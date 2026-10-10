@@ -13,7 +13,8 @@
   - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
     fix it needed (2026-10-09).
   - S18's gates on both boxes. G-S18g read 2026-10-10: FAIL as registered. The same day's follow-up shows its rule
-    cannot grade a tower on Gemma 3 (the f16 reference fails it too), so the registered consequence waits on the owner.
+    cannot grade a tower on Gemma 3 (the f16 reference fails it too); the owner withdrew its consequence and G-S18g2
+    replaces it (registered, queued for the night of 2026-10-10).
 - **In flight:**
   - S6: Qwen3.6-35B images served on CUDA, the 31B's step (b'), E4B on Metal.
   - S14 (speech).
@@ -3001,7 +3002,7 @@ aikit expected 0: L, as registered for S10's MoE variants.
   - **The reported CUDA arm:** its sidecar (`.int4.cuda.giw`, 16.7 GB) built in 11 min 5 s. The resident build then
     declined by name: `CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts …`,
     "continuing on the CPU/staged path". That is the decline the registration allowed for the 8 GB card.
-  - **The exit after the decline, root cause found 2026-10-10 by day (not yet fixed).** It is not about CUDA or the
+  - **The exit after the decline, root cause found and fixed 2026-10-10 by day.** It is not about CUDA or the
     decline. Serve exited with `--quant "int4" cannot apply to the prequantized .giw bundle …int4.cuda.giw — it is
     baked at "int4mix"`.
     - **Mechanism:** a `.giw` header records `Weights.quantLabel`, which reads `int4mix` whenever an int4 weight sits
@@ -3023,10 +3024,24 @@ aikit expected 0: L, as registered for S10's MoE variants.
       on the CPU under `-backend auto` on a Mac, `residentQuantLabel` prints "int4mix→int4, no Metal int8 GEMV
       kernel", and the KV-snapshot fingerprint carries it. The S6 night log shows the label on a prequant file named
       for int4: `qwen3.6-35b-a3b-int4.giw` decodes "cuda-resident (int4mix)".
-    - **Proposed fix, for the owner:** `quantLabel` returns `int4mix` only when int4 sits beside an int8 body weight
-      (what `--quant int4mix` produces); a float32 body weight beside int4 is a by-design pin, as the int8 logit
-      tables already are. A header that says `int4mix` is re-derived on read, so existing sidecars need no rebuild.
-      It changes MoE labels (and so their KV-snapshot fingerprints) and needs a parity hash refresh.
+    - **Fixed 2026-10-10 (owner: "fix now"), in the same format version.**
+      - `Weights.quantLabel` returns `int4mix` only when int4 sits beside an int8 body weight, which is what
+        `--quant int4mix` produces. A float32 body weight beside int4 is a by-design pin, as the int8 logit tables
+        already are.
+      - `LoadSerializedWeights` takes a header that says `int4mix` from the weights instead, so sidecars written
+        under the old rule load with the right label and need no rebuild.
+      - **No new `.giw` version (the owner asked).** The field keeps its values and the one the old rule got wrong
+        can be checked at load, so a version would buy nothing here; it would make every older binary, each pinned
+        night binary included, refuse the sidecars a new build writes and rebuild them.
+      - **Tests (each red before the fix except the control):** `TestQuantLabel_float32BesideInt4IsNotAMix` (the
+        committed `qwen3moe-tiny`: label, a baked bundle, an explicit int4 accepted, an explicit int8int8 still
+        refused), `TestQuantLabel_oldInt4MixHeaderIsRederived` (a bundle written with the old label),
+        `TestQuantLabel_int8BesideInt4IsAMix` (the control: a real mix is still a mix and still refuses int4), and an
+        explicit `--quant int4` through `modelload.Load`'s sidecar path in
+        `TestLoad_safetensorsDirGoesThroughSidecar`.
+      - **What changes for users:** an int4 MoE through a sidecar now reports `int4`. Its KV snapshots saved under the
+        old label no longer match and are prefilled again. Under `-backend auto` on a Mac such a model is no longer
+        held on the CPU for being "int4mix" (by reading `autoMetalPrecision`; not run).
   - **Queued again on nobara for the night of 2026-10-10 as `gs10q-d-2`** (est. 1 h 30 min; the same serve binary). The
     job now builds the CPU sidecar first under a 40 min wait, and leaves `--quant` at its int4 default.
 
@@ -4711,6 +4726,54 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **For the owner:** the registered consequence (int8 explicit-only) rests on a rule that cannot grade it. The
       alternative is to keep the fallback and register a graded replacement for G-S18g on this instrument: more
       images and prompts, the noise control, a margin written first, at night. Nothing in the code has changed.
+  - **Amendment to G-S18g, 2026-10-10 (owner: "do your recommendation").** G-S18g's registered consequence ("if it
+    fails, the int8 tower is not a default") is withdrawn. Its rule cannot grade a tower on Gemma 3: the f16 tower
+    fails it against the exact tower (the follow-up above). The int8 fallback stays as it is until G-S18g2 reads.
+    G-S18g's result stands in the record as FAIL as registered.
+  - **G-S18g2, registered 2026-10-10 before it runs: is the int8 Metal tower fit to stay the tight-memory default?**
+    - **Instrument:** `TestGemma3TowerDump` (the CPU float32 tower, the f16 Metal tower and the int8 Metal tower's
+      projected features for one image), then `TestGemma3TowerSensitivity` (Gemma 3 4B's int4 decoder on the CPU,
+      through its sidecar, teacher-forced along the CPU tower's own greedy reply). The graded positions run to the
+      reply's end of turn, 32 at most.
+    - **Units:** 24. Twelve committed images, each with two prompts.
+      - Images: the four F2a images; `qwen25vl_preprocess_image_resize.png`; `qwen35vl_preprocess_image.png`;
+        `glm_ocr/invoice.png`; `glm_ocr/invoices/inv01.png` to `inv05.png`. Six of the twelve are invoices and four
+        are synthetic gradients, so this is not a sample of ordinary photographs.
+      - Prompts: "What does this image show? Answer briefly." (G-S18g's) and "Describe this image in one sentence."
+    - **Statistics,** each with a 95% cluster bootstrap over the twelve images (10,000 resamples, seed 20261010):
+      - **D:** the mean over units of the int8 tower's mean KL(CPU tower || arm) minus the f16 tower's, nats per
+        position.
+      - **A:** the f16 tower's argmax agreement with the CPU tower's reply minus the int8 tower's, positions pooled,
+        percentage points.
+    - **Bands, read on each interval's upper bound; the verdict is the worse of the two:**
+
+      | | PASS | PARKED (to the owner) | FAIL |
+      |---|---|---|---|
+      | D, nats per position | at most 0.05 | above 0.05, at most 0.20 | above 0.20 |
+      | A, points | at most 5 | above 5, at most 15 | above 15 |
+
+      - 0.05 nats is the decoder's own floor on the least sensitive image in the follow-up (noise at either tower's
+        size reads 0.03-0.06 there): an excess under it is not distinguishable from a perturbation of any size.
+      - 0.20 nats is about what int4 quantization itself costs a decoder against a float reference (G-S10q-c read
+        0.07 and 0.17): an excess above it is a second quantization as large as the first.
+      - 5 and 15 points are G-S10q-c's bands.
+    - **Consequences:** PASS: the fallback stays. FAIL: the int8 tower becomes explicit-only (`-vision-quant int8`),
+      as G-S18g first registered. PARKED: the owner decides, with D, A and the cost of the alternative beside them
+      (the CPU tower: 30-40 s a request against 7.0-7.6 s, the follow-up's served arms).
+    - **Controls, per unit; a failure of either makes the run VOID:**
+      1. The CPU tower's features run again as an arm read KL exactly 0 with full agreement.
+      2. The CPU tower's features negated read at least 10 times that unit's f16 arm, and at least 0.5 nats.
+    - **Reported, not graded:** per tower, three noise arms (the CPU tower's features plus Gaussian noise at that
+      tower's per-soft-token relative L2), which show the decoder's floor on each unit.
+    - **What the exploratory run predicts, said before the graded one:** on the four F2a images with the first prompt
+      D was +0.116 (per image +0.002, +0.065, +0.036, +0.362), with positions forced past the end of turn on two of
+      them. That is inside the PARKED band. The graded run may differ: it stops at the end of turn and has 24 units.
+    - **Limits of the instrument:** the decoder runs on the CPU, while a served request decodes on Metal; the reply is
+      scored by distribution and argmax, not by a judgement of its quality.
+    - **Tier, cost, stopping rule:** night, the Mac. A fixed 24 units, no early stop. About 35 minutes, from the
+      follow-up's own times (a dump about 40 s an image, a nine-arm unit about 57 s), queued at 60.
+      `docs/measurements/multimodal-support-2026-10/s18-mac/run-gs18g2-night.sh`, graded by
+      `scripts/gs18g2_grade.py`; binaries pinned at the commit that carries this registration.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).
