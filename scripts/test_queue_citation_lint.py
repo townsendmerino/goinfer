@@ -658,6 +658,17 @@ class TestPinnedDocs(_LintRepo):
         self.assertGreen()
         self.assertEqual(qcl.pinned_marker(self.read("docs/task-x.md")), (None, None))
 
+    def test_en_dash_range_and_comma_list_numbers_are_all_checked(self):
+        n = len(GO_FIXTURE.rstrip("\n").split("\n"))
+        self.doc(self.pinned(f"ranges `pkg/svc.go:3–{n - 1}` and lists `pkg/svc.go:3,10,{n - 2}` are inside the file\n"))
+        self.assertGreen()
+        self.doc(self.pinned(f"an en-dash range past EOF `pkg/svc.go:3–{n + 40}`\n"), name="task-y.md")
+        self.assertRed("past the end", "task-y.md")
+        _git(self.repo, "rm", "-q", "-f", "docs/task-y.md")
+        self.doc(self.pinned(f"a list with one late number `pkg/svc.go:3,10,{n + 40}`\n"), name="task-z.md")
+        qcl.PINNED_FILE_CACHE.clear()
+        self.assertRed("past the end", "task-z.md")
+
     def test_pinned_to_a_commit_that_does_not_resolve_is_red(self):
         self.doc(self.pinned("see `pkg/svc.go:3`\n", commit="deadbeefdeadbeef"))
         self.assertRed("deadbeef")

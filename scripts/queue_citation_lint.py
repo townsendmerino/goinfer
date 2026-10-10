@@ -617,9 +617,10 @@ BARE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py))(?![\
 # and none was needed — the tree carried zero live .sh line citations when CC0 was written (2026-10-10).
 SYMBOL_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|py)):([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?!\w)")
 
-# A line citation with an optional range end (`x.go:10-20`): PATH_RE keeps only the first number, which is all a CONTENT key needs but
-# not what a pinned record needs — its range end must lie inside the file at its commit too.
-PATH_RANGE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py)):(\d+)(?:-(\d+))?(?![\d])")
+# A line citation as the docs write it: `x.go:10`, `x.go:10-20`, `x.go:10–20` (an EN DASH) and `x.go:10,34,56` (a comma list of more lines in
+# the same file). PATH_RE keeps only the first number, which is all a CONTENT key needs but not what a pinned record needs: EVERY number it
+# names must lie inside the file at its commit. (A range or list whose later numbers were never read is how an en-dash range hid past EOF.)
+PATH_RANGE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py)):(\d+)(?:[-–](\d+))?((?:,\d+(?:[-–]\d+)?)*)(?![\d])")
 
 
 def _go_line_starts_in_code(lines):
@@ -904,11 +905,12 @@ def check_pinned(doc_rel: str, commit: str, text: str, allow):
     bad = []
     seen = set()
     for m in PATH_RANGE_RE.finditer(text):
-        rel, a, b = m.group(1), int(m.group(2)), m.group(3)
-        if rel in allow or rel.split("/")[0] in allow or (rel, a, b) in seen:
+        rel, a, b, extra = m.group(1), int(m.group(2)), m.group(3), m.group(4)
+        if rel in allow or rel.split("/")[0] in allow or (rel, m.group(0)) in seen:
             continue
-        seen.add((rel, a, b))
-        cite = f"{rel}:{a}" + (f"-{b}" if b else "")
+        seen.add((rel, m.group(0)))
+        cite = m.group(0)
+        numbers = [a] + ([int(b)] if b else []) + [int(n) for n in re.findall(r"\d+", extra)]
         try:
             got = file_at(commit, rel)
         except CannotSearch as e:
@@ -918,8 +920,7 @@ def check_pinned(doc_rel: str, commit: str, text: str, allow):
             bad.append(f"  {doc_rel}|{cite}  PINNED PATH ABSENT — {rel} is absent at {commit[:10]}, the commit this record is pinned to")
             continue
         nlines = len(got[1].split("\n")) - (1 if got[1].endswith("\n") else 0)
-        end = int(b) if b else a
-        if a < 1 or max(a, end) > nlines:
+        if min(numbers) < 1 or max(numbers) > nlines:
             bad.append(f"  {doc_rel}|{cite}  PINNED LINE past the end of {rel} at {commit[:10]} ({nlines} lines)")
     for m in SYMBOL_RE.finditer(text):
         rel, name = m.group(1), m.group(2)
