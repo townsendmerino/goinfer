@@ -95,8 +95,8 @@ func TestKVPricingFor_metalNotCompiledKeepsCPUPricing(t *testing.T) {
 }
 
 // TestGuardGIWFit_metalNotOverchargedByCPUPricing is A3's "do first" test, at the guard: with memory that cannot hold
-// f32 KV over the whole 32k window but easily holds Metal's f16 at 4096, a Metal load is left alone while the same
-// load on the CPU is pinned down. Before A3's fix both were priced like the CPU.
+// f32 KV over the whole 32k window but easily holds Metal's f16 at 4096, a Metal load is left alone while the same load
+// on the CPU is pinned down.
 func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 	withFakeMetalCompiled(t)
 	cfg := a3Config("qwen2")

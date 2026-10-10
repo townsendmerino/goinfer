@@ -199,48 +199,26 @@ func ggufTensorQuants(path string) (map[string]string, error) {
 	return out, nil
 }
 
-// ggufQuantCosFloor is the per-source-quant agreement floor a CORRECT loader must clear when
-// its f32 reconstruction is diffed against the bf16 safetensors reference.
+// ggufQuantCosFloor is the per-source-quant agreement floor a CORRECT loader must clear when its f32 reconstruction is diffed
+// against the bf16 safetensors reference. These are dequant noise budgets, not quality targets: each sits at roughly 2x the
+// MEASURED (1-cos) for that format, from TestQwen38GGUF_weightDiff over layers 0-3 of unsloth/Qwen3.8-27B-GGUF UD-Q4_K_M
+// (table and run logs: docs/code-notes/decoder.md#ggufQuantCosFloor).
 //
-// These are dequant noise budgets, not quality targets. Each sits at roughly 2x the MEASURED
-// (1-cos) for that format, from TestQwen38GGUF_weightDiff over layers 0-3 of
-// unsloth/Qwen3.8-27B-GGUF UD-Q4_K_M against the bf16 safetensors (2026-09-12, 44 s,
-// goinfer-logs/qwen38-weightdiff-20260912-103901.log):
+// The table is evidence rather than a curve fit because the cosine is a function of the SOURCE QUANT ALONE: it tracks
+// bit-width and ignores what the tensor is for, which a transform defect cannot do. Quants not present in that file
+// (Q4_0/Q4_1/Q5_0/Q5_1, the IQ and TQ families, MXFP4) are set from a first-principles model the measured ones confirm: for a
+// k-quant with 32-element sub-blocks over roughly-Gaussian weights a b-bit code has step ~4.2*sigma/(2^b-1), so relL2 ~
+// step/sqrt(12)/sigma and 1-cos ~ relL2^2/2.
 //
-//	quant  n   measured cosine      1-cos      floor   budget used
-//	F32    18  1.000000 (maxAbs 0)  0          0.999999  0%
-//	Q8_0    6  0.999982-0.999986    1.7e-5     0.9999    17%
-//	Q6_K    2  0.999742-0.999758    2.5e-4     0.9995    52%
-//	Q5_K    6  0.999186-0.999257    8.0e-4     0.998     40%
-//	Q4_K    5  0.996974-0.997047    3.0e-3     0.995     61%
+// The margin matters less than it looks: the defect class these gates exist for does not produce a near-miss. A wrong
+// un-tile order PERMUTES elements, a missing (1+w) norm un-bake shifts every element by one, a sign error on -exp(A_log)
+// inverts; all land near zero or negative cosine, orders of magnitude below even the 2-bit floor. The floors only have to sit
+// above dequant noise and below "cratered". A loosened gate that can no longer go red is worth less than the tight one it
+// replaced, so change a floor only after re-running the mutation check: delete one real transform (the untileVHeads on
+// in_proj_z in decoder/gguf.go's loadQ35) and exactly that tensor must go red.
 //
-// What makes that table evidence rather than a curve fit: the cosine is a function of the
-// SOURCE QUANT ALONE. Q4_K spans 7e-5 across two different layer kinds (DeltaNet in_proj_qkv
-// and in_proj_z, softmax k_proj) and five tensor roles and shapes; Q5_K likewise. A transform
-// defect cannot produce agreement that tracks bit-width and ignores what the tensor is for.
-//
-// The quants not present in that file (Q4_0/Q4_1/Q5_0/Q5_1, the IQ and TQ families, MXFP4)
-// are set from the same first-principles model the measured ones confirm to within 3e-4 — for
-// a k-quant with 32-element sub-blocks over roughly-Gaussian weights, a b-bit code has step
-// ~4.2*sigma/(2^b-1), so relL2 ~ step/sqrt(12)/sigma and 1-cos ~ relL2^2/2, predicting Q4_K
-// 0.9967 / Q5_K 0.99924 / Q6_K 0.99982 / Q8_0 0.99995 against the measurements above.
-//
-// The margin matters less than it looks, because the defect class these gates exist for does
-// not produce a near-miss. A wrong un-tile order PERMUTES elements, a missing (1+w) norm
-// un-bake shifts every element by one, a sign error on -exp(A_log) inverts: all land near
-// zero or negative cosine, orders of magnitude below even the 2-bit floor. The floors only
-// have to sit above dequant noise and below "cratered", and that gap is enormous.
-//
-// THAT CLAIM WAS MEASURED, NOT ASSUMED — a loosened gate that can no longer go red is worth
-// less than the tight one it replaced, and "it passes now" is exactly what that looks like.
-// Deleting ONE real transform (the untileVHeads on in_proj_z in decoder/gguf.go's loadQ35)
-// and rerunning took that tensor from 0.996974 to 0.045919 — 47704% of its budget, ~160x past
-// the floor — while every other tensor stayed green, so the failure named the one broken
-// transform. Dequant noise tops out at 61% of budget; a transform bug is three orders of
-// magnitude past it. Run 2026-09-12, goinfer-logs/qwen38-weightdiff-MUTATION-20260912-*.log.
-//
-// An unrecognised quant deliberately gets the old whole-file bar: a format nobody has
-// calibrated must not silently widen a gate.
+// An unrecognised quant deliberately gets the old whole-file bar: a format nobody has calibrated must not silently widen a
+// gate.
 func ggufQuantCosFloor(q string) float64 {
 	switch q {
 	case "F32", "F64":

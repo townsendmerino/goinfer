@@ -94,27 +94,16 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 	}
 }
 
-// TestForwardN_matchesSequential checks the batched multi-position forward
-// (forwardLayersN) against running forward() one token at a time. The bar is BIT-IDENTITY: every
-// logit equal, not argmax plus a cosine floor.
+// TestForwardN_matchesSequential checks the batched multi-position forward (forwardLayersN) against running forward() one
+// token at a time. The bar is BIT-IDENTITY: every logit equal, not argmax plus a cosine floor.
 //
-// THE COMMENT THAT USED TO BE HERE DESCRIBED A DIFFERENT CODEBASE. It said "NOT bit-identical,
-// since batched attention moved QKᵀ/scores·V onto the f32 SIMD A·Bᵀ kernel" against "the scalar
-// attendQuery" — but decode has not used attendQuery since single-token decode was routed through
-// attendBatchedHeads at K=1 with acc64. attention.go says so where it does it, names THIS test as
-// the gate, and gives the reason: f32's reduction is M-dependent, so K=1 decode ≠ M=K verify, and
-// that flipped ~11% of argmaxes and left ~7% of speculations rejected. f64 is order-independent, so
-// the two are exact.
-//
-// So the gate was one assertion weaker than the contract it guards: a regression breaking
-// decode == prefill by 1e-6 passed here and only the heavy token-level spec-parity gates would have
-// noticed (audit-2026-09-02 G-06). Measured before tightening — 0 differing logits of 19,447,808 at
-// K=128 on qwen2.5-coder-0.5b int8int8 — so this asserts a property the code has, not one it ought
-// to have. forwardN passes fastAttn=false, so the A3 f32 path is not in play here; that path is
+// Single-token decode runs attendBatchedHeads at K=1 with acc64; attention.go names this test as the gate. f32's reduction
+// is M-dependent, so K=1 decode differs from M=K verify, which flips argmaxes and gets speculations rejected; f64 is
+// order-independent, so the two are exact. A regression breaking decode == prefill by 1e-6 must fail HERE, not only in the
+// heavy token-level spec-parity gates. forwardN passes fastAttn=false, so the A3 f32 path is not in play; that path is
 // deliberately NOT bit-identical and has its own gate.
 //
-// K=128 is included so the O(L²) attention term is actually exercised (K=6 barely touches it).
-// Skips without the model asset.
+// K=128 so the O(L^2) attention term is actually exercised (K=6 barely touches it). Skips without the model asset.
 func TestForwardN_matchesSequential(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
@@ -151,10 +140,8 @@ func TestForwardN_matchesSequential(t *testing.T) {
 				t.Fatalf("cache positions: seq=%d batch=%d want %d", cseq.Pos(), cbat.Pos(), K)
 			}
 
-			// EVERY LOGIT EQUAL. Same standard as TestMoEExpertMajor_bitIdentical, and the one
-			// attention.go's acc64 comment claims. A cosine floor cannot express it: 0.99 admits a
-			// drift big enough to flip argmaxes downstream, which is exactly what the f32 path did
-			// before acc64.
+			// EVERY LOGIT EQUAL. Same standard as TestMoEExpertMajor_bitIdentical and attention.go's acc64 comment. A cosine
+			// floor cannot express it: 0.99 admits a drift big enough to flip argmaxes downstream.
 			ndiff := 0
 			var worstMaxd float64
 			for i := range K {

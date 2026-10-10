@@ -15,13 +15,12 @@ const (
 	gemma4EModelGolden = "../testdata/gemma4_emodel_tiny_golden.json"
 )
 
-// TestGemma4EModel_safetensorsParity is S1.1's gate (docs/tasks/task-multimodal-support-2026-10.md): a
-// safetensors Gemma 4 E-model — Per-Layer Embeddings, cross-layer KV sharing, double-wide FFNs on the shared
-// layers — loads (until 2026-10-06 this loader refused any PLE checkpoint) and its CPU forward matches the HF
-// oracle at EVERY prompt position, f32: argmax equal and cosine >= 0.99999 at each, then the greedy
-// continuation byte-identical. All positions, not just the last, because the KV-shared layers only differ
-// from their own-KV counterparts once there is history to attend over, and the sliding window (4) is
-// shorter than the prompt (12).
+// TestGemma4EModel_safetensorsParity is S1.1's gate (docs/tasks/task-multimodal-support-2026-10.md): a safetensors
+// Gemma 4 E-model (Per-Layer Embeddings, cross-layer KV sharing, double-wide FFNs on the shared layers) loads and its
+// CPU forward matches the HF oracle at EVERY prompt position, f32: argmax equal and cosine >= 0.99999 at each, then the
+// greedy continuation byte-identical. All positions, not just the last, because the KV-shared layers only differ from
+// their own-KV counterparts once there is history to attend over, and the sliding window (4) is shorter than the prompt
+// (12).
 func TestGemma4EModel_safetensorsParity(t *testing.T) {
 	raw, err := os.ReadFile(gemma4EModelGolden)
 	if errors.Is(err, fs.ErrNotExist) {

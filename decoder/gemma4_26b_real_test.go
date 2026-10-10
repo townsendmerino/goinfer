@@ -24,13 +24,11 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// distinctTrigramRatio returns |distinct 3-rune windows| / |total| over s — a
-// language-agnostic degeneracy metric. Coherent prose cycles through many trigrams (high
-// ratio); a looping forward reuses a few ("water-water-water", "얓숌면-얓숌면-얓숌면",
-// "true or true or") so the ratio collapses. This is what the old printable-ASCII-majority
-// check was blind to: it passed int8's English-ish repetition and flagged int4's CJK
-// repetition, though both are the SAME degeneracy — see the RESOLUTION in
-// docs/task-gemma4-moe.md (da5a6ec).
+// distinctTrigramRatio returns |distinct 3-rune windows| / |total| over s: a language-agnostic degeneracy metric.
+// Coherent prose cycles through many trigrams (high ratio); a looping forward reuses a few ("water-water-water",
+// "얓숌면-얓숌면-얓숌면", "true or true or") so the ratio collapses. A printable-ASCII-majority check is blind to this: it
+// passes English-ish repetition and flags CJK repetition though both are the SAME degeneracy
+// (docs/completed/task-gemma4-moe.md, RESOLUTION).
 func distinctTrigramRatio(s string) float64 {
 	r := []rune(s)
 	if len(r) < 3 {
@@ -45,10 +43,9 @@ func distinctTrigramRatio(s string) float64 {
 	return float64(len(seen)) / float64(total)
 }
 
-// wantGemma4Prompt is the exact rendered generation prompt for the gate's user turn.
-// Asserted verbatim so a template/marker change (e.g. the <|turn>/<turn|> rename that
-// 681db0c made optional in tokenizer/sentencepiece.go) surfaces HERE as a clear diff,
-// not downstream as mystery garbage.
+// wantGemma4Prompt is the exact rendered generation prompt for the gate's user turn. It is asserted verbatim so a
+// template/marker change (for example the <|turn>/<turn|> rename tokenizer/sentencepiece.go made optional) surfaces
+// HERE as a clear diff, not downstream as garbage.
 const wantGemma4Prompt = "<bos><|turn>user\nWhat is the capital of France, and what is it famous for?<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
 
 const gemma4GateUserTurn = "What is the capital of France, and what is it famous for?"
@@ -75,9 +72,8 @@ func TestGemma4_26B_gate(t *testing.T) {
 		t.Skipf("no 26B checkpoint at %s: %v", dir, err)
 	}
 
-	// Run the gate at BOTH precisions. int4 (~13 GB) is the config Phase 5 benchmarks and
-	// is fully coherent under the chat template — the earlier "int4 is incoherent" claim
-	// was a raw-prompt artifact (retracted, da5a6ec). int8 (~26 GB) is the control.
+	// Run the gate at BOTH precisions: int4 (~13 GB) is the benchmarked config and is coherent under the chat template;
+	// int8 (~26 GB) is the control.
 	for _, quant := range []string{"int4", "int8int8"} {
 		t.Run(quant, func(t *testing.T) {
 			m, err := Load(dir, Options{Quant: quant})
@@ -129,18 +125,13 @@ func gemma4CheckSeams(t *testing.T, m *Model) {
 	t.Logf("loaded 26B-A4B: 30 layers, %d MoE (128 experts top-8), %d K=V-global", nMoE, nVFromK)
 }
 
-// gemma4CoherenceGate is the real gate: a greedy continuation of a PROPERLY TEMPLATED
-// chat turn must contain the known answer and clear the degeneracy floor.
+// gemma4CoherenceGate is the real gate: a greedy continuation of a PROPERLY TEMPLATED chat turn must contain the known
+// answer and clear the degeneracy floor.
 //
-// The prompt MUST go through Gemma 4's chat template. A raw completion prompt ("The
-// capital of France is") is off-distribution for this instruction-tuned checkpoint: BOTH
-// int8 and int4 degenerate there (int8 → "water-water-water is 100°C", int4 → CJK
-// repetition), and the old printable-ASCII gate mistook int8's English-ish garbage for
-// coherence while flagging int4's CJK — a false precision signal that cost a week
-// (resolved da5a6ec). DO NOT reintroduce a raw prompt here as a quality check;
-// gemma4RawPromptControl keeps the raw case as a NEGATIVE control only. Greedy + fixed
-// prompt is deterministic (sampling does not rescue a raw prompt anyway — verified), so
-// the known-answer substring is a legitimate, non-flaky signal.
+// The prompt MUST go through Gemma 4's chat template. A raw completion prompt is off-distribution for this instruction-tuned
+// checkpoint: BOTH int8 and int4 degenerate there, and an ASCII-majority gate misread that as a precision signal. DO NOT
+// reintroduce a raw prompt as a quality check; gemma4RawPromptControl keeps the raw case as a NEGATIVE control only. Greedy
+// and a fixed prompt are deterministic, so the known-answer substring is a legitimate, non-flaky signal.
 func gemma4CoherenceGate(t *testing.T, m *Model, tk *tokenizer.Tokenizer, quant string) {
 	t.Helper()
 	turns := []chat.Turn{{Role: "user", Content: gemma4GateUserTurn}}

@@ -13,22 +13,14 @@ import (
 
 func sqrt(f float64) float64 { return math.Sqrt(f) }
 
-// G24 — how much would an f32 attention path actually recover?
+// G24: how much would an f32 attention path recover over acc64? The comparison is NOT end-to-end:
 //
-// At K=8192 prefill, acc64 attention is ~70% of the time (MatmulAVAcc64 51.1% +
-// MatmulQKAcc64 18.7%). The acc64 comment calls f64 "~3.7× slower than f32", and
-// A3 proposes a gated f32 path. But the honest comparison is NOT end-to-end:
+//   - acc64 reads K/V DIRECTLY by stride (no kh gather, no vt gather+transpose). f32 must pay both, so the f32 arm includes
+//     those gathers; otherwise the ratio flatters f32.
+//   - the f32 branch in attendBatchedHeads is single-threaded by construction (its per-kv-group gather is shared mutable
+//     state), so an end-to-end A/B would race parallel-acc64 against serial-f32. Both arms here are single-threaded.
 //
-//   - acc64 reads K/V DIRECTLY by stride, "skipping a kh gather entirely" and
-//     "skipping a vt gather+transpose". f32 must pay both, so the f32 arm here
-//     includes those gathers — otherwise the ratio flatters f32 by omitting work
-//     it cannot avoid.
-//   - the f32 branch in attendBatchedHeads is single-threaded by construction
-//     (its per-kv-group gather is shared mutable state), so an end-to-end A/B
-//     would race parallel-acc64 against serial-f32 and measure the confound.
-//     Both arms here are single-threaded, which is the like-for-like comparison.
-//
-// Shapes are the ones G20's tiling actually calls at an 8k prompt.
+// Shapes are the ones G20's tiling calls at an 8k prompt.
 func TestG24AttnKernelRatio(t *testing.T) {
 	if os.Getenv("GOINFER_G24") == "" {
 		t.Skip("set GOINFER_G24=1 to run the A3 kernel comparison")
@@ -72,22 +64,17 @@ func TestG24AttnKernelRatio(t *testing.T) {
 		return best
 	}
 
-	// EQUALIZE PARALLELISM. MatmulBT fans out via parallelCols; the acc64 kernels
-	// are plain serial loops. A first pass of this benchmark compared serial acc64
-	// against parallel f32 and reported 17.6x against a documented ~3.7x — the
-	// ratio was mostly core count. Force MatmulBT serial so the number is the
-	// arithmetic-plus-gather truth, then report the parallel figure separately as
-	// what it is: a SECOND, separable effect.
+	// EQUALIZE PARALLELISM. MatmulBT fans out via parallelCols; the acc64 kernels are plain serial loops, so comparing
+	// them unequalised measures core count. Force MatmulBT serial so the number is the arithmetic-plus-gather ratio, then
+	// report the parallel figure separately as a SECOND, separable effect.
 	origThreshold := linalg.ParallelThreshold()
 	linalg.SetParallelThreshold(1 << 62)
 	defer linalg.SetParallelThreshold(origThreshold)
 
 	fmt.Fprintf(os.Stderr, "G24 attention kernels at kt=%d hd=%d nKeys=%d (best of %d), MatmulBT forced SERIAL\n", kt, hd, nKeys, reps)
 
-	// CORRECTNESS FIRST. A ratio between two kernels that compute different things
-	// is worthless, and the first version of this benchmark already produced one
-	// misleading number (17.6x, from unequal parallelism). So: run both arms once
-	// and compare outputs before timing anything.
+	// CORRECTNESS FIRST. A ratio between two kernels that compute different things is worthless: run both arms once and
+	// compare outputs before timing anything.
 	{
 		accOut := make([]float32, kt*nKeys)
 		f32Out := make([]float32, kt*nKeys)

@@ -9,10 +9,9 @@ import (
 	"testing"
 )
 
-// R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's live re-run): real
-// vm_stat output shape, 16 KB pages (Apple Silicon — the M1 Pro that found this bug, not the
-// traditional 4 KB), so a parser tested only against a 4 KB assumption would pass here and still
-// be wrong on the machine that matters.
+// Real vm_stat output shape, 16 KB pages (Apple Silicon, not the traditional 4 KB), so a parser tested only against a 4
+// KB assumption would pass here and still be wrong on the machine that matters
+// (docs/measurements/cold-user-2026-09-07-macbook-arm64.md).
 const sampleVMStat = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
 Pages free:                                5945.
 Pages active:                             123456.

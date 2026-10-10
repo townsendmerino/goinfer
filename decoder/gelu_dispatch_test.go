@@ -5,19 +5,11 @@ import (
 	"testing"
 )
 
-// GPT-2's activation_function must select the function it NAMES.
-//
-// The bug this pins: validateGPT2 accepted both "gelu_new" and "gelu", and
-// gpt2Architecture hardcoded Act: ActGeluTanh — so a checkpoint declaring HF's exact
-// "gelu" silently ran the tanh approximation. In HF these are different entries,
-// ACT2FN["gelu"] = GELUActivation (exact erf) vs ACT2FN["gelu_new"] = NewGELUActivation
-// (tanh), not two spellings of one function.
-//
-// aikit hit the mirror image on its encoder side in v1.19.0 — three tanh names routed
-// through the exact erf — and its note said no shipping checkpoint was affected, latent
-// for a future addition. The same was true here, which is the point: this test exists so
-// the next GPT-2-family checkpoint that declares "gelu" gets the function it asked for
-// instead of a silently approximated one.
+// GPT-2's activation_function must select the function it NAMES. validateGPT2 accepts both "gelu_new" and "gelu", so
+// gpt2Architecture must not hardcode ActGeluTanh: a checkpoint declaring HF's exact "gelu" would silently run the tanh
+// approximation. In HF these are different entries (ACT2FN["gelu"] is the exact erf, ACT2FN["gelu_new"] the tanh form),
+// not two spellings of one function. The next GPT-2-family checkpoint that declares "gelu" must get the function it
+// asked for.
 func TestGPT2_activationSelectsTheNamedFunction(t *testing.T) {
 	for _, c := range []struct {
 		name string

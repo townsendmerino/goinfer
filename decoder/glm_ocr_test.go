@@ -98,12 +98,12 @@ func TestGlmOcr_realConfig(t *testing.T) {
 	}
 }
 
-// TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may
-// run it resident only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope
-// kernels. CUDA does (cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA), and Metal since
-// 2026-10-09 (metal.TestGlmOcrResidentParityMetal); WebGPU still has only the NeoX half-split kernels, and
-// admitting glm_ocr there gave logit cosine -0.34 resident-vs-CPU on the CUDA twin of that kernel set
-// (2026-10-01), with no error. The decline must name the missing features so `serve check` shows the real cause.
+// TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may run it resident
+// only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope kernels (the parity gates are
+// cuda.TestGlmOcrResidentParityCUDA over cuda/rope_pairwise.cu and metal.TestGlmOcrResidentParityMetal). A backend with
+// only the NeoX half-split kernels must decline: admitting glm_ocr there computes the wrong rotation with no error
+// (logit cosine -0.34 resident-vs-CPU on the CUDA twin of that kernel set). The decline must name the missing features
+// so `serve check` shows the real cause.
 func TestGlmOcr_residentDeclined(t *testing.T) {
 	cfg, err := loadConfig(os.DirFS("../testdata"), "glm_ocr_real_config.json")
 	if err != nil {
@@ -806,12 +806,11 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 }
 
 // TestGlmOcr_generateQwenVL_cpuOnly: GenerateQwenVL, the entry point serve calls for an image turn, on a CPU-only load of
-// glm_ocr (m.resident == nil), through the SAME tiny image fixture and HF continuation as TestGlmOcr_mropeParity. The O1
-// review flagged that GenerateQwenVL's resident branches had never been checked for a nil resident. Every one of them sits
-// behind a type assertion on m.resident (ok is false on a nil interface) or behind tryClaimResident, so a CPU load takes the
-// CPU prefill + CPU decode and never touches a resident — this proves it by running the whole turn, twice with the same
-// image hash (the second call is where a reuse branch would be reached if it were reachable), and checks the tokens are
-// HF's and that no resident flag is set.
+// glm_ocr (m.resident == nil), through the SAME tiny image fixture and HF continuation as TestGlmOcr_mropeParity.
+// GenerateQwenVL's resident branches must tolerate a nil resident: each sits behind a type assertion on m.resident (ok is
+// false on a nil interface) or behind tryClaimResident, so a CPU load takes the CPU prefill and CPU decode and never touches
+// a resident. This runs the whole turn twice with the same image hash (the second call is where a reuse branch would be
+// reached if it were reachable), and checks the tokens are HF's and that no resident flag is set.
 func TestGlmOcr_generateQwenVL_cpuOnly(t *testing.T) {
 	raw, err := os.ReadFile("../testdata/glm_ocr_tiny_mrope_golden.json")
 	if errors.Is(err, fs.ErrNotExist) {

@@ -9,19 +9,13 @@ import (
 	"testing"
 )
 
-// TestGemma4VLBidir_textParity is the P0 invariant for the batched path,
-// mirroring TestGemma4VL_textParity's shape: on a use_bidirectional_attention=
-// "vision" checkpoint, a TEXT-ONLY forward (no image) must still match HF —
-// confirmed this session that HF's own forward degrades block_sequence_ids to
-// an all -1 tensor when there is no multimodal content, which makes
-// blockwise_overlay unconditionally false, i.e. plain causal (see
-// scripts/pin_gemma4_vl_bidir_tiny.py's docstring for the citation). This test
-// checks BOTH the unchanged sequential path (m.forward, via runLayersGemma4)
-// AND the new batched path (runLayersGemma4FromEmbedN with imgLen=0) against
-// the HF golden, and against each other — the regression check the plan
-// called for: an M=K batched matmul is not guaranteed bit-identical reduction
-// order to K separate M=1 calls, so the bound here is a tight tolerance, not
-// literal bit-exactness.
+// TestGemma4VLBidir_textParity is the P0 invariant for the batched path, mirroring TestGemma4VL_textParity's shape: on
+// a use_bidirectional_attention="vision" checkpoint, a TEXT-ONLY forward (no image) must still match HF. HF's own
+// forward degrades block_sequence_ids to an all -1 tensor when there is no multimodal content, which makes
+// blockwise_overlay unconditionally false, i.e. plain causal (scripts/pin_gemma4_vl_bidir_tiny.py's docstring has the
+// citation). This test checks BOTH the sequential path (m.forward, via runLayersGemma4) AND the batched path
+// (runLayersGemma4FromEmbedN with imgLen=0) against the HF golden, and against each other. An M=K batched matmul is not
+// guaranteed the reduction order of K separate M=1 calls, so the bound is a tight tolerance, not bit-exactness.
 func TestGemma4VLBidir_textParity(t *testing.T) {
 	const golden = "../testdata/gemma4_vl_bidir_tiny_text_golden.json"
 	const ckpt = "../testdata/gemma4-vl-bidir-tiny"
@@ -117,18 +111,13 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 	}
 }
 
-// TestGemma4VLBidir_imageParity is the real gate: a multimodal prompt whose
-// image block is deliberately longer than the checkpoint's sliding_window and
-// positioned so the block's own start falls outside the last block position's
-// causal window (scripts/pin_gemma4_vl_bidir_image.py's docstring has the
-// full reasoning) — a shape that only a genuine blockwise-OR-causal mask gets
-// right. Also asserts the fixture is non-vacuous: the OLD, unmodified
-// sequential path (prefillLogitsGemma4VL, strictly causal) is run on the SAME
-// inputs and must reproduce the golden's own causal_only_last_logits (proving
-// goinfer's causal path is itself correct on this checkpoint shape) while
-// genuinely DISAGREEING with the bidirectional golden (proving a wrong,
-// causal-only kernel would provably fail this gate, not coincidentally pass
-// it).
+// TestGemma4VLBidir_imageParity is the real gate: a multimodal prompt whose image block is longer than the checkpoint's
+// sliding_window and positioned so the block's own start falls outside the last block position's causal window
+// (scripts/pin_gemma4_vl_bidir_image.py's docstring has the reasoning), a shape only a genuine blockwise-OR-causal mask
+// gets right. It also asserts the fixture is non-vacuous: the sequential path (prefillLogitsGemma4VL, strictly causal),
+// run on the SAME inputs, must reproduce the golden's own causal_only_last_logits (goinfer's causal path is correct on
+// this shape) while genuinely DISAGREEING with the bidirectional golden (a causal-only kernel would fail this gate, not
+// pass it by coincidence).
 func TestGemma4VLBidir_imageParity(t *testing.T) {
 	const golden = "../testdata/gemma4_vl_bidir_tiny_image_golden.json"
 	const ckpt = "../testdata/gemma4-vl-bidir-tiny"

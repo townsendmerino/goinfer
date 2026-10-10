@@ -8,11 +8,9 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// TestGemma4Config_realGGUF runs the real E2B GGUF through ggufConfig +
-// resolveArchitecture (the Increment-1 config/descriptor path) and asserts the
-// parsed descriptor matches the verified metadata. Weight loading is guarded off
-// (the next increment), so this stops at the descriptor. Skips without the asset
-// (set the file at ~/models/gemma-4-E2B_q4_0-it.gguf).
+// TestGemma4Config_realGGUF runs the real E2B GGUF through ggufConfig + resolveArchitecture and asserts the parsed
+// descriptor matches the verified metadata; it stops at the descriptor (no weight load). Skips without the asset
+// (~/models/gemma-4-E2B_q4_0-it.gguf).
 func TestGemma4Config_realGGUF(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
@@ -87,10 +85,9 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 	eq("headDimAt(4)", arch.headDimAt(4), 512)
 }
 
-// TestGemma4Load is Increment 2: the full weight load. It exercises the gemma4
-// loader against the real E2B GGUF — per-layer head_dim/FFN, the KV-shared tail
-// (layers ≥ 15 carry no k/v), and the PLE tensors. int4 keeps it light on 16 GB.
-// (Forward pass is Increment 3, so this checks the bundle, not generation.)
+// TestGemma4Load exercises the full gemma4 weight load against the real E2B GGUF: per-layer head_dim/FFN, the KV-shared
+// tail (layers >= 15 carry no k/v) and the PLE tensors. int4 keeps it light on 16 GB. It checks the bundle, not
+// generation.
 func TestGemma4Load(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"

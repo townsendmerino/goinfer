@@ -9,10 +9,9 @@ import (
 	"testing"
 )
 
-// TestGemma4_logitParity is the Increment-3 gate: goinfer's gemma4 forward (int8
-// quantized GGUF) vs the HF bf16 oracle. Argmax must match (the correctness
-// gate); cosine over the sampled-256 logits must clear the quant-vs-bf16 bar.
-// Skips without the golden or the GGUF asset.
+// TestGemma4_logitParity is the gate for goinfer's gemma4 forward (int8 quantized GGUF) against the HF bf16 oracle.
+// Argmax must match (the correctness gate); cosine over the sampled-256 logits must clear the quant-vs-bf16 bar. Skips
+// without the golden or the GGUF asset.
 func TestGemma4_logitParity(t *testing.T) {
 	requireHeavyModel(t)
 	raw, err := os.ReadFile("../testdata/gemma4_forward_golden.json")

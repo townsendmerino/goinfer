@@ -11,12 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestGemma4FakeQuant drives the fakequant.go diagnostic against the real gemma-4-26b-a4b-it:
-// it loads under a base quant (ZZBASE, default int4) with GOINFER_FAKEQUANT set to a 4-bit
-// scheme and prints the greedy continuation of a fixed prompt. It built the int4-quality
-// matrix in docs/task-gemma4-moe.md (sym/affine × int8/f32 act × full/experts-only). No
-// assertion — it is a measurement harness; the fidelity gate that makes its output
-// trustworthy is TestFakeQuantSymMatchesRuntimeInt4 (default suite). Skipped without the ckpt.
+// TestGemma4FakeQuant drives the fakequant.go diagnostic against the real gemma-4-26b-a4b-it: it loads under a base quant
+// (ZZBASE, default int4) with GOINFER_FAKEQUANT set to a 4-bit scheme and prints the greedy continuation of a fixed prompt
+// (the int4-quality matrix in docs/completed/task-gemma4-moe.md: sym/affine x int8/f32 act x full/experts-only). No
+// assertion: it is a measurement harness; the fidelity gate that makes its output trustworthy is
+// TestFakeQuantSymMatchesRuntimeInt4 (default suite). Skipped without the ckpt.
 //
 //	GOINFER_FAKEQUANT=sym|affine|symmse   4-bit weight scheme (unset = real int4, no fake-quant)
 //	GOINFER_FAKEQUANT_ACT=f32             store Q8 (f32 activations) instead of W8A8 (int8 act)

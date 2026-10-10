@@ -7,12 +7,9 @@ import (
 	"testing"
 )
 
-// R3 gate (docs/measurements/cold-user-2026-09-06.md, scenario D). On v0.16.0 a 21 GB model on a
-// 16 GB machine loaded without a word and drove the box +7,819 MB into swap in five seconds. The
-// bar for this test is therefore not "an error is returned" — it is that NOTHING WAS ALLOCATED
-// when the error was returned, and that the message names the flag that fixes it.
-//
-// The RAM figure is injected, so the test exercises the 16 GB machine's arithmetic on any box.
+// Pins that the fit guard refuses BEFORE anything is allocated and that the message names the flag that fixes it:
+// "an error is returned" is not the bar (docs/measurements/cold-user-2026-09-06.md, scenario D). The RAM figure is
+// injected, so the 16 GB machine's arithmetic runs on any box.
 func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
 
@@ -38,8 +35,7 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 			"the allocation, which is the swap storm it exists to prevent", got)
 	}
 
-	// The message has to carry the remedy and the arithmetic, because the user who reads it is
-	// the one who has no idea -stream-weights exists — that was the whole finding.
+	// The message must carry the remedy and the arithmetic: the user reading it does not know -stream-weights exists.
 	msg := err.Error()
 	for _, want := range []string{"-stream-weights", "memory available", "budget", "GOINFER_NO_FIT_GUARD"} {
 		if !strings.Contains(msg, want) {
@@ -51,10 +47,9 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 		t.Errorf("refusal names the flag without saying what it does:\n%s", msg)
 	}
 
-	// gptoss_tiny.gguf is gpt-oss — MoE, own-forward — so an automatic -stream-weights retry must
-	// NOT be offered: that CPU path is the one docs/benchmarks.md "M35/M26 on the Mac" measured as
-	// 2h10min/zero completions on a real checkpoint. Both the sentinel (errors.Is) and the typed
-	// field (errors.As) have to agree, since main.go's retry decision reads the field directly.
+	// gptoss_tiny.gguf is gpt-oss (MoE, own-forward), so an automatic -stream-weights retry must NOT be offered: that CPU
+	// path is the one docs/benchmarks.md "M35/M26 on the Mac" records as never completing on a real checkpoint. The sentinel
+	// (errors.Is) and the typed field (errors.As) must agree, since main.go's retry decision reads the field directly.
 	if !errors.Is(err, ErrWontFitResident) {
 		t.Error("refusal does not wrap ErrWontFitResident")
 	}
@@ -67,27 +62,12 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 	}
 }
 
-// TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights gates the cold-user 2026-09-18
-// nobara-pc Scenario D defect (docs/measurements/cold-user-2026-09-18-nobara-pc.md): loading
-// gpt-oss-20b (12.11 GB MXFP4 GGUF) via `chat --backend cuda` (no special flags) or
-// `serve --backend cuda --moe-cache-experts` drove REAL, incremental swap growth on a machine
-// with 37+ GB RAM free, with zero warning printed first — while `chat fit`'s pre-flight estimate
-// (dense+experts+KV, ~13.3 GB) reported comfortably fitting. Reproduced directly on nobara-pc (the
-// same box) with a heap profile + /proc RSS sampling around a bare decoder.Load of the real
-// checkpoint (CUDA and --moe-cache-experts are red herrings here: gpt-oss declines CUDA residency
-// via the missing FeatAttnSink feature — decoder/registry.go's own gptOssArchitecture comment — so
-// both commands actually ran this exact CPU-resident .gguf load path): peak RSS reached ~24.5 GB,
-// matching weightBytes+fileSize (12.58+12.11=24.69 GB) to within 2%, not the ~12.58 GB the OLD
-// (pre-fix) estimator priced.
-//
-// This test pins the fix on the tiny fixture without needing the 12 GB real checkpoint: read the
-// REAL weightBytes+kvBytes+srcFileBytes off fitCheckFor itself (not a hand-derived guess — the
-// fixture's real config resolves a non-zero kvBytes too, so reimplementing the arithmetic by hand
-// would silently under-count and prove nothing; caught by mutation-checking this test against the
-// pre-fix `need()`, which passed spuriously until this was fixed to read the real fields), pick a
-// RAM figure whose budget sits strictly between (weightBytes+kvBytes) and
-// (weightBytes+kvBytes+srcFileBytes), and confirm the guard now refuses on the strength of
-// srcFileBytes alone.
+// TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights pins that the load-time estimate counts the on-disk
+// GGUF (srcFileBytes) on top of weightBytes+kvBytes, because a CPU-resident .gguf load holds both
+// (docs/measurements/cold-user-2026-09-18-nobara-pc.md, scenario D). It reads the REAL terms off fitCheckFor rather
+// than re-deriving them by hand (a hand derivation under-counts KV and then passes against the pre-fix estimator),
+// picks a RAM figure whose budget sits strictly between (weightBytes+kvBytes) and (weightBytes+kvBytes+srcFileBytes),
+// and confirms the guard refuses on srcFileBytes alone.
 func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
 
@@ -133,14 +113,13 @@ func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T)
 	}
 }
 
-// TestFitGuard_pricesTheCUDAExpertCacheBuildPeak: --backend cuda --moe-cache-experts holds the
-// canonical weights, a packed copy of them and a pinned copy of the experts on the host at once
-// (measured on the real gpt-oss-20b: 39 GB peak for a 12 GB checkpoint). In the regime that
-// matters that exceeds the weights+KV+file total the CPU path is priced at, and it does not stack
-// with the file term (the source is unmapped before the build), so need() takes the larger.
+// TestFitGuard_pricesTheCUDAExpertCacheBuildPeak: --backend cuda --moe-cache-experts holds the canonical weights, a packed
+// copy of them and a pinned copy of the experts on the host at once. In the regime that matters that exceeds the CPU path's
+// weights+KV+file total, and it does not stack with the file term (the source is unmapped before the build), so need()
+// takes the larger.
 //
-// Two halves, because the tiny fixture cannot be in that regime (its KV at the full window dwarfs
-// its weights): the wiring is checked on the real GGUF, the arithmetic on realistic numbers.
+// Two halves, because the tiny fixture cannot be in that regime (its KV at the full window dwarfs its weights): the wiring
+// is checked on the real GGUF, the arithmetic on realistic numbers.
 func TestFitGuard_pricesTheCUDAExpertCacheBuildPeak(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
 	opts := Options{Quant: "int4", Backend: "cuda", MoECacheExperts: true}
@@ -259,11 +238,9 @@ func TestFitGuard_amplyProvisionedMachineIsSilent(t *testing.T) {
 	m.Close()
 }
 
-// R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's SECOND live re-run):
-// the load-time guard must price against CURRENTLY AVAILABLE memory, not total RAM. Ample total
-// RAM with tight availability is exactly the live failure's shape — the load-time guard on the
-// real Mac reported a healthy-looking margin against total RAM while the machine was, in fact,
-// already out of room, and swap began within 15 seconds of load completing, before any request.
+// The load-time guard must price against CURRENTLY AVAILABLE memory, not total RAM: ample total RAM with tight
+// availability is the shape of the live failure (docs/measurements/cold-user-2026-09-07-macbook-arm64.md, second live
+// re-run).
 func TestFitGuard_pricesAgainstAvailableNotTotalRAM(t *testing.T) {
 	restore := injectHostRAM(t, 64<<30) // 64 GB total: this alone must NOT be enough to pass
 	defer restore()
@@ -336,11 +313,9 @@ func TestFitCheck_arithmeticMatchesTheMeasuredFailure(t *testing.T) {
 	}
 }
 
-// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the guard priced weights and,
-// only if -ctx was pinned, KV — so an UNPINNED load that fits at idle can still swap the machine
-// on its first real request, because KV was priced at 0 regardless of how large the model's own
-// context window is. Driven with numbers shaped like the actual failure: a 7B-class model whose
-// weights alone fit comfortably, but whose KV at its full context window does not.
+// An UNPINNED load must price KV at the model's maximum context: a load that fits at idle can otherwise swap the
+// machine on its first real request (docs/measurements/cold-user-2026-09-07-macbook-arm64.md, R13). Driven with a
+// 7B-class shape whose weights fit comfortably and whose KV at the full context window does not.
 func TestFitCheck_unpinnedPricesKVAtTheModelsMaximum(t *testing.T) {
 	cfg := &Config{NumLayers: 32, NumKVHeads: 8, HeadDim: 128, MaxPositions: 131072}
 	ram := int64(16) << 30               // 16 GB, the machine that actually swapped
@@ -438,21 +413,14 @@ func TestFitCheck_unpinnedRefusesWhenEvenTheFloorDoesNotFit(t *testing.T) {
 	}
 }
 
-// End to end, through the real Load() path with a real (tiny) GGUF fixture — proves the wiring
-// from guardFit's return value into opts.ResidentContext (decoder/model.go), not only the pure
-// arithmetic above.
+// Through the real Load() path on the tiny GGUF fixture: an ample-RAM load is neither capped nor pinned. The auto-pin
+// wiring (guardFit's return value into opts.ResidentContext) is NOT asserted here; see the comment in the body.
 func TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
-	// MEASURED, not assumed: this fixture's own metadata gives ggufConfig a MaxPositions of 0
-	// (context_length is not set the way this synthetic build's config parses it), so
-	// fitCheckFor's "unknown ⇒ proceed" branch fires and this specific fixture cannot exercise
-	// the auto-pin path at all — confirmed by direct inspection (kvBytesPerPosition=512,
-	// MaxPositions=0), not by running this test and rationalizing a SKIP after the fact. The pure
-	// arithmetic is fully covered by TestFitCheck_unpinnedPricesKVAtTheModelsMaximum above, which
-	// does not depend on any fixture's real dimensions; this test exists to prove the OTHER half —
-	// that a fixture with a real MaxPositions and comfortable weights does not regress into
-	// spuriously capping or refusing — and to auto-upgrade to a real auto-pin assertion the day a
-	// fixture with MaxPositions>0 is available at this path.
+	// This fixture's ggufConfig has MaxPositions 0 (context_length does not parse on this synthetic build), so fitCheckFor's
+	// "unknown proceeds" branch fires and the auto-pin path is not exercised. The arithmetic is covered by
+	// TestFitCheck_unpinnedPricesKVAtTheModelsMaximum, which does not depend on a fixture's dimensions; this test pins the
+	// other half: a comfortable-weights load does not regress into capping or refusing.
 	restore := injectHostRAM(t, 64<<30) // ample: this fixture must load normally, uncapped
 	defer restore()
 
@@ -469,9 +437,9 @@ func TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing(t *testi
 	}
 }
 
-// The estimator must not be free to drift from the accountant M-01 completed. It prices the model
-// from GGUF metadata BEFORE the load; ResidentWeightBytes sums the matrices AFTER it. They answer
-// the same question from opposite sides, so a large disagreement means one of them is wrong.
+// The estimator must not drift from the accountant. It prices the model from GGUF metadata BEFORE the load;
+// ResidentWeightBytes sums the matrices AFTER it. They answer the same question from opposite sides, so a large
+// disagreement means one of them is wrong.
 func TestFitEstimate_agreesWithResidentWeightBytes(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
 	for _, q := range []struct {
@@ -493,13 +461,9 @@ func TestFitEstimate_agreesWithResidentWeightBytes(t *testing.T) {
 				t.Skip("accountant reported 0 for this fixture")
 			}
 			ratio := float64(est) / float64(actual)
-			// TIGHT on purpose, and it was not always. The band started at 0.6-1.6 and passed on
-			// linux/amd64 at 0.96 while darwin/arm64 sat at 0.53 — the arm64 W4A8 row4 repack
-			// keeps a second buffer, so int4 costs about twice its encoding there and a
-			// hand-derived constant was ~1.8x low on the one platform the guard exists for.
-			// quantBytesPerElem now MEASURES through quantizeWM, so a wide band would only hide
-			// the next such divergence. Some slack remains because the estimator prices every
-			// tensor uniformly while the accountant reads the real backing slices.
+			// TIGHT on purpose: quantBytesPerElem MEASURES through quantizeWM, so a wide band would hide a platform divergence
+			// (the arm64 W4A8 row4 repack keeps a second buffer, so int4 costs about twice its encoding there). Some slack
+			// remains because the estimator prices every tensor uniformly while the accountant reads the real backing slices.
 			if ratio < 0.85 || ratio > 1.25 {
 				t.Errorf("estimate %d vs accounted %d (ratio %.2f) — the pre-load estimate has "+
 					"drifted from ResidentWeightBytes", est, actual, ratio)
@@ -509,13 +473,10 @@ func TestFitEstimate_agreesWithResidentWeightBytes(t *testing.T) {
 	}
 }
 
-// TestFitEstimate_safetensorsAgreesWithResidentWeightBytes is
-// TestFitEstimate_agreesWithResidentWeightBytes's safetensors twin (P9b, docs/multimodal.md):
-// proves estimateSafetensorsWeightBytes's shape-based, quant-priced estimate actually tracks a
-// real load's resident weight bytes, on a real (tracked, non-gitignored) safetensors checkpoint —
-// not just that it compiles or returns something positive. This is what closes the gap
-// fitCheckFor's OLD behavior left: a safetensors path returned a zero weight estimate
-// unconditionally, so fits() always reported true regardless of the machine's actual RAM.
+// TestFitEstimate_safetensorsAgreesWithResidentWeightBytes is TestFitEstimate_agreesWithResidentWeightBytes's safetensors
+// twin (docs/multimodal.md, P9b): estimateSafetensorsWeightBytes's shape-based, quant-priced estimate must track a real
+// load's resident weight bytes, on a real (tracked, non-gitignored) safetensors checkpoint. A safetensors path used to
+// return a zero weight estimate, so fits() was always true.
 func TestFitEstimate_safetensorsAgreesWithResidentWeightBytes(t *testing.T) {
 	const dir = "testdata/internlm2-tiny"
 	for _, q := range []struct {
@@ -549,11 +510,9 @@ func TestFitEstimate_safetensorsAgreesWithResidentWeightBytes(t *testing.T) {
 	}
 }
 
-// TestFitCheckFor_pricesSafetensorsNotJustGGUF pins the actual regression this closes: before
-// P9b, fitCheckFor returned a zero-weight (therefore always-fits) check for ANY non-.gguf path —
-// a safetensors checkpoint's fit guard was silent by construction, never refusing regardless of
-// how little RAM was injected. Confirms both weightBytes and kvBytes are now non-zero for a real
-// safetensors directory with a resolvable context.
+// TestFitCheckFor_pricesSafetensorsNotJustGGUF pins that fitCheckFor no longer returns a zero-weight (always-fits)
+// check for a non-.gguf path: weightBytes and kvBytes are both non-zero for a real safetensors directory with a
+// resolvable context.
 func TestFitCheckFor_pricesSafetensorsNotJustGGUF(t *testing.T) {
 	const dir = "testdata/internlm2-tiny"
 	f := fitCheckFor(dir, "int4", quantInt4, Options{})
@@ -585,13 +544,10 @@ func TestFitCheckFor_unresolvableSafetensorsProceedsUnknown(t *testing.T) {
 	}
 }
 
-// TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory gates M-30: the remedy text for a
-// refused safetensors DIRECTORY used to unconditionally recommend -stream-weights — a flag that
-// is a genuine no-op for a directory (decoder.Load ignores it for anything but a .giw, and
-// serve's own -stream-weights gates are .gguf-suffix-only) — so a user who did exactly what the
-// message told them got an identical refusal back. The remedy must now name the escape hatch
-// that actually works for this source (GOINFER_NO_FIT_GUARD=1) and the real path to a permanent
-// fix (cmd/prequant), and must NOT recommend -stream-weights at all.
+// TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory (M-30): the remedy for a refused safetensors DIRECTORY
+// must not recommend -stream-weights, which is a no-op for a directory (decoder.Load ignores it for anything but a
+// .giw). It must name the escape hatch that works for this source (GOINFER_NO_FIT_GUARD=1) and the permanent fix
+// (cmd/prequant).
 func TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory(t *testing.T) {
 	restore := injectHostRAM(t, 128<<10) // far below anything internlm2-tiny needs — forces refusal
 	defer restore()
@@ -614,12 +570,9 @@ func TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory(t *testing.T) 
 	}
 }
 
-// injectHostRAM replaces BOTH the machine's total-RAM figure AND its currently-available figure
-// with the same value, for one test. Most callers do not care about the total-vs-available
-// distinction (they are testing the arithmetic given "a machine with N bytes to work with"); a
-// test that DOES care calls injectHostRAMAvailable (prefill_budget_test.go) afterwards to override
-// just the available figure, matching the live failure's own shape (ample total RAM, tight
-// availability). Returned as a restore func rather than only t.Cleanup so the intent reads at the
+// injectHostRAM replaces BOTH the total-RAM figure AND the currently-available figure with the same value, for one
+// test. A test that cares about the difference calls injectHostRAMAvailable (prefill_budget_test.go) afterwards to
+// override just the available figure. Returned as a restore func rather than only t.Cleanup so the intent reads at the
 // call site.
 func injectHostRAM(t *testing.T, bytes int64) func() {
 	t.Helper()
@@ -668,10 +621,9 @@ func TestDenseStreamable_agreesWithLayerPagerEligibility(t *testing.T) {
 	})
 }
 
-// declineErr must carry fitCheck.denseStreamable through to FitDeclineError.DenseStreamable
-// unchanged in both directions — main.go's retry decision reads only the returned error, never
-// the fitCheck that produced it, so a silent drop here would either offer a retry for MoE (the
-// measured-bad path) or withhold one for a dense model that would have streamed fine.
+// declineErr must carry fitCheck.denseStreamable through to FitDeclineError.DenseStreamable unchanged in both
+// directions: main.go's retry decision reads only the returned error, so a silent drop would offer a retry for MoE (the
+// path that never completes) or withhold one for a dense model that would have streamed.
 func TestFitDeclineError_carriesDenseStreamable(t *testing.T) {
 	for _, want := range []bool{true, false} {
 		f := fitCheck{name: "x.gguf", quant: "int4", weightBytes: 21 << 30, availBytes: 16 << 30, denseStreamable: want}
@@ -707,21 +659,14 @@ func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 		})
 	}
 
-	// int4 has exactly TWO legitimate costs, and which one applies is a property of the host, not
-	// of the encoding:
+	// int4 has exactly TWO legitimate costs, and which applies is a property of the host, not of the encoding:
 	//
-	//   ~0.5625 canonical nibbles + one binary16 scale per group of 32 (aikit v1.50.0; 0.625 with the f32
-	//           scales before it), and no repack
-	//   ~1.125  the same, PLUS a second repacked buffer that the loader keeps beside it —
-	//           RepackInt4Row4 on arm64-with-dotprod (nibbles and scales both doubled; 1.250 before)
+	//   ~0.5625 canonical nibbles + one binary16 scale per group of 32, and no repack
+	//   ~1.125  the same, PLUS a second repacked buffer the loader keeps beside it (RepackInt4Row4 on arm64-with-dotprod)
 	//
-	// Pinning the pair rather than a range is the point: a wrong measurement usually lands
-	// BETWEEN them, and a range wide enough to hold both would accept it.
-	//
-	// This replaces an assertion that int4 must be cheaper than int8, which CI proved false.
-	// Measured on darwin/arm64 2026-09-06: int4 1.2500 against int8 1.0156 — on Apple Silicon
-	// int4 weights occupy about 23% MORE resident RAM than int8int8, because int8 gets no repack.
-	// See docs/tasks/task-first-hour.md for what that means for the help text's "int4 ... smallest".
+	// Pinning the pair rather than a range is the point: a wrong measurement usually lands BETWEEN them, and a range wide enough
+	// to hold both would accept it. Do not assert int4 < int8: on Apple Silicon int4 occupies MORE resident RAM than int8int8,
+	// because int8 gets no repack (docs/tasks/task-first-hour.md).
 	for _, name := range []struct {
 		label string
 		mode  quantMode

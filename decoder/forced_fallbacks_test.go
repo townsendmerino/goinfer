@@ -34,15 +34,19 @@ func TestForcedFallbacks_expected(t *testing.T) {
 	}
 }
 
-// Forced-fallback floors. Under a forced narrower kernel the numerics are a different realization of the same arithmetic, so the goldens that pin ONE path's token sequence or sample values
-// (recorded on the default path; the int4 goldens are arm64-baked) cannot be compared exactly. These replace them under the tags with a closeness bound, measured 2026-10-04 on a Ryzen 7 3700X
-// (docs/tasks/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real defect does, and each shown red by a mutation.
+// Forced-fallback floors. Under a forced narrower kernel the numerics are a different realization of the same
+// arithmetic, so the goldens that pin ONE path's token sequence or sample values (recorded on the default path; the
+// int4 goldens are arm64-baked) cannot be compared exactly. These replace them under the tags with a closeness bound
+// (docs/tasks/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real
+// defect does, each shown red by a mutation.
 const (
-	// forcedInt4CosFloor: centered cosine of an int4 fixture's logit samples against its recorded golden. Forced noavx2 measured 1.0 on 21 of 22 fixtures and 0.99381096 on gemma4-dense-scaled (the
-	// fixture built to amplify numeric differences; argmax equal). The healthy cross-arch deficit on gpt2 is 2.2e-3 (int4_golden_test.go); a group-size mutation moves it by 2.4e-2.
+	// forcedInt4CosFloor: centered cosine of an int4 fixture's logit samples against its recorded golden. The bar sits
+	// between the healthy forced-noavx2 values (lowest on gemma4-dense-scaled, the fixture built to amplify numeric
+	// differences; argmax equal) and what a group-size mutation does (int4_golden_test.go).
 	forcedInt4CosFloor = 0.99
-	// forcedLogitCloseness: 1 - cosine between two paths' logits for the same ids, where the pair differs by design: int4 against int8int8 (measured 1.64e-2 pure Go, 1.75e-2 AVX2) and the f32
-	// fast-attention prefill against the exact path (measured 8.3e-3 pure Go, 1.6e-2 AVX2, 768 tokens).
+	// forcedLogitCloseness: 1 - cosine between two paths' logits for the same ids, where the pair differs by design: int4
+	// against int8int8, and the f32 fast-attention prefill against the exact path. The bound sits above the deficit of
+	// both, pure Go and AVX2.
 	forcedLogitCloseness = 3e-2
 )
 

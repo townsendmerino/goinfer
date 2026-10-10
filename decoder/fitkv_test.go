@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// TestKvDimAt_zeroForRecurrentLayers gates M-28's first sub-fix: a linear (DeltaNet), Mamba-2, or
-// gated-conv mixer layer holds no position-indexed K/V array at all — a small fixed-size
-// recurrent state instead, never priced by ctx — so kvDimAt must report zero for each, not the
-// ordinary NumKVHeads*HeadDim the flat formula this replaces charged every layer regardless.
+// TestKvDimAt_zeroForRecurrentLayers (M-28): a linear (DeltaNet), Mamba-2 or gated-conv mixer layer holds no
+// position-indexed K/V array, only a small fixed-size recurrent state that ctx does not scale, so kvDimAt must report
+// zero for each, not the NumKVHeads*HeadDim the old flat formula charged every layer.
 func TestKvDimAt_zeroForRecurrentLayers(t *testing.T) {
 	a := &Architecture{
 		NumKVHeads:    8,
@@ -25,14 +24,11 @@ func TestKvDimAt_zeroForRecurrentLayers(t *testing.T) {
 	}
 }
 
-// TestKvDimAt_zeroForNemotronNonAttentionLayers gates a residual gap in M-28 found while
-// implementing P-02 (docs/audit-2026-09-10.md): Nemotron's mixer identity is per-layer RUNTIME
-// DATA (nemotronParams.blockKind, read from layers_block_type), not a registry-time closure like
-// Granite's layerIsMamba — so isMambaLayer never fires for a Nemotron mamba layer at all, and its
-// mlp/moe block kinds (decoder/forward_nemotron.go's own switch: only nemoAttn ever touches
-// cache) touch no K/V either, uncaught by any generic predicate. Real fixture, not synthetic:
-// testdata/nemotron-tiny's layers_block_type is exactly
-// ["mamba","attention","mlp","mamba","attention"].
+// TestKvDimAt_zeroForNemotronNonAttentionLayers (M-28, docs/audit-2026-09-10.md P-02): Nemotron's mixer identity is
+// per-layer RUNTIME DATA (nemotronParams.blockKind, read from layers_block_type), not a registry-time closure like
+// Granite's layerIsMamba, so isMambaLayer never fires for a Nemotron mamba layer, and its mlp/moe block kinds touch no
+// K/V either (the switch in decoder/forward_nemotron.go: only nemoAttn touches cache). Real fixture, not synthetic:
+// testdata/nemotron-tiny's layers_block_type is ["mamba","attention","mlp","mamba","attention"].
 func TestKvDimAt_zeroForNemotronNonAttentionLayers(t *testing.T) {
 	_, arch := realArchFixture(t, "../testdata/nemotron-tiny")
 	if arch.nemotron == nil {
@@ -50,10 +46,9 @@ func TestKvDimAt_zeroForNemotronNonAttentionLayers(t *testing.T) {
 	}
 }
 
-// TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth gates M-28's MLA sub-fix: the cache
-// holds the compressed KVLoRARank+QKRopeHeadDim latent (forward_deepseek.go reconstructs
-// per-head K/V from it each step), not NumKVHeads*HeadDim's full reconstructed width — the audit's
-// own DeepSeek-V2-Lite figure ("MLA stores 576/layer, priced 4096") is exactly this gap.
+// TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth (M-28): the MLA cache holds the compressed
+// KVLoRARank+QKRopeHeadDim latent (forward_deepseek.go reconstructs per-head K/V from it each step), not
+// NumKVHeads*HeadDim's reconstructed width.
 func TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth(t *testing.T) {
 	a := &Architecture{
 		NumKVHeads: 128, HeadDim: 128, // a deliberately huge reconstructed width, to prove it is NOT what gets used
@@ -66,10 +61,8 @@ func TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth(t *testing.T) {
 	}
 }
 
-// TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal gates M-28's sliding-window sub-fix: a
-// local (non-global) layer's ring never grows past SlidingWindow regardless of ctx, while a
-// global layer's cost keeps growing with ctx — the gemma3-12b "~6x over at 131k" figure traces
-// to exactly this asymmetry being ignored.
+// TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal (M-28): a local (non-global) layer's ring never grows past
+// SlidingWindow regardless of ctx, while a global layer's cost keeps growing with ctx.
 func TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal(t *testing.T) {
 	a := &Architecture{
 		SlidingWindow: 4096,
@@ -86,9 +79,8 @@ func TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal(t *testing.T) {
 	}
 }
 
-// TestKvBytesForCtx_skipsRecurrentLayers is the end-to-end combination: a DeltaNet-hybrid-shaped
-// architecture (half the layers linear, holding no KV) must price only the real attention
-// layers, not all of them — the flat formula this replaces would have doubled the true cost here.
+// TestKvBytesForCtx_skipsRecurrentLayers is the end-to-end combination: a DeltaNet-hybrid-shaped architecture (half the
+// layers linear, holding no KV) must price only the real attention layers.
 func TestKvBytesForCtx_skipsRecurrentLayers(t *testing.T) {
 	a := &Architecture{
 		NumLayers: 8, NumKVHeads: 8, HeadDim: 128,
@@ -103,9 +95,8 @@ func TestKvBytesForCtx_skipsRecurrentLayers(t *testing.T) {
 	}
 }
 
-// TestKvBytesForCtx_nilOrEmptyProceedsUnknown matches this file's "every unknown proceeds"
-// discipline: an unresolved architecture or a non-positive ctx prices at zero rather than
-// panicking or guessing.
+// TestKvBytesForCtx_nilOrEmptyProceedsUnknown: an unresolved architecture or a non-positive ctx prices at zero rather
+// than panicking or guessing (the guard's "every unknown proceeds" discipline).
 func TestKvBytesForCtx_nilOrEmptyProceedsUnknown(t *testing.T) {
 	if got := kvBytesForCtx(nil, 1000, false, false); got != 0 {
 		t.Errorf("kvBytesForCtx(nil arch) = %d, want 0", got)
@@ -115,9 +106,8 @@ func TestKvBytesForCtx_nilOrEmptyProceedsUnknown(t *testing.T) {
 	}
 }
 
-// realArchFixture loads a real checkpoint's config.json and resolves its Architecture, or skips
-// if the (gitignored, real) fixture is absent — same convention as the rest of this package's
-// hybrid/MLA tests (loadHybridTiny etc. in fitplan_test.go).
+// realArchFixture loads a real checkpoint's config.json and resolves its Architecture, or skips if the (gitignored, real)
+// fixture is absent, like the hybrid/MLA tests (loadHybridTiny etc. in fitplan_test.go).
 func realArchFixture(t *testing.T, dir string) (*Config, *Architecture) {
 	t.Helper()
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
@@ -131,10 +121,9 @@ func realArchFixture(t *testing.T, dir string) (*Config, *Architecture) {
 	return cfg, arch
 }
 
-// TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth is M-28's DeepSeek-V2-Lite case from the
-// audit ("MLA stores 576/layer, priced 4096"), on the real fixture: the fixed estimator must price
-// meaningfully LESS than the flat formula it replaces, because the flat formula charges the full
-// reconstructed per-head width where MLA actually caches only the compressed latent.
+// TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth (M-28, DeepSeek-V2-Lite, real fixture): the estimator must price
+// meaningfully LESS than the old flat formula, which charges the full reconstructed per-head width where MLA caches only
+// the compressed latent.
 func TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth(t *testing.T) {
 	cfg, arch := realArchFixture(t, "../testdata/deepseek-tiny")
 	if arch.mla == nil {
@@ -149,8 +138,7 @@ func TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth(t *testing.T) {
 	t.Logf("ctx=%d: flat(pre-M-28)=%d bytes, fixed(post-M-28)=%d bytes, ratio=%.2fx", ctx, flat, fixed, float64(flat)/float64(fixed))
 }
 
-// TestFitGuard_hybridKVSkipsRecurrentLayers is M-28's DeltaNet-hybrid case, on the real qwen3.5
-// fixture the audit itself names ("Qwen3.5-4B: priced 128 KiB/position vs 32 KiB stored").
+// TestFitGuard_hybridKVSkipsRecurrentLayers (M-28): the DeltaNet-hybrid case, on the real qwen3.5 fixture.
 func TestFitGuard_hybridKVSkipsRecurrentLayers(t *testing.T) {
 	cfg, arch := realArchFixture(t, "../testdata/qwen35-tiny")
 	hasLinear := false
@@ -172,10 +160,9 @@ func TestFitGuard_hybridKVSkipsRecurrentLayers(t *testing.T) {
 	t.Logf("ctx=%d: flat(pre-M-28)=%d bytes, fixed(post-M-28)=%d bytes, ratio=%.2fx", ctx, flat, fixed, float64(flat)/float64(fixed))
 }
 
-// TestFitGuard_slidingWindowFlattensPastTheWindow is M-28's olmo3-7B case from the audit
-// ("~3.4x over at 65k"), on the real fixture: at a ctx well past the model's own sliding window,
-// the fixed estimator's local layers must have stopped growing while the flat formula keeps
-// charging every layer as if it held the full context.
+// TestFitGuard_slidingWindowFlattensPastTheWindow (M-28, olmo3-7B, real fixture): at a ctx well past the model's sliding
+// window the estimator's local layers must have stopped growing, where the flat formula charges every layer the full
+// context.
 func TestFitGuard_slidingWindowFlattensPastTheWindow(t *testing.T) {
 	cfg, arch := realArchFixture(t, "../testdata/olmo3-tiny")
 	if arch.SlidingWindow <= 0 {

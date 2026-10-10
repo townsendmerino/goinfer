@@ -9,19 +9,14 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): found while wiring up the new
-// request-time memory guard (AdmitPrefillMemory, prefill_budget.go) — Config.MaxPositions came
-// back 0 for a real, freshly-downloaded qwen2.5-coder-0.5b GGUF, silently disabling both the new
-// guard and the pre-existing contextLengthError/clampMaxTokens checks (C-18/C-20). The cause: 16
-// of the 18 GGUF architecture config builders never read "context_length" into
-// Config.MaxPositions at all — only ggufPhi3Config did, by what looks like accident rather than
-// design (nothing about that family is special). This is a regression gate for every one of
-// them, driven through the real dispatch table (ggufConfig), not the individual functions, so a
-// future architecture that forgets the field fails here too.
+// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): every GGUF architecture config builder must read
+// "context_length" into Config.MaxPositions, or the request-time memory guard (AdmitPrefillMemory, prefill_budget.go) and the
+// contextLengthError/clampMaxTokens checks (C-18/C-20) are silently disabled for that family. This is the regression gate for
+// every builder, driven through the real dispatch table (ggufConfig) rather than the individual functions, so a future
+// architecture that forgets the field fails here too.
 //
-// Mutation: comment out any one architecture's `MaxPositions: u("context_length"),` line — that
-// architecture's subtest goes red with MaxPositions=0 (want 4096); every other subtest stays
-// green, isolating exactly which family broke.
+// Mutation: comment out any one architecture's `MaxPositions: u("context_length"),` line and that architecture's subtest goes
+// red with MaxPositions=0 (want 4096); every other subtest stays green, isolating which family broke.
 func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 	const wantCtx = 4096
 	emb := []ggufTensorDecl{embedTensor(8, 32)}

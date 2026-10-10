@@ -12,12 +12,11 @@ import (
 // goldenLiteral matches a quoted golden file name in test source: "…golden….json" or "…golden….json.gz".
 var goldenLiteral = regexp.MustCompile(`"([^"\s]*golden[^"\s]*\.json(?:\.gz)?)"`)
 
-// Every real-checkpoint gate SKIPS when its golden is missing ("no golden — run the pin script"), so a
-// test that names x_golden.json while the tree holds x_golden.json.gz (or the reverse) does not fail — it
-// quietly stops gating. That is the one mistake the 2026-09-25 compression of the large goldens could
-// make, and a fixture-less run cannot see it, so this reads the source instead: for every golden name
-// quoted in a *_test.go anywhere in the repo, wherever the OTHER spelling exists on disk, this one must
-// too. A golden that is absent in both spellings (gitignored, not pinned on this box) is not its concern.
+// Every real-checkpoint gate SKIPS when its golden is missing ("no golden, run the pin script"), so a test that names
+// x_golden.json while the tree holds x_golden.json.gz (or the reverse) does not fail: it quietly stops gating. A
+// fixture-less run cannot see that, so this reads the source instead: for every golden name quoted in a *_test.go
+// anywhere in the repo, wherever the OTHER spelling exists on disk, this one must too. A golden that is absent in both
+// spellings (gitignored, not pinned on this box) is not its concern.
 func TestGoldenNames_matchTheFileOnDisk(t *testing.T) {
 	root, err := filepath.Abs("..")
 	if err != nil {

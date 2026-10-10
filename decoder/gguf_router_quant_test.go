@@ -5,12 +5,11 @@ import (
 	"testing"
 )
 
-// TestGGUFRouter_staysF32AtQuant gates M-27: several GGUF MoE loaders quantized the router
-// (ffn_gate_inp) via the generic mat() helper instead of routing it through
-// streamMat(..., quantNone, ...) like gpt-oss/qwen35 already did — CUDA/Metal residency
-// requires an f32 router (quantizing it flips which experts win near a tie, not just rounding
-// noise), so every affected family at a non-f32 quant silently declined resident build. This
-// fixture's shared generic loadLayer branch covers GLM/Mellum/Qwen3-MoE/DeepSeek2.
+// TestGGUFRouter_staysF32AtQuant gates M-27: the GGUF MoE router (ffn_gate_inp) must load through streamMat(...,
+// quantNone, ...) like gpt-oss and qwen35 do, not through the generic mat() helper. CUDA/Metal residency requires an
+// f32 router (quantizing it flips which experts win near a tie, not just rounding noise), so a quantized router makes
+// the family silently decline resident build at any non-f32 quant. This fixture's shared generic loadLayer branch
+// covers GLM/Mellum/Qwen3-MoE/DeepSeek2.
 func TestGGUFRouter_staysF32AtQuant(t *testing.T) {
 	const gguf = "../testdata/glm-tiny.gguf"
 	if _, err := os.Stat(gguf); err != nil {

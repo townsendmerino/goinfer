@@ -15,25 +15,19 @@ import (
 	"testing"
 )
 
-// The tiny parity checkpoints are gitignored and regenerated per machine by scripts/pin_*.py, but the
-// goldens recorded from them are committed — and the pin scripts do not reproduce the same random weights
-// across torch/transformers versions. So a box whose checkpoint was re-pinned elsewhere compares the
-// committed golden against DIFFERENT weights, and the parity test reports a meaningless cosine (−0.04 for
-// gemma3-vl-tiny) that reads exactly like a forward-pass regression. That kept five decoder tests red on
-// the Mac from 2026-09-18 to 2026-09-24, pre-registered as "known unrelated" and never investigated
-// (docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md).
+// The tiny parity checkpoints are regenerated per machine by scripts/pin_*.py, but the goldens recorded from them are
+// committed, and the pin scripts do not reproduce the same random weights across torch/transformers versions. A box whose
+// checkpoint was re-pinned elsewhere would compare the committed golden against DIFFERENT weights and report a meaningless
+// cosine that reads like a forward-pass regression (docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md).
 //
-// requireFixtureIdentity fails fast, with the actual diagnosis, when a fixture listed in
-// testdata/fixture_identity.json does not hold the weights its goldens were recorded from. Since
-// 2026-09-24 the small fixtures are COMMITTED instead (git pins their bytes); the manifest covers only
-// the ones too large to commit, and TestInt4_forwardParity's per-fixture subtest is the caller.
+// requireFixtureIdentity fails fast, with the actual diagnosis, when a fixture listed in testdata/fixture_identity.json does
+// not hold the weights its goldens were recorded from. The small fixtures are COMMITTED (git pins their bytes); the manifest
+// covers only the ones too large to commit, and TestInt4_forwardParity's per-fixture subtest is the caller.
 //
-// The comparison is NUMERIC, not a file hash: the same pin script with the same seed produces
-// byte-different checkpoints on arm64 and amd64 (measured: nemotron3nano-tiny and qwen3next-tiny differ in
-// 33-36% of elements between the Mac and nobara, by at most 2.4e-7 — float32 ULP noise from torch's normal_
-// on the two architectures), and both correctly pass every golden. A different random draw moves a
-// tensor's sum by O(sum|x|/sqrt(n)); ULP noise moves it by ~1e-7 of sum|x|. The 1e-4 relative tolerance
-// sits three orders of magnitude from each.
+// The comparison is NUMERIC, not a file hash: the same pin script with the same seed produces byte-different checkpoints on
+// arm64 and amd64 (float32 ULP noise from torch's normal_), and both correctly pass every golden. A different random draw
+// moves a tensor's sum by O(sum|x|/sqrt(n)); ULP noise moves it by ~1e-7 of sum|x|. The 1e-4 relative tolerance sits three
+// orders of magnitude from each.
 const (
 	fixtureIdentityPath = "../testdata/fixture_identity.json"
 	fixtureIdentityTol  = 1e-4

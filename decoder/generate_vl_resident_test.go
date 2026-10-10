@@ -47,14 +47,12 @@ func loadGemma3VLTiny(t *testing.T) (*Model, gemma3VLGolden) {
 	return m, g
 }
 
-// TestGenerateVL_residentDecodeEngagesAndUploadsKV is gap 0's wiring gate for GenerateVL, extended
-// for P9(a): given a resident backend, the turn must (a) call UploadKV once per layer with the CPU
-// prefill's K/V, (b) dispatch decode through the resident Forward (not the CPU m.forward), and (c)
-// COMMIT resIDs + the image block afterward — a stale resIDs from an unrelated prior generation
-// must not survive as a false reuse candidate (m.resIDs starts at a value that cannot satisfy the
-// image-block check below), and this turn's own prefix becomes the reuse candidate for the NEXT
-// turn if the same image comes back (the entire point of P9(a); GenerateVL used to be forbidden
-// from touching resIDs at all, then gap 0 made it unconditionally forget — now it commits).
+// TestGenerateVL_residentDecodeEngagesAndUploadsKV is gap 0's wiring gate for GenerateVL, extended for P9(a): given a
+// resident backend, the turn must (a) call UploadKV once per layer with the CPU prefill's K/V, (b) dispatch decode
+// through the resident Forward (not the CPU m.forward), and (c) COMMIT resIDs + the image block afterward. A stale
+// resIDs from an unrelated prior generation must not survive as a false reuse candidate (m.resIDs starts at a value
+// that cannot satisfy the image-block check below), and this turn's own prefix becomes the reuse candidate for the NEXT
+// turn if the same image comes back (the point of P9(a)).
 func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
@@ -104,12 +102,11 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	}
 }
 
-// TestGenerateVL_residentContextCapPublishesBudgetClamped is M-02's (docs/audit-2026-09-10.md)
-// gate: when the resident context cap clamps maxTokens down, the Generation must publish
-// Budget/BudgetClamped (openai.go's effectiveBudget trusts Budget only when BudgetClamped is
-// true) — before this fix, a cap-truncated VL turn silently reported the same finish_reason as an
-// ordinary EOS-terminated one. capPos leaves room for exactly 2 decode tokens; maxNew (5) asks for
-// more, forcing the clamp on this — the "ordinary path" (residentUploadPrefill) — site.
+// TestGenerateVL_residentContextCapPublishesBudgetClamped is M-02's gate (docs/audit-2026-09-10.md): when the resident
+// context cap clamps maxTokens down, the Generation must publish Budget/BudgetClamped (openai.go's effectiveBudget trusts
+// Budget only when BudgetClamped is true), or a cap-truncated VL turn reports the same finish_reason as an ordinary
+// EOS-terminated one. capPos leaves room for exactly 2 decode tokens; maxNew (5) asks for more, forcing the clamp on the
+// "ordinary path" (residentUploadPrefill) site.
 func TestGenerateVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
@@ -176,10 +173,9 @@ func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 	}
 }
 
-// TestGenerateVL_residentConcurrencyRace is the direct regression guard for V-11's actual bug
-// shape (docs/review-2026-09-04.md), now meaningful for the first time since that fix: a
-// resident-touching plain Generate and a resident-touching GenerateVL running concurrently on
-// the SAME *Model must not corrupt resIDs or double-claim resBusy. Run with -race.
+// TestGenerateVL_residentConcurrencyRace is the regression guard for V-11's bug shape (docs/completed/review-2026-09-04.md): a
+// resident-touching plain Generate and a resident-touching GenerateVL running concurrently on the SAME *Model must not
+// corrupt resIDs or double-claim resBusy. Run with -race.
 func TestGenerateVL_residentConcurrencyRace(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
@@ -425,13 +421,12 @@ func TestGenerateVL_imageReuseFastPath_sameImageSkipsTower(t *testing.T) {
 	}
 }
 
-// TestGenerateVL_imageReuseFastPath_declinesPastResidentCap is M-01's own gate for the P9a fast
-// path (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) — a strict
-// extension of an already-committed prefix, so P9a's own full-reuse condition (reuseFrom >=
-// imgPos+imgLen) is satisfied — must NOT take the fast path once it would overrun the resident
-// cap. Before the fix, residentPrefillSeed's own error there just set g.err and returned with no
-// fallback; this must instead decline cleanly and fall through to the ordinary path (tower runs
-// again), exactly as "not fully reused" already does.
+// TestGenerateVL_imageReuseFastPath_declinesPastResidentCap is M-01's gate for the P9a fast path
+// (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions), a strict extension of an
+// already-committed prefix so P9a's own full-reuse condition (reuseFrom >= imgPos+imgLen) holds, must NOT take the fast
+// path once it would overrun the resident cap. It must decline cleanly and fall through to the ordinary path (tower
+// runs again), exactly as "not fully reused" does: residentPrefillSeed's own error there only sets g.err, with no
+// fallback.
 func TestGenerateVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}

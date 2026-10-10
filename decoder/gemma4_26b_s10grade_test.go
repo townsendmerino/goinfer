@@ -96,9 +96,9 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 				if argmax(cpu) == argmax(mt) {
 					agree[a]++
 				} else {
-					// Per-position margins for the disagreement (the owner's follow-up of 2026-10-07: is the 26B's low argmax agreement near-ties?).
-					// G1c's rule: benign iff the CPU's top-1 and the index Metal chose are within 3% in the CPU's logits (relative to the CPU's top-1).
-					// The G3 rule is on probability: p(Metal's choice) >= half p(CPU's top-1), the softmax taken over the CPU's logits.
+					// Per-position margins for the disagreement (is the 26B's low argmax agreement near-ties?). G1c's rule: benign iff
+					// the CPU's top-1 and the index Metal chose are within 3% in the CPU's logits (relative to the CPU's top-1). The
+					// G3 rule is on probability: p(Metal's choice) >= half p(CPU's top-1), the softmax taken over the CPU's logits.
 					ct, mtop := argmax(cpu), argmax(mt)
 					gap := (float64(cpu[ct]) - float64(cpu[mtop])) / (math.Abs(float64(cpu[ct])) + 1e-30)
 					pr := math.Exp(float64(cpu[mtop]) - float64(cpu[ct]))

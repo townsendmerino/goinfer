@@ -68,11 +68,10 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the G-S3b arms' own decoder. Through the
-	// directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, the file serve's Metal load reads, int4 with the
-	// plain head), mapped rather than quantized into the heap, which the load guard refused on the 16 GB Mac (the
-	// 2026-10-08 night: 6.2 GB against 4.8). The sidecar generates exactly what the direct load does
-	// (prequant.TestDirSidecar_matchesDirectLoad).
+	// EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the arms use serve's own decoder.
+	// Through the directory's sidecar when it exists (`<dir>.int4.metal.giw`, the file serve's Metal load reads, int4 with
+	// the plain head), mapped rather than quantized into the heap, which the load guard refuses on the 16 GB Mac. The
+	// sidecar generates exactly what the direct load does (prequant.TestDirSidecar_matchesDirectLoad).
 	src := dir
 	if g := dir + ".int4.metal.giw"; fileExistsG3(g) {
 		src = g
@@ -89,9 +88,8 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 
 	// serve's prompt, built the way serve builds it (internal/serveapp encodeVisionSegments): the model's chat template
 	// rendered as segments, the image block (the processor's "\n\n" on both sides, M-38) spliced in as its own Special
-	// segment, then EncodeSegments. Until 2026-10-08 this hand-wrote the template and encoded it as one string, which merges
-	// the template's "\n" with the block's "\n\n" into one token: 277 tokens against serve's 278, so the greedy reference
-	// was not the served path (the night of 2026-10-07: "...a table of..." where serve says "...quarterly unit sales...").
+	// segment, then EncodeSegments. Do not hand-write the template and encode it as one string: that merges the template's
+	// "\n" with the block's "\n\n" into one token, so the greedy reference is not the served path.
 	tm, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {
 		t.Fatal(err)

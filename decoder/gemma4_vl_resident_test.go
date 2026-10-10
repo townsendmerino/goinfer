@@ -153,10 +153,9 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 }
 
 // TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped mirrors
-// TestGenerateVL_residentContextCapPublishesBudgetClamped (generate_vl_resident_test.go) for
-// GenerateGemma4VL's own single clamp site (M-02, docs/audit-2026-09-10.md) — before this fix,
-// none of the 7 VL resident clamp sites published Budget/BudgetClamped, so a cap-truncated turn
-// silently reported the same finish_reason as an ordinary EOS-terminated one.
+// TestGenerateVL_residentContextCapPublishesBudgetClamped (generate_vl_resident_test.go) for GenerateGemma4VL's own
+// single clamp site (M-02, docs/audit-2026-09-10.md): a cap-truncated turn must publish Budget/BudgetClamped, or it
+// reports the same finish_reason as an ordinary EOS-terminated one.
 func TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
@@ -219,12 +218,10 @@ func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 	}
 }
 
-// TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers is the gitignored gemma4-vl-tiny fixture's check of the
-// S1.8 contract (docs/tasks/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class
-// (this one has KV-shared layers) with a resident attached uploads its CPU prefill's K/V for the layers that own it,
-// never a KV-shared one, then decodes resident. Until S1.8 the bridge was gated on UseBidirectionalAttention and this
-// test asserted it was never touched; Metal now runs E-models, so that premise changed (nobara caught the stale test,
-// 2026-10-07: CI skips it, the fixture being gitignored). The same contract runs on a committed-path fixture in
+// TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers is the gitignored gemma4-vl-tiny fixture's check of the S1.8
+// contract (docs/tasks/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class (this one
+// has KV-shared layers) with a resident attached uploads its CPU prefill's K/V for the layers that own it, never a KV-shared
+// one, then decodes resident. CI skips it (the fixture is gitignored); the same contract runs on a committed-path fixture in
 // TestGenerateGemma4VL_eModelDecodesResident.
 func TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers(t *testing.T) {
 	m, g := loadGemma4VLTinySequential(t)

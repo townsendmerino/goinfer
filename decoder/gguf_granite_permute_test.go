@@ -8,16 +8,14 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// Audit 2026-09-10 C-05: llama.cpp converts dense Granite (GraniteForCausalLM) through
-// GraniteModel(LlamaModel), which inherits undo_permute=True — so every GGUF whose
-// general.architecture is "granite" stores attn_q/attn_k rows in llama.cpp's interleaved RoPE
-// order. goinfer un-permuted only llama and mellum, so dense Granite loaded exact at position 0
-// and rotated the wrong pairs at every position after — fluent, and wrong, with no error.
+// C-05 (docs/audit-2026-09-10.md): llama.cpp converts dense Granite (GraniteForCausalLM) through GraniteModel(LlamaModel),
+// which inherits undo_permute=True, so every GGUF whose general.architecture is "granite" stores attn_q/attn_k rows in
+// llama.cpp's interleaved RoPE order and the loader must un-permute them, as it does for llama and mellum. A missed
+// un-permute loads exact at position 0 and rotates the wrong pairs at every position after: fluent, and wrong, with no error.
 //
-// These gates write a real (data-bearing) GGUF with q/k permuted by a line-for-line port of
-// llama.cpp's own permute() (conversion/llama.py), then load it through the real ggufConfig ->
-// resolveArchitecture -> buildWeightsFromGGUF path and compare rows. Rows, not logits: the defect
-// is a row order, so the row order is the thing to pin.
+// These gates write a real (data-bearing) GGUF with q/k permuted by a line-for-line port of llama.cpp's own permute()
+// (conversion/llama.py), then load it through the real ggufConfig -> resolveArchitecture -> buildWeightsFromGGUF path and
+// compare rows. Rows, not logits: the defect is a row order, so the row order is the thing to pin.
 
 type ggufDataTensor struct {
 	name string
@@ -101,10 +99,8 @@ func tinyNormRopeGGUF(arch string) (raw []byte, q, k, v []float32) {
 		kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-6), kvF32(arch+".rope.freq_base", 10000),
 	}
 	if arch == "granite" {
-		// The REAL Granite 4.2 multipliers (granite-4.2-3b config.json). residual_scale must be 1.0:
-		// every released 4.2 size ships it, and validateGraniteDense rejects anything else because
-		// the generic forward has no residual hook. (A first draft used Granite 3.x's 0.22 and the
-		// gate "failed" at resolveArchitecture, never reaching a row — a red that proved nothing.)
+		// The REAL Granite 4.2 multipliers (granite-4.2-3b config.json). residual_scale must be 1.0: every released 4.2 size
+		// ships it, and validateGraniteDense rejects anything else because the generic forward has no residual hook.
 		kvs = append(kvs, kvF32("granite.attention.scale", 0.015625), kvF32("granite.embedding_scale", 1),
 			kvF32("granite.logit_scale", 1), kvF32("granite.residual_scale", 1))
 	}

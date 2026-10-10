@@ -9,25 +9,17 @@ import (
 	"testing"
 )
 
-// task-never-swap-2026-09.md S2: a family's per-layer loader closure is safe to stream
-// (build -> sink.layer -> release, the loadQ35/loadGptOss shape) only if EVERY tensor it reads is
-// genuinely per-layer — named "blk.{i}." + something, never a bare/model-level name. gpt-oss's own
-// closure was verified this way by hand before its fix landed (byte-identical to the resident
-// path, on a real fixture — decoder/testdata/gptoss_tiny.gguf, internal/prequant's
-// TestGptOss_streamedMatchesResident). laguna, granite (the Mamba-2+MoE hybrid, arch.granite —
-// not the plain dense Granite family gguf_granite_permute_test.go covers), nemotron and llama4
-// have NO comparable fixture (no small, tokenizer-bearing, architecture-correct GGUF for any of
-// them exists in this repo or under ~/models at the time this landed) — building one per family
-// from scratch is real, separate work this pass did not do (a genuinely different Mamba-2/MoE
-// tensor set per family). This test is the structural half of the proof that DID ship with the
-// code: same technique stream_test.go's own TestTranscode_writesViaTempThenRenames already uses
-// for a property real execution can't force either — parse the source and check the invariant
-// directly, since the property this checks (nothing is read that would silently corrupt a
-// streamed bundle) IS provable from source, independent of a real checkpoint's numbers.
+// S2 (docs/tasks/task-never-swap-2026-09.md): a family's per-layer loader closure is safe to
+// stream (build -> sink.layer -> release, the loadQ35/loadGptOss shape) only if EVERY tensor it reads is genuinely
+// per-layer: named "blk.{i}." + something, never a bare/model-level name.
 //
-// Verified, not assumed, when this landed: read every one of these four closures by hand,
-// confirmed zero non-per-layer tensor reads, THEN wrote this test to keep that true — not the
-// other way around (a test written first and never checked against the real code proves nothing).
+// gpt-oss's closure is also proven byte-identical to the resident path on a real fixture (decoder/testdata/gptoss_tiny.gguf,
+// internal/prequant's TestGptOss_streamedMatchesResident). laguna, granite (the Mamba-2+MoE hybrid, arch.granite, not the
+// plain dense Granite family gguf_granite_permute_test.go covers), nemotron and llama4 have no comparable GGUF fixture in
+// this repo, so this test is the structural half of the proof: it parses the source and checks the invariant directly, the
+// technique stream_test.go's TestTranscode_writesViaTempThenRenames uses for a property real execution cannot force. The
+// property (nothing is read that would silently corrupt a streamed bundle) is provable from source, independent of a real
+// checkpoint's numbers.
 func TestStreamableFamilyClosures_onlyReadPerLayerTensors(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "gguf.go", nil, 0)

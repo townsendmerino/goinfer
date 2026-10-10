@@ -5,17 +5,13 @@ import (
 	"testing"
 )
 
-// TestGemma4RunLayersFromEmbed_matchesTokenPath proves runLayersGemma4FromEmbed
-// (the new P7 embed-by-vector seam) is behavior-preserving for the ordinary
-// text path: feeding it the SAME already-scaled embedding runLayersGemma4
-// itself builds, with pleTokenID equal to the real token id, must reproduce
-// runLayersGemma4's own output bit-for-bit (they now share every line after
-// the embedding prologue — see forward_gemma4.go).
+// TestGemma4RunLayersFromEmbed_matchesTokenPath proves runLayersGemma4FromEmbed (the embed-by-vector seam, P7) is
+// behavior-preserving for the ordinary text path: feeding it the SAME already-scaled embedding runLayersGemma4 builds, with
+// pleTokenID equal to the real token id, must reproduce runLayersGemma4's own output bit-for-bit (they share every line after
+// the embedding prologue, forward_gemma4.go).
 //
-// Uses the real E2B GGUF (the only local fixture with PLE enabled —
-// hidden_size_per_layer_input=256; every tiny synthetic fixture in this
-// package has PLE off), so it is heavy-gated like the other real-checkpoint
-// gemma4 gates in this file's neighbors.
+// Uses the real E2B GGUF (the only local fixture with PLE enabled, hidden_size_per_layer_input=256; every tiny synthetic
+// fixture in this package has PLE off), so it is heavy-gated like the other real-checkpoint gemma4 gates.
 func TestGemma4RunLayersFromEmbed_matchesTokenPath(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"

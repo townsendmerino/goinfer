@@ -1,20 +1,16 @@
 //go:build realckpt
 
-// gpt-oss-120b loader gate — does the safetensors path generalize past the 20b it was
-// written against?
+// gpt-oss-120b loader gate: does the safetensors path generalize past the 20b it was written against?
 //
-// WHAT THIS DOES AND DOES NOT CHECK, stated because the difference decides its value. The
-// forward math is already proven end to end on 20b (argmax-identical, cosine 0.999121 vs
-// the T3-validated GGUF reader). What 120b changes is SHAPE, not math: 36 layers instead
-// of 24, 128 experts instead of 32, and 14 shards instead of 2. So the risk this gate is
-// pointed at is EXPERT INDEXING at four times the count and tensors spanning many shards —
-// an off-by-N in the expert stride reads the wrong expert's weights while every shape check
-// still passes.
+// WHAT THIS DOES AND DOES NOT CHECK, stated because the difference decides its value. The forward math is already proven end
+// to end on 20b against the T3-validated GGUF reader. What 120b changes is SHAPE, not math: 36 layers instead of 24, 128
+// experts instead of 32, and 14 shards instead of 2. So the risk this gate is pointed at is EXPERT INDEXING at four times the
+// count and tensors spanning many shards: an off-by-N in the expert stride reads the wrong expert's weights while every shape
+// check still passes.
 //
-// It deliberately does NOT build an HF reference. Four layers of 120b dequantize to ~51GB
-// in f32, which does not fit; claiming a numeric oracle here would mean pretending to a
-// check that cannot run. Instead it asserts geometry, spot-checks the HIGHEST expert index
-// (where a stride bug shows first and a low-index check would miss), and requires finite,
+// It deliberately does NOT build an HF reference. Four layers of 120b dequantize to ~51GB in f32, which does not fit;
+// claiming a numeric oracle here would mean pretending to a check that cannot run. Instead it asserts geometry, spot-checks
+// the HIGHEST expert index (where a stride bug shows first and a low-index check would miss), and requires finite,
 // non-degenerate logits.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestGptOss120 -v -timeout 60m
