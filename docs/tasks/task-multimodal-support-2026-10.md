@@ -2951,6 +2951,27 @@ aikit expected 0: L, as registered for S10's MoE variants.
 
   Raw: `~/goinfer-logs/qwen3vlmoe/tower/` on nobara (aikit-test.log). The test's log label reads "G-S10b", the dense
   model's gate, whose code it is.
+- **G-S10q-c's reference: built, controls PASS (nobara, by day).**
+  - `scripts/q3vlmoe_hf_stream.py` runs HF's own decoder layers layer-major. The image rows come from HF's own tower,
+    the positions from HF's own `get_rope_index` (run on a stub, since it reads no weights), and the experts are
+    converted as transformers converts them (`Transpose(1, 2, check_dims=True)`).
+  - Controls on the tiny (`scripts/q3vlmoe_stream_controls.py`), two image sequences:
+    - stream against ordinary: 1.95e-7 relative (bar 1e-4);
+    - DeepStack skipped: 0.55; two layers swapped: 0.80; the router not renormalised: 0.22. Each is beyond the bar.
+  - **Two defects of the stream itself, found by control 1 (1.26 relative) by differencing per layer, and fixed:**
+    1. A standalone decoder layer needs its experts implementation named (`from_pretrained` picks `grouped_mm`; HF's
+       three implementations agree to 1.3e-6 on the tiny).
+    2. Given three-row m-RoPE positions, HF builds the causal mask and calls the layers with `position_ids` None. The
+       stream passed the temporal row, which `create_causal_mask` read as packed sequences.
+  - goinfer's side is `decoder/qwen3vlmoe_logits_real_test.go` (paths, then the teacher-forced arms); the grader is
+    `scripts/q3vlmoe_grade.py`.
+  - **Smoke on the 2B sibling, by day:** the paths step took 198 s, with sensible continuations (for example "Table 2.
+    Quarterly unit sales by region (thousands)"). HF ordinary ran 179 positions with the image-token check passing.
+    Those 2B sequences are the pinned ones; the night job reuses them.
+  - **Queued on nobara 2026-10-09 22:34 PDT:** `s10q-c`, est. 2 h 30 min (timeout 5 h), output
+    `~/goinfer-logs/s10q-c-run/`, binaries pinned in `~/goinfer-bench/s10q-c` (branch rev `12b1a93d`).
+- **G-S10q-d** (served at int4 on nobara's CPU): owed. The 30B's first int4 load transcodes a sidecar; two arms are
+  about 20 minutes, so night.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
