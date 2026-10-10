@@ -2970,8 +2970,12 @@ aikit expected 0: L, as registered for S10's MoE variants.
     Those 2B sequences are the pinned ones; the night job reuses them.
   - **Queued on nobara 2026-10-09 22:34 PDT:** `s10q-c`, est. 2 h 30 min (timeout 5 h), output
     `~/goinfer-logs/s10q-c-run/`, binaries pinned in `~/goinfer-bench/s10q-c` (branch rev `12b1a93d`).
-- **G-S10q-d** (served at int4 on nobara's CPU): owed. The 30B's first int4 load transcodes a sidecar; two arms are
-  about 20 minutes, so night.
+- **G-S10q-d** (served at int4 on nobara's CPU): queued on nobara 2026-10-09 23:01 PDT as `gs10q-d`, est. 1 h (timeout
+  2 h), after `s10q-c`. The job is `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/run-gs10q-d-night.sh`:
+  two CPU int4 arms through G-S10m-d's served driver (graded: identical replies on both requests), then one `--backend
+  cuda` arm, reported. The serve binary is pinned in `~/goinfer-bench/gs10q-d` (`cuda/cmd/serve`, `-tags cuda`, main at
+  `f5fa5a30`); output goes to `~/goinfer-logs/gs10q-d-2026-10-10/`. The 30B's first int4 load transcodes the sidecar.
+  If `s10q-c` uses its full slot, the 06:30 deadline holds this job back to the next night.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
