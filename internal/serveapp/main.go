@@ -1074,6 +1074,8 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if visionModelType(cand) == "qwen3_asr" {
 					dir = cand
+				} else if visionModelType(cand) == "voxtral" { // Voxtral Mini's audio tower, in the model's own directory
+					dir = cand
 				} else if visionModelType(cand) == "mistral3" { // Ministral 3's Pixtral tower
 					dir = cand
 				} else if visionModelType(cand) == "lfm2_vl" { // LFM2-VL's SigLIP2 NaFlex tower (S10)
@@ -1111,6 +1113,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if mt == "qwen3_asr" { // speech to text; the audio encoder is in the model's own directory
 		return s.loadQwenASR(dir)
+	}
+	if mt == "voxtral" { // speech to text; the audio tower and projector are in the model's own directory
+		return s.loadVoxtral(dir)
 	}
 	if mt == "glm_ocr" {
 		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
@@ -1342,6 +1347,19 @@ func (s *server) loadQwenASR(dir string) error {
 		}
 		lm.qwenASRDir, lm.qwenASRTok = dir, id
 		fmt.Fprintf(os.Stderr, "Qwen3-ASR audio input on for %q (audio-pad id %d; the encoder loads on the first clip, CPU float32) from %s\n", lm.name, id, dir)
+	}
+	return nil
+}
+
+// loadVoxtral turns on audio input for a Voxtral Mini model, as loadQwenASR does for Qwen3-ASR: the encoder lives beside the decoder in the same safetensors and loads on the first clip, so
+// there is only the [AUDIO] placeholder to check for and the directory to remember.
+func (s *server) loadVoxtral(dir string) error {
+	for _, lm := range s.models {
+		if _, ok := lm.tk.TokenID("[AUDIO]"); !ok {
+			return fmt.Errorf("audio: %s is a Voxtral checkpoint but its tokenizer has no [AUDIO] token (a Tekken tokenizer is needed: tekken.json beside the weights)", dir)
+		}
+		lm.voxtralDir = dir
+		fmt.Fprintf(os.Stderr, "Voxtral audio input on for %q (the encoder loads on the first clip, CPU float32; a clip over %d s is refused) from %s\n", lm.name, voxtralMaxSeconds, dir)
 	}
 	return nil
 }
