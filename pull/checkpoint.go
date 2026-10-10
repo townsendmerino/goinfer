@@ -15,12 +15,12 @@ import (
 	"strings"
 )
 
-// A safetensors checkpoint as a pull target (docs/tasks/task-checkpoint-fetch-2026-09.md, P1-P3 and P5). GGUF is one
-// file; a safetensors checkpoint is a SET: config.json, the tokenizer files, and either model.safetensors or an index
-// plus the shards it names. decoder.Load already opens such a directory, so this only gets the set onto disk, with the
-// guarantees a single file has: every file digest-verified, resumable, and nothing at the final path until the whole set
-// is there. Anonymous only (the doc's §2, option (c), owner 2026-10-03): a gated original is declined by CheckAccess
-// before any of this runs.
+// A safetensors checkpoint as a pull target (docs/tasks/task-checkpoint-fetch-2026-09.md). GGUF is one
+// file; a safetensors checkpoint is a SET: config.json, the tokenizer files, and either
+// model.safetensors or an index plus the shards it names. decoder.Load already opens such a directory,
+// so this only gets the set onto disk, with the guarantees a single file has: every file
+// digest-verified, resumable, and nothing at the final path until the whole set is there. Anonymous
+// only: a gated original is declined by CheckAccess before any of this runs.
 
 // CheckpointSelector is the selector that names a repo's safetensors checkpoint ("owner/repo:safetensors"). No GGUF
 // quant is called that, so it cannot shadow a quant selector.
@@ -78,10 +78,9 @@ func EncoderLoads(modelType string) (string, error) {
 	return "", fmt.Errorf("model_type %q, which the embedding encoder does not load (it loads nomic_bert and embedding_gemma2)", modelType)
 }
 
-// AnyLoads is the pull CLI's model_type check: a generative family this build loads from safetensors, else the
-// embedding encoder. The CLI fetches for whatever will open the files; --model and the web UI, which load generative
-// models only, keep PlanCheckpoint's check (task-checkpoint-fetch P7: `pull <encoder>:safetensors` used to decline what
-// serve --embed-model fetches itself).
+// AnyLoads is the pull CLI's model_type check: a generative family this build loads from safetensors,
+// else the embedding encoder. The CLI fetches for whatever will open the files; --model and the web UI,
+// which load generative models only, keep PlanCheckpoint's check.
 func AnyLoads(modelType string) (string, error) {
 	if fam, err := generativeLoads(modelType); err == nil {
 		return fam, nil
@@ -154,7 +153,7 @@ func fetchSmall(ctx context.Context, repo, p string, max int64) ([]byte, error) 
 	return b, nil
 }
 
-// matrixFamily is the subset of a capability-matrix row P5 reads.
+// matrixFamily is the subset of a capability-matrix row FamilyForModelType reads.
 type matrixFamily struct {
 	Name       string   `json:"name"`
 	ModelTypes []string `json:"model_types"`
@@ -163,7 +162,7 @@ type matrixFamily struct {
 }
 
 // FamilyForModelType finds the capability-matrix family whose model_types include mt and that loads from safetensors
-// (P5: "will this load?" from data already in the tree). ok is false when this build has no such family.
+// ("will this load?" answered from data already in the tree). ok is false when this build has no such family.
 func FamilyForModelType(mt string) (family string, ok bool) {
 	var rows []matrixFamily
 	if json.Unmarshal(capabilityMatrixJSON, &rows) != nil {
@@ -182,7 +181,7 @@ func FamilyForModelType(mt string) (family string, ok bool) {
 // PlanCheckpoint decides what a safetensors checkpoint pull of repo would fetch, before any weight moves. It reads the
 // tree and two small files (config.json, and the shard index when there is one), and refuses:
 //   - a repo with no config.json or no safetensors weights;
-//   - a model_type this build cannot load (P5's decline, before the first weight byte);
+//   - a model_type this build cannot load (declined before the first weight byte);
 //   - a shard index that names a file the repo does not have, or an unsafe path.
 //
 // The caller runs CheckAccess first, as for a GGUF pull.
@@ -193,7 +192,7 @@ func PlanCheckpoint(ctx context.Context, repo string) (Plan, error) {
 // PlanCheckpointFor is PlanCheckpoint with the caller's model_type check. loads names the family that will load the
 // checkpoint, or returns why it cannot, and a refusal still comes after reading config.json and before any weight file.
 // serve's -embed-model uses it with its encoder's own check, because an embedding encoder is not a generative family in
-// the capability matrix (task-checkpoint-fetch P7).
+// the capability matrix.
 func PlanCheckpointFor(ctx context.Context, repo string, loads func(modelType string) (family string, err error)) (Plan, error) {
 	files, err := listTree(ctx, repo)
 	if err != nil {
@@ -304,7 +303,7 @@ func (p Plan) VerifyPin(pin string) error {
 	return nil
 }
 
-// SizeNote is the disk-and-bandwidth line a plan must show before the transfer (the doc's §3 rule 4): the full-precision
+// SizeNote is the disk-and-bandwidth line a plan must show before the transfer: the full-precision
 // original costs several times a GGUF of the same model, which goinfer would run at the same quant.
 func (p Plan) SizeNote() string {
 	s := fmt.Sprintf("%d files, %s to download", len(p.Files), humanBytes(p.Bytes))

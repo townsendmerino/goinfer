@@ -9,28 +9,24 @@ import (
 	"sync"
 )
 
-// The recommended-checkpoint registry: a short name a person can type, mapped to a checkpoint this
-// project has actually run.
+// The recommended-checkpoint registry: a short name a person can type (`pull <name>`), mapped to a
+// checkpoint this project has actually run, so a first-time user does not need to know that a GGUF
+// conversion exists, who published it, or which quantization to ask for.
 //
-// THE PROBLEM IT SOLVES. `pull owner/repo:quant` works and requires the user to already know three
-// things — that a GGUF conversion exists, who published it, and which quantization to ask for.
-// That is knowledge from having spent time on Hugging Face, which is exactly what a first-time
-// user does not have.
+// IT DERIVES FROM THE CAPABILITY MATRIX. docs/capability-matrix.json records which families this project
+// supports and at what parity status; a hand-kept second list would drift from it, and a registry
+// claiming support the matrix does not back is worse than no registry. So a checkpoint entry lives ON
+// its family's matrix row, and TestRegistry_everyEntryTracesToItsFamily fails if one names a family that
+// is not there. pull/capability-matrix.json is the embedded byte copy of that file (the docs file is
+// canonical; a test fails on drift).
 //
-// IT DERIVES FROM THE CAPABILITY MATRIX, and that is the whole design. docs/capability-matrix.json
-// already records which families this project supports and at what parity status; a hand-kept
-// second list would drift from it, and a registry claiming support the matrix does not back is
-// worse than no registry. So a checkpoint entry lives ON its family's matrix row, and
-// TestRegistry_everyEntryTracesToItsFamily fails if one ever names a family that is not there.
+// NOT A DOWNLOAD SERVICE. Every entry points at Hugging Face and carries a sha256 the fetch verifies.
+// This project hosts no weights: that creates an availability obligation nobody here can meet, and
+// redistribution carries licence questions worth avoiding.
 //
-// NOT A DOWNLOAD SERVICE. Every entry points at Hugging Face and carries a sha256 the fetch
-// verifies. This project hosts no weights: it costs money, creates an availability obligation
-// nobody here can meet, and redistribution carries licence questions worth avoiding.
-//
-// DISTINCT FROM `demo:` TIERS, deliberately. curated.json pins the models that are EMBEDDED in
-// release binaries and is checked against the release workflow; its own comment says it is "not a
-// name registry to grow". That is a different question from "which checkpoints do we recommend",
-// so this does not extend it.
+// DISTINCT FROM `demo:` TIERS, deliberately. curated.json pins the models embedded in release binaries,
+// is checked against the release workflow, and is "not a name registry to grow", so this does not extend
+// it.
 
 //go:embed capability-matrix.json
 var capabilityMatrixJSON []byte
@@ -43,19 +39,17 @@ type Checkpoint struct {
 	Quant  string `json:"quant"`  // the on-disk quantization
 	Bytes  int64  `json:"bytes"`  // download size
 	SHA256 string `json:"sha256"` // verified on fetch (for a directory entry: the plan's tree digest, Plan.TreeDigest)
-	// Kind is "" for a single-file GGUF (every entry until 2026-10-08) and KindDirectory for a safetensors checkpoint
-	// fetched as a set (`pull <name>` then runs the same plan-and-verify path as `pull owner/repo:safetensors`, and
-	// refuses when the repo's files no longer match the tree digest this build pins). It is how a vision-language
-	// checkpoint can be recommended at all: the GGUF loader reads no image projector, the safetensors directory
-	// carries the tower (docs/multimodal.md, P9(d)).
+	// Kind is "" for a single-file GGUF and KindDirectory for a safetensors checkpoint fetched as a set
+	// (`pull <name>` then runs the same plan-and-verify path as `pull owner/repo:safetensors`, and refuses
+	// when the repo's files no longer match the tree digest this build pins). It is how a vision-language
+	// checkpoint can be recommended at all: the GGUF loader reads no image projector, the safetensors
+	// directory carries the tower (docs/multimodal.md).
 	Kind    string `json:"kind,omitempty"`
 	GoodFor string `json:"good_for"` // what it is worth using for
 	Needs   string `json:"needs"`    // what it costs to run
-	// Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint
-	// (R11, docs/measurements/cold-user-2026-09-06-nobara-pc.md): "tools, OpenAI" is a
-	// one-function schema, "tools, harness-scale" a dozen-tool schema shaped like a real agent's
-	// — the shape that broke under opencode with a server whose minimal-schema row was green.
-	// From a RECORDED `serve check` run, never guessed (TestRegistry_toolsColumnIsNonEmpty).
+	// Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint: "tools,
+	// OpenAI" is a one-function schema, "tools, harness-scale" a dozen-tool schema shaped like a real
+	// agent's. From a RECORDED `serve check` run, never guessed (TestRegistry_toolsColumnIsNonEmpty).
 	Tools string `json:"tools"`
 
 	// Family and Parity are copied off the matrix row at load, so a caller listing checkpoints can
@@ -148,10 +142,9 @@ func (c Checkpoint) Describe() string {
 	return fmt.Sprintf("%-22s %6.2f GB  %-8s %s", c.Name, float64(c.Bytes)/1e9, quant, c.GoodFor)
 }
 
-// DescribeTools reports what `serve check`'s two tools rows measured for this checkpoint (R11):
-// whether it calls a tool at all, and separately, whether it still does under a real agent's
-// full tool schema — the two are not the same fact, and a model can pass the first and skip the
-// second.
+// DescribeTools reports what `serve check`'s two tools rows measured for this checkpoint: whether it
+// calls a tool at all, and separately whether it still does under a real agent's full tool schema.
+// The two are not the same fact; a model can pass the first and skip the second.
 func (c Checkpoint) DescribeTools() string {
 	if c.Tools == "" {
 		return "not yet measured"

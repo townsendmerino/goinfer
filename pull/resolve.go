@@ -25,10 +25,6 @@ func IsRef(spec string) bool {
 // hf:repo:file.gguf ref names its file but was never given a size or digest to verify a cache hit
 // against, so it cannot either — trusting a same-sized file on disk without a digest would be
 // exactly the "trust the filename" shortcut Download's own cache check deliberately avoids.
-//
-// V-16 (docs/review-2026-09-04.md): Resolve used to call CheckAccess+List unconditionally before
-// any cache check at all, so `serve --model demo:1.5b` with the file already cached still failed
-// to start offline — the opposite of what Resolve's own doc comment promised.
 func resolveOffline(ref Ref) (string, bool) {
 	if ref.File == "" || ref.Pin == "" || ref.Bytes <= 0 {
 		return "", false
@@ -48,10 +44,9 @@ func resolveOffline(ref Ref) (string, bool) {
 //
 // An already-cached demo: file (exact name, size and digest all pinned in curated.json) is
 // returned without touching the network. A quant selector (hf:repo:quant) cannot make the same
-// promise: which file matches the quant is not knowable without asking HuggingFace to list the
-// repo (V-16, docs/review-2026-09-04.md) — an explicit hf:repo:file.gguf ref names its file but
-// still needs List for the size/digest to verify a cache hit against, so it also still checks
-// the network first. progress may be nil.
+// promise: which file matches the quant is not knowable without asking HuggingFace to list the repo.
+// An explicit hf:repo:file.gguf ref names its file but still needs List for the size and digest to
+// verify a cache hit against, so it also checks the network first. progress may be nil.
 func Resolve(ctx context.Context, spec string, progress func(done, total int64)) (string, error) {
 	if !IsRef(spec) {
 		return spec, nil
@@ -66,7 +61,7 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 	if ref.File == "" && ref.Quant == "" {
 		return "", fmt.Errorf("%s: name a quant or a file, e.g. hf:%s:q4_k_m (or hf:%s:%s for a safetensors checkpoint)", spec, ref.Repo, ref.Repo, CheckpointSelector)
 	}
-	// V-16 (docs/review-2026-09-04.md): checked BEFORE any network call. See resolveOffline.
+	// checked BEFORE any network call; see resolveOffline.
 	if path, ok := resolveOffline(ref); ok {
 		return path, nil
 	}
@@ -113,8 +108,6 @@ func resolveCheckpoint(ctx context.Context, ref Ref, loads func(string) (string,
 	return DownloadCheckpoint(ctx, p, dir, prog)
 }
 
-// ResolveVerbose is Resolve with a progress line on stderr, for the command-line front ends.
-// Split from Resolve so a library caller gets no surprise output on a stream it does not own.
 // ResolveCheckpointFor resolves an `hf:<owner>/<repo>:safetensors` spec with the caller's model_type check
 // (PlanCheckpointFor), reporting progress on stderr as ResolveVerbose does. A plain path is returned untouched, and so is
 // an hf: spec that names a GGUF quant or file, which goes through ResolveVerbose. A complete cached checkpoint resolves
@@ -144,6 +137,8 @@ func ResolveCheckpointFor(ctx context.Context, spec string, loads func(modelType
 	return path, nil
 }
 
+// ResolveVerbose is Resolve with a progress line on stderr, for the command-line front ends. It is split from
+// Resolve so a library caller gets no surprise output on a stream it does not own.
 func ResolveVerbose(ctx context.Context, spec string) (string, error) {
 	if !IsRef(spec) {
 		return spec, nil
@@ -162,9 +157,10 @@ func ResolveVerbose(ctx context.Context, spec string) (string, error) {
 	return path, nil
 }
 
-// IsMMProj reports whether a repo file is a llama.cpp-style multimodal projector (`mmproj-*.gguf`): the vision half of a GGUF model,
-// shipped as a second file. A model repo lists it beside the quants, so `pull` says what it is (R22, docs/tasks/task-first-hour.md):
-// goinfer loads a Qwen3.5+ one with `--vision` (P8b, docs/multimodal.md); other families' are not supported yet.
+// IsMMProj reports whether a repo file is a llama.cpp-style multimodal projector (`mmproj-*.gguf`): the
+// vision half of a GGUF model, shipped as a second file. A model repo lists it beside the quants, so
+// `pull` says what it is (docs/tasks/task-first-hour.md): goinfer loads a Qwen3.5+ one with `--vision`
+// (docs/multimodal.md); other families' are not supported yet.
 func IsMMProj(name string) bool {
 	base := strings.ToLower(name)
 	if i := strings.LastIndex(base, "/"); i >= 0 {
