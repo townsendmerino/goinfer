@@ -598,7 +598,8 @@ func (v vetTarget) tagSets() []string {
 	case ".":
 		return []string{"", "realckpt goinfer_testhooks"}
 	case "cuda":
-		return []string{"", "cuda goinfer_testhooks"}
+		// tagged only: prefill_deltanet.go has no build line but uses types the tagged files define, so an untagged vet cannot build
+		return []string{"cuda goinfer_testhooks"}
 	case "gpu":
 		return []string{"", "gpu goinfer_testhooks"}
 	}
