@@ -5,15 +5,12 @@ import (
 	"testing"
 )
 
-// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md, corrected on review): "cuda-staged
-// (int4)" on an 8 GB card sat at the idle VRAM baseline (464 MiB, unchanged) for a full request
-// sampled at 1 Hz. Cuda's and metal's own Backend.MatmulBT implementations are bare CPU calls
-// and neither implements QuantBackend at all, so their "staged" path never reaches the device at
-// ANY quant — DecodePath() folds that into the same requested-vs-effective shape
-// BackendSummary() already uses (see decoder/backend_report_test.go), rather than naming a
-// "cuda-staged"/"metal-staged" path that was never real. declinedToCPUReason is the pure,
-// Model-free piece of that string; DecodePath()'s own wiring is covered by R9's real-hardware
-// verification (docs/tasks/task-first-hour.md), not a synthetic Model here.
+// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): cuda's and metal's own Backend.MatmulBT implementations are
+// bare CPU calls and neither implements QuantBackend at all, so their "staged" path never reaches the device at ANY
+// quant. DecodePath() folds that into the same requested-vs-effective shape BackendSummary() already uses (see
+// decoder/backend_report_test.go), rather than naming a "cuda-staged"/"metal-staged" path that was never real.
+// declinedToCPUReason is the pure, Model-free piece of that string; DecodePath()'s own wiring is covered by R9's
+// real-hardware verification (docs/tasks/task-first-hour.md), not a synthetic Model here.
 func TestDeclinedToCPUReason(t *testing.T) {
 	for _, tc := range []struct {
 		backend, resDecline string

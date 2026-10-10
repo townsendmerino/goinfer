@@ -6,15 +6,13 @@ import (
 	"testing"
 )
 
-// validArch returns an Architecture that PASSES validateResolved, so each sub-test below can
-// break exactly one thing. Without this they would pass for whichever reason fired first.
+// validArch returns an Architecture that PASSES validateResolved, so each sub-test below can break exactly one thing;
+// without this they would pass for whichever reason fired first.
 //
-// It does NOT call finalizeRoPE — the caller does, mirroring resolveArchitecture's real order
-// (adapter → finalizeRoPE → validateResolved). That matters: finalizeRoPE returns early on
-// base <= 0 WITHOUT clearing an existing table, so a fixture that finalized at a good base and
-// was then mutated keeps its old table and the RoPE guard cannot fire. Harmless in production,
-// where finalizeRoPE runs once on a fresh descriptor — but it made the first draft of this test
-// report a passing guard that had not run.
+// It does NOT call finalizeRoPE: the caller does, mirroring resolveArchitecture's real order (adapter → finalizeRoPE →
+// validateResolved). That matters: finalizeRoPE returns early on base <= 0 WITHOUT clearing an existing table, so a
+// fixture that finalized at a good base and was then mutated keeps its old table and the RoPE guard cannot fire. Harmless
+// in production, where finalizeRoPE runs once on a fresh descriptor.
 func validArch() *Architecture {
 	return &Architecture{
 		Name: "probe", Norm: NormRMS, NormEps: 1e-5, AttnScale: 0.25,

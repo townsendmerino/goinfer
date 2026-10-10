@@ -78,14 +78,12 @@ func freq(c []float64, n int) []float64 {
 	return out
 }
 
-// TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain
-// Generate at the integration level: under pure temperature (no filters, no
-// Logprobs) with the same seed, the FIRST emitted token must be identical — both
-// draw through the temperature-only Gumbel-max branch (R7b; formerly sampleChunked, N-14)
-// over the same seed-position logits with an identically seeded Philox key and draw
-// index 0 — plain via SampleWithInfo, speculative via drawTarget. (Beyond the first token the two RNG streams diverge by construction, so
-// only the first is bit-comparable; full-sequence equivalence is distributional,
-// proven by TestSpecStepLossless.)
+// TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain Generate at the integration level: under
+// pure temperature (no filters, no Logprobs) with the same seed, the FIRST emitted token must be identical. Both draw
+// through the temperature-only Gumbel-max branch (R7b) over the same seed-position logits with an identically seeded
+// Philox key and draw index 0: plain via SampleWithInfo, speculative via drawTarget. Beyond the first token the two RNG
+// streams diverge by construction, so only the first is bit-comparable; full-sequence equivalence is distributional,
+// proven by TestSpecStepLossless.
 func TestNgramSampledFirstTokenMatchesPlain(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
@@ -184,20 +182,14 @@ func TestNgramSampledRejectsUnsupported(t *testing.T) {
 	}
 }
 
-// TestDistVectorFrom_scratchClearedAcrossPositions is the P-14 gate: distVectorFrom
-// now returns a reused per-sampler scratch buffer (distBufN) instead of a fresh
-// make() every call, on the assumption that consecutive speculative-verify
-// positions never hold two returned vectors live at once. That assumption says
-// nothing about whether the PREVIOUS call's mass gets cleared before the buffer is
-// reused — a missing clear() would leak a prior position's nonzero entries into a
-// position whose support has since shrunk, corrupting the distribution silently
-// (same shape as a stale row in a raw-Q4 group cache). Caught in review: the
-// existing speculative test suite (TestNgramSpeculativeGreedyParity,
-// TestNgramSampledHarness, etc.) all still passed with one of the two clear()
-// calls deleted, because their fixed logit sets happen to keep the same support
-// shape call to call. This test constructs the adversarial case directly: two
-// consecutive calls whose kept/argmax sets are DISJOINT, and asserts every index
-// outside the current call's support reads exactly zero.
+// TestDistVectorFrom_scratchClearedAcrossPositions is the P-14 gate: distVectorFrom returns a reused per-sampler scratch
+// buffer (distBufN) instead of a fresh make() every call. Consecutive speculative-verify positions never hold two
+// returned vectors live at once, but that says nothing about whether the PREVIOUS call's mass is cleared before reuse:
+// a missing clear() would leak a prior position's nonzero entries into a position whose support has since shrunk,
+// corrupting the distribution silently. The speculative suite (TestNgramSpeculativeGreedyParity,
+// TestNgramSampledHarness, etc.) still passes with one of the two clear() calls deleted, because its fixed logit sets
+// keep the same support shape call to call; this test constructs the adversarial case directly: two consecutive calls
+// whose kept/argmax sets are DISJOINT, and asserts every index outside the current call's support reads exactly zero.
 func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
 	t.Run("greedy argmax changes", func(t *testing.T) {
 		s := NewSampler(SamplingParams{Temperature: 0}) // greedy: distVectorFrom's argmax branch

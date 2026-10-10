@@ -212,13 +212,11 @@ func TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate(t *testing.T) {
 	}
 }
 
-// M-03 (docs/audit-2026-09-10.md): verifying past the resident context cap made the backend's
-// checkCap refuse the WHOLE round with a hard error instead of finishing cleanly at the limit —
-// the same M-13 shape TestBlockSpec_roundWidthRespectsBothBudgets already pins for block
-// speculation (blockSpecRoundWidth, blockspec.go). specRoundDraftWidth is the shared fix used by
-// both genNgramInto (this file) and GenerateSpeculative (speculative.go); this test is their
-// actual TDD gate — it fails red against the pre-fix behavior (no clamp: a round always verified
-// the full proposed width regardless of the cap) and passes green with the clamp in place.
+// M-03 (docs/audit-2026-09-10.md): verifying past the resident context cap made the backend's checkCap refuse the WHOLE
+// round with a hard error instead of finishing cleanly at the limit (the M-13 shape
+// TestBlockSpec_roundWidthRespectsBothBudgets pins for block speculation: blockSpecRoundWidth in blockspec.go).
+// specRoundDraftWidth is the shared clamp used by genNgramInto (this file) and GenerateSpeculative (speculative.go);
+// this test is their gate: without the clamp a round verifies the full proposed width regardless of the cap.
 func TestSpecRoundDraftWidth_respectsResidentContextCap(t *testing.T) {
 	if got := specRoundDraftWidth(4, 100, 0); got != 4 {
 		t.Errorf("uncapped (ctxCap<=0): got %d, want 4 unchanged", got)

@@ -5,13 +5,9 @@ import (
 	"testing"
 )
 
-// R15 (docs/tasks/red-october.md) measurement: topFilterLogits's own max-scan (sampler.go,
-// the loop right at the top of the function) is a hand-rolled, serial, 4x-unrolled loop --
-// NOT the existing parallelMax (sampler_chunked.go), even though parallelMax already exists,
-// is already bit-identical-by-construction (max is associative/commutative on floats), and is
-// already used for the temperature-only path. maxScanSerial below reproduces that inline loop
-// exactly, isolated, for a same-session A/B against parallelMax -- mirroring the softcap
-// benchmark's own precedent (decoder/softcap_test.go).
+// maxScanSerial reproduces topFilterLogits's own inline max-scan (a serial, 4x-unrolled loop at the top of the function,
+// not parallelMax in sampler_chunked.go) in isolation, for a same-session A/B against parallelMax; same design as the
+// softcap benchmark in softcap_test.go. Task: docs/tasks/red-october.md, R15.
 func maxScanSerial(logits []float32) float32 {
 	maxF := logits[0]
 	i := 1
@@ -42,9 +38,9 @@ func benchRandLogits(n int, seed int64) []float32 {
 	return a
 }
 
-// TestMaxScanSerial_matchesParallelMax is the bit-exactness check the A/B below leans on: max
-// is associative/commutative barring NaN, so parallelMax's chunked reduction must agree with
-// the serial scan exactly, at every vocab size the benchmark below uses.
+// TestMaxScanSerial_matchesParallelMax is the bit-exactness check the A/B below leans on: max is associative and
+// commutative barring NaN, so parallelMax's chunked reduction must agree with the serial scan exactly at every vocab
+// size the benchmark uses.
 func TestMaxScanSerial_matchesParallelMax(t *testing.T) {
 	for _, n := range []int{1, 7, 8192, 32064, 151936, 262144} {
 		logits := benchRandLogits(n, int64(n))
@@ -71,8 +67,8 @@ func benchMaxScan(b *testing.B, n int, parallel bool) {
 	}
 }
 
-// gemma 262144, qwen/llama-class ~152k, phi3-scale 32064 -- spans the vocab sizes this repo's
-// own CUDA-side vocab-scaling finding (task-moe-streaming.md) already measured for softcap.
+// Vocab sizes: gemma 262144, qwen/llama-class ~152k, phi3-scale 32064, the sizes of the CUDA-side softcap vocab-scaling
+// measurement.
 func BenchmarkMaxScan_gemmaVocab_serial(b *testing.B)   { benchMaxScan(b, 262144, false) }
 func BenchmarkMaxScan_gemmaVocab_parallel(b *testing.B) { benchMaxScan(b, 262144, true) }
 func BenchmarkMaxScan_152kVocab_serial(b *testing.B)    { benchMaxScan(b, 151936, false) }
@@ -80,10 +76,9 @@ func BenchmarkMaxScan_152kVocab_parallel(b *testing.B)  { benchMaxScan(b, 151936
 func BenchmarkMaxScan_32kVocab_serial(b *testing.B)     { benchMaxScan(b, 32064, false) }
 func BenchmarkMaxScan_32kVocab_parallel(b *testing.B)   { benchMaxScan(b, 32064, true) }
 
-// topKByLogit and the min-p linear scan: sized, not (yet) parallelized -- R15's own measurement
-// asks whether either is worth the real algorithmic work parallelizing a heap-select or an
-// order-preserving filter would need (unlike the max-scan, neither is "call an existing
-// function"). topK values 1/8/40 span greedy-adjacent to a typical sampling config.
+// topKByLogit and the min-p linear scan are sized here, not parallelized: unlike the max-scan, parallelizing a
+// heap-select or an order-preserving filter is real algorithmic work, and R15 asks whether either is worth it. topK
+// 1/8/40 span greedy-adjacent to a typical sampling config.
 func benchTopKByLogit(b *testing.B, n, k int) {
 	logits := benchRandLogits(n, 2)
 	b.ResetTimer()
@@ -119,10 +114,8 @@ func benchMinPScan(b *testing.B, n int) {
 
 func BenchmarkMinPScan_gemmaVocab(b *testing.B) { benchMinPScan(b, 262144) }
 
-// End-to-end: the WHOLE topFilterLogits call, each active-filter shape, at gemma vocab -- puts
-// the isolated per-component numbers above in context against the function's total per-token
-// cost (Z's chunkedZ is already parallel; this end-to-end number is what actually reaches a
-// decode token's budget).
+// End to end: the whole topFilterLogits call for each active-filter shape at gemma vocab, to put the per-component
+// numbers above against the per-token cost that reaches a decode token's budget (Z's chunkedZ is already parallel).
 func benchTopFilterLogits(b *testing.B, topK int, topP, minP float64) {
 	const n = 262144
 	logits := benchRandLogits(n, 4)

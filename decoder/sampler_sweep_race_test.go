@@ -2,32 +2,18 @@
 
 package decoder
 
-// Under -race the exactness sweep runs a STRIDED SUBSET of seeds rather than all of them.
+// Under -race the exactness sweep runs a STRIDED SUBSET of seeds rather than all of them. TestTopFilterLogits_MatchesReference
+// is pure computation (no goroutines, shared state or channels), so the detector has nothing to find in it while costing
+// a large factor; the full sweep is a second execution of cases the non-race run already proves.
 //
-// WHY. TestTopFilterLogits_MatchesReference is pure computation: no goroutines, no shared state,
-// no channels. The race detector therefore has nothing to find in it, while costing ~34× (measured
-// on this box: the sweep is 12.3 s sharded without -race; the decoder package went from a 600 s
-// timeout panic to 414 s once sharded, and the sweep is the dominant term). On a 4-core CI runner —
-// where the parallel sharding recovers much less than on a many-core box — the full sweep is
-// plausibly 8–9 minutes of EVERY CI run, for a second execution of cases the non-race job already
-// proved. Paying that indefinitely is the waste; the tax is not buying coverage.
+// This strides the SEED axis only: all 15 parameter configs and all 4 temperatures still run for every selected seed,
+// and striding rather than taking the first N keeps the seeds spread across the range.
 //
-// WHAT IS PRESERVED. This strides the SEED axis only. Every one of the 15 parameter configs and all
-// 4 temperatures still run, for every seed selected — so the parameter space is spanned, not
-// truncated to a prefix. Striding (rather than taking the first N) keeps the selected seeds spread
-// across the whole range, so the tie-heavy and tie-free logit shapes (which alternate on seed
-// parity) both stay represented.
+// Both root CI jobs run `go test -race`, so the full 24,018-case sweep runs only because ci.yml carries an explicit
+// non-race step for it (with the throughput gate). TestSweepCoverage_fullSweepRunsSomewhere fails if that step is removed.
 //
-// COVERAGE NOTE (corrected). An earlier version of this comment claimed the full sweep "still runs
-// in the non-race job" — it did not. BOTH root CI jobs run `go test -race`, so gating on race mode
-// alone would have meant the full 24,018-case sweep ran in NO CI job at all: a real weakening,
-// asserted to be none. ci.yml now carries an explicit non-race step that runs the full sweep (and
-// the throughput gate) on every push. If that step is ever removed, this gate silently shrinks
-// again — TestSweepCoverage_fullSweepRunsSomewhere fails if the two drift apart.
-// The stride is ODD on purpose. The sweep picks its logit shape by seed parity (`s%2 == 0` →
-// tie-heavy, else tie-free), so an EVEN stride would select only even seeds and silently drop the
-// tie-free shape entirely — a subset that no longer spans the space it claims to. 7 alternates
-// parity on every step, keeping both shapes represented.
+// The stride is ODD on purpose: the sweep picks its logit shape by seed parity (`s%2 == 0` → tie-heavy, else tie-free),
+// so an EVEN stride would select only even seeds and silently drop the tie-free shape. 7 alternates parity on every step.
 const (
 	sweepSeedStride = 7
 	// raceEnabled lets timing-based gates opt out under the detector, which distorts wall clock.

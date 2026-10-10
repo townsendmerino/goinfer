@@ -86,11 +86,10 @@ func TestOptFwdEligible(t *testing.T) {
 	if plain.optFwdEligible(SamplingParams{Temperature: 0}) {
 		t.Error("Temperature<=0 (greedy-equivalent) must NOT be eligible -- fastGreedy already covers it")
 	}
-	// Every NEGATIVE case below uses a temperature INSIDE the cap on purpose: at 0.7 they would be
-	// refused for being too hot, and would pass without exercising the property they name.
-	// The threshold itself. Above optFwdMaxTemp the overlap is a MEASURED loss (2.8-6.8% on
-	// phi3-mini across T=0.4-1.0), so the common chat range must be excluded -- this is the whole
-	// behaviour change, and 0.7 being ineligible is the point rather than a regression.
+	// Every NEGATIVE case below uses a temperature INSIDE the cap on purpose: at 0.7 they would be refused for being too hot,
+	// and would pass without exercising the property they name.
+	// The threshold itself: above optFwdMaxTemp the overlap is a measured loss, so the common chat range must be excluded;
+	// this is the whole behaviour change, and 0.7 being ineligible is the point rather than a regression.
 	for _, T := range []float64{0.21, 0.4, 0.7, 1.0, 2.0} {
 		if plain.optFwdEligible(SamplingParams{Temperature: T}) {
 			t.Errorf("T=%g is above the %g cap and must NOT be eligible -- optFwd loses there", T, optFwdMaxTemp)

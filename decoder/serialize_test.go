@@ -105,9 +105,8 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 	}
 	t.Logf("byte-identical across %d matmul weights", len(a))
 
-	// Aliasing: the deserialized q8 and its scales both point INTO blob (zero-copy). Scales were a copy until
-	// .giw weights v12 (cdae727d, 2026-09-24) aligned them so the reader aliases them; this heavy-model test still
-	// expected the copy and failed the first time it ran after (the v0.20.0 parity sweep).
+	// Aliasing: the deserialized q8 and its scales both point INTO blob (zero-copy); .giw weights v12 aligns the scales so
+	// the reader aliases them.
 	for _, w := range b {
 		if len(tQ8(w)) == 0 {
 			continue
@@ -283,12 +282,10 @@ func TestSerializeQwen35_roundTrip(t *testing.T) {
 	t.Logf("qwen3_5_moe round-trips: %d delta + %d qattn layers, decode byte-identical", nDelta, nQattn)
 }
 
-// TestSerializeGemma4MoE_roundTrip gates the v4 format extension: the gemma4
-// parallel dense+MoE stack must survive a .giw round-trip. Before v4 canSerialize
-// refused all of Gemma 4; now the gemma4 tail carries layer_scalar, the KV-share
-// flags, the PLE branch, and the gemma4moe sub-block (router + per-expert scale +
-// the three branch norms + the quantized fused experts). The reload must restore
-// gemma4moe on every layer and reproduce the greedy decode byte-identically.
+// TestSerializeGemma4MoE_roundTrip gates the v4 format extension: the gemma4 parallel dense+MoE stack must survive a
+// .giw round-trip. The gemma4 tail carries layer_scalar, the KV-share flags, the PLE branch, and the gemma4moe sub-block
+// (router + per-expert scale + the three branch norms + the quantized fused experts). The reload must restore gemma4moe
+// on every layer and reproduce the greedy decode byte-identically.
 func TestSerializeGemma4MoE_roundTrip(t *testing.T) {
 	const ckpt = "../testdata/gemma4-moe-tiny"
 	if _, err := os.Stat(ckpt); err != nil {
@@ -442,19 +439,15 @@ func TestSerializeWeightsTo_matchesBuffer(t *testing.T) {
 	t.Logf("streamed %d bytes, byte-identical to buffered", n)
 }
 
-// TestSerialize_unpopulatedLayersOmitsLabel is the dangerous half of B11, gated directly and
-// without a heavy asset. writeHeadGlobals used to decide whether to write the v5 quant-label
-// field by asking `wr.sink == nil` — "are we the buffered writer" — as a proxy for "do we have
-// the real weight data yet". Those disagree for the true GGUF streaming transcode, which writes
-// the header on a freshly make()'d, all-zero Layers slice BEFORE any layer has streamed in: at
-// that moment quantLabel()'s own "nothing matched" case returns "native" — a REAL quant mode, not
-// an empty string — so calling it unconditionally would bake a FALSE "native" label into every
-// genuinely-streamed bundle. hasPopulatedLayers() is the correct guard (data availability, not
-// writer identity); this asserts it actually withholds the label when the data is not there.
+// TestSerialize_unpopulatedLayersOmitsLabel is the dangerous half of B11, gated directly and without a heavy asset.
+// writeHeadGlobals decides whether to write the v5 quant-label field with hasPopulatedLayers() (data availability), not
+// writer identity (`wr.sink == nil`): the GGUF streaming transcode writes the header on a freshly make()'d, all-zero
+// Layers slice BEFORE any layer has streamed in, where quantLabel()'s "nothing matched" case returns "native" (a REAL
+// quant mode), so an unconditional call would bake a FALSE "native" label into every streamed bundle. This asserts the
+// label is withheld when the data is not there.
 //
-// Walks the header by hand (no heavy checkpoint, no architecture resolution needed on write: only
-// json.Marshal(w.Cfg) must succeed, and a zero Config does) rather than round-tripping through
-// LoadSerializedWeights, which would additionally require a resolvable arch.
+// It walks the header by hand (only json.Marshal(w.Cfg) must succeed, and a zero Config does) rather than
+// round-tripping through LoadSerializedWeights, which would also require a resolvable arch.
 func TestSerialize_unpopulatedLayersOmitsLabel(t *testing.T) {
 	w := &Weights{Layers: make([]LayerWeights, 4)}
 	if w.hasPopulatedLayers() {
@@ -533,12 +526,12 @@ func aliasesF32(s []float32, blob []byte) bool {
 	return sp >= bp && sp < bp+uintptr(len(blob))
 }
 
-// TestCanSerialize_refusesUnrepresentable is the C2 gate: the .giw writer only expresses the
-// standard block + qwen3_5_moe's extras, so families whose per-layer state it silently drops
-// (MLA / Mamba-2 / Gemma-4 PLE / Llama-4) must be REFUSED — else they produce a CRC-valid bundle
-// that nil-derefs at the first forward. Table-driven per registered arch; hardware-free.
+// TestCanSerialize_refusesUnrepresentable is the C2 gate: a family whose per-layer state the .giw writer silently
+// drops must be REFUSED by canSerialize, else it produces a CRC-valid bundle that nil-derefs at the first forward.
+// Table-driven per registered arch; hardware-free. The `refused` table is empty today (see below), so what the body
+// asserts is that canSerialize refuses no registered family; the refusal branch runs only when a family is added to it.
 func TestCanSerialize_refusesUnrepresentable(t *testing.T) {
-	// EMPTY AS OF .giw v6 (2026-08-19): every registered family is representable, so nothing should
+	// Empty as of .giw v6: every registered family is representable, so nothing should
 	// be refused. The map stays because the mechanism stays — a future family with per-layer state
 	// the writer has no field for MUST be refused, and this is where that gets recorded.
 	//

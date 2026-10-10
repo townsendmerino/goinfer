@@ -1,20 +1,14 @@
 //go:build realckpt
 
-// Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM) — Gate 2
-// (docs/tasks/task-spark-x2-5.md): the T3 promotion of the spark2_5 family from Gate 1's
-// tiny-random synthetic fixture to a released checkpoint. 1.7B is the smaller of the two
-// released sizes (task doc's own "start with the 1.7B... then the 4B"). Fixture:
-// scripts/pin_spark2_5_real.py.
+// Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM): Gate 2 of
+// docs/tasks/task-spark-x2-5.md, the T3 promotion of the family from the tiny synthetic fixture to a released checkpoint
+// (1.7B is the smaller of the two released sizes). Fixture: scripts/pin_spark2_5_real.py.
 //
-// TestSpark25Real_gate and TestSpark25Real_fitGuardLongContext need OPPOSITE fit-guard states and
-// must be run as SEPARATE invocations, not together: this machine's real headroom (~8 GB) is
-// narrower than the checkpoint's ~6.4 GB f32-resident need at the guard's 70% conservative margin
-// (a real, monitored bypass was needed and approved to pass the first gate at all — see
-// docs/measurements/ once Gate 2/3 are written up), so TestSpark25Real_gate needs
-// GOINFER_NO_FIT_GUARD=1 to load; TestSpark25Real_fitGuardLongContext specifically checks that an
-// oversized pin gets REFUSED, so it needs the guard ACTIVE (unset) to mean anything — run with
-// GOINFER_NO_FIT_GUARD=1 set, it silently no-ops (Load succeeds, the test's own "expected a clean
-// refusal" assertion fails on an unrelated cause).
+// TestSpark25Real_gate and TestSpark25Real_fitGuardLongContext need OPPOSITE fit-guard states and must be run as
+// SEPARATE invocations: the checkpoint's ~6.4 GB f32-resident need exceeds the guard's 70% margin on a machine with ~8 GB
+// of headroom, so TestSpark25Real_gate needs GOINFER_NO_FIT_GUARD=1 to load, while TestSpark25Real_fitGuardLongContext
+// checks that an oversized pin gets REFUSED and needs the guard ACTIVE (unset): with GOINFER_NO_FIT_GUARD=1 it silently
+// no-ops (Load succeeds and the test's own "expected a clean refusal" assertion fails on an unrelated cause).
 //
 //	go test -tags realckpt ./decoder/ -run TestSpark25Tiny_textParity -v                     # Gate 1, no asset needed
 //	GOINFER_HEAVY_TESTS=1 GOINFER_NO_FIT_GUARD=1 go test -tags realckpt ./decoder/ -run TestSpark25Real_gate -v -timeout 10m                # Gate 2
@@ -119,17 +113,11 @@ func TestSpark25Real_gate(t *testing.T) {
 	emitParityRow(t, "spark2_5", "full-forward-oracle", "HF f32 (Spark-X2.5-1.7B, Spark2_5ForCausalLM)", 100.0, float64(cos), float64(cos))
 }
 
-// TestSpark25Real_fitGuardLongContext is Gate 3 (docs/tasks/task-spark-x2-5.md): "the fit guard
-// must price KV correctly for a sliding-window model at long context — which is exactly the case
-// where a naive calculation is most wrong. Verify the guard's behaviour on spark2_5 at 131072
-// explicitly." The task doc's own hazard is real: an HF user hit a kernel OOM running
-// Spark-X2.5-4B at -c 131072 with llama.cpp's --swa-full (which explicitly DISABLES that engine's
-// sliding-window memory saving, so every layer priced at full context). goinfer's own M-28 fix
-// (decoder/arch.go's kvPositionsAt/kvBytesForCtx) is the generic mechanism that's supposed to
-// prevent the equivalent mistake here — this checks it against the REAL checkpoint's geometry,
-// not just a synthetic fixture (fitkv_test.go's TestFitGuard_slidingWindowFlattensPastTheWindow
-// already covers the generic mechanism on olmo3-tiny; this is the family-specific confirmation
-// the task doc asks for, on real numbers).
+// TestSpark25Real_fitGuardLongContext is Gate 3 (docs/tasks/task-spark-x2-5.md): the fit guard must price KV correctly
+// for a sliding-window model at long context (131072), where a naive calculation is most wrong (llama.cpp's --swa-full
+// prices every layer at full context). decoder/arch.go's kvPositionsAt/kvBytesForCtx is the generic mechanism that
+// prevents that mistake; this checks it against the REAL checkpoint's geometry (fitkv_test.go's
+// TestFitGuard_slidingWindowFlattensPastTheWindow covers the generic mechanism on olmo3-tiny).
 func TestSpark25Real_fitGuardLongContext(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_SPARK25_1_7B")

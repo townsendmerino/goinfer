@@ -5,18 +5,13 @@ import (
 	"testing"
 )
 
-// C-03: A CRC-VALID BUNDLE THAT LOADS CLEAN AND NIL-DEREFS AT THE FIRST FORWARD.
+// A CRC-valid bundle that loads clean and nil-derefs at the first forward (audit C-03): a writer that omits the conv
+// mixer (shortConv) yields a bundle that is well-formed by every check that runs on it (CRC, selfCheck, which only
+// Loads) and panics in the decode goroutine at conv layer 0.
 //
-// `grep shortConv decoder/serialize.go` returned ZERO matches. cmd/prequant loaded an LFM2
-// checkpoint, wrote every field except the conv mixer, appended a valid CRC, and selfCheck passed
-// because selfCheck only Loads. Serving the bundle, the first token reached conv layer 0 with
-// lw.shortConv == nil and panicked in the decode goroutine. That is the R3 shape: the artifact is
-// well-formed by every check that runs on it, and wrong.
-//
-// Two halves, and BOTH are needed. The v8 tail makes a correctly-written bundle round-trip. The
-// validateShapes presence check makes an INCORRECTLY-written one — a pre-v8 bundle, or a future
-// writer that forgets again — fail at load instead of at the first forward, where the panic is in
-// a goroutine no handler recovers.
+// Two halves, and BOTH are needed. The v8 tail makes a correctly-written bundle round-trip. The validateShapes presence
+// check makes an INCORRECTLY-written one (a pre-v8 bundle, or a future writer that forgets again) fail at load instead
+// of at the first forward, where the panic is in a goroutine no handler recovers.
 func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 	m, err := Load("../testdata/lfm2-tiny", Options{})
 	if err != nil {
@@ -75,9 +70,8 @@ func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 	}
 }
 
-// The other half: a bundle whose conv layers carry NO mixer must be refused at LOAD. Before the v8
-// tail every LFM2 bundle was one of these, and the only thing that noticed was the decode goroutine
-// dying. This builds one on purpose by clearing the field before serializing.
+// The other half: a bundle whose conv layers carry NO mixer must be refused at LOAD. This builds one on purpose by
+// clearing the field before serializing.
 func TestLFM2_bundleWithoutConvWeightsIsRefusedAtLoad(t *testing.T) {
 	m, err := Load("../testdata/lfm2-tiny", Options{})
 	if err != nil {

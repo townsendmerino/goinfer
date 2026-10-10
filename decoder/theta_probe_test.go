@@ -8,29 +8,21 @@ import (
 	"time"
 )
 
-// ---------------------------------------------------------------------------
-// Theta — the marginal cost of one extra verify node, measured.
-//
-// spec_adaptive.go's own words: "Theta is the relative cost of one extra verify
-// node on *this backend* — measure it." The shipped default is 0.5, described as
-// the batched-CPU ForwardN value. It has never been measured on any backend; the
-// GPU-resident path uses the CPU constant today (docs/spec/02).
+// Theta: the marginal cost of one extra verify node, measured. spec_adaptive.go's own words: "Theta is the relative cost
+// of one extra verify node on *this backend* — measure it."
 //
 // DEFINITION, so the CPU control and the CUDA probe compute the same number:
 //
-//	T(n)  = wall time of one verify pass over n tokens at a fixed context depth
-//	Theta = dT/dn / T(1)
+// 	T(n)  = wall time of one verify pass over n tokens at a fixed context depth
+// 	Theta = dT/dn / T(1)
 //
-// i.e. the slope of T(n) expressed in units of one single-token target step. The
-// AdaptiveDepth rule D = floor(ln Theta / ln alpha) is exactly "extend while the
-// chance of reaching depth d beats the marginal node cost", so this is the
-// quantity the controller wants.
+// i.e. the slope of T(n) expressed in units of one single-token target step. The AdaptiveDepth rule
+// D = floor(ln Theta / ln alpha) is exactly "extend while the chance of reaching depth d beats the marginal node cost",
+// so this is the quantity the controller wants.
 //
-// THIS FILE IS THE CONTROL. It measures Theta on the staged CPU path, where the
-// design says it should come out ~0.5. If the instrument cannot reproduce the one
-// value already believed, its answer on CUDA is not trustworthy either — that is
-// the whole reason the control exists and runs first.
-// ---------------------------------------------------------------------------
+// THIS FILE IS THE CONTROL. It measures Theta on the staged CPU path, where the design says it should come out ~0.5. If
+// the instrument cannot reproduce the one value already believed, its answer on CUDA is not trustworthy either; that is
+// the reason the control exists and runs first.
 
 // thetaFit returns the least-squares slope of T(n) over the sampled widths, the
 // measured T(1), and Theta = slope / T(1).

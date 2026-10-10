@@ -38,10 +38,9 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 	sess.cache.pos = 0
 	clean := sess.Snapshot("model-A")
 
-	// The header layout, from Snapshot's writer: magic, ver(4), id (u32 length + bytes),
-	// adapter (u32 length + bytes, v3), numLayers(4) kvDim(4) window(4) headDim(4) manualPos(1)
-	// quant(1) pos(4). Offsets derived from kvSnapMagic rather than hardcoded — the first draft
-	// assumed a 4-byte magic and indexed into the middle of the id string.
+	// The header layout, from Snapshot's writer: magic, ver(4), id (u32 length + bytes), adapter (u32 length + bytes, v3),
+	// numLayers(4) kvDim(4) window(4) headDim(4) manualPos(1) quant(1) pos(4). Offsets are derived from kvSnapMagic, not
+	// hardcoded.
 	idLenOff := len(kvSnapMagic) + 4
 	idLen := int(binary.LittleEndian.Uint32(clean[idLenOff:]))
 	adLenOff := idLenOff + 4 + idLen
@@ -155,20 +154,14 @@ func TestCheckGlobalLen(t *testing.T) {
 	}
 }
 
-// TestLoadSession_allocationCeilingNotBodyRatio pins the guard that replaced the body-ratio bound
-// on 2026-09-05, from both sides — the valid blob the old bound REJECTED, and the hostile one the
-// new bound must still refuse.
+// TestLoadSession_allocationCeilingNotBodyRatio pins the allocation guard from both sides: the valid blob a body-ratio
+// bound (pos <= len(body)/(numLayers·kvDim)) would REJECT, and the hostile one the ceiling must still refuse. A body
+// ratio is wrong because kvsnapshot.go's own writer stores no KV bytes for a never-written ring (count/nLive/stride
+// only) or a KV-shared layer, so a well-formed body can carry zero KV bytes at pos > 0 (any session longer than ~8·W
+// on an all-sliding-window model, since a ring layer only stores min(count, W) rows).
 //
-// The old check bounded pos by `len(body)/(numLayers·kvDim)`, asserting that "each of the pos
-// positions stores at least one byte across the numLayers·kvDim KV". kvsnapshot.go's own writer
-// contradicts that: a never-written ring serialises count/nLive/stride and stops, and a KV-shared
-// layer stores nothing, so a well-formed body can carry zero KV bytes at pos > 0. That made the
-// guard reject valid snapshots — including, in production, any session longer than ~8·W on an
-// all-sliding-window model, since a ring layer only ever stores min(count, W) rows.
-//
-// CI CANNOT SEE THIS FILE'S FAILURES WITHOUT A FIXTURE. loadTestModel skips when no model is
-// present, so on a fixture-less runner these tests skip and the package reports ok — which is how
-// the original defect sat on main unnoticed. If this test starts skipping in an environment that
+// CI cannot see this file's failures without a fixture: loadTestModel skips when no model is present, so on a
+// fixture-less runner these tests skip and the package reports ok. If this test starts skipping in an environment that
 // is supposed to have a model, that is the finding, not a pass.
 func TestLoadSession_allocationCeilingNotBodyRatio(t *testing.T) {
 	m := loadTestModel(t)

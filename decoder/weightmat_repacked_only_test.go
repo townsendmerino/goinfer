@@ -12,8 +12,8 @@ import (
 // minimal stand-in for a webgpu-class backend, for wantsCanonicalInt4's routing test.
 type fakeQuantBackend4 struct{ fakeMatmulBTBackend }
 
-// The QuantBackend4 match is a runtime type assertion; a signature drift here (it happened: f32 -> binary16
-// scales, aikit v1.50.0) would silently stop this fake satisfying it and change what the test covers.
+// The QuantBackend4 match is a runtime type assertion; a signature drift here (the scales moved from f32 to binary16)
+// would silently stop this fake satisfying it and change what the test covers.
 var _ QuantBackend4 = fakeQuantBackend4{}
 
 func (fakeQuantBackend4) MatmulW4A8(a []float32, q4 []byte, q4s []uint16, group int, dst []float32, M, K, N int) bool {
@@ -62,12 +62,10 @@ func syntheticEmbedF32(rows, cols int) []float32 {
 	return f32
 }
 
-// TestQuantizeEmbedWM_repackedOnlyWhenEligible is M-22's adoption gate (aikit v1.41.0, cross-
-// referenced from goinfer's audit-2026-09-10.md's own M-22 — an unrelated finding sharing the
-// label by coincidence of two repos' independent numbering): needCanonical=false on a shape this
-// core can build row4 for must produce a repacked-only WeightMat (IsInt4() true, Int4()'s own ok
-// false — no canonical bytes resident at all); needCanonical=true must produce the existing
-// canonical(+row4) "both" policy unchanged.
+// TestQuantizeEmbedWM_repackedOnlyWhenEligible is aikit's M-22 adoption gate (an unrelated finding that shares the label
+// with goinfer's audit-2026-09-10.md M-22): needCanonical=false on a shape this core can build row4 for must produce a
+// repacked-only WeightMat (IsInt4() true, Int4()'s own ok false: no canonical bytes resident at all);
+// needCanonical=true must produce the existing canonical(+row4) "both" policy unchanged.
 func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 	const rows, cols = 8, 64
 	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
@@ -280,11 +278,10 @@ func TestIsBatchedProjTensor_matchesOnlyTheStandardNames(t *testing.T) {
 	}
 }
 
-// TestMatmulW4A8Batch_repackedOnlyMatchesCanonical is the load-bearing correctness proof for
-// extending repacked-only to the attention Q/K/V / MLP gate/up policy: the REAL production
-// dispatch (wmW4A8Op building the op, matmulW4A8Batch running it — exactly what
-// causalAttention/gatedMLP call, decoder/attention.go:87 and decoder/mlp.go:441) must produce
-// bit-identical output whether the three fused ops are repacked-only or canonical(+row4).
+// TestMatmulW4A8Batch_repackedOnlyMatchesCanonical is the load-bearing correctness proof for extending repacked-only to
+// the attention Q/K/V / MLP gate/up policy: the REAL production dispatch (wmW4A8Op building the op, matmulW4A8Batch
+// running it, exactly what causalAttention (attention.go) and gatedMLP (mlp.go) call) must produce bit-identical output
+// whether the three fused ops are repacked-only or canonical(+row4).
 func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 	const rows, cols = 8, 64
 	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {

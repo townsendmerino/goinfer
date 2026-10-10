@@ -5,15 +5,13 @@ import (
 	"testing"
 )
 
-// TestGenNgramInto_residentReusesWarmPrefix is P-05 (audit-2026-09-10): R-03 already made this
-// function COMMIT the accepted sequence correctly on exit (residentCommitIDs), but nothing on
-// ENTRY ever consulted what that commit left behind — every round cold-prefilled the whole
-// prompt from position 0 regardless, so a --spec/--drafter agent loop got no prefix reuse despite
-// committing one every round. This drives two rounds back to back: round 1 cold (nothing
-// committed yet), round 2 with a prompt that STRICTLY EXTENDS round 1's own committed sequence
-// (the real agent-turn shape residentReuseLen exists for) — and asserts round 2's
-// Generation.PrefillReused is nonzero, the same observable proof generate_vl.go's own reuse
-// tests use, not just that generation still produces output.
+// TestGenNgramInto_residentReusesWarmPrefix is P-05 (audit-2026-09-10): genNgramInto commits the accepted sequence on
+// exit (residentCommitIDs), so on ENTRY it must consult what that commit left behind instead of cold-prefilling the
+// whole prompt from position 0 every round (a --spec/--drafter agent loop would otherwise get no prefix reuse). This
+// drives two rounds back to back: round 1 cold, round 2 with a prompt that STRICTLY EXTENDS round 1's own committed
+// sequence (the agent-turn shape residentReuseLen exists for), and asserts round 2's Generation.PrefillReused is
+// nonzero, the same observable proof generate_vl.go's own reuse tests use, not just that generation still produces
+// output.
 func TestGenNgramInto_residentReusesWarmPrefix(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.DecodeRunnerEligible() {
@@ -68,13 +66,13 @@ func TestGenNgramInto_residentReusesWarmPrefix(t *testing.T) {
 }
 
 // TestGenNgramInto_residentCommitMatchesPlain: a speculative generation that ends by reaching maxTokens leaves the
-// resident holding exactly what plain decode leaves: prompt + every emitted token. Plain decode forwards each token it
-// emits, the last included. A round's trailing token used to be forwarded only as the next round's seq[0], so the
-// next turn reused one position less and re-prefilled it. On Metal that one re-prefilled position (f16-MMA prefill,
-// not bit-identical to decode) changed every later turn's output
-// (docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). Asserted as equal reuse on the next turn, spec against
-// plain, at five lengths. Without the fix every one is one position short, so every case ends at the trailing-token
-// exit. The exit after a streamed draft token is not exercised here; its tokens are forwarded by the verify already.
+// resident holding exactly what plain decode leaves: prompt + every emitted token (plain decode forwards each token it
+// emits, the last included). A round's trailing token forwarded only as the next round's seq[0] would make the next turn
+// reuse one position less and re-prefill it; on Metal that one re-prefilled position (f16-MMA prefill, not
+// bit-identical to decode) changes every later turn's output (docs/measurements/spec-vs-batching-metal-2026-09-27.md
+// §4). Asserted as equal reuse on the next turn, spec against plain, at five lengths; every case ends at the
+// trailing-token exit. The exit after a streamed draft token is not exercised here; its tokens are forwarded by the
+// verify already.
 func TestGenNgramInto_residentCommitMatchesPlain(t *testing.T) {
 	greedy := SamplingParams{Temperature: 0}
 	ctx := context.Background()

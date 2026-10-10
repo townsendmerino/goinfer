@@ -187,8 +187,8 @@ func TestSupportTable_plantedDefects(t *testing.T) {
 	for _, r := range supportRows {
 		byLabel[r.label] = r
 	}
-	// This morning's real error: Qwen3.5+ on Metal decoding an image turn on the GPU. The cell must read CPU, and a
-	// Metal hybrid image prefill (a declaration that would make it GPU) is not declared.
+	// The error this table once had: Qwen3.5+ on Metal decoding an image turn on the GPU. The cell must read CPU, and a Metal
+	// hybrid image prefill (a declaration that would make it GPU) is not declared.
 	if got := supportCell(t, byLabel["Qwen3.5+ dense"], "metal"); got != "GPU / CPU" {
 		t.Errorf("Qwen3.5+ dense on Metal: %q, want GPU / CPU (the tower is Metal's, the image turn decodes on the CPU)", got)
 	}

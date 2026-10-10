@@ -12,12 +12,10 @@ import (
 	"testing"
 )
 
-// refTopFilter is the canonical, obviously-correct reference for topFilterLogits: a full
-// stable sort with the tie-break (ascending id) and summation-order (descending) contracts
-// applied. It is the GATE TARGET (amendment 1) — the optimized bounded path must reproduce
-// it bit-for-bit. It is test-only and does NOT ship on the hot path; gating the optimized
-// path against the OLD (unstable-sort) path would be meaningless, since no partial-selection
-// implementation can reproduce an unspecified tied order.
+// refTopFilter is the obviously-correct reference for topFilterLogits: a full stable sort with the tie-break (ascending
+// id) and summation-order (descending) contracts applied. The optimized bounded path must reproduce it bit for bit. It
+// is test-only. The old unstable-sort path is no gate target: no partial-selection implementation can reproduce an
+// unspecified tied order.
 func refTopFilter(logits []float32, temperature float64, topK int, topP, minP float64) []indexedProb {
 	texp := temperature
 	if texp <= 0 {
@@ -115,9 +113,9 @@ func randLogitsWithTies(n int, r *rand.Rand) []float32 {
 	return l
 }
 
-// TestTopFilterLogits_MatchesReference is the exactness gate (amendment 1): across a wide
-// seed sweep and two vocabulary sizes, the optimized bounded selection must equal the
-// reference bit-for-bit — same retained ids in the same order, same renormalized probs.
+// TestTopFilterLogits_MatchesReference is the exactness gate: across a wide seed sweep and two vocabulary sizes, the
+// optimized bounded selection must equal the reference bit for bit (same retained ids in the same order, same
+// renormalized probs).
 func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	const seeds = 400
 	vocabs := []int{152064, 262144} // qwen2.5 / gemma3 — the reporter's pair
@@ -135,30 +133,19 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	}
 	temps := []float64{0.8, 0.01, 1.0, 2.0}
 
-	// The seed sweep is run in PARALLEL SHARDS. Every case still runs — the shards partition the
-	// same seed range and assert the same things — but wall time divides by the core count.
+	// The seed sweep runs in PARALLEL SHARDS: they partition the same seed range and assert the same things, so every case
+	// still runs while wall time divides by the core count. Sharding rather than shrinking the sweep is deliberate: it is
+	// pure computation, so -race finds nothing in it, and a smaller sweep would trade away the exactness gate that
+	// justifies the optimization.
 	//
-	// Why it matters: CI runs `go test -race`, and this sweep is pure computation with no
-	// goroutines and no shared state, so the race detector finds nothing here while costing ~10×.
-	// At 400 seeds × 15 cfgs × 4 temps that pushed the whole decoder package past the 600 s default
-	// timeout on CI's slower runner (locally 63 s un-raced) — main went red on a TIMEOUT, not a
-	// failure. Sharding is the coverage-neutral fix; reducing the sweep would have traded away the
-	// exactness gate that justifies the optimization, which is the wrong thing to trade.
-	// Seed selection: every seed normally, an evenly-STRIDED subset under -race (the detector has
-	// nothing to find in this pure-compute sweep — see sampler_sweep_race_test.go). Striding rather
-	// than truncating keeps the selection spread across the whole range, so both logit shapes
-	// (tie-heavy / tie-free, which alternate on seed parity) stay represented. All 15 configs and
-	// all 4 temperatures run for every selected seed either way.
-	//
-	// C8 (docs/completed/task-ci-speed-2026-09.md): the stride below WAS this loop's whole point
-	// and it went missing in 324f63c9 ("go fix: modernize"), which rewrote
-	// `for s := 0; s < seeds; s += sweepSeedStride` into `for s := range seeds` — every seed ran
-	// under -race for months while the mode string said "strided subset", and this test was 217 s
-	// of every CI run. The check right after the loop is the guard that shape needs: a build that
-	// declares a stride must be seen to apply it.
+	// Seed selection: every seed normally, an evenly strided subset under -race (sampler_sweep_race_test.go). Striding
+	// rather than truncating keeps the selection spread across the range, so both logit shapes (tie-heavy / tie-free,
+	// alternating on seed parity) stay represented; all 15 configs and all 4 temperatures run for every selected seed
+	// either way. The check right after the loop is the guard the stride needs: a build that declares a stride must be
+	// seen to apply it (a go fix rewrite of the loop once dropped it silently; docs/completed/task-ci-speed-2026-09.md, C8).
 	var seedList []int
 	for s := range seeds {
-		if s%sweepSeedStride == 0 { // not `s += sweepSeedStride`: go fix rewrites that to `range seeds` where the stride is the constant 1 (the non-race build), and drops it from the -race build too (2026-10-08, again)
+		if s%sweepSeedStride == 0 { // not `s += sweepSeedStride`: go fix rewrites that to `range seeds` where the stride is the constant 1, and drops it from the -race build too
 			seedList = append(seedList, s)
 		}
 	}
@@ -287,43 +274,26 @@ func drawFromRef(ips []indexedProb, rng *rand.Rand) int {
 	return ips[len(ips)-1].id
 }
 
-// TestSamplingThroughputGate asserts the top-p/top-k cliff is gone: sampling at
-// temperature+top_p must run within a bounded factor of the TEMPERATURE-ONLY baseline
-// (amendment 4 — gated against temp-only, not greedy). A full-vocab sort regression shows
-// up as ~7× (the reported 100→15 tok/s); the gate factor sits below that and above the
-// real post-fix ratio.
+// TestSamplingThroughputGate asserts the top-p/top-k cliff is gone: sampling at temperature+top_p must run within a
+// bounded factor of the TEMPERATURE-ONLY baseline (not greedy). A full-vocab sort regression shows up as ~7x; the
+// gate factor sits below that and above the real ratio.
 func TestSamplingThroughputGate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("throughput gate: skipped under -short")
 	}
-	// A WALL-CLOCK RATIO measured under the race detector measures the DETECTOR, not the sampler.
-	// Observed on CI: this gate passed on linux/-race and failed on darwin/-race at 3.86× and 3.99×
-	// against a 3.0× bound, on two commits that touched no sampler code — the instrumentation does
-	// not scale the two arms equally, and a shared runner adds noise on top. Left on, it is a
-	// permanently red gate that says "full-vocab selection has regressed" when nothing has.
-	//
-	// It is not skipped into oblivion: ci.yml runs this test WITHOUT -race on every push, which is
-	// where a real regression would show. Timing gates belong in an un-instrumented run.
+	// A wall-clock ratio under the race detector measures the detector, not the sampler: the instrumentation does not
+	// scale the two arms equally, so the gate would be permanently red with nothing regressed. ci.yml runs this test
+	// WITHOUT -race on every push, which is where a real regression shows. Timing gates belong in an un-instrumented run.
 	if raceEnabled {
 		t.Skip("throughput gate: skipped under -race (the detector distorts wall clock; ci.yml runs " +
 			"this test without -race on every push)")
 	}
-	// RE-BOUNDED after P2b (2026-08-09). This gate compares temp+top_p against temp-only, and P2b made
-	// the DENOMINATOR ~4.7× faster (parallel chunked normalization), so the ratio rose from 0.86× to
-	// 3.88× at 262k WITHOUT the filtered path regressing — top_p itself went 6.98 ms → 6.72 ms over the
-	// same change. A gate whose baseline moves is measuring two things at once; the bound is raised to
-	// keep it catching real filtered-path regressions rather than firing on an improvement elsewhere.
-	//
-	// Note the synthetic logits here overstate top_p's cost: randLogits is near-Gaussian, so a 0.95
-	// nucleus over 262k entries retains an enormous candidate set, where REAL peaked decode logits
-	// retain a handful. The e2e A/B on real models shows the filtered path ~2× FASTER after P2b
-	// (gemma3-1b 56.3 → 117.0 tok/s), the opposite of what this ratio suggests in isolation.
-	//
-	// RE-ANCHORED after R7b (2026-09-20), the bar NOT moved. Production temperature-only sampling became
-	// Gumbel-max, ~1.3-1.8x cheaper on the CPU (1.49 -> 1.16 ms at 262k), which moved this ratio from 4.14x to
-	// 5.26x while top_p itself was unchanged (6.17 -> 6.09 ms) — the same "baseline moved" hazard as above. The
-	// denominator is now the LEGACY chunked inverse-CDF draw, kept unchanged in sampler_chunked_ref_test.go, so
-	// the ratio means exactly what it meant when the 5.0x bar was set.
+	// The denominator is the LEGACY chunked inverse-CDF draw (sampleChunked, kept unchanged in sampler_chunked_ref_test.go),
+	// not production temperature-only sampling: a gate whose baseline moves measures two things at once, and the bound has
+	// twice had to be re-anchored when the denominator got faster while the filtered path did not regress. Re-anchor with
+	// a measurement, not a guess. The synthetic logits also overstate top_p's cost (randLogits is near-Gaussian, so a
+	// 0.95 nucleus keeps a huge candidate set where real peaked logits keep a handful), so the ratio says nothing about
+	// end-to-end speed. Record: docs/code-notes/decoder.md#TestSamplingThroughputGate.bound.
 	const factor = 5.0
 	for _, V := range []int{152064, 262144} {
 		r := rand.New(rand.NewSource(1))
@@ -339,25 +309,11 @@ func TestSamplingThroughputGate(t *testing.T) {
 	}
 }
 
-// benchSample times one sampling configuration, taking the BEST of three runs rather than one.
-//
-// WHY BEST-OF-N AND NOT A SINGLE MEAN. testing.Benchmark's NsPerOp is a mean over b.N, and a mean
-// tracks scheduling jitter upward — it has a floor but no ceiling. Measured 2026-08-31 on x86,
-// three consecutive isolated runs of the temp-only arm at V=262144: 1.356 / 1.694 / 1.994 ms, a
-// 47% spread, while the temp+top_p arm over the same runs moved only 6% (6.54 / 6.72 / 6.93 ms).
-// The RATIO those produce swings 3.48-4.83 — and none of that motion is the sampler.
-//
-// The minimum is the right estimator here because the quantity is floored: the fastest observed
-// run is the one least contaminated by whatever else the machine was doing. It cuts the x86
-// spread from 1.35x to 0.39x (3.48-4.83 becomes 3.85-4.24) and leaves arm64 where it was
-// (4.81-4.85).
-//
-// IT DOES NOT MAKE THE RATIO MACHINE-INDEPENDENT, and an earlier draft of this comment claimed
-// it would — predicted, not measured, and the measurement refuted it. x86 settles near 4.0 and
-// arm64 near 4.83: a real 0.7x gap between machines, on the same code. So the bound below is
-// effectively set by whichever machine runs hottest on this ratio, which is arm64, at ~3% margin.
-// That is a property of the RATIO design (see the note on the bound), not something a better
-// estimator fixes.
+// benchSample times one sampling configuration, taking the BEST of three runs rather than one. testing.Benchmark's
+// NsPerOp is a mean over b.N, and a mean tracks scheduling jitter upward (a floor, no ceiling), so the minimum is the
+// least contaminated estimator of a floored quantity. It does not make the ratio machine-independent: x86 and arm64
+// settle at different ratios on the same code, so the bound is effectively set by whichever machine runs hottest
+// (arm64, at a thin margin).
 func benchSample(logits []float32, p SamplingParams) int64 {
 	best := int64(0)
 	for range 3 {
@@ -414,18 +370,14 @@ func benchFilter(b *testing.B, V int, useRef bool) {
 
 func BenchmarkFilterRef152k(b *testing.B) { benchFilter(b, 152064, true) }
 
-// 32k is phi3-mini's vocab, and it was NOT in this benchmark's population when P10 (4da116d)
-// reused the full-vocab scratch buffer: only 152k and 262k were measured. The §B5 re-anchor then
-// found phi3-mini DOWN 5.8% at temperature 1.0 while the 152k and 262k models gained 8-9% on the
-// same configuration (G26). A change validated on two large vocabs and shipped for all of them
-// needs the small one measured too.
+// 32k is phi3-mini's vocab and is in the population on purpose: a scratch-reuse change validated only on the two
+// large vocabs (152k, 262k) regressed this one.
 func BenchmarkFilterRef32k(b *testing.B) { benchFilter(b, 32064, true) }
 func BenchmarkFilterNew32k(b *testing.B) { benchFilter(b, 32064, false) }
 
-// benchFilterFreshScratch is the PRE-P10 shape: a fresh full-vocab buffer per call, which is what
-// sampleChunked/chunkedZ did before 4da116d. Paired against benchFilter's reused scratch this
-// isolates P10 itself, rather than the optimized path as a whole — the existing Ref/New pair
-// compares two different algorithms and cannot answer the G26 question.
+// benchFilterFreshScratch is the pre-reuse shape: a fresh full-vocab buffer per call, as sampleChunked/chunkedZ
+// allocated before the scratch was reused. Paired against benchFilter's reused scratch it isolates the scratch reuse
+// itself; the Ref/New pair compares two different algorithms and cannot answer that.
 func benchFilterFreshScratch(b *testing.B, V int) {
 	r := rand.New(rand.NewSource(1))
 	logits := randLogits(V, r)
@@ -443,27 +395,20 @@ func BenchmarkFilterNew152k(b *testing.B) { benchFilter(b, 152064, false) }
 func BenchmarkFilterRef262k(b *testing.B) { benchFilter(b, 262144, true) }
 func BenchmarkFilterNew262k(b *testing.B) { benchFilter(b, 262144, false) }
 
-// TestSweepCoverage_fullSweepRunsSomewhere is the gate on the gate.
-//
-// The exactness sweep is strided under -race, and BOTH root CI jobs run -race — so the full
-// 24,018-case sweep runs only because ci.yml carries an explicit non-race step for it. That is a
-// coupling between a build tag and a YAML file, invisible from either side: delete the step and the
-// gate silently shrinks to a subset in every job, with nothing red. (An earlier version of this
-// change asserted the full sweep "still runs in the non-race job" when no such job existed.)
-//
-// This reads ci.yml and fails if the step is gone. It is deliberately a string check rather than a
-// YAML parse: what matters is that SOME step runs this test without -race, and the cheapest honest
-// way to assert that is to look for it.
+// TestSweepCoverage_fullSweepRunsSomewhere is the gate on the gate. The exactness sweep strides under -race and both
+// root CI jobs run -race, so the full 24,018-case sweep runs only because ci.yml carries an explicit non-race step for
+// it: a coupling between a build tag and a YAML file, invisible from either side. Delete the step and the gate
+// silently shrinks to a subset in every job, with nothing red. This reads ci.yml and fails if the step is gone; a
+// string check, not a YAML parse, because what matters is that some step runs the test without -race.
 func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
 	if err != nil {
 		t.Skipf("no ci.yml to check (%v) — this gate only applies in the repo", err)
 	}
 	ci := string(b)
-	// Every sweep that strides itself under -race must be named on a non-race `go test` step:
-	// the exactness sweep (seed stride) and, since C8, the device top-K draw sweep (draw stride —
-	// TestSampleFromTopK_matchesFullPath, sampler_topk_test.go). Add to this list when a third
-	// sweep takes the same shape; a name missing here is a gate that silently shrank.
+	// Every sweep that strides itself under -race must be named on a non-race `go test` step: the exactness sweep (seed
+	// stride) and the device top-K draw sweep (draw stride, TestSampleFromTopK_matchesFullPath in sampler_topk_test.go).
+	// Add to this list when another sweep takes the same shape; a name missing here is a gate that silently shrank.
 	strided := []string{"TestTopFilterLogits_MatchesReference", "TestSampleFromTopK_matchesFullPath"}
 	found := map[string]bool{}
 	for line := range strings.SplitSeq(ci, "\n") {

@@ -94,21 +94,18 @@ func TestSpecAdaptiveSwitch_matchesPlainDecode(t *testing.T) {
 	t.Logf("batched steps %d serving %d tokens (largest %d); solo forwards %d", rf.steps, rf.stepSeqs, rf.maxStep, rf.soloFwds)
 }
 
-// TestSpecAdaptiveSwitch_offByDefaultUnaffected: with -spec-adaptive off, a spec generation's own exclusive claim
-// now goes through claimExclusive (holders == 0), not a bare CAS on resBusy — the hardening this file's other test
-// forced (a bare CAS could succeed at the same moment an MC3 holder, admitted via bt.claim, was mid-step: bt.claim
-// only READS resBusy, it never sets it). Production never creates this combination (-spec without -spec-adaptive
-// forces concurrency to 1 in openai.go's setConcurrency, so a spec generation and an MC3 holder never coexist),
-// but the test constructs it directly to prove the guard does not depend on that. Two outcomes are both correct:
-// the spec generation wins the claim (resident, mc3Fake's path) or loses to an already-admitted holder and falls
-// back to the staged CPU path (the tiny fixture's real weights, a genuinely different computation, not a
-// degraded one) — this is the pre-existing M9 guard's own contract ("both still complete correctly, only the
-// loser loses resident speed"), unrelated to this session's changes. NOT compared against an always-resident
-// reference: unlike matchesPlainDecode, a mid-run fallback to a different code path is not expected to be
-// id-identical to the path it did not take — that was this test's own first-draft mistake, not a real
-// divergence (caught by running enough repeats: it failed ~1 run in 5, every time on a real, different, but
-// individually valid continuation, e.g. `got=[171 197 164...]` vs `alone=[102 186 172...]` — two distinct valid
-// greedy paths, not a wrong one).
+// TestSpecAdaptiveSwitch_offByDefaultUnaffected: with -spec-adaptive off, a spec generation's own exclusive claim goes
+// through claimExclusive (holders == 0), not a bare CAS on resBusy: a bare CAS could succeed at the same moment an MC3
+// holder, admitted via bt.claim, was mid-step (bt.claim only READS resBusy, it never sets it). Production never creates
+// this combination (-spec without -spec-adaptive forces concurrency to 1 in openai.go's setConcurrency), but the test
+// constructs it directly to prove the guard does not depend on that.
+//
+// Two outcomes are both correct: the spec generation wins the claim (resident, mc3Fake's path) or loses to an
+// already-admitted holder and falls back to the staged CPU path (the tiny fixture's real weights, a different
+// computation, not a degraded one). That is the M9 guard's contract: both still complete correctly, only the loser
+// loses resident speed. NOT compared against an always-resident reference: unlike matchesPlainDecode, a mid-run
+// fallback to a different code path is not expected to be id-identical to the path it did not take (two distinct valid
+// greedy paths).
 func TestSpecAdaptiveSwitch_offByDefaultUnaffected(t *testing.T) {
 	m, rf := loadWithMC3Fake(t, 4)
 	rf.delay = 3 * time.Millisecond

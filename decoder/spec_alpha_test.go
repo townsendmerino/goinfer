@@ -109,10 +109,9 @@ func TestNgramAlphaTable(t *testing.T) {
 		}
 		prev = a
 	}
-	// Both sources are now calibrated accept-probs on a common scale. The trace-fit
-	// α̂_grammar (~0.20, tokenization-fragile) is the weakest source, so EVERY n-gram copy
-	// — even the shortest (len-2 ≈ 0.70) — must outrank grammar; grammar drafts only when
-	// n-gram has no copy. (This corrected the original guess that grammar was ~0.9.)
+	// Both sources are calibrated accept-probs on a common scale. The trace-fit α̂_grammar (~0.20, tokenization-fragile) is
+	// the weakest source, so EVERY n-gram copy, even the shortest (len-2 ≈ 0.70), must outrank grammar; grammar drafts only
+	// when n-gram has no copy.
 	if ngramAlpha(2) <= grammarConf {
 		t.Errorf("α̂_ngram(2)=%.3f should exceed the tokenization-fragile α̂_grammar=%.3f", ngramAlpha(2), grammarConf)
 	}

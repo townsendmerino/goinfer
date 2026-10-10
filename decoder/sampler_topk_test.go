@@ -129,11 +129,9 @@ func TestSampleFromTopK_matchesFullPath(t *testing.T) {
 				case v >= 32000:
 					draws = 40
 				}
-				// C8 (docs/completed/task-ci-speed-2026-09.md): under -race the DRAW axis is strided by
-				// the same constant the exactness sweep strides its seeds with — every (vocab, shape,
-				// config) cell still runs, with 1/7 of its draws — because this is pure computation the
-				// detector finds nothing in, and it was 369 s of every CI run (44 s un-raced). The full
-				// draw count runs in ci.yml's non-race sampler-gates step, which
+				// Under -race the DRAW axis is strided by the same constant as the exactness sweep's seeds: every (vocab, shape, config)
+				// cell still runs, with 1/sweepSeedStride of its draws, because this is pure computation the detector finds nothing in
+				// (docs/completed/task-ci-speed-2026-09.md, C8). The full draw count runs in ci.yml's non-race sampler-gates step, which
 				// TestSweepCoverage_fullSweepRunsSomewhere requires to name this test.
 				if sweepSeedStride > 1 {
 					draws = max(1, draws/sweepSeedStride)

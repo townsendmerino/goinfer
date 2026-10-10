@@ -215,18 +215,15 @@ func TestSwapWatch_ctxCancelStopsTheGoroutine(t *testing.T) {
 	}
 }
 
-// TestSwapWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check
-// docs/tasks/task-never-swap-2026-09.md S3 asks for, encoded as a test so the mistake it guards
-// against cannot come back silently. CLAUDE.md: "A guard that INVERTS under the condition it
-// exists for is worse than no guard — it actively reassures." The real R11(c) run
-// (docs/measurements/metal-moe-autopager-m26-2026-09-20.md) measured, in the SAME build, both
-// figures below: swap-used genuinely grew from 2.3 to 12 GB and NEVER came back down, while the
-// test's own RSS reading went "7 MB -> 892 MB -> falling" — because darwin reclaims MTLBuffer
-// pages under pressure as fast as they are written, so RSS reports what survived, not what was
-// asked for (S0's own reading of this run). Run BOTH trajectories through the exact same watch:
-// a swap-keyed watch never resumes (correct — the machine never stopped losing memory); an
-// RSS-keyed watch resumes mid-spiral, because its own falling tail reads as recovery. That
-// resume-while-still-losing is the inversion, shown directly rather than argued.
+// TestSwapWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check docs/tasks/task-never-swap-2026-09.md
+// S3 asks for, encoded as a test so the mistake it guards against cannot come back silently. CLAUDE.md: "A guard that
+// INVERTS under the condition it exists for is worse than no guard". In the real R11(c) run
+// (docs/measurements/metal-moe-autopager-m26-2026-09-20.md) swap-used genuinely grew and NEVER came back down, while the
+// run's own RSS reading rose and then fell, because darwin reclaims MTLBuffer pages under pressure as fast as they are
+// written: RSS reports what survived, not what was asked for. Both trajectories run through the exact same watch: a
+// swap-keyed watch never resumes (correct, the machine never stopped losing memory); an RSS-keyed watch resumes
+// mid-spiral, because its own falling tail reads as recovery. That resume-while-still-losing is the inversion, shown
+// directly rather than argued.
 func TestSwapWatch_keyingOnRSSWouldHaveMissedR11c(t *testing.T) {
 	const threshold = 512 * 1024 * 1024
 	const resumeAfter = 2 * time.Millisecond
