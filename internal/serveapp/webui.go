@@ -20,33 +20,22 @@ import (
 	"github.com/townsendmerino/goinfer/pull"
 )
 
-// The local web UI (docs/completed/task-model-pull.md §4, option B).
+// The local web UI. It rides the server that already exists: the page is a small set of embedded files (index.html plus its
+// stylesheet and script under webui/ui/) with no external stylesheet, font or script, and it talks to the SAME /v1/models and
+// /v1/chat/completions routes any other client uses. It adds no second inference path to keep in sync and cannot drift from
+// the API, because it IS a client of it. Being asset-free keeps the offline story intact: a CDN reference would make the UI of
+// an offline-capable engine require the network. A native desktop app was rejected: every realistic toolkit needs cgo or a
+// bundled webview runtime, which this project is built to avoid (docs/completed/task-model-pull.md §4).
 //
-// It rides the server that already exists: the page is a small set of embedded files — index.html
-// plus its stylesheet and script under webui/ui/ — with no external stylesheet, font or script,
-// and it talks to the SAME /v1/models and
-// /v1/chat/completions routes any other client uses. That is the point — it adds no second
-// inference path to keep in sync, and it cannot drift from the API, because it IS a client
-// of it. Being asset-free also keeps the offline story intact: a CDN reference would make
-// the UI of an offline-capable engine require the network.
-//
-// A native desktop app was considered and rejected in the same design note: every realistic
-// toolkit needs cgo or a bundled webview runtime, which is the one property this project is
-// built to avoid.
-//
-// OFF BY DEFAULT (-web). The page itself is static and harmless; the pull route is not — it
-// triggers an outbound download of a caller-named repo and writes it to disk. It therefore
-// sits behind the same two gates -allow-admin uses: an explicit opt-in flag, and the
-// startup rule that a non-loopback bind must carry an -api-key. Loopback stays key-free so
-// the ordinary single-user desktop case has no auth friction.
+// OFF BY DEFAULT (-web). The page itself is static and harmless; the pull route is not: it triggers an outbound download of a
+// caller-named repo and writes it to disk. It therefore sits behind the same two gates -allow-admin uses: an explicit opt-in
+// flag, and the startup rule that a non-loopback bind must carry an -api-key. Loopback stays key-free so the single-user
+// desktop case has no auth friction.
 
-// ONE DIRECTORY, NOT ONE FILE (docs/tasks/task-web-ui-2026-09.md §6.1). The page was a single
-// 1,828-line HTML file; the web-UI plan roughly doubles it, so it is split into index.html plus
-// webui/ui/app.css and webui/ui/app.js. What is deliberately NOT given up: still no build step, no
-// bundler, no toolchain — plain files, embedded verbatim, one binary, fully offline. The assets
-// live under ui/ and are referenced relatively ("ui/app.js"), so the same page also loads from
-// file:// with no server, which is how a headless browser can check it on a box whose sandbox
-// blocks loopback HTTP.
+// The page is index.html plus webui/ui/app.css and webui/ui/app.js, not one file (docs/tasks/task-web-ui-2026-09.md §6.1).
+// There is deliberately still no build step, bundler or toolchain: plain files, embedded verbatim, one binary, fully offline.
+// The assets live under ui/ and are referenced relatively ("ui/app.js"), so the same page also loads from file:// with no
+// server, which is how a headless browser can check it on a box whose sandbox blocks loopback HTTP.
 //
 //go:embed webui
 var webUIFS embed.FS
@@ -95,17 +84,13 @@ func (p *pullState) release() {
 	p.mu.Unlock()
 }
 
-// sameOrigin refuses a cross-origin request, the same guard N-26 added to the demo/agent web
-// app for its own mutating routes (cmd/agent-web/main.go). V-20 (docs/review-2026-09-04.md):
-// the two routes below (list, pull) act — pull triggers a caller-named multi-gigabyte download
-// — and on the key-free loopback default (requireAuth is a no-op when -api-key is unset) they
-// had NO protection at all: any page open in the same browser can send a cross-origin POST
-// (browsers block reading the response, not sending the request), so a malicious or compromised
-// page could drive a multi-GB download onto the user's disk with no visible prompt. A browser's
-// own fetch()/XHR from the web UI's page always carries a same-origin Origin header; a
-// cross-origin POST either carries a foreign one (refused here) or, for a same-site plain form
-// post, none at all outside a browser context — which is why (like N-26) this only checks an
-// Origin header that IS present, rather than requiring one.
+// sameOrigin refuses a cross-origin request, the same guard demo/agent's web app uses for its own mutating routes
+// (demo/agent/cmd/agent-web/main.go). The routes it wraps act (pull triggers a caller-named multi-gigabyte download), and on the key-free
+// loopback default (requireAuth is a no-op when -api-key is unset) nothing else protects them: any page open in the same
+// browser can send a cross-origin POST (browsers block reading the response, not sending the request). A browser's own
+// fetch()/XHR from the web UI's page always carries a same-origin Origin header; a cross-origin POST carries a foreign one
+// (refused here) or, for a plain form post from outside a browser, none at all, which is why this only checks an Origin header
+// that IS present rather than requiring one (docs/completed/review-2026-09-04.md, V-20).
 func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" {
@@ -129,13 +114,13 @@ func (s *server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(webUIPage)
 }
 
-// handleWebAsset serves the page's own stylesheet and script from webui/ui/. UNAUTHENTICATED, for
-// the same reason as the page (V-02, see main.go): a browser's plain subresource load sends no
-// Authorization header, and without these files the page — the only place the key can be typed —
-// cannot work at all. They are static, embedded at build time, and hold no secrets.
+// handleWebAsset serves the page's own stylesheet and script from webui/ui/. UNAUTHENTICATED, for the same reason as the page
+// (see the "GET /{$}" route in Main): a browser's plain subresource load sends no Authorization header, and without these
+// files the page, the only place the key can be typed, cannot work at all. They are static, embedded at build time, and hold
+// no secrets.
 //
-// Only a single path segment under ui/ with an allow-listed extension is served; anything else,
-// including a traversal attempt or a directory, is a plain 404. No directory listing, ever.
+// Only a single path segment under ui/ with an allow-listed extension is served; anything else, including a traversal attempt
+// or a directory, is a plain 404. No directory listing, ever.
 func (s *server) handleWebAsset(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("file")
 	ctype, ok := webUIAssetTypes[path.Ext(name)]
@@ -162,8 +147,8 @@ type webPullReq struct {
 	Repo  string `json:"repo"`
 	Quant string `json:"quant"`
 	File  string `json:"file"`
-	// Checkpoint names the repo's whole safetensors checkpoint (pull's ":safetensors" selector) rather than one GGUF
-	// file: the shape a family with no GGUF loader is published in (task-checkpoint-fetch-2026-09.md P6).
+	// Checkpoint names the repo's whole safetensors checkpoint (pull's ":safetensors" selector) rather than one GGUF file: the
+	// shape a family with no GGUF loader is published in (docs/tasks/task-checkpoint-fetch-2026-09.md).
 	Checkpoint bool `json:"checkpoint"`
 }
 
@@ -199,21 +184,16 @@ func (s *server) freeBytesForActiveBackend() (int64, bool) {
 	return decoder.FreeBytesFor(s.cfg.load.Backend)
 }
 
-// fitEstimate is a COARSE per-file verdict for the file listing, using only the file's own
-// on-disk size against free memory for the backend this server actually runs — no header
-// parsing, no model load (docs/tasks/task-fit-to-hardware.md §3's own words: "the file table can
-// say fits / needs streaming / will not fit per row from the listing alone, before the
-// multi-gigabyte transfer"). NOT exact, and the UI note beside this field says so: a GGUF's size
-// only approximates its resident bytes when the file is already at roughly the quant this server
-// loads at — `-quant` re-quantizes at load time regardless of the file's own native format
-// (decoder/gguf.go's buildGGUFWeights), so pulling a Q8_0 file onto an int4 server resident-loads
-// far smaller than this file's size suggests, and the reverse case overshoots. Parsing the
-// file's own quant hint out of its name to correct for that would need a real quant-name table
-// this coarse a check has no business building — see the scoping note in
-// task-web-ui-2026-09.md's W33 part 2 for why that line was drawn here.
+// fitEstimate is a COARSE per-file verdict for the file listing, using only the file's own on-disk size against free memory
+// for the backend this server actually runs: no header parsing, no model load (docs/tasks/task-fit-to-hardware.md §3). NOT
+// exact, and the UI note beside this field says so: a GGUF's size only approximates its resident bytes when the file is
+// already at roughly the quant this server loads at, since `-quant` re-quantizes at load (decoder/gguf.go's buildGGUFWeights),
+// so a Q8_0 file pulled onto an int4 server loads far smaller than its size suggests and the reverse overshoots. Correcting
+// for that by parsing the quant out of the file name would need a real quant-name table this coarse check has no business
+// building (docs/tasks/task-web-ui-2026-09.md, W33 part 2).
 //
-// Bands are deliberately conservative (fewer false "fits"): a resident load also needs KV cache
-// and context on top of raw weight bytes, so "file size == everything free" already does not fit.
+// Bands are deliberately conservative (fewer false "fits"): a resident load also needs KV cache and context on top of raw
+// weight bytes, so "file size == everything free" already does not fit.
 func fitEstimate(fileSize, free int64) string {
 	switch {
 	case fileSize >= free:
@@ -294,18 +274,16 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 
 type webSearchReq struct {
 	Query string `json:"query"`
-	// Kind narrows the search (pull.Search's own searchKinds table). The page always sends
-	// "gguf" today — the only kind this build's pull flow actually loads — but the field exists
-	// now, not added later, so a future kind is a client change plus one table entry in pull.go,
-	// never a new route or request shape.
+	// Kind narrows the search (pull.Search's searchKinds table). The page sends "gguf", the only kind this build's pull flow
+	// loads; the field exists so a future kind is a client change plus one table entry in pull.go, never a new route or
+	// request shape.
 	Kind string `json:"kind"`
 }
 
-// searchLimit bounds how many suggestions a search returns — a dropdown, not a full listing;
-// pull.Search sends no limit= to HuggingFace at all when given 0, which is a request shape this
-// route should never produce. Raised from 8 to 50 live during testing (2026-09-17): 8 was too
-// narrow to surface a less-trending-but-still-relevant repo past HF's own trendingScore ordering
-// (pull.Search's own doc comment — not downloads or likes) for anything but the most obvious query.
+// searchLimit bounds how many suggestions a search returns: a dropdown, not a full listing; pull.Search sends no limit= to
+// HuggingFace at all when given 0, a request shape this route should never produce. It is 50, not 8: HF orders by
+// trendingScore (see pull.Search), and 8 was too narrow to surface a less-trending-but-still-relevant repo for anything but
+// the most obvious query.
 const searchLimit = 50
 
 // handleWebSearch answers the repo box's search-as-you-type: candidates to PICK from, not a
@@ -335,22 +313,16 @@ func (s *server) handleWebSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"repos": out})
 }
 
-// webPullRef resolves a pull request's repo box and the clicked selector (if any) into one Ref,
-// WITHOUT string concatenation. req.Repo alone decides ref.Repo (`pull.ParseRef` cuts at the
-// FIRST colon, so blindly appending a second selector after a box that already carries one —
-// "owner/repo:q4_k_m" typed in, then a file clicked — produced "owner/repo:q4_k_m:file.gguf",
-// re-cut into repo="owner/repo", selector="q4_k_m:file.gguf": a ".gguf"-suffixed string that
-// LOOKS like a filename and is looked up as one, verbatim, in a repo that publishes no such name.
-// Listing never showed this, because handleWebList parses req.Repo alone and only ever reads
-// ref.Repo back out of it — so every Pull button failed while List worked, which read like a bad
-// repo rather than a bad concatenation.
+// webPullRef resolves a pull request's repo box and the clicked selector (if any) into one Ref, WITHOUT string concatenation.
+// req.Repo alone decides ref.Repo: pull.ParseRef cuts at the FIRST colon, so appending a second selector after a box that
+// already carries one ("owner/repo:q4_k_m" typed in, then a file clicked) yields "owner/repo:q4_k_m:file.gguf", which is
+// re-cut into a ".gguf"-suffixed selector that looks like a filename and is looked up verbatim in a repo that publishes no
+// such name.
 //
-// A clicked file or quant REPLACES whatever selector the box already carried, rather than
-// appending to it — the click is the more specific, more recent choice. With neither clicked, the
-// box's own parse is returned as-is: re-parsing a resolved `demo:` tier would still yield the same
-// Repo/File, but would drop Pin/Bytes (ParseRef only ever sets those for a literal "demo:tier"
-// input, not for the repo/file pair a tier resolves to) — the digest a demo: pull is supposed to
-// verify against.
+// A clicked file or quant REPLACES whatever selector the box already carried: the click is the more specific, more recent
+// choice. With neither clicked, the box's own parse is returned as-is: re-parsing a resolved `demo:` tier would yield the same
+// Repo/File but drop Pin/Bytes (ParseRef sets those only for a literal "demo:tier" input), the digest a demo: pull is supposed
+// to verify against.
 func webPullRef(req webPullReq) (pull.Ref, error) {
 	base, err := pull.ParseRef(req.Repo)
 	if err != nil {
@@ -404,11 +376,9 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
-	// r.Context() dies when the browser tab closes, which cancels the transfer. Download KEEPS
-	// the .part on a cancel, deliberately — the next pull of the same file resumes from it. Wrapped
-	// in our own cancel (N-23, docs/audit-2026-09-10.md) so a STALLED-but-open connection —
-	// caught by sseWriter's write deadline below, not by r.Context() — stops the download the
-	// same way.
+	// r.Context() dies when the browser tab closes, which cancels the transfer. Download KEEPS the .part on a cancel,
+	// deliberately: the next pull of the same file resumes from it. Wrapped in our own cancel so a STALLED-but-open
+	// connection, caught by sseWriter's write deadline below and not by r.Context(), stops the download the same way.
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
@@ -530,20 +500,18 @@ type webLoadReq struct {
 
 // webLoadPath decides whether the page may load p, and returns the resolved file to load.
 //
-// THIS IS THE WHOLE POLICY OF THE LOAD ROUTE (docs/tasks/task-web-ui-2026-09.md W5). The admin load
-// takes any caller-named path and is gated behind -allow-admin for exactly that reason; the web UI
-// is not widened into it. Instead the page can load only what the pull flow can put on disk: a
-// regular .gguf file under pull.CacheRoot(), or a directory there that is a complete checkpoint the
-// pull flow published (its marker present and every file it names verified: pull.CachedCheckpoint).
-// A checkpoint still being assembled lives in "<dir>.partial" with no marker, so it is refused the
-// way a ".part" file is. Both p and the root are symlink-resolved BEFORE the
-// containment check, so neither a "../" in the request nor a symlink planted inside the cache can
-// point the loader at a file outside it, and the resolved path — not the requested one — is what
-// gets loaded. The suffix is checked on the resolved name too, which also refuses an in-progress
-// download (Download writes "<name>.part" and renames only after the digest verifies).
+// THIS IS THE WHOLE POLICY OF THE LOAD ROUTE (docs/tasks/task-web-ui-2026-09.md). The admin load takes any caller-named path
+// and is gated behind -allow-admin for exactly that reason; the web UI is not widened into it. The page can load only what the
+// pull flow can put on disk: a regular .gguf file under pull.CacheRoot(), or a directory there that is a complete checkpoint
+// the pull flow published (its marker present and every file it names verified: pull.CachedCheckpoint). A checkpoint still
+// being assembled lives in "<dir>.partial" with no marker, so it is refused the way a ".part" file is. Both p and the root are
+// symlink-resolved BEFORE the containment check, so neither a "../" in the request nor a symlink planted inside the cache can
+// point the loader at a file outside it, and the resolved path, not the requested one, is what gets loaded. The suffix is
+// checked on the resolved name too, which also refuses an in-progress download (Download writes "<name>.part" and renames only
+// after the digest verifies).
 //
-// Not defended: someone who can already write into the user's cache directory can swap a file
-// between this check and the load. That is the user's own account, which could run anything anyway.
+// Not defended: someone who can already write into the user's cache directory can swap a file between this check and the load.
+// That is the user's own account, which could run anything anyway.
 func webLoadPath(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("path is required")
@@ -686,11 +654,10 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleWebCache answers the page's "On disk" card (task-checkpoint-fetch-2026-09.md P8): every model the pull cache
-// holds, with its size, its .giw sidecars, whether its pull finished, and the name it is loaded under, if it is. On disk
-// and loaded are different questions, and this is the one the Resident card does not answer: what a pull put here that
-// nothing has loaded, or loaded since. Sizes only (pull.CacheEntries), so it is fast on a large cache; a load still
-// verifies in full.
+// handleWebCache answers the page's "On disk" card (docs/tasks/task-checkpoint-fetch-2026-09.md): every model the pull cache
+// holds, with its size, its .giw sidecars, whether its pull finished, and the name it is loaded under, if it is. On disk and
+// loaded are different questions, and this is the one the Resident card does not answer: what a pull put here that nothing has
+// loaded, or loaded since. Sizes only (pull.CacheEntries), so it is fast on a large cache; a load still verifies in full.
 func (s *server) handleWebCache(w http.ResponseWriter, r *http.Request) {
 	if !s.webEnabled(w) {
 		return
@@ -741,11 +708,10 @@ type webUnloadReq struct {
 	Name string `json:"name"`
 }
 
-// unloadSuggestion turns a fit-guard refusal into an actionable one (W32, task-web-ui-2026-09.md
-// bullet 6): the decoder package that raised it has no view of the registry, so it can only say the
-// shortfall; the registry is what can name a way out. Returns "" for any other kind of error, or
-// when nothing is resident to suggest freeing (a fresh server's first load is a real refusal with no
-// fix on this page — the message should not imply one exists).
+// unloadSuggestion turns a fit-guard refusal into an actionable one: the decoder package that raised it has no view of the
+// registry, so it can only say the shortfall; the registry can name a way out. Returns "" for any other kind of error, or when
+// nothing is resident to suggest freeing (a fresh server's first load is a real refusal with no fix on this page, and the
+// message should not imply one exists).
 func (s *server) unloadSuggestion(err error) string {
 	if !errors.Is(err, decoder.ErrWontFitResident) {
 		return ""
@@ -772,17 +738,12 @@ func (s *server) unloadSuggestion(err error) string {
 	return fmt.Sprintf(" Unload %q (%.1f GB) to make room.", biggest, float64(biggestBytes)/(1<<30))
 }
 
-// handleWebUnload is W32 (task-web-ui-2026-09.md): unload a model the page itself can already see.
-//
-// UNLIKE LOAD, THIS NEEDS NO PATH POLICY AT ALL. webLoadPath exists because a load names a
-// filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
-// registry key, and the only registry keys that exist are the ones GET /v1/models already publishes
-// to every client. s.models[req.Name] under regMu — the same lookup unloadByName does internally —
-// IS the whole policy: a name not currently loaded is a 404, exactly as if the page had asked to
-// cancel a job id it never held (W27/W31's rule, applied here to a different registry). No new
-// containment logic, no -allow-admin, no widening of the admin surface: unloadByName is the same
-// function the admin route calls, so a model unloaded from the page drains exactly the way one
-// unloaded through /admin does.
+// handleWebUnload unloads a model the page itself can already see. UNLIKE LOAD, THIS NEEDS NO PATH POLICY: webLoadPath exists
+// because a load names a filesystem path the admin route would otherwise trust unconditionally; unload names only a registry
+// key, and the only keys that exist are the ones GET /v1/models already publishes to every client. s.models[req.Name] under
+// regMu (the lookup unloadByName does) IS the whole policy: a name not currently loaded is a 404. No new containment logic, no
+// -allow-admin, no widening of the admin surface: unloadByName is the function the admin route calls, so a model unloaded from
+// the page drains exactly as one unloaded through /admin does (docs/tasks/task-web-ui-2026-09.md).
 func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {
 	if !s.webEnabled(w) {
 		return

@@ -7,19 +7,17 @@ import (
 	"strings"
 )
 
-// Multimodal image input. v1 accepts inline base64 images only — a data: URI in
-// an OpenAI image_url part, or an Anthropic image block's base64 source. A
-// remote URL is never fetched: a server that GETs an attacker-chosen URL is an
-// SSRF primitive, and the project just spent a release hardening attacker-
-// supplied bytes (a `--allow-image-urls` opt-in can come later). Decoded bytes
-// flow to the same vision pipeline (preprocess → encoder → projector).
+// Multimodal image input. Only inline base64 images are accepted: a data: URI in an OpenAI image_url part, or an
+// Anthropic image block's base64 source. A remote URL is never fetched: a server that GETs an attacker-chosen URL is an
+// SSRF primitive (a `--allow-image-urls` opt-in can come later). Decoded bytes flow to the same vision pipeline
+// (preprocess -> encoder -> projector).
 
 // imageRef is one decoded inline media item from a request content part: an image, or (audio set) an audio clip.
 type imageRef struct {
 	mediaType string // e.g. "image/png" (informational; preprocess sniffs the real format), "audio/wav"
 	data      []byte // raw bytes (base64 already decoded)
-	audio     bool   // an OpenAI input_audio part (S5 of docs/tasks/task-multimodal-support-2026-10.md): a WAV for Gemma 4's audio tower
-	at        int    // S11: the byte offset in its message's joined text parts where this part sat (placeImageBlocks)
+	audio     bool   // an OpenAI input_audio part (docs/tasks/task-multimodal-support-2026-10.md): a WAV for Gemma 4's audio tower
+	at        int    // the byte offset in its message's joined text parts where this part sat (placeImageBlocks)
 }
 
 // contentPart is one element of an OpenAI chat message's content array.

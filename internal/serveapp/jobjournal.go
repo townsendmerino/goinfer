@@ -10,13 +10,11 @@ import (
 	"time"
 )
 
-// jobJournal is J2's optional durability layer (task-work-queue-2026-09.md): one JSONL line per
-// job state transition, appended to <dir>/jobs.jsonl. Each line is a FULL snapshot of the job at
-// that point, not a diff, so reconstruction on restart is just "keep the last line per id" —
-// no replay-a-sequence-of-deltas logic needed. dir is created at sessionDirPerm (0o700) and the
-// file opened at sessionFilePerm (0o600), the exact reasoning sessions.go's own KV-snapshot
-// permissions already established: a job record replays the prompt, so it gets the same
-// owner-only treatment as a KV session snapshot (audit-2026-09-02 N-21).
+// jobJournal is the optional durability layer: one JSONL line per job state transition, appended to <dir>/jobs.jsonl. Each
+// line is a FULL snapshot of the job at that point, not a diff, so reconstruction on restart is "keep the last line per id".
+// dir is created at sessionDirPerm (0o700) and the file opened at sessionFilePerm (0o600), for the reason sessions.go's
+// KV-snapshot permissions have: a job record replays the prompt, so it gets the same owner-only treatment
+// (docs/tasks/task-work-queue-2026-09.md).
 type jobJournal struct {
 	mu sync.Mutex
 	f  *os.File
@@ -58,9 +56,8 @@ func (jj *jobJournal) close() error {
 	return jj.f.Close()
 }
 
-// record appends one line (a full job snapshot) and fsyncs when State is terminal — the point
-// where losing this line matters, mirroring sessions.go's own "fsync on terminal states" for the
-// same underlying reason (this is the record an operator reads after a halt, K9's original ask).
+// record appends one line (a full job snapshot) and fsyncs when State is terminal, the point where losing this line matters
+// (mirroring sessions.go's "fsync on terminal states"; this is the record an operator reads after a halt).
 func (jj *jobJournal) record(j job) error {
 	line, err := json.Marshal(j)
 	if err != nil {

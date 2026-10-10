@@ -9,13 +9,10 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// Anthropic Messages API (POST /v1/messages, POST /v1/messages/count_tokens) —
-// the second de-facto standard chat surface (llama.cpp, Ollama, LM Studio all
-// serve it), and the one Anthropic-speaking tools — Claude Code included — speak
-// via ANTHROPIC_BASE_URL. We translate at the edge into the same internal path
-// the OpenAI handlers use (system + chat.Turn + sampling + chat.Tool) and
-// translate the result back out; drive/prepare are unchanged. Compatibility bar
-// (same as llama.cpp's): "works for the apps that matter", not full-spec.
+// Anthropic Messages API (POST /v1/messages, POST /v1/messages/count_tokens), the surface Anthropic-speaking tools,
+// Claude Code included, reach via ANTHROPIC_BASE_URL. We translate at the edge into the same internal path the OpenAI
+// handlers use (system + chat.Turn + sampling + chat.Tool) and translate the result back out; drive/prepare are
+// unchanged. Compatibility bar (same as llama.cpp's): "works for the apps that matter", not full-spec.
 
 // --- request shapes (the subset we honor) ---
 
@@ -161,13 +158,12 @@ func writeAnthropicErr(w http.ResponseWriter, code int, kind, msg string) {
 	})
 }
 
-// decodeAnthropicJSON is decodeJSON for the Anthropic dialect: 413 when the
-// (size-bounded, see maxBytes) body exceeded the limit, else 400. M3.
+// decodeAnthropicJSON is decodeJSON for the Anthropic dialect: 413 when the (size-bounded, see maxBytes) body exceeded
+// the limit, else 400.
 func decodeAnthropicJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		// N-16: shared with decodeJSON. This appended err.Error() verbatim, which re-leaked the Go
-		// struct/field/type names M-06 and R-11 removed from the OpenAI surface — the same fix
-		// reaching one route and not the other (audit §0 theme 2).
+		// Shared with decodeJSON: appending err.Error() verbatim would leak the Go struct, field and type names the
+		// OpenAI surface hides.
 		msg, tooLarge := jsonDecodeMessage(err)
 		if tooLarge {
 			writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", msg)
@@ -210,20 +206,15 @@ func anthropicText(raw json.RawMessage) string {
 	return b.String()
 }
 
-// anthropicInputBytes sums the TOKENIZABLE text across an Anthropic request — the system prompt
-// plus every message's text blocks, its replayed tool_use calls, and any declared tool schemas.
-// It is the /v1/messages analogue of chatInputBytes, and it matters that the text half uses
-// anthropicText: image blocks (and cache_control metadata) are excluded, so a base64 image is
-// never charged against a context window it does not consume. A vision request is a few hundred
-// tokens of image regardless of its megabytes on the wire.
+// anthropicInputBytes sums the TOKENIZABLE text across an Anthropic request: the system prompt plus every message's text
+// blocks, its replayed tool_use calls, and any declared tool schemas. It is the /v1/messages analogue of chatInputBytes.
+// The text half uses anthropicText, so image blocks (and cache_control metadata) are excluded: a base64 image is never
+// charged against a context window it does not consume (a vision request is a few hundred tokens of image whatever its
+// megabytes on the wire).
 //
-// M-15 (audit-2026-09-10): tool_use blocks and req.Tools were excluded entirely before this —
-// anthropicText's text-only sum skips a tool_use block's own type ("tool_use", not "text"), and
-// nothing summed req.Tools at all. anthropicTurns renders an assistant's replayed tool_use calls
-// into the prompt regardless of whether tools are active THIS turn, and RenderToolsSegments
-// renders every declared tool's schema whenever they are — both callers of this function guard
-// BOTH branches with one call (their own documented design), so both are priced unconditionally
-// here too, matching that intent rather than duplicating the guard per branch.
+// Tool_use blocks and tool schemas are priced unconditionally: anthropicTurns renders replayed tool_use calls whether or
+// not tools are active this turn, and RenderToolsSegments renders every declared schema whenever they are, so both
+// callers guard both branches with one call and this prices both to match.
 func anthropicInputBytes(req *anthropicReq) int {
 	n := len(anthropicText(req.System))
 	for i := range req.Messages {
@@ -234,9 +225,9 @@ func anthropicInputBytes(req *anthropicReq) int {
 	return n
 }
 
-// anthropicToolCallBytes sums a message content field's tool_use blocks (M-15): an assistant's
-// own prior tool calls, replayed into the prompt by anthropicTurns's tool_use case. Ignores
-// anything that doesn't parse as a block array (a plain string has none).
+// anthropicToolCallBytes sums a message content field's tool_use blocks: an assistant's own prior tool calls, replayed
+// into the prompt by anthropicTurns's tool_use case. Ignores anything that doesn't parse as a block array (a plain
+// string has none).
 func anthropicToolCallBytes(raw json.RawMessage) int {
 	var blocks []anthropicBlock
 	if json.Unmarshal(raw, &blocks) != nil {
@@ -251,8 +242,8 @@ func anthropicToolCallBytes(raw json.RawMessage) int {
 	return n
 }
 
-// anthropicToolSchemaBytes sums a tool declaration list's rendered bytes (M-15): the schemas
-// RenderToolsSegments renders into the prompt whenever tools are active.
+// anthropicToolSchemaBytes sums a tool declaration list's rendered bytes: the schemas RenderToolsSegments renders into
+// the prompt whenever tools are active.
 func anthropicToolSchemaBytes(tools []anthropicTool) int {
 	n := 0
 	for _, t := range tools {
@@ -272,17 +263,10 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 	toolNames := map[string]string{} // tool_use id → name, to label tool-result turns
 	var turns []chat.Turn
 	for mi, m := range req.Messages {
-		// G13: the Anthropic Messages API accepts exactly two roles in this array.
-		// Reject anything else instead of folding it into the conversation.
-		//
-		// Before this check, anthropicRole mapped everything that is not "assistant"
-		// to a USER turn and nothing validated, so a typo'd, invented, or wrong-API
-		// role ("developer", "Assistant", "sytem") did not fail — it silently
-		// restructured what the model saw. That is a worse outcome than a 400 for
-		// every caller: a real Anthropic-shape client only ever sends legal roles, so
-		// rejection costs it nothing, while anything else gets a loud failure instead
-		// of a quiet mangling. It is also what upstream does, which is the
-		// compatibility bar this surface is held to.
+		// The Messages API accepts exactly two roles here. Reject anything else instead of folding it into the
+		// conversation: anthropicRole maps every non-assistant role to a user turn, so a typo'd or wrong-API role
+		// ("developer", "Assistant") would silently restructure what the model saw. A client that sends legal roles
+		// loses nothing to the 400, and it is what upstream does.
 		if m.Role != "user" && m.Role != "assistant" {
 			return "", nil, badReq("message %d: role must be %q or %q, got %q "+
 				"(the system prompt is the top-level \"system\" field on this API, not a message role)",
@@ -374,13 +358,10 @@ func anthropicImages(req *anthropicReq) ([]imageRef, error) {
 	return out, nil
 }
 
-// anthropicRole maps the wire role to an internal turn role (assistant passes
-// through; everything else is a user turn).
-//
-// Since G13 the caller validates first, so "everything else" can only be "user"
-// here — the fallback is no longer load-bearing and must not be treated as a
-// license to accept new roles silently. Widening what reaches this function
-// means widening the validation above, deliberately.
+// anthropicRole maps the wire role to an internal turn role (assistant passes through; everything else is a user turn).
+// The caller validates roles first, so "everything else" can only be "user" here; the fallback is not a license to
+// accept new roles silently. Widening what reaches this function means widening that validation in anthropicTurns,
+// deliberately.
 func anthropicRole(role string) string {
 	if role == "assistant" {
 		return "assistant"
@@ -473,11 +454,10 @@ func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {
 	return nil // auto / none / "any" with multiple tools: the model decides freely
 }
 
-// applyToolConstraint wires constrained decoding for an unambiguous tool call
-// (lone or forced tool with a family JSON call form), exactly as handleChatTools.
-// A tool_choice of type "tool" (a NAMED function) that cannot be constrained returns
-// an error the caller renders as a 400 — Anthropic guarantees a named tool_choice
-// produces that call, so silent unconstrained decoding is a violation (audit M-05).
+// applyToolConstraint wires constrained decoding for an unambiguous tool call (lone or forced tool with a family JSON
+// call form), exactly as handleChatTools. A tool_choice of type "tool" (a NAMED function) that cannot be constrained
+// returns an error the caller renders as a 400: Anthropic guarantees a named tool_choice produces that call, so silent
+// unconstrained decoding is a violation.
 func applyToolConstraint(lm *loadedModel, gr *genRequest, mode, name string, tools []chat.Tool) error {
 	forced := anthropicForcedTool(mode, name, tools)
 	union := ""
@@ -516,7 +496,7 @@ func toolUseBlock(c chat.ToolCall) map[string]any {
 // stop_sequence (with the sequence); otherwise (EOS / turn-stop) → end_turn.
 func anthropicStopReason(finish, stopSeq string) (string, any) {
 	switch {
-	case finish == "cancelled": // K1, docs/tasks/task-halt-2026-09.md — not a real Anthropic stop_reason, a deliberate goinfer extension
+	case finish == "cancelled": // not a real Anthropic stop_reason: a deliberate goinfer extension (docs/tasks/task-halt-2026-09.md)
 		return "cancelled", nil
 	case finish == "length":
 		return "max_tokens", nil
@@ -538,9 +518,8 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "max_tokens is required and must be > 0")
 		return
 	}
-	// N-22: G5 made an empty `messages` a 400 on the OpenAI route and this one still accepted it,
-	// rendering a prompt with no turns and generating from whatever the template's scaffold alone
-	// produces. Same fix, second surface.
+	// An empty `messages` is a 400, as on the OpenAI route: otherwise the prompt renders with no turns and generates
+	// from the template's scaffold alone.
 	if len(req.Messages) == 0 {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "messages must not be empty")
 		return
@@ -551,12 +530,10 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 // serveMessagesWith runs an Anthropic /v1/messages generation. Reached ONLY through withModelAnthropic
 // (liveness RLock held).
 func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req anthropicReq, lm *loadedModel) {
-	// G1c on the Anthropic surface: reject an input that cannot fit the context window BEFORE the
-	// O(n) tokenize. The OpenAI routes got this guard; /v1/messages did not, so a body under the
-	// body cap still paid full tokenization only to be rejected afterwards — bounded, but the same
-	// defect this release claims to fix, left half-covered on one surface. Placed before the vision
-	// branch so both paths are guarded; image bytes are excluded from the count (anthropicInputBytes),
-	// so this cannot reject a valid image request on a small-context model.
+	// Reject an input that cannot fit the context window BEFORE the O(n) tokenize, as the OpenAI routes do, so a body
+	// under the body cap does not pay full tokenization only to be rejected afterwards. Placed before the vision branch
+	// so both paths are guarded; image bytes are excluded from the count (anthropicInputBytes), so this cannot reject a
+	// valid image request on a small-context model.
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
@@ -569,8 +546,8 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 	if len(imgs) > 0 {
-		// The vision path renders/parses no tools, so a tools+image request would silently drop the
-		// tools and answer in prose — refuse it, mirroring the OpenAI surface's N-16 guard (audit R-08).
+		// The vision path renders and parses no tools, so a tools+image request would silently drop the tools and answer
+		// in prose: refuse it, mirroring the OpenAI surface's guard.
 		if vmode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && vmode != "none" {
 			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "tools are not supported together with image inputs; send images or tools, not both")
 			return
@@ -605,7 +582,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		if anthropicToolsConstrainedFromStart(mode, name, tools) {
 			tm = lm.constrainedTemplate(ts)
 		}
-		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
+		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
 	} else {
 		ids, err = lm.promptForT(tm, system, turns)
 	}
@@ -727,9 +704,8 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 // serveCountTokensWith counts prompt tokens for /v1/messages/count_tokens. Reached ONLY through
 // withModelAnthropic (liveness RLock held). No generation, no decode mutex.
 func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loadedModel) {
-	// G1c, extended (audit-2026-09-02 M-21). THE WORST OF THE FIVE: count_tokens never enters the
-	// per-model queue, so up to -max-inflight (128) of these tokenizations run CONCURRENTLY, each
-	// over a body the guard would have rejected in constant time.
+	// count_tokens never enters the per-model queue, so up to -max-inflight of these tokenizations run CONCURRENTLY,
+	// each over a body the guard would reject in constant time: the guard matters most here.
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
@@ -754,7 +730,7 @@ func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, l
 		if anthropicToolsConstrainedFromStart(mode, name, tools) {
 			tm = lm.constrainedTemplate(ts)
 		}
-		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
+		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
 	} else {
 		ids, err = lm.promptForT(tm, system, turns)
 	}

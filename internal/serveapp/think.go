@@ -51,9 +51,8 @@ func parseReasoningFormat(s string) (reasoningFormat, bool) {
 }
 
 // thinkDefault / reasoningFormat resolve the -thinking / -reasoning-format flags (validated at startup). The default is
-// `template` — each model's own chat template's default (owner decision 2026-09-30) — and it lives HERE, so a config built
-// without the flag, as tests build it, gets exactly what the flag's default gives; `asis` (the pre-thinking prompt bytes)
-// has to be asked for by name.
+// `template`, each model's own chat template's default, and it lives HERE so a config built without the flag, as tests build
+// it, gets exactly what the flag's default gives; `asis` (the pre-thinking prompt bytes) has to be asked for by name.
 func (c config) thinkDefault() chat.ThinkMode {
 	if strings.TrimSpace(c.thinking) == "" {
 		return chat.ThinkTemplate
@@ -171,10 +170,10 @@ func (lm *loadedModel) constrainedTemplate(ts thinkSettings) *chat.Template {
 	return t
 }
 
-// promptForT renders system + turns through tmpl (the per-request template) and encodes the result; with no template it
-// falls back to the raw-conversation prompt. EncodeSegments keeps a special-token surface form typed into a user/tool
-// message from becoming a real control token that forges a turn boundary (M25); addBOS is false because the template emits
-// its own BOS marker. Shared by every chat route, so they all encode prompts identically.
+// promptForT renders system + turns through tmpl (the per-request template) and encodes the result; with no template it falls
+// back to the raw-conversation prompt. EncodeSegments keeps a special-token surface form typed into a user/tool message from
+// becoming a real control token that forges a turn boundary; addBOS is false because the template emits its own BOS marker.
+// Shared by every chat route, so they all encode prompts identically.
 func (lm *loadedModel) promptForT(tmpl *chat.Template, system string, turns []chat.Turn) ([]int, error) {
 	if tmpl != nil {
 		return lm.tk.EncodeSegments(tmpl.RenderSegments(system, turns), false)
@@ -188,10 +187,10 @@ func (lm *loadedModel) promptForT(tmpl *chat.Template, system string, turns []ch
 // means "pass text through untouched" (-reasoning-format none, or a model without a reasoning spec).
 //
 // Stop strings are matched against the ANSWER only (streamTokens feeds the stop logic what feed returns): a stop string is a
-// request about what the model says to the client, and the reasoning is scratch work it never asked to police. Before this, a
-// stop string that appeared in the model's thinking ended the reply there with no answer at all. The exception is deepseek-legacy,
-// where `content` is the raw text, tags and all: what the client sees is what the stop logic watches, so a stop in the thinking
-// still stops it there.
+// request about what the model says to the client, and the reasoning is scratch work it never asked to police (a stop string
+// in the thinking would otherwise end the reply with no answer at all). The exception is deepseek-legacy, where `content` is
+// the raw text, tags and all: what the client sees is what the stop logic watches, so a stop in the thinking still stops it
+// there.
 type thinkOut struct {
 	rs *chat.ReplySplitter
 	// onReasoning receives the reasoning text as it arrives, always on a UTF-8 boundary. Never nil once routed: a route that

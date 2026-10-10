@@ -5,12 +5,13 @@ import (
 	"strconv"
 )
 
-// Images already in a conversation's history (R23, docs/tasks/task-first-hour.md). The vision path takes one image span per generation
-// (decoder.GenerateVL and its Qwen and Gemma 4 variants), and a chat client resends the whole conversation, so its second image turn used to carry
-// both images and fail with "v1 supports 1 image per request, got 2". Owner decision 2026-10-01: NO multi-image history. The newest image is kept and
-// every image in an EARLIER message is replaced by a visible note, so the model knows something was there rather than hearing nothing, and the client
-// is told with a header. Several images inside the one latest message are a different thing — the caller asked for them together — and since
-// S11 (docs/tasks/task-multimodal-support-2026-10.md) they are taken, each its own block, up to maxImagesPerTurn.
+// Images already in a conversation's history (docs/tasks/task-first-hour.md). The vision path takes one image span per
+// generation (decoder.GenerateVL and its Qwen and Gemma 4 variants), and a chat client resends the whole conversation,
+// so its second image turn would carry both images and fail with "v1 supports 1 image per request, got 2". There is NO
+// multi-image history: the newest image is kept and every image in an EARLIER message is replaced by a visible note, so
+// the model knows something was there rather than hearing nothing, and the client is told with a header. Several images
+// inside the one latest message are a different thing (the caller asked for them together) and are taken, each its own
+// block, up to maxImagesPerTurn (docs/tasks/task-multimodal-support-2026-10.md).
 
 // imagesOmittedHeader tells the client how many earlier images this request's answer did not see.
 const imagesOmittedHeader = "X-Goinfer-Images-Omitted"
@@ -18,7 +19,7 @@ const imagesOmittedHeader = "X-Goinfer-Images-Omitted"
 // olderImageNote stands where an omitted image was, in the text the model reads.
 const olderImageNote = "[an earlier image in this conversation was omitted: this server keeps only the newest image]"
 
-// olderAudioNote stands where an omitted audio clip was (S5): the generation takes one media span, image or audio, so an
+// olderAudioNote stands where an omitted audio clip was: the generation takes one media span, image or audio, so an
 // earlier message's clip is noted the same way, and counted in the same header.
 const olderAudioNote = "[an earlier audio clip in this conversation was omitted: this server keeps only the newest image or clip]"
 

@@ -9,17 +9,15 @@ import (
 	"time"
 )
 
-// A vision tower is the slow part of an image turn on the families whose tower runs on the CPU: the cold-user run
-// (docs/measurements/cold-user-2026-10-05-nobara-pc.md, F) measured 37.5 to 42 s to first token for a 1024x640
-// screenshot on Qwen3.5-0.8B, the same for a byte-identical resend, with `-backend cuda` changing nothing because the
-// tower stays on the CPU. The decoder's own image reuse (P9a) keeps the KV of a resent image, but only on a resident
-// non-recurrent model, so a hybrid like Qwen3.5 re-encoded every time.
+// A vision tower is the slow part of an image turn on the families whose tower runs on the CPU, and a chat client
+// resends the conversation, images included, every turn. This caches the tower's OUTPUT per image, so the encode is paid
+// once. The decoder's own image reuse keeps the KV of a resent image, but only on a resident non-recurrent model, so a
+// hybrid like Qwen3.5 would otherwise re-encode every time.
 //
-// This caches the tower's OUTPUT per image, so a chat client that resends the conversation, which every one does
-// each turn, pays for the encode once. The features are a pure function of the image bytes and of the loaded
-// model's fixed vision settings, and the cache is per loaded model, so a hit is bit-identical to recomputing.
-// Keyed by SHA-256 of the raw bytes rather than the 64-bit imgHash the KV reuse uses: this one hands back numbers
-// instead of skipping a prefix, and a collision there would be a wrong picture, not a missed optimisation.
+// The features are a pure function of the image bytes and of the loaded model's fixed vision settings, and the cache is
+// per loaded model, so a hit is bit-identical to recomputing. Keyed by SHA-256 of the raw bytes rather than the 64-bit
+// imgHash the KV reuse uses: this one hands back numbers instead of skipping a prefix, and a collision there would be a
+// wrong picture, not a missed optimisation.
 const featureCacheBudget = 256 << 20 // bytes of cached features per loaded model
 
 type featureCache struct {
@@ -72,9 +70,8 @@ func (c *featureCache) put(key [sha256.Size]byte, feats []float32) {
 	c.used += size
 }
 
-// wrap returns a features function that answers from the cache when it holds this image and otherwise runs compute
-// and remembers the result. Failures are never cached. The log line says which happened and how long the encode
-// took, which the cold-user run found it had no way to learn from the server.
+// wrap returns a features function that answers from the cache when it holds this image and otherwise runs compute and
+// remembers the result. Failures are never cached. The log line says which happened and how long the encode took.
 func (c *featureCache) wrap(raw []byte, compute func() ([]float32, error)) func() ([]float32, error) {
 	key := sha256.Sum256(raw)
 	return func() ([]float32, error) {

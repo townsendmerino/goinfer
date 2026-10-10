@@ -8,10 +8,10 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// pixtralTower is Ministral 3's image path (S10, docs/tasks/task-multimodal-support-2026-10.md): aikit's Pixtral tower,
-// the multimodal projector, the processor's settings and the [IMG] token id. The tower runs on the CPU in float32 (no
-// device tower yet, multimodal.DeclaredTowers); the image tokens are causal, so the turn goes through
-// decoder.GenerateVLCausalSpans, one span per merged row.
+// pixtralTower is Ministral 3's image path: aikit's Pixtral tower, the multimodal projector, the processor's settings and the
+// [IMG] token id. The tower runs on the CPU in float32 (no backend declares a Pixtral device tower:
+// multimodal.DeclaredTowers); the image tokens are causal, so the turn goes through decoder.GenerateVLCausalSpans, one span
+// per merged row (docs/tasks/task-multimodal-support-2026-10.md).
 type pixtralTower struct {
 	enc    *vision.PixtralVisionEncoder
 	proj   *multimodal.PixtralProjector

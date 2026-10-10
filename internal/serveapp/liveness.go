@@ -7,15 +7,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-drain.md for the full
-// design and the reciprocal comments at handleAdminUnload and resident.Close.
+// Model liveness and the drain-based unload path (docs/completed/task-admin-unload-drain.md has the design; reciprocal
+// comments at handleAdminUnload and resident.Close).
 //
-// The problem this solves: freeing a model's native memory (purego has no ARC, no finalizers) on
-// unload is a use-after-free unless every in-flight request that holds the model has finished first.
-// The request preamble (pick → tokenize → prepare) touches the model with no lock, so the old
-// mu.TryLock could not see it. The fix: a per-*decoder.Model read/write lock held by every request
-// from resolution to completion (rw), plus a count of registry entries backed by the model (refs).
-// Unload drains rw before Close; refs decides when Close is the LAST owner's to make.
+// Freeing a model's native memory on unload (purego has no ARC or finalizers) is a use-after-free unless every in-flight
+// request that holds the model has finished. The request preamble (pick -> tokenize -> prepare) touches the model with no
+// lock, so a TryLock on the decode mutex cannot see it. So there is a per-*decoder.Model read/write lock held by every request
+// from resolution to completion (rw), plus a count of registry entries backed by the model (refs). Unload drains rw before
+// Close; refs decides when Close is the LAST owner's to make.
 
 // modelLiveness is shared by every registry entry backed by one *decoder.Model (a base and its
 // compute-time adapters share one). Guarded for mutation by server.regMu; rw is taken directly.
@@ -85,12 +84,10 @@ func (s *server) resolveAndLock(name string) (*loadedModel, func()) {
 	return lm, ml.rw.RUnlock
 }
 
-// withModel is the ONE route from a request's model name to a *loadedModel on the OpenAI surfaces.
-// The RLock is held for the whole handler body fn — spanning the preamble AND the generation, the
-// window the old per-request mu missed — and the single deferred release covers every exit route
-// (early return, panic, disconnect), so no handler can leak the read-lock (which would hang unload's
-// drain forever). pick was removed; this wrapper (and withModelAnthropic) is why handlers cannot skip
-// the lock.
+// withModel is the ONE route from a request's model name to a *loadedModel on the OpenAI surfaces. The RLock is held for the
+// whole handler body fn, spanning the preamble AND the generation, and the single deferred release covers every exit route
+// (early return, panic, disconnect), so no handler can leak the read-lock (which would hang unload's drain forever) or skip
+// it.
 func (s *server) withModel(w http.ResponseWriter, name string, fn func(*loadedModel)) {
 	lm, release := s.resolveAndLock(name)
 	if lm == nil {
@@ -131,14 +128,10 @@ func (lm *loadedModel) closeEntryNatives() {
 	lm.glm = nil   // GLM-OCR tower: same shape as qwen3 below, plain f32 weights, drop the reference
 	lm.qwen3 = nil // Qwen3.5+ tower: plain f32 weights, no native Close; drop the reference (and any loaded encoder with it)
 	lm.vproj = nil // no native Close (weights); drop the reference
-	// N-32 (docs/audit-2026-09-10.md): gemma4Enc (*vision.Gemma4Encoder) has no Close method
-	// either — same shape as vproj, plain weights — but unlike vproj it was never dropped here
-	// at all, retaining a served Gemma 4 vision tower's weight memory past unload. The audit
-	// flagged this as a latent risk "if a native Close appears"; it is simpler than that: the
-	// field is already live (main.go's loadGemma4VisionTower, vision_serve.go's Forward path)
-	// and just needed the same nil-out vproj already gets.
+	// gemma4Enc (*vision.Gemma4Encoder) has no Close method either; like vproj it is plain weights, and dropping it here
+	// releases a served Gemma 4 tower's weight memory at unload.
 	lm.gemma4Enc = nil
-	lm.gemma4Audio = nil // plain weights, no native Close (S5)
+	lm.gemma4Audio = nil // plain weights, no native Close
 }
 
 // startDrain runs the DETACHED phase of unload. The entry is already unpublished (Phase 1). On a bare
@@ -167,13 +160,11 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 		// KV is settled now (no in-flight generation). Checkpoint before the buffers it lives in are
 		// freed — for a resident backend the KV is inside the model's device memory.
 		if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
-			// N-20: lm.sessMu is the sessionLRU's guard (sessions.go documents the LRU as NOT
-			// goroutine-safe), and demoteLoop mutates it on its own ticker. The drain has
-			// waited out in-flight REQUESTS, which is a different thing — the idle-demote
-			// goroutine is not a request and does not hold ml.rw. Narrow window
-			// (-kv-idle-demote + -session-dir + an unload landing on a tick), but it is a map
-			// mutated concurrently, which is a process crash rather than a wrong answer.
-			// admin.go takes lm.sessMu around the LOAD-side restore for exactly this reason.
+			// lm.sessMu is the sessionLRU's guard (sessions.go documents the LRU as NOT goroutine-safe), and demoteLoop
+			// mutates it on its own ticker. The drain waited out in-flight REQUESTS, which is different: the idle-demote
+			// goroutine is not a request and does not hold ml.rw. The window is narrow (-kv-idle-demote + -session-dir + an
+			// unload landing on a tick), but it is a map mutated concurrently, a process crash rather than a wrong answer.
+			// admin.go takes lm.sessMu around the load-side restore for the same reason.
 			lm.sessMu.Lock()
 			_ = lm.sessions.save(sessionSubdir(s.cfg.sessionDir, lm.fp))
 			lm.sessMu.Unlock()

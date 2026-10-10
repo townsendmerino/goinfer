@@ -16,20 +16,17 @@ type batchLineResult struct {
 	ErrMsg     string
 }
 
-// batchRecord is J4's unit of work over J2's job store (task-work-queue-2026-09.md): N lines,
-// submitted as N ordinary jobs (see batches_run.go), tracked here only for what a job alone
-// cannot answer — aggregate status, original input order, and the assembled output.
+// batchRecord is the unit of work over the job store: N lines, submitted as N ordinary jobs (batches_run.go), tracked
+// here only for what a job alone cannot answer: aggregate status, original input order, and the assembled output
+// (docs/tasks/task-work-queue-2026-09.md).
 //
-// wg is Add(n) once at creation (batchStore.create) and Done() once per line as its own last act
-// (batches_run.go) — not a job-store concept, this record's own completion signal, so
-// finalizeBatch (batches_finalize.go) needs no polling: wg.Wait() IS "every line is terminal."
+// wg is Add(n) once at creation (batchStore.create) and Done() once per line as its own last act (batches_run.go). It is
+// this record's own completion signal, not a job-store concept, so finalizeBatch needs no polling: wg.Wait() IS "every
+// line is terminal."
 //
-// mu guards Status/Results/OutputFileID/ErrorFileID/CompletedAt: many line goroutines write
-// Results[i] concurrently (disjoint indices, so the writes themselves never race each other) but
-// Status and the two file-id fields are read by every GET and written by exactly one finalizer,
-// so they need the same discipline job.go's own mu gained in J3 after -race caught a real bug
-// there (job.go:142's doc comment) — written locked from the start here instead of finding the
-// same class of defect twice.
+// mu guards Status/Results/OutputFileID/ErrorFileID/CompletedAt: many line goroutines write Results[i] concurrently
+// (disjoint indices, so those writes never race each other), but Status and the two file-id fields are read by every GET
+// and written by exactly one finalizer, so they need the same discipline as jobStore's mu.
 type batchRecord struct {
 	ID               string
 	Kind             string // "openai_chat" | "anthropic_messages"
@@ -50,15 +47,12 @@ type batchRecord struct {
 	CompletedAt  *time.Time
 }
 
-// requestCancel is the batch-level analogue of jobStore.cancel: mark cancelling, then cancel
-// every constituent job not yet terminal (checked live against jobStore, not against Results,
-// since Results is only written by a line's OWN goroutine as it finishes — a line still running
-// has no Results entry yet either way).
+// requestCancel is the batch-level analogue of jobStore.cancel: mark cancelling, then cancel every constituent job not
+// yet terminal (checked live against jobStore, not against Results, since Results is only written by a line's OWN
+// goroutine as it finishes).
 //
-// JobIDs is copied under b.mu before ranging over it — found by -race, not by inspection: each
-// line's goroutine writes its own slot via setJobID (batches_run.go) under the same lock, and a
-// plain read of the slice here raced those writes even though every write lands at a disjoint
-// index (job.go:142's doc comment names the same class of bug in J3's job store).
+// JobIDs is copied under b.mu before ranging over it: each line's goroutine writes its own slot via setJobID under the
+// same lock, and a plain read of the slice raced those writes even though every write lands at a disjoint index.
 func (b *batchRecord) requestCancel(jobs *jobStore) {
 	b.mu.Lock()
 	if b.Status == "completed" || b.Status == "cancelled" {
@@ -75,10 +69,8 @@ func (b *batchRecord) requestCancel(jobs *jobStore) {
 	}
 }
 
-// batchStore is a bounded, in-memory, process-wide registry — mirrors jobStore's own shape
-// (job.go:69) closely enough that the FIFO-skip-a-live-one eviction logic is copied, not
-// reinvented: a batch a client is still polling must never disappear the same way a job must not
-// (job.go:198's own comment).
+// batchStore is a bounded, in-memory, process-wide registry that mirrors jobStore's shape, including the FIFO eviction
+// that skips a live entry: a batch a client is still polling must never disappear (see evictLocked).
 type batchStore struct {
 	mu      sync.Mutex
 	batches map[string]*batchRecord
@@ -116,9 +108,9 @@ func (bs *batchStore) get(id string) *batchRecord {
 	return bs.batches[id]
 }
 
-// evictLocked drops the oldest COMPLETED/CANCELLED batches once len(batches) exceeds cap. Called
-// with bs.mu held. Mirrors jobStore.evictLocked (job.go:202) exactly, including the reason: "a
-// batch in flight must never disappear out from under a client polling it."
+// evictLocked drops the oldest COMPLETED/CANCELLED batches once len(batches) exceeds cap. Called with bs.mu held.
+// Mirrors jobStore.evictLocked, including the reason: a batch in flight must never disappear out from under a client
+// polling it.
 func (bs *batchStore) evictLocked() {
 	if bs.cap <= 0 {
 		return

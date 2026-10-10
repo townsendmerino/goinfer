@@ -9,32 +9,28 @@ import (
 	"time"
 )
 
-// Dynamic model load/unload (Track B Inc3), mirroring llama.cpp / mistral.rs
-// admin conventions but kept small. Gated behind --allow-admin: loading an
-// attacker-supplied path is RCE-adjacent, so it is off by default (403 when off).
-// Unload unpublishes the model immediately, then DRAINS in-flight requests before
-// freeing its native memory (purego has no ARC / finalizers, so GC never reclaims
-// it) — see handleAdminUnload and docs/completed/task-admin-unload-drain.md. It snapshots warm
-// KV as part of the drain, and reports 200 (freed) or 202 (draining) per the wait.
+// Dynamic model load/unload, gated behind --allow-admin: loading an attacker-supplied path is RCE-adjacent, so it is off
+// by default (403 when off). Unload unpublishes the model immediately, then DRAINS in-flight requests before freeing its
+// native memory (purego has no ARC or finalizers, so GC never reclaims it); see handleAdminUnload and
+// docs/completed/task-admin-unload-drain.md. The drain snapshots warm KV, and the response is 200 (freed) or 202
+// (draining) per the wait.
 
-// adminCancelReq is the body of POST /admin/generations/{id}/cancel (K1,
-// docs/tasks/task-halt-2026-09.md). reason is required so a cancelled generation's finish_reason and
-// log line always say WHY, not just THAT — "every halt/cancel is loud and attributed" is this
-// doc's own ground rule.
+// adminCancelReq is the body of POST /admin/generations/{id}/cancel. reason is required so a cancelled generation's
+// finish_reason and log line always say WHY, not just THAT (docs/tasks/task-halt-2026-09.md: every halt and cancel is
+// loud and attributed).
 type adminCancelReq struct {
 	Reason string `json:"reason"`
 }
 
-// handleAdminGenerationsList lists every in-flight generation (K1). No liveness/regMu
-// interaction needed — s.gens is its own registry, independent of model load/unload.
+// handleAdminGenerationsList lists every in-flight generation. s.gens is its own registry, independent of model
+// load/unload, so no liveness or regMu interaction is needed.
 func (s *server) handleAdminGenerationsList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"generations": s.gens.list()})
 }
 
-// handleAdminGenerationCancel cancels one generation by id (K1). Cancelling an id that has
-// already finished (or never existed) is reported the same way either finding leaves the
-// generation stopped, which is what the caller asked for — 200 either way, with found:false
-// distinguishing them for an operator or test that cares.
+// handleAdminGenerationCancel cancels one generation by id. Cancelling an id that has already finished (or never
+// existed) is 200 either way, since either way the generation is stopped, which is what the caller asked for;
+// found:false tells the two apart for an operator or test that cares.
 func (s *server) handleAdminGenerationCancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req adminCancelReq
@@ -61,10 +57,10 @@ type adminUnloadReq struct {
 	Name string `json:"name"`
 }
 
-// requireAdmin is the TCP-listener gate for /admin/* — chain-level (alongside auth/haltGate/inf
-// in main.go), not a handler-internal check, so it can be left off entirely when registering the
-// same handlers on the admin socket (K5, docs/tasks/task-halt-2026-09.md): there, the socket's file
-// permissions (mode 0600) are the auth, and -allow-admin has no TCP-listener meaning to enforce.
+// requireAdmin is the TCP-listener gate for /admin/*. It is chain-level (alongside auth/haltGate/inf in main.go), not a
+// handler-internal check, so it can be left off when the same handlers are registered on the admin socket, where the
+// socket's file permissions (mode 0600) are the auth and -allow-admin has no meaning to enforce
+// (docs/tasks/task-halt-2026-09.md).
 func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.cfg.allowAdmin {
@@ -75,12 +71,10 @@ func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// registerAdminRoutes registers every /admin/* route — model load/unload, K1's generation
-// list/cancel/status, K2's halt/resume — onto mux, each wrapped with wrap. main.go calls this
-// twice: once for the TCP mux (wrap = auth+requireAdmin, gated by -api-key/-allow-admin), and
-// once for the admin socket when -admin-socket is set (K5, docs/tasks/task-halt-2026-09.md; wrap =
-// identity there — the socket's file permissions are the auth, and it replaces the TCP
-// registration rather than adding to it, so the two never both run for the same server).
+// registerAdminRoutes registers every /admin/* route (model load/unload, generation list/cancel/status, halt/resume)
+// onto mux, each wrapped with wrap. main.go calls it for the TCP mux (wrap = auth+requireAdmin) or, when -admin-socket
+// is set, for the admin socket (wrap = identity: the socket's file permissions are the auth); the socket replaces the
+// TCP registration rather than adding to it (docs/tasks/task-halt-2026-09.md).
 func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("POST /admin/models/load", wrap(maxBytes(textCap, s.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/unload", wrap(maxBytes(textCap, s.handleAdminUnload)))
@@ -88,16 +82,14 @@ func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func
 	mux.HandleFunc("POST /admin/generations/{id}/cancel", wrap(maxBytes(textCap, s.handleAdminGenerationCancel)))
 	mux.HandleFunc("POST /admin/halt", wrap(maxBytes(textCap, s.handleAdminHalt)))
 	mux.HandleFunc("POST /admin/resume", wrap(s.handleAdminResume))
-	// GET /admin/status: not asked for outside K5, but K5's one-word CLI needs a "status"
-	// subcommand that works over a socket serving ONLY /admin/* (health.go's /health is
-	// deliberately not registered there — it's a /v1-shaped route with no admin content). Admin
-	// scoped rather than reusing /health so it is reachable wherever /admin/* is.
+	// GET /admin/status exists because the one-word `serve status` CLI needs a status route on a socket that serves ONLY
+	// /admin/*; /health is deliberately not registered there. It is admin-scoped rather than reusing /health so it is
+	// reachable wherever /admin/* is.
 	mux.HandleFunc("GET /admin/status", wrap(s.handleAdminStatus))
 }
 
-// handleAdminStatus is GET /admin/status: the current halt state (mirroring /health's own
-// halted/halt_reason/halt_at fields) plus K1's live generation count, so `serve status` (K5) has
-// something to report without needing /health on the same listener.
+// handleAdminStatus is GET /admin/status: the current halt state (mirroring /health's halted/halt_reason/halt_at) plus
+// the live generation count, so `serve status` has something to report without /health on the same listener.
 func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	hi := s.haltState()
 	resp := map[string]any{"halted": hi != nil, "generations_inflight": s.gens.count()}
@@ -106,9 +98,9 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 		resp["halt_trigger"] = hi.trigger
 		resp["halt_at"] = hi.at
 	}
-	// MC3's resident batcher counters per model running several generations at once (the same numbers serve prints at
+	// The resident batcher's counters per model running several generations at once (the numbers serve prints at
 	// shutdown), so a harness can difference them across one cell rather than across the server's whole life: load,
-	// warm-up and first-use pipeline compiles excluded (the per-pass prefill attribution, task-concurrency-2026-09.md).
+	// warm-up and first-use pipeline compiles excluded (docs/tasks/task-concurrency-2026-09.md).
 	rb := map[string]any{}
 	for _, lm := range s.modelList() {
 		if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
@@ -145,17 +137,11 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	// Per-request quant/lora override the global defaults; everything else
 	// (backend, kv-sessions, session-dir) comes from the server config.
 	c := s.cfg
-	// N-19: quantSet, not just quant. explicitQuant() drives the .giw baked-quant mismatch
-	// check, and it reads cfg.quantSet — which was inherited from the CLI and said nothing
-	// about THIS request. Both directions were wrong:
-	//
-	//   no CLI --quant + admin asks int8  → QuantSet false → no check → the bundle's baked
-	//                                       int4 loads silently under an int8 request
-	//   CLI --quant given + admin asks nothing → QuantSet true → this request is checked
-	//                                       against a quant it never named, and is rejected
-	//
-	// The admin request is the authority for its own load: if it names a quant that is the
-	// explicit choice, and if it does not, the CLI value stays as a DEFAULT but is not an
+	// The request is the authority for its own load. explicitQuant() drives the .giw baked-quant mismatch check and
+	// reads cfg.load.QuantSet, which the CLI set and which says nothing about THIS request. Inheriting it is wrong both
+	// ways: with no CLI --quant and an admin request for int8, the bundle's baked int4 would load silently; with a CLI
+	// --quant and an admin request naming none, the request would be checked against a quant it never named and
+	// rejected. So QuantSet is true only when the request names a quant; otherwise the CLI value stays a default, not an
 	// explicit choice to conflict with.
 	if req.Quant != "" {
 		c.load.Quant, c.load.QuantSet = req.Quant, true
@@ -177,26 +163,22 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
 }
 
-// publishLoaded makes a freshly loaded model routable, or — when another load of the same name
-// published first — closes it and reports false. Shared by the admin load and the web UI's load
-// (webui.go) so the M-24 close-on-race and the session restore live in one place.
+// publishLoaded makes a freshly loaded model routable, or, when another load of the same name published first, closes it
+// and reports false. Shared by the admin load and the web UI's load (webui.go) so the close-on-race and the session
+// restore live in one place.
 func (s *server) publishLoaded(lm *loadedModel) bool {
-	if line := lm.setConcurrency(s.cfg); line != "" { // MC3c: before the model is routable
+	if line := lm.setConcurrency(s.cfg); line != "" { // before the model is routable
 		fmt.Fprintf(os.Stderr, "%q %s\n", lm.name, line)
 	}
 	s.regMu.Lock()
 	if _, dup := s.models[lm.name]; dup { // raced another load of the same name
 		s.regMu.Unlock()
-		// M-24: the LOSER of the race holds a fully loaded model — resident device
-		// memory, the .giw mmap, an uploaded block drafter — and refusing to publish it
-		// used to just drop the pointer. purego installs no finalizers, so nothing ever
-		// reclaims those; that is the whole reason the drain design exists. Close here
-		// rather than in a defer: it must NOT run on the success path, where the registry
-		// now owns the model.
+		// The LOSER of the race holds a fully loaded model (resident device memory, the .giw mmap, an uploaded block
+		// drafter), and purego installs no finalizers, so nothing reclaims those unless they are closed here. Close
+		// here rather than in a defer: it must NOT run on the success path, where the registry now owns the model.
 		//
-		// Safe to Close unconditionally: loadDecoder always builds a fresh decoder.Load,
-		// so this entry shares its weights with no other registry entry, and retainLocked
-		// has not run for it — it was never published.
+		// Safe to Close unconditionally: loadDecoder always builds a fresh decoder.Load, so this entry shares its
+		// weights with no other registry entry, and retainLocked has not run for it.
 		lm.model.Close()
 		lm.closeEntryNatives()
 		return false
@@ -205,11 +187,10 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 	s.retainLocked(lm.model) // one more registry entry backed by this *decoder.Model (liveness refs)
 	s.regMu.Unlock()
 	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
-		// The model is now published, so a request can already acquire it. lm.sessMu is the
-		// sessionLRU's guard (drive/driveVL take it around their own sessions.acquire — J1,
-		// task-work-queue-2026-09.md), and load doesn't take it — so hold it here to serialize
-		// this not-goroutine-safe restore against a handler that reaches the LRU first, instead
-		// of racing the map (M5).
+		// The model is now published, so a request can already acquire it. lm.sessMu guards the sessionLRU
+		// (drive/driveVL take it around their own sessions.acquire; docs/tasks/task-work-queue-2026-09.md) and load does
+		// not take it, so hold it here to serialize this not-goroutine-safe restore against a handler that reaches the
+		// LRU first.
 		lm.sessMu.Lock()
 		lm.sessions.load(sessionSubdir(s.cfg.sessionDir, lm.fp))
 		lm.sessMu.Unlock()
@@ -219,21 +200,18 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 
 // handleAdminUnload drops a model from the registry and DRAINS before freeing its native memory.
 //
-// The naive fix — lm.model.Close() straight after the registry delete — is a use-after-free: a
-// request past pick() but not yet at enter() holds the *lm pointer and touches lm.model in its
-// preamble (tokenize/prepare) with no lock, so a Close there frees weights mid-request (on CUDA, a
-// driver SIGSEGV). The safe fix is a DRAIN: every in-flight holder takes a per-model liveness RLock
-// via withModel (spanning the preamble and the generation), and unload waits that lock out before
-// closing. See docs/completed/task-admin-unload-drain.md and the reciprocal note at resident.Close.
+// Calling lm.model.Close() straight after the registry delete is a use-after-free: a request past pick() but not yet at
+// enter() holds the *lm pointer and touches lm.model in its preamble (tokenize/prepare) with no lock, so a Close there
+// frees weights mid-request (on CUDA, a driver SIGSEGV). Instead every in-flight holder takes a per-model liveness RLock
+// via withModel (spanning the preamble and the generation), and unload waits that lock out before closing. See
+// docs/completed/task-admin-unload-drain.md and the reciprocal note at resident.Close.
 //
-// Two phases, in unloadByName below (shared with the web route, W32 — task-web-ui-2026-09.md).
-// Phase 1 (under regMu): unpublish the entry and decide last-ownership — delete-before-decide, so
-// two concurrent sibling unloads cannot both decline (releaseLocked). Phase 2 (startDrain, detached):
-// drain in-flight holders, checkpoint the settled KV, close the entry's private natives, close the
-// shared model iff last owner. The response is a bounded wait: 200 (freed) if the drain completes
-// within -unload-drain-wait, else 202 with the drain continuing detached — the model is unroutable
-// immediately either way, and /health lists what is still draining. ?wait=false skips straight to
-// 202. (This replaces the old 409-busy, which was only ever safe because it never freed anything.)
+// Two phases, in unloadByName (shared with the web route). Phase 1 (under regMu): unpublish the entry and decide
+// last-ownership, delete-before-decide, so two concurrent sibling unloads cannot both decline (releaseLocked). Phase 2
+// (startDrain, detached): drain in-flight holders, checkpoint the settled KV, close the entry's private natives, close
+// the shared model iff last owner. The response is a bounded wait: 200 (freed) if the drain completes within
+// -unload-drain-wait, else 202 with the drain continuing detached; the model is unroutable immediately either way, and
+// /health lists what is still draining. ?wait=false skips straight to 202.
 func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 	var req adminUnloadReq
 	if !decodeJSON(w, r, &req) {
@@ -251,10 +229,9 @@ func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, body)
 }
 
-// unloadByName is handleAdminUnload's two phases (see its own doc comment for the drain design),
-// shared with the web route (webui.go) so a model unloaded from the page is unpublished and drained
-// exactly the same way as one unloaded through /admin — the only difference between the two routes
-// is which names a caller is allowed to name, not what happens once one is accepted.
+// unloadByName is handleAdminUnload's two phases (see its doc comment for the drain design), shared with the web route
+// (webui.go) so a model unloaded from the page is unpublished and drained exactly as one unloaded through /admin: the
+// two routes differ only in which names a caller may name, not in what happens once one is accepted.
 func (s *server) unloadByName(name string, wait time.Duration) (status int, body map[string]any, ok bool) {
 	s.regMu.Lock()
 	lm, found := s.models[name]

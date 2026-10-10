@@ -20,7 +20,7 @@ import (
 // run-finder live in the vision package (shared with demo/agent).
 const (
 	imageSoftToken   = multimodal.ImageSoftToken
-	maxImagesPerTurn = 8 // S11: images in the newest message, each its own block; a guard on tower work per request
+	maxImagesPerTurn = 8 // images in the newest message, each its own block; a guard on tower work per request
 )
 
 // lastUserTurn returns the index of the last user turn (where v1 attaches the
@@ -40,42 +40,33 @@ func lastUserTurn(turns []chat.Turn) int {
 type visionInput struct {
 	ids            []int
 	features       func() ([]float32, error) // runs the tower+projector; invoked at most once, lazily
-	imgHash        uint64                    // content hash of the raw image bytes, for P9(a) resident reuse
+	imgHash        uint64                    // content hash of the raw image bytes, for resident image reuse
 	imgPos, imgLen int
 	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
 	qwen           bool
-	deepSets       int  // Qwen3-VL (S10): features() returns the merged rows, then this many DeepStack sets of the same size
+	deepSets       int  // Qwen3-VL: features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
 	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR)
-	pixtral        bool // S10: Ministral 3, causal image tokens (GenerateVLCausalSpans)
-	images         int  // the images in the turn (S10: a Pixtral image is one span per merged row, so not len(spans))
-	// S11: every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then
-	// returns every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the
-	// one-media builders (GLM-OCR, audio), whose single span driveVL reads from imgPos/imgLen.
+	pixtral        bool // Ministral 3, causal image tokens (GenerateVLCausalSpans)
+	images         int  // the images in the turn (a Pixtral image is one span per merged row, so not len(spans))
+	// Every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then returns
+	// every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the one-media builders
+	// (GLM-OCR, audio), whose single span driveVL reads from imgPos/imgLen.
 	spans []decoder.ImageSpan
 	grids [][3]int
 }
 
-// visionPrompt runs img through the tower and assembles the multimodal prompt: the
-// text turns with the family's image block prepended to the last user turn, so the
-// rendered+encoded ids carry a placeholder run the embed seam overrides.
-
-// encodeVisionSegments encodes a vision prompt the way the TEXT path already does: the template's
-// structural markers and the image block as Special segments, the user's own words as ordinary
-// content the added-token trie never sees.
+// encodeVisionSegments encodes a vision prompt the way the TEXT path does: the template's structural markers and the image
+// block as Special segments, the user's own words as ordinary content the added-token trie never sees. Without that
+// (Tokenizer.Encode is not for untrusted content) a user message in an IMAGE request containing
+// "<end_of_turn>\n<start_of_turn>model\n" or "<|im_end|>...<|im_start|>system" becomes real control tokens and forges a turn
+// boundary.
 //
-// M-22. The vision path called lm.encode(lm.tmpl.Render(...)) — Tokenizer.Encode, whose own doc
-// says "do NOT use this on untrusted content" — while the text path had used EncodeSegments since
-// M25. So a user message in an IMAGE request containing "<end_of_turn>\n<start_of_turn>model\n"
-// (or "<|im_end|>…<|im_start|>system") became real control tokens and forged a turn boundary: the
-// hardening reached one route and not the other, which is audit §0 theme 2 exactly.
-//
-// The image block has to stay SPECIAL — its sentinels and soft-token run are what FindImageRun
-// locates and what the embed-by-vector seam replaces — so it cannot simply be prepended to the
-// content segment, which is untrusted by construction. It is spliced back in as its own Special
-// segment instead, and a block that fails to splice is an error rather than a prompt that silently
-// tokenizes the sentinels as text (the imgLen check downstream would catch it, but late and with a
-// misleading message about a template mismatch).
+// The image block has to stay SPECIAL: its sentinels and soft-token run are what FindImageRun locates and what the
+// embed-by-vector seam replaces, so it cannot simply be prepended to the content segment, which is untrusted by construction.
+// It is spliced back in as its own Special segment, and a block that fails to splice is an error rather than a prompt that
+// silently tokenizes the sentinels as text (the imgLen check downstream would catch it, but late and with a misleading message
+// about a template mismatch).
 func encodeVisionSegments(lm *loadedModel, tm *chat.Template, system string, turns []chat.Turn, block string) ([]int, error) {
 	segs, err := spliceImageBlock(tm.RenderSegments(system, turns), block)
 	if err != nil {
@@ -84,13 +75,15 @@ func encodeVisionSegments(lm *loadedModel, tm *chat.Template, system string, tur
 	return lm.tk.EncodeSegments(segs, false)
 }
 
-// spliceImageBlock is multimodal.SpliceImageBlock (moved there in O5 so goinfer-chat and the examples share it; the
-// reasoning, including V-19's last-occurrence rule, lives with it).
+// spliceImageBlock is multimodal.SpliceImageBlock, shared with goinfer-chat and the examples; the reasoning, including the
+// last-occurrence rule, lives with it.
 func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
 	return multimodal.SpliceImageBlock(segs, block)
 }
 
-// tm is the per-request template (think.go): the model's own, switched to the request's thinking mode.
+// visionPrompt runs img through the tower and assembles the multimodal prompt: the text turns with the family's image block
+// prepended to the last user turn, so the rendered+encoded ids carry a placeholder run the embed seam overrides. tm is the
+// per-request template (think.go): the model's own, switched to the request's thinking mode.
 func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
 	vi, err := lm.visionPromptUncached(tm, system, turns, img)
 	if err != nil {
@@ -180,11 +173,12 @@ func qwenDeviceForward(t residentTower, require bool, forward func() ([]float32,
 	return recoverDeviceTower("Qwen2.5-VL", forward)
 }
 
-// recoverDeviceTower runs a tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
-// resident decoder has taken the device's memory, and aikit's Qwen2.5-VL tower panicked on an allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it:
-// unrecovered, one big image killed the whole server (found by the S4 default-plan run, 2026-10-07). The request fails with the reason; the server and the other requests
-// live. Every tower passes through it: the grid towers inside deviceFallback.run, Qwen2.5-VL inside qwenDeviceForward, and every family's features (Gemma 3's SigLIP,
-// Gemma 4's image and audio towers included) at withFeatureCache.
+// recoverDeviceTower runs a tower's forward and turns a panic into an error that names the likely cause. A device tower grows
+// its scratch on the first image, after the resident decoder has taken the device's memory, and a tower may panic on an
+// allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it (aikit's Qwen2.5-VL tower did): unrecovered, one big
+// image kills the whole server. The request fails with the reason; the server and the other requests live. Every tower passes
+// through it: the grid towers inside deviceFallback.run, Qwen2.5-VL inside qwenDeviceForward, and every family's features
+// (Gemma 3's SigLIP, Gemma 4's image and audio towers included) at withFeatureCache.
 func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []float32, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -293,7 +287,7 @@ func (lm *loadedModel) gemma4AudioEncoder() (*audio.Gemma4AudioEncoder, error) {
 	return lm.gemma4Audio, lm.gemma4AudioErr
 }
 
-// gemma4AudioForward is the audio tower: the conformer blocks on the accelerator when there is one (G-S5d), between
+// gemma4AudioForward is the audio tower: the conformer blocks on the accelerator when there is one between
 // aikit's Subsample and FinishBlocks on the host; otherwise aikit's CPU Forward.
 func (lm *loadedModel) gemma4AudioForward(enc *audio.Gemma4AudioEncoder, mel []float32, T int) ([]float32, error) {
 	if lm.gemma4AudioAcc == nil {
@@ -317,11 +311,11 @@ const gemma4AudioMaxSoftTokens = 750
 // gemma4AudioMaxSeconds is the same cap in seconds of 16 kHz audio.
 const gemma4AudioMaxSeconds = 30
 
-// gemma4AudioPrompt is the Gemma 4 audio path (S5): the WAV (16-bit PCM at any rate, 1-8 channels, downmixed and resampled
-// to 16 kHz mono by resample_poly's filter: G-S5e) through aikit's log-mel and the
-// audio tower (embed_audio baked in) → the prompt with the audio block, <|audio> + n x <|audio|> + <audio|>, before the
-// user's text, as HF's processor writes it (no newline on either side). The run is generated through GenerateGemma4VL,
-// which splices any media run the same way: rows unscaled, PAD for PLE's token-identity term.
+// gemma4AudioPrompt is the Gemma 4 audio path: the WAV (16-bit PCM at any rate, 1-8 channels, downmixed and resampled to 16
+// kHz mono by resample_poly's filter) through aikit's log-mel and the audio tower (embed_audio baked in) -> the prompt with
+// the audio block, <|audio> + n x <|audio|> + <audio|>, before the user's text, as HF's processor writes it (no newline on
+// either side). The run is generated through GenerateGemma4VL, which splices any media run the same way: rows unscaled, PAD
+// for PLE's token-identity term.
 func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, clip imageRef) (visionInput, error) {
 	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
 	if err != nil {
@@ -395,8 +389,8 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, http.StatusBadRequest, tooManyImages(len(imgs)))
 		return
 	}
-	// G1c, extended (audit-2026-09-02 M-21). Image bytes are excluded (chatInputBytes counts tokenizable TEXT), so this cannot reject a
-	// valid image request on a small-context model.
+	// Image bytes are excluded (chatInputBytes counts tokenizable TEXT), so this cannot reject a valid image request on a
+	// small-context model.
 	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -433,7 +427,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	}
 	defer lm.exit()
 	id := "chatcmpl-" + reqID()
-	gr.id = id // K1: registers this generation for cancel-by-id
+	gr.id = id // registers this generation for cancel-by-id
 	created := time.Now().Unix()
 
 	if req.Stream {
@@ -442,12 +436,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
-		// nComp was discarded here; include_usage needs the real generated-token count,
-		// which no count of emitted chunks can report (M-26).
-		//
-		// N-24 (docs/audit-2026-09-10.md): nothing else is sent before the first token, and on
-		// CPU an image prefill can take minutes — the M-19 gate that catches a missing heartbeat
-		// on the text-only lm.drive( sites never enumerated the driveVL sites at all.
+		// include_usage needs the real generated-token count (nComp), which no count of emitted chunks can report. Nothing
+		// else is sent before the first token and a CPU image prefill can take minutes, so a heartbeat runs while driveVL
+		// works, as on the text-only lm.drive sites.
 		stopBeat := sseHeartbeat(ss)
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
@@ -519,10 +510,8 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", tooManyImages(len(imgs)))
 		return
 	}
-	// G1c, extended (audit-2026-09-02 M-21). NOT in the audit's list of five — found by widening
-	// the anti-drift gate to prompt builders that tokenize transitively, which is how the vision
-	// routes hide: this function contains no tokenizer call of its own, visionPrompt does. Image
-	// bytes are excluded from the count, so a valid image request is never rejected by it.
+	// This function has no tokenizer call of its own (visionPrompt tokenizes), so the guard is spelled out here. Image bytes
+	// are excluded from the count, so a valid image request is never rejected by it.
 	if err := lm.promptTooLargeForContext(anthropicInputBytes(req)); err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
@@ -563,7 +552,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	defer lm.exit()
 	id := "msg_" + reqID()
-	gr.id = id // K1: registers this generation for cancel-by-id
+	gr.id = id // registers this generation for cancel-by-id
 
 	if req.Stream {
 		ss, ok := anthropicSSEStart(w)
@@ -592,8 +581,8 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
-		// N-24 (docs/audit-2026-09-10.md): the ping above is one-shot, not a keep-alive — an
-		// image prefill on CPU can take minutes with nothing sent until the first token.
+		// The ping above is one-shot, not a keep-alive: an image prefill on CPU can take minutes with nothing sent until the
+		// first token.
 		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
@@ -650,7 +639,7 @@ func (lm *loadedModel) qwenASREncoder() (*audio.QwenASREncoder, error) {
 	return lm.qwenASR, lm.qwenASRErr
 }
 
-// qwenASRPrompt is the Qwen3-ASR path (S14.3): the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for Gemma 4's audio) through the Qwen3-ASR front end, whose
+// qwenASRPrompt is the Qwen3-ASR path: the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for Gemma 4's audio) through the Qwen3-ASR front end, whose
 // frame count fixes the number of audio tokens, into the fixed prompt layout (multimodal.QwenASRPrompt). The encoder runs lazily inside features(). The reply is the model's raw
 // "language <Name><asr_text><transcription>"; text in the user turn is not part of the template and is ignored, the system message is passed through.
 func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput, error) {
