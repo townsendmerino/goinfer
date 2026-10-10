@@ -398,6 +398,9 @@ The first night grades T; a later night grades V.
 
 ## Decisions (owner)
 
+**Decided 2026-10-10, after T0 and T6:** Decision 1, T before V ("t before v"). Decision 3, option (a), a quarter of
+available RAM at transcode start ("a quarter of ram is fine"). Decisions 2 and 4 are open.
+
 1. **Order:** T first, then V (recommended, so the rebuild wave after v16 runs at the new speed), or V first.
 2. **Policy: read exactly one version** (recommended).
    - It is safe today because every `.giw` is a sidecar next to its source, or is built into a release binary at tag
