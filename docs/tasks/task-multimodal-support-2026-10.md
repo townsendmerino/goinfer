@@ -32,11 +32,12 @@
     (G-E4B-1, G-E4B-2) has not run: its sidecar build was refused for memory on 2026-10-07. A Metal sidecar built by
     serve has been on the Mac since 2026-10-09.
   - S14 (speech), 2026-10-10: Qwen3-ASR's word-error-rate gate G-S14c4b failed on its re-read (2026-10-09); the partial
-    forced prefix that might fix it (G-S14c4d) is queued (`s14c4d`). Voxtral Mini is served (`input_audio`, G-S14e4a and
-    b PASS; the 36 s clip and int4 are queued as `s14e4c`, record only). A pure-Go Whisper is built and equal to
+    forced prefix (G-S14c4d) read 2026-10-10: (a) PASS, (b) PARKED (int4 +1.04 points over float32 with it, +4.17 without),
+    serve unchanged until the owner decides. Voxtral Mini is served (`input_audio`, G-S14e4a and b PASS; `s14e4c` read: int4
+    equals float32 on both clips, the float32 36 s arm was refused by the swap guard). A pure-Go Whisper is built and equal to
     transformers on whisper-small: the decoder (G-S14f1, f2), timestamps and long-form (G-S14g1 to g3), the decode policy
-    (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record is queued
-    (`s14f`). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
+    (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record (G-S14f3)
+    PASSED 2026-10-10 (73/73 byte-equal, WER 6.70% both sides). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
 - **With the owner:**
   - Decided 2026-10-10: the int8 Metal tower stays the tight-memory fallback (after G-S18g2's PARKED).
   - Decided 2026-10-10: the `--embed-int4` default is on (option D's numbers). It already is everywhere but Metal;
@@ -6101,3 +6102,22 @@ list's order: S15, S12, full S13.
   four models; the flag is inert on nine families; Qwen2.5-VL-3B (where the 3.5x was seen) is read on the second night.
 - S14's speech family (P11's options; decided when S14 starts).
 - ~~Which VL checkpoint `pull` recommends per box class (P9(d)).~~ Decided and shipped 2026-10-08, "P9(d) done".
+
+##### S14 night reads, 2026-10-10 (queue run `2026-10-10` on nobara-pc, 11:56-14:05 PDT; logs `~/goinfer-logs/night/runs/2026-10-10/{s14c4d,s14e4c,s14f}.log`, records `~/goinfer-logs/{s14c4d,s14e4c,s14f}-2026-10-10/`)
+
+**G-S14c4d: (a) PASS, (b) PARKED.** Binary `s14c4d` at `79e31bdb`, 73 clips, 921 s, load 0.8.
+- **Controls held:** the three unforced arms (`f32`, `int4`, `int4h8`) are byte-equal to 2026-10-09's on 73/73 clips, so the change did not touch the unforced path.
+- **(a):** `f32pf` byte-equal to `f32` on 73/73 (bar >= 72), |WER diff| 0.00 points (bar <= 0.30): PASS. The force is harmless where the model was already right.
+- **(b):** WER_int4pf - WER_f32 = **+1.04 points, 95% interval [+0.45, +1.68]**; 14 clips differ in words from `f32`; control tokens in `int4pf` replies 0 (bar: more than 3 parks). The registered rule: PASS needs the difference <= +0.5 and the upper bound <= +1.5 (both missed: +1.04, +1.68); PARKED is a difference <= +1.5 (met); FAIL is above. **PARKED.**
+- **Record only:** WER f32 4.09%, f32pf 4.09%, int4 8.26% (33 control-token replies), **int4pf 5.13%**, int4h8 16.78%, int4h8pf 4.78%. The forced arms put 73/73 clips on `language` / a name / a word at the three positions; the language name written by `int4pf` differs from `f32`'s on 0/73 (English data, so detection itself is not tested).
+- **Prediction scored:** PASS 0.50, PARKED 0.25, FAIL 0.25: the reading is the 0.25 PARKED branch. The reasoning that the stray first token carried most of the damage held (4.17 -> 1.04 points, 33 control-token replies -> 0); the part that did not hold is that nothing else was left, +1.04 points remain at positions the force does not touch.
+- **Consequence, per the registration:** serve's behaviour for Qwen3-ASR is unchanged; the forced prefix is not shipped. Whether to ship it anyway (int4pf is 4.1 points better than the unforced int4 and is within about one point of float32) is the owner's call; nothing was changed in serve.
+
+**G-S14e4c (record only, nothing graded): partly read.** Binary `s14e4` at `891a51ba`.
+- **(a), float32 on the 36 s clip: NOT READ.** serve's swap guard refused the request with HTTP 503 (the float32 load, 18 GB, left swap +0.56 GB over the baseline, past the +512 MB limit), so `reply-f32-libri6x.json` does not exist and the 133-token comparison against the transformers reference was not made at float32. The 5.9 s float32 request (79 s) is **byte-equal** to the reference, reproducing G-S14e4b.
+- **(b), serve's default int4 (int4 head):** on the 5.9 s clip 22 completion tokens, finish stop, **0 word edits over 17 words** against float32, no control token; on the 36 s clip (two windows, 755 prompt tokens, 140 s) 132 completion tokens, finish stop, six repetitions of the sentence, **byte-equal to the transformers float32 reference's 133 generated tokens including the stop** (checked against the reference run in the same job, 265 s).
+- **Prediction scored:** "int4 within three words of float32 on the single clip" at 0.5, "a control token or empty first position in at least one int4 reply" at 0.3: the first held (0 edits), the second did not occur.
+- **Limit:** one voice, one sentence, six times; no WER gate on Voxtral's int4. The registration said a word-error gate would follow only if (b) showed damage, and it did not, so none is registered.
+- **Owed:** (a) on the 36 s clip needs the float32 server to start without the swap guard firing (a clean box, or a lower-RSS start); not re-queued, because int4 matched the float32 reference and the question it would answer is narrower than it was.
+
+**G-S14f3: PASS.** Binary at `55dbc0d8`; transformers 310 s, goinfer 1,088 s on the CPU. 73/73 texts byte-equal (bar >= 70), WER 6.70% on both sides, |WER diff| 0.00 points (bar <= 0.30). The language each side detected differs on 0/73 clips. The prediction (PASS at 0.75) held. Established: the pure-Go Whisper decoder at float32 on the CPU, short form, greedy, equals transformers on the 73 clips of G-S14c4, with whisper-small. Not established: any language but English, a long clip against a reference at WER level, the GPU.
