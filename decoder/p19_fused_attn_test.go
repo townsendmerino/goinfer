@@ -13,38 +13,26 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// P19 — does the FUSED (FlashAttention-style) schedule beat the materialized one?
+// TestP19FusedAttention measures whether the FUSED (FlashAttention-style) schedule beats the materialized
+// one, WITHOUT touching production code: a prototype for a decision, not an implementation. The
+// materialized path tiles over QUERY ROWS only (`scores` is tile x nKeys, attendBatchedHeads forbids a
+// key-dimension split because it would re-associate the softmax denominator and the AV fold), so the
+// N-wide score row makes three trips through memory per tile.
 //
-// Step 0 established that goinfer materializes: G20 tiles over QUERY ROWS only,
-// `scores` is tile x nKeys, and attendBatchedHeads forbids a key-dimension split
-// because it "would re-associate the softmax denominator and the AV fold".
-// So the N-wide score row makes three trips through memory per tile — written by
-// QK^T, read-and-rewritten by the softmax, read again by scores*V. At the
-// production tile budget (attnScoreTileBytes = 8 MiB) that block is far past L2
-// on either machine, so the traffic is real.
+// THE COMPARISON IS AT FIXED PRECISION: both arms are f32 over identical inputs, so the delta is the
+// SCHEDULE and nothing else (a win that only appears with f32 enabled is A3's win, not this item's).
+// Gathers sit outside the timed region because both arms pay the same ones.
 //
-// This measures whether removing it wins, WITHOUT touching production code. It is
-// a prototype for a decision, not an implementation.
-//
-// THE COMPARISON IS AT FIXED PRECISION, and that is the item's own decision rule:
-// "a win that only appears with f32 enabled is A3's win, not this item's". Both
-// arms are f32 over identical inputs, so the delta is the SCHEDULE and nothing
-// else. Gathers sit outside the timed region because both arms pay exactly the
-// same ones; including them would only dilute the effect being measured.
-//
-// PRE-REGISTERED BAR (written before the first run, and before the kernel):
+// Pre-registered bar:
 //
 //	>= 1.30x at K=8192 shapes -> fusion clears its own bar, prototype in production
 //	<  1.10x                  -> close the item
 //	1.10-1.30x                -> AMBIGUOUS, parks
 //
-// NOT bit-identical by construction: the running-max rescale re-associates. That
-// is the item's stated cost, the same category as --cpu-fast-attention. So
-// correctness is a tolerance, declared here rather than after: cosine >= 0.9999
-// against the materialized arm.
-//
-// Masking: neither arm masks (full attention over nKeys). Identical in both, so
-// the ratio is unaffected; it means the absolute times are not production TTFT.
+// Not bit-identical by construction (the running-max rescale re-associates, the same category as
+// --cpu-fast-attention), so correctness is a declared tolerance: cosine >= 0.9999 against the
+// materialized arm. Neither arm masks, which leaves the ratio unaffected but makes the absolute times
+// not production TTFT. Provenance and results: docs/code-notes/decoder.md#TestP19FusedAttention.
 func TestP19FusedAttention(t *testing.T) {
 	if os.Getenv("GOINFER_P19") == "" {
 		t.Skip("set GOINFER_P19=1 to run the fused-attention prototype measurement")
@@ -104,12 +92,9 @@ func TestP19FusedAttention(t *testing.T) {
 		acc := make([]float32, ktProd*hd)
 		mRun := make([]float32, ktProd)
 		lRun := make([]float32, ktProd)
-		// V, pre-transposed PER BLOCK and laid out block-major, ONCE. MatmulBT
-		// computes a·bᵀ so the AV block needs b as [hd, n], and a column range of
-		// the [hd, nKeys] `vt` is not contiguous. The first draft of this built
-		// that transpose inside the timed loop, which would have charged the fused
-		// arm for a layout cost the schedule does not actually imply — and made
-		// the arm being tested lose for the wrong reason.
+		// V, pre-transposed PER BLOCK and laid out block-major, ONCE: MatmulBT computes a·bᵀ so the AV block needs
+		// b as [hd, n], and a column range of the [hd, nKeys] `vt` is not contiguous. The transpose stays outside
+		// the timed loop, because the schedule does not imply that layout cost.
 		vBlk := make([]float32, hd*nKeys)
 		for k0 := 0; k0 < nKeys; k0 += kb {
 			n := min(kb, nKeys-k0)
@@ -193,13 +178,10 @@ func TestP19FusedAttention(t *testing.T) {
 		return b
 	}
 
-	// SERIAL CONTROL. MatmulBT fans out over its N output columns, and the two arms
-	// present very different N: the materialized QK^T has N=nKeys=8192, the fused
-	// one N=kb (128..1024). So a fused loss could be a PARALLELISM artifact --
-	// fewer columns to shard, more fork/joins -- rather than a property of the
-	// schedule. Running both arms serial as well separates those. This repo has
-	// already published one ratio that was mostly core count (G24's first pass,
-	// 17.6x against a documented ~3.7x), so the control is not optional.
+	// SERIAL CONTROL. MatmulBT fans out over its N output columns and the two arms present very different
+	// N (materialized QK^T N=nKeys=8192, fused N=kb), so a fused loss could be a parallelism artifact. Running
+	// both arms serial as well separates the two; this repo has already published one ratio that was mostly
+	// core count (see docs/code-notes/decoder.md#TestP19FusedAttention.serial).
 	serial := os.Getenv("GOINFER_P19_SERIAL") == "1"
 	if serial {
 		orig := linalg.ParallelThreshold()
@@ -238,23 +220,12 @@ func TestP19FusedAttention(t *testing.T) {
 			kb, float64(d.Microseconds())/1000, float64(dMat)/float64(d), cos, maxAb)
 	}
 
-	// ---------------------------------------------------------------------
-	// ROW-PARALLEL ARMS — the control for this file's own stated caveat.
-	//
-	// The arms above showed fusion losing 0.690x in parallel and washing (1.031x)
-	// serially, and attributed the gap to MatmulBT's fan-out being over N OUTPUT
-	// COLUMNS: materialized presents N=8192, fused presents N=kb. That is a
-	// property of composing fusion over a column-parallel matmul, NOT of the
-	// schedule -- so it left open whether a version parallelised over QUERY ROWS
-	// changes the answer.
-	//
-	// This tests exactly that, and controls the obvious confound: both arms are
-	// row-parallel across the same worker count, and both use MatmulBT as a
-	// SERIAL inner primitive (per-worker Workspace, threshold pinned). So kernel
-	// quality is identical and the parallelism model is identical; the schedule is
-	// again the only variable. Writing a hand-rolled SIMD inner loop instead would
-	// have measured my scalar Go against aikit's tuned kernel and told us nothing
-	// about scheduling.
+	// ROW-PARALLEL ARMS: the control for the column-parallel arms above, whose MatmulBT fan-out is over N
+	// OUTPUT COLUMNS (materialized N=8192, fused N=kb), a property of composing fusion over that matmul and
+	// not of the schedule. Both arms here are row-parallel across the same worker count and use MatmulBT as
+	// a SERIAL inner primitive (per-worker Workspace, threshold pinned), so kernel quality and parallelism
+	// model are identical and the schedule is the only variable. A hand-rolled SIMD inner loop would measure
+	// our scalar Go against aikit's tuned kernel and say nothing about scheduling.
 	rowsPer := func(w, workers int) (int, int) {
 		per := (ktProd + workers - 1) / workers
 		return w * per, min((w+1)*per, ktProd)
@@ -262,11 +233,8 @@ func TestP19FusedAttention(t *testing.T) {
 	workers := min(runtime.GOMAXPROCS(0), 8)
 
 	chMatRP := make([]float32, ktProd*hd)
-	// PER-WORKER SCRATCH AND WORKSPACES HOISTED OUT OF THE TIMED REGION. The first
-	// version allocated the materialized arm's [n, nKeys] score buffer (1.4 MB per
-	// worker) INSIDE the timed call while the fused arm allocated far less — which
-	// would have charged the losing arm for allocation and inflated exactly the
-	// result being claimed. Caught before quoting the number, not after.
+	// Per-worker scratch and workspaces are hoisted out of the timed region, so neither arm is charged for
+	// allocation (the materialized arm's [n, nKeys] score buffer is 1.4 MB per worker).
 	matScr := make([][]float32, workers)
 	matWS := make([]*linalg.Workspace, workers)
 	for w := range workers {
@@ -444,27 +412,12 @@ func TestP19FusedAttention(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "  ROW-PARALLEL VERDICT: best kb=%d -> %.3fx (bar: >=1.30 clears, <1.10 closes)\n",
 		bestRPkb, rpRatio)
 
-	// ---------------------------------------------------------------------
-	// CAUSAL ARMS — the condition production actually runs under.
-	//
-	// The arms above are UNMASKED, and that flatters neither side by accident: it
-	// omits the one asymmetry that matters most. Production's materialized path
-	// computes the FULL QK^T over every key --
-	//   matmul(qh, ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
-	// -- and only then masks inside the softmax, so causality buys it NOTHING. A
-	// key-blocked fused loop can skip a block that is entirely masked, and in
-	// causal prefill roughly half of them are.
-	//
-	// So the unmasked 1.75x is a floor, not the number. This measures the real one.
-	// Rows are placed at absolute positions startPos+i with startPos = nKeys-ktProd,
-	// i.e. the last tile of an nKeys-token prompt, which is the shape at K=8192.
-	// SWEEP EVERY TILE, not just the last one. A prefill of nKeys tokens runs
-	// nKeys/ktProd tiles, from row 0 (attends 1 key) to row nKeys-1 (attends all).
-	// The FIRST version of this arm measured only the last tile -- where causal
-	// masking skips almost nothing, so fusion's block-skip is worth ~zero while
-	// materialized still gets its softmax narrowed. That is the least favourable
-	// tile for the schedule under test, and parking the item on it would have been
-	// parking it on the instrument. Production's cost is the SUM over tiles.
+	// CAUSAL ARMS, the condition production runs under. The materialized path computes the FULL QK^T over
+	// every key and masks only inside the softmax, so causality buys it nothing, while a key-blocked fused
+	// loop can skip fully masked blocks. Rows sit at absolute positions startPos+i, and the sweep covers
+	// EVERY tile of an nKeys-token prefill (row 0 attends 1 key, the last attends all): the last tile alone
+	// is the least favourable one for fusion and would park the item on the instrument. Production's cost
+	// is the SUM over tiles.
 	var startPos int
 	chMatC := make([]float32, ktProd*hd)
 	matCausalTile := func() {
@@ -656,15 +609,10 @@ func TestP19FusedAttention(t *testing.T) {
 	}
 }
 
-// TestFusedAttention_matchesMaterialized gates the production fused path.
-//
-// NOT bit-identity — the running-max rescale re-associates by construction, so
-// demanding equality would be demanding the schedule not work. The bar is the
-// one declared before the kernel: cosine >= 0.9999 against the materialized
-// path, through the REAL attendBatchedHeads, with masking on.
-//
-// It runs shapes the prototype did not: a sliding window and a non-zero base, so
-// the lo/hi bounds are exercised rather than assumed to be [0, pos].
+// TestFusedAttention_matchesMaterialized gates the production fused path. Not bit-identity: the
+// running-max rescale re-associates by construction, so the bar is cosine >= 0.9999 against the
+// materialized path, through the REAL attendBatchedHeads with masking on. It runs a sliding window and a
+// non-zero base so the lo/hi bounds are exercised rather than assumed to be [0, pos].
 func TestFusedAttention_matchesMaterialized(t *testing.T) {
 	const (
 		nH    = 8
@@ -694,8 +642,8 @@ func TestFusedAttention_matchesMaterialized(t *testing.T) {
 			}
 			run := func(on string) []float32 {
 				t.Setenv("GOINFER_FUSED_ATTENTION", on)
-				// wantFused=true: useAcc64=false and cache has no treeMask, for both the "0" and "1"
-				// runs — this exercises P-05's vt/scores elimination on the "1" (fused) run.
+				// wantFused=true: useAcc64=false and the cache has no treeMask for both the "0" and "1" runs, so the
+				// "1" (fused) run exercises the vt/scores elimination.
 				pool := newHeadWorkerPool(4, tc.K, tc.nKeys, hd, true)
 				ctx := make([]float32, tc.K*qDim)
 				attendBatchedHeads(q, ctx, keys, vals, 0, cache, 0, tc.startPos, tc.K,
@@ -732,17 +680,11 @@ func TestFusedAttention_matchesMaterialized(t *testing.T) {
 	}
 }
 
-// TestFusedAttention_logitDivergence answers the question the golden raises but
-// cannot: when fusion changes the generated tokens, is that a NEAR-TIE FLIP or a
-// BUG? Those look identical from a token diff.
-//
-// It compares the PREFILL LOGITS directly on a real checkpoint and reports both
-// the cosine (is the forward computing the same thing?) and the top-2 margin at
-// the final position (was the argmax decidable at all?). A high cosine with a
-// margin near the perturbation size is a tie flip; a low cosine is a defect.
-//
-// This is the same shape as a3_divergence_test.go, which exists because the f32
-// flag needed the identical question answered.
+// TestFusedAttention_logitDivergence tells a NEAR-TIE FLIP from a BUG when fusion changes the
+// generated tokens (a token diff cannot). It compares the PREFILL LOGITS on a real checkpoint and
+// reports the cosine (same computation?) and the top-2 margin at the final position (was the argmax
+// decidable?): a high cosine with a margin near the perturbation size is a tie flip, a low cosine is a
+// defect. Same shape as a3_divergence_test.go.
 func TestFusedAttention_logitDivergence(t *testing.T) {
 	if os.Getenv("GOINFER_P19") == "" {
 		t.Skip("set GOINFER_P19=1 (loads a real model)")
@@ -765,11 +707,8 @@ func TestFusedAttention_logitDivergence(t *testing.T) {
 		}
 		return out
 	}
-	// BASELINE ON THE SAME MODEL: how far does the f32 flag ALREADY move the
-	// hidden states away from acc64? Comparing fusion's divergence against a
-	// number from a different model (a3_divergence_test.go's 0.9976 at dense 1.5B)
-	// would be the cross-machine mistake in another costume. Both arms here, one
-	// checkpoint, one depth.
+	// BASELINE ON THE SAME MODEL: how far the f32 flag already moves the hidden states away from acc64.
+	// Both arms use one checkpoint at one depth; a number from another model would not compare.
 	accRun := func() []float32 {
 		setKnob(t, m, knobFusedAttention, "0")
 		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), false) // acc64
@@ -832,32 +771,20 @@ func TestFusedAttention_logitDivergence(t *testing.T) {
 	t.Logf("last row: top1 idx %d (%.6f), top2 %.6f, MARGIN %.3g", arg1, b1, b2, b1-b2)
 	t.Logf("fused    top1 idx %d (%.6f)   %s", oarg, o1,
 		map[bool]string{true: "SAME", false: "FLIPPED"}[oarg == arg1])
-	// The bar compares fusion's ADDITIONAL divergence against the divergence the
-	// f32 flag already accepts on the SAME model. A kernel-level 0.9999 bar is the
-	// wrong instrument for a 24-layer forward -- the flag itself only reaches
-	// ~0.998 there -- and applying it was my error, corrected here rather than
-	// relaxed silently.
+	// The bar compares fusion's ADDITIONAL divergence against the divergence the f32 flag already
+	// accepts on the SAME model; a kernel-level 0.9999 bar is the wrong instrument for a 24-layer forward.
 	if c2 < c1*0.999 {
 		t.Fatalf("fusion moves the hidden states materially further from acc64 than the f32 flag "+
 			"already does (%.9f vs baseline %.9f) — that is a defect, not a tie flip", c2, c1)
 	}
 }
 
-// TestFusedAttention_endToEnd — what the 1.69-1.73x kernel win is worth through
-// a real forward, which is the only number that justifies accepting a
-// user-visible output change.
-//
-// Everything else measured for P19 is kernel-level. This repo has retracted two
-// projections in one day for composing a kernel ratio with a profile share, so
-// the shipping claim comes from here.
-//
-// DENSE model on purpose: attention's share of prefill is what the win scales
-// with, and it is ~55-70% on dense at depth against 17.4% on the MoE profiled
-// 2026-09-01. Dense is the favourable case, so a weak result here closes the
-// question for both.
-//
-// Paired and interleaved with alternating lead. Both arms run the f32 path
-// (fastAttn=true); the ONLY difference is GOINFER_FUSED_ATTENTION.
+// TestFusedAttention_endToEnd measures what the fused kernel is worth through a real forward, the
+// only number that justifies a user-visible output change: kernel-level ratios do not compose with
+// a profile share. It uses a DENSE model on purpose (attention's share of prefill is what the win
+// scales with, so a weak result here closes the question for MoE too), paired and interleaved with
+// alternating lead; both arms run the f32 path (fastAttn=true) and the only difference is
+// GOINFER_FUSED_ATTENTION. Figures: docs/code-notes/decoder.md#TestFusedAttention_endToEnd.
 func TestFusedAttention_endToEnd(t *testing.T) {
 	if os.Getenv("GOINFER_P19_E2E") == "" {
 		t.Skip("set GOINFER_P19_E2E=1")

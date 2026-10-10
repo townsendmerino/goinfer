@@ -64,15 +64,13 @@ func TestOwnForward_tableNamesEveryFamilyForward(t *testing.T) {
 	}
 }
 
-// C-01, END TO END, ON THE COMMITTED FIXTURE. Every prompt of >=2 tokens reached the generic
-// batched stack, whose first act on an LFM2 conv layer is rmsNorm against a QNorm that was never
-// loaded — an index-out-of-range in the Generate goroutine, where net/http's handler recover does
-// not reach. TestLFM2_textParity stayed green throughout because it drives m.forward one token at
-// a time and never calls prefillLogits.
+// C-01, END TO END, ON THE COMMITTED FIXTURE. A prompt of >=2 tokens reached the generic batched stack, whose
+// first act on an LFM2 conv layer is rmsNorm against a QNorm that was never loaded: an index-out-of-range in the
+// Generate goroutine, where net/http's recover does not reach. TestLFM2_textParity drives m.forward one token at a
+// time and never calls prefillLogits, so it cannot see it.
 //
-// The assertion is not "it does not panic" but "the two paths agree": prefillLogits documents
-// itself as bit-identical to the sequential prefill, and a fix that merely stopped the crash while
-// taking a different path would satisfy the weaker claim.
+// The assertion is "the two paths agree", not "it does not panic": prefillLogits is documented as bit-identical
+// to the sequential prefill, and a fix that stopped the crash on a different path would satisfy the weaker claim.
 func TestLFM2_multiTokenPrefillMatchesSequential(t *testing.T) {
 	const ckpt = "../testdata/lfm2-tiny"
 	if _, err := os.Stat(ckpt); err != nil {
@@ -145,11 +143,10 @@ func TestLFM2_generateMultiTokenPrompt(t *testing.T) {
 	}
 }
 
-// THE OTHER FOUR CONSUMERS OF THE SAME FACT (audit §0 theme 1). Each hand-listed the own-forward
-// families; between them they had drifted by two — lfm2 was missing from all four and gpt-oss from
-// HiddenLast — so an LFM2 model reached seams documented to refuse it and got nil rows or a pooled
-// vector from a path nobody had checked. Driven off the table so a family added there is covered
-// here without anyone remembering to.
+// THE OTHER CONSUMERS OF THE SAME FACT (audit §0 theme 1). Each hand-listed the own-forward families and the
+// lists drifted (lfm2 was missing from all of them), so a family reached seams documented to refuse it and got
+// nil rows or a pooled vector. Driven off the table so a family added there is covered without anyone
+// remembering to.
 func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 	for _, f := range ownForwards {
 		arch := archWithFamily(t, f)
@@ -177,19 +174,13 @@ func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 	}
 }
 
-// The two views of "recurrent" must not disagree: the table's Recurrent bit decides before a cache
-// exists (speculative rollback), KVCache.hasRecurrentState decides once one does (truncate,
-// snapshot, session reconcile). A family recurrent in one sense and not the other is the state that
-// produced C-02, only with the halves swapped.
-// TestOwnForward_recurrentBitMatchesTheCacheKinds is DERIVED, not listed (audit 2026-09-10 C-03,
-// G-05). It used to carry a hand-written map of family -> which cache field to set, and
-// bailing_hybrid was on NEITHER side of it: table Recurrent=false and absent from the map, so it
-// passed as "consistently non-recurrent" while its KDA state leaked across sessions. Both
-// predicates it compared omitted KDA, so their agreement proved nothing — what was missing was an
-// INDEPENDENT view of what the cache actually holds.
+// The two views of "recurrent" must not disagree: the table's Recurrent bit decides before a cache exists
+// (speculative rollback), KVCache.hasRecurrentState decides once one does (truncate, snapshot, session
+// reconcile). A family recurrent in one sense and not the other leaks state across sessions (audit C-02/C-03).
 //
-// So the cache is asked directly: each own-forward family's REAL cache is built by NewCache from
-// its representativeConfig, and its recurrent kinds are found by reflection (recurrentKinds). The
+// TestOwnForward_recurrentBitMatchesTheCacheKinds is DERIVED, not listed: both predicates could omit the same
+// state (KDA) and agree, so the cache is asked directly. Each own-forward family's REAL cache is built by
+// NewCache from its representativeConfig and its recurrent kinds are found by reflection (recurrentKinds); the
 // registry bit, both hasRecurrentState views and speculative rollback must all agree with that.
 func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {
 	for _, f := range ownForwards {

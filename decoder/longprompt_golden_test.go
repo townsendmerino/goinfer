@@ -17,54 +17,32 @@ func longPromptIDs(n int) []int {
 	return p
 }
 
-// longPromptFastWant is the greedy continuation of longPromptIDs(768) on the bench model through
-// the DEFAULT (f32) prefill path. Regenerate ONLY when a numerics change to that path is
-// intentional and reviewed — the same contract parityWant carries for the exact path.
+// longPromptFastWant is the greedy continuation of longPromptIDs(768) on the bench model through the DEFAULT
+// (f32, fused-schedule) prefill path. Regenerate ONLY when a numerics change to that path is intentional and
+// reviewed, the same contract parityWant carries for the exact path.
 //
-// KEYED BY GOARCH, and that is a FINDING, not boilerplate. Measured 2026-09-01 on the same
-// checkpoint and commit: arm64 and amd64 diverge at the FIRST generated token
-// (11 714 279 ... vs 13 715 522 ...). The exact kernel does not do this — parityWant is one
-// list for both — so cross-arch token reproducibility is something the f32 default gives up,
-// beyond the "decode != prefill" the flag documents. gc fuses x*y+z into FMA on arm64 and not
-// on amd64 (docs/parity-coverage-policy.md, "CPU reference is arch-scoped"), and f32 attention
-// has no f64 accumulator to absorb the difference.
+// It is KEYED BY GOARCH on purpose: arm64 and amd64 diverge at the FIRST generated token on the same checkpoint,
+// which the exact kernel does not do (parityWant is one list for both). gc fuses x*y+z into FMA on arm64 and not
+// on amd64 (docs/parity-coverage-policy.md, "CPU reference is arch-scoped"), and f32 attention has no f64
+// accumulator to absorb the difference. A single shared list would be a permanently red gate on one runner.
 //
-// A single shared list here would have been a permanently red gate on one of the two CI runners.
-// REGENERATED 2026-09-01 for the P19 fused schedule becoming the default. The
-// pre-fusion lists were:
-//
-//	arm64 {11, 714, 279, 3491, 374, 429, 279, 2038, 374, 537, 3238, 438, 3601, 13, 576, 1465}
-//	amd64 {13, 715, 522, 2599, 397, 522, 1551, 397, 522, 2599, 397, 522, 1551, 397, 522, 2599}
-//
-// AN ODDITY WORTH RECORDING RATHER THAN GLOSSING: arm64-fused reproduces the
-// pre-fusion AMD64 list exactly, all 16 tokens. That is not mystical -- that
-// sequence is a repeating attractor (522, 2599, 397, 1551 cycling) and two
-// different numerical paths can fall into the same loop -- but it does say these
-// continuations sit on knife-edges, which is the tie-flip reading rather than the
-// defect one. Independently supported: fusion's model-level divergence from acc64
-// (cosine 0.998262) is within 2e-5 of what the f32 flag already produces on its
-// own (0.998283), measured on one checkpoint at one depth.
-//
-// The prompt is synthetic nonsense (700 + (i*7919)%9000), so a degenerate
-// continuation is garbage-in-garbage-out on either path and is not read here as a
-// quality signal. What the golden pins is REPRODUCIBILITY, not quality.
+// The prompt is synthetic nonsense (700 + (i*7919)%9000), so a degenerate continuation is not read as a quality
+// signal: the golden pins REPRODUCIBILITY, not quality, and these continuations sit on knife-edges (a
+// tie-flip reading, not a defect one). Pre-fusion lists and the evidence:
+// docs/code-notes/decoder.md#longPromptFastWant.
 var longPromptFastWant = map[string][]int{
 	"arm64": {13, 715, 522, 2599, 397, 522, 1551, 397, 522, 2599, 397, 522, 1551, 397, 522, 2599},
 	"amd64": {11, 714, 279, 1196, 374, 537, 2952, 311, 1490, 279, 1196, 594, 3139, 13, 576, 1196},
 }
 
-// TestLongPromptFast_forwardParity closes the coverage hole that flipping --cpu-fast-attention's
-// default exposed: every other forward golden uses a prompt SHORTER than fastAttnMinPrompt, so
-// they all take the exact kernel and the f32 path — the shipped default — had no golden at all.
+// TestLongPromptFast_forwardParity is the golden for the f32 fast-attention prefill path, the shipped default:
+// every other forward golden uses a prompt SHORTER than fastAttnMinPrompt and takes the exact kernel, so a
+// numerics change to the default path was invisible to them (scripts/refresh_parity_hashes.sh would call it a
+// "non-numeric core refresh").
 //
-// WHY THAT MATTERED CONCRETELY, not hypothetically. scripts/refresh_parity_hashes.sh is the
-// sanctioned release valve for a hashed-core edit, and it reported the default flip as a
-// "non-numeric core refresh" — true of everything the goldens touched, false of the change. A
-// green that covers only the unchanged side of an edit is the exact failure Q1 documents.
-//
-// THE NAME ENDS IN _forwardParity DELIBERATELY: that is what the refresh script's selector
-// matches ((_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$). A gate that the
-// release valve does not run is a gate that does not protect the release valve.
+// THE NAME ENDS IN _forwardParity DELIBERATELY: that is what the refresh script's selector matches
+// ((_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$), and a gate the refresh script does not run
+// does not protect it.
 func TestLongPromptFast_forwardParity(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
@@ -79,14 +57,10 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	}
 	prompt := longPromptIDs(K)
 
-	// Default path (no env override): this is what a user gets. Pinned via t.Setenv (restores
-	// after the test, unlike the raw os.Unsetenv this replaced) to the DEFAULT-on value for both
-	// knobs that can perturb this golden's exact float sequence — not just
-	// GOINFER_CPU_FAST_ATTENTION. A developer with GOINFER_FUSED_ATTENTION=0 legitimately
-	// exported (fusedattn.go's documented opt-out) used to see this golden fail with
-	// "f32 prefill continuation drifted", a false positive: the golden was recorded fused, and an
-	// ambient =0 silently switched this run to the materialized (non-fused) arithmetic path
-	// instead (N-41 (09-02)).
+	// Default path (no env override): this is what a user gets. t.Setenv pins the DEFAULT-on value for both knobs
+	// that can perturb this golden's float sequence, not only GOINFER_CPU_FAST_ATTENTION: an ambient
+	// GOINFER_FUSED_ATTENTION=0 (fusedattn.go's documented opt-out) would switch the run to the materialized
+	// arithmetic and fail the golden, which was recorded fused.
 	if len(forcedFallbacks()) > 0 {
 		forcedLongPromptCloseness(t, m, prompt)
 		return
@@ -110,9 +84,8 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 			t.Fatalf("f32 prefill continuation drifted at %d (GOARCH=%s):\n got %v\nwant %v", i, runtime.GOARCH, got, want)
 		}
 	}
-	// NON-VACUITY: prove this golden is on the f32 side. If the floor moved, or the default were
-	// reverted, the assertions above would still pass while testing the exact kernel — a golden
-	// that silently changes which path it covers is worse than no golden.
+	// NON-VACUITY: prove this golden is on the f32 side. If the floor moved or the default were reverted, the
+	// assertions above would still pass while testing the exact kernel.
 	setKnob(t, m, knobCPUFastAttention, "0")
 	exOut, _ := m.Generate(context.Background(), prompt, 16, SamplingParams{Temperature: 0})
 	var exact []int
@@ -132,10 +105,11 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	}
 }
 
-// forcedLongPromptCloseness replaces TestLongPromptFast_forwardParity's token-exact comparison under a forced CPU fallback (H1.3). The golden pins one realization of the f32 fast-attention path
-// (a documented, accepted divergence from the exact path), and the top four exact logits sit within 0.21, so a different realization reorders the continuation (the pure-Go path reads token 304
-// first where the AVX2 golden reads 11). The question that does not depend on the draw: how far is the fast path from the EXACT path on this build (measured 1 - cosine at 768 tokens: 8.3e-3
-// pure Go, 1.6e-2 AVX2, and the exact path itself is bit-identical across the two builds)?
+// forcedLongPromptCloseness replaces TestLongPromptFast_forwardParity's token-exact comparison under a forced
+// CPU fallback. The golden pins one realization of the f32 fast-attention path (a documented, accepted
+// divergence from the exact path), and the top logits sit close enough that a different realization reorders
+// the continuation. The draw-independent question: how far is the fast path from the EXACT path on this build?
+// Figures: docs/code-notes/decoder.md#forcedLongPromptCloseness.
 func forcedLongPromptCloseness(t *testing.T, m *Model, prompt []int) {
 	t.Helper()
 	_, nL, _, nKV, hd, _, _ := m.Dims()

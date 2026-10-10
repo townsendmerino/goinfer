@@ -55,13 +55,11 @@ func TestGenerateResident_cancelCommitsExactlyWhatWasEmitted(t *testing.T) {
 	}
 }
 
-// TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache is P-09 (audit-2026-09-10, sibling
-// of R-02 above): a request whose context is cancelled before generateInto even starts (the
-// audit's scenario — cancelled while waiting for the caller's model-lock queue) must not discard
-// a warm resident cache for a prefill it is about to refuse anyway. Warms the cache with one real
-// turn, then drives a second Generate with an ALREADY-cancelled context and asserts resIDs is
-// byte-for-byte unchanged — not merely that the call fails, which it would regardless of whether
-// the forget ran.
+// TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache (audit P-09, sibling of R-02 above): a request
+// cancelled before generateInto starts (e.g. while queued for the model lock) must not discard a warm resident
+// cache for a prefill it is about to refuse. Warms the cache with one real turn, then drives a second Generate
+// with an ALREADY-cancelled context and asserts resIDs is byte-for-byte unchanged, not merely that the call
+// fails, which it would regardless.
 func TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.ResidentActive() {
@@ -183,19 +181,15 @@ func TestGenerateResident_forwardErrorStillForgets(t *testing.T) {
 	}
 }
 
-// TestGenerateNgramSpeculative_residentCommitsAcceptedSequence is audit R-03's gate for
-// spec_ngram.go's resident branch (the OTHER writer named there, alongside spec_eagle.go — see
-// that file's own note on why its forget calls are out of scope): on completion, resIDs must be
-// (a prefix of) prompt+everything actually emitted, not stay forgotten from the pre-prefill
-// residentForgetIDs call. Recurrent families never reach this branch at all
-// (validateNgramSpec rejects them before the goroutine starts), so there is nothing to gate for
-// the forget-otherwise half of R-01/R-03's general shape here.
+// TestGenerateNgramSpeculative_residentCommitsAcceptedSequence is audit R-03's gate for spec_ngram.go's
+// resident branch: on completion, resIDs must be (a prefix of) prompt+everything actually emitted, not stay
+// forgotten from the pre-prefill residentForgetIDs call. Recurrent families never reach this branch
+// (validateNgramSpec rejects them first).
 //
-// Exactly prompt+emitted is NOT always achievable: a round's own trailing token is streamed
-// before it is forwarded (forwarding happens at the START of the next round, as that round's
-// targetVerify seq[0] — see the "one asymmetry" note in spec_ngram.go), so a return right after
-// that specific emit is one token behind the stream. Safe (the cache is never claimed to hold
-// more than it truly does) but the test has to allow for it rather than require exact equality.
+// Exactly prompt+emitted is NOT always achievable: a round's trailing token is streamed before it is forwarded
+// (forwarding happens at the START of the next round, as targetVerify seq[0]), so a return right after that emit
+// is one token behind the stream. That is safe (the cache is never claimed to hold more than it does), and the
+// test allows for it rather than requiring equality.
 func TestGenerateNgramSpeculative_residentCommitsAcceptedSequence(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.ResidentActive() || !m.DecodeRunnerEligible() {
@@ -234,18 +228,11 @@ func TestGenerateNgramSpeculative_residentCommitsAcceptedSequence(t *testing.T) 
 	}
 }
 
-// TestGenerateSpeculative_forgetsDraftResIDs is R-00's shape on the SECOND Model (V-09,
-// docs/review-2026-09-04.md): GenerateSpeculative's target claim forgets resIDs before any
-// resident write (R-00), but the draft's own claim just below it skipped the forget entirely.
-// GenerateSpeculative never COMMITS either model's resIDs (only R-01 phase 1/2 would let it), so
-// the correct postcondition for BOTH is nil after any call — the same invariant target's own
-// claim already held, now held by draft too.
-//
-// A stale resIDs matters here specifically because it is reachable through the public API on
-// its own: a caller holding a draft *Model can call target.GenerateSpeculative once (which used
-// to leave draft.resIDs however it was BEFORE this call, silently) and then call draft.Generate
-// directly — a completely unrelated turn — which would trust a resIDs value describing content
-// the draft's resident KV no longer holds (this call already overwrote it).
+// TestGenerateSpeculative_forgetsDraftResIDs pins that GenerateSpeculative leaves resIDs nil on BOTH models
+// after any call: it never COMMITS either model's resIDs, and its target claim forgets before any resident
+// write, so the draft's claim must too (V-09, docs/review-2026-09-04.md). A stale draft resIDs is reachable
+// through the public API alone: a later draft.Generate on an unrelated turn would trust a resIDs value
+// describing content the draft's resident KV no longer holds.
 func TestGenerateSpeculative_forgetsDraftResIDs(t *testing.T) {
 	target, _ := loadWithFakeResident(t)
 	draft, _ := loadWithFakeResident(t)

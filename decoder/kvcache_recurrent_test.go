@@ -69,15 +69,12 @@ func TestTruncateTo_resetsMultimodal(t *testing.T) {
 	}
 }
 
-// A THIRD KIND OF RECURRENT STATE, ALONE. TestTruncateTo_resetsRecurrent above sets mamba AND
-// delta on the same cache, so a guard checking either one stays green — and a third kind is
-// invisible to it. That is exactly what happened: LFM2's short-conv window is mutated in place per
-// token like the other two, resetRecurrent() already cleared it, and the guard that CALLS
-// resetRecurrent named only mamba and delta. On an LFM2-only cache the reset was unreachable, so
-// TruncateTo(0) left the window intact and conversation B's first K-1 tokens convolved over
-// conversation A's last Bx vectors at every conv layer (audit-2026-09-02 C-02).
-//
-// This cache carries ONLY conv, which is the whole point of it being a separate test.
+// A THIRD KIND OF RECURRENT STATE, ALONE. TestTruncateTo_resetsRecurrent above sets mamba AND delta on the same
+// cache, so a guard checking either one stays green and a third kind is invisible to it. LFM2's short-conv window is
+// mutated in place per token like the other two and resetRecurrent() clears it, but the guard that CALLS
+// resetRecurrent must name it too: on an LFM2-only cache TruncateTo(0) would otherwise leave the window intact and
+// the next conversation would convolve over the previous one's last Bx vectors (audit-2026-09-02 C-02). This cache
+// carries ONLY conv, which is why it is a separate test.
 func TestTruncateTo_resetsConvWindowAlone(t *testing.T) {
 	newCache := func() *KVCache {
 		c := NewKVCache(1, 1, 1, 0, 4, nil)

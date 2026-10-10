@@ -1,33 +1,18 @@
 //go:build realckpt
 
-// Real-checkpoint gate for Laguna (poolside) — the loader + forward on the actual
-// released Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards).
+// Real-checkpoint gate for Laguna (poolside): the loader + forward on the released Laguna-XS.2 (33B-A3B,
+// bf16 safetensors, 14 shards).
 //
-// WHY THIS EXISTS SEPARATELY FROM T1. The tiny goldens prove the math against HF at
-// 4 layers and 8 experts with random weights. They cannot prove that the loader
-// reads a REAL Laguna checkpoint, and that is where this family has hidden every
-// one of its surprises so far — all three of these were found by reading the real
-// checkpoint, and none of them are visible in a tiny fixture built from a config:
+// The tiny goldens prove the math against HF at 4 layers and 8 experts with random weights; they cannot
+// prove the loader reads a REAL Laguna checkpoint. This family's checkpoint-only surprises are each
+// asserted below where they are read: q_norm/k_norm on every layer, g_proj per-HEAD despite `gating: true`,
+// per-expert tensors (mlp.experts.N.*) and `shared_expert` (singular). A wrong stride or misread schema
+// gives correct shapes, finite values and confident nonsense, so the coherence bar is a distinct-TRIGRAM
+// ratio over a CHAT-TEMPLATED prompt, not a distinct-token floor on a raw completion (a raw completion on an
+// instruction-tuned checkpoint only measures "did the forward avoid total collapse").
 //
-//   - q_norm/k_norm exist on every layer, are UNCONDITIONAL in the module, and are
-//     mentioned nowhere in config.json.
-//   - g_proj is [64, 2048] — per-HEAD — even though config says `gating: true`,
-//     which the sibling generations' module resolves to per-element.
-//   - experts ship PER-EXPERT (mlp.experts.N.*), not as the module's fused 3D
-//     parameters, and the shared expert is `shared_expert` (singular) while the
-//     module calls it `shared_experts`.
-//
-// A wrong stride or a misread schema here produces correct shapes, finite values,
-// and confident nonsense — so the coherence bar is a distinct-TRIGRAM ratio over a
-// CHAT-TEMPLATED prompt, not a distinct-token floor on a raw completion. (A raw
-// completion prompt on an instruction-tuned checkpoint measures "did the forward
-// avoid total collapse"; on gemma-4-26b that manufactured a false "int4 is broken"
-// signal that survived a week.)
-//
-// M.1 has no gate of this kind and will not get one on this box: it is ~220B
-// (89 shards, ~400GB bf16) against 62GB of RAM. Its code path is identical to
-// XS.2's apart from config, and this gates that path — the same call made for
-// Kimi K2, recorded in docs/task-laguna.md.
+// M.1 (~220B) has no gate of this kind and will not get one on this box; its code path is identical to
+// XS.2's apart from config, and this gates that path (docs/completed/task-laguna.md).
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
 //	  go test -tags realckpt ./decoder/ -run TestLagunaReal -v -timeout 180m
@@ -45,8 +30,7 @@ func TestLagunaReal_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_LAGUNA_XS2")
 
-	// int4 weights: 33B bf16 is ~63GB on disk and would not fit alongside f32
-	// activations in 62GB of RAM. Activations stay f32.
+	// int4 weights: 33B bf16 is ~63GB on disk and would not fit alongside f32 activations in 62GB of RAM.
 	m, err := Load(ckpt, Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", ckpt, err)
@@ -139,20 +123,15 @@ func TestLagunaReal_gate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load tokenizer: %v", err)
 	}
-	// The prompt is the EXACT string poolside's own chat_template.jinja renders for
-	// this turn, captured via transformers' apply_chat_template. It is a literal here
-	// rather than built through chat.Detect because Laguna's template reaches goinfer
-	// through neither channel Detect reads: it ships as a chat_template.jinja SIDECAR
-	// (tokenizer_config.json has no chat_template key, so tk.ChatTemplate() is empty),
-	// and its markers are plain <system>/<user>/<assistant> tags that match no native
-	// template. Hand-writing an approximation would put the model off-distribution and
-	// measure the prompt instead of the loader.
+	// The prompt is the EXACT string poolside's chat_template.jinja renders for this turn (captured via
+	// transformers' apply_chat_template), a literal rather than built through chat.Detect because the template
+	// ships as a chat_template.jinja SIDECAR (tokenizer_config.json has no chat_template key) and its
+	// <system>/<user>/<assistant> markers match no native template. An approximation would measure the prompt,
+	// not the loader.
 	//
-	// THE TRAILING "</think>" IS LOAD-BEARING: the template's enable_thinking defaults
-	// to false and emits a closing </think> to suppress reasoning. Dropping it puts the
-	// model in THINKING mode, where a 48-token budget is spent entirely on reasoning
-	// and never reaches an answer — a gate that would then fail for a reason having
-	// nothing to do with the forward pass.
+	// THE TRAILING "</think>" IS LOAD-BEARING: enable_thinking defaults to false and the template emits a closing
+	// </think> to suppress reasoning. Dropping it puts the model in THINKING mode, where a 48-token budget is
+	// spent on reasoning and never reaches an answer.
 	const prompt = "\u3008|EOS|\u3009<system>\n\nYou are a helpful, conversationally-fluent assistant made by " +
 		"Poolside. You are here to be helpful to users through natural language conversations.\n</system>\n" +
 		"<user>\nName three landmarks in Paris.\n</user>\n<assistant>\n</think>"
@@ -160,9 +139,9 @@ func TestLagunaReal_gate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	// transformers tokenizes this exact string to 56 ids. A mismatch means goinfer's
-	// added-token trie did not fire on the special surface forms (〈|EOS|〉, </think>),
-	// which would silently feed the model a different prompt than the reference.
+	// transformers tokenizes this exact string to 56 ids. A mismatch means goinfer's added-token trie did not
+	// fire on the special surface forms (〈|EOS|〉, </think>) and the model would get a different prompt than the
+	// reference.
 	if len(ids) != 56 {
 		t.Errorf("prompt encoded to %d ids, want 56 (transformers) — special tokens may not have "+
 			"been recognized as single ids", len(ids))
@@ -197,26 +176,13 @@ func TestLagunaReal_gate(t *testing.T) {
 	}
 }
 
-// TestLagunaReal_oracle is the T3 numeric row: the released bf16 weights matched against an
-// HF bf16 forward of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py
-// (accelerate disk offload — the reference and goinfer are never resident at the same instant,
-// the same technique scripts/pin_qwen3next_real.py already proved on an 80B model). Until this
-// gate, TestLagunaReal_gate above was coherence-only BY DESIGN: it proves the loader reads the
-// real checkpoint correctly (three real surprises found that way, see the file doc comment) but
-// never compared a single logit against an independent reference.
+// TestLagunaReal_oracle is the T3 numeric row: the released bf16 weights matched against an HF bf16 forward
+// of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py (accelerate disk offload, so the
+// reference and goinfer are never resident at the same instant). TestLagunaReal_gate above is coherence-only
+// by design.
 //
-// int8, NOT int4 (changed 2026-09-18) — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md
-// for the full account. This comment used to say int8 "does not fit alongside f32 activations in
-// 62GB of RAM" and cited qwen3next's own real gate as the same capacity-forced choice — THAT WAS
-// WRONG, and it was never actually measured before this comment asserted it. Measured 2026-09-18:
-// int8 peaks at ~43GB RSS on this box (62GB total, comfortable headroom), takes ~8 minutes, and —
-// the reason this matters beyond a comment fix — the int4 gate this comment used to defend had a
-// real, reproducible divergence at continuation[3] (int4: cosine 0.984776, wrong token; confirmed
-// via a floating-point-rounding-noise control that it was a genuine near-tie in int4's coarser
-// grid, not a wiring bug). At int8 that divergence is GONE: cosine 0.998845, all 8 continuation
-// tokens exact. Caught by independent review (Gemini) challenging the capacity claim directly
-// rather than accepting "accept the int4 divergence as permanent" on the strength of a premise
-// nobody had actually run.
+// It runs int8, NOT int4: the int4 gate had a reproducible near-tie divergence at continuation[3] that is gone
+// at int8, and int8 fits this box's RAM. Evidence: docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestLagunaReal_oracle -v -timeout 60m
 func TestLagunaReal_oracle(t *testing.T) {

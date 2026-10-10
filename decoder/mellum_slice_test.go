@@ -1,31 +1,17 @@
 //go:build realckpt
 
-// REAL-WEIGHT layer-slice oracle for Mellum2 (JetBrains Mellum2-12B-A2.5B-Instruct) — the
-// CPU half of G11.
-//
-// WHY IT EXISTS, AND WHY IT IS NOT A SYNTHETIC FIXTURE. G10 declared FeatRopeMscale for
-// Metal to unblock gpt-oss's YaRN, which as a documented side effect also admits Mellum
-// onto the Metal resident path — a second GPU path for this family with ZERO end-to-end
-// validation. G10's attempt to close that with a hand-rolled random-weight fixture failed
-// for a reason worth not repeating: at realistic dims a plain dense qwen2 control with NO
-// QK-norm at all also misses the 0.95 cosine bar against fully-random weights (0.898).
-// Random weights lack the outlier structure real checkpoints have, so int4/int8 noise
-// swamps whatever feature is under test. A synthetic fixture CANNOT discriminate a real
-// bug from that noise floor.
-//
-// A real slice can. It keeps what matters — trained weights, with their real routing
-// distributions, real QK-norm scales and real YaRN interaction — and drops only depth.
-// Layers [0,4) is the coverage floor, not a size choice: Mellum2's real layer_types is a
-// 3:1 sliding/full interleave, so layer 3 (0-indexed) is the FIRST full_attention layer
-// and therefore the first one carrying YaRN. A 3-layer slice would gate the sliding path
-// and silently skip the mscale that G10 actually changed. Verified against the released
-// config before slicing rather than assumed.
-//
-// This is the DECODER-side gate: it proves goinfer's own CPU forward matches the HF f32
-// reference on real weights. The Metal half (metal/mellum_real_test.go) runs residentParity
-// against the SAME slice; see docs/queue-correctness.md G11 for the handoff, including how
-// to regenerate this slice bit-identically (it is 4 GB, so the checkpoint is gitignored and
+// REAL-WEIGHT layer-slice oracle for Mellum2 (JetBrains Mellum2-12B-A2.5B-Instruct): the CPU half of G11, and
+// the DECODER-side gate (goinfer's own CPU forward against the HF f32 reference on real weights). The Metal half
+// (metal/mellum_real_test.go) runs residentParity against the SAME slice; docs/queue-correctness.md G11 has the
+// handoff, including how to regenerate the slice bit-identically (it is 4 GB, so the checkpoint is gitignored and
 // only the golden is tracked).
+//
+// It is not a synthetic fixture because random weights lack a real checkpoint's outlier structure, so int4/int8
+// noise swamps the feature under test (a plain dense qwen2 control misses the 0.95 cosine bar on them). A real
+// slice keeps trained weights, real routing distributions, QK-norm scales and the YaRN interaction, and drops only
+// depth. Layers [0,4) is the coverage floor: layer_types is a 3:1 sliding/full interleave, so layer 3 is the FIRST
+// full_attention layer and the first to carry YaRN; a 3-layer slice would gate only the sliding path and skip the
+// mscale G10's FeatRopeMscale declaration is about.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestMellumSlice -v
 package decoder

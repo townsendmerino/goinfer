@@ -10,18 +10,13 @@ import (
 )
 
 // TestLlamaTiny_textParity pins the plain `llama` forward against a tiny-random HF oracle.
+// The baseline architecture needs its own tiny fixture: `llama` is a required parity gate and the most common
+// architecture, and the only other llama checkpoints are gitignored on the Linux box, so no other machine could
+// exercise it and the .giw census round-tripped other families without ever touching it (audit-2026-09-02 C-03).
 //
-// THE BASELINE ARCHITECTURE HAD NO TINY FIXTURE. `llama` is a required parity gate and the most
-// common architecture in the ecosystem, and until 2026-09-02 the only llama checkpoints anywhere
-// here were the Linux box's gitignored llama3.2-1b (2.4 GB), tinyllama-awq (731 MB) and
-// tinyllama-gptq (733 MB). So no other machine could exercise the arch at all, and the .giw census
-// round-tripped 21 families without ever touching it. Found by the census's completeness gate
-// reporting the box's untracked fixtures (audit-2026-09-02 C-03 follow-on).
-//
-// Deliberately plain — GQA 2:1, SwiGLU, RMSNorm, UNTIED head, rope_theta at Llama-3's 500000.0.
-// Every other family's descriptor is a deviation from this one, so a break here is a break in the
-// thing they all deviate FROM. The untied head matters on its own: it is a separate LMHead tensor
-// the serializer carries, and the tied families cannot exercise that path.
+// Deliberately plain: GQA 2:1, SwiGLU, RMSNorm, UNTIED head, rope_theta at Llama-3's 500000.0. Every other family's
+// descriptor is a deviation from this one, so a break here is a break in the thing they all deviate FROM. The untied
+// head matters on its own: it is a separate LMHead tensor the serializer carries, which tied families cannot exercise.
 func TestLlamaTiny_textParity(t *testing.T) {
 	raw, err := os.ReadFile("../testdata/llama_tiny_text_golden.json")
 	if errors.Is(err, fs.ErrNotExist) {

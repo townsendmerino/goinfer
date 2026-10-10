@@ -9,18 +9,14 @@ import (
 	"testing"
 )
 
-// SPIKE (docs/ideas-weight-memory.md, idea #2 — MoE expert demand-paging viability).
-// The make-or-break number: on a real large MoE, do a minority of experts dominate
-// (so an LRU is warm), and what's the cold-miss tail latency a token eats when a
-// routed expert isn't resident? We run the real Qwen3.6-35B-A3B, record every
-// router top-k selection in forward order (moeSelTrace, set here), de-interleave by
-// layer, and simulate an LRU of whole-expert pages at several RAM budgets — reporting
-// hit rate + estimated added ms/token. Asset-gated; set GOINFER_MOE35 to the GGUF.
+// SPIKE (docs/ideas-weight-memory.md, idea #2: MoE expert demand-paging viability). The make-or-break number: on
+// a real large MoE, do a minority of experts dominate (so an LRU is warm), and what cold-miss tail latency does a
+// token eat when a routed expert is not resident? It runs the real Qwen3.6-35B-A3B, records every router top-k
+// selection in forward order (moeSelTrace, set here), de-interleaves by layer, and simulates an LRU of
+// whole-expert pages at several RAM budgets, reporting hit rate and estimated added ms/token. Asset-gated;
+// set GOINFER_MOE35 to the GGUF.
 //
-// This decides whether "35B-A3B on a 24 GB box, interactively" is real or just "it
-//
-//	loads." Run: GOINFER_MOE35=~/models/qwen3.6-35b-a3b-Q8_0.gguf go test ./decoder/ \
-//	  -run TestMoEPagingSpike -v -timeout 3600s
+//	GOINFER_MOE35=~/models/qwen3.6-35b-a3b-Q8_0.gguf go test ./decoder/ -run TestMoEPagingSpike -v -timeout 3600s
 func TestMoEPagingSpike(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.Getenv("GOINFER_MOE35")
@@ -153,11 +149,9 @@ func TestMoEPagingSpike(t *testing.T) {
 		_ = perMissS
 	}
 	t.Logf("B0: worst MRU−LRU delta = %+.1f pp (negative ⇒ aikit's default scan-resistant policy REGRESSES the pager — fixed by EvictLeastRecent)", 100*worstMruDelta)
-	// Lever-2 verdict: plain LFU is WORSE than LRU (classic establishment pathology — a re-faulted hot
-	// expert restarts at freq=1 and is re-evicted before it accumulates count). LFU-aging fixes that
-	// and beats LRU, but ONLY at impractically-tight budgets (3–4 GB); at the realistic ≥8 GB range all
-	// three converge because LRU already keeps the hot set warm on this stationary-skewed signal
-	// (frequency ⇒ recency). So a frequency-aware policy is NOT worth building — keep EvictLeastRecent.
+	// Lever-2 verdict: a frequency-aware policy is NOT worth building; keep EvictLeastRecent. Plain LFU is WORSE than
+	// LRU, and LFU-aging beats it only at impractically tight budgets (3-4 GB), because LRU already keeps the hot set
+	// warm at realistic budgets on this stationary-skewed signal.
 	t.Logf("Lever 2: best plain-LFU−LRU delta = %+.1f pp (≤0 ⇒ LFU never beats LRU at a real budget); best LFU-aging−LRU delta = %+.1f pp (only at 3–4 GB; ≈0 at ≥8 GB). Verdict: keep LRU.",
 		100*bestLfuDelta, 100*bestLfuAgeDelta)
 
@@ -220,12 +214,10 @@ func mruSim(access []int, C int) (hits, misses int) {
 	return
 }
 
-// lfuSim runs classic LFU of capacity C over the access stream: on a miss over budget it evicts the
-// resident page with the LOWEST access count SINCE it became resident (ties broken by LRU — the
-// oldest among the coldest). The MoE router's demand is a skewed-FREQUENCY signal (the spike above:
-// the hottest 10% of experts absorb ~72% of accesses, stable across tokens), which is LFU's sweet
-// spot — once the hot set is warm it is never the victim. This is Lever 2's candidate vs the pager's
-// current EvictLeastRecent (LRU). Eviction scans the resident set (O(C)); the trace is small.
+// lfuSim runs classic LFU of capacity C over the access stream: on a miss over budget it evicts the resident page
+// with the LOWEST access count SINCE it became resident (ties broken by LRU). The MoE router's demand is a
+// skewed-FREQUENCY signal, LFU's sweet spot, and this is Lever 2's candidate against the pager's EvictLeastRecent
+// (LRU). Eviction scans the resident set (O(C)).
 func lfuSim(access []int, C int) (hits, misses int) {
 	type ent struct{ freq, last int }
 	res := make(map[int]*ent, C)
@@ -252,12 +244,10 @@ func lfuSim(access []int, C int) (hits, misses int) {
 	return
 }
 
-// lfuAgingSim is LFU with dynamic aging: every ~1/8 of the trace, all resident counts are halved
-// (min 1). Pure LFU's failure mode is cache pollution — a page that was hot early stays immortal
-// even after its traffic dies (a real risk if routing drifts across a long generation). Aging decays
-// stale frequency so a formerly-hot-now-cold expert can finally be evicted, at the cost of some
-// hot-set churn. Whether the MoE signal needs it — i.e. whether routing frequency is stationary
-// enough that plain LFU suffices — is exactly what this column answers.
+// lfuAgingSim is LFU with dynamic aging: every ~1/8 of the trace, all resident counts are halved (min 1).
+// Pure LFU's failure mode is cache pollution (a page hot early stays immortal after its traffic dies); aging
+// decays stale frequency at the cost of some hot-set churn. Whether the MoE signal needs it, i.e. whether routing
+// frequency is stationary enough that plain LFU suffices, is what this column answers.
 func lfuAgingSim(access []int, C int) (hits, misses int) {
 	type ent struct{ freq, last int }
 	res := make(map[int]*ent, C)

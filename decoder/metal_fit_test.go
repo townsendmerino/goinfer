@@ -43,8 +43,8 @@ func TestGuardGIWFit_onMetalStillPricesTheCPUWorstCase(t *testing.T) {
 	}
 }
 
-// TestGuardGIWFit_floorRefusalNamesTheFloorsNeed: the refusal says what the floor needs. It used to print the whole
-// window's need under "even at the 2048-token floor" (about 32 GB for a 128k-window 7B, against a floor need under 1 GB).
+// TestGuardGIWFit_floorRefusalNamesTheFloorsNeed: the refusal says what the floor needs, not the whole window's
+// need, under "even at the 2048-token floor".
 func TestGuardGIWFit_floorRefusalNamesTheFloorsNeed(t *testing.T) {
 	cfg := &Config{NumLayers: 32, NumKVHeads: 8, HeadDim: 128, MaxPositions: 131072}
 	injectHostRAM(t, int64(giwMemMargin)+prefillAttnScratchBudget/2)

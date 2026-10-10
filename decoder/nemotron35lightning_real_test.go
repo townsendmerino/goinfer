@@ -1,25 +1,18 @@
 //go:build realckpt
 
-// Real-checkpoint gate for NVIDIA-Nemotron-3.5-Lightning-30B-A3B (nemotron_h MoE) — F2 of
-// docs/completed/task-families-2026-09.md. NOT a new family: Phase 0 found this checkpoint's config.json
-// identical to the already-T3'd Nemotron 3 Nano's (docs/completed/queue-correctness.md G4) in
-// every architecturally meaningful field, including the exact 52-block layer pattern (23 mamba /
-// 23 moe / 6 attention, same order). This gate exists to confirm the ACTUALLY TRAINED weights
-// behave the way that identical architecture predicts — a tiny fixture cannot catch a wrong
-// tensor name, a transposed expert stack, or a router bias read from the wrong key.
+// Real-checkpoint gate for NVIDIA-Nemotron-3.5-Lightning-30B-A3B (nemotron_h MoE), F2 of
+// docs/completed/task-families-2026-09.md. NOT a new family: its config.json is identical to the already-T3'd
+// Nemotron 3 Nano's (docs/completed/queue-correctness.md G4) in every architecturally meaningful field, including the
+// 52-block layer pattern. This gate confirms the ACTUALLY TRAINED weights behave as that identical architecture
+// predicts; a tiny fixture cannot catch a wrong tensor name, a transposed expert stack or a router bias read from the
+// wrong key.
 //
-// This goes through the same realLogitOracleQuant helper every other real-checkpoint gate uses,
-// so it DOES call emitParityRow like the others — but it is deliberately left OUT of
-// cmd/gate/parity.go's emitGates list (the manifest's "nemotron_h" row is keyed by registry
-// model_type, not by checkpoint, and is already `validated` from Nano's T3, cosine 0.997668;
-// TestNemotron3NanoReal_oracle itself isn't in emitGates either — the row was populated once by a
-// direct run + manual merge, not by the routine sweep). A `go run ./cmd/gate parity` sweep will
-// still run this gate (it's in parityRealckptGates) and PASS/FAIL/skip on it, but won't touch the
-// manifest; running it directly with GOINFER_MANIFEST_EMIT=1 would still emit a PARITY_ROW line,
-// and merging that WOULD overwrite Nano's specific numbers with Lightning's — a deliberate choice
-// for whoever runs it by hand, not something this gate silently does on a routine sweep. This
-// run's result is recorded in docs/completed/task-families-2026-09.md's F2 section as confirmatory
-// evidence for the same family.
+// It goes through realLogitOracleQuant, so it calls emitParityRow, but it is deliberately OUT of cmd/gate/parity.go's
+// emitGates list: the manifest's "nemotron_h" row is keyed by registry model_type, not by checkpoint, and is already
+// `validated` from Nano's T3. A `go run ./cmd/gate parity` sweep still runs it (it is in parityRealckptGates) but does
+// not touch the manifest; running it by hand with GOINFER_MANIFEST_EMIT=1 and merging the PARITY_ROW line WOULD
+// overwrite Nano's numbers with Lightning's, which is a deliberate choice for whoever does it. The result is recorded in
+// docs/completed/task-families-2026-09.md's F2 section as confirmatory evidence.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotron35LightningReal -v -timeout 90m
 package decoder

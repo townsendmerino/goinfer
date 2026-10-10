@@ -328,18 +328,14 @@ func writeSafetensors(t *testing.T, path string, tensors map[string]stTensor) {
 	}
 }
 
-// TestLoadAdapter_rejectsEveryOwnForwardFamily pins V-12 (docs/review-2026-09-04.md):
-// LoadAdapter used to hand-list arch.gemma4/arch.qwen35 as the own-forward families to
-// reject, instead of deriving the check from arch.ownForward() — the single table
-// (decoder/arch.go's ownForwards) that runLayers itself dispatches on. LFM2 fell out of
-// that hand-list (it wasn't in it to begin with), so LoadAdapter validated an LFM2 adapter
-// cleanly and registered it — but runLayersLFM2 takes no lora parameter at all, so the
-// registered adapter silently did nothing at generate time. This is the same "one
-// predicate, seven consumers" bug class canBatchN (decoder/forwardn.go) was fixed for
-// after an identical LFM2 omission crashed decode (audit-2026-09-02 C-01/C-02).
+// TestLoadAdapter_rejectsEveryOwnForwardFamily pins V-12 (docs/review-2026-09-04.md): LoadAdapter derives the
+// own-forward rejection from arch.ownForward(), the single table (decoder/arch.go's ownForwards) runLayers
+// dispatches on, rather than a hand-list. A family missing from a hand-list (LFM2) would validate and register an
+// adapter that silently does nothing, since runLayersLFM2 takes no lora parameter: the "one predicate, many
+// consumers" bug class canBatchN (decoder/forwardn.go) was also fixed for.
 //
-// The rejection happens before any file I/O (loadLoRA is only called after the switch),
-// so a bogus dir is enough to isolate the check.
+// The rejection happens before any file I/O (loadLoRA is only called after the switch), so a bogus dir is enough
+// to isolate the check.
 func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 	schema := &tensorSchema{}
 	for _, fam := range ownForwards {

@@ -47,9 +47,9 @@ func TestExpertPaging_bitExact(t *testing.T) {
 	// enough to run many tokens. (Correctness doesn't depend on the budget; this is
 	// chosen to force eviction at a sane speed.)
 	const budget = 512 << 20
-	// AcceptSlowMoE: the 512 MB budget is chosen to FORCE eviction, which the load-time working-set guard (S4, 2026-09-23) predicts is
-	// slower than its 2.0 tok/s floor on a big MoE; throughput is not what this gate checks. Without it this gate returned a load error
-	// from 2026-09-23 on, and being env-gated (GOINFER_MOE_GIW) nothing ran it until 2026-10-06 (docs/queue-engineering.md B13).
+	// AcceptSlowMoE: the 512 MB budget is chosen to FORCE eviction, which the load-time working-set guard
+	// predicts is slower than its 2.0 tok/s floor on a big MoE; throughput is not what this gate checks, and
+	// without it the load returns an error (docs/queue-engineering.md B13).
 	paged, err := Load(giwPath, Options{StreamWeights: true, WeightCacheBytes: budget, AcceptSlowMoE: true})
 	if err != nil {
 		t.Fatalf("load paged .giw: %v", err)
@@ -137,18 +137,14 @@ func newRealMmapPager(t *testing.T, keys []unsafe.Pointer, spanBytes int64) *exp
 		minfltBase: minflt, majfltBase: majflt, faultsOK: ok}
 }
 
-// TestExpertPaging_touchesEveryFamilyThatBuildsAPager is M-34's gate (audit-2026-09-10): the
-// pager and its budget banner are built generically for ANY mmap-backed MoE (newExpertPager
-// registers every w.Layers[li].Experts entry regardless of architecture), but gpt-oss, Llama 4
-// and Nemotron 3 Nano's own forward loops indexed lw.Experts directly with no pager.touch call
-// at all — so -stream-weights enforced no RAM bound for these three families even though the
-// banner claimed one. This drives each family's own real MoE forward function directly
-// (hand-built minimal Architecture/LayerWeights, same discipline as
-// TestNemotron3NanoMoE_forward) with m.pager wired to a real mmap-backed pager keyed by
-// exactly the addresses (&lw.Experts[e]) the fixed code now touches, and asserts
-// pager.stats() shows nonzero hits+misses afterward — which it did NOT before this fix
-// (misses would stay 0 forever, since the mapped experts were never faulted through the
-// cache at all).
+// TestExpertPaging_touchesEveryFamilyThatBuildsAPager pins that every family whose loader builds a pager
+// also calls pager.touch from its own MoE forward loop. newExpertPager registers every w.Layers[li].Experts
+// entry for any mmap-backed MoE, but a forward that indexes lw.Experts directly without touch enforces no RAM
+// bound under -stream-weights while the banner claims one (gpt-oss, Llama 4 and Nemotron 3 Nano did this;
+// audit M-34). It drives each family's real MoE forward function directly (hand-built minimal
+// Architecture/LayerWeights, as TestNemotron3NanoMoE_forward does) with m.pager wired to a real mmap-backed
+// pager keyed by the addresses (&lw.Experts[e]) the code touches, and asserts pager.stats() shows nonzero
+// hits+misses.
 func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 	const hidden, inter = 2, 2
 	newExperts := func() []expertWeights {
@@ -249,13 +245,10 @@ func TestExpertPaging_touchesEveryFamilyThatBuildsAPager(t *testing.T) {
 	})
 }
 
-// task-never-swap-2026-09.md S5: one gap in decoder/moepool_test.go's already-thorough pool
-// coverage (byte-exact-through-compute refill, top-K self-eviction, LRU order, cross-stream lock
-// correctness — read before adding here, most of what a first pass wrote turned out to duplicate
-// it and was removed). What was missing: every existing slot-count test is minSlots-driven
-// (TestExpertBufferPool_topKNeverSelfEvicts deliberately gives a budget of ONE expert so minSlots
-// has to override it); none exercises the OTHER direction — a budget generous enough that IT,
-// not minSlots, decides the slot count. TestExpertBufferPool_capNeverExceedsBudget is that case.
+// TestExpertBufferPool_capNeverExceedsBudget covers the direction decoder/moepool_test.go's pool tests do not:
+// every slot-count test there is minSlots-driven (TestExpertBufferPool_topKNeverSelfEvicts gives a budget of
+// ONE expert so minSlots has to override it); this gives a budget generous enough that IT, not minSlots,
+// decides the slot count. Read moepool_test.go before adding pool tests here: most of a first pass duplicated it.
 
 func TestExpertBufferPool_capNeverExceedsBudget(t *testing.T) {
 	const nMembers, fieldBytes = 10, 64
@@ -288,12 +281,9 @@ func TestExpertBufferPool_capNeverExceedsBudget(t *testing.T) {
 	}
 }
 
-// TestExpertPager_faultDelta is S5's own fault-counter gate: the A/B measurement this brief
-// exists to run (mmap mode's real WILLNEED-triggered page faults vs pool mode's pread, which
-// should add near-zero) needs faultDelta() to report something real, not a stub. Deliberately
-// loose on the EXACT count (real OS fault behavior is not something a unit test should pin a
-// precise number to) — this only proves the mechanism reports non-negative, monotonically
-// sane deltas and correctly declines when the platform has no probe.
+// TestExpertPager_faultDelta gates the fault counter faultDelta() reports: loose on the EXACT count (real OS
+// fault behavior is not something to pin a number to); it proves only that the deltas are non-negative and
+// monotonically sane, and that it declines when the platform has no probe.
 func TestExpertPager_faultDelta(t *testing.T) {
 	const nKeys, spanBytes = 4, 16384
 	ids := make([]int, nKeys)

@@ -24,12 +24,10 @@ import (
 //	      1.0, two dense prefix layers. The per-element gate path at a different
 //	      dense/MoE split.
 //
-// Each fixture was generated against ITS OWN generation's modeling_laguna.py
-// (see scripts/pin_laguna_tiny.py), and the references were verified to actually
-// apply the per-layer-type RoPE — xs21's HF model carries rotary_emb with
-// inv_freq len 4 + YaRN mscale 1.3466 and swa_rotary_emb with len 8 + scaling
-// 1.0, exactly the widths and scalings the adapter derives. Without that check a
-// silently-degenerate reference would have made this gate meaningless.
+// Each fixture was generated against ITS OWN generation's modeling_laguna.py (scripts/pin_laguna_tiny.py), and the
+// references were checked to apply the per-layer-type RoPE (xs21's HF model carries rotary_emb with inv_freq len 4 +
+// YaRN mscale and swa_rotary_emb with len 8 + scaling 1.0, the widths and scalings the adapter derives); without
+// that check a silently-degenerate reference would make this gate meaningless.
 func TestLaguna_textParity(t *testing.T) {
 	for _, tc := range []struct {
 		tag             string
@@ -110,13 +108,10 @@ func TestLaguna_textParity(t *testing.T) {
 				t.Errorf("last-logit cosine %.6f < 0.9999", cos)
 			}
 
-			// BATCHED PREFILL, against the same golden. This is a separate code path from
-			// the per-token loop above (runLayersFromEmbedN, with its own buffers), and
-			// exercising only the sequential path is what let a per-layer-head bug reach
-			// the 63GB real gate: q/ctx there were sized once from NumHeads, so layer 1's
-			// 64 heads overran a 48-head buffer and the shape check tripped mid-prefill.
-			// The tiny fixtures reproduce that geometry (4 heads full / 8 sliding), so
-			// this catches it in 0.02s instead of two minutes of loading.
+			// BATCHED PREFILL, against the same golden: a separate code path from the per-token loop above
+			// (runLayersFromEmbedN, with its own buffers). q/ctx there were once sized from NumHeads only, so a layer with more
+			// heads overran the buffer; the tiny fixtures reproduce that geometry (4 heads full / 8 sliding), so it is caught here
+			// in 0.02s instead of in the 63GB real gate.
 			if !m.canBatchN(len(g.PromptIDs)) {
 				t.Errorf("canBatchN(%d) = false — laguna should use the batched prefill path", len(g.PromptIDs))
 			} else {

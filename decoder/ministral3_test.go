@@ -185,14 +185,11 @@ func TestMinistral3_batchedMatchesSequential(t *testing.T) {
 
 // TestAttnTempScale_matchesSequentialFormula is G5's real gate for FeatAttnTemp
 // (docs/tasks/task-gpu-paths-2026-09.md): a resident backend calls Model.AttnTempScale(pos) (decode) or
-// Model.AttnTempParams() (CUDA's batched prefill, which must recompute the same formula PER ROW
-// device-side since position varies within one launch) instead of a new per-model constant, so
-// this is a PURE, backend-agnostic check that both give exactly the formula
-// decoder/attention.go's sequential path applies: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)).
-// No GPU, no quantization noise — see decoder.TestRopeInvFreqLayer_NoPEIsZero (G5 row 1) for why
-// this codebase prefers proving the actual changed function directly over a resident-vs-CPU
-// cosine floor on a seeded/synthetic tiny fixture, which may or may not be discriminating enough
-// on its own (checked separately, in the resident smoke tests).
+// Model.AttnTempParams() (CUDA's batched prefill, which recomputes the formula PER ROW device-side) instead of a new
+// per-model constant, so this is a pure, backend-agnostic check that both give exactly the formula
+// decoder/attention.go's sequential path applies: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)). No GPU and no
+// quantization noise; see TestRopeInvFreqLayer_NoPEIsZero for why a direct check of the changed function is preferred
+// to a resident-vs-CPU cosine floor on a tiny fixture.
 func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 	if _, err := os.Stat(ministral3ModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no Ministral3 checkpoint at %s — regenerate with scripts/pin_ministral3_tiny.py", ministral3ModelDir)

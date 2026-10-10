@@ -23,21 +23,11 @@ import "testing"
 func TestNemotron3NanoReal_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_NEMOTRON3NANO_HF")
-	// int8 WEIGHTS, f32 ACTIVATIONS — not the int8int8 every other family uses, and the
-	// difference is measured rather than assumed:
-	//
-	//	int8int8   cosine 0.978086   (int8 activations)
-	//	int8       cosine 0.997668   (f32 activations)
-	//
-	// The forward is correct; the sensitivity is real. This model routes 6 of 128 experts
-	// (4.7%), far sparser than the comparable MoE families here (deepseek_v3 0.99951,
-	// qwen3_5_moe 0.99333, granitemoehybrid 0.99566, all at int8int8), and its own DENSE
-	// parent scores 0.99574 at int8int8. Quantizing activations perturbs the router enough to
-	// flip which experts run, which is a discrete change no amount of averaging smooths —
-	// the expert-flip cliff already recorded for granite's MoE stack.
-	//
-	// So this is a deployment fact worth carrying, not a threshold dodge: DO NOT run this
-	// family's MoE variant with int8 activations.
+	// int8 WEIGHTS, f32 ACTIVATIONS, not the int8int8 every other family uses: this model routes 6 of 128 experts, far
+	// sparser than the comparable MoE families here, and quantizing activations perturbs the router enough to flip which
+	// experts run, a discrete change no averaging smooths (the expert-flip cliff recorded for granite's MoE stack). The
+	// forward is correct; the sensitivity is real. So this is a deployment fact, not a threshold dodge: DO NOT run this
+	// family's MoE variant with int8 activations. Measured cosines: docs/code-notes/decoder.md#TestNemotron3NanoReal_oracle.int8.
 	realLogitOracleQuant(t, ckpt, "../testdata/nemotron3nano_real_golden.json.gz", "nemotron_h", "nemotron_h",
 		"HF bf16 (NVIDIA-Nemotron-3-Nano-30B-A3B-BF16; int8 weights, f32 activations)", "int8")
 }

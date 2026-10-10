@@ -5,15 +5,13 @@ import (
 	"testing"
 )
 
-// M-05: attention_chunk_size was read from config and never applied. The RoPE layers attended
-// [0, pos] on every position, so from position C on they saw keys HF's block-diagonal chunked
-// mask removes. Nothing caught it because every parity gate uses a sequence shorter than C,
-// where chunked and full-causal are the same function.
+// M-05: attention_chunk_size was read from config and never applied, so RoPE layers attended [0, pos] on every
+// position and saw keys HF's block-diagonal chunked mask removes from position C on. Every parity gate uses a
+// sequence shorter than C, where chunked and full-causal are the same function.
 //
-// WHAT IS PINNED HERE is the mask this build implements: a query at p attends [(p/C)*C, p] on a
-// RoPE layer, and [0, p] on a NoPE layer. The audit rates the HF semantics medium-confidence
-// (recalled, not read), so this states the rule explicitly rather than burying it — if HF turns
-// out to chunk differently, this test names exactly what to change.
+// WHAT IS PINNED HERE is the mask this build implements: a query at p attends [(p/C)*C, p] on a RoPE layer and
+// [0, p] on a NoPE layer. The audit rates the HF semantics medium-confidence (recalled, not read), so the rule is
+// stated explicitly: if HF chunks differently, this test names exactly what to change.
 func TestLlama4_chunkedAttentionStart(t *testing.T) {
 	const C = 8192
 	arch := &Architecture{
@@ -125,11 +123,10 @@ func TestLlama4_attendQueryHonoursTheChunk(t *testing.T) {
 	}
 }
 
-// THE WIRING, config → Architecture. The two tests above build llama4Params by hand, so both
-// pass with `chunkSize: cfg.AttentionChunkSize` deleted from the adapter — measured, and it is
-// the same gap twice over: a component that is correct, a call site that is correct, and
-// nothing checking that the VALUE reaches either. attention_chunk_size being read into Config
-// and then dropped is precisely what M-05 was.
+// THE WIRING, config → Architecture. The two tests above build llama4Params by hand, so both pass with
+// `chunkSize: cfg.AttentionChunkSize` deleted from the adapter: a correct component and a correct call site with
+// nothing checking that the VALUE reaches either. Reading attention_chunk_size into Config and dropping it is what
+// M-05 was.
 func TestLlama4_chunkSizeReachesTheArchitecture(t *testing.T) {
 	cfg := &Config{
 		ModelType: "llama4_text", HiddenDim: 64, NumLayers: 4, NumHeads: 8, NumKVHeads: 4, HeadDim: 8,
@@ -151,10 +148,9 @@ func TestLlama4_chunkSizeReachesTheArchitecture(t *testing.T) {
 			"dropped on the way to the forward, which is M-05 exactly",
 			arch.llama4.chunkSize, cfg.AttentionChunkSize)
 	}
-	// And it must actually bound a query past the chunk on a RoPE layer. Note the polarity of
-	// no_rope_layers, which is the opposite of what its name suggests and which I got wrong
-	// first time: the adapter reads `useRope[i] = NoRopeLayers[i] != 0`, so with {1,1,0,1}
-	// layers 0/1/3 USE RoPE and layer 2 is the NoPE one.
+	// And it must bound a query past the chunk on a RoPE layer. Mind the polarity of no_rope_layers, the opposite of
+	// its name: the adapter reads `useRope[i] = NoRopeLayers[i] != 0`, so with {1,1,0,1} layers 0/1/3 USE RoPE and
+	// layer 2 is the NoPE one.
 	if got := arch.attnChunkStart(0, 8192+3); got != 8192 {
 		t.Errorf("resolved arch: start %d at pos 8195 on RoPE layer 0, want 8192", got)
 	}

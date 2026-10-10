@@ -191,14 +191,12 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 	}
 }
 
-// TestLoadAdapter_dimMismatchRejects gates C-03 (audit-metal-2026-09-12.md): LoadAdapter (the
-// compute-time path, #7) validated only that a delta's tensor NAME matched a known projection —
-// never that its [Out,In] shape matched the ACTUAL base projection. A same-family adapter trained
-// against a different-size base (e.g. one more attention head) passed straight through to every
-// resident backend's SetAdapter, which trusts In/Out from the checkpoint (Metal only range-checks
-// rank); a mismatched Out overruns the kernel's own output bound and writes past the Q slot into
-// K/V. The merge-at-load path (weights.go's loadProj -> loraAdapter.merge) already made exactly
-// this check; validateComputeTimeDims is its twin for the compute-time path.
+// TestLoadAdapter_dimMismatchRejects gates C-03 (audit-metal-2026-09-12.md): LoadAdapter (the compute-time path)
+// must check that a delta's [Out,In] shape matches the ACTUAL base projection, not only that its tensor NAME matches
+// a known projection. A same-family adapter trained against a different-size base would otherwise reach every
+// resident backend's SetAdapter, which trusts In/Out from the checkpoint; a mismatched Out overruns the kernel's
+// output bound and writes past the Q slot into K/V. The merge-at-load path (loadProj -> loraAdapter.merge) already
+// made this check; validateComputeTimeDims is its twin.
 func TestLoadAdapter_dimMismatchRejects(t *testing.T) {
 	const hidden, heads, headDim, inter, vocab = 8, 2, 4, 16, 16
 	qDim := heads * headDim // 8

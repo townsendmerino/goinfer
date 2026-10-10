@@ -10,16 +10,13 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// M2 of aikit's goinfer-kernel-moves task: the MXFP4 arithmetic that used to live in
-// decoder/mxfp4.go now lives in aikit (embed.MXFP4Scale / DequantMXFP4Blocks /
-// DequantMXFP4Split), gated there raw-bit against frozen copies of these bodies.
+// The MXFP4 arithmetic lives in aikit (embed.MXFP4Scale / DequantMXFP4Blocks / DequantMXFP4Split), gated there
+// raw-bit against frozen copies of the original bodies.
 //
-// THIS FILE STAYS, pointed at aikit, because it holds something aikit's gate cannot: a fixture
-// extracted from a REAL gpt-oss:20b tensor and dequantized by the reference `gguf` Python library
-// (TestMXFP4_bitExactGolden). aikit has no Python, so its own vectors are Go-generated and
-// self-referential by construction; this one is an independent oracle. Deleting it with the
-// implementation would have removed the only check that the packing matches what the reference
-// library actually produces for bytes off a real checkpoint.
+// THIS FILE STAYS because it holds what aikit's gate cannot: a fixture extracted from a REAL gpt-oss:20b tensor
+// and dequantized by the reference `gguf` Python library (TestMXFP4_bitExactGolden). aikit has no Python, so its
+// own vectors are Go-generated and self-referential; this one is an independent oracle for whether the packing
+// matches what the reference library produces for bytes off a real checkpoint.
 
 // TestMXFP4_referenceValues pins the format constants and the e8m0 scale against hand-derived
 // values from the OCP MX spec / gguf reference — asset-free, so it runs in CI regardless of the
@@ -139,19 +136,11 @@ func TestMXFP4_bitExactGolden(t *testing.T) {
 	t.Logf("bit-exact vs gguf on %q: %d blocks / %d values, 0 mismatches", g.Tensor, g.NBlocks, len(g.WantBits))
 }
 
-// TestMXFP4_splitIsSequentialNotGGML pins the intra-block nibble order of the SAFETENSORS
-// layout, which is NOT GGML's.
-//
-// This test exists because the opposite was assumed and written down. Phase 0 recorded that
-// safetensors MXFP4 differed from GGUF "only in addressing — no new numerics", and the first
-// implementation reused the GGML core. Dequantizing a real gpt-oss expert both ways and
-// diffing against the same weight through the already-validated GGUF reader settled it:
-// cosine 0.081 for GGML order, 1.000000 for sequential. The bug it would have shipped is the
-// worst kind — finite values, correct shapes, plausible magnitudes, entirely wrong weights.
-//
-// So this asserts the two orders DISAGREE in exactly the documented way, rather than
-// asserting they agree (which the earlier version of this test did, and passed, because the
-// implementation shared their shared mistake).
+// TestMXFP4_splitIsSequentialNotGGML pins the intra-block nibble order of the SAFETENSORS layout, which is NOT
+// GGML's: the two orders give different weights (finite values, correct shapes, plausible magnitudes, entirely
+// wrong), and the safetensors path reusing the GGML core was a shipped-in-waiting bug. So this asserts the two
+// orders DISAGREE in exactly the documented way; asserting they agree would pass on an implementation that
+// shared the mistake. Measurement: docs/code-notes/decoder.md#TestMXFP4_splitIsSequentialNotGGML.
 func TestMXFP4_splitIsSequentialNotGGML(t *testing.T) {
 	// One block: byte j holds low nibble = code (j % 15), high nibble = code ((j + 7) % 15).
 	// Codes stay < 15 so every value is distinct and non-zero under the e2m1 table.

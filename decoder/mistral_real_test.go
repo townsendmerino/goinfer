@@ -1,12 +1,10 @@
 //go:build realckpt
 
-// Real-model gate for TinyMistral-248M (mistral, dense) — the safetensors loader + mistral forward on
-// actual released weights. 1.7B fits an f32 forward in RAM, so Options{} ⇒ quantNone and the
-// gate is a TIGHT cosine vs the HF f32 golden (argmax + greedy continuation + cosine ≥ 0.9999),
-// not the int8-vs-bf16 of the larger families. Verifies the mistral axis on real weights:
-// GQA + QKV-bias + full rotary. Fixture: scripts/pin_mistral_real.py.
-// This is the real-oracle emit gate that moves mistral pending → validated in the parity manifest
-// (batched-prefill coverage: mistral is canBatchN-batchable).
+// Real-model gate for TinyMistral-248M (mistral, dense): the safetensors loader + mistral forward on actual released
+// weights. It fits an f32 forward in RAM, so Options{} ⇒ quantNone and the gate is a TIGHT cosine vs the HF f32
+// golden (argmax + greedy continuation + cosine ≥ 0.9999), not the int8-vs-bf16 of the larger families. Verifies the
+// mistral axis on real weights: GQA + full rotary. Fixture: scripts/pin_mistral_real.py. This is the real-oracle emit
+// gate for the mistral row in the parity manifest (batched-prefill coverage: mistral is canBatchN-batchable).
 //
 //	go test -tags realckpt ./decoder/ -run TestMistralReal -v -timeout 20m
 package decoder

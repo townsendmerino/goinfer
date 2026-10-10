@@ -1,27 +1,17 @@
 //go:build realckpt
 
-// Real-GGUF gate for Nemotron 3 Nano (nemotron_h MoE, 30B-A3B) — the loader + MoE forward on
-// actual released quantized weights.
+// Real-GGUF gate for Nemotron 3 Nano (nemotron_h MoE, 30B-A3B): the loader + MoE forward on actual released quantized
+// weights.
 //
-// WHY THIS EXISTS SEPARATELY FROM T3. T3 (nemotron3nano_real_test.go) proves the forward against
-// an HF oracle, but it loads SAFETENSORS. The GGUF path is a different loader with a different
-// expert layout — safetensors ships one tensor per expert
-// (experts.I.{up,down}_proj), GGUF fuses ALL experts into one 3-D tensor per projection
-// (blk.N.ffn_{up,down}_exps.weight) — and it had never completed a forward pass. It was verified
-// by reading a real file's header and dequantizing one layer's tensors by hand; correct dims and
-// sane values, which is not the same as a model that runs.
+// It exists separately from T3 (nemotron3nano_real_test.go), which loads SAFETENSORS. The GGUF path is a different
+// loader with a different expert layout (safetensors ships one tensor per expert, experts.I.{up,down}_proj; GGUF fuses
+// ALL experts into one 3-D tensor per projection, blk.N.ffn_{up,down}_exps.weight). A fused expert stack read with the
+// wrong stride gives correct shapes, finite values and confident nonsense, so reading a header is not the same as a
+// model that runs.
 //
-// That gap matters here more than usual: a fused expert stack read with the wrong stride
-// produces correct shapes, finite values, and confident nonsense. This session has now seen that
-// failure mode five times in a different subsystem.
-//
-// THE PROMPT GOES THROUGH THE CHAT TEMPLATE, and the coherence bar is a distinct-TRIGRAM ratio,
-// not a distinct-token floor. The dense gate (TestNemotronReal_gate) carries an audit note
-// saying exactly this: its raw completion prompt on an instruction-tuned checkpoint measures
-// "did the forward avoid TOTAL collapse", not coherence, and on gemma-4-26b that manufactured a
-// false "int4 is broken" signal that survived a week — which a distinct<3 floor would not have
-// caught, because repetition has more than 3 distinct tokens. New gate, so it starts with the
-// pattern that note recommends rather than inheriting the one it warns about.
+// THE PROMPT GOES THROUGH THE CHAT TEMPLATE, and the coherence bar is a distinct-TRIGRAM ratio, not a distinct-token
+// floor: a raw completion prompt on an instruction-tuned checkpoint only measures "did the forward avoid TOTAL
+// collapse", and repetition has more than 3 distinct tokens (see the audit note in TestNemotronReal_gate).
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_NEMOTRON3NANO_GGUF=~/models/nemotron3nano-gguf/... \
 //	  go test -tags realckpt ./decoder/ -run TestNemotron3NanoMoEReal -v -timeout 60m
