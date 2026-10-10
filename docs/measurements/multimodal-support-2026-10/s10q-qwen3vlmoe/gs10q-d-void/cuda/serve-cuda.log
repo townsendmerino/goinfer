@@ -1,0 +1,34 @@
+stream-weights: transcoding qwen3-vl-30b-a3b-instruct → qwen3-vl-30b-a3b-instruct.int4.cuda.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (16689 MB) in 11m5s
+swap guard (load): not armed for /home/francis/models/qwen3-vl-30b-a3b-instruct.int4.cuda.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+[cuda] resident build failure, detail:
+goroutine 66 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:1826 +0x3d
+panic({0x1647fd0?, 0x324b16183900?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x324b1638e280, 0xc000000, 0x3000000, {0xbf24cc, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:900
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x324b16335808, {0x324d3441e000, 0x3000000, 0x3000000})
+	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:919 +0x6c
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xbf039b, 0x4}, {0x324d3441e000, 0x3000000, 0x3000000}, {0x0, 0x0, 0x0}, {0x324d4041e000, ...}, ...})
+	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:929 +0x91
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upExperts(_, {{0xbf039b, 0x4}, {0x324d3441e000, 0x3000000, 0x3000000}, {0x0, 0x0, 0x0}, {0x324d4041e000, ...}, ...})
+	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:949 +0x27e
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func4()
+	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:1365 +0x7ff6
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:1829 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:715 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:711 +0x54e6
+
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 201326592 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts (a mixture-of-experts model keeps its hottest experts on the GPU and streams the rest from host memory), a smaller -quant (int4) or -ctx, or run on the CPU on purpose with -backend cpu) — continuing on the CPU/staged path
+--model "/home/francis/models/qwen3-vl-30b-a3b-instruct": decoder: --quant "int4" cannot apply to the prequantized .giw bundle /home/francis/models/qwen3-vl-30b-a3b-instruct.int4.cuda.giw — it is baked at "int4mix", and a .giw carries its own quant; pass --quant int4mix or omit --quant

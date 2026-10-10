@@ -1,0 +1,51 @@
+=== night job gs18g
+=== cmd      env S18_REV=c2891555 bash docs/measurements/multimodal-support-2026-10/run-gs18g-served.sh
+=== cwd      /Users/francistownsend-merino/tmcode/goinfer
+=== rev      queued at c2891555, now 069642dd
+=== host     macbookpro.lan
+=== est      15.0 min, timeout 35.0 min
+=== by       Claude, S18 on the Mac (owner 2026-10-09: re-queue on the directory)
+=== doc      docs/tasks/task-multimodal-support-2026-10.md
+=== note     the int8 Metal SigLIP tower against the f16 one on Gemma 3 4B from its directory sidecar; the first night's run used the GGUF, whose tokenizer has no <image_soft_token> (VOID)
+=== START    2026-10-09 23:18:43 PDT  loadavg 1.33
+Preparing worktree (detached HEAD c2891555)
+Updating files:  83% (5258/6310)Updating files:  84% (5301/6310)Updating files:  85% (5364/6310)Updating files:  86% (5427/6310)Updating files:  87% (5490/6310)Updating files:  88% (5553/6310)Updating files:  89% (5616/6310)Updating files:  90% (5679/6310)Updating files:  91% (5743/6310)Updating files:  92% (5806/6310)Updating files:  93% (5869/6310)Updating files:  94% (5932/6310)Updating files:  95% (5995/6310)Updating files:  96% (6058/6310)Updating files:  97% (6121/6310)Updating files:  98% (6184/6310)Updating files:  99% (6247/6310)Updating files: 100% (6310/6310)Updating files: 100% (6310/6310), done.
+HEAD is now at c2891555 docs: citations re-pointed through the S16 switch comment in metal/backend.go (via the commit's diff, then --update; prose changes are line numbers only)
+serve rev c2891555 (sha256 3bc0fb9a6b7abba1)
+started: 2026-10-09 23:18:49 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 2048.00M  used = 777.12M  free = 1270.88M  (encrypted)
+23:18  up 15 days, 13:14, 1 user, load averages: 1.38 1.88 2.58
+  f16 glm_ocr/table.png (9.2s): 'The image shows a table presenting quarterly unit sales by region (North, South, East, West, and Central) for the fiscal'
+  f16 gemma3_preprocess_image.png (6.8s): 'The image shows a gradient blend of dark purple and bright green.'
+  f16 qwen25vl_preprocess_image.png (6.6s): 'The image shows a gradient blend of dark purple, gray, and light green.'
+  f16 glm_ocr/formula.png (7.1s): 'The image demonstrates the Gaussian integral and its connection to the normal distribution (also known as the bell curve'
+metal: KV plan: 2 conversation(s) x 4096 positions (1.2 GB left for the vision tower or drafter)
+  decode path: metal-resident (int4)
+  KV plan: 2 conversations x 4096 positions (4 asked for; 1.3 GB held back for the vision tower)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/metal-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+  int8 glm_ocr/table.png (7.3s): 'The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, and a total'
+  int8 gemma3_preprocess_image.png (6.8s): 'The image shows a gradient blend of dark purple and green, transitioning to light purple.'
+  int8 qwen25vl_preprocess_image.png (7.1s): 'The image shows a gradient blend of dark purple and bright green, transitioning to a light gray.'
+  int8 glm_ocr/formula.png (7.5s): 'The image demonstrates the Gaussian integral and its connection to the normal (or Gaussian) distribution, which is a fun'
+metal: KV plan: 2 conversation(s) x 4096 positions (0.9 GB left for the vision tower or drafter)
+  decode path: metal-resident (int4)
+  KV plan: 2 conversations x 4096 positions (4 asked for; 0.9 GB held back for the vision tower)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder int8/metal-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+  f16b glm_ocr/table.png (7.2s): 'The image shows a table presenting quarterly unit sales by region (North, South, East, West, and Central) for the fiscal'
+  f16b gemma3_preprocess_image.png (6.5s): 'The image shows a gradient blend of dark purple and bright green.'
+  f16b qwen25vl_preprocess_image.png (6.6s): 'The image shows a gradient blend of dark purple, gray, and light green.'
+  f16b glm_ocr/formula.png (7.1s): 'The image demonstrates the Gaussian integral and its connection to the normal distribution (also known as the bell curve'
+metal: KV plan: 2 conversation(s) x 4096 positions (1.2 GB left for the vision tower or drafter)
+  decode path: metal-resident (int4)
+  KV plan: 2 conversations x 4096 positions (4 asked for; 1.3 GB held back for the vision tower)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/metal-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+glm_ocr/table.png: first difference at generated token 3: f16 ' a', int8 ' quarterly'; f16's top-3 ' a' 0.830, ' quarterly' 0.170, ' data' 0.000: NOT a near-tie
+gemma3_preprocess_image.png: first difference at generated token 10: f16 ' bright', int8 ' green'; f16's top-3 ' bright' 0.495, ' green' 0.324, ' light' 0.159: near-tie
+qwen25vl_preprocess_image.png: first difference at generated token 9: f16 ',', int8 ' and'; f16's top-3 ',' 0.486, ' and' 0.337, '/' 0.145: near-tie
+glm_ocr/formula.png: first difference at generated token 12: f16 ' distribution', int8 ' ('; f16's top-3 ' distribution' 0.747, ' (' 0.236, ' probability' 0.015: NOT a near-tie
+G-S18g: FAIL
+finished: 2026-10-09 23:21:59 PDT rc=1
+
+=== END      2026-10-09 23:21:59 PDT  rc=1

@@ -1,0 +1,59 @@
+[23:26:59] round 1: gemma-3-4b | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18610
+  up in 4 s, model 'gemma-3-4b-it'; load 3.31
+  warm-up 0: TTFT 6.207 s "Here's a description of the image"
+  timed   1: TTFT 6.221 s "Here's a description of the image"
+  timed   2: TTFT 6.268 s "Here's a description of the image"
+  timed   3: TTFT 6.362 s "Here's a description of the image"
+[23:27:33] round 1: gemma-4-e2b | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq --backend metal --addr 127.0.0.1:18610
+  up in 3 s, model 'gemma-4-E2B_q4_0-it'; load 3.99
+  warm-up 0: TTFT 2.465 s 'This image is an abstract, gradient background'
+  timed   1: TTFT 1.972 s 'This image is an abstract, gradient background'
+  timed   2: TTFT 1.961 s 'This image is an abstract gradient with a'
+  timed   3: TTFT 1.976 s 'This image is an abstract, gradient background'
+[23:27:49] round 1: gemma-4-e2b-audio | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq --backend metal --addr 127.0.0.1:18610
+  up in 2 s, model 'gemma-4-E2B_q4_0-it'; load 3.79
+  warm-up 0: TTFT 2.538 s 'Mr. Quilter is the apostle of'
+  timed   1: TTFT 0.574 s 'Mr. Quilter is the apostle of'
+  timed   2: TTFT 0.557 s 'Mr. Quilter is the apostle of'
+  timed   3: TTFT 0.566 s 'Mr. Quilter is the apostle of'
+[23:27:59] round 1: qwen2.5-vl-3b | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/qwen25vl-3b-instruct --backend metal --addr 127.0.0.1:18610
+  up in 7 s, model 'qwen25vl-3b-instruct'; load 4.00
+  warm-up 0: TTFT 6.901 s 'This image is a blurred and abstract representation'
+  timed   1: TTFT 6.006 s 'The image is a solid color image with'
+  timed   2: TTFT 5.485 s 'This image is a gradient background with a'
+  timed   3: TTFT 5.507 s 'The image is a blurred and abstract representation'
+[23:28:35] round 1: qwen3.5-0.8b | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/qwen3.5-0.8b --backend metal --addr 127.0.0.1:18610
+  up in 1 s, model 'qwen3.5-0.8b'; load 3.95
+  warm-up 0: TTFT 4.764 s 'This is a digital gradient image that transitions'
+  timed   1: TTFT 4.335 s 'This image displays a smooth, gradient background'
+  timed   2: TTFT 4.206 s 'This image is a vibrant, abstract digital'
+  timed   3: TTFT 3.876 s 'This image is a vibrant, abstract digital'
+[23:28:58] round 1: qwen3-vl-2b | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/qwen3-vl-2b-instruct --backend metal --addr 127.0.0.1:18610
+  up in 2 s, model 'qwen3-vl-2b-instruct'; load 4.13
+  warm-up 0: TTFT 5.792 s 'This is a digital image of a smooth'
+  timed   1: TTFT 2.837 s 'This is a digital gradient, a smooth'
+  timed   2: TTFT 2.833 s 'This is a digital gradient, a smooth'
+  timed   3: TTFT 2.816 s 'This image displays a smooth, vertical gradient'
+[23:29:18] round 1: glm-ocr | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/glm-ocr --backend metal --addr 127.0.0.1:18610
+  up in 1 s, model 'glm-ocr'; load 3.89
+  warm-up 0: TTFT 6.441 s 'The image is a gradient of colors that'
+  timed   1: TTFT 3.096 s 'The image is a gradient of colors that'
+  timed   2: TTFT 3.088 s 'The image is a gradient of colors that'
+  timed   3: TTFT 3.083 s 'The image is a gradient of colors that'
+[23:29:39] round 1: gemma-4-e4b | goinfer: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-4-E4B-it.int4.metal.giw --vision /Users/francistownsend-merino/models/gemma-4-E4B-it --backend metal --addr 127.0.0.1:18610
+  up in 3 s, model 'gemma-4-E4B-it.int4.metal.giw'; load 3.20
+  warm-up 0: TTFT 3.636 s '* The user has provided an image and'
+  timed   1: TTFT 2.567 s '*   **Analyze the request:** The'
+  timed   2: TTFT 2.568 s 'The user has provided an image and asked'
+  timed   3: TTFT 2.571 s 'The user has provided an image and asked'
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-3-4b | goinfer | 3 | 6.27 | no |
+| gemma-4-e2b | goinfer | 3 | 1.97 | yes |
+| gemma-4-e2b-audio | goinfer | 3 | 0.57 | yes |
+| qwen2.5-vl-3b | goinfer | 3 | 5.51 | no |
+| qwen3.5-0.8b | goinfer | 3 | 4.21 | yes |
+| qwen3-vl-2b | goinfer | 3 | 2.83 | yes |
+| glm-ocr | goinfer | 3 | 3.09 | yes |
+| gemma-4-e4b | goinfer | 3 | 2.57 | yes |

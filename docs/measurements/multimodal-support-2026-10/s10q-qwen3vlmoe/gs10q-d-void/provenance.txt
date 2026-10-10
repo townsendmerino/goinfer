@@ -1,0 +1,5 @@
+binaries: /home/francis/goinfer-bench/gs10q-d (rev f5fa5a30445b3426cc725e45c5f99ab4410af58c)
+started: 2026-10-10 00:59:40 PDT
+free: 263 GB; load: 0.82 6.20 6.48 1/596 2966542
+Mem:              62           3          18           0          41          59
+595.91.07, 8192 MiB, 468 MiB

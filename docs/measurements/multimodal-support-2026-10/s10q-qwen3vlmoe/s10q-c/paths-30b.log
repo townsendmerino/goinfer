@@ -1,0 +1,17 @@
+=== RUN   TestQwen3VLMoe_goinferLogits
+[q3m     17s] tower: gemma3_preprocess_image.png grid [1 56 56], 3 DeepStack sets
+[q3m     17s] tower: qwen25vl_preprocess_image.png grid [1 14 20], 3 DeepStack sets
+[q3m     44s] tower: glm_ocr/formula.png grid [1 76 62], 3 DeepStack sets
+[q3m     66s] tower: glm_ocr/table.png grid [1 56 76], 3 DeepStack sets
+decoder: context capped at 55047 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB — pass -ctx to choose, or -stream-weights to lift
+[q3m    276s] path: gemma3_preprocess_image.png / "Describe this image in one sentence.": 812 prompt ids, 32 tokens: "This image displays a smooth gradient transitioning from dark green in the bottom-left corner, through magenta and pink in the center, to white in the bottom-right corner"
+[q3m    375s] path: gemma3_preprocess_image.png / "What text, if any, appears in this image? Answer briefly.": 819 prompt ids, 8 tokens: "There is no text in this image."
+[q3m    413s] path: qwen25vl_preprocess_image.png / "Describe this image in one sentence.": 98 prompt ids, 31 tokens: "This image displays a smooth gradient transitioning from green in the bottom-left corner to magenta in the top-right corner, with a blend of colors in between."
+[q3m    432s] path: qwen25vl_preprocess_image.png / "What text, if any, appears in this image? Answer briefly.": 105 prompt ids, 1 tokens: "None"
+[q3m    610s] path: glm_ocr/formula.png / "Describe this image in one sentence.": 1206 prompt ids, 32 tokens: "This image displays a mathematical note explaining the Gaussian integral and the normal distribution, including the integral of e^(-x²) from negative to positive infinity equaling"
+[q3m    784s] path: glm_ocr/formula.png / "What text, if any, appears in this image? Answer briefly.": 1213 prompt ids, 32 tokens: "A Note on the Gaussian Integral\nThe Gaussian integral appears throughout probability and statistics. Its value is classical and can be obtained by squaring the integral and passing to"
+[q3m    940s] path: glm_ocr/table.png / "Describe this image in one sentence.": 1092 prompt ids, 32 tokens: "This image displays Table 2, which presents quarterly unit sales by region in thousands for the fiscal year 2025, showing sales data for North,"
+[q3m   1100s] path: glm_ocr/table.png / "What text, if any, appears in this image? Answer briefly.": 1099 prompt ids, 32 tokens: "Table 2. Quarterly unit sales by region (thousands)\nRegion\tQ1\tQ2\tQ3\tQ4\tTotal\nNorth\t128.4"
+[q3m   1100s] wrote /home/francis/goinfer-logs/s10q-c-run/b30.seqs.json (8 sequences)
+--- PASS: TestQwen3VLMoe_goinferLogits (1100.46s)
+PASS

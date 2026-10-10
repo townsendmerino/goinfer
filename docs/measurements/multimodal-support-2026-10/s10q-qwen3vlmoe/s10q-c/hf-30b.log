@@ -1,0 +1,53 @@
+[q3vlmoe      0s] stream none: 8 sequences, 200 positions
+[ERROR] `loss` is part of Qwen3VLMoeCausalLMOutputWithPast.__init__'s signature, but not documented. Make sure to add it to the docstring of the function in /home/francis/.venv-vl/lib64/python3.14/site-packages/transformers/models/qwen3_vl_moe/modeling_qwen3_vl_moe.py.
+[ERROR] `logits` is part of Qwen3VLMoeCausalLMOutputWithPast.__init__'s signature, but not documented. Make sure to add it to the docstring of the function in /home/francis/.venv-vl/lib64/python3.14/site-packages/transformers/models/qwen3_vl_moe/modeling_qwen3_vl_moe.py.
+[q3vlmoe     89s] tower and embeddings: 8 sequences
+[q3vlmoe     94s] layer 1/48 (index 0): load 1.7s, 8 sequences 3.5s
+[q3vlmoe     99s] layer 2/48 (index 1): load 1.8s, 8 sequences 3.3s
+[q3vlmoe    104s] layer 3/48 (index 2): load 1.8s, 8 sequences 3.4s
+[q3vlmoe    109s] layer 4/48 (index 3): load 1.7s, 8 sequences 3.6s
+[q3vlmoe    115s] layer 5/48 (index 4): load 1.8s, 8 sequences 3.4s
+[q3vlmoe    120s] layer 6/48 (index 5): load 1.7s, 8 sequences 3.3s
+[q3vlmoe    125s] layer 7/48 (index 6): load 1.7s, 8 sequences 3.6s
+[q3vlmoe    130s] layer 8/48 (index 7): load 1.8s, 8 sequences 3.8s
+[q3vlmoe    136s] layer 9/48 (index 8): load 1.8s, 8 sequences 3.2s
+[q3vlmoe    141s] layer 10/48 (index 9): load 1.7s, 8 sequences 3.3s
+[q3vlmoe    146s] layer 11/48 (index 10): load 1.7s, 8 sequences 3.4s
+[q3vlmoe    151s] layer 12/48 (index 11): load 1.7s, 8 sequences 3.5s
+[q3vlmoe    156s] layer 13/48 (index 12): load 1.8s, 8 sequences 3.7s
+[q3vlmoe    161s] layer 14/48 (index 13): load 1.9s, 8 sequences 3.2s
+[q3vlmoe    167s] layer 15/48 (index 14): load 1.8s, 8 sequences 3.5s
+[q3vlmoe    172s] layer 16/48 (index 15): load 1.8s, 8 sequences 3.2s
+[q3vlmoe    177s] layer 17/48 (index 16): load 1.9s, 8 sequences 3.6s
+[q3vlmoe    182s] layer 18/48 (index 17): load 1.8s, 8 sequences 3.4s
+[q3vlmoe    188s] layer 19/48 (index 18): load 1.8s, 8 sequences 3.7s
+[q3vlmoe    193s] layer 20/48 (index 19): load 1.8s, 8 sequences 3.3s
+[q3vlmoe    199s] layer 21/48 (index 20): load 2.5s, 8 sequences 3.7s
+[q3vlmoe    204s] layer 22/48 (index 21): load 1.8s, 8 sequences 3.4s
+[q3vlmoe    210s] layer 23/48 (index 22): load 1.8s, 8 sequences 3.5s
+[q3vlmoe    215s] layer 24/48 (index 23): load 1.7s, 8 sequences 3.6s
+[q3vlmoe    220s] layer 25/48 (index 24): load 1.8s, 8 sequences 3.5s
+[q3vlmoe    226s] layer 26/48 (index 25): load 1.8s, 8 sequences 3.6s
+[q3vlmoe    231s] layer 27/48 (index 26): load 1.8s, 8 sequences 3.5s
+[q3vlmoe    236s] layer 28/48 (index 27): load 1.8s, 8 sequences 3.3s
+[q3vlmoe    242s] layer 29/48 (index 28): load 1.8s, 8 sequences 3.7s
+[q3vlmoe    247s] layer 30/48 (index 29): load 1.7s, 8 sequences 3.7s
+[q3vlmoe    252s] layer 31/48 (index 30): load 1.8s, 8 sequences 3.5s
+[q3vlmoe    257s] layer 32/48 (index 31): load 1.9s, 8 sequences 3.2s
+[q3vlmoe    264s] layer 33/48 (index 32): load 2.4s, 8 sequences 3.8s
+[q3vlmoe    269s] layer 34/48 (index 33): load 1.7s, 8 sequences 3.5s
+[q3vlmoe    274s] layer 35/48 (index 34): load 1.7s, 8 sequences 3.9s
+[q3vlmoe    280s] layer 36/48 (index 35): load 1.8s, 8 sequences 3.7s
+[q3vlmoe    285s] layer 37/48 (index 36): load 1.7s, 8 sequences 3.5s
+[q3vlmoe    290s] layer 38/48 (index 37): load 1.7s, 8 sequences 3.6s
+[q3vlmoe    295s] layer 39/48 (index 38): load 1.7s, 8 sequences 3.3s
+[q3vlmoe    301s] layer 40/48 (index 39): load 1.8s, 8 sequences 3.4s
+[q3vlmoe    306s] layer 41/48 (index 40): load 1.8s, 8 sequences 3.4s
+[q3vlmoe    311s] layer 42/48 (index 41): load 1.7s, 8 sequences 3.3s
+[q3vlmoe    316s] layer 43/48 (index 42): load 1.8s, 8 sequences 3.7s
+[q3vlmoe    321s] layer 44/48 (index 43): load 1.7s, 8 sequences 3.2s
+[q3vlmoe    327s] layer 45/48 (index 44): load 1.7s, 8 sequences 3.7s
+[q3vlmoe    332s] layer 46/48 (index 45): load 1.8s, 8 sequences 3.6s
+[q3vlmoe    337s] layer 47/48 (index 46): load 1.8s, 8 sequences 3.6s
+[q3vlmoe    342s] layer 48/48 (index 47): load 1.8s, 8 sequences 3.2s
+[q3vlmoe    346s] wrote /home/francis/goinfer-logs/s10q-c-run/b30.hf.f32 (200, 151936)

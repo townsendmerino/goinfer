@@ -1,0 +1,27 @@
+=== RUN   TestQwen3VLMoe_goinferLogits
+[q3m     17s] tower: gemma3_preprocess_image.png grid [1 56 56], 3 DeepStack sets
+[q3m     17s] tower: qwen25vl_preprocess_image.png grid [1 14 20], 3 DeepStack sets
+[q3m     43s] tower: glm_ocr/formula.png grid [1 76 62], 3 DeepStack sets
+[q3m     66s] tower: glm_ocr/table.png grid [1 56 76], 3 DeepStack sets
+decoder: context capped at 55412 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB — pass -ctx to choose, or -stream-weights to lift
+[q3m    278s] int8int8: sequence 1/8 (843 ids), 32 positions, finite true
+[q3m    397s] int8int8: sequence 2/8 (826 ids), 8 positions, finite true
+[q3m    425s] int8int8: sequence 3/8 (128 ids), 31 positions, finite true
+[q3m    449s] int8int8: sequence 4/8 (105 ids), 1 positions, finite true
+[q3m    636s] int8int8: sequence 5/8 (1237 ids), 32 positions, finite true
+[q3m    822s] int8int8: sequence 6/8 (1244 ids), 32 positions, finite true
+[q3m    991s] int8int8: sequence 7/8 (1123 ids), 32 positions, finite true
+[q3m   1160s] int8int8: sequence 8/8 (1130 ids), 32 positions, finite true
+[q3m   1160s] int8int8: wrote /home/francis/goinfer-logs/s10q-c-run/b30.int8int8.f32 (200 positions)
+decoder: context capped at 26842 (model allows 262144) so that KV fits: weights 16.5 GB + KV 4.9 GB of budget 21.5 GB — pass -ctx to choose, or -stream-weights to lift
+[q3m   1415s] int4: sequence 1/8 (843 ids), 32 positions, finite true
+[q3m   1570s] int4: sequence 2/8 (826 ids), 8 positions, finite true
+[q3m   1608s] int4: sequence 3/8 (128 ids), 31 positions, finite true
+[q3m   1642s] int4: sequence 4/8 (105 ids), 1 positions, finite true
+[q3m   1896s] int4: sequence 5/8 (1237 ids), 32 positions, finite true
+[q3m   2152s] int4: sequence 6/8 (1244 ids), 32 positions, finite true
+[q3m   2381s] int4: sequence 7/8 (1123 ids), 32 positions, finite true
+[q3m   2612s] int4: sequence 8/8 (1130 ids), 32 positions, finite true
+[q3m   2612s] int4: wrote /home/francis/goinfer-logs/s10q-c-run/b30.int4.f32 (200 positions)
+--- PASS: TestQwen3VLMoe_goinferLogits (2611.73s)
+PASS

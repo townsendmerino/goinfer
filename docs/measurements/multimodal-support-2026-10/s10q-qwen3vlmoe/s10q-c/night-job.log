@@ -1,0 +1,113 @@
+=== night job s10q-c
+=== cmd      bash /home/francis/wt/goinfer-q3m/docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/run-s10q-c-night.sh /home/francis/goinfer-logs/s10q-c-run
+=== cwd      /home/francis/mycode/goinfer
+=== rev      queued at 2566d15e, now 2566d15e
+=== host     nobara-pc
+=== est      150.0 min, timeout 300.0 min
+=== by       Claude (Mac session), S10 Qwen3-VL MoE G-S10q-c
+=== doc      docs/tasks/task-multimodal-support-2026-10.md
+=== START    2026-10-09 23:45:36 PDT  loadavg 0.79
+binaries: /home/francis/goinfer-bench/s10q-c (branch rev 12b1a93d)
+started: 2026-10-09 23:45:36 PDT
+free: 264 GB; load: 0.79 5.27 5.64 1/594 2965806
+Mem:              62           3          50           0           9          59
+[23:45:36] START controls
+controls           rc=0       5s
+[controls] stream (control 1)           relative max|diff| 1.950e-07  (within 0.0001)
+[controls] nodeepstack                  relative max|diff| 5.515e-01  (beyond 0.0001)
+[controls] swap                         relative max|diff| 7.995e-01  (beyond 0.0001)
+[controls] norenorm                     relative max|diff| 2.224e-01  (beyond 0.0001)
+[controls] PASS: control 1 within the bar, every planted defect beyond it
+[23:45:41] START goinfer-2b
+[23:46:41] ... goinfer-2b running 60s; last: decoder: context capped at 177307 (model allows 262144) so that KV fits: weights 2.0 GB + KV 37.9 GB of budget 39.9 GB —
+[23:47:41] ... goinfer-2b running 120s; last: [q3m    113s] int8int8: sequence 7/8 (1123 ids), 32 positions, finite true
+[23:48:41] ... goinfer-2b running 180s; last: [q3m    178s] int4: sequence 6/8 (1244 ids), 32 positions, finite true
+goinfer-2b         rc=0     205s
+[23:49:06] START paths-30b
+[23:50:06] ... paths-30b running 60s; last: [q3m     44s] tower: glm_ocr/formula.png grid [1 76 62], 3 DeepStack sets
+[23:51:06] ... paths-30b running 120s; last: decoder: context capped at 55047 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB —
+[23:52:06] ... paths-30b running 180s; last: decoder: context capped at 55047 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB —
+[23:53:06] ... paths-30b running 240s; last: decoder: context capped at 55047 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB —
+[23:54:06] ... paths-30b running 300s; last: [q3m    276s] path: gemma3_preprocess_image.png / "Describe this image in one sentence.": 812 prompt ids, 32 tokens: "Th
+[23:55:06] ... paths-30b running 360s; last: [q3m    276s] path: gemma3_preprocess_image.png / "Describe this image in one sentence.": 812 prompt ids, 32 tokens: "Th
+[23:56:06] ... paths-30b running 420s; last: [q3m    413s] path: qwen25vl_preprocess_image.png / "Describe this image in one sentence.": 98 prompt ids, 31 tokens: "T
+[23:57:06] ... paths-30b running 480s; last: [q3m    432s] path: qwen25vl_preprocess_image.png / "What text, if any, appears in this image? Answer briefly.": 105 pro
+[23:58:06] ... paths-30b running 540s; last: [q3m    432s] path: qwen25vl_preprocess_image.png / "What text, if any, appears in this image? Answer briefly.": 105 pro
+[23:59:06] ... paths-30b running 600s; last: [q3m    432s] path: qwen25vl_preprocess_image.png / "What text, if any, appears in this image? Answer briefly.": 105 pro
+[00:00:06] ... paths-30b running 660s; last: [q3m    610s] path: glm_ocr/formula.png / "Describe this image in one sentence.": 1206 prompt ids, 32 tokens: "This imag
+[00:01:06] ... paths-30b running 720s; last: [q3m    610s] path: glm_ocr/formula.png / "Describe this image in one sentence.": 1206 prompt ids, 32 tokens: "This imag
+[00:02:06] ... paths-30b running 780s; last: [q3m    610s] path: glm_ocr/formula.png / "Describe this image in one sentence.": 1206 prompt ids, 32 tokens: "This imag
+[00:03:06] ... paths-30b running 840s; last: [q3m    784s] path: glm_ocr/formula.png / "What text, if any, appears in this image? Answer briefly.": 1213 prompt ids, 
+[00:04:06] ... paths-30b running 900s; last: [q3m    784s] path: glm_ocr/formula.png / "What text, if any, appears in this image? Answer briefly.": 1213 prompt ids, 
+[00:05:06] ... paths-30b running 960s; last: [q3m    940s] path: glm_ocr/table.png / "Describe this image in one sentence.": 1092 prompt ids, 32 tokens: "This image 
+[00:06:06] ... paths-30b running 1020s; last: [q3m    940s] path: glm_ocr/table.png / "Describe this image in one sentence.": 1092 prompt ids, 32 tokens: "This image 
+[00:07:07] ... paths-30b running 1081s; last: [q3m    940s] path: glm_ocr/table.png / "Describe this image in one sentence.": 1092 prompt ids, 32 tokens: "This image 
+paths-30b          rc=0    1103s
+[00:07:29] START goinfer-30b
+[00:08:29] ... goinfer-30b running 60s; last: [q3m     43s] tower: glm_ocr/formula.png grid [1 76 62], 3 DeepStack sets
+[00:09:29] ... goinfer-30b running 120s; last: decoder: context capped at 55412 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB —
+[00:10:29] ... goinfer-30b running 180s; last: decoder: context capped at 55412 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB —
+[00:11:29] ... goinfer-30b running 240s; last: decoder: context capped at 55412 (model allows 262144) so that KV fits: weights 29.4 GB + KV 10.1 GB of budget 39.5 GB —
+[00:12:29] ... goinfer-30b running 300s; last: [q3m    278s] int8int8: sequence 1/8 (843 ids), 32 positions, finite true
+[00:13:29] ... goinfer-30b running 360s; last: [q3m    278s] int8int8: sequence 1/8 (843 ids), 32 positions, finite true
+[00:14:29] ... goinfer-30b running 420s; last: [q3m    397s] int8int8: sequence 2/8 (826 ids), 8 positions, finite true
+[00:15:29] ... goinfer-30b running 480s; last: [q3m    449s] int8int8: sequence 4/8 (105 ids), 1 positions, finite true
+[00:16:29] ... goinfer-30b running 540s; last: [q3m    449s] int8int8: sequence 4/8 (105 ids), 1 positions, finite true
+[00:17:29] ... goinfer-30b running 600s; last: [q3m    449s] int8int8: sequence 4/8 (105 ids), 1 positions, finite true
+[00:18:29] ... goinfer-30b running 660s; last: [q3m    636s] int8int8: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:19:29] ... goinfer-30b running 720s; last: [q3m    636s] int8int8: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:20:29] ... goinfer-30b running 780s; last: [q3m    636s] int8int8: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:21:29] ... goinfer-30b running 840s; last: [q3m    822s] int8int8: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:22:29] ... goinfer-30b running 900s; last: [q3m    822s] int8int8: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:23:29] ... goinfer-30b running 960s; last: [q3m    822s] int8int8: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:24:29] ... goinfer-30b running 1020s; last: [q3m    991s] int8int8: sequence 7/8 (1123 ids), 32 positions, finite true
+[00:25:29] ... goinfer-30b running 1080s; last: [q3m    991s] int8int8: sequence 7/8 (1123 ids), 32 positions, finite true
+[00:26:29] ... goinfer-30b running 1140s; last: [q3m    991s] int8int8: sequence 7/8 (1123 ids), 32 positions, finite true
+[00:27:29] ... goinfer-30b running 1200s; last: decoder: context capped at 26842 (model allows 262144) so that KV fits: weights 16.5 GB + KV 4.9 GB of budget 21.5 GB — 
+[00:28:29] ... goinfer-30b running 1260s; last: decoder: context capped at 26842 (model allows 262144) so that KV fits: weights 16.5 GB + KV 4.9 GB of budget 21.5 GB — 
+[00:29:29] ... goinfer-30b running 1320s; last: decoder: context capped at 26842 (model allows 262144) so that KV fits: weights 16.5 GB + KV 4.9 GB of budget 21.5 GB — 
+[00:30:29] ... goinfer-30b running 1380s; last: decoder: context capped at 26842 (model allows 262144) so that KV fits: weights 16.5 GB + KV 4.9 GB of budget 21.5 GB — 
+[00:31:29] ... goinfer-30b running 1440s; last: [q3m   1415s] int4: sequence 1/8 (843 ids), 32 positions, finite true
+[00:32:29] ... goinfer-30b running 1500s; last: [q3m   1415s] int4: sequence 1/8 (843 ids), 32 positions, finite true
+[00:33:29] ... goinfer-30b running 1560s; last: [q3m   1415s] int4: sequence 1/8 (843 ids), 32 positions, finite true
+[00:34:29] ... goinfer-30b running 1620s; last: [q3m   1608s] int4: sequence 3/8 (128 ids), 31 positions, finite true
+[00:35:29] ... goinfer-30b running 1680s; last: [q3m   1642s] int4: sequence 4/8 (105 ids), 1 positions, finite true
+[00:36:29] ... goinfer-30b running 1740s; last: [q3m   1642s] int4: sequence 4/8 (105 ids), 1 positions, finite true
+[00:37:29] ... goinfer-30b running 1800s; last: [q3m   1642s] int4: sequence 4/8 (105 ids), 1 positions, finite true
+[00:38:29] ... goinfer-30b running 1860s; last: [q3m   1642s] int4: sequence 4/8 (105 ids), 1 positions, finite true
+[00:39:29] ... goinfer-30b running 1920s; last: [q3m   1896s] int4: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:40:29] ... goinfer-30b running 1980s; last: [q3m   1896s] int4: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:41:29] ... goinfer-30b running 2040s; last: [q3m   1896s] int4: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:42:29] ... goinfer-30b running 2100s; last: [q3m   1896s] int4: sequence 5/8 (1237 ids), 32 positions, finite true
+[00:43:29] ... goinfer-30b running 2160s; last: [q3m   2152s] int4: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:44:29] ... goinfer-30b running 2220s; last: [q3m   2152s] int4: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:45:29] ... goinfer-30b running 2280s; last: [q3m   2152s] int4: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:46:29] ... goinfer-30b running 2340s; last: [q3m   2152s] int4: sequence 6/8 (1244 ids), 32 positions, finite true
+[00:47:29] ... goinfer-30b running 2400s; last: [q3m   2381s] int4: sequence 7/8 (1123 ids), 32 positions, finite true
+[00:48:29] ... goinfer-30b running 2460s; last: [q3m   2381s] int4: sequence 7/8 (1123 ids), 32 positions, finite true
+[00:49:29] ... goinfer-30b running 2520s; last: [q3m   2381s] int4: sequence 7/8 (1123 ids), 32 positions, finite true
+[00:50:29] ... goinfer-30b running 2580s; last: [q3m   2381s] int4: sequence 7/8 (1123 ids), 32 positions, finite true
+goinfer-30b        rc=0    2612s
+[00:51:01] START hf-30b
+[00:52:01] ... hf-30b running 60s; last: [q3vlmoe      0s] stream none: 8 sequences, 200 positions
+[00:53:01] ... hf-30b running 120s; last: [q3vlmoe    115s] layer 5/48 (index 4): load 1.8s, 8 sequences 3.4s
+[00:54:01] ... hf-30b running 180s; last: [q3vlmoe    177s] layer 17/48 (index 16): load 1.9s, 8 sequences 3.6s
+[00:55:01] ... hf-30b running 240s; last: [q3vlmoe    236s] layer 28/48 (index 27): load 1.8s, 8 sequences 3.3s
+[00:56:01] ... hf-30b running 300s; last: [q3vlmoe    295s] layer 39/48 (index 38): load 1.7s, 8 sequences 3.3s
+hf-30b             rc=0     348s
+[00:56:49] START grade
+grade              rc=0       6s
+30B: 200 positions over 8 prompts; HF mean top-1 probability 0.897; HF argmax equals the path token at 0.980
+  int8int8  agreement  98.00% [95.0, 100.0]   mean KL(HF||arm) 0.0113 [0.0066, 0.0190]   finite: True
+  int4      agreement  92.50% [87.9, 97.1]   mean KL(HF||arm) 0.0691 [0.0338, 0.1353]   finite: True
+2B: 179 positions over 8 prompts; HF mean top-1 probability 0.888; HF argmax equals the path token at 0.933
+  int8int8  agreement  95.53% [91.9, 98.8]   mean KL(HF||arm) 0.0187 [0.0083, 0.0268]   finite: True
+  int4      agreement  90.50% [86.6, 95.8]   mean KL(HF||arm) 0.1699 [0.1035, 0.2185]   finite: True
+
+int8int8 : 30B agreement minus 2B's = +2.47 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+int4     : 30B agreement minus 2B's = +2.00 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+
+G-S10q-c: PASS (both arms)
+finished: 2026-10-10 00:56:55 PDT
+
+=== END      2026-10-10 00:56:55 PDT  rc=0

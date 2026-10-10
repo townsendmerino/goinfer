@@ -1,0 +1,11 @@
+30B: 200 positions over 8 prompts; HF mean top-1 probability 0.897; HF argmax equals the path token at 0.980
+  int8int8  agreement  98.00% [95.0, 100.0]   mean KL(HF||arm) 0.0113 [0.0066, 0.0190]   finite: True
+  int4      agreement  92.50% [87.9, 97.1]   mean KL(HF||arm) 0.0691 [0.0338, 0.1353]   finite: True
+2B: 179 positions over 8 prompts; HF mean top-1 probability 0.888; HF argmax equals the path token at 0.933
+  int8int8  agreement  95.53% [91.9, 98.8]   mean KL(HF||arm) 0.0187 [0.0083, 0.0268]   finite: True
+  int4      agreement  90.50% [86.6, 95.8]   mean KL(HF||arm) 0.1699 [0.1035, 0.2185]   finite: True
+
+int8int8 : 30B agreement minus 2B's = +2.47 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+int4     : 30B agreement minus 2B's = +2.00 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+
+G-S10q-c: PASS (both arms)
