@@ -6,13 +6,10 @@ import (
 	"testing"
 )
 
-// TestGenerate_residentPathAllocatesNoHostKV is P-01(a) (audit-2026-09-10): Model.Generate used
-// to allocate the full host KV cache (m.NewCache) BEFORE the resBusy CAS even ran, so a
-// resident-and-won call paid for capacity it never touched. NewCache is the sole place
-// prefillEnters advances (R13's own discipline: "a test can OBSERVE that a check placed one line
-// too late produces the identical error text" — same idea, applied to allocation instead of a
-// refusal), so a zero delta here is a direct, non-inferred proof no host KV was allocated, not
-// just that generation still produced the right tokens.
+// TestGenerate_residentPathAllocatesNoHostKV is P-01(a) (audit-2026-09-10): a resident-and-won Model.Generate must not
+// allocate the host KV cache (m.NewCache) at all; it once did so BEFORE the resBusy CAS ran. NewCache is the sole place
+// prefillEnters advances, so a zero delta here is a direct proof that no host KV was allocated, not just that generation
+// still produced the right tokens.
 func TestGenerate_residentPathAllocatesNoHostKV(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.ResidentActive() {
@@ -67,13 +64,11 @@ func TestGenerate_casLoserStillCompletesOnCPU(t *testing.T) {
 	}
 }
 
-// TestGenerate_residentContextCapDeclinesToCPUInsteadOfErroring is M-01's decoder-seam gate
-// (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) must decline the
-// resident path up front and fall through to the CPU path, not commit to a resident prefill that
-// dies mid-write with no fallback (residentPrefillSeed's own error just sets g.err and returns).
-// This is defense in depth for the decoder seam — internal/serveapp's own residentPath() fix
-// (M-01, openai.go) is the primary guard that should stop such a request even earlier, but this
-// exercises the decoder package directly, independent of any caller's enforcement.
+// TestGenerate_residentContextCapDeclinesToCPUInsteadOfErroring is M-01's decoder-seam gate (docs/audit-2026-09-10.md):
+// a prompt in (ResidentContextCap, MaxPositions) must decline the resident path up front and fall through to the CPU
+// path, not commit to a resident prefill that dies mid-write with no fallback (residentPrefillSeed's error only sets
+// g.err). This is defense in depth: internal/serveapp's residentPath() (openai.go) is the primary guard, and this
+// exercises the decoder package independent of any caller's enforcement.
 func TestGenerate_residentContextCapDeclinesToCPUInsteadOfErroring(t *testing.T) {
 	m, be := loadWithFakeResident(t)
 	if !m.ResidentActive() {

@@ -25,11 +25,9 @@ import (
 // independent of the model's own rms_norm_eps (1e-6 here); rope_parameters is {"rope_theta": null}
 // on the release, so there is no RoPE anywhere, on any layer.
 //
-// VERIFIED AGAINST A REAL Olmo-Hybrid-7B CHECKPOINT (HTTP Range on its safetensors header), not
-// just modeling_olmo_hybrid.py's source — the source alone, and even a local save_pretrained
-// round-trip through this transformers version's own conversion_mapping.py, both produced tensor
-// names/splits that do NOT match the real release; see scripts/pin_olmo_hybrid_tiny.py's own
-// docstring for the full account.
+// The tensor names and splits were checked against the real Olmo-Hybrid-7B safetensors header, not just
+// modeling_olmo_hybrid.py or a local save_pretrained round-trip, which both produce names/splits that do NOT match the
+// release; see scripts/pin_olmo_hybrid_tiny.py's docstring for the account.
 //
 // Regenerate (seeded tiny OlmoHybridForCausalLM checkpoint + golden, both reproducible):
 //

@@ -1371,3 +1371,40 @@ string no tier rule recognises. TestParityManifest_methodTier caught both, which
 working; these two catch them at the source, and — the part that matters — they run in plain
 CI, where the emitter itself never does.
 ```
+
+## TestGenerate_residentPathAllocatesNoHostKV
+
+Moved from `decoder/model_lazy_kv_test.go` (the comment above `TestGenerate_residentPathAllocatesNoHostKV`) on 2026-10-09.
+
+```text
+TestGenerate_residentPathAllocatesNoHostKV is P-01(a) (audit-2026-09-10): Model.Generate used
+to allocate the full host KV cache (m.NewCache) BEFORE the resBusy CAS even ran, so a
+resident-and-won call paid for capacity it never touched. NewCache is the sole place
+prefillEnters advances (R13's own discipline: "a test can OBSERVE that a check placed one line
+too late produces the identical error text" — same idea, applied to allocation instead of a
+refusal), so a zero delta here is a direct, non-inferred proof no host KV was allocated, not
+just that generation still produced the right tokens.
+```
+
+## olmo_hybrid_test.go.verified
+
+Moved from `decoder/olmo_hybrid_test.go` (the comment above `olmo_hybrid_test.go.verified`) on 2026-10-09.
+
+```text
+VERIFIED AGAINST A REAL Olmo-Hybrid-7B CHECKPOINT (HTTP Range on its safetensors header), not
+just modeling_olmo_hybrid.py's source — the source alone, and even a local save_pretrained
+round-trip through this transformers version's own conversion_mapping.py, both produced tensor
+names/splits that do NOT match the real release; see scripts/pin_olmo_hybrid_tiny.py's own
+docstring for the full account.
+```
+
+## loadMistralWindowGolden
+
+Moved from `decoder/mistral_tiny_window_test.go` (the comment above `loadMistralWindowGolden`) on 2026-10-09.
+
+```text
+THIS TEST EXISTS BECAUSE THE FIXTURE'S WEIGHTS WERE NEVER COMMITTED. Only its config files were (the *.safetensors ignore rule), so the CUDA and WebGPU
+window tests and `gate identity`'s mistral asset had nothing to load on a fresh checkout, and no CPU test consumed the golden at all: the CPU
+sliding-window path had no committed parity gate against HF. A missing fixture or golden FAILS here instead of skipping, for the reason D11 found in
+D2's gate: a gate whose fixture can vanish into a skip is not a gate.
+```

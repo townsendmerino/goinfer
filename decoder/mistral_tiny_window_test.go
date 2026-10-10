@@ -11,10 +11,9 @@ import (
 // about 32 positions the window start is past 0 and moving. scripts/pin_mistral_tiny_window.py pins the golden (last-position logits, the argmax and
 // six greedy continuation tokens).
 //
-// THIS TEST EXISTS BECAUSE THE FIXTURE'S WEIGHTS WERE NEVER COMMITTED. Only its config files were (the *.safetensors ignore rule), so the CUDA and WebGPU
-// window tests and `gate identity`'s mistral asset had nothing to load on a fresh checkout, and no CPU test consumed the golden at all: the CPU
-// sliding-window path had no committed parity gate against HF. A missing fixture or golden FAILS here instead of skipping, for the reason D11 found in
-// D2's gate: a gate whose fixture can vanish into a skip is not a gate.
+// This is the committed CPU parity gate for the sliding-window path against HF; the fixture's weights are committed
+// despite the *.safetensors ignore rule. A missing fixture or golden FAILS here instead of skipping: a gate whose
+// fixture can vanish into a skip is not a gate.
 func loadMistralWindowGolden(t *testing.T) (g struct {
 	Window          int       `json:"window"`
 	PromptIDs       []int     `json:"prompt_ids"`
