@@ -26,8 +26,8 @@ func getEmbs(r *resident, prompt []int) [][]float32 {
 	return embs
 }
 
-// TestMoEExpertMajor_ParityVsRowByRow verifies that the expert-major batched prefill
-// produces near-identical logits and matching argmax compared to the row-by-row fallback.
+// TestMoEExpertMajor_ParityVsRowByRow checks the expert-major batched prefill against the sequential Forward loop: cosine >= 0.95
+// and a matching argmax. The row-by-row fallback's argmax and its cosines are logged, not asserted.
 func TestMoEExpertMajor_ParityVsRowByRow(t *testing.T) {
 	ckpt := "../testdata/mixtral-tiny"
 	if _, err := os.Stat(ckpt + "/config.json"); err != nil {
@@ -132,7 +132,7 @@ func BenchmarkMoEExpertMajor_VsRowByRow(b *testing.B) {
 	}
 }
 
-// TestMoEPrefillSpeedupDirect compares latency of expert-major vs row-by-row in a single test run.
+// TestMoEPrefillSpeedupDirect logs the latency of expert-major vs row-by-row prefill in a single test run; it asserts nothing.
 func TestMoEPrefillSpeedupDirect(t *testing.T) {
 	ckpt := "../testdata/mixtral-tiny"
 	if _, err := os.Stat(ckpt + "/config.json"); err != nil {

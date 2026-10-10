@@ -11,24 +11,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillLast_startPosGreaterThanZero gates G-08 (audit-metal-2026-09-12.md): the §3.2 pooled
-// gate (prefill_gate_ref_test.go) only ever calls PrefillLast(embs, 0) — every resident-prefix-
-// reuse turn (decoder/model.go's residentPrefillSeed, `from` — an agent loop continuing from an
-// already-resident prefix, the peer matrix's own headline workload) calls it with startPos > 0,
-// and the fused kernel's startPos/uMReal masking (attention_prefill_fused's nKeysMax computation)
-// has no coverage at that shape outside one synthetic hd=64 unit case.
-//
-// A focused correctness check on the tiny synthetic fixture, not a change to the pooled gate's
-// own carefully pre-registered statistics (decisionKs/confirmKs, the critA/B/C formulas) — G-08's
-// own confidence is "plausible, coverage gap, no defect shown", and this closes the gap without
-// risking the established methodology those formulas represent. Builds the SAME shared KV prefix
-// [0,from) on two residents via Forward (bit-identical by construction — same sequential path),
-// then diverges: one continues the reference way (Forward, one token at a time) through [from,K);
-// the other takes the SAME suffix through PrefillLast(embs[from:], from) — the exact code path
-// G-08 flags as uncovered. Compares the two residents' final logits at position K-1.
+// TestPrefillLast_startPosGreaterThanZero pins PrefillLast at startPos > 0. Every resident-prefix-reuse turn (residentPrefillSeed's
+// `from`, an agent loop continuing from a resident prefix) calls it that way, while the §3.2 pooled gate
+// (prefill_gate_ref_test.go) only ever calls PrefillLast(embs, 0), so the fused kernel's startPos/uMReal masking
+// (attention_prefill_fused's nKeysMax) is otherwise unexercised at that shape. A focused check on the tiny synthetic fixture, not a
+// change to the pooled gate's pre-registered statistics. Two residents build the same [0,from) KV prefix via Forward; one
+// continues with Forward through [from,K), the other takes the same suffix through PrefillLast(embs[from:], from); their final
+// logits at position K-1 must agree in argmax and have cosine >= 0.95.
 //
 // The fixture's head dim is 16, so PrefillLast runs attention_prefill_fused here. At head dim 128 production runs
-// attention_prefill_steel, which TestAttentionPrefillSteelMatchesFloat64 checks at startPos > 0 (F-G01).
+// attention_prefill_steel, which TestAttentionPrefillSteelMatchesFloat64 checks at startPos > 0.
 func TestPrefillLast_startPosGreaterThanZero(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

@@ -24,11 +24,10 @@ func TestResidentMemGuard(t *testing.T) {
 		ram  uint64
 		want bool
 	}{
-		// THE MEASURED CASE. gpt-oss-20b's 11.28 GB of weights on a 16 GB MacBook drove swap to
-		// 35.98 GB of 36 GB and never completed or declined. It must be refused.
+		// The measured failure behind residentMemFraction: gpt-oss-20b's weights on a 16 GB MacBook. It must be refused.
 		{"gptoss20b_on_16gb", 11280 * gb / 1000, 16 * uint64(gb), false},
-		// Ordinary models on the same machine must still go resident. qwen2.5-coder 0.5B/1.5B
-		// int4 are ~0.4/1.2 GB; a guard that refused these would be worse than none.
+		// Ordinary models on the same machine (qwen2.5-coder 0.5B and 1.5B int4) must still go resident; a guard that refused these would
+		// be worse than none.
 		{"qwen_0_5b_on_16gb", 400 * gb / 1000, 16 * uint64(gb), true},
 		{"qwen_1_5b_on_16gb", 1200 * gb / 1000, 16 * uint64(gb), true},
 		// The SAME model fits a bigger machine — the guard is about the ratio, not the model.
@@ -50,12 +49,10 @@ func TestResidentMemGuard(t *testing.T) {
 	}
 }
 
-// TestMetalMemoryCeiling_takesTheStricterBound is S4 item 3's own gate (task-never-swap-2026-09.md):
-// the combined ceiling must equal the static ram*residentMemFraction figure whenever the live
-// probe is unknown or looser, and must equal the LIVE figure whenever that is the tighter one —
-// never the other way around, since a live figure ALLOWED to widen the ceiling would reopen
-// exactly the darwin-UBC "guard that inverts under pressure" failure this file's own doc comment
-// on metalMemoryCeiling explains.
+// TestMetalMemoryCeiling_takesTheStricterBound pins that the combined ceiling equals the static ram*residentMemFraction figure
+// whenever the live probe is unknown or looser, and the live figure whenever that is tighter, never wider: a live figure allowed to
+// widen the ceiling would reopen the darwin-UBC "guard that inverts under pressure" failure metalMemoryCeiling's doc comment
+// explains.
 func TestMetalMemoryCeiling_takesTheStricterBound(t *testing.T) {
 	const gb = int64(1) << 30
 	const ram = 16 * uint64(gb) // static ceiling = 11.2 GB
@@ -92,13 +89,10 @@ func TestMetalMemoryCeiling_takesTheStricterBound(t *testing.T) {
 	})
 }
 
-// TestResidentFitsMemory_honorsLiveCeiling is S4 item 3's own WIRING gate:
-// TestMetalMemoryCeiling_takesTheStricterBound above proves the combined-ceiling arithmetic in
-// isolation; this proves residentFitsMemory — the REAL load-time guard, not a private copy of the
-// same formula — actually reads through it. A version of residentFitsMemory that reverted to its
-// pre-item-3 static-only budget would still pass every other test in this file (they never touch
-// metalLiveAvailable) while silently ignoring a live probe reporting almost no memory at all —
-// exactly the wiring gap this guards against.
+// TestResidentFitsMemory_honorsLiveCeiling pins the wiring: TestMetalMemoryCeiling_takesTheStricterBound proves the combined
+// ceiling in isolation; this proves residentFitsMemory, the real load-time guard, reads through it. A residentFitsMemory reverted to a
+// static-only budget would pass every other test in this file (they never touch metalLiveAvailable) while ignoring a live probe
+// reporting almost no memory.
 func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {
 	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment — the guard is disabled, nothing to exercise")
@@ -136,18 +130,11 @@ func tinyDenseModelWithMoESlots(t *testing.T, slots int) *decoder.Model {
 	return m
 }
 
-// TestMetalMoESlotsFromEnv is M-02's gate for the guard's half of the ordering fix:
-// residentFitsMemory must ask ResidentWeightBytesPaged for the SAME N that metal/moe.go and
-// metal/gemma4_moe.go are about to honor, not silently fall back to the unpaged number on
-// anything it cannot parse cleanly. Mirrors those two files' resolution exactly (metalMoESlotsRequest),
-// except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
-// and declines on a bad value) rather than a hard error.
-//
-// Phase 2 (docs/tasks/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
-// env-var cases below now go through a model whose Options.MoECacheSlots is 0 (unset), so
-// metalMoESlotsRequest's fallback to GOINFER_METAL_MOE_SLOTS is what's actually exercised — an
-// additional case pins the NEW priority order directly (Options wins over the env var when both
-// are set).
+// TestMetalMoESlotsFromEnv pins the guard's reader of the slot request: residentFitsMemory must ask ResidentWeightBytesPaged for
+// the same N that moe.go and gemma4_moe.go are about to honor, not silently fall back to the unpaged number on a value it cannot
+// parse. It mirrors their resolution (metalMoESlotsRequest) except that an invalid or unset value means "assume unpaged" here
+// (buildResident still validates and declines a bad one). The env cases run with Options.MoECacheSlots unset, so the fallback
+// GOINFER_METAL_MOE_SLOTS is what is exercised; one case pins the priority order: Options wins over the env var.
 func TestMetalMoESlotsFromEnv(t *testing.T) {
 	for _, tc := range []struct {
 		name, val string
@@ -182,20 +169,12 @@ func TestMetalMoESlotsFromEnv(t *testing.T) {
 	}
 }
 
-// TestResidentNeedBytes_honorsPagingSlots is M-02's gate for the actual wiring gap: reverting
-// residentNeedBytes to always call ResidentWeightBytes() (the pre-fix behavior) compiles clean
-// and TestMetalMoESlotsFromEnv above still passes, because that test only exercises the parsing
-// function in isolation — it never proves the guard USES what it parses. This does, by loading a
-// real (tiny) MoE checkpoint and comparing residentNeedBytes' output against
-// ResidentWeightBytes/ResidentWeightBytesPaged/ResidentHostCopyBytes/residentKVBytes directly,
-// with no real RAM or a checkpoint large enough to swing residentFitsMemory's verdict required.
-//
-// 2026-09-09 (M-02 continued): residentNeedBytes gained two more additive terms (the host-copy
-// addend and KV bytes) beside the paged-weight term this test originally gated alone — so "==
-// unpaged weight bytes" is no longer residentNeedBytes' own contract; the assertions below add
-// the SAME two terms back in, computed independently via the public accessors, so this still
-// catches a regression in the paging wiring specifically without needing to be rewritten every
-// time another additive term is found.
+// TestResidentNeedBytes_honorsPagingSlots pins that the guard USES what TestMetalMoESlotsFromEnv parses: a residentNeedBytes
+// reverted to always call ResidentWeightBytes() compiles clean and passes that parsing test. It loads a real (tiny) MoE checkpoint
+// and compares residentNeedBytes against ResidentWeightBytes, ResidentWeightBytesPaged, ResidentHostCopyBytes and residentKVBytes
+// directly, with no real RAM needed. The assertions add the host-copy and KV terms back in, computed independently through the public
+// accessors, so the test catches a regression in the paging wiring specifically without a rewrite each time another additive term
+// appears.
 func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	// testdata/gemma4-moe-tiny is gitignored (a real, if small, checkpoint) — never present in CI,
 	// so skip rather than fail when it's absent, matching decoder's own convention for this fixture.
@@ -241,9 +220,8 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+hostcopy+kv) — "+
 				"the guard is not asking for the paged estimate", got, want)
 		}
-		// The host-copy addend must ITSELF shrink under paging (that's the whole point of M-02's
-		// distinction): paged experts stream, so ResidentHostCopyBytes(1) must be strictly smaller
-		// than ResidentHostCopyBytes(0) whenever paging actually caps anything on this fixture.
+		// The host-copy addend must itself shrink under paging: paged experts stream, so ResidentHostCopyBytes(1) must be strictly smaller
+		// than ResidentHostCopyBytes(0) whenever paging caps anything on this fixture.
 		if hc0, hc1 := m.ResidentHostCopyBytes(0), m.ResidentHostCopyBytes(1); hc1 >= hc0 {
 			t.Errorf("ResidentHostCopyBytes(1)=%d not smaller than ResidentHostCopyBytes(0)=%d — "+
 				"paging should exempt streamed experts from the host-copy addend", hc1, hc0)

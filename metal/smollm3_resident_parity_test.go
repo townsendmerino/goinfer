@@ -8,27 +8,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/tasks/task-gpu-paths-2026-09.md) smoke
-// gate: the model actually goes resident and produces finite, non-degenerate output when its
-// LAST layer is NoPE (testdata/smollm3-tiny's no_rope_layers=[1,1,1,0], 1=has-rope/0=NoPE).
+// TestSmolLM3ResidentSmokeMetal is the smoke gate for FeatNoPE (docs/tasks/task-gpu-paths-2026-09.md, G5): the model goes resident
+// with its last layer NoPE (testdata/smollm3-tiny, no_rope_layers=[1,1,1,0]; 1=has-rope, 0=NoPE), no logit of a 32-token decode or
+// of the batched prefill is NaN, the prefill path is batched, and the batched-prefill logits match the sequential decode's at
+// cosine >= 0.98.
 //
-// This is DELIBERATELY NOT a resident-vs-CPU cosine floor, and used to be one — MEASURED (not
-// assumed) that this fixture cannot discriminate a correct NoPE implementation from a broken
-// one: with the real fix (zero invFreq on layer 3 only), with the fix reverted (real invFreq on
-// every layer, i.e. layer 3 wrongly ropes), and with EVERY layer's invFreq forced to zero (layers
-// 0-2 wrongly skip rope too), the worst cosine against the CPU reference over 32 tokens was
-// 0.9619, 0.9617, and 0.9624 respectively — a ~0.0006 spread, all three configurations equally
-// "passing" or "failing" any threshold that would separate them. The seeded/synthetic weights at
-// hidden=64 mean int8 quantization noise dominates the comparison regardless of rope correctness
-// — the SAME "cannot discriminate a real bug from quantization noise on unstructured weights"
-// finding this codebase already recorded for Mellum-on-Metal (features.go's FeatRopeMscale note).
-//
-// The actual correctness gate is decoder.TestRopeInvFreqLayer_NoPEIsZero — a pure, backend-
-// agnostic unit test of RopeInvFreqLayer itself (exact zero/non-zero per layer, no GPU, no
-// quantization noise), plus the shipped rope2 kernel math being exact identity at invFreq==0 by
-// construction (metal/kernels.go, metal/rope_test.go's TestRope_mscale family already exercises
-// that kernel directly). This test's only job is: does declaring FeatNoPE actually let the model
-// go resident and run without error/NaN.
+// Deliberately NOT a resident-vs-CPU cosine floor: this fixture cannot discriminate a correct NoPE implementation from a broken one
+// (with the fix, with it reverted, and with every layer's invFreq forced to zero, the worst cosine against the CPU over 32 tokens
+// was the same to within 0.001), because seeded synthetic weights at hidden=64 let int8 quantization noise dominate; the same finding
+// was recorded for Mellum on Metal (features.go's FeatRopeMscale note). The correctness gate is decoder.TestRopeInvFreqLayer_NoPEIsZero
+// (exact zero per layer, no GPU) plus the rope2 kernel being the identity at invFreq==0 by construction (TestRope_mscale, rope_test.go).
 func TestSmolLM3ResidentSmokeMetal(t *testing.T) {
 	const ckpt = "../testdata/smollm3-tiny"
 

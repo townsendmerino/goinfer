@@ -65,23 +65,17 @@ kernel void gb_kat_probe(constant uint4& ctr [[buffer(0)]], constant uint2& key 
 	}
 }
 
-// TestGumbelDeviceAgreesWithHost is the kernel gate for gumbel_stage1/2 (R7b Mac half), a direct
-// port of cuda's TestGumbelDeviceAgreesWithHost (cuda/gumbel_test.go) — read its header first;
-// this uses the exact same pre-registered rule, rows and seeds.
-//
-// PRE-REGISTERED RULE (written before the first run, matching the CUDA gate). The host draw
-// (decoder.gumbelDraw, f64 noise transform) is the reference; the device computes the same argmax
-// with an f32 transform. Philox is integer-exact, so the two agree except where the best two keys
-// are within a few f32 ulps. Therefore:
+// TestGumbelDeviceAgreesWithHost is the kernel gate for gumbel_stage1/2, a port of cuda's TestGumbelDeviceAgreesWithHost
+// (cuda/gumbel_test.go; read its header first) with the same pre-registered rule, rows and seeds. The host draw
+// (decoder.gumbelDraw, f64 noise transform) is the reference; the device computes the same argmax with an f32 transform. Philox is
+// integer-exact, so the two agree except where the best two keys are within a few f32 ulps:
 //
 //  1. Overall agreement >= 99.99% of draws (mismatch rate <= 1e-4).
-//  2. EVERY mismatch is a genuine near-tie: the HOST's own keys for the device's token and the
-//     host's token differ by <= 5e-5. A mismatch with a larger gap would mean the noise itself
-//     differs — a bug, not rounding.
+//  2. EVERY mismatch is a genuine near-tie: the HOST's own keys for the device's token and the host's token differ by <= 5e-5. A
+//     larger gap would mean the noise itself differs, a bug rather than rounding.
 //
-// Rows: the real vocab and sizes that are not multiples of 4 or of the block (GB_THREADS=256, so
-// the block is 1024 entries), normal / peaked / -inf-masked / flat; temperatures 0.3, 1.0, 2.0;
-// seeds and draw indices that exercise the high words of both.
+// Rows: the real vocab and sizes that are not multiples of 4 or of the block (GB_THREADS=256, so 1024 entries); normal / peaked /
+// -inf-masked / flat; temperatures 0.3, 1.0, 2.0; seeds and draw indices that exercise the high words of both.
 func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint for the compiled gumbel kernels)")
@@ -179,13 +173,11 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 	}
 }
 
-// TestPhiloxGumbelMSL_mutationDetectsAConstantChange applies R7b's own registered mutation check
-// (docs/measurements/sampled-gumbel-2026-09-20.md: "a Philox constant changed on the CUDA kernel →
-// mismatches with host-key gaps 1.4-5.2") to the MSL kernel: flip gumbel.go's philoxM0 constant
-// (0xD2511F53 -> 0xD2511F52), rebuild the library, and confirm TestGumbelDeviceAgreesWithHost's own
-// rule (every mismatch within 5e-5 of the host's own keys) goes red with LARGE gaps — proving the
-// gate can actually catch a broken kernel, not just pass vacuously on a correct one. Restores the
-// source afterward and confirms the restoration is byte-identical.
+// TestPhiloxGumbelMSL_mutationDetectsAConstantChange is the registered mutation check (docs/measurements/sampled-gumbel-2026-09-20.md:
+// a Philox constant changed on the CUDA kernel mismatches the host with large key gaps) for the MSL kernel. It flips the 0xD2511F53u
+// multiplier to 0xD2511F52u in a copy of gumbelMSLKernels, compiles that as its own library, and requires a 300-draw comparison on
+// one 4099-entry normal row to mismatch the host with a key gap above 5e-5, which shows the gate can go red on a broken kernel, not
+// only pass on a correct one. The shipped source is not modified.
 func TestPhiloxGumbelMSL_mutationDetectsAConstantChange(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (compiles a mutated kernel library)")
@@ -264,12 +256,10 @@ func TestPhiloxGumbelMSL_mutationDetectsAConstantChange(t *testing.T) {
 	}
 }
 
-// mutatePhiloxConstant exists only so the mutation test above can build an ALTERNATE library
-// without touching the shipped allKernels — see gumbel.go's own philoxM0-equivalent constant
-// (0xD2511F53u, the same value decoder/philox.go pins). Replaces EVERY occurrence (it appears
-// twice, in one statement computing hi0 via gb_mulhi and lo0 via a plain multiply) so the mutated
-// kernel is internally consistent — a real accidental constant change would move both call sites
-// together, not leave them disagreeing with each other.
+// mutatePhiloxConstant builds an alternate library source for the mutation test without touching the shipped allKernels. It
+// replaces EVERY occurrence of the Philox multiplier 0xD2511F53u (twice, in the statement computing hi0 via gb_mulhi and lo0 via a
+// plain multiply) so the mutated kernel is internally consistent, as a real accidental constant change would move both call sites
+// together.
 func mutatePhiloxConstant(src string) string {
 	const from = "0xD2511F53u"
 	const to = "0xD2511F52u"

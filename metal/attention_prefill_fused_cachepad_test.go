@@ -11,23 +11,15 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAttentionPrefillFused_ctxCapNotMultipleOf8 gates C-01 (audit-metal-2026-09-12.md):
-// attention_prefill_fused's key loop reads whole 8-row simdgroup tiles and masks the ragged
-// remainder AFTER the load, so a resident cache built for a ctxCap that is NOT a multiple of 8
-// can have its last, ragged tile read past kc/vc's actual allocated end when nKeysMax reaches
-// that cap exactly. The fix (metal/model.go buildResident) rounds the kc/vc ALLOCATION up to a
-// multiple of 8 rows while leaving r.ctxCap itself (the checked, user-visible capacity) alone.
+// TestAttentionPrefillFused_ctxCapNotMultipleOf8 pins that the resident kc/vc are allocated rounded up to a multiple of 8 rows
+// while r.ctxCap (the checked, user-visible capacity) stays as requested: attention_prefill_fused's key loop reads whole 8-row
+// simdgroup tiles and masks the ragged remainder after the load, so with a ctxCap that is not a multiple of 8 the last tile reads
+// past the allocation when nKeysMax reaches the cap (buildResident, metal/model.go).
 //
-// This asserts the allocated BYTE LENGTH directly (Buffer.Len(), the logical size passed to the
-// allocator) rather than trying to observe the OOB read's effect on output: a first attempt at
-// this test drove PrefillLast right up to the ctxCap=37 boundary and compared logits against the
-// sequential-Forward reference, and it passed identically with the fix reverted — Metal's actual
-// buffer backing is page-rounded (16 KB on Apple silicon) regardless of the requested length, so
-// a 37-row and a 40-row request for a buffer this small land on the exact same physical
-// allocation and the "OOB" read is silently in-bounds either way. Buffer.Len() reports the
-// LOGICAL length the caller asked for, not the physical rounding, so it is the only reliable way
-// to see this fix take effect — the same "prove the gate can go red" discipline this repo's other
-// gates are held to (CLAUDE.md).
+// It asserts the allocated byte length (Buffer.Len(), the logical size passed to the allocator), not the out-of-bounds read's
+// effect on output: Metal page-rounds the physical backing (16 KB on Apple silicon), so a 37-row and a 40-row buffer this small
+// share one allocation and the read is in bounds either way; a version that compared PrefillLast logits at the boundary against
+// sequential Forward passed with the fix reverted. The PrefillLast run below is a smoke check (finite logits), not a gate.
 func TestAttentionPrefillFused_ctxCapNotMultipleOf8(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -36,7 +28,7 @@ func TestAttentionPrefillFused_ctxCapNotMultipleOf8(t *testing.T) {
 	dir := t.TempDir()
 	writeDense(t, dir, w)
 
-	const ctxCap = 37                                 // NOT a multiple of 8 — the exact shape C-01 describes
+	const ctxCap = 37                                 // NOT a multiple of 8
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // ctxCap=37 is far below any real floor; read at Load
 	m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8", ResidentContext: ctxCap})
 	if err != nil {

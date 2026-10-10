@@ -1134,3 +1134,267 @@ file whose int4 scales are not in the layout Metal binds, what to do about it. S
 bundle stores binary16 scales, but only a -target metal bundle (kind 7, and fused groups) lays them out to be bound,
 so a v15 file for another target is converted too (F-D02, audit-metal-2026-09-30.md).
 ```
+
+## TestAttentionPrefillFused_ctxCapNotMultipleOf8
+
+Moved from `metal/attention_prefill_fused_cachepad_test.go` (the comment above `TestAttentionPrefillFused_ctxCapNotMultipleOf8`) on 2026-10-10.
+
+```text
+TestAttentionPrefillFused_ctxCapNotMultipleOf8 gates C-01 (audit-metal-2026-09-12.md):
+attention_prefill_fused's key loop reads whole 8-row simdgroup tiles and masks the ragged
+remainder AFTER the load, so a resident cache built for a ctxCap that is NOT a multiple of 8
+can have its last, ragged tile read past kc/vc's actual allocated end when nKeysMax reaches
+that cap exactly. The fix (metal/model.go buildResident) rounds the kc/vc ALLOCATION up to a
+multiple of 8 rows while leaving r.ctxCap itself (the checked, user-visible capacity) alone.
+
+This asserts the allocated BYTE LENGTH directly (Buffer.Len(), the logical size passed to the
+allocator) rather than trying to observe the OOB read's effect on output: a first attempt at
+this test drove PrefillLast right up to the ctxCap=37 boundary and compared logits against the
+sequential-Forward reference, and it passed identically with the fix reverted — Metal's actual
+buffer backing is page-rounded (16 KB on Apple silicon) regardless of the requested length, so
+a 37-row and a 40-row request for a buffer this small land on the exact same physical
+allocation and the "OOB" read is silently in-bounds either way. Buffer.Len() reports the
+LOGICAL length the caller asked for, not the physical rounding, so it is the only reliable way
+to see this fix take effect — the same "prove the gate can go red" discipline this repo's other
+gates are held to (CLAUDE.md).
+```
+
+## TestOlmo3ResidentSmokeMetal
+
+Moved from `metal/olmo3_resident_smoke_test.go` (the comment above `TestOlmo3ResidentSmokeMetal`) on 2026-10-10.
+
+```text
+TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are G5's FeatPostOnlyNorm +
+FeatQKNormWhole row (docs/tasks/task-gpu-paths-2026-09.md) smoke gates: the model actually goes
+resident and produces finite, non-degenerate output.
+
+DELIBERATELY NOT a resident-vs-CPU cosine floor — same finding G5 rows 1-2 already recorded for
+their own seeded/synthetic tiny fixtures (testdata/olmo3-tiny, testdata/olmo_hybrid-tiny are
+both "seeded" per their own pin_*.py scripts, same pattern). This feature has no new pure-Go
+formula the way FeatNoPE/FeatAttnTemp did, so the real correctness gate is one level lower:
+TestQKNorm_wholeVector (qknorm_whole_test.go) proves the whole-vector qk_norm DISPATCH GEOMETRY
+directly against the real production kernel with an exact per-component comparison (no GPU
+quantization noise at all in that path) — the strongest evidence this row has. The postOnly
+pre-norm skip (quant_vec instead of rmsnorm_quant) reuses an already-proven, unmodified kernel
+(ctx-before-o-proj already dispatches it), so its own correctness rests on that kernel's
+existing coverage plus this smoke test's admission-and-no-NaN check.
+```
+
+## TestPrefillLast_startPosGreaterThanZero
+
+Moved from `metal/prefill_startpos_test.go` (the comment above `TestPrefillLast_startPosGreaterThanZero`) on 2026-10-10.
+
+```text
+TestPrefillLast_startPosGreaterThanZero gates G-08 (audit-metal-2026-09-12.md): the §3.2 pooled
+gate (prefill_gate_ref_test.go) only ever calls PrefillLast(embs, 0) — every resident-prefix-
+reuse turn (decoder/model.go's residentPrefillSeed, `from` — an agent loop continuing from an
+already-resident prefix, the peer matrix's own headline workload) calls it with startPos > 0,
+and the fused kernel's startPos/uMReal masking (attention_prefill_fused's nKeysMax computation)
+has no coverage at that shape outside one synthetic hd=64 unit case.
+
+A focused correctness check on the tiny synthetic fixture, not a change to the pooled gate's
+own carefully pre-registered statistics (decisionKs/confirmKs, the critA/B/C formulas) — G-08's
+own confidence is "plausible, coverage gap, no defect shown", and this closes the gap without
+risking the established methodology those formulas represent. Builds the SAME shared KV prefix
+[0,from) on two residents via Forward (bit-identical by construction — same sequential path),
+then diverges: one continues the reference way (Forward, one token at a time) through [from,K);
+the other takes the SAME suffix through PrefillLast(embs[from:], from) — the exact code path
+G-08 flags as uncovered. Compares the two residents' final logits at position K-1.
+
+The fixture's head dim is 16, so PrefillLast runs attention_prefill_fused here. At head dim 128 production runs
+attention_prefill_steel, which TestAttentionPrefillSteelMatchesFloat64 checks at startPos > 0 (F-G01).
+```
+
+## TestResidentNeedBytes_honorsPagingSlots
+
+Moved from `metal/resident_memguard_test.go` (the comment above `TestResidentNeedBytes_honorsPagingSlots`) on 2026-10-10.
+
+```text
+TestResidentNeedBytes_honorsPagingSlots is M-02's gate for the actual wiring gap: reverting
+residentNeedBytes to always call ResidentWeightBytes() (the pre-fix behavior) compiles clean
+and TestMetalMoESlotsFromEnv above still passes, because that test only exercises the parsing
+function in isolation — it never proves the guard USES what it parses. This does, by loading a
+real (tiny) MoE checkpoint and comparing residentNeedBytes' output against
+ResidentWeightBytes/ResidentWeightBytesPaged/ResidentHostCopyBytes/residentKVBytes directly,
+with no real RAM or a checkpoint large enough to swing residentFitsMemory's verdict required.
+
+2026-09-09 (M-02 continued): residentNeedBytes gained two more additive terms (the host-copy
+addend and KV bytes) beside the paged-weight term this test originally gated alone — so "==
+unpaged weight bytes" is no longer residentNeedBytes' own contract; the assertions below add
+the SAME two terms back in, computed independently via the public accessors, so this still
+catches a regression in the paging wiring specifically without needing to be rewritten every
+time another additive term is found.
+```
+
+## TestSmolLM3ResidentSmokeMetal
+
+Moved from `metal/smollm3_resident_parity_test.go` (the comment above `TestSmolLM3ResidentSmokeMetal`) on 2026-10-10.
+
+```text
+TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/tasks/task-gpu-paths-2026-09.md) smoke
+gate: the model actually goes resident and produces finite, non-degenerate output when its
+LAST layer is NoPE (testdata/smollm3-tiny's no_rope_layers=[1,1,1,0], 1=has-rope/0=NoPE).
+
+This is DELIBERATELY NOT a resident-vs-CPU cosine floor, and used to be one — MEASURED (not
+assumed) that this fixture cannot discriminate a correct NoPE implementation from a broken
+one: with the real fix (zero invFreq on layer 3 only), with the fix reverted (real invFreq on
+every layer, i.e. layer 3 wrongly ropes), and with EVERY layer's invFreq forced to zero (layers
+0-2 wrongly skip rope too), the worst cosine against the CPU reference over 32 tokens was
+0.9619, 0.9617, and 0.9624 respectively — a ~0.0006 spread, all three configurations equally
+"passing" or "failing" any threshold that would separate them. The seeded/synthetic weights at
+hidden=64 mean int8 quantization noise dominates the comparison regardless of rope correctness
+— the SAME "cannot discriminate a real bug from quantization noise on unstructured weights"
+finding this codebase already recorded for Mellum-on-Metal (features.go's FeatRopeMscale note).
+
+The actual correctness gate is decoder.TestRopeInvFreqLayer_NoPEIsZero — a pure, backend-
+agnostic unit test of RopeInvFreqLayer itself (exact zero/non-zero per layer, no GPU, no
+quantization noise), plus the shipped rope2 kernel math being exact identity at invFreq==0 by
+construction (metal/kernels.go, metal/rope_test.go's TestRope_mscale family already exercises
+that kernel directly). This test's only job is: does declaring FeatNoPE actually let the model
+go resident and run without error/NaN.
+```
+
+## TestPhiloxGumbelMSL_mutationDetectsAConstantChange
+
+Moved from `metal/gumbel_test.go` (the comment above `TestPhiloxGumbelMSL_mutationDetectsAConstantChange`) on 2026-10-10.
+
+```text
+TestPhiloxGumbelMSL_mutationDetectsAConstantChange applies R7b's own registered mutation check
+(docs/measurements/sampled-gumbel-2026-09-20.md: "a Philox constant changed on the CUDA kernel →
+mismatches with host-key gaps 1.4-5.2") to the MSL kernel: flip gumbel.go's philoxM0 constant
+(0xD2511F53 -> 0xD2511F52), rebuild the library, and confirm TestGumbelDeviceAgreesWithHost's own
+rule (every mismatch within 5e-5 of the host's own keys) goes red with LARGE gaps — proving the
+gate can actually catch a broken kernel, not just pass vacuously on a correct one. Restores the
+source afterward and confirms the restoration is byte-identical.
+```
+
+## TestSampledDecodeLadder_speed
+
+Moved from `metal/sampled_gumbel_speed_test.go` (the comment above `TestSampledDecodeLadder_speed`) on 2026-10-10.
+
+```text
+TestSampledDecodeLadder_speed is R7b Mac's speed measurement (docs/tasks/red-october.md),
+following the same protocol docs/measurements/sampled-gumbel-2026-09-20.md's CUDA/WebGPU numbers
+used (paired against greedy, same session, interleaved with a rotating start, a discarded
+warm-up round, and a do-nothing arm) — CUDA's own TestSampledDecodeLadder was not found
+committed anywhere in this tree to port directly (checked: no match repo-wide), so this is a
+from-scratch harness built to the SAME protocol description, not a line-for-line port.
+
+THREE ARMS, one seed, one prompt, per round:
+  - greedy       (Temperature: 0)
+  - host draw    (Temperature: 1.0, GOINFER_NO_SAMPLE_FASTPATH=1) -- the do-nothing arm: proves
+    the device path is worth having at all, not just that it beats itself
+  - device draw  (Temperature: 1.0, fastpath default)
+
+PAIRED, NOT POOLED (CLAUDE.md measurement discipline, rule 7): each round runs all three arms
+back to back before the next round starts, and the ratio is computed PER ROUND, then those
+per-round ratios are summarized (median + spread) -- never a ratio of pooled means, which would
+carry between-round variance (thermal, scheduler noise) into the comparison.
+
+DECODE-ONLY: timed from the first emitted token to the last (time-to-first-token subtracted),
+not from the call start, so prefill cost (paid once, off this measurement's critical path in a
+real decode-bound workload) doesn't dilute the per-token rate.
+
+Run: GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestSampledDecodeLadder_speed -v -timeout 30m
+```
+
+### metal/attention_prefill_fused_cachepad_test.go, on `const ctxCap = 37`
+
+```text
+const ctxCap = 37                                 // NOT a multiple of 8 — the exact shape C-01 describes
+```
+
+## Test files (metal-wM2): tracker labels and short history removed
+
+Comment lines of the test files `metal/resident_memguard_test.go`, `metal/gumbel_test.go` and `metal/moe_expert_major_prefill_test.go` that the diet cut down to what the test pins, verbatim, on 2026-10-10. The test names are unchanged; the larger stories are under their own `## Test...` headings above.
+
+
+### metal/resident_memguard_test.go, before `{"gptoss20b_on_16gb", 11280 * gb / 1000, 16 * uint64(gb), false},`
+
+```text
+THE MEASURED CASE. gpt-oss-20b's 11.28 GB of weights on a 16 GB MacBook drove swap to
+35.98 GB of 36 GB and never completed or declined. It must be refused.
+```
+
+
+### metal/resident_memguard_test.go, before `func TestMetalMemoryCeiling_takesTheStricterBound(t *testing.T) {`
+
+```text
+TestMetalMemoryCeiling_takesTheStricterBound is S4 item 3's own gate (task-never-swap-2026-09.md):
+the combined ceiling must equal the static ram*residentMemFraction figure whenever the live
+probe is unknown or looser, and must equal the LIVE figure whenever that is the tighter one —
+never the other way around, since a live figure ALLOWED to widen the ceiling would reopen
+exactly the darwin-UBC "guard that inverts under pressure" failure this file's own doc comment
+on metalMemoryCeiling explains.
+```
+
+
+### metal/resident_memguard_test.go, before `func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {`
+
+```text
+TestResidentFitsMemory_honorsLiveCeiling is S4 item 3's own WIRING gate:
+TestMetalMemoryCeiling_takesTheStricterBound above proves the combined-ceiling arithmetic in
+isolation; this proves residentFitsMemory — the REAL load-time guard, not a private copy of the
+same formula — actually reads through it. A version of residentFitsMemory that reverted to its
+pre-item-3 static-only budget would still pass every other test in this file (they never touch
+metalLiveAvailable) while silently ignoring a live probe reporting almost no memory at all —
+exactly the wiring gap this guards against.
+```
+
+
+### metal/resident_memguard_test.go, before `func TestMetalMoESlotsFromEnv(t *testing.T) {`
+
+```text
+TestMetalMoESlotsFromEnv is M-02's gate for the guard's half of the ordering fix:
+residentFitsMemory must ask ResidentWeightBytesPaged for the SAME N that metal/moe.go and
+metal/gemma4_moe.go are about to honor, not silently fall back to the unpaged number on
+anything it cannot parse cleanly. Mirrors those two files' resolution exactly (metalMoESlotsRequest),
+except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
+and declines on a bad value) rather than a hard error.
+
+Phase 2 (docs/tasks/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
+env-var cases below now go through a model whose Options.MoECacheSlots is 0 (unset), so
+metalMoESlotsRequest's fallback to GOINFER_METAL_MOE_SLOTS is what's actually exercised — an
+additional case pins the NEW priority order directly (Options wins over the env var when both
+are set).
+```
+
+
+### metal/resident_memguard_test.go, before `if hc0, hc1 := m.ResidentHostCopyBytes(0), m.ResidentHostCopyBytes(1); hc1 >= hc`
+
+```text
+The host-copy addend must ITSELF shrink under paging (that's the whole point of M-02's
+distinction): paged experts stream, so ResidentHostCopyBytes(1) must be strictly smaller
+than ResidentHostCopyBytes(0) whenever paging actually caps anything on this fixture.
+```
+
+
+### metal/gumbel_test.go, before `func TestGumbelDeviceAgreesWithHost(t *testing.T) {`
+
+```text
+TestGumbelDeviceAgreesWithHost is the kernel gate for gumbel_stage1/2 (R7b Mac half), a direct
+port of cuda's TestGumbelDeviceAgreesWithHost (cuda/gumbel_test.go) — read its header first;
+this uses the exact same pre-registered rule, rows and seeds.
+
+PRE-REGISTERED RULE (written before the first run, matching the CUDA gate). The host draw
+(decoder.gumbelDraw, f64 noise transform) is the reference; the device computes the same argmax
+with an f32 transform. Philox is integer-exact, so the two agree except where the best two keys
+are within a few f32 ulps. Therefore:
+
+ 1. Overall agreement >= 99.99% of draws (mismatch rate <= 1e-4).
+ 2. EVERY mismatch is a genuine near-tie: the HOST's own keys for the device's token and the
+    host's token differ by <= 5e-5. A mismatch with a larger gap would mean the noise itself
+    differs — a bug, not rounding.
+
+Rows: the real vocab and sizes that are not multiples of 4 or of the block (GB_THREADS=256, so
+the block is 1024 entries), normal / peaked / -inf-masked / flat; temperatures 0.3, 1.0, 2.0;
+seeds and draw indices that exercise the high words of both.
+```
+
+
+### metal/moe_expert_major_prefill_test.go, before `func TestMoEExpertMajor_ParityVsRowByRow(t *testing.T) {`
+
+```text
+TestMoEExpertMajor_ParityVsRowByRow verifies that the expert-major batched prefill
+produces near-identical logits and matching argmax compared to the row-by-row fallback.
+```
