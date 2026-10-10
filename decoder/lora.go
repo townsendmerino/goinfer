@@ -132,15 +132,13 @@ func loraTensor(st *embed.SafetensorsFile, name string) ([]float32, []int, error
 	return data, t.Shape, nil
 }
 
-// validateTargets checks every adapter delta maps to a per-layer projection the
-// loader will merge into — so an adapter targeting an unsupported module (e.g.
-// embed_tokens) fails loudly rather than silently no-op'ing.
+// validateTargets checks that every adapter delta maps to a per-layer projection the loader will merge into, so an
+// adapter targeting an unsupported module (e.g. embed_tokens) fails loudly rather than silently doing nothing.
 //
-// name MUST build the SAME tensor names the corresponding merge path actually looks the delta up
-// by, or the check lies (M18): the merge-at-load path in weights.go looks up prefixed names (tn,
-// which adds language_model.* / model.language_model.* on VL checkpoints), while the compute-time
-// path (buildLoraRuntime) uses the bare tensorName. Passing the wrong builder is exactly how a
-// VL-prefixed base validated clean and then silently ignored the whole adapter.
+// name MUST build the same tensor names the corresponding apply path looks the delta up by, or the check lies: the
+// merge-at-load path in weights.go looks up prefixed names (tn, which adds language_model.* and model.language_model.*
+// on VL checkpoints), while the compute-time path (buildLoraRuntime) uses the bare tensorName. A wrong builder lets a
+// VL-prefixed base validate clean and then silently ignore the whole adapter. History: docs/code-notes/decoder.md#loraAdapter.validateTargets.
 func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer int, suffix string) string) error {
 	known := map[string]bool{}
 	for i := range numLayers {
@@ -159,15 +157,12 @@ func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(
 	return nil
 }
 
-// validateComputeTimeDims checks every targeted delta's declared [Out,In] shape against the
-// ACTUAL base projection it will be added to — the same check merge() already makes for every
-// tensor on the merge-at-load path (its own `d.out != out || d.in != in` above), which the
-// compute-time path never made: buildLoraRuntime maps deltas onto projections by NAME only, with
-// no shape check at all. A same-family adapter trained against a different-size base (a narrower
-// or wider hidden/head/intermediate dim) then reaches every resident backend's SetAdapter
-// carrying a rank-only-checked delta whose In/Out the kernel trusts blindly — on Metal this writes
-// past the Q slot into K/V (audit-metal-2026-09-12.md C-03). Fixed once here, at the one
-// chokepoint every backend's compute-time LoRA passes through, rather than duplicated per backend.
+// validateComputeTimeDims checks every targeted delta's declared [Out,In] shape against the actual base projection it
+// will be added to, as merge does on the merge-at-load path. buildLoraRuntime maps deltas onto projections by name only,
+// and every resident backend's SetAdapter trusts the delta's In/Out (Metal checks only the rank), so an adapter trained
+// against a different-size base would make a kernel write past its slot. This is the one chokepoint every backend's
+// compute-time LoRA passes through: keep the check here, not per backend.
+// History: docs/code-notes/decoder.md#loraAdapter.validateComputeTimeDims.
 func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []LayerWeights, s *tensorSchema, name func(layer int, suffix string) string) error {
 	check := func(i int, suf string, proj *linalg.WeightMat) error {
 		if suf == "" {
@@ -238,11 +233,10 @@ func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
 	return nil
 }
 
-// checkAllMerged refuses an adapter that has a delta the load never merged (D3). validateTargets checks
-// names against a list before the load; this checks them against what the load actually did, so it
-// also covers a family whose tensor names no list holds (qwen35's DeltaNet layouts), a loader that
-// takes no adapter at all (internlm2, gpt-oss), and a name that is on the list but is not loaded
-// in that layer (a self_attn projection on a linear-attention layer). nil-safe.
+// checkAllMerged refuses an adapter that has a delta the load never merged. validateTargets checks names against a list
+// before the load; this checks them against what the load actually did, so it also covers a family whose tensor names no
+// list holds, a loader that takes no adapter at all, and a name that is on the list but not loaded in that layer (a
+// self_attn projection on a linear-attention layer). nil-safe.
 func (a *loraAdapter) checkAllMerged() error {
 	if a == nil {
 		return nil
@@ -284,13 +278,11 @@ func (a *loraAdapter) close() {
 	}
 }
 
-// --- Compute-time LoRA (#7): apply the low-rank delta in the forward instead of
-// merging it into the base weight. Keeping the base immutable + zero-copy lets N
-// adapters of one base share a single resident transformer (≈ base + N small
-// deltas) rather than paying the full RAM N times over. Opt-in: merged-LoRA stays
-// the faster, simpler default — this trades a little decode speed for that density.
-// Only the generic dense forward (runLayersFromEmbed → causalAttention + gatedMLP)
-// is wired; Model.LoadAdapter rejects the special-forward / MoE / non-gated archs.
+// --- Compute-time LoRA: apply the low-rank delta in the forward instead of merging it into the base weight. The base
+// stays immutable and zero-copy, so N adapters of one base share a single resident transformer (base plus N small
+// deltas). Opt-in: merged LoRA stays the faster, simpler default; this trades a little decode speed for density. Only
+// the generic dense forward (runLayersFromEmbed, causalAttention, gatedMLP) is wired; Model.LoadAdapter rejects the
+// special-forward, MoE and non-gated archs.
 
 // loraLayerDelta holds one transformer layer's per-projection deltas; a nil entry
 // is a projection the adapter does not target (the apply is a no-op).
@@ -337,19 +329,14 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchem
 	return rt
 }
 
-// LoadAdapter loads a PEFT LoRA adapter for compute-time application (#7) and
-// registers it under name. Unlike the merge-at-load path (Options.Lora), the base
-// stays immutable, so many adapters of one base share its resident weights — the
-// density win. Only the generic dense forward is wired: MoE, non-gated, and every
-// own-forward family (arch.ownForward — gemma4, qwen3_5_moe, lfm2, granitemoehybrid,
-// nemotron_h, deepseek_v2/v3, llama4_text, gpt-oss) are rejected, as is a
-// GGUF/serialized base (the adapter is HF-named — it needs the safetensors schema).
+// LoadAdapter loads a PEFT LoRA adapter for compute-time application and registers it under name. Unlike the
+// merge-at-load path (Options.Lora) the base stays immutable, so many adapters of one base share its resident weights.
+// Only the generic dense forward is wired: MoE, non-gated MLP and every own-forward family (arch.ownForward) are
+// rejected, as is a GGUF or serialized base (the adapter is HF-named and needs the safetensors schema).
 //
-// V-12 (docs/review-2026-09-04.md): this used to hand-list gemma4/qwen35 instead of
-// deriving from arch.ownForward() — the same "one predicate, seven consumers" bug class
-// canBatchN (decoder/forwardn.go) was fixed for after LFM2 fell out of ITS hand-copied
-// list (audit-2026-09-02 C-01/C-02). LoRA against LFM2 loaded and validated cleanly —
-// runLayersLFM2 takes no lora parameter at all — so the adapter silently did nothing.
+// The own-forward rejection must derive from arch.ownForward(), not a hand-written family list: a family missing from
+// a copy would load and validate cleanly and then silently apply nothing (runLayersLFM2 takes no lora parameter).
+// History: docs/code-notes/decoder.md#Model.LoadAdapter.
 func (m *Model) LoadAdapter(name, dir string) error {
 	arch := m.w.arch
 	_, hasOwnForward := arch.ownForward()
@@ -373,10 +360,8 @@ func (m *Model) LoadAdapter(name, dir string) error {
 		a.close()
 		return err
 	}
-	// C-03 (audit-metal-2026-09-12.md): validateTargets only checks that every target NAME is a
-	// known projection — it says nothing about SHAPE. Every resident backend's SetAdapter trusts
-	// In/Out from the checkpoint (Metal only range-checks rank); catch a mismatched adapter here,
-	// once, before it reaches any of them.
+	// validateTargets checks names only; every resident backend's SetAdapter trusts In/Out from the checkpoint, so a
+	// mismatched adapter is caught here, once, before it reaches any of them.
 	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.schema, tensorName); err != nil {
 		a.close()
 		return err
@@ -385,12 +370,10 @@ func (m *Model) LoadAdapter(name, dir string) error {
 	return nil
 }
 
-// registerAdapter installs rt under name, retiring any runtime it displaces (audit C-29). A live
-// Session may still hold the displaced runtime via cache.lora and read its mmap'd deltas
-// mid-generation, so it is retired (released at Model.Close), never munmap'd here. The registry's
-// mutex guards this against concurrent UseAdapter/HasAdapter reads from other request goroutines.
-// The registry is allocated on first use (adapters are loaded at setup, before serving), so the
-// pointer field is only ever set here.
+// registerAdapter installs rt under name, retiring any runtime it displaces. A live Session may still hold the displaced
+// runtime via cache.lora and read its mmap'd deltas mid-generation, so it is retired (released at Model.Close), never
+// munmap'd here. The registry's mutex guards this against concurrent UseAdapter/HasAdapter reads. The registry is
+// allocated on first use (adapters load at setup, before serving), so the pointer field is only ever set here.
 func (m *Model) registerAdapter(name string, rt *loraRuntime) {
 	if m.adapters == nil {
 		m.adapters = newAdapterRegistry()

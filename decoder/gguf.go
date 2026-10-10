@@ -14,36 +14,26 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// GGUF loading — read a quantized llama.cpp checkpoint and
-// run it through the generic forward. The GGUF file carries both the
-// architecture config (metadata) and the weights (dequantized from the mmap,
-// then optionally re-quantized to resident int8/int4 per the quant mode), so no
-// separate config.json/safetensors is needed. Layout quirks vs the HF safetensors
-// path are normalized at load: tensors use llama.cpp's blk.N.* names; the q/k
-// projections of NORM-rope archs (llama/mellum) are in llama.cpp's interleaved-
-// RoPE permutation, inverted here to this package's rotate_half order (NEOX-rope
-// archs — qwen/gemma — are left as-is, see ggufQKPermuted); and Gemma's (1+w)
-// norm offset, baked into the stored weights by llama.cpp, is subtracted back out.
+// GGUF loading: read a quantized llama.cpp checkpoint and run it through the generic forward. The GGUF file carries both
+// the architecture config (metadata) and the weights (dequantized from the mmap, then optionally re-quantized to resident
+// int8/int4 per the quant mode), so no separate config.json or safetensors is needed. Layout quirks against the HF
+// safetensors path are normalized at load: tensors use llama.cpp's blk.N.* names; the q/k projections of NORM-rope archs
+// (llama, mellum) are in llama.cpp's interleaved-RoPE permutation, inverted here to rotate_half order (NEOX-rope archs,
+// qwen and gemma, are left as is; see ggufQKPermuted); and Gemma's (1+w) norm offset, baked into the stored weights by
+// llama.cpp, is subtracted back out.
 //
-// Architectures: whatever decoder/registry.go's `registry` map carries (34 as of 2026-09-02 —
-// llama/mistral/mixtral/phi3, the qwen2/qwen3/qwen3_5 family, gemma3/gemma4, gpt2, gpt_oss,
-// cohere, deepseek_v2/v3, kimi_k2, glm4_moe, granitemoehybrid, nemotron_h, internlm2/3, laguna,
-// lfm2, llama4_text, mellum). NOT restated as a fixed list here: this comment carried five names
-// for long enough that it read as a limit rather than an example (N-34). Read the map.
-// Quant types: F32/F16,
-// Q8_0/Q4_0/Q5_0, the K-quants Q2_K/Q3_K/Q4_K/Q5_K/Q6_K, and IQ4_NL/IQ4_XS.
+// Architectures: whatever registry.go's `registry` map carries, not restated here (a short list reads as a limit rather
+// than an example). Quant types: F32/F16, Q8_0/Q4_0/Q5_0, the K-quants Q2_K/Q3_K/Q4_K/Q5_K/Q6_K, and IQ4_NL/IQ4_XS.
 
 // ggufConfig synthesizes a Config from GGUF metadata, dispatching on
 // general.architecture. The resolved Config feeds resolveArchitecture, so a
 // GGUF reuses the same per-family adapter as the safetensors path.
 func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	arch, _ := g.Str("general.architecture")
-	// Hostile metadata can drive a family builder into an integer divide-by-zero
-	// (e.g. a missing head_count ⇒ hidden/0) or a similar panic before
-	// validateGGUFDims ever runs. Convert any such panic into a typed error so the
-	// loader honors its never-panic contract for every architecture, current and
-	// future (M16). Unbounded per-layer allocations are guarded explicitly by
-	// ggufLayerCount below — a huge makeslice is a fatal OOM that recover can't catch.
+	// Hostile metadata can drive a family builder into an integer divide-by-zero (a missing head_count makes hidden/0) or a
+	// similar panic before validateGGUFDims runs. Any such panic becomes a typed error, so the loader keeps its never-panic
+	// contract for every architecture, current and future. Unbounded per-layer allocations are guarded explicitly by
+	// ggufLayerCount: a huge makeslice is a fatal OOM that recover cannot catch.
 	defer func() {
 		if r := recover(); r != nil {
 			cfg, err = nil, fmt.Errorf("decoder(gguf): malformed metadata for architecture %q: %v", arch, r)
@@ -143,15 +133,12 @@ func ggufLlamaConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
-// ggufGraniteDenseConfig builds a dense Granite 4.2 Config from the granite.* metadata.
-// Verified against a real file's header (HTTP-Range-fetched, bartowski/granite-4.2-3b-GGUF
-// Q2_K): architecture string "granite" (distinct from the hybrid's "granitehybrid"), and
-// llama.cpp bakes Granite's scalar multipliers directly into metadata — attention.scale (the
-// resolved attention_multiplier, not 1/√d), embedding_scale, logit_scale, residual_scale — so
-// no separate multiplier-vs-default resolution is needed the way the safetensors path does.
-// The tensor set is exactly llama's (no separate ggufLlamaConfig reuse possible here since the
-// metadata NAMESPACE differs, but the loader dispatch for actually reading tensors is identical
-// once resolveArchitecture returns llamaTensorSchema).
+// ggufGraniteDenseConfig builds a dense Granite 4.2 Config from the granite.* metadata. The architecture string is
+// "granite", distinct from the hybrid's "granitehybrid", and llama.cpp bakes Granite's scalar multipliers directly into
+// metadata (attention.scale, the resolved attention_multiplier rather than 1/sqrt(d); embedding_scale; logit_scale;
+// residual_scale), so no multiplier-versus-default resolution is needed as on the safetensors path. The tensor set is
+// exactly llama's: the metadata namespace differs, so ggufLlamaConfig cannot be reused, but tensor loading is identical
+// once resolveArchitecture returns llamaTensorSchema.
 func ggufGraniteDenseConfig(g *embed.GGUFFile) (*Config, error) {
 	u := func(k string) int {
 		v, _ := g.Uint("granite." + k)
@@ -487,12 +474,10 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 	if baseSwa == 0 {
 		baseSwa = base
 	}
-	// attention_factor: the same trap ggufLagunaConfig documents and avoids (N-69,
-	// docs/audit-2026-09-10.md — this used to be synthesized unconditionally here). llama.cpp
-	// writes rope.scaling.yarn_attn_factor = 1.0 as its "unset" sentinel and 0 is
-	// metadata-absent; passing either through as an explicit attention_factor would override
-	// YaRN's own computed mscale (get_mscale(factor) = 0.1·ln(factor)+1) with a no-op or zero.
-	// Omit the field at the sentinel/absent cases so the decoder computes it instead.
+	// attention_factor: the same trap ggufLagunaConfig documents. llama.cpp writes rope.scaling.yarn_attn_factor = 1.0 as its
+	// "unset" sentinel and 0 is metadata-absent; passing either through as an explicit attention_factor would override
+	// YaRN's own computed mscale (get_mscale(factor) = 0.1*ln(factor)+1) with a no-op or zero. Omit the field at the
+	// sentinel and absent cases so the decoder computes it.
 	attnFactor := ""
 	if af := gf("rope.scaling.yarn_attn_factor"); af != 0 && af != 1 {
 		attnFactor = fmt.Sprintf(`,"attention_factor":%g`, af)
@@ -507,20 +492,13 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
-// ggufQwen3MoeConfig builds a Qwen3-MoE Config from the qwen3moe.* metadata.
-// Verified against a real file's header (HTTP-Range-fetched, first 30MB of
-// unsloth/Qwen3-30B-A3B-GGUF's Q2_K — well under the 15GB+ full file), not
-// assumed: architecture string is literally "qwen3moe", the metadata is the
-// plain {arch}.attention.head_count/head_count_kv/key_length/
-// layer_norm_rms_epsilon, {arch}.expert_count/expert_used_count/
-// expert_feed_forward_length, {arch}.rope.freq_base — no sliding-window or YaRN
-// keys at all (single global RoPE, unlike Mellum's per-layer-type split) — and
-// the tensor set carries attn_q_norm/attn_k_norm and
-// ffn_gate_inp/ffn_{gate,up,down}_exps but NO ffn_*_shexp (no shared expert,
-// matching the real config.json's absent shared_expert_intermediate_size).
-// norm_topk_prob isn't carried as GGUF metadata; hardcoded true to match the
-// real config (HF Qwen3MoeConfig's own default, same convention ggufMellumConfig
-// uses for its own missing metadata).
+// ggufQwen3MoeConfig builds a Qwen3-MoE Config from the qwen3moe.* metadata: architecture string "qwen3moe"; the plain
+// {arch}.attention.head_count/head_count_kv/key_length/layer_norm_rms_epsilon, {arch}.expert_count/expert_used_count/
+// expert_feed_forward_length and {arch}.rope.freq_base keys; no sliding-window or YaRN keys (a single global RoPE, unlike
+// Mellum's per-layer-type split). The tensor set carries attn_q_norm/attn_k_norm and ffn_gate_inp/ffn_{gate,up,down}_exps
+// but no ffn_*_shexp (no shared expert, matching the real config's absent shared_expert_intermediate_size).
+// norm_topk_prob is not GGUF metadata and is hardcoded true to match HF Qwen3MoeConfig's default, the same convention
+// ggufMellumConfig uses for its own missing metadata.
 func ggufQwen3MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	u := func(k string) int {
 		v, _ := g.Uint("qwen3moe." + k)
@@ -556,33 +534,26 @@ func ggufQwen3MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
-// ggufLagunaConfig builds a Laguna Config from the laguna.* metadata. llama.cpp
-// has FIRST-CLASS laguna support (general.architecture == "laguna"), and the GGUF
-// carries the family's two awkward parts more cleanly than the safetensors config
-// does: the per-layer QUERY head counts arrive as an ARRAY
-// (laguna.attention.head_count), and the two layer types' rotary widths as separate
-// rope.dimension_count / rope.dimension_count_swa scalars.
+// ggufLagunaConfig builds a Laguna Config from the laguna.* metadata. llama.cpp has first-class laguna support
+// (general.architecture == "laguna"), and the GGUF carries the family's two awkward parts more cleanly than the
+// safetensors config does: the per-layer query head counts arrive as an array (laguna.attention.head_count), and the two
+// layer types' rotary widths as separate rope.dimension_count / rope.dimension_count_swa scalars.
 //
-// THREE THINGS THE GGUF DOES NOT SAY, each handled explicitly:
+// Three things the GGUF does not say, each handled explicitly:
 //
-//  1. WHICH LAYERS ARE FULL. There is no layer_types and no sliding-window PATTERN
-//     key, so it must be derived. The head-count array encodes it (48 on
-//     full_attention, 64 on sliding on the XS line) and layer 0 is full in every
-//     released config, so layers matching heads[0] are the full ones. That is an
-//     INFERENCE, so it is validated: at most two distinct counts, and the derived
-//     split is reported to the caller through LayerTypes for the gate to assert.
+//  1. Which layers are full. There is no layer_types and no sliding-window pattern key, so it is derived. The head-count
+//     array encodes it (full-attention and sliding layers have different query head counts) and layer 0 is full in every
+//     released config, so layers matching heads[0] are the full ones. That is an inference, so it is validated: at most
+//     two distinct counts, and the derived split is reported to the caller through LayerTypes for the gate to assert.
 //
-//  2. THE GATE'S GRANULARITY. There is no gating key at all — matching the
-//     safetensors path, where the declared value is unreliable anyway (XS.2 says
-//     `gating: true` and ships a per-HEAD tensor). The loader reads it from
+//  2. The gate's granularity. There is no gating key at all, matching the safetensors path, where the declared value is
+//     unreliable anyway (XS.2 declares `gating: true` and ships a per-head tensor). The loader reads it from
 //     blk.0.attn_gate.weight's shape, which is the authority in both formats.
 //
-//  3. YARN'S attention_factor. llama.cpp writes rope.scaling.yarn_attn_factor = 1.0
-//     as its "unset" sentinel and computes the mscale itself. Passing 1.0 through
-//     would REPLACE YaRN's mscale with a no-op: goinfer's attention_factor is a
-//     *float64 whose nil means "compute get_mscale(factor) = 0.1·ln(factor)+1", which
-//     for factor 32 is 1.3465735902799727 — exactly what the safetensors config
-//     states. So the field is OMITTED at the sentinel and passed through otherwise.
+//  3. YaRN's attention_factor. llama.cpp writes rope.scaling.yarn_attn_factor = 1.0 as its "unset" sentinel and computes
+//     the mscale itself. Passing 1.0 through would replace YaRN's mscale with a no-op: goinfer's attention_factor is a
+//     *float64 whose nil means "compute get_mscale(factor) = 0.1*ln(factor)+1", which is what the safetensors config
+//     states. So the field is omitted at the sentinel and passed through otherwise.
 func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 	u := func(k string) int {
 		v, _ := g.Uint("laguna." + k)
@@ -600,11 +571,9 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 	if headDim <= 0 || numLayers <= 0 {
 		return nil, fmt.Errorf("decoder(gguf-laguna): missing attention.key_length / block_count")
 	}
-	// M-10(a): BOUND block_count before anything allocates from it. granitehybrid, nemotron
-	// and llama4 got ggufLayerCount; laguna did not, and it goes on to `make([]string,
-	// numLayers)`. A GGUF declaring laguna.block_count = 2^36 asks for 1 TiB — under Go's
-	// maxAlloc, so it is a FATAL "out of memory" rather than a panic, and the loader's own
-	// recover() cannot catch it. Untrusted metadata, unbounded allocation, no error.
+	// Bound block_count before anything allocates from it: laguna goes on to make([]string, numLayers), and a GGUF declaring
+	// laguna.block_count = 2^36 asks for 1 TiB, under Go's maxAlloc, so it is a fatal "out of memory" rather than a panic
+	// and the loader's own recover() cannot catch it. Every builder that allocates from block_count calls ggufLayerCount.
 	if _, err := ggufLayerCount(int(numLayers)); err != nil {
 		return nil, err
 	}
@@ -918,13 +887,10 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
 		`{"rope_type":"default","rope_theta":%g}`, gf("rope.freq_base")))
-	// NoPE. The released granite-4.0-h models set position_embedding_type "nope" and the
-	// converter carries that across as rope.scaling.finetuned — the rope.dimension_count /
-	// rope.freq_base keys are written regardless and are vestigial here (this file has
-	// dimension_count 128 on a model HF ropes not at all). Only an explicitly present key
-	// flips the behaviour; absent leaves the roped path, so an older GGUF cannot silently
-	// lose its RoPE. Verified against the bf16 oracle: roped ⇒ cosine 0.9936 + a wrong
-	// continuation, NoPE ⇒ 0.9995 + exact.
+	// NoPE. The released granite-4.0-h models set position_embedding_type "nope", and the converter carries that across as
+	// rope.scaling.finetuned; the rope.dimension_count and rope.freq_base keys are written regardless and are vestigial here.
+	// Only an explicitly present key flips the behaviour; absent leaves the roped path, so an older GGUF cannot silently lose
+	// its RoPE.
 	if finetuned, ok := g.Metadata["granitehybrid.rope.scaling.finetuned"].(bool); ok && !finetuned {
 		cfg.PositionEmbeddingType = "nope"
 	}
@@ -932,16 +898,13 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
-// ggufNemotronConfig builds a Nemotron-H Config from the nemotron_h.* (or, for
-// Nemotron 3 Nano's MoE variant, nemotron_h_moe.*) metadata. Per-layer kind comes
-// from two parallel arrays: attention.head_count_kv (>0 ⇒ attention) and
-// feed_forward_length (>0 ⇒ mlp for plain nemotron_h, moe for nemotron_h_moe — that
-// architecture string never carries a plain dense-mlp layer, confirmed against a
-// real checkpoint's metadata, not assumed); the rest are mamba. head_dim is
-// attention.key_length (NOT embedding/heads). Attention is NoPE (the rope.* keys are
-// vestigial). ModelType is normalized to "nemotron_h" either way — llama.cpp's GGUF
-// arch string differs from HF's model_type (which stays "nemotron_h" for BOTH the
-// dense and MoE checkpoints), but goinfer's own registry dispatches on the latter.
+// ggufNemotronConfig builds a Nemotron-H Config from the nemotron_h.* (or, for Nemotron 3 Nano's MoE variant,
+// nemotron_h_moe.*) metadata. Per-layer kind comes from two parallel arrays: attention.head_count_kv (>0 means attention)
+// and feed_forward_length (>0 means mlp for plain nemotron_h, moe for nemotron_h_moe, which never carries a plain
+// dense-mlp layer); the rest are mamba. head_dim is attention.key_length (NOT embedding/heads). Attention is NoPE (the
+// rope.* keys are vestigial). ModelType is normalized to "nemotron_h" either way: llama.cpp's GGUF arch string differs
+// from HF's model_type (which stays "nemotron_h" for both the dense and MoE checkpoints), and goinfer's registry
+// dispatches on the latter.
 func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 	archStr, _ := g.Str("general.architecture") // "nemotron_h" or "nemotron_h_moe"
 	isMoE := archStr == "nemotron_h_moe"
@@ -1022,15 +985,10 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 		VocabSize:        ggufVocabSize(g),
 	}
 	if isMoE {
-		// Nemotron 3 Nano's MoE fields — key names verified against a real GGUF file's
-		// metadata (bartowski/nvidia_Nemotron-3-Nano-30B-A3B-GGUF), not assumed from the
-		// safetensors config's field names or llama.cpp's convert script alone:
-		// expert_count/expert_used_count/expert_feed_forward_length/
-		// expert_shared_feed_forward_length/expert_shared_count/expert_weights_norm/
-		// expert_weights_scale/expert_group_count/expert_group_used_count — all present,
-		// including expert_group_used_count (the topk_group equivalent), which is easy to
-		// assume absent since the safetensors config's own topk_group has no direct GGUF
-		// key of the same name.
+		// Nemotron 3 Nano's MoE fields: expert_count, expert_used_count, expert_feed_forward_length,
+		// expert_shared_feed_forward_length, expert_shared_count, expert_weights_norm, expert_weights_scale, expert_group_count
+		// and expert_group_used_count (the topk_group equivalent) are all present in the GGUF; the safetensors config's
+		// topk_group has no GGUF key of the same name, which makes the last easy to assume absent.
 		normTopK := true
 		if b, ok := g.Metadata[archStr+".expert_weights_norm"].(bool); ok {
 			normTopK = b
@@ -1344,22 +1302,16 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonic
 	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4, needCanonical, skipRow4, nil, "", abort)
 }
 
-// StreamTranscodeGGUF transcodes the GGUF at path into a .giw weights body written
-// to out (the GINFW serialization + trailing CRC), loading ONE layer at a time so
-// peak RAM is ~one layer rather than the whole model — the streaming analogue of
-// Load + SerializeWeightsTo, for models too large to hold resident (the build-time
-// hump that otherwise blocks running a >RAM MoE). Every family streams, dedicated
-// loaders included (S2). Returns the bytes written. Typically invoked inside
-// giw.WriteStream as the weights half of a .giw bundle.
+// StreamTranscodeGGUF transcodes the GGUF at path into a .giw weights body written to out (the GINFW serialization plus
+// trailing CRC), loading one layer at a time so peak RAM is about one layer rather than the whole model: the streaming
+// analogue of Load + SerializeWeightsTo, for models too large to hold resident. Every family streams, dedicated loaders
+// included. Returns the bytes written. Typically invoked inside giw.WriteStream as the weights half of a .giw bundle.
 func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4 bool, target GIWTarget, id string) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	// Cancellation (M-21): a transcode of a >RAM model can run for minutes writing tens
-	// of GB. Wrapping the sink makes every per-layer write observe ctx, so a cancelled
-	// context aborts at the next layer boundary (the granularity the streaming loop
-	// writes at) rather than only after the whole pass. Covers both the streaming path
-	// and the qwen35 resident-then-serialize path, which also writes through out.
+	// Cancellation: a transcode of a >RAM model can run for minutes writing tens of GB. Wrapping the sink makes every
+	// per-layer write observe ctx, so a cancelled context aborts at the next layer boundary rather than after the whole pass.
 	out = &ctxWriter{ctx: ctx, w: out}
 	q, err := parseQuant(quant)
 	if err != nil {
@@ -1374,15 +1326,11 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if err != nil {
 		return 0, err
 	}
-	// M-04 (docs/audit-2026-09-10.md): this streaming path never goes through decoder.Load, so it
-	// never picked up Load's own resolveEOSIDs write-back — a .giw built by StreamTranscodeGGUF
-	// carried only cfg.EOSTokenID's raw GGUF-metadata value, dropping any extra stop id a sibling
-	// generation_config.json next to the .gguf would have added, and (found only by
-	// TestStreamTranscodeMatchesResident, which byte-diffs this path against decoder.Load's own
-	// resident-then-serialize output) making the two bundles diverge before the quant label even
-	// on a fixture with no such file to lose. Mirrors decoder/model.go's Load fix exactly: resolve
-	// against the GGUF's own parent directory (os.DirFS(path) can't open anything inside a FILE),
-	// then write the resolved set back into cfg.EOSTokenID so it round-trips through the bundle.
+	// This streaming path never goes through decoder.Load, so it must repeat Load's resolveEOSIDs write-back: resolve against
+	// the GGUF's own parent directory (os.DirFS(path) cannot open anything inside a FILE), then write the resolved set back
+	// into cfg.EOSTokenID so it round-trips through the bundle. Without it a .giw would carry only the raw GGUF-metadata EOS,
+	// dropping any extra stop id from a sibling generation_config.json, and the stream would diverge from the resident bundle
+	// (TestStreamTranscodeMatchesResident byte-diffs the two).
 	if raw, jerr := json.Marshal(resolveEOSIDs(filepath.Dir(path), cfg)); jerr == nil {
 		cfg.EOSTokenID = raw
 	}
@@ -1393,27 +1341,18 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if err != nil {
 		return 0, err
 	}
-	// canSerialize once refused MLA / Mamba-2 / Gemma-4 PLE / Llama-4 here; since v6 the writer
-	// expresses all of them and it returns nil unconditionally. The comment that used to sit
-	// here still described the refusal, which is how M-09 stayed invisible: the families it
-	// named are exactly the ones whose GGUF branch never drives the sink, and the reader was
-	// told they could not get this far.
+	// canSerialize refuses a family the writer cannot express; it returns nil for every registered family today.
 	if serr := canSerialize(arch); serr != nil {
 		return 0, serr
 	}
-	// Every family streams (S2, task-never-swap-2026-09.md): buildWeightsFromGGUF's sink != nil branch
-	// builds, writes and releases one layer at a time, so peak RSS is ~one layer rather than the whole
-	// model. qwen35 got there first (2026-08-24, docs/completed/task-zeno-compare.md: a 35B-A3B MoE had
-	// OOM'd at 40.5 GB resident on a 16 GB Mac under the old resident-then-serialize path); gpt-oss,
-	// laguna, granite, nemotron and llama4 on 2026-09-23; gemma4, the last, on 2026-09-24. The
-	// needsResidentSerialize list that routed families around this path is gone with its last entry.
+	// Every family streams: buildWeightsFromGGUF's sink != nil branch builds, writes and releases one layer at a time, so peak
+	// RSS is about one layer rather than the whole model.
 	//
-	// needCanonical=true unconditionally, regardless of target: the writer needs canonical bytes IN RAM
-	// to choose what to write (repackRow4ForEmit computes row4 from canonical), even on a cpu-arm64
-	// target that will write kind 5 (canonical-absent) to DISK — per layer, that is one layer's
-	// canonical bytes. See docs/tasks/task-int4-layout-2026-09.md's L2. abort=nil: this is the
-	// cmd/prequant transcode path, which observes ctx per layer via M-21's ctxWriter (S3 scopes the
-	// swap tripwire's load-time consumer to decoder.Load's resident build only — see Options.LoadAbort).
+	// needCanonical=true unconditionally, regardless of target: the writer needs canonical bytes in RAM to choose what to
+	// write (repackRow4ForEmit computes row4 from canonical), even on a cpu-arm64 target that writes kind 5
+	// (canonical-absent) to disk; per layer, that is one layer's canonical bytes. abort=nil: this is the cmd/prequant
+	// transcode path, which observes ctx per layer through ctxWriter; the swap tripwire's load-time consumer is scoped to
+	// decoder.Load's resident build only (see Options.LoadAbort).
 	wr := &giwWriter{sink: out, target: target}
 	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id, nil); err != nil {
 		return wr.n, err
@@ -1426,10 +1365,9 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	return wr.n + 4, nil
 }
 
-// ctxWriter aborts an in-flight streamed transcode: it returns ctx.Err() before each
-// underlying Write once the context is cancelled, so StreamTranscodeGGUF stops writing
-// (and the caller removes the partial .giw) instead of running the whole multi-GB pass
-// to completion after a shutdown/disconnect (audit M-21).
+// ctxWriter aborts an in-flight streamed transcode: it returns ctx.Err() before each underlying Write once the context is
+// cancelled, so StreamTranscodeGGUF stops writing (and the caller removes the partial .giw) instead of running the whole
+// multi-GB pass to completion after a shutdown or disconnect.
 type ctxWriter struct {
 	ctx context.Context
 	w   io.Writer
@@ -1455,18 +1393,10 @@ const (
 	maxGGUFExperts   = 1 << 16
 )
 
-// validateGGUFDims rejects core dimensions that are out of range before they
-// reach an allocation. GGUF reads counts as uint64 and narrows to int, so a
-// hostile metadata value (e.g. block_count = 1<<63) silently becomes negative
-// and would panic make([]LayerWeights, n) ("makeslice: len out of range"); a
-// merely-huge positive value would OOM. Both are caught here. Only the dims
-// every family sets from metadata are checked (HeadDim is derived per family;
-// IntermediateDim is vestigial/zero for some MoE checkpoints).
-// ggufLayerCount bounds a block_count before any per-layer slice is allocated or
-// iterated. validateGGUFDims catches an out-of-range count too, but only after the
-// family builder has already run — a hostile count would makeslice a multi-TB array
-// (a fatal OOM, unrecoverable) or, wrapped negative, panic, before that. Call this
-// right after reading block_count in any builder that allocates from it (M16).
+// ggufLayerCount bounds a block_count before any per-layer slice is allocated or iterated. validateGGUFDims catches an
+// out-of-range count too, but only after the family builder has run, and a hostile count would by then have makeslice'd a
+// multi-TB array (a fatal OOM, unrecoverable) or, wrapped negative, panicked. Call it right after reading block_count in
+// any builder that allocates from it.
 
 func ggufLayerCount(n int) (int, error) {
 	if n <= 0 || n > maxGGUFLayers {
@@ -1475,6 +1405,11 @@ func ggufLayerCount(n int) (int, error) {
 	return n, nil
 }
 
+// validateGGUFDims rejects core dimensions that are out of range before they reach an allocation. GGUF reads counts as
+// uint64 and narrows to int, so a hostile metadata value (e.g. block_count = 1<<63) silently becomes negative and would
+// panic make([]LayerWeights, n); a merely-huge positive value would OOM. Both are caught here. Only the dims every
+// family sets from metadata are checked (HeadDim is derived per family; IntermediateDim is vestigial or zero for some
+// MoE checkpoints).
 func validateGGUFDims(cfg *Config) error {
 	switch {
 	case cfg.NumLayers <= 0 || cfg.NumLayers > maxGGUFLayers:
@@ -1571,27 +1506,18 @@ func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int)
 	return wm, err == nil, err
 }
 
-// buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle.
-// When quant is set, each matmul tensor is re-quantized (per-row int8 or
-// group-wise int4) right after it is dequantized (and un-permuted) and its f32
-// is freed — so a Q4/Q8 GGUF lands resident as int8/int4 (~¼ / ~⅛ f32) without
-// ever materializing the whole model in f32 (see loadWeights). The GGUF's own
-// quant is lossy and so is the re-quant, but it captures nearly all of what a
-// Q4_K_M file carries.
-// When sink is non-nil, the weights are STREAMED to it (a .giw body) instead of
-// retained: the header + globals are written, then each layer is loaded, written,
-// and freed in turn, so peak RAM is ~one layer rather than the whole model — this is
-// what lets a model larger than RAM be transcoded. The returned *Weights then holds
-// no layer tensors (they were freed); the caller writes the trailing CRC. Streaming
-// is supported for the generic per-layer loader (llama/qwen2/qwen3/mellum/glm4_moe) and for
-// qwen35's own dedicated branch, which streams per layer too (N-64, docs/audit-2026-09-10.md:
-// this used to say qwen35 rejected streaming — loadQ35 builds each layer independently, so a
-// sequential build-then-write-then-release loop bounds peak RSS the same way). Every other family's
-// dedicated branch streams the same way (S2, task-never-swap-2026-09.md: gpt-oss, laguna, granite,
-// nemotron and llama4 on 2026-09-23, gemma4 on 2026-09-24). A branch that returns without driving
-// the sink would write a header declaring N layers and then none — the M-09 failure — so any new
-// family branch must stream too; decoder/gguf_streaming_shape_test.go checks its closure reads only
-// per-layer tensors, and TestGemma4GGUF_streamedMatchesResident-style byte identity is the gate.
+// buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle. When quant is set, each matmul tensor is
+// re-quantized (per-row int8 or group-wise int4) right after it is dequantized (and un-permuted) and its f32 is freed, so
+// a Q4/Q8 GGUF lands resident as int8/int4 (about 1/4 and 1/8 of f32) without ever materializing the whole model in f32
+// (see loadWeights). The GGUF's own quant is lossy and so is the re-quant, but it captures nearly all of what a Q4_K_M
+// file carries.
+//
+// When sink is non-nil, the weights are streamed to it (a .giw body) instead of retained: the header and globals are
+// written, then each layer is loaded, written and freed in turn, so peak RAM is about one layer, which is what lets a
+// model larger than RAM be transcoded. The returned *Weights then holds no layer tensors; the caller writes the trailing
+// CRC. Every family's branch streams. A branch that returns without driving the sink would write a header declaring N
+// layers and then none, so any new family branch must stream too; decoder/gguf_streaming_shape_test.go checks its
+// closure reads only per-layer tensors, and TestGemma4GGUF_streamedMatchesResident-style byte identity is the gate.
 func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
@@ -1616,19 +1542,16 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			mode = quantInt8I8
 		}
 		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, rowSrc(r), dst) }
-		// M-07 (audit-metal-2026-09-12.md): streamMat covers everything mat/permMat don't route
-		// to streamMatBatched — o_proj, down_proj, router, and any other non-batched, non-embedding
-		// layer tensor — so skipRow4 applies here exactly as it does in quantizeWMSkipRow4's
-		// safetensors twin.
+		// streamMat covers everything mat/permMat do not route to streamMatBatched (o_proj, down_proj, router, any other
+		// non-batched, non-embedding layer tensor), so skipRow4 applies here as in quantizeWMSkipRow4.
 		if skipRow4 {
 			return streamQuantizedSkipRow4(out, in, mode, rowInto)
 		}
 		return streamQuantized(out, in, mode, rowInto)
 	}
-	// streamMatBatched is streamMat's twin for the attention Q/K/V and MLP gate/up projections
-	// (isBatchedProjTensor) — streamQuantizedBatchedProj instead of the plain streamQuantized, so
-	// it may build repacked-only int4 (aikit audit M-22) when this load's backend allows it. See
-	// quantizeBatchedProjWM's own doc comment for the safety argument.
+	// streamMatBatched is streamMat's twin for attention Q/K/V and MLP gate/up (isBatchedProjTensor):
+	// streamQuantizedBatchedProj instead of streamQuantized, so it may build repacked-only int4 when this load's backend
+	// allows it. See quantizeBatchedProjWM for the safety argument.
 	streamMatBatched := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
@@ -1656,11 +1579,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		return streamMat(name, out, in, matmulQuant(quant, name), func(r int) int { return r * in })
 	}
-	// embMat loads the embedding / LM head, which is logit-critical — quantize
-	// it with the embedding policy (int8 even in int4 mode), not the projection
-	// mode. streamQuantizedEmbed, not streamMat's plain streamQuantized: Embed/LMHead may build
-	// repacked-only when needCanonical is false and int4 mode applies (aikit audit M-22) — see
-	// that function's own doc comment.
+	// embMat loads the embedding / LM head, which is logit-critical: quantize it with the embedding policy (int8 even in int4
+	// mode), not the projection mode. It uses streamQuantizedEmbed, which may build repacked-only when needCanonical is false
+	// and int4 mode applies; see that function.
 	embMat := func(name string, out, in int) (linalg.WeightMat, error) {
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
@@ -1709,9 +1630,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// pulls from GGUF source row (h*hd + 2*j + s) — and quantize in place. See
 	// ggufInvPermute for the index derivation.
 	permMat := func(name string, out, in, nHead int) (linalg.WeightMat, error) {
-		// nHead is a validated head count (>0), but a hostile head_dim can still make
-		// out/nHead == 1 (half == 0 ⇒ divide-by-zero in the row map below) or odd (the
-		// RoPE row permutation is only defined for an even head_dim) — M16.
+		// nHead is a validated head count (>0), but a hostile head_dim can still make out/nHead == 1 (half == 0, a divide-by-zero
+		// in the row map below) or odd (the RoPE row permutation is only defined for an even head_dim).
 		if nHead <= 0 || out%nHead != 0 || (out/nHead)%2 != 0 {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q needs an even head_dim (out=%d, heads=%d)", name, out, nHead)
 		}
@@ -1745,7 +1665,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			rowInto := func(r int, dst []float32) error { return into((e*out+r)*in, dst) }
 			var m linalg.WeightMat
 			var err error
-			// M-07 (audit-metal-2026-09-12.md): MoE experts, same skip-row4-only scope as streamMat.
+			// MoE experts: the same skip-row4-only scope as streamMat.
 			if skipRow4 {
 				m, err = streamQuantizedSkipRow4(out, in, matmulQuant(quant, name), rowInto)
 			} else {
@@ -1757,14 +1677,11 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			res[e] = m
 			return nil
 		}
-		// A streaming transcode builds one layer at a time (S2), so the across-layer parallelism the
-		// resident build gets from parallelLayers is gone — and the experts ARE the layer (the 26B-A4B:
-		// ~95% of each layer's bytes). Build them in parallel instead: the dequantizer is a pure function
-		// of the mapped tensor bytes and streamQuantized allocates its own scratch, so concurrent experts
-		// share nothing, and each lands in its own res[e] — byte-identical to the sequential order.
-		// Measured on the 26B-A4B (nobara, 2026-09-24): sequential streaming ran at 93% CPU and took
-		// 4.9x the resident build's wall time. The resident path (sink == nil) is left exactly as it was;
-		// it already runs one layer per core.
+		// A streaming transcode builds one layer at a time, so the across-layer parallelism the resident build gets from
+		// parallelLayers is gone, and the experts are most of a layer's bytes. Build them in parallel instead: the dequantizer is
+		// a pure function of the mapped tensor bytes and streamQuantized allocates its own scratch, so concurrent experts share
+		// nothing, and each lands in its own res[e], byte-identical to the sequential order. The resident path (sink == nil) is
+		// unchanged; it already runs one layer per core.
 		if sink != nil {
 			if err := parallelLayers(nExpert, nil, one); err != nil {
 				return nil, err
@@ -1797,9 +1714,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			mode = quantInt8I8
 		}
 		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, (rowStart+r)*in, dst) }
-		// M-07 (audit-metal-2026-09-12.md): Phi-3's fused qkv/gate_up split, same skip-row4-only
-		// scope as streamMat — not routed through the isBatchedProjTensor naming convention (this
-		// is GGUF's own fused-tensor special case), so no needCanonical/repacked-only branch here.
+		// Phi-3's fused qkv/gate_up split: the same skip-row4-only scope as streamMat. It is not routed through the
+		// isBatchedProjTensor naming convention (GGUF's own fused-tensor special case), so there is no needCanonical or
+		// repacked-only branch here.
 		if skipRow4 {
 			return streamQuantizedSkipRow4(rows, in, mode, rowInto)
 		}
@@ -1864,15 +1781,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return data, nil
 		}
-		// wmQ is f32mat + Options.Quant, for the projections that dominate decode bandwidth. Until
-		// 2026-08-19 this path (like its safetensors twin) kept them f32 regardless of the requested
-		// quant — "parity-first" from the bring-up — which on a 27.8B Qwen3.8 meant ~29 GB of f32
-		// weights streamed per token while the FFN was int4. Transform-then-quantize: the untile
-		// below has to see f32.
-		// M-07 (audit-metal-2026-09-12.md): these are exactly "the projections that dominate decode
-		// bandwidth" per this function's own comment above — real candidates for the row4 side-copy
-		// waste, so both route through the skip-aware wrapper like every other family's layer
-		// projections.
+		// wmQ is f32mat + Options.Quant, for the projections that dominate decode bandwidth. Transform-then-quantize: the untile
+		// below has to see f32. These are the projections for which the row4 side-copy is waste, so both route through the
+		// skip-aware wrapper like every other family's layer projections.
 		wmQ := func(name string, out, in int) (linalg.WeightMat, error) {
 			f, e := f32mat(name, out, in)
 			if e != nil {
@@ -1986,10 +1897,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				}
 				l.qattn = a
 			}
-			// DENSE (Qwen3.8, llama.cpp arch "qwen35"): a plain SwiGLU where the MoE sibling has a
-			// router. Exactly the same one-branch difference the safetensors bring-up had, so the
-			// rest of this loader — the V un-tile, the −exp(A_log) un-bake, the (1+w) norms — is
-			// shared verbatim rather than copied.
+			// DENSE (Qwen3.8, llama.cpp arch "qwen35"): a plain SwiGLU where the MoE sibling has a router. The rest of this loader (the
+			// V un-tile, the -exp(A_log) un-bake, the (1+w) norms) is shared.
 			if arch.MoE == nil {
 				if l.GateProj, e = mat(p+"ffn_gate.weight", arch.IntermediateDim, hidden); e != nil {
 					return e
@@ -2036,16 +1945,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			l.SharedGate = linalg.WrapF32(sg, 1, hidden)
 			return nil
 		}
-		// Streaming (sink != nil, e.g. cmd/prequant): loadQ35 already builds one
-		// layer's data independently of every other layer — parallelLayers's own
-		// concurrency is an unrelated speed choice, not a correctness dependency —
-		// so a sequential build-then-write-then-release loop produces bit-identical
-		// per-layer output while bounding peak RSS to ~one layer instead of all of
-		// them (docs/completed/task-zeno-compare.md, 2026-08-24: the old always-parallel,
-		// always-resident path OOM'd a 35B-A3B MoE at 40.5GB on a 16GB Mac).
-		// Non-streaming (sink == nil, regular resident load): unchanged, still
-		// parallel — every qwen35-family model tried before now fits resident, and
-		// there is no reason to slow that path down.
+		// Streaming (sink != nil, e.g. cmd/prequant): loadQ35 already builds one layer's data independently of every other layer
+		// (parallelLayers's concurrency is a speed choice, not a correctness dependency), so a sequential build, write and release
+		// loop produces bit-identical per-layer output while bounding peak RSS to about one layer. Non-streaming (sink == nil):
+		// unchanged, still parallel.
 		if sink != nil {
 			for i := range arch.NumLayers {
 				if err := loadQ35(i); err != nil {
@@ -2065,12 +1968,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		return w, nil
 	}
 
-	// gpt-oss: sparse MoE on every layer with per-head attention sinks + per-expert
-	// biases + a router-logit bias. q/k/v/o all carry biases; no QK-norm. Attention/
-	// embeddings/router quantize per policy; the (F32) sinks + biases load raw. The
-	// expert weights are MXFP4 in the real checkpoint — stackedExperts routes them
-	// through aikit's RowDequantizer, so this loads once aikit dequants ggml type 39
-	// (until then a Q8_0/F32 tiny model exercises the same path).
+	// gpt-oss: sparse MoE on every layer with per-head attention sinks, per-expert biases and a router-logit bias. q/k/v/o all
+	// carry biases; no QK-norm. Attention/embeddings/router quantize per policy; the (F32) sinks and biases load raw. The
+	// expert weights are MXFP4 (ggml type 39) in the real checkpoint; stackedExperts routes them through aikit's
+	// RowDequantizer.
 	if arch.gptoss != nil {
 		nH, nKV := arch.NumHeads, arch.NumKVHeads
 		qDim, kvDim := nH*hd, nKV*hd
@@ -2131,12 +2032,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if l.AttnSinks, e = vec(p+"attn_sinks.weight", nH); e != nil {
 				return e
 			}
-			// MoE: router (+ logit bias) + stacked routed experts (+ per-expert biases). Router
-			// stays f32 regardless of the ambient quant mode (matching gptoss_safetensors.go and
-			// qwen35's streamMat(..., quantNone, ...) below) — top-k selection is discrete, so
-			// quantizing it flips which experts win rather than adding rounding noise. Plain mat()
-			// here was a latent bug: it had never been exercised at a non-f32 quant until Metal
-			// residency's f32Mat(router) panic caught it.
+			// MoE: router (+ logit bias) + stacked routed experts (+ per-expert biases). Router stays f32 regardless of the ambient
+			// quant mode (matching gptoss_safetensors.go and qwen35's streamMat(..., quantNone, ...) below): top-k selection is
+			// discrete, so quantizing it flips which experts win rather than adding rounding noise. Plain mat() would quantize it.
 			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nExp, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
@@ -2164,16 +2062,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		// S2 (task-never-swap-2026-09.md): streaming (sink != nil, e.g. cmd/prequant) —
-		// loadGptOss already builds one layer's data independently of every other layer
-		// (every tensor it reads is named blk.{i}.*, including the per-layer AttnSinks and
-		// RouterBias this family keeps per-layer rather than as a model-level tail; stackedExperts
-		// and stackedExpertBias are per-tensor RowDequantizer reads keyed by the same blk.{i}.*
-		// name, not a whole-file or cross-layer dependency) — the loadQ35 shape (2026-08-24,
-		// docs/completed/task-zeno-compare.md) applies unchanged: a sequential build-then-write-
-		// then-release loop bounds peak RSS to ~one layer instead of the whole resident model,
-		// which is what the historical gpt-oss-20b 22.9 GB swap incident this whole task is
-		// written against actually built. Non-streaming (sink == nil): unchanged, still parallel.
+		// Streaming (sink != nil): loadGptOss builds one layer's data independently of every other layer (every tensor it reads is
+		// named blk.{i}.*, including the per-layer AttnSinks and RouterBias; stackedExperts and stackedExpertBias are per-tensor
+		// RowDequantizer reads keyed by the same name), so the loadQ35 shape applies: a sequential build, write and release loop
+		// bounds peak RSS to about one layer. Non-streaming (sink == nil): unchanged, still parallel.
 		if sink != nil {
 			for i := range arch.NumLayers {
 				if err := loadGptOss(i); err != nil {
@@ -2193,24 +2085,16 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		return w, nil
 	}
 
-	// Granite-4.0-H (granitehybrid): per-layer Mamba-2 mixer or GQA attention, MoE on
-	// every layer. The Mamba-2 ssm_* tensors use llama.cpp's conventions (shared with
-	// qwen35): ssm_a stores −exp(A_log) directly (reversed to A_log via log(−a) so the
-	// shared mamba2Step works), conv1d is [convDim, K], ssm_norm raw. Mixer stays f32
-	// (parity-first); experts/attention/embeddings quantize. NEOX rope ⇒ no q/k permute.
-	// Laguna (poolside). llama.cpp names its tensors the way every other MoE family
-	// here is named, so the only genuinely new one is blk.N.attn_gate.weight — the
-	// softplus output gate. Two shape details drive the rest:
+	// Laguna (poolside). llama.cpp names its tensors the way every other MoE family here is named, so the only genuinely new
+	// one is blk.N.attn_gate.weight, the softplus output gate. Two shape details drive the rest:
 	//
-	//   * qDim is PER LAYER (arch.headsAt(i)): full-attention layers project 48 heads
-	//     and sliding layers 64 on the XS line, so attn_q/attn_output differ by layer.
-	//   * the gate's granularity is read from attn_gate's ROW COUNT, exactly as the
-	//     safetensors loader does, because neither format carries a trustworthy
-	//     declaration of it (XS.2's config says per-element and ships per-head).
+	//   * qDim is per layer (arch.headsAt(i)): full-attention and sliding layers project different head counts, so
+	//     attn_q/attn_output differ by layer.
+	//   * the gate's granularity is read from attn_gate's row count, exactly as the safetensors loader does, because neither
+	//     format carries a trustworthy declaration of it (XS.2's config says per-element and ships per-head).
 	//
-	// Experts are FUSED+STACKED per projection (ffn_*_exps), the shared expert is
-	// *_shexp, and the router bias is exp_probs_b — all shapes goinfer already reads
-	// for GLM/DeepSeek/Granite. Layers below FirstKDense are plain dense FFNs.
+	// Experts are fused and stacked per projection (ffn_*_exps), the shared expert is *_shexp, and the router bias is
+	// exp_probs_b: all shapes goinfer already reads for GLM/DeepSeek/Granite. Layers below FirstKDense are plain dense FFNs.
 	if arch.laguna != nil {
 		kvDim := arch.NumKVHeads * arch.HeadDim
 		// exp_probs_b is 1-D; the shared `mat` helper wants 2-D, so read it as a flat
@@ -2277,9 +2161,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				return nil
 			}
 			moe := arch.MoE
-			// Router stays f32 regardless of the ambient quant mode (M-27, docs/audit-2026-09-10.md;
-			// matching qwen35/gptoss above) — top-k selection is discrete, so quantizing it flips
-			// which experts win rather than adding rounding noise.
+			// Router stays f32 regardless of the ambient quant mode (matching qwen35/gptoss above): top-k selection is discrete, so
+			// quantizing it flips which experts win rather than adding rounding noise.
 			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
@@ -2311,9 +2194,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		// S2 (task-never-swap-2026-09.md): loadLaguna is self-contained per-layer (every tensor
-		// it reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from
-		// source and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		// Streaming (sink != nil): loadLaguna is self-contained per layer (every tensor it reads is blk.{i}.*-named;
+		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
+		// shape applies unchanged.
 		if sink != nil {
 			for i := range arch.NumLayers {
 				if err := loadLaguna(i); err != nil {
@@ -2333,6 +2216,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		return w, nil
 	}
 
+	// Granite-4.0-H (granitehybrid): per-layer Mamba-2 mixer or GQA attention, MoE on every layer. The Mamba-2 ssm_*
+	// tensors use llama.cpp's conventions (shared with qwen35): ssm_a stores -exp(A_log) directly (reversed to A_log via
+	// log(-a) so the shared mamba2Step works), conv1d is [convDim, K], ssm_norm raw. Mixer stays f32 (parity-first);
+	// experts/attention/embeddings quantize. NEOX rope, so no q/k permute.
 	if gp := arch.granite; gp != nil {
 		dInner := gp.NHeads * gp.HeadDim
 		convDim := dInner + 2*gp.NGroups*gp.DState
@@ -2420,7 +2307,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			// MoE on every layer: router + stacked routed experts + ungated shared.
 			expInter := arch.MoE.IntermediateDim
-			// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+			// Router stays f32; see the Laguna site above.
 			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
@@ -2446,9 +2333,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		// S2 (task-never-swap-2026-09.md): loadGranite is self-contained per-layer (every tensor
-		// it reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from
-		// source and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		// Streaming (sink != nil): loadGranite is self-contained per layer (every tensor it reads is blk.{i}.*-named;
+		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
+		// shape applies unchanged.
 		if sink != nil {
 			for i := range arch.NumLayers {
 				if err := loadGranite(i); err != nil {
@@ -2561,17 +2448,12 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 					return e
 				}
 			case nemoMoE:
-				// Nemotron 3 Nano's MoE FFN. Tensor names verified against a real GGUF
-				// file's tensor list (bartowski/nvidia_Nemotron-3-Nano-30B-A3B-GGUF,
-				// fetched directly and parsed with this package's own GGUF reader — not
-				// assumed from llama.cpp's conversion-script source mapping, which names
-				// the SOURCE safetensors tensor, not the output GGUF tensor). Experts are
-				// FUSED per projection (one 3-D [in,out,nExpert] tensor each), unlike the
-				// safetensors path's one-tensor-per-expert layout — stackedExperts is the
-				// existing helper other GGUF MoE families already use for this shape.
-				// exp_probs_b.bias is llama.cpp's name for e_score_correction_bias.
+				// Nemotron 3 Nano's MoE FFN. The tensor names are the GGUF's own, not llama.cpp's conversion-script source mapping (which
+				// names the source safetensors tensor, not the output GGUF tensor). Experts are fused per projection (one 3-D
+				// [in,out,nExpert] tensor each), unlike the safetensors path's one tensor per expert, so stackedExperts, the helper other
+				// GGUF MoE families use for this shape, applies. exp_probs_b.bias is llama.cpp's name for e_score_correction_bias.
 				moe := arch.MoE
-				// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+				// Router stays f32; see the Laguna site above.
 				if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 					return e
 				}
@@ -2601,9 +2483,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		// S2 (task-never-swap-2026-09.md): loadNemo is self-contained per-layer (every tensor it
-		// reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from source
-		// and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		// Streaming (sink != nil): loadNemo is self-contained per layer (every tensor it reads is blk.{i}.*-named;
+		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
+		// shape applies unchanged.
 		if sink != nil {
 			for i := range arch.NumLayers {
 				if err := loadNemo(i); err != nil {
@@ -2697,12 +2579,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if l.DownProj, e = mat(p+"ffn_down.weight", hidden, ffn); e != nil {
 				return e
 			}
-			// The per-layer output scalar is read BEFORE the MoE branch below, which copies it into
-			// gemma4MoEWeights.layerScalar — the value the MoE forward multiplies the whole layer's output by
-			// (forward_gemma4_moe.go). Until 2026-09-24 this assignment sat at the end of loadG4, after that
-			// copy, so every MoE layer of a DIRECTLY loaded gemma4-26B GGUF was scaled by 0 and the model
-			// emitted only <pad> (token 0); the .giw reader and the safetensors loader already read it first,
-			// which is why the sidecar was fine (TestGemma4GGUF_moeLayerScalarMatchesLayer).
+			// The per-layer output scalar is read BEFORE the MoE branch below, which copies it into gemma4MoEWeights.layerScalar, the
+			// value the MoE forward multiplies the whole layer's output by (forward_gemma4_moe.go). Read after that copy, every MoE
+			// layer of a directly loaded GGUF would be scaled by 0 and the model would emit only <pad>; the .giw reader and the
+			// safetensors loader also read it first (TestGemma4GGUF_moeLayerScalarMatchesLayer).
 			l.LayerScalar = 1
 			if sc, se := vec(p+"layer_output_scale.weight", 1); se == nil {
 				l.LayerScalar = sc[0]
@@ -2738,9 +2618,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				if gm.postFFNNorm2, e = vnorm(p+"post_ffw_norm_2.weight", hidden); e != nil {
 					return e
 				}
-				// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
-				// The safetensors Gemma4 loader (decoder/weights.go) already does this correctly;
-				// this GGUF path was the one family missing it.
+				// Router stays f32 (see the Laguna site above); the safetensors Gemma4 loader does the same.
 				if gm.routerProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 					return e
 				}
@@ -2771,24 +2649,18 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		// S2 (task-never-swap-2026-09.md), 2026-09-24: gemma4 streams like every other family. The
-		// "fused PLE/MoE tail" that kept it on a resident build turned out not to exist in this format:
-		// the model-level PLE inputs (per_layer_token_embd / per_layer_model_proj / per_layer_proj_norm,
-		// plus FFNPerLayer) are written in the HEAD (writeHeadGlobals), before any layer, and loaded above
-		// before loadG4 runs; everything else gemma4-specific — PLE gate/proj/norm, the layer scalar,
-		// KV-shared / K=V flags and the whole 26B-A4B MoE branch — lives in each layer's own record
-		// (giwWriter.gemma4Layer) and is read from blk.{i}.* only (decoder/gguf_streaming_shape_test.go
-		// keeps that true). So: head once the PLE globals exist, then build → write → release per layer.
-		// The 26B-A4B's resident transcode peaked at 34.7 GB RSS (nobara, 2026-09-24), which no 16 GB
-		// Mac can build; this bounds it to ~one layer. Non-streaming (sink == nil): unchanged, parallel.
+		// Streaming (sink != nil): the model-level PLE inputs (per_layer_token_embd / per_layer_model_proj / per_layer_proj_norm,
+		// plus FFNPerLayer) are written in the head (writeHeadGlobals) before any layer and loaded above before loadG4 runs.
+		// Everything else gemma4-specific (PLE gate/proj/norm, the layer scalar, the KV-shared and K=V flags, the whole 26B-A4B
+		// MoE branch) lives in each layer's own record (giwWriter.gemma4Layer) and is read from blk.{i}.* only
+		// (decoder/gguf_streaming_shape_test.go keeps that true). So: head once the PLE globals exist, then build, write and
+		// release per layer. Non-streaming (sink == nil): unchanged, parallel.
 		if sink != nil {
 			if err := sink.writeHeadGlobals(w, id); err != nil {
 				return nil, err
 			}
-			// The head is on disk; nothing below reads these again (the returned *Weights of a
-			// streaming build is discarded — see this function's doc). Holding them was the flat
-			// ~1.4 GB under the whole 26B-A4B stream (its 262k-vocab int8 embedding table alone is
-			// ~0.74 GB), so let them go before the layers.
+			// The head is on disk and nothing below reads these again (the returned *Weights of a streaming build is discarded; see
+			// this function's doc), so release them before the layers: holding them is a flat floor under the whole stream.
 			w.Embed, w.LMHead, w.PosEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
 			w.PerLayerTokenEmbed, w.PerLayerModelProj = linalg.WeightMat{}, linalg.WeightMat{}
 			for i := range arch.NumLayers {
@@ -2806,9 +2678,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err = parallelLayers(arch.NumLayers, abort, loadG4); err != nil {
 			return nil, err
 		}
-		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection
-		// (v_norm(k_proj) — see loadG4/runLayersGemma4). Parity-gated against the HF
-		// bf16 oracle by TestGemma4_12B_logitParity (argmax exact, cosine 0.990).
+		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection (v_norm(k_proj); see loadG4/runLayersGemma4).
+		// Parity-gated against the HF bf16 oracle by TestGemma4_12B_logitParity.
 		return w, nil
 	}
 
@@ -2854,7 +2725,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				}
 				return nil
 			}
-			// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+			// Router stays f32; see the Laguna site above.
 			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
@@ -2879,9 +2750,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		// S2 (task-never-swap-2026-09.md): loadL4 is self-contained per-layer (every tensor it
-		// reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from source
-		// and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		// Streaming (sink != nil): loadL4 is self-contained per layer (every tensor it reads is blk.{i}.*-named;
+		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
+		// shape applies unchanged.
 		if sink != nil {
 			for i := range arch.NumLayers {
 				if err := loadL4(i); err != nil {
@@ -2913,9 +2784,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		return mat(name, out, hidden)
 	}
-	// Load the layers in parallel: each is independent (its own linalg.WeightMat slots
-	// over the read-only mmap), and the per-tensor dequant + re-quant is the load's
-	// cost — fanning it out across cores turns a 12B GGUF's ~2 min load into seconds.
+	// Load the layers in parallel: each is independent (its own linalg.WeightMat slots over the read-only mmap), and the
+	// per-tensor dequant and re-quant is the load's cost.
 	loadLayer := func(i int) error {
 		l := &w.Layers[i]
 		p := fmt.Sprintf("blk.%d.", i)
@@ -3020,7 +2890,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			// (ffn_*_shexp, ungated). GLM's first_k_dense_replace prefix (i < FirstKDense)
 			// has no router and falls through to the dense FFN below.
 			expInter := arch.MoE.IntermediateDim
-			// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+			// Router stays f32; see the Laguna site above.
 			if l.Router, err = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); err != nil {
 				return err
 			}
@@ -3108,12 +2978,11 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	return w, nil
 }
 
-// ggufQKPermuted reports whether llama.cpp's GGUF conversion permuted this
-// architecture's q/k weights (and their per-row biases and head-dim norms). It
-// permutes only for the NORM rope type — llama and its derivatives, including
-// mellum and dense granite (audit C-05: llama.cpp's GraniteModel inherits LlamaModel's undo_permute); the NEOX rope type (qwen2/qwen3/gemma and the other modern families)
-// leaves q/k in HF rotate_half order, so no un-permutation is needed. Unknown
-// archs default to NEOX (no permute), the common modern case.
+// ggufQKPermuted reports whether llama.cpp's GGUF conversion permuted this architecture's q/k weights (and their per-row
+// biases and head-dim norms). It permutes only for the NORM rope type: llama and its derivatives, including mellum and
+// dense granite (llama.cpp's GraniteModel inherits LlamaModel's undo_permute). The NEOX rope type (qwen2/qwen3/gemma and
+// the other modern families) leaves q/k in HF rotate_half order, so no un-permutation is needed. Unknown archs default to
+// NEOX (no permute), the common modern case.
 func ggufQKPermuted(archName string) bool {
 	switch archName {
 	case "llama", "mellum", "granite":
