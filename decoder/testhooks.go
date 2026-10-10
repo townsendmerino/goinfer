@@ -1,13 +1,8 @@
 //go:build goinfer_testhooks
 
-// Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
-// only under -tags goinfer_testhooks so they are NOT part of the public API
-// (audit B-08). See RELEASING.md. Imports are added to satisfy the moved bodies.
-//
-// HAND-MAINTAINED, NOT MACHINE-GENERATED — despite this file's former name
-// (testhooks_gen.go, renamed 2026-09-11, audit-2026-09-02.md N-41). There is no
-// //go:generate directive and nothing regenerates it; edit it directly like any
-// other file. Mirrors gpu/testhooks.go and cuda/testhooks.go.
+// Test-only hooks, compiled only under -tags goinfer_testhooks so they are not part of the public API (RELEASING.md).
+// Hand-maintained: nothing generates this file (there is no //go:generate directive); edit it directly like any other file.
+// Mirrors gpu/testhooks.go and cuda/testhooks.go.
 
 package decoder
 
@@ -21,10 +16,9 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// ForwardSubCaptureLogitsForTest is ForwardSubCapture plus the token's logits from the SAME
-// forward — the gpu package's per-layer resident-vs-CPU parity gate needs both, and running the
-// token twice would append it to the KV cache twice. Same arch guard and same byte-identical-
-// output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
+// ForwardSubCaptureLogitsForTest is ForwardSubCapture plus the token's logits from the same forward: the gpu package's
+// per-layer resident-vs-CPU parity gate needs both, and running the token twice would append it to the KV cache twice. Same
+// arch guard and byte-identical-output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
 	if _, own := a.ownForward(); own {
@@ -47,34 +41,32 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 	return append([]float32(nil), lg...), cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
 }
 
-// FinalNormForTest applies the model's final normalization to a copy of h — the CPU reference
-// for the last step of a resident bisect (the seam between the trunk and the LM head, where the
-// hidden state is normed then projected). Does NOT project to logits; that is the head.
+// FinalNormForTest applies the model's final normalization to a copy of h: the CPU reference for the seam between the trunk
+// and the LM head in a resident bisect. It does not project to logits; that is the head.
 func (m *Model) FinalNormForTest(h []float32) []float32 {
 	out := append([]float32(nil), h...)
 	normalize(m.w.arch, out, m.w.FinalNorm, m.w.FinalNormBias, m.w.arch.HiddenDim)
 	return out
 }
 
+// EmbedResidentForTest is the resident input embedding (including Granite's EmbMul): a CPU-side reference seam for the gpu-package
+// resident parity gates.
 func (m *Model) EmbedResidentForTest(id int) []float32 { return m.embedResident(id) }
 
 // Gemma4ResidentMediaRowForTest is gemma4ResidentMediaRow: the resident row GenerateGemma4VL's E-model resident prefill
-// builds for an image or audio position (S9).
+// builds for an image or audio position.
 func (m *Model) Gemma4ResidentMediaRowForTest(feature []float32) []float32 {
 	return m.gemma4ResidentMediaRow(feature)
 }
 
-// ForwardForTest / EmbedResidentForTest are CPU-reference seams for the gpu-package
-// resident parity gates (which can't be in package decoder — import cycle via gpu).
-// ForwardForTest is the CPU per-token logits; EmbedResidentForTest is the resident
-// input embedding (incl. Granite EmbMul). Test-only.
+// ForwardForTest is the CPU per-token logits: a reference seam for the gpu-package resident parity gates, which cannot live
+// in package decoder (import cycle via gpu).
 func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 	return m.forward(id, cache)
 }
 
-// ResidentForwardForTest exposes the resident forward (nil when not resident) for the
-// GPU ForwardN-vs-Forward parity gate. Test-only seam; production code routes through
-// Generate / GenerateSpeculative, not this.
+// ResidentForwardForTest exposes the resident forward (nil when not resident) for the GPU ForwardN-vs-Forward parity gate.
+// Production code routes through Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
 // SplitQGateForTest and QGateContextForTest are the CPU's attn_output_gate split and output gate
@@ -88,32 +80,31 @@ func SplitQGateForTest(qg []float32, nH, hd int) (q, gate []float32) {
 // QGateContextForTest applies the output gate to ctx in place (see SplitQGateForTest).
 func QGateContextForTest(ctx, gate []float32) { qGateContext(ctx, gate) }
 
-// AutoPinResidentContextForTest makes the model's resident context request ctx with the caller not having chosen it,
-// the state the load-time fit guard's auto-pin leaves (R13), which only a load under memory pressure produces.
+// AutoPinResidentContextForTest makes the model's resident context request ctx without the caller having chosen it: the
+// state the load-time fit guard's auto-pin leaves, which only a load under memory pressure produces.
 func (m *Model) AutoPinResidentContextForTest(ctx int) { m.resCtxReq, m.resCtxPinned = ctx, false }
 
-// ResidentImagePrefillForTest wraps residentImagePrefill (decoder/generate_vl_resident.go) — the
-// exact primitive GenerateVL's resident image-prefill fast path calls internally — so a
-// real-checkpoint gate (cuda/) can compare its logits directly against PrefillLogitsVLForTest's
-// CPU reference, matched precision, on the SAME model instance and the SAME real image.
+// ResidentImagePrefillForTest wraps residentImagePrefill, the primitive GenerateVL's resident image-prefill fast path calls,
+// so a real-checkpoint gate (cuda/) can compare its logits with PrefillLogitsVLForTest's CPU reference at matched precision
+// on the same model instance and the same real image.
 func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
 	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
-// ResidentImagePrefillSpansForTest is ResidentImagePrefillForTest for several images (S11's G-S11c).
+// ResidentImagePrefillSpansForTest is ResidentImagePrefillForTest for several images.
 func (m *Model) ResidentImagePrefillSpansForTest(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, spans []ImageSpan) ([]float32, int, error) {
 	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, spans)
 }
 
-// ResidentMRoPEPrefillForTest wraps residentMRoPEPrefillDeep (no DeepStack sets) — the exact primitive GenerateQwenVL's
-// resident m-RoPE prefill fast path calls internally — mirroring ResidentImagePrefillForTest
-// exactly, for a real-checkpoint gate comparing its logits against PrefillLogitsQwenVLForTest.
+// ResidentMRoPEPrefillForTest wraps residentMRoPEPrefillDeep (no DeepStack sets), the primitive GenerateQwenVL's resident
+// m-RoPE prefill fast path calls, mirroring ResidentImagePrefillForTest for a real-checkpoint gate comparing its logits
+// against PrefillLogitsQwenVLForTest.
 func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
 	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, nil)
 }
 
-// ResidentMRoPEDeepstackPrefillForTest wraps residentMRoPEPrefillDeep (S16): the resident m-RoPE prefill with Qwen3-VL's
-// DeepStack sets, for the Metal gate that compares it with the CPU prefill.
+// ResidentMRoPEDeepstackPrefillForTest wraps residentMRoPEPrefillDeep with Qwen3-VL's DeepStack sets, for the Metal gate
+// that compares it with the CPU prefill.
 func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
 	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, deep)
 }
@@ -128,32 +119,27 @@ func (c *KVCache) SetDeepstackForTest(start, n int, rows [][]float32) {
 	c.deepstack = &deepstackRows{spans: []ImageSpan{{Pos: start, Len: n}}, rows: rows}
 }
 
-// ResidentUploadPrefillForTest wraps residentUploadPrefill (decoder/generate_vl_resident.go) —
-// the generic per-layer KVCache.LayerKV -> ResidentForward.UploadKV bridge GenerateGemma4VL's
-// resident branch uses after a CPU bidirectional prefill — so a real-hardware gate (cuda/) can
-// upload a CPU-computed cache and continue decode on the resident backend directly, on the SAME
-// model instance whose CPU decode it is compared against.
+// ResidentUploadPrefillForTest wraps residentUploadPrefill, the generic per-layer KVCache.LayerKV -> ResidentForward.UploadKV
+// bridge GenerateGemma4VL's resident branch uses after a CPU bidirectional prefill, so a real-hardware gate (cuda/) can upload
+// a CPU-computed cache and continue decode on the resident backend, on the same model instance whose CPU decode it is
+// compared against.
 func (m *Model) ResidentUploadPrefillForTest(cache *KVCache) error {
 	return m.residentUploadPrefill(cache)
 }
 
-// ApplyMRoPEForTest wraps applyMRoPE (decoder/rope.go) — the CPU m-RoPE reference a resident
-// kernel's own rotation must match bit-for-bit. Test-only: production always reaches applyMRoPE
-// through ropeAt, never directly. interleaved selects Qwen3-VL's per-index component layout
-// (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent) — pass false
-// for Qwen2.5-VL.
+// ApplyMRoPEForTest wraps applyMRoPE, the CPU m-RoPE reference a resident kernel's own rotation must match bit-for-bit.
+// Production always reaches applyMRoPE through ropeAt, never directly. interleaved selects Qwen3-VL's per-index component
+// layout (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent); pass false for Qwen2.5-VL.
 func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64, interleaved bool) {
 	applyMRoPE(vec, heads, headDim, pos, section, invFreq, scale, interleaved)
 }
 
-// Gemma4MoEExpertForTest computes ONE gemma4 MoE expert's output on a caller-supplied input xe
-// ([hidden]) — the gelu-tanh GeGLU expert function edown = Down · (geluTanh(gate)·up), gate‖up =
-// GateUp·xe — and returns it alongside the expert's fused gate‖up and down weight matrices. The
-// cuda single-expert gate (task 2c) packs those weights, runs the resident chain
-// (gemv_w4a8_moe → glu_quant act=GELU_TANH → down) on the same xe, and compares: the gelu-tanh MoE
-// epilogue × the indexed-expert GEMV is a combination that ships in neither Gemma-3 (dense, not
-// indexed) nor Mixtral/GLM (indexed, but SiLU), so it is verified directly, not argued by
-// composition. ok=false for a non-gemma4 model, a dense layer, or e out of range.
+// Gemma4MoEExpertForTest computes one gemma4 MoE expert's output on a caller-supplied input xe ([hidden]): edown = Down ·
+// (geluTanh(gate)·up) with gate‖up = GateUp·xe, returned with the expert's fused gate‖up and down weight matrices. The cuda
+// single-expert gate packs those weights and runs the resident chain (gemv_w4a8_moe → glu_quant act=GELU_TANH → down) on the
+// same xe: the gelu-tanh epilogue × indexed-expert GEMV is a combination no other family ships (Gemma-3 is dense, Mixtral and
+// GLM are indexed but SiLU), so it is verified directly, not argued by composition. ok=false for a non-gemma4 model, a dense
+// layer, an e out of range, or len(xe) != hidden.
 func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []float32, gateUp, down *linalg.WeightMat, moeInter, hidden int, ok bool) {
 	if m.w.arch.gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
 		return nil, nil, nil, 0, 0, false
@@ -174,12 +160,11 @@ func (m *Model) Gemma4MoEExpertForTest(layer, e int, xe []float32) (edown []floa
 	return out, &gm.expertsGateUp[e], &gm.expertsDown[e], gm.moeInter, m.w.arch.HiddenDim, true
 }
 
-// Gemma4MoERouterForTest exposes a gemma4 MoE layer's f32 router projection (row-major [nE, hidden])
-// and its selection bias (zeros — gemma4 has no router bias) for the resident-router idx-equality
-// unit test (cuda/). That test replays captured router inputs (routerRnBuf) through the CUDA
-// selection kernels and gates resident idx[] against the CPU idx[], isolating a routing FLIP from
-// any expert-GEMV numeric difference — the "router first" discipline. ok=false for a non-gemma4
-// model or a dense (non-MoE) layer.
+// Gemma4MoERouterForTest exposes a gemma4 MoE layer's f32 router projection (row-major [nE, hidden]) and its selection bias
+// (zeros: gemma4 has no router bias) for the cuda resident-router idx-equality test. That test replays captured router inputs
+// (routerRnBuf) through the CUDA selection kernels and compares resident idx[] with the CPU idx[], which isolates a routing flip
+// from any expert-GEMV numeric difference. ok=false for a non-gemma4 model, a dense (non-MoE) layer, an out-of-range layer, or a
+// router not held as f32.
 func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, topK, hidden int, ok bool) {
 	if m.w.arch.gemma4 == nil || layer < 0 || layer >= len(m.w.Layers) {
 		return nil, nil, 0, 0, 0, false
@@ -195,12 +180,10 @@ func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, top
 	return f, make([]float32, gm.nE), gm.nE, gm.topK, m.w.arch.HiddenDim, true
 }
 
-// gemma4HiddenBuf accumulates a COPY of the residual stream after each layer (index 0 =
-// post-embedding, from g4traceHidden's layer -1; index i+1 = after layer i) on every
-// runLayersGemma4 call, when capture is on. It backs the per-layer LOCALIZATION a resident-vs-CPU
-// gate uses (metal/cuda Step 4). Test-only: appended only by the SetGemma4HiddenCaptureForTest
-// closure below (production only sees the nil-by-default g4traceHidden seam), so it lives here under
-// goinfer_testhooks — off-tag it would be an unused package var (staticcheck U1000). B-08.
+// gemma4HiddenBuf accumulates a copy of the residual stream after each layer (index 0 = post-embedding, from g4traceHidden's
+// layer -1; index i+1 = after layer i) on every runLayersGemma4 call while capture is on; it backs the per-layer localization of
+// a resident-vs-CPU gate. It lives here, not beside g4traceHidden, because only SetGemma4HiddenCaptureForTest appends to it
+// (production sees only the nil-by-default g4traceHidden seam): off-tag it would be an unused package var (staticcheck U1000).
 var gemma4HiddenBuf [][]float32
 
 // Gemma4HiddenCaptureForTest returns the captured residual stream per layer, in call order:
@@ -225,11 +208,10 @@ func SetGemma4HiddenCaptureForTest(on bool) {
 	}
 }
 
-// RouterMarginForTest returns the per-decision top-k boundary margin (smallest selected expert's
-// softmax prob minus the largest rejected expert's), same order/index as RouterCaptureForTest. It
-// is the MoE-specific robustness signal a noise-floor check reads: a fixture whose margin sits below
-// the int4-vs-f32 routing perturbation can flip top-k under quant and cannot gate a resident router,
-// however correct the port (the reason the CUDA MoE fixture was rebuilt at 9275f94).
+// RouterMarginForTest returns the per-decision top-k boundary margin (the smallest selected expert's softmax prob minus the
+// largest rejected expert's), in RouterCaptureForTest's order and index. It is the MoE robustness signal a noise-floor check
+// reads: a fixture whose margin sits below the int4-vs-f32 routing perturbation can flip top-k under quant and cannot gate a
+// resident router, however correct the port.
 func RouterMarginForTest() []float32 { return routerMarginBuf }
 
 // Gemma4MoECaptureForTest returns the CPU per-decision wts / x1 / x2 (same order as RouterCaptureForTest).
@@ -252,28 +234,26 @@ func SetRouterCaptureForTest(on bool) {
 	}
 }
 
-// LayerKVForTest is a thin wrapper over the production KVCache.LayerKV (kvcache.go — promoted
-// there so decoder/generate_vl_resident.go's resident-KV upload bridge can call it untagged).
-// Kept under this name for the existing cross-package (cuda/metal) test call sites: the
-// cross-backend attention confirmer injects goinfer's exact K/V into another engine.
+// LayerKVForTest is KVCache.LayerKV under the name the cross-package (cuda, metal) test call sites use: the cross-backend
+// attention confirmer injects goinfer's exact K/V into another engine.
 func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return c.LayerKV(layer) }
 
+// SetSSMQ8CPU makes the CPU Mamba reference round-trip its projections through int8, so it carries the same quantization error as
+// the resident W8A8 path (the confirmation seam GOINFER_SSM_Q8CPU also turns on).
 func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }
 
-// SetSSMForceF32 / SetSSMQ8CPU toggle the CPU-reference precision-localization seams
-// at runtime (gpu/ssm_kernel_control_test.go needs the staged webgpu backend, which
-// lives in a package the decoder can't import — so it drives these via the registry).
+// SetSSMForceF32 toggles the CPU reference's f32 SSM accumulation (the gated-norm precision-localization seam). It and
+// SetSSMQ8CPU are exports because gpu/ssm_kernel_control_test.go needs the staged webgpu backend and so lives in package gpu,
+// which cannot reach decoder's unexported variables.
 func SetSSMForceF32(v bool) { ssmForceF32 = v }
 
 // SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
 func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
 
-// DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's
-// parity gate. The trunk's own DraftBlock takes a Backend, and cpuBackend is unexported — so a
-// backend package (cuda/metal/gpu) cannot drive the reference implementation it must match
-// without this. Test-hook-gated for the same reason the rest of this file is: it is a seam for
-// gates, not API.
+// DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's parity gate. The trunk's own
+// DraftBlock takes a Backend and cpuBackend is unexported, so a backend package (cuda/metal/gpu) cannot drive the reference
+// it must match without this. A seam for gates, not API.
 func DraftBlockCPUForTest(d BlockDrafterWeights, fused, blockIn [][]float32) ([][]float32, error) {
 	t, ok := d.(interface {
 		DraftBlock(Backend, [][]float32, [][]float32) ([][]float32, error)
@@ -295,10 +275,9 @@ func FuseContextCPUForTest(d BlockDrafterWeights, ctxCat [][]float32) ([][]float
 	return t.FuseContext(&cpuBackend{}, ctxCat)
 }
 
-// LoadTokenizerForTest / EncodeChatForTest give a backend package the same chat-templated token
-// ids the CPU acceptance sweep used, so a GPU wall-clock number is comparable to it. Without
-// them a backend test would have to re-implement the template, and the non-thinking suffix in
-// particular has already cost this program one wrong measurement.
+// LoadTokenizerForTest and EncodeChatForTest give a backend package the same chat-templated token ids the CPU acceptance
+// sweep used, so a GPU wall-clock number is comparable to it without re-implementing the template. The non-thinking suffix
+// in particular must match.
 func LoadTokenizerForTest(dir string) (*tokenizer.Tokenizer, error) { return tokenizer.Load(dir) }
 
 func EncodeChatForTest(tk *tokenizer.Tokenizer, prompt string) ([]int, error) {
@@ -311,9 +290,8 @@ func EncodeChatForTest(tk *tokenizer.Tokenizer, prompt string) ([]int, error) {
 		return nil, err
 	}
 	if noThink := os.Getenv("GOINFER_TEST_NOTHINK") != "0"; !noThink {
-		// GOINFER_TEST_NOTHINK=0 reproduces what the SERVER renders: Qwen3's template with
-		// thinking left ON. The drafter was trained on non-thinking output, so this is the
-		// off-distribution case, and it is worth being able to measure deliberately.
+		// GOINFER_TEST_NOTHINK=0 reproduces what the server renders: Qwen3's template with thinking left on. The drafter was trained
+		// on non-thinking output, so that is the off-distribution case.
 		return ids, nil
 	}
 	if _, ok := tk.TokenID("<think>"); ok {
@@ -326,20 +304,17 @@ func EncodeChatForTest(tk *tokenizer.Tokenizer, prompt string) ([]int, error) {
 	return ids, nil
 }
 
-// DeltaNetStepForTest runs ONE Gated-DeltaNet decode step on the CPU reference and returns the
-// layer output — the parity target for a backend's DeltaNet kernel (gpu/deltanet_test.go).
+// DeltaNetStepForTest runs one Gated-DeltaNet decode step on the CPU reference and returns the layer output: the parity target
+// for a backend's DeltaNet kernel (gpu/deltanet_test.go).
 //
-// Why a hook rather than a reimplementation in the backend's test: the CPU recurrence is already
-// gated against HF (TestGatedDeltaNet_parity, against transformers'
-// torch_recurrent_gated_delta_rule), so comparing a kernel to THIS makes the chain
-// kernel ≡ CPU ≡ HF. A reference re-written inside the gpu package would be a second unvalidated
-// implementation, which is the shape that let a hand-rolled forward drift for months
+// It is a hook rather than a reimplementation in the backend's test because the CPU recurrence is already gated against HF
+// (TestGatedDeltaNet_parity, against transformers' torch_recurrent_gated_delta_rule), so a kernel compared with this one is
+// kernel ≡ CPU ≡ HF; a reference rewritten inside package gpu would be a second unvalidated implementation
 // (docs/parity-coverage-policy.md).
 //
-// The caller supplies the weights and the state; `st` is mutated in place across calls, so a
-// multi-token drift test just calls this in a loop.
-// A nil backend means the CPU one, which is unexported — the same accommodation
-// DraftBlockCPUForTest makes, and necessary because matmul dereferences it unconditionally.
+// The caller supplies the weights and the state; st is mutated in place across calls, so a multi-token drift test calls this in
+// a loop. A nil backend means the CPU one, which is unexported, as in DraftBlockCPUForTest; matmul dereferences it
+// unconditionally.
 func DeltaNetStepForTest(be Backend, h []float32, w *DeltaNetWeightsForTest, hidden int, eps float64, st *DeltaStateForTest) []float32 {
 	if be == nil {
 		be = &cpuBackend{}
@@ -413,10 +388,9 @@ func GumbelKeyForTest(logits []float32, temperature float64, seed, draw uint64, 
 	return gumbelKey(logits[i], float32(1/temperature), r[i&3])
 }
 
-// SetSSMStopLayerForTest sets the granite forward's layer truncation (forward_granite.go's
-// ssmStopLayer) and returns a func that restores the previous value. It replaced the env var
-// GOINFER_SSM_STOP_LAYER, which the decoder read ONCE at init — so the gpu layer sweeps' os.Setenv
-// inside their loops changed nothing on the decoder side, and their CPU references ran every layer.
+// SetSSMStopLayerForTest sets the granite forward's layer truncation (ssmStopLayer in forward_granite.go) and returns a func
+// that restores the previous value. Keep it a variable: an environment variable read once at init would ignore a sweep's
+// per-iteration change.
 func SetSSMStopLayerForTest(n int) (restore func()) {
 	prev := ssmStopLayer
 	ssmStopLayer = n
@@ -441,11 +415,13 @@ func SetHostRAMAvailableForTest(v int64) (restore func()) {
 	}
 }
 
-// SetMemoryProbeForTest makes the named backend's registered memory probe (RegisterMemoryProbe: "cuda", "metal") report freeBytes and ok, and returns the restore
-// (hardware-coverage H1.5). It reaches the residency decisions that read FreeBytesFor: the resident context a load picks, how many KV slots fit, whether Plan places
-// or declines the model. A budget BELOW the real card runs end to end on it (the model shrinks its context or declines to the CPU); a budget above it only changes the
-// decision, and a resident build that then asked the real card for the memory would fail, so a test should not force a figure the model cannot really be given.
-// Set it BEFORE the model loads. A name with no registered probe is created, so a test can also force a backend that is not linked.
+// SetMemoryProbeForTest makes the named backend's registered memory probe (RegisterMemoryProbe: "cuda", "metal") report
+// freeBytes and ok, and returns the restore. It reaches the residency decisions that read FreeBytesFor: the resident context a
+// load picks, how many KV slots fit, whether Plan places or declines the model. A budget below the real card runs end to end on
+// it (the model shrinks its context or declines to the CPU); a budget above it only changes the decision, and a resident build
+// that then asked the real card for the memory would fail, so a test should not force a figure the model cannot really be given.
+// Set it before the model loads. A name with no registered probe is created, so a test can also force a backend that is not
+// linked.
 func SetMemoryProbeForTest(name string, freeBytes int64, ok bool) (restore func()) {
 	memProbeMu.Lock()
 	prev, had := memProbes[name]
@@ -462,7 +438,7 @@ func SetMemoryProbeForTest(name string, freeBytes int64, ok bool) (restore func(
 	}
 }
 
-// ProbeBackendForTest runs the resident self-test (selftest_gpu.go) for backend and quant, uncached and unrecorded, and returns its result (hardware-coverage H2).
+// ProbeBackendForTest runs the resident self-test (selftest_gpu.go) for backend and quant, uncached and unrecorded, and returns its result.
 func ProbeBackendForTest(backend, quant string) SelfTestResult { return probeBackend(backend, quant) }
 
 // SetProbeGPUConfigMutatorForTest makes the resident self-test hand each fixture's GPU model a config.json rewritten by mutate while the CPU reference keeps the true one, and returns
@@ -476,21 +452,21 @@ func SetProbeGPUConfigMutatorForTest(mutate func(name string, cfg []byte) []byte
 // ResetSelfTestCachesForTest clears the per-(backend, quant) probe cache and the recorded results, so a test sees a first-use probe.
 func ResetSelfTestCachesForTest() { resetSelfTestCaches() }
 
-// SetGemma4PLEDropTokenForTest plants S1's G2 defect (2): the resident embedding row's PLE inputs lose their
-// token-identity term (docs/tasks/task-multimodal-support-2026-10.md). The CPU forward is unaffected.
+// SetGemma4PLEDropTokenForTest plants a defect: the resident embedding row's PLE inputs lose their token-identity term
+// (docs/tasks/task-multimodal-support-2026-10.md), so a gate can be shown to go red. The CPU forward is unaffected.
 func SetGemma4PLEDropTokenForTest(on bool) { gemma4PLEDropTokenForTest = on }
 
-// SetGemma4VLRowsDefectForTest selects S9 part B's G2q planted defect in the E-model image-row builder (0 clears it; see gemma4VLRowsDefectForTest).
+// SetGemma4VLRowsDefectForTest selects a planted defect in the E-model image-row builder (0 clears it; see gemma4VLRowsDefectForTest).
 func SetGemma4VLRowsDefectForTest(d int) { gemma4VLRowsDefectForTest = d }
 
-// Gemma4EModelImageRowsForTest exposes the E-model image-row builder (G1q/G2q build the rows, then hand them to the resident's PrefillLast).
+// Gemma4EModelImageRowsForTest exposes the E-model image-row builder; a gate builds the rows, then hands them to the resident's PrefillLast.
 func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, imgPos, imgLen int) ([][]float32, error) {
 	return m.gemma4EModelImageRowsSpans(ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
-// SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual add and DeepStack add) on c for the
-// next CPU prefill: CapturedForTest then holds one [rows*hidden] float32 copy per requested layer, the residual AFTER that layer, as HF's hidden_states[l+1] is. The
-// 896-pixel investigation's per-layer differencing uses it from the cuda package. nil disarms.
+// SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual
+// add and DeepStack add) on c for the next CPU prefill: CapturedForTest then holds one [rows*hidden] float32 copy per requested
+// layer, the residual after that layer, as HF's hidden_states[l+1] is. nil disarms.
 func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 	if layers == nil {
 		c.captureLayers, c.captured = nil, nil
@@ -504,7 +480,7 @@ func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 func (c *KVCache) CapturedForTest() [][]float32 { return c.captured }
 
 // SetStreamDirSwapForTest turns on StreamTranscodeDir's planted defect (layers 0 and 1 written in each other's place) and
-// returns the restore (docs/tasks/task-prequant-dir-streaming-2026-10.md, G-DS1).
+// returns the restore (docs/tasks/task-prequant-dir-streaming-2026-10.md).
 func SetStreamDirSwapForTest(on bool) func() {
 	prev := streamDirSwapForTest
 	streamDirSwapForTest = on

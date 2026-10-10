@@ -5,14 +5,12 @@ import (
 	"strconv"
 )
 
-// Per-model operator knobs (docs/tasks/task-env-config-2026-09.md, phase 2a). These were read from the
-// process environment on EVERY forward or generation, so changing the environment altered a model that was
-// already loaded, and two models in one process could not differ. Each model now snapshots them ONCE, at
-// Load (Options.Knobs overrides the environment per model), and every reader consults the model's snapshot.
-// The environment variables keep working — they are simply read once, at Load.
+// Per-model operator knobs (docs/env-vars.md, "Policy — where a new setting goes"). Each model snapshots them once, at Load
+// (Options.Knobs overrides the environment per model), and every reader consults the model's snapshot, so changing the
+// environment cannot alter a loaded model and two models in one process can differ. The environment variables still work;
+// they are read once, at Load.
 //
-// The values are kept RAW (as the environment would give them) and each reader below keeps the exact parsing
-// its os.Getenv call had, so a default or an override means precisely what it meant before.
+// The values are kept raw, as the environment would give them, and each reader below does its own parsing of the raw string.
 const (
 	knobAttnGrouped      = "GOINFER_ATTN_GROUPED"
 	knobAttnRowTile      = "GOINFER_ATTN_ROW_TILE"
@@ -29,7 +27,7 @@ const (
 	knobOptFwdMaxTemp    = "GOINFER_OPTFWD_MAX_TEMP"
 	knobCPUFastAttention = "GOINFER_CPU_FAST_ATTENTION"
 
-	// Phase 2b: read at Load or per call on a loaded model.
+	// Read at Load or per call on a loaded model.
 	knobMoECacheExperts = "GOINFER_MOE_CACHE_EXPERTS"
 	knobMoECacheSlots   = "GOINFER_MOE_CACHE_SLOTS"
 	knobNoFitDefault    = "GOINFER_NO_FIT_DEFAULT"
@@ -38,25 +36,23 @@ const (
 	knobNoResidentReuse = "GOINFER_NO_RESIDENT_REUSE"
 	knobSSMResident     = "GOINFER_SSM_RESIDENT"
 
-	// Phase 6: a rollback switch that had been filed as a diagnostic.
+	// A rollback switch.
 	knobMoEPreadCPU = "GOINFER_MOE_PREAD_CPU"
 
-	// MC4 "spec inside a batch" premise (docs/tasks/task-concurrency-2026-09.md): does the just-shipped
-	// switch's per-round yield ever cost more than it buys on copy-heavy traffic, where staying exclusive
-	// beats joining MC3's batch? Set to force genNgramInto's adaptive round loop to never yield — the
-	// measurement this bisects, not a shipped policy.
+	// Forces genNgramInto's adaptive round loop to never yield to a batch: a diagnostic for the MC4 "spec inside a batch"
+	// measurement (docs/tasks/task-concurrency-2026-09.md), not a shipped policy.
 	knobSpecAdaptiveNeverYield = "GOINFER_SPEC_ADAPTIVE_NEVER_YIELD"
 )
 
-// cudaKnobs are phase 3's: the CUDA backend's operator knobs, snapshotted here with the rest so one mechanism
-// (Load-time read, Options.Knobs override, the testhooks drift check) covers every backend. The CUDA resident
-// reads them through Model.Knob; decoder itself never interprets them.
+// cudaKnobs are the CUDA backend's operator knobs, snapshotted here with the rest so one mechanism (Load-time read,
+// Options.Knobs override, the testhooks drift check) covers every backend. The CUDA resident reads them through Model.Knob;
+// decoder itself never interprets them.
 var cudaKnobs = []string{
 	"GOINFER_CUDA_FAST_PREFILL", "GOINFER_CUDA_FAST_PREFILL_FLOOR", "GOINFER_CUDA_FLASH_DECODE",
 	"GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "GOINFER_CUDA_FLASH_DECODE_VERIFY", "GOINFER_CUDA_NO_FUSE",
 	"GOINFER_NO_LORA_CACHE", "GOINFER_PREFILL_CHUNK", "GOINFER_PREFILL_IMAGE_CHUNK", "GOINFER_SPLITKV_ATTN",
 	"GOINFER_SPLITKV_MIN_KEYS",
-	// Phase 6: rollback switches for default-on paths, filed as diagnostics until then.
+	// Rollback switches for default-on paths.
 	"GOINFER_CUDA_MOE_EXPERT_MAJOR", "GOINFER_CUDA_ATTN_FUSED_TILE", "GOINFER_MOE_DMA_OVERLAP",
 	"GOINFER_MOE_PIN_REGISTER",
 }
@@ -69,8 +65,8 @@ var knobNames = []string{
 	knobNoResidentReuse, knobSSMResident, knobMoEPreadCPU, knobSpecAdaptiveNeverYield,
 }
 
-// metalKnobs are phase 4's: the Metal backend's operator knobs, same arrangement as cudaKnobs (read through
-// Model.Knob by the Metal resident). GOINFER_MOE_EXPERT_MAJOR is shared with the CPU path and already listed.
+// metalKnobs are the Metal backend's operator knobs, same arrangement as cudaKnobs (read through Model.Knob by the Metal
+// resident). GOINFER_MOE_EXPERT_MAJOR is shared with the CPU path and already listed.
 var metalKnobs = []string{
 	"GOINFER_METAL_ALIAS", "GOINFER_METAL_ATTN_FA", "GOINFER_METAL_BATCHED_PREFILL", "GOINFER_METAL_DECODE_LANE",
 	"GOINFER_METAL_FAST_PREFILL", "GOINFER_METAL_FAST_PREFILL_FLOOR", "GOINFER_METAL_FUSED_ATTENTION",
@@ -90,8 +86,8 @@ func (k *Knobs) values() map[string]string {
 	return *k
 }
 
-// knobSet is one model's snapshot. A nil *knobSet reads the live environment — the old behaviour — for the
-// structures tests build by hand without a Model (a hand-made Architecture, scratch or worker pool).
+// knobSet is one model's snapshot. A nil *knobSet reads the live environment, for the structures tests build by hand
+// without a Model (a hand-made Architecture, scratch or worker pool).
 type knobSet struct {
 	val    map[string]string
 	set    map[string]bool
@@ -135,9 +131,9 @@ func (k *knobSet) pin(name, value string, set bool) (restore func()) {
 }
 
 // Knob returns this model's value for one per-model knob and whether it is set: the snapshot taken at Load, with
-// Options.Knobs applied. It is how a backend reads its own operator knobs (phase 3: CUDA), so they are read once
-// per model and can differ between two models in one process. name must be on knobs.go's list — an unknown name
-// panics rather than silently reading "unset", which is what a typo would otherwise do.
+// Options.Knobs applied. It is how a backend reads its own operator knobs, so they are read once per model and can differ
+// between two models in one process. name must be on knobs.go's list: on a model with a snapshot an unknown name panics
+// rather than silently reading "unset", which is what a typo would otherwise do.
 func (m *Model) Knob(name string) (string, bool) {
 	if m.knobs != nil {
 		if _, known := m.knobs.set[name]; !known {

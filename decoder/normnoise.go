@@ -7,22 +7,17 @@ import (
 	"strconv"
 )
 
-// GOINFER_NORM_ULP_NOISE=<seed> is a DIAGNOSTIC (default-off, one env read per load): every f32
-// norm vector the loaded model carries (pre/post-attention, pre/post-MLP, per-head QK norms, the
-// final norm) gets an independent −1/0/+1 ULP nudge per element, seeded by <seed>. That is noise
-// of exactly f32-rounding size (~1.2e-7 relative), dense across every activation — the same
-// magnitude and shape as the difference between two CORRECT implementations of one forward that
-// sum in different orders (a GPU's tree reductions vs the CPU's sequential ones).
+// applyNormULPNoiseDiag is a diagnostic: when GOINFER_NORM_ULP_NOISE=<seed> is set (read once per load; unset changes
+// nothing; an unparsable seed means 1), every f32 norm vector the model carries (pre/post-attention, pre/post-MLP, per-head
+// QK norms, the final norm) gets an independent -1/0/+1 ULP nudge per element. That is noise of f32-rounding size (~1.2e-7
+// relative), dense across every activation: the magnitude and shape of the difference between two correct forwards that sum
+// in different orders (a GPU's tree reductions against the CPU's sequential ones).
 //
-// What it measures: the model's OWN sensitivity to that noise. Run the CPU forward twice, once
-// with this set and once without, and the logit cosine between the two runs is the floor below
-// which a resident-vs-CPU cosine on that checkpoint carries no information about the kernels —
-// the quantized (W4A8/W8A8) forward re-rounds activations to int8 at every projection, and a
-// perturbation far below one int8 step still flips a fraction of rounding decisions, each by a
-// whole step, compounding per layer. Measured on a 4-layer phi3-mini-shaped checkpoint (docs/
-// tasks/task-webgpu-nogqa-decode-bug.md): CPU-vs-CPU under this noise 0.9994–0.9996, argmax flip
-// at the same prompt position the WebGPU resident path flipped at — indistinguishable from the
-// resident-vs-CPU gap that had been read as a kernel bug. Observe-only: unset, nothing changes.
+// It measures the model's own sensitivity to that noise. Run the CPU forward with and without it: the logit cosine between
+// the two runs is the floor below which a resident-vs-CPU cosine on that checkpoint says nothing about the kernels, because
+// the quantized (W4A8/W8A8) forward re-rounds activations to int8 at every projection and a perturbation far below one int8
+// step still flips rounding decisions that compound per layer. Measurement and the case it explained:
+// docs/code-notes/decoder.md#applyNormULPNoiseDiag.
 func applyNormULPNoiseDiag(w *Weights) {
 	v := os.Getenv("GOINFER_NORM_ULP_NOISE")
 	if v == "" || w == nil {
