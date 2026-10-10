@@ -7,12 +7,11 @@ import (
 	"testing"
 )
 
-// TestRecordUpload_capturesFirstError is the C-08 gate: BuildResident's load-time up* helpers must
-// record a failed upload into setupErr (the setup job returns r.setupErr, which BuildResident turns
-// into a decline). Before the fix they discarded gpu.Upload's error with `_ =`, so a failed upload left
-// a zeroed buffer and the build returned ok=true — a resident that decodes garbage. Device-free: it
-// exercises the recording contract directly (the seam the executor return-path and backend.go's
-// `if setupErr != nil { … declined }` depend on), the same shape as the C-24 runJob gate.
+// TestRecordUpload_capturesFirstError is the C-08 gate: BuildResident's load-time up* helpers must record a failed upload
+// into setupErr (the setup job returns r.setupErr, which BuildResident turns into a decline), because discarding
+// gpu.Upload's error leaves a zeroed buffer and the build returns ok=true: a resident that decodes garbage. Device-free:
+// it exercises the recording contract directly (the seam the executor return-path and backend.go's `if setupErr != nil {
+// … declined }` depend on), the same shape as the C-24 runJob gate.
 func TestRecordUpload_capturesFirstError(t *testing.T) {
 	r := &cudaResident{}
 

@@ -12,11 +12,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestUploadKV_matchesSequentialForward is UploadKV's FIRST real correctness test (P6b / gap-0,
-// docs/multimodal.md). Before this, UploadKV had zero non-test call sites and every fake stub
-// (decoder/*_test.go) ignored its arguments and returned nil — the "no precision/layout
-// mismatch" claim the hybrid resident-decode design leans on was asserted by doc comments, never
-// exercised.
+// TestUploadKV_matchesSequentialForward is UploadKV's correctness test (P6b / gap-0, docs/multimodal.md): the hybrid
+// resident-decode design leans on a "no precision/layout mismatch" claim that only an exercised test can back.
 //
 // Two arms on the SAME resident handle (Reset between them, not two loads — two resident 4B
 // loads risk OOM on an 8 GB card):

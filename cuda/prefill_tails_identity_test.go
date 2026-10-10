@@ -18,11 +18,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// R-24 (docs/tasks/task-recompute-audit.md §5): the batched prefill's tail used to download the whole [M, hidden] residual after every pass, though only
-// ResidualAll reads it (the argmax and all-logits heads read it on the device, and the last-row tails need one row, which they uploaded back). This gate hashes
-// the output of EVERY tail mode the resident exposes, for each fixture, and compares it with the hashes recorded from the code BEFORE that change
-// (testdata/prefill_tails_baseline.json). It is device-specific for the same reason keqv_copy_baseline.json is (the PTX is JIT-compiled to the card's own SASS), so
-// the baseline is compared only on the device and driver that recorded it.
+// The batched prefill's tails (R-24, docs/tasks/task-recompute-audit.md §5): only ResidualAll reads the [M, hidden]
+// residual back to the host; the argmax and all-logits heads read it on the device, and the last-row tails upload one
+// row. This gate hashes the output of EVERY tail mode the resident exposes, per fixture, and compares it with the hashes
+// recorded from the code before the residual download was dropped (testdata/prefill_tails_baseline.json). It is
+// device-specific for the same reason keqv_copy_baseline.json is (the PTX is JIT-compiled to the card's own SASS), so the
+// baseline is compared only on the device and driver that recorded it.
 //
 //	go test -tags 'cuda goinfer_testhooks' -run TestPrefillTails -v ./cuda/
 //	GOINFER_TAILS_RECORD=1 go test ...   # (re)writes the baseline: only from code whose tails are the reference

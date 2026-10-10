@@ -53,10 +53,9 @@ func ropeScalarArgs(q, k, v, invF, kc, vc Buffer, nH, nKV, hd, startPos, rhalf, 
 		gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 		gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 		gpu.ArgValue(mscale),
-		// qTempRows, added to rope_kv_batched by b26fa122 (Ministral 3's per-row query scale): null means
-		// no attention temperature, which is what prefillCore's attnTempRows passes for every other family.
-		// Without it the launch has 13 of the kernel's 14 parameters and the driver refuses it with
-		// CUDA_ERROR_INVALID_VALUE, which is how this test sat red from 2026-09-11 to 2026-09-28.
+		// qTempRows (rope_kv_batched's per-row query scale, Ministral 3): null means no attention temperature, which is what
+		// prefillCore's attnTempRows passes for every other family. Omitted, the launch has 13 of the kernel's 14 parameters and
+		// the driver refuses it with CUDA_ERROR_INVALID_VALUE.
 		ArgNull(),
 	}
 }

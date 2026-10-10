@@ -13,20 +13,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillMoE_bitIdentical gates the third P20 blocker: a MoE layer's FFN now runs row by row off
-// the BATCHED residual (xB.At(m*hidden*4)) instead of taking the whole model off the batched path.
-// The attention half is batched; the routed experts keep decode's exact per-token sequence, so the
-// only thing that may change is speed.
+// TestPrefillMoE_bitIdentical pins that a MoE layer's FFN, which runs row by row off the BATCHED residual
+// (xB.At(m*hidden*4)), changes only speed: the attention half is batched and the routed experts keep
+// decode's exact per-token sequence.
 //
-// "May change" is the claim, so the assertion is equality against the sequential per-token path on
-// the same resident at the same positions — every logit, not a tolerance. A MoE model is the WORST
-// case for a tolerance-based check: routing is a discrete argmax over router logits, so a tiny
-// numerical difference does not perturb the output slightly, it runs a DIFFERENT EXPERT and the row
-// is unrelated. A near-match here would mean the routing agreed by luck on this input.
+// The assertion is equality against the sequential per-token path on the same resident at the same
+// positions: every logit, not a tolerance. Routing is a discrete argmax over router logits, so a tiny
+// numerical difference runs a DIFFERENT EXPERT and the row is unrelated; a near-match would mean the
+// routing agreed by luck on this input.
 //
-// Both fixtures are exercised because they cover different halves: gemma4-moe-scaled carries the
-// real 26B FFN shapes (hidden 2816, moe_inter 704) and gemma4-moe-kv-tiny puts K=V and MoE in the
-// same model, which is the combination M26 actually is.
+// The fixtures cover different halves: gemma4-moe-scaled carries the real 26B FFN shapes (hidden 2816,
+// moe_inter 704); gemma4-moe-kv-tiny is meant to put K=V and MoE in one model (M26's combination) but
+// declines residency (see TestPrefillMoE_real26B), so its subtest skips.
 //
 //	go test -tags 'cuda goinfer_testhooks' -run TestPrefillMoE -v ./cuda/
 func TestPrefillMoE_bitIdentical(t *testing.T) {
@@ -35,18 +33,16 @@ func TestPrefillMoE_bitIdentical(t *testing.T) {
 	}
 }
 
-// TestPrefillMoE_real26B is the same assertion against the model this was built for — M26, the
-// Gemma-4-26B-A4B kind-4 .giw bundle, loaded with -moe-cache-experts exactly as scripts/bench_peer.py
-// launches it.
+// TestPrefillMoE_real26B is the same assertion against M26, the Gemma-4-26B-A4B kind-4 .giw bundle, loaded
+// with -moe-cache-experts as scripts/bench_peer.py launches it.
 //
-// It is NOT redundant with the fixture gate above, and the difference is the point. No fixture here
-// carries K=V and MoE in the SAME model: gemma4-moe-kv-tiny is the one that would, and it declines
-// residency ("moeInter(16) and hidden(64) both multiples of 32"), so gemma4-moe-scaled covers MoE
-// with uniform non-K=V geometry and gemma4-dense-scaled covers K=V without MoE. M26 is the only
-// checkpoint that exercises both at once — and it is also the only one that exercises the C′ routed
-// expert DMA inside the per-row loop, which the fixtures run with cacheExperts=false.
+// It is NOT redundant with the fixture gate above. No fixture here carries K=V and MoE in the SAME model:
+// gemma4-moe-kv-tiny is the one that would, and it declines residency ("moeInter(16) and hidden(64) both
+// multiples of 32"), so gemma4-moe-scaled covers MoE with uniform non-K=V geometry and gemma4-dense-scaled
+// covers K=V without MoE. M26 is the only checkpoint that exercises both at once, and the only one that
+// exercises the C′ routed expert DMA inside the per-row loop (the fixtures run cacheExperts=false).
 //
-// Heavy: the load alone is ~2m11s (pinned host allocation for the expert stack).
+// Heavy: the load pins host memory for the expert stack and takes minutes.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestPrefillMoE_real26B -v -timeout 30m ./cuda/
 func TestPrefillMoE_real26B(t *testing.T) {
@@ -78,9 +74,8 @@ func prefillMoEParity(t *testing.T, dir string, real26B bool) {
 		t.Skipf("not CUDA-resident (%T)", mc.ResidentForwardForTest())
 	}
 
-	// Non-vacuity: this gate is about MoE layers taking the batched pass, so the fixture must HAVE
-	// them. Without this the test would pass on a dense model by exercising the branch it is not
-	// about — the failure mode the expert-major gate needed a run counter to rule out.
+	// Non-vacuity: the fixture must HAVE MoE layers, or the test passes on a dense model by exercising a
+	// branch it is not about.
 	moeLayers := 0
 	for l := range rf.layers {
 		if rf.layers[l].isMoE || rf.layers[l].g4moe {

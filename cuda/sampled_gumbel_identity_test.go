@@ -13,14 +13,13 @@ import (
 )
 
 // TestSampledGumbelStreamIdentity is R7b's end-to-end gate (docs/tasks/red-october.md): with a fixed seed, the token
-// stream drawn on-device by Gumbel-max is IDENTICAL to the stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1) —
-// the host and the device implement one algorithm over one Philox counter stream, so they may differ only where two
-// candidates' scores are within an f32 rounding (measured ~1e-6 per token, and 0 in 15,840 kernel-level draws).
-// Real checkpoints, three temperatures, 1,000 tokens each.
+// stream drawn on-device by Gumbel-max is IDENTICAL to the stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1): the host
+// and the device implement one algorithm over one Philox counter stream, so they may differ only where two candidates'
+// scores are within an f32 rounding (a ~1e-6 per-token event). Real checkpoints, three temperatures, 1,000 tokens each.
 //
-// PRE-REGISTERED: any divergence fails, and is investigated, not tolerated: at ~1e-6 per token a divergence in ~36k
-// tokens is a ~3% event, so one is more likely a bug than rounding. The test also fails if the device path never
-// engaged (DeviceSampled == 0), so it cannot pass vacuously.
+// PRE-REGISTERED: any divergence fails, and is investigated, not tolerated: at ~1e-6 per token a divergence in ~36k tokens
+// is a ~3% event, so one is more likely a bug than rounding. The test also fails if the device path never engaged
+// (DeviceSampled == 0), so it cannot pass vacuously.
 //
 // Run: GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestSampledGumbelStreamIdentity -v -timeout 30m ./cuda/
 func TestSampledGumbelStreamIdentity(t *testing.T) {

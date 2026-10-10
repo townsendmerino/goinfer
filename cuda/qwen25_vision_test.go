@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S3a for the Qwen2.5-VL tower on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "S7 on CUDA, the fix", registered before the code): every merged token at cosine >= 0.9999 against aikit's CPU tower, both
+// G-S3a for the Qwen2.5-VL tower on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "S7 on CUDA, the fix"): every merged token at cosine >= 0.9999 against aikit's CPU tower, both
 // float32; 0.999-0.9999 ambiguous (parked). Tiny first, sharpened exactly as metal/s3_towers_test.go does (norms randomised; q/k biases and weights, then v and the output projection, scaled up, because the tiny tower's
 // init-scale weights left attention nearly uniform and most defects invisible), over three grids including a two-image batch, with each registered planted defect alone required red: (1) the attention scale dropped, (2) RoPE's
 // halves swapped, (3) every block attending its whole frame, (4) the window reordering skipped. Then the real tower on the four F2a images. Needs a CUDA device; skips without one.

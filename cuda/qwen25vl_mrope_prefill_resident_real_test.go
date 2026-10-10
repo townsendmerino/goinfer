@@ -12,20 +12,17 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestQwen25VLMRoPEPrefillResidentReal_gate is the real-checkpoint gate for the resident m-RoPE
-// prefill fast path (decoder.ResidentMRoPEPrefill) — the direct Qwen2.5-VL sibling of
-// gemma3_img_prefill_resident_real_test.go's TestGemma3ImgPrefillResidentReal_gate, same
-// methodology and same two-half structure, but exercising a COLD (first-time) image turn's
-// PREFILL through the m-RoPE batched-rotation kernel instead of Gemma-3's bidirectional-attention
-// one.
+// TestQwen25VLMRoPEPrefillResidentReal_gate is the real-checkpoint gate for the resident m-RoPE prefill fast path
+// (decoder.ResidentMRoPEPrefill): the Qwen2.5-VL sibling of gemma3_img_prefill_resident_real_test.go's
+// TestGemma3ImgPrefillResidentReal_gate, same two-half structure, exercising a COLD (first-time) image turn's PREFILL
+// through the m-RoPE batched-rotation kernel.
 //
-// Reuses the EXISTING real golden (testdata/qwen25vl_real_golden.json.gz) — no new pin script. That
-// golden's own image grid already compresses post-image text positions (confirmed by
-// TestQwen25VLResidentReal_gate's own mropeDelta!=0 assertion on this same fixture), so this gate
-// exercises the genuinely-divergent-rotation path, not just the degenerate scalar-equivalent one.
+// It reuses the real golden (testdata/qwen25vl_real_golden.json.gz). That golden's image grid compresses post-image text
+// positions (TestQwen25VLResidentReal_gate asserts mropeDelta!=0 on this fixture), so the genuinely divergent rotation
+// path is exercised, not the degenerate scalar-equivalent one.
 //
-// Matched precision (int4 both arms) and forced-trajectory cosine on raw logits, same reasoning as
-// every other resident-vs-CPU gate in this package.
+// Matched precision (int4 both arms) and forced-trajectory cosine on raw logits, as in every other resident-vs-CPU gate
+// in this package.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestQwen25VLMRoPEPrefillResidentReal_gate -v -timeout 30m
 func TestQwen25VLMRoPEPrefillResidentReal_gate(t *testing.T) {

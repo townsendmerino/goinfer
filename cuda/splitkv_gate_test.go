@@ -9,10 +9,9 @@ import "testing"
 // no model — so it runs everywhere and guards the one thing that is expensive to rediscover: which
 // geometry/depth combinations may take the split path.
 //
-// This test exists because the gate was previously a single constant (splitkvMinKeys = 256)
-// characterized on ONE geometry (qwen2.5-1.5b) by a tight in-process loop, then applied to all
-// models. e2e measurement showed that constant regressed three of four geometries by up to 18–25%,
-// and was wrong on its own geometry too. A future simplification back to one constant MUST fail here.
+// A future simplification back to one constant MUST fail here: the gate was once a single constant (splitkvMinKeys = 256)
+// characterized on ONE geometry (qwen2.5-1.5b) by a tight in-process loop, and e2e measurement showed it regressed three of
+// four geometries by up to 18-25%.
 func TestSplitKVGate_measuredGeometries(t *testing.T) {
 	// nWin is the EFFECTIVE attended span (window-clamped), not the raw position.
 	cases := []struct {

@@ -74,9 +74,8 @@ func TestSpecDecode(t *testing.T) {
 	for i := range N {
 		tk := argmaxF(lg)
 		gt = append(gt, tk)
-		// Baseline uses the batched path per-token (PrefillLast M=1) — the SAME forward the verify uses,
-		// so losslessness is w.r.t. the batched forward (the decode-step Forward differs at the last ULP
-		// for pos>0, a batched-vs-decode rope/attention numerics gap under investigation).
+		// Baseline uses the batched path per-token (PrefillLast M=1), the SAME forward the verify uses, so losslessness is
+		// w.r.t. the batched forward.
 		outs, e := rf.PrefillLast(context.Background(), [][]float32{emb(tk)}, pos)
 		if e != nil {
 			t.Fatalf("plain decode %d: %v", i, e)

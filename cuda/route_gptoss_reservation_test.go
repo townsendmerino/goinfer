@@ -8,14 +8,13 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// TestRouteGptOssGrowsPoolPastMoERoute measures the gap audit-2026-09-10 G-13(b) closed.
+// TestRouteGptOssGrowsPoolPastMoERoute measures the gap G-13(b) (audit-2026-09-10) closed.
 //
-// BuildResident pays the deferred local-memory reservation before sizing the expert cache by
-// launching the kernel with the most per-thread scratch (see TestMoERouteFirstLaunchReservation for
-// the mechanism). It launched moe_route, 4416 B/thread. route_gptoss declares 4608, and it is the
-// router on gpt-oss, the model the expert cache exists for. This replays the old warm-up (moe_route
-// alone), then reads what route_gptoss's first launch takes on top. That figure is what allocSlots
-// could not see on gpt-oss before the fix.
+// BuildResident pays the deferred local-memory reservation before sizing the expert cache by launching the kernel with
+// the most per-thread scratch (see TestMoERouteFirstLaunchReservation for the mechanism). That is moe_route, 4416
+// B/thread, while route_gptoss declares 4608 and is the router on gpt-oss, the model the expert cache exists for. This
+// replays the old warm-up (moe_route alone), then reads what route_gptoss's first launch takes on top: the figure
+// allocSlots could not see on gpt-oss before the fix.
 //
 // The fix's own property is checked after that: once both are forced, a launch shaped like a real
 // gpt-oss-20b token (nE=32, k=4) must cost nothing.

@@ -48,15 +48,12 @@ import (
 //	    the prompts (PAIRED, not pooled — CLAUDE.md rule 7)
 //	(c) spike's mean continuation KL(reference || arm) <= 1.1 x exact's mean
 //
-// CRITERION (a) WAS AMENDED BY OWNER DECISION, 2026-09-13, after the S confirmation cell was scored
-// and before any D7 reference existed. As pre-registered it read `spike HF <= exact HF`, §3's strict
-// form — which the pre-registration mislabelled "§3.2". S failed it 8 v 7 over 640 positions, a
-// difference well inside Poisson noise (σ ≈ √7 ≈ 2.6), so the strict count cannot resolve the
-// question it is asking. It now uses the ceiling task-prefill-gap.md §3.2 specifies and the Metal
-// pooled gate implements (metal/prefill_gate_ref_test.go, `exact + 2*math.Sqrt(exact)`). The STRICT
-// result is still computed and printed for every cell, so the amendment is auditable rather than
-// silent. (b) and (c) are NOT amended: §3.2's noise-aware (b) would be looser than the registered
-// 1.0 pt, and that bar stays.
+// CRITERION (a) IS NOT THE PRE-REGISTERED STRICT FORM. By owner decision it uses the ceiling task-prefill-gap.md §3.2
+// specifies and the Metal pooled gate implements (metal/prefill_gate_ref_test.go, `exact + 2*math.Sqrt(exact)`), because the
+// strict `spike HF <= exact HF` cannot resolve a difference inside Poisson noise. The STRICT result is still computed and
+// printed for every cell, so the amendment is auditable rather than silent. (b) and (c) are NOT amended: §3.2's noise-aware
+// (b) would be looser than the registered 1.0 pt, and that bar stays. Record of the amendment:
+// docs/code-notes/cuda.md#TestVsumSplitGateVsReference.amendment.
 //
 // AMBIGUOUS -> PARKED: (b) inside its last 0.2 pt, or (c) in 1.05-1.10x, is inconclusive rather
 // than a pass. The band is pre-registered because the zone just under a threshold is where

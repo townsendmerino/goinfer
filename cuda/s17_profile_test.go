@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// S17 step 0 on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA", registered before this ran): the device towers' time split by kernel class.
+// S17 step 0 on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): the device towers' time split by kernel class.
 // Per tower and image: one warm-up, 3 unprofiled forwards (the wall) and 3 profiled ones, the median per class. Checks recorded with the read: the profiled output equals the unprofiled
 // one bit for bit; the profiled total is within +10% of the unprofiled wall; the three profiled reads of a class agree within 5%. Heavy; run alone.
 
@@ -101,8 +101,9 @@ func s17Profile(t *testing.T, name string, ops *towerOps, fwd func() ([]float32,
 		t.Errorf("%s: the profiled output differs from the unprofiled one (the hook changed the numerics)", name)
 	}
 	if over > 0.10 {
-		// The drains add a fixed bubble per class change, so a forward of tens of milliseconds (the dispatch-bound 14x20 grid) reads over the limit by construction; the registered limit is for the
-		// towers a lever targets. Under half a second the overhead is logged, not failed (the 2026-10-07 heavy tier failed this on that grid: +14.5% of 45 ms).
+		// The drains add a fixed bubble per class change, so a forward of tens of milliseconds (the dispatch-bound 14x20 grid)
+		// reads over the limit by construction; the registered limit is for the towers a lever targets. Under half a second the
+		// overhead is logged, not failed.
 		if wall < 500*time.Millisecond {
 			t.Logf("%s: the profiled wall is %+.1f%% over the unprofiled, on a %s forward that is dispatch-bound: noted, not graded", name, over*100, wall.Round(time.Millisecond))
 		} else {
@@ -329,8 +330,8 @@ func TestS17LeverA_wholeTower(t *testing.T) {
 	})
 }
 
-// TestS17ProfileQwen25CUDA is the step 0 profile of the Qwen2.5-VL tower on the tower base (S7 on CUDA's fix): the first real read missed its registered band (4.04 s on the 896x896 image against 1.7-2.6 s), so the class split
-// says where the time is. Heavy; run alone.
+// TestS17ProfileQwen25CUDA is the step 0 profile of the Qwen2.5-VL tower on the tower base (S7 on CUDA's fix): the class
+// split says where the time goes. Heavy; run alone.
 func TestS17ProfileQwen25CUDA(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")

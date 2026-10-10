@@ -13,46 +13,29 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestGemma3ResidentReal_imageBlockAtomicity is P9(a)'s pre-registered kill condition
-// (docs/multimodal.md's P9(a) plan, "Top risk: the atomicity boundary"), run against the REAL
-// GenerateVL entrypoint on gemma-3-4b-it's resident CUDA backend — not the decoder package's own
-// fakeResident unit gates (decoder/generate_vl_resident_test.go's TestGenerateVL_imageReuseFastPath_*
-// cover the control-flow logic in isolation; this proves the same claim against real kernels).
+// TestGemma3ResidentReal_imageBlockAtomicity is P9(a)'s pre-registered kill condition (docs/multimodal.md's P9(a) plan,
+// "Top risk: the atomicity boundary"), run against the REAL GenerateVL entrypoint on gemma-3-4b-it's resident CUDA backend,
+// not the decoder package's fakeResident unit gates (decoder/generate_vl_resident_test.go's
+// TestGenerateVL_imageReuseFastPath_* cover the control flow in isolation; this proves the same claim against real
+// kernels). CUDA is the witness because gemma-3-4b-it's text decoder declines residency on WebGPU entirely.
 //
-// (A WebGPU version of this gate was tried first, matching gap 0's own CUDA+WebGPU split — but
-// gemma-3-4b-it's text decoder declines residency on this box's WebGPU backend entirely
-// ("arch needs unimplemented feature(s) [embed-scale gated-gelu sandwich-norm]"), so it could
-// only ever SKIP, providing no real coverage. P9(a)'s reuse logic lives entirely in the backend-
-// agnostic decoder package (gap 0 already validated the CUDA and WebGPU kernel primitives
-// separately), so CUDA — proven to hold Gemma 3 resident on this exact box,
-// TestGemma3ResidentReal_gate above — is an equally valid real-hardware witness for this
-// specific claim.)
+// Same token-IDENTITY methodology as gpu/resident_reuse_parity_test.go's TestResidentPrefixReuse_tokenIdentical, for the
+// same reason: a wrong image-block match produces fluent, confidently wrong output with no error anywhere, so only
+// bit-for-bit identity against a reuse-disabled cold run is acceptable evidence. Two claims, both checked, across a 3-turn
+// transcript (image A, the SAME image A resent, then a DIFFERENT image B at the same placeholder slot):
 //
-// Same token-IDENTITY methodology as gpu/resident_reuse_parity_test.go's
-// TestResidentPrefixReuse_tokenIdentical, for the identical reason stated there: a wrong
-// image-block match produces fluent, confidently wrong output with no error anywhere, so only
-// bit-for-bit identity against a reuse-disabled cold run is acceptable evidence. Two claims,
-// both checked, across a 3-turn transcript (image A, the SAME image A resent, then a DIFFERENT
-// image B at the same placeholder slot):
+//   - Resending the SAME image must reuse the resident KV (the vision tower's own call counter stays flat across that turn,
+//     and Generation.PrefillReused reports a reuse length reaching at least past the image block) AND the warm run's output
+//     must be bitwise identical to a cold (reuse-forced-off) run's.
+//   - A DIFFERENT image at the SAME slot must NOT reuse (the tower is called again, PrefillReused reports 0) AND the output
+//     is bitwise identical to a cold run: a bug that claims reuse it should not would still show up here even if it
+//     produced plausible-looking text.
 //
-//   - Resending the SAME image must reuse the resident KV — proven by the vision tower's own
-//     call counter staying flat across that turn, and by Generation.PrefillReused reporting a
-//     reuse length reaching at least past the image block — AND the warm run's output must be
-//     bitwise identical to a cold (reuse-forced-off) run's.
-//   - A DIFFERENT image at the SAME slot must NOT reuse — proven by the tower being called
-//     again, PrefillReused reporting 0, AND (same as above) bitwise identity against a cold run —
-//     a wrong-in-the-other-direction bug (claiming reuse it shouldn't) would still show up here
-//     even if it happened to produce plausible-looking text.
-//
-// The vision tower's own forward pass is real but MEMOIZED by image identity: a real forward
-// pass on this checkpoint is documented as minutes-scale on CPU (demo/agent/agent.go's TurnImage
-// doc comment), and a deterministic f32 forward pass over identical input produces identical
-// output by construction — reuse-vs-not is a property of GenerateVL/the resident KV, not of the
-// tower, so recomputing the SAME image's features on every call would only spend real time
-// proving something this test doesn't need re-proven. The call counter still increments on EVERY
-// invocation (that is what proves whether GenerateVL actually called the closure); only the
-// expensive compute behind it is paid once per distinct image across the whole test — 2 real
-// forward passes total, not up to 6.
+// The vision tower's forward pass is real but MEMOIZED by image identity: a real forward pass on this checkpoint is
+// minutes-scale on CPU (demo/agent/agent.go's TurnImage doc comment) and deterministic, and reuse-vs-not is a property of
+// GenerateVL and the resident KV, not of the tower. The call counter still increments on EVERY invocation (that is what
+// proves whether GenerateVL called the closure); only the compute behind it is paid once per distinct image (2 real
+// forward passes total, not up to 6).
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3ResidentReal_imageBlockAtomicity -v -timeout 30m
 func TestGemma3ResidentReal_imageBlockAtomicity(t *testing.T) {
@@ -92,10 +75,8 @@ func TestGemma3ResidentReal_imageBlockAtomicity(t *testing.T) {
 		t.Fatalf("LoadProjector: %v", err)
 	}
 
-	// Image B: same shape as the golden's real pixel_values, deliberately different content (a
-	// sign flip guarantees a different SigLIP forward pass) — a second real image's worth of
-	// pixels, not a stand-in for one; what matters for this gate is that it is NOT image A's
-	// content, not that it depicts anything in particular.
+	// Image B: same shape as the golden's real pixel_values, deliberately different content (a sign flip guarantees a
+	// different SigLIP forward pass); all that matters is that it is NOT image A's content.
 	pixelsB := make([]float32, len(g.PixelValues))
 	for i, v := range g.PixelValues {
 		pixelsB[i] = -v

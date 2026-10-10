@@ -11,10 +11,9 @@ import (
 	"testing"
 )
 
-// TestPTX_matchesSourcesAndBindings is PTX freshness without a device or an NVRTC (audit-2026-09-10
-// G-09). A .cu edit committed without regenerating its .ptx compiles, vets and passes -short CI.
-// Then at runtime cuModuleGetFunction fails, BuildResident declines, and every family runs on the
-// CPU; 23c46b1 and 5b44383 each describe that shape. This test is its static guard:
+// TestPTX_matchesSourcesAndBindings is PTX freshness without a device or an NVRTC. A .cu edit committed without
+// regenerating its .ptx compiles, vets and passes -short CI; at runtime cuModuleGetFunction then fails, BuildResident
+// declines, and every family runs on the CPU. This test is its static guard:
 //
 //  1. every __global__ a .cu declares is a .visible .entry in its .ptx, with the same parameter
 //     count and kinds, and the .ptx carries no entry the .cu no longer declares;

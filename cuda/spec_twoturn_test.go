@@ -12,26 +12,20 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// spec_twoturn_test.go is item 30 (docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of
-// two fixes measured and shipped on Metal / against stubs only —
+// spec_twoturn_test.go is item 30 (docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of two
+// trailing-token fixes whose real drafter and kernels exist only on CUDA —
 //
-//   - 0e579400 (the block drafter, --drafter, CUDA only): at a completed exit (EOS or max_tokens) the resident
-//     commit recorded prompt + every emitted token as held in KV, but the LAST emitted token — the next round's
-//     anchor — was never forwarded through the target. A second turn then reused that position as it stood: a
-//     rejected draft's K/V, or nothing at max_tokens 1.
-//   - 97615930 (the n-gram loop, serve --spec ngram): the same gap — the trailing token was forwarded only as the
-//     next round's seq[0], so a generation ending at max_tokens left the cache one token short.
+//   - the block drafter (--drafter, CUDA only): at a completed exit (EOS or max_tokens) the resident commit must record the
+//     LAST emitted token (the next round's anchor) as forwarded through the target, or a second turn reuses that position
+//     as it stood: a rejected draft's K/V, or nothing at max_tokens 1.
+//   - the n-gram loop (serve --spec ngram): the trailing token must be forwarded, not only as the next round's seq[0], or a
+//     generation ending at max_tokens leaves the cache one token short.
 //
-// Both were proven on Metal (spec_multiturn_test.go) or only against stubs
-// (TestBlockSpecGenerate_commitsOnlyWrittenPositions) — the real drafter and kernels exist only on CUDA. This
-// ports spec_multiturn_test.go's shape (fresh load per arm, turn 1 through the speculative path, turn 2 a strict
-// ChatML extension through plain Generate) with the prompt's own three assertions: turn-1 ids equal (losslessness),
-// turn-2 PrefillReused equal AND equal to len(prompt1)+len(out1) (the property the fixes are for), turn-2 ids equal.
-//
-// Run twice, per the prompt: once at HEAD (both fixes in — expect everything equal), once with
-// decoder/blockspec.go reverted to 0e579400^ and decoder/spec_ngram.go reverted to 97615930^ (expect turn 2 to
-// diverge). See docs/measurements/spec-vs-batching-metal-2026-09-27.md's "CUDA check" Update section for the
-// results of both runs.
+// It ports spec_multiturn_test.go's shape (fresh load per arm, turn 1 through the speculative path, turn 2 a strict ChatML
+// extension through plain Generate) with three assertions: turn-1 ids equal (losslessness), turn-2 PrefillReused equal AND
+// equal to len(prompt1)+len(out1) (the property the fixes are for), turn-2 ids equal. Reverting decoder/blockspec.go and
+// decoder/spec_ngram.go to before those fixes makes turn 2 diverge; both runs are recorded in
+// docs/measurements/spec-vs-batching-metal-2026-09-27.md's "CUDA check" Update section.
 
 // twoTurnAssets resolves the target checkpoint and checks a tokenizer is actually loadable — shared by both new
 // tests, mirroring blockspec_test.go's own asset resolution exactly so a real run exercises the identical
@@ -142,13 +136,10 @@ func runPlainTwoTurn(t *testing.T, tgt string, n int) twoTurnResult {
 // equal. wantPrompt1Len is len(prompt1) as encoded by firstTurn — passed in rather than recomputed so a caller
 // that already has it (every one here does) can't accidentally encode a second, possibly-nondeterministic copy.
 //
-// checkReused is false only for the turn2-via-GenerateStream variant: decoder/blockspec.go's GenerateStream never
-// sets Generation.PrefillReused at all (grep confirms it — BlockSpec has no separate prefill phase to report reuse
-// for in the same accounting sense Model.Generate's resident path uses), so it always reads 0 there regardless of
-// whether the trailing-token fix is doing its job. That is a reporting gap in a field this call path never
-// populates, not evidence about the fix — checked once, live (measured 2026-09-28: every N, reused2=0, while the
-// SAME run's turn-2 ids matched plain's exactly), rather than assumed. The ids check below is what actually
-// proves the KV is correct for that variant, and it still runs unconditionally.
+// checkReused is false only for the turn2-via-GenerateStream variant: decoder/blockspec.go's GenerateStream never sets
+// Generation.PrefillReused (BlockSpec has no separate prefill phase to report reuse for), so it always reads 0 there
+// regardless of whether the trailing-token fix is doing its job. That is a reporting gap, not evidence about the fix: the
+// turn-2 ids check is what proves the KV is correct for that variant, and it still runs unconditionally.
 func checkTwoTurn(t *testing.T, label string, wantPrompt1Len int, plain, got twoTurnResult, checkReused bool) {
 	t.Helper()
 	if d := firstDiffTwoTurn(plain.out1, got.out1); d >= 0 {
@@ -170,11 +161,11 @@ func checkTwoTurn(t *testing.T, label string, wantPrompt1Len int, plain, got two
 	t.Logf("%s: turn1 %d tok (reused %d), turn2 %d tok (reused %d, want %d, checked=%v)", label, len(got.out1), got.reused1, len(got.out2), got.reused2, wantReused, checkReused)
 }
 
-// TestBlockSpec_twoTurnsMatchPlain is 0e579400's own CUDA check: qwen3-4b int4 plus the DFlash block drafter, N in
-// {1, 17, 48} (1 is the seed-only exit — no draft round at all, the shape most likely to expose a stale anchor).
-// Two spec variants share turn 1 (the drafter's GenerateStream) and differ only in how turn 2 continues: through
-// plain Generate (the property serve actually depends on — a spec turn followed by an ordinary one), and through
-// the drafter's own GenerateStream again (spec-into-spec).
+// TestBlockSpec_twoTurnsMatchPlain is the block drafter fix's CUDA check: qwen3-4b int4 plus the DFlash block drafter, N in
+// {1, 17, 48} (1 is the seed-only exit, no draft round at all, the shape most likely to expose a stale anchor). Two spec
+// variants share turn 1 (the drafter's GenerateStream) and differ only in how turn 2 continues: through plain Generate (the
+// property serve depends on: a spec turn followed by an ordinary one), and through the drafter's own GenerateStream again
+// (spec-into-spec).
 func TestBlockSpec_twoTurnsMatchPlain(t *testing.T) {
 	tgt := twoTurnAssets(t)
 	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
@@ -254,9 +245,9 @@ func TestBlockSpec_twoTurnsMatchPlain(t *testing.T) {
 	}
 }
 
-// TestNgramSpec_twoTurnsMatchPlain is 97615930's own CUDA check, the same shape on the target alone (no drafter
-// object to attach — decoder.NgramDrafter{} is stateless) via GenerateNgramSpeculativeAdaptive, serve's own
-// resident call for `--spec ngram`.
+// TestNgramSpec_twoTurnsMatchPlain is the n-gram fix's CUDA check, the same shape on the target alone (no drafter object to
+// attach: decoder.NgramDrafter{} is stateless) via GenerateNgramSpeculativeAdaptive, serve's own resident call for
+// `--spec ngram`.
 func TestNgramSpec_twoTurnsMatchPlain(t *testing.T) {
 	tgt := twoTurnAssets(t)
 	prompt1Len := len(firstTurn(t, tgt, twoTurnPrompt1))

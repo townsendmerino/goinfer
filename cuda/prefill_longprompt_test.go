@@ -15,15 +15,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillLongPrompt probes the batched prefill path at the prompt lengths a deep-context
-// benchmark actually uses (up to 8k), which no existing harness covers: TestPrefillTTFT stops at
-// M=2048 on a 1.5B model. The M-sized device scratch prefillCore allocates is O(M*inter), so the
-// path can pass its LOAD-time report (PrefillPath says "batched") and still decline every real
-// long prompt at call time, silently falling back to the ~6 ms/token sequential loop.
+// TestPrefillLongPrompt probes the batched prefill path at the prompt lengths a deep-context benchmark uses
+// (up to 8k). The M-sized device scratch prefillCore allocates is O(M*inter), so the path can pass its
+// LOAD-time report (PrefillPath says "batched") and still decline every real long prompt at call time,
+// silently falling back to the sequential per-token loop.
 //
-// Reports, per M: the static decline (if any), whether the call succeeded, its duration, and the
-// per-token cost. Diagnostic — it asserts only that the model loaded and that the static gate is
-// open; the numbers are the output.
+// Reports, per M: the static decline (if any), whether the call succeeded, its duration, and the per-token
+// cost. Diagnostic: it asserts only that the model loaded and that the static gate is open; the numbers are
+// the output.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestPrefillLongPrompt -v -timeout 40m ./cuda/
 func TestPrefillLongPrompt(t *testing.T) {

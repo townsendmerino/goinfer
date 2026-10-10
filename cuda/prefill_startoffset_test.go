@@ -13,16 +13,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillStartOffset asks whether a prompt's seed logits depend on WHERE its prefill starts: the question a KV-cache prefix reuse puts to the kernels. The reference is the whole prompt
-// in one PrefillLast call. Each case computes the first r rows in one call, then the remaining rows in a SECOND call at startPos=r (exactly what reuse does: the first r rows' KV is already
-// resident, the rest are prefilled from r) and compares the seed logits bit for bit.
+// TestPrefillStartOffset asks whether a prompt's seed logits depend on WHERE its prefill starts: the question a
+// KV-cache prefix reuse puts to the kernels. The reference is the whole prompt in one PrefillLast call. Each case
+// computes the first r rows in one call, then the remaining rows in a SECOND call at startPos=r (what reuse does: the
+// first r rows' KV is already resident) and compares the seed logits bit for bit.
 //
 //	A (default floor): a first call of r<512 rows runs on the EXACT kernels (the fast floor is judged on the pass), as the leftover slot's short prompt did in serve.
 //	B (floor 0):       the first call runs the fast kernels too, so any difference is the start offset alone.
 //
-// Measured 2026-10-02 on the 1.5B: B is bit-identical at every r from 16 to 512 (the fused kernels ARE start-offset-invariant), A differs at every r below the floor (max|d| 0.7 to 0.9 on random
-// embeddings) and is identical at r=512. So what a prefix reuse changes is the PROVENANCE of the reused rows (exact-kernel versus fast-kernel numerics), not the start offset. This test pins the invariance;
-// the A rows show the comparison can go red (it does, 151936/151936). Random embeddings: this is a numerics check, not a text one.
+// B is start-offset-invariant (the fused kernels are), so what a prefix reuse changes is the PROVENANCE of the reused
+// rows (exact-kernel versus fast-kernel numerics), not the start offset. A differs below the floor by kernel class, which
+// shows the comparison can go red. Random embeddings: a numerics check, not a text one. Figures:
+// docs/code-notes/cuda.md#TestPrefillStartOffset.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestPrefillStartOffset -v ./cuda/
 func TestPrefillStartOffset(t *testing.T) {

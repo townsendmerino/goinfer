@@ -17,10 +17,10 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestVsumMechanism is R6 step 1 (docs/tasks/red-october.md): why did the V-sum spike's KL against the
-// f32/f64 reference read 1.0585x exact's on D7@8000 while its argmax metrics were better?
-// Pre-registered in docs/measurements/vsum-mechanism-PREREGISTERED.md; the hypotheses, the numeric tests
-// and the decision rule are there and are not restated here.
+// TestVsumMechanism is R6 step 1 (docs/tasks/red-october.md): why did the V-sum spike's KL against the f32/f64 reference
+// read worse than exact's on D7@8000 while its argmax metrics were better? Pre-registered in
+// docs/measurements/vsum-mechanism-PREREGISTERED.md; the hypotheses, the numeric tests and the decision rule are there and
+// are not restated here.
 //
 // It re-uses Phase A's cached reference rows and re-scores arms only: exact (skVsumSplit=0) and the spike
 // at each S in GOINFER_VSUM_MECH_S (default 1,2,4,8,16). S=1 must be BIT-IDENTICAL to exact — it is the

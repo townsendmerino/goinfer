@@ -16,26 +16,14 @@ const (
 	topK26B    = 8
 )
 
-// TestSlotCapArithmetic gates the expert-cache CAPPING branch — code that ships, decides how much
-// VRAM to claim, and had never once been executed by a test.
+// TestSlotCapArithmetic gates the expert-cache CAPPING branch, code that decides how much VRAM to claim. The branch only
+// binds when the requested slots exceed free VRAM, and no fixture is large enough for that: it is the
+// exercised-but-never-triggered shape, reported green by coverage tools and never run until the real 26B.
 //
-// It could not be: the branch only binds when the requested slots exceed free VRAM, and no fixture
-// is remotely large enough for that. It bound for the first time on the real 26B. That is the
-// exercised-but-never-triggered shape — a branch inside well-tested code that the tests' inputs can
-// never reach, so coverage tools report it green and it has never run.
-//
-// TWO CLAIMS THIS FILE USED TO MAKE, BOTH WITHDRAWN.
-//
-// It said it "corroborates the sizing", on the grounds that it predicted 34 and the hardware
-// produced 34. It corroborated a PARALLEL COPY: allocSlots had its own inline arithmetic and this
-// gate drove capSlots, so agreement between them showed only that two transcriptions of the same
-// formula agreed. allocSlots now calls capSlots, so the gate points at the shipping path.
-//
-// And it said the agreement placed the 26B discrepancy "downstream of the sizing decision". It did
-// not. The formula both copies implemented was WRONG: it summed requested bytes, while the driver
-// charges each of the four buffers per layer its own whole 2 MiB quanta. 34 was the answer to the
-// wrong question, and the forward at 34 slots generated zero tokens. The two copies agreeing was
-// never evidence about the answer — only about the copying.
+// The gate drives capSlots, which allocSlots calls, so it points at the shipping path; agreement between two
+// transcriptions of one formula is not evidence about the formula. The formula must charge each of the four buffers per
+// layer its own whole 2 MiB quanta: a sum of requested bytes returns 34 slots on the 26B, where the forward generates
+// zero tokens. The two claims this file once made and withdrew: docs/code-notes/cuda.md#TestSlotCapArithmetic.
 func TestSlotCapArithmetic(t *testing.T) {
 	const gb = int64(1) << 30
 	cases := []struct {
@@ -148,14 +136,11 @@ func TestSlotCapArithmetic_search(t *testing.T) {
 //
 //	rounding removed (raw sum) -> 34 slots, not 33. That is the ORIGINAL DEFECT, and the forward at
 //	                              34 generates zero tokens on the real 26B.
-//	margin removed             -> 37 slots. DERIVED under the ROUNDING form, and worth stating how
-//	                              it was got wrong first: 38 was carried over from the old raw-sum
-//	                              derivation without re-deriving, and this gate caught it. With
+//	margin removed             -> 37 slots. DERIVED under the ROUNDING form: with
 //	                              x = n*123904/2MiB, n=37 gives quanta 3+5+18+35 = 61, so
 //	                              30 x 61 x 2 MiB = 3,837,788,160 <= 3,847,880,704 free; n=38 gives
 //	                              3+5+18+36 = 62, so 3,900,702,720 > free. The margin costs 4 slots
-//	                              (33 -> 37), not the 4 the old sum happened to give (34 -> 38) —
-//	                              same delta, different endpoints, and only one of them is real.
+//	                              (33 -> 37).
 //	floor removed (clamp up)   -> "below topK" returns 8 slots instead of declining: the
 //	                              allocate-then-fail-to-launch path.
 //

@@ -21,9 +21,8 @@ import (
 // adaptive at the shipped 0.5 / adaptive at this backend's measured Theta /
 // adaptive at the conservative sensitivity value.
 //
-// `off` is in the arm set because a speculation suite in this repo was once found
-// where no configuration beat running no drafter at all, and that was only visible
-// because off was a competitor.
+// `off` is in the arm set because "beats every configuration" means nothing if running no drafter wins (CLAUDE.md,
+// Measurement discipline: include the do-nothing arm).
 //
 // Inputs are REAL repo files read at run time, not the constructed specWorkloads
 // corpus (measured at 4-7x the copy density of real code — docs/spec/02). The
@@ -101,11 +100,9 @@ func TestThetaAB(t *testing.T) {
 			t.Fatalf("tokenizer: %v", err)
 		}
 
-		// WARM-UP, discarded. The first cell after a model load carries JIT, allocator
-		// and cache effects: between two otherwise-identical runs the `off` control —
-		// which no code change here can affect — moved +32.2% on exactly that cell,
-		// putting the noise floor above the effect being measured. One throwaway
-		// generation before any timed cell removes it.
+		// WARM-UP, discarded. The first cell after a model load carries JIT, allocator and cache effects large enough to put the
+		// noise floor above the effect being measured (the `off` control, which no code change here can affect, moved on exactly
+		// that cell between two identical runs). One throwaway generation before any timed cell removes it.
 		if wp, werr := tk.Encode(inputs[0].prompt, true); werr == nil {
 			wch, _ := m.Generate(ctx, wp, 32, greedy)
 			_ = collectToks(wch)

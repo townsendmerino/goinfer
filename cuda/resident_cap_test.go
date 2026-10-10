@@ -71,24 +71,18 @@ func TestResolveCtxCap(t *testing.T) {
 	}
 }
 
-// TestResolveCtxCapFit_shortcuts pins the branches that need no real device: an explicit request
-// is untouched either way (fit-by-default only ever applies to an UNPINNED load), --fit=off
-// (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT env-var precursor both restore resolveCtxCap
-// exactly, and a model whose own window is already at or below cudaCtxCapDefault has nothing to
-// gain from asking Plan at all. The live-probe-driven branch (a real free-VRAM reading) is
-// exercised on real hardware separately (docs/tasks/task-gpu-paths-2026-09.md's G11 entry has the
-// nobara numbers). A real (if minimal, tracked-in-git) model is loaded per case rather than
-// passing nil — m.FitDisabled() reads a real field now, unlike the plain env-var check this
-// replaced, so a nil *decoder.Model would panic in the request==0 cases where it's evaluated.
+// TestResolveCtxCapFit_shortcuts pins the branches that need no real device: an explicit request is untouched either way
+// (fit-by-default only ever applies to an UNPINNED load), --fit=off (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT
+// env-var precursor both restore resolveCtxCap exactly, and a model whose own window is already at or below
+// cudaCtxCapDefault has nothing to gain from asking Plan. The live-probe branch (a real free-VRAM reading) is exercised on
+// real hardware separately (docs/tasks/task-gpu-paths-2026-09.md, G11). A real (minimal, tracked-in-git) model is loaded per
+// case rather than nil: m.FitDisabled() reads a real field, so a nil *decoder.Model would panic in the request==0 cases.
 //
-// `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m
-// itself is a GENUINE pin (decoder.Model.ResidentContextPinned() true) or just a bare request
-// value passed straight to resolveCtxCapFit with an unpinned m — item 28
-// (docs/prompts/nobara-mc1-webgpu-2026-09.md §4): before this field existed here, every
-// request>0 case below loaded m WITHOUT ResidentContext set, so `pinned` was accidentally always
-// false and these cases were passing by coincidence (fitDefaultCtx is itself 8192, and llama-tiny
-// is small enough that Plan hands 8192 straight back unshrunk) rather than by actually taking the
-// "genuine pin, skip fit entirely" branch they claimed to test.
+// `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m itself is a GENUINE pin
+// (decoder.Model.ResidentContextPinned() true) or a bare request value passed to resolveCtxCapFit with an unpinned m. Set
+// it deliberately on every request>0 case: left unset, the cases pass by coincidence (fitDefaultCtx is itself 8192 and
+// llama-tiny is small enough that Plan hands 8192 back unshrunk) instead of taking the "genuine pin, skip fit entirely"
+// branch they claim to test (docs/prompts/nobara-mc1-webgpu-2026-09.md §4, item 28).
 func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	for _, c := range []struct {
 		name              string
@@ -106,18 +100,15 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 		{"Options.DisableFit (--fit=off) restores the historical default", 0, 32768, false, false, true, false, cudaCtxCapDefault},
 		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, false, false, false, cudaCtxCapDefault},
 		{"model window below the historical default has nothing to gain", 0, 2048, false, false, false, false, cudaCtxCapDefault},
-		// Found live 2026-09-15/16: growing ctx starves the expert-slot cache's own claim on the
-		// same free VRAM (resolveCtxCapFit's own doc comment has the measured numbers). A genuine
-		// pin still overrides it below — this only changes the UNPINNED default.
+		// Growing ctx starves the expert-slot cache's own claim on the same free VRAM (resolveCtxCapFit's doc comment has the
+		// measured numbers). A genuine pin still overrides it below; this only changes the UNPINNED default.
 		{"Options.MoECacheExperts restores the historical default, same as DisableFit", 0, 32768, false, false, false, true, cudaCtxCapDefault},
 		{"genuine pin still bypasses fit with MoECacheExperts set", 8192, 32768, true, false, false, true, 8192},
-		// Item 28's own fix: request>0 but NOT pinned is a load-time fit-guard auto-pin (R13), not
-		// a choice — it must still go through fit-by-default (never the request>0 shortcut above),
-		// clamped so it can only ever land AT OR UNDER the guard's own pin, never over it. llama-tiny
-		// is tiny enough that Plan always has room, so this lands exactly at the pin (the clamp,
-		// not Plan, is what's under test) — including the below-cudaCtxCapDefault case, where the
-		// OLD code would have wrongly floored back UP to cudaCtxCapDefault, raising a context past
-		// what the guard proved host RAM could hold.
+		// request>0 but NOT pinned is a load-time fit-guard auto-pin (R13), not a choice: it must still go through
+		// fit-by-default (never the request>0 shortcut above), clamped so it can only land AT OR UNDER the guard's own pin. llama-tiny
+		// is tiny enough that Plan always has room, so this lands exactly at the pin (the clamp, not Plan, is under test),
+		// including the below-cudaCtxCapDefault case, where flooring back UP to cudaCtxCapDefault would raise a context past what
+		// the guard proved host RAM could hold.
 		{"guard pin (unpinned m) at cudaCtxCapDefault: fit-by-default still runs, clamped to it", cudaCtxCapDefault, 32768, false, false, false, false, cudaCtxCapDefault},
 		{"guard pin (unpinned m) BELOW cudaCtxCapDefault: floor follows it down, not back up", 2048, 32768, false, false, false, false, 2048},
 	} {
@@ -146,23 +137,18 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	}
 }
 
-// TestResolveCtxCapFit_agreesWithCheckKVFits is M-12 and M-22's own gate (docs/audit-2026-09-10.md),
-// on a real device: resolveCtxCapFit's own PLANNING-time choice must actually pass checkKVFits'
-// BUILD-time check — before M-12's fix, Plan reserved zero margin while checkKVFits required an
-// extra 384 MiB on top, so any INTERIOR (non-ceiling, non-floor) choice failed almost every time.
-// A real card usually has far more free VRAM than testdata/llama-tiny plus 8192 positions could
-// ever need, so the default candidate hits the CEILING branch (fits outright) — never buggy even
-// before the fix, and not what this finding is about. ExtraResidentBytes forces the INTERIOR
-// branch deterministically: computed from a real free-bytes probe so the remaining budget lands
-// resolveCtxCapFit's candidate choice between the floor and the ceiling, not by chance.
+// TestResolveCtxCapFit_agreesWithCheckKVFits is M-12 and M-22's gate (docs/audit-2026-09-10.md), on a real device:
+// resolveCtxCapFit's PLANNING-time choice must pass checkKVFits' BUILD-time check (Plan must reserve the same margin
+// checkKVFits requires, or an INTERIOR choice, neither ceiling nor floor, fails almost every time). A real card usually has
+// far more free VRAM than testdata/llama-tiny plus 8192 positions need, so the default candidate hits the CEILING branch
+// (fits outright), which cannot show the finding. ExtraResidentBytes forces the INTERIOR branch deterministically: computed
+// from a real free-bytes probe so the remaining budget lands the candidate between the floor and the ceiling.
 //
-// Run with and without an ADDITIONAL simulated companion K/V rate (M-22) on top of that forced
-// interior scenario: resolveCtxCapFit prices that rate against its own candidate (never smaller
-// than what it eventually picks), and the real build prices it against the FINAL chosen ctx — this
-// proves those two, independently-computed prices stay consistent, not just individually
-// plausible. The companion rate (40960 B/position) is the audit finding's own cited real number: a
-// 5-layer DFlash trunk's K/V measured at "5 x 8192 x 1024 x 8 B ~ 335 MB" for an 8192-position
-// target, i.e. ~40.96 KB/position — not a round guess.
+// Run with and without an ADDITIONAL simulated companion K/V rate (M-22) on that forced interior scenario:
+// resolveCtxCapFit prices the rate against its own candidate (never smaller than what it eventually picks), and the real
+// build prices it against the FINAL chosen ctx; this proves those two independently-computed prices stay consistent. The
+// companion rate (40960 B/position) is the audit's own real number: a 5-layer DFlash trunk's K/V, "5 x 8192 x 1024 x 8 B
+// ~ 335 MB" for an 8192-position target.
 func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -189,18 +175,14 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 	if !ok {
 		t.Skip("no cuda free-bytes probe available")
 	}
-	// Target the interior of (cudaCtxCapDefault, fitDefaultCtx]: an ExtraResidentBytes big enough
-	// that, with the SAME margin the fixed resolveCtxCapFit itself subtracts before calling Plan,
-	// dense+kv(fitDefaultCtx)+extra does NOT fit, but dense+kv(targetCtx)+extra does — forcing
-	// chooseCtx's budget branch instead of its "fits outright" shortcut. Computed against the
-	// MARGINED budget on purpose: llama-tiny's own perPos is tiny (a plain dense fixture) next to
-	// ctxCapMarginBytes (384 MiB), so a forcing term sized against raw free would leave the fixed
-	// code's own margin subtraction with nothing to bite on and land the floor instead of the
-	// interior — sized this way, the interior landing is exact in the FIXED case; the reverted
-	// case (no internal margin subtraction) gets ~384 MiB of slack this same term doesn't leave
-	// room for, landing it at the ceiling (fitDefaultCtx) instead — still a real, checkable
-	// disagreement between planning and build time (see the checkKVFits assertion below), just not
-	// "interior" in that one arm. Both arms are logged, not asserted on, for exactly that reason.
+	// Target the interior of (cudaCtxCapDefault, fitDefaultCtx]: an ExtraResidentBytes big enough that, with the SAME margin
+	// resolveCtxCapFit itself subtracts before calling Plan, dense+kv(fitDefaultCtx)+extra does NOT fit but
+	// dense+kv(targetCtx)+extra does, forcing chooseCtx's budget branch instead of its "fits outright" shortcut. Computed
+	// against the MARGINED budget on purpose: llama-tiny's perPos is tiny next to ctxCapMarginBytes (384 MiB), so a term sized
+	// against raw free would leave the margin subtraction nothing to bite on and land the floor. A planner without that
+	// internal margin subtraction lands at the ceiling (fitDefaultCtx) instead: still a checkable planning-vs-build
+	// disagreement (the checkKVFits assertion below), but not "interior" in that arm, so both arms are logged, not asserted
+	// on.
 	const targetCtx = 6000
 	if targetCtx <= cudaCtxCapDefault || targetCtx >= fitDefaultCtx {
 		t.Fatalf("test bug: targetCtx %d must sit strictly inside (%d, %d)", targetCtx, cudaCtxCapDefault, fitDefaultCtx)
@@ -340,12 +322,10 @@ func TestReservedBudget(t *testing.T) {
 	}
 }
 
-// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/tasks/task-gpu-paths-2026-09.md
-// §6): "nothing pinned is overridden... honoured or refused with numbers". The sibling test below
-// pins the SENTINEL/wiring without a device; this one calls checkKVFits itself, against a REAL
-// device's REAL free VRAM, and asserts the refusal actually NAMES the requested context and the
-// GB figures — not just that an error occurred. An absurd ctx (1<<30 positions) is used so the
-// assertion holds on any card, not just the specific one this happened to be measured on.
+// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/tasks/task-gpu-paths-2026-09.md §6): "nothing pinned
+// is overridden... honoured or refused with numbers". The sibling test below pins the SENTINEL/wiring without a device;
+// this one calls checkKVFits against a REAL device's REAL free VRAM and asserts the refusal NAMES the requested context
+// and the GB figures, not just that an error occurred. An absurd ctx (1<<30 positions) makes it hold on any card.
 func TestCheckKVFits_realDevice_explicitRefusesWithNumbers(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -373,15 +353,11 @@ func TestCheckKVFits_realDevice_explicitRefusesWithNumbers(t *testing.T) {
 	}
 }
 
-// TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers is tasks/task-fit-to-hardware.md §2's
-// drafter-aware sizing, on a REAL device: the sibling test above proves an absurd CTX refuses;
-// this proves a MODEST ctx that would otherwise fit can be refused purely by
-// Model.ExtraResidentBytes reserving the room instead — the companion-allocation term, not the
-// KV term, is what pushes it over. Paired on the SAME cudaResident shape (only extraBytes
-// differs), the "difference matched observations" discipline this repo's measurements use
-// elsewhere: a modest ctx (128 positions, a few KB of KV) fits at extraBytes=0 and is refused at
-// extraBytes=100 GiB, which is bigger than any card this repo targets — so the refusal cannot be
-// this box's own free VRAM being tight, only the reservation.
+// TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers is tasks/task-fit-to-hardware.md §2's drafter-aware
+// sizing, on a REAL device: the sibling test above proves an absurd CTX refuses; this proves a MODEST ctx that would
+// otherwise fit can be refused purely by Model.ExtraResidentBytes reserving the room instead. Paired on the SAME
+// cudaResident shape (only extraBytes differs): a modest ctx (128 positions) fits at extraBytes=0 and is refused at
+// extraBytes=100 GiB, bigger than any card this repo targets, so the refusal can only be the reservation.
 func TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {

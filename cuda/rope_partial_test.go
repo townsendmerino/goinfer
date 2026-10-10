@@ -10,20 +10,14 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestRopePartial is the kernel gate for partial rotary (rotary_dim < head_dim: GLM, Phi).
+// TestRopePartial is the kernel gate for partial rotary (rotary_dim < head_dim: GLM, Phi), gated in isolation rather than
+// left for a model test to catch later.
 //
-// It exists because no admitted model reaches that path yet — glm-tiny also needs the shared
-// expert, which is not built. Landing a kernel with no gate on the reasoning that "the model
-// test will catch it later" is how dead code rots into a silent bug the day it wakes up, so the
-// kernel is gated in isolation now, the same way the MoE kernels were gated before their
-// dispatch existed.
-//
-// The specific bug this is written to catch: the pre-partial kernel gave each k thread the pair
-// (d, d+hd/2) and had it store BOTH elements, which covered all hd elements only because
-// 2*(hd/2) == hd. With rhalf < hd/2 the pair threads touch just [0, 2*rhalf), so the tail
-// [2*rhalf, hd) is never written into the KV cache. Nothing errors — attention simply reads
-// whatever was in the cache, which for position 0 of a fresh buffer is zeros. A "half the head
-// dims are silently zero" bug produces plausible-looking logits.
+// The specific bug it catches: a kernel that gives each k thread the pair (d, d+hd/2) and has it store BOTH elements covers
+// all hd elements only because 2*(hd/2) == hd. With rhalf < hd/2 the pair threads touch just [0, 2*rhalf), so the tail
+// [2*rhalf, hd) is never written into the KV cache. Nothing errors: attention simply reads whatever was in the cache, which
+// for position 0 of a fresh buffer is zeros, and a "half the head dims are silently zero" bug produces plausible-looking
+// logits.
 //
 // The reference is written from the SEMANTICS (rotate the first rotaryDim dims as (d, d+rhalf)
 // pairs; pass the tail through; cache the whole head) rather than transliterated from the

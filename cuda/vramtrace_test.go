@@ -9,32 +9,28 @@ import (
 	"time"
 )
 
-// TestMain installs an OPT-IN VRAM sampler for A12: does free VRAM decline monotonically across the
-// heavy tier (accumulation — something is not freeing), or does it recover after each test with a
-// high-water mark above the card (a genuine environment limit)?
+// TestMain installs an OPT-IN VRAM sampler: does free VRAM decline monotonically across the heavy tier (accumulation:
+// something is not freeing), or does it recover after each test with a high-water mark above the card (a genuine
+// environment limit)?
 //
-// Go's testing package exposes no per-test hook, and the four tests that fail in-suite do not share
-// a helper — requireHeavyModel covers 14 call sites and none of them. So the boundaries are taken
-// from `-v` output and joined to a timestamped sample stream by wall clock.
+// Go's testing package exposes no per-test hook, so the test boundaries are taken from `-v` output and joined to a
+// timestamped sample stream by wall clock.
 //
-// IT USES cuMemGetInfo, deliberately — the same instrument the whole A-chain used. nvidia-smi would
-// have been easier to wire from outside the process and would have been a DIFFERENT instrument: the
-// two disagreed by 852,224 B when A10 mixed them (107,806,720 vs 106,954,752), and the reporting-gap
-// decomposition only closed with cuMemGetInfo on both sides.
+// IT USES cuMemGetInfo, deliberately: nvidia-smi is a DIFFERENT instrument (the two disagree by a context-sized margin),
+// and a reporting-gap decomposition only closes with cuMemGetInfo on both sides.
 //
-// WHAT IT COSTS, stated because it perturbs what it measures: the sampler holds its own context, and
-// a context reserves ~106,954,752 B (A10's per-context term). Every reading is therefore offset by
-// roughly that much, and the run has that much less to work with than an untraced one. The SHAPE —
-// monotonic versus sawtooth — is what this is for, and the shape is unaffected by a constant offset.
-// Absolute figures from a traced run are not comparable with an untraced one.
+// WHAT IT COSTS, because it perturbs what it measures: the sampler holds its own context, which reserves ~106,954,752 B, so
+// every reading is offset by roughly that and the run has that much less to work with. The SHAPE (monotonic versus
+// sawtooth) is what this is for, and a constant offset leaves it unaffected; absolute figures from a traced run are not
+// comparable with an untraced one.
 //
 // Off unless GOINFER_VRAM_TRACE=1, so no ordinary run pays the context or the polling.
 func TestMain(m *testing.M) {
-	// The flash-decode lane is DEFAULT ON since 2026-09-23 (R6). It is checked before split-KV in the decode dispatch and is not
-	// bit-identical to the exact path, so a test that loads a resident with the variable unset would silently exercise the lane
-	// at >= 2048 keys — and a split-KV or exact-path comparison would compare the lane against itself. Pin it OFF for the suite;
-	// the flash-decode tests set the variable themselves (t.Setenv overrides this), and a test of the DEFAULT must unset it
-	// explicitly (see flash_decode_default_test.go's unsetenv).
+	// The flash-decode lane is DEFAULT ON (R6). It is checked before split-KV in the decode dispatch and is not bit-identical to
+	// the exact path, so a test that loads a resident with the variable unset would silently exercise the lane at >= 2048 keys,
+	// and a split-KV or exact-path comparison would compare the lane against itself. Pin it OFF for the suite; the flash-decode
+	// tests set the variable themselves (t.Setenv overrides this), and a test of the DEFAULT must unset it explicitly (see
+	// flash_decode_default_test.go's unsetenv).
 	if _, set := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE"); !set {
 		os.Setenv("GOINFER_CUDA_FLASH_DECODE", "0")
 	}

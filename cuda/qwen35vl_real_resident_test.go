@@ -12,23 +12,22 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestQwen35VLReal_residentImagePrefillMatchesCPU is the real-checkpoint gate for the CUDA-resident image prefill of a Gated-DeltaNet
-// hybrid (P26b, docs/queue-performance.md): Qwen3.5-0.8B, the three G2 images (docs/measurements/p8a-qwen35-vl-2026-09), HF's own
-// image features fed to both sides so only the decoder differs, F32 on both arms so the only difference is where it runs.
+// TestQwen35VLReal_residentImagePrefillMatchesCPU is the real-checkpoint gate for the CUDA-resident image prefill of a
+// Gated-DeltaNet hybrid (P26b, docs/queue-performance.md): Qwen3.5-0.8B, the three G2 images
+// (docs/measurements/p8a-qwen35-vl-2026-09), HF's own image features fed to both sides so only the decoder differs, F32
+// on both arms so the only difference is where it runs.
 //
-// WHAT THIS GATE IS, AND WHAT CHANGED AFTER THE FIRST TWO RUNS. It is a GROSS-ERROR gate, not a precision gate. It was first written
-// at int4 with a last-logits cosine bar of 0.999 and read 0.951 / 0.975 / 0.946; at f32 it read 0.973 / 0.975 / 0.956 against bars of
-// 0.9999. Both bars were wrong, not the path: the controls (docs/measurements/p26b-cuda-hybrid-image-prefill-2026-10-06/) show that on
-// this 0.8B the CUDA resident sits at about 0.97 to 0.98 cosine from the CPU's f32 logits for ANY prompt, because the existing, shipped
-// resident TEXT prefill reads 0.978 on the same model; int4 is only 0.85 from f32; and injecting the WRONG m-RoPE layout into the
-// resident moved the image number from 0.9728 to 0.9699, i.e. inside that noise. So a real-checkpoint cosine cannot resolve the layout.
-// The layout is gated where it can be resolved: the kernel against decoder.ApplyMRoPEForTest in both modes
-// (TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference) and the tiny hybrid fixture end to end, where the wrong mode reads
-// 0.99955 against 0.99995 (TestGenerateQwenVL_hybridResidentPrefillMatchesCPU).
+// It is a GROSS-ERROR gate, not a precision gate. On this 0.8B the CUDA resident sits at about 0.97 to 0.98 cosine from the
+// CPU's f32 logits for ANY prompt (the shipped resident text prefill included), and injecting the WRONG m-RoPE layout moved
+// the image number inside that noise, so a real-checkpoint cosine cannot resolve the layout. Do not tighten the bars toward
+// 0.9999: the controls are in docs/measurements/p26b-cuda-hybrid-image-prefill-2026-10-06/. The layout is gated where it
+// can be resolved: the kernel against decoder.ApplyMRoPEForTest in both modes
+// (TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference) and the tiny hybrid fixture end to end
+// (TestGenerateQwenVL_hybridResidentPrefillMatchesCPU).
 //
-// What this real gate does catch is what the tiny one cannot: a path that is wrong on a real, deep checkpoint in a gross way (recurrent
-// state not built, KV garbage, a stale record reused), none of which a 0.97 cosine could hide. f32 on both arms, HF's own image features
-// to both sides, so only where it runs differs. Bars, amended from the controls and stated here so they are not read as pre-registered:
+// What this real gate does catch is what the tiny one cannot: a path that is grossly wrong on a real, deep checkpoint
+// (recurrent state not built, KV garbage, a stale record reused). The bars are amended from the controls, not
+// pre-registered:
 //
 //   - last-token logits cosine >= 0.9 (observed 0.956 to 0.975; a zeroed recurrent state or wrong KV falls far below) and the same argmax;
 //

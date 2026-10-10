@@ -14,21 +14,11 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestA1PreLaunchProbe settles where the 64 MiB in the 34-slot failure came from.
-//
-// The shipped message reported "265945088 B free" at the failing fRoute launch, and
-// 265,945,088 − 198,836,224 (free at the FIRST launch) is exactly 67,108,864 = 2^26. But
-// describeLaunchErr is reached only after r.stream.Launch returns non-nil, so that reading is
-// taken AFTER the failure. It cannot distinguish:
-//
-//	(a) 64 MiB was released by intervening work, and fRoute then wanted more than 253.6 MiB; from
-//	(b) nothing was released, and the failed attempt itself freed a driver-side block while
-//	    unwinding — in which case the 64 MiB is an artifact of where the probe sits.
-//
-// An exact 2^26 reads more like a driver or module block than like application scratch, which is
-// what makes (b) the live hypothesis. The probe records free VRAM immediately BEFORE
-// every launch, so the same event is observed from the other side. The trace also yields A9's
-// first decrement (free at first launch → free at the failing launch) from this one run.
+// TestResidentLaunchVRAMProbe records free VRAM immediately BEFORE every launch on the real 26B at a slot count that fails
+// (A1_SLOTS, default 34). describeLaunchErr's "free" reading is taken AFTER r.stream.Launch fails, so it cannot
+// distinguish (a) memory released by intervening work from (b) the failed attempt itself freeing a driver-side block while
+// unwinding; the pre-launch trace observes the same event from the other side, and also yields A9's first decrement (free
+// at first launch to free at the failing launch).
 func TestResidentLaunchVRAMProbe(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("GOINFER_HEAVY_TESTS unset — loads the real 26B (~5 min, 11.4 GB pinned host)")
@@ -56,19 +46,15 @@ func TestResidentLaunchVRAMProbe(t *testing.T) {
 	defer m.Close()
 	rf := m.ResidentForwardForTest()
 	if rf == nil {
-		// ITS OWN WORDS ARE A SKIP. "This run says nothing about the probe" is the definition of
-		// could-not-evaluate, and reporting it as FAIL made a correct decline — the resident path
-		// declining and falling back is designed behaviour, logged with its reason — indistinguishable
-		// from a probe that measured something wrong. B8's rule, applied inside a test.
+		// A decline is a SKIP, not a FAIL: "this run says nothing about the probe" is could-not-evaluate, and the resident path
+		// declining and falling back is designed behaviour, logged with its reason (B8's rule, applied inside a test).
 		t.Skip("could not evaluate: resident DECLINED (see the [cuda] decline line above for the " +
 			"KV-vs-free figures), so the launch path was never reached and this run says nothing " +
 			"about the probe")
 	}
 	r := rf.(*cudaResident)
-	// Set the probe on the resident directly. The first attempt read an env var into a package-level
-	// var, which is initialised before t.Setenv runs — so it recorded nothing and the guard at the
-	// bottom fired. Nothing about the load ordering matters here: allocSlots is already done, and
-	// every launch is still ahead.
+	// Set the probe on the resident directly: an env var read into a package-level var is initialised before t.Setenv runs and
+	// records nothing. Load ordering does not matter here: allocSlots is already done and every launch is still ahead.
 	r.dbgProbe = true
 
 	tk, err := tokenizer.Load(dir)

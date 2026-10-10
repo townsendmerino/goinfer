@@ -2,13 +2,12 @@
 
 package cuda
 
-// TestSpecAdaptiveConcurrentCUDA is the gate the MC4 candidate (-spec-adaptive) was missing: N CONCURRENT greedy
-// GenerateNgramSpeculative generations on a REAL CUDA resident with SetSpecAdaptive(true) must emit exactly what each
-// emits alone. decoder/spec_adaptive_switch_test.go checks the same property on mc3Fake, which has no numerics and no real
-// slots, so it passed 200/200 while the 2026-10-01 graded run (docs/measurements/mc4-candidate-cuda-2026-10-01.md) found
-// nearly every concurrent reply wrong: a round claimed only resBusy and so ran its bind-then-verify while another
-// generation's exclusive section (slot pick, prefill, commit) bound a different slot, and each wrote the other's. Verified
-// red without the fix (12 of 12 generations differ at 2 clients, the first token already wrong) and green with it.
+// TestSpecAdaptiveConcurrentCUDA gates -spec-adaptive: N CONCURRENT greedy GenerateNgramSpeculative generations on a REAL
+// CUDA resident with SetSpecAdaptive(true) must emit exactly what each emits alone. decoder/spec_adaptive_switch_test.go
+// checks the same property on mc3Fake, which has no numerics and no real slots, so it cannot see the race this guards: a
+// round that claims only resBusy runs its bind-then-verify while another generation's exclusive section (slot pick,
+// prefill, commit) binds a different slot, and each writes the other's (docs/measurements/mc4-candidate-cuda-2026-10-01.md).
+// Red without the fix, green with it.
 
 import (
 	"context"

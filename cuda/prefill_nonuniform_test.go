@@ -13,22 +13,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillNonUniform_bitIdentical gates the two guards batched prefill dropped so the Gemma-4
-// families could reach it at all: PER-LAYER geometry and K=V.
+// TestPrefillNonUniform_bitIdentical pins what batched prefill needs to take the Gemma-4 families:
+// PER-LAYER geometry (each launch binds its own layer's dims, and the M-sized scratch is allocated at the
+// max across layers) and K=V.
 //
-// The fixture is the scaled dense Gemma 4 (hidden 1024, 12 layers, 5:1 sliding/full, head dim 256
-// on the local layers and 512 on the global ones, K=V on the globals) — the only checkpoint here
-// that exercises BOTH at once, and small enough to run in seconds. Before this change
-// prefillStaticDecline refused it twice over: "non-uniform layer geometry at N" and "K=V layer at
-// N". The refusals were correct for the code as it stood, because prefillCore hoisted layer 0's
-// dims into every launch; each launch now binds its own layer's, and the M-sized scratch is
-// allocated at the max across layers.
+// The fixture is the scaled dense Gemma 4 (hidden 1024, 12 layers, 5:1 sliding/full, head dim 256 on the
+// local layers and 512 on the global ones, K=V on the globals): the only checkpoint here that exercises
+// BOTH at once, and small enough to run in seconds.
 //
-// The assertion is the batched pass against the SEQUENTIAL per-token path on the same resident, at
-// the same positions: bit-identical last-token logits. Not "close" — every batched kernel is the
-// M=1 kernel with an M dimension, so any difference is a striding or ordering bug, and a
-// near-match is exactly what a wrong-but-plausible stride produces on a K=V layer whose V happens
-// to correlate with K.
+// The assertion is the batched pass against the SEQUENTIAL per-token path on the same resident, at the
+// same positions: bit-identical last-token logits. Not "close": every batched kernel is the M=1 kernel
+// with an M dimension, so any difference is a striding or ordering bug, and a near-match is exactly what
+// a wrong-but-plausible stride produces on a K=V layer whose V happens to correlate with K.
 //
 //	go test -tags 'cuda goinfer_testhooks' -run TestPrefillNonUniform -v ./cuda/
 func TestPrefillNonUniform_bitIdentical(t *testing.T) {
@@ -47,9 +43,8 @@ func TestPrefillNonUniform_bitIdentical(t *testing.T) {
 		t.Skipf("not CUDA-resident (%T) — nothing to compare", mc.ResidentForwardForTest())
 	}
 
-	// Non-vacuity, both halves. This fixture must actually PRESENT the two shapes, or the test
-	// passes by exercising neither — the same trap the MoE expert-major gate needed a run counter
-	// for. Assert against the layer table, not against the fixture's documentation.
+	// Non-vacuity, both halves: this fixture must actually PRESENT the two shapes, or the test passes by
+	// exercising neither. Assert against the layer table, not against the fixture's documentation.
 	L0 := &rf.layers[0]
 	nonUniform, kEqV := 0, 0
 	for l := range rf.layers {
