@@ -2,27 +2,22 @@ package decoder
 
 import "math"
 
-// Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md R7b, owner decision 2026-09-20).
+// Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md, R7b).
 //
-// WHAT IT IS. For a logit row l and temperature T, the token is
+// For a logit row l and temperature T, the token is
 //
 //	argmax_i ( l_i/T + G_i ),   G_i = -ln(E_i),   E_i = -ln(1 - w_i),   w_i = (h_i + 0.5) / 2^32
 //
 // where h_i is a 32-bit word from Philox4x32-10 keyed by (seed) with counter (i>>2, draw, draw>>32, 0), lane
 // i&3. By the Gumbel-max theorem that is an exact draw from softmax(l/T), with no normalisation, no
-// cumulative sum and no per-token dependence on the other tokens — so it is an argmax, which every GPU
-// backend can do in one parallel pass with no f64, and which needs no full-vocabulary readback.
+// cumulative sum and no per-token dependence on the other tokens, so it is an argmax every GPU backend can do in one
+// parallel pass with no f64 and no full-vocabulary readback. It replaced an inverse-CDF draw (sampleChunked, now the
+// reference in sampler_chunked_ref_test.go) that walked the vocabulary in index order over a full normalisation, which
+// cannot be reproduced from a top-K and needs f64 exp to reproduce on a device.
 //
-// WHY THIS REPLACED THE INVERSE-CDF DRAW. The old temperature-only path (sampleChunked, now the reference
-// in sampler_chunked_ref_test.go) drew by cumulative search in vocabulary INDEX order over a full
-// normalisation. That cannot be reproduced from a top-K and needs f64 exp to reproduce on a device, so the
-// server's default sampling shape (temperature 1, no filters) sat at ~0.74 of greedy speed on CUDA. This
-// path is ~0.97 there and works on Metal and WebGPU.
-//
-// THE COST, DISCLOSED: for a given seed this draws DIFFERENT tokens than every earlier release (the
-// distribution is unchanged; the stream is not). Speculative sampled decoding keeps drawing from explicit
-// probabilities (it needs them for accept/reject) and was never stream-equal to plain decoding — it is
-// in-distribution lossless (spec_sample.go).
+// For a given seed this draws different tokens than releases before it (the distribution is unchanged; the stream is
+// not). Speculative sampled decoding keeps drawing from explicit probabilities (it needs them for accept/reject) and was
+// never stream-equal to plain decoding; it is in-distribution lossless (spec_sample.go).
 //
 // NOISE RANGE. G is bounded, so a token whose logit gap to the maximum exceeds the range can never win, where
 // the exact draw would give it e^-gap. With w in (0,1) at 2^-32 resolution, E spans [1.2e-10, 22.9], so G

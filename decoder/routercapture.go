@@ -6,18 +6,12 @@ import (
 	"sync"
 )
 
-// routerCapture is a test seam (default off; tests set it directly — its GOINFER_ROUTER_CAPTURE env
-// read was retired 2026-09-24, docs/tasks/task-env-config-2026-09.md phase 6): when on, gemma4MoEFFN appends each MoE-layer call's selected top-k expert
-// indices to routerCaptureBuf, in call order (token-outer, layer-inner — one entry per
-// layer per token). It is OBSERVE-ONLY: it copies out `idx` and changes no compute, so with
-// it off the forward is byte-identical.
-//
-// Probe #1 in docs/task-gemma4-moe.md uses it to tell routing collapse from uniform weight
-// noise: capture selections for the int8 run and a 4-bit run over the SAME teacher-forced
-// token sequence, then compare per-layer top-k overlap and per-layer selection entropy.
-// Repetitive-English output is the signature of routing collapse, not of weight noise; if
-// the 4-bit run's selections have degenerated vs int8, more bits on the expert weights
-// won't close the gap and the plan redirects to router-input cleanliness.
+// routerCapture is a test seam (default off; tests set it directly): when on, gemma4MoEFFN appends each MoE-layer call's
+// selected top-k expert indices to routerCaptureBuf, in call order (token-outer, layer-inner: one entry per layer per
+// token). It is observe-only: it copies out idx and changes no compute, so with it off the forward is byte-identical.
+// Probe #1 of docs/completed/task-gemma4-moe.md uses it to tell routing collapse from uniform weight noise: capture
+// selections for an int8 run and a 4-bit run over the same teacher-forced token sequence, then compare per-layer top-k
+// overlap and selection entropy.
 var routerCapture bool
 
 // routerCaptureBuf accumulates the selected expert-index sets when routerCapture is on.
@@ -26,22 +20,18 @@ var routerCapture bool
 // a pass and reads it after — no helper accessors, so nothing here is unused off-tag.
 var routerCaptureBuf [][]int
 
-// routerRnBuf records, per MoE decision (same order/index as routerCaptureBuf), a COPY of the
-// finalized router input rn = (weightless-norm(h) · routerScale · hidden^-0.5) — the exact f32
-// vector that feeds routerProj. It exists so a CUDA resident-router unit test can replay identical
-// inputs through the device selection kernels and gate resident idx[] against the CPU idx[]
-// (routerCaptureBuf), isolating a ROUTING FLIP from any expert-GEMV numeric difference — the
-// "router first" discipline. Captured only when routerCapture is on; observe-only, byte-identical
-// with the env unset.
+// routerRnBuf records, per MoE decision (same order and index as routerCaptureBuf), a copy of the finalized router input
+// rn = weightless-norm(h) · routerScale · hidden^-0.5, the exact f32 vector that feeds routerProj. A CUDA
+// resident-router unit test replays these through the device selection kernels and gates resident idx[] against the
+// CPU's (routerCaptureBuf), isolating a routing flip from any expert-GEMV numeric difference. Captured only when
+// routerCapture is on.
 var routerRnBuf [][]float32
 
-// routerMarginBuf records, per MoE decision (same order/index as routerCaptureBuf), the top-k
-// BOUNDARY MARGIN: the smallest selected expert's softmax prob minus the largest REJECTED
-// expert's prob. This is the quantity that decides whether a small quant perturbation flips the
-// top-k — the MoE-specific failure mode. A resident-gate-ready fixture wants this margin to stay
-// well above the per-decision quant perturbation on every decision, not merely to AGREE on one
-// int4-vs-f32 pair (agreement can be luck; a wide margin is robustness). Captured only when
-// routerCapture is on; observe-only, so the forward stays byte-identical with the env unset.
+// routerMarginBuf records, per MoE decision (same order and index as routerCaptureBuf), the top-k boundary margin: the
+// smallest selected expert's softmax prob minus the largest rejected expert's. It decides whether a small quant
+// perturbation flips the top-k, so a resident-gate fixture wants it well above the per-decision quant perturbation on
+// every decision, not merely to agree on one int4-vs-f32 pair (agreement can be luck). Captured only when routerCapture
+// is on.
 var routerMarginBuf []float32
 
 // routerWtsBuf / routerX1Buf / routerX2Buf capture the other three gemma4-MoE-layer intermediates
@@ -55,27 +45,20 @@ var (
 	routerX2Buf  [][]float32
 )
 
-// N-27: THE BUFFERS ABOVE ARE PACKAGE-LEVEL AND WERE APPENDED FROM INSIDE THE FORWARD WITH NO
-// LOCK AND NO BOUND.
-//
-// Two separate problems, and the diagnostic framing hid both. Under the documented
-// concurrent-sequence contract two goroutines can be in a forward at once, so the appends are a
-// data race on a slice header — a crash, not a wrong number. And there is no cap: set on a long
-// running `serve` process this grows without limit, one entry per MoE decision per layer per
-// token, each carrying a copy of a hidden-sized vector.
-//
-// Fixed here rather than by refusing under `serve`: the decoder cannot see who its caller is,
-// and a diagnostic that is safe everywhere is better than one that is refused in the one place
-// it is dangerous. The mutex removes the race; the cap turns an unbounded leak into a bounded
-// buffer that says when it stopped.
+// The buffers above are package-level and appended from inside the forward, so they are guarded and bounded. Under the
+// documented concurrent-sequence contract two goroutines can be in a forward at once, so unlocked appends race on a
+// slice header (a crash, not a wrong number); and without a cap a long-running serve process would grow them without
+// limit, one entry per MoE decision per layer per token, each carrying a hidden-sized copy. The decoder cannot see who
+// its caller is, so the diagnostic is made safe everywhere rather than refused under serve: the mutex removes the race
+// and the cap turns an unbounded leak into a bounded buffer that says when it stopped.
 var (
 	routerCaptureMu  sync.Mutex
 	routerCaptureOff bool // set once the cap is hit, so the warning prints once
 )
 
-// routerCaptureMax bounds each buffer. Generous for the diagnostic's actual use — a
-// teacher-forced pass of a few hundred tokens over 30 layers — and small enough that a
-// forgotten env var on a serving process costs bounded memory instead of the process.
+// routerCaptureMax bounds each buffer: generous for the diagnostic's use (a teacher-forced pass of a few hundred tokens
+// over 30 layers) and small enough that capture left on in a serving process costs bounded memory instead of the
+// process.
 const routerCaptureMax = 1 << 16
 
 // routerCaptureDo runs fn under the capture lock if capture is on and the cap is not reached.

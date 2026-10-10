@@ -48,10 +48,8 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 		GroupSize   int    `json:"group_size"`
 		DescAct     bool   `json:"desc_act"`
 		Sym         *bool  `json:"sym"`
-		// N-05: GPTQModel's v2 export stores zero-points WITHOUT the v1 "+1" bias. This loader
-		// applies the +1 unconditionally, so a gptq_v2 checkpoint dequantizes every weight one
-		// scale step low — finite, plausible, and wrong everywhere at once. The field was not
-		// even parsed, so there was nothing to notice.
+		// checkpoint_format distinguishes GPTQModel's v2 export (zero-points without the v1 "+1" bias) from v1; parseQuantConfig
+		// refuses v2.
 		CheckpointFormat string `json:"checkpoint_format"`
 		Fmt              string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
 		WeightBlock      []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
@@ -86,12 +84,10 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 	if obj.GroupSize <= 0 {
 		return nil, fmt.Errorf("quantization_config(%s): group_size %d unsupported (need a positive group)", obj.QuantMethod, obj.GroupSize)
 	}
-	// N-05: gptqReconstruct applies the v1 "+1" zero-point bias UNCONDITIONALLY. GPTQModel's
-	// v2 export drops that bias, so a v2 checkpoint would dequantize every weight one scale
-	// step low — no error, no NaN, just a uniformly wrong model. Refuse rather than guess:
-	// implementing the v2 path without a v2 checkpoint to validate against would be the same
-	// unverified change this audit has declined elsewhere, and the failure mode here is
-	// specifically the silent kind.
+	// gptqReconstruct applies the v1 "+1" zero-point bias unconditionally. GPTQModel's v2 export drops that bias, so a v2
+	// checkpoint would dequantize every weight one scale step low: no error, no NaN, a uniformly wrong model. Refuse rather
+	// than guess: implementing v2 without a v2 checkpoint to validate against would be an unverified change, and the failure
+	// mode is the silent kind.
 	//
 	// "" and "gptq" both mean v1 (the field predates v2 and older exports omit it).
 	if obj.QuantMethod == "gptq" && obj.CheckpointFormat != "" && obj.CheckpointFormat != "gptq" {

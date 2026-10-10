@@ -6,11 +6,9 @@ import (
 	"strings"
 )
 
-// A .giw's trailing CRC-32 covers every byte of the weight payload, and checking it forces a
-// read of the whole mapped file. On a streamed load that is the entire load time and the
-// entire page-cache footprint: measured 2026-09-23, a 22 GB M35 .giw read over a ~10 MB/s link
-// spent 27-28 minutes in that one check (docs/measurements/moe-pager-m35-smb-2026-09-23.md), and
-// on a 5.17 GB local .giw the CRC was ~100% of LoadSerializedWeights' cost.
+// A .giw's trailing CRC-32 covers every byte of the weight payload, and checking it forces a read of the whole mapped
+// file. On a streamed load that is the entire load time and the entire page-cache footprint
+// (docs/measurements/moe-pager-m35-smb-2026-09-23.md).
 //
 // The CRC's job is to catch a corrupt or truncated file. Truncation is already caught for free by
 // the lengths recorded in the header; what only the CRC catches is silent corruption inside the

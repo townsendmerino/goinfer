@@ -7,38 +7,23 @@ import (
 	"time"
 )
 
-// Load-time instrumentation (task: knowing what to download, and how long it takes to load,
-// Part B). Before this, the only record of load cost anywhere in the tree was a prose claim in a
-// comment — that fanning the GGUF parse across cores turned a 12B's roughly two-minute load into
-// seconds. A real and significant result with no measurement behind it, and no way for a user to
-// see the number on their own machine.
+// Load-time instrumentation: how long a model load takes and where the time goes.
 //
-// THE SPLIT IS THE POINT, not the total. A slow load caused by storage and a slow load caused by
-// repacking call for completely different responses — a faster disk versus a different quant — and
-// a single number cannot tell them apart. The phases are therefore chosen to separate those:
+// The split is the point, not the total. A slow load caused by storage and one caused by repacking call for different
+// responses (a faster disk versus a different quant), and one number cannot tell them apart. The phases:
 //
-//	map    the file becoming addressable: open + mmap + header parse. NOT the file read — see below.
-//	build  tensors becoming resident weights: dequantize, quantize, repack. CPU-bound.
-//	resident  weights becoming a device-side runner, where a backend builds one. PCIe/GPU-bound.
+// 	map       the file becoming addressable: open + mmap + header parse. Not the file read.
+// 	build     tensors becoming resident weights: dequantize, quantize, repack. CPU-bound.
+// 	resident  weights becoming a device-side runner, where a backend builds one. PCIe/GPU-bound.
 //
-// `map` DOES NOT ISOLATE STORAGE, and the first measurement is what showed it. The loader mmaps, so
-// pages fault in lazily during `build`, not during `map` — `map` is header parse alone. Measured
-// 2026-09-06 on NVMe: Phi-3-mini (2.23 GB) spent 7ms in `map` and 5.18s in `build`, and the 0.5B
-// model spent MORE map time (48ms) on a fifth of the bytes, because that phase tracks metadata
-// count rather than size. The storage cost is real but lands inside `build`, where it shows up as
-// the cold-minus-warm delta rather than as its own phase.
+// `map` does not isolate storage. The loader mmaps, so pages fault in lazily during `build`, not `map`, and `map` tracks
+// metadata count rather than file size. The storage cost lands inside `build`, visible as the cold-minus-warm delta
+// rather than as its own phase; isolating it would need a non-mmap read path or per-phase fault accounting.
 //
-// That delta turned out to be small — 3.3% and 4.4% across the two models — because the repack is
-// CPU-bound enough that the kernel's readahead hides most of the I/O behind it. On a spinning disk
-// or a network mount that would not hold, which is exactly why the regime has to be recorded
-// rather than assumed. Isolating storage properly would need a non-mmap read path or per-phase
-// fault accounting; neither is worth it while the answer is "storage is not the problem here".
-//
-// WHAT THIS CANNOT TELL YOU, and what therefore has to be recorded by whoever measures: whether the
-// page cache was cold. A warm-cache `map` phase measures memcpy; a cold one measures the disk, and
-// re-running a benchmark gives you a warm one by accident. The profile reports bytes and a rate so
-// the regime is at least visible in the number, but the label belongs in docs/benchmarks.md next
-// to the storage class, not here.
+// The profile cannot tell whether the page cache was cold: a warm-cache `map` measures memcpy, a cold one the disk, and
+// re-running a benchmark gives a warm one by accident. It reports bytes and a rate so the regime is visible in the
+// number; the cold/warm label belongs in docs/benchmarks.md next to the storage class. The measurements that showed
+// this: docs/code-notes/decoder.md#loadprofile.
 
 // LoadPhase is one named span of a model load.
 type LoadPhase struct {

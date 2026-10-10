@@ -36,8 +36,8 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	if err != nil {
 		return 0, err
 	}
-	// Load writes the EOS ids generation_config.json adds back into the config a bundle serializes (decoder/model.go);
-	// the stream writes the config in its head, before any layer, so it resolves them first (StreamTranscodeGGUF's M-04).
+	// Load writes the EOS ids generation_config.json adds back into the config a bundle serializes (decoder/model.go); the
+	// stream writes the config in its head, before any layer, so it resolves them first, as StreamTranscodeGGUF does.
 	if raw, jerr := json.Marshal(resolveEOSIDs(dir, cfg)); jerr == nil {
 		cfg.EOSTokenID = raw
 	}

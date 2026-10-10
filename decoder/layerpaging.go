@@ -9,41 +9,30 @@ import (
 	"github.com/townsendmerino/aikit/mmap"
 )
 
-// layerPager streams a DENSE model's per-layer weights out of the read-only .giw
-// mapping (idea #4, docs/ideas-weight-memory.md). Unlike MoE expert paging, the
-// transformer layer loop is sequential and fully known in advance, so the pager
-// PREFETCHES the upcoming layer (Advise WILLNEED) while the current one computes —
-// overlapping the fault with compute — and RELEASES (Advise DONTNEED) the layer
-// that slides out the back of a window. This is a windowed prefetch, NOT an LRU, so
-// it does not use aikit/mmap.SpanCache (whose policy is least-recently-touched); it
-// borrows only the generic span-alignment (WeightMat.MappedSpan), the residency hint
-// (mmap.Advise), and the RAM budget (mmap.AutoBudget) — the layer-order demand signal
-// stays here. Resident weight RAM is bounded to ~window layers, so a dense model too
-// big for RAM still runs (the floor is NVMe bandwidth: a model that doesn't fit is
-// re-read ~once per token). Bit-exact — the mapping is read-only and file-backed, so
-// a released layer re-faults from disk with identical bytes (aikit's
-// TestMadvise_dontneedRefaultsIntact proves the property).
+// layerPager streams a dense model's per-layer weights out of the read-only .giw mapping (docs/ideas-weight-memory.md,
+// idea #4). The layer loop is sequential and known in advance, so the pager prefetches the upcoming layer (Advise
+// WILLNEED) while the current one computes and releases (Advise DONTNEED) the layer that slides out the back of a
+// window. It is a windowed prefetch, not an LRU, so it does not use aikit/mmap.SpanCache; it borrows the span
+// alignment (WeightMat.MappedSpan), the residency hint (mmap.Advise) and the RAM budget (mmap.AutoBudget). Resident
+// weight RAM is bounded to about window layers, so a dense model too big for RAM still runs; the floor is NVMe
+// bandwidth, since a model that does not fit is re-read about once per token. Bit-exact: the mapping is read-only and
+// file-backed, so a released layer re-faults with identical bytes (aikit's TestMadvise_dontneedRefaultsIntact).
 //
-// The resident floor is NOT zero: only the 7 per-layer projections stream. The token
-// embedding, final norm, and LM head aren't per-layer, so they stay resident, plus
-// the live window. For a big-vocab model embed+head alone can be a multi-GB floor —
-// the complementary lever there is idea #3 (sub-int8 embed/head). So "bigger than
-// RAM" means bounded to floor + window, not ≈ 0.
+// The resident floor is not zero: only the 7 per-layer projections stream. The token embedding, final norm and LM head
+// stay resident, plus the live window, so "bigger than RAM" means bounded to floor + window.
 //
-// Built only for mmap-backed dense .giw models; nil when the model is MoE (that's
-// idea #2's expertPager), heap-backed, or small enough to fit the budget whole.
-// Guarded by an internal mutex (audit C-30): the pager lives on *Model and StreamWeights
-// supports concurrent decode streams, so its shared paging state is locked.
+// Built only for mmap-backed dense .giw models; nil for MoE (expertPager), heap-backed, or a model small enough to fit
+// the budget whole. An internal mutex guards the paging state: the pager lives on *Model and StreamWeights supports
+// concurrent decode streams.
 type layerPager struct {
 	spans  [][][]byte // [layer][weight] page-aligned spans within the mapping
 	window int        // resident layer cap (the layer `window` behind is released)
 	ahead  int        // prefetch distance (layers ahead to Advise WILLNEED)
 
-	// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, shared across
-	// every Generate; StreamWeights explicitly supports concurrent streams, and each drives the layer
-	// loop, so two streams race on state[]/counters without this. The mapping (and thus the WILLNEED/
-	// DONTNEED hints) is genuinely model-level, so one guarded view is correct — the madvise hints are
-	// advisory, so a stream re-faults a page another stream released; only the state writes need the lock.
+	// mu guards the mutable paging state below. The pager lives on *Model, shared across every Generate, and StreamWeights
+	// supports concurrent streams that each drive the layer loop, so two streams would race on state[]/counters. The
+	// mapping and its WILLNEED/DONTNEED hints are model-level, so one guarded view is correct; the hints are advisory, so
+	// a stream may re-fault a page another released, and only the state writes need the lock.
 	mu    sync.Mutex
 	state []bool // per-layer: currently hinted resident
 
@@ -57,10 +46,8 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 	if w.arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
-	// Own-forward families run their own layer loop that never calls enterLayer, so a pager would
-	// print a RAM-bound banner it can't deliver (N-13; the dense ones are gemma4, nemotron and
-	// lfm2 — the rest are MoE, already excluded above). Only the generic dense forward pages.
-	// Derived from the dispatch table: the hand-written list here missed lfm2 (C-02/C-03).
+	// Own-forward families run their own layer loop, which never calls enterLayer, so a pager would print a RAM-bound
+	// banner it cannot deliver. Only the generic dense forward pages. Derived from the dispatch table (ownForward).
 	if _, own := w.arch.ownForward(); own {
 		return nil
 	}
@@ -78,12 +65,9 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 			&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj,
 			&lw.GateProj, &lw.UpProj, &lw.DownProj,
 		} {
-			// Register only the span the M=1 decode kernel will actually read: row4
-			// when present, canonical otherwise — never both. Registering both under
-			// one cache key was a real, measured bug (moepaging.go's addExpert,
-			// docs/completed/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch
-			// WILLNEEDs every span under a key unconditionally, so a cold kind-4 touch
-			// prefetched the unread canonical copy too — a fixed ~2x I/O tax per miss.
+			// Register only the span the M=1 decode kernel will read: row4 when present, canonical otherwise, never both.
+			// SpanCache.Touch WILLNEEDs every span under a key unconditionally, so registering both prefetches the unread copy too,
+			// a fixed ~2x I/O tax per miss (moepaging.go's addExpert follows the same rule).
 			s := wm.MappedSpanRow4(base, end)
 			if len(s) == 0 {
 				s = wm.MappedSpan(base, end)
@@ -105,9 +89,8 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 		budget = mmap.AutoBudget()
 	}
 	const ahead = 1
-	// enterLayer prefetches l+ahead before releasing l-window, so the resident
-	// set at steady state is window+ahead layers (P-12), not window — subtract
-	// ahead here so window+ahead layers' bytes actually fit budget.
+	// enterLayer prefetches l+ahead before releasing l-window, so the resident set at steady state is window+ahead layers,
+	// not window: subtract ahead here so window+ahead layers' bytes fit the budget.
 	window := max(int(budget/maxLayer)-ahead,
 		// never evict a layer we just prefetched
 		ahead+2)

@@ -10,30 +10,28 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// DSparkDrafter is an imported DeepSeek DSpark block drafter (P10 / docs/spec/08): the same
-// non-causal block trunk DFlash uses, plus the three things DFlash does not have — its own
-// embedding and LM head, a rank-256 Markov chain, and a confidence head.
+// DSparkDrafter is an imported DeepSeek DSpark block drafter (docs/spec/08): the same non-causal block trunk DFlash
+// uses, plus what DFlash does not have: its own embedding and LM head, a rank-256 Markov chain, and a confidence head.
 //
-// It reuses blockTrunk rather than reimplementing the forward, and that is a measured claim,
-// not a convenience: DeepSpec's `_forward_backbone` and z-lab's `DFlashDraftModel.forward`
-// compute the same thing, down to the split RoPE application. See blockTrunk's doc.
+// It reuses blockTrunk rather than reimplementing the forward: DeepSpec's `_forward_backbone` and z-lab's
+// `DFlashDraftModel.forward` compute the same thing, down to the split RoPE application (see blockTrunk's doc).
 //
-// The differences that DO matter, all of which a port gets wrong silently:
+// The differences that matter, all of which a port gets wrong silently:
 //
 //   - **logits_start = 0.** All blockSize positions are draft predictions; slot 0 both embeds
 //     the anchor AND predicts the first token. DFlash reserves slot 0 and predicts from 1.
 //     Slicing the wrong one makes every draft land one position late, which halves acceptance
 //     while the text stays correct — so nothing crashes and no gate but this one notices.
-//   - **Its own embed/head.** DSpark ships frozen COPIES of the target's (778 M of its 1.39 B).
-//     They are loaded here; reusing the resident target's instead is a later optimization that
-//     must be proven equal first, not assumed.
+//   - **Its own embed/head.** DSpark ships frozen COPIES of the target's. They are loaded here;
+//     reusing the resident target's instead is a later optimization that must be proven equal
+//     first, not assumed.
 //   - **The Markov chain is SEQUENTIAL.** logits[i] += w2(w1[prev]) where prev is the token
 //     just sampled at i-1, so the block is parallel in the trunk and serial in a blockSize-step
 //     scalar chain. Each step is a [vocab, 256] matvec — small against a layer, but latency-serial
 //     and therefore inside the draft term that gate 3 is most sensitive to.
-//   - **The confidence head is adaptive block LENGTH, not a fire/don't-fire router.** Measured:
-//     gating trims the proposal (chat 6.96 -> 4.87 positions) and barely moves acceptance
-//     (3.04 -> 2.96), so what it buys is a cheaper verify. See docs/spec/08.
+//   - **The confidence head is adaptive block LENGTH, not a fire/don't-fire router.** Gating
+//     trims the proposal and barely moves acceptance, so what it buys is a cheaper verify
+//     (docs/spec/08).
 type DSparkDrafter struct {
 	blockTrunk
 	blockSize, maskTokenID int
