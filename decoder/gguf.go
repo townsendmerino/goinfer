@@ -1679,21 +1679,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			res[e] = m
 			return nil
 		}
-		// A streaming transcode builds one layer at a time, so the across-layer parallelism the resident build gets from
-		// parallelLayers is gone, and the experts are most of a layer's bytes. Build them in parallel instead: the dequantizer is
-		// a pure function of the mapped tensor bytes and streamQuantized allocates its own scratch, so concurrent experts share
-		// nothing, and each lands in its own res[e], byte-identical to the sequential order. The resident path (sink == nil) is
-		// unchanged; it already runs one layer per core.
-		if sink != nil {
-			if err := parallelLayers(nExpert, nil, one); err != nil {
-				return nil, err
-			}
-			return res, nil
-		}
-		for e := range nExpert {
-			if err := one(e); err != nil {
-				return nil, err
-			}
+		// The dequantizer is a pure function of the mapped tensor bytes and streamQuantized allocates its own scratch, so
+		// concurrent experts share nothing and each lands in its own res[e] (forExperts).
+		if err := forExperts(nExpert, sink, one); err != nil {
+			return nil, err
 		}
 		return res, nil
 	}

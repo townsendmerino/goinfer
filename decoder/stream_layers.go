@@ -1,6 +1,9 @@
 package decoder
 
-import "runtime"
+import (
+	"runtime"
+	"sync/atomic"
+)
 
 // streamLayerBudgetFallback is the window's memory budget on a host with no available-memory probe.
 const streamLayerBudgetFallback = 1 << 30
@@ -53,6 +56,31 @@ func streamLayers(w *Weights, arch *Architecture, sink *giwWriter, load func(i i
 			w.Layers[i] = LayerWeights{} // release before the next window is built
 		}
 		p += k
+	}
+	return nil
+}
+
+// expertFanoutsForTest counts the forExperts calls that fanned out across cores.
+var expertFanoutsForTest atomic.Int64
+
+// expertsInOrderForTest makes forExperts build in order even for a sink.
+var expertsInOrderForTest bool
+
+// forExperts runs one(e) for each of a MoE layer's n experts. Building for a sink it fans them out across cores:
+// streamLayers builds a MoE one layer at a time, and the experts are most of that layer. With no sink it runs them in
+// order, because a resident build already runs one layer per core and nesting the two would multiply the transients.
+//
+// one must write only its own expert's slot and read its source without shared state, as the resident build already
+// requires across layers. The result is then the one the in-order run gives.
+func forExperts(n int, sink *giwWriter, one func(e int) error) error {
+	if sink != nil && !expertsInOrderForTest {
+		expertFanoutsForTest.Add(1)
+		return parallelLayers(n, nil, one)
+	}
+	for e := range n {
+		if err := one(e); err != nil {
+			return err
+		}
 	}
 	return nil
 }

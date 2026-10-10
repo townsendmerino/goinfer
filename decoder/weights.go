@@ -1100,7 +1100,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 				}
 			}
 			if arch.MoE != nil {
-				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, skipRow4); err != nil {
+				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, skipRow4, sink); err != nil {
 					return err
 				}
 			}
@@ -1126,22 +1126,24 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			expInter := arch.MoE.IntermediateDim // expert FFN width (Mellum: moe_intermediate_size)
 			if fusedExperts {
 				// Real qwen3_5_moe: all experts in two stacked 3-D tensors.
-				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, skipRow4); err != nil {
+				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, skipRow4, sink); err != nil {
 					return err
 				}
 			} else {
 				l.Experts = make([]expertWeights, arch.MoE.NumExperts)
-				for e := 0; e < arch.MoE.NumExperts; e++ {
+				if err = forExperts(arch.MoE.NumExperts, sink, func(e int) error {
 					ex := &l.Experts[e]
+					var err error
 					if ex.Gate, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertGate, e)), expInter, hd); err != nil {
 						return err
 					}
 					if ex.Up, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertUp, e)), expInter, hd); err != nil {
 						return err
 					}
-					if ex.Down, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertDown, e)), hd, expInter); err != nil {
-						return err
-					}
+					ex.Down, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertDown, e)), hd, expInter)
+					return err
+				}); err != nil {
+					return err
 				}
 			}
 			// Shared expert (Qwen2-MoE): an always-on gated MLP + a scalar sigmoid
@@ -1560,8 +1562,8 @@ func fusedLayout(name string, shape []int, nExpert, a, b int) (transposed bool, 
 //
 // It streams via Tensor.SubF32, one expert at a time, as streamExperts does for gemma4's fused experts: whole-tensor
 // TensorF32 reads would materialize both stacks as f32, a multi-GB transient per layer times every layer parallelLayers
-// has in flight.
-func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4 bool) ([]expertWeights, error) {
+// has in flight. The experts are built through forExperts.
+func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4 bool, sink *giwWriter) ([]expertWeights, error) {
 	guT, err := st.Tensor(gateUpName)
 	if err != nil {
 		return nil, err
@@ -1589,14 +1591,14 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		guTrans, dnTrans = false, false
 	}
 	experts := make([]expertWeights, nExpert)
-	for e := range experts {
+	err = forExperts(nExpert, sink, func(e int) error {
 		guE, err := guT.SubF32(e*guStride, guStride)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		dnE, err := dnT.SubF32(e*downStride, downStride)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if guTrans { // [H, 2I] -> [2I, H]: gate rows first, then up
 			guE = transposeF32(guE, hidden, 2*inter)
@@ -1615,6 +1617,10 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 			dn = quantizeWM(linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter), quant)
 		}
 		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return experts, nil
 }
@@ -1639,7 +1645,7 @@ func transposeF32(m []float32, rows, cols int) []float32 {
 // Router weights stay f32 (loadMat, no quant: the router is logit-critical); the experts quantize at load through the
 // layer's quant mode. The experts stream one at a time via Tensor.SubF32, so a bf16 checkpoint never materializes the
 // whole [nExperts, 2*inter, hidden] gate_up, only one expert's f32 at a time.
-func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, quant quantMode, tn func(int, string) string, skipRow4 bool) (*gemma4MoEWeights, error) {
+func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, quant quantMode, tn func(int, string) string, skipRow4 bool, sink *giwWriter) (*gemma4MoEWeights, error) {
 	m := arch.MoE
 	nm := func(s string) string { return tn(i, s) }
 	w := &gemma4MoEWeights{
@@ -1683,10 +1689,10 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architec
 	if err != nil {
 		return nil, err
 	}
-	if w.expertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, skipRow4); err != nil {
+	if w.expertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, skipRow4, sink); err != nil {
 		return nil, err
 	}
-	if w.expertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, skipRow4); err != nil {
+	if w.expertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, skipRow4, sink); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -1697,27 +1703,31 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architec
 // so the whole 3-D f32 is never materialized (the bf16-26B transient win). Each
 // expert passes through quantizeWM: int8/int4 produces owned quantized data and the
 // f32 slice is dropped; f32/quantNone leaves an f32 WeightMat aliasing the mapping
-// (pageable, valid while w.st is retained) — no heap copy.
-func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, skipRow4 bool) ([]linalg.WeightMat, error) {
+// (pageable, valid while w.st is retained) — no heap copy. The experts are built through forExperts.
+func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, skipRow4 bool, sink *giwWriter) ([]linalg.WeightMat, error) {
 	stride := rows * cols
 	if t.Elements() != nExpert*stride {
 		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", t.Name, t.Elements(), nExpert*stride, nExpert, rows, cols)
 	}
 	out := make([]linalg.WeightMat, nExpert)
-	for e := range nExpert {
+	err := forExperts(nExpert, sink, func(e int) error {
 		f32, err := t.SubF32(e*stride, stride)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if fakeQuantScheme != "" && fakeQuantExpertsOnly { // DIAGNOSTIC (default-off): fake-4-bit the EXPERTS only; see fakequant.go
 			out[e] = fakeInt4WM(f32, rows, cols, fakeQuantScheme)
-			continue
+			return nil
 		}
 		if skipRow4 {
 			out[e] = quantizeWMSkipRow4(linalg.WrapF32(f32, rows, cols), quant)
 		} else {
 			out[e] = quantizeWM(linalg.WrapF32(f32, rows, cols), quant)
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -2521,7 +2531,7 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		if lw.Router, e = loadMat(st, tn("block_sparse_moe.router.layer.weight"), arch.MoE.NumExperts, hidden); e != nil {
 			return e
 		}
-		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant, skipRow4); e != nil {
+		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant, skipRow4, sink); e != nil {
 			return e
 		}
 		sInter := arch.MoE.SharedIntermediateDim
@@ -2660,8 +2670,9 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 				return e
 			}
 			lw.Experts = make([]expertWeights, moe.NumExperts)
-			for ei := range lw.Experts {
+			if e = forExperts(moe.NumExperts, sink, func(ei int) error {
 				ex := &lw.Experts[ei]
+				var e error
 				if ex.Up, e = loadMat(st, tn(fmt.Sprintf("mixer.experts.%d.up_proj.weight", ei)), moe.IntermediateDim, hidden); e != nil {
 					return e
 				}
@@ -2669,6 +2680,9 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 					return e
 				}
 				ex.Up, ex.Down = q(ex.Up), q(ex.Down)
+				return nil
+			}); e != nil {
+				return e
 			}
 			if moe.SharedIntermediateDim > 0 {
 				se := &lw.SharedExpert
@@ -3026,7 +3040,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 			return derr
 		}
 		l.Experts = make([]expertWeights, nE)
-		for ex := range nE {
+		if err := forExperts(nE, sink, func(ex int) error {
 			guBase, dnBase := ex*hidden*2*expInter, ex*expInter*hidden
 			gate := make([]float32, expInter*hidden)
 			up := make([]float32, expInter*hidden)
@@ -3047,6 +3061,9 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 				Up:   q(linalg.WrapF32(up, expInter, hidden)),
 				Down: q(linalg.WrapF32(down, hidden, expInter)),
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		return nil
 	}
