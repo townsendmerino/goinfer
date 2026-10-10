@@ -113,24 +113,14 @@ func TestGLMResidentParity(t *testing.T) {
 			t.Logf("GLM resident vs CPU: %d/%d exact | worst near-tie %.3f%% | hard fails %d | min cosine %.6f",
 				exact, len(prompt), worst*100, hard, minCos)
 
-			// The 3% rule and this floor divide the work, and BOTH are needed — proven by breaking
-			// each composed piece and measuring (glm-tiny / glm-tiny-bias, this box):
-			//
-			//   broken piece                         exact       min cosine     caught by
-			//   ----------------------------------  ----------  -------------  -----------
-			//   correct                              12/12,12/12  0.9998,0.9999  —
-			//   partial-rotary tail not cached       4/12, 3/12   0.498, 0.617   3% rule
-			//   shared-expert combine garbage        0/12, 0/12   -0.08, -0.11   3% rule
-			//   shared expert SKIPPED entirely      12/12,11/12   0.9966,0.9949  FLOOR only
-			//   shared gate/up swapped in glu        9/12,10/12    0.968, 0.980   FLOOR (mostly)
-			//
-			// The last two are the ones the argmax rule MISSES: the shared expert at sharedInter=32
-			// over four layers is a small perturbation of 256-dim logits, so dropping or mangling it
-			// barely moves the top token — exactly the mixtral-tiny problem, and the reason a cosine
-			// floor is not optional here. 0.998 sits below every correct run (min 0.9995 across three
-			// prompts) and above the tightest real bug (shared skipped, 0.9966). It is a NARROW gate
-			// (~0.0015 margin), which is the honest ceiling this tiny fixture affords for a component
-			// this small; TestRopePartial gates the tail-caching independently and strongly.
+			// The 3% rule and this floor divide the work, and BOTH are needed. A tail cache that is not kept or a
+			// garbled shared-expert combine is caught by the 3% rule; a shared expert that is SKIPPED or has its
+			// gate/up swapped is what the argmax rule MISSES: at sharedInter=32 over four layers it is a small
+			// perturbation of 256-dim logits, so the top token barely moves (the mixtral-tiny problem), and the
+			// cosine floor catches it. 0.998 sits below every correct run and above the tightest real bug. It is
+			// a NARROW gate (~0.0015 margin), the honest ceiling this tiny fixture affords for a component this
+			// small; TestRopePartial gates the tail-caching independently and strongly. The measured table (each
+			// composed piece broken in turn): docs/code-notes/cuda.md#TestGLMResidentParity.
 			if minCos < 0.998 {
 				t.Errorf("logit cosine %.6f < 0.998 on %s — below the measured correct run (~0.9997) and "+
 					"into shared-expert-bug territory (skipped ~0.996, gate/up swapped ~0.97); the argmax "+

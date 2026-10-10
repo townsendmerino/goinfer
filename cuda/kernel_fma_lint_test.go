@@ -10,27 +10,14 @@ import (
 )
 
 // lintedKernels is the contracted-kernel list TestKernelFMALint checks, and the list
-// TestKernelFMALint_coversEmbeddedPTX holds to the set of kernels actually shipped as PTX.
+// TestKernelFMALint_coversEmbeddedPTX holds to the set of kernels actually shipped as PTX. A kernel
+// is not covered by being contracted; it is covered by being in THIS list (router_f32.cu, the
+// pure-f32 Gemma-4 router projection on the production decode path, sat unguarded until it joined).
 //
-// moe.cu is exempt because the shipped moe.ptx is a FROZEN artifact, audited at NVRTC 12.6.85.
-//
-// M-35 (CLOSED 2026-09-10, option (a)): the shipped moe.ptx (and glue.ptx, gemv_fwd.ptx —
-// cuda/kernels.go names all three as the audited set) had drifted to this box's ambient NVRTC
-// 12.9.86 across three separate regens, none at the pinned toolchain. Re-pinned at genuine
-// 12.6.85 per cuda/testdata/REGEN.md's own "re-pin at 12.6.85" record — moe.cu's bare MACs are
-// still exempt (they were never converted to intrinsics; that is still-open option (b)), but the
-// artifact behind the "frozen, audited" claim is real again. Per-kernel hash audit + the real
-// MoE-resident-parity gate (identical min cosine 0.997829 before/after) found no measurable
-// numeric drift from the three ambient-NVRTC regens either — see REGEN.md for the full record.
-//
-// moe.cu's bare MACs remain unconverted (option (b) from the original M-35 finding), so this
-// exemption stays. (TestMoEPTX_versionMatchesItsDocumentation, which held REGEN.md and this
-// exemption to moe.ptx's banner, was deleted 2026-09-25; the pin is now kept by reading the banner.)
-//
-// router_f32.cu was added AFTER this lint and never joined the list (audit C-16), so the pure-f32
-// Gemma-4 router projection — on the production decode path, and the one path the repo calls "the
-// discrete-failure path" because a near-tie flips which expert runs — sat unguarded. A kernel is
-// not covered by being contracted; it is covered by being in THIS list.
+// moe.cu is exempt because the shipped moe.ptx is a FROZEN artifact, audited at NVRTC 12.6.85
+// (cuda/kernels.go names moe.ptx, glue.ptx and gemv_fwd.ptx as the audited set; the pin is recorded
+// in cuda/testdata/REGEN.md). moe.cu's bare MACs were never converted to intrinsics, so the
+// exemption stays until they are.
 var lintedKernels = []string{
 	"fused_qkv.cu", "glue.cu", "prefill_batched.cu", "decode_splitkv.cu",
 	"gemv_w4a8_rn.cu", "gemv_w8a8_batched.cu", "gemv_fwd.cu",
@@ -43,9 +30,9 @@ var lintedKernels = []string{
 // fmaLintExempt lists embedded PTX deliberately outside the lint, with the reason. Anything else
 // that is embedded MUST be linted — see TestKernelFMALint_coversEmbeddedPTX.
 var fmaLintExempt = map[string]string{
-	// See the M-35 note above: re-pinned at 12.6.85 (2026-09-10), the "frozen, audited" premise
-	// holds again. Still exempt because the bare MACs were never converted to intrinsics
-	// (option (b), still open) — a future ambient regen could re-drift this at any time.
+	// See the lintedKernels note: moe.ptx is frozen and audited at NVRTC 12.6.85, but its bare MACs
+	// were never converted to intrinsics, so it stays exempt (option (b), still open) — a future
+	// ambient regen could re-drift this at any time.
 	"moe.cu": "MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted",
 }
 
@@ -53,7 +40,7 @@ var fmaLintExempt = map[string]string{
 // in any kernel under a bit-identity contract. A bare MAC (`x += a*b`, `= a*b + c`) lets the compiler
 // CHOOSE fma vs mul+add, and separately-compiled kernels that share a contract (a decode kernel and
 // its batched counterpart) then compile to ~1 ULP-different, DATA-DEPENDENT numerics — invisible on
-// uniform fixtures, an 84% token-stream divergence on real weights (docs/task-batched-prefill-
+// uniform fixtures, a token-stream divergence on real weights (docs/completed/task-batched-prefill-
 // bitidentity.md). Every MAC must be an explicit intrinsic (__fmaf_rn / __fmul_rn / __fadd_rn) so no
 // compiler discretion remains. This catches the CAUSE at compile time — before any numerical test,
 // and independent of the NVRTC version that JITs the PTX. A new bare MAC fails the build. (aikit's
@@ -66,9 +53,8 @@ func TestKernelFMALint(t *testing.T) {
 	//   expression:  ... <expr> * <expr> [+-] <expr>  (val = a*b + c ; a*c - b*s)
 	macAccum := regexp.MustCompile(`\b\w[\w.]*\s*\+=\s*[^;/]* \* `)
 	macExpr := regexp.MustCompile(` \* [^;/]* [+\-] `)
-	// ... and the same MAC with the multiply to the RIGHT of the add (c + a * b). Its absence let
-	// prefill_batched.cu's `1.0f + attnTempBeta * log1pf(...)` ship in a linted kernel
-	// (audit-2026-09-10 G-11).
+	// ... and the same MAC with the multiply to the RIGHT of the add (c + a * b); without it
+	// prefill_batched.cu's `1.0f + attnTempBeta * log1pf(...)` shipped in a linted kernel.
 	macExprRev := regexp.MustCompile(` [+\-] [^;/()]* \* `) // no parens between: (a - b) * c and c + f(a * b) are not MACs
 	compliant := regexp.MustCompile(`__fmaf_rn|__fmul_rn|__fadd_rn|__fma_rn|__dp4a|__shfl`)
 	arrayIndex := regexp.MustCompile(`\[[^\]]*\]`) // strip array indices (int arithmetic) before matching
@@ -79,9 +65,8 @@ func TestKernelFMALint(t *testing.T) {
 		`^\s*(const\s+)?[\w]+\s*\*+\s*\w+\s*=|` + // pointer declaration: T* p = ...
 		`\(long\)|\(int\)|\(unsigned`) // int-cast arithmetic
 	// A for-header is INTEGER arithmetic (the init/cond/incr), but the loop BODY on the same line is
-	// not — a single-line `for (…) acc += a[k] * b[k];` carries a real float MAC. Skipping the whole
-	// line (the old `\bfor\s*\(` in isDeclOrIndex) let router_f32.cu's two MACs pass unseen (audit
-	// R-04). Strip only the `for (…)` header, then lint the remaining body.
+	// not — a single-line `for (…) acc += a[k] * b[k];` carries a real float MAC, and skipping the whole
+	// line would let it pass unseen. Strip only the `for (…)` header, then lint the remaining body.
 	forHeader := regexp.MustCompile(`\bfor\s*\([^)]*\)`)
 	// remaining genuine non-MACs: reduce-adds (no '*'), lone float muls (no +/-), int array indices.
 	whitelist := []string{
@@ -128,15 +113,11 @@ func TestKernelFMALint(t *testing.T) {
 	}
 }
 
-// TestKernelFMALint_coversEmbeddedPTX is the gate on the gate (audit C-16).
+// TestKernelFMALint_coversEmbeddedPTX is the gate on the gate. TestKernelFMALint only checks the
+// kernels someone remembered to list, so nothing connected "this kernel ships" to "this kernel is
+// linted"; this test derives the required set from what kernels.go actually embeds.
 //
-// TestKernelFMALint only checks the kernels someone remembered to list. That is how router_f32.cu
-// — production PTX on the Gemma-4 decode path — went unguarded from the day it was added: nothing
-// connected "this kernel ships" to "this kernel is linted", so the list silently described a subset
-// of reality. Adding router_f32.cu to the list fixes today's gap and nothing else; this test fixes
-// the CLASS, by deriving the required set from what kernels.go actually embeds.
-//
-// A new kernel now fails here the moment it is embedded without being linted or explicitly exempted,
+// A new kernel fails here the moment it is embedded without being linted or explicitly exempted,
 // which is the point at which the author is still holding the context to decide which it should be.
 func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
 	src, err := os.ReadFile("kernels.go")

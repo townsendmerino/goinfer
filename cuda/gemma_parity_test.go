@@ -32,17 +32,9 @@ func TestDenseResidentParity(t *testing.T) {
 }
 
 // residentCosineParity drives BOTH paths from the SAME text, tokenized by the model's OWN
-// tokenizer.
-//
-// It used to take hardcoded token ids, and the Gemma gate's were ones I invented and never
-// decoded: they were not valid Gemma tokens at all, so every Gemma parity number reported from
-// here (and inherited by the Metal port) was measured on gibberish. The parity CLAIM survived
-// that — both paths got identical input, and agreement is agreement — but the ANALYSIS did not:
-// the control ran on real Qwen ids while Gemma ran on nonsense, and nonsense flattens the
-// logits, which inflates near-ties and depresses exact-argmax. I read that signature as
-// "Gemma is noisier, probably the 262k vocab" instead of as a confound I had created.
-//
-// Encoding real text makes a wrong id impossible BY CONSTRUCTION rather than by eyeballing, and
+// tokenizer. Encoding real text makes a wrong id impossible BY CONSTRUCTION rather than by
+// eyeballing (hardcoded ids that were not valid tokens once made every Gemma number meaningless:
+// nonsense input flattens the logits, which inflates near-ties and depresses exact-argmax), and
 // makes the two models comparable: same sentence, each in its own vocabulary.
 func residentCosineParity(t *testing.T, path, text string) {
 	if _, err := os.Stat(path); err != nil {
@@ -78,8 +70,7 @@ func residentCosineParity(t *testing.T, path, text string) {
 	if len(prompt) < 4 {
 		t.Fatalf("encode(%q) gave only %d ids — too short to gate anything", text, len(prompt))
 	}
-	// Prove the ids ROUND-TRIP before trusting a single number measured on them. This is the
-	// check whose absence made the whole exercise worthless.
+	// Prove the ids ROUND-TRIP before trusting a single number measured on them.
 	back, err := tk.Decode(prompt)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -143,10 +134,9 @@ func residentCosineParity(t *testing.T, path, text string) {
 		exact, len(prompt), worst*100, hard, minCos)
 	// The GATE is the repo's own rule (gpu/kv_i8_parity_test.go): argmax must match, or differ
 	// only inside a 3% near-tie — asserted per position above. Cosine is logged as a DIAGNOSTIC,
-	// with only a gross-breakage floor: an early draft of this test asserted cosine ≥ 0.999 and
-	// that bar failed the SHIPPED dense Qwen path (min 0.9936), which is why the control below
-	// exists. W4A8 int4 does not reproduce CPU int4 to 0.999; a tighter floor here would encode a
-	// number no backend meets.
+	// with only a gross-breakage floor: W4A8 int4 does not reproduce CPU int4 to 0.999 (the shipped
+	// dense Qwen path itself misses it, which is why the control above exists), so a tighter floor here
+	// would encode a number no backend meets.
 	if minCos < 0.95 {
 		t.Errorf("logit cosine %.6f < 0.95 — far below the dense control (~0.99); that is gross breakage, not int4 noise", minCos)
 	}

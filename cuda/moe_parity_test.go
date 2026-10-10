@@ -124,34 +124,21 @@ func TestMoEResidentParity(t *testing.T) {
 
 	// The 3% near-tie rule above is NECESSARY BUT NOT SUFFICIENT on this fixture, and the floor
 	// below is what closes the gap. Both are calibrated by breaking the dispatch on purpose and
-	// measuring — a green parity test proves nothing until it has been seen to go red.
+	// measuring — a green parity test proves nothing until it has been seen to go red
+	// (table: docs/code-notes/cuda.md#TestMoEResidentParity.floor).
 	//
-	// RE-MEASURED 2026-08-06 (RTX 2070 SUPER) after audit C-15 made cuda's f32tof16 match the
-	// canonical cross-backend f16 scale representation (decoder.f32ToF16bits). The OLD table below
-	// had correct=0.999906 and bug B=0.997687 — but that separation was ENTIRELY an artifact of the
-	// old TRUNCATING f32tof16, which happened to resolve one int4 near-tie token the CPU's way. With
-	// the correct scales each control applied alone measures:
+	// The correct run is not 12/12: one token is a genuine int4-KERNEL near-tie (device W8A8 GEMV vs
+	// CPU int4, a sub-0.1% argmax gap, benign), so the correct cosine is ~0.9978, not ~1.0. The floor
+	// is therefore 0.995 — below correct and above bug A (down-proj slot pinned to 0, min cosine
+	// 0.9885), the only STRUCTURAL bug that survives the 3% argmax rule (a gate/up GEMV slot pinned to
+	// 0, a router fed the raw residual and a mis-strided down-proj stack all open >3% gaps). Margins:
+	// ~2.5e-3 on the correct side, ~6.5e-3 on the bug side.
 	//
-	//   dispatch state                            exact   worst gap   min cosine   3% rule   floor(0.995)
-	//   ---------------------------------------  ------  ----------  -----------  --------  ------------
-	//   correct                                   11/12      0.032%     0.997833   pass      pass
-	//   A down-proj slot pinned to 0              11/12      0.959%     0.988509   PASSES ✗  FAILS ✓
-	//   B glu_quant gOff/uOff swapped             11/12      0.032%     0.997846   PASSES ✗  PASSES ✗  ← see below
-	//   C gate/up GEMV slot pinned to 0           10/12      6.124%     0.989101   fails     (fails)
-	//   D router fed the raw residual              — (>3% argmax gap, structural — caught by the rule)
-	//   E down-proj stack mis-strided              — (79% gap / NaN — caught by the rule + NaN guard)
-	//
-	// The correct run is no longer 12/12: one token is a genuine int4-KERNEL near-tie (device W8A8
-	// GEMV vs CPU int4, 0.032% argmax gap, benign), so the correct cosine is 0.997833, not ~1.0. The
-	// floor is therefore 0.995 — below correct (0.997833) and above bug A (0.988509), which is the
-	// only STRUCTURAL bug that survives the 3% argmax rule (C/D/E have >3% gaps). ~2.5e-3 margin on
-	// the correct side, ~6.5e-3 on the bug side.
-	//
-	// Bug B (gate/up swap) can NO LONGER be caught here: correct (0.997833) and bug B (0.997846) are
-	// indistinguishable, because on RANDOM-weight experts silu(up)*gate ≈ silu(gate)*up in magnitude
-	// and the difference washes out through down-proj + combine + argmax. It is instead caught by
-	// TestMoeSwigluWiring_C15, which exercises launchGluSplit (the sole gate/up-split dispatch) with
-	// crafted gate≠up and asserts the pre-quant SwiGLU output directly — scale- and fixture-independent.
+	// Bug B (gate/up swap) can NOT be caught here: on RANDOM-weight experts silu(up)*gate ≈
+	// silu(gate)*up in magnitude and the difference washes out through down-proj + combine + argmax.
+	// It is caught by TestMoeSwigluWiring_C15, which exercises launchGluSplit (the sole gate/up-split
+	// dispatch) with crafted gate≠up and asserts the pre-quant SwiGLU output directly — scale- and
+	// fixture-independent.
 	if minCos < 0.995 {
 		t.Errorf("logit cosine %.6f < 0.995 — the correct dispatch measures 0.997833 here and the "+
 			"tightest STRUCTURAL bug the 3%% rule misses (down-proj slot pinned) measures 0.988509, so "+

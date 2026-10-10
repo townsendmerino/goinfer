@@ -159,7 +159,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 	}
 }
 
-// TestGemvRNBandwidth times gemv_w4a8_rn at the gate/up shape vs the 4.41 ms coalesced batched baseline.
+// TestGemvRNBandwidth times gemv_w4a8_rn at the gate/up shape against the coalesced batched baseline.
 func TestGemvRNBandwidth(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1")

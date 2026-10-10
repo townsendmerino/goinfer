@@ -58,11 +58,11 @@ func TestPrefillDecomp(t *testing.T) {
 
 	t.Logf("%-6s %10s %10s %10s %10s %8s", "N", "gemv", "attn", "glue", "catSum", "attn%")
 	// Depths overridable (GOINFER_DECOMP_K=128,512,2048,3900): the fixed list stops
-	// at 2048, but the question this instrument is now being asked -- what share of
+	// at 2048, but the question this instrument is asked -- what share of
 	// CUDA prefill is attention, and therefore what a fused/FlashAttention schedule
 	// could reach -- is a LONG-CONTEXT question. Attention is O(K^2) and the weight
 	// matmuls are O(K), so a share read at 2048 systematically understates it at
-	// 3900, which is where the 2026-09-01 re-anchor put goinfer furthest behind.
+	// 3900.
 	depths := []int{128, 512, 2048}
 	if v := os.Getenv("GOINFER_DECOMP_K"); v != "" {
 		depths = depths[:0]

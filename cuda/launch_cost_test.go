@@ -9,14 +9,13 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// TestCUDA_launchCost bounds the per-launch host cost — Step 0 for the dispatch-overhead lever.
-// The refined 26B decomposition put ~19 ms/token across ~600 launches ≈ 32 µs/launch, several times
-// a normal CUDA launch (~5 µs). That points at the purego FFI crossing (cgo-free: every
-// cuLaunchKernel is a dlopen'd-symbol call + Go-side arg packing), NOT GPU-side dispatch. If
-// confirmed, CUDA GRAPHS (capture once, replay in one call — collapses N crossings into one) are the
-// tool, not batching (which only cuts dispatch COUNT). The split: launch a cheap kernel at the real
-// grid vs a minimal 1×1 grid — if per-launch is ~equal and both ~30 µs, the cost is launch-bound
-// (FFI + packing), not compute-bound, and graphs win.
+// TestCUDA_launchCost bounds the per-launch host cost, the first question for the dispatch-overhead
+// lever. A per-launch cost several times a native CUDA launch (~5 µs) points at the purego FFI
+// crossing (cgo-free: every cuLaunchKernel is a dlopen'd-symbol call + Go-side arg packing), NOT
+// GPU-side dispatch; then CUDA GRAPHS (capture once, replay in one call — collapses N crossings into
+// one) are the tool, not batching (which only cuts dispatch COUNT). The split: launch a cheap kernel
+// at the real grid vs a minimal 1×1 grid — if per-launch is ~equal and both high, the cost is
+// launch-bound (FFI + packing), not compute-bound, and graphs win.
 //
 // Model-independent (the FFI cost is the same for any model), so it runs on the tiny fixture.
 func TestCUDA_launchCost(t *testing.T) {

@@ -9,12 +9,11 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// TestCUDA_graphReplayBound is the fail-fast in front of the CUDA-graphs forward restructure
-// (Step 2). launch_cost bounded a SINGLE live launch at ~10 µs (FFI/purego-bound, grid-independent).
-// It did NOT measure graph replay — and the whole lever rests on one unproven claim: that replaying a
-// captured K-kernel segment collapses K host crossings into ~one, rather than still paying per-node
-// GPU-side dispatch K times. If replay ≈ live at real segment size, the restructure buys nothing and
-// we bank a negative BEFORE the invasive launchToken surgery.
+// TestCUDA_graphReplayBound is the fail-fast in front of the CUDA-graphs forward restructure. The
+// whole lever rests on one claim: that replaying a captured K-kernel segment collapses K host
+// crossings into ~one, rather than still paying per-node GPU-side dispatch K times. If replay ≈ live
+// at real segment size, the restructure buys nothing and that is banked BEFORE the invasive
+// launchToken surgery (docs/code-notes/cuda.md#TestCUDA_graphReplayBound).
 //
 // It captures a representative static chain (K launches of a trivial elementwise kernel — the crossing
 // cost is kernel-independent, same basis launch_cost used), then compares:
@@ -132,7 +131,7 @@ func TestCUDA_graphReplayBound(t *testing.T) {
 
 	// Project to a 26B-shaped decode: ~48 MoE layers × 3 static segments = ~144 replays/token.
 	// Each replay saves (liveUs - graphUs) over live issue; the per-token wall-clock delta is the
-	// share of the ~59 ms/token budget this lever can actually reclaim.
+	// share of the decode token budget this lever can actually reclaim.
 	const segsPerToken = 48 * 3
 	projMs := savementPerSeg * float64(segsPerToken) / 1000.0
 	t.Logf("  projection (48 layers × 3 segments = %d replays/token): ~%.1f ms/token reclaimed", segsPerToken, projMs)

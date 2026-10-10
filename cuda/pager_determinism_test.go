@@ -2,11 +2,9 @@
 
 // Does repeated greedy generation on a PAGED MoE return the same tokens every time?
 //
-// FOUND WHILE MEASURING SOMETHING ELSE. In the spec-x-pager run the off arm produced 64 tokens on
-// the first repeat of a prompt, 1 on the second and 0 on the third — same prompt, temperature 0,
-// same process, `Generate` returning a nil error each time, while the two neighbouring prompts gave
-// 64/64/64 around it. Greedy decode is deterministic by construction, so identical inputs returning
-// different outputs means state is carrying between generations.
+// Greedy decode is deterministic by construction, so identical inputs returning different outputs
+// means state is carrying between generations (an observed run: same prompt, temperature 0, same
+// process, `Generate` returning a nil error, 64 tokens on the first repeat and 0 on the third).
 //
 // THE HYPOTHESIS THIS TEST EXISTS TO CHECK, and the reason it belongs next to the pager rather than
 // in a general decode test: the ONE piece of state deliberately kept across generations here is the
@@ -82,14 +80,11 @@ func TestPagerDeterminism(t *testing.T) {
 		t.Fatalf("chat template: %v", err)
 	}
 
-	// A/B ON THE ONE SUSPECT, because a repro that only shows the symptom cannot name the cause.
-	// decoder/resident_reuse.go (commit 3358e6ba, today) added prefix reuse on the resident KV and
-	// gates it on GOINFER_NO_RESIDENT_REUSE alone — there is no recurrent-state exclusion in
-	// residentReuseLen. For a Gated-DeltaNet family that is the exact hazard the rest of the tree
-	// already refuses: the conv ring and matrix state are NOT position-truncatable
+	// A/B ON THE ONE SUSPECT, because a repro that only shows the symptom cannot name the cause:
+	// prefix reuse on the resident KV (decoder/resident_reuse.go, GOINFER_NO_RESIDENT_REUSE). For a
+	// Gated-DeltaNet family the conv ring and matrix state are NOT position-truncatable
 	// (decoder/deltanet.go: "why qwen3_5_moe falls back from prefix reuse / speculative"), and
-	// cudaResident.Forward re-zeroes them only at pos == 0 — which a reused prefix never reaches.
-	// So a second generation would decode from the PREVIOUS generation's tail state.
+	// cudaResident.Forward re-zeroes them only at pos == 0, which a reused prefix never reaches.
 	//
 	// If disabling reuse makes the symptom vanish, that is the cause. If it survives, the reuse
 	// path is exonerated and the hunt moves to the pager, which is why both arms run here rather
@@ -132,12 +127,10 @@ func runDeterminismArm(t *testing.T, m *decoder.Model, r *cudaResident, tk *toke
 			}
 			// STAGE COUNT IS THE DIAGNOSTIC, not decoration. One staging event happens per routed
 			// MoE layer per forward POSITION, so stages/layers is the number of positions the run
-			// actually pushed through the model — prompt prefill included. In the run that raised
-			// this, the first repeat of a prompt showed 88 positions (24 prompt + 64 generated) and
-			// the second showed 65, i.e. the prompt was not prefilled the second time. Whether that
-			// is KV being reused across a supposedly stateless Generate, or the prefill being
-			// skipped for another reason, the position count distinguishes it from a sampling or
-			// stop-token explanation, which would leave prefill untouched.
+			// actually pushed through the model — prompt prefill included. A repeat that shows fewer positions
+			// than prompt + generated means the prompt was not prefilled: either KV is being reused across a
+			// supposedly stateless Generate, or the prefill is skipped for another reason. The position count
+			// distinguishes that from a sampling or stop-token explanation, which would leave prefill untouched.
 			hits, misses := r.CacheStatsForTest()
 			st, _ := r.PagerStageStatsForTest()
 			hb("%.40s… run %d: %d tok | %d stages (~%d positions) | hit %.1f%%",

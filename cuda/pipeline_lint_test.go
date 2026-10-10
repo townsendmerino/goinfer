@@ -15,11 +15,10 @@ import (
 //
 // The launch-site census sorts kernels into: launched by production and covered by an asserting
 // gate; launched by production and covered by nothing; launched only from tests; and embedded but
-// never launched. `gemv_w4a8_batched` was in none of them. It was BOUND into a production pipeline
-// field at every model load — paying NVRTC JIT time — and launched by nothing, anywhere, while
-// carrying a parity test AND a bandwidth benchmark that made it look like the shipping batched
-// int4 kernel. It is not: bGemvB dispatches int4 to `gemv_w4a8_rn` unconditionally
-// (prefill.go, bGemvB), so the kernel named for the feature was not the one the feature used.
+// never launched. A kernel BOUND into a production pipeline field at every model load (paying NVRTC
+// JIT time) and launched by nothing, anywhere, is in none of them — and a parity test or bandwidth
+// benchmark on it makes it look like the shipping kernel (gemv_w4a8_batched was this: bGemvB
+// dispatches int4 to `gemv_w4a8_rn` unconditionally, prefill.go).
 //
 // A runtime launch trace CANNOT find this class — it sees no launch for a bound-and-dead field
 // and no launch for a field that was never bound, and those are the same observation with

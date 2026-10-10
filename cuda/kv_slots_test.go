@@ -277,7 +277,7 @@ func TestCUDAKVSlots_clampedBuild(t *testing.T) {
 }
 
 // TestCUDAKVSlots_pricedAgainstWhatIsLeft pins how the slot count is priced — the CUDA side of the Metal double-count
-// bug (6807ab95), where a weights-inclusive base was compared with a live figure the weights had already left. The
+// bug, where a weights-inclusive base was compared with a live figure the weights had already left. The
 // free-VRAM probe is stubbed to fall by exactly what the device really allocates from a fictional starting figure,
 // chosen (from a calibration build) so that precisely `want` slots fit beside everything the build puts on the device
 // before its KV. One more slot than that is requested, so the test is two-sided:
@@ -287,8 +287,7 @@ func TestCUDAKVSlots_clampedBuild(t *testing.T) {
 //     card would not fit.
 //
 // A double count is visible only where the build's pre-KV bytes exceed half a slot, so a fixture where they do not
-// skips with the numbers. GOINFER_CUDA_KVSLOTS_MODEL runs it on a real checkpoint (the 1.5B: ~1 GB before KV
-// against ~0.46 GB per slot).
+// skips with the numbers. GOINFER_CUDA_KVSLOTS_MODEL runs it on a real checkpoint.
 func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 	dir, quant := os.Getenv("GOINFER_CUDA_KVSLOTS_MODEL"), "int4"
 	if dir == "" {
@@ -360,7 +359,7 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 	}
 }
 
-// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's 2026-09-27 decision (docs/tasks/task-concurrency-2026-09.md
+// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's decision (docs/tasks/task-concurrency-2026-09.md
 // MC1 on CUDA): an unpinned load that asks for N resident KV slots gives up context until all N fit, instead of taking
 // the one-slot context and clamping the slots. The free-VRAM budget is forced (ExtraResidentBytes, from a real probe,
 // the way TestResolveCtxCapFit_agreesWithCheckKVFits does it) so that one slot fits the full candidate while 4 fit only
@@ -469,9 +468,8 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 // fall in free VRAM from before the load to checkKVFits' probe. That fall is the weights plus the build's scratch and
 // kernel modules, so the estimate must not exceed it by more than an allocation quantum per matrix-ish slack, and it
 // must fall short of it by less than ctxCapMarginBytes, the margin Plan and checkKVFits both reserve for exactly that
-// scratch. Before the fix the untied 7B was priced with its ~520 MB host-side embedding table: 4930 MB against ~4476 MB
-// on the device (docs/measurements/concurrency-mc1-cuda-2026-09-27.md), so the first bound failed. GOINFER_HEAVY_TESTS
-// adds the 7B, the one untied model here.
+// scratch. The untied 7B's host-side embedding table must not be priced as device weights
+// (docs/measurements/concurrency-mc1-cuda-2026-09-27.md). GOINFER_HEAVY_TESTS adds the 7B, the one untied model here.
 func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 	requireCUDADevice(t)
 	home, _ := os.UserHomeDir()
@@ -526,8 +524,8 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 			drop := free0 - atKV
 			est, all := m.ResidentDenseWeightBytesFor("cuda"), m.ResidentDenseWeightBytes()
 			// Plan prices the requested bytes; the driver rounds each buffer of a quantum or more up (allocRoundSlack), which the build prices into the plan on its own
-			// (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: on the 7B the rounding alone
-			// is 406 MB, over the whole margin (the 2026-10-07 night gate's failure, root-caused 2026-10-08: docs/tasks/task-multimodal-support-2026-10.md).
+			// (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: the rounding alone can exceed the whole margin on the 7B
+			// (docs/tasks/task-multimodal-support-2026-10.md).
 			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB) + allocation slack %.0f MB; "+
 				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(res.allocSlackBytes), mb(drop-est-res.allocSlackBytes), mb(ctxCapMarginBytes))
 			est += res.allocSlackBytes
@@ -604,9 +602,9 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 }
 
 // TestCUDAKVSlots_oomKeepsTheSlotsThatFit is S18's CUDA gate (docs/tasks/task-multimodal-support-2026-10.md, "G-S18a"): when the device runs out of memory allocating a later KV slot (checkKVFits sizes the
-// count against the free VRAM read before the build's own scratch, with the margin the only slack, so on the 8 GB card Gemma 3 4B's four slots fit with 1.2 MB to spare and the last one misses by the scratch),
-// the resident keeps the slots that fit instead of declining to the CPU. Three slots requested, the seam fails slot 2: the model stays CUDA-resident with two, no device buffer leaks (the ledger equals a
-// plain two-slot build's), and both granted slots decode the same tokens as a plain two-slot build's. The control, no seam: all three slots. Without the recover the build declines and this goes red.
+// count against the free VRAM read before the build's own scratch, with the margin the only slack, so the last slot can miss by the scratch), the resident keeps the slots that fit instead of declining to the CPU.
+// Three slots requested, the seam fails slot 2: the model stays CUDA-resident with two, no device buffer leaks (the ledger equals a plain two-slot build's), and both granted slots decode the same tokens as a plain
+// two-slot build's. The control, no seam: all three slots. Without the recover the build declines and this goes red.
 func TestCUDAKVSlots_oomKeepsTheSlotsThatFit(t *testing.T) {
 	dir := filepath.Join("..", "testdata", "mistral-tiny-window")
 	requireDeviceAndFixture(t, dir)

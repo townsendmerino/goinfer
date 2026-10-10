@@ -15,10 +15,9 @@ import (
 //
 // The router is where MoE goes wrong QUIETLY. Its output steers a DISCRETE choice, so a
 // disagreement is not a small numeric error — it runs a different expert, and the output is
-// unrelated rather than slightly off. goinfer has already paid for that class once: the Granite
-// SSM investigation traced a 66%-agreement wall to discrete expert flips, and proved no
-// precision knob could recover it. So the bar here is EXACT on the selected indices, not a
-// cosine.
+// unrelated rather than slightly off (the Granite SSM resident-quality wall was that class, and no
+// precision knob recovered it). So the bar here is EXACT on the selected indices, not a cosine.
+// Evidence: docs/code-notes/cuda.md#TestMoERoute
 //
 // The cases cover every routing flavour the registry produces, because they compose and each
 // combination is a separate way to be wrong:
@@ -68,10 +67,10 @@ func TestMoERoute(t *testing.T) {
 		{"kimi/group-limited-wide", 128, 8, true, true, 2.827, 8, 4, true},
 		{"k=1/top1", 16, 1, false, false, 0, 0, 0, false},
 		{"k==nE/all-experts", 8, 8, false, true, 0, 0, 0, false},
-		// Past the OLD 256 cap. These exist because MOE_MAX_E was raised 256 -> 512 and moe.ptx was
-		// regenerated for it; without them the regen is unvalidated at exactly the widths it added.
-		// The kernel writes score[nE]/sel[nE] into a per-thread depot sized by MOE_MAX_E, so an
-		// under-sized depot here is an out-of-bounds local write, not a clean failure.
+		// Past the 256 cap MOE_MAX_E had before the 512 regen: without these cases the regenerated
+		// moe.ptx is unvalidated at exactly the widths it added. The kernel writes score[nE]/sel[nE]
+		// into a per-thread depot sized by MOE_MAX_E, so an under-sized depot here is an out-of-bounds
+		// local write, not a clean failure.
 		{"past-old-cap/257", 257, 4, true, false, 1, 0, 0, true},
 		{"kimi_k2/384-real-shape", 384, 8, true, true, 2.827, 8, 4, true},
 		{"new-cap-boundary/512", 512, 8, true, true, 2.5, 0, 0, true},

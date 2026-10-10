@@ -9,15 +9,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMellumResidentParityCUDA is the CUDA counterpart of metal/mellum_real_test.go, and it
-// exists for a reason that is worth stating plainly: declaring FeatRopeMscale so gpt-oss's YaRN
-// can work ALSO admits Mellum, because mellumArchitecture requires exactly {FeatMoE,
-// FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow} and CUDA already declared the
-// other four. One flag is the entire admission.
-//
-// Metal hit the same coupling (G10) and resolved it by an explicit owner call, because no Mellum
-// checkpoint was reachable on that machine — waiting was not an available option. On this box a
-// real 4-layer weight slice IS present, so the choice there is a measurement here.
+// TestMellumResidentParityCUDA is the CUDA counterpart of metal/mellum_real_test.go. It exists
+// because declaring FeatRopeMscale so gpt-oss's YaRN can work ALSO admits Mellum:
+// mellumArchitecture requires exactly {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale,
+// FeatSlidingWindow} and CUDA already declared the other four, so one flag is the entire admission.
+// A real 4-layer weight slice is present here, so the admission is a measurement rather than a call.
 //
 // WHAT THIS PROVES AND WHAT IT DOES NOT. It proves the CUDA resident forward agrees with the CPU
 // forward on real Mellum weights, which is what the admission is a claim about. It does not prove

@@ -34,11 +34,9 @@ func loadOptFwdBenchModel(b *testing.B) *decoder.Model {
 
 // BenchmarkOptFwd measures real end-to-end decode with and without the feature at three
 // temperatures, on the same prompt and seed — the whole-generation check, not optFwdStep's isolated
-// cost. Ported from metal/optfwd_bench_test.go so the two backends' numbers are comparable.
-//
-// The Metal run (qwen2.5-coder-0.5b, two independent runs) reported ~8-15% faster at T=0.2/T=0.7 and
-// ~6-7% SLOWER at T=1.0 — the last being bounded gate-warmup cost, expected rather than a bug, since
-// the gate must observe some misses before it can turn itself off.
+// cost. Ported from metal/optfwd_bench_test.go so the two backends' numbers are comparable. At high
+// temperature the feature can run slower than off: a bounded gate-warmup cost, expected rather than a
+// bug, since the gate must observe some misses before it can turn itself off.
 func BenchmarkOptFwd(b *testing.B) {
 	m := loadOptFwdBenchModel(b)
 	defer m.Close()

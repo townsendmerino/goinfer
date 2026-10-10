@@ -11,43 +11,34 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGptOssResidentParityCUDA is G7's gate: ONE real gpt-oss forward on a resident path.
+// TestGptOssResidentParityCUDA is G7's gate: ONE real gpt-oss forward on a resident path. The
+// FeatAttnSink declaration waits on this gate passing, not the other way round
+// (docs/queue-correctness.md G7).
 //
-// It had never been run on EITHER backend. docs/queue-correctness.md records the reason on each:
-// this card has 8 GB against a ~12 GB checkpoint, and the MacBook has 16 GB RAM against weights
-// that expand to 19.5 GB in memory (measured — it drove swap to exhaustion and never completed).
-// 2224441 declared FeatAttnSink on kernel-level evidence and was correctly reverted, so the
-// declaration waits on this, not the other way round.
+// IT FITS AN 8 GB CARD VIA MACHINERY THAT ALREADY EXISTED: --moe-cache-experts holds the experts in
+// pinned host memory and DMAs the routed ones into device slots per token, the path that already
+// carries Qwen3.6-35B-A3B on this card (TestQwen36_35B_cache). TestGptOssExpertCacheAB is the
+// discriminating A/B for gpt-oss's use of it; no cosine bar would catch its failure.
 //
-// IT FITS AN 8 GB CARD VIA MACHINERY THAT ALREADY EXISTED. --moe-cache-experts holds the experts
-// in pinned host memory and DMAs the routed ones into device slots per token; the same path
-// already carries Qwen3.6-35B-A3B on this card (TestQwen36_35B_cache). gpt-oss is the smaller
-// problem. What was missing was not the streaming but gpt-oss's ability to use it: under caching
-// it indexed its per-expert bias table by SLOT id (fixed d9829ce, and TestGptOssExpertCacheAB is
-// the discriminating A/B — it fails by ~2.6% on the pre-fix code, which no cosine bar would have
-// caught).
-//
-// The CPU arm is the reference. Both models load at once, which is free here (62 GB host) and is
-// exactly what is NOT possible on the 16 GB Mac.
+// The CPU arm is the reference. Both models load at once, which needs a large-RAM host (the 16 GB
+// Mac cannot).
 func TestGptOssResidentParityCUDA(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model)")
 	}
-	// Skips until CUDA declares the two features, exactly as metal/gptoss_real_test.go does.
-	// The declaration is NOT made: this gate was run on 2026-08-31 with them declared locally
-	// and FAILED at min cosine 0.681 (see docs/queue-correctness.md G7), so declaring would be
-	// the 2224441 mistake a second time. The test is committed so the next attempt starts from a
-	// reproduction rather than a rebuild.
+	// Skips until CUDA declares the two features, exactly as metal/gptoss_real_test.go does. The
+	// declaration is NOT made: this gate FAILED (min cosine 0.681) with them declared locally
+	// (docs/queue-correctness.md G7), so declaring on kernel-level evidence would repeat the mistake that
+	// was reverted. The test is committed so the next attempt starts from a reproduction rather than a
+	// rebuild.
 	if !decoder.ResidentBackendFeatures("cuda")[decoder.FeatAttnSink] {
 		t.Skip("cuda does not declare FeatAttnSink/FeatOutBias — the gate below is what must pass first")
 	}
-	// decoder.AssetPathForTest, NOT modelPath: this used to call modelPath("gpt-oss-20b-MXFP4.gguf"),
-	// which reads GOINFER_MODELS_DIR — a DIFFERENT variable from the one the comment claimed to
-	// honour. It satisfied TestAssetRegistry_noDirectReads (a source-text regex over
-	// os.Getenv(...) of that name, which this call never spelled) while actually bypassing
-	// the registry's real GOINFER_GPTOSS_GGUF override entirely (audit-2026-09-02.md N-41, found
-	// 2026-09-11). AssetPathForTest resolves the SAME registry entry decoder's own
-	// TestGptOssSafetensors_vsGGUF uses, and skips with the reason when absent.
+	// decoder.AssetPathForTest, NOT modelPath: modelPath reads GOINFER_MODELS_DIR, a different variable
+	// from the registry's real GOINFER_GPTOSS_GGUF override, which it would bypass entirely while still
+	// satisfying TestAssetRegistry_noDirectReads (a source-text regex over os.Getenv(...) of that name).
+	// AssetPathForTest resolves the SAME registry entry decoder's own TestGptOssSafetensors_vsGGUF uses,
+	// and skips with the reason when absent.
 	path := decoder.AssetPathForTest(t, "GOINFER_GPTOSS_GGUF")
 	const steps = 8
 	seed := []int{3, 14, 7, 42, 1, 99, 5, 60}

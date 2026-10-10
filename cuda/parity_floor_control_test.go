@@ -26,15 +26,10 @@ func TestParityFloorControl(t *testing.T) {
 		t.Skip("measurement harness, no assertion — set GOINFER_HEAVY_TESTS=1 GOINFER_PARITY_FLOOR_CONTROL=1")
 	}
 	seed := []int{3, 14, 7, 42, 1, 99, 5, 60}
-	// Measured 2026-08-31 on the RTX 2070 SUPER, all via this harness:
-	//
-	//   qwen2.5-coder-0.5b   24 layers  dense          0.973926
-	//   qwen2.5-coder-1.5b   28 layers  dense          0.993496
-	//   qwen3.6-35b-a3b      40 layers  MoE+streaming  0.982171
-	//   gpt-oss-20b          24 layers  MoE+streaming  0.895287   <- the outlier
-	//
-	// The 35B row is the one that matters: same path, same card, sparse, streamed, and DEEPER,
-	// yet 0.982. That is what makes gpt-oss's 0.895 a defect rather than this path's floor.
+	// Reference readings: docs/code-notes/cuda.md#TestParityFloorControl.readings
+	// The 35B row is
+	// the one that matters: same path, same card, sparse, streamed, and DEEPER, yet ~0.98 — which is what
+	// makes gpt-oss's ~0.895 a defect rather than this path's floor.
 	// (The 35B is not run here — it needs ~44 GB of host RAM across both arms and ~6 min. Add it
 	// back with MoECacheExperts:true and m.NewCache, not decoder.NewKVCache: it is a DeltaNet
 	// hybrid whose recurrent state the plain constructor does not allocate.)

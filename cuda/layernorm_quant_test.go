@@ -11,11 +11,10 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestLayerNormQuant is the CUDA twin of metal/gpt2_kernels_test.go's TestLayerNormQuant — this
-// backend's layernorm_quant (cuda/glue.cu) is a BRAND NEW kernel (G5, docs/tasks/task-gpu-paths-2026-09.md,
-// the last row: Cohere/Command-R + Cohere2/Command-R7B), so it gets the same isolated,
-// exact-CPU-reference proof Metal's kernel already had before any family was declared resident on
-// the strength of it.
+// TestLayerNormQuant is the CUDA twin of metal/gpt2_kernels_test.go's TestLayerNormQuant: this
+// backend's layernorm_quant (cuda/glue.cu) gets the same isolated, exact-CPU-reference proof Metal's
+// kernel had before any family was declared resident on the strength of it (Cohere/Command-R,
+// docs/tasks/task-gpu-paths-2026-09.md G5).
 //
 // Bias-free ONLY, unlike Metal's kernel: Cohere's LayerNorm carries no learned bias term, and this
 // backend's layernorm_quant has no hasBias parameter at all — a future bias-bearing LayerNorm

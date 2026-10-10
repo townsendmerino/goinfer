@@ -16,11 +16,10 @@ import (
 // TestPrefillCancel pins the guarantee chunked prefill weakened and this restores: a cancelled
 // request stops the prompt, rather than running it to completion on a GPU nobody is waiting for.
 //
-// The sequential fallback checks ctx.Err() PER TOKEN — G18 put it there because "an abandoned
-// client leaves the whole prompt streaming through the device". A batched pass has no such loop, so
-// before Prefiller carried a context the granularity was the whole pass: measured ~22 s for one
-// 512-row MoE chunk on M26, against the ~46 ms the per-token path it replaced would have taken to
-// notice. That is the regression under test.
+// The sequential fallback checks ctx.Err() PER TOKEN, so an abandoned client does not leave the whole
+// prompt streaming through the device. A batched pass has no such loop, so without Prefiller carrying
+// a context the granularity is the whole pass (one 512-row MoE chunk takes seconds, against
+// milliseconds for the per-token path to notice). That is the regression under test.
 //
 // Two arms, because they fail differently:
 //   - already-cancelled: PrefillLast must return ctx.Err() and NOT the logits. Catches a missing
@@ -152,11 +151,11 @@ func TestPrefillCancel_dense(t *testing.T) {
 		embs[i] = row
 	}
 
-	// The baseline is a WARM run. The first prefill on a fresh model pays one-off costs (kernel JIT, buffer
-	// first-touch), and a baseline taken from it overstates the steady-state cost several times over: measured, one
-	// run read 1.185 s cold and the cancelled run then finished the whole prefill in 162 ms, before the cancel
-	// scheduled at a fifth of the cold figure (237 ms) could fire. That read as "cancel ignored" and failed the test
-	// without any cancellation being wrong. So: one untimed warm-up, then the fastest of three timed runs.
+	// The baseline is a WARM run. The first prefill on a fresh model pays one-off costs (kernel JIT,
+	// buffer first-touch), and a baseline taken from it overstates the steady-state cost several times
+	// over, so a cancel scheduled at a fraction of it can fire after the run has already finished, which
+	// reads as "cancel ignored" without any cancellation being wrong. So: one untimed warm-up, then the
+	// fastest of three timed runs.
 	prefill := func(ctx context.Context) (time.Duration, error) {
 		rf.Reset()
 		t0 := time.Now()
@@ -205,8 +204,8 @@ func TestPrefillCancel_dense(t *testing.T) {
 
 	// The SINGLE-PASS branch. A prompt at or under the chunk width skips the loop entirely, so
 	// neither the chunk-boundary check nor (on a dense model) any per-row check can see a cancel —
-	// only the check at function entry can. Measured, not assumed: removing that entry check leaves
-	// every other case in this file green, which is how the hole was found in the first place.
+	// only the check at function entry can. Removing that entry check leaves every other case in this
+	// file green.
 	t.Run("single-pass", func(t *testing.T) {
 		decoder.SetKnobEnvForTest(t, mc, "GOINFER_PREFILL_CHUNK", "4096") // wider than M ⇒ one pass, loop skipped
 		ctx, cancel := context.WithCancel(context.Background())

@@ -14,7 +14,7 @@ import (
 
 // TestGumbelDeviceAgreesWithHost is the kernel gate for gumbel_stage1/2 (R7b).
 //
-// PRE-REGISTERED RULE (written before the first run). The host draw (decoder.gumbelDraw, f64 noise transform) is
+// PRE-REGISTERED RULE. The host draw (decoder.gumbelDraw, f64 noise transform) is
 // the reference; the device computes the same argmax with an f32 transform. Philox is integer-exact, so the two
 // agree except where the best two keys are within a few f32 ulps. Therefore:
 //

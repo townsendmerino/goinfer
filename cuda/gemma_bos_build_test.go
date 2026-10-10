@@ -10,11 +10,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemmaBOSBuild looks at how L0 builds the BOS token's massive activation — the Metal box
-// found Metal under-builds it (goinfer |resid into L1| = 12491, Metal = 1461, 8.5x too weak),
-// corrupting Gemma's attention sink and craterng every downstream context. This traces the
-// build on the CUDA side: does the amplification live in L0's ATTENTION contribution or its
-// MLP contribution, and does CUDA-int4 reach f32's magnitude (so the bug is Metal-specific) or
+// TestGemmaBOSBuild looks at how L0 builds the BOS token's massive activation, which Metal
+// under-builds (corrupting Gemma's attention sink and every downstream context). This traces the
+// build on the CUDA side: does the amplification live in L0's ATTENTION contribution or its MLP
+// contribution, and does CUDA-int4 reach f32's magnitude (so the bug is Metal-specific) or
 // under-build like Metal (an int4 issue CUDA tolerates)?
 //
 // Probe is pos 0 (BOS, id 2) — the sink token, where the massive activation is constructed.

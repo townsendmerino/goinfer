@@ -10,26 +10,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestResidentCloseFreesVRAM is the lifecycle gate.
+// TestResidentCloseFreesVRAM is the lifecycle gate: Close must free every device allocation and
+// release the context, so load+Close cycles do not leak the model (weights + per-layer KV cache,
+// gigabytes on a real checkpoint) until the process exits.
 //
-// WHY THIS EXISTS. cudaResident.Close() used to free the page-locked HOST buffer and close the
-// executor channel — and nothing else. It never freed a single DEVICE allocation and never
-// released the context, so every decoder.Load(Backend:"cuda") + Close() leaked the ENTIRE model
-// (weights + per-layer KV cache — gigabytes on a real checkpoint) until the process exited
-// (d8e81cb).
+// A leak here is invisible in a one-model run. It bites a model zoo, an /admin/models/unload, or a
+// test binary that loads several models in sequence, where VRAM saturates and every Alloc/NewStream
+// returns nil; tests that drop those errors then see zero-filled buffers as "cosine 0.000000 —
+// layout/unpack mismatch", an OOM dressed as a parity bug.
 //
-// It hid because it is invisible in a one-model run. It only bites a model zoo, an
-// /admin/models/unload, or a test binary that loads several models in sequence — and it bit all
-// three. It reddened the whole CUDA suite: VRAM ratcheted 421 -> 1801 -> 3077 -> 4783 -> 7733 MiB
-// and pinned at the 8192 ceiling, after which every Alloc/NewStream returned nil, the tests
-// DROPPED those errors, and the resulting zero-filled buffers surfaced as "cosine 0.000000 —
-// layout/unpack mismatch". An OOM wore a parity bug's clothes for long enough that two people
-// independently concluded "the tests just interfere; they pass individually" and moved on.
-//
-// The gate is the SHAPE of memory across load/close cycles, which is the signal that actually
-// found it: a sawtooth means Close frees; a staircase means it leaks. Peak alone proves nothing,
-// and memory measured AFTER the process is worthless — it always looks clean, because the
-// process exited.
+// The gate is the SHAPE of memory across load/close cycles: a sawtooth means Close frees; a
+// staircase means it leaks. Peak alone proves nothing, and memory measured AFTER the process is
+// worthless — it always looks clean, because the process exited.
 func TestResidentCloseFreesVRAM(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")

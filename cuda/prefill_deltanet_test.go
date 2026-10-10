@@ -33,13 +33,11 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 		{filepath.Join("..", "testdata", "qwen35-tiny"), []int{3, 8, 15, 40}, 25},
 		{filepath.Join("..", "testdata", "qwen3next-tiny"), []int{3, 8, 15, 40}, 25},
 		// Post-only norm placement (Olmo 3's): the DeltaNet layers' FFN must still take the pre-MLP norm, as decode's
-		// segBFFN does. The first cut applied the model-level placement there and read cosine 0.888 at 24 rows.
+		// segBFFN does, not the model-level placement.
 		{filepath.Join("..", "testdata", "olmo_hybrid-tiny"), []int{3, 8, 15, 40}, 25},
 		// The MoE sibling (item 9, task-cuda-deltanet-prefill-2026-09.md): DeltaNet mixer + sparse FFN +
 		// sigmoid-gated shared expert in the SAME layer, unlike the three above. Resident-eligible as-is
-		// (moeInter 64, hidden 64 — both already multiples of 32); qwen3next-tiny was not, until its own
-		// fixture was regenerated at moeInter/sharedInter 32 (scripts/pin_qwen3next_tiny.py) to close the
-		// same gap for the qwen3_next config-shape path specifically.
+		// (moeInter 64, hidden 64 — both multiples of 32).
 		{filepath.Join("..", "decoder", "testdata", "qwen3_5_moe-tiny"), []int{3, 8, 15, 40}, 25},
 	}
 	if p := os.Getenv("GOINFER_CUDA_DNET_MODEL"); p != "" {

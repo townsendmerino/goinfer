@@ -24,9 +24,9 @@ func rawFunc(p Pipeline) *gc.Function { return (*pipeShim)(unsafe.Pointer(&p)).f
 
 var ptxEntry = regexp.MustCompile(`\.visible\s+\.entry\s+([A-Za-z_][A-Za-z0-9_$]*)`)
 
-// ptxModules is every PTX blob goinfer embeds, DERIVED from kernels.go's //go:embed list (audit
-// 2026-09-10 G-13(b)): the hand-written list covered 15 of 22 modules, so the census never saw
-// gptoss_act.ptx, the expert-cache path its moe_route precondition exists for. Reading
+// ptxModules is every PTX blob goinfer embeds, DERIVED from kernels.go's //go:embed list rather than
+// hand-listed, so the census cannot miss a new production module (a hand-written list once missed
+// gptoss_act.ptx, the expert-cache path the moe_route precondition exists for). Reading
 // testdata/<name>.ptx is byte-for-byte what go:embed embeds. TestPTXModules_coverEveryEmbed holds
 // the result to the embed list, as TestKernelFMALint_coversEmbeddedPTX does for the FMA lint.
 func ptxModules() []struct {
@@ -55,15 +55,12 @@ func ptxModules() []struct {
 // TestKernelLocalMemoryCensus reports CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES for every entry point in
 // every embedded module, and checks the backing-store multiplier against a measured reservation.
 //
-// A9 established that moe_route's first launch reserves 138,412,032 B, and did so by measuring two
-// kernels. Two kernels is a sample. Local memory per thread is a per-kernel compile-time property,
-// so any kernel with per-thread arrays carries its own deferred reservation, and nothing in the tree
-// reported them. This is the loop.
-//
-// It also settles the multiplier. "MOE_MAX_E 256 -> 512 doubled the cost from ~66 to 132 MiB"
-// assumes the backing store is linear in per-thread bytes with a constant occupancy factor. That is
-// an assumption about the driver, not an observation, and it is checked here against
-// multiProcessorCount x maxThreadsPerMultiProcessor rather than asserted.
+// Local memory per thread is a per-kernel compile-time property, so any kernel with per-thread
+// arrays carries its own deferred reservation (moe_route's first launch reserves 138,412,032 B,
+// TestMoERouteFirstLaunchReservation); this is the loop over all of them. It also settles the
+// multiplier: "MOE_MAX_E 256 -> 512 doubled the cost" assumes the backing store is linear in
+// per-thread bytes with a constant occupancy factor, an assumption about the driver that is checked
+// here against multiProcessorCount x maxThreadsPerMultiProcessor rather than asserted.
 func TestKernelLocalMemoryCensus(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -137,10 +134,10 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	}
 	t.Logf("%d entry points across %d modules; %d declare per-thread local memory",
 		len(rows), len(ptxModules()), nonZero)
-	// DENOMINATOR, stated every run. ptxModules() is DERIVED from kernels.go's own //go:embed
-	// list (audit 2026-09-10 G-13(b), see the function's own doc comment), not hand-maintained —
-	// so it cannot silently drop a new production module the way a hand-picked list could.
-	// Naming the modules examined still makes the set visible in the log, not just the count.
+	// DENOMINATOR, stated every run. ptxModules() is DERIVED from kernels.go's own //go:embed list
+	// (see its doc comment), not hand-maintained, so it cannot silently drop a new production module
+	// the way a hand-picked list could. Naming the modules examined still makes the set visible in the
+	// log, not just the count.
 	names := make([]string, 0, len(ptxModules()))
 	for _, m := range ptxModules() {
 		names = append(names, m.name)
@@ -148,16 +145,11 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	t.Logf("EXAMINED: %d module(s) — %s. Derived straight from kernels.go's //go:embed list, so "+
 		"this line names exactly what that list currently contains.",
 		len(names), strings.Join(names, " "))
-	// AUDITED 2026-09-12 against the embeds (docs/completed/cuda-megakernel-closeout.md): 31 .ptx
-	// blobs are go:embed-ed across cuda/*.go today, 22 of them in kernels.go — exactly what
-	// ptxModules() reports, since G-13(b) made it read that same file. The other 9
-	// (gemv_w4a8{,_coal,_coal2,_coal3,_coal4,_fast,_v4}.ptx, gemv_w8a8.ptx, addone.ptx) were
-	// referenced only from _test.go — variant-comparison blobs, no production path; the seven
-	// gemv_w4a8 variants were removed 2026-09-24 (last at 8f452a7e), leaving two; megakernel.ptx
-	// (the tenth such blob as of the prior audit) was deleted in this closeout along with the rest
-	// of the dead scaffold. Re-run this count (`grep -n go:embed cuda/*.go`, then which vars
-	// non-test files use) if kernels.go's own embed list ever needs independent confirmation —
-	// the derivation above means it can no longer drift silently, only the source file can move.
+	// Only the production embeds count: .ptx blobs embedded across cuda/*.go that no non-test file
+	// uses are variant-comparison blobs with no production path. If kernels.go's embed list ever needs
+	// independent confirmation, re-run the count (`grep -n go:embed cuda/*.go`, then which vars
+	// non-test files use); the derivation above means it can no longer drift silently, only the source
+	// file can move.
 	t.Logf("SUM of per-kernel backing stores at full occupancy: %d B (%.1f MiB) — an UPPER BOUND on "+
 		"the deferred cost, not a prediction: the driver may share or reuse a backing store across "+
 		"kernels, and nothing here shows that it allocates them all simultaneously",
@@ -165,9 +157,8 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 
 	// ---- PINNED: the per-kernel local footprint of the shipped PTX ----
 	//
-	// Item 6: a gate that asserts only "a reservation exists" lets a future MOE_MAX_E change double a
-	// hidden 132 MiB cost while still passing — the exercised-but-never-triggered shape, inside the
-	// gate written for this finding. So the BYTE FIGURES are pinned.
+	// A gate that asserts only "a reservation exists" lets a future MOE_MAX_E change double a hidden
+	// cost while still passing, so the BYTE FIGURES are pinned.
 	//
 	// This is the enumerated form, not a sample: every entry point with non-zero local memory is
 	// listed, so a regeneration that gives any kernel per-thread scratch trips the gate even if
@@ -177,8 +168,8 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"moe_route":       4416, // two float[MOE_MAX_E] at MOE_MAX_E=512, plus the group scratch
 		"rope_kv":         32,
 		"rope_kv_batched": 32,
-		// The next two were invisible until ptxModules() was derived from kernels.go's embeds
-		// (audit-2026-09-10 G-13(b)). Both figures are this census's first reading of them.
+		// The next two come from modules the census reads only because ptxModules() is derived from
+		// kernels.go's embeds.
 		"route_gptoss":          4608, // gptoss_act.ptx; larger than moe_route, so backend.go forces it too
 		"rope_kv_mrope_batched": 32,   // rope_mrope_prefill.ptx
 		// rope_pairwise.ptx: the GPT-J pairwise twins; the same 28 B cosf/sinf slow-path scratch
@@ -190,8 +181,8 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"mla_latent_store":         32, // mla.ptx (FeatMLA)
 		// deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
 		// scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
-		// registers (launch_bounds(128, 1) measured the same 96 B). 3.8 MiB at full occupancy, against the 1.23 s →
-		// 38 ms it bought on a 621-token Qwen3.5-9B prefill over the no-spill generic scan.
+		// registers (launch_bounds(128, 1) gives the same 96 B). That is 3.8 MiB at full occupancy, accepted
+		// for the speed over the no-spill generic scan.
 		"delta_rule_rows_128": 96,
 	}
 	got := map[string]int{}
@@ -217,19 +208,19 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		}
 	}
 
-	// ---- A9-FIX's precondition ----
+	// ---- the moe_route-forcing precondition ----
 	//
 	// BuildResident forces moe_route BY NAME before sizing the expert cache, which is only sound
-	// because the local-memory backing store is shared and sized by the LARGEST kernel (measured:
-	// launching the whole census gives a threshold and residual identical to moe_route alone, to the
-	// byte). Forcing the maximum forces the pool for everything.
+	// because the local-memory backing store is shared and sized by the LARGEST kernel (launching the
+	// whole census gives a threshold and residual identical to moe_route alone, to the byte). Forcing
+	// the maximum forces the pool for everything.
 	//
 	// That moe_route IS the maximum is checked here rather than assumed. Without this, a new kernel
 	// with deeper per-thread scratch would make the warm-up force the wrong pool, allocSlots would
 	// again size against memory about to be taken, and nothing would say so — naming one member of a
 	// set is the sibling-drift shape, and this is what keeps the naming honest.
 	//
-	// route_gptoss is the one exception, and it declares more (G-13(b)). It is bound only on gpt-oss,
+	// route_gptoss is the one exception, and it declares more. It is bound only on gpt-oss,
 	// and backend.go forces it in the same warm-up wherever it is bound; that launch is checked below.
 	// Every other kernel runs where moe_route alone is forced, so moe_route must be the maximum of
 	// the rest.
@@ -255,11 +246,10 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 
 	// ---- the multiplier, checked rather than assumed ----
 	//
-	// moe_route's reservation was MEASURED at 138,412,032 B (RTX 2070 SUPER, driver 595.58.03,
-	// 2026-08-12, both cuMemGetInfo and nvidia-smi agreeing). If the naive form
-	// local x SMs x maxThreadsPerSM reproduces it, the "256 -> 512 halves it" derivation is sound.
-	// If it does not, the multiplier carries something else and the derivation was doing more work
-	// than it looked.
+	// moe_route's reservation was measured at 138,412,032 B (TestMoERouteFirstLaunchReservation). If the
+	// naive form local x SMs x maxThreadsPerSM reproduces it, the "256 -> 512 doubles it" derivation is
+	// sound. If it does not, the multiplier carries something else and the derivation was doing more
+	// work than it looked.
 	const measuredMoERoute = 138412032
 	for _, r := range rows {
 		if r.fn != "moe_route" {

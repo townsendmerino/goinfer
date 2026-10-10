@@ -17,19 +17,18 @@ import (
 // loosening it to make the number go away.
 const hiddenLastResidentBarCUDA = 0.998
 
-// TestHiddenLastResidentParityCUDA is M-10's own gate (docs/audit-2026-09-10.md) — the CUDA twin of
-// metal/hiddenlast_resident_parity_test.go, which the finding named as missing ("Only Metal has a
-// hiddenlast_resident_parity_test.go"). Same shape: resident HiddenLast (cudaResident.HiddenLast /
+// TestHiddenLastResidentParityCUDA is the CUDA twin of metal/hiddenlast_resident_parity_test.go
+// (docs/audit-2026-09-10.md M-10). Same shape: resident HiddenLast (cudaResident.HiddenLast /
 // prefillChunked's tailHiddenLast) vs CPU HiddenLast, same int8int8 weights, called directly via
 // ResidentForwardForTest (bypassing decoder.Model.HiddenLast's own resBusy/fallback dispatch,
 // already covered by the fake-backend seam tests) so this isolates the KERNEL correctness question.
 //
-// This is also forceExactKernels' own integration proof (M-09/M-10/M-11): before that fix,
-// prefillCore's tailHiddenLast pass could silently engage useAttnFused/useGemmMMA whenever M/K/
-// position crossed their shape thresholds — this fixture's own M may or may not cross them, so a
-// failing run here without the fix would only be a coincidence; the real proof that forceExactKernels
-// is wired correctly is decoder/spec_verify_guard_test.go's pure unit coverage plus this test
-// passing at whatever cosine the real kernels produce, unaffected by prompt length.
+// It is also forceExactKernels' integration test: prefillCore's tailHiddenLast pass must not engage
+// useAttnFused/useGemmMMA when M/K/position cross their shape thresholds. This fixture's own M may
+// or may not cross them, so a red run without forceExactKernels is a coincidence, not a guarantee;
+// the real proof that forceExactKernels is wired correctly is decoder/spec_verify_guard_test.go's pure
+// unit coverage plus this test passing at whatever cosine the real kernels produce, unaffected by
+// prompt length.
 func TestHiddenLastResidentParityCUDA(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	requireDeviceAndFixture(t, ckpt)

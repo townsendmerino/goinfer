@@ -37,10 +37,8 @@ func requireDeviceAndFixture(t *testing.T, dir string) {
 // WHY THIS MATTERS MORE THAN IT LOOKS. A dropped alloc error is how an out-of-memory
 // condition disguises itself as a numerics bug. gc.Alloc returns (nil, err) when the card
 // is full; drop the err and the nil buffer reads back as ZEROS, so the assertion that
-// fires is "cosine 0.000000 — layout/unpack mismatch". That sentence sent two people
-// hunting a kernel bug for a day while the real cause was a VRAM leak saturating an 8 GB
-// card mid-suite (d8e81cb). The kernels were never wrong; the memory was gone, and every
-// test lied about why.
+// fires is "cosine 0.000000 — layout/unpack mismatch" while the real cause is a VRAM leak
+// saturating the card mid-suite (docs/code-notes/cuda.md#mustAlloc).
 //
 // The rule this encodes: a RESOURCE failure must say it is a resource failure. Tests may
 // legitimately skip when a GPU is absent or too small — but they must never silently
