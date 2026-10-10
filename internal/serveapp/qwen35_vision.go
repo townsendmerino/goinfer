@@ -11,31 +11,30 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Qwen3.5+ image serving (P8a, docs/multimodal.md P8 record). The route is the Qwen2.5-VL one —
-// preprocess → tower → GenerateQwenVL with m-RoPE — with two differences that live here:
-// the tower is loaded on first use, and an image is capped at qwen3MaxImageTokens.
+// Qwen3.5+ image serving (docs/multimodal.md, P8 record). The route is the Qwen2.5-VL one (preprocess, tower,
+// GenerateQwenVL with m-RoPE) with two differences that live here: the tower is loaded on first use, and an image is
+// capped at qwen3MaxImageTokens.
 
 // qwen3MaxImageTokens is the serve-side ceiling on merged image tokens per image. The checkpoint's own
-// preprocessor_config allows up to 16384 (longest_edge 16777216 px), which is not a usable request on
-// the CPU decode path an image turn takes today: a Gated-DeltaNet hybrid prefills one token at a time,
-// and the resident GPU paths cannot yet carry an image turn (docs/multimodal.md P8 record, item 5).
-// 1024 tokens is a 1024x1024 image. Larger images are smart-resized down to fit, exactly as the
-// processor would for its own max_pixels; a build-time constant, not an environment read.
+// preprocessor_config allows up to 16384 (longest_edge 16777216 px), which is not a usable request where an image
+// turn prefills on the CPU, one token at a time for a Gated-DeltaNet hybrid (docs/multimodal.md says which backends
+// carry an image turn resident). 1024 tokens is a 1024x1024 image. Larger images are smart-resized down to fit, as
+// the processor would for its own max_pixels; a build-time constant, not an environment read.
 const qwen3MaxImageTokens = 1024
 
 // qwen3Tower is a Qwen3.5+ vision tower that loads on first use. encoder() is safe for concurrent
 // callers; a failed load is remembered rather than retried on every request.
 type qwen3Tower struct {
 	dir    string
-	mmproj bool // dir is a GGUF mmproj file, not a checkpoint directory (P8b)
+	mmproj bool // dir is a GGUF mmproj file, not a checkpoint directory
 	quant  bool
-	plan   gridTowerPlan // where the tower runs (S2): the device it is built on at first use
+	plan   gridTowerPlan // where the tower runs: the device it is built on at first use
 	once   sync.Once
 	enc    *vision.Qwen3VisionEncoder
 	acc    multimodal.GridTowerAccelerator // nil: aikit's CPU tower
 	fb     deviceFallback                  // serializes the accelerator and falls back to the CPU on a device memory failure
 	err    error
-	deep   int // Qwen3-VL's DeepStack sets (S10); 0 for Qwen3.5+. A DeepStack tower runs on the CPU (no device tower yet)
+	deep   int // Qwen3-VL's DeepStack sets; 0 for Qwen3.5+ (see encoder for where a DeepStack tower runs)
 }
 
 func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
@@ -51,7 +50,7 @@ func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
 		}
 		if q.plan.device != "" {
 			acc, err := multimodal.NewQwen3Tower(q.plan.device, q.enc)
-			if err == nil && q.deep > 0 { // Qwen3-VL: the device tower must tap the DeepStack blocks (G-S10e)
+			if err == nil && q.deep > 0 { // Qwen3-VL: the device tower must tap the DeepStack blocks
 				if _, ok := acc.(multimodal.GridTowerTapper); !ok {
 					_ = acc.Close()
 					acc, err = nil, fmt.Errorf("the %s tower cannot tap the DeepStack blocks", q.plan.device)
@@ -86,10 +85,11 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 	})
 }
 
-// isQwen35VisionDir reports whether dir is a Qwen3.5+ checkpoint that carries a usable vision tower:
-// model_type qwen3_5/qwen3_5_moe, a non-empty vision_config with no DeepStack, and a preprocessor
-// config LoadQwen3PreprocessConfig accepts. Used for AUTO-discovery only: a stripped text-only copy
-// (no vision_config or no preprocessor_config.json) is simply not a vision model, not an error.
+// isQwen35VisionDir reports whether dir is a checkpoint that carries a usable Qwen3.5+ family vision tower:
+// model_type qwen3_5, qwen3_5_moe or qwen3_vl, a non-empty vision_config (with DeepStack indexes for qwen3_vl and
+// none for the others), and a preprocessor config LoadQwen3PreprocessConfig accepts. For auto-discovery only: a
+// stripped text-only copy (no vision_config or no preprocessor_config.json) is simply not a vision model, not an
+// error.
 func isQwen35VisionDir(dir string) bool {
 	mt := visionModelType(dir)
 	if mt != "qwen3_5" && mt != "qwen3_5_moe" && mt != "qwen3_vl" {
@@ -108,7 +108,7 @@ func isQwen35VisionDir(dir string) bool {
 	if json.Unmarshal(raw, &c) != nil || c.Vision == nil || c.Vision.Depth <= 0 {
 		return false
 	}
-	if (mt == "qwen3_vl") != (len(c.Vision.Deepstack) > 0) { // Qwen3-VL carries DeepStack (S10); Qwen3.5+ never does
+	if (mt == "qwen3_vl") != (len(c.Vision.Deepstack) > 0) { // Qwen3-VL carries DeepStack; Qwen3.5+ never does
 		return false
 	}
 	_, err = multimodal.LoadQwen3PreprocessConfig(dir)
@@ -164,9 +164,9 @@ func (s *server) loadQwen35VisionTower(dir string, int8Tower bool, backend strin
 	return s.attachQwen35Tower(tower, pp, dir)
 }
 
-// setupQwen35MMProj is setupQwen35Vision for a GGUF mmproj (P8b, docs/multimodal.md F5): the projector must be a
-// Qwen3.5+ one (qwen3vl_merger, aikit's refusals), its output width the text model's hidden width, and the text model a
-// Qwen3.5+ one; the preprocessing is the family's own config (an mmproj carries none), under the same serve cap.
+// setupQwen35MMProj is setupQwen35Vision for a GGUF mmproj (docs/multimodal.md): the projector must be a Qwen3.5+ one
+// (qwen3vl_merger, aikit's refusals), its output width the text model's hidden width, and the text model a Qwen3.5+
+// one; the preprocessing is the family's own config (an mmproj carries none), under the same serve cap.
 func setupQwen35MMProj(path, modelType string, textHidden int, int8Tower bool) (*qwen3Tower, multimodal.QwenPreprocessConfig, error) {
 	if modelType != "qwen3_5" && modelType != "qwen3_5_moe" {
 		return nil, multimodal.QwenPreprocessConfig{}, fmt.Errorf("-vision %s: a GGUF mmproj is supported for Qwen3.5+ models only; the model is %q", path, modelType)

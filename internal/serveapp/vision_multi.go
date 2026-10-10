@@ -11,11 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// S11 (docs/tasks/task-multimodal-support-2026-10.md, "S11, plan and gates"): several images in one message. Each image
-// is prepared on its own (its block, its placeholder count, its lazy tower), the blocks go where the image parts sat
-// among the text parts, and every block becomes its own decoder.ImageSpan: never two images in one block, even adjacent
-// and the same size (docs/multimodal.md, "Do not pair images"). One image takes the same path, so the single-image
-// prompt is this code with N = 1.
+// Several images in one message (docs/tasks/task-multimodal-support-2026-10.md, "S11, plan and gates"). Each image is
+// prepared on its own (its block, its placeholder count, its lazy tower), the blocks go where the image parts sat
+// among the text parts, and every block becomes its own decoder.ImageSpan: never two images in one block, even
+// adjacent and the same size (docs/multimodal.md, "Do not pair images"). One image takes the same path, so the
+// single-image prompt is this code with N = 1.
 
 // imagePrep is one image of an image prompt: its block text, its placeholder count, the lazy tower that fills it, and
 // what decoding needs (the Qwen grid, the DeepStack set count).
@@ -30,8 +30,8 @@ type imagePrep struct {
 	deepSets int
 }
 
-// imageKind is the image path a model's family takes: "gemma3", "qwen" or "gemma4". The others (GLM-OCR, audio,
-// Qwen3-ASR) keep their own one-media builders.
+// imageKind is the image path a model's family takes: "gemma3", "qwen", "gemma4" or "pixtral". The others (GLM-OCR,
+// audio, Qwen3-ASR) keep their own one-media builders.
 func (lm *loadedModel) imageKind() string {
 	switch {
 	case lm.pixtral != nil:
@@ -71,7 +71,7 @@ func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 			return p, err
 		}
 		n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
-		deepSets := lm.qwenDeepstackSets() // Qwen3-VL (S10): the features carry this many DeepStack sets after the merged rows
+		deepSets := lm.qwenDeepstackSets() // Qwen3-VL: the features carry this many DeepStack sets after the merged rows
 		p.n, p.grid, p.deepSets = n, grid, deepSets
 		p.features = func() ([]float32, error) {
 			feats, err := lm.qwenForward(pv, grid)
@@ -83,10 +83,8 @@ func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 			}
 			return feats, nil
 		}
-		// M-38 (audit-2026-09-10): Qwen2.5-VL's real chat_template.json (verified live against
-		// Qwen/Qwen2.5-VL-7B-Instruct) splices <|vision_start|><|image_pad|><|vision_end|> inline
-		// with NO adjacent newline on either side — the trailing "\n" this used to append doesn't
-		// exist in the real template.
+		// Qwen2.5-VL's real chat_template.json splices <|vision_start|><|image_pad|><|vision_end|> inline with no
+		// adjacent newline on either side, so the block carries none.
 		p.block = multimodal.QwenImageBlock(n)
 	case "gemma4":
 		patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)
@@ -105,9 +103,8 @@ func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 			}
 			return feats, nil
 		}
-		// M-38 (audit-2026-09-10): Gemma 4's own processor (processing_gemma4.py, verified against the
-		// real transformers source) does f"{boi_token}{image_tokens}{eoi_token}" — no adjacent
-		// newline at all, unlike the trailing "\n" this used to append.
+		// Gemma 4's own processor (processing_gemma4.py) builds f"{boi_token}{image_tokens}{eoi_token}": no adjacent
+		// newline at all, so the block carries none.
 		p.block = multimodal.Gemma4ImageBlock(n)
 	default:
 		pv, err := vision.Preprocess(img.data, lm.vcfg)
@@ -135,10 +132,9 @@ func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 	return p, nil
 }
 
-// placeImageBlocks puts blocks[k] where image k sat in its message (S11). ordered says the images' offsets (imageRef.at,
+// placeImageBlocks puts blocks[k] where image k sat in its message. ordered says the images' offsets (imageRef.at,
 // byte offsets into msgText, the message's joined text parts) apply to content: true when content ends with msgText,
-// the message's own turn (or a turn it was merged onto). Otherwise every block leads the content in order, which is
-// where one image always went before S11.
+// the message's own turn (or a turn it was merged onto). Otherwise every block leads the content, in order.
 func placeImageBlocks(content, msgText string, ordered bool, imgs []imageRef, blocks []string) string {
 	if !ordered || msgText == "" || !strings.HasSuffix(content, msgText) {
 		return strings.Join(blocks, "") + content
@@ -276,8 +272,8 @@ func (lm *loadedModel) cachedFeatures(tower func() ([]float32, error), raw []byt
 	return lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 }
 
-// visionPromptN is visionPrompt for every image of a message (S11). One medium that is not an image of a multi-image
-// family (an audio clip, a GLM-OCR page, Qwen3-ASR) takes visionPrompt; two or more must all be images, on a family that
+// visionPromptN is visionPrompt for every image of a message. One medium that is not an image of a multi-image family
+// (an audio clip, a GLM-OCR page, Qwen3-ASR) takes visionPrompt; two or more must all be images, on a family that
 // takes several.
 func (lm *loadedModel) visionPromptN(tm *chat.Template, system string, turns []chat.Turn, imgs []imageRef, ordered bool, msgText string) (visionInput, error) {
 	for _, img := range imgs {

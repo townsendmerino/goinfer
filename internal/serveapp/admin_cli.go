@@ -13,9 +13,8 @@ import (
 	"time"
 )
 
-// isAdminCLICmd reports whether args[0] (when present) names one of K5's one-word admin
-// subcommands (docs/tasks/task-halt-2026-09.md), dispatched from Main() the same way `pull`/`check`
-// already are — before flag.Parse, since each gets its own flag set.
+// isAdminCLICmd reports whether cmd names one of the one-word admin subcommands, dispatched from Main() like `pull`
+// and `check`, before flag.Parse, since each gets its own flag set.
 func isAdminCLICmd(cmd string) bool {
 	switch cmd {
 	case "status", "ls", "cancel", "halt", "resume":
@@ -24,16 +23,14 @@ func isAdminCLICmd(cmd string) bool {
 	return false
 }
 
-// runAdminCLI implements `<binary> status|ls|cancel <id> [reason]|halt [reason]|resume`, talking
-// to the admin socket a running `serve -admin-socket ...` set up (K5). No -api-key: the socket's
-// file permissions are the auth, so this CLI needs none either — it just has to be running as
-// whichever user can open the socket file.
+// runAdminCLI implements `<binary> status|ls|cancel <id> [reason]|halt [reason]|resume` against the admin socket a
+// running `serve -admin-socket ...` set up. There is no -api-key: the socket's file permissions are the auth, so this
+// must run as a user who can open the socket file.
 func runAdminCLI(cmd string, args []string, self string) int {
 	fs := flag.NewFlagSet(self+" "+cmd, flag.ExitOnError)
-	// NOTE: -admin-socket must come BEFORE any positional reason text (`halt -admin-socket
-	// <path> "reason"`, not the reverse) — Go's flag package stops parsing flags at the first
-	// non-flag argument, so a reason typed first silently falls back to the default path
-	// instead of erroring. Documented in the flag's own --help text too.
+	// NOTE: -admin-socket must come before any positional reason text (`halt -admin-socket <path> "reason"`, not the
+	// reverse): Go's flag package stops parsing at the first non-flag argument, so a reason typed first silently
+	// falls back to the default path instead of erroring. The flag's --help text says so too.
 	sockPath := fs.String("admin-socket", defaultAdminSocketPath(),
 		"path to the running server's admin socket; must match its own -admin-socket. Must be given before any positional argument (e.g. a halt reason)")
 	fs.Parse(args)

@@ -24,9 +24,10 @@ func isEmbeddingGemma2(dir string) bool {
 	return json.Unmarshal(raw, &c) == nil && c.ModelType == "embedding_gemma2"
 }
 
-// loadEmbeddingGemma2 loads an EmbeddingGemma 2 checkpoint as the /v1/embeddings model (docs/tasks/task-embeddinggemma2.md,
-// Gate 3). It runs in float32 on the CPU only, so -embed-quant other than f32 is refused rather than dropped (the M-17
-// class: a quant flag that silently does nothing). `dimensions` takes exactly the model's Matryoshka widths.
+// loadEmbeddingGemma2 loads an EmbeddingGemma 2 checkpoint as the /v1/embeddings model
+// (docs/tasks/task-embeddinggemma2.md). It runs in float32, on the CPU or, where chooseEG2Device picks it, on Metal,
+// so -embed-quant other than f32 is refused rather than dropped (a quant flag that silently does nothing).
+// `dimensions` takes exactly the model's Matryoshka widths.
 func (s *server) loadEmbeddingGemma2(cfg config) error {
 	switch strings.ToLower(cfg.embedQuant) {
 	case "", "f32":
@@ -86,10 +87,9 @@ type eg2Accelerable interface {
 	UseAccelerator(name string) (embeddinggemma2.Accelerator, error)
 }
 
-// chooseEG2Device puts the encoder on the GPU when serve's resolved backend is Metal (Phase M of
-// docs/tasks/task-embeddinggemma2.md), and says where it runs. Metal failing to start falls back to the CPU with the
-// reason, unless -require-backend asks for a refusal instead. Other backends run it on the CPU: its only GPU path is
-// Metal so far.
+// chooseEG2Device puts the encoder on the GPU when serve's resolved backend is Metal and says where it runs. Metal
+// failing to start falls back to the CPU with the reason, unless -require-backend asks for a refusal instead. Other
+// backends run it on the CPU: its only GPU path is Metal.
 func chooseEG2Device(e eg2Accelerable, backend string, require bool) (string, error) {
 	switch backend {
 	case "metal":

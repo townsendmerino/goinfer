@@ -1,12 +1,13 @@
 package serveapp
 
-// POST /v1/systemone — TypeSafe's decisions wire shape (D5 of docs/tasks/task-constrained-confidence.md; the request
-// and response JSON are recorded verbatim in docs/measurements/decisions-d0-prior-art-2026-09-27.md §3), answered by
-// label scoring on the served model (Route A, internal/decide). It exists so jevx and TypeSafe's SDKs (JS, Python,
-// Vercel, LangChain), which all take a base-URL override, work against goinfer unchanged.
+// POST /v1/systemone is TypeSafe's decisions wire shape (docs/tasks/task-constrained-confidence.md; the request and
+// response JSON are recorded verbatim in docs/measurements/decisions-d0-prior-art-2026-09-27.md section 3), answered
+// by label scoring on the served model (internal/decide), or by the entry's trained decision head or Clef model where
+// it has one. It exists so jevx and TypeSafe's SDKs (JS, Python, Vercel, LangChain), which all take a base-URL
+// override, work against goinfer unchanged.
 //
-// What it is not: TypeSafe's hosted model or a trained decision head. Its distributions are the served model's own
-// probabilities over the options, calibrated only for a kind whose temperature -decisions-calibration supplies (the
+// What it is not: TypeSafe's hosted model. Its distributions are the served model's own probabilities over the
+// options (or a trained head's), calibrated only for a kind whose temperature -decisions-calibration supplies (the
 // response's goinfer.calibrated says which).
 
 import (
@@ -55,8 +56,8 @@ func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
-	// A Clef entry (Route C) reads the request as the reference's encoder does, from the raw body, so it never goes through the label route's per-question
-	// translation (which would impose that route's limits and change the prompt text).
+	// A Clef entry reads the request as the reference's encoder does, from the raw body, so it never goes through the
+	// label route's per-question translation (which would impose that route's limits and change the prompt text).
 	if s.isClefModel(req.Model) {
 		s.withModel(w, req.Model, func(lm *loadedModel) { s.serveClef(w, r, lm, body, req.Questions) })
 		return
@@ -175,8 +176,9 @@ func (s *server) serveSystemOne(w http.ResponseWriter, r *http.Request, lm *load
 	calibrated := map[string]bool{}
 	dropped := []string{} // questions whose option descriptions a decision head did not read
 	inputTokens := 0
-	// All the questions at once: where the model can share work between them (the CPU Qwen3.5 path, D8) the prefix their prompts share is prefilled once and each
-	// question resumes from a copy of that cache; elsewhere DecideMany is one Decide per question, exactly as this loop used to be.
+	// DecideMany takes all the questions at once: where the model can share work between them, the prefix their
+	// prompts share is prefilled once and each question resumes from a copy of that cache; elsewhere it is one Decide
+	// per question.
 	reqs := make([]decide.Request, len(items))
 	for i, it := range items {
 		reqs[i] = it.req
@@ -267,8 +269,8 @@ func (lm *loadedModel) getDecider(cfg config) (*decide.Decider, error) {
 			}
 		}
 		if lm.head != nil {
-			// Route B: the head's own template and calibration.json. -decisions-template and -decisions-calibration
-			// describe label scoring and do not apply to a head.
+			// A head carries its own template and calibration.json: -decisions-template and -decisions-calibration
+			// describe label scoring and do not apply to it.
 			lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), nil,
 				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(lm.model), HiddenMany: decide.ModelHiddenMany(lm.model)})
 			return

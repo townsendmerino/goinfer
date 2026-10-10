@@ -11,17 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// sessionLRU keeps up to size prefilled KV sessions and hands each request the
-// one that already holds its prompt as a prefix — so a continuing chat (or an
-// agent loop with a fixed system prompt + tool specs) prefills only the new
-// suffix instead of the whole history. It is the cmd/serve layer over
-// decoder.Session; the decoder does the exact prefix reuse, the LRU just decides
-// which session to reuse and which to evict.
+// sessionLRU keeps up to size prefilled KV sessions and hands each request the one that already holds its prompt as a
+// prefix, so a continuing chat (or an agent loop with a fixed system prompt and tool specs) prefills only the new
+// suffix instead of the whole history. It is the serve layer over decoder.Session: the decoder does the exact prefix
+// reuse, the LRU decides which session to reuse and which to evict.
 //
-// Not goroutine-safe. The server holds s.mu across every generation, which
-// serializes all access — the same lock that already serializes the shared model.
-// The optional tiered-KV demotion (see enableTiering) runs under that same lock,
-// so the background demoter and the request path never race.
+// Not goroutine-safe. Every access, including the optional tiered-KV demotion (see enableTiering) from its background
+// ticker, is under the owner's lock (loadedModel.sessMu), which is held around LRU operations only, not across a
+// generation: a session a generation is using is checked out instead (see busy).
 type sessionLRU struct {
 	model   *decoder.Model
 	size    int
@@ -30,9 +27,8 @@ type sessionLRU struct {
 	adapter string             // compute-time LoRA adapter name bound to every session here (#7); "" = base
 	order   []*decoder.Session // most-recently-used first; resident in RAM; len ≤ size
 
-	// Tiered KV (idea #8): demote idle warm sessions RAM → NVMe. Zero value =
-	// disabled, in which case behavior is exactly the original RAM-only LRU.
-	// Enabled via enableTiering; demoteAfter > 0 is the on switch.
+	// Tiered KV: demote idle warm sessions from RAM to NVMe. The zero value is disabled, in which case behavior is
+	// the plain RAM-only LRU. enableTiering turns it on (demoteAfter > 0 is the switch).
 	demoteAfter time.Duration                  // idle threshold; a session untouched this long is demoted
 	demotedMax  int                            // cap on the on-disk cold tier (older cold sessions are evicted)
 	dir         string                         // where cold blobs are written (the model's -session-dir subdir)
@@ -41,11 +37,10 @@ type sessionLRU struct {
 	seq         int                            // monotonic counter for unique cold-blob filenames
 	now         func() time.Time               // clock seam (tests override); defaults to time.Now
 
-	// busy holds the sessions an in-flight generation has checked out (MC3c, docs/tasks/task-concurrency-2026-09.md:
-	// -max-concurrent lets several generations of one CPU model run at once). A busy session is never handed out,
-	// evicted, demoted or saved, and its tokens are never read here — its generation is writing them — until
-	// checkin. Every access to the LRU, this included, is still under the caller's lock (loadedModel.sessMu); what
-	// changed is that the lock is no longer held across the generation itself.
+	// busy holds the sessions an in-flight generation has checked out (-max-concurrent lets several generations of
+	// one CPU model run at once). A busy session is never handed out, evicted, demoted or saved, and its tokens are
+	// never read here (its generation is writing them) until checkin. Every access to the LRU is under the caller's
+	// lock (loadedModel.sessMu), which is not held across the generation itself.
 	busy map[*decoder.Session]bool
 }
 
@@ -57,11 +52,9 @@ type coldSession struct {
 	path   string
 }
 
-// KV snapshots and cold blobs are the CONVERSATION, not a cache of public data: a .giw-kv blob
-// replays what the user said and what the model answered. They were written 0o644 inside a 0o755
-// directory, so every local account could read them (audit-2026-09-02 N-21). Owner-only, both
-// levels — the directory matters as much as the files, since a readable directory lists the
-// session ids.
+// KV snapshots and cold blobs are the conversation, not a cache of public data: a .giw-kv blob replays what the user
+// said and what the model answered. They are written owner-only at both levels, directory and files, since a readable
+// directory lists the session ids.
 const (
 	sessionDirPerm  = 0o700
 	sessionFilePerm = 0o600
@@ -74,10 +67,9 @@ func newSessionLRU(m *decoder.Model, size, capHint int, fp string) *sessionLRU {
 	return &sessionLRU{model: m, size: size, capHint: capHint, fp: fp, now: time.Now}
 }
 
-// newSession creates an empty session bound to this LRU's compute-time adapter
-// (#7) — so every session it hands out projects through the right fine-tune. Base
-// LRUs (adapter == "") get a plain session. UseAdapter can't fail here: the
-// adapter was registered on the shared model at load before any LRU referenced it.
+// newSession creates an empty session bound to this LRU's compute-time adapter, so every session it hands out
+// projects through the right fine-tune. Base LRUs (adapter == "") get a plain session. UseAdapter cannot fail here:
+// the adapter was registered on the shared model at load, before any LRU referenced it.
 func (l *sessionLRU) newSession() *decoder.Session {
 	s := l.model.NewSession(l.capHint)
 	l.bindAdapter(s)
@@ -131,22 +123,16 @@ func (l *sessionLRU) mark(s *decoder.Session) {
 	}
 }
 
-// acquire returns the session to generate prompt against and marks it most-
-// recently-used. It reuses whichever session's stored tokens share the longest
-// prefix with prompt (L-15), not only an exact continuation — the decoder's own
-// rewindForReuse truncates that session's cache to the shared length and
-// prefills just the divergent suffix. This also covers a stop-string hit, a
-// max_tokens cut mid-word, or an edited last message (P-18): each commits a few
-// tokens the client's next prompt can't reproduce, which the old whole-
-// containment rule rejected outright, cold-prefilling and evicting a session
-// that was almost entirely reusable. A prompt that merely shares a system-prompt
-// preamble with some other conversation's session still does NOT hijack it —
-// bestExtend requires beating what that session shares with every OTHER known
-// session, not just any nonzero match — so distinct conversations keep their own
-// slots. Anything else gets a fresh slot, evicting the coldest session when full.
+// acquire returns the session to generate prompt against and marks it most recently used. It reuses whichever
+// session's stored tokens share the longest prefix with prompt, not only an exact continuation: the decoder's own
+// rewindForReuse truncates that session's cache to the shared length and prefills just the divergent suffix. That
+// covers a stop-string hit, a max_tokens cut mid-word, or an edited last message, each of which commits a few tokens
+// the client's next prompt cannot reproduce. A prompt that merely shares a system-prompt preamble with some other
+// conversation's session does not hijack it: bestExtend requires beating what that session shares with every other
+// known session, so distinct conversations keep their own slots. Anything else gets a fresh slot, evicting the
+// coldest idle session when full.
 //
-// With size 0 reuse is disabled: every call gets a throwaway session (the old
-// re-prefill-everything behavior).
+// With size 0 reuse is disabled: every call gets a throwaway session.
 func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	if l.size == 0 {
 		return l.newSession()
@@ -205,21 +191,13 @@ func (l *sessionLRU) coldestIdle() int {
 	return -1
 }
 
-// bestExtend returns the index of the session whose common prefix with prompt is
-// longest (L-15), preferring reuse whenever a candidate's match beats what that
-// same candidate merely shares with every OTHER known session — a shared
-// system-prompt preamble alone never qualifies, however long, or any two
-// conversations that open the same way would evict each other's own turns.
-// This subsumes the old whole-containment rule (an exact continuation's match is
-// its own full length, which always clears the floor set by other sessions) and
-// additionally catches P-18's cases: a stop-string hit, a max_tokens cut
-// mid-word, or an edited last message each commit a few tokens the client's next
-// prompt can't reproduce, so the session's own tokens are no longer FULLY
-// contained in prompt even though almost all of them still are — the old rule
-// rejected these outright and cold-prefilled instead. The decoder's own
-// rewindForReuse (decoder/session.go) truncates the chosen session's cache to
-// the matched length; bestExtend only picks which session gets that treatment.
-// -1 if nothing qualifies.
+// bestExtend returns the index of the session whose common prefix with prompt is longest, preferring reuse whenever a
+// candidate's match beats what that same candidate shares with every other known session. A shared system-prompt
+// preamble alone never qualifies, however long: otherwise any two conversations that open the same way would evict
+// each other's turns. An exact continuation's match is its own full length, which always clears the floor other
+// sessions set, and a partial match (a stop-string hit, a mid-word max_tokens cut, an edited last message) qualifies
+// too. The decoder's rewindForReuse (decoder/session.go) truncates the chosen session's cache to the matched length;
+// bestExtend only picks which session gets that treatment. -1 if nothing qualifies.
 func bestExtend(sessions [][]int, prompt []int) int {
 	best, bestMatch := -1, 0
 	for i, toks := range sessions {
@@ -277,11 +255,10 @@ func (l *sessionLRU) fresh() *decoder.Session {
 
 // --- tiered KV: demote idle / overflow sessions to disk, fault back on demand ---
 
-// demoteIdle moves every resident session untouched for longer than demoteAfter
-// into the on-disk cold tier, freeing its RAM. Returns the number demoted. The
-// server calls this from a background ticker under the model lock; it is a no-op
-// when tiering is off. Sessions whose cache can't be serialized (a recurrent
-// hybrid cache) are left resident.
+// demoteIdle moves every resident session untouched for longer than demoteAfter into the on-disk cold tier, freeing
+// its RAM, and returns the number demoted. The server calls it from a background ticker under loadedModel.sessMu; it
+// is a no-op when tiering is off. Sessions whose cache cannot be serialized (a recurrent hybrid cache) are left
+// resident.
 func (l *sessionLRU) demoteIdle() int {
 	if !l.tiering() {
 		return 0
@@ -462,10 +439,8 @@ func (l *sessionLRU) save(dir string) error {
 		}
 		blob := s.Snapshot(l.fp)
 		if blob == nil {
-			// Snapshot refuses RECURRENT state (Mamba-2 / DeltaNet / LFM2 conv / MLA latent),
-			// which cannot be restored from a KV blob. It used to refuse sliding-window rings
-			// too, and this line still said so — rings have been persistable since
-			// kvSnapVersion 2 (N-34).
+			// Snapshot refuses recurrent state (Mamba-2 / DeltaNet / LFM2 conv / MLA latent), which cannot be
+			// restored from a KV blob.
 			continue
 		}
 		p := filepath.Join(dir, fmt.Sprintf("session-%02d%s", i, sessionSnapExt))
@@ -523,13 +498,12 @@ func sessionDirOK(dir string) error {
 
 // pickSession is acquire's choice: bestExtend's candidate, unless the LRU has room for a fresh session (spare) and
 // reusing the candidate would throw away more of it than it keeps. bestExtend's floor learns the shared preamble only
-// from OTHER resident sessions, so with a single one it cannot tell a chat-template preamble from a continuation: two
-// interleaved conversations then took each other's session on every turn, each truncating the other to the preamble,
-// and the LRU never grew past one session (MC0, docs/tasks/task-concurrency-2026-09.md, 2026-09-26: 7 tokens reused per
-// turn at 2 clients, 0.69x the 1-client aggregate on CPU). A fresh session costs only re-prefilling the shared lead;
-// the truncation costs the other conversation its history. P-18's partial matches (a stop-string tail, an edited last
-// message) keep most of their session and still reuse. With no room, reusing the candidate IS the eviction, so it
-// stands. -1 means take a fresh session.
+// from other resident sessions, so with a single one it cannot tell a chat-template preamble from a continuation: two
+// interleaved conversations then take each other's session on every turn, each truncating the other to the preamble,
+// and the LRU never grows past one session. A fresh session costs only re-prefilling the shared lead; the truncation
+// costs the other conversation its history. Partial matches (a stop-string tail, an edited last message) keep most of
+// their session and still reuse. With no room, reusing the candidate is the eviction, so it stands. -1 means take a
+// fresh session.
 func pickSession(sessions [][]int, prompt []int, spare bool) int {
 	i := bestExtend(sessions, prompt)
 	if i >= 0 && spare {

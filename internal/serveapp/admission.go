@@ -6,17 +6,14 @@ import (
 	"sync"
 )
 
-// admissionRecord is what a future scheduler reads to decide ordering — J1 keeps strict FIFO and
-// never inspects this itself (task-work-queue-2026-09.md: "J1 itself keeps strict FIFO — it
-// establishes the structure and changes no order"). promptIDs is this repo's own "session/prefix
-// key": sessionLRU (sessions.go's bestExtend) has no client-visible session id at all — it matches
-// purely by longest-common-prefix over a request's actual prompt token ids against the sessions
-// currently resident — so the ids themselves are what a later prefix-aware scheduler (J6) would
-// need to run that same match against the LRU at pick time.
+// admissionRecord is what a scheduler would read to decide ordering; admission keeps strict FIFO and never inspects
+// it. promptIDs is this repo's session/prefix key: sessionLRU matches purely by longest common prefix over a
+// request's prompt token ids against the resident sessions (bestExtend, sessions.go) and has no client-visible
+// session id, so a prefix-aware scheduler would run that same match against the LRU at pick time.
 type admissionRecord struct {
 	promptIDs []int
-	// id names the waiter for position() — a job's id (W28: a page shows its own job's place in line).
-	// "" for requests nothing will ever ask about; position() simply never matches them.
+	// id names the waiter for position() (a job's id: a page shows its own job's place in line). "" for requests
+	// nothing will ask about; position() never matches them.
 	id string
 }
 
@@ -27,25 +24,16 @@ type turnWaiter struct {
 	rec   admissionRecord
 }
 
-// admission is a size-1, FIFO, context-aware turn-granter (J1, task-work-queue-2026-09.md),
-// replacing loadedModel's plain sync.Mutex. A mutex has no notion of context: a waiter blocked on
-// Lock() cannot notice its own client disconnecting, or a K2 halt landing, until it is actually
-// GRANTED the lock — at which point it has already occupied its place in line for nothing, and
-// everything behind it waits that much longer. admission.enter drops out the instant ctx ends,
-// whether or not the turn has been granted yet, so a dead request never delays a live one.
+// admission is a FIFO, context-aware turn-granter: up to cap holders at once, one by default (the zero value is ready
+// to use and admits one; setCap widens it for -max-concurrent). It replaces a plain mutex, which cannot notice a
+// waiter's client disconnecting, or a halt, until the waiter is granted the lock, by which point the dead request has
+// held its place for nothing and delayed everyone behind it. enter drops out the instant ctx ends, granted or not.
 //
-// FIFO order only; it does not reorder waiters on anything in admissionRecord — that is left for
-// J6 (prefix-aware scheduling) and J7 (classes/priorities) to build on top of, not decided here.
+// Strict FIFO: waiters are not reordered on anything in admissionRecord.
 //
-// Modeled on golang.org/x/sync/semaphore.Weighted's Acquire, specialized to weight-1 (one holder
-// at a time — ground rule: "one decode worker per model stays," task-work-queue-2026-09.md's own
-// "Ground rules" §1). The MECHANISM is reused, not the package: pulling in a dependency for one
-// specialized case would be the wrong trade for a three-method primitive this repo can own and
-// test directly (task-work-queue-2026-09.md's own ground rule 4: "no new root module dependency").
-//
-// Zero value is ready to use — no constructor needed — and admits ONE holder. setCap widens it (MC3c,
-// docs/tasks/task-concurrency-2026-09.md: -max-concurrent on a CPU model): up to cap holders at once, still strict FIFO
-// for everyone waiting.
+// Modeled on golang.org/x/sync/semaphore.Weighted's Acquire, specialized to weight 1. The mechanism is reused, not
+// the package: a dependency is the wrong trade for a three-method primitive this repo can own and test directly (the
+// work-queue task doc's rule: no new root module dependency).
 type admission struct {
 	mu      sync.Mutex
 	held    int       // turns currently granted
@@ -69,10 +57,9 @@ func (a *admission) load() int {
 	return a.held + a.waiters.Len()
 }
 
-// enter blocks until this waiter holds a turn or ctx ends first. The immediate-admit fast path
-// (a turn free, nobody else waiting) never allocates or blocks. release() must be called exactly
-// once by whoever gets ok=true, when done running — see loadedModel.exit(). Turns are
-// interchangeable, so no per-request closure is needed here.
+// enter blocks until this waiter holds a turn or ctx ends first. The immediate-admit fast path (a turn free, nobody
+// else waiting) neither allocates nor blocks. Whoever gets ok=true must call release exactly once when done (see
+// loadedModel.exit). Turns are interchangeable, so no per-request closure is needed.
 func (a *admission) enter(ctx context.Context, rec admissionRecord) (ok bool) {
 	a.mu.Lock()
 	if a.held < a.capacity() && a.waiters.Len() == 0 {
@@ -106,10 +93,9 @@ func (a *admission) enter(ctx context.Context, rec admissionRecord) (ok bool) {
 	}
 }
 
-// position reports where the waiter with this id stands: its place among the waiters (1 = next to be
-// granted the turn), how many are waiting in all, and whether one is running now. ok is false when no
-// waiter has this id — it was never queued, has already been granted the turn, or dropped out. Order is
-// exactly arrival order: J1 is strict FIFO, and J6's reordering was measured and not shipped.
+// position reports where the waiter with this id stands: its place among the waiters (1 = next to be granted the
+// turn), how many are waiting in all, and whether one is running now. ok is false when no waiter has this id: it was
+// never queued, has already been granted the turn, or dropped out. Order is exactly arrival order.
 func (a *admission) position(id string) (place, waiting int, running, ok bool) {
 	if id == "" {
 		return 0, 0, false, false

@@ -10,26 +10,17 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cliutil"
 )
 
-// versionReport is what `serve --version` prints. Its load-bearing line is `backends:` — the
-// list of backends COMPILED INTO this binary, which is not the same thing as the list
-// --backend accepts.
-//
-// R2 (docs/measurements/cold-user-2026-09-06.md, finding #3): the v0.16.0 darwin release asset
-// was built from the root cmd/serve, which links no backend at all. `--backend metal` on it
-// therefore ran on CPU — 37.9 tok/s against the 82.3 the same box does with Metal — and the
-// only signal was one warning line that scrolled past before the banner. Nothing on the binary
-// could be asked. Now it can be, without loading a model, which is also what the release
-// workflow greps to prove each asset carries the backend for its platform.
-// injectedVersion is set via `-ldflags -X` on a release-built binary. R6 (docs/measurements/
-// cold-user-2026-09-06-nobara-pc.md): the v0.17.0 linux-amd64 release asset's `--version`
-// printed "v0.0.0-20260907045005-f36b095ac9a1+dirty", not "v0.17.0" — R2-follow-on's
-// `go mod edit -replace` on the ephemeral submodule checkout is an uncommitted go.mod edit, and
-// that alone is enough for the VCS stamp to read "modified". A binary built the ordinary way
-// (`go install .../cmd/serve@v0.17.0`, no replace, no ephemeral checkout) is unaffected and
-// keeps reporting its real tag from cliutil.BuildIdent with no injection at all — this only overrides
-// the release workflow's own path.
+// injectedVersion is set via `-ldflags -X` on a release-built binary, because the release workflow's own path stamps
+// a dirty pseudo-version: its `go mod edit -replace` on the ephemeral submodule checkout is an uncommitted go.mod
+// edit, which alone makes the VCS stamp read "modified". A binary built the ordinary way (`go install
+// .../cmd/serve@vX.Y.Z`, no replace, no ephemeral checkout) is unaffected and reports its real tag from
+// cliutil.BuildIdent with no injection at all.
 var injectedVersion string
 
+// versionReport is what `serve --version` prints. Its load-bearing line is `backends:`, the list of backends compiled
+// into this binary, which is not the list --backend accepts: a binary that links no backend runs `--backend metal` on the
+// CPU, with only a warning line that scrolls past before the banner. The line can be read without loading a model, and
+// the release workflow greps it to prove each asset carries the backend for its platform.
 func versionReport(prog string) string {
 	var b strings.Builder
 	version, revision := cliutil.BuildIdent(injectedVersion)
@@ -57,9 +48,8 @@ func isVersionArg(a string) bool {
 	return false
 }
 
-// countFlags reports how many flags are registered, so the help header's "all N flags" line cannot
-// drift from reality the way a hand-typed count would. That drift is the same defect class as the
-// parity manifest's hand-typed aikit_version, which sat seventeen versions stale.
+// countFlags reports how many flags are registered, so the help header's "all N flags" line cannot drift from reality
+// the way a hand-typed count would.
 func countFlags() int {
 	n := 0
 	flag.VisitAll(func(*flag.Flag) { n++ })
