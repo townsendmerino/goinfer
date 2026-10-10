@@ -32,7 +32,9 @@ mkdir -p "$OUT/graded" "$OUT/cuda"
 SIDECAR=$MODEL.int4.cpu-amd64.giw
 [ -n "${GS10QD_DRY:-}" ] && { echo "DRY: preconditions hold; plan = sidecar ($([ -e "$SIDECAR" ] && echo present || echo "to build")), graded =cpu,cpu at int4, then the reported cuda arm"; exit 0; }
 cd "$SRC"
-FLAGS=(--model "$MODEL" --vision "$MODEL" --quant int4)
+# int4 is serve's default and is left unset on purpose: at the pinned rev an explicit --quant int4 on a MoE directory is
+# refused against the sidecar the same load builds (its header says int4mix; the task doc's G-S10q-d record).
+FLAGS=(--model "$MODEL" --vision "$MODEL")
 
 if [ -e "$SIDECAR" ]; then
   echo "[$(date +%T)] 0/2 sidecar: present ($SIDECAR)"
