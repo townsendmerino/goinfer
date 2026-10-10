@@ -2642,6 +2642,92 @@ families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models
   - A GPU Pixtral tower (none declared on any backend).
   - Mistral Small 3.x's 24B: the same `PixtralVisionModel` architecture, never run.
 
+**S10, LFM2.5-VL: desk map, plan and gates, registered 2026-10-09 before any code** (owner: "on to s10s families", then
+"continue"). Checkpoint `LiquidAI/LFM2.5-VL-1.6B` (bf16, `~/models/lfm25-vl-1.6b` on nobara; the LFM Open License v1.0,
+`license: other` on the hub). The 450M (a smaller SigLIP2) and the 3B are the same `lfm2_vl` architecture and are not part of
+these gates.
+
+**Gate 0, the desk map** (transformers 5.12.0's `lfm2_vl` and `siglip2` sources on nobara, and the checkpoint's own
+`config.json`, `processor_config.json` and `chat_template.jinja`, read 2026-10-09):
+- **Preprocessing** (`Lfm2VlImageProcessorFast`, through the full `Lfm2VlProcessor`):
+  - Bilinear resize with antialias on uint8 (`resample` 2), then (x/255 - 0.5)/0.5.
+  - An image is "too large" when its size, rounded to multiples of 32, exceeds 256 tokens x 32² x 2.0 (the pixel
+    tolerance). A too-large image is resized to a grid of 512x512 tiles. The grid is the (w, h) pair with 2 <= w·h <= 10
+    whose aspect is closest to the image's; on a tie, the later pair wins when the image covers more than half its area.
+    The tiles are followed by a thumbnail.
+  - Otherwise, or as the thumbnail, it is smart-resized: each side rounded to a multiple of 32, then scaled so the token
+    count lies between 64 and 256 (floor on shrink, ceil on growth).
+  - Each tile or thumbnail is patchified into 16x16 patches, each flattened (row, column, channel), channels innermost,
+    and runs through the tower on its own (the padding to 1,024 patches is masked).
+- **Token layout:** `<|image_start|>`, then for a multi-tile image each tile in row-major order as `<|img_row_R_col_C|>`
+  followed by its 256 `<image>` (id 396), then `<|img_thumbnail|>` and the thumbnail's tokens, then `<|image_end|>`. A
+  single-tile image is `<|image_start|>`, its tokens, `<|image_end|>`. The features replace the `<image>` positions only.
+- **The tower** (`Siglip2VisionModel`, NaFlex, 27 layers, hidden 1152, 16 heads, no head):
+  - A linear patch embedding over the 768-value patch vector.
+  - A learned 16x16 position table, resized to each tile's patch grid with `F.interpolate(bilinear, align_corners=False,
+    antialias=True)`.
+  - SigLIP's pre-norm blocks (LayerNorm eps 1e-6, biased q/k/v/o, GELU-tanh MLP), then `post_layernorm`. The output is
+    `last_hidden_state`.
+- **Projector:**
+  - A 2x2 pixel unshuffle over each tile's patch grid. Unit (r, c) takes patches (2r+j, 2c+k) laid out
+    `[(2j+k)·1152 + channel]`: position-major, the opposite of Pixtral's merger.
+  - No LayerNorm, then linear 4608->2048 (bias), GELU (erf), linear 2048->2048 (bias).
+- **Decoder:**
+  - `lfm2` (LFM2-1.2B's shape: 16 layers, 10 short-conv and 6 attention).
+  - Plain 1-D positions and causal attention; the image rows also run through the conv layers in order.
+  - goinfer's `lfm2` is CPU only (no backend implements its short convolution) and runs one token at a time
+    (`runLayersLFM2(id)`). It has no entry that takes an embedding.
+- **Chat:** the checkpoint's template is ChatML after a BOS. An image part is `<image>` in content order, with no newline
+  around it.
+- **Today:** serve has no `lfm2_vl` loader. aikit has no SigLIP2 NaFlex tower and no antialiased bilinear resize.
+
+**Plan:**
+1. **aikit** (a local branch `s10-lfm2vl`, released when done):
+   - `ResizeBilinearAA`: the existing antialiased uint8 resize with a triangle filter.
+   - `Siglip2NaFlexEncoder`: the linear patch embedding, the antialiased position-table resize in float32, SigLIP's
+     blocks and `post_layernorm`, one tile per call.
+   - A tiny-tower test against HF.
+2. **goinfer** (worktree branch `s10-lfm2vl`):
+   - The preprocessing (`multimodal`): too-large, the grid, smart resize, tiles plus thumbnail, patchify.
+   - The projector and the prompt block.
+   - `runLayersLFM2FromEmbed` and a per-token causal image prefill for `lfm2` behind the causal span entry, with one span
+     per tile and thumbnail. It is CPU only, so no resident path.
+   - Serve's `lfm2_vl` branch and the support-table row.
+
+**Gates:**
+- **G-S10l-a, preprocessing:** against the full HF processor (`~/.venv-vl`) on the four F2a images and three layout
+  cases:
+  - a 1000x20 strip (one tile, smart resize);
+  - a 3000x2000 image (the grid search);
+  - 84x56 (upscaled to the 64-token floor).
+  - Grid, tile count, thumbnail size and token counts equal; pixels within one 8-bit level (0.0078 after normalising).
+    torchvision's uint8 bilinear is fixed point, so exactness is the target and one level the bar.
+- **G-S10l-b, the tower and projector on the real 1.6B:**
+  - Every stage (patch embedding plus positions, each block, `post_layernorm`, the unshuffle, linear_1, linear_2) at
+    worst row cosine >= 0.9999, on every tile and thumbnail of the four images. HF's tower runs alone in float32 from its
+    own pixels; 0.999-0.9999 is ambiguous (parked).
+  - aikit's tiny tower (norms randomised, a position table that both shrinks and grows) and goinfer's tiny projector,
+    with planted defects each red:
+    1. the position table resized without antialias;
+    2. patches flattened channel-major;
+    3. `post_layernorm` dropped;
+    4. the unshuffle channel-major (Pixtral's order).
+- **G-S10l-c, the full model on an image prompt against HF `Lfm2VlForConditionalGeneration`:**
+  - Float32, nobara, an explicit system message, goinfer's ids, a multi-tile image. G-S5b's bar: last-position cosine
+    >= 0.999, argmax equal, argmax agreement >= 95% over the text after the image.
+  - Planted defects, each red:
+    1. the tiles' features in column-major order;
+    2. the thumbnail's features placed first;
+    3. features written over the `<|img_row_R_col_C|>` markers.
+- **G-S10l-d, served:**
+  - One-image and two-image requests through serve on the Mac (`--backend cpu`) and a second CPU run: identical replies.
+  - The one-image prompt's ids equal G-S10l-c's.
+  - A `--backend metal` arm must decline the image turn to the CPU path by name, not fail, since `lfm2` has no GPU
+    decoder.
+- **Tier:** b and c hold about 8 GB in float32 on nobara, each well under 10 minutes, so by day.
+
+**Size:** aikit about 400 lines, goinfer about 900, both with tests: M, as registered for S10.
+
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
 owner's choice is that decision. The dev checkpoint is `Qwen/Qwen3-VL-2B-Instruct`, downloaded on nobara (`~/models/
