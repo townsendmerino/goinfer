@@ -5,9 +5,8 @@ import (
 	"strings"
 )
 
-// Skip bucketing — ported verbatim in BEHAVIOUR from scripts/skip_census.py, whose rule order is
-// itself load-bearing (first match wins: fixture before device before heavy). The buckets come
-// from docs/parity-coverage-policy.md, "A gate must be able to run, and able to fail":
+// Skip bucketing. The rule order is load-bearing (first match wins: fixture before device before heavy).
+// The buckets come from docs/parity-coverage-policy.md, "A gate must be able to run, and able to fail":
 //
 //	missing-fixture  a committed golden over a gitignored checkpoint (regen: scripts/pin_*.py)
 //	missing-golden   no *_golden.json recorded yet

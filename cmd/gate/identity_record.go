@@ -1,8 +1,8 @@
 package main
 
-// `gate identity -record FILE` (TE6(b), docs/tasks/task-test-efficiency-2026-09.md; owner decision 2026-09-28: a
-// family's validation may be inherited by identity). It writes PARITY_ROW lines for the decoder package's
-// TestParityManifest_merge, the manifest's one writer, and never writes the manifest itself.
+// `gate identity -record FILE` (TE6(b), docs/tasks/task-test-efficiency-2026-09.md): a family's validation may
+// be inherited by identity. It writes PARITY_ROW lines for the decoder package's TestParityManifest_merge, the
+// manifest's one writer, and never writes the manifest itself.
 //
 // A family is eligible only when identity is proof of the SAME numerics its T3 oracle validated:
 //   - its row is `validated` under a T3 method (or an earlier identity-inherited one);

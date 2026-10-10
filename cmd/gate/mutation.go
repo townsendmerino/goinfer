@@ -12,34 +12,22 @@ import (
 	"syscall"
 )
 
-// A gate's own gate, committed rather than typed.
+// gate mutation: a gate's own gate, committed rather than typed. A gate must land with a demonstration
+// it can FAIL, and an ad-hoc one-liner for that has reported a mutation as verified while nothing ran:
+// `command -v staticcheck && staticcheck …` short-circuited to nothing when the binary was off PATH, and
+// `python3 lint.py | head -3; echo "exit=$?"` read head's status, not the lint's. A mutation check that
+// silently reads the wrong status certifies a gate as falsifiable when nothing ran.
 //
-// The policy requires that a gate land with a demonstration it can FAIL. Running that demonstration
-// as an ad-hoc one-liner produced two defects of its own in this repo, and BOTH reported a mutation
-// as verified while nothing had been exercised:
-//
-//   - `command -v staticcheck >/dev/null && staticcheck …` — the binary was not on PATH, the &&
-//     short-circuited, the whole check evaluated to nothing, and it was reported as clean.
-//   - `python3 lint.py 2>&1 | head -3; echo "exit=$?"` — $? read head's status, not the lint's, so a
-//     red mutation printed exit=0.
-//
-// A mutation check that silently reads the wrong status certifies a gate as falsifiable when nothing
-// ran: G-01 inside the mechanism built to prevent G-01.
-//
-// THE SHELL VERSION DEFENDED AGAINST THAT BY DISCIPLINE — "the status path here contains NO PIPES
-// and no && chains" — which is a rule someone has to keep remembering. Here there is no status path
-// to get wrong: exec.Cmd.Run returns the command's own error, and a missing `sed` is an explicit
-// LookPath failure rather than a short-circuit that evaluates to success. The class is gone by
-// construction, which is the whole argument for the migration (E8 §2).
+// Here there is no status path to get wrong: exec.Cmd.Run returns the command's own error, and a missing
+// `sed` is an explicit LookPath failure rather than a short-circuit that evaluates to success.
 //
 // Usage:
 //
 //	gate mutation <name> <file> <sed-expr> <verify-cmd...>
 //
 //	<file>      is backed up and restored, including on failure or interrupt.
-//	<sed-expr>  is applied in place; it MUST change the file (asserted — a no-op mutation is the
-//	            defect that makes a mutation check vacuous, and it happened: float32(v/sc) where
-//	            both operands were already float32).
+//	<sed-expr>  is applied in place; it MUST change the file (asserted: a no-op mutation makes a
+//	            mutation check vacuous).
 //	<verify>    must EXIT 0 before the mutation and NON-ZERO after it.
 //
 // Example:
@@ -95,10 +83,9 @@ func runMutation(argv []string, w io.Writer) int {
 		_ = os.WriteFile(file, original, info.Mode().Perm())
 		_ = os.Remove(bak)
 	}
-	// RESTORE ON INTERRUPT, not only on return. This edits a source file in place, so Ctrl-C between
-	// the mutation and the restore would otherwise leave a deliberately broken tree behind — and the
-	// next thing the operator runs would fail for a reason that has nothing to do with their change.
-	// A deferred call does not run on a signal, so the handler is explicit.
+	// RESTORE ON INTERRUPT, not only on return: this edits a source file in place, so Ctrl-C between the
+	// mutation and the restore would leave a deliberately broken tree behind. A deferred call does not run on
+	// a signal, so the handler is explicit.
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	done := make(chan struct{})
@@ -125,18 +112,12 @@ func runMutation(argv []string, w io.Writer) int {
 	}
 	fmt.Fprintf(w, "  baseline green\n")
 
-	// 2. MUTATE, and assert the mutation actually CHANGED something. A sed expression that matches
-	//    nothing leaves a green run that looks like a verified mutation check.
-	//	NO `sed -i`, DELIBERATELY, AND THIS IS NOT A STYLE CHOICE. GNU sed takes an OPTIONAL suffix
-	//	attached to the flag (`-i.bak`), so `sed -i EXPR file` edits in place; BSD sed (macOS) takes a
-	//	REQUIRED separate suffix, so the same argv makes EXPR the backup suffix and `file` the
-	//	expression — "sed: 1: \"subject.txt\": unterminated substitute pattern". The shell script this
-	//	replaces carried that bug for its whole life and nobody saw it, because it is a hand-run
-	//	operator tool that nobody ran on the Mac. Moving it into Go put it under CI's darwin job,
-	//	which failed on it within one push.
+	// 2. MUTATE, and assert the mutation actually CHANGED something: a sed expression that matches nothing
+	// leaves a green run that looks like a verified mutation check.
 	//
-	//	Reading sed's STDOUT and writing the file from Go is portable across both, and it puts the
-	//	file write on the side of the line that owns state anyway.
+	// NO `sed -i`, deliberately and not as a style choice. GNU sed takes an OPTIONAL suffix attached to the
+	// flag (`-i.bak`), BSD sed (macOS) a REQUIRED separate one, so the same argv makes EXPR the backup suffix
+	// on BSD. Reading sed's STDOUT and writing the file from Go is portable across both (sedArgs pins it).
 	mutated, err := exec.Command("sed", sedArgs(expr, file)...).Output()
 	if err != nil {
 		msg := err.Error()

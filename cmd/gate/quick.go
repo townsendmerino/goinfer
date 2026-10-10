@@ -342,10 +342,10 @@ func lintJobs(qc *quickConfig, g *quickGraph, s *quickSelection, overlay, rundir
 		}
 	}
 	if canary {
-		// PROVE THE GATE CAN GO RED. An empty staticcheck result is indistinguishable from one that
-		// never analysed anything: a version-skewed binary prints only an internal error about
-		// importing internal/cpu and checks nothing (CLAUDE.md; a U1000 held CI red for three pushes).
-		// So every run shows the binary finding the defect CI once shipped, in a four-line package.
+		// PROVE THE GATE CAN GO RED. An empty staticcheck result is indistinguishable from one that never
+		// analysed anything: a version-skewed binary prints only an internal error about importing internal/cpu
+		// and checks nothing (CLAUDE.md). So every run shows the binary finding the defect CI once shipped (an
+		// unused struct field, U1000) in a four-line package.
 		dir := filepath.Join(rundir, "staticcheck-canary")
 		_ = os.MkdirAll(dir, 0o755)
 		_ = os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module canary\n\ngo 1.21\n"), 0o644)

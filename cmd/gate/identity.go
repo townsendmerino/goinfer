@@ -20,14 +20,13 @@ import (
 	"time"
 )
 
-// `gate identity <old-rev> <new-rev>` — inherit validation by identity (TE6(b),
+// `gate identity <old-rev> <new-rev>`: inherit validation by identity (TE6(b),
 // docs/tasks/task-test-efficiency-2026-09.md).
 //
 // For a change meant to be numerically neutral, the cheapest complete proof is byte-identical logits
-// against the last validated build on the family's parity prompt. This formalizes what L1 did by hand
-// (task-cpu-decode-peer-gap-2026-09.md, "L1 build: the Mac half"): build ONE small dumper at each
-// revision, dump full logits (prefill + N greedy steps, raw little-endian float32) for each family's
-// parity prompt(s), and compare bytes.
+// against the last validated build on the family's parity prompt: build ONE small dumper at each revision,
+// dump full logits (prefill + N greedy steps, raw little-endian float32) for each family's parity
+// prompt(s), and compare bytes.
 //
 //   - Two temporary `git worktree`s, detached, outside the repo; removed afterwards (also on SIGINT).
 //     The main working tree is never touched. The dumper is written into each worktree and built
@@ -38,12 +37,10 @@ import (
 //     WITHIN TOLERANCE, never IDENTICAL. On the CPU that nondeterminism is TE6's kill criterion.
 //   - A SKIP IS NOT A PASS: a family whose asset is missing, whose load fails in both builds, or whose
 //     GPU cell fell back to the CPU is NOT RUN, listed separately with the reason.
-//   - BOTH SIDES SEE ONE ENVIRONMENT. Every GOINFER_* variable is removed from the dumpers' env. L1's
-//     manual check hit the trap this closes: an env diagnostic given to the OLD side only
-//     (GOINFER_INT4_F16_SCALES) did not reach the .giw reader, so the "old" build ran something other
-//     than what the comparison claimed, and the dumps differed from byte 1 for a reason that was not
-//     the change. Here the only thing that differs between the two runs is the code; the decode path
-//     each side reports is printed, and a path difference is flagged.
+//   - BOTH SIDES SEE ONE ENVIRONMENT. Every GOINFER_* variable is removed from the dumpers' env: a
+//     diagnostic given to one side only may not reach everything it claims to, and the dumps then differ
+//     from byte 1 for a reason that is not the change. The only thing that differs between the two runs is
+//     the code; the decode path each side reports is printed, and a path difference is flagged.
 //   - The parity manifest is NOT written: what an "identity-inherited" row would record is printed,
 //     and whether to make it a manifest method is the owner's decision.
 

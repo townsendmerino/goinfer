@@ -1,9 +1,9 @@
 package main
 
-// The gate ledger (B14): the record of gate results a PERSON has confirmed. Ported from
-// scripts/gate_ledger.py (2026-09-25) so the parity sweep no longer shells out to Python; the file
-// format, the source key and every verdict are byte-for-byte what the script produced — existing
-// confirmations stay valid (TestLedger_matchesThePythonImplementation pins it).
+// The gate ledger (B14): the record of gate results a PERSON has confirmed. The file format, the source key
+// and every verdict are byte-for-byte what the original Python implementation produced, so existing
+// confirmations stay valid (TestLedger_realLedgerRoundTripsByteIdentical and
+// TestLedger_sourceKeyMatchesThePythonImplementation pin it).
 //
 // WHY IT EXISTS. A gate reporting FAIL on its FIRST EXECUTION is asserting a delta it has no second
 // point to compute: there is no prior result to differ from. So there is a fourth outcome, FIRST-RUN,
@@ -121,12 +121,11 @@ func findEntry(d *ledgerDoc, gate string) map[string]any {
 
 func entryStr(e map[string]any, k string) string { s, _ := e[k].(string); return s }
 
-// gateFuncSource returns the gate's own function body — the `func <name>(` line through the first
-// line starting with "}" — or ok=false if no *_test.go under root (outside testdata/) defines it.
-// Deliberately dumb, as the script was: a parser that can be wrong in subtle ways is worse here than
-// one that fails loudly, and "not found" is handled as "cannot key this gate", never as "unchanged".
-// Files are visited in the same order the script's sorted(ROOT.rglob("*_test.go")) visited them, so
-// a name defined twice resolves to the same definition.
+// gateFuncSource returns the gate's own function body (the `func <name>(` line through the first line
+// starting with "}") or ok=false if no *_test.go under root (outside testdata/) defines it. Deliberately
+// dumb: a parser that can be wrong in subtle ways is worse here than one that fails loudly, and "not
+// found" is handled as "cannot key this gate", never as "unchanged". Files are visited in sorted order, so
+// a name defined twice resolves to the same definition every run.
 func gateFuncSource(root, name string) (string, bool) {
 	pat := regexp.MustCompile(`^func ` + regexp.QuoteMeta(name) + `\(`)
 	var src string

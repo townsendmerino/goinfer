@@ -10,24 +10,16 @@ import (
 	"strings"
 )
 
-// The release gate's coverage COMPOSITION along its axes — family × quant × loader.
+// The release gate's coverage COMPOSITION along its axes: family × quant × loader.
 //
-// THE RULE THIS IMPLEMENTS: a gate whose value depends on an axis must print its composition along
-// that axis. The sweep reported pass/fail per gate with nothing saying what the set SPANNED, and
-// that is the shape that let the forward goldens report "19 passed" through nine deps_hash refreshes
-// while every one of the 19 was f32 — an accurate count that could not distinguish "the axis is
-// covered" from "the axis collapsed to one value".
+// THE RULE THIS IMPLEMENTS: a gate whose value depends on an axis must print its composition along that
+// axis. A pass count cannot distinguish "the axis is covered" from "the axis collapsed to one value" (the
+// forward goldens once reported "19 passed" while all 19 were f32).
 //
-// DERIVED, NOT DECLARED. Quant comes from grepping each gate's own test source for `Quant: "..."`,
-// and loader from the test name. Hand-maintained axis metadata beside the gate list would be a
-// second copy to drift, which is the defect this repo keeps finding. A gate whose test source
-// cannot be located is reported as UNKNOWN rather than defaulted to f32 — defaulting would inflate
-// the f32 count with gates nobody checked, which is the opposite of the point.
-//
-// MIGRATED FROM scripts/sweep_composition.py (E8). It had to move in the same commit as the sweep
-// itself, not "later as a config": it PARSED the `GATES=(…)` array out of parity_sweep.sh with a
-// regexp, so deleting that shell script would have broken it outright. The gate list is now the Go
-// slice both sides read, which removes the parse rather than reimplementing it.
+// DERIVED, NOT DECLARED. Quant comes from grepping each gate's own test source for `Quant: "..."`, and
+// loader from the test name: hand-maintained axis metadata beside the gate list would be a second copy to
+// drift. A gate whose test source cannot be located is reported as UNKNOWN rather than defaulted to f32,
+// which would inflate the f32 count with gates nobody checked.
 
 var (
 	quantRe  = regexp.MustCompile(`Quant:\s*"([a-z0-9]+)"`)

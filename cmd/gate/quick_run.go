@@ -116,9 +116,9 @@ func runJobs(jobs []*quickJob, j int, rundir string, progress io.Writer, beat ti
 		started := false
 		if len(running) < j {
 			for i, jb := range pending {
-				// A checkpoint loader runs alone. Measured 2026-09-28 on the MacBook: with only the
-				// other LOADERS held back, examples/confidence's f32 load (3.6 GB) still met 3.4 GB
-				// available beside decoder, metal and their compiles, and was refused; alone it had 5.8.
+				// A checkpoint loader runs alone: with only the other LOADERS held back, a real-checkpoint f32 load still
+				// met too little free memory beside the decoder and metal compiles and was refused by the fit guard; alone
+				// it has room.
 				if memBusy || (jb.Mem && len(running) > 0) || (jb.Device && devBusy) || (rootOf(jb) != nil && busyRoot[rootOf(jb)]) {
 					continue
 				}
