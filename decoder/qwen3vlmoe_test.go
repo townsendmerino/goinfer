@@ -192,27 +192,24 @@ func TestQwen3VLMoe_tinyPlantedDefects(t *testing.T) {
 	}
 }
 
-// TestFusedLayout pins the layout rule loadFusedExperts reads by: a shape matching one layout decides it, a square one
-// falls to the family's declared layout, anything else is refused.
+// TestFusedLayout pins the layout rule loadFusedExperts reads by, HF's own (Transpose(1, 2, check_dims=True)): the row
+// shape reads as rows, the square case included (HF does not transpose it either); only the transposed shape reads
+// transposed; anything else is refused.
 func TestFusedLayout(t *testing.T) {
 	for _, c := range []struct {
 		shape          []int
-		legacy         bool
+		a, b           int
 		wantTransposed bool
 		wantErr        bool
 	}{
-		{[]int{128, 1536, 2048}, false, false, false}, // Qwen3.5-MoE's [E, 2I, H]
-		{[]int{128, 2048, 1536}, false, true, false},  // the 4.57 layout [E, H, 2I], whatever the family says
-		{[]int{8, 64, 64}, true, true, false},         // square: the family decides
-		{[]int{8, 64, 64}, false, false, false},
-		{[]int{128, 1536 * 2048}, false, false, true}, // equal element count, wrong shape: refused
+		{[]int{128, 1536, 2048}, 1536, 2048, false, false}, // Qwen3.5-MoE's [E, 2I, H]
+		{[]int{128, 2048, 1536}, 1536, 2048, true, false},  // the 4.57 layout [E, H, 2I]
+		{[]int{8, 64, 64}, 64, 64, false, false},           // square: HF reads it as is
+		{[]int{128, 1536 * 2048}, 1536, 2048, false, true}, // equal element count, wrong shape: refused
 	} {
-		got, err := fusedLayout("t", c.shape, c.shape[0], 1536, 2048, c.legacy)
-		if c.shape[1] == 64 {
-			got, err = fusedLayout("t", c.shape, 8, 64, 64, c.legacy)
-		}
+		got, err := fusedLayout("t", c.shape, c.shape[0], c.a, c.b)
 		if (err != nil) != c.wantErr || (err == nil && got != c.wantTransposed) {
-			t.Errorf("shape %v legacy %v: transposed %v err %v; want %v, error %v", c.shape, c.legacy, got, err, c.wantTransposed, c.wantErr)
+			t.Errorf("shape %v: transposed %v err %v; want %v, error %v", c.shape, got, err, c.wantTransposed, c.wantErr)
 		}
 	}
 }
