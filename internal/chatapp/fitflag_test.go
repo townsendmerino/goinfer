@@ -12,10 +12,9 @@ import (
 // shared with the other binary and unit-tested in internal/cliutil. What stays here is the part
 // that is per-binary: that THIS binary registers --fit with it.
 
-// TestFitFlag_realBinaryAcceptsOff proves the fix through the FULL registered flag.CommandLine,
-// not just cliutil.OnOff.Set in isolation — --version exits before touching a model, so this is a
-// cheap way to prove "--fit=off" (the spelling tasks/task-fit-to-hardware.md promises) parses cleanly
-// end to end, where a plain flag.BoolVar would exit 2 with "invalid boolean value".
+// TestFitFlag_realBinaryAcceptsOff pins that --fit=off (the spelling docs/tasks/task-fit-to-hardware.md promises) parses
+// through the FULL registered flag.CommandLine, not just cliutil.OnOff.Set in isolation: a plain flag.BoolVar would exit
+// 2 with "invalid boolean value". --version exits before touching a model, so this is cheap.
 func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
@@ -47,11 +46,11 @@ func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {
 	}
 }
 
-// TestExactPrefillFlag_realBinaryParses is M-26 (audit-2026-09-10): chatapp had no --exact-prefill
-// flag at all despite docs/completed/task-prefill-gap.md documenting it as existing on this REPL.
-// Same discipline as TestFitFlag_realBinaryAcceptsOff: proves the flag is actually REGISTERED on
-// the real flag.CommandLine (a typo'd flag.Bool name would make this exit 2 with "flag provided
-// but not defined"), not just present in source. --version exits before touching a model.
+// TestExactPrefillFlag_realBinaryParses pins that --exact-prefill (documented in docs/completed/task-prefill-gap.md as a
+// flag of this REPL) is REGISTERED on the real flag.CommandLine, not just present in source: a typo'd flag.Bool name
+// would exit 2 with "flag provided but not defined". Same discipline as TestFitFlag_realBinaryAcceptsOff; --version
+// exits before touching a model. Origin (M-26):
+// docs/code-notes/internal-chatapp.md#TestExactPrefillFlag_realBinaryParses.
 func TestExactPrefillFlag_realBinaryParses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")

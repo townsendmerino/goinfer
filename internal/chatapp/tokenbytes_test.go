@@ -11,19 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestJSONMasker_reusesCachedTokenBytes is P-17's demo half (audit-2026-09-10): jsonMasker used to
-// rebuild the constraint masker's token→bytes table (constrain.TokenBytes(s.vocab,
-// s.tk.TokenText)) on every constrained turn — the same O(vocab) rebuild serve's own
-// cachedTokenBytes exists to avoid. newSession now builds it once into s.tokenBytes instead, and
-// jsonMasker must read that cached field rather than touching the tokenizer again.
+// TestJSONMasker_reusesCachedTokenBytes pins that jsonMasker reads the token-to-bytes table newSession builds once into
+// s.tokenBytes, instead of rebuilding constrain.TokenBytes(s.vocab, s.tk.TokenText), an O(vocab) cost, on every
+// constrained turn (the rebuild serve's cachedTokenBytes exists to avoid).
 //
-// Proven by nil-ing s.tk AFTER building s.tokenBytes by hand (mirroring newSession's own one-line
-// wiring) and confirming jsonMasker still runs: if it still called s.tk.TokenText, this would
-// panic on the nil pointer instead of silently passing. No committed fixture pairs a real
-// tokenizer with a loadable model (internal/serveapp/prefillpath_test.go's tinyServed notes the
-// same gap: "the committed tiny GGUF carries no embedded tokenizer"), so newSession's own
-// construction isn't exercised end-to-end here — its wiring is the one-line
-// `s.tokenBytes = constrain.TokenBytes(...)` this test's setup mirrors exactly.
+// Proof: s.tk is nil-ed after s.tokenBytes is built by hand (mirroring newSession's one-line wiring), so a call to
+// s.tk.TokenText panics. No committed fixture pairs a real tokenizer with a loadable model (see tinyServed in
+// internal/serveapp/prefillpath_test.go), so newSession's own construction is not exercised end to end. Origin (P-17):
+// docs/code-notes/internal-chatapp.md#TestJSONMasker_reusesCachedTokenBytes.
 func TestJSONMasker_reusesCachedTokenBytes(t *testing.T) {
 	const vocab = 8
 	s := &session{
@@ -39,13 +34,12 @@ func TestJSONMasker_reusesCachedTokenBytes(t *testing.T) {
 	}
 }
 
-// TestJSONMasker_holdsBackTemplateStopIDs is N-71 (docs/audit-2026-09-10.md): jsonMasker only
-// held back EOS/EndOfTurn, not the chat template's own turn-stop ids (s.stopIDs) — Llama-3's
-// <|eot_id|> and harmony's <|end|> are neither, so a constrained generation for those families
-// could emit the real stop token mid-document instead of it being masked. A held-back id must
-// be masked to -Inf before the grammar can end (an empty document is not valid JSON yet, so
-// CanEnd is false here) — internal/serveapp/openai.go's own masker already unions eosIDs with
-// stopIDs; this pins the demo doing the same.
+// TestJSONMasker_holdsBackTemplateStopIDs pins that jsonMasker holds back the chat template's own turn-stop ids
+// (s.stopIDs), not only EOS/EndOfTurn: Llama-3's <|eot_id|> and harmony's <|end|> are neither, so an unheld one could be
+// emitted mid-document on a constrained generation. A held-back id must be masked to -Inf before the grammar can end (an
+// empty document is not valid JSON yet, so CanEnd is false here), as internal/serveapp/openai.go's masker does by
+// unioning eosIDs with stopIDs. Origin (N-71):
+// docs/code-notes/internal-chatapp.md#TestJSONMasker_holdsBackTemplateStopIDs.
 func TestJSONMasker_holdsBackTemplateStopIDs(t *testing.T) {
 	const vocab = 8
 	const stopID = 5 // e.g. Llama-3's <|eot_id|> — not EOS, not EndOfTurn
@@ -66,14 +60,12 @@ func TestJSONMasker_holdsBackTemplateStopIDs(t *testing.T) {
 	}
 }
 
-// TestJSONMasker_warnsOnUnreachableSchemaCompileFailure is N-78 (docs/audit-2026-09-10.md):
-// jsonMasker's fallback for a schema that fails to compile used to be SILENT — main's flag
-// parsing already fail-fasts (os.Exit) on an invalid --schema before s.schema is ever set, so in
-// practice this branch never fires via the CLI, but a silent downgrade is still the wrong shape
-// for the day something else sets s.schema without going through that check. This drives the
-// branch directly (bypassing the CLI's fail-fast, which is the whole point) by constructing a
-// session with intentionally-invalid schema bytes, and asserts the fallback is now visible on
-// stderr rather than swallowed.
+// TestJSONMasker_warnsOnUnreachableSchemaCompileFailure pins that jsonMasker's fallback for a schema that fails to
+// compile is visible on stderr, not silent. main's flag parsing already fail-fasts (os.Exit) on an invalid --schema
+// before s.schema is set, so the branch never fires via the CLI, but a silent downgrade is the wrong shape for the day
+// something else sets s.schema without that check. The test drives the branch directly, bypassing the fail-fast, with a
+// session holding intentionally invalid schema bytes. Origin (N-78):
+// docs/code-notes/internal-chatapp.md#TestJSONMasker_warnsOnUnreachableSchemaCompileFailure.
 func TestJSONMasker_warnsOnUnreachableSchemaCompileFailure(t *testing.T) {
 	const vocab = 8
 	s := &session{

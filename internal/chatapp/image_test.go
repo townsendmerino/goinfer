@@ -245,12 +245,12 @@ func TestImagePrompt_modelReadsTheTemplate(t *testing.T) {
 	}
 }
 
-// TestChatImage_demoEndToEnd is the one-line demo, on the real checkpoint: the real goinfer-chat binary (pure Go, CPU,
-// int4: about 75 s, most of it the vision tower) on the committed rendered invoice (NOT a real scan) with the committed
-// schema. Heavy: needs GOINFER_HEAVY_TESTS=1 and ~/models/glm-ocr, and skips cleanly without either. The assertions are loose
-// on purpose (the exact text is int4-sensitive): stdout is JSON with every schema key, the invoice number is the one printed
-// at the top of the page, and the total is 1140.55; "every key present" is the grammar's contract, the two values are the
-// model reading the page.
+// TestChatImage_demoEndToEnd is the one-line demo on the real checkpoint: the real goinfer-chat binary (pure Go, CPU,
+// int4; slow, most of it the vision tower) on the committed rendered invoice (NOT a real scan) with the committed
+// schema. Heavy: needs GOINFER_HEAVY_TESTS=1 and ~/models/glm-ocr, and skips cleanly without either. The assertions are
+// loose on purpose (the exact text is int4-sensitive): stdout is JSON with every schema key, the invoice number is the
+// one printed at the top of the page, and the total is 1140.55; "every key present" is the grammar's contract, the two
+// values are the model reading the page.
 func TestChatImage_demoEndToEnd(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a 2.7 GB model, runs the CPU tower)")

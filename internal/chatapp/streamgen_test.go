@@ -8,16 +8,13 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestStreamGen_matchesWholeSequenceDecode is P-17's deferred demo half (audit-2026-09-10):
-// streamGen decodes each token INCREMENTALLY (DecodePiece, appended to a strings.Builder) instead
-// of re-decoding the whole generated slice every token — proven here against a REAL tokenizer by
-// comparing the concatenation of every flushed chunk to tk.DecodeContinuation(ids), the
-// established whole-sequence reference for a CONTINUATION (not a fresh sequence — see DecodePiece
-// and DecodeContinuation's own doc comments on why Decode's leading-space strip does not apply
-// here). TestDecodeContinuation_isIncrementallyAssociative (tokenizer/) proves the underlying
-// per-piece concatenation property directly; this proves THIS function's own cursor/flush
-// bookkeeping composes with it correctly, end to end, with no model needed (streamGen takes the
-// token channel directly).
+// TestStreamGen_matchesWholeSequenceDecode pins that streamGen decodes each token incrementally (DecodePiece into a
+// strings.Builder) instead of re-decoding the whole slice every token: against a real tokenizer, the concatenation of
+// every flushed chunk must equal tk.DecodeContinuation(ids), the whole-sequence reference for a continuation (not a
+// fresh sequence; see DecodePiece and DecodeContinuation on why Decode's leading-space strip does not apply).
+// TestDecodeContinuation_isIncrementallyAssociative (tokenizer/) proves the per-piece property; this proves streamGen's
+// cursor/flush bookkeeping composes with it, with no model, since streamGen takes the token channel directly. Origin
+// (P-17): docs/code-notes/internal-chatapp.md#TestStreamGen_matchesWholeSequenceDecode.
 func TestStreamGen_matchesWholeSequenceDecode(t *testing.T) {
 	tk := loadTinyTokenizerForTest(t)
 	s := &session{tk: tk}

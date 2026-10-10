@@ -13,11 +13,10 @@ func chatFlagSet() *flag.FlagSet {
 	return fs
 }
 
-// Cold-user run 2026-09-06, scenario B, 06:37:23 — the tester's FIRST error of that leg, and the
-// reason it started badly. `goinfer-chat serve` ignored the subcommand and complained about
-// --model; `goinfer-chat -web` said "flag provided but not defined: -web". Neither said the two
-// belong to a different binary, and the README's own examples used them, so the tester concluded
-// the released binary was broken and went hunting through pkg.go.dev for a server.
+// TestServeOnlyInvocation pins that a serve-only subcommand or flag typed at chat (`serve`, `-web`) is named, so the
+// caller can say it belongs to the other binary, instead of an ignored subcommand or a bare "flag provided but not
+// defined"; a legitimate chat invocation, including every flag the two binaries share, is NEVER redirected. Origin:
+// docs/code-notes/internal-chatapp.md#TestServeOnlyInvocation.
 func TestServeOnlyInvocation(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -29,8 +28,7 @@ func TestServeOnlyInvocation(t *testing.T) {
 		{"double dash", []string{"--web"}, "--web"},
 		{"flag with an = value", []string{"--addr=0.0.0.0:8080"}, "--addr"},
 		{"serve-only flag after a shared one", []string{"--model", "m.gguf", "--api-key", "x"}, "--api-key"},
-		// --stream-weights was serve-only and redirected here; since internal/loadflags it is chat's own
-		// flag too, so it must now fall through to chat (the cold-user run's dead end, closed the other way).
+		// --stream-weights is shared with serve through internal/loadflags, so it must fall through to chat.
 		{"a model-loading flag chat now shares", []string{"-stream-weights"}, ""},
 		{"and one that takes a value, with its value", []string{"--moe-cache-slots", "8", "--ctx", "16384"}, ""},
 
@@ -41,10 +39,8 @@ func TestServeOnlyInvocation(t *testing.T) {
 		{"chat's own pull", []string{"pull", "hf:owner/repo:q4_k_m"}, ""},
 		{"no args", nil, ""},
 		{"a path that merely contains the word serve", []string{"--model", "/models/serve/m.gguf"}, ""},
-		// N-77 (docs/audit-2026-09-10.md): every argv token used to be checked uniformly, with no
-		// notion of "this token is a FLAG'S VALUE, not a flag or subcommand" — a chat flag's value
-		// that happens to equal a serveOnly word (most plausibly "serve" itself, via --system)
-		// wrongly triggered the redirect.
+		// N-77: a token that is a flag's VALUE, not a flag or subcommand, must not trigger the redirect: a chat flag's value
+		// equal to a serveOnly word (most plausibly "serve" itself, via --system).
 		{"a flag VALUE that happens to equal a serveOnly word", []string{"--system", "serve"}, ""},
 		{"same, with a serve-only flag genuinely after it", []string{"--system", "serve", "--web"}, "--web"},
 		{"a genuine serve-only flag is still caught when NOT preceded by a value-taking flag",

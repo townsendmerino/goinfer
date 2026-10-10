@@ -8,11 +8,10 @@ import (
 	"testing"
 )
 
-// TestLoadFlags_realBinaryParses: chat had no --ctx, --stream-weights or --moe-cache-experts/
-// --moe-cache-slots, and a cold-user run reached for --moe-cache-experts and got "flag provided but
-// not defined". They are internal/loadflags' now, registered for both binaries; this proves the REAL
-// flag.CommandLine carries them (--version exits before touching a model, the same discipline as
-// TestExactPrefillFlag_realBinaryParses).
+// TestLoadFlags_realBinaryParses pins that the REAL flag.CommandLine carries the flags internal/loadflags registers for
+// both binaries (--ctx, --stream-weights, --moe-cache-experts, --moe-cache-slots). --version exits before touching a
+// model, the same discipline as TestExactPrefillFlag_realBinaryParses. Origin:
+// docs/code-notes/internal-chatapp.md#TestLoadFlags_realBinaryParses.
 func TestLoadFlags_realBinaryParses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
