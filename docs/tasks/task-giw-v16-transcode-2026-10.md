@@ -682,10 +682,26 @@ The T night's runs, as built: `docs/measurements/giw-v16-transcode-2026-10/gt_ni
 ## Decisions (owner)
 
 **Decided 2026-10-10, after T0 and T6:** Decision 1, T before V ("t before v"). Decision 3, option (a), a quarter of
-available RAM at transcode start ("a quarter of ram is fine"). Decisions 2 and 4 are open.
+available RAM at transcode start ("a quarter of ram is fine"). Decisions 2 and 4 are open (decided later the same
+day, below).
 
 **Decided 2026-10-10, after T2:** Decision 5, the transcode does not read its file back ("no self check makes sense to
 me"). Built as: the load check stays, the CRC read-back goes (F9 has what is kept and what is given up).
+
+**Decided 2026-10-10, after T4b's day gate:** Decision 2, the reader reads only v16 ("Only v16"). Decision 4, the
+hand-built bundles are rebuilt by the session that lands V ("I rebuild them").
+- What Decision 4 covers, surveyed the same day. Four bundles have no source beside them by name, and every one has
+  a source elsewhere:
+
+  | bundle | where | rebuilt from |
+  |---|---|---|
+  | `gemma4-26b-int4.giw` (16.1 GB) | nobara `~/models` | `gemma4-26b-q4_k_m.gguf`, nobara |
+  | `gemma4-26b-int4-v14st.metal.giw` (16.2 GB) | nobara `~/models` and the archive | the same GGUF, `-target metal` |
+  | `qwen3.6-35b-a3b-int4.giw` (20.1 GB; the archive holds `…-int4-v12.giw`) | nobara `~/models`, the archive | `qwen3.6-35b-a3b-q4_k_m.gguf`, nobara |
+  | `mellum2.int4.giw` (7.8 GB) | nobara `~/models` | `mellum2-unq`, the archive (pulled to `~/models` first) |
+
+  The flags each was built with are not recorded beside it; they are read from each old file's header before it is
+  replaced. Every other `.giw` on either box is a sidecar and rebuilds by itself.
 
 **Amended 2026-10-10, after T3:** Decision 5, second part. Asked "can we have another thread do this as bytes are
 written", and offered the size rule alone, the size rule with a trailing reader, or the trailing reader alone, the
