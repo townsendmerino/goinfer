@@ -821,6 +821,8 @@ PIN_NEAR_TOP = 40  # the marker must sit in the first N lines; a marker buried i
 
 # (repo root, commit, rel) -> (label, text) | None
 PINNED_FILE_CACHE = {}
+# "module@version" for every module a pinned record's citation was looked for in (file_at): what --pinned-modules prints.
+PINNED_MODULES_NEEDED = set()
 
 # Set True by step CC0.c (the door): a path:line in an UNPINNED doc is then a red. Off while live docs are being migrated.
 CLOSE_THE_DOOR = True
@@ -895,7 +897,9 @@ def file_at(commit: str, rel: str):
         hit = (repo_name(ROOT), t)
     else:
         missing = []
-        for mod, ver in modules_at(commit).items():
+        mods = modules_at(commit)
+        PINNED_MODULES_NEEDED.update(f"{mod}@{ver}" for mod, ver in mods.items())  # all of them, whatever is cached here
+        for mod, ver in mods.items():
             d = modcache_dir(mod, ver)
             if d is None:
                 missing.append(f"{mod}@{ver}")
@@ -1076,7 +1080,33 @@ def main() -> int:
     return _main()
 
 
+def pinned_modules() -> int:
+    """--pinned-modules: print, one per line, each module@version a pinned record's citations are looked for in, and exit 0.
+
+    A pinned record's aikit paths are checked at the aikit version its commit required, from the module cache. A machine that
+    has not downloaded that version gets CANNOT SEARCH, by design. This is the list to download first:
+
+        python3 scripts/queue_citation_lint.py --pinned-modules | xargs -r go mod download
+
+    It runs the same lookups the lint does and discards their verdicts, so the list cannot drift from what the lint needs."""
+    PINNED_MODULES_NEEDED.clear()
+    PINNED_FILE_CACHE.clear()
+    pallow = path_allowlist()
+    body = body_without_index(QUEUE.read_text()) if QUEUE.exists() else ""
+    for doc in live_docs():
+        dbody = body if doc == QUEUE else doc.read_text(errors="replace")
+        commit, _ = pinned_marker(dbody)
+        if commit and commit_resolves(commit):
+            check_pinned(str(doc.relative_to(ROOT)), commit, dbody, pallow)
+    PINNED_FILE_CACHE.clear()  # a later lint run in this process must look again, with whatever has been downloaded since
+    for m in sorted(PINNED_MODULES_NEEDED):
+        print(m)
+    return 0
+
+
 def _main() -> int:
+    if "--pinned-modules" in sys.argv:
+        return pinned_modules()
     update = "--update" in sys.argv
     text = QUEUE.read_text()
     body = body_without_index(text)
