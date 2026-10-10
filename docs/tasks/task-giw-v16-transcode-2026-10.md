@@ -1,8 +1,7 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0, T6 and T1 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
-the Mac for T6 and for T1** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). T2–T5, T7 and V are not
-started. The gates
+**Status:** scoped 2026-10-10. **T0, T6, T1 and T2 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
+the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). T3–T5, T7 and V are not started. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -158,8 +157,13 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
     int4 sidecar, over seventeen transcodes, where the cloud box read 0.13 s. It has no stable relation to the target or
     to the logit tables' precision (a first reading, "slow with int8 tables", did not survive the next six runs).
   - The same load in a fresh process takes 0.2 s, and the self-check's CPU is 0.5–0.6 s. So the time is not the
-    check's own work. What it waits on is not established
+    check's own work. It grows with the file (0.1 s under 610 MB, 9 s at 1.7 GB), and it reproduces with no goinfer
+    code: 1.7 GB written over 5 s and then read through a mapping took 8.2 s the first time and 0.3 s the second. It is
+    the system's handling of just-written pages; what exactly it waits on is not established
     ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
+  - **After T1 and T2 it is often the larger half of a Mac transcode** (exploratory: stream 2.4–6.3 s, self-check
+    0.2–9.4 s on the 1.5B). Whether to keep reading the whole file back straight after writing it is a decision this
+    doc does not have yet.
 
 ### Checked and not worth doing
 
@@ -224,6 +228,15 @@ change what runs when and how fast, never what is written.
     `decoder/weights.go:loadEmbedTable` keeps a 1,024-row block cache, so it needs one per worker, with ranges aligned
     to its block.
   - Do not parallelize `rowInto` generally: a stateful reader is exactly the case that breaks.
+  - **Built 2026-10-10 (`ec5958fa`): `decoder/weightmat.go:streamQuantizedEmbed` over `forRowRanges`.** What the tree
+    made different from the text above:
+    - The parallel form is `streamQuantizedEmbed` itself, not `streamQuantizedRepackable`: an int8-pinned table never
+      went through the latter (it fell back to `streamQuantized`), and int8 is the default pin.
+    - It also covers Gemma 4's per-layer token table, a third logit table with a stateless reader.
+    - A table under 4M elements stays on one goroutine. So no tiny fixture reaches the parallel form on its own; tests
+      force it, and G-T1's real GGUF cells carry it.
+  - **G-T1 for T2: PASS on the Mac, 2026-10-10** (330 tiny cells and 8 real cells IDENTICAL, 0 DIFFERENT; no data race
+    under `go test -race`).
 - **T3. Parallel experts on the safetensors side.**
   - `loadFusedExperts`, `streamExperts` and the generic per-expert loop get what `stackedExperts` has: `parallelLayers`
     over experts when building for a sink, sequential otherwise. In the resident build they already sit inside

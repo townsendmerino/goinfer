@@ -83,8 +83,15 @@ runs on this page (T6's, then T1's):
 - **A pattern that did not hold.** T6's six runs read as "slow with int8 logit tables, fast with int4 ones". T1's six
   runs break it both ways (0.3 s on a plain file, 2.4 s on the `e4h` one). Over the twelve runs the time ranges from 0.2
   to 5.8 s with no stable relation to the configuration.
-- The mechanism is not established. The self-check's CPU is about half a second (the arm64 profile), so the rest is a
-  wait. The box had 16 GB, the owner's session open and about 4 GB of disk free.
+- The self-check's CPU is about half a second (the arm64 profile), so the rest is a wait. The box had 16 GB, the
+  owner's session open and about 4 GB of disk free.
+- **It grows with the file.** Adding T2's run (below): the 0.5B's files (344-609 MB) read 0.1 s in fifteen of sixteen
+  runs, the 1.5B's 959 MB file 0.2-2.8 s, its 1,155 MB file 3.6-5.5 s, its 1,312 MB file 0.3-6.6 s, and its
+  1,704 MB int8int8 file 8.9 and 9.4 s.
+- **It reproduces with no goinfer code** (a script, the same box, 2026-10-10): 1.7 GB written to a file over about 5 s
+  and then CRC'd through a read-only mapping took 8.2 s the first time and 0.3 s the second. 1.2 GB written the same
+  way, fast or over 12 s, took 0.2 s. So the wait is the system's handling of pages it has just been given to write,
+  above some size, and not the check's own work. What exactly it waits on is not established.
 
 ## G-T1 for T1, 2026-10-10: PASS, every cell that ran is IDENTICAL
 
@@ -105,9 +112,41 @@ T1 is the windowed layer parallelism in every streaming loop. Same instrument, b
   phase read 3.8-7.4 s over the six runs, where T6's build read 10.7-16.1 s for the two plain configurations and
   13.5-13.6 s for `e4h`. Not a result: G-T2 measures it at night, in ABAB pairs.
 
+## G-T1 for T2, 2026-10-10: PASS, every cell that ran is IDENTICAL
+
+T2 is the row-parallel logit tables. Same instrument and box; base `eee75d83`, new `ec5958fa` (T6, T1 and T2 together).
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 384 | 330 | 0 | 54 | 58 s |
+| the real Qwen2.5-Coder 0.5B and 1.5B Q4_K_M GGUFs, four configurations each | 8 | 8 | 0 | 0 | 3 min 14 s |
+
+- **Why the real cells carry this gate:** a table under 4M elements is quantized on one goroutine, and every tiny
+  fixture's tables are under it. The real GGUFs' tables are 136M and 233M elements, int8-pinned in three configurations
+  and int4 in `e4h`.
+- **The paths the real GGUFs do not reach** are the safetensors table reader (one block cache per row range) and
+  Gemma 4's per-layer token table. `TestStreamQuantizedEmbed_rangesGiveTheSequentialTable` and
+  `TestStreamTranscode_rowRangesWriteTheSameBytes` force several row ranges on small tables for those, in every
+  embedding precision, and `go test -race` over them and over a real 0.5B GGUF transcode reports no race.
+
+| source | configuration | verdict | sha256 (first 16) | bytes |
+|---|---|---|---|---|
+| `coder-0.5b-q4km` | `int4:cpu-arm64` | IDENTICAL | `85de0d6013819797` | 481,009,219 |
+| `coder-0.5b-q4km` | `int4:metal` | IDENTICAL | `652b0544a1d5c83c` | 525,736,387 |
+| `coder-0.5b-q4km` | `int4:cpu-arm64:e4h` | IDENTICAL | `13658e82d959badf` | 360,675,907 |
+| `coder-0.5b-q4km` | `int8int8:cpu` | IDENTICAL | `bac71e528ce2dfdc` | 638,774,851 |
+| `coder-1.5b-q4km` | `int4:cpu-arm64` | IDENTICAL | `655aa58553924d69` | 1,211,492,739 |
+| `coder-1.5b-q4km` | `int4:metal` | IDENTICAL | `5b6c6956e9cbbcc0` | 1,375,265,859 |
+| `coder-1.5b-q4km` | `int4:cpu-arm64:e4h` | IDENTICAL | `832aff86af916316` | 1,006,075,267 |
+| `coder-1.5b-q4km` | `int8int8:cpu` | IDENTICAL | `a36c8034c2c1e067` | 1,787,283,843 |
+
+- **Phase lines, exploratory** (`g-t1-t2-real-lines.txt`; one run each, by day, the box in use). The 1.5B's stream phase
+  read 2.4-6.3 s over eight runs, and the `e4h` one 4.1-4.5 s where T1 alone read 6.4-6.8 s. The self-check read 0.2-9.4 s
+  in the same runs, more than the stream in five of the eight. Not a result: G-T2 measures the transcode at night.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
-- `g-t1-t1-*`: the same five files for T1's run.
+- `g-t1-t1-*`, `g-t1-t2-*`: the same five files for T1's run and for T2's.
