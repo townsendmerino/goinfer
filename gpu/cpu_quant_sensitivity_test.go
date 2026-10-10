@@ -10,16 +10,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestCPUQuantSensitivity is the control for TestPhi3SynthResidentParityWebGPU: NO GPU at
-// all. It runs the CPU int4 forward on two copies of the same checkpoint that differ in ONE
-// f32 norm weight by one part in 2^20 (~1e-6 relative; GOINFER_PARITY_CKPT_B is that copy) and
-// reports the logit cosine between them, per position. Whatever this prints is the floor a
-// resident-vs-CPU comparison of this quantized forward can EVER reach: the W4A8/W8A8 path
-// re-quantizes activations to int8 at every projection, and a perturbation far below one int8
-// step flips a fraction of rounding decisions proportional to its size while each flip is a
-// whole step — a square-root amplifier of tiny numerical differences, compounding per layer.
-// A GPU that reproduces the CPU's f32 arithmetic only to ~1e-7 (reduction order) is such a
-// perturbation. See docs/completed/task-webgpu-nogqa-decode-bug.md.
+// TestCPUQuantSensitivity is the control for TestResidentCaptureParityWebGPU: no GPU at all. It runs the CPU int4 forward
+// on two loads of the same checkpoint whose f32 norms differ by about one part in 2^20 (GOINFER_PARITY_CKPT_B, a
+// hand-nudged copy differing in ONE norm weight; or, when unset, the GOINFER_NORM_ULP_NOISE load diagnostic) and logs the
+// logit cosine between them per position. It asserts nothing: what it logs is the floor a resident-vs-CPU comparison of a
+// quantized forward can reach, because the W4A8/W8A8 path re-quantizes activations to int8 at every projection and a
+// perturbation far below one int8 step flips a fraction of rounding decisions, each flip a whole step, compounding per
+// layer. A GPU that reproduces the CPU's f32 arithmetic only to ~1e-7 (reduction order) is such a perturbation. See
+// docs/completed/task-webgpu-nogqa-decode-bug.md and docs/code-notes/gpu.md#webgpuBackend.BuildResident.nogqa.
 func TestCPUQuantSensitivity(t *testing.T) {
 	dirA, dirB := os.Getenv("GOINFER_PARITY_CKPT"), os.Getenv("GOINFER_PARITY_CKPT_B")
 	if dirA == "" {

@@ -422,3 +422,66 @@ runLayer tuple unset, so lnKV/lhd/lkvDim fall back to the model values and the
 allocation is byte-identical. Gemma 4's builder will set rl.gnKV/rl.ghd (local
 8·256=2048, global 2·512=1024) and this picks up the differing widths per layer.
 ```
+## TestCPUQuantSensitivity
+
+Moved from `gpu/cpu_quant_sensitivity_test.go` (the comment above `TestCPUQuantSensitivity.wG`) on 2026-10-10.
+
+```text
+TestCPUQuantSensitivity is the control for TestPhi3SynthResidentParityWebGPU: NO GPU at
+all. It runs the CPU int4 forward on two copies of the same checkpoint that differ in ONE
+f32 norm weight by one part in 2^20 (~1e-6 relative; GOINFER_PARITY_CKPT_B is that copy) and
+reports the logit cosine between them, per position. Whatever this prints is the floor a
+resident-vs-CPU comparison of this quantized forward can EVER reach: the W4A8/W8A8 path
+re-quantizes activations to int8 at every projection, and a perturbation far below one int8
+step flips a fraction of rounding decisions proportional to its size while each flip is a
+whole step — a square-root amplifier of tiny numerical differences, compounding per layer.
+A GPU that reproduces the CPU's f32 arithmetic only to ~1e-7 (reduction order) is such a
+perturbation. See docs/completed/task-webgpu-nogqa-decode-bug.md.
+```
+
+## TestDecodeRunnerW4A8_geometries
+
+Moved from `gpu/geom_mha_decoderunner_test.go` (the comment above `TestDecodeRunnerW4A8_geometries.wG`) on 2026-10-10.
+
+```text
+TestDecodeRunnerW4A8_geometries is TestDecodeRunnerW4A8_parity re-run over attention
+geometries the resident decode path had never been exercised on by any synthetic test
+(every one of them used qwen2.5-1.5B's (nH,nKV,hd) = (12,2,128)), against the same CPU
+oracle. It exists for docs/completed/task-webgpu-nogqa-decode-bug.md: phi3-mini's resident
+decode diverges from CPU, and the doc's open question is whether the kernels are wrong for
+its shape — no GQA (nH == nKV, group 1) AND head_dim 96 (not a power of two) AND a
+[3072,3072] Q/K/V/O with a 32064-row LM head — or whether the divergence is numerical.
+A synthetic model with EXACTLY phi3-mini's dims (2 layers) answers the shape half of that
+question on any adapter, including the CI software one: the oracle runs the same
+int4/int8 math, so a pass here is a kernel/wiring pass for the geometry (cosine ~1.0),
+independent of what a real checkpoint's activations do to int8 quantization.
+
+Position 0 is covered as well as a mid-context position, because the doc reports the
+real-model divergence already at position 0 — where attention has one key and is the
+identity on V, so only the projection/norm/MLP/LM-head chain can differ.
+```
+
+## TestResidentCaptureParityWebGPU
+
+Moved from `gpu/resident_capture_parity_test.go` (the comment above `TestResidentCaptureParityWebGPU.wG`) on 2026-10-10.
+
+```text
+TestResidentCaptureParityWebGPU runs docs/completed/task-webgpu-nogqa-decode-bug.md's exact
+experiment (resident Forward vs CPU ForwardForTest at the same quant, the 8-token arbitrary
+prompt, then a greedy continuation) through the PRODUCTION load path — decoder.Load with
+Backend:"webgpu", so BuildResident's uploadProj fast path, any fused-tensor split the family
+does at load, residentDecoder.Forward and the generic CPU forward with aikit's kernels are all
+the real ones — on ANY checkpoint (GOINFER_PARITY_CKPT: a safetensors dir or a .gguf), and with
+GOINFER_GPU_CAPTURE=1 it differences the two forwards PER SUBLAYER PER LAYER (attention
+context, attention contribution, MLP contribution — the runner's capture buffers vs
+decoder.ForwardSubCaptureLogitsForTest) so a divergence is localised in one run instead of
+argued from the final logits. Prints, does not assert a bar: what a cosine means for a given
+checkpoint is what TestCPUQuantSensitivity (same file's sibling) measures for it.
+
+GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident
+W8A8-at-upload path — NOT a same-quant comparison; see the task doc for what that shows).
+GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU
+stores, which is the only single-variable form of the int4 comparison. Written against
+scripts/mk_phi3_synth.py's phi3-mini-shaped synthetic checkpoint; runs on the real one too.
+```
+

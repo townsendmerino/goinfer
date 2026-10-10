@@ -9,21 +9,14 @@ import (
 	"testing"
 )
 
-// TestDecodeRunnerW4A8_geometries is TestDecodeRunnerW4A8_parity re-run over attention
-// geometries the resident decode path had never been exercised on by any synthetic test
-// (every one of them used qwen2.5-1.5B's (nH,nKV,hd) = (12,2,128)), against the same CPU
-// oracle. It exists for docs/completed/task-webgpu-nogqa-decode-bug.md: phi3-mini's resident
-// decode diverges from CPU, and the doc's open question is whether the kernels are wrong for
-// its shape — no GQA (nH == nKV, group 1) AND head_dim 96 (not a power of two) AND a
-// [3072,3072] Q/K/V/O with a 32064-row LM head — or whether the divergence is numerical.
-// A synthetic model with EXACTLY phi3-mini's dims (2 layers) answers the shape half of that
-// question on any adapter, including the CI software one: the oracle runs the same
-// int4/int8 math, so a pass here is a kernel/wiring pass for the geometry (cosine ~1.0),
-// independent of what a real checkpoint's activations do to int8 quantization.
-//
-// Position 0 is covered as well as a mid-context position, because the doc reports the
-// real-model divergence already at position 0 — where attention has one key and is the
-// identity on V, so only the projection/norm/MLP/LM-head chain can differ.
+// TestDecodeRunnerW4A8_geometries is TestDecodeRunnerW4A8_parity re-run over attention geometries no other synthetic test
+// exercised (they all use qwen2.5-1.5B's (nH,nKV,hd) = (12,2,128)), against the same CPU oracle: phi3-mini's exact dims
+// (no GQA, nH == nKV; head_dim 96, not a power of two; a [3072,3072] Q/K/V/O; a 32064-row LM head) plus controls that vary
+// one axis each. It answers the shape half of the phi3-mini question (are the kernels right for that shape?) on any adapter,
+// including the CI software one: the oracle runs the same int4/int8 math, so a pass (cosine >= 0.9999) is a kernel/wiring
+// pass for the geometry, independent of what a real checkpoint's activations do to int8 quantization. Position 0 is covered
+// as well as a mid-context one: with one key attention is the identity on V, so only the projection/norm/MLP/LM-head chain
+// can differ there. Context: docs/completed/task-webgpu-nogqa-decode-bug.md.
 func TestDecodeRunnerW4A8_geometries(t *testing.T) {
 	ctx := newOrSkip(t)
 	defer ctx.Close()

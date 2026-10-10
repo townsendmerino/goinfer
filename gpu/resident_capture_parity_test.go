@@ -10,23 +10,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestResidentCaptureParityWebGPU runs docs/completed/task-webgpu-nogqa-decode-bug.md's exact
-// experiment (resident Forward vs CPU ForwardForTest at the same quant, the 8-token arbitrary
-// prompt, then a greedy continuation) through the PRODUCTION load path — decoder.Load with
-// Backend:"webgpu", so BuildResident's uploadProj fast path, any fused-tensor split the family
-// does at load, residentDecoder.Forward and the generic CPU forward with aikit's kernels are all
-// the real ones — on ANY checkpoint (GOINFER_PARITY_CKPT: a safetensors dir or a .gguf), and with
-// GOINFER_GPU_CAPTURE=1 it differences the two forwards PER SUBLAYER PER LAYER (attention
-// context, attention contribution, MLP contribution — the runner's capture buffers vs
-// decoder.ForwardSubCaptureLogitsForTest) so a divergence is localised in one run instead of
-// argued from the final logits. Prints, does not assert a bar: what a cosine means for a given
-// checkpoint is what TestCPUQuantSensitivity (same file's sibling) measures for it.
+// TestResidentCaptureParityWebGPU runs the resident Forward against the CPU ForwardForTest at the same quant (an 8-token
+// arbitrary prompt, then a greedy continuation) through the PRODUCTION load path, decoder.Load with Backend:"webgpu", on ANY
+// checkpoint (GOINFER_PARITY_CKPT: a safetensors dir or a .gguf). With GOINFER_GPU_CAPTURE=1 it differences the two forwards
+// PER SUBLAYER PER LAYER (attention context, attention contribution, MLP contribution: the runner's capture buffers vs
+// decoder.ForwardSubCaptureLogitsForTest), so a divergence is localised in one run instead of argued from the final logits.
+// It prints and does not assert a bar (the only assertion is that the cosine is not NaN): what a cosine means for a given
+// checkpoint is what TestCPUQuantSensitivity measures for it.
 //
-// GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident
-// W8A8-at-upload path — NOT a same-quant comparison; see the task doc for what that shows).
-// GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU
-// stores, which is the only single-variable form of the int4 comparison. Written against
-// scripts/mk_phi3_synth.py's phi3-mini-shaped synthetic checkpoint; runs on the real one too.
+// GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident W8A8-at-upload path, NOT a
+// same-quant comparison). GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU stores,
+// the only single-variable form of the int4 comparison. Written against scripts/mk_phi3_synth.py's phi3-mini-shaped
+// synthetic checkpoint; runs on a real one too. Protocol and findings: docs/completed/task-webgpu-nogqa-decode-bug.md.
 func TestResidentCaptureParityWebGPU(t *testing.T) {
 	dir := os.Getenv("GOINFER_PARITY_CKPT")
 	if dir == "" {
