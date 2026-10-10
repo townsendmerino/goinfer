@@ -2,23 +2,22 @@
 
 package decoder
 
-// A content-keyed cache for the prefill fidelity gates' CPU f32-activation references (TE6(a) and TE8 of
-// docs/tasks/task-test-efficiency-2026-09.md). TestPrefillGateReference is the longest single run in the census (up to
-// 168 min), all-or-nothing, and its output's staleness was judged by hand — a stale set had to be renamed aside once,
-// and set A's 2026-09-05 files were scored against logits for different text (prefill-ref-identity-2026-09-26.md).
+// A content-keyed cache for the prefill fidelity gates' CPU f32-activation references (docs/tasks/task-test-efficiency-2026-09.md,
+// TE6(a) and TE8). TestPrefillGateReference is the longest single run in the test census and all-or-nothing, and a stale
+// reference cannot be spotted by hand (prefill-ref-identity-2026-09-26.md records a set scored against logits for different
+// text). So each (model, K, prompt) reference is keyed by everything it depends on:
 //
-// Each (model, K, prompt) reference is keyed by everything it depends on:
 //   - the checkpoint's sha256 (cached by path + size + mtime, so a 4.7 GB file is hashed once);
 //   - the prompt's own token ids at that K (sha256, the same encoding as internal/fidelity.PromptSetHash);
-//   - the source the CPU reference path compiles from: every non-test .go file in decoder/, internal/giw/ and
-//     constrain/ (go list -deps ./decoder, 2026-09-28) plus go.mod, which pins aikit and golang.org/x;
-//   - runtime.GOARCH (the CPU reference is bit-identical within an arch, not across), the weight quant, the
-//     continuation length, and the forced exact attention.
+//   - the source the CPU reference path compiles from: every non-test .go file in decoder/, internal/giw/ and constrain/ (from
+//     go list -deps ./decoder) plus go.mod, which pins aikit and golang.org/x;
+//   - runtime.GOARCH (the CPU reference is bit-identical within an arch, not across), the weight quant, the continuation length,
+//     and the forced exact attention.
 //
-// A hit is a lookup, not a judgement; a miss is computed and stored atomically, so an interrupted generator resumes
-// where it stopped. The historical ~/goinfer-logs/prefill-ref[-<set>]/<model>-K<k>-p<i>.bin path is populated from the
-// cache (a hard link where the filesystem allows, else a copy), with a <file>.key.json sidecar beside it, so every
-// consumer keeps reading the path it reads today and can check the sidecar's prompt hash exactly.
+// A hit is a lookup, not a judgement; a miss is computed and stored atomically, so an interrupted generator resumes where it
+// stopped. The historical ~/goinfer-logs/prefill-ref[-<set>]/<model>-K<k>-p<i>.bin path is populated from the cache (a hard link
+// where the filesystem allows, else a copy), with a <file>.key.json sidecar beside it, so every consumer keeps reading the path it
+// reads today and can check the sidecar's prompt hash exactly.
 
 import (
 	"crypto/sha256"
@@ -183,11 +182,10 @@ func checkpointSHA256(path string) (string, error) {
 	return sum, nil
 }
 
-// checkpointDirSHA256 is checkpointSHA256 for a safetensors checkpoint directory (D-B01's Qwen3.5-0.8B was the first
-// reference cell built from one): every regular file under it, by relative path, each through checkpointSHA256's own
-// cached file hash, folded into one digest in path order. Hidden files and goinfer's own sidecars (*.giw and their
-// *.verified markers, written beside a checkpoint after the fact) are left out: they say nothing about the weights,
-// and counting them would re-key every reference the first time a model is transcoded.
+// checkpointDirSHA256 is checkpointSHA256 for a safetensors checkpoint directory: every regular file under it, by relative path,
+// each through checkpointSHA256's own cached file hash, folded into one digest in path order. Hidden files and goinfer's own
+// sidecars (*.giw and their *.verified markers, written beside a checkpoint after the fact) are left out: they say nothing about
+// the weights, and counting them would re-key every reference the first time a model is transcoded.
 func checkpointDirSHA256(dir string) (string, error) {
 	var rels []string
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {

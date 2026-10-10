@@ -8,9 +8,8 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// addBias adds a per-output bias vector to a projection result in place
-// addBias adds b into x in place. Used for architectures with QKV bias
-// (Qwen2's q/k/v projections). len(b) must equal len(x).
+// addBias adds b into x in place, for architectures with q/k/v/o bias (Qwen2's projections, GPT-2's output). Callers pass equal
+// lengths; only the first min(len(x), len(b)) elements are touched.
 func addBias(x, b []float32) {
 	n := min(len(x), len(b))
 	if n == 0 {
@@ -34,38 +33,15 @@ func addBias(x, b []float32) {
 	}
 }
 
-// causalAttention runs one decoder block's grouped-query causal attention
-// for a single decode step (the query is the one new position; keys/values
-// come from the KV cache plus this step's own K/V). Every per-family knob
-// (QKV bias, QK-norm, RoPE base/scaling vs. learned positions, sliding
-// window, attention scale) is read from arch, so this one body serves all
-// supported families.
+// causalAttention runs one decoder block's grouped-query causal attention for a single decode step (the query is the one new
+// position; keys/values come from the KV cache plus this step's own K/V) and writes the output-projected result into out
+// [hidden]; the caller applies the post-attn norm and residual add. Every per-family knob (QKV bias, QK-norm, RoPE or learned
+// positions, sliding window, attention scale) is read from arch, so one body serves all families. The q/k/v/ctx/scores buffers
+// are reused from the cache's per-stream scratch, so steady-state decode allocates nothing.
 //
-// Shapes / steps:
-//
-//	h        [HiddenDim]                  the current position's hidden state (post pre-norm)
-//	QProj    [NumHeads*HeadDim, HiddenDim]
-//	KProj/VProj [NumKVHeads*HeadDim, HiddenDim]
-//	OProj    [HiddenDim, NumHeads*HeadDim]
-//
-//	1. q = QProj·h (NumHeads heads); k,v = KProj·h, VProj·h (NumKVHeads heads),
-//	   plus the optional q/k/v bias (arch.QKVBias — Qwen2).
-//	2. QK-norm: rmsNorm each q and k head over HeadDim, if arch.QKNorm
-//	   (Gemma 3, Qwen3).
-//	3. RoPE q,k at absolute position cache.Pos() with the per-layer inv-freq
-//	   table (Gemma local 10k vs. global 1e6; llama3 scaling), unless the
-//	   family uses learned absolute positions (arch.LearnedPosEmbed — GPT-2).
-//	4. cache.Append(layer, k, v)
-//	5. for each query head, attend over cache keys in
-//	   [cache.WindowStart(global), cache.Pos()) — the GQA group maps query
-//	   head h → kv head h/(NumHeads/NumKVHeads). scale by 1/sqrt(QueryPreAttnScalar).
-//	6. softmax (shared kernel) → weighted sum of values → ctx
-//	7. out = OProj·ctx ; caller applies post-attn norm + residual add.
-//
-// causalAttention computes one position's attention block and writes the
-// output-projected result into out ([hidden]); the caller applies the post-attn
-// norm + residual add. The q/k/v/ctx/scores buffers are reused from the cache's
-// per-stream scratch — no per-call allocation in steady-state decode.
+// Steps: q/k/v projections (plus optional bias and compute-time LoRA), QK-norm, RoPE at cache.Pos() with the per-layer inv-freq
+// table (skipped for learned absolute positions), cache.Append, attention over [WindowStart, Pos] with query head h reading kv
+// head h/(NumHeads/NumKVHeads), output gating, then OProj.
 func causalAttention(
 	layer int,
 	h []float32,
@@ -101,8 +77,7 @@ func causalAttention(
 		scr.qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
 		matmulW8A8Batch(be, scr.ws, h, 1, lw.QProj.Cols(), scr.qkvOps[:], lw.QProj.ActQuantGroup())
 	} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {
-		// audit R-06: fused q/k/v W4A8, mirroring the W8A8 batch above. group is shared
-		// across the three (same layer, same quant config), matching
+		// Fused q/k/v W4A8, mirroring the W8A8 batch above. group is shared across the three (same layer, same quant config), matching
 		// MatmulBTW4A8Batch's single-scalar signature.
 		var group int
 		scr.qkvOpsW4[0], group = wmW4A8Op(&lw.QProj, q)
@@ -111,7 +86,7 @@ func causalAttention(
 		scr.ws.SetThreshold(int4ParThreshold)
 		matmulW4A8Batch(be, scr.ws, h, 1, lw.QProj.Cols(), group, scr.qkvOpsW4[:], lw.QProj.ActQuantGroup())
 	} else {
-		// h quantized once for q, k and v (R-13) when they run the CPU W4A8 path; each matmul quantized it again.
+		// h is quantized once for q, k and v when they run the CPU W4A8 path, not once per matmul.
 		scr.hq.prepare(be, &lw.QProj, h, 1)
 		matmulIntoPre(scr.ws, be, &lw.QProj, &scr.hq, h, q, 1)
 		matmulIntoPre(scr.ws, be, &lw.KProj, &scr.hq, h, k, 1)
@@ -169,29 +144,20 @@ func causalAttention(
 		}
 	}
 
-	// 4. Append this position's K/V, then attend over the stored history. Route
-	// single-token decode through the SAME attendBatchedHeads kernel (at K=1) the
-	// batched prefill/verify (forwardN) uses, with f64 accumulation (acc64) — so
-	// decode is BIT-IDENTICAL to the batched forward for BOTH dense and MoE.
-	// Same-model speculative decoding requires it: the target's batched verify must
-	// reproduce sequential greedy exactly. The old dense path used the scalar
-	// attendQuery + an f32 (MatmulBT) batched verify, only cosine ≥0.99 — that flipped
-	// ~11% of argmaxes (spec output diverged) and left ~7% of speculations rejected
-	// (acceptance 0.93). f32's QKᵀ/AV reduction is M-dependent (K=1 decode ≠ M=K
-	// verify) at every aikit version; f64 is order-independent ⇒ exact. MoE already
-	// used acc64 for the same reason (top-k router stability); dense joins it — the
-	// f64 attention cost buys bit-exact decode==prefill==verify (gate:
-	// TestForwardN_matchesSequential / TestSpeculativeGreedyParity). The three cases
-	// mirror forwardN's: ring window, int8-KV global (dequant to f32 scratch), f32
-	// global (append-forever).
+	// 4. Append this position's K/V, then attend over the stored history through the same attendBatchedHeads kernel (at K=1) that the
+	// batched prefill/verify (forwardN) uses, with f64 accumulation (acc64), so decode is bit-identical to the batched forward for
+	// dense and MoE alike. Same-model speculative decoding requires it: the target's batched verify must reproduce sequential greedy
+	// exactly, and f32's QKᵀ/AV reduction is M-dependent (K=1 decode differs from M=K verify) while f64 is order-independent. Gate:
+	// TestForwardN_matchesSequential and TestSpeculativeGreedyParity. The three cases mirror forwardN's: ring window, int8-KV global
+	// (dequant to f32 scratch), f32 global (append-forever).
 	ctx := cache.scr.ctx[:nH*hd]
 	acc64 := true
 	switch {
 	case cache.rings[layer] != nil && ringDirectDecode && cache.rings[layer].quant != kvI8:
-		// Local ring layer, f32 (audit R-12): store this token's K/V first, then read the window [base, pos] in place as one contiguous slice. The write
-		// before the read is safe because the slot it takes holds position pos-W, the one row just OUTSIDE the window [pos-W+1, pos] (and an empty slot
-		// before the first wrap). The copy path below moved every resident row into scratch each token (about 32 ms of a 201 ms token at depth 4500 on
-		// Gemma-2-2B, 2.5 ms of 39 on Gemma-3-1B at depth 900, measured here); the attention then sees the same rows in the same order, so it is bit-identical.
+		// Local ring layer, f32 (ringDirectDecode): store this token's K/V first, then read the window [base, pos] in place as one
+		// contiguous slice. The write before the read is safe because the slot it takes holds position pos-W, the one row just outside
+		// the window [pos-W+1, pos] (or is empty before the first wrap). The copy path below moves every resident row into scratch each
+		// token; attention sees the same rows in the same order, so this is bit-identical.
 		r := cache.rings[layer]
 		r.write(pos, k, v)
 		base := max(pos-r.w+1, 0)
@@ -230,11 +196,9 @@ func causalAttention(
 		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, pool)
 	}
 
-	// 6b. Output gating, applied to the attention context BEFORE o_proj: ctx *= gate(g_proj · h),
-	// where h is this layer's POST-input_layernorm hidden state — the same tensor q/k/v were
-	// projected from, so no extra tap is needed. Laguna (softplus) keys off arch.laguna != nil,
-	// unchanged; Spark-X2.5 (sigmoid) keys off arch.AttnGate == GateSigmoid — applyAttnGate itself
-	// dispatches the activation. No-op for every other family.
+	// 6b. Output gating, applied to the attention context before o_proj: ctx *= gate(g_proj · h), where h is this layer's
+	// post-input_layernorm hidden state (the tensor q/k/v were projected from, so no extra tap). applyAttnGate dispatches the
+	// activation (Laguna softplus; Spark-X2.5 sigmoid, arch.AttnGate). No-op for every other family.
 	if arch.hasAttnOutputGate() {
 		applyAttnGate(scr, be, lw, arch, h, ctx, nH, hd)
 	}
@@ -273,11 +237,9 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
 	nKeys := len(keys) / kvDim
-	// Local (sliding-window) layers store only the last W positions in a ring; the
-	// K/V for absolute key s live at row s%W. nKeys becomes the logical count, and
-	// the window guarantees every read s ∈ [start, nKeys) ≥ count-W is resident.
-	// wrap=0 ⇒ global append-forever, row = s (unchanged). scores stays indexed by
-	// absolute s (its scratch is already context-sized).
+	// Local (sliding-window) layers store only the last W positions in a ring: absolute key s lives at row s%W, nKeys becomes the
+	// logical count, and the window guarantees every read s in [start, nKeys) is resident. wrap=0 means global append-forever,
+	// row = s. scores stays indexed by absolute s (its scratch is already context-sized).
 	wrap := 0
 	if r := cache.rings[layer]; r != nil {
 		keys, vals, nKeys, wrap = r.k, r.v, r.count, r.w
@@ -352,9 +314,8 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 		}
 		return s
 	}
-	// Chunked layers here too, for symmetry with attendQuery — llama4 is f32-only today so
-	// this path is not reachable for it, but a start rule that lives in one of two twins is
-	// how they drift (M-05).
+	// Chunked layers here too, for symmetry with attendQuery: a start rule that lives in only one of two twins is how they drift.
+	// (llama4 is f32-only, so this path is not reachable for it today.)
 	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
 	scale := arch.AttnScale
 	group := nH / nKV
@@ -410,32 +371,18 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 	}
 }
 
-// applyAttnGate applies Laguna's softplus output gating to the attention context
-// in place, before the output projection:
+// applyAttnGate applies the output gate to the attention context in place, before the output projection: ctx *= gate(g_proj · h),
+// h being the post-input_layernorm hidden state, the gate per head (broadcast) or per element. Laguna's gate is softplus,
+// Spark-X2.5's sigmoid (arch.AttnGate); applyGateRow and applySigmoidGateRow hold the math.
 //
-//	gate = softplus(g_proj · h)            // h = post-input_layernorm hidden state
-//	ctx *= gate                            // per-head (broadcast) or per-element
+// Two parity details are load-bearing (modeling_laguna.py). Softplus is taken in float32: the vendor upcasts before the
+// nonlinearity, and goinfer's activations are already f32, but a bf16 port would be wrong. And the gate reads the layer input
+// (post-input_layernorm), not the attention output, which would be a different model.
 //
-// TWO PARITY DETAILS ARE LOAD-BEARING, both mirroring modeling_laguna.py:
-//
-//  1. softplus is computed in FLOAT32 and the product taken there — the vendor
-//     writes F.softplus(self.g_proj(hidden_states).float()).to(attn_output.dtype),
-//     i.e. it deliberately upcasts before the nonlinearity. goinfer's activations are
-//     already f32, so this is the natural path rather than an extra cast; it is
-//     called out because a bf16 port of the same code would be wrong.
-//
-//  2. the gate reads the layer INPUT (post-input_layernorm), NOT the attention
-//     output. Gating on the attention output is the natural-looking misread and
-//     would be a different model.
-//
-// Granularity is read from the WEIGHT's row count, not from config.gating. The
-// released checkpoints make that necessary: Laguna-XS.2 declares `gating: true`,
-// which the XS-2.1/M.1 module resolves to per-ELEMENT, yet XS.2's own module
-// hardcodes nn.Linear(hidden, num_heads) and never reads the field — and its
-// shipped g_proj is [64, 2048], i.e. per-HEAD. The vendor's spelling→granularity
-// rule is generation-specific; the tensor shape is not. nH and nH*hd can never
-// collide (hd > 1), so the shape is unambiguous. arch.laguna.GatePerHead records
-// what the CONFIG declared and is used only to flag a mismatch at load.
+// Granularity is read from the weight's row count (nH is per-head, nH*hd per-element), not from config.gating: released
+// checkpoints disagree with their own config (Laguna-XS.2 declares gating: true yet ships a per-head g_proj), the vendor's
+// spelling-to-granularity rule is generation-specific, and the shape is unambiguous because hd > 1. arch.laguna.GatePerHead
+// records what the config declared and is used only to flag a mismatch at load.
 func applyAttnGate(scr *decodeScratch, be Backend, lw *LayerWeights, arch *Architecture, h, ctx []float32, nH, hd int) {
 	gates := scr.gateBuf(lw.GProj.Rows())
 	matmulInto(scr.ws, be, &lw.GProj, h, gates, 1)
@@ -446,15 +393,10 @@ func applyAttnGate(scr *decodeScratch, be Backend, lw *LayerWeights, arch *Archi
 	applyGateRow(gates, ctx, lw.GProj.Rows() == nH, nH, hd)
 }
 
-// applyGateRow multiplies ONE position's attention context by its softplus gate,
-// in place. It is the single home for the gate math: causalAttention calls it at
-// K=1 and the batched forward calls it per row, so the two paths cannot drift.
-// Keeping them separate is exactly how the gate came to be applied on the decode
-// path but not in batched prefill — which reads as a plausible 0.957 cosine
-// rather than as a crash.
-//
-// perHead ⇒ gates has nH entries, one per head, broadcast across that head's hd
-// channels; otherwise gates has nH*hd entries, one per channel.
+// applyGateRow multiplies one position's attention context by its softplus gate, in place. It is the single home for the gate
+// math: causalAttention calls it at K=1 and the batched forward calls it per row, so the two paths cannot drift (separate copies
+// once left the gate off batched prefill, which shows as a plausible cosine, not a crash). perHead means gates has nH entries,
+// broadcast across each head's hd channels; otherwise nH*hd entries, one per channel.
 func applyGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 	if perHead {
 		for head := range nH {
@@ -471,12 +413,8 @@ func applyGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 	}
 }
 
-// applySigmoidGateRow multiplies ONE position's attention context by its sigmoid gate, in place —
-// Bailing Hybrid's (Ling 3.0) MLA output gate. Mirrors applyGateRow's shape (perHead broadcast
-// vs per-element) but with sigmoid instead of softplus: a real, small difference verified against
-// the real modeling_bailing_moe_v3.py (`F.sigmoid(gate)`), not assumed identical to Laguna's
-// mechanism just because the STRUCTURE (a per-head/per-element scalar gating the context before
-// the output projection) is the same.
+// applySigmoidGateRow is applyGateRow with a sigmoid gate (Bailing Hybrid's MLA output gate; the vendor's F.sigmoid(gate) in
+// modeling_bailing_moe_v3.py) instead of softplus; the perHead/per-element convention is the same.
 func applySigmoidGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 	if perHead {
 		for head := range nH {

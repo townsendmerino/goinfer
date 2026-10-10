@@ -11,20 +11,14 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// moeSelTrace — when non-nil, records the top-k expert indices of every moeMLP call
-// in forward order. SPIKE instrumentation for the #2 (MoE expert demand-paging)
-// viability measurement (docs/ideas-weight-memory.md): de-interleave by NumLayers to
-// get per-(layer, token) selections, then simulate LRU hit rate. Off (nil) in
-// production — a single nil-check per MoE FFN, zero allocation. Set by the spike test.
+// moeSelTrace, when non-nil, records the top-k expert indices of every moeMLP call in forward order (de-interleave by NumLayers
+// for per-(layer, token) selections). Test instrumentation set by the demand-paging spike test; nil in production, costing one
+// nil check per MoE FFN.
 var moeSelTrace [][]int
 
-// moeWtsTrace mirrors moeSelTrace for the per-call routing WEIGHTS; together they
-// capture a forward's full routing decision. moeSelOverride/moeWtsOverride — when
-// non-nil — force each moeMLP call to REPLAY a recorded routing (idx+wts from a
-// higher-precision reference run) in forward order instead of routing on its own
-// hidden. The precision-localization experiment (E2, decoder/ssm_precision_localize_test.go):
-// does feeding the f32-SSM forward the f64 reference's routing recover quality
-// (→ a cheap router-selection island suffices) or not (→ the whole SSM needs precision)?
+// moeWtsTrace mirrors moeSelTrace for the routing weights. moeSelOverride/moeWtsOverride, when non-nil, make each moeMLP call
+// replay a recorded routing (from a higher-precision reference run) in forward order instead of routing on its own hidden; used
+// by the precision-localization experiment (ssm_precision_localize_test.go).
 var (
 	moeWtsTrace    [][]float32
 	moeSelOverride [][]int
@@ -32,23 +26,10 @@ var (
 	moeOverridePos int
 )
 
-// gatedMLP runs one block's gated MLP for the current position and returns the
-// output (caller applies the post-MLP norm + residual add). The gate/up/down
-// structure is shared by GeGLU (Gemma) and SwiGLU (Llama/Mistral/Qwen); only
-// the gate activation differs (Architecture.Act).
-//
-//	gate = GateProj·h            // [IntermediateDim]
-//	up   = UpProj·h              // [IntermediateDim]
-//	mid  = act(gate) ⊙ up        // [IntermediateDim]
-//	out  = DownProj·mid          // [HiddenDim]
-//
-// mlp runs the block's feed-forward network, dispatching on the descriptor:
-// a sparse mixture of experts (Mixtral), GPT-2's non-gated up→act→down with
-// biases, or the gated GeGLU/SwiGLU shared by Gemma/Llama/Qwen.
-// mlp writes the FFN output for input h into out ([hidden]); the caller applies
-// any post-MLP norm + residual. The hot dense path (gatedMLP) reuses scratch and
-// writes straight into out; the rarer MoE / non-gated paths still allocate
-// internally and are copied into out.
+// mlp writes the FFN output for input h into out ([hidden]); the caller applies any post-MLP norm and residual. It dispatches on
+// the descriptor: a sparse mixture of experts (moeMLP), GPT-2's non-gated up→act→down with biases (nonGatedMLP), or the gated
+// GeGLU/SwiGLU shared by Gemma/Llama/Qwen (gatedMLP). The hot dense path reuses scratch and writes straight into out; the rarer
+// MoE and non-gated paths allocate internally and are copied into out.
 func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager, lora *loraLayerDelta) error {
 	switch {
 	case arch.MoE != nil && lw.Experts != nil:
@@ -72,25 +53,13 @@ func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr
 	}
 }
 
-// moeMLP runs a sparse mixture-of-experts FFN (Mixtral). The router scores all
-// experts; the top-k by softmax probability run as gated SwiGLU MLPs and their
+// moeMLP runs a sparse mixture-of-experts FFN. The router scores all experts; the top-k run as gated SwiGLU MLPs and their
 // outputs combine weighted by the (optionally renormalized) router weights:
+// out = Σ_j w[j] · expert_{e[j]}(h), with expert = down(silu(gate(h)) ⊙ up(h)). Only the chosen experts are evaluated.
 //
-//	probs   = softmax(Router·h)              // over all NumExperts
-//	(w, e)  = topk(probs, TopK)              // weights + expert indices
-//	if NormTopKProb { w /= sum(w) }          // Mixtral renormalizes
-//	out     = Σ_j w[j] · expert_{e[j]}(h)    // expert = down(silu(gate(h)) ⊙ up(h))
-//
-// Only the chosen experts are evaluated — the point of MoE.
-//
-// scr, when non-nil, backs the router-logits/accumulator/expert-gate-up buffers with
-// per-stream scratch instead of allocating them fresh — the dominant share of MoE
-// decode's per-token allocation (P8). The single-token decode call sites always pass
-// their cache's scr; the batched-prefill call site (forwardn.go) has no cache.scr in
-// scope and passes nil, falling back to the original per-call allocation (amortized
-// over the K-token batch, not the flagged decode hot path). routeExperts/topK's own
-// small (NumExperts/TopK-sized) internal allocations are untouched — negligible next
-// to the hidden/intermediate-sized buffers below.
+// scr, when non-nil, backs the router-logits/accumulator/expert-gate-up buffers with per-stream scratch instead of allocating
+// them per call. The single-token decode call sites always pass their cache's scr; the batched-prefill call site (forwardN) has
+// none in scope and passes nil, allocating per call, amortized over the K-token batch.
 func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
 	moe := arch.MoE
 	nE, k := moe.NumExperts, moe.TopK
@@ -119,12 +88,10 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
 		moeWtsTrace = append(moeWtsTrace, append([]float32(nil), wts...))
 	}
-	// Weight residency (idea #2): the router selection is the demand signal. Touch
-	// every chosen expert before the matmuls so the pager faults them in and keeps
-	// resident RAM within budget (releasing the LRU tail). Bit-exact — released
-	// experts re-fault from the read-only mapping (mmap mode) or are re-pread (pool
-	// mode). Lock/Unlock spans touch AND the matmul reads below it (swiGLUExpert) —
-	// see expertPager's doc comment for why pool mode needs this held that long.
+	// Weight residency: the router selection is the demand signal. Touch every chosen expert before the matmuls so the pager faults
+	// them in and keeps resident RAM within budget (releasing the LRU tail). Bit-exact: released experts re-fault from the read-only
+	// mapping (mmap mode) or are re-pread (pool mode). Lock/Unlock spans the touch and the matmul reads below it (swiGLUExpert); see
+	// expertPager's doc for why pool mode needs it held that long.
 	if pager != nil {
 		pager.Lock()
 		defer pager.Unlock()
@@ -136,9 +103,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 	// Weighted sum of the chosen experts (each a SwiGLU MLP). Experts use the
 	// MoE expert width (Mellum's moe_intermediate_size), not the dense one.
 	hidden := arch.HiddenDim
-	// One gate/up pair for the whole token. The experts run sequentially, so k pairs were never
-	// simultaneously live — this was 2*k allocations per token where 2 suffice, and at top-k 8 with
-	// a large moe_intermediate that is the bulk of moeMLP's per-token allocation.
+	// One gate/up pair for the whole token: the experts run sequentially, so k pairs are never simultaneously live.
 	sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)
 	var out, expOut, egate, eup []float32
 	if scr != nil {
@@ -149,8 +114,7 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 		egate, eup = make([]float32, sc), make([]float32, sc)
 	}
 	clear(out)
-	// h is every routed and shared expert's gate and up input: quantize it once for the layer (R-13), where each
-	// of the 2k+2 matmuls quantized it again.
+	// h is every routed and shared expert's gate and up input: quantize it once for the layer, not once in each of the 2k+2 matmuls.
 	var hq *w4a8Act
 	if scr != nil {
 		hq = &scr.moeHQ
@@ -184,17 +148,14 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 	return out, nil
 }
 
-// routeExperts selects the top-k experts and their weights from router logits.
-// Mixtral/Qwen2-MoE: softmax over experts, top-k by probability, weights = those
-// probabilities. DeepSeek/GLM (sigmoid=true): per-expert sigmoid scores; if bias
-// (e_score_correction_bias) is present it shifts the top-k SELECTION only, while the
-// weights are the chosen experts' UN-biased sigmoid scores. norm renormalizes the
-// weights to sum 1; scale (routed_scaling_factor) multiplies them (0/1 = no-op).
-// With sigmoid=false, bias=nil, scale∈{0,1}, nGroup≤1 this is the exact prior Mixtral path.
+// routeExperts selects the top-k experts and their weights from router logits. Mixtral/Qwen2-MoE: softmax over experts, top-k by
+// probability, weights = those probabilities. DeepSeek/GLM (sigmoid=true): per-expert sigmoid scores; a bias
+// (e_score_correction_bias), when present, shifts the top-k selection only, while the weights are the chosen experts' unbiased
+// sigmoid scores. norm renormalizes the weights to sum 1; scale (routed_scaling_factor) multiplies them (0/1 = no-op). With
+// sigmoid=false, bias=nil, scale in {0,1} and nGroup<=1 this is plain Mixtral routing.
 //
-// nGroup>1 (DeepSeek-V3 noaux_tc) adds group-limited selection: experts are partitioned
-// into nGroup contiguous groups, each group scored by the sum of its top-2 selection
-// scores; only experts in the top topkGroup groups are eligible for the per-token top-k.
+// nGroup>1 (DeepSeek-V3 noaux_tc) adds group-limited selection: experts are partitioned into nGroup contiguous groups, each group
+// scored by the sum of its top-2 selection scores; only experts in the top topkGroup groups are eligible for the per-token top-k.
 func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float64, nGroup, topkGroup int) (idx []int, wts []float32) {
 	var scoreBuf [128]float32
 	var scores []float32
@@ -287,27 +248,19 @@ func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
 			}
 		}
 	}
-	// Trailing experts beyond nGroup*gsz (when NumExperts % nGroup != 0) belong to no group
-	// and must be masked, not left at 0.0 — else they can outscore a legitimately -inf'd expert
-	// (N-02; latent, real DeepSeek divides evenly, but a future/odd config would mis-route).
+	// Trailing experts beyond nGroup*gsz (when NumExperts % nGroup != 0) belong to no group and must be masked, not left at 0.0, or
+	// they can outscore a legitimately -inf'd expert. Real DeepSeek divides evenly; this guards an odd config from mis-routing.
 	for i := nGroup * gsz; i < len(sel); i++ {
 		out[i] = negInf
 	}
 	return out
 }
 
-// activationFanoutThreshold gates parallelElementwise's fan-out: below this element count, the
-// fork/join (goroutine-wake stagger) costs more than a short shard's work, so the range runs
-// serially instead. MEASURED on this Mac (arm64, 6 P-cores, `silubench` — a standalone serial-vs-
-// 6-worker fan-out microbenchmark over the exact silu(gate)*up computation, arms alternating
-// rep-by-rep, median of 51 reps): parallel is a clear LOSS at 1024-2048 elements (0.79x-0.87x),
-// roughly break-even at 4096 (1.04x — the ambiguous zone), and a clean win from 8192 onward
-// (1.53x, climbing to ~5x by 1M elements). 8192 sits safely past the ambiguous band rather than
-// riding its edge. This is LOWER than S-06's own attention-fanout stagger estimate (~92us at six
-// workers) would suggest for a "decode-sized" (~8960-element) call — because this fan-out's
-// per-worker setup is a bare closure over a slice range, not headWorkerPool's per-worker
-// gather-then-matmul; a cheaper goroutine body has a cheaper stagger. Re-measure with silubench
-// before changing this constant; do not guess a new value from the attention pool's own number.
+// activationFanoutThreshold gates parallelElementwise's fan-out: below this element count the fork/join (goroutine-wake
+// stagger) costs more than a short shard's work, so the range runs serially. 8192 sits safely past the ambiguous band of the
+// silubench microbenchmark rather than riding its edge. Re-measure with silubench before changing it, and do not derive a new
+// value from the attention pool's stagger: this fan-out's per-worker body is a bare closure over a slice range, with a cheaper
+// stagger.
 const activationFanoutThreshold = 8192
 
 // activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as
@@ -315,12 +268,11 @@ const activationFanoutThreshold = 8192
 // core count only has one place to update.
 const activationFanoutWorkers = maxAttnWorkers
 
-// parallelElementwise splits [0,n) into up to activationFanoutWorkers contiguous ranges and runs
-// fn(lo,hi) on each in its own goroutine when n crosses activationFanoutThreshold; otherwise runs
-// fn(0,n) serially. Bit-identical either way BY CONSTRUCTION: fn must depend only on its own
-// index range (no cross-range read, no shared accumulator) — every call site here is a pure
-// elementwise activation (silu/geluTanh × gate), never a reduction (a softmax's `sum += e` would
-// reorder under this split and must NOT use it — see S-06 step 1's own scope note).
+// parallelElementwise splits [0,n) into up to activationFanoutWorkers contiguous ranges and runs fn(lo,hi) on each in its own
+// goroutine when n crosses activationFanoutThreshold; otherwise it runs fn(0,n) serially. Bit-identical either way by
+// construction: fn must depend only on its own index range (no cross-range read, no shared accumulator). Every call site is a
+// pure elementwise activation (silu/geluTanh × gate); a reduction (a softmax's `sum += e`) would reorder under this split and must
+// not use it.
 func parallelElementwise(n int, fn func(lo, hi int)) {
 	if !activationFanoutEnabled || n < activationFanoutThreshold {
 		fn(0, n)
@@ -389,11 +341,9 @@ func geglu(gate, up []float32) {
 	}
 }
 
-// gegluExact is geglu with the EXACT erf GELU (geluErf) instead of the tanh approximation —
-// Spark-X2.5's gated MLP: down(gelu(gate(x)) * up(x)), verified against the real
-// modeling_spark.py's Spark2_5MLP.forward, which raises unless hidden_act=="gelu" (HF's exact
-// "gelu", not "gelu_new"/"gelu_pytorch_tanh"). Before this, ActGelu only reached the NON-gated
-// MLP path (nonGatedMLP, Nemotron-H) — gatedMLP's switch had no case for it at all.
+// gegluExact is geglu with the exact erf GELU (geluErf) instead of the tanh approximation: Spark-X2.5's gated MLP,
+// down(gelu(gate(x)) * up(x)), whose vendor code requires hidden_act == "gelu" (HF's exact "gelu", not "gelu_new" or
+// "gelu_pytorch_tanh"). ActGelu also reaches the non-gated path (nonGatedMLP, Nemotron-H).
 func gegluExact(gate, up []float32) {
 	n := len(gate)
 	if n == 0 {
@@ -417,18 +367,12 @@ func gegluExact(gate, up []float32) {
 	}
 }
 
-// swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate
-// width into dst[:hidden]: dst = Down·(silu(Gate·h) ⊙ Up·h).
-// P6: gate/up come from the CALLER so a token's k experts share one pair instead of allocating a
-// pair each. They are fully overwritten by the two matmuls below before anything reads them, so
-// reuse cannot carry state between experts and the result is bit-identical by construction — same
-// operands, same order, same accumulation.
-//
-// expertScratch sizes them; a nil or short buffer allocates, so callers that have no scratch (the
-// llama4 path) keep working unchanged.
-//
-// hq, when non-nil, is h already quantized for the CPU W4A8 path (R-13): moeMLP quantizes h once for every expert of
-// the layer. With hq nil, gate and up still share one quantization of h.
+// swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate width into dst[:hidden]:
+// dst = Down·(silu(Gate·h) ⊙ Up·h). gate/up come from the caller so a token's k experts share one pair; the two matmuls fully
+// overwrite them before anything reads them, so reuse carries no state between experts and the result is bit-identical. A nil or
+// short buffer allocates, so callers with no scratch (the llama4 path) work unchanged. hq, when non-nil, is h already quantized
+// for the CPU W4A8 path (moeMLP quantizes it once for every expert of the layer); with hq nil, gate and up still share one
+// quantization of h.
 func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, gate, up []float32, hq *w4a8Act) {
 	if cap(gate) < inter || cap(up) < inter {
 		gate, up = make([]float32, inter), make([]float32, inter)
@@ -556,7 +500,14 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 	return out, nil
 }
 
+// gatedMLP runs one block's gated MLP for the current position into out (the caller applies the post-MLP norm and residual).
+// GeGLU (Gemma) and SwiGLU (Llama/Mistral/Qwen) share the structure and differ only in the gate activation (Architecture.Act).
 // No biases on any projection.
+//
+//	gate = GateProj·h            // [IntermediateDim]
+//	up   = UpProj·h              // [IntermediateDim]
+//	mid  = act(gate) ⊙ up        // [IntermediateDim]
+//	out  = DownProj·mid          // [HiddenDim]
 func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
 	fusedAct := false            // set when the fused path already applied the activation
@@ -579,7 +530,7 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		scr.gateUpOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
 		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), scr.gateUpOps[:], lw.GateProj.ActQuantGroup()) // gate/up in one dispatch (GPU: one submit)
 	} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {
-		// audit R-06: fused gate/up W4A8, mirroring the W8A8 batch above.
+		// Fused gate/up W4A8, mirroring the W8A8 batch above.
 		var group int
 		scr.guOpsW4[0], group = wmW4A8Op(&lw.GateProj, gate)
 		scr.guOpsW4[1], _ = wmW4A8Op(&lw.UpProj, up)
@@ -648,77 +599,34 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// P18 — expert-major MoE prefill batching.
+// moeExpertMajorChunk is the row count per expert-major chunk. The expert-major path (moeMLPBatch) turns the M=1 matmuls moeMLP
+// issues per row into M=N per expert, so an expert's weights are read once per chunk rather than once per token routed to it.
 //
-// moeMLP runs one row at a time and swiGLUExpert issues its three matmuls at
-// M=1, so an expert's weights are re-read for every token that routes to it. At
-// K=8192 that is ~10^3 re-reads per expert per layer. Measured at real Mellum2
-// shapes with locality already perfect, converting M=1 -> M=N is worth 1.32x at
-// N=8 rising to 1.67x at N=256 and still falling
-// (docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md).
-//
-// BIT-IDENTITY IS THE CONSTRAINT, AND IT IS ACHIEVABLE. Two things must hold:
-//
-//  1. the matmuls must be M-invariant. linalg.MatmulBT documents this as a
-//     contract ("a row computed alone (M=1) equals the same row computed inside
-//     a batch"), and weightmat.go says the same of the int4 W4A8 kernel, so a
-//     row's expert output does not depend on how many rows shared the call.
-//  2. the per-row ACCUMULATION ORDER must be preserved. moeMLP folds the k
-//     experts as `for j, e := range idx { out += wts[j]*expOut }` -- in ROUTING
-//     RANK order. Float addition is not associative, so summing expert-major
-//     would change the result. This computes every (row, rank) expert output
-//     first and then folds each row in rank order, which keeps the sequence
-//     identical.
-//
-// (2) is why this holds a [rows][k][hidden] buffer and therefore why it runs in
-// CHUNKS rather than over the whole prompt: at K=8192, k=8, hidden=2304 that
-// would be 604 MB.
+// Bit-identity is the constraint, and it holds on two counts. The matmuls are M-invariant (linalg.MatmulBT's contract: a row
+// computed alone equals the same row inside a batch; weightmat.go says the same of the int4 W4A8 kernel). And the per-row
+// accumulation order is preserved: moeMLP folds the k experts in routing-rank order and float addition is not associative, so
+// moeMLPBatch computes every (row, rank) expert output first and then folds each row in rank order. That is also why it holds a
+// [rows][k][hidden] buffer and runs in chunks rather than over the whole prompt (604 MB at K=8192, k=8, hidden=2304).
 const moeExpertMajorChunk = 512
 
-// moeExpertMajor reports whether the expert-major prefill path is enabled.
-//
-// DEFAULT ON since 2026-09-01. Measured end to end on the full 28-layer Mellum2
-// at K=4096, paired and interleaved: 4.364x (1206.9s -> 276.6s), reproduced at
-// 4.50x on the second pair. The pre-registered bar was 15%; this clears it by
-// more than twenty times.
-//
-// It is BIT-IDENTICAL, which is why this default flip needs no golden change, no
-// documented divergence and no user-facing flag -- unlike --cpu-fast-attention,
-// this changes speed and nothing else. TestMoEExpertMajor_bitIdentical asserts
-// equality on every logit through the real forward at K=600 and K=4096, is
-// mutation-proven (reverse-order folding reddens 1381871/1382400 logits), and
-// asserts non-vacuity via a chunk counter so a silent refusal cannot pass as a
-// green.
-//
-// GOINFER_MOE_EXPERT_MAJOR=0 restores the per-row path. Kept as an escape hatch
-// and an A/B handle, not as a user setting.
-//
-// What the win is NOT: per-row allocation. moeMLP allocates ~5 slices per row
-// per layer here and the K=8192 profile recorded 339,293 GCs / 20.9 GB, so that
-// was the obvious explanation -- and reusing one scratch across the row loop,
-// measured as its own arm, is worth 0.99x and 1.02x. The mechanism is the
-// restructuring itself; the decomposition of why is measured as unexplained
-// rather than asserted. See docs/measurements/p18-expert-major-e2e-2026-09-01.md.
+// knobSet.moeExpertMajor (knobs.go) reports whether the expert-major prefill path is on; GOINFER_MOE_EXPERT_MAJOR=0 restores the
+// per-row path, as an escape hatch and A/B handle rather than a user setting. It is bit-identical, so unlike
+// --cpu-fast-attention it changes speed and nothing else. TestMoEExpertMajor_bitIdentical asserts equality on every logit through
+// the real forward, and asserts non-vacuity via the chunk counter (moeExpertMajorRuns) so a silent refusal cannot pass as green.
+// Measurements: docs/code-notes/decoder.md#knobSet.moeExpertMajor.
 
-// moeExpertMajorRuns counts chunks that actually took the expert-major path.
-// It exists so the bit-identity gate can prove it is not vacuous: moeMLPBatch
-// REFUSES for several legitimate reasons (shared expert, live pager, test
-// seams), and a refusal makes both arms take the identical per-row path, so the
-// test would pass while proving nothing.
+// moeExpertMajorRuns counts chunks that took the expert-major path, so the bit-identity gate can prove it is not vacuous:
+// moeMLPBatch refuses for several legitimate reasons (shared expert, live pager, test seams), and a refusal makes both arms take
+// the identical per-row path, so the test would pass while proving nothing.
 var moeExpertMajorRuns int64
 
-// moeMLPBatch runs the MoE FFN over `rows` ([n, hidden]) expert-major, writing
-// n*hidden results into dst. Bit-identical to calling moeMLP per row.
+// moeMLPBatch runs the MoE FFN over rows ([n, hidden]) expert-major, writing n*hidden results into dst; bit-identical to calling
+// moeMLP per row. It refuses (returns false) for the cases whose observable behaviour is order-dependent rather than
+// value-dependent, which preserving the accumulation order cannot make identical:
 //
-// It refuses (returns false) for the cases whose observable behaviour is
-// ORDER-dependent rather than value-dependent, because those cannot be made
-// identical by preserving the accumulation order alone:
 //   - moeSelOverride / moeSelTrace: test seams keyed on per-call forward order.
-//   - a live pager: `touch` order is the demand signal that drives eviction, so
-//     reordering it changes which experts are resident. Expert-major is very
-//     likely BETTER for paging, but "different" is not "better" until measured,
-//     and this item is about compute.
+//   - a live pager: touch order is the demand signal that drives eviction, so reordering it changes which experts are resident.
+//     Expert-major is likely better for paging, but different is not better until measured.
 func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager, dst []float32) (bool, error) {
 	moe := arch.MoE
 	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
@@ -727,18 +635,15 @@ func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be
 	if arch.Act != ActSiLU {
 		return false, nil
 	}
-	// The shared expert is added AFTER the routed fold in moeMLP. Refusing here
-	// rather than after the work, so a fall-back costs nothing: a partial
-	// implementation that silently dropped it would change results, not speed.
+	// The shared expert is added after the routed fold in moeMLP. Refuse up front so a fall-back costs nothing: a partial
+	// implementation that dropped it would change results, not speed.
 	if moe.SharedIntermediateDim > 0 {
 		return false, nil
 	}
 	hidden, nE, k := arch.HiddenDim, moe.NumExperts, moe.TopK
 	inter := moe.IntermediateDim
 
-	// Router for the whole chunk in ONE matmul (M=n). This is separately worth
-	// something: the profile put the per-row router matmul at 22.4 s and the
-	// per-row `make([]float32, nE)` at 46.2 s of a 1443 s moeMLP.
+	// Router for the whole chunk in one matmul (M=n), instead of a matmul and an nE-sized allocation per row.
 	logits := make([]float32, n*nE)
 	matmul(be, &lw.Router, rows, logits, n)
 

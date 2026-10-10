@@ -6,16 +6,12 @@ import (
 	"unsafe"
 )
 
-// gpt-oss forward (own path, CPU-only). gpt-oss is a sparse-MoE family whose two
-// ops diverge from the generic descriptor forward: attention adds a learned
-// per-head SINK to the softmax denominator (an escape valve that bleeds attention
-// mass, with no value), and the MoE experts use a clamped interleaved-SwiGLU with
-// an α-scaled sigmoid, a +1 on the linear branch, and per-expert biases. The layer
-// skeleton is otherwise plain pre-norm (NormPre2): everything else — embedding,
-// norms, residuals, final head — is the shared path. Isolating gpt-oss here keeps
-// the sink/clamped-activation out of the 20 other families' hot softmax/MLP kernels.
-// Parity-first and arch-neutral (no SIMD): §1 says the capability matters more than
-// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.6).
+// gpt-oss forward (own path). gpt-oss is a sparse-MoE family whose two ops diverge from the generic descriptor forward: attention
+// adds a learned per-head SINK to the softmax denominator (an escape valve that bleeds attention mass, with no value), and the MoE
+// experts use a clamped interleaved-SwiGLU with an α-scaled sigmoid, a +1 on the linear branch, and per-expert biases. The layer
+// skeleton is otherwise plain pre-norm (NormPre2); embedding, norms, residuals and final head are the shared path. Isolating
+// gpt-oss here keeps the sink and clamped activation out of the other families' hot softmax/MLP kernels. Parity-first and
+// arch-neutral (no SIMD); see docs/completed/task-mxfp4-gptoss.md.
 
 // runLayersGptOss embeds token id and runs the block stack, returning the residual
 // stream after the last layer (pre-final-norm) — the same contract as runLayers, so
@@ -169,10 +165,9 @@ func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]
 	idx, topv := topK(logits, moe.TopK)
 	wts := softmaxF32(topv) // softmax over the top-k selected logits
 
-	// M-34 (audit-2026-09-10): touch every routed expert before evaluating it, same as
-	// moeMLP (decoder/mlp.go) — without this, m.pager's budget banner and SpanCache LRU are
-	// built but never consulted for gpt-oss, so -stream-weights enforces no RAM bound at all
-	// on this family and every expert is served through raw demand page-faults instead.
+	// Touch every routed expert before evaluating it, as moeMLP does: without it, m.pager's budget and SpanCache LRU are built but
+	// never consulted for gpt-oss, so -stream-weights enforces no RAM bound on this family and every expert is served through raw
+	// demand page faults.
 	if m.pager != nil {
 		for _, e := range idx {
 			m.pager.touch(unsafe.Pointer(&lw.Experts[e]))

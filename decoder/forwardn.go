@@ -10,54 +10,20 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// cpuFastAttention reports whether the operator opted into A3's f32 prefill
-// attention (G24). Read here only; every consumer receives it as an explicit
-// argument so no path can pick it up by accident — see runLayersFromEmbedN.
+// cpuFastAttention reports whether the live environment enables f32 prefill attention (GOINFER_CPU_FAST_ATTENTION; on unless
+// set to "0", which is what --cpu-exact-prefill sets). It is the reading for a hand-built caller with no Model; a loaded model
+// reads its own snapshot through (*Model).cpuFastAttention. It is read only here: every consumer receives the answer as an
+// explicit argument, so no path can pick it up by accident (see runLayersFromEmbedN).
 //
-// Enabling it gives up two of acc64's three guarantees for this model:
-// spec-decode verify == sequential greedy (structurally prevented from applying
-// there anyway), and decode == prefill. Measured divergence at dense 1.5B:
-// cosine ~0.9976, and a measured 2.28x on an 8k prefill
-// (docs/measurements/attention-a3-kernel-ratio-2026-08-26.md).
-// DEFAULT ON since 2026-08-31 (operator decision). GOINFER_CPU_FAST_ATTENTION=0 turns it off,
-// which is what --cpu-exact-prefill sets. The variable was previously opt-IN ("1" enabled it), so
-// the sense of an EXPLICIT "1" is unchanged and only the unset case moved.
+// Enabling it gives up two of the exact (acc64) path's guarantees for the model: spec-decode verify == sequential greedy
+// (structurally prevented from applying there) and decode == prefill. A long prompt can therefore produce a different response at
+// temperature 0 than under the exact kernel; decode itself is untouched. It also gives up split-invariance: f32 reassociation makes
+// a prompt's KV depend on how the prompt was chunked, so a Session (a warm prefix, then a divergent suffix) stops matching a
+// one-shot generate over the same tokens. That divergence is accepted (operator decision). TestSessionFastAttnDivergence pins
+// it; the equality itself is gated under the exact kernel by TestSessionNgramSpecParity.
 //
-// What flipping the default costs, stated plainly because it is now the shipped behaviour: a long
-// prompt can produce a different response than the same prompt did before this change, at
-// temperature 0, on the CPU backend. Measured divergence is cosine ~0.9976 at dense 1.5B, stable
-// across 256/1024/2048-token prompts. Decode is untouched; this is prefill only. Speculative
-// verify is structurally excluded (it passes fastAttn=false, not a runtime check).
-//
-// WHAT IT GIVES UP IS BIGGER THAN "prefill != decode", and the help text understated it until
-// 2026-08-31: f32 attention is not SPLIT-INVARIANT. The f64 accumulator makes a prompt's KV
-// independent of how the prompt was chunked; f32 reassociation does not. So a SESSION — which
-// prefills a warm prefix and then a divergent suffix, two chunks — stops matching a one-shot
-// generate over the same tokens. Measured: TestSessionNgramSpecParity fails with the flag on and
-// passes with it off, and it failed that way BEFORE this became the default, so it is a latent
-// property of the flag rather than of defaulting it.
-//
-// That divergence is ACCEPTED as of 2026-08-31 (operator decision) rather than excluded, because
-// excluding sessions does not restore the equality — it only moves the disagreement from the
-// split to the kernel — and it costs measurably: 1.43x on a cold 2048-token turn (+18.3s) and
-// 1.32x on a warm 2048+128 suffix, since a suffix still attends over the whole prefix.
-// TestSessionFastAttnDivergence pins the new behaviour; the equality is still gated, under the
-// exact kernel, by TestSessionNgramSpecParity.
-//
-// IT IS FLOORED BY PROMPT LENGTH — see fastAttnMinPrompt. The win scales with K; the divergence
-// does not, so below the floor the default would trade a different answer for nothing.
-//
-// MoE IS *NOT* EXCLUDED, and that is deliberate: 66d0a05 removed the exclusion after measuring it
-// (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case this already ships, depth-matched,
-// 48/48 identical greedy continuation). --help still claims "REFUSED for MoE models at any
-// setting"; that text is STALE, not a description of a guard, and is corrected there.
-//
-// N-34: the sentence that used to end this paragraph — "so it is now enforced in code" — was
-// itself false. cpuFastAttention() below reads one env var and has no arch check; 82dda2a
-// removed the guard when 66d0a05's measurement made the exclusion unnecessary. Two comments
-// naming the same list, and both wrong, in opposite directions.
-// cpuFastAttention is the live-environment reading (a hand-built caller with no Model); a Loaded model reads
-// its own snapshot through (*Model).cpuFastAttention.
+// It is floored by prompt length (fastAttnMinPrompt). MoE is deliberately not excluded, and nothing here checks the arch.
+// Evidence, measured figures and the decision record: docs/code-notes/decoder.md#cpuFastAttention.
 func cpuFastAttention() bool { return (*knobSet)(nil).cpuFastAttention() }
 
 // cpuFastAttention is the per-model form: off when this model was loaded with
@@ -68,137 +34,68 @@ func (m *Model) cpuFastAttention() bool { return !m.exactPrefill && m.knobs.cpuF
 // must take each backend's bit-exact path. Backends consult it next to their own env var.
 func (m *Model) ExactPrefill() bool { return m.exactPrefill }
 
-// fastAttnMinPrompt is the prompt length below which f32 prefill attention is NOT used, even
-// when enabled. Attention is O(K·nKeys), so the win grows with K while the divergence does not:
-// a short prompt gets a different answer and buys almost nothing for it.
+// fastAttnMinPrompt is the prompt length (K, the suffix being prefilled) below which f32 prefill attention is not used, even
+// when enabled: attention is O(K*nKeys), so the win grows with K while the divergence does not, and a short prompt gets a
+// different answer for almost nothing.
 //
-// Measured 2026-08-31 (qwen2.5-coder-1.5b int4, M1 Pro, cold prefill, f32 vs f64-accum):
-//
-//	K=512   8.59s vs  9.90s   1.15x
-//	K=1024 19.29s vs 23.66s   1.23x
-//	K=2048 42.83s vs 61.08s   1.43x
-//	K=8192 (from the flag's own record)  2.28x
-//
-// Against that, an 8-TOKEN prompt diverged at the THIRD generated token of 24 and never
-// re-converged — full divergence, no measurable win. Without this floor, flipping the default
-// would have changed the output of every short request in exchange for nothing, which is not the
-// trade the flag documents or the one it was turned on for.
-//
-// 512 IS A JUDGEMENT, NOT A MEASUREMENT: it is the smallest K measured with a win over ~15%, and
-// nothing here identifies a crossover point. A sweep that found one should move this and say so.
-// It is deliberately NOT configurable — a knob here would be a third way for prefill numerics to
-// vary between two runs of the same build.
+// 512 is a judgement, not a measured crossover (the smallest K measured with a win over ~15%); a sweep that finds one should move
+// it and say so. It is deliberately not configurable: a knob would be another way for prefill numerics to vary between two runs
+// of the same build. Measurements: docs/code-notes/decoder.md#fastAttnMinPrompt.
 const fastAttnMinPrompt = 512
 
-// attnHeadsParThreshold gates A1 move (a)'s head-parallel fan-out: below this
-// many MACs' worth of per-call work (K*nKeys, the QKᵀ/AV size driver), the
-// fork-join cost isn't worth it and attendBatchedHeads runs its heads serially
-// through pool[0] instead — the same "small work stays serial" discipline
-// int4ParThreshold and aikit's own parThreshold already apply one level down
-// (docs/task-attention-decode-cost.md's Gate A0 item 2 finding: a second
-// confirmed instance of that bug class, here avoided rather than repeated).
-// Measured, not guessed — see the campaign doc's move (a) writeup.
+// attnHeadsParThreshold is the per-call work (K*nKeys, the QKᵀ/AV size driver) below which attendBatchedHeads runs its heads
+// serially through pool[0] instead of fanning out: the same "small work stays serial" rule int4ParThreshold applies. It is 0, so
+// the fan-out is never skipped on size. Campaign record: docs/completed/task-attention-decode-cost.md (move (a)).
 const attnHeadsParThreshold = 0
 
-// attnGroupedNEONSize is the query-head group size aikit's grouped acc64
-// kernels (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for — the
-// 1.5B's real GQA ratio (NumHeads/NumKVHeads), R13's registered decision
-// shape (docs/tasks/red-october.md, aikit linalg commit af926e3). Any other
-// group ratio still runs correctly through the same Group functions (their
-// Go fallback is the oracle every G is gated against), but slower than G
-// separate per-head calls — so attendGroupedHeads is gated to EXACTLY this
-// size, never called for a model whose group ratio differs, rather than
-// trusting the kernel's own internal G-dispatch to save a mismatched caller.
+// attnGroupedNEONSize is the query-head group size (NumHeads/NumKVHeads) the aikit grouped acc64 kernels
+// (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for. Any other ratio still runs correctly through the Go fallback but
+// slower than separate per-head calls, so attendGroupedHeads is gated to exactly this size rather than trusting the kernel's own
+// dispatch to save a mismatched caller.
 const attnGroupedNEONSize = 6
 
-// attnGroupedNEONBlock is the NEON grouped kernels' own internal block width
-// (8 keys per QK block, 8 dims per AV block — attn_acc64_group_arm64.s,
-// aikit). Arm B's runSplitAligned calls round each worker's key/dim slice up
-// to a multiple of this, so a slice that would otherwise land on a ragged
-// boundary doesn't silently fall through to the much slower plain-Go
-// grouped kernel for its remainder — see runSplitAligned's own doc for the
-// measured cost of getting this wrong.
+// attnGroupedNEONBlock is the NEON grouped kernels' own block width (8 keys per QK block, 8 dims per AV block). runSplitAligned
+// rounds each worker's slice up to a multiple of it so no slice falls through to the much slower plain-Go grouped kernel for a
+// ragged remainder.
 const attnGroupedNEONBlock = 8
 
-// attnGroupedMinKeys is the nWin gate: below this many attended keys, the
-// per-head path runs unchanged. R13 step 0(iii)'s distinct-bytes probe
-// (docs/measurements/r13-distinct-bytes-probe-2026-09-19.md) found the
-// cache already dedups a GQA group's shared reads below roughly K=1024; the
-// aikit kernel A/B (docs/measurements/r13-neon-kernel-ab-2026-09-20.md)
-// nonetheless measured a real win from the smallest depth it tested (130),
-// so 128 — the smallest depth either R13 record measured, not the cache
-// probe's own crossover — is the conservative floor here, not the
-// aggressive one.
+// attnGroupedMinKeys is the number of attended keys below which the per-head path runs unchanged. 128 is the smallest depth
+// either R13 record measured a win at: a conservative floor, not the cache probe's own crossover (the cache already dedups a GQA
+// group's shared reads below roughly K=1024). Records: docs/measurements/r13-distinct-bytes-probe-2026-09-19.md and
+// docs/measurements/r13-neon-kernel-ab-2026-09-20.md.
 const attnGroupedMinKeys = 128
 
-// knobSet.attnGrouped (knobs.go) reports whether R13's grouped-kernel decode path may
-// run. DEFAULT ON, matching moeExpertMajor's sense (mlp.go). Three earlier
-// wiring attempts (Arm A full-group ownership, Arm B split, Arm B serial)
-// all measured slower once profiled against a real checkpoint — traced,
-// via `go tool trace`'s per-goroutine breakdown (plain CPU pprof pointed at
-// the wrong cause first — see the record), to attendGroupedLayer having
-// accidentally SERIALIZED softmax, which the ungrouped path runs 6-way
-// parallel. Fixed by splitting softmax the same way QK/AV already are.
-// Real result: parity at depth 2048 (~1% overhead, noise-level), a genuine
-// 1.32x served speedup at depth 8192 (docs/measurements/
-// r13-served-decode-2026-09-20.md) — matching the depth-dependence R13's
-// own step 0 predicted. GOINFER_ATTN_GROUPED=0 restores the per-head path.
+// knobSet.attnGrouped (knobs.go) reports whether the grouped-kernel decode path may run; on unless GOINFER_ATTN_GROUPED=0, which
+// restores the per-head path. The path also needs attnGroupedKernels (a per-architecture default, on for arm64 only).
 
-// attnGroupedRuns counts attendGroupedHeads calls — R13 Gate (4), the wiring
-// proof. Bit-identity hides dispatch inertness (a grouped path that never
-// runs passes every correctness gate); this is what a test asserts nonzero
-// above attnGroupedMinKeys and zero below it, mirroring moeExpertMajorRuns'
-// (mlp.go) exact idiom.
+// attnGroupedRuns counts attendGroupedHeads/attendGroupedLayer dispatches. Bit-identity hides dispatch inertness (a grouped path
+// that never runs passes every correctness gate), so a test asserts it nonzero above attnGroupedMinKeys and zero below;
+// moeExpertMajorRuns (mlp.go) is the same idiom.
 var attnGroupedRuns int64
 
-// canBatchN reports whether the batched M=K path applies: the gated-MLP families
-// (Qwen / Llama / Gemma) AND standard sparse-MoE (Mellum / Mixtral) with K>1 —
-// their attention is plain GQA softmax, so the SIMD attendBatchedHeads applies
-// (the L² hotspot: a profile put scalar attendQuery at ~83% of MoE prefill). The
-// MoE FFN itself stays per-row (router picks different experts per token).
-// GPT-2 (non-gated + learned positions) and K≤1 take the sequential fallback.
+// canBatchN reports whether the batched M=K path applies: K>1 on a family without its own sequential forward, with a gated MLP
+// and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
+// FFN stays per row because the router picks different experts per token.
 func (m *Model) canBatchN(K int) bool {
 	a := m.w.arch
-	// Every family with its own sequential forward is excluded, and the exclusion is DERIVED from
-	// the dispatch table rather than restated here. It used to be restated, and the copy fell one
-	// family behind: LFM2 dispatched to runLayersLFM2 in runLayers and was absent from this list,
-	// so a 2-token prompt ran the dense attention stack over conv layers that load no q/k/v/o and
-	// panicked in rmsNorm (audit-2026-09-02 C-01). A new family now gets this for free.
+	// Every family with its own sequential forward is excluded, derived from the dispatch table (ownForward) rather than restated
+	// here: a restated list once fell a family behind, and a 2-token prompt ran the dense attention stack over conv layers that load
+	// no q/k/v/o.
 	if _, own := a.ownForward(); own {
 		return false
 	}
 	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed
 }
 
-// specRollbackSafe reports whether speculative decode's rollback — KVCache.TruncateTo
-// after a partial accept — correctly restores this model's state. True for softmax /
-// GQA (truncate the appended K/V) and MLA (reslice the latent KV) — both live in the
-// cache, so a verified-then-rejected draft block leaves no residue. FALSE for every
-// family hasRecurrentState below marks Recurrent — not just the two most obvious
-// examples, Mamba-2 (granite / nemotron_h) and Gated DeltaNet (qwen3_5_moe), whose
-// rolling state mamba2Step / the delta scan mutate IN PLACE, but also LFM2's conv
-// window and KDA (bailing_hybrid) — and TruncateTo does NOT roll back any of them (it
-// only reslices KV layouts). Verifying a K-token block over-advances that state, and
-// the next round decodes from it: a silent distribution bug, not a crash (00-core §6;
-// N-10). Those families need the
-// checkpoint-at-block-start / restore path (not yet built); until then the n-gram
-// speculative entry points refuse them and the caller falls back to plain decode.
-// hasRecurrentState reports whether this model carries state that is mutated IN PLACE per token —
-// a conv window, an SSM state, a linear-attention state — which no positional rewind can restore.
-// It is the arch-side view of KVCache.hasRecurrentState(), read from the dispatch table's Recurrent
-// bit so it can be asked BEFORE any cache exists. That matters for the resident path, which has no
-// KVCache to interrogate.
+// hasRecurrentState reports whether this model carries state mutated in place per token (a conv window, an SSM state, a
+// linear-attention state), which no positional rewind can restore. It is the arch-side view of KVCache.hasRecurrentState(), read
+// from the dispatch table's Recurrent bit so it can be asked before any cache exists (the resident path has none).
 //
-// ONE PREDICATE, READ EVERYWHERE, because the family list has now been missed once per consumer.
-// This expression used to be inlined in specRollbackSafe alone; decoder/resident_reuse.go needed
-// the same question and the same answer, and a second hand-written copy is exactly how LFM2's conv
-// window came to be absent from every site that should have named it (audit-2026-09-02 C-02). A new
-// state kind is added to the dispatch table once and every caller here follows.
+// One predicate, read everywhere (specRollbackSafe, resident_reuse.go, generate_vl.go): a second hand-written family list is how
+// a family gets missed at a consumer. A new state kind is added to the dispatch table once and every caller follows.
 func (m *Model) hasRecurrentState() bool {
-	// Nil-safe because residentReuseLen is reachable from a Model with no weights loaded — its unit
-	// test constructs one to exercise the id-matching arithmetic alone. A model with no arch has no
-	// family and so no recurrent state; answering false keeps that test measuring what it is about,
-	// and no real generation can reach here with a nil arch anyway.
+	// Nil-safe because residentReuseLen is reachable from a Model with no weights loaded (its unit test builds one). A model with no
+	// arch has no family and so no recurrent state.
 	if m == nil || m.w == nil || m.w.arch == nil {
 		return false
 	}
@@ -206,24 +103,23 @@ func (m *Model) hasRecurrentState() bool {
 	return own && f.Recurrent
 }
 
+// specRollbackSafe reports whether speculative decode's rollback (KVCache.TruncateTo after a partial accept) correctly restores
+// this model's state. It is true for softmax/GQA and MLA, whose state lives in the cache and is resliced. It is false for every
+// family hasRecurrentState marks Recurrent: TruncateTo does not roll back their in-place state, so verifying a K-token block
+// over-advances it and the next round decodes from it, a silent distribution bug rather than a crash. It is also false for
+// windowed models (see below). The n-gram speculative entry points refuse unsafe models and the caller falls back to plain
+// decode; no checkpoint-at-block-start/restore path exists.
 func (m *Model) specRollbackSafe() bool {
 	a := m.w.arch
 	if m.hasRecurrentState() {
 		return false
 	}
-	// C1/C-04: a STAGED sliding-window cache stores local layers in physical rings. Once a ring
-	// wraps (context > window), a rollback of >1 position can't restore the evicted positions, so
-	// the verify reads stale history and diverges — the "lossless" guarantee broken for the families
-	// rings serve (Gemma-3 local / Mistral / Phi-3). The earlier exemption keyed on m.resident==nil,
-	// assuming a resident backend means the positional resident path is taken — but three of four
-	// speculative loops at the time (EAGLE, since removed; grammar always; n-gram whenever a Session drives the staged cache)
-	// use the staged ring EVEN when m.resident!=nil, and a resident CAS loss also falls back to
-	// staged mid-flight. That misjudged path made the predicate return "safe" for a cache that wraps.
-	// Refuse windowed models for speculation unconditionally: the resident positional path is itself
-	// safe, but refusing costs little (→ plain decode) and closes the hole at the source. With windowed models refused here, the staged rollback sites
-	// (KVCache.TruncateTo) only ever run on ring-free caches, where TruncateTo is always exact — so
-	// no inexact case reaches them; re-enabling windowed speculation later must consume that exact
-	// bool at each rollback site (audit C-04).
+	// A staged sliding-window cache stores local layers in physical rings. Once a ring wraps (context > window), a rollback of more
+	// than one position cannot restore the evicted positions, so verify would read stale history and diverge. The resident
+	// positional path is itself safe, but the speculative loops can use the staged ring even when m.resident != nil (and a resident
+	// CAS loss falls back to staged mid-flight), so windowed models are refused for speculation unconditionally; the cost is plain
+	// decode. That keeps the staged rollback sites (KVCache.TruncateTo) to ring-free caches, where it is always exact. Re-enabling
+	// windowed speculation means consuming an exact-rollback bool at each rollback site.
 	if a.SlidingWindow > 0 {
 		return false
 	}
@@ -270,10 +166,8 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
-	// maxQDim, not qDim: a family with PER-LAYER query heads (Laguna — 48 on
-	// full-attention layers, 64 on sliding) reuses q/ctx across every layer, so they
-	// must be sized for the WIDEST one and sliced per layer below. maxHeads collapses
-	// to NumHeads everywhere else, leaving these allocations unchanged.
+	// maxQDim, not qDim: a family with per-layer query heads (Laguna) reuses q/ctx across every layer, so they are sized for the
+	// widest and sliced per layer below. maxHeads is NumHeads everywhere else.
 	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
 	K := len(h) / hidden
 	startPos := cache.Pos()
@@ -290,113 +184,32 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
 	// is the same for every layer in this sweep). See attendBatchedHeads.
 	maxKeys := startPos + K
-	// A3 (G24): OPT-IN f32 attention for prefill. Off unless asked for — and as of
-	// 2026-08-29, available to MoE as well, which it was not.
+	// fastAttn is the caller's statement that this sweep may use f32 attention and so diverge from the exact path (see
+	// cpuFastAttention). It is a parameter, not a global read, so the guard is structural: spec-decode verify runs through forwardN
+	// and must keep acc64 or "verify == sequential greedy" silently stops holding, and a runtime check could not tell the two callers
+	// apart. The exclusions are applied here, at the single point where the decision becomes arithmetic, not at each caller: three
+	// call sites pass cpuFastAttention() and verify passes false, so a per-caller guard would be three chances to forget.
 	//
-	// The acc64 path is 8.14x slower than f32 at long-context shapes (measured,
-	// docs/measurements/attention-a3-kernel-ratio-2026-08-26.md — note that is
-	// more than double the "~3.7x" the kernel comment assumes), and attention is
-	// ~70% of an 8k dense prefill and 97.1% of an 8k MoE one ON A 4-LAYER SLICE —
-	// which OVERSTATES the full model, see the speedup note below. It exists to hold three
-	// guarantees, and enabling this gives up two of them for the model that enables
-	// it: spec-decode verify == sequential greedy, and decode == prefill.
+	// The floor keys on K, the suffix length, not on attention work (K*nKeys), deliberately: a warm 2048+128 suffix (K=128) does not
+	// take the fast path although it attends over the whole prefix. The divergence was measured at the shapes the floor admits, and
+	// re-keying would extend an accepted output change to short suffixes whose divergence nobody has measured. Changing it means
+	// measuring at that shape first.
 	//
-	// THE THIRD GUARANTEE — MoE router stability — USED TO EXCLUDE MoE OUTRIGHT, on
-	// the argument that an f32 QK reassociation flips a top-k expert at a near-tie and
-	// cascades. That argument was never measured; it is now, and it is half right.
-	// The mechanism is REAL: at 28 layers, 14.5% of moeMLP calls select a different
-	// expert set, and removing the routing term recovers 70.1% of the divergence. What
-	// is NOT supported is the categorical refusal:
-	//
-	// MATCHED on both depth and prompt length — 28 layers and K=2048 on each side,
-	// which took three tries to get right; the two earlier pairings were matched on
-	// one axis each and disagreed about the SIGN:
-	//
-	//	1 - cosine   dense qwen2.5-coder-1.5b  2.352e-3
-	//	             MoE   Mellum2             2.126e-3   (0.90x dense)
-	//	greedy continuation, 48 tokens          IDENTICAL, 48/48
-	//
-	// THAT 0.90x IS A K=2048 STATEMENT AND DOES NOT SURVIVE TO LONG CONTEXT. At
-	// K=8192 on the full model MoE is 2.777e-3 against dense's recorded 2.400e-3 —
-	// about 1.16x, i.e. marginally WORSE, and that dense figure is cross-session so
-	// the direction is not load-bearing. Both remain ~4x inside the >= 0.99 bar
-	// (1e-2), which is what the decision rests on; "MoE diverges less than dense" is
-	// not something to repeat unqualified.
-	//
-	// So the case the flag forbade diverges slightly LESS than the case it permits,
-	// and never reaches the output at all. Both sit ~4x inside the >= 0.99 bar.
-	// Refusing one while shipping the other was not a defensible line. Record:
-	// docs/measurements/mellum2-moe-prefill-split-RESULT.md.
-	//
-	// WHAT THE EVIDENCE COVERS, because it is one family: Mellum2, 28 layers, 21 of
-	// them sliding-attention at window 1024 — which CAPS nKeys, and so caps how much
-	// reassociation error a layer can accumulate. A full-attention MoE stresses this
-	// harder and is unmeasured. Do not read the numbers above as "MoE in general".
-	//
-	// WHAT IT ACTUALLY BUYS, measured on the FULL 28-layer model at K=8192 — both
-	// earlier figures came from configurations nobody runs (3.11x on a 4-layer slice
-	// at K=8192, 1.08x on the full model at K=2048):
-	//
-	//	Ryzen 3700X  int8int8  8411.6s -> 5540.1s   1.52x
-	//	M1 Pro       int4      3935.2s -> 2480.5s   1.59x  (paged; ratio corroborates)
-	//
-	// ~1.5x, not 3.11x. Two architectures, two quants and very different memory
-	// conditions agreeing within 0.07x is better evidence than either alone. The
-	// slice almost certainly overstated because its 1.6 GB of weights fit in cache,
-	// so weight matmul was cheap and attention read as 97.1% of the work; the full
-	// model's 6-12 GB is bandwidth-bound, attention's share falls, and an
-	// attention-only swap buys less. That mechanism is UNVERIFIED — confirming it
-	// needs a profile at K=8192 on the full model.
-	//
-	// Same shape as --metal-fast-prefill: default off, divergence documented, and
-	// the caller opts in knowingly.
-	// fastAttn is the CALLER's statement that this sweep may diverge. It is a
-	// parameter rather than a global read because the guard has to be structural:
-	// spec-decode verify runs through forwardN and MUST keep acc64, or "verify ==
-	// sequential greedy" silently stops holding. A runtime check could not tell
-	// the two callers apart; a parameter cannot get it wrong.
-	// Both exclusions are applied HERE, at the single point where the decision becomes
-	// arithmetic, rather than at each caller: three call sites pass cpuFastAttention() and a
-	// fourth (speculative verify) passes false, so a per-caller guard would be three chances to
-	// forget and one already-correct site that looks the same.
-	// N-35: THE FLOOR KEYS ON K, THE SUFFIX LENGTH — not on attention work, which is K·nKeys.
-	// A warm 2048+128 suffix therefore does NOT take the fast path (K=128 < 512), even though
-	// it attends over the whole 2176-key prefix and is precisely the shape the divergence note
-	// above cites its 1.32x for. So that measurement describes a case this floor excludes.
-	//
-	// Left keyed on K deliberately rather than moved to K·nKeys: the divergence was measured at
-	// the shapes the floor admits, and re-keying would silently extend an accepted output
-	// change to short suffixes whose divergence nobody has measured. Changing it means
-	// measuring at that shape first, which is the audit's own first option.
+	// MoE is not excluded: its measured divergence was close to the dense case and never reached the output
+	// (docs/code-notes/decoder.md#Model.runLayersFromEmbedN.fastAttn). That evidence is one family, Mellum2, whose sliding-attention
+	// layers cap nKeys; a full-attention MoE is unmeasured, so do not read it as "MoE in general".
 	if fastAttn && K < fastAttnMinPrompt {
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
 
-	// G16: prefill attention runs its heads in PARALLEL, budget permitting.
+	// Prefill attention runs its heads in parallel: each worker owns its scratch slot and the nH query heads are independent
+	// (disjoint ctx writes, no shared mutable state), so bit-identity holds (TestPrefillAttnPoolInvariance gates it). The pool is
+	// budgeted, not simply maxAttnWorkers: a slot's scores buffer is K*nKeys floats, so prefillAttnWorkersK lets the worker count fall
+	// toward serial on long prompts rather than the allocation growing without bound.
 	//
-	// A1 deferred this ("no M>1-specific work here") and implemented the deferral
-	// literally, as one pool slot — which forced attendBatchedHeads's serial
-	// branch below. The deferral had a measured cost: CPU prefill sat at ~100% of
-	// one core on a 6-P-core box while the weight matmuls beside it fanned out,
-	// and since serial attention is O(K²) while those matmuls are O(K), attention
-	// took a growing share as prompts got longer.
-	//
-	// Nothing about the guarantee changes. A1's constraint permits exactly this —
-	// "Parallelism may only split independent outputs across workers/registers —
-	// heads, ..." — and attendBatchedHeads's own comment records that the nH query
-	// heads are fully independent (disjoint ctx writes, no shared mutable state).
-	// Each worker owns its own scratch slot. Bit-identity is gated by
-	// TestPrefillAttnPoolInvariance, not assumed.
-	//
-	// The pool is BUDGETED, not simply maxAttnWorkers: a slot's scores buffer is
-	// K*nKeys floats, quadratic in prompt length, so the worker count falls back
-	// toward serial on long prompts rather than the allocation growing without
-	// bound (prefillAttnWorkers).
-	// P-05 (audit-2026-09-02): useAcc64 and cache.treeMask are both fixed for this whole call (every
-	// layer below reuses the same attnPool with the same useAcc64/cache), so fusedOK
-	// (attendBatchedHeads: !useAcc64 && cache.treeMask == nil) is the same for every layer too —
-	// exactly the promise newHeadWorkerPool's wantFused needs to safely skip vt/scores.
+	// useAcc64 and cache.treeMask are fixed for this whole call, so fusedOK in attendBatchedHeads is the same for every layer: the
+	// promise newHeadWorkerPool's wantFused needs to safely skip vt/scores.
 	wantFusedPool := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0 // the fused tile never sees a score to cap
 	attnPool := newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd, wantFusedPool)
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
@@ -407,15 +220,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		alk = make([]float32, maxKeys*kvDim)
 		alv = make([]float32, maxKeys*kvDim)
 	}
-	// Batch the qkv and gate/up projections (shared activation) so a GPU backend
-	// runs each group as one submit (BatchTiled) instead of per-matmul syncs.
-	//
-	// P-04: an unset Workspace keeps aikit's own conservative default (16.78M MACs), tuned for
-	// prefill-scale work — but this same ws also carries small-K forwardN calls (spec verify,
-	// K<=8), whose per-round matmuls sit well under that bar and so ran serial while decode's
-	// identical-shape M=1 matmul, which sets DefaultDecodeParallelThreshold (300K) on its own
-	// Workspace (scratch.go's newDecodeScratch), fans out. Large-K prefill matmuls clear both
-	// thresholds comfortably, so this only changes behavior for the small-K case it was missing.
+	// Batch the qkv and gate/up projections (shared activation) so a GPU backend runs each group as one submit (BatchTiled). The
+	// Workspace threshold is set to DefaultDecodeParallelThreshold, not aikit's prefill-scale default: this ws also carries small-K
+	// forwardN calls (spec verify, K<=8), whose matmuls would otherwise run serial while decode's identical-shape M=1 matmul fans out.
+	// Large-K prefill matmuls clear both thresholds.
 	var ws linalg.Workspace
 	var hq w4a8Act // the K-row normed block, quantized once for q/k/v and once for gate/up (R-13); reused per layer
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
@@ -433,16 +241,9 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	}
 
 	for l := 0; l < arch.NumLayers; l++ {
-		// G18: an abandoned client must not leave this loop running. Prefill is where
-		// the time goes (a 3k-token prompt is minutes), and before this check a client
-		// that gave up left a core burning to completion — measured at 47:38 of CPU
-		// with nothing attached, with a retrying harness stacking one such prefill per
-		// retry. Checked per LAYER, not per token: the check is free at this
-		// granularity, but it is NOT instant — the bound is one layer's work, measured
-		// at ~12s for a 3072-token prompt on an M1 Pro (cancel at 300ms, observed at
-		// 12.34s; TestPrefillCancelMidFlight logs both). That is the tail to tighten
-		// if it ever matters — per-head inside attendBatchedHeads — not a claim that
-		// cancellation is immediate here.
+		// An abandoned client must not leave this loop running: prefill is where the time goes. The context is checked per layer, which is
+		// free at this granularity but not instant: cancellation latency is bounded by one layer's work (TestPrefillCancelMidFlight logs
+		// it). The tail to tighten, if it ever matters, is a per-head check inside attendBatchedHeads.
 		if err := reqCtx.Err(); err != nil {
 			return nil, err
 		}
@@ -526,16 +327,12 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}
 		}
-		// QKᵀ and scores·V for all K positions, per head, on the SIMD A·Bᵀ kernel
-		// (the L² terms) instead of the scalar per-position attendQuery. f64
-		// accumulation (the `true` acc64 arg) is bit-identical to the sequential
-		// reference decode also runs (causalAttention), so a batched verify reproduces
-		// sequential greedy EXACTLY — required for same-model speculative decoding and
-		// for the MoE top-k router never to cascade. (Was f32 for dense — only cosine
-		// ≥0.99, which broke spec parity since f32's reduction is M-dependent.)
-		// Local layers read an assembled [base, startPos+K) window (ring history +
-		// the K new rows in k/v); the ring write is deferred until after the read so
-		// a K>W batch can't evict in-batch history. Global layers read append-forever.
+		// QKᵀ and scores·V for all K positions run per head on the SIMD A·Bᵀ kernel (the L² terms), not the scalar per-position
+		// attendQuery. With useAcc64 (f64 accumulation) the result is bit-identical to the sequential reference decode also runs
+		// (causalAttention), so a batched verify reproduces sequential greedy exactly: required for same-model speculative decoding and
+		// for the MoE top-k router never to cascade. Local layers read an assembled [base, startPos+K) window (ring history plus the K new
+		// rows); the ring write is deferred until after the read so a K>W batch cannot evict in-batch history. Global layers read
+		// append-forever.
 		if isLocal {
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
 			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, useAcc64, attnPool)
@@ -548,12 +345,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		} else {
 			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 		}
-		// Output gating, per row, BEFORE o_proj — the batched twin of the K=1 call in
-		// causalAttention, sharing applyGateRow/applySigmoidGateRow so the two paths cannot
-		// diverge. `norm` still holds this layer's POST-input_layernorm rows here (it is not
-		// recomputed for the MLP until after the o_proj below), which is exactly the tensor the
-		// gate reads. Laguna (softplus) keys off arch.laguna != nil, unchanged; Spark-X2.5
-		// (sigmoid) keys off arch.AttnGate == GateSigmoid.
+		// Output gating, per row, before o_proj: the batched twin of the K=1 call in causalAttention, sharing
+		// applyGateRow/applySigmoidGateRow so the two paths cannot diverge. `norm` still holds this layer's post-input-layernorm rows (it
+		// is not recomputed for the MLP until after o_proj), which is the tensor the gate reads. Laguna (softplus) and Spark-X2.5
+		// (sigmoid, arch.AttnGate == GateSigmoid) both come through hasAttnOutputGate.
 		if arch.hasAttnOutputGate() {
 			gRows := lw.GProj.Rows()
 			if cap(gbuf) < K*gRows {
@@ -601,39 +396,15 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				// drop `att`. Fail loud until a parallel+MoE family needs the joint add.
 				return nil, errNotImplemented
 			}
-			// Sparse MoE (Mellum / Mixtral): the router selects different experts per
-			// token, so the FFN isn't batchable across K — run the existing per-token
-			// moeMLP for each row (bit-identical to the sequential path).
+			// Sparse MoE (Mellum / Mixtral): the router selects different experts per token, so the FFN is not batchable across K and runs the
+			// per-token moeMLP for each row (bit-identical to the sequential path). At agentic prompt lengths this is not where the time goes
+			// (attention dominates), so batching it expert-major is not a compute lever; its case has to be made on streaming I/O, where the
+			// same expert is re-fetched per row, and measured there (docs/code-notes/decoder.md#Model.runLayersFromEmbedN.moeFFN).
 			//
-			// THIS RESIDUAL SHRINKS WITH PROMPT LENGTH, and the "~17%" that stood here
-			// was a K≈1k-era figure quoted as if it were constant. It also over-attributed:
-			// it named the expert matmuls, but the profile bucket it came from holds the
-			// q/k/v/o projections too. Measured 2026-08-28 (Mellum2 4-layer slice,
-			// int8int8, M1 Pro, real routing — a constant-id prompt collapses the top-k
-			// and understates this), as a share of prefill work. NOTE THE SLICE: its
-			// weights fit in cache, so these OVERSTATE attention's share on the full
-			// model, where weight matmul is bandwidth-bound:
-			//
-			//	K       attention   ALL weight matmul (an UPPER bound on the FFN)
-			//	1024      77.3%       22.7%
-			//	2048      88.8%       11.2%
-			//	4096      93.9%        6.1%
-			//	8192      97.1%        2.9%
-			//
-			// So batching this FFN expert-major (docs/tasks/task-moe-streaming.md Lever 4) is not a
-			// compute lever at agentic prompt lengths: an upper bound on what it could
-			// return was measured at 4.6-5.1% at K=1-2k and was NOT RESOLVABLE above
-			// run-to-run spread at K>=4096. Its case has to be made on streaming I/O,
-			// where the same expert is re-fetched per row, and measured there.
-			// Record: docs/measurements/mellum2-moe-prefill-split-RESULT.md.
-			//
-			// GLM's dense prefix layers (Experts nil) fall through to the dense FFN below.
-			// P18 (opt-in, GOINFER_MOE_EXPERT_MAJOR=1): run the routed experts
-			// EXPERT-MAJOR in chunks instead of one row at a time, so each expert's
-			// weights are read once per chunk rather than once per token. Refuses
-			// and falls through for the order-dependent cases (test seams, a live
-			// pager, a shared expert) -- see moeMLPBatch. Bit-identical when it
-			// runs: TestMoEExpertMajor_bitIdentical.
+			// GLM's dense prefix layers (Experts nil) fall through to the dense FFN below. With knobSet.moeExpertMajor on, the routed experts
+			// run expert-major in chunks so each expert's weights are read once per chunk rather than once per token. moeMLPBatch refuses and
+			// falls through for the order-dependent cases (test seams, a live pager, a shared expert), and is bit-identical when it runs
+			// (TestMoEExpertMajor_bitIdentical).
 			emDone := make([]bool, K)
 			var emOut []float32
 			if m.knobs.moeExpertMajor() {
@@ -675,10 +446,8 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 					hi[j] += ff[j]
 				}
 			}
-			// Hidden-state seam (05), same as the dense path below: MoE layers must also
-			// record captured[ci], or a capture against a sparse-MoE target (the since-removed EAGLE path)
-			// (Mixtral/Mellum) leaves captured all-nil and fuseAt slices a nil slice → panic
-			// (audit C-07). The `continue` used to skip this.
+			// Hidden-state seam, as in the dense path below: MoE layers must also record captured[ci], or a capture against a sparse-MoE
+			// target leaves captured all-nil and fuseAt slices a nil slice. The `continue` below skips the dense path's copy.
 			if cache.captureLayers != nil {
 				for ci, cl := range cache.captureLayers {
 					if cl == l {
@@ -769,34 +538,6 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	return h, nil
 }
 
-// attendTileFor returns how many query rows attendOneHead may process at once with THIS slot: the
-// cache-sized tile from attnRowTile, clamped to what the slot's buffers actually hold.
-//
-// THE TILE IS A PROPERTY OF THE POOL, NOT OF THE CALL, AND THAT WAS THE BUG. forwardLayersN sizes
-// the pool ONCE from maxKeys = startPos+K, on the premise its own comment states — "nKeys =
-// startPos+K is the same for every layer in this sweep". It is not. A local (sliding-window) layer
-// whose ring has wrapped assembles a SHORTER window, nKeys = W-1+K, and attnRowTile is INVERSE in
-// nKeys: fewer keys, more rows per tile. So the per-layer tile came out LARGER than the qh the slot
-// was allocated, and the Q gather sliced past its length — `panic: slice bounds out of range`, in a
-// worker goroutine on the fan-out arm and in the Generate goroutine on the serial one, neither
-// recovered (audit-2026-09-02 C-04).
-//
-// Clamping is not a workaround for a sizing mistake; it is the invariant stated in the one place
-// that can enforce it. The tile is a memory-locality choice and the slot's capacity is the binding
-// constraint, so the slot is what gets to decide. Every other slot buffer follows from qh: with
-// kt <= t and nKeys <= maxKeys, scores needs kt*nKeys <= t*maxKeys, ch needs kt*hd <= t*hd, and
-// kh/vt need nKeys*hd <= maxKeys*hd. Clamp qh and they are all satisfied.
-//
-// It also covers the hand-built scratch slices in the ring tests, which no pool constructor sizes.
-// runSplit fans work over the independent-output range [0,n) into up to
-// `workers` contiguous, non-overlapping slices, running fn(w, lo, hi) once
-// per non-empty slice — worker 0 inline (matching this file's other
-// fan-outs, e.g. attendBatchedHeads' own head-range loop), the rest via
-// goroutines joined before returning. fn must write only to worker w's own
-// scratch (pool[w]) and to its own disjoint [lo,hi) region of any shared
-// output — runSplit itself performs no combining, so callers must not
-// require one (see attendGroupedLayer's own doc for why R13 Arm B never
-// needs one).
 // attnTask is one unit of work handed to attnWorkerPool: run fn over the
 // caller's own [lo,hi) slice, tagged with worker index w so fn can index its
 // own per-worker scratch (pool[w] in attendGroupedLayer).
@@ -806,24 +547,11 @@ type attnTask struct {
 	done      *sync.WaitGroup
 }
 
-// attnWorkerPool is a small set of LONG-LIVED goroutines, parked on a
-// channel between rounds, shared across every decode step's attention
-// fan-out (R13 Arm B).
-//
-// MEASURED, NOT ASSUMED, why this replaced spawning a fresh goroutine per
-// split (go func(){...}()): a temporary time.Now() instrument around
-// attendBatchedHeads (GOINFER_ATTN_TIMING_DEBUG=1) showed attention's OWN
-// wall time — not just the wiring's net effect on total decode — going from
-// 11.5ms/token (ungrouped) to 23.7ms/token (Arm B, spawn-per-split) on
-// qwen2.5-coder-1.5b at depth 2048: the fork-join overhead alone
-// outweighed nearly all of the grouped kernel's own savings. Each decoded
-// token does up to 28 layers x 2 kv heads x 2 phases (QK split, AV split) =
-// up to 112 fan-outs, each spawning up to 5 fresh goroutines — up to ~560
-// spawns/token. A persistent pool pays goroutine creation once, at
-// process start, and every later round is a channel send to an already-
-// running, already-parked goroutine (a runtime "goready", not a "newproc")
-// — see docs/measurements/r13-served-decode-2026-09-20.md for the
-// spawn-per-split numbers this replaced.
+// attnWorkerPool is a small set of long-lived goroutines, parked on a channel between rounds and shared by every decode step's
+// attention fan-out. It replaced a fresh goroutine per split: a decoded token does up to 28 layers x 2 kv heads x 2 phases of
+// fan-outs, and the spawn overhead alone outweighed most of the grouped kernel's savings. A persistent pool pays goroutine
+// creation once; each round is a channel send to a parked goroutine. Record:
+// docs/measurements/r13-served-decode-2026-09-20.md.
 type attnWorkerPool struct {
 	tasks chan attnTask
 }
@@ -841,41 +569,20 @@ func newAttnWorkerPool(n int) *attnWorkerPool {
 	return p
 }
 
-// globalAttnWorkerPool is process-wide, not per-Model: bounding total
-// attention-fan-out parallelism to maxAttnWorkers across every concurrent
-// request (not maxAttnWorkers PER request) is the same oversubscription
-// discipline this file already applies within one call (see A1 move (a)'s
-// own "nesting oversubscribes" note above), just extended across requests.
+// globalAttnWorkerPool is process-wide, not per-Model: total attention fan-out parallelism is bounded by maxAttnWorkers across
+// every concurrent request, the same oversubscription discipline applied within one call.
 var globalAttnWorkerPool = sync.OnceValue(func() *attnWorkerPool {
 	return newAttnWorkerPool(maxAttnWorkers)
 })
 
-// runSplit fans work over the independent-output range [0,n) into up to
-// `workers` contiguous, non-overlapping slices, running fn(w, lo, hi) once
-// per non-empty slice — worker 0 inline (matching this file's other
-// fan-outs, e.g. attendBatchedHeads' own head-range loop), the rest via the
-// persistent globalAttnWorkerPool. fn must write only to worker w's own
-// scratch (pool[w]) and to its own disjoint [lo,hi) region of any shared
-// output — runSplit itself performs no combining, so callers must not
-// require one (see attendGroupedLayer's own doc for why R13 Arm B never
-// needs one).
-// runSplitAligned is runSplit with each slice's width rounded UP to a
-// multiple of `align`.
+// runSplitAligned fans work over the independent-output range [0,n) into up to `workers` contiguous, non-overlapping slices, each
+// width rounded up to a multiple of align, running fn(w, lo, hi) once per non-empty slice: worker 0 inline, the rest via the
+// persistent globalAttnWorkerPool. fn must write only to worker w's own scratch (pool[w]) and to its own disjoint [lo,hi) region of
+// any shared output; no combining is performed, so callers must not need one.
 //
-// MEASURED, NOT ASSUMED, why this matters here specifically: aikit's NEON
-// grouped kernels (avAcc64GroupBlocks/qkAcc64GroupKeys) process their range
-// in 8-wide blocks, falling back to the plain Go grouped kernel (itself
-// 6-10x slower than the per-head kernels — see linalg/matmul_group_acc64_
-// bench_test.go's own A/B, aikit) for whatever doesn't fit a whole block.
-// hd=128 (this model) has ZERO remainder taken as one call (128/8=16 exact
-// blocks) — but naive equal-width splitting into 6 pieces of ~22 gives
-// EVERY worker a ~6-dim remainder, so ~27% of each slice silently takes the
-// slow path instead of 0% of the whole in the unsplit case. Rounding each
-// slice up to a multiple of 8 keeps every slice block-aligned (hd=128, 6
-// workers, align=8 gives slices of 24,24,24,24,24,8 — all exact multiples
-// of 8) at the cost of very slightly uneven work distribution, which this
-// file's other block-tiled loops (e.g. attendOneHead's G20 row tile) already
-// accept for the same reason.
+// The alignment matters: aikit's NEON grouped kernels process their range in 8-wide blocks and fall back to the plain-Go grouped
+// kernel (6-10x slower) for a remainder that does not fill a block. Equal-width splitting would give every worker a ragged
+// remainder; rounding up keeps each slice block-aligned at the cost of slightly uneven work.
 func runSplitAligned(workers, n, align int, fn func(w, lo, hi int)) {
 	if workers <= 1 || n < workers {
 		fn(0, 0, n)
@@ -905,6 +612,12 @@ func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
 	return attendTileForK(nil, ws, K, nKeys, hd)
 }
 
+// attendTileForK returns how many query rows attendOneHead may process at once with this slot: the cache-sized tile from
+// attnRowTileK, clamped to what the slot's buffers hold. The tile is a property of the pool, not of the call: the pool is sized
+// once from maxKeys = startPos+K, but a local layer whose ring has wrapped assembles a shorter window and attnRowTile is inverse
+// in nKeys, so the per-layer tile can exceed the qh the slot was allocated and the Q gather would slice past its length. The
+// slot's capacity is the binding constraint, so the slot decides: with kt <= tile and nKeys <= maxKeys every other slot buffer
+// (scores, ch, kh, vt) fits once qh does. It also covers hand-built scratch in the ring tests.
 func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 	tile := attnRowTileK(k, K, nKeys)
 	if hd < 1 {
@@ -916,68 +629,38 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 	return max(1, tile)
 }
 
-// attendBatchedHeads computes grouped-query causal attention for K query
-// positions at once, per head, via the SIMD A·Bᵀ matmul (linalg.MatmulBT)
-// instead of the scalar per-position attendQuery. The two O(L²) terms — QKᵀ and
-// scores·V — move off the scalar triple-loops onto the vector kernel, which an
-// end-to-end prefill profile showed were ~half the forward's CPU time.
+// attendBatchedHeads computes grouped-query causal attention for K query positions at once, per head: per KV head it gathers
+// K_head and V_headᵀ once (f32 path), then per query head scores = Q·Kᵀ, a scaled causal/window-masked softmax per row (masked
+// entries zeroed so they drop out of the next matmul), and ctx = scores·V scattered into ctx[K,qDim].
 //
-// Per KV head it gathers K_head [nKeys,hd] and V_headᵀ [hd,nKeys] once (reused
-// across the GQA group). Per query head: scores[K,nKeys] = Q_head·K_headᵀ; a
-// scaled, causal/window-masked softmax per row (row i attends to
-// [WindowStart(startPos+i), startPos+i], masked entries zeroed so they drop out
-// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as
-// MatmulBT(scores, V_headᵀ); scattered into ctx[K,qDim].
-//
-// NOT bit-identical to attendQuery: QKᵀ moves from float64 to f32 accumulation
-// and the matmul reassociates the reduction. Parity is argmax-exact + cosine —
-// the same standard the GPU residency attention already meets. The softmax exp
-// stays per-row in float64. Scratch slices (qh:[K*hd], kh:[maxKeys*hd],
-// vt:[maxKeys*hd], scores:[K*maxKeys], ch:[K*hd]) are caller-owned, reused across
+// With useAcc64 the dots accumulate in f64 and are bit-identical to the sequential attendQuery/causalAttention. The f32 path
+// (MatmulBT) reassociates the reduction, so its parity is argmax-exact plus cosine, the standard the GPU residency attention also
+// meets. The softmax exp stays per row in float64. Scratch slices (qh, kh, vt, scores, ch) are caller-owned and reused across
 // layers.
-// keys/vals are the contiguous K/V the gather reads, with physical row 0 holding
-// absolute key position `base`: for a global layer that's cache.Keys(layer) at
-// base 0; for a local (sliding-window) layer it's an assembled [base, startPos+K)
-// window (the resident ring history + the K new rows) so the ring's wrap is
-// invisible here and the math is byte-identical to append-forever. Per-query
-// masking stays in absolute positions (WindowStart/attendHi) and maps to physical
-// columns s-base.
+//
+// keys/vals are the contiguous K/V the gather reads, physical row 0 holding absolute key position `base`: cache.Keys(layer) at
+// base 0 for a global layer; for a local (sliding-window) layer an assembled [base, startPos+K) window, so the ring's wrap is
+// invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
+// (WindowStart/attendHi), mapped to physical columns by s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	// headsAt, not NumHeads: Laguna varies the QUERY head count per layer (its KV
-	// heads stay uniform, so `group` below is per-layer too). Every other family's
-	// headsAt returns NumHeads, leaving this identical.
+	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
 	scale := arch.AttnScale
 	nKeys := len(keys) / kvDim
-	// MoE routing is discontinuous: the f32 QKᵀ reassociation (~4.6e-5) flips a
-	// top-k expert at a near-tie and cascades, changing the output. The acc64
-	// kernels accumulate each dot in f64 (bit-identical to the sequential f64
-	// reference), killing that perturbation — slower than f32 but still ≫ the
-	// scalar path. Dense MLPs tolerate the f32 error (cosine ≥0.99).
-	//
-	// There is no shared `matmul` variable: the acc64 path calls MatmulQKAcc64 /
-	// MatmulAVAcc64 directly (strided, no gather), and the f32 path is handed its
-	// matmul per head — package-level MatmulBT when the head loop is serial, the
-	// worker's serial Workspace when it is not. A single variable could not
-	// express that, and the one that used to sit here was reachable only from the
-	// f32 branches anyway.
+	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
+	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
+	// shared `matmul` variable: acc64 calls MatmulQKAcc64/MatmulAVAcc64 directly (strided, no gather), and the f32 path is handed its
+	// matmul per head (package-level MatmulBT when the head loop is serial, the worker's serial Workspace when not).
 
-	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into
-	// ctx, using ws's scratch. A1 move (a): this is what runs concurrently across
-	// heads below — bit-identical regardless of which pool slot or goroutine runs
-	// it, or what order heads finish in, since every head's own math (moves b/c's
-	// unchanged per-output reduction order) and its ctx write (a disjoint qhead*hd
-	// slice — no two heads ever touch the same bytes) are exactly as before.
-	// mm is the f32 matmul this head should use: the package-level MatmulBT
-	// (column-parallel) on the serial arm, or the worker's own serial
-	// Workspace on the head-parallel arm. Unused on the acc64 path, which
-	// calls MatmulQKAcc64/MatmulAVAcc64 directly.
-	// P19: the fused schedule is eligible only on the f32 path (it would break
-	// acc64's bit-identity) and only without a tree mask. Each worker uses ITS OWN
-	// ws.fused — never a shared one, since each gathers a different kv head's V.
+	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask or logit softcap.
+	// Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
 	fusedOK := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0
+	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently
+	// across heads and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is
+	// unchanged and its ctx write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial
+	// arm, the worker's own serial Workspace on the head-parallel arm); it is unused on the acc64 path.
 	attendOneHead := func(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
 		var fs *fusedScratch
 		if fusedOK {
@@ -985,22 +668,14 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		}
 		kvh := qhead / group
 		qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
-		// G20: walk the query rows in TILES. Every step below is row-wise — the Q
-		// gather, QKᵀ (rows are the leading dimension), the per-row softmax, scores·V
-		// (each row folds over keys independently) and the ctx scatter — so splitting
-		// rows splits INDEPENDENT OUTPUTS, which is what A1's bit-identity constraint
-		// permits. No key-dimension split happens here and none may: that would
-		// re-associate the softmax denominator and the AV fold, the exact thing acc64
-		// exists to prevent.
+		// Walk the query rows in tiles. Every step below is row-wise, so splitting rows splits independent outputs, which is what
+		// bit-identity permits. No key-dimension split happens here and none may: it would re-associate the softmax denominator and the AV
+		// fold, exactly what acc64 exists to prevent. The point is memory: scores is tile*nKeys, not K*nKeys, so a worker slot stops
+		// growing with the square of the prompt and the pool can still fan out on a long prompt.
 		//
-		// The point is memory, not speed: scores is tile*nKeys instead of K*nKeys, so
-		// a worker slot stops growing with the square of the prompt and the G16 pool
-		// can still fan out on a long prompt.
-		//
-		// `i` indexes the TILE below; `gi` is the global row. Positions and masks must
-		// use `gi` — startPos+gi, treeRowPos[gi], treeMask[gi] — while buffers use `i`.
-		// attendTileFor, not attnRowTile: the slot's capacity binds, and recomputing the tile
-		// from this layer's key count is what panicked a warm windowed session (C-04).
+		// `i` indexes the tile; `gi` is the global row. Positions and masks use `gi` (startPos+gi, treeRowPos[gi], treeMask[gi]), buffers
+		// use `i`. The tile comes from attendTileForK, not attnRowTile: the slot's capacity binds, and recomputing it from this layer's key
+		// count panicked a warm windowed session.
 		tile := attendTileForK(arch.knobs, ws, K, nKeys, hd)
 		for t0 := 0; t0 < K; t0 += tile {
 			kt := min(tile, K-t0)
@@ -1008,13 +683,9 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				b := (t0+i)*qDim + qhead*hd
 				copy(qh[i*hd:i*hd+hd], q[b:b+hd])
 			}
-			// P19: the FUSED schedule, when enabled and applicable. It replaces the
-			// whole QKᵀ / softmax / scores·V sequence below for this tile, keeping
-			// the score block resident instead of materializing kt x nKeys. Declines
-			// (and falls through) for acc64, whose bit-identity it would break, and
-			// for tree attention, whose per-(row,column) mask is not the contiguous
-			// [lo,hi] bound this handles. Measured 1.69-1.73x causal over a whole
-			// prefill — see fusedattn.go.
+			// The fused schedule, when enabled and applicable, replaces the whole QKᵀ/softmax/scores·V sequence for this tile and keeps the
+			// score block resident instead of materializing kt x nKeys (fusedattn.go). It declines, and falls through, for acc64 (whose
+			// bit-identity it would break) and for tree attention (whose per-(row,column) mask is not the contiguous [lo,hi] bound it handles).
 			if fs != nil {
 				for i := range kt {
 					gi := t0 + i
@@ -1032,20 +703,10 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					continue
 				}
 			}
-			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads
-			// keys DIRECTLY — row stride kvDim (rows are nKeys apart), element
-			// stride 1 (a head's hd floats are contiguous) — skipping a kh gather
-			// entirely. Bit-identical by construction (P1; aikit v1.18.0
-			// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as
-			// MatmulBTAcc64, only b's addressing differs), verified at goinfer's own
-			// stride parameters by TestAttendStrided_matchesGatherReference.
-			//
-			// A1 move (b): MatmulQKAcc64 interleaves 8 keys' dot products as 8
-			// concurrent f64 accumulator chains, hiding FMA latency the single-chain
-			// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so
-			// this is bit-identical, not just close — docs/task-attention-decode-cost.md).
-			// Measured 4.4x in isolation (both depth 130 and 8192 — a pure latency
-			// fix, not depth-dependent, unlike move (c)'s memory-order fix).
+			// QKᵀ: scores[kt,nKeys] = Q_head[kt,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads keys directly (row stride kvDim, element stride 1),
+			// skipping the kh gather. MatmulQKAcc64 interleaves 8 keys' dot products as concurrent f64 accumulator chains to hide FMA latency;
+			// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
+			// (TestAttendStrided_matchesGatherReference checks it at this stride).
 			if useAcc64 {
 				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
 			} else {
@@ -1140,26 +801,14 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					clear(rowS[:nKeys])
 				}
 			}
-			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
-			//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
-			// Acc64 reads vals DIRECTLY, "as if transposed" — row stride 1 (V's hd
-			// floats are contiguous, and vt's row index IS that offset), element
-			// stride kvDim (vt's column index steps by a whole KV row) — skipping
-			// a vt gather+transpose. Same bit-identity argument as QKᵀ.
+			// scores·V: ctx_head[kt,hd] = scores[kt,nKeys] · V_head[nKeys,hd]. Acc64 reads vals directly, "as if transposed" (row stride 1,
+			// element stride kvDim), skipping a vt gather and transpose. MatmulAVAcc64 reads V rows contiguously (keys-outer, dims-inner) into
+			// hd independent f64 accumulators; each dim's accumulator sees the same key-ascending adds as the strided walk, so it is
+			// bit-identical.
 			//
-			// A1 move (c): MatmulAVAcc64 reads V rows contiguously (keys-outer,
-			// dims-inner) into hd independent f64 accumulators, instead of
-			// MatmulBTAcc64Strided's dims-outer/keys-inner walk (one cache line
-			// per f64 MAC at kvDim stride). Bit-identical by construction — each
-			// dim's accumulator sees the same key-ascending sequence of adds
-			// either way (docs/task-attention-decode-cost.md, docs/task-decode-
-			// splitkv-attention.md:36's "split the independent axis" principle).
-			// Measured 1.81x at depth 130, 2.39x at depth 8192 (aikit
-			// MatmulAVAcc64_ABBench).
-			//
-			// R-17: a one-row tile (every K=1 decode) writes this head's context straight into ctx. MatmulAVAcc64 OVERWRITES its destination, and this head's hd
-			// floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work there. A tile of several rows has a
-			// [kt,hd] result that is NOT contiguous in ctx (row stride qDim), so it keeps the scatter.
+			// A one-row tile (every K=1 decode) writes this head's context straight into ctx: MatmulAVAcc64 overwrites its destination and the
+			// head's hd floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work. A multi-row
+			// tile's [kt,hd] result is not contiguous in ctx (row stride qDim) and keeps the scatter.
 			direct := useAcc64 && kt == 1
 			if direct {
 				b := t0*qDim + qhead*hd
@@ -1178,23 +827,14 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		}
 	}
 
-	// attendGroupedHeads is R13's grouped-kernel path: one MatmulQKAcc64Group/
-	// MatmulAVAcc64Group call pair covers all attnGroupedNEONSize query heads
-	// of ONE kv head, instead of attnGroupedNEONSize separate attendOneHead
-	// calls each re-reading the same K/V rows. Callable only when the caller
-	// has already checked K==1 (decode; M>1 is not wired — "wire decode
-	// first" per the brief), no tree mask (its per-(row,column) mask needs
-	// attendOneHead's own branch), and group == attnGroupedNEONSize exactly.
+	// attendGroupedHeads is the grouped-kernel path: one MatmulQKAcc64Group/MatmulAVAcc64Group pair covers all attnGroupedNEONSize
+	// query heads of one kv head, instead of that many attendOneHead calls re-reading the same K/V rows. The caller must have checked
+	// K==1 (decode; M>1 is not wired), no tree mask (its per-(row,column) mask needs attendOneHead's own branch), and
+	// group == attnGroupedNEONSize.
 	//
-	// Q for these heads at this one position is CONTIGUOUS in q's [K,qDim]
-	// layout (qDim = nH*hd, heads are laid out head-major within a row, and
-	// a kv group's query heads are themselves contiguous head indices) — so
-	// no gather is needed, unlike attendOneHead's per-tile copy. Same for
-	// ctx on the scatter side. Softmax stays PER HEAD, row by row, identical
-	// to attendOneHead's own non-tree branch (same masking, same max/exp/sum/
-	// normalize sequence) — grouping only shares the QKᵀ and scores·V loads/
-	// folds, never the reduction each head's own softmax performs, matching
-	// the brief's own "the per-head softmax between them as it is today".
+	// Q for these heads is contiguous in q's [K,qDim] layout (and so is ctx), so no gather is needed. Softmax stays per head, row by
+	// row, identical to attendOneHead's non-tree branch: grouping shares the QKᵀ and scores·V loads and folds, never the reduction
+	// inside each head's softmax.
 	attendGroupedHeads := func(kvh int, ws *headWorkerScratch) {
 		qh0 := kvh * group
 		a := q[qh0*hd : qh0*hd+group*hd]
@@ -1238,25 +878,19 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				clear(rowS[:nKeys])
 			}
 		}
-		// R-17: MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx (the same layout), so it
-		// writes straight into ctx; the scratch gCtx and the copy are gone.
+		// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
+		// straight into ctx with no scratch copy.
 		gAvAcc := ws.groupAvAcc[:group*hd]
 		linalg.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
 		atomic.AddInt64(&attnGroupedRuns, 1)
 	}
-	// attnGroupedOK is this call's eligibility for the grouped path — checked
-	// once per attendBatchedHeads call, not per head, since none of these
-	// depend on qhead. cache.treeMask != nil excludes speculative verify (its
-	// per-(row,column) mask attendGroupedHeads does not implement); K != 1
-	// excludes prefill/batched M>1 (not wired yet).
+	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
+	// treeMask excludes speculative verify (attendGroupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
+	// (not wired); attnGroupedKernels is the per-architecture platform gate.
 	attnGroupedOK := useAcc64 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
 		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
-	// runHeadRange walks qhead across [h0,h1), taking the grouped path for
-	// any run of attnGroupedNEONSize heads that (a) starts on a kv-group
-	// boundary and (b) fits entirely inside [h0,h1) — i.e. exactly the
-	// "same-KV-head run a worker already owns" the brief's Arm A wiring
-	// names; a worker whose range splits a kv group falls back to
-	// attendOneHead for that group's heads, unchanged from today.
+	// runHeadRange walks qhead across [h0,h1), taking the grouped path for any run of attnGroupedNEONSize heads that starts on a
+	// kv-group boundary and fits inside [h0,h1); a worker whose range splits a kv group uses attendOneHead for that group's heads.
 	runHeadRange := func(ws *headWorkerScratch, h0, h1 int) {
 		qhead := h0
 		for qhead < h1 {
@@ -1270,54 +904,15 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		}
 	}
 
-	// attendGroupedLayer is R13 Arm B: unlike Arm A above (runHeadRange /
-	// attendGroupedHeads), which needs one worker to own a WHOLE kv group's
-	// heads and so collapses worker count to nKV when it fires, this keeps
-	// the full worker pool busy AND uses the efficient G=6 kernel by
-	// splitting WITHIN each kv head's group instead of splitting ACROSS
-	// heads: QK by key range, AV by dim range, softmax serial between them.
+	// attendGroupedLayer is the grouped path for a pool of more than one slot (decode, K==1). Arm A (runHeadRange/attendGroupedHeads)
+	// needs one worker to own a whole kv group's heads and so collapses worker count to nKV; this keeps the pool busy and still uses
+	// the grouped kernel by splitting within each kv head's group: QK by key range, softmax by row, AV by dim range, the three phases
+	// joined in between.
 	//
-	// MEASURED, NOT ASSUMED, why Arm A alone was not enough: a served
-	// BenchmarkDecodeAtDepth run on qwen2.5-coder-1.5b showed
-	// GOINFER_ATTN_GROUPED on vs off as noise-level identical even AFTER
-	// confirming (via attnGroupedRuns) that Arm A's grouped kernel really
-	// was firing — because forcing one worker to own a whole 6-head group
-	// collapsed the 1.5B's 6-way head parallelism down to nKV=2-way, and
-	// that lost parallelism roughly cancelled the kernel's own per-call
-	// efficiency gain (docs/measurements/r13-served-decode-2026-09-20.md).
-	//
-	// BOTH splits here are INDEPENDENT-OUTPUT splits, not reduction splits:
-	// QK's reduction is over d (head dim), so splitting by KEY range only
-	// splits its output columns; AV's reduction is over keys, so splitting
-	// by DIM range only splits ITS output columns. Neither needs any
-	// floating-point combining — each worker's slice lands in a disjoint
-	// region of the shared buffer via a plain byte copy, the exact same
-	// "split the independent axis" argument this file already uses for
-	// splitting by head or query row, one level finer. Bit-identical to the
-	// ungrouped per-head path (and to Arm A) by construction;
-	// TestAttendGroupedLayer_matchesPerHead is the check, not just the
-	// argument.
-	// attendGroupedLayer fans out ONE goroutine per kv head (via the
-	// persistent pool, one join for the whole layer) and has each one call
-	// attendGroupedHeads (Arm A's per-kv-head closure, above) exactly as
-	// written — a single, unsplit MatmulQKAcc64Group/MatmulAVAcc64Group
-	// call pair per kv head, no internal key/dim-range fan-out at all.
-	//
-	// MEASURED, NOT ASSUMED, why the internal-split version (QK by key
-	// range, AV by dim range, up to 6-way within EACH kv head) was
-	// abandoned in favor of this simpler design: even after two real fixes
-	// (a persistent worker pool, ruled out as not the cost; then NEON-
-	// block-aligned split boundaries, which recovered a real chunk) it
-	// still measured 486ms/30-steps attention-only at depth 2048 against a
-	// 325ms baseline — 1.5x slower, not faster, and fewer split-workers (3,
-	// then 2) made it WORSE (511ms, 549ms), ruling out fork-join/wake-up
-	// overhead scaling with worker count as the remaining story too. Every
-	// internal-split fork-join has a synchronization cost that a plain
-	// single-threaded kernel call inside one already-running goroutine does
-	// not pay at all — this design pays that cost ONCE per kv head per
-	// layer (nKV*NumLayers times) instead of twice per kv head per layer
-	// PLUS the per-slice coordination inside each round. Full numbers:
-	// docs/measurements/r13-served-decode-2026-09-20.md.
+	// All three are independent-output splits, not reduction splits (QK reduces over d and is split by key; AV reduces over keys and
+	// is split by dim), so no floating-point combining is needed: each worker's slice lands in a disjoint region of the shared buffer
+	// by plain copy. The result is bit-identical to the per-head path and to Arm A; TestAttendGroupedLayer_manyWorkers is the check.
+	// The softmax phase must stay split: see the note on it below.
 	attendGroupedLayer := func(pool []headWorkerScratch) {
 		splitWorkers := max(min(len(pool), maxAttnWorkers), 1)
 		leader := &pool[0]
@@ -1351,24 +946,9 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		if hiP >= nKeys {
 			hiP = nKeys - 1
 		}
-		// MEASURED, NOT ASSUMED, why this is parallelized now and wasn't
-		// before: attendOneHead's own softmax runs INSIDE whichever worker
-		// owns that head, so the ungrouped path already spreads softmax
-		// across up to 6 goroutines; the first version of this function ran
-		// every kv head's every row's softmax SERIALLY on the one goroutine
-		// that calls attendGroupedLayer. R13 step 0(ii)
-		// (r13-attn-category-split-2026-09-19.md) already measured softmax
-		// at ~21-26% of this model's attention time — serializing something
-		// that used to run 6-way parallel is a real, direct, fully
-		// mechanistic cost, found via `go tool trace`'s goroutine breakdown
-		// (not pprof, which mis-set this investigation's first theory —
-		// see docs/measurements/r13-served-decode-2026-09-20.md): the
-		// calling goroutine's OWN execution time grew by ~755ms over 150
-		// decode steps between the ungrouped and grouped runs, almost
-		// exactly the wall-clock gap between them. Splitting by ROW (one
-		// kv-head's one query-head's softmax) is another independent-
-		// output split — no combining, same argument as the QK/AV splits
-		// above, one level finer.
+		// Softmax is split by row (one kv head's one query head) across the workers, as the per-head path already does inside each head's
+		// worker. Running it serially on this goroutine was measured slower than not grouping at all; do not collapse it
+		// (docs/code-notes/decoder.md#attendGroupedLayer.softmax).
 		runSplitAligned(splitWorkers, nKV*group, 1, func(w, lo, hi int) {
 			for row := lo; row < hi; row++ {
 				kvh, g := row/group, row%group
@@ -1421,19 +1001,13 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	}
 
 	if !useAcc64 {
-		// f32 path — the DEFAULT for prefill above fastAttnMinPrompt since
-		// 2026-08-31, not the test-only fallback it was written as.
-		//
-		// gatherKV fills ws's kh/vt for one kv head. Deterministic: a pure
-		// function of (keys, vals, kvh), so two workers gathering the same kvh
-		// into their own buffers produce identical bytes — which is why the
-		// serial and fan-out arms below are BIT-IDENTICAL, not merely close
-		// (TestAttendF32Fanout_bitIdentical).
+		// f32 path (the default for prefill above fastAttnMinPrompt). gatherKV fills ws's kh/vt for one kv head. It is a pure function of
+		// (keys, vals, kvh), so two workers gathering the same kvh into their own buffers produce identical bytes, which is why the serial
+		// and fan-out arms below are bit-identical, not merely close (TestAttendF32Fanout_bitIdentical).
 		gatherKV := func(ws *headWorkerScratch, kvh int) {
-			// P19: the fused schedule needs V BLOCK-MAJOR (a key-range slice of the
-			// [hd, nKeys] layout is not contiguous), so the layout is chosen here at
-			// gather time rather than re-transposed per block. Same work, different
-			// indexing.
+			// The fused schedule needs V block-major (a key-range slice of the [hd, nKeys]
+			// layout is not contiguous), so the layout is chosen here at gather time rather
+			// than re-transposed per block.
 			if fusedOK && ws.fused != nil {
 				gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, kvDim, nKeys)
 				return
@@ -1449,27 +1023,11 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				}
 			}
 		}
-		// A3: fan out over QUERY heads, exactly as the acc64 path does. The old
-		// code walked kv-major and reused one gather across a kv group, and its
-		// comment read that sharing as a reason the path "stays single-threaded
-		// (the gather itself is shared, mutable state a concurrent split would
-		// race on)". The sharing is real; the conclusion did not follow. Every
-		// pool slot ALREADY owns a full-size kh/vt pair (prefillAttnWorkers has
-		// budgeted 2*nKeys*hd per slot all along), so a worker gathers into its
-		// own buffers and nothing is shared at all.
-		//
-		// MEASURED, and the reason this was worth doing: the claim that the f32
-		// path was single-threaded was checked and came back 1.68x utilization,
-		// not 1.0x — MatmulBT fans out internally over output columns, so the
-		// matmuls were already parallel while the gather, the softmax and the
-		// scatter were not. That left ~58% of the arm serial, which is what
-		// head-level fan-out converts and column-level fan-out cannot reach.
-		// See docs/measurements/a3-f32-attention-fanout-2026-09-01.md.
-		//
-		// Heads are assigned in CONTIGUOUS runs so a worker walks whole kv
-		// groups: it re-gathers only when kvh changes, so the total gather count
-		// is at most nKV + workers rather than nH. That is the cost of dropping
-		// the sharing, and it is bounded and small.
+		// Fan out over query heads, as the acc64 path does. Every pool slot already owns a full-size kh/vt pair (prefillAttnWorkersK
+		// budgets 2*nKeys*hd per slot), so a worker gathers into its own buffers and nothing is shared across the group. Heads are
+		// assigned in contiguous runs so a worker walks whole kv groups and re-gathers only when kvh changes: at most nKV + workers
+		// gathers, not nH. MatmulBT already fans out over output columns internally; head-level fan-out is what parallelises the gather,
+		// the softmax and the scatter.
 		workers := 1
 		if len(pool) > 1 && nH > 1 && K*nKeys >= attnHeadsParThreshold {
 			workers = min(len(pool), nH)
@@ -1526,29 +1084,17 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		return
 	}
 
-	// R13 Arm B takes priority over Arm A whenever it can actually help:
-	// with more than one pool slot, splitting WITHIN each kv group (Arm B)
-	// keeps every slot busy where Arm A's "one worker owns a whole group"
-	// rule would strand the rest idle (see attendGroupedLayer's own doc for
-	// the measured reason this matters). With only one slot there is
-	// nothing for Arm B's internal fan-out to parallelize, and the plain
-	// serial arm below already takes the grouped kernel path correctly
-	// (runHeadRange's [0,nH) range always spans whole groups), so Arm B is
-	// skipped rather than adding fork-join overhead for no benefit.
+	// With more than one pool slot, Arm B (attendGroupedLayer) takes priority over Arm A, whose one-worker-per-group rule would strand
+	// the other slots idle. With one slot Arm B has nothing to parallelise and the serial arm below already takes the grouped kernel
+	// (runHeadRange's [0,nH) range spans whole groups), so Arm B is skipped rather than adding fork-join cost.
 	if attnGroupedOK && len(pool) > 1 {
 		attendGroupedLayer(pool)
 		return
 	}
 
-	// A1 move (a): the acc64 path (the real one — every live caller). The nH
-	// query heads are fully independent (disjoint ctx writes, no shared mutable
-	// state — kh/vt aren't touched on this path at all). Below the measured
-	// fan-out floor, or with only one pool slot / one head, run serially through
-	// pool[0] instead: a fork-join here costs real time the (c)+(b) speedups
-	// already shrank to ~13-14 µs/head at depth 130 — the same "small work stays
-	// serial" discipline int4ParThreshold and aikit's parThreshold apply one
-	// level down (Gate A0 item 2 — this is the SAME bug class, avoided here
-	// rather than repeated a third time).
+	// The acc64 path (the one every live caller takes): the nH query heads are independent (disjoint ctx writes, no shared mutable
+	// state; kh/vt are unused here). Below the fan-out floor, or with one pool slot or one head, run serially through pool[0]: a
+	// fork-join costs real time the per-head kernels have already shrunk to a few microseconds a head at shallow depth.
 	if len(pool) <= 1 || nH <= 1 || K*nKeys < attnHeadsParThreshold {
 		runHeadRange(&pool[0], 0, nH)
 		return
@@ -1588,11 +1134,8 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
 		}
 	}
-	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite
-	// logits_scaling divisor). Mirror logitsFromHidden's tail — the sequential
-	// path applies this, so the batched prefill/verify must too, else forwardN
-	// diverges for any LogitScale family. Cohere is the first forwardN-eligible
-	// one (Granite runs its own forward), which is why this was latent.
+	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite logits_scaling divisor): mirrors logitsFromHidden's tail.
+	// The sequential path applies it, so batched prefill/verify must too or forwardN diverges for any LogitScale family.
 	if arch.LogitScale != 0 && arch.LogitScale != 1 {
 		inv := float32(1 / arch.LogitScale)
 		for j := range logits {
@@ -1610,15 +1153,10 @@ func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][
 	return m.forwardNAttn(reqCtx, ids, cache, false)
 }
 
-// forwardNAttn is forwardN with the attention-kernel choice made by the caller.
-//
-// M-07: the two callers want DIFFERENT answers and shared one. Speculative verify must run the
-// exact kernel on both arms or its equality argument collapses — that is what `false` is for,
-// and it is unchanged. But EAGLE (removed 2026-09-24) also PREFILLED the prompt through here, while Generate's
-// prefillLogits prefills with cpuFastAttention() (default ON, floored at 512 tokens). So the
-// two produced different KV for the same prompt, and "token-identical to plain greedy" — which
-// EAGLE's whole contract rests on — stopped holding at temperature 0 for any prompt over the
-// floor. TestEagleSpecParity uses ~25 tokens, well under it, so nothing caught this.
+// forwardNAttn is forwardN with the attention-kernel choice made by the caller. Speculative verify must run the exact kernel
+// (fastAttn=false) on both arms or its equality argument collapses. A caller that must produce KV identical to Generate's prefill
+// passes cpuFastAttention(), as prefillLogits does; otherwise "token-identical to plain greedy" stops holding at temperature 0 for
+// any prompt over the fastAttnMinPrompt floor.
 func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([][]float32, error) {
 	K := len(ids)
 	if K == 0 {
@@ -1630,10 +1168,9 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 	if cache.treeMask != nil && !m.canBatchN(K) {
 		return nil, fmt.Errorf("decoder.forwardN: tree verify unsupported on this arch (not batchable)")
 	}
-	// Compute-time LoRA (#7) is wired only into the sequential forward, so an active
-	// adapter must take the M=1 path (as prefillLogits does): the batched verify would
-	// project every position with the base model and commit base K/V, silently
-	// verifying speculative drafts against the wrong model (M12).
+	// Compute-time LoRA is wired only into the sequential forward, so an active adapter must take the M=1 path (as prefillLogits
+	// does): the batched verify would project every position with the base model and commit base K/V, silently verifying drafts
+	// against the wrong model.
 	if cache.lora != nil || !m.canBatchN(K) {
 		out := make([][]float32, K)
 		for i, id := range ids {
@@ -1658,14 +1195,10 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 	return out, nil
 }
 
-// prefillLogits processes the whole prompt and returns the logits at its LAST
-// position (the seed for the first generated token). On the batched archs it
-// runs the layers at M=len(prompt) in one pass — each weight streamed once,
-// reused across all positions (~1.7–2× faster prompt prefill / time-to-first-
-// token than sequential M=1) — and runs the LM head on the last position ONLY
-// (the others' logits aren't needed). Falls back to sequential runLayers +
-// forward otherwise. Bit-identical to the sequential prefill (the seed token is
-// unchanged). The cache is filled with the whole prompt either way.
+// prefillLogits processes the whole prompt and returns the logits at its last position (the seed for the first generated token).
+// On the batched archs it runs the layers at M=len(prompt) in one pass (each weight streamed once, reused across all positions)
+// and the LM head on the last position only. Otherwise it falls back to sequential runLayers + forward. Bit-identical to the
+// sequential prefill when the exact kernel is in use; the cache is filled with the whole prompt either way.
 func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
 	// Compute-time LoRA (#7) is wired only into the sequential forward (causalAttention
 	// + gatedMLP), so an active adapter takes the M=1 path — the prompt's K/V must carry
@@ -1673,8 +1206,8 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 	// (N adapters share one base) is unaffected; only adapter'd prefill speed regresses.
 	if cache.lora != nil || !m.canBatchN(len(prompt)) {
 		for _, id := range prompt[:len(prompt)-1] {
-			// G18: the sequential fallback checks per token — it has no layer batch to
-			// bound, and a LoRA'd or non-batchable arch prefills here.
+			// The sequential fallback checks the context per token: it has no layer batch to bound, and a LoRA'd or non-batchable arch
+			// prefills here.
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
@@ -1743,7 +1276,7 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 // tokens attend CAUSALLY — no bidirectional image block (Qwen's bidirectionality is
 // inside the ViT, not the decoder) — and the rotary uses m-RoPE (ropeAt reads
 // cache.mropePos). The merged features are RAW (no embed scale), matching HF's
-// scatter into inputs_embeds. (P5)
+// scatter into inputs_embeds.
 func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsQwenVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageFeats, mropePos, cache)
 }
@@ -1752,7 +1285,7 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 // span order in imageFeats, replace that span's placeholder run, and mropePos covers them all (mropePositions with one
 // grid per image).
 func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, mropePos [][3]int, cache *KVCache) ([]float32, error) {
-	if m.w.arch.qwen35 != nil { // the Gated-DeltaNet hybrids have no batched prefill: per-token, P8a
+	if m.w.arch.qwen35 != nil { // the Gated-DeltaNet hybrids take their own prefill (batched when qwen35BatchNAnyPos applies)
 		return m.prefillLogitsQwen35VL(ctx, ids, imageFeats, spans, mropePos, cache)
 	}
 	if !m.canBatchN(len(ids)) {

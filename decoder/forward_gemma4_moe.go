@@ -8,15 +8,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Gemma 4 26B-A4B parallel dense-MLP + MoE FFN sub-block (enable_moe_block). The
-// two branches run on the SAME post-attention residual h but through DIFFERENT
-// normalizations, and their outputs are joint-normed then residual-added; a
-// per-layer scalar multiplies the whole layer output. Pinned against transformers
-// 5.12.0's Gemma4TextDecoderLayer.forward — see docs/task-gemma4-moe.md Phase 1a.
+// Gemma 4 26B-A4B parallel dense-MLP + MoE FFN sub-block (enable_moe_block). The two branches run on the same post-attention
+// residual h but through different normalizations; their outputs are joint-normed then residual-added, and a per-layer scalar
+// multiplies the whole layer output. Pinned against transformers 5.12.0's Gemma4TextDecoderLayer.forward
+// (docs/completed/task-gemma4-moe.md, Phase 1a).
 //
-// The router and experts are Gemma-4-specific (a weightless-norm + learned-scale
-// pre-projection, an unconditional renorm, a per-expert scale, and gelu-tanh GeGLU
-// experts), so this does NOT reuse the SiLU moeMLP/swiGLUExpert.
+// The router and experts are Gemma-4-specific (a weightless-norm + learned-scale pre-projection, an unconditional renorm, a
+// per-expert scale, and gelu-tanh GeGLU experts), so this does not reuse the SiLU moeMLP/swiGLUExpert.
 
 // gemma4MoEWeights is one layer's FFN sub-block, as WeightMats (matmul path) + f32
 // norm/scale vectors. Built by the loader (production) or a golden (the op-test).
@@ -40,27 +38,20 @@ type gemma4MoEWeights struct {
 	denseInter, moeInter, nE, topK int
 }
 
-// gemma4MoEFFN applies the sub-block to one token's post-attention residual h
-// ([hidden]) and returns the layer output ([hidden]). Position-independent, so the
-// decode loop calls it per token.
+// gemma4MoEFFN applies the sub-block to one token's post-attention residual h ([hidden]) and returns the layer output ([hidden]).
+// It is position-independent, so the decode loop calls it per token.
 //
-// Lever 3 (task-moe-streaming.md, "overlap routed reads with the resident branch"):
-// the router only needs h (not the dense branch's output), and the dense branch only
-// needs h (not the router's chosen experts) — the two are independent until the join.
-// So the router runs FIRST (to learn which experts to fetch), the expert fills are
-// ISSUED, and the dense branch's matmuls run on the calling goroutine WHILE a second
-// goroutine drives the fills — hiding a cold miss's fault/pread latency behind the
-// dense branch's own compute time instead of paying both serially. Bit-identical
-// either way (dense and moe branches touch disjoint memory and are summed
-// order-independently at the join; TestGemma4MoEFFN_overlapBitIdentical), backend
-// calls untouched (the fill goroutine never touches `be`, only the pager).
+// The router needs only h and the dense branch needs only h, so the two are independent until the join. The router runs first (to
+// learn which experts to fetch), the expert fills are issued, and the dense branch's matmuls run on the calling goroutine while a
+// second goroutine drives the fills, hiding a cold miss's fault/pread latency behind the dense compute
+// (docs/completed/task-moe-streaming.md, Lever 3). The result is bit-identical either way: the branches touch disjoint memory
+// and are summed order-independently at the join (TestGemma4MoEFFN_overlapBitIdentical), and the fill goroutine never touches
+// `be`, only the pager.
 func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {
 	hidden := arch.HiddenDim
 	eps := arch.NormEps
-	// The weighted norms follow arch.RMSAddOne (the (1+w) offset) exactly like the
-	// dense forward's normalize(arch, …), so if that flag is ever flipped for gemma4
-	// these five track it rather than silently diverging. false today (Gemma4RMSNorm
-	// is plain x*w); the router's norm at rmsNormNoWeight below is genuinely weightless.
+	// The weighted norms follow arch.RMSAddOne (the (1+w) offset) exactly like the dense forward's normalize(arch, …), so these five
+	// track the flag rather than diverging; the router's norm (rmsNormNoWeight below) is genuinely weightless.
 	addOne := arch.RMSAddOne
 
 	// moe branch — router on the RAW residual h (its own weightless RMSNorm + learned
@@ -101,15 +92,12 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 		}
 		routerCaptureDo(func() { routerMarginBuf = append(routerMarginBuf, minSel-maxRej) })
 	}
-	// Weight residency (idea #2): the router selection is the demand signal. Touch each
-	// chosen expert so the pager faults it in and evicts the LRU tail to stay within
-	// budget. Keyed by the gateUp element address (newExpertPager's key). Bit-exact —
-	// released experts re-fault from the read-only mapping (mmap mode) or are re-pread
-	// (pool mode). Issued on a separate goroutine (Lever 3) so the fills run WHILE the
-	// dense branch below computes on the calling goroutine, instead of paying both
-	// serially; Lock/Unlock still spans touch AND the matmul reads further below (the
-	// expert loop over w.expertsGateUp/expertsDown), now across the wg.Wait() boundary
-	// — see expertPager's doc comment for why pool mode needs the lock held that long.
+	// Weight residency: the router selection is the demand signal. Touch each chosen expert so the pager faults it in and evicts the
+	// LRU tail to stay within budget, keyed by the gateUp element address (newExpertPager's key). Bit-exact: released experts
+	// re-fault from the read-only mapping (mmap mode) or are re-pread (pool mode). The fills are issued on a separate goroutine so
+	// they run while the dense branch below computes on the calling goroutine; Lock/Unlock still spans the touch and the matmul reads
+	// further below (the expert loop over w.expertsGateUp/expertsDown), across the wg.Wait() boundary (see expertPager's doc for why
+	// pool mode needs the lock held that long).
 	var fillWG sync.WaitGroup
 	if pager != nil {
 		pager.Lock()
@@ -132,11 +120,9 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 		routerCaptureDo(func() { routerWtsBuf = append(routerWtsBuf, append([]float32(nil), wts...)) })
 	}
 
-	// dense branch: x1 = post_ffn_norm_1( mlp( pre_ffn_norm(h) ) ), gelu-tanh GeGLU.
-	// Runs here — after the fills are issued, before they're waited on — so its compute
-	// overlaps the fill goroutine's I/O (Lever 3). Touches only dense weights (never
-	// paged) and fresh local buffers, disjoint from what the fill goroutine touches, so
-	// this is safe without any lock of its own.
+	// dense branch: x1 = post_ffn_norm_1(mlp(pre_ffn_norm(h))), gelu-tanh GeGLU. It runs after the fills are issued and before they
+	// are waited on, so its compute overlaps the fill goroutine's I/O. It touches only dense weights (never paged) and fresh local
+	// buffers, disjoint from what the fill goroutine touches, so it is safe without a lock of its own.
 	xd := append([]float32(nil), h...)
 	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, addOne)
 	gate := make([]float32, w.denseInter)

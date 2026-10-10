@@ -16,16 +16,11 @@ var g4traceHidden func(layer int, h []float32)
 // every runLayersGemma4 call (k/v nil on KV-shared layers). Debug/test only.
 var g4traceQKV func(layer int, q, k, v []float32)
 
-// runLayersGemma4 is the Gemma 4 (E-model) forward over one token. It diverges
-// from the generic runLayers enough to warrant its own path: per-layer head_dim
-// (256 local / 512 global), per-layer KV-head count, scale-less v-norm,
-// cross-layer KV sharing (the last N layers reuse an earlier layer's KV),
-// per-attention-type RoPE (proportional / partial-rotary on the global layers),
-// the Per-Layer-Embedding (PLE) residual branch, and a per-layer output scalar.
-// Returns the post-final-norm... no — returns the pre-final-norm hidden, matching
-// runLayers; forward() applies the final norm + LM head + softcap (30).
-//
-// Buffers are allocated per call (parity-first; not the perf path).
+// runLayersGemma4 is the Gemma 4 (E-model) forward over one token. It has its own path because it diverges from the generic
+// runLayers: per-layer head_dim and KV-head count, scale-less v-norm, cross-layer KV sharing (the last N layers reuse an earlier
+// layer's KV), per-attention-type RoPE (proportional / partial-rotary on the global layers), the Per-Layer-Embedding (PLE)
+// residual branch, and a per-layer output scalar. It returns the pre-final-norm hidden, matching runLayers; forward() applies the
+// final norm, LM head and softcap. Buffers are allocated per call (parity-first, not the perf path).
 func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	hidden := arch.HiddenDim
@@ -39,22 +34,14 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	return m.runLayersGemma4FromEmbed(h, id, cache)
 }
 
-// runLayersGemma4FromEmbed is runLayersGemma4's shared body, parameterized over
-// an already-built (already-scaled) hidden-state embedding h — runLayersGemma4's
-// own case is a real token's embedding; a multimodal caller (P7) substitutes a
-// projected image/video/audio embedding here instead of a token-id lookup, the
-// "embed-by-vector" seam this family lacked (the June seams — runLayersFromEmbed
-// / runLayersFromEmbedN in model.go/forwardn.go — only reach the GENERIC forward
-// path; gemma4's own-forward never went through them).
+// runLayersGemma4FromEmbed is runLayersGemma4's shared body over an already-built (already-scaled) hidden-state embedding h: the
+// embed-by-vector seam a multimodal caller uses to substitute a projected image/video/audio embedding for a token lookup (the
+// generic runLayersFromEmbed/runLayersFromEmbedN seams do not reach this own-forward family).
 //
-// pleTokenID selects which token id's per-layer embedding feeds PLE's
-// token-identity term. For a real text position this is the same id h was
-// embedded from. For a multimodal position the real HF multimodal forward
-// substitutes the checkpoint's pad_token_id THERE, before computing PLE — not
-// the placeholder token's own id, and not a skipped/zeroed term (verified
-// against modeling_gemma4.py's real multimodal forward path, not assumed — see
-// docs/multimodal.md's P7 entry). A caller passes arch.gemma4.PadTokenID for an
-// image/video/audio position.
+// pleTokenID selects which token id's per-layer embedding feeds PLE's token-identity term: for a real text position, the id h was
+// embedded from; for a multimodal position, the checkpoint's pad_token_id (arch.gemma4.PadTokenID), which is what HF's multimodal
+// forward substitutes before computing PLE (not the placeholder token's own id, and not a skipped or zeroed term; see
+// docs/multimodal.md, P7 entry).
 func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	g4 := arch.gemma4
@@ -256,11 +243,9 @@ func rmsNormNoWeight(x []float32, rows, dim int, eps float64) {
 	}
 }
 
-// g4attnScratch holds the batched-over-heads gemma4 attention buffers: the
-// gathered K_head [n,hd] / V_headᵀ [hd,n] for one KV head, the stacked query-head
-// group, its scores, and the context. Allocated once per token in
-// runLayersGemma4 (sized to the widest head_dim and current key count), reused
-// across layers — replaces the per-layer-per-token `scores := make`.
+// g4attnScratch holds the batched-over-heads gemma4 attention buffers: the gathered K_head [n,hd] / V_headᵀ [hd,n] for one KV
+// head, the stacked query-head group, its scores, and the context. Allocated once per token in runLayersGemma4 (sized to the
+// widest head_dim and current key count) and reused across layers.
 type g4attnScratch struct {
 	kh, vt, qstack, scores, cstack []float32
 }
@@ -331,10 +316,9 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 
 // gemma4PLEInputs writes one position's Per-Layer-Embedding inputs into dst ([NumLayers*pleDim]):
 // (token_identity + context_aware) / √2, where token_identity = per_layer_token_embd[pleTokenID] × √pleDim and
-// context_aware = RMSNorm per layer segment of ( per_layer_model_proj(h) × hidden^-0.5 ). h is the position's
-// inputs_embeds (already × EmbedScale). The CPU forward and the resident embedding (embedResidentInto, which hands
-// a GPU backend [h ‖ these]) both call it, so the two cannot compute PLE differently. S1.2,
-// docs/tasks/task-multimodal-support-2026-10.md.
+// context_aware = RMSNorm per layer segment of (per_layer_model_proj(h) × hidden^-0.5). h is the position's inputs_embeds (already
+// × EmbedScale). The CPU forward and the resident embedding (embedResidentInto, which hands a GPU backend [h ‖ these]) both call
+// it, so the two cannot compute PLE differently.
 func (m *Model) gemma4PLEInputs(h []float32, pleTokenID int, dst []float32) {
 	arch := m.w.arch
 	pleDim := arch.gemma4.HiddenSizePerLayerInput

@@ -4,20 +4,16 @@ import (
 	"math"
 )
 
-// DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3) forward path — Multi-head Latent Attention
-// over a DeepSeekMoE FFN. MLA is the third efficient-attention coverage axis (latent-KV):
-// K/V are compressed to a shared low-rank latent (kv_lora_rank), and ONLY that latent (‖ a
-// per-position rope-carrying key) is cached — ~576 floats/token vs the ~41k a reconstructed
-// full K+V would need. Per-head K/V are rebuilt from the latent each step (the "naive" path,
-// bit-identical to HF; the "absorb" optimization that folds kv_b_proj into q/o is a perf
-// follow-up, not needed for parity). Decoupled RoPE rides on a separate qk_rope_head_dim
-// slice of Q and the shared latent key; the no-rope dims and the (different-width) V skip it.
+// DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3) forward path: Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed
+// to a shared low-rank latent (kv_lora_rank), and only that latent (plus a per-position rope-carrying key) is cached, far smaller
+// than a reconstructed full K+V. Attention either rebuilds per-head K/V from the latent each step (mlaAttentionNaive, bit-identical
+// to HF) or, by default, works in latent space without ever rebuilding them (mlaAttentionAbsorb). Decoupled RoPE rides on a
+// separate qk_rope_head_dim slice of Q and the shared latent key; the no-rope dims and the (different-width) V skip it.
 //
-// The block is a standard Pre2 residual stack — input_layernorm → MLA → +residual →
-// post_attention_layernorm → MoE/dense → +residual — so the FFN reuses the generic mlp()
-// dispatch (dense prefix on l < first_k_dense_replace, DeepSeekMoE elsewhere). Parity-first
-// f32, one token per call (the latent append + causal attend mirror the other own-path
-// families); canBatchN excludes the MLA attention-kind.
+// The block is a standard Pre2 residual stack (input_layernorm → MLA → +residual → post_attention_layernorm → MoE/dense →
+// +residual), so the FFN reuses the generic mlp() dispatch (dense prefix on l < first_k_dense_replace, DeepSeekMoE elsewhere).
+// Parity-first f32, one token per call (the latent append and causal attend mirror the other own-path families); canBatchN
+// excludes the MLA attention kind.
 func (m *Model) runLayersDeepseek(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	hidden := arch.HiddenDim

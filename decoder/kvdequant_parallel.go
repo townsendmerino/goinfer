@@ -7,13 +7,12 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Audit R-15. An int8-KV decode token widens every stored K and V row of every global layer back to f32 (dequantGlobalLayer), and widens a ring layer's whole
-// window the same way. That is O(context) per token per layer, on ONE thread, directly in front of the attention that then fans out across heads: measured on
-// Qwen2.5 1.5B at depth 2000, 17.4 ms of an 80.5 ms int8-KV token (the f32 token is 59.5 ms), so the dequantization is essentially the whole int8 slowdown.
-//
-// The widen is elementwise, float32(q) * scale per row with no shared state, so it splits by rows with no change to any bit. It is bandwidth-bound (1 byte read,
-// 4 written per element), so the fan-out is the process's usual width (fusedWorkers: GOMAXPROCS capped by linalg's parallel width) and only kicks in once there is
-// enough to amortize a fork/join.
+// An int8-KV decode token widens every stored K and V row of every global layer back to f32 (dequantGlobalLayer), and a ring
+// layer's whole window the same way. That is O(context) per token per layer, on one thread, directly in front of the attention
+// that then fans out across heads, and it is essentially the whole int8 slowdown. The widen is elementwise (float32(q) * scale
+// per row, no shared state), so it splits by rows with no change to any bit. It is bandwidth-bound (1 byte read, 4 written per
+// element), so the fan-out uses the process's usual width (fusedWorkers: GOMAXPROCS capped by linalg's parallel width) and only
+// kicks in once there is enough work to amortize a fork/join.
 
 // kvDequantParallel is the A/B handle and test seam for the fan-out, never an environment read: tests and the paired ABBA flip it.
 var kvDequantParallel = true

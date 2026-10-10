@@ -7,9 +7,8 @@ import "os"
 var (
 	ssmNoMul   = os.Getenv("GOINFER_SSM_NOMUL") != ""
 	ssmSkipFFN = os.Getenv("GOINFER_SSM_SKIPFFN") != ""
-	// ssmStopLayer truncates the forward after this layer (-1 = run every layer): the resident-SSM
-	// bring-up's layer-sweep seam. It was the env var GOINFER_SSM_STOP_LAYER until 2026-09-24; only
-	// tests set it now, through SetSSMStopLayerForTest (testhooks.go).
+	// ssmStopLayer truncates the forward after this layer (-1 = run every layer): the resident-SSM bring-up's layer-sweep seam. Only
+	// tests set it, through SetSSMStopLayerForTest (testhooks.go).
 	ssmStopLayer = -1
 )
 
@@ -76,15 +75,13 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 	return h, nil
 }
 
-// graniteAttention is a plain GQA softmax attention layer: q/k/v/o projections, full
-// rotary RoPE (or none — see below), causal attention over the KV cache scaled by
-// attention_multiplier (arch.AttnScale) — no QK-norm, no bias, no output gate.
+// graniteAttention is a plain GQA softmax attention layer: q/k/v/o projections, full rotary RoPE (or none, see below), causal
+// attention over the KV cache scaled by attention_multiplier (arch.AttnScale), with no QK-norm, no bias and no output gate.
 //
-// RoPE is skipped entirely when the checkpoint sets position_embedding_type "nope", which
-// the RELEASED granite-4.0-h models do (HF then builds no rotary_emb and passes
-// position_embeddings=None). This layer applied RoPE unconditionally until the real-model
-// oracle caught it: the tiny fixture is roped, so every T1 gate agreed while the shipped
-// checkpoints were being decoded with positional rotations HF never applies.
+// RoPE is skipped entirely when the checkpoint sets position_embedding_type "nope", which the released granite-4.0-h models do (HF
+// then builds no rotary_emb and passes position_embeddings=None). The tiny fixture is roped, so only the real-checkpoint oracle
+// exercises the nope path; applying RoPE unconditionally agrees with every T1 gate and decodes the shipped checkpoints with
+// positional rotations HF never applies.
 func (m *Model) graniteAttention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	hidden := arch.HiddenDim

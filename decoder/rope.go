@@ -128,31 +128,25 @@ func applyRoPEInterleaved(vec []float32, heads, headDim, pos int, invFreq []floa
 	}
 }
 
-// ropeAt rotates the token at absolute sequence position seqPos, choosing m-RoPE
-// vs plain scalar RoPE. The single seam both the batched (forwardN) and sequential
-// (causalAttention) RoPE sites call, so adding m-RoPE didn't fork them.
+// ropeAt rotates the token at absolute sequence position seqPos, choosing m-RoPE vs plain scalar RoPE. It is the single seam both
+// the batched (forwardN) and sequential (causalAttention) RoPE sites call, so the two cannot fork.
 //
-//   - Not VL (mropePos nil): scalar RoPE at seqPos — every non-Qwen2.5-VL model.
+//   - Not VL (mropePos nil): scalar RoPE at seqPos, for every non-Qwen2.5-VL model.
 //   - VL prefill (seqPos within the prefilled m-RoPE positions): m-RoPE 3D.
-//   - VL decode (seqPos past the prefill): text positions resume at the block max +
-//     1, i.e. scalar RoPE at seqPos+mropeDelta (the image-token grid compressed the
-//     position count, so mropeDelta is typically negative).
+//   - VL decode (seqPos past the prefill): text positions resume at the block max + 1, i.e. scalar RoPE at seqPos+mropeDelta (the
+//     image-token grid compressed the position count, so mropeDelta is typically negative).
 //
-// interleave selects GPT-J pairwise rotation (adjacent dims 2d,2d+1) over the
-// NeoX rotate_half layout (dims d, d+half) — Cohere/Falcon/GPT-J/GLM-OCR vs Llama/Qwen.
-// It applies to the scalar path AND, with the contiguous-section layout (mropeInterleaved
-// false), to the m-RoPE block: GLM-OCR rotates pairwise with Qwen2.5-VL's contiguous t/h/w
-// sections, which is applyMRoPEPairwise. Qwen2.5-VL and Qwen3-VL are NeoX m-RoPE
-// (interleave false), so they still go to applyMRoPE, untouched. The one combination
-// nothing registers — pairwise rotation with Qwen3-VL's strided section layout — keeps
-// the old behaviour (applyMRoPE, NeoX) rather than inventing a rotation no checkpoint
-// has been checked against.
+// interleave selects GPT-J pairwise rotation (adjacent dims 2d,2d+1) over the NeoX rotate_half layout (dims d, d+half):
+// Cohere/Falcon/GPT-J/GLM-OCR vs Llama/Qwen. It applies to the scalar path and, with the contiguous-section layout
+// (mropeInterleaved false), to the m-RoPE block: GLM-OCR rotates pairwise with Qwen2.5-VL's contiguous t/h/w sections, which is
+// applyMRoPEPairwise. Qwen2.5-VL and Qwen3-VL are NeoX m-RoPE (interleave false) and go to applyMRoPE. The one combination nothing
+// registers, pairwise rotation with Qwen3-VL's strided section layout, falls through to applyMRoPE (NeoX) rather than inventing a
+// rotation no checkpoint has been checked against.
 //
-// mropeInterleaved is a SEPARATE, unrelated flag — Qwen3-VL's per-frequency-index m-RoPE
-// component layout vs Qwen2.5-VL's contiguous-block one (mropeComponentInterleaved vs
-// mropeComponent, see either's doc comment). Never confuse the two "interleaved" concepts: one is
-// GPT-J's pairwise rotation ordering, the other is which of 3 position components a frequency
-// index maps to under m-RoPE. Only meaningful when mropePos != nil.
+// mropeInterleaved is a separate, unrelated flag: Qwen3-VL's per-frequency-index m-RoPE component layout vs Qwen2.5-VL's
+// contiguous-block one (mropeComponentInterleaved vs mropeComponent). Never confuse the two "interleaved" concepts: one is GPT-J's
+// pairwise rotation ordering, the other is which of 3 position components a frequency index maps to under m-RoPE. It is only
+// meaningful when mropePos != nil.
 func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int, mropeDelta int, interleave, mropeInterleaved bool) {
 	rope := applyRoPE
 	if interleave {
@@ -190,7 +184,7 @@ func mropeDelta(pos [][3]int, seqLen int) int {
 // height, width) position components, so each frequency d rotates by pos[comp(d)]·invFreq[d].
 // section sums to len(invFreq). For a TEXT token the three positions are equal, so this reduces
 // EXACTLY to applyRoPE(pos[0]) — the basis for keeping the text path bit-identical, for EITHER
-// layout. (P5, P8)
+// layout.
 //
 // NeoX (split-half) rotation only. GLM-OCR's pairwise rotation over contiguous sections is
 // applyMRoPEPairwise, a separate function so this one stays byte-for-byte what Qwen runs.
