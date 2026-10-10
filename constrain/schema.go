@@ -18,6 +18,7 @@ import (
 //   - object: properties (required + optional), additionalProperties:false (closed)
 //   - string, number, integer, boolean, null
 //   - enum, const
+//   - minimum, for the value 0 only (no leading '-')
 //   - array: items (one schema), minItems, maxItems
 //   - arbitrary nesting of the above
 //
@@ -65,23 +66,20 @@ type propNode struct {
 // JSONSchema compiles a JSON Schema document into a Grammar. It returns an error
 // for an unsupported keyword/shape (so an unenforceable constraint is loud).
 func JSONSchema(schema []byte) (Grammar, error) {
-	// UseNumber, not plain Unmarshal: an integer enum/const above 2^53 decoded into
-	// float64 comes back out of encodeLiteral with different digits, and the grammar
-	// then forces a literal the caller never wrote (M-29).
+	// UseNumber, not plain Unmarshal: an integer enum/const above 2^53 decoded into float64
+	// comes back out of encodeLiteral with different digits, and the grammar would then force a
+	// literal the caller never wrote.
 	dec := json.NewDecoder(bytes.NewReader(schema))
 	dec.UseNumber()
 	var doc map[string]any
 	if err := dec.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("constrain: parse schema: %w", err)
 	}
-	// Decoder.Decode stops after the first top-level value and leaves the rest of the
-	// reader unread — unlike json.Unmarshal, it does NOT reject trailing garbage, so
-	// `{"type":"number"}0` compiled as if the schema were just the object (found by
-	// FuzzJSONSchema, which uses json.Unmarshal as its own independent oracle and
-	// disagreed). The same principle this package already applies to an unsupported
-	// keyword — a silently-ignored piece of input is worse than a loud compile error —
-	// applies here too: a caller who accidentally concatenates or truncates a schema
-	// string should not get back a Grammar that quietly compiled a PREFIX of it.
+	// Decoder.Decode stops after the first top-level value and, unlike json.Unmarshal, does not
+	// reject trailing data, so `{"type":"number"}0` would compile as if the schema were just the
+	// object. A silently ignored piece of input is worse than a loud compile error: a caller who
+	// concatenates or truncates a schema string must not get a Grammar that quietly compiled a
+	// PREFIX of it.
 	if _, err := dec.Token(); err != io.EOF {
 		return nil, fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
@@ -94,23 +92,18 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	return g, nil
 }
 
-// maxSchemaDepth caps object/array nesting (M-40, docs/audit-2026-09-10.md): unbounded depth let
-// a several-MB `response_format` body force the model down ~160k levels of
-// {"type":"array","minItems":1,"items":...}, making one Process step's mask-frame-stack copy
-// O(vocab × depth) — 151936 × 5000 × 64 B ≈ 49 GB of memcpy per step at depth 5000. 64 is
-// generous against any schema a human writes (the package's own >64 properties/enum-entries caps
-// use the same order of magnitude) and small against the attack shape.
+// maxSchemaDepth caps object/array nesting. Unbounded depth would let a several-MB
+// `response_format` body drive one mask step's frame-stack copy to O(vocab × depth). 64 is
+// generous against any schema a human writes (the package's own >64 properties/enum-entries
+// caps are the same order of magnitude) and small against that attack shape.
 const maxSchemaDepth = 64
 
-// compile turns one JSON Schema object into a node. depth is the nesting level this call is
-// compiling AT (0 for the schema's top-level object), threaded through compileObject/compileArray
-// so every object property and array items schema counts, not just object-under-object nesting.
-// schemaKeywords are the keywords compile enforces plus the annotation-only
-// keywords it may safely ignore. Any other keyword is an assertion we do NOT enforce
-// (pattern, minimum, maxLength, oneOf, $ref, uniqueItems, …) — the package contract
-// is that these are a compile error, not a silent no-op, so a caller can't believe a
-// constraint is in force that isn't (M27). `format` is annotation-only by JSON Schema
-// 2020-12 default, so it's allowed and ignored rather than rejected.
+// schemaKeywords are the keywords compile enforces plus the annotation-only keywords it may
+// safely ignore. Any other keyword is an assertion this package does NOT enforce (pattern,
+// maxLength, oneOf, $ref, uniqueItems, …): the package contract is that it is a compile error,
+// not a silent no-op, so a caller cannot believe a constraint is in force that isn't. `format`
+// is annotation-only by JSON Schema 2020-12 default, so it is allowed and ignored rather than
+// rejected.
 var schemaKeywords = map[string]bool{
 	// enforced
 	"type": true, "enum": true, "const": true,
@@ -131,6 +124,9 @@ func checkSchemaKeys(s map[string]any) error {
 	return nil
 }
 
+// compile turns one JSON Schema object into a node. depth is the nesting level this call
+// compiles AT (0 for the top-level object), threaded through compileObject and compileArray so
+// every object property and array items schema counts, not just object-under-object nesting.
 func compile(s map[string]any, depth int) (*node, error) {
 	if depth > maxSchemaDepth {
 		return nil, fmt.Errorf("constrain: schema nesting exceeds %d levels", maxSchemaDepth)
@@ -194,11 +190,10 @@ func compile(s map[string]any, depth int) (*node, error) {
 	}
 }
 
-// validPropertyName rejects property names the key grammar can't match byte-for-byte:
-// keyStep treats an unescaped '"' as the key terminator and does not accept a JSON
-// escape ('\'), and control bytes never appear literally in a JSON string. Such a
-// name compiles but is unsatisfiable — mid-generation every logit goes to −∞, the
-// exact wedged state the fuzzer flags as a bug. Reject at compile instead (M27).
+// validPropertyName rejects property names the key grammar can't match byte-for-byte: keyStep
+// treats an unescaped '"' as the key terminator and does not accept a JSON escape ('\'), and
+// control bytes never appear literally in a JSON string. Such a name would compile but be
+// unsatisfiable (every logit goes to −∞ mid-generation), so it is rejected at compile.
 func validPropertyName(name string) error {
 	for i := 0; i < len(name); i++ {
 		if c := name[i]; c == '"' || c == '\\' || c < 0x20 || c == 0x7f {
@@ -222,11 +217,11 @@ func compileObject(s map[string]any, depth int) (*node, error) {
 	if len(propsRaw) > 64 {
 		return nil, fmt.Errorf("constrain: object with >64 properties unsupported")
 	}
-	// An object with no declared properties and no `additionalProperties:false` is the
-	// freeform "any object" shape (the standard freeform tool-arguments schema). The
-	// grammar can only build a CLOSED object, so it would compile to "{} only" — far
-	// tighter than the schema means. Reject it loudly; an explicit closed empty object
-	// (additionalProperties:false, no properties) legitimately matches just "{}" (M27).
+	// An object with no declared properties and no `additionalProperties:false` is the freeform
+	// "any object" shape (the standard freeform tool-arguments schema). The grammar can only build
+	// a CLOSED object, so it would compile to "{} only", far tighter than the schema means. Reject
+	// it loudly; an explicit closed empty object (additionalProperties:false, no properties)
+	// legitimately matches just "{}".
 	if len(propsRaw) == 0 && !apClosed {
 		return nil, fmt.Errorf("constrain: object with no properties is unconstrainable (a freeform object needs a free-JSON sub-grammar); declare properties or set additionalProperties:false for an empty object")
 	}
@@ -242,11 +237,8 @@ func compileObject(s map[string]any, depth int) (*node, error) {
 	for _, name := range names {
 		declared[name] = true
 	}
-	// A `required` entry naming an undeclared property is unenforceable: the
-	// closed object can never emit that key, so the constraint would be silently
-	// dropped and the masker would happily produce output the schema rejects.
-	// Reject it loudly (the package's invariant: an unenforceable schema fails to
-	// compile rather than mis-constrain at decode time).
+	// A `required` entry naming an undeclared property is unenforceable: the closed object can
+	// never emit that key, so the masker would produce output the schema rejects. Reject it loudly.
 	req := map[string]bool{}
 	if rraw, present := s["required"]; present {
 		rl, ok := rraw.([]any)
@@ -337,12 +329,9 @@ func intKeyword(s map[string]any, key string) (val int, present bool, err error)
 	if f < 0 || f != math.Trunc(f) {
 		return 0, true, fmt.Errorf("constrain: %s must be a non-negative integer, got %v", key, raw)
 	}
-	// N-76 (docs/audit-2026-09-10.md): converting a float64 that does not fit in an int is
-	// IMPLEMENTATION-DEFINED per the Go spec — on amd64/arm64 it can come back negative, and
-	// maxItems specifically treats <0 as "unbounded" (node.maxItems' own doc comment above).
-	// A huge, presumably-hostile maxItems would then silently mean NO limit instead of being
-	// refused or clamped — the opposite of what a bound is for. Refuse rather than clamp: a
-	// caller asking for more items than fit in an int has no sane bounded interpretation here.
+	// Converting a float64 that does not fit in an int is implementation-defined (it can come back
+	// negative), and maxItems treats <0 as unbounded (node.maxItems), so a huge maxItems would
+	// silently mean no limit. Refuse rather than clamp: there is no sane bounded interpretation.
 	if f > float64(math.MaxInt) {
 		return 0, true, fmt.Errorf("constrain: %s is too large (%v exceeds %d)", key, raw, math.MaxInt)
 	}
@@ -352,15 +341,12 @@ func intKeyword(s map[string]any, key string) (val int, present bool, err error)
 // encodeLiteral renders an enum/const value to the compact JSON bytes the model must
 // reproduce exactly.
 //
-// NOT json.Marshal, which HTML-ESCAPES by default (M-29). For {"enum":["<",">","="]}
-// it emits "\u003c", so the grammar masks the natural continuation `<` at −∞ and a
-// greedy model slides to whichever member IS reachable. The output still validates —
-// the oracle marshals both sides the same way — so the failure is silent and shows up
-// only as the model "preferring" a different literal than it did unconstrained.
+// NOT json.Marshal, which HTML-ESCAPES by default: {"enum":["<",">","="]} would become
+// "\u003c", so the grammar would mask the natural `<` at −∞ and a greedy model would slide to
+// whichever member IS reachable. The output still validates, so the failure is silent.
 //
-// json.Number is emitted VERBATIM: the schema is decoded with UseNumber precisely so
-// an integer enum above 2^53 is not routed through float64 and re-encoded with lost
-// precision, which would make the literal unreachable for a different reason.
+// json.Number is emitted VERBATIM: the schema is decoded with UseNumber so an integer enum
+// above 2^53 is not re-encoded through float64 with lost precision.
 func encodeLiteral(v any) ([]byte, error) {
 	if n, ok := v.(json.Number); ok {
 		return []byte(n.String()), nil
@@ -375,14 +361,12 @@ func encodeLiteral(v any) ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
-// nonNegativeKeyword reads `minimum`, which is supported for the value 0 ONLY — the
-// grammar can enforce "no leading minus" as a prefix rule, which is all minimum:0 is,
-// but a general numeric bound needs magnitude comparison the byte FSM does not do.
-// Anything else is refused rather than silently ignored, per this compiler's rule that
-// an unenforceable constraint is loud. `minimum` was previously not a known keyword at
-// all, so every schema carrying it already errored; this only ever widens what compiles.
+// nonNegativeKeyword reads `minimum`, which is supported for the value 0 ONLY: the grammar can
+// enforce "no leading minus" as a prefix rule, which is all minimum:0 is, but a general numeric
+// bound needs magnitude comparison the byte FSM does not do. Anything else is refused rather
+// than silently ignored.
 //
-// SchemaFromStruct emits minimum:0 for the unsigned Go kinds (M-28).
+// SchemaFromStruct emits minimum:0 for the unsigned Go kinds.
 func nonNegativeKeyword(s map[string]any) (bool, error) {
 	raw, ok := s["minimum"]
 	if !ok {

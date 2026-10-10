@@ -33,7 +33,7 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	}
 	paramSchema = closeEmptyToolObject(paramSchema)
 	// encodeLiteral, not json.Marshal: the tool name becomes a `const` literal in the
-	// grammar, so HTML-escaping it makes a name containing < or & unreachable (M-29).
+	// grammar, so HTML-escaping it would make a name containing < or & unreachable.
 	name, err := encodeLiteral(toolName)
 	if err != nil {
 		return nil, fmt.Errorf("constrain: tool name: %w", err)
@@ -54,9 +54,9 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	return g, nil
 }
 
-// mustMap decodes a schema document built above. UseNumber for the same reason
-// JSONSchema uses it: this is the path a TOOL's paramSchema takes, so without it a
-// large integer enum in a tool argument loses precision here instead (M-29).
+// mustMap decodes a schema document built above. UseNumber for the same reason JSONSchema
+// uses it: a TOOL's paramSchema takes this path, and a large integer enum in a tool argument
+// would otherwise lose precision here.
 func mustMap(s string) map[string]any {
 	dec := json.NewDecoder(strings.NewReader(s))
 	dec.UseNumber()
@@ -93,14 +93,11 @@ func (g *toolGrammar) CanEnd() bool {
 	return false
 }
 
-// InPlainString (P-17, audit-2026-09-10) lets forced tool-call decoding take the same
-// plain-string fast path (P-20, audit-2026-09-02) every other JSON-shaped grammar already gets.
-// Without it, plainStringGrammar's type assertion (constrain/plainstring.go's inPlainString)
-// simply never matches a *toolGrammar, so every forced tool call paid the full walk on the
-// prefix/suffix's own JSON body — mostly string content, the exact case the fast path exists
-// for. Only meaningful during phase 1 (the JSON value): phases 0/2/3 are the literal
-// prefix/suffix/done, never a JSON string, and inner's own InPlainString is only valid to
-// consult once inner is actually the grammar in play.
+// InPlainString lets forced tool-call decoding take the plain-string fast path every other
+// JSON-shaped grammar gets: without it plainStringGrammar's assertion never matches a
+// *toolGrammar, and every forced tool call pays the full walk over the JSON body. Only
+// meaningful in phase 1 (the JSON value); phases 0/2/3 are the literal prefix, suffix and
+// done, never a JSON string.
 func (g *toolGrammar) InPlainString() bool {
 	return g.phase == 1 && g.inner.InPlainString()
 }
@@ -177,23 +174,20 @@ func (g *toolGrammar) step(b byte) bool {
 	}
 }
 
-// closeEmptyToolObject rewrites a no-argument tool schema into the closed-empty form
-// the compiler can build (M-30).
+// closeEmptyToolObject rewrites a no-argument tool schema into the closed-empty form the
+// compiler can build.
 //
-// `{"type":"object","properties":{}}` is THE canonical no-argument tool schema —
-// OpenAI's own examples, most MCP servers, and every Pydantic/zod tool with no
-// parameters emit it. compile() rejects an object with no properties and no
-// `additionalProperties:false`, correctly, because in JSON Schema that shape means
-// "any object" and the grammar can only build a closed one. But a TOOL that declared
-// its parameters and declared NONE means it takes no arguments, and reading it as
-// "any object" is the wrong of the two readings. So the narrowing happens here, in
-// the tool path where the extra context justifies it, and compile() is left strict —
-// an omitted `parameters` already mapped to this same closed-empty form, so the
-// explicit spelling now behaves like the implicit one rather than being a 400.
+// `{"type":"object","properties":{}}` is THE canonical no-argument tool schema (OpenAI's
+// examples, most MCP servers, Pydantic/zod tools with no parameters). compile() rejects an
+// object with no properties and no `additionalProperties:false`, correctly: in JSON Schema
+// that shape means "any object" and the grammar can only build a closed one. But a TOOL that
+// declared its parameters and declared NONE takes no arguments, so the narrowing happens here,
+// in the tool path where that context exists, and compile() stays strict. An omitted
+// `parameters` already maps to this same closed-empty form.
 //
-// Only the ambiguous case is touched: an explicit additionalProperties (true or
-// false) is left exactly as written, so `additionalProperties:true` still reaches
-// compile() and is still refused rather than being silently narrowed.
+// Only the ambiguous case is touched: an explicit additionalProperties (true or false) is left
+// exactly as written, so `additionalProperties:true` still reaches compile() and is refused
+// rather than silently narrowed.
 func closeEmptyToolObject(schema []byte) []byte {
 	dec := json.NewDecoder(bytes.NewReader(schema))
 	dec.UseNumber()

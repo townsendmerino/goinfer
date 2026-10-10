@@ -9,24 +9,23 @@ type ToolSpec struct {
 	Parameters []byte
 }
 
-// ToolCallsGrammar constrains ONE tool call to any of several tools (task T1,
-// docs/tasks/task-tool-grammar-union-2026-09.md). It is the union of the single-tool
+// ToolCallsGrammar constrains ONE tool call to any of several tools
+// (docs/tasks/task-tool-grammar-union-2026-09.md). It is the union of the single-tool
 // grammars ToolCallGrammar already builds, run as parallel branches: a byte is legal iff at
 // least one live branch accepts it, and a branch that rejects a committed byte is dropped.
 // Every branch shares the wrapper and the object shape; they differ only in the "name"
 // const and in what follows it, so the set collapses to one branch as soon as the name
-// discriminates — and, because each branch is the complete single-tool grammar, that holds
+// discriminates; because each branch is the complete single-tool grammar, that holds
 // whichever order the model writes the object's keys in.
 //
-// Provable by construction: the language is exactly the union of the single-tool languages,
-// so every string it accepts is a well-formed call to exactly one supplied tool, with
-// arguments matching that tool's schema, and no string naming an absent tool is accepted.
-// schemaGrammar is not modified (the task's ground rule 3).
+// By construction the language is exactly the union of the single-tool languages: every
+// string it accepts is a well-formed call to exactly one supplied tool, with arguments
+// matching that tool's schema, and no string naming an absent tool is accepted. schemaGrammar
+// is not modified.
 //
 // Duplicate names collapse to their first spec. An empty tool list, or a tool whose schema
-// cannot be compiled, is an error: the caller then decodes unconstrained, as today, rather
-// than silently dropping a tool the model was offered (ground rule 1 — the model keeps its
-// choice).
+// cannot be compiled, is an error: the caller then decodes unconstrained rather than
+// silently dropping a tool the model was offered.
 func ToolCallsGrammar(prefix, suffix, argsKey string, array bool, tools []ToolSpec) (Grammar, error) {
 	if len(tools) == 0 {
 		return nil, fmt.Errorf("constrain: no tools")

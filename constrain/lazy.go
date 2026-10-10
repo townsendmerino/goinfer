@@ -5,18 +5,17 @@ import "bytes"
 // LazyMasker applies a Masker's grammar only once the model commits to it: it masks nothing
 // until a trigger (a tool-call opener such as "<tool_call>") appears in the generated output,
 // then constrains from the trigger on, and disarms again as soon as the grammar's document is
-// complete. Task T2, docs/tasks/task-tool-grammar-union-2026-09.md: under tool_choice "auto" a
-// prose answer must stay legal (ground rule 1), so the constraint cannot start at token 1 — it
-// arms on the model's own decision to call, and from there the call cannot be malformed.
+// complete. Under tool_choice "auto" a prose answer must stay legal, so the constraint cannot start
+// at token 1: it arms on the model's own decision to call, and from there the call cannot be malformed.
 // Disarming after each complete call means a second call in the same turn is constrained
-// independently (T5, decided: repeated wrapper, each constrained).
+// independently. Design: docs/tasks/task-tool-grammar-union-2026-09.md.
 //
 // The grammar must START with the trigger's bytes (build it with the trigger as its prefix):
 // on arming, the bytes from the trigger's first byte through the end of the latest token are
 // fed to a freshly Reset grammar. If the grammar rejects them — the trigger text appeared in
 // prose, or the model continued the opener in a shape the grammar cannot express — the lazy
 // masker FAILS OPEN for that occurrence and keeps scanning: bytes already emitted cannot be
-// taken back, and a grammar that cannot back out is worse than none (the task's own words).
+// taken back, and a grammar that cannot back out is worse than none.
 //
 // Use Process as the LogitProcessor. It is NOT a grammar-fused speculative masker (the grammar
 // is not live from token 1), so callers must not hand it to the fused-spec path.
@@ -39,7 +38,7 @@ type LazyMasker struct {
 }
 
 // NewCallKeyLazyMasker is the lazy masker for a family whose call has NO opener (llama3: the call is a
-// bare JSON object — task option c). It arms only when the output begins, after whitespace and an
+// bare JSON object). It arms only when the output begins, after whitespace and an
 // optional skip marker (llama3's "<|python_tag|>"), with `{` + `"name"` + `:` + `"` (JSON whitespace
 // allowed between them): by then the model has written the name key of a call object, the same
 // commitment an opener signals. The grammar is fed from the `{`, so build it with an EMPTY prefix.
