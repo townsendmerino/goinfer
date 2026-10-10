@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// M-34: RELEASING.md said the standalone (no-workspace) build was proved by "CI's
-// standalone-build step (below)", and there was no such step — `.github/workflows/ci.yml` had
-// no GOWORK=off anywhere, every submodule job running `go work init`. The B-01…B-04 class was
-// caught only by a human running Step 2 by hand at tag time, and demo/agent — the fifth module,
-// carrying the MCP-SDK demo — compiled for the FIRST time there.
+// M-34: RELEASING.md relies on the standalone-build workflow to prove the no-workspace build, so
+// `.github/workflows/standalone-build.yml` must exist and do it: GOWORK=off, tag-triggered, every shipped
+// submodule, never `go work init`; and ci.yml must build demo/agent on every push. Otherwise the B-01…B-04
+// class is caught only by a human running Step 2 by hand at tag time, and demo/agent — the fifth module —
+// compiles for the first time there.
 //
 // A prose claim about CI is exactly the kind that rots silently, so this asserts the artifact
 // exists and does what the sentence says. It lives in chat/ only because the repo has no test
@@ -37,8 +37,7 @@ func TestReleasing_standaloneBuildGateExists(t *testing.T) {
 	}
 	// It must NOT create a workspace — that would silently defeat the whole check. Comment
 	// lines are skipped: the workflow EXPLAINS why it does not run `go work init`, and matching
-	// that explanation is the same "a check that matches its own comment" trap this audit has
-	// now produced three times.
+	// that explanation is the "a check that matches its own comment" trap.
 	for ln := range strings.SplitSeq(src, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(ln), "#") {
 			continue

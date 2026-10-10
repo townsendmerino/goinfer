@@ -83,12 +83,9 @@ func TestStreamableLen_bytewiseNeverOverruns(t *testing.T) {
 // THE gate: for every streamable family, streaming a generation one byte at a
 // time must release exactly a PREFIX of the lead ParseToolCalls computes over
 // the whole output — for prose-only outputs, prose-then-call, and the whitespace
-// shapes that made the naive "raw prefix" design wrong.
-//
-// This test is why the design changed. An earlier version declared these families
-// streamable on the assumption that lead was the raw untrimmed prefix; it is
-// strings.TrimSpace(lead), and this caught that before any byte could be emitted
-// that the parser would later disagree with.
+// shapes that make a naive "raw prefix" design wrong: the lead is
+// strings.TrimSpace(lead), not the raw untrimmed prefix, and this catches a streamer that
+// releases a byte the parser would later disagree with.
 func TestProseStreamerMatchesParser(t *testing.T) {
 	families := map[string]*Template{"chatml": ChatML(), "mellum2": Mellum2(), "gemma4": Gemma4()}
 	for name, tmpl := range families {

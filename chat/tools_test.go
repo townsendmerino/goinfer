@@ -155,15 +155,12 @@ func goldenCase(g *toolGolden, name string) string {
 	return ""
 }
 
-// M-20: the `call_result` case in all four tool goldens was DEAD DATA. Only `declare` was ever
-// compared, so every step after the declaration — the tool call, the tool response, and the
-// turn scaffolding around them — went unchecked against the models' own templates.
-//
-// For Gemma 4 that hid two real defects: goinfer closed the model turn with "<turn|>\n" after a
-// tool call and re-opened a "<|turn>model\n<|channel>thought\n<channel|>" scaffold after the
-// tool response, while upstream does NEITHER (the responses continue the same model turn, and
-// add_generation_prompt emits nothing after a tool_response). Any Gemma-4 tool loop hit it on
-// its very first turn.
+// M-20: the `call_result` case in all four tool goldens must be COMPARED, not dead data: every step after
+// the declaration — the tool call, the tool response, and the turn scaffolding around them — is checked
+// against the models' own templates. For Gemma 4 that pins two points: the model turn is NOT closed with
+// "<turn|>\n" after a tool call, and no "<|turn>model\n<|channel>thought\n<channel|>" scaffold is
+// re-opened after the tool response (the responses continue the same model turn, and add_generation_prompt
+// emits nothing after a tool_response).
 //
 // The fixture is the reference, so the test is simply: render the fixture's own messages and
 // compare bytes.
@@ -222,15 +219,13 @@ func TestToolGoldens_callResult_byteExact(t *testing.T) {
 	}
 }
 
-// A DIVERGENCE THE AUDIT DID NOT LIST, found by reading the fixtures M-20 says are dead data:
-// Mistral's upstream template puts the call id in BOTH directions —
+// KNOWN DIVERGENCE, NOT PINNED AS CORRECT: Mistral's upstream template puts the call id in BOTH directions —
 // [TOOL_CALLS] [{"name":…, "arguments":…, "id": "abc123def"}] and
 // [TOOL_RESULTS] {"content": …, "call_id": "abc123def"} — and goinfer emits neither.
 //
 // That is semantic, not formatting: with two calls in one turn the model has nothing to
-// correlate the results by. Recorded as a failing expectation would block the tranche, so it is
-// recorded as what it is — a check that documents the gap and passes today, flipping to a real
-// assertion when the renderer carries the id.
+// correlate the results by. This is a check that documents the gap and passes today, flipping to a
+// real assertion when the renderer carries the id.
 func TestMistral_toolCallIDIsNotYetRendered(t *testing.T) {
 	turns := []Turn{
 		{Role: "user", Content: "Weather in Paris?"},
@@ -251,9 +246,9 @@ func TestMistral_toolCallIDIsNotYetRendered(t *testing.T) {
 		hasID, hasCallID)
 }
 
-// M-20's other half: a nested argument must survive render → parse unchanged. gemmaValue's
-// default arm used to json.Marshal a map ({"limit":5} — JSON inside a Gemma-syntax body), and
-// splitGemmaPairs tracked only quoting, so opts:{limit:5,sort:<|"|>asc<|"|>} came back as
+// M-20's other half: a nested argument must survive render → parse unchanged. gemmaValue must not
+// json.Marshal a map ({"limit":5} would be JSON inside a Gemma-syntax body), and splitGemmaPairs must
+// track nesting, not only quoting: otherwise opts:{limit:5,sort:<|"|>asc<|"|>} comes back as
 // {"opts":"{limit:5","sort":"asc}"}: two keys, both wrong, no error anywhere.
 func TestGemma4_nestedArgumentsRoundTrip(t *testing.T) {
 	for name, args := range map[string]string{
@@ -291,17 +286,15 @@ func TestGemma4_nestedArgumentsRoundTrip(t *testing.T) {
 	}
 }
 
-// N-37: no family had a `no_system` golden except mellum2, so the no-system shape — the one an
-// API request without a system message takes — was unpinned for every other family. Rendering
-// chatml.json's OWN chat_template with jinja2 shows why that matters: Qwen 2.5 inserts a
-// default system prompt when there is no system turn, and this renderer emits no system turn
-// at all.
+// N-37: the no-system shape — the one an API request without a system message takes — is pinned here
+// because a Qwen 2.5 template (chatml.json's OWN chat_template, rendered with jinja2) inserts a
+// default system prompt when there is no system turn, and this renderer emits no system turn at all.
 //
 // THE DIVERGENCE IS DELIBERATE AND STAYS. ChatML() is the generic ChatML renderer, shared with
 // families that are not Qwen and carry no such default; hard-coding Qwen's sentence would be
-// wrong for them. What was missing is not the behaviour but the PIN — so this asserts both
-// sides: goinfer emits no system turn, the upstream golden does, and they differ by exactly
-// that block. A change to either is then a test failure rather than a silent drift.
+// wrong for them. So this asserts both sides: goinfer emits no system turn, the upstream golden
+// does, and they differ by exactly that block. A change to either is then a test failure rather
+// than a silent drift.
 func TestChatML_noSystem_documentedDivergence(t *testing.T) {
 	g := loadToolGoldenPlain(t, "chatml")
 	if g == nil {
@@ -338,12 +331,12 @@ func TestChatML_noSystem_documentedDivergence(t *testing.T) {
 // encoding/json's default HTML-escaping already turns the raw bytes for less-than, greater-than
 // and ampersand into their backslash-u-NNNN escapes, matching Jinja2's htmlsafe_json_dumps (what
 // `| tojson` calls) exactly for those three — but tojson also escapes an apostrophe the same
-// way, which encoding/json has no flag for, so a tool description containing one used to render
-// one byte different from what the reference template produces. Verified 2026-09-16 against
-// jinja2's own source (src/jinja2/utils.py) that the substitution is that backslash-u-NNNN form,
-// not the HTML entity the audit's own citation named — this pins the verified form via the
-// production code's own apostropheEscape rather than retyping the escape sequence by hand (an
-// easy way to reintroduce a decoded raw apostrophe by accident, see tools.go's comment on it).
+// way, which encoding/json has no flag for, so a tool description containing one would render
+// one byte different from what the reference template produces. The substitution is that
+// backslash-u-NNNN form (jinja2's own src/jinja2/utils.py), not the HTML entity the audit's
+// citation named — this pins that form via the production code's own apostropheEscape rather
+// than retyping the escape sequence by hand (an easy way to reintroduce a decoded raw apostrophe
+// by accident, see tools.go's comment on it).
 func TestFuncDefJSON_escapesApostropheLikeJinjaTojson(t *testing.T) {
 	got := funcDefJSON(Tool{
 		Name:        "get_weather",

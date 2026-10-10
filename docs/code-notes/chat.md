@@ -395,3 +395,253 @@ follow-up.
 emits ONE Special segment (identical to whole-string Encode — no regression) and forgoes the injection hardening the others get.
 Splitting it safely needs the loaded tokenizer's added-vocabulary, a follow-up.
 ```
+
+## bare_tool_call_test.header
+
+Moved from `chat/bare_tool_call_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Gates G1–G3 of the lenient bare-call parser, pre-registered in
+docs/measurements/tool-call-failure-t0-2026-09-23.md ("Follow-up A") before the code existed.
+```
+
+## chatCase.UpstreamOnly
+
+Moved from `chat/chat_test.go` (the comment inside the golden-case struct) on 2026-10-09.
+
+```text
+UpstreamOnly marks a case that records what the MODEL'S template produces where this
+renderer deliberately differs, rather than what this renderer must produce. Only
+chatml/no_system uses it today (N-37: Qwen 2.5 inserts a default system prompt; the
+generic ChatML renderer, shared with non-Qwen families, does not). The divergence is
+asserted in full by TestChatML_noSystem_documentedDivergence — this flag keeps the
+equality sweep below from failing on it, and is opt-in per case so it cannot quietly
+excuse a real regression.
+```
+
+## TestDetect_declinesSmolLM3AndOlmo3
+
+Moved from `chat/chat_test.go` (the comment above `TestDetect_declinesSmolLM3AndOlmo3`) on 2026-10-09.
+
+```text
+TestDetect_declinesSmolLM3AndOlmo3 is M-36's decline gate (docs/audit-2026-09-10.md): both
+families use plain <|im_start|>/<|im_end|> markers — the same substring ChatML's own Detect
+test matches — but each diverges from generic ChatML enough that silently rendering it that
+way would be wrong, not just imprecise: SmolLM3 (HuggingFaceTB/SmolLM3-3B) always emits its own
+"## Metadata" system preamble the caller never asked for; Olmo 3 (allenai/Olmo-3-7B-Instruct)
+uses <functions>/<function_calls> XML for tool declarations/calls, not ChatML/Qwen's Hermes
+<tool_call> JSON dialect. Per the user's own design decision (this session, 2026-09-16):
+decline rather than guess at an unverified template, since only Ministral 3 was independently
+confirmed enough to be worth a real renderer. Both fingerprints below are the exact real
+substrings fetched live from each checkpoint's own chat_template.jinja on 2026-09-16, not
+synthesized guesses — see the docs/audit-2026-09-10.md closure note for the full excerpts.
+```
+
+## default_system_test.header
+
+Moved from `chat/default_system_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+The checkpoint's own default system message (owner, 2026-10-09: "every template with one"): Detect reads it from the
+template, and the no-system rendering is then Qwen 2.5's own, byte for byte (the chatml golden's no_system case was
+rendered by that template). The generic ChatML() still has no default: TestChatML_noSystem_documentedDivergence.
+```
+
+## fenced_tool_call_test.header
+
+Moved from `chat/fenced_tool_call_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+PRE-REGISTERED (written and committed before the code that satisfies it), docs/queue-correctness.md G39.
+
+The opt-in fenced-call rule. A chatml-family model that writes its tool call as a fenced JSON block in prose
+(Qwen2.5-Coder-7B under opencode, the cold-user run of 2026-10-05) makes no call today. With
+Template.WithLenientToolCalls(true) a reply is read as ONE call when ALL of these hold, and as prose otherwise:
+```
+
+## TestFencedToolCall_offByDefaultAndOtherFamiliesUntouched.llama3
+
+Moved from `chat/fenced_tool_call_test.go` (the comment inside the off-by-default test) on 2026-10-09.
+
+```text
+(The pre-registered version of this loop covered every family and was wrong about llama3: its parser has always
+found a bare JSON call anywhere in a reply, fence or not. The rule under test is for chatml and mellum2.)
+```
+
+## harmony_test.header
+
+Moved from `chat/harmony_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+The harmony (gpt-oss) renderer, pinned against HuggingFace's own template.
+
+gpt-oss was previously UNREACHABLE through chat.Detect: its HF checkpoint ships no
+chat_template at all (length 0) and its markers matched none of Detect's branches, so every
+gpt-oss prompt fell through to the raw-completion path. That is a real gap — goinfer supports
+the family for inference while being unable to hold a conversation with it.
+
+The expected string below is NOT hand-written. It is what
+`tokenizer.apply_chat_template(..., chat_template=<the 16.7 KB template from the MXFP4 GGUF>)`
+produced, and goinfer's render was verified to encode to the SAME 78 token ids against the
+real gpt-oss vocab. Byte equality here plus that id check is what makes the renderer
+trustworthy; a hand-written expectation would only test that the code does what I typed.
+
+The clock is pinned because harmony's system preamble carries a LIVE date (strftime_now
+upstream), so an unpinned test would pass only on the day it was written.
+```
+
+## TestHarmony_conversationMatchesHF
+
+Moved from `chat/harmony_test.go` (the comment above `TestHarmony_conversationMatchesHF`) on 2026-10-09.
+
+```text
+TestHarmony_conversationMatchesHF pins the conversation rendering to gpt-oss's own chat template (testdata/chat_think_goldens/
+harmony_history.json, generated by scripts/pin_harmony_history.py from the template inside the MXFP4 GGUF). TestHarmony_byteExact
+above covers one user turn; this covers what that test could not see — a system prompt, and above all an assistant turn earlier in
+the conversation, which the template renders on the `final` channel. goinfer wrote it with no channel, so every multi-turn gpt-oss
+conversation was given a history in a shape the model was not trained on, while the preamble told it "Channel must be included
+for every message". The prior turn's reasoning is dropped however it was supplied, which a case here pins as well.
+```
+
+## mellum21_history_test.header
+
+Moved from `chat/mellum21_history_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Mellum2.1's chat template (JetBrains/Mellum2.1-12B-A2.5B-Thinking @ 92ddae9f, 2026-10-09) adds Qwen3's thinking control and
+history rule to 2.0's ChatML body. The golden is Hugging Face's own rendering of that template over the same conversations as
+think_history.json, in every enable_thinking mode (scripts/pin_chat_think_history.py, PIN_CKPTS=mellum2.1; 20 cases x 3 modes).
+Before the Detect and histMellum21 edits goinfer matched 10 of those 60 prompts; every one must now be byte-identical.
+```
+
+## releasing_ci_test.header
+
+Moved from `chat/releasing_ci_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+M-34: RELEASING.md said the standalone (no-workspace) build was proved by "CI's
+standalone-build step (below)", and there was no such step — `.github/workflows/ci.yml` had
+no GOWORK=off anywhere, every submodule job running `go work init`. The B-01…B-04 class was
+caught only by a human running Step 2 by hand at tag time, and demo/agent — the fifth module,
+carrying the MCP-SDK demo — compiled for the FIRST time there.
+
+A prose claim about CI is exactly the kind that rots silently, so this asserts the artifact
+exists and does what the sentence says. It lives in chat/ only because the repo has no test
+package for repo-root concerns; the paths are explicit.
+```
+
+## TestReleasing_standaloneBuildGateExists.comments
+
+Moved from `chat/releasing_ci_test.go` (the comment inside the standalone-build CI test) on 2026-10-09.
+
+```text
+It must NOT create a workspace — that would silently defeat the whole check. Comment
+lines are skipped: the workflow EXPLAINS why it does not run `go work init`, and matching
+that explanation is the same "a check that matches its own comment" trap this audit has
+now produced three times.
+```
+
+## TestProseStreamerMatchesParser
+
+Moved from `chat/streamable_test.go` (the comment above the streamable-families gate) on 2026-10-09.
+
+```text
+THE gate: for every streamable family, streaming a generation one byte at a
+time must release exactly a PREFIX of the lead ParseToolCalls computes over
+the whole output — for prose-only outputs, prose-then-call, and the whitespace
+shapes that made the naive "raw prefix" design wrong.
+
+This test is why the design changed. An earlier version declared these families
+streamable on the assumption that lead was the raw untrimmed prefix; it is
+strings.TrimSpace(lead), and this caught that before any byte could be emitted
+that the parser would later disagree with.
+```
+
+## TestThinkModes_detectedFacts
+
+Moved from `chat/reasoning_test.go` (the comment above the defaults test) on 2026-10-09.
+
+```text
+The defaults and the open/closed shape per checkpoint, stated as facts about the real templates (2026-09-30).
+```
+
+## TestToolGoldens_callResult_byteExact
+
+Moved from `chat/tools_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+M-20: the `call_result` case in all four tool goldens was DEAD DATA. Only `declare` was ever
+compared, so every step after the declaration — the tool call, the tool response, and the
+turn scaffolding around them — went unchecked against the models' own templates.
+
+For Gemma 4 that hid two real defects: goinfer closed the model turn with "<turn|>\n" after a
+tool call and re-opened a "<|turn>model\n<|channel>thought\n<channel|>" scaffold after the
+tool response, while upstream does NEITHER (the responses continue the same model turn, and
+add_generation_prompt emits nothing after a tool_response). Any Gemma-4 tool loop hit it on
+its very first turn.
+
+The fixture is the reference, so the test is simply: render the fixture's own messages and
+compare bytes.
+```
+
+## TestMistral_toolCallIDIsNotYetRendered
+
+Moved from `chat/tools_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+A DIVERGENCE THE AUDIT DID NOT LIST, found by reading the fixtures M-20 says are dead data:
+Mistral's upstream template puts the call id in BOTH directions —
+[TOOL_CALLS] [{"name":…, "arguments":…, "id": "abc123def"}] and
+[TOOL_RESULTS] {"content": …, "call_id": "abc123def"} — and goinfer emits neither.
+
+That is semantic, not formatting: with two calls in one turn the model has nothing to
+correlate the results by. Recorded as a failing expectation would block the tranche, so it is
+recorded as what it is — a check that documents the gap and passes today, flipping to a real
+assertion when the renderer carries the id.
+```
+
+## TestGemma4_nestedArgumentsRoundTrip
+
+Moved from `chat/tools_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+M-20's other half: a nested argument must survive render → parse unchanged. gemmaValue's
+default arm used to json.Marshal a map ({"limit":5} — JSON inside a Gemma-syntax body), and
+splitGemmaPairs tracked only quoting, so opts:{limit:5,sort:<|"|>asc<|"|>} came back as
+{"opts":"{limit:5","sort":"asc}"}: two keys, both wrong, no error anywhere.
+```
+
+## TestChatML_noSystem_documentedDivergence
+
+Moved from `chat/tools_test.go` (the comment above `TestChatML_noSystem_documentedDivergence`) on 2026-10-09.
+
+```text
+N-37: no family had a `no_system` golden except mellum2, so the no-system shape — the one an
+API request without a system message takes — was unpinned for every other family. Rendering
+chatml.json's OWN chat_template with jinja2 shows why that matters: Qwen 2.5 inserts a
+default system prompt when there is no system turn, and this renderer emits no system turn
+at all.
+
+THE DIVERGENCE IS DELIBERATE AND STAYS. ChatML() is the generic ChatML renderer, shared with
+families that are not Qwen and carry no such default; hard-coding Qwen's sentence would be
+wrong for them. What was missing is not the behaviour but the PIN — so this asserts both
+sides: goinfer emits no system turn, the upstream golden does, and they differ by exactly
+that block. A change to either is then a test failure rather than a silent drift.
+```
+
+## TestFuncDefJSON_escapesApostropheLikeJinjaTojson
+
+Moved from `chat/tools_test.go` (the comment above `TestFuncDefJSON_escapesApostropheLikeJinjaTojson`) on 2026-10-09.
+
+```text
+TestFuncDefJSON_escapesApostropheLikeJinjaTojson is N-80 (docs/audit-2026-09-10.md):
+encoding/json's default HTML-escaping already turns the raw bytes for less-than, greater-than
+and ampersand into their backslash-u-NNNN escapes, matching Jinja2's htmlsafe_json_dumps (what
+`| tojson` calls) exactly for those three — but tojson also escapes an apostrophe the same
+way, which encoding/json has no flag for, so a tool description containing one used to render
+one byte different from what the reference template produces. Verified 2026-09-16 against
+jinja2's own source (src/jinja2/utils.py) that the substitution is that backslash-u-NNNN form,
+not the HTML entity the audit's own citation named — this pins the verified form via the
+production code's own apostropheEscape rather than retyping the escape sequence by hand (an
+easy way to reintroduce a decoded raw apostrophe by accident, see tools.go's comment on it).
+```

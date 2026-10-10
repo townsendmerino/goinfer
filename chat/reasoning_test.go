@@ -295,7 +295,7 @@ func TestThinkModes_asIsIsTodaysBytes(t *testing.T) {
 	}
 }
 
-// The defaults and the open/closed shape per checkpoint, stated as facts about the real templates (2026-09-30).
+// The defaults and the open/closed shape per checkpoint, stated as facts about the real templates.
 func TestThinkModes_detectedFacts(t *testing.T) {
 	want := map[string]struct {
 		defaultOn bool
