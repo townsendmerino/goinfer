@@ -1,5 +1,7 @@
 # Review notes: 11-one-file-model-inside.md
 
+<!-- citations-at: b8ab20c4bfd8 -->
+
 Build check passed (`GOWORK=off go run ./cmd/build ... -drafts .`). Body about 700 words. `reviewed:` is empty.
 
 ## Claims and sources

@@ -1,5 +1,7 @@
 # The coalescing fix I proposed would fix nothing — and L2 already does most of what the GQA kernel promises
 
+<!-- citations-at: 39ec8872302c -->
+
 Measured 2026-09-13, nobara-pc. ncu on `attn_batched` at M=1, split-KV OFF, depth 8000, grids
 asserted. Prompted by `splitkv-f-depth-invariance-2026-09-13.md`, which found D7's measured DRAM
 throughput running 4.6 pp above the roof model's prediction and blamed sector waste.

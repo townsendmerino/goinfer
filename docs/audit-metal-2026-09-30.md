@@ -1,5 +1,7 @@
 # goinfer Metal audit — 2026-09-30
 
+<!-- citations-at: be41cc509e64 -->
+
 **Tree:** goinfer `844700f8` (2026-09-30) + aikit `v1.51.0` (the `gpu/` Metal bindings goinfer's `metal/` calls through) +
 MLX `9c3d355` (2026-09-30; MLX paths below are relative to `mlx/backend/metal/` unless they start with `mlx/`). The
 working repo is at `cd7eb362` (v0.20.0 and later): seven commits after the audited snapshot, none of them under `metal/`,
@@ -1618,7 +1620,7 @@ moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N
 | D-G01 | Major | Expert-major prefill ships default ON on a dense gate; MoE tests cannot see its failure modes | `metal/prefill.go:1811`; `metal/backend.go:680-727`; `metal/moe_expert_major_prefill_test.go:32,48,83`; `metal/prefill_moe_parity_test.go:23-24,107` | none (gate) | n/a | real-MoE paged-off fixture, per-layer cosine, router-flip count, mutation set |
 | D-B02 | Major | Host-grouped expert loop: 5 x nE dispatches/layer, per-layer sync, 64-row tile padding; MLX schedules on device with bm=16 | `metal/prefill.go:1842-1850,1672-1700`; header `:36-38` | `quantized.h:2426-2574`, `quantized.cpp:1661-1823,1996`, `utils.h:503-542`, `gather_mm_offsets.metal:8-22` | 5-25% of MoE prefill at 64-128 experts (proj) | count tile waste, then device-side offsets kernel A/B |
 | D-P04 | Major | MoE router top-k runs on one GPU thread; recorded about 10% of a fitting ~5 ms MoE token | `metal/moe.go:46-96,98-121,992-1001`; Sep 12 `:1438-1440` | none cheaper (`sort.cpp:346-348`) | 4-9% of a resident MoE token (proj on rec) | GPU timestamps around the (1,1) dispatch |
-| D-B03 | Major | gpt-oss MXFP4 is requantized to int4 absmax/7; native MXFP4 (E2M1 x E8M0) would keep the checkpoint's values and save 0.6 GB | `decoder/gptoss_safetensors.go:148-192`; aikit `linalg/quant.go:562-634` | `fp_quantized.h:30-38,82-100`, `fp4.h:36-38`, `fp8.h:51-85` | 0.6 GB (cnt); fidelity unquantified | requantization error on the real checkpoint (a CPU-side script) |
+| D-B03 | Major | gpt-oss MXFP4 is requantized to int4 absmax/7; native MXFP4 (E2M1 x E8M0) would keep the checkpoint's values and save 0.6 GB | `decoder/gptoss_safetensors.go:148-192`; aikit `linalg/quant.go:588-660` | `fp_quantized.h:30-38,82-100`, `fp4.h:36-38`, `fp8.h:51-85` | 0.6 GB (cnt); fidelity unquantified | requantization error on the real checkpoint (a CPU-side script) |
 | D-B04 | Minor | R18 rows form not applied to shared experts, DeltaNet projections, routed expert GEMVs | `metal/model.go:1835-1877`; `metal/deltanet.go:133-136` | `gemv.h` (R18 source) | 5-12% on shared-expert-heavy/hybrid decode (proj) | wire shared-expert GEMV through `gemvRowsFor` |
 | D-P02 | Minor (REVISIT) | M-11 / R11(c) premises are stale for M26 | Sep 12 `:568-590`; `red-october.md:296-305,424` | none | ~0% for the shared-event design (proj) | PROF_SPLIT on aliased v14 M26; N=64 rerun with kill-watch |
 | D-B05 | Minor (REVISIT) | `delta_rule` layout: 4x state traffic per token, thread-per-row, uncoalesced; "at ceiling" is stale | `metal/deltanet_kernels.go:128-206`; Sep 12 `:1663` | `gated_delta_update.h:271-366` | 40-96 us/layer recovered (proj) | micro-benchmark lane-per-Dk variant |
@@ -1862,7 +1864,7 @@ no probe; I found no later measurement or comment (`metal/moe.go:45-48` describe
 
 **What goinfer does.** Both loaders decode MXFP4 (`mxfp4Pair`) to f32 rows and call `streamQ`, which quantizes
 to int4 group-32 f16 scales with `QuantizeGroupInt4Row` (`decoder/gptoss_safetensors.go:148-192`; aikit
-`linalg/quant.go:562-634`, scale `maxAbs/7`). Metal then holds int4 and runs `gemv_w4a8_moe*`. The router stays
+`linalg/quant.go:588-660`, scale `maxAbs/7`). Metal then holds int4 and runs `gemv_w4a8_moe*`. The router stays
 f32 (`decoder/gptoss_safetensors.go:150`).
 
 **What MLX does (mlx).** `fp_quantized.h` dequantizes E8M0 scales as `fp8_e8m0` for group size 32 (`:30-38`),

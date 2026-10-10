@@ -1,5 +1,7 @@
 # Theta, measured per backend — and the domain that excluded Metal (2026-09-01)
 
+<!-- citations-at: be41cc509e64 -->
+
 **`AdaptiveDepth.Theta` was enforced in `[0,1)`. Metal measures 1.006–1.048. Every value Metal
 actually has was rejected and silently replaced by 0.5 — the most over-drafting setting on the
 dial — at the one moment the measurement said "do not draft at all."**

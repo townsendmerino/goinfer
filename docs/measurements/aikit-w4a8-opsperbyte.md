@@ -1,5 +1,7 @@
 # W4A8 ops-per-byte — answer to docs/prompts/aikit-w4a8-ops-per-byte.md
 
+<!-- citations-at: e781faf490ec -->
+
 Box: Ryzen 7 3700X (8c/16t, AVX2, no VNNI), the same one the 0.656 vs 1.674 tok/s gap was
 measured on. Kernel under test: `dotW4A8FoldAVX2` (`linalg/dot_w4a8_amd64.s`) at the FFN
 gate/up/down shape, K=5120, the largest single per-token contributor in the profile.
@@ -94,7 +96,7 @@ narrower."
 But raw (uncentered) nibbles compute `Σnib·act`, not the true `Σ(nib-8)·act` — a per-group
 correction `8·Σact` has to go somewhere. Priced optimally (precomputing `Σact` per group once
 per token, the same "quantize once, reuse across all N rows" shape aikit's own
-`QuantizeActivationsInto` (`linalg/quant.go:319`) already uses — goinfer calls it, it doesn't own
+`QuantizeActivationsInto` (`linalg/quant.go:335`) already uses — goinfer calls it, it doesn't own
 it — since the activation row is shared across every weight
 row in one M=1 matmul — not recomputed per row), the realistic instruction count is **18/group
 vs the current 20** — ~10%, not the ~50% "skip 4 ops" naively implied — and even that needs a

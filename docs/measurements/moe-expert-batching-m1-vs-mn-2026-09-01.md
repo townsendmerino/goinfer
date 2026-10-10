@@ -1,5 +1,7 @@
 # MoE expert matmul, M=1 vs M=N — Lever 4's ceiling did not bound this (2026-09-01)
 
+<!-- citations-at: 575a3768e27f -->
+
 **Batching the expert matmul over rows is worth 1.55× at N=8 rising to 2.13× at N=256, measured
 with weight locality already perfect. That is the axis the parked "not a compute lever" verdict
 holds fixed, so it does not bound this and Lever 4 should be reopened as a scoped campaign.**

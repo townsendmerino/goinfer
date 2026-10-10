@@ -1,5 +1,7 @@
 # D7 confirms the f axis: split-KV wins +9.9% on the geometry the gate says "never"
 
+<!-- citations-at: 39ec8872302c -->
+
 Ran 2026-09-13, nobara-pc. Pre-registration: `splitkv-d7-fthreshold-PREREGISTERED.md`, written
 before any cell, with **f (DRAM-roof fraction) named as the sole discriminator** after the
 max-of-three operationalisation was PARKED on 2026-09-12. Binary `serve-cuda-1f224682`, driver

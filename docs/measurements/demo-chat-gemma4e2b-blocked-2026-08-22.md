@@ -1,5 +1,7 @@
 # Gemma 4 E2B Tier 2 candidate — blocked on a real safetensors loader gap, not measured
 
+<!-- citations-at: 93f4ab0ebefc -->
+
 **Why this exists.** `docs/prompts/mac-demo-chat-apple-silicon-numbers.md` item 2 asked for a
 `BenchmarkDecode`-equivalent number on `google/gemma-4-E2B-it`, having already downloaded it to
 `~/models/gemma-4-E2B-unq` (a raw HF safetensors checkpoint, not a `.gguf`). Loading it fails, and

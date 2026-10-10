@@ -1,5 +1,7 @@
 # R9 step 2 — S-03/S-04's NEON kernels were already shipped, just never measured: a real ~1.17× on Mac CPU decode
 
+<!-- citations-at: 7b50947a9313 -->
+
 **Result: aikit's S-03 (NEON activation quantizer) and S-04-step-2 (NEON QK/AV attention kernels)
 have been sitting in goinfer's own dependency tree, live on every CPU decode token, since
 2026-09-03 — 18 days before this measurement. Nobody had checked whether they were paying off.
@@ -26,7 +28,7 @@ per this session's now-standard practice after the R-06 and R1/R2 correction pat
   fan-out) **is DONE — bit-identical, gate-checked, 2026-09-03**, per aikit commit `ffacb84`.
   Confirmed live on goinfer's own hot path by direct code read: `decoder/attention.go:372` calls
   `linalg.QuantizeRowInt8`, which is `return quantizeRowInt8Core(row, q, 1)` verbatim
-  (`linalg/quant.go:135`) — the exact function S-03 NEON-dispatches on arm64. The MLP
+  (`linalg/quant.go:137`) — the exact function S-03 NEON-dispatches on arm64. The MLP
   path's own quantization happens *inside* aikit's `MatmulBTW4A8Into`/`MatmulBTW4A8Row4Into`
   entry points (the same S-03 section names these as the call sites), so goinfer gets it
   transparently through every W4A8 matmul it already issues — no new goinfer-side call needed.

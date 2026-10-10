@@ -1,5 +1,7 @@
 # REVIEW-10: "Work that survives a disconnect"
 
+<!-- citations-at: c0910e292207 -->
+
 Body ~730 words. Build passes (`-drafts`). `figures: []` on purpose: no measured number is quoted. The 256, 8 and 9 in the text are code constants, not measurements.
 
 ## Claims and sources

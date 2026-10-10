@@ -1,5 +1,7 @@
 # Pre-registration — does speculative verify break the expert pager?
 
+<!-- citations-at: b9bfd5c8f01e -->
+
 **Written before any arm was run.** Box taken 2026-09-02 16:12 (nobara-pc idle: 16 MiB
 GPU, load 0.02). Decision rules, thresholds and the ambiguous→parked band below are
 fixed as of this commit; the results file records outcomes against them without

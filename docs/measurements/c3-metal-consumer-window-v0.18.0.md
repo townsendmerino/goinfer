@@ -1,5 +1,7 @@
 # C3 — Metal consumer window, evaluated against `metal/v0.18.0` (2026-09-18)
 
+<!-- citations-at: cdf10e4937cb -->
+
 Out-of-tree-shaped consumer evaluation of goinfer's Metal backend, run against the actual
 published `metal/v0.18.0` tag. Supersedes `c3-metal-consumer-window-v0.14.0.md` (v0.14.0) rather
 than editing it — that file's findings are historical record, not stale. Run on `macbook-arm64`

@@ -1,5 +1,7 @@
 # Reduction-tree accuracy: a BLOCKED V-sum fold beats the sequential fold — measured 2026-09-12
 
+<!-- citations-at: b9bfd5c8f01e -->
+
 **Pre-registered before the run** (`PREREG.md`, reproduced in §5). Verdict: **HOLDS**, the bar met
 in **every** cell at nKeys ≥ 2048, worst mean-ratio 1.76 against a pre-registered 1.5.
 

@@ -1,5 +1,7 @@
 # Multimodal audit, 2026-10-02: what image input actually does, per family and per backend
 
+<!-- citations-at: 8c159d85f7a7 -->
+
 **What this is.** `docs/multimodal.md`'s status paragraph was dated 2026-09-15 and known stale (`docs/tasks/task-glm-ocr-2026-10.md`, O7 RESULT: "NOT done:
 the per-backend audit"). This record re-derives the per-family x per-backend table from the tree and from what ran on `nobara-pc` today, says which cells
 were run, which were only read, and which could not be checked, and lists every claim in the docs that turned out wrong. The docs were then rewritten from it

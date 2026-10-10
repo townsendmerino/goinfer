@@ -1,5 +1,7 @@
 # PRE-REGISTERED — V-sum split spike, §3.2 fidelity gate
 
+<!-- citations-at: b9bfd5c8f01e -->
+
 **Written 2026-09-13 BEFORE Phase A was launched. Not edited after any result was seen.**
 The record goes in `vsum-split-fidelity-2026-09-13.md`; this file stays as written.
 

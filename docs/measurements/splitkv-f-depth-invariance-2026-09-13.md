@@ -1,5 +1,7 @@
 # f is depth-invariant by the pre-registered metric — but my roof model is not, and that is the finding
 
+<!-- citations-at: 39ec8872302c -->
+
 Ran 2026-09-13. Pre-registration: `splitkv-f-depth-invariance-PREREGISTERED.md`, written before
 profiling. ncu `attn_batched` at M=1, split-KV OFF, depth 8000, grids asserted `(28,1,1)` / `(32,1,1)`.
 

@@ -1,5 +1,7 @@
 # demo/chat Tier 2 gates — Qwen3.5-0.8B as the embedded 0.5B replacement
 
+<!-- citations-at: 93f4ab0ebefc -->
+
 `docs/task-demo-refresh.md` Tier 2, run in the doc's own kill order. **Gates 1 and 2 pass; gate 4
 kills the straight swap**, and the doc pre-registered exactly this outcome.
 

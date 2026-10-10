@@ -1,5 +1,7 @@
 # A/A floor for mistral-7b: the split-KV win is REAL, at 17–26x the noise floor
 
+<!-- citations-at: 39ec8872302c -->
+
 Ran 2026-09-12, nobara-pc, after `splitkv-8000-reanchor-2026-09-12.md` whose §Limitations flagged
 the missing floor. Pre-registration: `splitkv-aa-floor-PREREGISTERED.md`, written before any cell.
 Binary `serve-cuda-1f224682`, driver `595.91.07`, preflight green on every stage.

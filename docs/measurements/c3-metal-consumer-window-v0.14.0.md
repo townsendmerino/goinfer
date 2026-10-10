@@ -1,5 +1,7 @@
 # C3 — Metal consumer window, evaluated against `metal/v0.14.0` (2026-08-19)
 
+<!-- citations-at: f73b980a3937 -->
+
 Out-of-tree consumer evaluation of goinfer's Metal backend, run against the actual published
 `metal/v0.14.0` tag (root `goinfer v0.14.0` @ `4d91858`) — the auto-pickup trigger (an aikit bump:
 root moved v1.17.1 → v1.21.0 since v0.13.0). Run on `macbook-arm64` (Apple M1 Pro), Go 1.26.6, from

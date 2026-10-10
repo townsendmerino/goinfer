@@ -1,5 +1,7 @@
 # PRE-REGISTERED — is the split-KV sign flip explained by KV traffic per key?
 
+<!-- citations-at: 39ec8872302c -->
+
 Written 2026-09-12 **before profiling**. `docs/task-prefill-attention.md:55` warns this campaign
 "has recorded three plausible-mechanism-as-conclusion attributions already; profile first" — this
 file is that warning applied to my own mechanism.

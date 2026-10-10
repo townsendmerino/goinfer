@@ -1,5 +1,7 @@
 # S1 Gate 0: Gemma 4 E2B/E4B decode on Metal. A design map
 
+<!-- citations-at: 93f4ab0ebefc -->
+
 Read-only research (a delegated desk read for S1 of `docs/tasks/task-multimodal-support-2026-10.md`), 2026-10-06, `main` @ 837b86f3. Every claim cites file:line at the commit above (S1.0, c12e2778, later fixed the two bugs this map found; the citations to the code it changed are prose now); `TF/` is the installed transformers package (5.12 where the map says so). Anything **INFERRED** was reasoned
 from the code and not run. Nothing here was executed except reading files and the two configs.
 
@@ -418,7 +420,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 | Real E2B config/load | `decoder/gemma4_load_test.go:16,94` | heavy |
 | Real E2B declines resident | `decoder/gemma4_emodel_real_test.go:15-50` | invert for metal on declare |
 | Synthetic E-model admission | `decoder/gemma4_admission_test.go:62-73`; derivation `decoder/features_test.go:553-555` | update metal |
-| kvSrc map | `decoder/gemma4_kvsrc_test.go:14-90` | reuse |
+| kvSrc map | `decoder/gemma4_kvsrc_test.go:14-88` | reuse |
 | Shared-KV-only tiny (PLE-free): `gemma4-vl-tiny`, 4 layers, `num_kv_shared_layers=2`, K=V globals | `scripts/pin_gemma4_vl_tiny.py:36-56`; tests `decoder/gemma4_vl_test.go:24,96` | gitignored (`.gitignore:213`), **absent on the Mac**; regen needs `~/.venv-vl` |
 | E2B vision tower on Metal | `metal/gemma4_vision_e2b_real_test.go:21` | tower only |
 | Metal resident-vs-CPU patterns | `metal/gemma4_twogeom_test.go:41-63,181-232` (direct `buildResident`, int4 both sides, argmax + 3% near-tie rule, cosine 0.90 backstop at the time, 0.995 since S1.0); `metal/gemma4_dense_scaled_test.go:24-111` (calibrated envelope: mean Metal-vs-CPUint4 ≥ mean CPUint4-vs-f32, pos0 ≥ 0.97); `metal/gemma1_resident_parity_test.go:18-56` (via `Load(Backend:"metal")` + `ResidentForwardForTest`, 16 positions, worst cosine ≥ 0.999); localize helpers `forwardTrunkForTest`/`forwardSubCaptureForTest` (`metal/model.go:2728,2728`) | mirror |

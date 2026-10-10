@@ -1,5 +1,7 @@
 # Metal prefill L2 — fused (simdgroup_matrix) attention: SHIPS and DEFAULT ON since 2026-09-10, measured 4.23× on S/K=3900
 
+<!-- citations-at: 418146498e17 -->
+
 **Update 2026-09-10: the §3 gate ran and SHIPS.** §5 below is the gate — S's decision set
 (K∈{256,512,1024}, prompt set B, pooled §3.2 form, same reference files and harness L1's own
 gate used) passes all three criteria, and fused *beats* exact on every one (fewer hard flips,

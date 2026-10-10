@@ -1,5 +1,7 @@
 # goinfer Metal audit — 2026-09-12
 
+<!-- citations-at: 8c159d85f7a7 -->
+
 **Tree:** goinfer `da1e461` (2026-09-12, `main`) + aikit `d295ba5` (2026-09-11, v1.41.0 +2). Every
 `path:line` is keyed to those commits. The 53 commits touching `metal/` and `decoder/` since the
 2026-09-10 whole-repo audit (`c7ef16a`) were read with `--stat`.

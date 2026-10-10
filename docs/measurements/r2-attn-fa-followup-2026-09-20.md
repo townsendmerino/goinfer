@@ -1,5 +1,7 @@
 # R2 follow-up — a real (but irrelevant) race found and fixed, root cause still open
 
+<!-- citations-at: ebce2b4d9932 -->
+
 Continuation of `docs/measurements/r2-attn-fa-2026-09-19.md` (read that first — this record
 assumes its background, kernel description, and the original `TestAttentionFA_endToEndReproduction`
 table). That record parked R2 with two named-but-untested hypotheses: (1) whether Metal's automatic

@@ -1,5 +1,7 @@
 # Why the M26 alias arm collapsed: fork() copies a whole mapping once Metal has wired any page of it — 2026-09-24
 
+<!-- citations-at: cbaecc0cebd2 -->
+
 **Status: root-caused, reproduced without a model, FIXED and confirmed on M26 (§7a).** Companion to `s6-alias-2026-09-24.md` (the S6 build and the three
 collapses) — this document supersedes that record's "mechanism unknown" and corrects several of its numbers.
 

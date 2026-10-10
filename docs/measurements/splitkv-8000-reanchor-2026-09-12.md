@@ -1,5 +1,7 @@
 # split-KV at 8000: the re-anchor FAILED as a re-anchor, and that failure is the finding
 
+<!-- citations-at: 39ec8872302c -->
+
 Ran 2026-09-12, nobara-pc. Pre-registration: `splitkv-8000-reanchor-PREREGISTERED.md`, written
 before any cell. Raw: `goinfer-logs/splitkv-8000-reanchor-run3-20260912*.json`.
 

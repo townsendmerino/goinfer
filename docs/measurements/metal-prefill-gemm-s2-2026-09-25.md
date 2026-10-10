@@ -1,5 +1,7 @@
 # Metal prefill GEMM redesign — S2 (R16): prior-art read and prototypes (2026-09-25)
 
+<!-- citations-at: 1fd9d95ec0e4 -->
+
 `docs/tasks/red-october.md` R16 pre-registers this item (ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8× on the
 in-sequence GEMM category at K=512, 1.5B) and requires the prior-art read before any kernel is written. This is that
 read, followed by the prototypes' measurements (from *Prototype 1* on).

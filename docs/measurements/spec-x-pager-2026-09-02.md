@@ -1,5 +1,7 @@
 # Does speculative verify break the expert pager? — results
 
+<!-- citations-at: b9bfd5c8f01e -->
+
 **Pre-registration:** `spec-x-pager-prereg-2026-09-02.md`, written before any arm ran; its R1–R4
 thresholds are unedited. Read it first. Box: nobara-pc, RTX 2070 SUPER 8 GB, driver 595.91.07,
 taken idle 2026-09-02 16:12 (16 MiB GPU, load 0.02). Logs: `~/bench-logs/spec-x-pager/`.

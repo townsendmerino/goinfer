@@ -1,5 +1,7 @@
 # CUDA prefill L2 — fused attention: SHIPS at 1.70× end to end (2026-09-05)
 
+<!-- citations-at: 418146498e17 -->
+
 **`attn_fused` clears its pre-registered band. Attention category 3.76×, end to end 1.70× on
 S at K=3900, against a ship bar of ≥1.4×.** The kernel is correct against an independent
 reference, the win is attributable (the gemv category is unchanged), and Amdahl accounts for the

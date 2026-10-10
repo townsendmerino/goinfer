@@ -1,5 +1,7 @@
 # CUDA prefill L2/L3 — Phase 0: baseline and the ceiling arithmetic (2026-09-05)
 
+<!-- citations-at: b9bfd5c8f01e -->
+
 **The arithmetic that sets the bands, written before either kernel exists, plus the "before" rows
 every later ratio is taken against.** `docs/task-prefill-gap.md` §4 L2/L3 pre-registers the ship /
 ambiguous / park bands; this doc records what the ceilings actually are when computed from this

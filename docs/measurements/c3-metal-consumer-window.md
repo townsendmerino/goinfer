@@ -1,5 +1,7 @@
 # C3 — Metal consumer window, evaluated against `metal/v0.13.0` (2026-08-15)
 
+<!-- citations-at: 40dddb7b1bc0 -->
+
 Out-of-tree consumer evaluation of goinfer's Metal backend — the auto-pickup that fired when the
 trigger (a release tag ≥ v0.13.0 carrying the aikit bump) was met. Run on `macbook-arm64`, Go 1.26.6,
 Apple M1 Pro. **No result is fabricated;** where a claim was not re-measured out-of-tree, that is said

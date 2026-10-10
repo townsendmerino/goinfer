@@ -1,5 +1,7 @@
 # Review notes: writeup 08 "A 26B model on an 8 GB card" (drafted 2026-09-29)
 
+<!-- citations-at: c0910e292207 -->
+
 Draft only (`reviewed:` empty). Body about 810 words. The site build passes with `-drafts`. Nothing was run or measured; every figure is copied from a record.
 
 ## Claims and sources

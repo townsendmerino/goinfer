@@ -1,5 +1,7 @@
 # ncu on both geometries: the GATE's stated reason is refuted; MY mechanism is not established
 
+<!-- citations-at: 39ec8872302c -->
+
 Profiled 2026-09-12, nobara-pc. Pre-registration: `splitkv-mechanism-ncu-PREREGISTERED.md`, written
 before profiling. `attn_batched` at **M=1 decode**, split-KV OFF, depth 3900, both geometries, binary
 `serve-cuda-1f224682`, driver `595.91.07`. 16 launches each, grid `(32,1,1)` verified on both sides.

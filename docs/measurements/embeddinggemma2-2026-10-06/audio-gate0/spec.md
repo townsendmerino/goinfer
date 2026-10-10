@@ -1,5 +1,7 @@
 # Gate 0 desk spec: `gemma4_audio` tower → pure Go (EmbeddingGemma 2 first, Gemma 4 E2B/E4B second)
 
+<!-- citations-at: 24aa1960f2f1 -->
+
 Date 2026-10-06. Read-only research (a research agent's desk read for Phase A of `docs/tasks/task-embeddinggemma2.md`; the probe scripts beside it are what it ran). The reference is **transformers 5.19.0** as installed in the
 embeddinggemma2-2026-10-06 venv. The checkpoint's `config.json` says it was written by `5.18.0.dev0`.
 Checkpoint: `~/models/embeddinggemma-2`, `REVISION` = `914f7f89142e33e77833254d9c9b90c3cef7303b`.
