@@ -8,11 +8,9 @@ import (
 	"github.com/townsendmerino/aikit/gpu"
 )
 
-// TestCopyBytesToU32Buf_oversizedSrcPanics gates N-33 (audit-metal-2026-09-12.md):
-// copyBytesToU32Buf used to unsafe.Slice-reinterpret dst and Go-copy src into it, which silently
-// truncates an oversized src with no error — the exact gap gpu.Upload's own bounds check exists to
-// close. Confirmed red without the fix: the old implementation returned normally on an oversized
-// src (truncating it into dst) instead of panicking.
+// TestCopyBytesToU32Buf_oversizedSrcPanics gates N-33 (audit-metal-2026-09-12.md): an oversized src must panic, as
+// gpu.Upload's own bounds check does, and not be silently truncated into dst (the old unsafe.Slice
+// reinterpret-and-copy returned normally).
 func TestCopyBytesToU32Buf_oversizedSrcPanics(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

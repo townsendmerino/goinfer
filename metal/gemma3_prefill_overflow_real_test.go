@@ -16,8 +16,8 @@ import (
 )
 
 // G-NF1 (S17, docs/tasks/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows the batched pass's f16
-// (inf at layer 6), and the int8 head reads the NaN row that follows as finite zeros, so before the residual check every
-// Gemma 3 prompt of 16+ tokens on Metal answered "<pad>" and noise. With it the pass declines, naming the overflow, and
+// (inf at layer 6), and the int8 head reads the NaN row that follows as finite zeros, so without the residual check every
+// Gemma 3 prompt of 16+ tokens on Metal answers "<pad>" and noise. With it the pass declines, naming the overflow, and
 // Generate's greedy tokens equal the sequential path's (ExactPrefill). The residual scale (G-RS2) now keeps Gemma 3
 // inside f16, so this runs it unscaled (s = 1), the overflow the guard exists for. GOINFER_HEAVY_TESTS=1.
 func TestGemma3PrefillOverflow_declinesReal(t *testing.T) {

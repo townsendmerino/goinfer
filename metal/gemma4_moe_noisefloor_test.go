@@ -12,10 +12,9 @@ import (
 
 // TestGemma4MoE_noiseFloor is the pre-flight the track's rule requires BEFORE any resident MoE
 // number is interpreted: measure the fixture's own CPU-int4-vs-CPU-f32 floor on THIS machine. It is
-// CPU-only (no Metal), so it runs before the gemma4MoeMLP kernels exist. The CUDA MoE fixture had to
-// be rebuilt once (9275f94) because the original couldn't hold a tolerance — degenerate routing at
-// 68.8% agreement, 0.77 logit floor. A fixture whose int4-vs-f32 logit cosine or routing agreement
-// sits below the near-tie bar cannot gate Metal regardless of how good the port is; better to learn
+// CPU-only (no Metal), so it runs before the gemma4MoeMLP kernels exist. A fixture whose int4-vs-f32 logit
+// cosine or routing agreement sits below the near-tie bar cannot gate Metal regardless of how good the port is
+// (the CUDA MoE fixture had to be rebuilt once for degenerate routing); better to learn
 // that here than after the MoE forward is wired.
 //
 // Three signals per fixture: (1) logit cosine CPU-int4 vs CPU-f32 (the "as well as int4 can agree"

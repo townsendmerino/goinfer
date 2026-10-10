@@ -15,11 +15,8 @@ import (
 // decoder/gpt2_test.go's CPU parity gate already validates (testdata/gpt2, downloaded via
 // scripts/pin_gpt2_real.py — 548 MB, small enough not to need requireHeavyModel's opt-in gate).
 //
-// Dormant until all four features are declared (same pattern as TestGemma3ResidentParity): metal
-// ships the LayerNorm/non-gated-MLP/learned-pos/out-bias kernels and the encodeLayer/
-// encodeAttention wiring, but does not yet DECLARE them, so gpt2 still declines to CPU — skip
-// rather than fail, and residentParity t.Fatals on a decline once the declaration lands (catching
-// a silent CPU fallback rather than an honest skip).
+// Skipped unless Metal declares all four GPT-2 features (LayerNorm, non-gated MLP, learned positions, out-bias; it does):
+// residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGPT2ResidentParity(t *testing.T) {
 	f := decoder.ResidentBackendFeatures("metal")
 	if !f[decoder.FeatLayerNorm] || !f[decoder.FeatNonGatedMLP] || !f[decoder.FeatLearnedPos] || !f[decoder.FeatOutBias] {

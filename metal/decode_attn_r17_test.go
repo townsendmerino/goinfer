@@ -254,7 +254,7 @@ func r17PatchKernel(t *testing.T, r *resident, kernel, name string, edit func(st
 func r17PreciseExp(src string) string { return strings.ReplaceAll(src, "exp(", "precise::exp(") }
 
 // r17Legacy returns the legacy attention_fa first pass (the R2 kernel; production dispatches the R17 block kernel
-// instead for G = 6 and 7 since 2026-09-25) compiled under its own name, and the split count its core-count rule
+// instead for G = 6 and 7) compiled under its own name, and the split count its core-count rule
 // gives on r — so an arm that means "attention_fa" keeps meaning that kernel whatever r.pAttnFA is.
 func r17Legacy(t *testing.T, r *resident) (Pipeline, int) {
 	t.Helper()
@@ -1135,7 +1135,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 	combPx := r17PatchKernel(t, r, "attention_fa_combine", "attention_fa_combine_px", r17PreciseExp)
 	protoPx := r17ProtoPrecise(t, r)
 	// "attention_fa" arms are the LEGACY kernel at its own split rule (r17Legacy); "production" is whatever
-	// r.pAttnFA is at the production split (since 2026-09-25 the block kernel on G = 6/7 — identical to
+	// r.pAttnFA is at the production split (the block kernel on G = 6/7 — identical to
 	// "prototype S=16" there).
 	legacy, legacySplit := r17Legacy(t, r)
 	arms := []arm{

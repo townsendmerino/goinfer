@@ -320,16 +320,11 @@ func TestDeltaNetKernels_mutations(t *testing.T) {
 			to:   "float delta = (v[headV*hv+vd] - kvdot) * beta; // MUTATED: vBase dropped",
 		},
 		{
-			// A first attempt swapped hv/hk in the offset formula, but at this test's REAL geometry
-			// hk==hv==128 makes that a no-op (numerically identical). A second attempt permuted
-			// (headV,vd)->row bijectively — also invisible: a thread's row is never read by any
-			// OTHER thread, so consistently relocating one thread's own private storage changes
-			// nothing about what it computes, only where. The actual bug class "un-transposing"
-			// guards against is state ADDRESSES COLLIDING across threads, which a bijection can't
-			// produce by construction. This drops the vd term instead, so every value head sharing
-			// one key head... no, every vd for a fixed headV now aliases ONE row: max offset
-			// (nv-1)*hk = 47*128 = 6016, safely in-bounds, and the per-thread exclusivity the file
-			// header calls out ("no cross-thread sharing") is exactly what breaks.
+			// Collapse the state row: dropping the vd term makes every vd for a fixed headV alias ONE row (max offset
+			// (nv-1)*hk = 47*128 = 6016, safely in-bounds), which breaks the per-thread exclusivity the file header calls out
+			// ("no cross-thread sharing"). Swapping hv/hk would be a no-op at this geometry (hk==hv==128), and a bijective
+			// relocation of a thread's own private row changes nothing it computes, so neither catches state ADDRESSES
+			// COLLIDING across threads, the bug class "un-transposing" guards against.
 			name: "collapse the state row (vd dropped from the address, threads alias)",
 			from: "device float* S = state + (uint)(headV*hv+vd)*hk;",
 			to:   "device float* S = state + (uint)(headV)*hk; // MUTATED: vd dropped, threads alias",

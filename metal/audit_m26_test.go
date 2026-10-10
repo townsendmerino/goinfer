@@ -19,7 +19,7 @@ import (
 // script sets the model and slot count, arms scripts/swap_killwatch.sh on this process's PID, and, for T1.8, takes
 // vmmap and footprint from outside while this process holds at token 32. The load goes through the production Metal
 // path (Backend "metal", every guard on), and nothing here forks: a fork while pages are GPU-wired is what collapsed
-// M26 on 2026-09-24.
+// M26 (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 //
 //	GOINFER_METAL_AUDIT_M26=1 GOINFER_AUDIT_MODEL=<.giw> GOINFER_AUDIT_SLOTS=<N> [GOINFER_AUDIT_HOLD=<file>]
 //	[GOINFER_AUDIT_TOKENS=40] [GOINFER_MOE_PROF_SPLIT=1] ./metal-<rev>.test -test.run '^TestAuditM26_pagedProbe$' -test.v
@@ -57,9 +57,8 @@ func TestAuditM26_pagedProbe(t *testing.T) {
 		t.Fatalf("no paged Gemma 4 MoE resident on Metal (decode path %q)", m.DecodePath())
 	}
 	r := a.r
-	// C-P01 (2026-10-02): the pager stages scales from the mapping, so there is no scale cache to size. The old
-	// binary's figure (experts × per-expert scale words × 2 bytes) was 1361.2 MB; the heap line at token 32 is the
-	// measurement now.
+	// C-P01: the pager stages scales from the mapping, so there is no scale cache to size; the heap line at token 32 is the
+	// measurement.
 	hb("built in %.1f s: %d paged MoE layers", time.Since(t0).Seconds(), len(moeLayerIdx(r)))
 
 	id := 1000 % r.V // any valid token; greedy argmax from here on

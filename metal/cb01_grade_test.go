@@ -116,8 +116,8 @@ func TestCB01ChainAB(t *testing.T) {
 	}
 	// The first Generate prefills the prompt cold; every later one reuses 63 of its 64 tokens and re-forwards the last on
 	// the decode path, whose logits differ by ulps (int8 activations against the pass's f16; the E-P01 entry of the task
-	// doc's log). Greedy's argmax survives that; a near-tie Gumbel draw need not (measured on the 0.5B at T=1: two
-	// chain-off arms, cold then warm, part at token 18). So one cold generation is discarded, and every compared arm is warm.
+	// doc's log). Greedy's argmax survives that; a near-tie Gumbel draw need not (cold and warm chain-off arms part). So one
+	// cold generation is discarded, and every compared arm is warm.
 	run(false)
 	check(-1, run(false), run(true)) // warm-up, discarded
 	var ratios, offR, onR []float64

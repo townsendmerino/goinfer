@@ -8,12 +8,10 @@ import (
 	"testing"
 )
 
-// TestBytesToU32_matchesManualLE gates N-29 (audit-metal-2026-09-12.md): bytesToU32 used to
-// reconstruct each word with a per-byte shift-and-mask loop; it now does one bulk copy into a
-// freshly-allocated (always 4-aligned) []uint32's own byte view. Confirmed red without the fix by
-// temporarily reverting to a deliberately wrong byte order (big-endian) — this test caught it
-// immediately, since the oracle below is independently computed via encoding/binary rather than by
-// re-deriving the same shift expression bytesToU32 itself uses.
+// TestBytesToU32_matchesManualLE gates N-29 (audit-metal-2026-09-12.md): bytesToU32 does one bulk copy
+// into a freshly-allocated (always 4-aligned) []uint32's own byte view. The oracle is independently computed via
+// encoding/binary rather than by re-deriving the same shift expression bytesToU32 itself uses, so a byte-order
+// error cannot pass.
 func TestBytesToU32_matchesManualLE(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	for _, n := range []int{0, 1, 2, 8, 37} {

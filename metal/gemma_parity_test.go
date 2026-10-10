@@ -12,18 +12,12 @@ import (
 )
 
 // seedPrompt derives the probe from the MODEL'S OWN tokenizer and VERIFIES it by decoding —
-// never a hardcoded id literal.
+// never a hardcoded id literal: ids nobody has decoded can be gibberish, and a parity number measured on gibberish is a
+// confound (flat logits from nonsense produce exactly the extra near-ties that get blamed on architecture).
 //
-// This gate used to carry invented ids that nobody had ever decoded. Gemma's read
-// "<bos>ath হই of carry Bত্ব忽视ardRep" — not Gemma tokens at all — so every Gemma parity number
-// on either backend was measured on gibberish, and the resulting "Gemma is noisier than the
-// control" was a rationalization of a confound in the test data. The control's were no better
-// ("The history of_init with a text of a **"): real tokens, near-nonsense text. Flat logits from
-// nonsense produce exactly the extra near-ties that got blamed on architecture.
-//
-// Both models now probe the SAME sentence, so they are actually comparable. Encode is used where
+// Both models probe the SAME sentence, so they are comparable. Encode is used where
 // the vocab has merge ranks; Gemma's GGUF ships scores instead, so its pieces are looked up
-// directly — either way the result is decoded back and logged, so a bad prompt cannot hide again.
+// directly — either way the result is decoded back and logged, so a bad prompt cannot hide.
 func seedPrompt(t *testing.T, path, text string) []int {
 	t.Helper()
 	tk, err := tokenizer.LoadGGUF(path)
@@ -52,23 +46,16 @@ func seedPrompt(t *testing.T, path, text string) []int {
 	return ids
 }
 
-// observeCos folds one position's logit cosine into the running min. NaN/Inf is COUNTED, never
-// fed to the `< minCos` reduction: `NaN < x` is false in Go, so a degenerate (NaN) cosine — the
-// signature of the worst bugs — would otherwise never update minCos and would sail through the
-// floor as if parity held. This is the exact vacuity parity-coverage-policy.md § Falsifiable
-// names, and TestParity_NaNCosineFailsTheGate breaks it on purpose to prove this guard fires.
 // residentParity drives Metal resident decode against the CPU forward in greedy LOCKSTEP — the
 // shipped metal convention (model_test.go): the CPU's argmax drives both sides, so they walk a
 // coherent trajectory instead of an arbitrary id sequence full of near-ties.
 //
-// On the bar: the bar was set when Metal had NO like-for-like CPU reference. BuildResident took an
-// int8 load and re-quantized it to its own W4A8 (group=32, scale=max/7), which no CPU load
-// reproduces, so this was int4-GPU vs int8-CPU. CUDA's 3%-near-tie bar does NOT transfer; it
-// compares int4-vs-int4. Measured here on the KNOWN-GOOD dense path, CUDA's bar fails. That is why
-// the control is committed: the bar is read off it, not assumed — the same lesson CUDA learned when
-// a cosine >= 0.999 draft failed its own shipped path. The threshold is the usual bug. Since slice 1
-// of docs/tasks/task-metal-int8-2026-10.md a dense int8 model runs its int8 weights natively, so for
-// those this is int8 against int8, and TestW8Native_F2 holds the pair to the int4 pair's agreement.
+// On the bar: CUDA's 3%-near-tie bar does NOT transfer to Metal, so the bar is read off the committed control
+// (TestDenseResidentParity), not assumed; a threshold is the usual bug. It was set when Metal had no like-for-like CPU
+// reference: BuildResident re-quantized an int8 load to its own W4A8 (group=32, scale=max/7), which no CPU load reproduces,
+// so the pair was int4-GPU vs int8-CPU. Since slice 1 of docs/tasks/task-metal-int8-2026-10.md a dense int8 model runs its
+// int8 weights natively, so for those this is int8 against int8, and TestW8Native_F2 holds the pair to the int4 pair's
+// agreement.
 func residentParity(t *testing.T, path string, seed []int, steps int) parityStats {
 	t.Helper()
 	return residentParityAt(t, path, "int8int8", seed, steps)
@@ -114,12 +101,10 @@ func residentParityAt(t *testing.T, path, quant string, seed []int, steps int) p
 		if err != nil {
 			t.Fatalf("gpu forward: %v", err)
 		}
-		// Skip the <bos> sink positions in the metric. Gemma's <bos> is an ATTENTION SINK whose
-		// value vector is trained near-zero (|V| 9.4 vs 129 for an ordinary token), so a cosine
-		// there is dominated by rounding — and the position after it attends to that sink. Both
-		// read as catastrophic (-0.047) while the model is fine: measured dNLL decays 15.9 -> 0.06
-		// nats as real keys accumulate, and it generates " Paris." correctly. Gating on min-cosine
-		// over these positions reported the two places the metric is meaningless.
+		// Skip the <bos> sink positions in the metric. Gemma's <bos> is an ATTENTION SINK whose value vector is trained
+		// near-zero, so a cosine there is dominated by rounding — and the position after it attends to that sink. Both read
+		// as catastrophic while the model is fine (it generates " Paris." correctly); gating on min-cosine over these
+		// positions reports the two places the metric is meaningless.
 		if i >= 2 {
 			st.observeCos(cosF(cpuL, gpuL))
 		}
@@ -172,10 +157,8 @@ func TestDenseResidentParity(t *testing.T) {
 // Needs the checkpoint (~4 GB at int8, loaded twice → budget ~10 GB); skips without it.
 func TestGemma3ResidentParity(t *testing.T) {
 	requireHeavyModel(t)
-	// Dormant until the kernels are validated: metal ships the Gemma kernels but does not yet
-	// DECLARE the features, so gemma3 declines to CPU. Skip rather than fail — and the moment
-	// the declaration lands this becomes a live gate (residentParity t.Fatals on a decline,
-	// which is what catches a silent fallback).
+	// Skipped unless Metal declares the Gemma features (it does): residentParity t.Fatals on a decline, which is what
+	// catches a silent fallback.
 	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatSandwichNorm] {
 		t.Skip("metal does not declare the Gemma features yet (kernels dormant) — see docs/task-metal-gemma.md")
 	}

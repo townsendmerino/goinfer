@@ -10,15 +10,8 @@ import (
 
 // TestAttention_ShippedKernelShapes drives the SHIPPED attention kernel (allKernels, the one
 // model.go dispatches) at Gemma 3's exact attention shape and at the control's, on REALISTIC
-// attention patterns — the case the existing coverage structurally cannot reach.
-//
-// Why this gap exists. Metal's gemma3 parity carries a Gemma-only residual of -0.104 against its
-// own CPU-int4 twin (metal/quantbar_test.go) that the weights do not explain (the double
-// quantization measured free — decoder/requant_test.go), so a Gemma-specific kernel is wrong. The
-// shape of the residual points here: 9 gaps >3% with a worst near-tie of 40.8% is not what a
-// per-layer precision delta compounding over 34 layers looks like (that is a smooth droop) — it
-// is an op failing on PARTICULAR positions. And multi-key attention at hd=256 is the one op that
-// is both Gemma-specific and untested:
+// attention patterns — the case the existing coverage structurally cannot reach: multi-key
+// attention at hd=256 is both Gemma-specific and untested elsewhere.
 //
 //   - the dense control is hd=128, so it is blind to an hd=256 fault by construction;
 //   - attention_test.go compiles its own INLINE copy of the kernel, not the shipped source;
@@ -27,10 +20,11 @@ import (
 //     multi-key softmax never runs. Every Gemma number that mattered lives at pos>0.
 //
 // The patterns matter as much as the shape. Random q/k give a DIFFUSE softmax where every key
-// contributes ~1/nKeys and errors average out — which is why a random-weight synthetic passed at
-// 0.997 while the real model does not. Real attention is SHARP (one key dominant) and real V
+// contributes ~1/nKeys and errors average out, so a random-weight synthetic can pass while the real
+// model does not. Real attention is SHARP (one key dominant) and real V
 // carries outliers, so this drives both: sharp scores, an outlier V row, and Gemma's own
-// near-zero-norm sink at key 0.
+// near-zero-norm sink at key 0. Why the gap was found, and the parity residual that pointed here:
+// docs/code-notes/metal.md#TestAttention_ShippedKernelShapes.
 //
 // The reference rounds K/V to f16 first, because the kernel reads an f16 KV cache — comparing
 // against an f32 reference would measure the cache's precision, not the kernel's correctness.
@@ -57,14 +51,10 @@ func TestAttention_ShippedKernelShapes(t *testing.T) {
 		{"gemma3-4b local (hd=256, win=1024)", 8, 4, 256, 24, 1024},
 		{"gemma3-4b global, long ctx", 8, 4, 256, 600, 0},
 		{"gemma3-4b local, window ENGAGED", 8, 4, 256, 600, 512},
-		// Gemma 4's global layers run at hd=512 (g4.GlobalHeadDim), and NOTHING on Metal has ever
-		// driven the attention kernel there — this is 9c's single biggest kernel unknown, retired
-		// here before the port. The kernel decomposes each head over a fixed 128-thread block, so
-		// hd=512 = 4 elems/thread stresses the wide end the same way CUDA's hd 128/256/512 sweep did
-		// (933201c, cosine ≈ 1.0). The first row is the pure single-variable mutation off the green
-		// gemma3-4b global row above (only hd 256→512 changes), so a red is attributable to head
-		// width, not the contract. The next two are Gemma 4's REAL global geometry (nKV=2, K=V, no
-		// window) at short and long ctx — the shape 9c will actually dispatch.
+		// Gemma 4's global layers run at hd=512 (g4.GlobalHeadDim). The kernel decomposes each head over a fixed 128-thread
+		// block, so hd=512 = 4 elems/thread stresses the wide end. The first row is the pure single-variable mutation off the
+		// green gemma3-4b global row above (only hd 256→512 changes), so a red is attributable to head width, not the contract.
+		// The next two are Gemma 4's REAL global geometry (nKV=2, K=V, no window) at short and long ctx.
 		{"gemma4 global (hd=512), hd-only mutation off gemma3", 8, 4, 512, 24, 0},
 		{"gemma4 global (hd=512, nKV=2), real geom", 8, 2, 512, 24, 0},
 		{"gemma4 global (hd=512, nKV=2), long ctx", 8, 2, 512, 600, 0},
@@ -78,9 +68,8 @@ func TestAttention_ShippedKernelShapes(t *testing.T) {
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			cos, maxabs, gn, rn := runAttnCase(t, d, pAttn, tc.nH, tc.nKV, tc.hd, tc.nKeys, tc.window)
-			// Norm is reported next to cosine deliberately: the sink hunt burned a week on a
-			// cosine that was meaningless because the vector under it was near-zero. Never again
-			// read one without the other.
+			// Norm is reported next to cosine deliberately: a cosine read off a near-zero vector is meaningless, so never read
+			// one without the other.
 			t.Logf("%s: cosine=%.7f maxAbs=%.2e |gpu|=%.4f |cpu|=%.4f", tc.what, cos, maxabs, gn, rn)
 			mustFinite(t, tc.what+" cosine", cos)
 			if cos < 0.9999 || maxabs > 1e-2 {
@@ -143,8 +132,8 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 	uHd, uNKeys := NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(nKeys))
 	uScale := NewBufferFloats(d, []float32{scale})
 	uWin := NewBufferU32(d, window)
-	// No learned attention sink here: hasSink=0 is a true no-op (model.go's no-sink branch,
-	// metal/model.go:631), so a dummy one-element sinks buffer is never read.
+	// No learned attention sink here: hasSink=0 is a true no-op (model.go's no-sink branch), so a dummy one-element sinks
+	// buffer is never read.
 	uSinks, uHasSink0 := NewBufferFloats(d, []float32{0}), NewBufferU32(d, 0)
 
 	cq := d.NewCommandQueue()

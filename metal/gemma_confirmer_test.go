@@ -12,8 +12,8 @@ import (
 
 // TestGemmaConfirmer_MatchedInput is the Metal half of the matched-input confirmer (the CUDA box's
 // TestGemmaConfirmerReference assembles the reference; this injects it). It settles the last cut on
-// Gemma's dormant crater: int4-direct proved the WEIGHTS are not the cause (L0=1.0 but L1 still
-// craters to 0.640 with byte-identical weights), leaving two candidates —
+// Gemma's dormant crater: int4-direct proved the WEIGHTS are not the cause (byte-identical weights, L1 still
+// craters), leaving two candidates —
 //
 //	Metal's L1 context MATCHES the target on injected input -> the crater is accumulated
 //	  f16/precision DRIFT in the residual+KV feeding attention (fix: f32 KV / f32 attn-accumulate).

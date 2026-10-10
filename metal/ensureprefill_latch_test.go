@@ -7,17 +7,14 @@ import (
 	"testing"
 )
 
-// TestEnsurePrefill_latchesFailure gates N-47 (audit-2026-09-10.md): a failed ensurePrefill used
-// to leave r.pf == nil with no record of WHY, so every later PrefillLast call re-ran the full MSL
-// compile from scratch just to panic identically again. Confirmed red without the fix: with the
-// pfErr short-circuit removed, ensurePrefill fell through to the real compile attempt against this
-// test's zero-value (no real Metal setup) Device and panicked with an unrelated compile-landmine
-// message instead of the cached sentinel — proving the short-circuit, not the compile itself, is
-// what this test pins.
+// TestEnsurePrefill_latchesFailure gates N-47 (audit-2026-09-10.md): a failed ensurePrefill latches its error in
+// r.pfErr, so every later PrefillLast returns the cached sentinel instead of re-running the full MSL compile just to panic
+// identically again.
 //
-// The fast path this test exercises (r.pfErr already set) runs entirely before ensurePrefill
-// touches r.d, so a bare &resident{} with no real Device proves the short-circuit never reaches
-// the expensive compile path — no Metal device needed for this half of the fix.
+// The fast path this test exercises (r.pfErr already set) runs entirely before ensurePrefill touches r.d, so a bare
+// &resident{} with no real Device proves the short-circuit never reaches the expensive compile path: with the
+// short-circuit removed the call falls through to the compile against this zero-value Device and panics with an
+// unrelated message instead of the cached sentinel. No Metal device needed.
 func TestEnsurePrefill_latchesFailure(t *testing.T) {
 	sentinel := errors.New("metal prefill compile: sentinel failure from a prior attempt")
 	r := &resident{pfErr: sentinel}

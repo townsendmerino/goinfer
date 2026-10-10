@@ -11,11 +11,11 @@ import (
 )
 
 // TestGemma4_depthSweep turns "int4 conditioning at depth" from an argument into a MEASUREMENT
-// (standing caution: this repo attributed a quality deficit to int4 twice — 625303e, bcadd44 — and
-// overturned it both times). Same scaled-dense geometry (hd 256/512, K=V globals) at 12/24/48/64
+// (standing caution: a quality deficit has twice been attributed to int4 here and overturned both times).
+// Same scaled-dense geometry (hd 256/512, K=V globals) at 12/24/48/64
 // layers, only depth varies. Part A: the floor-vs-depth curve (CPUint4-vs-f32 mean) + the Metal
 // envelope (Metal-vs-CPUint4 mean). Part B: the FULL 64-layer per-layer trace, to see whether the
-// smooth-then-steep collapse the 26B showed (0.97→0.73 over 11 layers, then 0.47 over 3) is the
+// smooth-then-steep collapse the 26B showed is the
 // fixture's own near-floor behaviour (explained) or a discontinuity the fixture doesn't reproduce.
 // Env-gated (loads GB-scale f32 checkpoints). GOINFER_DEPTH_SWEEP=1.
 func TestGemma4_depthSweep(t *testing.T) {
@@ -96,7 +96,7 @@ func meanFloorEnv(t *testing.T, dir string, prompt []int, cos func(a, b []float3
 }
 
 // perLayer64 captures the 64-layer fixture's per-layer hidden (Metal-int4 vs CPU-int4) at pos 3 and
-// logs the trace, so its shape can be compared to the 26B's (0.97→0.73→0.26).
+// logs the trace, so its shape can be compared to the 26B's.
 func perLayer64(t *testing.T, dir string) {
 	t.Helper()
 	mg, err := decoder.Load(dir, decoder.Options{Quant: "int4"})

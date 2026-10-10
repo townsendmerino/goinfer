@@ -12,31 +12,19 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// RESOLVED 2026-09-21 (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md): both diagnostics
-// below measured something real and neither measured a kernel defect. The position linkage the
-// sweep found is the INPUT's — position 1602's forward pass has an element within ~1e-6 of an int8
-// activation-quantization rounding boundary, which attention_fa's sparse f32 reduction-order noise
-// crosses at layer 16 (r2_ctx_diff_test.go's accumulated-divergence table). The ULP control's
-// "immediate, uniform" divergence was evidence FOR that hypersensitivity, not against it: a scale
-// nudge is a dense perturbation of every score at every layer and crosses a boundary at once; the
-// proper control (shipped kernels + a 1e-6 residual nudge after layer 0, same magnitude as the
-// kernel's real discrepancy) reproduces attention_fa's 0.6-level logit jump at every step.
+// TestAttentionFA_positionSweep is a diagnostic sweep (no assertion) that separates "third decode call" from a position-linked
+// trigger for the end-to-end divergence TestAttentionFA_endToEndReproduction reproduces. The two prefill depths first tried,
+// 1600 and 2200, are both multiples of 8, so "third decode call" and "key count ≡ 3 (mod 4)" were the same event in both runs;
+// attention_fa works in 4-key tiles, so a boundary condition tied to nKeys mod 4 was a live alternative.
 //
-// TestAttentionFA_positionSweep answers a sharp objection to the "call-count, not position"
-// conclusion in docs/measurements/r2-attn-fa-followup-2026-09-20.md: the two prefill depths
-// already tried, 1600 and 2200, are BOTH multiples of 8 — so "third decode call" and "key count ≡
-// 3 (mod 4)" were the same event in both runs, and the earlier experiment cannot tell them apart.
-// attention_fa's own kernel groups work by 4 consecutive vocabulary-adjacent... no, by 4-key tiles
-// (its own doc comment: "cooperative load, 32 lanes x half4"), so a boundary condition tied to
-// nKeys mod 4 is a live, structurally-motivated alternative to "call count" that the prior
-// experiment could not rule out.
+// It sweeps prefillLen over 1601, 1602, 1603, three depths not sharing 1600/2200's residue, so the failing step's mod-4
+// alignment and its call-count alignment come apart. Steps 0-4 land at positions prefillLen+step: if the trigger is the 3rd
+// decode call regardless of position, the first-divergent STEP stays at 2 for all three; if it is position-linked, it moves
+// from depth to depth.
 //
-// This sweeps prefillLen over 1601, 1602, 1603 — three depths NOT sharing 1600/2200's residue —
-// so the failing step's mod-4 alignment and its call-count alignment come apart. For each depth,
-// steps 0-4 land at positions (prefillLen+step); if the true trigger is "3rd decode call"
-// regardless of position, the first-divergent STEP stays at 2 for all three. If it is really
-// "nKeys ≡ 3 (mod 4)" (or any other position-linked residue), the first-divergent step moves
-// depth-to-depth (since prefillLen+step's residue mod 4 shifts as prefillLen shifts by 1).
+// Outcome: the divergence is the input's (one int8 activation-quantization rounding crossing at position 1602), not a kernel
+// defect: docs/measurements/r2-attn-fa-rootcause-2026-09-21.md. The original comment, including how the two diagnostics
+// resolved, is at docs/code-notes/metal.md#TestAttentionFA_positionSweep.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_TEST_MODEL=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf go test -tags goinfer_testhooks ./metal/ -run TestAttentionFA_positionSweep -v -timeout 20m
 func TestAttentionFA_positionSweep(t *testing.T) {
@@ -151,22 +139,13 @@ func TestAttentionFA_positionSweep(t *testing.T) {
 	}
 }
 
-// TestAttentionFA_ulpPerturbationControl tests the OTHER sharp alternative to "attention_fa has a
-// state-carrying bug": that "two clean decode steps, then a stable wrong plateau" is simply what
-// ANY non-bit-identical kernel eventually looks like once accumulated f32 error crosses a
-// downstream int8 activation-quantization rounding boundary — a discrete, not gradual, jump, by
-// construction of rounding. If that is right, deliberately perturbing the REFERENCE (shipped)
-// kernel's own attention scale by a single float32 ULP — nothing to do with attention_fa at all —
-// should reproduce the same qualitative signature: some early steps identical, then a stable
-// divergence once the rounding boundary is crossed.
-//
-// Both arms here use the SAME (shipped) kernel; only r.uScale's bit pattern differs between them
-// by exactly one ULP. If this control shows the same "clean, then stable jump" shape, the shape
-// itself carries no information about a bug in attention_fa specifically — it would be expected
-// under R2's OWN registered fidelity gate (attention_fa is deliberately not bit-identical), and R2
-// can proceed to that gate directly rather than keep hunting for a mechanism. If the control stays
-// clean throughout (or diverges gradually, not in a sudden plateau), the signature IS diagnostic
-// and the search for a state-carrying mechanism in attention_fa specifically should continue.
+// TestAttentionFA_ulpPerturbationControl is the control for the "two clean decode steps, then a stable wrong plateau"
+// signature: ANY non-bit-identical kernel eventually looks like that once accumulated f32 error crosses a downstream int8
+// activation-quantization rounding boundary, a discrete jump by construction. Both arms use the SAME (shipped) kernel; only
+// r.uScale's bit pattern differs between them, by exactly one float32 ULP. If the control shows the same clean-then-stable-jump
+// shape, the shape carries no information about a bug in attention_fa specifically. If it stays clean throughout (or diverges
+// gradually, not in a sudden plateau), the signature is diagnostic. The reasoning around it is at
+// docs/code-notes/metal.md#TestAttentionFA_ulpPerturbationControl.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_TEST_MODEL=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf go test -tags goinfer_testhooks ./metal/ -run TestAttentionFA_ulpPerturbationControl -v -timeout 10m
 func TestAttentionFA_ulpPerturbationControl(t *testing.T) {
@@ -268,7 +247,7 @@ func TestAttentionFA_ulpPerturbationControl(t *testing.T) {
 		t.Logf("CONTROL RESULT: 1-ULP scale perturbation FIRST DIVERGES at step=%d -- compare this shape "+
 			"(clean-steps-before-divergence, stable-or-not after) against attention_fa's own step=2 divergence", firstBad)
 	}
-	// No assertion: this is a diagnostic control, not a gate. Divergence here is not itself a
-	// failure of anything -- a 1-ULP scale change is EXPECTED to eventually matter for some input;
-	// the question is only what SHAPE that mattering takes, read from the log above.
+	// No assertion: this is a diagnostic control, not a gate. Divergence here is not itself a failure of anything -- a 1-ULP
+	// scale change is EXPECTED to eventually matter for some input; the question is only what SHAPE that mattering takes,
+	// read from the log above.
 }

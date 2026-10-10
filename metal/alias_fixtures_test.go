@@ -20,7 +20,7 @@ import (
 
 // S6's byte-identity gate over every resident-parity fixture, not just the two real checkpoints
 // TestWeightAlias_logitsByteIdentical is pointed at. Each tiny fixture is transcoded to a metal-target
-// .giw (weights format v14: fused q|k|v and gate|up groups, kind-7 singles, f16 scales), loaded twice
+// .giw (the current weights format: fused q|k|v and gate|up groups, kind-7 singles, f16 scales), loaded twice
 // with GOINFER_METAL_ALIAS off and on via Options.Knobs, and driven through the same tokens; every
 // logit must match bit for bit. A fixture Metal does not build resident is skipped (named in the log),
 // and one whose shapes leave nothing aliasable (cols not a multiple of 32) is compared anyway — the
@@ -242,10 +242,10 @@ func requireSameBits(t *testing.T, got, want [][]float32) {
 // fixes it. A current metal-target file of the same model carries no such note, and the anonymous figure it reports is the small
 // remainder the format does not cover.
 //
-// WHICH FORMAT THE "OLD" BUNDLE IS (F-D02, audit-metal-2026-09-30.md): this test used to call it a v12 file. It is built here by
-// today's prequant with GIWTargetNone, and the writer emits weights format v15 for every target, so it is a v15 NON-METAL bundle:
-// its int4 scales are stored as binary16 (v15) but not in the kind-7 / fused-group layout Metal binds, so they are converted into
-// a new buffer. The test now reads the version from each file's header and asserts it, so the label cannot go stale again.
+// The "old" bundle is built here by prequant with GIWTargetNone, and the writer emits one weights format (v15 today) for every
+// target, so it is a NON-METAL bundle at that version: its int4 scales are stored as binary16 but not in the kind-7 / fused-group
+// layout Metal binds, so they are converted into a new buffer. The test reads the version from each file's header and asserts it,
+// so the label cannot go stale. Why it is labelled this way: docs/code-notes/metal.md#TestWeightAlias_olderBundleTakesCopyPath.
 func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -263,8 +263,8 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 		return p
 	}
 	old, cur := build(decoder.GIWTargetNone, "llama-tiny.int4.giw"), build(decoder.GIWTargetMetal, "llama-tiny.int4.metal.giw")
-	// Both bundles were just written by this build, so both are at least v15 (binary16 scales stored). That is the case F-D02 says the
-	// banner got wrong, and what this test is for; if the writer's version moves, read the new case and relabel, don't loosen this.
+	// Both bundles were just written by this build, so both are at least v15 (binary16 scales stored): the case whose banner
+	// this test pins. If the writer's version moves, read the new case and relabel, don't loosen this.
 	const wantMinVersion = 15
 	for name, p := range map[string]string{"non-metal": old, "metal": cur} {
 		if v := giwFileVersion(t, p); v < wantMinVersion {
@@ -304,7 +304,7 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	}
 }
 
-// Aliasing is ON BY DEFAULT for a .giw-mapped model (S6 shipped 2026-09-24): with the knob unset the build
+// Aliasing is ON BY DEFAULT for a .giw-mapped model: with the knob unset the build
 // aliases, =0 turns it off, and a load that has no .giw mapping (safetensors here) never aliases.
 func TestWeightAlias_onByDefault(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {

@@ -40,7 +40,7 @@ func TestZZ_metalDepthBench(t *testing.T) {
 		t.Fatalf("resident: %v", err)
 	}
 	// Ambient GOINFER_METAL_ATTN_FA, not pinned: this test reports whichever arm the environment
-	// selects (default ON since 2026-09-21, R2) rather than hardcoding a label that would go stale
+	// selects (default ON, R2) rather than hardcoding a label that would go stale
 	// the moment the default changed — see r.decodeAttnFA, set at buildResident from
 	// metalAttnFAEnabled(). The label below reflects it exactly.
 	attnLane := "shipped attention"

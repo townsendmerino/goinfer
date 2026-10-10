@@ -108,7 +108,7 @@ func TestLayerNormQuant(t *testing.T) {
 // TestActQuant gates act_quant (kernels.go) against decoder/mlp.go's nonGatedMLP's activation
 // stage (GELU-tanh only — glu_act's only relevant branch for GPT-2's "gelu_new"). Values
 // deliberately span well past GELU-tanh's saturation region so a wrong or unclamped tanh
-// argument (the exact class of bug 38a2b7c fixed for Gemma) would show up here too.
+// argument (the exact class of bug fixed for Gemma) would show up here too.
 func TestActQuant(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

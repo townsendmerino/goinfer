@@ -14,30 +14,18 @@ import (
 )
 
 // TestGemmaBisect_PerLayer walks the residual stream layer by layer, Metal vs CPU, to locate
-// WHERE Metal's Gemma-only parity residual enters.
+// WHERE Metal's Gemma-only parity residual enters. What was already ruled out (weights, multi-key
+// attention at hd=256) and the residual's shape are at docs/code-notes/metal.md#TestGemmaBisect_PerLayer.
 //
-// What is already known, so this test does not re-litigate it:
-//   - int4 costs gemma3 0.99→0.92 of logit cosine and the control ~nothing (quantbar_test.go).
-//     That part is the quantization class at gemma's shape and is not a bug.
-//   - Metal still adds a further -0.104 on gemma and NOTHING on the control. That part is a bug.
-//   - It is not the weights: the double quantization measured free (decoder/requant_test.go).
-//   - It is not multi-key attention at hd=256: the shipped kernel is exact there, including
-//     sharp softmax, outlier V, sink, and window engaged (attn_shape_test.go).
+// Three deliberate choices:
 //
-// So a Gemma-specific op in the compute path is wrong, and the residual's SHAPE says which kind:
-// 9 gaps >3% with a worst near-tie of 40.8% is not a per-layer precision delta compounding over
-// 34 layers (that would be a smooth droop). It is an op failing on particular positions.
-//
-// Three deliberate choices, each one a lesson already paid for:
-//
-//  1. Reference is CPU-INT4, not CPU-int8. Metal's weights are now measured equivalent to the
+//  1. Reference is CPU-INT4, not CPU-int8. Metal's weights are measured equivalent to the
 //     decoder's int4, so int4 is the like-for-like reference; int8 would fold the (large, real,
-//     not-a-bug) quantization cost into every number and hide the -0.104 underneath it.
-//  2. NORM is reported beside cosine at every layer. The sink cost a week because a cosine was
-//     read off a near-zero vector. A collapsing norm and a collapsing cosine are different bugs.
+//     not-a-bug) quantization cost into every number and hide the Metal-only residual underneath it.
+//  2. NORM is reported beside cosine at every layer: a cosine read off a near-zero vector is
+//     meaningless, and a collapsing norm and a collapsing cosine are different bugs.
 //  3. The probe is an ORDINARY token at pos>0. At pos 0 attention output is v0 exactly and RoPE
-//     is the identity — the two ops most under suspicion do not even run, which is precisely why
-//     the earlier pos-0 analysis saw nothing.
+//     is the identity — the two ops most under suspicion do not even run.
 //
 // Each layer is tagged local/global (gemma's 5:1). If the jump tracks the global layers, the
 // carrier is attention/window/per-layer-RoPE; if it is uniform, it is a per-layer op.
@@ -154,16 +142,15 @@ func bisectModel(t *testing.T, path string) {
 		}
 	}
 
-	// Cross-backend reconciliation with the CUDA box. Three references at each target channel +
-	// neighbors, at the pre-final-norm tap (pos 5):
+	// Cross-backend reconciliation with the CUDA box: three references at each target channel + neighbors, at the
+	// pre-final-norm tap (pos 5):
 	//   metal      — Metal resident (int4 weight × int8 activation, W4A8)
 	//   cpu-int4   — decoder Quant:int4 == MatmulBTW4A8, ALSO int8 activation → shares the crush
 	//   cpu-int8w  — decoder Quant:int8 (weight-only) == MatmulBTQ8, int8 weight × f32 ACTIVATION
 	//                → NO activation crush, so its SIGN is the ground truth on crushed channels.
-	// The crux the CUDA box surfaced: our two "int4" references disagreed because BOTH quantize
-	// activations to int8 and round the near-zero crushed channels differently. cpu-int8w removes
-	// the activation quant, so whichever of metal/cpu-int4 disagrees with cpu-int8w's SIGN is the
-	// one that flipped. (Off-by-one is ruled out: the 443 spike sits at index 443 on both boxes.)
+	// The two "int4" references can disagree because BOTH quantize activations to int8 and round the near-zero crushed
+	// channels differently; cpu-int8w removes the activation quant, so whichever of metal/cpu-int4 disagrees with
+	// cpu-int8w's SIGN is the one that flipped.
 	m8w, e8w := decoder.Load(path, decoder.Options{Quant: "int8"})
 	if e8w != nil {
 		t.Fatalf("load int8-weight-only reference: %v", e8w)
@@ -202,9 +189,10 @@ func absf(x float32) float32 {
 }
 
 // TestGemmaBisect_Head splits the ONE step the per-layer bisect leaves whole: final-norm → LM
-// head. The per-layer walk showed gemma's trunk lands at cosine ~0.981 (control ~0.993) yet the
-// logits collapse to 0.818 (control 0.990) — so almost the entire Gemma-only residual enters
-// HERE, not in the 34 layers. This test says which of the two sub-steps:
+// head, because almost the entire Gemma-only residual enters there, not in the 34 layers. The per-layer walk's numbers:
+// docs/code-notes/metal.md#TestGemmaBisect_Head
+//
+// This test says which of the two sub-steps:
 //
 //	act:    Metal's head-input activation (r.aq * r.aSc, the int8-quantized final-norm output)
 //	        vs the CPU's f32 final-norm output — isolates the QUANTIZATION of the head input.
@@ -382,8 +370,8 @@ func dynRange(x []float32) (mx, mean float64) {
 }
 
 // TestGemmaTraceDims follows Gemma's massive-activation dims down the layer stack to find WHERE
-// Metal clobbers them. The head bisect showed the final-norm amplifies a handful of outlier dims
-// (1698/1730/2482/1723/227) that Metal has zeroed or sign-flipped; an all-dims cosine can't see 6
+// Metal clobbers them. The final norm amplifies a handful of outlier dims
+// (1698/1730/2482/1723/227) that Metal had zeroed or sign-flipped; an all-dims cosine can't see 6
 // bad channels in 2560, so this prints those channels explicitly at every layer, Metal vs CPU.
 func TestGemmaTraceDims(t *testing.T) {
 	requireHeavyModel(t)

@@ -14,8 +14,8 @@ import (
 
 // TestResolveMetalCtxCap_autoPinIsACeiling (C-C01, docs/audit-metal-2026-09-30.md): a context the load-time fit guard
 // auto-pinned (the caller did not choose it) may lower Metal's default, never raise it; an explicit -ctx keeps its own
-// rule, honoured up to metalCtxCapMax and refused above. Before, an auto-pin read as a request: on a tight machine it
-// allocated KV several times the default, and above the ceiling it was refused, moving the forward to the CPU.
+// rule, honoured up to metalCtxCapMax and refused above. An auto-pin that read as a request would, on a tight machine,
+// allocate KV several times the default, and above the ceiling be refused, moving the forward to the CPU.
 func TestResolveMetalCtxCap_autoPinIsACeiling(t *testing.T) {
 	dir := t.TempDir()
 	writeDense(t, dir, genTinyWeights(rand.New(rand.NewSource(11))))
