@@ -1,0 +1,91 @@
+=== night job gs10q-d
+=== cmd      bash docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/run-gs10q-d-night.sh
+=== cwd      /home/francis/wt/goinfer-gs10qd
+=== rev      queued at f5fa5a30, now f5fa5a30
+=== host     nobara-pc
+=== est      60.0 min, timeout 120.0 min
+=== by       Claude (Mac session), S10 Qwen3-VL MoE G-S10q-d
+=== doc      docs/tasks/task-multimodal-support-2026-10.md
+=== START    2026-10-10 00:59:40 PDT  loadavg 0.82
+binaries: /home/francis/goinfer-bench/gs10q-d (rev f5fa5a30445b3426cc725e45c5f99ab4410af58c)
+started: 2026-10-10 00:59:40 PDT
+free: 263 GB; load: 0.82 6.20 6.48 1/596 2966542
+Mem:              62           3          18           0          41          59
+595.91.07, 8192 MiB, 468 MiB
+[00:59:40] 1/2 graded: =cpu,cpu
+[00:59:40] arm cpu (--backend cpu --embed-int4=false)
+Traceback (most recent call last):
+  File "/usr/lib64/python3.14/urllib/request.py", line 1320, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1141, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1085, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/usr/lib64/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 13, in <module>
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib64/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 1349, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 1323, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>
+[01:09:46] graded step rc=1
+[01:09:46] 2/2 reported: --backend cuda
+  [cuda] resident build failure, detail:
+  	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:1826 +0x3d
+  	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:900
+  	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:919 +0x6c
+  	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:929 +0x91
+  	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:949 +0x27e
+  	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:1365 +0x7ff6
+  	/home/francis/wt/goinfer-gs10qd/cuda/resident.go:1829 +0x51
+  	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:715 +0x68
+  	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:711 +0x54e6
+  [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 201326592 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU
+  the cuda arm did not come up (a decline or a failed load): see /home/francis/goinfer-logs/gs10q-d-2026-10-10/cuda/serve-cuda.log
+  created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+  	/home/francis/wt/goinfer-gs10qd/cuda/backend.go:711 +0x54e6
+  
+  [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 201326592 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts (a mixture-of-experts model keeps its hottest experts on the GPU and streams the rest from host memory), a smaller -quant (int4) or -ctx, or run on the CPU on purpose with -backend cpu) — continuing on the CPU/staged path
+  --model "/home/francis/models/qwen3-vl-30b-a3b-instruct": decoder: --quant "int4" cannot apply to the prequantized .giw bundle /home/francis/models/qwen3-vl-30b-a3b-instruct.int4.cuda.giw — it is baked at "int4mix", and a .giw carries its own quant; pass --quant int4mix or omit --quant
+[01:21:59] done; graded rc=1
+
+=== END      2026-10-10 01:22:00 PDT  rc=1

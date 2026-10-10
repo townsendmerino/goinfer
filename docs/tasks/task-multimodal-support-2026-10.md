@@ -12,11 +12,12 @@
   - S16 for Qwen2.5-VL and Qwen3-VL.
   - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
     fix it needed (2026-10-09).
-  - S18's gates on both boxes, all but G-S18g.
+  - S18's gates on both boxes. G-S18g read 2026-10-10: FAIL, so the int8 Metal tower is not a default (the code change
+    is owed).
 - **In flight:**
   - S6: Qwen3.6-35B images served on CUDA, the 31B's step (b'), E4B on Metal.
   - S14 (speech).
-  - The Mac's third S7/S13-lite pass.
+  - The Mac's third S7/S13-lite pass: read 2026-10-10, six of eight S7 cells under the 5 s bar.
   - The `--embed-int4` default (option D).
 - **Done since:** S11 (several images per message) and S8 (the README and doc support table, computed from code and
   drift-checked), both 2026-10-09.
@@ -2970,12 +2971,42 @@ aikit expected 0: L, as registered for S10's MoE variants.
     Those 2B sequences are the pinned ones; the night job reuses them.
   - **Queued on nobara 2026-10-09 22:34 PDT:** `s10q-c`, est. 2 h 30 min (timeout 5 h), output
     `~/goinfer-logs/s10q-c-run/`, binaries pinned in `~/goinfer-bench/s10q-c` (branch rev `12b1a93d`).
-- **G-S10q-d** (served at int4 on nobara's CPU): queued on nobara 2026-10-09 23:01 PDT as `gs10q-d`, est. 1 h (timeout
-  2 h), after `s10q-c`. The job is `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/run-gs10q-d-night.sh`:
-  two CPU int4 arms through G-S10m-d's served driver (graded: identical replies on both requests), then one `--backend
-  cuda` arm, reported. The serve binary is pinned in `~/goinfer-bench/gs10q-d` (`cuda/cmd/serve`, `-tags cuda`, main at
-  `f5fa5a30`); output goes to `~/goinfer-logs/gs10q-d-2026-10-10/`. The 30B's first int4 load transcodes the sidecar.
-  If `s10q-c` uses its full slot, the 06:30 deadline holds this job back to the next night.
+- **G-S10q-c: PASS on both arms** (nobara, the night of 2026-10-09; job `s10q-c`, 1 h 11 min, exit 0). Raw:
+  `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/s10q-c/`.
+  - The controls ran again inside the job and passed (stream 1.95e-7; the planted defects 0.55, 0.80, 0.22).
+
+  | model | positions | arm | argmax agreement with HF [95%] | mean KL(HF \|\| arm) [95%] |
+  |---|---|---|---|---|
+  | Qwen3-VL-30B-A3B | 200 | int8int8 | 98.00% [95.0, 100.0] | 0.0113 [0.0066, 0.0190] |
+  | Qwen3-VL-30B-A3B | 200 | int4 | 92.50% [87.9, 97.1] | 0.0691 [0.0338, 0.1353] |
+  | Qwen3-VL-2B (the sibling) | 179 | int8int8 | 95.53% [91.9, 98.8] | 0.0187 [0.0083, 0.0268] |
+  | Qwen3-VL-2B (the sibling) | 179 | int4 | 90.50% [86.6, 95.8] | 0.1699 [0.1035, 0.2185] |
+
+  - **The rule:** the 30B's agreement minus the 2B's is +2.47 points at int8int8 and +2.00 at int4; PASS is at least
+    -5.0. Every logit is finite.
+  - HF's own argmax equals the path token at 0.980 on the 30B and 0.933 on the 2B (HF's mean top-1 probability 0.897
+    and 0.888).
+  - **A deviation from the registration:** it says 256 teacher-forced positions (8 prompts of 32 tokens). Three of the
+    30B's continuations ended their turn early (8, 31 and 1 tokens), which leaves 200 positions; the 2B's own
+    continuations leave 179. The statistic and the rule are as registered; the intervals are wider than 256 positions
+    would give.
+  - The binaries were pinned at branch rev `12b1a93d`, before the branch was rebased onto main.
+  - Wall time, not a speed record: the 30B's paths 1,103 s, its two arms 2,612 s, the HF stream 348 s.
+- **G-S10q-d: no reading (VOID, a fault in the job), nobara, the night of 2026-10-09** (job `gs10q-d`, 22 min, exit 1;
+  serve `cuda/cmd/serve` at `f5fa5a30`). Raw: `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/gs10q-d-void/`.
+  - **The graded CPU arms never answered.** The 30B's first int4 load transcodes its sidecar, and that outlasted the
+    served driver's 600 s wait for the server (`run-gs10m-served.sh`). The driver's first request was refused, and its
+    exit trap stopped serve in the middle of the transcode. A partial
+    `qwen3-vl-30b-a3b-instruct.int4.cpu-amd64.tmp.giw` (16.4 GB) is left in `~/models` on nobara.
+  - **The reported CUDA arm:** its sidecar (`.int4.cuda.giw`, 16.7 GB) built in 11 min 5 s. The resident build then
+    declined by name: `CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts …`,
+    "continuing on the CPU/staged path". That is the decline the registration allowed for the 8 GB card.
+  - **A defect found after the decline, not yet investigated:** serve did not continue on the CPU. It exited with
+    `--quant "int4" cannot apply to the prequantized .giw bundle …int4.cuda.giw — it is baked at "int4mix"`. So
+    `--backend cuda --quant int4` on a model too large for the card ends in an error about the sidecar that same load
+    wrote.
+  - **Owed:** the job again, with a step ahead of the arms that builds the CPU sidecar under a long wait, so both graded
+    arms read a finished sidecar.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
@@ -4123,6 +4154,37 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Binary:** `serve-metal` at `74830779`, in `~/goinfer-bench/s7-2026-10-09/` (`BIN=`).
   - **Purpose:** re-rank the failing cells for S17/S18's next lever, since three of the five moved by day.
   - **Queue:** `s7-mac-0909` and `s13lite-mac-0909`, 20 minutes each, tonight.
+  - **Read 2026-10-10** (the night of 2026-10-09; both jobs exit 0, 3 and 4 minutes; raw
+    `docs/measurements/multimodal-support-2026-10/night-2026-10-09-mac/`).
+    - **Conditions:** as the earlier passes: the median of three timed requests per cell (nine for S13-lite), new media
+      every request, every cell `metal-resident (int4)`. The load average was 3.2-4.1 during S7's cells and 1.6-4.0
+      during S13-lite's (the instant idle gate; a sidecar build and G-S18g had just run), so the seconds are a record
+      of the night.
+    - The two Gemma 4 E2B copies had been deleted from `~/models` that evening and were pulled back from the archive
+      before the run (13,590,544,823 bytes, equal on both sides). The Metal sidecars for E2B, Qwen3.5-0.8B and E4B
+      were built with this same binary before the queue started. The E4B cell ran because its sidecar existed.
+
+    | cell (median TTFT, s) | levers A+B (2026-10-08) | third pass | under 5 s |
+    |---|---|---|---|
+    | gemma-3-4b (S7's cell) | — | 6.27 | no |
+    | gemma-3-4b (S13-lite, 9 requests) | 6.60 | 6.23 | no; Ollama 4.98, llama.cpp 4.70 |
+    | gemma-4-e2b | 6.17 | 1.97 | yes |
+    | gemma-4-e2b audio | 3.14 | 0.57 | yes |
+    | gemma-4-e4b | — | 2.57 | yes |
+    | qwen2.5-vl-3b | 17.72 | 5.51 | no |
+    | qwen3.5-0.8b | 3.94 | 4.21 | yes |
+    | qwen3-vl-2b | 7.30 | 2.83 | yes |
+    | glm-ocr | 5.30 | 3.09 | yes |
+
+    - **Reading:** six of eight S7 cells are under the bar, against two of seven on the pass before. The two over it
+      are Gemma 3 (6.2-6.3 s, 1.25x Ollama and 1.33x llama.cpp in S13-lite) and Qwen2.5-VL (5.51 s).
+    - The moves follow 2026-10-09's changes: the E2B cells log S9 step 2's batched prefill for the E-models;
+      Qwen2.5-VL and Qwen3-VL prefill their images on the GPU (S16); GLM-OCR's decoder went resident.
+    - **This binary (`74830779`) predates Gemma 3's resident image prefill on Metal.** G-IP4 read that lever by day at
+      6.88 s before and 4.14 s after, so Gemma 3's row here is the 'before' build.
+    - **Ranking for the next lever:** Qwen2.5-VL is the one cell over the bar with no lever already measured under it.
+    - The passes are on different nights and interleave nothing; a small difference (Qwen3.5-0.8B's 3.94 to 4.21 s)
+      is not a resolved effect.
 
 - **S17's next Metal lever: Gemma 3's image turn prefills on the CPU. A resident image prefill on Metal, registered
   2026-10-09 before any code** (owner: "continue with image/audio track").
@@ -4558,6 +4620,24 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Owed:**
     - G-S18g (the served reply, int8 tower against f16 on the same decoder: night);
     - nothing else for the Mac half: G-S18a passed (above).
+  - **G-S18g: FAIL as registered, read 2026-10-10** (the night of 2026-10-09, job `gs18g`, 3 min; `serve-metal` at
+    `c2891555`, Gemma 3 4B from its directory sidecar). Raw:
+    `docs/measurements/multimodal-support-2026-10/s18-mac/gs18g-2026-10-09/`.
+    - Three arms on one decoder (`metal-resident (int4)`): the f16 tower, the int8 tower, the f16 tower again.
+    - **The control holds:** the two f16 arms give identical replies on all four images.
+    - **int8 against f16, first difference per image (f16's probabilities):**
+
+      | image | token | f16 | int8 | p(f16's token) | p(int8's token) | near-tie |
+      |---|---|---|---|---|---|---|
+      | `glm_ocr/table.png` | 3 | " a" | " quarterly" | 0.830 | 0.170 | no |
+      | `gemma3_preprocess_image.png` | 10 | " bright" | " green" | 0.495 | 0.324 | yes |
+      | `qwen25vl_preprocess_image.png` | 9 | "," | " and" | 0.486 | 0.337 | yes |
+      | `glm_ocr/formula.png` | 12 | " distribution" | " (" | 0.747 | 0.236 | no |
+
+    - Two of the four first differences are not near-ties (the rule needs every one to be), so the gate fails.
+    - **The registered consequence, owed in code:** the int8 tower is not a default. `resolveGemma3VisionQuantMetal`
+      takes it today when the budget does not hold the f16 tower; that choice has to go, leaving `-vision-quant int8`
+      as the explicit option and the f16 tower where it fits, or the CPU tower.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

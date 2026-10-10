@@ -1,0 +1,7 @@
+serve rev c2891555 (sha256 3bc0fb9a6b7abba1)
+started: 2026-10-09 23:18:49 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 2048.00M  used = 777.12M  free = 1270.88M  (encrypted)
+23:18  up 15 days, 13:14, 1 user, load averages: 1.38 1.88 2.58
+finished: 2026-10-09 23:21:59 PDT rc=1

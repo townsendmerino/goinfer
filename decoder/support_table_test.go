@@ -85,7 +85,7 @@ var supportRows = []supportRow{
 	{"Qwen3-VL", "qwen3_vl", multimodal.TowerQwen3, rep("qwen3_vl", nil),
 		"DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09)."},
 	{"Qwen3-VL MoE", "qwen3_vl_moe", multimodal.TowerQwen3, rep("qwen3_vl_moe", nil),
-		"Qwen3-VL-30B-A3B: too large for a 16 GB Mac or an 8 GB card at once. Decoder and tower checked against HF (G-S10q-a, b); the full model against HF and the served check are pending (S10, 2026-10-09)."},
+		"Qwen3-VL-30B-A3B: too large for a 16 GB Mac or an 8 GB card at once. Decoder, tower and the full model (CPU, int8int8 and int4) checked against HF (G-S10q-a, b, c); the served check is pending (S10, 2026-10-10)."},
 	{"GLM-OCR", "glm_ocr", multimodal.TowerGlmOcr, rep("glm_ocr", nil),
 		"One image per request (2026-10-09)."},
 	{"LFM2.5-VL", "lfm2_vl", multimodal.TowerSiglip2NaFlex, rep("lfm2_vl", nil),

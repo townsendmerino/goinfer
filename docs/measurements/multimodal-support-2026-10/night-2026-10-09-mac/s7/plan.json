@@ -1,0 +1,165 @@
+{
+ "rounds": 1,
+ "per_round": 3,
+ "rotate": false,
+ "cells": [
+  {
+   "cell": "gemma-3-4b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-3-4b-it",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/Users/francistownsend-merino/models/gemma-4-E2B-unq",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b-audio",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "audio",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/speech/librispeech-1272-128104-0000.wav",
+   "prompt": "Transcribe this audio.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/Users/francistownsend-merino/models/gemma-4-E2B-unq",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "qwen2.5-vl-3b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen25vl-3b-instruct",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "qwen3.5-0.8b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen3.5-0.8b",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "qwen3-vl-2b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen3-vl-2b-instruct",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "glm-ocr",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/glm-ocr",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  },
+  {
+   "cell": "gemma-4-e4b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18610,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-4-E4B-it.int4.metal.giw",
+    "--vision",
+    "/Users/francistownsend-merino/models/gemma-4-E4B-it",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18610"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,22 @@
+controls           rc=0       5s
+[controls] stream (control 1)           relative max|diff| 1.950e-07  (within 0.0001)
+[controls] nodeepstack                  relative max|diff| 5.515e-01  (beyond 0.0001)
+[controls] swap                         relative max|diff| 7.995e-01  (beyond 0.0001)
+[controls] norenorm                     relative max|diff| 2.224e-01  (beyond 0.0001)
+[controls] PASS: control 1 within the bar, every planted defect beyond it
+goinfer-2b         rc=0     205s
+paths-30b          rc=0    1103s
+goinfer-30b        rc=0    2612s
+hf-30b             rc=0     348s
+grade              rc=0       6s
+30B: 200 positions over 8 prompts; HF mean top-1 probability 0.897; HF argmax equals the path token at 0.980
+  int8int8  agreement  98.00% [95.0, 100.0]   mean KL(HF||arm) 0.0113 [0.0066, 0.0190]   finite: True
+  int4      agreement  92.50% [87.9, 97.1]   mean KL(HF||arm) 0.0691 [0.0338, 0.1353]   finite: True
+2B: 179 positions over 8 prompts; HF mean top-1 probability 0.888; HF argmax equals the path token at 0.933
+  int8int8  agreement  95.53% [91.9, 98.8]   mean KL(HF||arm) 0.0187 [0.0083, 0.0268]   finite: True
+  int4      agreement  90.50% [86.6, 95.8]   mean KL(HF||arm) 0.1699 [0.1035, 0.2185]   finite: True
+
+int8int8 : 30B agreement minus 2B's = +2.47 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+int4     : 30B agreement minus 2B's = +2.00 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+
+G-S10q-c: PASS (both arms)

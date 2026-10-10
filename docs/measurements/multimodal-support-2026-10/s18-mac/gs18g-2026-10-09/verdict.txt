@@ -1,0 +1,5 @@
+glm_ocr/table.png: first difference at generated token 3: f16 ' a', int8 ' quarterly'; f16's top-3 ' a' 0.830, ' quarterly' 0.170, ' data' 0.000: NOT a near-tie
+gemma3_preprocess_image.png: first difference at generated token 10: f16 ' bright', int8 ' green'; f16's top-3 ' bright' 0.495, ' green' 0.324, ' light' 0.159: near-tie
+qwen25vl_preprocess_image.png: first difference at generated token 9: f16 ',', int8 ' and'; f16's top-3 ',' 0.486, ' and' 0.337, '/' 0.145: near-tie
+glm_ocr/formula.png: first difference at generated token 12: f16 ' distribution', int8 ' ('; f16's top-3 ' distribution' 0.747, ' (' 0.236, ' probability' 0.015: NOT a near-tie
+G-S18g: FAIL

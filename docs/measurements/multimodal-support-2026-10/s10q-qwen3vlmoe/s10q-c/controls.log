@@ -1,0 +1,28 @@
+[ERROR] `loss` is part of Qwen3VLMoeCausalLMOutputWithPast.__init__'s signature, but not documented. Make sure to add it to the docstring of the function in /home/francis/.venv-vl/lib64/python3.14/site-packages/transformers/models/qwen3_vl_moe/modeling_qwen3_vl_moe.py.
+[ERROR] `logits` is part of Qwen3VLMoeCausalLMOutputWithPast.__init__'s signature, but not documented. Make sure to add it to the docstring of the function in /home/francis/.venv-vl/lib64/python3.14/site-packages/transformers/models/qwen3_vl_moe/modeling_qwen3_vl_moe.py.
+Loading weights:   0%|          | 0/110 [00:00<?, ?it/s]Loading weights: 100%|██████████| 110/110 [00:00<00:00, 10869.14it/s]
+[q3vlmoe      3s] tower and embeddings: 2 sequences
+[q3vlmoe      3s] layer 1/4 (index 0): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 2/4 (index 1): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 3/4 (index 2): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 4/4 (index 3): load 0.0s, 2 sequences 0.0s
+[controls] stream (control 1)           relative max|diff| 1.950e-07  (within 0.0001)
+[q3vlmoe      3s] tower and embeddings: 2 sequences
+[q3vlmoe      3s] layer 1/4 (index 0): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 2/4 (index 1): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 3/4 (index 2): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 4/4 (index 3): load 0.0s, 2 sequences 0.0s
+[controls] nodeepstack                  relative max|diff| 5.515e-01  (beyond 0.0001)
+[q3vlmoe      3s] tower and embeddings: 2 sequences
+[q3vlmoe      3s] layer 1/4 (index 1): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 2/4 (index 0): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 3/4 (index 2): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 4/4 (index 3): load 0.0s, 2 sequences 0.0s
+[controls] swap                         relative max|diff| 7.995e-01  (beyond 0.0001)
+[q3vlmoe      3s] tower and embeddings: 2 sequences
+[q3vlmoe      3s] layer 1/4 (index 0): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 2/4 (index 1): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 3/4 (index 2): load 0.0s, 2 sequences 0.0s
+[q3vlmoe      3s] layer 4/4 (index 3): load 0.0s, 2 sequences 0.0s
+[controls] norenorm                     relative max|diff| 2.224e-01  (beyond 0.0001)
+[controls] PASS: control 1 within the bar, every planted defect beyond it
