@@ -53,13 +53,14 @@ const (
 
 // Decoder is a loaded Whisper decoder. It is immutable after Load; a State carries one request's caches.
 type Decoder struct {
-	Cfg    Config
-	embed  []float32 // [vocab][D]; the head is its transpose
-	pos    []float32 // [MaxTarget][D]
-	layers []layer
-	lnW    []float32
-	lnB    []float32
-	defect int
+	Cfg      Config
+	embed    []float32 // [vocab][D]; the head is its transpose
+	pos      []float32 // [MaxTarget][D]
+	layers   []layer
+	lnW      []float32
+	lnB      []float32
+	defect   int
+	tsDefect int // a planted timestamp or long-form defect (timestamps_test.go)
 }
 
 // Load reads the decoder from a Whisper checkpoint directory: config.json and the tensors under "model.decoder." (or "decoder.", or none) of model.safetensors or a shard index.

@@ -23,8 +23,9 @@ func TestGenerate_rules(t *testing.T) {
 	if !slices.Equal(base.Prompt, []int{3, 150, 153, 7}) || base.Language != "<|en|>" {
 		t.Fatalf("prompt %v, language %s", base.Prompt, base.Language)
 	}
-	if len(base.Prompt)+len(base.IDs) > g.MaxLength {
-		t.Fatalf("%d tokens past max_length %d", len(base.Prompt)+len(base.IDs), g.MaxLength)
+	// max_length is raised by the prompt's length (at most max_target_positions/2 - 1 of it) and never past max_target_positions: 24 + 4 here
+	if cap := d.maxLength(g, len(base.Prompt)); cap != 28 || len(base.Prompt)+len(base.IDs) > cap {
+		t.Fatalf("%d tokens past max_length %d (want 28)", len(base.Prompt)+len(base.IDs), cap)
 	}
 	// suppress_tokens: a token the model wrote is never written once suppressed, at any position
 	g2 := tinyGen()
@@ -75,7 +76,10 @@ func TestGenerate_rules(t *testing.T) {
 	g5 := tinyGen()
 	g5.MaxLength = 6
 	res5, err := d.Generate(enc, g5, "en", "transcribe")
-	if err != nil || len(res5.IDs) > 2 {
-		t.Errorf("max_length 6: %d generated ids (err %v)", len(res5.IDs), err)
+	if err != nil || len(res5.IDs) > 6 || len(res5.IDs) < 6 && !res5.Stopped {
+		t.Errorf("max_length 6 (raised to 10 by the 4-token prompt): %d generated ids, stopped %v (err %v)", len(res5.IDs), res5.Stopped, err)
+	}
+	if d.maxLength(GenConfig{MaxLength: 60}, 4) != 64 || d.maxLength(GenConfig{}, 4) != 64 {
+		t.Errorf("max_length is never past max_target_positions (64): got %d and %d", d.maxLength(GenConfig{MaxLength: 60}, 4), d.maxLength(GenConfig{}, 4))
 	}
 }
