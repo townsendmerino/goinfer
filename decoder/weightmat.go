@@ -173,8 +173,8 @@ func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func
 	}
 }
 
-// streamQuantizedRepackable is streamQuantized's twin for the GGUF streaming path, shared by streamQuantizedEmbed and
-// streamQuantizedBatchedProj; the policy and each caller's safety argument are on quantizeEmbedWM,
+// streamQuantizedRepackable is streamQuantized's twin for the GGUF streaming path, behind streamQuantizedBatchedProj (the
+// logit tables have a row-parallel form of their own, streamQuantizedEmbed); the policy and each caller's safety argument are on quantizeEmbedWM,
 // quantizeBatchedProjWM and repackedOnlyOrCanonical. The row-quantize loop is the same whatever the final layout; the
 // twin differs only in the last step for quantInt4, where the repack decision goes through repackedOnlyOrCanonical
 // (row4-only, or canonical optionally row4-skipped) instead of streamQuantized's fixed canonical plus row4.
@@ -200,12 +200,123 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, sk
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4), nil
 }
 
-// streamQuantizedEmbed is streamQuantizedRepackable for Embed/LMHead (the safety argument is quantizeEmbedWM's). skipRow4
-// is false for every load that will decode: Embed/LMHead are read via .Row() on the host on every backend, so the
+// rowReader fills dst with row r of a table.
+type rowReader func(r int, dst []float32) error
+
+// streamEmbedParallelMinElems is the table size, in elements, from which a logit table's rows are quantized on several
+// goroutines; a smaller one is not worth the fan-out.
+const streamEmbedParallelMinElems = 1 << 22
+
+// streamEmbedWorkersForTest, when positive, is the number of row ranges forRowRanges uses, whatever the table's size.
+var streamEmbedWorkersForTest int
+
+// forRowRanges runs do over [0, rows) split into contiguous ranges, one goroutine per range, each with a reader of its own
+// from newReader, so a reader may keep state. Every range but the last is a multiple of align rows long (a reader that
+// caches blocks of align rows then never shares a block with another range). do must write only its own rows. The first
+// range's error wins, so a failure reads the same however the ranges were scheduled.
+func forRowRanges(rows, cols, align int, newReader func() rowReader, do func(lo, hi int, read rowReader) error) error {
+	workers := 1
+	if rows*cols >= streamEmbedParallelMinElems {
+		workers = runtime.GOMAXPROCS(0)
+	}
+	if streamEmbedWorkersForTest > 0 {
+		workers = streamEmbedWorkersForTest
+	}
+	align = max(align, 1)
+	per := (rows + workers - 1) / max(workers, 1)
+	per = (per + align - 1) / align * align
+	if workers <= 1 || per >= rows {
+		return do(0, rows, newReader())
+	}
+	errs := make([]error, (rows+per-1)/per)
+	var wg sync.WaitGroup
+	for i := range errs {
+		lo := i * per
+		wg.Go(func() { errs[i] = do(lo, min(lo+per, rows), newReader()) })
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// streamQuantizedEmbed builds Embed/LMHead (and Gemma 4's per-layer token table) a row at a time, as
+// streamQuantizedRepackable does and with the same per-row primitives, on several goroutines over contiguous row ranges
+// (forRowRanges): these are single tensors that run before any layer, so nothing else is in flight. Each row is
+// quantized on its own, so the result is the sequential one bit for bit. The safety argument for the repacked-only
+// layout is quantizeEmbedWM's.
+//
+// newReader makes a row reader, once per range; align is the reader's block size in rows, or 1 for one that keeps no
+// state.
+//
+// skipRow4 is false for every load that will decode: Embed/LMHead are read via .Row() on the host on every backend, so the
 // row4-skip trade (a slower CPU fallback for less resident memory) is not this class's call, and quantizeEmbedWM makes
 // the same choice. Only a build for a sink passes true (!repackForDecode(sink)): nothing reads the table there.
-func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-	return streamQuantizedRepackable(rows, cols, mode, needCanonical, skipRow4, rowInto)
+func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, align int, newReader func() rowReader) (linalg.WeightMat, error) {
+	if mode == quantQ4K {
+		mode = quantInt8I8 // a logit table has no raw Q4_K form here, as in streamQuantizedRow4
+	}
+	if mode == quantInt4 && fakeQuantScheme != "" {
+		return streamQuantized(rows, cols, mode, newReader())
+	}
+	switch mode {
+	case quantInt8, quantInt8I8:
+		q8 := make([]int8, rows*cols)
+		scales := make([]float32, rows)
+		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
+			scratch := make([]float32, cols)
+			for r := lo; r < hi; r++ {
+				if err := read(r, scratch); err != nil {
+					return err
+				}
+				scales[r] = linalg.QuantizeRowInt8(scratch, q8[r*cols:(r+1)*cols])
+			}
+			return nil
+		})
+		if err != nil {
+			return linalg.WeightMat{}, err
+		}
+		return linalg.WrapInt8(q8, scales, rows, cols, mode == quantInt8I8), nil
+	case quantInt4:
+		const group = int4GroupSize
+		nGroups := (cols + group - 1) / group
+		bpr := (cols + 1) / 2
+		q4 := make([]byte, rows*bpr)
+		q4s := make([]uint16, rows*nGroups)
+		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
+			scratch := make([]float32, cols)
+			rowScales := make([]float32, nGroups)
+			for r := lo; r < hi; r++ {
+				if err := read(r, scratch); err != nil {
+					return err
+				}
+				linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
+				linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
+			}
+			return nil
+		})
+		if err != nil {
+			return linalg.WeightMat{}, err
+		}
+		return repackedOnlyOrCanonical(linalg.WrapInt4F16(q4, q4s, rows, cols, group), needCanonical, skipRow4), nil
+	default: // quantNone: keep the full f32
+		f32 := make([]float32, rows*cols)
+		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
+			for r := lo; r < hi; r++ {
+				if err := read(r, f32[r*cols:(r+1)*cols]); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return linalg.WeightMat{}, err
+		}
+		return linalg.WrapF32(f32, rows, cols), nil
+	}
 }
 
 // streamQuantizedBatchedProj is streamQuantizedRepackable for attention Q/K/V and MLP gate/up; the batch-path safety

@@ -1592,9 +1592,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		return streamQuantizedEmbed(out, in, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), func(r int, dst []float32) error {
-			return into(r*in, dst)
-		})
+		// into reads the mapping and writes dst alone, so every row range shares it.
+		read := func(r int, dst []float32) error { return into(r*in, dst) }
+		return streamQuantizedEmbed(out, in, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), 1, func() rowReader { return read })
 	}
 	// vec loads a 1-D tensor (norm or bias).
 	vec := func(name string, n int) ([]float32, error) {

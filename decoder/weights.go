@@ -572,20 +572,22 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 		return linalg.WeightMat{}, fmt.Errorf("decoder: %q shape %v, want [%d %d]", name, t.Shape, rows, cols)
 	}
 	// Read in blocks of rows: one bf16->f32 conversion per block instead of per row (a 262k-row table is 262k calls
-	// otherwise). A block of the widest table here is about 10 MB.
+	// otherwise). A block of the widest table here is about 10 MB, and each row range holds one (its reader's own).
 	const block = 1024
-	var buf []float32
-	base := -1
-	return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), func(r int, dst []float32) error {
-		if base < 0 || r >= base+block {
-			base = r - r%block
-			var rerr error
-			if buf, rerr = t.SubF32(base*cols, min(block, rows-base)*cols); rerr != nil {
-				return rerr
+	return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), block, func() rowReader {
+		var buf []float32
+		base := -1
+		return func(r int, dst []float32) error {
+			if base < 0 || r < base || r >= base+block {
+				base = r - r%block
+				var rerr error
+				if buf, rerr = t.SubF32(base*cols, min(block, rows-base)*cols); rerr != nil {
+					return rerr
+				}
 			}
+			copy(dst, buf[(r-base)*cols:(r-base+1)*cols])
+			return nil
 		}
-		copy(dst, buf[(r-base)*cols:(r-base+1)*cols])
-		return nil
 	})
 }
 
@@ -1208,11 +1210,12 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			if len(t.Shape) != 2 || t.Shape[0] != pleVocab || t.Shape[1] != pleTotal {
 				return nil, fmt.Errorf("gemma4: %q shape %v, want [%d %d]", name, t.Shape, pleVocab, pleTotal)
 			}
-			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), func(r int, dst []float32) error {
+			readPLE := func(r int, dst []float32) error { // keeps no state: every row range shares it
 				row, rerr := t.SubF32(r*pleTotal, pleTotal)
 				copy(dst, row)
 				return rerr
-			}); err != nil {
+			}
+			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), 1, func() rowReader { return readPLE }); err != nil {
 				return nil, err
 			}
 			if w.PerLayerModelProj, err = loadProj(mp("model.per_layer_model_projection.weight"), pleTotal, hd, false); err != nil {
