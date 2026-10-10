@@ -42,7 +42,7 @@ func metadataPrefixLen(raw []byte) (int, error) {
 		c.str()            // name
 		nd := int(c.u32()) // n_dims
 		// Break on c.err so a hostile n_dims (e.g. 0xFFFFFFFF ≈ 4.29e9) doesn't spin billions of
-		// no-op reads past the exhausted buffer (N-17); a real tensor has 1–4 dims.
+		// no-op reads past the exhausted buffer; a real tensor has 1–4 dims.
 		for j := 0; j < nd && c.err == nil; j++ {
 			c.u64() // dim
 		}
@@ -114,7 +114,7 @@ var ggufScalarSize = map[uint32]int{0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7:
 
 // maxGGUFArrayDepth bounds skipValue's recursion. Real GGUF arrays never nest (the element
 // type is a scalar or string), so a small cap turns a hostile nested-array header into a typed
-// error instead of ~5.6M levels of stack growth against a 64 MiB prefix (N-18).
+// error instead of millions of levels of stack growth against a 64 MiB prefix.
 const maxGGUFArrayDepth = 64
 
 func (c *ggufCur) skipValue(vtype uint32) { c.skipValueDepth(vtype, 0) }

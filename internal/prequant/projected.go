@@ -8,10 +8,9 @@ import (
 )
 
 // projectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
-// GGUF's tensor shapes (a header read — no weights are paged in). The pre-transcode disk check used
-// the SOURCE's size as its proxy, on the argument that a sidecar is never bigger than an f32 source;
-// but the sources are already quantized, and real int4 sidecars measured 1.02–1.16× their q4_k_m
-// source, int8int8 about 1.6× — so the check passed and the transcode could still run out of disk.
+// GGUF's tensor shapes (a header read: no weights are paged in). The source's own size is not a
+// usable proxy: the sources are already quantized, so a sidecar can be larger than its source and a
+// check on the source's size could pass while the transcode still ran out of disk.
 //
 // Pricing, per element, the payload plus its scales, rounded up:
 //   - matrices at the quant: int4 0.5 B + an f32 scale per group of 32 (per row, rounded up);
@@ -77,7 +76,7 @@ func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
 	return int64(total * 1.03), true
 }
 
-// projectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory (S18): the sizes of its .safetensors
+// projectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory: the sizes of its .safetensors
 // files, scaled from a 16-bit source to the quant's bytes per element with its group scales (int4 0.5 + 4/32, int8 1 +
 // 4/32, f32 4), plus the same 3% margin. A bundled vision tower is in the files and not in the sidecar, and an f32 source
 // is twice the elements' bytes, so both over-count, which is the safe direction for a disk check. ok is false when the
