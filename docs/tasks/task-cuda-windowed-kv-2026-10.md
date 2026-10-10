@@ -148,3 +148,16 @@ C', and its note that the lever is "untested" at 16384 is now answered: windowed
 
 Exploratory smoke timings (single session, 2 short + 1 long request per arm, NOT a result): full KV 91.1 / 90.8 / 87.6 tok/s, windowed 87.3 / 88.2 / 84.9 tok/s (about
 -3%). G-W3's bar (0.98-1.02, FAIL below 0.97) will say whether that is session drift or the view's cost.
+
+## 10. The A/A for the default path, pre-registered 2026-10-10 before it ran
+
+**The gap.** G-W2 and G-W3 compare the option on against off in one branch build. They do not say whether the branch's DEFAULT path (option off) differs from the code it branched from, and the branch does touch it: `kvEnsure` runs at the top
+of every `launchToken` and every `prefillCore`, and every attention launch now takes its K and V through `kvK(l)` / `kvV(l)`, which return the buffer unchanged when no layer is windowed. Each should cost nothing next to a token, but it is
+unmeasured, and the branch edits `decoder/` (pricing, the reuse floor) as well.
+
+**Instrument.** `docs/measurements/cuda-windowed-kv-2026-10/aa_default_path.py` (via `run-windowed-kv-aa.sh`): Mellum2.1 at ctx 2048, neither arm passing `--windowed-kv`: M, `serve-cuda-main`, built at the branch's merge base with main
+(`bdde4175`); B, `serve-cuda`, built at the branch tip. Sessions M B B M, the workloads of G-W3 (3 short prompts x 3 reps of 128 tokens; one prompt of 1,500+ tokens x 3 reps of 384, decode past the window).
+**Bars (the ones G-W3 uses, written now).** Texts of one prompt identical across both arms and all four sessions: a difference FAILS (the default path's output changed). Per class the ratio B/M of the medians in [0.98, 1.02] PASS,
+below 0.97 FAIL, 0.97 to 0.98 ambiguous and parked; the verdict is the worse class. **Void:** a server not cuda-resident, or windowed KV engaged in either arm. **Cost:** about 10 minutes (queue est 20). **Prediction:** PASS at 0.8: the added work
+is a handful of integer comparisons per token against a 11 ms token; the 0.2 is the box's own session drift (about 0.8 percent on this card in follow-up C) and the first-vs-second-session ordering effect the smoke showed (0.968 against 1.065 at n=2).
+**Ship rule, amended:** the merge of this branch into main waits for G-W2, G-W3 AND this A/A, all read.
