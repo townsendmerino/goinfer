@@ -9,6 +9,8 @@ import (
 // The real data holds: every row transcribes the snapshot, every derived status equals the snapshot's, the shares
 // recompute to its Result table, and the headline is a cited Fact. The three vision families the rule depends on come
 // out supported, which is why the rule reads modality and not only tasks (gemma3's tasks do not say vision).
+// No real row is T since the 2026-10-09 snapshot (mistral-small3.2 gained its images); the T derivation is pinned by
+// TestCheckOllama_refuses' "the matrix moved (qwen3_5 loses its images)" case.
 func TestCheckOllama_theRealDataHolds(t *testing.T) {
 	in := realInputs(t)
 	if err := CheckOllama(repoRoot, in); err != nil {
@@ -23,7 +25,7 @@ func TestCheckOllama_theRealDataHolds(t *testing.T) {
 		status[e.Tag] = e.Status
 	}
 	for tag, want := range map[string]string{"gemma3": "S", "gemma4": "S", "qwen2.5vl": "S", "qwen3-vl": "S",
-		"mistral-small3.2": "T", "nemotron-3-super": "U", "gemma2": "S", "codegemma": "S", "llava": "N", "nomic-embed-text": "S"} {
+		"mistral-small3.2": "S", "nemotron-3-super": "U", "gemma2": "S", "codegemma": "S", "llava": "N", "nomic-embed-text": "S"} {
 		if status[tag] != want {
 			t.Errorf("%s: derived %q, want %q", tag, status[tag], want)
 		}
