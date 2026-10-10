@@ -12006,3 +12006,7328 @@ swap from something else unrelated has a baseline that includes it — this meas
 what grows AFTER the watch starts, i.e. what the watched process itself adds, not the
 machine's pre-existing state.
 ```
+
+# Test files
+
+Moved from the comments of the package's `_test.go` files (CC5); same conventions as above.
+
+## TestA3FastAttentionDivergence
+
+Moved from `decoder/a3_divergence_test.go` (the comment above `TestA3FastAttentionDivergence`) on 2026-10-09.
+
+```text
+A3 (G24) ships a DOCUMENTED DIVERGENCE, so the divergence must be a measured
+number, not an adjective. This reports what a user gives up by enabling
+GOINFER_CPU_FAST_ATTENTION, at the prompt depths the flag is for.
+
+WHAT THIS FILE ACTUALLY ASSERTS, stated to match the body rather than to flatter it.
+It loads the DENSE bench checkpoint, so every assertion below is about dense:
+  - default OFF: with the env unset, output is bit-identical to acc64;
+  - explicit "0" is identical to unset;
+  - the divergence clears the kernel comment's own >= 0.99 bar.
+
+It used to claim, here, that it also pinned "MoE excluded: the flag cannot turn f32
+attention on for a MoE arch at all". It never did — `MoE` appeared exactly once in
+this file, in that sentence, and `arch.MoE` zero times. The exclusion it advertised
+as pinned had never been measured on a MoE at all, and an auditor reading the promise
+and matching it to a test name would have stopped there. That is the failure recorded
+as its own rule in CLAUDE.md; this comment is the correction.
+
+The exclusion itself was dropped on 2026-08-29 after it WAS measured: the mechanism is
+real (14.5% of moeMLP calls flip their top-k at 28 layers, 70.1% of the divergence) but
+the magnitude does not support a categorical refusal — 1-cosine 2.126e-3 for MoE against
+2.400e-3 for the dense case this flag already ships, depth-matched, with a 48/48
+IDENTICAL greedy continuation. Those assertions live where the models are:
+a3_moe_exclusion_test.go, a3_moe_routeflip_test.go, a3_moe_tokenlevel_test.go.
+```
+
+## TestA3FastAttentionDivergence.compare
+
+Moved from `decoder/a3_divergence_test.go` (the comment above `TestA3FastAttentionDivergence.compare`) on 2026-10-09.
+
+```text
+COMPARE off VS fast, not base vs fast. Until 2026-08-31 `base` (unset) WAS the acc64
+path, so base-vs-fast measured the trade; with the default flipped, unset IS fast and
+that pair is now fast-vs-fast — it reported cosine 1.000000000 and tripped this test's
+own "flag had no effect" guard, which was right to fire and pointing at the test.
+```
+
+## TestA3FastAttentionDivergence.identity
+
+Moved from `decoder/a3_divergence_test.go` (the comment above `TestA3FastAttentionDivergence.identity`) on 2026-10-09.
+
+```text
+BIT-IDENTITY IS maxAbs == 0, not `cos == 1.0 && maxAbs == 0`. cos is a float64 quotient
+of sums; for two bit-identical vectors it lands NEAR 1.0 and need not equal it, so the
+old conjunction could read "not identical" for vectors that were. It never fired before
+2026-08-31 because the two arms always differed, so the weaker half was never load-
+bearing — until the floor made them agree below 512 and the inverse assertion ran.
+```
+
+## TestA3FanoutEndToEnd
+
+Moved from `decoder/a3_fanout_e2e_test.go` (the comment above `TestA3FanoutEndToEnd`) on 2026-10-09.
+
+```text
+A3 fan-out, END TO END on a real checkpoint.
+
+The kernel measurement (TestA3FanoutUtilization) says head-level fan-out is
+3.3x on attention alone. That is a KERNEL ratio, and this repo has already
+paid once for projecting one of those to a whole model: the 3.11x four-layer
+slice that became 1.52x at full depth, and the ~13% this very item was costed
+at by feeding a serial-vs-serial kernel ratio into an Amdahl model built on a
+parallel-path profile share. So the shipping claim comes from here, not from
+there.
+
+Method: paired and interleaved (CLAUDE.md measurement discipline, rule 7 —
+difference matched observations, never pool them). Each pair runs the SAME
+prompt through the SAME model twice, once with the fan-out and once with
+GOINFER_PREFILL_ATTN_WORKERS=1, which forces prefillAttnWorkers to 1 slot and
+so takes the serial head loop — exactly the pre-A3 shape, with MatmulBT still
+column-parallel inside it. That env var already existed as an A/B handle; no
+measurement-only knob was added to the production path for this.
+
+It also asserts the two arms' logits are BIT-IDENTICAL at every depth. That
+is not decoration: it is what makes the timing a like-for-like comparison
+rather than a race between two different computations, and it exercises the
+fan-out through its real caller (forwardLayersN) rather than through a
+hand-supplied calling convention.
+```
+
+## TestA3FanoutEndToEnd.depths
+
+Moved from `decoder/a3_fanout_e2e_test.go` (the comment above `TestA3FanoutEndToEnd.depths`) on 2026-10-09.
+
+```text
+8192 added 2026-09-23 (P23, docs/queue-performance.md): the doc's own text says
+"K=8192 is NOT measured here and is deliberately not extrapolated to" — the trend across
+1024/2048/4096 is monotone but a fourth point is what actually answers whether it holds,
+keeps climbing, or plateaus/reverses at the depth the f32 flag's own headline uses.
+```
+
+## TestA3FanoutUtilization
+
+Moved from `decoder/a3_fanout_test.go` (the comment above `TestA3FanoutUtilization`) on 2026-10-09.
+
+```text
+A3 fan-out — is the f32 prefill attention path actually single-threaded?
+
+The premise this test exists to check, quoted from G24's own harness
+(g24_attnkernel_test.go) and carried into the queue and the Atlas as a
+costed next move:
+
+	"the f32 branch in attendBatchedHeads is single-threaded by construction
+	 (its per-kv-group gather is shared mutable state)"
+
+That sentence is true about the HEAD LOOP and was then read as if it were
+true about the WORK. It is not. The f32 arm's two matmuls are
+linalg.MatmulBT, which fans out internally over its N output columns
+(parallelCols) above parThreshold = 1<<24 MACs. At the K=8192 tile shape
+each call is ~268M MACs — 16x over that line — so the f32 path is already
+using every core, just at the COLUMN level instead of the HEAD level.
+
+G24 measured its two arms with MatmulBT forced serial, deliberately and
+correctly, to get an arithmetic-plus-gather ratio. The error was downstream
+of it: that serial-vs-serial ratio (8.37x) was fed into an Amdahl estimate
+against a profile share measured on the PARALLEL production path, and the
+gap between them was booked as recoverable headroom worth ~13%. Two
+different parallelism states either side of one division sign.
+
+So this measures the real attendBatchedHeads, at real Mellum2 geometry, and
+reports UTILIZATION (CPU time / wall time) alongside wall time. Utilization
+is the discriminator: a genuinely single-threaded path cannot exceed ~1.0x
+no matter what its wall clock says, and no amount of Amdahl arithmetic can
+argue it up.
+
+Arms, all on identical inputs:
+
+	acc64            production default before 2026-08-31 (head-parallel)
+	f32              production default now (column-parallel inside MatmulBT)
+	f32-serial       f32 with linalg forced serial — the do-nothing arm, and
+	                 the ONLY arm the "single-threaded by construction" claim
+	                 actually describes
+
+Pre-registered reading (written before the first run):
+
+	If f32 utilization is ~1x, the premise holds and head fan-out is worth
+	building. If it is >2x, the premise is false, the ~13% is not there to
+	recover, and the queue item closes as already-parallel. The band between
+	1x and 2x is ambiguous and parks pending a profile.
+```
+
+## TestA3MoEExclusionIsMeasured
+
+Moved from `decoder/a3_moe_exclusion_test.go` (the comment above `TestA3MoEExclusionIsMeasured`) on 2026-10-09.
+
+```text
+What is the MoE exclusion in A3/G24 actually worth?
+
+forwardn.go excludes MoE from --cpu-fast-attention unconditionally, on a stated
+mechanism: "an f32 QK reassociation flips a top-k expert at a near-tie and
+cascades ... so MoE is excluded here rather than trusted to the operator." The
+mechanism is real in kind — routing is discontinuous where a dense MLP is not.
+But it was never MEASURED on a MoE: no MoE appears in the A3 kernel-ratio
+record, and both tests in a3_divergence_test.go load the DENSE bench model,
+including TestA3FastAttentionDivergence, whose doc comment claims it pins "MoE
+excluded" while asserting nothing about MoE at all.
+
+That matters now because the term the exclusion protects is the one that
+dominates. On a Mellum2 slice, attention is 83.2% of prefill work at K=1024 and
+97.1% at K=8192 (ON A 4-LAYER SLICE — the full model is lower, and the measured
+full-model win is 1.52x/1.59x, not the slice's 3.11x) — so the excluded lever is
+aimed at most of the cost while
+expert-major batching competes for what is left.
+
+This measures BOTH halves of the trade at once:
+
+	COST — output cosine and max abs delta, acc64 vs f32, the same statistic
+	       a3_divergence_test.go reports for dense (which ships at 0.9976).
+	GAIN — wall-clock speedup of the same prefill.
+
+It deliberately does NOT decide anything. A cosine is not a routing-flip count,
+and a flip that changes generated TOKENS is the thing that would justify the
+guard; this bounds the perturbation, and says so.
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_MELLUM_CKPT=... GOINFER_MELLUM_K=2048 \
+	go test -tags goinfer_testhooks ./decoder/ -run TestA3MoEExclusionIsMeasured -v
+```
+
+## TestA3MoEExclusionIsMeasured.quant
+
+Moved from `decoder/a3_moe_exclusion_test.go` (the comment above `TestA3MoEExclusionIsMeasured.quant`) on 2026-10-09.
+
+```text
+Quant is an axis here, not a detail. The full 28-layer Mellum2 is ~12 GB at
+int8int8 and does not fit the 16 GB Mac at all, but ~6 GB at int4 does — and
+int4 is what docs/completed/mellum2-resident.md actually runs. The attention swap under test
+is quant-INDEPENDENT (acc64 vs f32 accumulation), but its SHARE is not: int4's
+faster weight matmul raises attention's fraction of prefill and so raises the
+speedup. So an int4 number is the operator-facing one and an int8int8 number is
+the one comparable to this file's earlier runs; label which you quote.
+```
+
+## TestA3MoERouteFlips
+
+Moved from `decoder/a3_moe_routeflip_test.go` (the comment above `TestA3MoERouteFlips`) on 2026-10-09.
+
+```text
+DOES A ROUTER FLIP EXPLAIN THE A3 MoE DIVERGENCE? — the mechanism experiment for the
+--cpu-fast-attention MoE exclusion.
+
+The state of the argument before this test. forwardn.go excludes MoE from A3/G24
+unconditionally, on a stated mechanism: "an f32 QK reassociation flips a top-k expert at a
+near-tie and cascades". TestA3MoEExclusionIsMeasured now puts the SYMPTOM at cosine
+0.999787-0.999788 — an order of magnitude tighter than the 0.9976 dense already ships behind
+the same flag. But a cosine cannot tell a routing flip from ordinary numeric drift, and the
+guard is a claim about routing specifically. This measures the mechanism.
+
+THE DECOMPOSITION, which is what makes it decisive. Three arms on one prompt:
+
+	A  acc64 attention, natural routing          — the baseline; its routing is recorded
+	B  f32 attention, natural routing            — total divergence (what the flag would ship)
+	C  f32 attention, A's routing REPLAYED       — divergence with the routing term REMOVED
+
+Arm C uses the existing moeSelOverride seam (built for E2's higher-precision replay). So:
+
+	cos(A,C) ~= cos(A,B)  =>  routing flips contribute ~nothing; the divergence is ordinary
+	                          drift and the guard is aimed at something that is not happening.
+	cos(A,C) >>  cos(A,B)  =>  routing flips ARE the dominant term and the guard has its case.
+
+THE PREDICTION, stated before the run so it can fail: given a symptom this small, arm C should
+land close to arm B. If instead C is far cleaner than B, the exclusion is vindicated on its own
+mechanism and this test says so — which is a real finding, not a failed test.
+
+WHAT A FLIP COSTS is reported too, because "a flip happened" is not "a flip mattered".
+norm_topk_prob renormalizes over the kept k, so swapping the k-th expert perturbs the sum by at
+most its weight; the SMALLEST top-k weight therefore BOUNDS one flip's contribution. That is a
+bound, not a margin — the dropped expert's own score is not in the trace — and it is reported
+as one.
+
+DIAGNOSTIC, NOT A GATE. It asserts only what must hold under either story (the arms are
+comparable, the seams actually fired). The numbers are for a recorded decision.
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_DIAG=1 GOINFER_MELLUM_CKPT=... GOINFER_MELLUM_K=2048 \
+	go test -tags goinfer_testhooks ./decoder/ -run TestA3MoERouteFlips -v -timeout 60m
+```
+
+## TestA3MoETokenLevel
+
+Moved from `decoder/a3_moe_tokenlevel_test.go` (the comment above `TestA3MoETokenLevel`) on 2026-10-09.
+
+```text
+DOES THE A3 MoE DIVERGENCE CHANGE THE TOKENS A USER SEES?
+
+The last gap before extending --cpu-fast-attention to MoE. Everything measured so far is a
+COSINE on hidden states: 0.997874 at full depth, against 0.9976 for the dense case the flag
+already ships. That comparison is depth-matched (both models are 28 layers) and it says the
+categorical refusal is unsupported. What it does NOT say is what a user experiences.
+
+The two errors differ IN KIND, which is why the cosine alone is not enough. Dense's divergence
+is smooth numeric drift — every logit nudged slightly. MoE's is 70% ROUTING FLIPS, which are
+discontinuous: 14.5% of moeMLP calls select a different expert set. Two perturbations with the
+same cosine can behave differently in generated text, and generated text is the product.
+
+WHAT IS COMPARED. The flag perturbs PREFILL only (forwardLayersN); decode is the same code on
+both sides. So the arms share everything except the KV cache and first logits the prompt
+produced, and any divergence in the continuation is downstream of exactly the thing under test.
+
+WHAT IS REPORTED, and why a bare token-mismatch count would mislead: greedy decode is a
+sequence of argmaxes, so ONE flip at a near-tie makes every later token "differ" without any
+quality claim being warranted. So this reports the FIRST divergence and the baseline's
+top1-vs-top2 margin there, normalized by the logit range — the repo's existing 3%-of-range
+near-tie rule (gpu/kv_f16_test.go, gpu/kv_i8_parity_test.go). A first divergence at a near-tie
+is the benign class those tests already accept; one at a real margin is not.
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_DIAG=1 GOINFER_MELLUM_CKPT=~/models/mellum2-unq \
+	GOINFER_MELLUM_K=2048 GOINFER_MELLUM_N=48 \
+	go test -count=1 -tags goinfer_testhooks ./decoder/ -run TestA3MoETokenLevel -v -timeout 120m
+```
+
+## TestAikitPinsAgree
+
+Moved from `decoder/aikit_pin_test.go` (the comment above `TestAikitPinsAgree`) on 2026-10-09.
+
+```text
+TestAikitPinsAgree pins every module's aikit require to the ROOT's.
+
+WHY. goinfer is five Go modules, each with its own go.mod, and each pinning
+github.com/townsendmerino/aikit independently. Nothing checked that they agree. Measured
+2026-09-06: the root sat at v1.37.0 while cuda, gpu, metal and demo/agent were all still on
+v1.35.0 — a drift discovered only by reading four files by hand, prompted by a months-old git
+stash that had once tried to fix the same thing at v1.33.0.
+
+It matters more here than "tidiness" suggests, for two reasons:
+
+  - The RELEASE ASSETS ARE BUILT FROM THESE MODULES. The Mac and Linux `goinfer-serve` binaries
+    come from metal/cmd/serve and cuda/cmd/serve, so a submodule pinning an older aikit ships an
+    older aikit to users — the same failure shape as the release-asset finding recorded in
+    docs/tasks/task-first-hour.md, one dependency over.
+  - The parity manifest's aikit_version tracks the ROOT's pin only. A submodule on a different
+    aikit is numerics the staleness gate cannot see, which is exactly the hole that let
+    aikit_version sit at v1.19.0 for seventeen versions.
+
+aikit's own `gpupins` gate (`gpu backend version pins` in its CI, with `gpupins --fix`) checks both
+the root aikit pin and the aikit/gpu pin across aikit's eight gpu backends. This test covers the
+same two pins on the goinfer side, as two subtests: "aikit" and "aikit/gpu". (Until 2026-09-24 this comment claimed that parity while the test matched only
+`aikit v…` — the regex's space after "aikit" never matches `aikit/gpu v…` — so metal sat on
+gpu v0.33.1 while cuda was on v0.33.3, unseen.) Neither test can check that a pin is the LATEST
+tag — that needs the network — only that the modules agree. Mid-cycle drift is EXPECTED between
+releases — RELEASING.md's two-step tag bumps the submodules after the root tag — but expected is
+not the same as unchecked, and the two-step is precisely the ritual a person can forget.
+```
+
+## TestAikitPinsAgree.gpu
+
+Moved from `decoder/aikit_pin_test.go` (the comment above `TestAikitPinsAgree.gpu`) on 2026-10-09.
+
+```text
+testAikitGPUPinsAgree pins every module that requires github.com/townsendmerino/aikit/gpu to the SAME
+version. There is no root pin to compare against (the root and gpu/go.mod require only aikit), so the
+rule is agreement: today cuda and metal, which build the Linux and Mac `goinfer-serve` release
+binaries. A module on an older gpu ships older kernels to users, and the parity manifest tracks the
+ROOT's aikit_version only, so a gpu-only difference is numerics its staleness gate cannot see.
+RELEASING.md's B-07 states this rule; before this test nothing enforced it (metal sat on v0.33.1
+while cuda was on v0.33.3, found 2026-09-24).
+```
+
+## TestAPITiers_hardListMatchesDoc.substring
+
+Moved from `decoder/api_tiers_test.go` (the comment above `TestAPITiers_hardListMatchesDoc.substring`) on 2026-10-09.
+
+```text
+G-10: a BARE substring match cannot fail. "Load" is inside "LoadGGUFBytes", so
+deleting `decoder.Load` from the Hard section left this green — and the same held for
+Model, Session, Config, Segment, Template, Tool, Turn, Meta and Has, every one of them
+a substring of some longer name the document also lists. A check that cannot go red
+for the ten most fundamental entries is not gating the document.
+
+Match the name as the document actually writes it: inside backticks, optionally
+package-qualified, and terminated — so `decoder.Load` matches and LoadGGUFBytes does
+not lend it its letters.
+```
+
+## namedInDoc.scope
+
+Moved from `decoder/api_tiers_test.go` (the comment above `namedInDoc.scope`) on 2026-10-09.
+
+```text
+SCOPED TO THE PACKAGE'S OWN SUBSECTION. Searching the whole Hard section let
+`tokenizer.Load` satisfy an entry for `decoder.Load` — measured: with the doc's
+`decoder.Load` deleted, the check still passed on the tokenizer line. The document is
+organised as "### `<pkg>`" subsections, so that is the unit to search.
+
+Within a subsection the TRAILING boundary does the work: it separates `Load` from
+`LoadGGUFBytes`. The leading one only rejects a name buried inside a longer identifier
+(Reload), so it excludes word characters but NOT a dot — the document qualifies by
+whatever reads best, `decoder.Load` in one place and `Model.LoadSession` in another, and
+both are the name being named.
+```
+
+## namedInDoc.entries
+
+Moved from `decoder/api_tiers_test.go` (the comment above `namedInDoc.entries`) on 2026-10-09.
+
+```text
+WHOLE BACKTICKED ENTRIES, not a regex over prose. A word-boundary match still let a TYPE
+be satisfied by a METHOD that happens to be qualified by it — `Model.LoadSession` answered
+for `decoder.Model`, so deleting the type from the document changed nothing. Measured: of
+the ten names G-10 lists, a boundary match caught only Load.
+
+An entry names `ident` when some backticked span IS it (bare or package-qualified), or
+ends in "."+ident — which covers `Model.LoadSession` naming LoadSession and
+`Options.Quant` naming Quant, while `Model.LoadSession` does NOT name Model.
+```
+
+## AssetRegistry.gateside
+
+Moved from `decoder/asset_registry_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+THE GATE SIDE OF THE SHARED ASSET REGISTRY (testdata/assets.json).
+
+Every heavy gate used to resolve its own asset: read an env var, fall back to a path it spelled
+out itself, and decide presence with os.Stat. The sweep's preflight did the same thing again in
+bash with `[ -e ]`. Two implementations of "is this asset present", free to disagree, and they did:
+
+  * a DIRECTORY satisfies `-e`, so preflight reported .gguf assets RESOLVED while naming the
+    directory above them. Four gates were costed by that.
+  * GOINFER_QWEN35_GOLDEN's real requirement is a readable manifest.json INSIDE the directory,
+    which `-e` on the directory cannot express -- preflight said present, the gate skipped.
+  * GOINFER_PREQUANT_GGUF had three different fallbacks across four call sites and, at
+    loadInt4Model, none at all -- so one box ran different gates against different files.
+
+Now both sides read testdata/assets.json and apply the predicate it states. The two
+implementations (this file and scripts/asset_registry.py) are checked against each other by
+TestAssetRegistry_agreesWithPreflight rather than assumed to match.
+```
+
+## TestAttendBatchedHeads_ctxBitsUnchanged
+
+Moved from `decoder/attn_ctx_direct_test.go` (the comment above `ctxCase`) on 2026-10-09.
+
+```text
+Audit R-17 (the remainder): the AV kernels (MatmulAVAcc64 / MatmulAVAcc64Group) overwrite a contiguous destination, so attendBatchedHeads's K=1 paths write
+each head's context straight into ctx instead of into scratch and then copying it there (the per-head `ch`, the grouped `gCtx`, and Arm B's `fullCtx`).
+
+This pins every one of those paths to the ctx bits the code produced BEFORE that change: a hash of ctx per case, recorded from the unmodified code. The attention
+kernels accumulate in f64 and are bit-identical across architectures by design (the grouped NEON port and its Go fallback included), so one table serves every
+arch; if a case ever differs by architecture, the table must be keyed by GOARCH, not loosened.
+
+	GOINFER_CTX_RECORD=1 go test ./decoder/ -run TestAttendBatchedHeads_ctxBitsUnchanged -v   # prints the table: only from code whose ctx path is the reference
+```
+
+## BenchmarkAttnDistinctBytes
+
+Moved from `decoder/attn_distinct_bytes_bench_test.go` (the comment above `BenchmarkAttnDistinctBytes`) on 2026-10-09.
+
+```text
+BenchmarkAttnDistinctBytes is R13 (docs/tasks/red-october.md) step 0(iii): "the CPU's version of
+the Metal collapse probe and CUDA's ncu traffic ratio" — it asks whether the real GQA layout
+(nKV distinct KV heads, each read by nH/nKV query heads) is faster than an otherwise-identical
+MHA-EXPANDED layout (nH distinct KV heads, one per query head, same per-head QKᵀ/scores·V work)
+PURELY because of the byte-count difference, or whether the CPU's cache already dedups the
+group's repeated reads so the two run at the same speed. Neither arm computes anything
+meaningful (synthetic random data, no softmax, no correctness claim) — this is a memory-access-
+pattern probe, not a model or a golden.
+
+Reading the result: GQA MARKEDLY faster than expanded ⇒ the hardware is not deduping, every
+query head pays real DRAM/cache traffic for its group's reads, and an explicit K/V-staging
+kernel (reading each KV head's row once, sharing it across its group in registers/threadgroup
+memory) recovers real bandwidth, not just µops — "the top of the band is live" in the brief's own
+words. GQA and expanded running the SAME speed ⇒ the cache already dedups the repeated reads in
+hardware (they're hot from the immediately-prior query head's pass), and a grouped kernel's whole
+gain is the µop sharing R13's own Build section already banks on — no additional bandwidth win to
+expect.
+
+Real head shapes (NumHeads/NumKVHeads/HeadDim) come from loadBenchModel()'s own config so the
+group size G = NumHeads/NumKVHeads matches what the served kernels actually see; the K/V data
+itself is synthetic (rand, seeded) since only the ACCESS PATTERN is under test.
+```
+
+## withGroupedKernels
+
+Moved from `decoder/attn_grouped_test.go` (the comment above `withGroupedKernels`) on 2026-10-09.
+
+```text
+TestAttendGroupedHeads_matchesPerHead is R13 Gate (2) (bit-identical, no
+golden change — this compares directly rather than against a stored
+golden) and Gate (4) (the wiring proof: attnGroupedRuns must be nonzero
+with grouping on, at a shape that is actually eligible for it).
+withGroupedKernels forces the grouped path's platform gate on for one test: these tests exist
+to exercise and wire-prove the grouped path (Go fallback included), whatever this
+architecture's shipped default is (cpu_tuning_other.go turns it off on non-arm64 — R9's Linux
+attribution measured the fallback slower than per-head).
+```
+
+## TestAutoMetalPrecision_keepsTheLoadedPrecision
+
+Moved from `decoder/auto_backend_test.go` (the comment above `TestAutoMetalPrecision_keepsTheLoadedPrecision`) on 2026-10-09.
+
+```text
+TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/tasks/task-metal-int8-2026-10.md): when
+auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at the
+precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively, and is
+kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is dropped for
+the CPU. int4, and any model on a metal the user named, go resident as before. Without the guard, the model-included
+0.5B goinfer-chat (an int8int8 bundle) went resident on Metal at int4 and loaded in 1.7 s against 0.17 s on the CPU
+(exploratory runs, docs/measurements/r17-auto-backend-2026-10-01/).
+```
+
+## TestBackendReport_namesTheEffectiveBackend
+
+Moved from `decoder/backend_report_test.go` (the comment above `TestBackendReport_namesTheEffectiveBackend`) on 2026-10-09.
+
+```text
+R2 (docs/measurements/cold-user-2026-09-06.md, finding #3): on a Mac the runtime printed
+"decoder: metal backend not built in ... using cpu" and then, on the very next line,
+"loaded 28-layer model ... [backend=metal quant=int4]". The warning scrolls past; the status
+line is what gets pasted into an issue, and it named a backend that was not executing. The
+cost on that box was 37.9 vs 82.3 tok/s.
+
+These two tests are the gate. The first pins the semantics of the report; the second pins that
+every banner in the tree actually uses it, which is the half that would have gone red on
+v0.16.0 (all three banners formatted the REQUEST).
+```
+
+## BailingHybrid.header
+
+Moved from `decoder/bailing_hybrid_test.go` (the comment at the top of the const block) on 2026-10-09.
+
+```text
+G5 (docs/completed/task-families-2026-09.md, batch 2) Bailing Hybrid parity (inclusionAI, Ling 3.0,
+model_type "bailing_hybrid"): DeepSeek-style Multi-head Latent Attention alternating with Kimi
+Delta Attention (KDA) every layer_group_size-th layer being MLA, over a DeepSeekMoE FFN.
+
+MLA and the MoE router are pure composition of goinfer's existing deepseekArchitecture
+primitives (verified field-for-field against the real modeling_bailing_moe_v3.py, parameterized
+for two real naming departures — both mixers are self.attention not self.self_attn, and MLA's
+output projection is self.dense not o_proj — plus an optional Laguna-shaped sigmoid output
+gate). KDA is the one genuinely new primitive: a delta-rule recurrence structurally identical to
+Gated DeltaNet but with a PER-CHANNEL decay (batch 1 F4's rehearsal, decoder/kda_rehearsal.go,
+already proved this against fla-org/flash-linear-attention's actual reference,
+maxAbsDiff 2.98e-08).
+
+Regenerate (hand-assembled tiny checkpoint + golden, both reproducible — see
+scripts/pin_bailing_hybrid_tiny.py's own docstring for why the real BailingMoeV3ForCausalLM
+can't be instantiated on this Mac: its modeling file imports fla.ops.kda at module top level,
+which transitively imports Triton, unavailable on this platform):
+
+	~/.venv-nemotron3/bin/python scripts/pin_bailing_hybrid_tiny.py
+```
+
+## TestBlockSpecGenerate_commitsResIDsOnFullCompletion
+
+Moved from `decoder/blockspec_commit_test.go` (the comment above `TestBlockSpecGenerate_commitsResIDsOnFullCompletion`) on 2026-10-09.
+
+```text
+TestBlockSpecGenerate_commitsResIDsOnFullCompletion is P-05's blockspec.go half (audit-2026-09-10):
+BlockSpec.generate claimed resBusy and forgot resIDs (R-00) but never committed them back on a
+completed generation, so a --drafter turn always left the resident cache cold for whatever ran
+next (a plain Generate turn, or another BlockSpec turn). Uses a real loaded model (embedResident
+needs real weights) with a stubbed drafter host/trunk so the seed step runs for real and
+opt.MaxTokens == 1 ends the generation immediately after it, at the ONLY exit that commits.
+```
+
+## TestBlockSpecGenerate_reusesDrafterContextOnExtension
+
+Moved from `decoder/blockspec_reuse_test.go` (the comment above `TestBlockSpecGenerate_reusesDrafterContextOnExtension`) on 2026-10-09.
+
+```text
+TestBlockSpecGenerate_reusesDrafterContextOnExtension is P-05's deferred half (audit-2026-09-10):
+a SECOND generate() call on the SAME *BlockSpec instance, whose prompt is a strict extension of
+the first call's committed sequence, must reuse both the target's resident KV (reuseFrom > 0)
+AND the drafter's own context (TruncateContext(reuseFrom), not TruncateContext(0)) — seeding
+and fusing only the new suffix, not re-embedding the whole prompt.
+```
+
+## TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter
+
+Moved from `decoder/blockspec_reuse_test.go` (the comment above `TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter`) on 2026-10-09.
+
+```text
+TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter is the safety half of P-05's
+deferred fix: resIDs matching alone is not enough to trust the drafter's own context — a
+DIFFERENT writer (a plain Generate turn, or another BlockSpec instance) can commit a
+token-identical resIDs without ever touching THIS BlockSpec's drafter, leaving rd's context
+stale relative to what resIDs now claims. Simulates that by committing resIDs directly
+(bypassing s.generate, exactly like a plain Generate turn would) between two calls into the
+SAME BlockSpec instance with an otherwise-reusable extension — the second call must still
+TruncateContext(0), not trust the mismatched drafter state.
+```
+
+## TestBlockSpec_stopSetAgreesWithPlainDecoding
+
+Moved from `decoder/blockspec_stops_test.go` (the comment above `TestBlockSpec_stopSetAgreesWithPlainDecoding`) on 2026-10-09.
+
+```text
+C-11: THE BLOCK-SPEC LOOP'S STOP SET MUST EQUAL THE ONE PLAIN DECODING USES.
+
+Every other speculative loop calls target.isStop(tok, sp). This one rebuilt the set from
+Cfg.EOSIDs() alone — config.json's eos_token_id, missing generation_config.json's additions
+(which resolveEOSIDs merges into m.eosIDs) and the caller's StopIDs (the chat template's stops on
+a served request). On the shipped pairing that is {151645} against {151645, 151643}: an
+<|endoftext|> came out as content, generation continued to <|im_end|> or max_tokens, and
+streamTokens decoded the stop token into the response.
+
+The invariant is AGREEMENT, so the test compares the two predicates directly rather than
+re-listing what the set should contain — a list would be a second copy of the same belief.
+```
+
+## TestBlockSpec_roundWidthRespectsBothBudgets
+
+Moved from `decoder/blockspec_stops_test.go` (the comment above `TestBlockSpec_roundWidthRespectsBothBudgets`) on 2026-10-09.
+
+```text
+M-13: a round commits up to `width` tokens, and the budget was checked once per ROUND.
+```
+
+## capabilityRow.Checkpoint
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `capabilityRow.Checkpoint`) on 2026-10-09.
+
+```text
+Checkpoint is the recommended checkpoint for this family, if there is one — the row
+pull/registry.go reads to turn a short name into a repo + file + digest.
+
+IT LIVES HERE, IN THE GENERATOR, because docs/capability-matrix.json is GENERATED and
+freshness-gated by this very test. Hand-editing the JSON is silently undone by the next
+`-update`, which is how the first version of this shipped and went red in CI. Data that is
+meant to survive belongs beside the family definition, not in the rendered artifact.
+
+Omitted entirely for a family with no recommendation, so the JSON stays free of null keys.
+```
+
+## recommendedCheckpoints.nemotronh.needs
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCheckpoints.nemotronh.needs`) on 2026-10-09.
+
+```text
+R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): this checkpoint used to load
+with "tokenizer.ggml.pre=\"dbrx\" is not a known pre-tokenizer; falling back to
+cl100k" on every pull — a registry-recommended entry cannot ship with a tokenizer
+decline. Fixed (tokenizer/gguf.go's byteLevelKnobs gained a measured "dbrx" case); the
+tokenizer tier is stated here rather than only in the runtime banner, since this is the
+line a `pull`-before-you-load reader actually sees.
+```
+
+## recommendedCheckpoints.nemotronh.tools
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCheckpoints.nemotronh.tools`) on 2026-10-09.
+
+```text
+Attempted 2026-09-07: this checkpoint's decode path is CPU-only staged (R9 — no GPU
+dispatch exists for int4 in the staged path) and its prefill is sequential (no batched
+CPU prefill for this arch), so a full `serve check` run did not finish in a reasonable
+time on this box and was not force-completed. Not yet measured (R11 gate: never
+guessed) rather than extrapolated from a faster model's result.
+```
+
+## recommendedCheckpoints.gemma4
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCheckpoints.gemma4`) on 2026-10-09.
+
+```text
+R7 follow-up (docs/measurements/cold-user-2026-09-06-nobara-pc.md, and review feedback on
+that finding): Gemma-4-26B-A4B — this project's own §B4/§B4.1 host↔VRAM C′-streaming
+anchor, the model that section's whole design is measured against — DOES have a real,
+official download: `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` (Google's own QAT q4_0 GGUF;
+README's existing "bake any model" example at a smaller Gemma-4 tier already used this
+exact repo's naming convention). The earlier pass concluded no download existed because
+every reference IN THIS TREE'S OWN TESTS is a local, unpinned safetensors dir
+(GOINFER_GEMMA4_26B=~/models/gemma-4-26b-a4b-it) — that conclusion was about this tree's
+test fixtures, not about whether Google ever published GGUF weights, and it should have
+searched HF directly before ruling the model out rather than only grepping this repo.
+sha256/bytes: HF API blobs=true on the real repo, 2026-09-07 — then CROSS-VERIFIED against
+an actual local copy already on this box (~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf,
+byte count matches exactly) via TestRegistry_digestsMatchLocalFiles, same as gpt-oss-20b.
+```
+
+## recommendedCheckpoints.gemma4.tools
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCheckpoints.gemma4.tools`) on 2026-10-09.
+
+```text
+Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). This
+checkpoint is multimodal (image-text-to-text); Gemma-4's tool template was a known
+partial (M-20, docs/tasks/task-embed-and-harness-ux.md §3.1) but that was fixed
+2026-09-02 (chat/gemma4_tools.go's gemmaValue/gemmaParseValue, byte-exact call_result) —
+the remaining reason to run this deliberately rather than infer it is simply that it is
+not yet measured, not a template gap.
+```
+
+## recommendedCheckpoints.gptoss
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCheckpoints.gptoss`) on 2026-10-09.
+
+```text
+R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the README's own "bigger than
+your GPU"/"bigger than your RAM" examples named a size class ("qwen3.5-35b-a3b",
+"20-35B MoE") with no resolvable owner/repo anywhere — a cold user could not find any
+checkpoint actually large enough to need -moe-cache-experts or -stream-weights. This
+family's own description above already claims "resident on an 8 GB card via
+-moe-cache-experts, validated on the real 20B" — gpt-oss-20b is that real 20B, so it is
+the one this project can actually recommend rather than a size class it cannot deliver.
+sha256/bytes are the repo's own git-lfs-recorded digest (HF API blobs=true on
+ggml-org/gpt-oss-20b-GGUF, 2026-09-07), the same kind of source release-assets.yml's
+pinned model URLs use — not re-hashed from a local download (12 GB; impractical for this
+entry the way the release workflow's embedded-tier fetch step already does for its own,
+much smaller, pins).
+```
+
+## recommendedCheckpoints.gptoss.tools
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCheckpoints.gptoss.tools`) on 2026-10-09.
+
+```text
+Not yet measured against `serve check`'s tools rows specifically (R11 gate: never
+guessed). docs/integrations/claude-code.md's own 2026-09-02 measurement is the closest
+existing evidence for this size class: Qwen2.5-7B-Instruct (a different checkpoint, not
+this registry) held a 25-tool-schema agent loop where a 1.5B "re-calls the same tool
+forever" — worth running this row against once gpt-oss-20b's own harness-scale result
+is recorded, rather than assuming a same-class result transfers across families.
+```
+
+## gpuResidentEligible
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `gpuResidentEligible`) on 2026-10-09.
+
+```text
+gpuResidentEligible is the FULL truth the "GPU-resident" column claims: at least one real
+backend actually admits this arch (features.go's ResidentEligible — the same
+decodeRunnerEligible-shape-AND-feature-coverage-AND-MoE-capacity gate hardware_matrix_test.go's
+rows already use, so the two generated docs can never disagree about the same family) — NOT
+decodeRunnerEligible() alone, which only answers "is the shape representable" and previously let
+LFM2 read "GPU-resident: yes" for a family no backend could run at all (caught 2026-08-31, fixed
+there with a special-case shape decline). olmo3/olmo_hybrid (and, it turns out on checking,
+cohere/cohere2/mistral3/smollm3 too — five PRE-EXISTING rows, not new ones) hit the same failure
+mode a different way, through undeclared features rather than a shape incompatibility; using the
+existing, more complete ResidentEligible here instead of a second one-off special case fixes all
+of them at once and can't drift from hardware-matrix.md's own answer again.
+```
+
+## TestCapabilityMatrix.pullcopy
+
+Moved from `decoder/capability_matrix_test.go` (the comment above `pullJSPath`) on 2026-10-09.
+
+```text
+pull/ embeds a BYTE COPY of the json (pull/registry.go's go:embed cannot reach ../docs), which
+TestRegistry_embeddedMatrixMatchesTheDoc keeps in lockstep. -update writes it too: a regeneration that left the
+copy behind went red in CI twice (2026-09-29: 49f594d0's qwen3_next row, then the 26B text on top of it).
+```
+
+## TestLastWithMass_neverReturnsAMaskedToken
+
+Moved from `decoder/chunked_decay_test.go` (the comment above `TestLastWithMass_neverReturnsAMaskedToken`) on 2026-10-09.
+
+```text
+N-02: a float-rounding miss must not return a MASKED token.
+
+drawChunked and drawFull walked the cumulative distribution and, if rounding left `r` past the
+final cumulative sum, fell through to the LAST INDEX. The vector is masked — top-k and top-p zero
+the excluded tail — so the last index is very often a token the filter deliberately removed, and
+returning it emits something the caller configured to be impossible. spec_sample.go's drawTree
+already walked back to the last entry with mass; these two did not.
+
+~1e-16 per draw, so a contract nick rather than a live bug — but it is the contract that top-k
+and top-p exist to provide.
+```
+
+## TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation
+
+Moved from `decoder/config_bounds_test.go` (the comment above `TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation`) on 2026-10-09.
+
+```text
+M-10: two unbounded per-layer allocations from UNTRUSTED metadata — the M16 fatal-OOM gap,
+reopened on the paths that did not get ggufLayerCount.
+
+The failure mode is worth naming precisely, because it is not a panic: a count like
+68719476736 asks for an allocation that is under Go's maxAlloc, so the runtime does not
+reject it — it tries, and the process dies with a FATAL "out of memory" that no recover()
+can catch. The .giw loader HAS a recover() and its doc promises a typed error; neither
+helps. So the bound has to come before the allocation, not around it.
+
+Checked at resolveArchitecture, which is the single point every source of config reaches —
+.giw, safetensors, GGUF — rather than at the two JSON call sites the audit names. Putting it
+at the callers would be the "one predicate, N consumers" shape that produced a large share
+of this audit's findings.
+```
+
+## TestCPUBatchS0c_widthAA
+
+Moved from `decoder/cpu_batch_s0_test.go` (the comment above `TestCPUBatchS0c_widthAA`) on 2026-10-09.
+
+```text
+TestCPUBatchS0c_widthAA re-runs S0b's width sweep with an A/A control, because S0b's E2 was confounded: its
+"default" and "w16" arms are the SAME configuration (the default width is GOMAXPROCS = 16 on nobara) and read 1.41x
+apart, so position in the rotation (after a long serial arm the workers are parked) mattered more than width. Here
+there is no serial arm, the default is measured twice (A and A'), every timed block is preceded by an untimed warm
+block, and blocks are longer. A width result counts only if A/A' agree within a few percent.
+```
+
+## TestCPURoofline_w4a8Batch
+
+Moved from `decoder/cpu_roofline_ab_test.go` (the comment above `TestCPURoofline_w4a8Batch`) on 2026-10-09.
+
+```text
+TestCPURoofline_w4a8Batch re-measures R-06's parked GOINFER_W4A8_BATCH (q/k/v as one fork/join,
+gate/up as one) against the roofline accounting: the fork/join cost the per-component GB/s table
+attributes to the small projections predicts a win of about 3-4 ms of a 54 ms 1.5B token.
+
+	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURoofline_w4a8Batch -v -count=1 -timeout 30m
+```
+
+## TestFastAttnPromptFloor
+
+Moved from `decoder/cpufastattn_default_test.go` (the comment above `TestFastAttnPromptFloor`) on 2026-10-09.
+
+```text
+TestFastAttnPromptFloor pins the prompt-length floor, which is what keeps flipping the default
+from changing the output of every SHORT request for no speed. Measured before it existed: an
+8-token prompt diverged at the third generated token of 24 and never re-converged, while the
+win at that length is nil (1.15x at K=512, and the flag's headline 2.28x is at K=8192).
+
+NOTE what is deliberately NOT here: a MoE exclusion. 66d0a05 removed it after measuring it, and
+re-adding one during this change would have quietly reversed a decision made with evidence.
+```
+
+## TestDecode_fusedScheduleCostsNothingPerToken
+
+Moved from `decoder/decode_alloc_test.go` (the comment above `TestDecode_fusedScheduleCostsNothingPerToken`) on 2026-10-09.
+
+```text
+P-01 / M-03: A DECODE ALLOCATION GATE. P-01's own note says one would have caught M-03, so here
+it is.
+
+M-03: headWorkerPool allocated a fresh fusedScratch per pool slot, per layer, per decoded token,
+on a path that never reads it — decode runs acc64=true and attendBatchedHeads computes
+fusedOK = !useAcc64 && treeMask == nil. Since 84e0f13 made GOINFER_FUSED_ATTENTION default-on,
+that was the shipped default. Measured before the fix, TotalAlloc per decoded token on
+qwen2.5-coder-0.5b int8int8, interleaved:
+
+	context 256    11.9 MB/token (fused on)  vs  74 KB/token (=0)   160x
+	context 1024   42.6 MB/token (fused on)  vs  74 KB/token (=0)   573x
+
+linear in context, zero-filled, GC-churned, and unread. After: identical with the schedule on and
+off.
+
+The gate asserts the INVARIANT rather than a byte count, which would be a benchmark pinned as a
+test and would drift with every unrelated allocation: turning the default-on fused schedule on or
+off must not change what a decode step allocates, because decode never uses it.
+```
+
+## BenchmarkDecode
+
+Moved from `decoder/decode_bench_test.go` (the comment above `BenchmarkDecode`) on 2026-10-09.
+
+```text
+BenchmarkDecode times steady-state single-token decode (the chat case:
+batch=1, greedy). It loads the 0.5B at int8int8, prefills a short fixed
+prompt, then runs b.N forward+sample steps in the timed loop — the same
+forward/runLayers + LM head + sampler path Generate drives. Reports tok/s.
+
+DO NOT COMPARE TWO RUNS OF THIS TAKEN AT DIFFERENT TIMES. Interleave the arms
+in ONE session, alternating, and discard the first sample of each process.
+
+The number that settles it, measured on this box (Ryzen 7 3700X) on
+2026-08-12 with the same model, same binary shape, same everything:
+
+	morning session   ~0.93–0.97 tok/s
+	afternoon session ~0.98–1.03 tok/s     — a ~5% SESSION-LEVEL SHIFT
+
+Both effects under test that day were smaller than that drift: an aikit
+regression at −2.96% and its fix at +0.43%. A sequential before/after would
+have been dominated by whichever session each arm happened to land in, and
+would have reported whatever the box's mood was. The first attempt at exactly
+that comparison produced "−4%" and was worthless.
+
+Interleaving is not rigour for its own sake here — it is the only reason
+either result means anything. Pre-register the noise floor before running
+(2.0% of the pooled mean, ≈2.4σ, from an 8-sample characterization), define
+the warm-up discard in advance, and apply it identically to both arms.
+Worked examples with raw samples: docs/measurements/aikit-v1.17.0-decode-ab.md
+and -v1.17.1-decode-ab.md.
+
+It is the perf campaign's regression guard; run with profiles:
+
+	go test ./decoder -run '^$' -bench BenchmarkDecode -benchmem \
+	  -cpuprofile cpu.out -memprofile mem.out -benchtime 5s
+
+Skips cleanly without the model asset (set GOINFER_PREQUANT_GGUF or drop the
+gguf in testdata), like the other model-dependent tests.
+```
+
+## BenchmarkDecodeAtDepth.setup
+
+Moved from `decoder/decode_depth_bench_test.go` (the comment above `BenchmarkDecodeAtDepth.setup`) on 2026-10-09.
+
+```text
+Reach depth via the BATCHED prefill path (forwardLayersN, K=depth) — O(depth)
+via one wide matmul sweep, not O(depth²) via depth sequential single-token
+forwards (the naive setup timed out at depth 2048: ~248s, almost all setup).
+This is also what production prefill actually does, so it is the
+representative setup, not just the cheap one.
+```
+
+## TestDeltaNetSnapshotCost
+
+Moved from `decoder/deltanet_snapshot_cost_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+MEASUREMENT ONLY — prices the narrow DeltaNet state snapshot for MTP speculation.
+Builds nothing: no snapshot/restore is wired into any decode path, specRollbackSafe is
+untouched, and nothing here is called from non-test code.
+
+WHAT IS BEING PRICED, and it is not the thing docs/qwen3_5_moe.md deferred. That entry scoped
+"state checkpoints" for cross-call PREFIX REUSE — restore to an arbitrary earlier position,
+later, possibly across requests. Speculation needs something much weaker: snapshot immediately
+before a verify, restore on rejection, discard. One buffer, one round deep, lifetime of
+milliseconds. The two were bundled because they share a root cause (decoder/deltanet.go:deltaState: the
+state is fixed-size and NOT position-truncatable), not because they are the same size of
+problem.
+
+	GOINFER_QWEN35_08B=~/models/qwen3.5-0.8b \
+	  go test -tags realckpt ./decoder/ -run TestDeltaNetSnapshotCost -v -timeout 30m
+```
+
+## TestDequantHeads_bitIdenticalToAikit
+
+Moved from `decoder/dequant_aikit_test.go` (the comment above `TestDequantHeads_bitIdenticalToAikit`) on 2026-10-09.
+
+```text
+TestDequantHeads_bitIdenticalToAikit is the gate that licensed deleting dequantHeads' arithmetic
+in favour of linalg.DequantizeRowsInt8Into (aikit docs/task-goinfer-kernel-moves.md, M5).
+
+It stays after the swap on purpose. dequantHeads now *is* the aikit call, so today this compares
+aikit against a frozen copy of the body goinfer used to own — which is exactly what makes it a
+regression gate rather than a tautology: if a future aikit bump changes DequantizeRowsInt8Into's
+bits, this fails here, in goinfer, where the KV cache contract lives, instead of surfacing as a
+moved golden somewhere downstream.
+
+RAW BITS, never a tolerance: the difference this class of change produces is signed zero and
+1-ULP, both of which a tolerance test cannot see (measured in M5 — fakequant's sym branch differs
+from aikit's int4 round trip in exactly 7/256 elements, every one of them -0 vs +0).
+```
+
+## TestDFlashDraftScaling.newPerRound
+
+Moved from `decoder/dflash_draftscale_test.go` (the comment above `TestDFlashDraftScaling.newPerRound`) on 2026-10-09.
+
+```text
+One round commits the anchor plus the accepted drafts. 5 is close to the measured mean
+accepted at the widths that matter (3.97 at k=7, 4.24 at k=8), so it is the realistic
+number of new context rows per round.
+```
+
+## TestDFlashGemma4_diag
+
+Moved from `decoder/dflash_gemma4_diag_test.go` (the comment above `TestDFlashGemma4_diag`) on 2026-10-09.
+
+```text
+TestDFlashGemma4_diag localizes the Gemma-4 pairing's 0.00 acceptance.
+
+477 rounds, 480 tokens, mean accepted EXACTLY 0.00. That number is not "the drafter
+transfers badly" — a merely mismatched drafter still lands the occasional newline or
+closing brace. Zero across 477 first-position proposals says the drafter is being fed
+something it cannot use, and the pairing has no gate-1 reference dump to localize it,
+which is why this prints intermediate quantities instead of asserting a threshold.
+
+Already RULED OUT, so they are not re-checked here:
+  - the prompt: goinfer's Gemma4 template renders id-identical to HF's canonical one
+    (24/24 ids), and its trailing `<|channel>thought\n<channel|>` is the EMPTY thought
+    block, i.e. Gemma 4's NON-thinking prompt — the analogue of Qwen3's suppressor.
+  - the embedding scale: DrafterEmbedBlock goes through embedToken, which applies
+    arch.EmbedScale, so the block embedding matches the target's own convention.
+  - the LM head: DrafterHeadLogits handles tied heads, softcap and logit scale, and
+    argmax is invariant to the monotonic parts regardless.
+
+What is left is the hidden states, so that is what this measures. The tell is SCALE: the
+drafter's fc maps taps*hidden -> hidden with weights trained on the reference's residual
+magnitudes, and Gemma 4's residual stream is unusually large (embedding scale sqrt(2816)
+~ 53). If our captured norms are far from the drafter's expectation, everything downstream
+is saturated noise and 0.00 is the expected consequence rather than a mystery.
+
+	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run DFlashGemma4_diag -v
+```
+
+## TestDFlash_pairingDialects
+
+Moved from `decoder/dflash_pairing_test.go` (the comment above `TestDFlash_pairingDialects`) on 2026-10-09.
+
+```text
+The CONFIG-DIALECT gate, and it exists because one publisher ships more than one spelling.
+
+z-lab's four DFlash drafters differ in every config-driven dimension — taps, trunk depth,
+block width, hidden, vocab, mask id — and in TWO SPELLINGS the 4B-only loader could not read:
+
+  - block_size NESTED in dflash_config (top-level on the other three)
+  - RoPE as rope_parameters (flat rope_theta on the other three)
+
+One publisher, two dialects, and the 4B-only loader reported the 35B as "block_size must be
+>= 2, got 0" — a supported pairing looking broken. Third instance of this class in P10 after
+granite's flat-only rope and nemotron's hybrid_override_pattern, which is why it is gated
+rather than fixed quietly.
+
+TABLE, NOT A ONE-OFF. This started as a single 35B test. It is a table now because the 35B
+turned out to be the OUTLIER — gpt-oss and gemma-4 both spell block_size at top level — and a
+single-case gate would have left that as an assumption. The point of the table is that a
+future drafter is one row, and the row records the dialect it exercises.
+
+Every case asserts the SHAPE the loader derived, not merely that loading succeeded: a loader
+that silently defaulted a dimension would still "load".
+```
+
+## TestDFlashAcceptance.maxNew
+
+Moved from `decoder/dflash_accept_test.go` (the comment above `TestDFlashAcceptance.maxNew`) on 2026-10-09.
+
+```text
+maxNew MUST be several blocks, and this is a hard error rather than a note because a
+short run does not produce a noisy tok/verify — it produces a systematically INFLATED
+one, from two independent mechanisms:
+
+ 1. END-OF-RUN OVERSHOOT. The loop runs while generated < maxNew, so the final round is
+    counted in FULL even though it overshoots — up to block-1 extra tokens credited
+    against one verify. The smaller maxNew/block is, the less that overshoot is
+    amortized.
+ 2. AN UNREPRESENTATIVE SLICE OF THE ANSWER. A truncated run measures whatever part of
+    the output it reaches, and that part is not the workload. The DIRECTION of this one
+    is model-dependent, which an earlier version of this comment got wrong: it asserted
+    a general "easy prefix" inflation, on the theory that a coding answer opens with
+    near-deterministic boilerplate. The 4B is consistent with that (7.11 -> 6.75 -> 6.14
+    as the run lengthens). The 35B does the OPPOSITE, and sharply — 4.77 at maxNew=16 to
+    8.15 at 48 — because its easy region is the code block, which arrives AFTER a prose
+    preamble that a 16-token run never gets past.
+
+    This is why the guard is a hard error rather than a directional correction. The bias
+    is not "short runs read high"; it is "short runs read UNPREDICTABLY", and at
+    maxNew=16 the two pairings rank in the opposite order from maxNew=48.
+
+MEASURED, not assumed. The Qwen3-4B code suite, same pairing, same quant, non-thinking:
+
+	              Qwen3-4B      Qwen3.6-35B-A3B
+	maxNew=16     7.11          4.77      <- 35B ranks WORSE
+	maxNew=48     6.75          8.15      <- and BETTER, at the very next length
+	maxNew=160    6.14 (recorded gate-2 number)
+
+So the inflation is ~1.16x from 16 to 160, and ~1.10x still remains at 48. Real, and
+enough to matter when two pairings are being compared, but MUCH smaller than a figure
+this comment briefly carried: an earlier draft cited 2.45x by comparing 7.11 against
+2.90. That was wrong — 2.90 is the DISCREDITED thinking-mode measurement this document
+supersedes with 6.14, so the 2.45x conflated truncation with the thinking-mode error.
+Worth leaving recorded: the correct-looking baseline to grab is the one printed nearby,
+not the one that survived re-measurement.
+
+The conclusion that finding supported is unaffected, because it rested on a MATCHED
+control rather than on the recorded number: at maxNew=16 the 35B reads 4.77 against the
+4B's 7.11, so the second pairing accepts LESS, not more. Any two tok/verify numbers
+being compared must share this setting; prefer 160, which is what gate 2 is recorded at.
+```
+
+## TestDFlashAcceptance.progress
+
+Moved from `decoder/dflash_accept_test.go` (the comment above `TestDFlashAcceptance.progress`) on 2026-10-09.
+
+```text
+PER-PROMPT PROGRESS. Without this the harness logs once per SUITE, at the
+end, so a run that takes half an hour on a big target emits its pairing line
+and then nothing — indistinguishable from a hang. That ambiguity already
+cost one healthy run, killed on the belief it was stuck (the actual culprit
+there was an unbuffered pipe, but a silent harness is what made the belief
+plausible). One line per prompt makes progress observable and gives a
+running estimate of the final figure.
+WHAT THE TARGET ACTUALLY PRODUCED, not what the suite label says it was asked
+for. The suite names describe the PROMPT; acceptance is a property of the
+OUTPUT, and on a reasoning-by-default model the two diverge silently. gpt-oss
+is the case in point: harmony has no non-thinking form, so its `code` run
+measured the analysis channel — reasoning prose — and produced a number that
+looked comparable to three code numbers and was not. That was caught only by
+inspecting an anchor token in a separate diagnostic. Printing a preview makes
+it visible in the run that produced the number.
+```
+
+## TestDFlashAcceptance.steadystate
+
+Moved from `decoder/dflash_accept_test.go` (the comment above `TestDFlashAcceptance.steadystate`) on 2026-10-09.
+
+```text
+STEADY STATE, reported alongside the raw ratio because the raw one has a third
+small upward bias on top of the two the maxNew guard covers.
+
+`generated` is seeded at 1 per PROMPT — the anchor, which prefill produced and no
+verify round paid for. Over R rounds with P prompts:
+    generated = P + R + sum(accepted)
+    tok/verify = 1 + P/R + mean(accepted)
+so the raw ratio carries a +P/R term that has nothing to do with the drafter and
+shrinks as the run lengthens: +0.23 on the 35B's 4.77 at 13 rounds, +0.33 on the
+4B's 7.11 at 9 rounds — ~5% each. 1 + mean(accepted) is the prompt-count-independent
+figure, and is what two pairings should be compared on.
+
+The gate below still uses the raw ratio, deliberately: it is the definition every
+recorded number in docs/spec/08 was measured under, and silently redefining a metric
+to move a number past its own bar is the move this whole file exists to prevent.
+```
+
+## noThinkSuffix
+
+Moved from `decoder/dflash_accept_test.go` (the comment above `noThinkSuffix`) on 2026-10-09.
+
+```text
+noThinkSuffix returns the ids for "<think>\n\n</think>\n\n" — what Qwen3's template emits
+for enable_thinking=False.
+
+THIS USED TO BE A LITERAL []int{151667, 271, 151668, 271}, pinned from Qwen3-4B, and that was
+a bug waiting for the second pairing. Qwen3.6-35B-A3B has a 248320-token vocab in which
+<think> is 248068 and 151667 is an unrelated token — so the literal would have quietly fed
+the 35B four wrong tokens, depressing acceptance in a way that looks exactly like "the
+drafter transfers badly to this target". Resolve it through the tokenizer that ships with
+the target, and verify rather than trust: the encode must produce the <think>/</think> ids
+the tokenizer itself reports.
+```
+
+## dflashRun.template
+
+Moved from `decoder/dflash_accept_test.go` (the comment above `dflashRun.template`) on 2026-10-09.
+
+```text
+THE TARGET'S OWN TEMPLATE, detected — not ChatML assumed.
+
+This was hardcoded to chat.ChatML(), which is right for both Qwen3 pairings and wrong
+for the other two: Gemma-4 uses <|turn>/<|channel> markers and gpt-oss uses harmony.
+Feeding a Gemma target ChatML would not error — it would just measure the drafter
+against a prompt format the target never sees, and increment 2 already measured what
+that costs (raw vs chat: 0/15 vs 10/15 accepted).
+
+An unrecognized template is a HARD ERROR rather than the library's raw-completion
+fallback. Falling back would produce a number rather than a failure, and a plausible
+acceptance figure measured off a malformed prompt is the single most expensive failure
+mode this harness has (it has now produced three retracted conclusions in P10).
+```
+
+## BenchmarkDFlashTrunk
+
+Moved from `decoder/dflash_accept_test.go` (the comment above `BenchmarkDFlashTrunk`) on 2026-10-09.
+
+```text
+BenchmarkDFlashTrunk times ONE block draft — the cost that decides increment 4's
+architecture. If the CPU trunk is cheap relative to a resident GPU target step, the
+target can go resident while the drafter stays on CPU. If it is not, the drafter has to
+be ported to the GPU too, and increment 4 is a much bigger build.
+
+This is the question Lever 2 already answered once the hard way: the DRAFT was the wall,
+not the verify — a CPU draft against a GPU target measured 0.11×. Measure before
+building, not after.
+
+	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run '^$' -bench DFlashTrunk -benchtime 10x
+```
+
+## TestDFlash_referenceParity.header
+
+Moved from `decoder/dflash_test.go` (the comment at the top of the const block) on 2026-10-09.
+
+```text
+P10 kill-gate 1 (docs/spec/08): the Go DFlash trunk must match the upstream reference
+on dumped fixtures BEFORE any acceptance measurement. This is the gate 05 cleared too
+late — a structurally-correct-looking head sat at alpha~0.3 for weeks because nothing
+compared it to the reference at the tensor level.
+
+The fixture is the reference's own output, not a reimplementation of it:
+scripts/pin_dflash_trace.py runs z-lab/Qwen3-4B-DFlash-b16's shipped dflash.py
+(unmodified, MIT) and dumps the drafter's INPUTS (fused_context, block_in) alongside
+every layer output. So this test feeds the reference's inputs to our forward and
+compares layer by layer — a mismatch localizes to a layer instead of surfacing as
+"the logits are wrong".
+
+Fixtures: testdata/dflash_qwen3_4b_golden.json (stats + drafted ids, committed) and
+testdata/dflash_qwen3_4b_ref.safetensors (full f32 tensors, committed by an explicit
+.gitignore exception — it is the reference's output, not weights, and costs ~24 GB of
+downloads to recreate).
+
+TIER: T3-in-practice, NOT a CI gate. The drafter WEIGHTS (GOINFER_DFLASH_F32, 2.1 GB)
+cannot be committed, so this skips without them — labelled per
+docs/parity-coverage-policy.md's rule that a committed golden over an uncommitted
+checkpoint is a T3 wearing a T1's clothes. Regenerate the weights with
+scripts/convert_dflash_f32.py.
+
+THE GATE IS FALSIFIABLE, checked rather than assumed (2026-08-15): causal-instead-of-
+bidirectional block, norming the fused context like the block, roping q at the
+block-local position, and dropping the per-head k_norm are each REJECTED by it. A
+first-run cosine of exactly 1.0 is precisely when that check is worth running.
+```
+
+## TestDFlash_refusesV2
+
+Moved from `decoder/dflash_test.go` (the comment above `TestDFlash_refusesV2`) on 2026-10-09.
+
+```text
+TestDFlash_refusesV2 pins the refusal added after the P15 step-(0)/(2) audit.
+
+It is a CONFIG-ONLY fixture on purpose: the danger this guards is that a DFlash 2 checkpoint
+is field-compatible with the v1 loader, so the check has to fire before any tensor is read.
+Measured on the real incoai/Qwen3.8-27B-DFlash2 (2026-08-20): 76.2% of its tensors are
+v1-shaped and every config key this loader reads is present, so it loaded WITHOUT ERROR and
+silently discarded 914,309,120 bytes of dynamic-conv + candidate-selector weights.
+
+Why that mattered enough to gate: DFlash verify is lossless, so the failure produces correct
+tokens at a worse acceptance rate — slower than v1, with nothing in the logs. A wrong answer
+gets noticed; a silent 20% throughput loss does not.
+```
+
+## declaredIdentityDispatch
+
+Moved from `decoder/dispatch_census_test.go` (the comment above `declaredIdentityDispatch`) on 2026-10-09.
+
+```text
+declaredIdentityDispatch is every use of an identity predicate in a dispatch position, with why it
+is legitimate. Definition sites and comments are excluded by the scanner.
+
+KEYED ON CONTENT, NOT POSITION. The first version keyed on file:line and tripped the moment a
+mechanical edit (G2's minmax rewrite) removed three lines above a declared site: (in mlp.go) line 356 became
+:353, the site itself unchanged. A census that cries wolf on every reformat is a census someone
+disables, and the thing it is supposed to notice — a member being named in a dispatch — is a
+property of the CODE, not of where the code sits.
+```
+
+## TestDSpark_referenceParity.header
+
+Moved from `decoder/dspark_test.go` (the comment at the top of the const block) on 2026-10-09.
+
+```text
+P10 kill-gate 1 for DSpark (docs/spec/08): the Go DSpark forward must match DeepSpec's own
+implementation on dumped fixtures before any acceptance claim rests on OUR code. DSpark's
+acceptance is already measured (5.76 / 5.73 / 3.04) but that was measured through DeepSpec's
+loop — this is what lets goinfer claim it.
+
+It doubles as the test of the SHARED-TRUNK claim. `decoder/dspark.go` reuses `blockTrunk`
+rather than reimplementing the forward, on the finding that DeepSpec's `_forward_backbone`
+and z-lab's `DFlashDraftModel.forward` compute the same thing. If that were wrong, the
+per-layer comparison below would diverge at layer 0 — the same code passes the DFlash
+fixture, so a DSpark failure here would localize the difference rather than hide it.
+
+Fixtures: testdata/dspark_qwen3_4b_golden.json + dspark_qwen3_4b_ref.safetensors, from
+scripts/pin_dspark_trace.py. Weights are an asset (GOINFER_DSPARK_F32) — T3-in-practice,
+not CI, exactly as the DFlash gate.
+```
+
+## TestHiddenLast_refusesMoreTokensThanTheContextWindow
+
+Moved from `decoder/embed_bound_test.go` (the comment above `TestHiddenLast_refusesMoreTokensThanTheContextWindow`) on 2026-10-09.
+
+```text
+C-07: HiddenLast HAD NO LENGTH BOUND, only a vocab one.
+
+It preallocates KV for len(ids) positions and then runs one sequential forward per token with no
+context to cancel it. So an over-long input is not slow, it is a ~114 GB allocation (28 layers,
+kvDim 1024, 500k positions) plus attention over up to len(ids) keys per token, holding the
+caller's mutex until the process is OOM-killed. The serving embedder's only bound was C-21's
+1 MiB of BYTES — about 500k tokens of short words.
+
+The bound is asserted HERE, where the cost is incurred, so a caller other than the serving
+embedder cannot reintroduce it.
+```
+
+## embedInt4Fixtures
+
+Moved from `decoder/embed_int4_loaders_test.go` (the comment above `embedInt4Fixtures`) on 2026-10-09.
+
+```text
+Options.EmbedInt4 must reach every safetensors loader. Until 2026-10-09 nine family loaders (gpt2, granite, nemotron_h, phi3, glm_ocr, spark2_5, llama4_text,
+gpt_oss, internlm2) quantized their embedding and LM head with quant.embedding() and never saw the flag, so --embed-int4 (the default everywhere but Metal) did
+nothing on them: the head stayed int8 whatever the flag said. Option D's registered HeadTable() assertion caught it on phi3 (docs/tasks/task-multimodal-support-2026-10.md).
+```
+
+## TestEmbedInt4_everyLoader.bar
+
+Moved from `decoder/embed_int4_loaders_test.go` (the comment above the cosine bar) on 2026-10-09.
+
+```text
+The bar is 0.5 for a stated reason, not a guess: a mis-laid int4 table reads near ZERO (the planted defects of the G-S10 gates read 0.1 to -0.1), and
+the working tables on the established generic path read 0.95 to 0.99 on these tiny fixtures (llama-tiny 0.982, gemma2-tiny 0.951); the eight here read
+0.86 (glm-ocr-tiny: hidden 48, a ragged last group of 16; a ragged group reconstructs at the same ~9% relative RMS as 64 columns, measured) to 0.999.
+```
+
+## TestEnvVars_docAndCodeAgree
+
+Moved from `decoder/envvars_registry_test.go` (the comment above `TestEnvVars_docAndCodeAgree`) on 2026-10-09.
+
+```text
+N-42: docs/env-vars.md is declared a Hard-tier contract by docs/api-tiers.md, and it had
+drifted in BOTH directions — 40 variables read by production code were absent from it
+(including the escape hatches for all four default-ON changes, each of which alters greedy
+output), and one it documented was read by nothing at all.
+
+This is the TestAssetRegistry_noDirectReads shape the audit's fix text asks for: the doc and
+the code are compared to each other, so neither can move without the other. It deliberately
+does NOT check what the doc SAYS about a variable — only that every variable exists in both
+places. A wrong description is a different problem; a missing entry is this one.
+```
+
+## TestEnvVars_docAndCodeAgree.rows
+
+Moved from `decoder/envvars_registry_test.go` (the comment above `rowSeen`) on 2026-10-09.
+
+```text
+One ROW per variable. The same var documented twice drifts: GOINFER_CUDA_FLASH_DECODE had an
+"(unset = off)" row and an "ON (S=16)" row at once after its default flipped, and
+GOINFER_CUDA_GRAPHS_SYNC sat in both the operator and the diagnostics sections.
+```
+
+## TestEnvVars_docAndCodeAgree.operator
+
+Moved from `decoder/envvars_registry_test.go` (the comment above `operatorDoc`) on 2026-10-09.
+
+```text
+M-56 (audit-2026-09-10.md): everything ABOVE the first "not contract" heading is an
+operator-facing promise (docs/api-tiers.md's Hard tier); a var documented only there but
+referenced by nothing except _test.go files is exactly GOINFER_GEMMA4_RESIDENT's shape —
+a bring-up gate that went silently unread while its doc row kept promising an effect. The
+phantom check below already tolerates a test-only reference for the diagnostics section
+(test-only IS what "not contract" means there); operatorDoc is scanned separately so that
+same tolerance can't hide a dead operator knob again.
+```
+
+## TestConfigEOSIDs_nullIsAbsent
+
+Moved from `decoder/eos_null_test.go` (the comment above `TestConfigEOSIDs_nullIsAbsent`) on 2026-10-09.
+
+```text
+A config.json whose eos_token_id is JSON null (transformers writes the key with None when a model leaves it to
+generation_config.json: Qwen3-ASR's text_config does) must have NO config-side stop id. json.Unmarshal of null into an int
+succeeds and leaves 0, so EOSIDs() once returned [0], and token id 0 ended generation: in Qwen's vocabulary id 0 is "!",
+so every Qwen3-ASR transcription stopped at its first "!" (G-S14c4, 2026-10-08: 2 of the 2 LibriSpeech clips with one).
+```
+
+## TestLoad_exactPrefillOptionIsAModelProperty
+
+Moved from `decoder/exactprefill_test.go` (the comment above `TestLoad_exactPrefillOptionIsAModelProperty`) on 2026-10-09.
+
+```text
+TestLoad_exactPrefillOptionIsAModelProperty is M-26's chokepoint gate (docs/audit-2026-09-10.md),
+revised 2026-09-24. decoder.Options.ExactPrefill used to be applied by Load setting the three
+fast-prefill env vars — process-global and never undone, so every model loaded later in the same
+process inherited it. It is now recorded on the Model and consulted by each backend's switch next
+to its env var (CPU: Model.cpuFastAttention; CUDA: at resident build; Metal: on its resident). This
+proves Load reports it on the model, applies it to this model's CPU prefill, and writes nothing to
+the environment. The two-model inheritance case is TestExactPrefill_isPerModel.
+```
+
+## TestF16Rules_agree
+
+Moved from `decoder/f16_rules_test.go` (the comment above `TestF16Rules_agree`) on 2026-10-09.
+
+```text
+TestF16Rules_agree pins that aikit's int4 scale storage (linalg.F32ToF16) and goinfer's F16Bits — the rule
+every resident GPU backend converts int4 scales with — are the same conversion, bit for bit, so a CPU
+weight and a GPU upload of the same tensor carry identical scales. Before aikit stored int4 scales as
+binary16 this was a third copy (the GOINFER_INT4_F16_SCALES diagnostic's f32ToF16bits); all three were
+checked equal on this same input before that copy was deleted.
+```
+
+## archFeatureProfile.smollm3
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.smollm3`) on 2026-10-09.
+
+```text
+SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/tasks/task-gpu-paths-2026-09.md):
+cuda+metal now declare FeatNoPE (RopeInvFreqLayer zeroes the NoPE layers' invFreq table,
+no new kernel), so this is SmolLM3's ONLY required feature and it now reaches both —
+see the admission golden below. cohere2 also needs FeatNoPE, plus FeatLayerNorm/
+FeatLogitScale/FeatParallelBlock — all now declared on both backends too (G5's last row).
+```
+
+## archFeatureProfile.olmo3
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.olmo3`) on 2026-10-09.
+
+```text
+Olmo 3: NormPostOnly + QKNormWhole, plus the standard sliding-window/YaRN features every
+backend already has. G5 (docs/tasks/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
+this now reaches both.
+FeatPerLayerRoPE IS needed (restored 2026-09-12, docs/audit-2026-09-10.md G-03/G-04's
+disposition): YaRN applies to full_attention layers only, sliding_attention gets plain
+RoPE at the same theta — genuinely different local/global tables. A prior revision of this
+comment ("0b0f5c9") claimed the opposite from reading modeling_olmo3.py's forward rather
+than calling it; `Olmo3RotaryEmbedding.forward` in the pinned transformers==5.15.0 takes an
+explicit layer_type argument and returns different (cos, sin) per call, which is the tell
+that a single shared table cannot be what runs. See registry.go's olmo3Architecture comment
+for the full account.
+```
+
+## archFeatureProfile.olmo_hybrid
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.olmo_hybrid`) on 2026-10-09.
+
+```text
+Olmo Hybrid: qwen3_5's own FeatDeltaNet (shared math), plus olmo3's FeatPostOnlyNorm/
+FeatQKNormWhole (its full-attention layers only, but the arch-level check reads
+NormPlacement/QKNormWhole model-wide, not per-layer) and FeatNoPE (layerNoPE set
+unconditionally — the release has no RoPE at all). All four are now declared on cuda+metal
+(FeatDeltaNet/FeatNoPE already were; G5 added the other two), so this now reaches both too —
+though getting there also surfaced a separate bug (both backends assumed every
+qwen35Params-carrying family's full-attention layer used qwen3.5's double-width q-gate
+scheme; Olmo Hybrid's is plain), fixed via a new Architecture.qwen35.AttnGate field.
+```
+
+## archFeatureProfile.cohere
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.cohere`) on 2026-10-09.
+
+```text
+Cohere's rotation is GPT-J PAIRWISE (rope_gptj), not NeoX: FeatPairwiseRoPE, added 2026-10-01
+after the CUDA resident (which ran it on NeoX kernels) measured wrong on real Command-R7B and
+Aya at int4. Declared by CUDA only; metal and webgpu DECLINE these families until their rope
+kernels have a pairwise variant.
+```
+
+## archFeatureProfile.spark2_5
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.spark2_5`) on 2026-10-09.
+
+```text
+spark2_5: same attention-output-gate CPU-only forcing function as Laguna (FeatAttnOutputGate
+— sigmoid here, softplus there; no resident backend implements either). Also gets
+FeatGatedGELU "for free" from residentFeatures' derivation (!NonGatedMLP && Act != ActSiLU),
+which is worth flagging explicitly: this is the FIRST family combining a gated MLP with
+ActGelu (exact erf) rather than ActGeluTanh — GatedActResident passes the raw ordinal to
+CUDA's glu_quant kernel, which has never been asked for this activation on the gated path,
+so whether it's even correct there is UNVERIFIED. It doesn't matter for now: FeatAttnOutputGate
+alone already forces CPU-only, so this combination never reaches a GPU kernel — but the next
+family with a gated exact-GELU MLP and NO attention gate would need that verified for real,
+not assumed safe by this precedent.
+```
+
+## archFeatureProfile.gemma
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.gemma`) on 2026-10-09.
+
+```text
+Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
+hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
+sliding-window, and claimed rms-add-one for gemma4, which has RMSAddOne=false).
+gemma3/gemma3_text are resident on CUDA. gemma4 needs the FINAL-logit softcap (30) — one
+host-side tanh, which CUDA now ships (FeatFinalLogitSoftcap, 9a-P2) — not the attention
+softcap. So it is feature-compatible with CUDA; its OWN forward (per-layer head_dim / K=V)
+is what the resident geometry bridge addresses, and dense admission is env-gated
+(GOINFER_GEMMA4_RESIDENT) in decodeRunnerEligible — a separate gate from this feature set.
+Gemma 1 / CodeGemma and Gemma 2 (2026-09-30, gemma12.go). Gemma 2 needs the attention-score softcap, a per-layer
+kernel no resident backend ships, so it is admitted nowhere and runs on the CPU until one does.
+```
+
+## archFeatureProfile.gemma4_text
+
+Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.gemma4_text`) on 2026-10-09.
+
+```text
+gemma4_text is the 26B-A4B MoE variant: gemma4's feature set + FeatMoE. It is
+FEATURE-compatible with CUDA, but Gemma 4's MoE is the parallel dense‖MoE shape the
+generic FeatMoE kernel cannot express, so decodeRunnerEligible declines a.MoE != nil
+until Split B lands the delta — the feature set is necessary, not sufficient.
+```
+
+## admissionGolden.cohere
+
+Moved from `decoder/features_test.go` (the comment above the cohere golden row) on 2026-10-09.
+
+```text
+Cohere / Command-R + Cohere2 / Command-R7B: G5's last row (docs/tasks/task-gpu-paths-2026-09.md).
+FeatParallelBlock reuses the pre-attn norm's already-quantized activation as the MLP's
+input too (no new kernel, a sequencing change); FeatLogitScale is a host-side multiply
+after readback (the same shape as FeatFinalLogitSoftcap). FeatLayerNorm was already
+declared on metal (GPT-2); cuda's twin (layernorm_quant, cuda/glue.cu) is genuinely new —
+this backend had no mean-centered norm before. cohere2 needs FeatNoPE/FeatSlidingWindow
+too, both already declared on both backends from earlier G5 rows, so it reaches the same
+two backends cohere does.
+
+CORRECTION 2026-10-01: CUDA ONLY now. Their rotation is GPT-J pairwise and the metal rope
+kernel is NeoX half-split; the CUDA resident had the same defect until cuda/rope_pairwise.cu
+(real Command-R7B / Aya-expanse-8B at int4, resident vs CPU: worst per-position cosine -0.075 /
+-0.041, exact at position 0 only). The old gates used flat 0.02-std fixtures where a wrong
+rotation reads 0.9997. FeatPairwiseRoPE is declared by cuda alone; metal declines these families
+to the CPU path until the Mac session ports the kernels.
+2026-10-09: Metal too (docs/tasks/task-metal-pairwise-rope-2026-10.md: rope_pw and twins, metal.TestPairwiseRoPEResidentParityMetal
+and the real-checkpoint metal.TestPairwiseRoPERealMetal). WebGPU still declines.
+```
+
+## admissionGolden.gemma
+
+Moved from `decoder/features_test.go` (the comment above the gemma golden row) on 2026-10-09.
+
+```text
+G6 (docs/tasks/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
+FeatSandwichNorm/FeatGatedGELU — gemma3 (uniform head_dim) now reaches it for real,
+verified against a genuine non-seeded checkpoint (testdata/gemma3-vl-tiny's text tower,
+gpu.TestGemma3ResidentParityWebGPU, minCosine 0.9998). gemma4/gemma4_text/
+gemma4_unified_text are FEATURE-compatible the same way gemma4_text's own MoE note below
+already says feature-compatible isn't sufficient — dense Gemma 4's local/global head_dim
+split needs a per-layer geometry seam this simplified feature-list model cannot express
+(decoder.Model.PerLayerGeomOK, a residentMoECapacityOK-shaped runtime check outside the
+ResidentFeature taxonomy), which webgpu's runLayer.ghd/gnKV fields exist for but
+gpu/residency.go's per-layer builder never populates for any family. The REAL runtime
+(decoder.ResidentEligible, TestGemma4Admission_unconditional) correctly declines gemma4 on
+webgpu despite this table showing it feature-admitted — this golden intentionally tracks
+the simplified feature-only model, not full runtime truth, matching this file's own MoE-cap
+precedent (deepseek_v2/kimi_k2 below, admitted by feature but capped elsewhere).
+```
+
+## admissionGolden.gpt_oss
+
+Moved from `decoder/features_test.go` (the comment above the gpt_oss golden row) on 2026-10-09.
+
+```text
+gpt_oss reaches ALL THREE backends on real end-to-end evidence now, which is not how it
+looked for most of G7's life. metal declared on the tiny fixture (TestGptOssResidentParity,
+cosine 0.9989); cuda declared 2026-08-31 on the REAL 20B, resident on an 8 GB card through
+--moe-cache-experts (7/8 argmax-exact, min cosine 0.996392) — the stronger evidence of the
+two, an odd inversion worth noting since the tiny fixture stopped reproducing the last
+defect it had to catch. webgpu declared 2026-09-08 (G6): the sink threaded through every
+attention kernel plus three brand-new MoE kernels (gpu/moe.go), verified against the real
+tiny fixture (gpu.TestGptOssResidentParityWebGPU, minCosine 0.9943 — the same 0.95 floor
+Metal's own gate uses on this fixture).
+```
+
+## admissionGolden.glm_ocr
+
+Moved from `decoder/features_test.go` (the comment above the glm_ocr golden row) on 2026-10-09.
+
+```text
+GLM-OCR: CUDA only (2026-10-01, cuda/rope_pairwise.cu; cuda.TestGlmOcrResidentParityCUDA).
+Admitted with the NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny; Metal and
+WebGPU still have only NeoX rope kernels and decline (FeatPairwiseRoPE + FeatPairwiseMRoPE).
+2026-10-09: Metal too (the pairwise twins; metal.TestGlmOcrResidentParityMetal). WebGPU still declines.
+```
+
+## admissionGolden.mellum
+
+Moved from `decoder/features_test.go` (the comment above the mellum golden row) on 2026-10-09.
+
+```text
+mellum reaches cuda and metal by the SAME coupling and with VERY DIFFERENT evidence, so
+the two are not interchangeable rows:
+  - cuda (added 2026-08-31, G7): FeatRopeMscale was declared for gpt-oss's YaRN, and
+    mellumArchitecture needs exactly {MoE, PerLayerRoPE, QKNorm, RopeMscale, SlidingWindow}
+    — the other four were already declared, so the fifth admitted Mellum for free. That
+    coupling was PRE-REGISTERED as a trap and then discharged by measurement rather than
+    waived: TestMellumResidentParityCUDA on a real 4-layer slice gives 7/11 argmax-exact,
+    0 hard fails, min cosine 0.994600. Mellum on CUDA is a MEASURED admission.
+  - metal: still the undischarged version of that same side effect (G10) — no Mellum
+    checkpoint was reachable there, so it was resolved by an owner call. G11 tracks the
+    real-weight Metal proof. It is here because it IS what the code does, not because it
+    is trusted.
+```
+
+## admissionGolden.qwen3_5
+
+Moved from `decoder/features_test.go` (the comment above the qwen3_5 golden row) on 2026-10-09.
+
+```text
+The Gated-DeltaNet family collapses to the backends that implement BOTH the recurrence AND
+the fused attention output gate (FeatDeltaNet) — the whole point of adding it as one taxon
+bundling both departures rather than two. CUDA and WebGPU landed it first (2026-08-19/20);
+Metal landed the recurrence kernels + the qGate softmax-layer wiring + a whole-model gate
+against qwen3_5-tiny (worst cosine 0.9886, drift 0.0081, replay-after-Reset self-cosine
+1.0 — TestQwen35ResidentParityMetal) and now admits too. CUDA still lacks it.
+```
+
+## TestResidentBackendFeatures_noOverclaim.cuda
+
+Moved from `decoder/features_test.go` (the comment above the cuda row) on 2026-10-09.
+
+```text
+cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set + partial rotary + MoE
+(routed via mixtral-tiny, ungated shared expert via glm-tiny) + the FINAL-logit softcap
+(host-side tanh in step(), 9a-P2 — Gemma 4). FeatRopeMscale landed 2026-08-31 (G7): the
+YaRN attention_factor is folded into cos/sin inside all three rope kernels (glue.cu,
+gemv_fwd.cu, prefill_batched.cu) with per-layer wiring from RopeMscaleLayer, and it is
+gated by TestRopeMscale plus a real-weight TestMellumResidentParityCUDA (4-layer slice:
+7/11 argmax-exact, 0 hard fails, min cosine 0.994600) — evidence first, declaration
+after. FeatAttnSink + FeatOutBias joined 2026-08-31 (G7), and ONLY after a real
+gpt-oss-20b forward ran resident on an 8 GB card via --moe-cache-experts: 7/8
+argmax-exact, min cosine 0.996392 (TestGptOssResidentParityCUDA). 2224441 declared
+FeatAttnSink once on kernel-level evidence and was correctly reverted; the difference
+this time is the end-to-end run, which found three silent wiring defects no kernel test
+could see. Still no per-layer rotary WIDTH, no ATTENTION softcap (FeatAttnLogitSoftcap —
+a per-layer kernel), no MLA/SSM, and no GATED shared expert (Qwen2-MoE)... which is now
+expressed as FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE decline
+is in the shared taxonomy, not a hand-coded check.
+G5 (docs/tasks/task-gpu-paths-2026-09.md) added seven more, across all five rows: FeatNoPE
+(SmolLM3), FeatAttnTemp (Ministral 3), FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo
+Hybrid), FeatLayerNorm + FeatParallelBlock + FeatLogitScale (Cohere/Command-R +
+Cohere2/Command-R7B, the last row — FeatLayerNorm is a genuinely new kernel here,
+cuda/glue.cu's layernorm_quant; the other two are wiring, no new kernel).
+```
+
+## TestResidentBackendFeatures_noOverclaim.cudaPairwise
+
+Moved from `decoder/features_test.go` (the comment above the pairwise row of the cuda set) on 2026-10-09.
+
+```text
+2026-10-01: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
+gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the
+real Aya/R7B gate. metal declares both since 2026-10-09 (its own twins and gates); webgpu does not.
+2026-10-07: FeatGemma4EModel (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md): the PLE branch from existing
+kernels, KV-shared layers aliasing their source's cache, per-layer FFN widths; G1c/G2c on the tiny E-model, graphs bit-exact.
+```
+
+## TestResidentBackendFeatures_noOverclaim.webgpu
+
+Moved from `decoder/features_test.go` (the comment above the webgpu row) on 2026-10-09.
+
+```text
+G6 (docs/tasks/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
+already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
+wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
+FeatGatedGELU (a genuinely new kernel pair — this backend had no GELU-tanh-gated
+activation before), FeatAttnSink (gpt-oss — the sink threaded through every attention
+kernel plus three brand-new MoE kernels, the largest single item in G6).
+```
+
+## TestResidentBackendFeatures_noOverclaim.metal
+
+Moved from `decoder/features_test.go` (the comment above the metal row) on 2026-10-09.
+
+```text
+GPT-2 (2026-08-18): LayerNorm/non-gated-MLP/learned-pos/out-bias all landed as real
+kernels + full BuildResident/encodeLayer/encodeAttention wiring, validated end-to-end
+against the real checkpoint (TestGPT2ResidentParity, min cosine 0.999) — not a
+declaration ahead of the evidence. gpt-oss's attention sink + clamped-SwiGLU MoE +
+custom router + YaRN rope mscale also landed (TestGptOssResidentParity, min cosine
+0.9989 on the tiny fixture) — FeatRopeMscale ALSO admits Mellum as a documented side
+effect (see docs/queue-correctness.md G10/G11): declared anyway on explicit user call,
+Mellum's own real-weight Metal gate is tracked as G11, not yet landed. Gated-DeltaNet
+mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) landed with its own
+end-to-end whole-model gate (TestQwen35ResidentParityMetal, qwen3_5-tiny: worst cosine
+0.9886, drift 0.0081, replay-after-Reset self-cosine 1.0) — not ahead of it.
+G5 (docs/tasks/task-gpu-paths-2026-09.md) added six more, across four rows (FeatLayerNorm was
+already here, from GPT-2): FeatNoPE (SmolLM3), FeatAttnTemp (Ministral 3),
+FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo Hybrid), FeatParallelBlock +
+FeatLogitScale (Cohere/Command-R + Cohere2/Command-R7B, the last row — reusing GPT-2's
+layernorm_quant and Gemma's softcap-shaped host readback respectively, no new kernel).
+S1 (docs/tasks/task-multimodal-support-2026-10.md) adds FeatGemma4EModel: encodePLE (ple_gelu_mul plus
+existing kernels), KV-shared layers aliasing their source's cache, per-layer FFN widths.
+```
+
+## TestResidentFeatures_derivationMatchesProfile
+
+Moved from `decoder/features_test.go` (the comment above `TestResidentFeatures_derivationMatchesProfile`) on 2026-10-09.
+
+```text
+TestResidentFeatures_derivationMatchesProfile ties the two sources of truth together (C6):
+the hand-written archFeatureProfile (the classification forcing-function) and residentFeatures()
+(the derivation that drives the generated hardware matrix AND the runtime RequiredResidentFeatures).
+They must agree for every registered arch — otherwise they silently disagree, as they did on
+Mellum (a layer-0-only yarn-mscale sample missed its full-layer YaRN) and qwen2_moe (the gated
+shared expert). Hardware-free — reads declared sets, runs in CI with no GPU.
+```
+
+## TestResidentMoECapacity_routerCap
+
+Moved from `decoder/features_test.go` (the comment above `TestResidentMoECapacity_routerCap`) on 2026-10-09.
+
+```text
+TestResidentMoECapacity_routerCap is the M22 taxonomy gate (kimi_k2 doc-drift). WebGPU/CUDA score
+experts into a fixed-size array (256) and groups into 32; a model past that routes on only the
+first N — plausible-looking wrong output — so ResidentEligible must decline it even though every
+FEATURE it needs is implemented. This is what keeps the generated hardware matrix honest: before
+residentBackendMoECap, the feature-only predicate showed Kimi K2 (384 experts) WebGPU-resident
+while the runtime (gpu/backend.go, M22) declined it.
+```
+
+## TestResidentMoECapacity_routerCap.metal
+
+Moved from `decoder/features_test.go` (the comment above `TestResidentMoECapacity_routerCap.metal`) on 2026-10-09.
+
+```text
+Metal is DECLARED in the cap map for the first time (its shader really is 256 and rejects
+above it, metal/moe.go's router kernel) — the map previously claimed "absent = uncapped", which was false.
+```
+
+## TestA3FastAttentionDivergence.floor
+
+Moved from `decoder/a3_divergence_test.go` (the comment above the `want, wantName` selection) on 2026-10-09.
+
+```text
+THE DEFAULT FLIPPED 2026-08-31, so what "unset" must equal now depends on K.
+Below fastAttnMinPrompt the f32 path is floored off and unset is still exactly acc64;
+at or above it, unset IS the f32 path. Asserting both halves pins the floor itself,
+not just the default — a floor set to 0 or to MaxInt would fail here rather than
+silently change what every short request returns.
+```
+
+## representativeConfig.olmo_hybrid
+
+Moved from `decoder/capability_matrix_test.go` (the comment in `representativeConfig`, the olmo_hybrid case) on 2026-10-09.
+
+```text
+Olmo Hybrid: qwen3_5's Gated DeltaNet (3-of-4 layers) + olmo3's own full-attention
+shape (1-of-4), with MIXED NormPlacement per layer kind (the reason G2 paused for a
+decision) and NO RoPE at all (rope_theta: null, the real release's own value) — so
+this config exercises NoPositionEncoding for real, not the trivial "never checked"
+case. MHA (NumKVHeads == NumHeads), matching the one released size fetched.
+```
+
+## TestEmbedInt4Knob
+
+Moved from `decoder/embedint4_test.go` (the comment above `TestEmbedInt4Knob`) on 2026-10-09.
+
+```text
+TestEmbedInt4Knob gates Options.EmbedInt4 (#3): with int4 quant, the default pins
+the embed/head table to int8 (logit-critical), but the opt-in knob relaxes it to
+int4 — halving the largest resident tensor on a big-vocab small model. Asserts the
+embed table's precision actually changes (int8 → int4) and both models still
+generate. The quality cost is recorded in docs (≈2.3 pts top-1); this test just
+gates that the knob takes effect and is lossless-to-load.
+```
+
+## admissionGolden.smollm3
+
+Moved from `decoder/features_test.go` (the comment above the smollm3 golden row) on 2026-10-09.
+
+```text
+G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
+zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
+so it now reaches both.
+```
+
+## admissionGolden.olmo3
+
+Moved from `decoder/features_test.go` (the comment above the olmo3 golden row) on 2026-10-09.
+
+```text
+Olmo 3 / Olmo Hybrid: G5 declares FeatPostOnlyNorm+FeatQKNormWhole on cuda+metal (the
+pre-norm skip reuses the already-shipped quant_vec kernel unchanged; the whole-vector
+qk-norm reuses the already-shipped per-head qk_norm kernel with a collapsed grid — no new
+kernel or PTX either way). olmo3 needed only those two (FeatRopeMscale/FeatSlidingWindow
+were already declared); olmo_hybrid's FeatDeltaNet+FeatNoPE were already declared too, so
+this is its ONLY remaining requirement — but reaching residency at all surfaced a real,
+separate bug (both backends assumed every qwen35Params-carrying family's full-attention
+layer used qwen3.5's own double-width q-gate scheme; Olmo Hybrid's is plain), fixed
+alongside this via a new Architecture.qwen35.AttnGate field.
+```
+
+## admissionGolden.mistral3
+
+Moved from `decoder/features_test.go` (the comment above the mistral3 golden row) on 2026-10-09.
+
+```text
+Ministral 3: G5 (docs/tasks/task-gpu-paths-2026-09.md) declares FeatAttnTemp on cuda+metal —
+rope_kv/rope2's new qTempScale param (Q-only, post-rotation) — its ONLY required feature,
+so it now reaches both, same shape as smollm3/FeatNoPE above. Not webgpu: unimplemented
+there.
+```
+
+## TestResidentBackendFeatures_noOverclaim.known
+
+Moved from `decoder/features_test.go` (the comment above the `known` taxonomy map) on 2026-10-09.
+
+```text
+G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnTemp/FeatPostOnlyNorm/FeatQKNormWhole
+landed (rows 2-3) without being added here — the exact N-12 omission repeated, caught
+only when the last row's full-suite run exercised this test again.
+```
+
+## TestResidentMoECapacity_routerCap.cap
+
+Moved from `decoder/features_test.go` (the comment above the 512 cap check) on 2026-10-09.
+
+```text
+The cap was raised 256 -> 512 (MOE_MAX_E / MAXE) so Kimi-K2's 384 is now ADMITTED on the two
+backends whose router scratch was widened. This is the point of the change: K2 is the shipped
+family the old cap declined.
+```
+
+## TestFitGuard_refusesBeforeAllocating
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_refusesBeforeAllocating`) on 2026-10-09.
+
+```text
+R3 gate (docs/measurements/cold-user-2026-09-06.md, scenario D). On v0.16.0 a 21 GB model on a
+16 GB machine loaded without a word and drove the box +7,819 MB into swap in five seconds. The
+bar for this test is therefore not "an error is returned" — it is that NOTHING WAS ALLOCATED
+when the error was returned, and that the message names the flag that fixes it.
+
+The RAM figure is injected, so the test exercises the 16 GB machine's arithmetic on any box.
+```
+
+## TestFitGuard_refusesBeforeAllocating.retry
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_refusesBeforeAllocating.retry`) on 2026-10-09.
+
+```text
+gptoss_tiny.gguf is gpt-oss — MoE, own-forward — so an automatic -stream-weights retry must
+NOT be offered: that CPU path is the one docs/benchmarks.md "M35/M26 on the Mac" measured as
+2h10min/zero completions on a real checkpoint. Both the sentinel (errors.Is) and the typed
+field (errors.As) have to agree, since main.go's retry decision reads the field directly.
+```
+
+## TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights`) on 2026-10-09.
+
+```text
+TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights gates the cold-user 2026-09-18
+nobara-pc Scenario D defect (docs/measurements/cold-user-2026-09-18-nobara-pc.md): loading
+gpt-oss-20b (12.11 GB MXFP4 GGUF) via `chat --backend cuda` (no special flags) or
+`serve --backend cuda --moe-cache-experts` drove REAL, incremental swap growth on a machine
+with 37+ GB RAM free, with zero warning printed first — while `chat fit`'s pre-flight estimate
+(dense+experts+KV, ~13.3 GB) reported comfortably fitting. Reproduced directly on nobara-pc (the
+same box) with a heap profile + /proc RSS sampling around a bare decoder.Load of the real
+checkpoint (CUDA and --moe-cache-experts are red herrings here: gpt-oss declines CUDA residency
+via the missing FeatAttnSink feature — decoder/registry.go's own gptOssArchitecture comment — so
+both commands actually ran this exact CPU-resident .gguf load path): peak RSS reached ~24.5 GB,
+matching weightBytes+fileSize (12.58+12.11=24.69 GB) to within 2%, not the ~12.58 GB the OLD
+(pre-fix) estimator priced.
+
+This test pins the fix on the tiny fixture without needing the 12 GB real checkpoint: read the
+REAL weightBytes+kvBytes+srcFileBytes off fitCheckFor itself (not a hand-derived guess — the
+fixture's real config resolves a non-zero kvBytes too, so reimplementing the arithmetic by hand
+would silently under-count and prove nothing; caught by mutation-checking this test against the
+pre-fix `need()`, which passed spuriously until this was fixed to read the real fields), pick a
+RAM figure whose budget sits strictly between (weightBytes+kvBytes) and
+(weightBytes+kvBytes+srcFileBytes), and confirm the guard now refuses on the strength of
+srcFileBytes alone.
+```
+
+## TestFitGuard_pricesTheCUDAExpertCacheBuildPeak
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_pricesTheCUDAExpertCacheBuildPeak`) on 2026-10-09.
+
+```text
+TestFitGuard_pricesTheCUDAExpertCacheBuildPeak: --backend cuda --moe-cache-experts holds the
+canonical weights, a packed copy of them and a pinned copy of the experts on the host at once
+(measured on the real gpt-oss-20b: 39 GB peak for a 12 GB checkpoint). In the regime that
+matters that exceeds the weights+KV+file total the CPU path is priced at, and it does not stack
+with the file term (the source is unmapped before the build), so need() takes the larger.
+
+Two halves, because the tiny fixture cannot be in that regime (its KV at the full window dwarfs
+its weights): the wiring is checked on the real GGUF, the arithmetic on realistic numbers.
+```
+
+## TestFitGuard_pricesAgainstAvailableNotTotalRAM
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_pricesAgainstAvailableNotTotalRAM`) on 2026-10-09.
+
+```text
+R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's SECOND live re-run):
+the load-time guard must price against CURRENTLY AVAILABLE memory, not total RAM. Ample total
+RAM with tight availability is exactly the live failure's shape — the load-time guard on the
+real Mac reported a healthy-looking margin against total RAM while the machine was, in fact,
+already out of room, and swap began within 15 seconds of load completing, before any request.
+```
+
+## TestFitCheck_unpinnedPricesKVAtTheModelsMaximum
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitCheck_unpinnedPricesKVAtTheModelsMaximum`) on 2026-10-09.
+
+```text
+R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the guard priced weights and,
+only if -ctx was pinned, KV — so an UNPINNED load that fits at idle can still swap the machine
+on its first real request, because KV was priced at 0 regardless of how large the model's own
+context window is. Driven with numbers shaped like the actual failure: a 7B-class model whose
+weights alone fit comfortably, but whose KV at its full context window does not.
+```
+
+## TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing.fixture
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing.fixture`) on 2026-10-09.
+
+```text
+MEASURED, not assumed: this fixture's own metadata gives ggufConfig a MaxPositions of 0
+(context_length is not set the way this synthetic build's config parses it), so
+fitCheckFor's "unknown ⇒ proceed" branch fires and this specific fixture cannot exercise
+the auto-pin path at all — confirmed by direct inspection (kvBytesPerPosition=512,
+MaxPositions=0), not by running this test and rationalizing a SKIP after the fact. The pure
+arithmetic is fully covered by TestFitCheck_unpinnedPricesKVAtTheModelsMaximum above, which
+does not depend on any fixture's real dimensions; this test exists to prove the OTHER half —
+that a fixture with a real MaxPositions and comfortable weights does not regress into
+spuriously capping or refusing — and to auto-upgrade to a real auto-pin assertion the day a
+fixture with MaxPositions>0 is available at this path.
+```
+
+## TestFitEstimate_agreesWithResidentWeightBytes.band
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitEstimate_agreesWithResidentWeightBytes.band`) on 2026-10-09.
+
+```text
+TIGHT on purpose, and it was not always. The band started at 0.6-1.6 and passed on
+linux/amd64 at 0.96 while darwin/arm64 sat at 0.53 — the arm64 W4A8 row4 repack
+keeps a second buffer, so int4 costs about twice its encoding there and a
+hand-derived constant was ~1.8x low on the one platform the guard exists for.
+quantBytesPerElem now MEASURES through quantizeWM, so a wide band would only hide
+the next such divergence. Some slack remains because the estimator prices every
+tensor uniformly while the accountant reads the real backing slices.
+```
+
+## TestFitEstimate_safetensorsAgreesWithResidentWeightBytes
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitEstimate_safetensorsAgreesWithResidentWeightBytes`) on 2026-10-09.
+
+```text
+TestFitEstimate_safetensorsAgreesWithResidentWeightBytes is
+TestFitEstimate_agreesWithResidentWeightBytes's safetensors twin (P9b, docs/multimodal.md):
+proves estimateSafetensorsWeightBytes's shape-based, quant-priced estimate actually tracks a
+real load's resident weight bytes, on a real (tracked, non-gitignored) safetensors checkpoint —
+not just that it compiles or returns something positive. This is what closes the gap
+fitCheckFor's OLD behavior left: a safetensors path returned a zero weight estimate
+unconditionally, so fits() always reported true regardless of the machine's actual RAM.
+```
+
+## TestFitCheckFor_pricesSafetensorsNotJustGGUF
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitCheckFor_pricesSafetensorsNotJustGGUF`) on 2026-10-09.
+
+```text
+TestFitCheckFor_pricesSafetensorsNotJustGGUF pins the actual regression this closes: before
+P9b, fitCheckFor returned a zero-weight (therefore always-fits) check for ANY non-.gguf path —
+a safetensors checkpoint's fit guard was silent by construction, never refusing regardless of
+how little RAM was injected. Confirms both weightBytes and kvBytes are now non-zero for a real
+safetensors directory with a resolvable context.
+```
+
+## TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory`) on 2026-10-09.
+
+```text
+TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory gates M-30: the remedy text for a
+refused safetensors DIRECTORY used to unconditionally recommend -stream-weights — a flag that
+is a genuine no-op for a directory (decoder.Load ignores it for anything but a .giw, and
+serve's own -stream-weights gates are .gguf-suffix-only) — so a user who did exactly what the
+message told them got an identical refusal back. The remedy must now name the escape hatch
+that actually works for this source (GOINFER_NO_FIT_GUARD=1) and the real path to a permanent
+fix (cmd/prequant), and must NOT recommend -stream-weights at all.
+```
+
+## TestQuantBytesPerElem_everyModeIsPlausible.int4
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestQuantBytesPerElem_everyModeIsPlausible.int4`) on 2026-10-09.
+
+```text
+int4 has exactly TWO legitimate costs, and which one applies is a property of the host, not
+of the encoding:
+
+  ~0.5625 canonical nibbles + one binary16 scale per group of 32 (aikit v1.50.0; 0.625 with the f32
+          scales before it), and no repack
+  ~1.125  the same, PLUS a second repacked buffer that the loader keeps beside it —
+          RepackInt4Row4 on arm64-with-dotprod (nibbles and scales both doubled; 1.250 before)
+
+Pinning the pair rather than a range is the point: a wrong measurement usually lands
+BETWEEN them, and a range wide enough to hold both would accept it.
+
+This replaces an assertion that int4 must be cheaper than int8, which CI proved false.
+Measured on darwin/arm64 2026-09-06: int4 1.2500 against int8 1.0156 — on Apple Silicon
+int4 weights occupy about 23% MORE resident RAM than int8int8, because int8 gets no repack.
+See docs/tasks/task-first-hour.md for what that means for the help text's "int4 ... smallest".
+```
+
+## TestKvDimAt_zeroForNemotronNonAttentionLayers
+
+Moved from `decoder/fitkv_test.go` (the comment above `TestKvDimAt_zeroForNemotronNonAttentionLayers`) on 2026-10-09.
+
+```text
+TestKvDimAt_zeroForNemotronNonAttentionLayers gates a residual gap in M-28 found while
+implementing P-02 (docs/audit-2026-09-10.md): Nemotron's mixer identity is per-layer RUNTIME
+DATA (nemotronParams.blockKind, read from layers_block_type), not a registry-time closure like
+Granite's layerIsMamba — so isMambaLayer never fires for a Nemotron mamba layer at all, and its
+mlp/moe block kinds (decoder/forward_nemotron.go's own switch: only nemoAttn ever touches
+cache) touch no K/V either, uncaught by any generic predicate. Real fixture, not synthetic:
+testdata/nemotron-tiny's layers_block_type is exactly
+["mamba","attention","mlp","mamba","attention"].
+```
+
+## TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth
+
+Moved from `decoder/fitkv_test.go` (the comment above `TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth`) on 2026-10-09.
+
+```text
+TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth gates M-28's MLA sub-fix: the cache
+holds the compressed KVLoRARank+QKRopeHeadDim latent (forward_deepseek.go reconstructs
+per-head K/V from it each step), not NumKVHeads*HeadDim's full reconstructed width — the audit's
+own DeepSeek-V2-Lite figure ("MLA stores 576/layer, priced 4096") is exactly this gap.
+```
+
+## TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal
+
+Moved from `decoder/fitkv_test.go` (the comment above `TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal`) on 2026-10-09.
+
+```text
+TestKvPositionsAt_slidingWindowCapsLocalLayersNotGlobal gates M-28's sliding-window sub-fix: a
+local (non-global) layer's ring never grows past SlidingWindow regardless of ctx, while a
+global layer's cost keeps growing with ctx — the gemma3-12b "~6x over at 131k" figure traces
+to exactly this asymmetry being ignored.
+```
+
+## TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth
+
+Moved from `decoder/fitkv_test.go` (the comment above `TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth`) on 2026-10-09.
+
+```text
+TestFitGuard_mlaKVPricedAtCompressedLatentNotFullWidth is M-28's DeepSeek-V2-Lite case from the
+audit ("MLA stores 576/layer, priced 4096"), on the real fixture: the fixed estimator must price
+meaningfully LESS than the flat formula it replaces, because the flat formula charges the full
+reconstructed per-head width where MLA actually caches only the compressed latent.
+```
+
+## TestFitGuard_hybridKVSkipsRecurrentLayers
+
+Moved from `decoder/fitkv_test.go` (the comment above `TestFitGuard_hybridKVSkipsRecurrentLayers`) on 2026-10-09.
+
+```text
+TestFitGuard_hybridKVSkipsRecurrentLayers is M-28's DeltaNet-hybrid case, on the real qwen3.5
+fixture the audit itself names ("Qwen3.5-4B: priced 128 KiB/position vs 32 KiB stored").
+```
+
+## TestFitGuard_slidingWindowFlattensPastTheWindow
+
+Moved from `decoder/fitkv_test.go` (the comment above `TestFitGuard_slidingWindowFlattensPastTheWindow`) on 2026-10-09.
+
+```text
+TestFitGuard_slidingWindowFlattensPastTheWindow is M-28's olmo3-7B case from the audit
+("~3.4x over at 65k"), on the real fixture: at a ctx well past the model's own sliding window,
+the fixed estimator's local layers must have stopped growing while the flat formula keeps
+charging every layer as if it held the full context.
+```
+
+## TestPlan_tableDriven
+
+Moved from `decoder/fitplan_test.go` (the comment above `TestPlan_tableDriven`) on 2026-10-09.
+
+```text
+TestPlan_tableDriven is G4 (docs/tasks/task-fit-to-hardware.md §6): "a table-driven unit test on
+synthetic headers — dense, MoE, hybrid, every backend, every budget... pins the placement and
+the ctx cap. A change to the priority order is a change to this table, reviewed." Not literally
+synthetic headers (Phase 1 was scoped Load()-based, docs/tasks/task-gpu-paths-2026-09.md's G11 entry)
+— real tiny checkpoints instead, budgets scaled to each fixture's OWN measured byte counts
+rather than the doc's literal "6 to 64 GB" (these are toy-sized parity fixtures, not real
+deployment checkpoints, so a literal GB range would never exercise the decline path at all).
+```
+
+## TestPlan_extraBytesReservedAheadOfExperts
+
+Moved from `decoder/fitplan_test.go` (the comment above `TestPlan_extraBytesReservedAheadOfExperts`) on 2026-10-09.
+
+```text
+TestPlan_extraBytesReservedAheadOfExperts is the regression this session's own G11 CUDA guard
+work (docs/tasks/task-gpu-paths-2026-09.md) traces back to: tasks/task-fit-to-hardware.md's motivating
+example (a --drafter attach after BuildResident grabbed VRAM an MoE expert cache had already
+claimed). PlanRequest.ExtraBytes exists so the CALLER can price a companion allocation (a
+drafter, a vision tower) as a FIXED term ahead of the elastic expert-slot count, per §2's "every
+allocation is a term of the plan, including the ones that attach after load."
+```
+
+## TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch
+
+Moved from `decoder/fitplan_test.go` (the comment above `TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch`) on 2026-10-09.
+
+```text
+TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch is the M-08 gate
+(docs/audit-2026-09-10.md): the existing "nonsense backend declines" test
+(moe/nonsense_backend_declines_on_features_not_bytes, above) only proves the decline for an
+arch with NON-EMPTY RequiredResidentFeatures — a plain Llama has none, so
+MissingResidentFeatures(nil) returned empty (nothing required, nothing implemented, so
+"nothing missing") and Plan fell through to RESIDENT for ANY backend name, including one that
+does not exist. This is the same shape as "Llama-4/cuda", "dense Gemma-4/webgpu" and
+"Kimi-K2/metal" in the finding: a family whose feature list alone doesn't catch the decline.
+```
+
+## TestFitEstimate_f32PinnedMixersAgreeWithResident
+
+Moved from `decoder/fitweights_test.go` (the comment above `TestFitEstimate_f32PinnedMixersAgreeWithResident`) on 2026-10-09.
+
+```text
+TestFitEstimate_f32PinnedMixersAgreeWithResident is M-29's headline case (docs/audit-2026-09-10.md):
+before the fix, a Mamba-2 mixer's or MLA's f32-pinned tensors were priced at the requested
+quant's rate instead of f32, drastically UNDER-counting them at int4/int8 (the audit's own
+figure: "a Nemotron-H-8B '≈4.7 GB at int4' lands at ≈13 GB, admitted"). Same
+estimate-vs-accountant band as TestFitEstimate_safetensorsAgreesWithResidentWeightBytes,
+extended to real f32-pinned-mixer fixtures.
+```
+
+## TestFitEstimate_f32PinnedMixersAgreeWithResident.band
+
+Moved from `decoder/fitweights_test.go` (the comment above `TestFitEstimate_f32PinnedMixersAgreeWithResident.band`) on 2026-10-09.
+
+```text
+Same band as the dense estimate-vs-accountant tests — before M-29 this was
+nowhere near 1.0 for these fixtures at int4 (the f32-pinned tensors alone are
+4x their int4-priced estimate, and dominate a Mamba-2/MLA-heavy model).
+
+MLA's floor is a hair lower (0.80, not 0.85): f32PinnedTensorName's own doc
+comment documents a known, deliberate residual gap — MLA's output projection
+(o_proj/dense.weight) is ALSO f32-pinned but shares its name with every
+ordinary family's quantizable o_proj, so it is left unmatched rather than
+risking a much larger false-positive elsewhere. This is that gap's real,
+measured size, not a loosened bar to paper over a regression.
+```
+
+## requireFixtureIdentity
+
+Moved from `decoder/fixture_identity_test.go` (the comment above `requireFixtureIdentity`) on 2026-10-09.
+
+```text
+The tiny parity checkpoints are gitignored and regenerated per machine by scripts/pin_*.py, but the
+goldens recorded from them are committed — and the pin scripts do not reproduce the same random weights
+across torch/transformers versions. So a box whose checkpoint was re-pinned elsewhere compares the
+committed golden against DIFFERENT weights, and the parity test reports a meaningless cosine (−0.04 for
+gemma3-vl-tiny) that reads exactly like a forward-pass regression. That kept five decoder tests red on
+the Mac from 2026-09-18 to 2026-09-24, pre-registered as "known unrelated" and never investigated
+(docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md).
+
+requireFixtureIdentity fails fast, with the actual diagnosis, when a fixture listed in
+testdata/fixture_identity.json does not hold the weights its goldens were recorded from. Since
+2026-09-24 the small fixtures are COMMITTED instead (git pins their bytes); the manifest covers only
+the ones too large to commit, and TestInt4_forwardParity's per-fixture subtest is the caller.
+
+The comparison is NUMERIC, not a file hash: the same pin script with the same seed produces
+byte-different checkpoints on arm64 and amd64 (measured: nemotron3nano-tiny and qwen3next-tiny differ in
+33-36% of elements between the Mac and nobara, by at most 2.4e-7 — float32 ULP noise from torch's normal_
+on the two architectures), and both correctly pass every golden. A different random draw moves a
+tensor's sum by O(sum|x|/sqrt(n)); ULP noise moves it by ~1e-7 of sum|x|. The 1e-4 relative tolerance
+sits three orders of magnitude from each.
+```
+
+## forcedFallbackFloors
+
+Moved from `decoder/forced_fallbacks_test.go` (the comment above `forcedFallbackFloors`) on 2026-10-09.
+
+```text
+Forced-fallback floors. Under a forced narrower kernel the numerics are a different realization of the same arithmetic, so the goldens that pin ONE path's token sequence or sample values
+(recorded on the default path; the int4 goldens are arm64-baked) cannot be compared exactly. These replace them under the tags with a closeness bound, measured 2026-10-04 on a Ryzen 7 3700X
+(docs/tasks/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real defect does, and each shown red by a mutation.
+```
+
+## forcedInt4CosFloor
+
+Moved from `decoder/forced_fallbacks_test.go` (the comment above `forcedInt4CosFloor`) on 2026-10-09.
+
+```text
+forcedInt4CosFloor: centered cosine of an int4 fixture's logit samples against its recorded golden. Forced noavx2 measured 1.0 on 21 of 22 fixtures and 0.99381096 on gemma4-dense-scaled (the
+fixture built to amplify numeric differences; argmax equal). The healthy cross-arch deficit on gpt2 is 2.2e-3 (int4_golden_test.go); a group-size mutation moves it by 2.4e-2.
+```
+
+## forcedLogitCloseness
+
+Moved from `decoder/forced_fallbacks_test.go` (the comment above `forcedLogitCloseness`) on 2026-10-09.
+
+```text
+forcedLogitCloseness: 1 - cosine between two paths' logits for the same ids, where the pair differs by design: int4 against int8int8 (measured 1.64e-2 pure Go, 1.75e-2 AVX2) and the f32
+fast-attention prefill against the exact path (measured 8.3e-3 pure Go, 1.6e-2 AVX2, 768 tokens).
+```
+
+## TestExcludeFromFork_syscallReachesMinherit
+
+Moved from `decoder/forkinherit_darwin_test.go` (the comment above `TestExcludeFromFork_syscallReachesMinherit`) on 2026-10-09.
+
+```text
+The syscall number and argument order excludeFromFork relies on are real: the same call with an
+invalid inheritance value must come back EINVAL from the kernel's minherit (a wrong syscall number
+would give ENOSYS or act on something else). XNU accepts minherit over an unmapped hole silently, so
+"does it fail on a bad range" is not a usable check; the effect itself is measured by
+metal/alias_forkprobe_test.go (fork 1,092 ms -> 3.8 ms while a page is wired).
+```
+
+## TestForwardN_matchesSequential
+
+Moved from `decoder/forwardn_test.go` (the comment above `TestForwardN_matchesSequential`) on 2026-10-09.
+
+```text
+TestForwardN_matchesSequential checks the batched multi-position forward
+(forwardLayersN) against running forward() one token at a time. The bar is BIT-IDENTITY: every
+logit equal, not argmax plus a cosine floor.
+
+THE COMMENT THAT USED TO BE HERE DESCRIBED A DIFFERENT CODEBASE. It said "NOT bit-identical,
+since batched attention moved QKᵀ/scores·V onto the f32 SIMD A·Bᵀ kernel" against "the scalar
+attendQuery" — but decode has not used attendQuery since single-token decode was routed through
+attendBatchedHeads at K=1 with acc64. attention.go says so where it does it, names THIS test as
+the gate, and gives the reason: f32's reduction is M-dependent, so K=1 decode ≠ M=K verify, and
+that flipped ~11% of argmaxes and left ~7% of speculations rejected. f64 is order-independent, so
+the two are exact.
+
+So the gate was one assertion weaker than the contract it guards: a regression breaking
+decode == prefill by 1e-6 passed here and only the heavy token-level spec-parity gates would have
+noticed (audit-2026-09-02 G-06). Measured before tightening — 0 differing logits of 19,447,808 at
+K=128 on qwen2.5-coder-0.5b int8int8 — so this asserts a property the code has, not one it ought
+to have. forwardN passes fastAttn=false, so the A3 f32 path is not in play here; that path is
+deliberately NOT bit-identical and has its own gate.
+
+K=128 is included so the O(L²) attention term is actually exercised (K=6 barely touches it).
+Skips without the model asset.
+```
+
+## TestG15PrefillProfile.file
+
+Moved from `decoder/g15_prefill_profile_test.go` (the comment above `TestG15PrefillProfile.file`) on 2026-10-09.
+
+```text
+Prefill profiler — time and profile ONE batched CPU prefill at a chosen prompt
+length and quantization.
+
+Built for queue G15 (a suspected int4-specific prefill cliff at ~3k tokens).
+**G15 was WITHDRAWN: the cliff was a measurement artifact** — one 3020-token
+int4 timing of 1587.1 s that three later measurements put at ~350 s, int4 and
+int8int8 scaling alike at ~n^1.85. This instrument is what caught it, by
+disagreeing with the number, so it is kept: the disagreement was the finding.
+
+Two things it does that the original measurement did not, both of which are now
+required by `docs/benchmarks.md`'s methodology list:
+
+ 1. It records MACHINE STATE beside the number (load average before and after).
+    A timing with no recorded state cannot be argued with later, which is what
+    made the artifact expensive rather than merely wrong.
+ 2. It REFUSES to run on a busy box unless explicitly overridden, because the
+    artifact's leading suspect is an abandoned prefill still burning a core.
+
+The profile covers the PREFILL ONLY. Model load is excluded deliberately: it is
+seconds of unrelated I/O and quantization that would otherwise dominate a short
+profile and differ between arms by construction.
+
+Run (one quant per process — loadBenchModel is a sync.Once):
+
+	GOINFER_PREQUANT_GGUF=<model.gguf> GOINFER_BENCH_QUANT=int4 \
+	GOINFER_G15_K=3020 GOINFER_G15_PROF=/tmp/int4-3020.prof \
+	go test ./decoder/ -run TestG15PrefillProfile -timeout 3600s -v
+
+Then: go tool pprof -top -nodecount=30 <prof>
+
+Set GOINFER_G15_ALLOW_BUSY=1 to run anyway on a loaded box — and then say so
+beside any number it produces.
+```
+
+## TestG15PrefillProfile.preflight
+
+Moved from `decoder/g15_prefill_profile_test.go` (the comment above `TestG15PrefillProfile.preflight`) on 2026-10-09.
+
+```text
+Pre-flight. The hazard that produced the G15 artifact was OUR OWN competing
+work — an abandoned prefill still saturating a core — not a busy desktop.
+The first version of this check refused on absolute load > 1.5, which is
+wrong for the machine it runs on: a developer Mac idles above that with
+Spotlight and an editor open, so the check skipped every real measurement
+and its only effect would have been to train people to set ALLOW_BUSY=1.
+
+So: refuse on a COMPETING PROCESS OF OURS (the real hazard, and precisely
+reproducible), and always RECORD the load rather than gating on it. A number
+with its machine state attached can be argued with later, which is the
+property that was actually missing.
+```
+
+## TestG15PrefillProfile.alloc
+
+Moved from `decoder/g15_prefill_profile_test.go` (the comment above `TestG15PrefillProfile.alloc`) on 2026-10-09.
+
+```text
+Report the allocation delta alongside the profile: the GC hypothesis for the
+cliff predicts a large one, and it costs nothing to answer here rather than
+in a second run.
+```
+
+## TestG24AttnKernelRatio
+
+Moved from `decoder/g24_attnkernel_test.go` (the comment above `TestG24AttnKernelRatio`) on 2026-10-09.
+
+```text
+G24 — how much would an f32 attention path actually recover?
+
+At K=8192 prefill, acc64 attention is ~70% of the time (MatmulAVAcc64 51.1% +
+MatmulQKAcc64 18.7%). The acc64 comment calls f64 "~3.7× slower than f32", and
+A3 proposes a gated f32 path. But the honest comparison is NOT end-to-end:
+
+  - acc64 reads K/V DIRECTLY by stride, "skipping a kh gather entirely" and
+    "skipping a vt gather+transpose". f32 must pay both, so the f32 arm here
+    includes those gathers — otherwise the ratio flatters f32 by omitting work
+    it cannot avoid.
+  - the f32 branch in attendBatchedHeads is single-threaded by construction
+    (its per-kv-group gather is shared mutable state), so an end-to-end A/B
+    would race parallel-acc64 against serial-f32 and measure the confound.
+    Both arms here are single-threaded, which is the like-for-like comparison.
+
+Shapes are the ones G20's tiling actually calls at an 8k prompt.
+```
+
+## TestG24AttnKernelRatio.parallelism
+
+Moved from `decoder/g24_attnkernel_test.go` (the comment above `TestG24AttnKernelRatio.parallelism`) on 2026-10-09.
+
+```text
+EQUALIZE PARALLELISM. MatmulBT fans out via parallelCols; the acc64 kernels
+are plain serial loops. A first pass of this benchmark compared serial acc64
+against parallel f32 and reported 17.6x against a documented ~3.7x — the
+ratio was mostly core count. Force MatmulBT serial so the number is the
+arithmetic-plus-gather truth, then report the parallel figure separately as
+what it is: a SECOND, separable effect.
+```
+
+## TestG24AttnKernelRatio.correctness
+
+Moved from `decoder/g24_attnkernel_test.go` (the comment above `TestG24AttnKernelRatio.correctness`) on 2026-10-09.
+
+```text
+CORRECTNESS FIRST. A ratio between two kernels that compute different things
+is worthless, and the first version of this benchmark already produced one
+misleading number (17.6x, from unequal parallelism). So: run both arms once
+and compare outputs before timing anything.
+```
+
+## g26BenchLogits.prohibition
+
+Moved from `decoder/g26_sampler_bench_test.go` (the comment above `g26BenchLogits.prohibition`) on 2026-10-09.
+
+```text
+SAMPLER MICROBENCHMARKS IN THIS PACKAGE MAY NOT PRODUCE QUOTABLE FIGURES.
+
+They are a tool for deciding WHERE TO LOOK. No number they emit belongs in a doc, a queue item, a
+commit message, or a comparison between two commits. This is a standing prohibition, not advice,
+and it was earned twice in a single investigation (G26, 2026-08-27):
+
+  1. BenchmarkExpChunked's ~96 us was used to argue that "sampling is a low-single-digit
+     percentage of per-token time, so no sampler change can move end-to-end by 5.9%." The real
+     in-situ sampled tail is 703-950 us — 7-10x larger. The bound retired the correct hypothesis
+     for two rounds.
+  2. A whole-path Sampler.Sample benchmark reported HEAD 23% SLOWER at 152k vocab. Measured
+     end-to-end on a 151936-vocab model, HEAD is 31% FASTER. Not a mis-scaled magnitude — an
+     INVERTED SIGN, and it had already been filed as a finding before the end-to-end run.
+
+WHY the loop lies here specifically: it keeps the vocab-sized scratch hot in cache and the
+allocator warm in its free-list, whereas decode runs one draw per token behind an ~8 ms forward
+that evicts both. The benchmark measures a cache state that never occurs.
+
+MEASURE IT IN SITU INSTEAD, which costs nothing extra: the same-build end-to-end greedy vs
+temp1.0 difference, with GOINFER_NO_OPTFWD=1 so the optimistic-forward overlap cannot confound
+it. On CUDA that difference is the whole sampled tail (greedy takes ForwardArgmax's on-device
+path and never reads back the logit vector), not the sampler alone — but it is measured where the
+code runs, and both times the two disagreed, the microbenchmark was the one that was wrong.
+```
+
+## g26BenchLogits.localisation
+
+Moved from `decoder/g26_sampler_bench_test.go` (the comment above `g26BenchLogits.localisation`) on 2026-10-09.
+
+```text
+G26 localisation: the FULL temp1.0_notrunc sampling path, not expChunked alone.
+
+WHY THE WHOLE PATH. G26's earlier round eliminated the sampler using BenchmarkExpChunked's
+~96 us, and that bound was wrong by 7-10x: the end-to-end greedy-vs-temp1.0 gap puts the real
+sampling step at 703 us (ca29d6c) / 950 us (HEAD) per token on phi3-mini. A microbenchmark of
+one function inside the path cannot bound the path. This benchmarks Sampler.Sample itself.
+
+The greedy arm is the control, and it is the point: subtracting it here reproduces the same
+decomposition the peer sweep produced end-to-end, so the two are comparable rather than merely
+suggestive.
+
+RESULT, 2026-08-27: THIS BENCHMARK'S 152k COMPARISON IS WRONG — do not use it as evidence.
+Measured end-to-end on qwen2.5-coder-1.5B (vocab 151936) with optFwd disabled in both arms, the
+production sampling step goes 1467 us -> 1009 us, i.e. HEAD is 31% FASTER, where this benchmark
+reports HEAD 23% SLOWER. The sign is inverted, not merely the magnitude. A tight loop keeps the
+scratch buffer hot and the allocator warm; decode does neither, running it behind an ~8 ms
+forward. Prefer the in-situ measure: the same-build greedy-vs-temp1.0 end-to-end difference with
+GOINFER_NO_OPTFWD=1. Kept only because the retraction is worth more than the file.
+
+CAVEAT, stated because it decides how a null result is read: these logits are SYNTHETIC. If the
+regression is data-dependent (a denormal-heavy tail, say), synthetic logits may not reproduce it
+-- and a flat result here is then evidence about the shape of the cause, not an absence of one.
+```
+
+## TestGPT2_activationSelectsTheNamedFunction
+
+Moved from `decoder/gelu_dispatch_test.go` (the comment above `TestGPT2_activationSelectsTheNamedFunction`) on 2026-10-09.
+
+```text
+GPT-2's activation_function must select the function it NAMES.
+
+The bug this pins: validateGPT2 accepted both "gelu_new" and "gelu", and
+gpt2Architecture hardcoded Act: ActGeluTanh — so a checkpoint declaring HF's exact
+"gelu" silently ran the tanh approximation. In HF these are different entries,
+ACT2FN["gelu"] = GELUActivation (exact erf) vs ACT2FN["gelu_new"] = NewGELUActivation
+(tanh), not two spellings of one function.
+
+aikit hit the mirror image on its encoder side in v1.19.0 — three tanh names routed
+through the exact erf — and its note said no shipping checkpoint was affected, latent
+for a future addition. The same was true here, which is the point: this test exists so
+the next GPT-2-family checkpoint that declares "gelu" gets the function it asked for
+instead of a silently approximated one.
+```
+
+## TestGemma3Real.file
+
+Moved from `decoder/gemma3_real_test.go` (the comment above `TestGemma3Real.file`) on 2026-10-09.
+
+```text
+Real-model gate for gemma-3-4b-it TEXT decoder (gemma3) — the safetensors loader + gemma3
+forward on actual released weights, text-only (the VL wrapper's vision path is not exercised).
+4B fits an f32 forward in RAM, so Options{} ⇒ quantNone and the gate is a TIGHT cosine vs the
+HF f32 golden (argmax + greedy continuation + cosine ≥ 0.9999). Verifies the gemma3 axis on
+real weights: sandwich (4-norm) placement + per-head QK-norm + sliding-window interleave +
+embed scale. Fixture: scripts/pin_gemma3_4b_text.py. This is the real-oracle emit gate that
+moves gemma3 pending → validated (batched-prefill coverage: gemma3 is canBatchN-batchable).
+```
+
+## TestGemma3TowerSensitivity.decoder
+
+Moved from `decoder/gemma3_tower_sensitivity_real_test.go` (the comment above `TestGemma3TowerSensitivity.decoder`) on 2026-10-09.
+
+```text
+EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the G-S3b arms' own decoder. Through the
+directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, the file serve's Metal load reads, int4 with the
+plain head), mapped rather than quantized into the heap, which the load guard refused on the 16 GB Mac (the
+2026-10-08 night: 6.2 GB against 4.8). The sidecar generates exactly what the direct load does
+(prequant.TestDirSidecar_matchesDirectLoad).
+```
+
+## TestGemma3TowerSensitivity.prompt
+
+Moved from `decoder/gemma3_tower_sensitivity_real_test.go` (the comment above `TestGemma3TowerSensitivity.prompt`) on 2026-10-09.
+
+```text
+serve's prompt, built the way serve builds it (internal/serveapp encodeVisionSegments): the model's chat template
+rendered as segments, the image block (the processor's "\n\n" on both sides, M-38) spliced in as its own Special
+segment, then EncodeSegments. Until 2026-10-08 this hand-wrote the template and encoded it as one string, which merges
+the template's "\n" with the block's "\n\n" into one token: 277 tokens against serve's 278, so the greedy reference
+was not the served path (the night of 2026-10-07: "...a table of..." where serve says "...quarterly unit sales...").
+```
+
+## distinctTrigramRatio
+
+Moved from `decoder/gemma4_26b_real_test.go` (the comment above `distinctTrigramRatio`) on 2026-10-09.
+
+```text
+distinctTrigramRatio returns |distinct 3-rune windows| / |total| over s — a
+language-agnostic degeneracy metric. Coherent prose cycles through many trigrams (high
+ratio); a looping forward reuses a few ("water-water-water", "얓숌면-얓숌면-얓숌면",
+"true or true or") so the ratio collapses. This is what the old printable-ASCII-majority
+check was blind to: it passed int8's English-ish repetition and flagged int4's CJK
+repetition, though both are the SAME degeneracy — see the RESOLUTION in
+docs/task-gemma4-moe.md (da5a6ec).
+```
+
+## wantGemma4Prompt
+
+Moved from `decoder/gemma4_26b_real_test.go` (the comment above `wantGemma4Prompt`) on 2026-10-09.
+
+```text
+wantGemma4Prompt is the exact rendered generation prompt for the gate's user turn.
+Asserted verbatim so a template/marker change (e.g. the <|turn>/<turn|> rename that
+681db0c made optional in tokenizer/sentencepiece.go) surfaces HERE as a clear diff,
+not downstream as mystery garbage.
+```
+
+## TestGemma4_26B.precisions
+
+Moved from `decoder/gemma4_26b_real_test.go` (the comment above `TestGemma4_26B.precisions`) on 2026-10-09.
+
+```text
+Run the gate at BOTH precisions. int4 (~13 GB) is the config Phase 5 benchmarks and
+is fully coherent under the chat template — the earlier "int4 is incoherent" claim
+was a raw-prompt artifact (retracted, da5a6ec). int8 (~26 GB) is the control.
+```
+
+## gemma4CoherenceGate
+
+Moved from `decoder/gemma4_26b_real_test.go` (the comment above `gemma4CoherenceGate`) on 2026-10-09.
+
+```text
+gemma4CoherenceGate is the real gate: a greedy continuation of a PROPERLY TEMPLATED
+chat turn must contain the known answer and clear the degeneracy floor.
+
+The prompt MUST go through Gemma 4's chat template. A raw completion prompt ("The
+capital of France is") is off-distribution for this instruction-tuned checkpoint: BOTH
+int8 and int4 degenerate there (int8 → "water-water-water is 100°C", int4 → CJK
+repetition), and the old printable-ASCII gate mistook int8's English-ish garbage for
+coherence while flagging int4's CJK — a false precision signal that cost a week
+(resolved da5a6ec). DO NOT reintroduce a raw prompt here as a quality check;
+gemma4RawPromptControl keeps the raw case as a NEGATIVE control only. Greedy + fixed
+prompt is deterministic (sampling does not rescue a raw prompt anyway — verified), so
+the known-answer substring is a legitimate, non-flaky signal.
+```
+
+## TestGemma4_26B_s10Grade.margins
+
+Moved from `decoder/gemma4_26b_s10grade_test.go` (the comment above `TestGemma4_26B_s10Grade.margins`) on 2026-10-09.
+
+```text
+Per-position margins for the disagreement (the owner's follow-up of 2026-10-07: is the 26B's low argmax agreement near-ties?).
+G1c's rule: benign iff the CPU's top-1 and the index Metal chose are within 3% in the CPU's logits (relative to the CPU's top-1).
+The G3 rule is on probability: p(Metal's choice) >= half p(CPU's top-1), the softmax taken over the CPU's logits.
+```
+
+## TestGemma4Admission_unconditional
+
+Moved from `decoder/gemma4_admission_test.go` (the comment above `TestGemma4Admission_unconditional`) on 2026-10-09.
+
+```text
+TestGemma4Admission_unconditional pins Gemma-4 admission after the Check-A backfill removed
+GOINFER_GEMMA4_RESIDENT from the arch predicate. Dense and enable_moe_block are admitted
+unconditionally; the per-backend answer stays with the feature gate, so WebGPU still declines
+(no Gemma kernels) and E-models still decline everywhere (PLE).
+
+It asserts the variable is INERT rather than dropping the coverage: a reintroduced read would
+silently reopen the hole the flag used to hide — a family gated on an env var with no gate
+behind it — so this fails if setting or clearing it changes any answer. The matrix's
+GPUResident column is arch.decodeRunnerEligible() (capability_matrix_test.go), so this is also
+what keeps docs/hardware-matrix.md honest.
+```
+
+## TestGemma4Admission_unconditional.inert
+
+Moved from `decoder/gemma4_admission_test.go` (the comment above `TestGemma4Admission_unconditional.inert`) on 2026-10-09.
+
+```text
+The variable is INERT in both states. Previously env-off meant "declined everywhere", which
+is what kept the generated matrix reporting CPU for a path that worked — see the flip commit.
+```
+
+## TestGemma4Admission_unconditional.moeadmit
+
+Moved from `decoder/gemma4_admission_test.go` (the comment above `TestGemma4Admission_unconditional.moeadmit`) on 2026-10-09.
+
+```text
+enable_moe_block now admits — Split B (splitB.2c) landed the parallel dense‖MoE
+FFN on its own cuda path (gemma4MoeMLP, routed around the generic MoE checks via
+HasGemma4MoEResident), so it falls through the arch predicate like the dense variant. CUDA
+ships every required feature; WebGPU still lacks the Gemma kernels, so the feature gate
+refuses it — same no-overclaim shape as dense. It is the PLE-free 26B-A4B shape, so no
+FeatGemma4EModel.
+```
+
+## TestGemma4Admission_unconditional.moe
+
+Moved from `decoder/gemma4_admission_test.go` (the comment above `TestGemma4Admission_unconditional.moe`) on 2026-10-09.
+
+```text
+The MoE variant is inert to the variable too. This used to assert the OPPOSITE — that env-off
+declined everywhere, "so a regenerated matrix cannot claim gemma4_text residency users can't
+reach". That reasoning was sound and the conclusion still holds; what changed is which way it
+resolves. The matrix is honest either way, but only one of the two is honest AND useful.
+```
+
+## TestGemma4EndToEndThroughput
+
+Moved from `decoder/gemma4_endtoend_throughput_test.go` (the comment above `TestGemma4EndToEndThroughput`) on 2026-10-09.
+
+```text
+TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap
+(docs/completed/task-zeno-compare.md's "Quiet-machine re-measure": gemma4-26b kind-4
+vs kind-3, -47.0%/-49.0% at 4GB/8GB, budget-invariant) — the number the
+whole cold-touch investigation was chasing an explanation for, now that
+the kernel-level 69%-slower finding has failed to reproduce 3/3 on a
+corrected methodology. This is NOT the isolated kernel microbenchmark;
+it's the real production path (Load with StreamWeights+WeightCacheBytes,
+then Model.Generate), same steady-state total_tokens/wall_time metric the
+original measurement used, adapted from cmd/serve+HTTP to a direct
+in-process call (no HTTP round-trip noise; the model is loaded ONCE and
+generation run 3 times against the same resident/paged state, matching
+the original "3 runs against one running server" shape without paying a
+multi-minute reload cost 3 times over).
+
+Env vars: GOINFER_EE_GIW (path), GOINFER_EE_BUDGET_GB (float, WeightCacheBytes
+in GB), GOINFER_EE_LABEL (free-text label for the log line).
+```
+
+## TestGemma4Config_realGGUF
+
+Moved from `decoder/gemma4_load_test.go` (the comment above `TestGemma4Config_realGGUF`) on 2026-10-09.
+
+```text
+TestGemma4Config_realGGUF runs the real E2B GGUF through ggufConfig +
+resolveArchitecture (the Increment-1 config/descriptor path) and asserts the
+parsed descriptor matches the verified metadata. Weight loading is guarded off
+(the next increment), so this stops at the descriptor. Skips without the asset
+(set the file at ~/models/gemma-4-E2B_q4_0-it.gguf).
+```
+
+## TestGemma4VLBidir_textParity
+
+Moved from `decoder/gemma4_vl_bidir_test.go` (the comment above `TestGemma4VLBidir_textParity`) on 2026-10-09.
+
+```text
+TestGemma4VLBidir_textParity is the P0 invariant for the batched path,
+mirroring TestGemma4VL_textParity's shape: on a use_bidirectional_attention=
+"vision" checkpoint, a TEXT-ONLY forward (no image) must still match HF —
+confirmed this session that HF's own forward degrades block_sequence_ids to
+an all -1 tensor when there is no multimodal content, which makes
+blockwise_overlay unconditionally false, i.e. plain causal (see
+scripts/pin_gemma4_vl_bidir_tiny.py's docstring for the citation). This test
+checks BOTH the unchanged sequential path (m.forward, via runLayersGemma4)
+AND the new batched path (runLayersGemma4FromEmbedN with imgLen=0) against
+the HF golden, and against each other — the regression check the plan
+called for: an M=K batched matmul is not guaranteed bit-identical reduction
+order to K separate M=1 calls, so the bound here is a tight tolerance, not
+literal bit-exactness.
+```
+
+## TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped
+
+Moved from `decoder/gemma4_vl_resident_test.go` (the comment above `TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped`) on 2026-10-09.
+
+```text
+TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped mirrors
+TestGenerateVL_residentContextCapPublishesBudgetClamped (generate_vl_resident_test.go) for
+GenerateGemma4VL's own single clamp site (M-02, docs/audit-2026-09-10.md) — before this fix,
+none of the 7 VL resident clamp sites published Budget/BudgetClamped, so a cap-truncated turn
+silently reported the same finish_reason as an ordinary EOS-terminated one.
+```
+
+## TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers
+
+Moved from `decoder/gemma4_vl_resident_test.go` (the comment above `TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers`) on 2026-10-09.
+
+```text
+TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers is the gitignored gemma4-vl-tiny fixture's check of the
+S1.8 contract (docs/tasks/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class
+(this one has KV-shared layers) with a resident attached uploads its CPU prefill's K/V for the layers that own it,
+never a KV-shared one, then decodes resident. Until S1.8 the bridge was gated on UseBidirectionalAttention and this
+test asserted it was never touched; Metal now runs E-models, so that premise changed (nobara caught the stale test,
+2026-10-07: CI skips it, the fixture being gitignored). The same contract runs on a committed-path fixture in
+TestGenerateGemma4VL_eModelDecodesResident.
+```
+
+## TestGemma4VL_textParity
+
+Moved from `decoder/gemma4_vl_test.go` (the comment above `TestGemma4VL_textParity`) on 2026-10-09.
+
+```text
+TestGemma4VL_textParity loads the tiny Gemma 4 VL checkpoint (scripts/
+pin_gemma4_vl_tiny.py) through goinfer's loader + forward and asserts the
+TEXT-ONLY path matches the HF golden. Same P0 invariant as Gemma 3's own
+TestGemma3VL_textParity: a VL checkpoint's text decoder (vision_tower/
+embed_vision ignored) loads and runs exactly like a plain gemma4.
+
+This fixture's num_kv_shared_layers=2 (of 4 layers) is not incidental — it
+is the exact shape that caught two real, pre-existing bugs in
+buildWeightsFromSafetensors's gemma4 branch this session (a missing
+cross-layer-KV-sharing skip, and a missing per-layer FFN-width discovery),
+found only by loading a real checkpoint of this shape for the first time.
+This test is what gives that fix CI-repeatable coverage.
+```
+
+## TestGemmaConfirmerReference
+
+Moved from `decoder/gemma_confirmer_test.go` (the comment above `TestGemmaConfirmerReference`) on 2026-10-09.
+
+```text
+TestGemmaConfirmerReference assembles the matched-input confirmer's reference bundle from
+existing seams — no new capture code — so the Metal box can inject goinfer's exact L1 state
+into Metal's attention and isolate the crater (0.9994 @ L0 -> 0.640 @ L1) to one of:
+
+	Metal's L1 context MATCHES this reference given matched input  -> the crater is accumulated
+	  f16/precision drift in the residual+KV feeding attention (fix: f32 KV / f32 attention
+	  accumulate for Gemma's low-magnitude contexts).
+	Metal's L1 context STILL inflates on matched input            -> Metal's attention op
+	  (softmax/scale/accumulate) has a real bug, independent of drift.
+
+The bundle at layer L1, position 5 ("The capital of France is"):
+
+	residual entering L1 = ForwardCapture(prompt, [0])[0]   (layer-0 output = L1 input)
+	K/V at L1            = cache.Keys(1) / cache.Vals(1)     (post-RoPE K, raw V, f32)
+	target context       = ForwardSubCapture -> subCtx[1]
+
+Runs on CPU int4 over the byte-identical Q4_K_M gguf (sha 882e8d2d), which reproduces the
+CUDA resident context to decimals — so the Metal box gets the same reference either box would
+produce, and the injection stays entirely on its side (naturally-f32 KV, no faked state).
+```
+
+## TestGenerateVL_residentDecodeEngagesAndUploadsKV
+
+Moved from `decoder/generate_vl_resident_test.go` (the comment above `TestGenerateVL_residentDecodeEngagesAndUploadsKV`) on 2026-10-09.
+
+```text
+TestGenerateVL_residentDecodeEngagesAndUploadsKV is gap 0's wiring gate for GenerateVL, extended
+for P9(a): given a resident backend, the turn must (a) call UploadKV once per layer with the CPU
+prefill's K/V, (b) dispatch decode through the resident Forward (not the CPU m.forward), and (c)
+COMMIT resIDs + the image block afterward — a stale resIDs from an unrelated prior generation
+must not survive as a false reuse candidate (m.resIDs starts at a value that cannot satisfy the
+image-block check below), and this turn's own prefix becomes the reuse candidate for the NEXT
+turn if the same image comes back (the entire point of P9(a); GenerateVL used to be forbidden
+from touching resIDs at all, then gap 0 made it unconditionally forget — now it commits).
+```
+
+## TestGenerateVL_residentContextCapPublishesBudgetClamped
+
+Moved from `decoder/generate_vl_resident_test.go` (the comment above `TestGenerateVL_residentContextCapPublishesBudgetClamped`) on 2026-10-09.
+
+```text
+TestGenerateVL_residentContextCapPublishesBudgetClamped is M-02's (docs/audit-2026-09-10.md)
+gate: when the resident context cap clamps maxTokens down, the Generation must publish
+Budget/BudgetClamped (openai.go's effectiveBudget trusts Budget only when BudgetClamped is
+true) — before this fix, a cap-truncated VL turn silently reported the same finish_reason as an
+ordinary EOS-terminated one. capPos leaves room for exactly 2 decode tokens; maxNew (5) asks for
+more, forcing the clamp on this — the "ordinary path" (residentUploadPrefill) — site.
+```
+
+## TestGenerateVL_residentConcurrencyRace
+
+Moved from `decoder/generate_vl_resident_test.go` (the comment above `TestGenerateVL_residentConcurrencyRace`) on 2026-10-09.
+
+```text
+TestGenerateVL_residentConcurrencyRace is the direct regression guard for V-11's actual bug
+shape (docs/review-2026-09-04.md), now meaningful for the first time since that fix: a
+resident-touching plain Generate and a resident-touching GenerateVL running concurrently on
+the SAME *Model must not corrupt resIDs or double-claim resBusy. Run with -race.
+```
+
+## TestGenerateVL_imageReuseFastPath_declinesPastResidentCap
+
+Moved from `decoder/generate_vl_resident_test.go` (the comment above `TestGenerateVL_imageReuseFastPath_declinesPastResidentCap`) on 2026-10-09.
+
+```text
+TestGenerateVL_imageReuseFastPath_declinesPastResidentCap is M-01's own gate for the P9a fast
+path (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) — a strict
+extension of an already-committed prefix, so P9a's own full-reuse condition (reuseFrom >=
+imgPos+imgLen) is satisfied — must NOT take the fast path once it would overrun the resident
+cap. Before the fix, residentPrefillSeed's own error there just set g.err and returned with no
+fallback; this must instead decline cleanly and fall through to the ordinary path (tower runs
+again), exactly as "not fully reused" already does.
+```
+
+## gguf_dims_test.file
+
+Moved from `decoder/gguf_dims_test.go` (the comment above `gguf_dims_test.file`) on 2026-10-09.
+
+```text
+Track 2.2 (testing campaign): goinfer's INTERPRETATION of a GGUF — metadata →
+Config synthesis — must turn a hostile header into a typed error, never a
+panic. FuzzGGUFConfig fuzzes that path; TestGGUF_hostileDims_typedError is the
+regression for the makeslice panic that surfaced (block_count overflowing int
+→ negative NumLayers). The container parse below it (string lengths, map
+pre-sizing) is aikit's and was hardened in v1.2.1, so the fuzzer now reaches
+goinfer's layer instead of dying in the parser.
+```
+
+## ggufSeeds.corpus
+
+Moved from `decoder/gguf_dims_test.go` (the comment above `ggufSeeds.corpus`) on 2026-10-09.
+
+```text
+Every dispatchable architecture gets a seed so the fuzzer exercises its family
+builder — the div-by-zero / makeslice sites M16 hardened live inside these, and
+the previous corpus reached none of the last seven (granite/nemotron/deepseek/
+glm4moe/qwen35moe/phi3/llama4). A generic dense seed is enough to drive each
+builder's entry; the fuzzer mutates from there.
+```
+
+## TestGemma4GGUF_moeLayerScalarMatchesLayer
+
+Moved from `decoder/gguf_gemma4_layerscalar_test.go` (the comment above `TestGemma4GGUF_moeLayerScalarMatchesLayer`) on 2026-10-09.
+
+```text
+A direct GGUF load of the gemma4 26B-A4B produced nothing but <pad> (token 0) on CPU, on HEAD, while the sidecar
+.giw built from the same file generated text (docs/measurements/transcode-streaming-gemma4-2026-09-24.md). The
+cause: loadG4 built the layer's gemma4MoEWeights — which copies l.LayerScalar into its own layerScalar — BEFORE
+it assigned l.LayerScalar (1, or blk.{i}.layer_output_scale.weight). Every MoE layer's output is multiplied by
+that copy (forward_gemma4_moe.go: out = (h + comb) * layerScalar), so it was zeroed, and the argmax fell to
+token 0. The .giw reader and the safetensors loader both set LayerScalar first, which is why only the direct GGUF
+path broke — and why Metal's resident build (residency.go copies gm.layerScalar) would break the same way on a
+direct GGUF load.
+
+Pinned on the synthetic 26B-shaped GGUF (every layer MoE, layer_output_scale present and non-zero): the MoE copy
+must equal the layer's own scalar, on every layer, and must not be zero.
+```
+
+## gguf_gemma4_stream_test.file
+
+Moved from `decoder/gguf_gemma4_stream_test.go` (the comment above `gguf_gemma4_stream_test.file`) on 2026-10-09.
+
+```text
+S2 (task-never-swap-2026-09.md): gemma4 was the last family transcoded by building the whole model
+resident and serializing it once — 34.7 GB RSS for the 26B-A4B, which no 16 GB Mac can build. It now
+streams (build → write → release per layer). These gates pin that the streamed bundle is
+byte-identical to the resident one on synthetic gemma4 GGUFs shaped like the two real layouts:
+
+  - "26b": the 26B-A4B's parallel dense+MoE FFN (router, stacked gate‖up and down experts, the three
+    extra norms) and a global layer with no attn_v (K=V, VFromK);
+  - "e2b": the E-models' Per-Layer Embeddings (model-level per_layer_* inputs in the head, per-layer
+    inp_gate/proj/post_norm) and a KV-shared tail layer, with per-layer FFN widths.
+
+Both carry a sliding/global pattern with different head dims and KV-head counts per type, so every
+per-layer geometry branch in loadG4 is exercised. The resident arm is exactly what
+StreamTranscodeGGUF did for gemma4 before (resolve EOS, build with needCanonical, serialize), so the
+comparison is against the behaviour being replaced. The quant label is excluded by construction: a
+streamed body records "" (the layers do not exist yet when the head is written — see
+writeHeadGlobals' B11 note), the resident one the resolved label.
+```
+
+## gguf_granite_permute_test.file
+
+Moved from `decoder/gguf_granite_permute_test.go` (the comment above `gguf_granite_permute_test.file`) on 2026-10-09.
+
+```text
+Audit 2026-09-10 C-05: llama.cpp converts dense Granite (GraniteForCausalLM) through
+GraniteModel(LlamaModel), which inherits undo_permute=True — so every GGUF whose
+general.architecture is "granite" stores attn_q/attn_k rows in llama.cpp's interleaved RoPE
+order. goinfer un-permuted only llama and mellum, so dense Granite loaded exact at position 0
+and rotated the wrong pairs at every position after — fluent, and wrong, with no error.
+
+These gates write a real (data-bearing) GGUF with q/k permuted by a line-for-line port of
+llama.cpp's own permute() (conversion/llama.py), then load it through the real ggufConfig ->
+resolveArchitecture -> buildWeightsFromGGUF path and compare rows. Rows, not logits: the defect
+is a row order, so the row order is the thing to pin.
+```
+
+## tinyNormRopeGGUF.multipliers
+
+Moved from `decoder/gguf_granite_permute_test.go` (the comment above `tinyNormRopeGGUF.multipliers`) on 2026-10-09.
+
+```text
+The REAL Granite 4.2 multipliers (granite-4.2-3b config.json). residual_scale must be 1.0:
+every released 4.2 size ships it, and validateGraniteDense rejects anything else because
+the generic forward has no residual hook. (A first draft used Granite 3.x's 0.22 and the
+gate "failed" at resolveArchitecture, never reaching a row — a red that proved nothing.)
+```
+
+## TestGGUFConfig_everyArchitectureReadsMaxPositions
+
+Moved from `decoder/gguf_maxpositions_test.go` (the comment above `TestGGUFConfig_everyArchitectureReadsMaxPositions`) on 2026-10-09.
+
+```text
+R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): found while wiring up the new
+request-time memory guard (AdmitPrefillMemory, prefill_budget.go) — Config.MaxPositions came
+back 0 for a real, freshly-downloaded qwen2.5-coder-0.5b GGUF, silently disabling both the new
+guard and the pre-existing contextLengthError/clampMaxTokens checks (C-18/C-20). The cause: 16
+of the 18 GGUF architecture config builders never read "context_length" into
+Config.MaxPositions at all — only ggufPhi3Config did, by what looks like accident rather than
+design (nothing about that family is special). This is a regression gate for every one of
+them, driven through the real dispatch table (ggufConfig), not the individual functions, so a
+future architecture that forgets the field fails here too.
+
+Mutation: comment out any one architecture's `MaxPositions: u("context_length"),` line — that
+architecture's subtest goes red with MaxPositions=0 (want 4096); every other subtest stays
+green, isolating exactly which family broke.
+```
+
+## TestGGUFRouter_staysF32AtQuant
+
+Moved from `decoder/gguf_router_quant_test.go` (the comment above `TestGGUFRouter_staysF32AtQuant`) on 2026-10-09.
+
+```text
+TestGGUFRouter_staysF32AtQuant gates M-27: several GGUF MoE loaders quantized the router
+(ffn_gate_inp) via the generic mat() helper instead of routing it through
+streamMat(..., quantNone, ...) like gpt-oss/qwen35 already did — CUDA/Metal residency
+requires an f32 router (quantizing it flips which experts win near a tie, not just rounding
+noise), so every affected family at a non-f32 quant silently declined resident build. This
+fixture's shared generic loadLayer branch covers GLM/Mellum/Qwen3-MoE/DeepSeek2.
+```
+
+## TestStreamableFamilyClosures_onlyReadPerLayerTensors
+
+Moved from `decoder/gguf_streaming_shape_test.go` (the comment above `TestStreamableFamilyClosures_onlyReadPerLayerTensors`) on 2026-10-09.
+
+```text
+task-never-swap-2026-09.md S2: a family's per-layer loader closure is safe to stream
+(build -> sink.layer -> release, the loadQ35/loadGptOss shape) only if EVERY tensor it reads is
+genuinely per-layer — named "blk.{i}." + something, never a bare/model-level name. gpt-oss's own
+closure was verified this way by hand before its fix landed (byte-identical to the resident
+path, on a real fixture — decoder/testdata/gptoss_tiny.gguf, internal/prequant's
+TestGptOss_streamedMatchesResident). laguna, granite (the Mamba-2+MoE hybrid, arch.granite —
+not the plain dense Granite family gguf_granite_permute_test.go covers), nemotron and llama4
+have NO comparable fixture (no small, tokenizer-bearing, architecture-correct GGUF for any of
+them exists in this repo or under ~/models at the time this landed) — building one per family
+from scratch is real, separate work this pass did not do (a genuinely different Mamba-2/MoE
+tensor set per family). This test is the structural half of the proof that DID ship with the
+code: same technique stream_test.go's own TestTranscode_writesViaTempThenRenames already uses
+for a property real execution can't force either — parse the source and check the invariant
+directly, since the property this checks (nothing is read that would silently corrupt a
+streamed bundle) IS provable from source, independent of a real checkpoint's numbers.
+
+Verified, not assumed, when this landed: read every one of these four closures by hand,
+confirmed zero non-per-layer tensor reads, THEN wrote this test to keep that true — not the
+other way around (a test written first and never checked against the real code proves nothing).
+```
+
+## ggufQuantCosFloor
+
+Moved from `decoder/gguf_tensorquant_test.go` (the comment above `ggufQuantCosFloor`) on 2026-10-09.
+
+```text
+ggufQuantCosFloor is the per-source-quant agreement floor a CORRECT loader must clear when
+its f32 reconstruction is diffed against the bf16 safetensors reference.
+
+These are dequant noise budgets, not quality targets. Each sits at roughly 2x the MEASURED
+(1-cos) for that format, from TestQwen38GGUF_weightDiff over layers 0-3 of
+unsloth/Qwen3.8-27B-GGUF UD-Q4_K_M against the bf16 safetensors (2026-09-12, 44 s,
+goinfer-logs/qwen38-weightdiff-20260912-103901.log):
+
+	quant  n   measured cosine      1-cos      floor   budget used
+	F32    18  1.000000 (maxAbs 0)  0          0.999999  0%
+	Q8_0    6  0.999982-0.999986    1.7e-5     0.9999    17%
+	Q6_K    2  0.999742-0.999758    2.5e-4     0.9995    52%
+	Q5_K    6  0.999186-0.999257    8.0e-4     0.998     40%
+	Q4_K    5  0.996974-0.997047    3.0e-3     0.995     61%
+
+What makes that table evidence rather than a curve fit: the cosine is a function of the
+SOURCE QUANT ALONE. Q4_K spans 7e-5 across two different layer kinds (DeltaNet in_proj_qkv
+and in_proj_z, softmax k_proj) and five tensor roles and shapes; Q5_K likewise. A transform
+defect cannot produce agreement that tracks bit-width and ignores what the tensor is for.
+
+The quants not present in that file (Q4_0/Q4_1/Q5_0/Q5_1, the IQ and TQ families, MXFP4)
+are set from the same first-principles model the measured ones confirm to within 3e-4 — for
+a k-quant with 32-element sub-blocks over roughly-Gaussian weights, a b-bit code has step
+~4.2*sigma/(2^b-1), so relL2 ~ step/sqrt(12)/sigma and 1-cos ~ relL2^2/2, predicting Q4_K
+0.9967 / Q5_K 0.99924 / Q6_K 0.99982 / Q8_0 0.99995 against the measurements above.
+
+The margin matters less than it looks, because the defect class these gates exist for does
+not produce a near-miss. A wrong un-tile order PERMUTES elements, a missing (1+w) norm
+un-bake shifts every element by one, a sign error on -exp(A_log) inverts: all land near
+zero or negative cosine, orders of magnitude below even the 2-bit floor. The floors only
+have to sit above dequant noise and below "cratered", and that gap is enormous.
+
+THAT CLAIM WAS MEASURED, NOT ASSUMED — a loosened gate that can no longer go red is worth
+less than the tight one it replaced, and "it passes now" is exactly what that looks like.
+Deleting ONE real transform (the untileVHeads on in_proj_z in decoder/gguf.go's loadQ35)
+and rerunning took that tensor from 0.996974 to 0.045919 — 47704% of its budget, ~160x past
+the floor — while every other tensor stayed green, so the failure named the one broken
+transform. Dequant noise tops out at 61% of budget; a transform bug is three orders of
+magnitude past it. Run 2026-09-12, goinfer-logs/qwen38-weightdiff-MUTATION-20260912-*.log.
+
+An unrecognised quant deliberately gets the old whole-file bar: a format nobody has
+calibrated must not silently widen a gate.
+```
+
+## giwalign_test.file
+
+Moved from `decoder/giwalign_test.go` (the comment above `giwalign_test.file`) on 2026-10-09.
+
+```text
+A .giw's int4/int8 group SCALES used to be copied to the Go heap on every load (giwReader.f32
+copies because the file did not align them): 3.75 GB of a streamed M35's 5.8 GB heap, and 3.0 GB of
+the M26 Metal load's 4.4 GB. v12 pads every weight-matrix payload array to a 16-byte boundary
+(giwWriter.alignArray) inside a v3 bundle whose blob starts at file offset 64, so the reader can
+alias them out of the mapping. These are the gates: the scales really live in the mapping, an
+older layout and a misaligned blob still load (by copying), and a corrupted layout is caught.
+```
+
+## TestGIWTargetForBackend_cpuArm64NeedsDotProd
+
+Moved from `decoder/giwalign_test.go` (the comment above `TestGIWTargetForBackend_cpuArm64NeedsDotProd`) on 2026-10-09.
+
+```text
+TestGIWTargetForBackend_cpuArm64NeedsDotProd: the default CPU target on arm64 is cpu-arm64 (row4-only sidecars) only on a core that can read that layout. Found 2026-10-04 by the first
+windows-arm64 CI run: aikit assumes no DotProd there, the default load wrote a cpu-arm64 sidecar its own core refused ("this core cannot use that layout"), and it was rebuilt on every start.
+The test follows the core it runs on, so it asserts the right half on a DotProd Mac or Linux runner and on a no-DotProd one (QEMU Cortex-A72, windows-11-arm).
+```
+
+## giwf16_test.file
+
+Moved from `decoder/giwf16_test.go` (the comment above `giwf16_test.file`) on 2026-10-09.
+
+```text
+Weights format v14 (metal target): every canonical group-32 int4 tensor also carries its group scales
+pre-converted by F16Bits, so a Metal no-copy buffer can alias them instead of converting the f32 scales
+into a new buffer (~389 MB on the 7B, S6). Singles are kind 7; kind-6 groups gain an f16 block. These pin
+that the f16 arrays exist for exactly those tensors, equal the kernels' own conversion, live in the
+mapping where the Metal build can find them, and that other targets and older files are unaffected.
+```
+
+## giwfitguard_test.file
+
+Moved from `decoder/giwfitguard_test.go` (the comment above `giwfitguard_test.file`) on 2026-10-09.
+
+```text
+task-never-swap-2026-09.md S4 item 1: a .giw load's weights are file-backed (fitCheckFor is
+never called for one, by design — its own srcFileBytes doc comment), but KV and prefill scratch
+ARE real anonymous cost this path priced nowhere before. guardGIWFit is the load-time guard;
+these are its own gates, mirroring fitguard_test.go's existing conventions for the .gguf side
+(injectHostRAM, the same Config field shape) rather than inventing new ones.
+```
+
+## TestLoad_giwAutoPinsUnderTightMemory.cfg
+
+Moved from `decoder/giwfitguard_test.go` (the comment above `TestLoad_giwAutoPinsUnderTightMemory.cfg`) on 2026-10-09.
+
+```text
+&w.Cfg directly — the actual struct Load will use internally — rather than hand-copying
+fields into a fresh Config, which silently dropped HeadDim to 0 the first time this was
+written (caught here: HeadDim=0 makes estimateKVBytes return 0 regardless of context,
+so the "floor vs max" need never actually differed and this test could not have told
+an auto-pin from a no-op).
+```
+
+## TestGlm4MoeAir.coherence
+
+Moved from `decoder/glm4moe_air_test.go` (the comment above `TestGlm4MoeAir.coherence`) on 2026-10-09.
+
+```text
+AUDIT NOTE (da5a6ec): raw completion prompt on an instruction-tuned checkpoint
+(GLM-4.5-Air), gated only by the distinct<3 floor below — which measures "did the
+forward avoid TOTAL collapse", not coherence. On gemma-4-26b-a4b-it a raw prompt
+manufactured a false "int4 is broken" signal that survived a week, and distinct<3
+would not have caught it (repetition has >3 distinct tokens). This gate currently
+passes, so the completion is in-distribution ENOUGH for this checkpoint — but when
+it is next revalidated, adopt TestGemma4_26B_gate's pattern (render the family chat
+template + distinctTrigramRatio floor) instead of trusting distinct<3.
+```
+
+## TestGlmOcr_residentDeclined
+
+Moved from `decoder/glm_ocr_test.go` (the comment above `TestGlmOcr_residentDeclined`) on 2026-10-09.
+
+```text
+TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may
+run it resident only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope
+kernels. CUDA does (cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA), and Metal since
+2026-10-09 (metal.TestGlmOcrResidentParityMetal); WebGPU still has only the NeoX half-split kernels, and
+admitting glm_ocr there gave logit cosine -0.34 resident-vs-CPU on the CUDA twin of that kernel set
+(2026-10-01), with no error. The decline must name the missing features so `serve check` shows the real cause.
+```
+
+## TestGlmOcr_generateQwenVL_cpuOnly
+
+Moved from `decoder/glm_ocr_test.go` (the comment above `TestGlmOcr_generateQwenVL_cpuOnly`) on 2026-10-09.
+
+```text
+TestGlmOcr_generateQwenVL_cpuOnly: GenerateQwenVL, the entry point serve calls for an image turn, on a CPU-only load of
+glm_ocr (m.resident == nil), through the SAME tiny image fixture and HF continuation as TestGlmOcr_mropeParity. The O1
+review flagged that GenerateQwenVL's resident branches had never been checked for a nil resident. Every one of them sits
+behind a type assertion on m.resident (ok is false on a nil interface) or behind tryClaimResident, so a CPU load takes the
+CPU prefill + CPU decode and never touches a resident — this proves it by running the whole turn, twice with the same
+image hash (the second call is where a reuse branch would be reached if it were reachable), and checks the tokens are
+HF's and that no resident flag is set.
+```
+
+## TestGoldenNames_matchTheFileOnDisk
+
+Moved from `decoder/golden_names_test.go` (the comment above `TestGoldenNames_matchTheFileOnDisk`) on 2026-10-09.
+
+```text
+Every real-checkpoint gate SKIPS when its golden is missing ("no golden — run the pin script"), so a
+test that names x_golden.json while the tree holds x_golden.json.gz (or the reverse) does not fail — it
+quietly stops gating. That is the one mistake the 2026-09-25 compression of the large goldens could
+make, and a fixture-less run cannot see it, so this reads the source instead: for every golden name
+quoted in a *_test.go anywhere in the repo, wherever the OTHER spelling exists on disk, this one must
+too. A golden that is absent in both spellings (gitignored, not pinned on this box) is not its concern.
+```
+
+## readGolden
+
+Moved from `decoder/goldenread_test.go` (the comment above `readGolden`) on 2026-10-09.
+
+```text
+readGolden reads a test golden, gunzipping it when the name ends in .gz. Goldens over ~1 MB are
+committed compressed (CLAUDE.md — the convention for new goldens, and the backlog of 24 large ones
+was converted 2026-09-25), so a reader goes through this instead of os.ReadFile: the same call
+reads a small .json and a large .json.gz. A missing file is still an os.IsNotExist error, which is
+what the callers' "no golden — run the pin script" skips test for.
+```
+
+## gpt2_test.regen
+
+Moved from `decoder/gpt2_test.go` (the comment above `gpt2_test.regen`) on 2026-10-09.
+
+```text
+Regenerate:  ~/.venv-vl/bin/python scripts/pin_gpt2_real.py
+(that script writes both the committed golden and the gitignored full-logit dump the
+cosine reads; the previously-named pin_llama_forward.py no longer exists.)
+```
+
+## gptoss120_test.file
+
+Moved from `decoder/gptoss120_test.go` (the comment above `gptoss120_test.file`) on 2026-10-09.
+
+```text
+gpt-oss-120b loader gate — does the safetensors path generalize past the 20b it was
+written against?
+
+WHAT THIS DOES AND DOES NOT CHECK, stated because the difference decides its value. The
+forward math is already proven end to end on 20b (argmax-identical, cosine 0.999121 vs
+the T3-validated GGUF reader). What 120b changes is SHAPE, not math: 36 layers instead
+of 24, 128 experts instead of 32, and 14 shards instead of 2. So the risk this gate is
+pointed at is EXPERT INDEXING at four times the count and tensors spanning many shards —
+an off-by-N in the expert stride reads the wrong expert's weights while every shape check
+still passes.
+
+It deliberately does NOT build an HF reference. Four layers of 120b dequantize to ~51GB
+in f32, which does not fit; claiming a numeric oracle here would mean pretending to a
+check that cannot run. Instead it asserts geometry, spot-checks the HIGHEST expert index
+(where a stride bug shows first and a low-index check would miss), and requires finite,
+non-degenerate logits.
+```
+
+## TestGptOss_webgpuDecline
+
+Moved from `decoder/gptoss_decline_test.go` (the comment above `TestGptOss_webgpuDecline`) on 2026-10-09.
+
+```text
+TestGptOss_webgpuDecline asserts the load-bearing guarantee (docs/task-mxfp4-gptoss.md §3/§6.4):
+a backend that does NOT implement gpt-oss's novel ops must DECLINE it and fall back to CPU,
+never mis-run it — and a backend that DOES ship and dispatch them must actually ADMIT, not stay
+declined by a stale check. All three resident backends are now on the admit side; the name is
+historical (kept so `git log -p` on it still tells the right story).
+
+CUDA MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-08-31 (G7): wiring the already-loaded
+kernels found three silent defects no kernel test could see, because each was a term the WIRING
+dropped rather than a kernel computing it wrongly:
+
+	d9829ce  the gate‖up bias table indexed by SLOT id under expert caching
+	610ce7f  the per-expert down bias never applied (needed gemv_w4a8_moe_wacc_bias)
+	6cfb15c  route_gptoss never LOADED, so the router fell back to moe_route, which takes the
+	         mixing weight from the UNBIASED score — same experts, different weights
+
+The declaration rests on a real 20B forward, resident on an 8 GB card via --moe-cache-experts:
+7/8 argmax-exact, min cosine 0.996392 (cuda.TestGptOssResidentParityCUDA). 2224441 declared
+FeatAttnSink once on kernel-level evidence and was correctly reverted; this time the whole model
+ran.
+
+WEBGPU MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-09-08 (G6,
+docs/tasks/task-gpu-paths-2026-09.md): the sink threaded through every attention kernel (attn,
+attn-keys, attn-f16, attn-i8, and all three wide variants — 7 pipelines), plus three brand-new
+MoE kernels (gpt-oss disagrees with the generic MoE path on what the router bias means and what
+the activation clamps — routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL,
+gpu/moe.go). Verified against the real (non-seeded) decoder/testdata/gptoss_tiny.gguf, resident
+vs CPU: min cosine 0.9943 across 8 positions (gpu.TestGptOssResidentParityWebGPU) — the same
+0.95 floor Metal's own gate uses on this fixture.
+```
+
+## TestGptOss_webgpuDecline.admit
+
+Moved from `decoder/gptoss_decline_test.go` (the comment above `TestGptOss_webgpuDecline.admit`) on 2026-10-09.
+
+```text
+A backend that ships AND DISPATCHES the kernels must actually admit, not stay declined by a
+stale check — which is the failure this test was written to catch in the other direction
+(and did, twice: CUDA in 2026-08-31, WebGPU in 2026-09-08).
+```
+
+## TestGptOss_webgpuDecline.archgate
+
+Moved from `decoder/gptoss_decline_test.go` (the comment above `TestGptOss_webgpuDecline.archgate`) on 2026-10-09.
+
+```text
+The arch-shape gate falls through for gpt-oss (2026-08-18, mirroring gemma4 and the
+GPT-2 NonGatedMLP/LearnedPosEmbed/OutBias precedent): the decline lives at the feature gate
+(FeatAttnSink, asserted above), not here — a backend that implements the sink/clamped-SwiGLU
+kernels admits through ResidentEligible without this arch predicate needing a second edit.
+```
+
+## TestGptOssReal.assetPath
+
+Moved from `decoder/gptoss_real_test.go` (the comment above `TestGptOssReal.assetPath`) on 2026-10-09.
+
+```text
+assetPath, not a hand-rolled env+fallback: the asset registry is what makes the
+gate and the sweep preflight apply the SAME predicate to the same candidate paths
+(testdata/assets.json). This file predated GOINFER_GPTOSS_GGUF being registered.
+```
+
+## TestGptOssReal_logitParity.assetPath
+
+Moved from `decoder/gptoss_real_test.go` (the comment above `TestGptOssReal_logitParity.assetPath`) on 2026-10-09.
+
+```text
+assetPath, not a hand-rolled env+fallback: the asset registry is what makes the
+gate and the sweep preflight apply the SAME predicate to the same candidate paths
+(testdata/assets.json). This file predated GOINFER_GPTOSS_GGUF being registered.
+```
+
+## TestGraniteReal.assetPath
+
+Moved from `decoder/granite_real_test.go` (the comment above `TestGraniteReal.assetPath`) on 2026-10-09.
+
+```text
+assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the
+sweep preflight apply the SAME predicate to the same candidate paths. Required by the sweep
+since 2026-09-02, and a required gate whose presence check disagrees with the preflight's is
+a SKIP nobody can attribute.
+```
+
+## TestGraniteReal.coherence
+
+Moved from `decoder/granite_real_test.go` (the comment above `TestGraniteReal.coherence`) on 2026-10-09.
+
+```text
+AUDIT NOTE (da5a6ec): raw completion prompt on an instruction-tuned checkpoint
+(granite-4.0-h), gated only by the distinct<3 floor below — which measures "did the
+forward avoid TOTAL collapse", not coherence. On gemma-4-26b-a4b-it a raw prompt
+manufactured a false "int4 is broken" signal that survived a week, and distinct<3
+would not have caught it (repetition has >3 distinct tokens). This gate currently
+passes, so the completion is in-distribution ENOUGH for this checkpoint — but when
+it is next revalidated, adopt TestGemma4_26B_gate's pattern (render the family chat
+template + distinctTrigramRatio floor) instead of trusting distinct<3.
+```
+
+## TestGraniteReal.nope
+
+Moved from `decoder/granite_real_test.go` (the comment above `TestGraniteReal.nope`) on 2026-10-09.
+
+```text
+NoPE on the GGUF path. The Q8_0 convert carries the same base weights as the
+safetensors release, so the bf16 golden is a valid reference for it too — and it is
+the ONLY check that the rope.scaling.finetuned → NoPE mapping in ggufGraniteConfig is
+right, since llama.cpp writes rope.dimension_count/freq_base on this model regardless.
+Roped, this reads ~0.9936 with a diverging continuation; NoPE, ~0.9958 and exact. Not
+a parity row: the T3 row is the safetensors oracle below, on weights HF actually ran.
+```
+
+## TestGraniteReal_oracle
+
+Moved from `decoder/granite_real_test.go` (the comment above `TestGraniteReal_oracle`) on 2026-10-09.
+
+```text
+TestGraniteReal_oracle is the T3 row: the released bf16 safetensors loaded at int8 and
+matched against an HF bf16 forward of the SAME weights. The gate above runs on a
+DIFFERENT artifact (a llama.cpp Q8_0 convert), and until this golden existed it had no
+reference to compare against at all — which is why granitemoehybrid sat at `pending`
+while having a passing "real gate": coherent-generation is not a T3 method. The row is
+recorded here, on the weights HF actually ran.
+
+Fixture: scripts/pin_granite_real.py.
+```
+
+## TestGraniteResidentBridge
+
+Moved from `decoder/granite_resident_test.go` (the comment above `TestGraniteResidentBridge`) on 2026-10-09.
+
+```text
+TestGraniteResidentBridge validates the P5b.1 accessor bridge: the resident SSM builder
+reads the Mamba geometry, per-layer mixer-kind, and correctly-shaped f32 mixer tensors
+through these accessors. Shape-checks the weights against the projDim/convDim/dInner the
+kernels expect, so a wiring error surfaces here before any GPU dispatch. Additive — no
+production routing change (eligibility flip is P6).
+```
+
+## TestHardwareMatrix_fresh.crlf
+
+Moved from `decoder/hardware_matrix_test.go` (the comment above `TestHardwareMatrix_fresh.crlf`) on 2026-10-09.
+
+```text
+stripCR before comparing: the generated md is always LF (Go "\n" literals), but a Windows
+checkout with no eol pin stores the committed doc as CRLF, so a bare bytes.Equal would report
+it "stale" on line endings alone. .gitattributes pins these docs to eol=lf; this is the
+other half, so the gate passes under any git autocrlf setting. (Windows CI would trip it —
+goinfer's is ubuntu+macos only, so this is a latent bug, not an active one.)
+```
+
+## stripCR
+
+Moved from `decoder/hardware_matrix_test.go` (the comment above `stripCR`) on 2026-10-09.
+
+```text
+stripCR removes carriage returns so a generated-doc freshness comparison is line-ending agnostic
+(mirrors aikit cfda968). Shared by the hardware- and capability-matrix gates.
+```
+
+## requireHeavyModel
+
+Moved from `decoder/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
+
+```text
+requireHeavyModel gates a test that loads a multi-GB checkpoint from ~/models
+behind an explicit env opt-in.
+
+The bug this closes: several tests decided whether to run by PATH EXISTENCE
+alone (os.Stat(~/models/...) → skip if absent, else Load()). On a box with the
+model zoo present, `go test ./decoder/` therefore fired all of them
+opportunistically — the EAGLE group alone reloaded qwen3-1.7b (+ the 785 MB
+head) once PER TEST, climbing to tens of GB RSS and thrashing swap, never
+finishing. Path auto-detection is not a gate; the asset happening to exist is
+not a request to run a multi-GB test.
+
+Policy (same shape as GOINFER_MOE_GIW / GOINFER_SSM_RESIDENT): a test that
+loads a multi-GB model must OPT IN via GOINFER_HEAVY_TESTS. Default `go test
+./decoder/` skips them regardless of what is on disk, so the package is
+runnable everywhere; set GOINFER_HEAVY_TESTS=1 when you mean to run them. The
+per-test os.Stat skip stays as a second guard, so opting in on a bare box is
+still harmless.
+```
+
+## sampleVMStat
+
+Moved from `decoder/hostram_darwin_test.go` (the comment above `sampleVMStat`) on 2026-10-09.
+
+```text
+R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's live re-run): real
+vm_stat output shape, 16 KB pages (Apple Silicon — the M1 Pro that found this bug, not the
+traditional 4 KB), so a parser tested only against a 4 KB assumption would pass here and still
+be wrong on the machine that matters.
+```
+
+## TestInt4_forwardParity.file
+
+Moved from `decoder/int4_golden_test.go` (the comment above `TestInt4_forwardParity.file`) on 2026-10-09.
+
+```text
+Q1(c) — the int4 forward goldens.
+
+int4 is the runtime's documented default quantization and, until this file, NOTHING gated it.
+Every golden that ran was f32: the three int8int8 goldens skipped for want of an env var (fixed,
+23b2ee7) and the one int8 golden sits behind `//go:build realckpt` plus a missing checkpoint. So
+`scripts/refresh_parity_hashes.sh` — the sanctioned freeze-exception path, and the only numeric
+proof a `decoder/` core edit gets — proved f32 numerics and silently nothing else.
+
+WHAT AN int4 GOLDEN IS, and what it deliberately is NOT.
+
+It is **int4 output compared against recorded int4 output**. It is NOT int4 compared to f32 within
+a tolerance. That distinction is the whole point: a tolerance band against f32 measures how lossy
+the quantizer is, which is a real question with its own gate (the policy's quant axis:
+quant-vs-f32 argmax + cosine), and it would read on a dashboard as "int4 is covered" while proving
+nothing about whether the int4 CODE PATH still computes what it computed yesterday. Only a
+self-comparison catches a regression in the W4A8 path itself, which is what the freeze is
+protecting and what P7 will change.
+
+The comparison is argmax-exact plus a tight value tolerance on recorded samples and moments —
+matching the existing goldens' treatment, and for the same reason: the CPU reference is
+bit-identical WITHIN an architecture but not across one (see parity-coverage-policy.md), so a
+bit-exact checksum would be a machine assertion rather than a code assertion.
+
+SCOPE, measured before authoring rather than described after: 23 fixtures across 16 model_types
+load at int4 today. int4 has no divisibility constraint (`nGroups` is a ceiling divide), so the
+limit is which fixtures exist, not which families are eligible. Recorded absences, which are NOT
+counted as gaps: `gpt_oss` is MXFP4-prequant and rejects a conflicting `--quant` by design;
+`siglip_vision_model` is an encoder, not a decoder; `gpt2`, `mellum`, `qwen2` and `qwen3` have no
+tiny safetensors fixture; `qwen2_moe` and the `gemma4-dense-scaled-{24,48,64}` variants have
+incomplete fixture dirs (no config.json).
+
+Regenerate with: GOINFER_INT4_GOLDEN_UPDATE=1 go test ./decoder/ -run TestInt4_forwardParity
+```
+
+## gpt2CosFloor
+
+Moved from `decoder/int4_golden_test.go` (the comment above `gpt2CosFloor`) on 2026-10-09.
+
+```text
+gpt2 is the ONLY real, fully-trained checkpoint this gate runs (every other fixture is a
+tiny/near-random test config — e.g. qwen35-tiny and phi3-tiny are both hidden_size=64,
+vocab_size in the hundreds — which quantizes far more cleanly than real learned weights
+with outlier features). Bisected 2026-08-22 (ForwardCapture, per-layer, same box, no cross-
+arch involved): int4-vs-f32 relative hidden-state error is already ~5-10% at LAYER 0 and
+stays in a 4-20% band through all 12 layers; int8-vs-f32 shows the SAME shape at ~7-8x
+SMALLER error at every layer — exactly the expected 4-bit-vs-8-bit precision ratio. That is
+the signature of ordinary (if large) round-to-nearest int4 quantization noise on a real
+trained model, not a logic bug — naive int4 without GPTQ/AWQ-style calibration is
+documented to do this to real checkpoints. Holding gpt2 to the same tight per-sample
+absolute gate as the tiny fixtures was never appropriate; argmax-exactness + a floor on
+centered cosine similarity (the same bar TestGPT2_forwardParity's f32 golden uses) is.
+Mutation-checked (int4GroupSize 32->64, decoder/weightmat.go): that mutation moves individual
+samples by up to 7.39 while argmax stays unchanged, so only a cosine floor catches it.
+
+Re-calibrated 2026-08-26. The previous calibration ("baseline 0.9995 on both, mutation 0.9938",
+2026-08-22) was measured against goldens that a11c56b REPLACED the next day, when the int4 LM
+head moved weight-only-Q8 -> full W8A8. The current goldens are arm64-baked, so amd64 carries a
+fixed FMA-contraction offset and the stale 0.999 floor failed a HEALTHY Linux box. All four
+numbers below re-measured at c5ae3c1 on both boxes, golden restored after every run:
+
+	                arm64 (Mac)     amd64 (Linux)
+	  healthy       1.0000000000    0.9977745721   <- golden is arm64-baked, so exact there
+	  32->64 mut.   0.9761066556    0.9761066320   <- mutation dwarfs the cross-arch offset
+
+argmax is unaffected by the cross-arch offset (16 on both) and is gated separately above.
+0.995 sits between with balanced margin: 2.2x the healthy amd64 deficit (2.23e-3), and it fails
+the mutation by 4.8x (2.39e-2). Do NOT raise this toward 0.999 without baking per-arch goldens
+first -- 0.999 is BELOW the natural cross-arch baseline and fails a correct build.
+```
+
+## TestInt4_forwardParity.forced
+
+Moved from `decoder/int4_golden_test.go` (the comment above `TestInt4_forwardParity.forced`) on 2026-10-09.
+
+```text
+A forced narrower kernel is another numeric realization of the same arithmetic, so the recorded samples cannot be matched to 5e-3 (H1.3: gemma4-dense-scaled reads 0.9938). The argmax above
+is still exact; the samples are held to a centered-cosine floor, the way gpt2 is (see forced_fallbacks_test.go for the measurement).
+```
+
+## TestGemma4EModel_safetensorsParity
+
+Moved from `decoder/gemma4_emodel_test.go` (the comment above `TestGemma4EModel_safetensorsParity`) on 2026-10-09.
+
+```text
+TestGemma4EModel_safetensorsParity is S1.1's gate (docs/tasks/task-multimodal-support-2026-10.md): a
+safetensors Gemma 4 E-model — Per-Layer Embeddings, cross-layer KV sharing, double-wide FFNs on the shared
+layers — loads (until 2026-10-06 this loader refused any PLE checkpoint) and its CPU forward matches the HF
+oracle at EVERY prompt position, f32: argmax equal and cosine >= 0.99999 at each, then the greedy
+continuation byte-identical. All positions, not just the last, because the KV-shared layers only differ
+from their own-KV counterparts once there is history to attend over, and the sliding window (4) is
+shorter than the prompt (12).
+```
+
+## TestGemma4Load
+
+Moved from `decoder/gemma4_load_test.go` (the comment above `TestGemma4Load`) on 2026-10-09.
+
+```text
+TestGemma4Load is Increment 2: the full weight load. It exercises the gemma4
+loader against the real E2B GGUF — per-layer head_dim/FFN, the KV-shared tail
+(layers ≥ 15 carry no k/v), and the PLE tensors. int4 keeps it light on 16 GB.
+(Forward pass is Increment 3, so this checks the bundle, not generation.)
+```
+
+## TestGemma4_logitParity
+
+Moved from `decoder/gemma4_parity_test.go` (the comment above `TestGemma4_logitParity`) on 2026-10-09.
+
+```text
+TestGemma4_logitParity is the Increment-3 gate: goinfer's gemma4 forward (int8
+quantized GGUF) vs the HF bf16 oracle. Argmax must match (the correctness
+gate); cosine over the sampled-256 logits must clear the quant-vs-bf16 bar.
+Skips without the golden or the GGUF asset.
+```
+
+## gguf_qwen35_test.file
+
+Moved from `decoder/gguf_qwen35_test.go` (the comment above `gguf_qwen35_test.file`) on 2026-10-09.
+
+```text
+STEP 1 (de-risk the crux, zero download): prove the inverse V-head reorder is
+bit-clean. llama.cpp's converter tiles HF's grouped-by-K V heads when
+num_v_heads > num_k_heads; the GGUF loader must undo it exactly or it silently
+corrupts every linear-attn layer. We replicate the converter's FORWARD with an
+INDEPENDENT permutation-index reference (gather, not the production copy loop),
+then require untileVHeads to recover the original bit-for-bit across every
+tensor block geometry the loader will touch — with the real ratio num_k=16,
+num_v=32 (num_v_per_k=2), head_dim=128.
+```
+
+## TestInt4MixMode
+
+Moved from `decoder/int4mix_test.go` (the comment above `TestInt4MixMode`) on 2026-10-09.
+
+```text
+TestInt4MixMode gates the per-tensor mixed-precision mode (idea #5): -quant int4mix
+keeps attention (q/k/v/o) at int8 — where the spike found the int4→int8 quality loss
+concentrated — and the FFN bulk (gate/up/down) at int4. Asserts the per-tensor kinds,
+that Quant() reports it distinctly (so the KV fingerprint won't collide with int4/int8),
+that it generates, and that a mixed model round-trips through the .giw serialize format.
+```
+
+## sampleMeminfo
+
+Moved from `decoder/hostram_linux_test.go` (the comment above `sampleMeminfo`) on 2026-10-09.
+
+```text
+R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's live re-run of the R13
+fix): HostRAMAvailableBytes exists because HostRAMBytes (total physical RAM) is what the fit
+guard budgeted against, and a fixed fraction of TOTAL RAM assumes nothing else on the machine
+ever needs more than the rest — false on a real machine with a browser or IDE open. This tests
+the shared meminfo-field parser both readers now use.
+```
+
+## TestGemma4_12B_trace
+
+Moved from `decoder/gemma4_12btrace_test.go` (the comment above `TestGemma4_12B_trace`) on 2026-10-09.
+
+```text
+TestGemma4_12B_trace drives the 12B GGUF over the HF trace's prompt and dumps a
+last-position per-layer residual trace + the layer 4/5 q/k/v, for an offline
+cosine diff against the HF reference (scripts/diff_gemma4_12b.py). Debug aid for
+the parked K=V forward — gated on G4_TRACE so it never runs in normal CI.
+```
+
+## TestFitEstimate_agreesWithResidentWeightBytes
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitEstimate_agreesWithResidentWeightBytes`) on 2026-10-09.
+
+```text
+The estimator must not be free to drift from the accountant M-01 completed. It prices the model
+from GGUF metadata BEFORE the load; ResidentWeightBytes sums the matrices AFTER it. They answer
+the same question from opposite sides, so a large disagreement means one of them is wrong.
+```
+
+## TestGemma4RunLayersFromEmbed_matchesTokenPath
+
+Moved from `decoder/gemma4_embed_test.go` (the comment above `TestGemma4RunLayersFromEmbed_matchesTokenPath`) on 2026-10-09.
+
+```text
+TestGemma4RunLayersFromEmbed_matchesTokenPath proves runLayersGemma4FromEmbed
+(the new P7 embed-by-vector seam) is behavior-preserving for the ordinary
+text path: feeding it the SAME already-scaled embedding runLayersGemma4
+itself builds, with pleTokenID equal to the real token id, must reproduce
+runLayersGemma4's own output bit-for-bit (they now share every line after
+the embedding prologue — see forward_gemma4.go).
+
+Uses the real E2B GGUF (the only local fixture with PLE enabled —
+hidden_size_per_layer_input=256; every tiny synthetic fixture in this
+package has PLE off), so it is heavy-gated like the other real-checkpoint
+gemma4 gates in this file's neighbors.
+```
+
+## TestGenerateVL_streams.resident
+
+Moved from `decoder/generate_vl_test.go` (the comment above `TestGenerateVL_streams.resident`) on 2026-10-09.
+
+```text
+V-11 (docs/review-2026-09-04.md): this model has no resident backend (Options{}, plain
+CPU), so GenerateVL's resident-touching branches (gap 0, P9a) never engage at all — a
+pre-existing resIDs describing an UNRELATED resident generation must survive this call
+untouched, exactly as it did before either of those existed.
+```
+
+## TestFitGuard_refusesBeforeAllocating.message
+
+Moved from `decoder/fitguard_test.go` (the comment above `TestFitGuard_refusesBeforeAllocating.message`) on 2026-10-09.
+
+```text
+The message has to carry the remedy and the arithmetic, because the user who reads it is
+the one who has no idea -stream-weights exists — that was the whole finding.
+```
+
+## TestP19FusedAttention
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestP19FusedAttention`) on 2026-10-09.
+
+```text
+P19 — does the FUSED (FlashAttention-style) schedule beat the materialized one?
+
+Step 0 established that goinfer materializes: G20 tiles over QUERY ROWS only,
+`scores` is tile x nKeys, and attendBatchedHeads forbids a key-dimension split
+because it "would re-associate the softmax denominator and the AV fold".
+So the N-wide score row makes three trips through memory per tile — written by
+QK^T, read-and-rewritten by the softmax, read again by scores*V. At the
+production tile budget (attnScoreTileBytes = 8 MiB) that block is far past L2
+on either machine, so the traffic is real.
+
+This measures whether removing it wins, WITHOUT touching production code. It is
+a prototype for a decision, not an implementation.
+
+THE COMPARISON IS AT FIXED PRECISION, and that is the item's own decision rule:
+"a win that only appears with f32 enabled is A3's win, not this item's". Both
+arms are f32 over identical inputs, so the delta is the SCHEDULE and nothing
+else. Gathers sit outside the timed region because both arms pay exactly the
+same ones; including them would only dilute the effect being measured.
+
+PRE-REGISTERED BAR (written before the first run, and before the kernel):
+
+	>= 1.30x at K=8192 shapes -> fusion clears its own bar, prototype in production
+	<  1.10x                  -> close the item
+	1.10-1.30x                -> AMBIGUOUS, parks
+
+NOT bit-identical by construction: the running-max rescale re-associates. That
+is the item's stated cost, the same category as --cpu-fast-attention. So
+correctness is a tolerance, declared here rather than after: cosine >= 0.9999
+against the materialized arm.
+
+Masking: neither arm masks (full attention over nKeys). Identical in both, so
+the ratio is unaffected; it means the absolute times are not production TTFT.
+```
+
+## TestP19FusedAttention.vblk
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestP19FusedAttention.vblk`) on 2026-10-09.
+
+```text
+V, pre-transposed PER BLOCK and laid out block-major, ONCE. MatmulBT
+computes a·bᵀ so the AV block needs b as [hd, n], and a column range of
+the [hd, nKeys] `vt` is not contiguous. The first draft of this built
+that transpose inside the timed loop, which would have charged the fused
+arm for a layout cost the schedule does not actually imply — and made
+the arm being tested lose for the wrong reason.
+```
+
+## TestP19FusedAttention.serial
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestP19FusedAttention.serial`) on 2026-10-09.
+
+```text
+SERIAL CONTROL. MatmulBT fans out over its N output columns, and the two arms
+present very different N: the materialized QK^T has N=nKeys=8192, the fused
+one N=kb (128..1024). So a fused loss could be a PARALLELISM artifact --
+fewer columns to shard, more fork/joins -- rather than a property of the
+schedule. Running both arms serial as well separates those. This repo has
+already published one ratio that was mostly core count (G24's first pass,
+17.6x against a documented ~3.7x), so the control is not optional.
+```
+
+## TestP19FusedAttention.rowparallel
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestP19FusedAttention.rowparallel`) on 2026-10-09.
+
+```text
+---------------------------------------------------------------------
+ROW-PARALLEL ARMS — the control for this file's own stated caveat.
+
+The arms above showed fusion losing 0.690x in parallel and washing (1.031x)
+serially, and attributed the gap to MatmulBT's fan-out being over N OUTPUT
+COLUMNS: materialized presents N=8192, fused presents N=kb. That is a
+property of composing fusion over a column-parallel matmul, NOT of the
+schedule -- so it left open whether a version parallelised over QUERY ROWS
+changes the answer.
+
+This tests exactly that, and controls the obvious confound: both arms are
+row-parallel across the same worker count, and both use MatmulBT as a
+SERIAL inner primitive (per-worker Workspace, threshold pinned). So kernel
+quality is identical and the parallelism model is identical; the schedule is
+again the only variable. Writing a hand-rolled SIMD inner loop instead would
+have measured my scalar Go against aikit's tuned kernel and told us nothing
+about scheduling.
+```
+
+## TestP19FusedAttention.hoist
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestP19FusedAttention.hoist`) on 2026-10-09.
+
+```text
+PER-WORKER SCRATCH AND WORKSPACES HOISTED OUT OF THE TIMED REGION. The first
+version allocated the materialized arm's [n, nKeys] score buffer (1.4 MB per
+worker) INSIDE the timed call while the fused arm allocated far less — which
+would have charged the losing arm for allocation and inflated exactly the
+result being claimed. Caught before quoting the number, not after.
+```
+
+## TestP19FusedAttention.causal
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestP19FusedAttention.causal`) on 2026-10-09.
+
+```text
+---------------------------------------------------------------------
+CAUSAL ARMS — the condition production actually runs under.
+
+The arms above are UNMASKED, and that flatters neither side by accident: it
+omits the one asymmetry that matters most. Production's materialized path
+computes the FULL QK^T over every key --
+  matmul(qh, ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
+-- and only then masks inside the softmax, so causality buys it NOTHING. A
+key-blocked fused loop can skip a block that is entirely masked, and in
+causal prefill roughly half of them are.
+
+So the unmasked 1.75x is a floor, not the number. This measures the real one.
+Rows are placed at absolute positions startPos+i with startPos = nKeys-ktProd,
+i.e. the last tile of an nKeys-token prompt, which is the shape at K=8192.
+SWEEP EVERY TILE, not just the last one. A prefill of nKeys tokens runs
+nKeys/ktProd tiles, from row 0 (attends 1 key) to row nKeys-1 (attends all).
+The FIRST version of this arm measured only the last tile -- where causal
+masking skips almost nothing, so fusion's block-skip is worth ~zero while
+materialized still gets its softmax narrowed. That is the least favourable
+tile for the schedule under test, and parking the item on it would have been
+parking it on the instrument. Production's cost is the SUM over tiles.
+```
+
+## TestFusedAttention_logitDivergence
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestFusedAttention_logitDivergence`) on 2026-10-09.
+
+```text
+TestFusedAttention_logitDivergence answers the question the golden raises but
+cannot: when fusion changes the generated tokens, is that a NEAR-TIE FLIP or a
+BUG? Those look identical from a token diff.
+
+It compares the PREFILL LOGITS directly on a real checkpoint and reports both
+the cosine (is the forward computing the same thing?) and the top-2 margin at
+the final position (was the argmax decidable at all?). A high cosine with a
+margin near the perturbation size is a tie flip; a low cosine is a defect.
+
+This is the same shape as a3_divergence_test.go, which exists because the f32
+flag needed the identical question answered.
+```
+
+## TestFusedAttention_logitDivergence.baseline
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestFusedAttention_logitDivergence.baseline`) on 2026-10-09.
+
+```text
+BASELINE ON THE SAME MODEL: how far does the f32 flag ALREADY move the
+hidden states away from acc64? Comparing fusion's divergence against a
+number from a different model (a3_divergence_test.go's 0.9976 at dense 1.5B)
+would be the cross-machine mistake in another costume. Both arms here, one
+checkpoint, one depth.
+```
+
+## TestFusedAttention_logitDivergence.bar
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestFusedAttention_logitDivergence.bar`) on 2026-10-09.
+
+```text
+The bar compares fusion's ADDITIONAL divergence against the divergence the
+f32 flag already accepts on the SAME model. A kernel-level 0.9999 bar is the
+wrong instrument for a 24-layer forward -- the flag itself only reaches
+~0.998 there -- and applying it was my error, corrected here rather than
+relaxed silently.
+```
+
+## TestFusedAttention_endToEnd
+
+Moved from `decoder/p19_fused_attn_test.go` (the comment above `TestFusedAttention_endToEnd`) on 2026-10-09.
+
+```text
+TestFusedAttention_endToEnd — what the 1.69-1.73x kernel win is worth through
+a real forward, which is the only number that justifies accepting a
+user-visible output change.
+
+Everything else measured for P19 is kernel-level. This repo has retracted two
+projections in one day for composing a kernel ratio with a profile share, so
+the shipping claim comes from here.
+
+DENSE model on purpose: attention's share of prefill is what the win scales
+with, and it is ~55-70% on dense at depth against 17.4% on the MoE profiled
+2026-09-01. Dense is the favourable case, so a weak result here closes the
+question for both.
+
+Paired and interleaved with alternating lead. Both arms run the f32 path
+(fastAttn=true); the ONLY difference is GOINFER_FUSED_ATTENTION.
+```
+
+## loadInt4Model.skip
+
+Moved from `decoder/parity_int4_test.go` (the comment above `loadInt4Model.skip`) on 2026-10-09.
+
+```text
+BEHAVIOUR CHANGE, deliberate. This site previously skipped whenever GOINFER_PREQUANT_GGUF was
+UNSET -- alone among the four readers of that variable, the other three fell back to
+../testdata. So the same box ran TestSerializeWeightsTo_matchesBuffer and skipped
+TestDecodeParityInt4 with nothing in either output naming the difference. Both now resolve
+through the registry's candidate list. Under the sweep nothing changes (the preflight exports
+the variable either way); under a bare `go test ./decoder`, this gate now RUNS where it used
+to skip.
+```
+
+## parityWantInt4ByArch
+
+Moved from `decoder/parity_int4_test.go` (the comment above `parityWantInt4ByArch`) on 2026-10-09.
+
+```text
+parityWantInt4 pins the 0.5B's int4 (W4A8) greedy continuation of parityPrompt
+— the int4 analog of parityWant (which pins int8int8). It guards the WHOLE int4
+forward, including the prefill→W4A8 switch (decoder/weightmat.go), against
+silent numerics drift: greedy + fixed prompt → fully deterministic. The first
+5 ids match parityWant (the prompt's strongest continuation survives 4-bit);
+they diverge after as int4's coarser weights bend the path. Regenerate ONLY
+when an int4 numerics change is intentional and parity-reviewed (set this to
+nil for a capture run — the test logs the new list and skips).
+
+Re-captured 2026-06-12 after the dense-attention fix (causalAttention routes
+decode through the f64 attendBatchedHeads, batched-identical to prefill — see
+attention.go). The PRIOR golden was recorded under the old decode≠prefill bug
+(scalar f32 attendQuery, aikit 1.3.0) and diverged from int8int8 already at id
+4 (474 vs parityWant's 750) — i.e. it pinned the buggy output. The fixed int4
+decode now MATCHES int8int8 through id 4 (both 750) and tracks it one token
+further before int4 lossiness bends off — the more-correct continuation.
+
+RE-CAPTURED AGAIN 2026-08-15, and the same way: the golden was pinning the WORSE
+of two int4 paths. Attributed by bisect to `7deb368` (2026-06-14, aikit 1.7.3 →
+1.8.1) — a bump whose message is entirely about the Qwen2.5-VL vision encoder and
+which asserts "no regression in the … decoder paths". It carried two aikit linalg
+commits that are not about vision at all: `36ce824` "fold W4A8 weight scales
+in-register" and `52890f5` wiring that kernel on NEON. Folding the scales changes
+the W4A8 accumulation, which moves a greedy continuation.
+
+EVIDENCE FOR RE-CAPTURING RATHER THAN CALLING IT A REGRESSION — this is the
+human decision `parity-coverage-policy.md` requires before a first-run value may
+be banked, and it is a measurement, not a judgement call. Same prompt, same 0.5B,
+24 greedy tokens, scored by how many leading ids match an f32 forward:
+
+	int8int8 (unchanged, its own gate green)   19/24
+	int4 THIS golden                           11/24
+	int4 the 2026-06-12 golden below it         5/24
+
+The kernel change made int4 twice as faithful to f32; it also tracks int8int8 for
+11 ids where the old golden bent away at 5. Reverting to hold the gate green would
+pin the less correct path — the identical mistake the 2026-06-12 note describes.
+
+WHY IT WENT UNSEEN FOR TWO MONTHS, which is the part worth fixing elsewhere: this
+gate was SKIPPING when the kernel landed (it alone required GOINFER_PREQUANT_GGUF
+to be set, while its three sibling readers fell back to ../testdata — see
+loadInt4Model above). It only began running when the asset registry gave it the
+fallback, and it went red on its first execution. A dependency bump moved a
+numerics path with the one gate that watches it dark.
+
+RE-CAPTURED 2026-09-28 for L1's binary16 int4 group scales (aikit v1.50.0, and v1.50.1's
+bit-identical arm64 fix; docs/tasks/task-cpu-decode-peer-gap-2026-09.md). That change moves int4
+numerics by design, and was owner-approved on 2026-09-27. This golden was not re-baselined with it:
+only TestInt4_forwardParity was, and this one went red on arm64 at the merge (3cd62e6d passes,
+5c85f7c0 fails, drift at id 13). It was found the next day by a whole-package run. The evidence:
+  - The new list is exactly what the PRE-L1 build (3cd62e6d) produces with GOINFER_INT4_F16_SCALES=1,
+    all 24 ids identical, so the drift is the intended f16 rounding and nothing else.
+  - Scored against an f32 forward, as above: the old golden 11/24, THIS golden 11/24, int8int8 19/24.
+    Both int4 paths leave f32 at the same id and differ from each other only after it, so this one is
+    no less faithful.
+
+PER ARCHITECTURE since 2026-09-30. The 2026-09-28 re-capture was made on arm64, and the binary16 scales move
+arm64's path only: the v0.20.0 parity sweep on nobara-pc (amd64, 0ca36756) produced the PRE-L1 list exactly, all 24
+ids, and so failed against the arm64 one at id 13. The CPU int4 path is bit-identical within an architecture but
+not across them (arm64 fuses multiply-adds that amd64 rounds separately; docs/parity-coverage-policy.md, "arch-
+scoped"), so one list cannot hold both. Each is its own architecture's golden, and per the evidence above the two are
+equally faithful to f32 (11/24 each). An architecture with no entry is a capture run.
+```
+
+## parityWantInt4ByArch.vnni
+
+Moved from `decoder/parity_int4_test.go` (the comment above `parityWantInt4ByArch.vnni`) on 2026-10-09.
+
+```text
+CAPTURED UNDER INTEL SDE 10.13.1, 2026-10-04 (sde64 -icx and -spr gave the same 24 ids), because no VNNI machine is on hand. The VNNI kernels are
+integer arithmetic, which SDE executes exactly, so the list is what a real VNNI CPU computes, not an emulation artefact; a real VNNI host
+(GitHub's EPYC 9V74 pool, Ice Lake and newer) is the check on that claim, and the first one to run this test with the asset is owed a look.
+It parts from the AVX2 list at id 22 (333, not 8960) where AVX2's top two are 0.078 apart. Evidence and the f32 comparison:
+docs/measurements/sde-2026-10-04/README.md.
+```
+
+## int4GoldenKey
+
+Moved from `decoder/parity_int4_test.go` (the comment above `int4GoldenKey`) on 2026-10-09.
+
+```text
+int4GoldenKey is the key into parityWantInt4ByArch for THIS host: the architecture, plus "-vnni" on an amd64 host whose dispatcher is
+using the AVX-512 VNNI W4A8 kernels. Those compute a different quantised result from the AVX2 path (not summation order: relative L2 0.072 on
+the logits of the step where the two lists part, docs/measurements/sde-2026-10-04/README.md), so the one amd64 list failed on every VNNI CPU
+and nothing saw it (CI skips this test: the asset is absent on the runners). It reads ACTIVE kernels, not detected ones, so a host whose
+self-test stepped VNNI down to AVX2 compares against the AVX2 list, which is the path it is then running. Call it AFTER the first Load (the CPU self-test runs there).
+```
+
+## forcedInt4Closeness
+
+Moved from `decoder/parity_int4_test.go` (the comment above `forcedInt4Closeness`) on 2026-10-09.
+
+```text
+forcedInt4Closeness replaces TestDecodeParityInt4's token-exact comparison under a forced CPU fallback (H1.3). The golden pins the default path's greedy continuation, whose
+4th token is a 0.15 near-tie that a different rounding draw flips (measured: the pure-Go path reads 474 where the AVX2 golden reads 750), so the forced run asks the question that
+does not depend on the draw: is the int4 forward still as close to the int8int8 forward, for the same ids, as it should be? The prompt and the golden's own 4-token prefix are checked
+(measured 1 - cosine: 1.64e-2 and 7.98e-3 pure Go, 1.75e-2 and 8.09e-3 AVX2).
+
+HOW SENSITIVE THIS IS, measured: it is a COARSE sanity bound. The int4-to-int8int8 distance is dominated by int4's own quantization noise, so the int4GroupSize 32 -> 64 mutation
+moves it only from 1.64e-2 to 1.92e-2 and this check stays GREEN; 32 -> 128 reads 4.1e-2 and fails it. That mutation is caught by TestInt4_forwardParity's forced centered-cosine
+floor (cosines 0.13 to 0.99 against 0.99). Do not read this check passing as evidence the int4 grouping is right.
+```
+
+## TestMoEExpertBatching_M1vsMN
+
+Moved from `decoder/moe_expert_batch_test.go` (the comment above `TestMoEExpertBatching_M1vsMN`) on 2026-10-09.
+
+```text
+Is batching the MoE expert matmul over rows worth anything? — the cheap check
+before anyone funds the restructuring.
+
+WHY THIS IS BEING ASKED AGAIN. The 2026-09-01 full-model profile put
+`swiGLUExpert` at 93.1% of moeMLP and moeMLP at 42.1% of prefill — so the
+expert weight matmuls are ~39% of prefill, and the largest single bucket now
+that A3 collapsed attention to 17.4%. At K=8192 the batched-prefill loop
+(forwardn.go) calls moeMLP once PER ROW, and swiGLUExpert issues its three
+matmuls at M=1, so an expert's weights are re-read for every token that
+routes to it.
+
+AND WHY THE EXISTING VERDICT MAY NOT COVER IT. docs/completed/task-moe-streaming.md
+Lever 4 is PARKED on "expert-major MoE prefill batching is NOT a compute
+lever", measured 2026-08-28 as `uniform` (every row picks the same experts)
+against `varied` (real routing), with uniform called the CEILING. But BOTH
+arms of that experiment call moeMLP per row at M=1. What uniform changes is
+which weights get touched, so it captures the BANDWIDTH/locality half of
+batching — the weights stay cache-resident across rows — and not the
+M=1 -> M=N half, which is a different axis: a GEMV is latency/ILP-bound in a
+way a GEMM over hundreds of rows is not. The two coincide only if the
+workload is purely bandwidth-bound.
+
+So that result answers "does routing diversity cost much?" (no — and today's
+profile agrees, routeExperts is 1.7% of moeMLP) without bounding "would
+batching rows into GEMMs help?". This measures the second question directly,
+which is cheaper than arguing about the first.
+
+METHOD. Real Mellum2 expert shapes, real int4 W4A8 weights through the same
+`matmul(be, *WeightMat, ...)` entry point production uses. Same total rows in
+both arms:
+
+	M=1 arm    N separate calls, exactly what moeMLP does today
+	M=N arm    one call over N rows
+
+The comparison is TIME PER ROW. If M=N is not materially cheaper per row, the
+parked verdict covers this too and the lever really is closed.
+```
+
+## TestMoEExpertBatching_M1vsMN.shape
+
+Moved from `decoder/moe_expert_batch_test.go` (the comment above `TestMoEExpertBatching_M1vsMN.shape`) on 2026-10-09.
+
+```text
+Mellum2 config.json: hidden_size 2304, **moe_intermediate_size 896**,
+64 experts, top-k 8.
+
+896 IS THE EXPERT WIDTH AND 7168 IS THE DENSE ONE. The first version of
+this benchmark used 7168 -- `intermediate_size`, which the DENSE FFN uses
+-- and so measured expert matmuls 8x wider than the ones swiGLUExpert
+actually issues (it is called with moe.IntermediateDim). Wider matmuls
+amortise per-call overhead better, so that error understated the batching
+win rather than inventing one, but it was still the wrong shape.
+```
+
+## TestMoEExpertMajor_bitIdentical.depth
+
+Moved from `decoder/moe_expert_batch_test.go` (the comment above `TestMoEExpertMajor_bitIdentical.depth`) on 2026-10-09.
+
+```text
+Overridable because the e2e measurement returned ~4x at K=4096 -- far more
+than batching the matmuls can explain -- and a speedup that comes partly
+from doing LESS work would look exactly like that. The identity must be
+checked at the depth the claim is made at, not only at the cheap one.
+```
+
+## loadMoEBitIdentModel
+
+Moved from `decoder/moe_expert_batch_test.go` (the comment above `loadMoEBitIdentModel`) on 2026-10-09.
+
+```text
+loadMoEBitIdentModel resolves a real MoE checkpoint for the gate above, through the shared
+asset registry (testdata/assets.json's GOINFER_MELLUM_CKPT entry) rather than a hand-rolled
+os.Getenv("HOME")+"/models/mellum2-unq" fallback — the old form was invisible to `gate census`
+and ignored GOINFER_MODELS pointing the models root elsewhere (audit-2026-09-02.md N-41).
+assetPath itself skips the test when the asset is absent, so a nil error here means Load ran.
+```
+
+## TestMoEExpertMajor_endToEnd
+
+Moved from `decoder/moe_expert_batch_test.go` (the comment above `TestMoEExpertMajor_endToEnd`) on 2026-10-09.
+
+```text
+TestMoEExpertMajor_endToEnd is P18's decision measurement.
+
+The microbenchmark says the expert matmul is 1.55x-2.13x cheaper per row when
+batched. It says nothing about the GATHER/SCATTER cost of collecting an
+expert's scattered rows, which is the whole open question — and multiplying
+the microbenchmark by moeMLP's profile share is precisely the projection this
+repo retracted twice on 2026-09-01.
+
+So this times the real forward with the flag on and off, paired and
+interleaved with alternating lead, at the depth the pre-registered rule names.
+
+PRE-REGISTERED DECISION RULE (docs/queue-performance.md P18, committed before
+this ran): fund if the net is >=15% end-to-end at K>=4096; park if <8%;
+8-15% is AMBIGUOUS and parks pending a second mechanism.
+```
+
+## laguna_real_test.go
+
+Moved from `decoder/laguna_real_test.go` (the comment above `laguna_real_test.go`) on 2026-10-09.
+
+```text
+Real-checkpoint gate for Laguna (poolside) — the loader + forward on the actual
+released Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards).
+
+WHY THIS EXISTS SEPARATELY FROM T1. The tiny goldens prove the math against HF at
+4 layers and 8 experts with random weights. They cannot prove that the loader
+reads a REAL Laguna checkpoint, and that is where this family has hidden every
+one of its surprises so far — all three of these were found by reading the real
+checkpoint, and none of them are visible in a tiny fixture built from a config:
+
+  - q_norm/k_norm exist on every layer, are UNCONDITIONAL in the module, and are
+    mentioned nowhere in config.json.
+  - g_proj is [64, 2048] — per-HEAD — even though config says `gating: true`,
+    which the sibling generations' module resolves to per-element.
+  - experts ship PER-EXPERT (mlp.experts.N.*), not as the module's fused 3D
+    parameters, and the shared expert is `shared_expert` (singular) while the
+    module calls it `shared_experts`.
+
+A wrong stride or a misread schema here produces correct shapes, finite values,
+and confident nonsense — so the coherence bar is a distinct-TRIGRAM ratio over a
+CHAT-TEMPLATED prompt, not a distinct-token floor on a raw completion. (A raw
+completion prompt on an instruction-tuned checkpoint measures "did the forward
+avoid total collapse"; on gemma-4-26b that manufactured a false "int4 is broken"
+signal that survived a week.)
+
+M.1 has no gate of this kind and will not get one on this box: it is ~220B
+(89 shards, ~400GB bf16) against 62GB of RAM. Its code path is identical to
+XS.2's apart from config, and this gates that path — the same call made for
+Kimi K2, recorded in docs/task-laguna.md.
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
+	  go test -tags realckpt ./decoder/ -run TestLagunaReal -v -timeout 180m
+```
+
+## TestLagunaReal_oracle
+
+Moved from `decoder/laguna_real_test.go` (the comment above `TestLagunaReal_oracle`) on 2026-10-09.
+
+```text
+TestLagunaReal_oracle is the T3 numeric row: the released bf16 weights matched against an
+HF bf16 forward of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py
+(accelerate disk offload — the reference and goinfer are never resident at the same instant,
+the same technique scripts/pin_qwen3next_real.py already proved on an 80B model). Until this
+gate, TestLagunaReal_gate above was coherence-only BY DESIGN: it proves the loader reads the
+real checkpoint correctly (three real surprises found that way, see the file doc comment) but
+never compared a single logit against an independent reference.
+
+int8, NOT int4 (changed 2026-09-18) — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md
+for the full account. This comment used to say int8 "does not fit alongside f32 activations in
+62GB of RAM" and cited qwen3next's own real gate as the same capacity-forced choice — THAT WAS
+WRONG, and it was never actually measured before this comment asserted it. Measured 2026-09-18:
+int8 peaks at ~43GB RSS on this box (62GB total, comfortable headroom), takes ~8 minutes, and —
+the reason this matters beyond a comment fix — the int4 gate this comment used to defend had a
+real, reproducible divergence at continuation[3] (int4: cosine 0.984776, wrong token; confirmed
+via a floating-point-rounding-noise control that it was a genuine near-tie in int4's coarser
+grid, not a wiring bug). At int8 that divergence is GONE: cosine 0.998845, all 8 continuation
+tokens exact. Caught by independent review (Gemini) challenging the capacity claim directly
+rather than accepting "accept the int4 divergence as permanent" on the strength of a premise
+nobody had actually run.
+
+	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestLagunaReal_oracle -v -timeout 60m
+```
+
+## TestMellum2PrefillProfile
+
+Moved from `decoder/mellum2_prefill_profile_test.go` (the comment above `TestMellum2PrefillProfile`) on 2026-10-09.
+
+```text
+Mellum2 long-prefill profiler — the ATTENTION-vs-MoE-FFN split of a batched
+MoE prefill, at a chosen prompt length.
+
+WHY THIS EXISTS, and why the dense profile does not answer it. The K=8192
+profile quoted in queue-performance.md (`MatmulAVAcc64` 51.1%, `MatmulQKAcc64`
+18.7%, ~70% attention) is a DENSE 1.5B. Two levers are live for long-context
+prefill and they attack different terms:
+
+	f32 attention  (G24, shipped as --cpu-fast-attention)  -> the O(K²) attention term
+	expert-major batching (docs/completed/task-moe-streaming.md Lever 4)  -> the O(K) per-row MoE FFN
+
+Their shares move in OPPOSITE directions as K grows, so "which is binding" has
+no single answer — it has a crossover, and the crossover is what this measures.
+Two structural facts make the dense number a bad proxy for the MoE case:
+
+ 1. `--cpu-fast-attention` REFUSES MoE (G24), so on this model the attention
+    lever is not merely unmeasured, it is unavailable as shipped.
+ 2. Mellum2 is 24/28 SLIDING-window layers at window 1024 (config.json
+    `layer_types`). Only the 4 full_attention layers grow as O(K²); the other 24
+    cap their nKeys at 1024. A dense model's attention share therefore
+    OVERSTATES this one's at every K past the window.
+
+Mellum2 is the only locally-available MoE that takes the batched path at all —
+canBatchN excludes deepseek_v2 (MLA), qwen3_5_moe and gemma4, which is every
+other MoE checkpoint in ~/models. It cannot go through loadBenchModel: that
+resolves GOINFER_PREQUANT_GGUF, whose asset kind is "file", and this checkpoint
+is a safetensors DIRECTORY. So it loads the directory directly, the way
+mellum2_parity_test.go does.
+
+Run (one quant per process):
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_MELLUM_K=2048 \
+	GOINFER_MELLUM_PROF=/tmp/mellum-2048.prof \
+	go test ./decoder/ -run TestMellum2PrefillProfile -timeout 3600s -v
+
+Then: go tool pprof -top -nodecount=30 <prof>
+
+SWAP IS RECORDED, NOT ASSUMED AWAY. This is a ~12 GB int8int8 model on a 16 GB
+box, and a run that pages produces a plausible, wrong profile — the exact
+failure class that made the withdrawn G15 cliff expensive. `vm.swapusage` is
+read before and after and printed with the result; a non-zero delta invalidates
+the run. It is deliberately NOT an RSS check: darwin's UBC reclaims under
+pressure, so RSS reports what survived rather than what was asked for (it read
+LOWER at the failure point than at the baseline in the Metal slot sweep).
+```
+
+## TestMellum2PrefillProfile.slice
+
+Moved from `decoder/mellum2_prefill_profile_test.go` (the comment above `TestMellum2PrefillProfile.slice`) on 2026-10-09.
+
+```text
+Default to the FULL checkpoint; GOINFER_MELLUM_CKPT points at a layer slice
+where the full one will not fit. A 4-layer slice is representative here and
+that is a property of THIS model, not a general licence: Mellum2 interleaves
+layer_types on a period of 4 (s,s,s,f), so 21 sliding / 7 full — exactly 25%
+full_attention — is reproduced exactly by layers [0,4), and every layer is
+`sparse`, so the MoE geometry is unchanged. What a slice does NOT preserve is
+the embedding's share of the total (4 layers amortize it over 7x less work);
+the LM head is excluded by construction, since forwardLayersN stops at the
+layer stack.
+```
+
+## TestExpertPaging_bitExact.AcceptSlowMoE
+
+Moved from `decoder/moepaging_test.go` (the comment above `TestExpertPaging_bitExact.AcceptSlowMoE`) on 2026-10-09.
+
+```text
+AcceptSlowMoE: the 512 MB budget is chosen to FORCE eviction, which the load-time working-set guard (S4, 2026-09-23) predicts is
+slower than its 2.0 tok/s floor on a big MoE; throughput is not what this gate checks. Without it this gate returned a load error
+from 2026-09-23 on, and being env-gated (GOINFER_MOE_GIW) nothing ran it until 2026-10-06 (docs/queue-engineering.md B13).
+```
+
+## TestExpertPaging_touchesEveryFamilyThatBuildsAPager
+
+Moved from `decoder/moepaging_test.go` (the comment above `TestExpertPaging_touchesEveryFamilyThatBuildsAPager`) on 2026-10-09.
+
+```text
+TestExpertPaging_touchesEveryFamilyThatBuildsAPager is M-34's gate (audit-2026-09-10): the
+pager and its budget banner are built generically for ANY mmap-backed MoE (newExpertPager
+registers every w.Layers[li].Experts entry regardless of architecture), but gpt-oss, Llama 4
+and Nemotron 3 Nano's own forward loops indexed lw.Experts directly with no pager.touch call
+at all — so -stream-weights enforced no RAM bound for these three families even though the
+banner claimed one. This drives each family's own real MoE forward function directly
+(hand-built minimal Architecture/LayerWeights, same discipline as
+TestNemotron3NanoMoE_forward) with m.pager wired to a real mmap-backed pager keyed by
+exactly the addresses (&lw.Experts[e]) the fixed code now touches, and asserts
+pager.stats() shows nonzero hits+misses afterward — which it did NOT before this fix
+(misses would stay 0 forever, since the mapped experts were never faulted through the
+cache at all).
+```
+
+## TestExpertBufferPool_capNeverExceedsBudget
+
+Moved from `decoder/moepaging_test.go` (the comment above `TestExpertBufferPool_capNeverExceedsBudget`) on 2026-10-09.
+
+```text
+task-never-swap-2026-09.md S5: one gap in decoder/moepool_test.go's already-thorough pool
+coverage (byte-exact-through-compute refill, top-K self-eviction, LRU order, cross-stream lock
+correctness — read before adding here, most of what a first pass wrote turned out to duplicate
+it and was removed). What was missing: every existing slot-count test is minSlots-driven
+(TestExpertBufferPool_topKNeverSelfEvicts deliberately gives a budget of ONE expert so minSlots
+has to override it); none exercises the OTHER direction — a budget generous enough that IT,
+not minSlots, decides the slot count. TestExpertBufferPool_capNeverExceedsBudget is that case.
+```
+
+## TestMC3_concurrentGenerationsFillSteps
+
+Moved from `decoder/mc3_batch_test.go` (the comment above `TestMC3_concurrentGenerationsFillSteps`) on 2026-10-09.
+
+```text
+TestMC3_concurrentGenerationsFillSteps pins the straggler window's timing. With a step that takes far longer than the
+window (a GPU's), 4 generations decoding together must run as full 4-wide steps, token after token. The window is
+timed from when the resident came free: timed from each token's submission, a token submitted during a run has
+"waited" the whole run when it ends, runs at once without the others, and the generations phase-lock into split
+runs — measured on Metal as 3 batched + 1 solo on every token, 255 of 256 runs started by the timeout.
+```
+
+## TestMC3_topPConcurrentMatchesAlone
+
+Moved from `decoder/mc3_batch_test.go` (the comment above `TestMC3_topPConcurrentMatchesAlone`) on 2026-10-09.
+
+```text
+TestMC3_topPConcurrentMatchesAlone: a top-p generation keeps the device top-K path under MC3 (it was simply off there
+until 2026-09-30, which cost CUDA top-p 26%: docs/measurements/topp-regression-2026-09-30.md), and concurrent
+generations still each get exactly the tokens they get alone. Two filters: one the K candidates usually serve, and one
+(top_p near 1) whose rows fall back to the full row. The fake's Full fails if any other write reached the shared
+logits buffer after its row, which is the hazard: the fallback must be read while the generation holds the resident.
+```
+
+## longPromptFastWant
+
+Moved from `decoder/longprompt_golden_test.go` (the comment above `longPromptFastWant`) on 2026-10-09.
+
+```text
+longPromptFastWant is the greedy continuation of longPromptIDs(768) on the bench model through
+the DEFAULT (f32) prefill path. Regenerate ONLY when a numerics change to that path is
+intentional and reviewed — the same contract parityWant carries for the exact path.
+
+KEYED BY GOARCH, and that is a FINDING, not boilerplate. Measured 2026-09-01 on the same
+checkpoint and commit: arm64 and amd64 diverge at the FIRST generated token
+(11 714 279 ... vs 13 715 522 ...). The exact kernel does not do this — parityWant is one
+list for both — so cross-arch token reproducibility is something the f32 default gives up,
+beyond the "decode != prefill" the flag documents. gc fuses x*y+z into FMA on arm64 and not
+on amd64 (docs/parity-coverage-policy.md, "CPU reference is arch-scoped"), and f32 attention
+has no f64 accumulator to absorb the difference.
+
+A single shared list here would have been a permanently red gate on one of the two CI runners.
+REGENERATED 2026-09-01 for the P19 fused schedule becoming the default. The
+pre-fusion lists were:
+
+	arm64 {11, 714, 279, 3491, 374, 429, 279, 2038, 374, 537, 3238, 438, 3601, 13, 576, 1465}
+	amd64 {13, 715, 522, 2599, 397, 522, 1551, 397, 522, 2599, 397, 522, 1551, 397, 522, 2599}
+
+AN ODDITY WORTH RECORDING RATHER THAN GLOSSING: arm64-fused reproduces the
+pre-fusion AMD64 list exactly, all 16 tokens. That is not mystical -- that
+sequence is a repeating attractor (522, 2599, 397, 1551 cycling) and two
+different numerical paths can fall into the same loop -- but it does say these
+continuations sit on knife-edges, which is the tie-flip reading rather than the
+defect one. Independently supported: fusion's model-level divergence from acc64
+(cosine 0.998262) is within 2e-5 of what the f32 flag already produces on its
+own (0.998283), measured on one checkpoint at one depth.
+
+The prompt is synthetic nonsense (700 + (i*7919)%9000), so a degenerate
+continuation is garbage-in-garbage-out on either path and is not read here as a
+quality signal. What the golden pins is REPRODUCIBILITY, not quality.
+```
+
+## TestLongPromptFast_forwardParity
+
+Moved from `decoder/longprompt_golden_test.go` (the comment above `TestLongPromptFast_forwardParity`) on 2026-10-09.
+
+```text
+TestLongPromptFast_forwardParity closes the coverage hole that flipping --cpu-fast-attention's
+default exposed: every other forward golden uses a prompt SHORTER than fastAttnMinPrompt, so
+they all take the exact kernel and the f32 path — the shipped default — had no golden at all.
+
+WHY THAT MATTERED CONCRETELY, not hypothetically. scripts/refresh_parity_hashes.sh is the
+sanctioned release valve for a hashed-core edit, and it reported the default flip as a
+"non-numeric core refresh" — true of everything the goldens touched, false of the change. A
+green that covers only the unchanged side of an edit is the exact failure Q1 documents.
+
+THE NAME ENDS IN _forwardParity DELIBERATELY: that is what the refresh script's selector
+matches ((_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$). A gate that the
+release valve does not run is a gate that does not protect the release valve.
+```
+
+## TestLongPromptFast_forwardParity.env
+
+Moved from `decoder/longprompt_golden_test.go` (the comment above `TestLongPromptFast_forwardParity.env`) on 2026-10-09.
+
+```text
+Default path (no env override): this is what a user gets. Pinned via t.Setenv (restores
+after the test, unlike the raw os.Unsetenv this replaced) to the DEFAULT-on value for both
+knobs that can perturb this golden's exact float sequence — not just
+GOINFER_CPU_FAST_ATTENTION. A developer with GOINFER_FUSED_ATTENTION=0 legitimately
+exported (fusedattn.go's documented opt-out) used to see this golden fail with
+"f32 prefill continuation drifted", a false positive: the golden was recorded fused, and an
+ambient =0 silently switched this run to the materialized (non-fused) arithmetic path
+instead (N-41 (09-02)).
+```
+
+## forcedLongPromptCloseness
+
+Moved from `decoder/longprompt_golden_test.go` (the comment above `forcedLongPromptCloseness`) on 2026-10-09.
+
+```text
+forcedLongPromptCloseness replaces TestLongPromptFast_forwardParity's token-exact comparison under a forced CPU fallback (H1.3). The golden pins one realization of the f32 fast-attention path
+(a documented, accepted divergence from the exact path), and the top four exact logits sit within 0.21, so a different realization reorders the continuation (the pure-Go path reads token 304
+first where the AVX2 golden reads 11). The question that does not depend on the draw: how far is the fast path from the EXACT path on this build (measured 1 - cosine at 768 tokens: 8.3e-3
+pure Go, 1.6e-2 AVX2, and the exact path itself is bit-identical across the two builds)?
+```
+
+## TestGenerateNgramSpeculative_residentCommitsAcceptedSequence
+
+Moved from `decoder/model_cancel_commit_test.go` (the comment above `TestGenerateNgramSpeculative_residentCommitsAcceptedSequence`) on 2026-10-09.
+
+```text
+TestGenerateNgramSpeculative_residentCommitsAcceptedSequence is audit R-03's gate for
+spec_ngram.go's resident branch (the OTHER writer named there, alongside spec_eagle.go — see
+that file's own note on why its forget calls are out of scope): on completion, resIDs must be
+(a prefix of) prompt+everything actually emitted, not stay forgotten from the pre-prefill
+residentForgetIDs call. Recurrent families never reach this branch at all
+(validateNgramSpec rejects them before the goroutine starts), so there is nothing to gate for
+the forget-otherwise half of R-01/R-03's general shape here.
+
+Exactly prompt+emitted is NOT always achievable: a round's own trailing token is streamed
+before it is forwarded (forwarding happens at the START of the next round, as that round's
+targetVerify seq[0] — see the "one asymmetry" note in spec_ngram.go), so a return right after
+that specific emit is one token behind the stream. Safe (the cache is never claimed to hold
+more than it truly does) but the test has to allow for it rather than require exact equality.
+```
+
+## TestGenerateSpeculative_forgetsDraftResIDs
+
+Moved from `decoder/model_cancel_commit_test.go` (the comment above `TestGenerateSpeculative_forgetsDraftResIDs`) on 2026-10-09.
+
+```text
+TestGenerateSpeculative_forgetsDraftResIDs is R-00's shape on the SECOND Model (V-09,
+docs/review-2026-09-04.md): GenerateSpeculative's target claim forgets resIDs before any
+resident write (R-00), but the draft's own claim just below it skipped the forget entirely.
+GenerateSpeculative never COMMITS either model's resIDs (only R-01 phase 1/2 would let it), so
+the correct postcondition for BOTH is nil after any call — the same invariant target's own
+claim already held, now held by draft too.
+
+A stale resIDs matters here specifically because it is reachable through the public API on
+its own: a caller holding a draft *Model can call target.GenerateSpeculative once (which used
+to leave draft.resIDs however it was BEFORE this call, silently) and then call draft.Generate
+directly — a completely unrelated turn — which would trust a resIDs value describing content
+the draft's resident KV no longer holds (this call already overwrote it).
+```
+
+## TestLagunaGGUF_gate.fitguard
+
+Moved from `decoder/laguna_gguf_test.go` (the comment above `TestLagunaGGUF_gate.fitguard`) on 2026-10-09.
+
+```text
+The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate. This gate checks the LOADER's parity,
+not memory planning, and the guard prices the 18.9 GB mapped checkpoint as resident for the whole load and the KV
+cache at the model's full context (56.5 GB needed against a 35.9 GB budget on nobara-pc's 62 GB, 2026-10-01),
+which refused a load this box completed in the v0.19.0 sweep. requireHeavyModel keeps it to the box that holds it.
+```
+
+## mxfp4_test.go
+
+Moved from `decoder/mxfp4_test.go` (the comment above `mxfp4_test.go`) on 2026-10-09.
+
+```text
+M2 of aikit's goinfer-kernel-moves task: the MXFP4 arithmetic that used to live in
+decoder/mxfp4.go now lives in aikit (embed.MXFP4Scale / DequantMXFP4Blocks /
+DequantMXFP4Split), gated there raw-bit against frozen copies of these bodies.
+
+THIS FILE STAYS, pointed at aikit, because it holds something aikit's gate cannot: a fixture
+extracted from a REAL gpt-oss:20b tensor and dequantized by the reference `gguf` Python library
+(TestMXFP4_bitExactGolden). aikit has no Python, so its own vectors are Go-generated and
+self-referential by construction; this one is an independent oracle. Deleting it with the
+implementation would have removed the only check that the packing matches what the reference
+library actually produces for bytes off a real checkpoint.
+```
+
+## TestMXFP4_splitIsSequentialNotGGML
+
+Moved from `decoder/mxfp4_test.go` (the comment above `TestMXFP4_splitIsSequentialNotGGML`) on 2026-10-09.
+
+```text
+TestMXFP4_splitIsSequentialNotGGML pins the intra-block nibble order of the SAFETENSORS
+layout, which is NOT GGML's.
+
+This test exists because the opposite was assumed and written down. Phase 0 recorded that
+safetensors MXFP4 differed from GGUF "only in addressing — no new numerics", and the first
+implementation reused the GGML core. Dequantizing a real gpt-oss expert both ways and
+diffing against the same weight through the already-validated GGUF reader settled it:
+cosine 0.081 for GGML order, 1.000000 for sequential. The bug it would have shipped is the
+worst kind — finite values, correct shapes, plausible magnitudes, entirely wrong weights.
+
+So this asserts the two orders DISAGREE in exactly the documented way, rather than
+asserting they agree (which the earlier version of this test did, and passed, because the
+implementation shared their shared mistake).
+```
+
+## TestLFM2_arch
+
+Moved from `decoder/lfm2_test.go` (the comment above `TestLFM2_arch`) on 2026-10-09.
+
+```text
+TestLFM2_arch pins the descriptor facts that the LFM2 forward depends on and that a
+config-key mistake would silently zero. The two explicit >0 assertions are not padding:
+both were real bugs, found 2026-08-31 by differencing against HF on the released
+LFM2.5-2.6B, and both produced a running, fluent, WRONG model rather than an error.
+
+  - NormEps came back 0 because LFM2 spells the key "norm_eps" and the adapter read
+    cfg.RMSNormEps. Uniform 1.0185x scale on the first norm; logits cosine 0.897.
+  - AttnScale came back 0 because the Architecture literal simply omitted it. Every q·k
+    score is then 0, so softmax returns a UNIFORM average over the context. Invisible at
+    one token (softmax of one element is 1.0 at any scale) — it needs >= 2 tokens to show.
+
+Both had a MATCHING argmax against HF while broken, so neither a smoke test nor a greedy
+decode would have caught them.
+```
+
+## TestLFM2_textParity.tier
+
+Moved from `decoder/lfm2_test.go` (the comment above `TestLFM2_textParity.tier`) on 2026-10-09.
+
+```text
+tiny-golden is SUB-T3, and the merge derives status from the method, so this lands as
+"experimental" rather than "validated" — which is the honest tier for a family whose
+only numeric gate is a seeded 4-layer fixture. The released LFM2.5-2.6B was differenced
+against HF by hand during bring-up (bit-exact after the two fixes), but that ran off a
+5 GB local checkpoint with no committed gate, so it is NOT claimed here.
+```
+
+## emitParityRow.method
+
+Moved from `decoder/parity_emit_test.go` (the comment above `emitParityRow.method`) on 2026-10-09.
+
+```text
+THE METHOD IS VOCABULARY, NOT FREE TEXT (B15). mellum's gate emitted "real-oracle" —
+one word short of the T3 name "real-model-oracle" — and the merge wrote it into the
+manifest verbatim, where it read as a method no tier rule recognises. A string typed
+at ~20 call sites and never compared to a list is a defect waiting for a rename, so
+it is checked HERE, at the source, rather than only by the tier gate downstream.
+```
+
+## emitParityRow.nan
+
+Moved from `decoder/parity_emit_test.go` (the comment above `emitParityRow.nan`) on 2026-10-09.
+
+```text
+A NaN metric is not a numerics failure — cosineToFull (forward_test.go) documents
+returning NaN when its full-logit-dump reference is simply absent on this box (a
+gitignored, locally-regenerated fixture), and %.5f prints that as a literal NaN
+token, which is not valid JSON and breaks TestParityManifest_merge for every OTHER
+row in the same run, not just this family's. Found on an arm64 sweep 2026-09-06:
+TestMixtral_forwardParity's tiny-golden checks (argmax/sample/top-k) all passed
+against testdata/mixtral_forward_golden.json, but testdata/mixtral_forward_full.json
+was missing, so cos came back NaN and this call still tried to record it as if it
+were a measured value. Same shape as a "SKIP (no row expected)" real-model gate —
+this gate has weaker evidence than usual, so it emits nothing rather than garbage.
+```
+
+## TestLoadAdapter_rejectsEveryOwnForwardFamily
+
+Moved from `decoder/lora_test.go` (the comment above `TestLoadAdapter_rejectsEveryOwnForwardFamily`) on 2026-10-09.
+
+```text
+TestLoadAdapter_rejectsEveryOwnForwardFamily pins V-12 (docs/review-2026-09-04.md):
+LoadAdapter used to hand-list arch.gemma4/arch.qwen35 as the own-forward families to
+reject, instead of deriving the check from arch.ownForward() — the single table
+(decoder/arch.go's ownForwards) that runLayers itself dispatches on. LFM2 fell out of
+that hand-list (it wasn't in it to begin with), so LoadAdapter validated an LFM2 adapter
+cleanly and registered it — but runLayersLFM2 takes no lora parameter at all, so the
+registered adapter silently did nothing at generate time. This is the same "one
+predicate, seven consumers" bug class canBatchN (decoder/forwardn.go) was fixed for
+after an identical LFM2 omission crashed decode (audit-2026-09-02 C-01/C-02).
+
+The rejection happens before any file I/O (loadLoRA is only called after the switch),
+so a bogus dir is enough to isolate the check.
+```
+
+## TestMoEPagingSpike.lever2
+
+Moved from `decoder/moepaging_spike_test.go` (the comment above `TestMoEPagingSpike.lever2`) on 2026-10-09.
+
+```text
+Lever-2 verdict: plain LFU is WORSE than LRU (classic establishment pathology — a re-faulted hot
+expert restarts at freq=1 and is re-evicted before it accumulates count). LFU-aging fixes that
+and beats LRU, but ONLY at impractically-tight budgets (3–4 GB); at the realistic ≥8 GB range all
+three converge because LRU already keeps the hot set warm on this stationary-skewed signal
+(frequency ⇒ recency). So a frequency-aware policy is NOT worth building — keep EvictLeastRecent.
+```
+
+## lfuSim
+
+Moved from `decoder/moepaging_spike_test.go` (the comment above `lfuSim`) on 2026-10-09.
+
+```text
+lfuSim runs classic LFU of capacity C over the access stream: on a miss over budget it evicts the
+resident page with the LOWEST access count SINCE it became resident (ties broken by LRU — the
+oldest among the coldest). The MoE router's demand is a skewed-FREQUENCY signal (the spike above:
+the hottest 10% of experts absorb ~72% of accesses, stable across tokens), which is LFU's sweet
+spot — once the hot set is warm it is never the victim. This is Lever 2's candidate vs the pager's
+current EvictLeastRecent (LRU). Eviction scans the resident set (O(C)); the trace is small.
+```
+
+## TestLagunaDFlash.mask
+
+Moved from `decoder/laguna_dflash_test.go` (the comment above `TestLagunaDFlash.mask`) on 2026-10-09.
+
+```text
+mask_token_id is TOP-LEVEL in this dialect. Getting it wrong is silent and
+expensive: the drafter still runs and still produces lossless output, just
+badly — P10 measured a known-good pairing fall from 1.60x to 0.66x on exactly
+this mistake.
+```
+
+## TestLagunaDFlash_acceptance
+
+Moved from `decoder/laguna_dflash_test.go` (the comment above `TestLagunaDFlash_acceptance`) on 2026-10-09.
+
+```text
+TestLagunaDFlash_acceptance measures what the pairing is actually worth: how many
+tokens per round the target ACCEPTS from the drafter.
+
+WHY ACCEPTANCE AND NOT SPEEDUP. Block drafting is lossless by construction — every
+emitted token is one the target's own argmax produced — so no correctness test can
+tell a good drafter from a bad one. Acceptance is the only signal, and P10 learned
+that the hard way twice (a wrong mask token turned 1.60x into 0.66x while output
+stayed perfectly valid; a drafter fed the wrong embeddings would do the same).
+
+This deliberately does NOT report a speedup. Laguna is CPU-only in goinfer today
+(FeatAttnOutputGate makes every resident backend decline it), and P10's own
+kill-gate found the DRAFT, not the verify, was the wall — a CPU draft against a
+CPU target is a different regime from the GPU-resident numbers gate 3 reported.
+Measuring wall-clock here would produce a number that says more about this box
+than about the pairing.
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
+	  GOINFER_LAGUNA_DFLASH=~/models/laguna-xs2-dflash \
+	  go test -tags realckpt ./decoder/ -run TestLagunaDFlash_acceptance -v -timeout 180m
+```
+
+## TestLFM2_multiTokenPrefillMatchesSequential
+
+Moved from `decoder/ownforward_test.go` (the comment above `TestLFM2_multiTokenPrefillMatchesSequential`) on 2026-10-09.
+
+```text
+C-01, END TO END, ON THE COMMITTED FIXTURE. Every prompt of >=2 tokens reached the generic
+batched stack, whose first act on an LFM2 conv layer is rmsNorm against a QNorm that was never
+loaded — an index-out-of-range in the Generate goroutine, where net/http's handler recover does
+not reach. TestLFM2_textParity stayed green throughout because it drives m.forward one token at
+a time and never calls prefillLogits.
+
+The assertion is not "it does not panic" but "the two paths agree": prefillLogits documents
+itself as bit-identical to the sequential prefill, and a fix that merely stopped the crash while
+taking a different path would satisfy the weaker claim.
+```
+
+## TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily
+
+Moved from `decoder/ownforward_test.go` (the comment above `TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily`) on 2026-10-09.
+
+```text
+THE OTHER FOUR CONSUMERS OF THE SAME FACT (audit §0 theme 1). Each hand-listed the own-forward
+families; between them they had drifted by two — lfm2 was missing from all four and gpt-oss from
+HiddenLast — so an LFM2 model reached seams documented to refuse it and got nil rows or a pooled
+vector from a path nobody had checked. Driven off the table so a family added there is covered
+here without anyone remembering to.
+```
+
+## TestOwnForward_recurrentBitMatchesTheCacheKinds
+
+Moved from `decoder/ownforward_test.go` (the comment above `TestOwnForward_recurrentBitMatchesTheCacheKinds`) on 2026-10-09.
+
+```text
+The two views of "recurrent" must not disagree: the table's Recurrent bit decides before a cache
+exists (speculative rollback), KVCache.hasRecurrentState decides once one does (truncate,
+snapshot, session reconcile). A family recurrent in one sense and not the other is the state that
+produced C-02, only with the halves swapped.
+TestOwnForward_recurrentBitMatchesTheCacheKinds is DERIVED, not listed (audit 2026-09-10 C-03,
+G-05). It used to carry a hand-written map of family -> which cache field to set, and
+bailing_hybrid was on NEITHER side of it: table Recurrent=false and absent from the map, so it
+passed as "consistently non-recurrent" while its KDA state leaked across sessions. Both
+predicates it compared omitted KDA, so their agreement proved nothing — what was missing was an
+INDEPENDENT view of what the cache actually holds.
+
+So the cache is asked directly: each own-forward family's REAL cache is built by NewCache from
+its representativeConfig, and its recurrent kinds are found by reflection (recurrentKinds). The
+registry bit, both hasRecurrentState views and speculative rollback must all agree with that.
+```
+
+## mellum_slice_test.go
+
+Moved from `decoder/mellum_slice_test.go` (the comment above `mellum_slice_test.go`) on 2026-10-09.
+
+```text
+REAL-WEIGHT layer-slice oracle for Mellum2 (JetBrains Mellum2-12B-A2.5B-Instruct) — the
+CPU half of G11.
+
+WHY IT EXISTS, AND WHY IT IS NOT A SYNTHETIC FIXTURE. G10 declared FeatRopeMscale for
+Metal to unblock gpt-oss's YaRN, which as a documented side effect also admits Mellum
+onto the Metal resident path — a second GPU path for this family with ZERO end-to-end
+validation. G10's attempt to close that with a hand-rolled random-weight fixture failed
+for a reason worth not repeating: at realistic dims a plain dense qwen2 control with NO
+QK-norm at all also misses the 0.95 cosine bar against fully-random weights (0.898).
+Random weights lack the outlier structure real checkpoints have, so int4/int8 noise
+swamps whatever feature is under test. A synthetic fixture CANNOT discriminate a real
+bug from that noise floor.
+
+A real slice can. It keeps what matters — trained weights, with their real routing
+distributions, real QK-norm scales and real YaRN interaction — and drops only depth.
+Layers [0,4) is the coverage floor, not a size choice: Mellum2's real layer_types is a
+3:1 sliding/full interleave, so layer 3 (0-indexed) is the FIRST full_attention layer
+and therefore the first one carrying YaRN. A 3-layer slice would gate the sliding path
+and silently skip the mscale that G10 actually changed. Verified against the released
+config before slicing rather than assumed.
+
+This is the DECODER-side gate: it proves goinfer's own CPU forward matches the HF f32
+reference on real weights. The Metal half (metal/mellum_real_test.go) runs residentParity
+against the SAME slice; see docs/queue-correctness.md G11 for the handoff, including how
+to regenerate this slice bit-identically (it is 4 GB, so the checkpoint is gitignored and
+only the golden is tracked).
+
+	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestMellumSlice -v
+```
+
+## TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe
+
+Moved from `decoder/layerpaging_test.go` (the comment above `TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe`) on 2026-10-09.
+
+```text
+TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe is S4 item 2's WIRING gate
+(task-never-swap-2026-09.md): TestResolveWeightCacheBudget (fitguard_test.go) proves the
+arithmetic in isolation; this proves decoder.Load actually calls it before newLayerPager sees
+WeightCacheBytes, through a REAL .giw load. Injecting hostRAMAvailable to two different live
+figures must move newLayerPager's own window arithmetic in the direction each figure implies: a
+modest available produces a budget smaller than this fixture's total resident weight bytes
+(window pinned well under its layer count, so a REAL pager is built) while a generous available
+makes the whole model "fit" (window >= n, so newLayerPager returns nil — no streaming needed).
+Reverting the model.go wiring (the `opts.WeightCacheBytes = resolveWeightCacheBudget(...)` line)
+makes BOTH cases build off aikit's own AutoBudget() instead, indistinguishable from each other
+since the live probe would never be consulted.
+
+Needs the 1.5B fixture, not the registry's default 0.5B one: at 0.5B (0.59 GB resident), every
+available figure large enough to clear guardGIWFit's own ~1 GB KV+scratch floor (S4 item 1)
+already halves to a budget bigger than the whole model — there is no available figure where
+BOTH guards are exercised on that fixture. 1.5B (1.66 GB resident) leaves a real gap between the
+two floors (empirically probed: 2.5 GB available streams at window=27 of 28 layers; 3 GB+ fits
+outright).
+```
+
+## TestLlama4_chunkedAttentionStart
+
+Moved from `decoder/llama4_chunk_test.go` (the comment above `TestLlama4_chunkedAttentionStart`) on 2026-10-09.
+
+```text
+M-05: attention_chunk_size was read from config and never applied. The RoPE layers attended
+[0, pos] on every position, so from position C on they saw keys HF's block-diagonal chunked
+mask removes. Nothing caught it because every parity gate uses a sequence shorter than C,
+where chunked and full-causal are the same function.
+
+WHAT IS PINNED HERE is the mask this build implements: a query at p attends [(p/C)*C, p] on a
+RoPE layer, and [0, p] on a NoPE layer. The audit rates the HF semantics medium-confidence
+(recalled, not read), so this states the rule explicitly rather than burying it — if HF turns
+out to chunk differently, this test names exactly what to change.
+```
+
+## TestLaguna_textParity.refs
+
+Moved from `decoder/laguna_test.go` (the comment above `TestLaguna_textParity.refs`) on 2026-10-09.
+
+```text
+Each fixture was generated against ITS OWN generation's modeling_laguna.py
+(see scripts/pin_laguna_tiny.py), and the references were verified to actually
+apply the per-layer-type RoPE — xs21's HF model carries rotary_emb with
+inv_freq len 4 + YaRN mscale 1.3466 and swa_rotary_emb with len 8 + scaling
+1.0, exactly the widths and scalings the adapter derives. Without that check a
+silently-degenerate reference would have made this gate meaningless.
+```
+
+## TestTruncateTo_resetsConvWindowAlone
+
+Moved from `decoder/kvcache_recurrent_test.go` (the comment above `TestTruncateTo_resetsConvWindowAlone`) on 2026-10-09.
+
+```text
+A THIRD KIND OF RECURRENT STATE, ALONE. TestTruncateTo_resetsRecurrent above sets mamba AND
+delta on the same cache, so a guard checking either one stays green — and a third kind is
+invisible to it. That is exactly what happened: LFM2's short-conv window is mutated in place per
+token like the other two, resetRecurrent() already cleared it, and the guard that CALLS
+resetRecurrent named only mamba and delta. On an LFM2-only cache the reset was unreachable, so
+TruncateTo(0) left the window intact and conversation B's first K-1 tokens convolved over
+conversation A's last Bx vectors at every conv layer (audit-2026-09-02 C-02).
+
+This cache carries ONLY conv, which is the whole point of it being a separate test.
+```
+
+## TestLlamaTiny_textParity
+
+Moved from `decoder/llama_tiny_test.go` (the comment above `TestLlamaTiny_textParity`) on 2026-10-09.
+
+```text
+
+THE BASELINE ARCHITECTURE HAD NO TINY FIXTURE. `llama` is a required parity gate and the most
+common architecture in the ecosystem, and until 2026-09-02 the only llama checkpoints anywhere
+here were the Linux box's gitignored llama3.2-1b (2.4 GB), tinyllama-awq (731 MB) and
+tinyllama-gptq (733 MB). So no other machine could exercise the arch at all, and the .giw census
+round-tripped 21 families without ever touching it. Found by the census's completeness gate
+reporting the box's untracked fixtures (audit-2026-09-02 C-03 follow-on).
+
+Deliberately plain — GQA 2:1, SwiGLU, RMSNorm, UNTIED head, rope_theta at Llama-3's 500000.0.
+Every other family's descriptor is a deviation from this one, so a break here is a break in the
+thing they all deviate FROM. The untied head matters on its own: it is a separate LMHead tensor
+the serializer carries, and the tied families cannot exercise that path.
+```
+
+## TestLlama4Real_gate.fitguard
+
+Moved from `decoder/llama4_real_test.go` (the comment above `TestLlama4Real_gate.fitguard`) on 2026-10-09.
+
+```text
+THIS MODEL DOES NOT FIT, AND THE GATE OPTS OUT ON PURPOSE.
+
+Scout is 107.8B elements; at int4 (0.625 bytes/element including group scales) that is
+~62.7 GB resident, against nobara-pc's 62.7 GB of RAM — 100% of the machine, with nothing
+left for the KV cache, activations or the OS. The load-time fit guard (decoder/fitguard.go)
+therefore refuses it, and the refusal is CORRECT: measured 2026-09-06 during the parity
+sweep, and the estimate was checked rather than trusted (no vision tensors in this GGUF,
+element count matches Scout's published 109B).
+
+What the guard revealed is that this gate has been completing by PAGING, which is the exact
+failure mode the guard was written for after a cold-user run watched a 16 GB Mac go +7.8 GB
+into swap in five seconds. The gate is kept as-is rather than shrunk, because it is the only
+real-checkpoint coverage llama4_text has and it inspects architecture rather than measuring
+speed — so paging costs time here, not correctness. The opt-out is explicit so that nobody
+reads a passing llama4 gate as evidence that this model fits.
+```
+
+## runMellum2Golden.emit
+
+Moved from `decoder/mellum2_parity_test.go` (the comment above `TestMellum2_forwardParity.emit`) on 2026-10-09.
+
+```text
+Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if any check
+above failed). int8int8 (serve default) vs HF bf16 → real-model-oracle; argmax exact when green.
+The method string is the T3 vocabulary name, checked by emitParityRow: "real-oracle" was
+written here for months and reached the manifest verbatim (B15).
+Emit only from the forward gate (not the window gate) to avoid a double row.
+```
+
+## TestMellum2_logitParity
+
+Moved from `decoder/mellum2_parity_test.go` (the comment above `TestMellum2_logitParity`) on 2026-10-09.
+
+```text
+TestMellum2_logitParity gates the Mellum2 forward (MoE 64/top-8, 3:1
+sliding/full interleave, YaRN-on-full RoPE, QK-norm) against the HF bf16
+oracle on a chat-templated prompt — argmax is the first answer token (50195
+"Paris"), so this also gates coherence. int8int8 (the serve default) vs bf16:
+measured sample-256 cosine 0.99955 (floor 0.98, the Gemma 4 12B reference).
+```
+
+## TestMellum2_windowParity
+
+Moved from `decoder/mellum2_parity_test.go` (the comment above `TestMellum2_windowParity`) on 2026-10-09.
+
+```text
+TestMellum2_windowParity pins the sliding-window EVICTION path on the real
+checkpoint: a 1441-token prompt (> the 1024 window), so the local layers attend
+only within the window while the YaRN'd full layers see everything. The
+next-token logits still match the HF bf16 oracle (measured cosine 0.99636).
+(Inc3 real-model proof; the synthetic unit-level proof is
+TestMellum2_slidingWindowEviction.)
+```
+
+## TestLoadAdapter_dimMismatchRejects
+
+Moved from `decoder/lora_compute_test.go` (the comment above `TestLoadAdapter_dimMismatchRejects`) on 2026-10-09.
+
+```text
+TestLoadAdapter_dimMismatchRejects gates C-03 (audit-metal-2026-09-12.md): LoadAdapter (the
+compute-time path, #7) validated only that a delta's tensor NAME matched a known projection —
+never that its [Out,In] shape matched the ACTUAL base projection. A same-family adapter trained
+against a different-size base (e.g. one more attention head) passed straight through to every
+resident backend's SetAdapter, which trusts In/Out from the checkpoint (Metal only range-checks
+rank); a mismatched Out overruns the kernel's own output bound and writes past the Q slot into
+K/V. The merge-at-load path (weights.go's loadProj -> loraAdapter.merge) already made exactly
+this check; validateComputeTimeDims is its twin for the compute-time path.
+```
+
+## TestGuardGIWFit_floorRefusalNamesTheFloorsNeed
+
+Moved from `decoder/metal_fit_test.go` (the comment above `TestGuardGIWFit_floorRefusalNamesTheFloorsNeed`) on 2026-10-09.
+
+```text
+TestGuardGIWFit_floorRefusalNamesTheFloorsNeed: the refusal says what the floor needs. It used to print the whole
+window's need under "even at the 2048-token floor" (about 32 GB for a 128k-window 7B, against a floor need under 1 GB).
+```
+
+## TestResolveMoEPagerPool
+
+Moved from `decoder/moe_pager_mode_test.go` (the comment above `TestResolveMoEPagerPool`) on 2026-10-09.
+
+```text
+The CPU expert pager's mode resolves in one place, in this order: Options.MoEPager, then
+GOINFER_MOE_PREAD_CPU, then MoEPagerDefault. A library caller used to get mmap on darwin while
+serve got pool, because serve applied its default by setting the env var.
+```
+
+## TestResidentMoECap_pinsKernelConstant
+
+Moved from `decoder/moecap_kernel_pin_test.go` (the comment above `TestResidentMoECap_pinsKernelConstant`) on 2026-10-09.
+
+```text
+TestResidentMoECap_pinsKernelConstant gates M-17: the feature-matrix MoE caps in
+residentBackendMoECap MUST equal the router kernel's actual fixed-array bounds, or the
+hardware-matrix generator declines archs BuildResident admits (or vice versa) — the
+one-source-of-truth invariant the map's own comment promises. This reads the kernel sources
+and compares. The cuda groups cap was 32 while cuda/moe.cu's MOE_MAX_G is 64, so an arch with
+n_group in 33..64 was published not-CUDA-resident while the runtime admitted it. The test
+extracts each constant from its source and pins the cap to it; a future kernel bump that
+forgets the map (or vice versa) fails here.
+```
+
+## TestResidentMoECap_runtimeDeclineReadsTheDeclaration
+
+Moved from `decoder/moecap_kernel_pin_test.go` (the comment above `TestResidentMoECap_runtimeDeclineReadsTheDeclaration`) on 2026-10-09.
+
+```text
+M-31: the pin above reads the KERNEL sources and features_test.go asserts ResidentEligible.
+Both were green while gpu/residency.go carried its own hardcoded 256/32 — so a 384-expert
+Kimi-K2 was published "✅ resident" in both generated matrices, admitted by ResidentEligible,
+and then declined to CPU by a line naming a number nothing else agreed with. Neither existing
+test reads the file that actually makes the decision.
+
+So this one does. It asserts the RUNTIME decline site does not restate a literal cap — the
+numbers must come from ResidentBackendMoECap — because a literal there is precisely the drift
+the map exists to prevent, and it is invisible to a test that only greps the kernel.
+```
+
+## nemotron35lightning_real_test.go
+
+Moved from `decoder/nemotron35lightning_real_test.go` (the comment above `nemotron35lightning_real_test.go`) on 2026-10-09.
+
+```text
+Real-checkpoint gate for NVIDIA-Nemotron-3.5-Lightning-30B-A3B (nemotron_h MoE) — F2 of
+docs/completed/task-families-2026-09.md. NOT a new family: Phase 0 found this checkpoint's config.json
+identical to the already-T3'd Nemotron 3 Nano's (docs/completed/queue-correctness.md G4) in
+every architecturally meaningful field, including the exact 52-block layer pattern (23 mamba /
+23 moe / 6 attention, same order). This gate exists to confirm the ACTUALLY TRAINED weights
+behave the way that identical architecture predicts — a tiny fixture cannot catch a wrong
+tensor name, a transposed expert stack, or a router bias read from the wrong key.
+
+This goes through the same realLogitOracleQuant helper every other real-checkpoint gate uses,
+so it DOES call emitParityRow like the others — but it is deliberately left OUT of
+cmd/gate/parity.go's emitGates list (the manifest's "nemotron_h" row is keyed by registry
+model_type, not by checkpoint, and is already `validated` from Nano's T3, cosine 0.997668;
+TestNemotron3NanoReal_oracle itself isn't in emitGates either — the row was populated once by a
+direct run + manual merge, not by the routine sweep). A `go run ./cmd/gate parity` sweep will
+still run this gate (it's in parityRealckptGates) and PASS/FAIL/skip on it, but won't touch the
+manifest; running it directly with GOINFER_MANIFEST_EMIT=1 would still emit a PARITY_ROW line,
+and merging that WOULD overwrite Nano's specific numbers with Lightning's — a deliberate choice
+for whoever runs it by hand, not something this gate silently does on a routine sweep. This
+run's result is recorded in docs/completed/task-families-2026-09.md's F2 section as confirmatory
+evidence for the same family.
+
+	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotron35LightningReal -v -timeout 90m
+```
+
+## TestNemotron3NanoReal_oracle.int8
+
+Moved from `decoder/nemotron3nano_real_test.go` (the comment above `TestNemotron3NanoReal_oracle.int8`) on 2026-10-09.
+
+```text
+int8 WEIGHTS, f32 ACTIVATIONS — not the int8int8 every other family uses, and the
+difference is measured rather than assumed:
+
+	int8int8   cosine 0.978086   (int8 activations)
+	int8       cosine 0.997668   (f32 activations)
+
+The forward is correct; the sensitivity is real. This model routes 6 of 128 experts
+(4.7%), far sparser than the comparable MoE families here (deepseek_v3 0.99951,
+qwen3_5_moe 0.99333, granitemoehybrid 0.99566, all at int8int8), and its own DENSE
+parent scores 0.99574 at int8int8. Quantizing activations perturbs the router enough to
+flip which experts run, which is a discrete change no amount of averaging smooths —
+the expert-flip cliff already recorded for granite's MoE stack.
+
+So this is a deployment fact worth carrying, not a threshold dodge: DO NOT run this
+family's MoE variant with int8 activations.
+```
+
+## nemotron_moe_real_test.go
+
+Moved from `decoder/nemotron_moe_real_test.go` (the comment above `nemotron_moe_real_test.go`) on 2026-10-09.
+
+```text
+Real-GGUF gate for Nemotron 3 Nano (nemotron_h MoE, 30B-A3B) — the loader + MoE forward on
+actual released quantized weights.
+
+WHY THIS EXISTS SEPARATELY FROM T3. T3 (nemotron3nano_real_test.go) proves the forward against
+an HF oracle, but it loads SAFETENSORS. The GGUF path is a different loader with a different
+expert layout — safetensors ships one tensor per expert
+(experts.I.{up,down}_proj), GGUF fuses ALL experts into one 3-D tensor per projection
+(blk.N.ffn_{up,down}_exps.weight) — and it had never completed a forward pass. It was verified
+by reading a real file's header and dequantizing one layer's tensors by hand; correct dims and
+sane values, which is not the same as a model that runs.
+
+That gap matters here more than usual: a fused expert stack read with the wrong stride
+produces correct shapes, finite values, and confident nonsense. This session has now seen that
+failure mode five times in a different subsystem.
+
+THE PROMPT GOES THROUGH THE CHAT TEMPLATE, and the coherence bar is a distinct-TRIGRAM ratio,
+not a distinct-token floor. The dense gate (TestNemotronReal_gate) carries an audit note
+saying exactly this: its raw completion prompt on an instruction-tuned checkpoint measures
+"did the forward avoid TOTAL collapse", not coherence, and on gemma-4-26b that manufactured a
+false "int4 is broken" signal that survived a week — which a distinct<3 floor would not have
+caught, because repetition has more than 3 distinct tokens. New gate, so it starts with the
+pattern that note recommends rather than inheriting the one it warns about.
+
+	GOINFER_HEAVY_TESTS=1 GOINFER_NEMOTRON3NANO_GGUF=~/models/nemotron3nano-gguf/... \
+	  go test -tags realckpt ./decoder/ -run TestNemotron3NanoMoEReal -v -timeout 60m
+```
+
+## TestNemotronReal_gate.audit
+
+Moved from `decoder/nemotron_real_test.go` (the comment above `TestNemotronReal_gate.audit`) on 2026-10-09.
+
+```text
+AUDIT NOTE (da5a6ec): raw completion prompt on an instruction-tuned checkpoint,
+gated only by the distinct<3 floor below — which measures "did the forward avoid
+TOTAL collapse", not coherence. On gemma-4-26b-a4b-it a raw prompt manufactured a
+false "int4 is broken" signal that survived a week, and distinct<3 would not have
+caught it (repetition has >3 distinct tokens). This gate currently passes, so the
+completion is in-distribution ENOUGH for this checkpoint — but when it is next
+revalidated, adopt TestGemma4_26B_gate's pattern (render the family chat template +
+distinctTrigramRatio floor) instead of trusting distinct<3.
+```
+
+## TestP13_mmapAliasRisk_classifiesDTypes
+
+Moved from `decoder/p13_mmap_release_test.go` (the comment above `TestP13_mmapAliasRisk_classifiesDTypes`) on 2026-10-09.
+
+```text
+P13: the safetensors loader used to hold the SOURCE mapping for the model's whole life. On a
+55.6 GB bf16 checkpoint that is 46.8 GB RSS against GGUF's 24.5 GB for an IDENTICAL 17.9 GB Go
+heap, and 1.69x slower decode — dead bf16 pages competing with the hot quantized weights for
+page cache. loadWeights now closes the source at end of load when nothing can alias it.
+
+THE GATE IS mmapAliasRisk, AND THIS TESTS THE GATE RATHER THAN THE OUTCOME. Getting it wrong in
+the safe direction costs the old behaviour; getting it wrong in the unsafe direction is a
+use-after-free on weights the decode is reading, which would surface as garbage output or a
+SIGBUS far from here.
+```
+
+## TestP13_rssAfterLoad
+
+Moved from `decoder/p13_mmap_release_test.go` (the comment above `TestP13_rssAfterLoad`) on 2026-10-09.
+
+```text
+TestP13_rssAfterLoad reports resident set size after a load, so the release can be measured
+rather than asserted. DIAGNOSTIC — P13's own entry says "do not assume the 1.69x transfers",
+because that figure came from a box holding 46.8 GB of 62 GB and is a page-pressure artifact as
+much as a mapping one. This prints; it does not gate.
+```
+
+## parity_emit_b15_test.go
+
+Moved from `decoder/parity_emit_b15_test.go` (the comment above `parity_emit_b15_test.go`) on 2026-10-09.
+
+```text
+B15 regression gates: the manifest WRITER must not produce claims the manifest READER has to
+reject. One sweep with EMIT_MANIFEST=1 promoted four families from experimental to *validated*
+while their method still said tiny-golden, and wrote mellum's method as "real-oracle" — a
+string no tier rule recognises. TestParityManifest_methodTier caught both, which is that gate
+working; these two catch them at the source, and — the part that matters — they run in plain
+CI, where the emitter itself never does.
+```
+
+## TestGenerate_residentPathAllocatesNoHostKV
+
+Moved from `decoder/model_lazy_kv_test.go` (the comment above `TestGenerate_residentPathAllocatesNoHostKV`) on 2026-10-09.
+
+```text
+TestGenerate_residentPathAllocatesNoHostKV is P-01(a) (audit-2026-09-10): Model.Generate used
+to allocate the full host KV cache (m.NewCache) BEFORE the resBusy CAS even ran, so a
+resident-and-won call paid for capacity it never touched. NewCache is the sole place
+prefillEnters advances (R13's own discipline: "a test can OBSERVE that a check placed one line
+too late produces the identical error text" — same idea, applied to allocation instead of a
+refusal), so a zero delta here is a direct, non-inferred proof no host KV was allocated, not
+just that generation still produced the right tokens.
+```
+
+## olmo_hybrid_test.go.verified
+
+Moved from `decoder/olmo_hybrid_test.go` (the comment above `olmo_hybrid_test.go.verified`) on 2026-10-09.
+
+```text
+VERIFIED AGAINST A REAL Olmo-Hybrid-7B CHECKPOINT (HTTP Range on its safetensors header), not
+just modeling_olmo_hybrid.py's source — the source alone, and even a local save_pretrained
+round-trip through this transformers version's own conversion_mapping.py, both produced tensor
+names/splits that do NOT match the real release; see scripts/pin_olmo_hybrid_tiny.py's own
+docstring for the full account.
+```
+
+## loadMistralWindowGolden
+
+Moved from `decoder/mistral_tiny_window_test.go` (the comment above `loadMistralWindowGolden`) on 2026-10-09.
+
+```text
+THIS TEST EXISTS BECAUSE THE FIXTURE'S WEIGHTS WERE NEVER COMMITTED. Only its config files were (the *.safetensors ignore rule), so the CUDA and WebGPU
+window tests and `gate identity`'s mistral asset had nothing to load on a fresh checkout, and no CPU test consumed the golden at all: the CPU
+sliding-window path had no committed parity gate against HF. A missing fixture or golden FAILS here instead of skipping, for the reason D11 found in
+D2's gate: a gate whose fixture can vanish into a skip is not a gate.
+```
+
+## parityManifest
+
+Moved from `decoder/parity_manifest_test.go` (the comment above `parityManifest`) on 2026-10-09.
+
+```text
+parityManifest mirrors testdata/parity_manifest.json. familyParity uses
+json.RawMessage for fields the test must preserve verbatim on -update
+(metrics/status/dates/etc.) while still letting us read+rewrite deps_hash and
+inspect uses/own/validated_at. Field order matches the on-disk schema so that
+re-marshaling produces a stable, zero-diff layout.
+
+No AikitVersion field (G-01, audit-2026-09-10): the manifest used to carry a hand-typed
+"aikit_version" string mixed into every family's deps_hash, which drifted from the real pin —
+stale seventeen versions once (CHANGELOG v0.17.0's "re-arm"), then drifted again two releases
+later when that fix re-TYPED the value instead of deriving it. freshDepsHash now reads the
+ROOT go.mod's aikit require directly (rootAikitVersion, below) at hash time, so there is no
+stored value left to drift from reality — the file this field used to duplicate.
+```
+
+## writeManifest
+
+Moved from `decoder/parity_manifest_test.go` (the comment above `writeManifest`) on 2026-10-09.
+
+```text
+writeManifest serialises the manifest back to disk FAITHFULLY.
+
+Two round-trip defects made scripts/refresh_parity_hashes.sh unusable — it correctly ABORTED on
+"the update changed more than deps_hash" every time, which is the guard working, but it meant the
+sanctioned goldens-gated refresh could not actually be used:
+
+  - json.MarshalIndent HTML-escapes, turning a ">" inside a `reference` string into "\u003e".
+  - `Method` was a plain string, so a JSON `null` came back as `""`.
+
+Neither changed any meaning, and both showed up as a diff the abort guard could not distinguish
+from a real edit. Fixed here rather than by loosening the guard: the guard was right.
+```
+
+## TestParityManifest_merge.machine
+
+Moved from `decoder/parity_manifest_test.go` (the comment in `TestParityManifest_merge`, above the machine default) on 2026-10-09.
+
+```text
+A hardcoded specific box's name here is a mislabel waiting to happen, not a
+convenience: it WAS "linux-62gb" unconditionally, so a merge run from any OTHER
+machine silently stamped every row as having been validated on nobara's 62 GB
+box. Caught 2026-09-06 running the arm64/Metal sweep from a 16 GB Mac — five
+rows it re-validated (granite-dense, ministral3, olmo3, qwen3_moe, smollm3) got
+overwritten from the correct "mac" to the wrong "linux-62gb", because nobody
+had ever needed to run this from a second machine before. GOOS-GOARCH can never
+be wrong the way a remembered hostname can; it is less pretty than "mac" or
+"linux-62gb", but pass GOINFER_MANIFEST_MACHINE explicitly for that.
+```
+
+## rootAikitVersion
+
+Moved from `decoder/parity_manifest_test.go` (the comment above `rootAikitVersion`) on 2026-10-09.
+
+```text
+rootAikitVersion reads the ROOT go.mod's aikit require directly (G-01, audit-2026-09-10) —
+freshDepsHash's replacement for the manifest's old hand-typed "aikit_version" field. Deriving
+it here instead of storing it makes drift structurally impossible: the hash always mixes in
+whatever go.mod actually pins, at the moment it is computed, not whatever someone last typed
+into the JSON.
+```
+
+## TestRootAikitVersion_readsFromGoMod
+
+Moved from `decoder/parity_manifest_test.go` (the comment above `TestRootAikitVersion_readsFromGoMod`) on 2026-10-09.
+
+```text
+TestRootAikitVersion_readsFromGoMod is G-01's direct unit gate (audit-2026-09-10): asserts
+rootAikitVersion actually reads go.mod rather than returning a stale or hardcoded value.
+Deliberately does NOT assert a specific version string — that would just be a second place to
+remember to bump on every aikit release, the exact hand-typed-value failure mode this fix
+removes. Instead: independently re-parse go.mod with a SEPARATE regexp match (not calling
+rootAikitVersion's own machinery) and require exact agreement, so a bug in the function itself
+(wrong path, wrong pattern) cannot pass by coincidence.
+```
+
+## TestParityManifest_fresh.emptySets
+
+Moved from `decoder/parity_manifest_test.go` (the comment in `TestParityManifest_fresh`, above the empty-set check) on 2026-10-09.
+
+```text
+A validated family whose uses/own sets name no files hashes nothing but the aikit version,
+so no edit to its forward can ever restale it (audit-2026-09-10 G-02: olmo_hybrid sat
+validated with "uses": [], "own": []). Its green would cover nothing. Keyed on status, not
+validated_at: an experimental family (bailing_hybrid) carries a validated_at but claims no
+validation, and gets its sets when it is promoted.
+```
+
+## TestParityManifest_methodTier
+
+Moved from `decoder/parity_manifest_test.go` (the comment above `TestParityManifest_methodTier`) on 2026-10-09.
+
+```text
+TestParityManifest_methodTier is the claim-discipline gate: it makes "validated" MEAN T3.
+
+WHY IT EXISTS. `parity-coverage-policy.md` has always defined which methods clear T3, but nothing
+enforced it — `Method` was parsed as a `json.RawMessage` and never compared to the list. That let
+five rows sit at `status: validated` with `method: tiny-golden` / `tiny-golden+coherent`: a T1
+artifact (cosine vs the family's own seeded tiny golden — no released checkpoint involved)
+recorded in a T3 slot, and therefore counted as "supported". The staleness gate could not catch it
+because it keys on `deps_hash` freshness, which says nothing about how the row was validated.
+
+THE HONEST ALTERNATIVE, so a weak row does not have to lie. `status: "experimental"` records a
+family whose gate is real but sub-T3. Such a row keeps its method and metrics, renders distinctly
+in the capability matrix, and is EXCLUDED from the supported count. Downgrading is not a
+regression — it is the matrix finally saying what the row always was.
+```
+
+## applyParityRows
+
+Moved from `decoder/parity_manifest_test.go` (the comment above `applyParityRows`) on 2026-10-09.
+
+```text
+applyParityRows folds PARITY_ROW lines into m and returns the families it touched. It is a
+FUNCTION rather than inline loop body so the B15 regression test can drive the real merge
+instead of a re-implementation of it — the defect it guards against (status promoted without
+the method to support it) was exactly the kind a parallel test-only copy would have missed.
+```
+
+## applyParityRows.status
+
+Moved from `decoder/parity_manifest_test.go` (the comment in `applyParityRows`, above the status assignment) on 2026-10-09.
+
+```text
+STATUS IS DERIVED FROM THE METHOD, NOT ASSERTED (B15). This used to read
+`f.Status = "validated"` unconditionally, so one sweep with EMIT_MANIFEST=1 promoted
+glm4_moe, mixtral, qwen2_5_vl and qwen2_moe to *supported* on tiny-golden evidence —
+the published capability matrix's "supported" count, upgraded by a tool, from rows
+that said tiny-golden right next to the promotion. TestParityManifest_methodTier
+caught it, which is the gate working; but a writer that produces claims a reader has
+to reject is the wrong shape. The rule the tier gate enforces is now the rule the
+writer applies: T3 method ⇒ validated, anything else ⇒ experimental. A row can
+therefore DEMOTE a family whose evidence was downgraded, instead of leaving a stale
+"validated" standing over a weaker method.
+```
+
+## parthreshold_sweep_bench_test.header
+
+Moved from `decoder/parthreshold_sweep_bench_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+The decode-matmul parallelism threshold sweep. int4ParThreshold (weightmat.go, 1<<20)
+and DefaultDecodeParallelThreshold (tune.go, 300K) are the fan-out crossovers, in MACs,
+below which a decode matmul runs SERIAL. Both were tuned on a Ryzen 7 3700X (8 desktop
+cores); the M1 Pro (6 P + 2 E, very different memory latency) is Phase 5's rig and was
+never swept — a wrong threshold understates any benchmark we eventually publish. This
+isolates the crossover from the model: it drives the SAME kernels (MatmulBTW4A8Into /
+MatmulBTW8A8Into) matmul() dispatches, at Gemma-4-26B-A4B's real decode shapes (M=1),
+across a bracket of thresholds, with a per-call Workspace exactly as the forward does.
+
+Run + read (per-shape ns/op; lower is better; the winning threshold is the largest one
+whose ns/op is still ~serial-beating for every shape it must fan out):
+
+	go test ./decoder -run '^$' -bench 'ParThresholdSweep' -benchtime 200ms
+
+Interpreting it: for each shape the ns/op is flat until the threshold rises ABOVE that
+shape's MAC count, at which point it jumps to the serial cost. The optimum is the
+threshold that keeps every shape you want parallel below the jump while leaving truly
+tiny ops (which over-parallelize — thread spawn > work) serial. Compare the M1 Pro
+optimum against the constants; if it differs materially, the constant wants to be
+per-platform (GOOS/arch or GOMAXPROCS-derived), not a universal default.
+```
+
+## TestPrefillAbsoluteTable
+
+Moved from `decoder/prefill_absolute_test.go` (the comment above `TestPrefillAbsoluteTable`) on 2026-10-09.
+
+```text
+Re-measure benchmarks.md §A's ABSOLUTE CPU prefill table.
+
+The recorded cells are dense 1.5B `int8int8`, prefill + 1 token, on an M1 Pro:
+
+	170 tok    3.3 s   (51.5 tok/s)
+	620 tok   19.7 s
+	1520 tok  93.2 s
+	3020 tok 334.9 s   (9.0 tok/s)
+
+They predate FOUR changes that landed 2026-09-01 — the f32 prefill default,
+A3's head fan-out (1.92× @K=4096), P18's expert-major MoE prefill (4.36×, MoE
+only, so inert for this dense model), and P19's fused schedule (+8%). The page
+was marked stale rather than guessed at; this produces the replacement.
+
+CONFIGURATION IS MATCHED TO THE ORIGINAL ON PURPOSE: same model class, same
+quant, same prompt lengths, same "prefill + 1 token" quantity. A re-measurement
+that quietly changes the cell definition is not a re-measurement.
+
+Best-of-3 rather than the original's single shot — an improvement to the
+method, stated so the two are not read as identically obtained.
+```
+
+## TestAdmitPrefillMemory_refusesAnOversizedRequest
+
+Moved from `decoder/prefill_budget_test.go` (the comment above `TestAdmitPrefillMemory_refusesAnOversizedRequest`) on 2026-10-09.
+
+```text
+R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time guard prices the
+worst case a request COULD reach; it cannot see the request that actually arrives. This is the
+request-time counterpart — driven with numbers shaped like the actual failure (a 7B-class
+model whose weights alone fit, but whose KV+scratch for a real agent-sized prompt does not).
+
+R13-follow-on: total RAM here is AMPLE (so Load succeeds and the load-time guard has nothing to
+say) but currently-AVAILABLE RAM is tight — the shape of the live re-run's actual failure: the
+load-time guard correctly auto-pinned a smaller context against total RAM, and the request
+still swapped, because other processes on the real machine had already claimed most of what
+the guard assumed was free.
+```
+
+## TestAdmitPrefillMemory_residentPathSkipsHostKV
+
+Moved from `decoder/prefill_budget_test.go` (the comment above `TestAdmitPrefillMemory_residentPathSkipsHostKV`) on 2026-10-09.
+
+```text
+TestAdmitPrefillMemory_residentPathSkipsHostKV is P-01(b) (audit-2026-09-10): a request that will
+actually run the stateless GPU-resident path never allocates the host KV AdmitPrefillMemory
+prices, so pricing it anyway could 413 a request an 8 GB CUDA box would have served entirely in
+VRAM. availBytes is chosen so the window is narrow: prefill scratch alone must fit (residentPath
+admits), but scratch+KV together must not (residentPath=false — the CPU/staged path, which does
+need the term — still refuses). If admission stopped depending on residentPath at all, the first
+assertion would go green vacuously; if the KV term were never skipped, the second would fail.
+```
+
+## TestCachedHostRAMAvailable_rateLimits
+
+Moved from `decoder/prefill_budget_test.go` (the comment above `TestCachedHostRAMAvailable_rateLimits`) on 2026-10-09.
+
+```text
+TestCachedHostRAMAvailable_rateLimits is P-13 (audit-2026-09-10): AdmitPrefillMemory runs on
+every request that reaches prefill, and the raw probe forks+execs (vm_stat on darwin). This
+asserts the rate-limiting directly — calls within the TTL window must not reach the underlying
+probe — rather than only asserting AdmitPrefillMemory still returns the right answer, which
+would pass whether or not caching ever happened.
+```
+
+## prefill_decline_warn_test.header
+
+Moved from `decoder/prefill_decline_warn_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+B20 (docs/queue-engineering.md) gate: residentPrefillSeed's decline must actually reach an
+operator-visible log naming the reason, not merely be read internally.
+
+WHY THIS EXISTS. V-05 (docs/review-2026-09-04.md) fixed a SILENT batched-prefill decline by
+making the launch refuse loudly (checkPrefillShmem et al.) instead of crashing, but B20 found
+the caller one level up, residentPrefillSeed, still threw that refusal away after checking it
+only for cancellation — the reason was reachable and correct but never reached an operator.
+5cc4854 (2026-09-04, later the same day as the review) wired warnPrefillDeclined into the
+fallback, but nothing asserted on the log line's CONTENT — a doc comment claiming coverage is
+not coverage (CLAUDE.md's own rule) applies just as much to an unasserted log line as to an
+unasserted test body.
+```
+
+## TestResidentPrefillSeed_DeclineIsLoggedWithReason.capture
+
+Moved from `decoder/prefill_decline_warn_test.go` (the comment in `TestResidentPrefillSeed_DeclineIsLoggedWithReason`, above the Generate call) on 2026-10-09.
+
+```text
+Generate MUST be started INSIDE the capture, not before it. captureStderr installs its pipe
+by assigning the os.Stderr global, and warnPrefillDeclined reads that global from the
+generation goroutine — so starting the goroutine first is a genuine data race on os.Stderr
+(caught by -race in CI on both linux and darwin, 2026-09-12, run 34711378811; the detector
+fired during this test and so blamed it, while the write was this line's own).
+
+It was also a correctness bug independent of the detector: the decline is logged during
+PREFILL, which is the first thing the goroutine does, so any decline emitted between
+Generate returning and the swap landing went to the REAL stderr and was missed. The test
+would then assert on output it never captured — a flake that looks like a missing log line.
+Starting inside the closure makes the capture cover the whole generation, which is what the
+assertion below already assumed.
+```
+
+## TestWarnPrefillDeclined_FiresOncePerReason
+
+Moved from `decoder/prefill_decline_warn_test.go` (the comment above `TestWarnPrefillDeclined_FiresOncePerReason`) on 2026-10-09.
+
+```text
+TestWarnPrefillDeclined_FiresOncePerReason gates N-35 (audit-metal-2026-09-12.md): the dedup key
+is now the decline's normalized reason, not a single process-lifetime gate. B20's original fix
+sketch wanted per-reason dedupe; the FIRST shipped version was coarser (a bare sync.Once) —
+TestWarnPrefillDeclined_FiresOncePerProcess used to pin that coarser behaviour deliberately, on
+the grounds that a future change to it should be a decision, not a silent drift. This is that
+decision: on Metal, nearly every prompt under the fast-prefill floor declines with a message
+that differs only in its promptLen, so a bare sync.Once let the very first short prompt
+permanently silence a later, genuinely different decline (a resident-cap refusal, an OOM) an
+operator would want to see. Numbers are normalized out of the key so same-shape declines with
+different byte/token counts still collapse to one line, while a differently-worded reason gets
+its own.
+```
+
+## TestCheckpointSHA256_directory
+
+Moved from `decoder/prefill_ref_dir_key_test.go` (the comment above `TestCheckpointSHA256_directory`) on 2026-10-09.
+
+```text
+A safetensors checkpoint directory keys a reference by its files (D-B01's first directory cell failed with "is a
+directory"): the key is stable, ignores goinfer's own sidecars and hidden files, and changes when a weight byte does.
+```
+
+## TestPrefillGateReference
+
+Moved from `decoder/prefill_ref_gen_test.go` (the comment above `TestPrefillGateReference`) on 2026-10-09.
+
+```text
+TestPrefillGateReference is Phase A of docs/completed/task-prefill-gap.md §3.1's L1 re-run: build the CPU
+f32-activation reference logits that BOTH Metal arms (metal/prefill_gate_ref_test.go, Phase B)
+are scored against. §3's first form scored Metal's fast (f16-activation) path against Metal's
+own exact (int8-per-row-activation) path and called the exact path truth — but the exact path is
+itself a quantisation, guaranteed to disagree with the fast path for a reason that has nothing
+to do with a defect (see the doc's §3.1 correction). This reference is what actually has no
+activation-precision loss to attribute anything to.
+
+Runs in its OWN process, deliberately separate from the Metal gate: a 7B CPU reference and a 7B
+Metal resident sharing 16GB at once on this machine is exactly the failure mode that produced a
+real kernel panic here before a model was ever intentionally run oversized. Two models:
+  - S (1.5B): Options{Backend:"cpu", Quant:""} — f32 weights, f32 activations, ~6GB.
+  - D7 (7B):  Options{Backend:"cpu", Quant:"int8"} — weight-only per-row int8, f32 activations,
+    ~7.6GB. The f32 weights for D7 would be ~28GB and do not fit; per the brief, if the q4_k_m
+    GGUF cannot load under "int8" this subtest logs why and skips — D7 is the confirmation
+    model, S is the one the decision rests on.
+
+The reference is the CPU backend's own prefill (PrefillLogitsForTest, the batched prompt path —
+weights streamed once and reused across all K positions, ~1.7-2x faster than a naive per-token
+loop and bit-identical to it) with GOINFER_CPU_FAST_ATTENTION forced to "0", i.e. the exact
+f64-accumulating attention kernel, never the f32-fast one that is default ON elsewhere in this
+tree. The 64-token greedy continuation past the prompt still runs one token at a time
+(ForwardForTest) — inherent to greedy decoding (each step needs the previous step's own choice),
+and cheap next to K up to 3900.
+
+PARALLEL ACROSS PROMPTS: the 10 prompts per (model, K) run concurrently, one goroutine per CPU
+(capped), each with its own *KVCache. This is safe because a CPU forward's mutable scratch state
+lives on the KVCache it's given (decoder/model.go's cache.scr), not on the shared *Model — the
+only mutex on *Model guards LoRA adapter swaps, a different concern. Verified empirically, not
+just argued: before the real run, a short preflight sends the SAME prompt through N concurrent
+workers on independent caches and requires bit-identical seed logits; a real corruption would
+show up there in seconds rather than being discovered hours into results that already cost the
+wall-clock this parallelism exists to avoid.
+
+Output is NOT written into the repo — these are large, per-machine, per-session binaries
+(10 prompts x 65 x vocab float32s per cell) meant only for the Phase B run on this box, not a
+committed artifact. Written to ~/goinfer-logs/prefill-ref/<model>-K<k>-p<i>.bin via
+decoder.WritePrefillReferenceForTest.
+
+	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestPrefillGateReference -v -timeout 4h
+```
+
+## TestPrefillGateReference.k512
+
+Moved from `decoder/prefill_ref_gen_test.go` (the comment in `TestPrefillGateReference`, above the models table) on 2026-10-09.
+
+```text
+K=512 joins the decision set here (docs/completed/task-prefill-gap.md §4 L1, 2026-09-09): CUDA's floor was
+set from a MEASURED K=512 cell, never interpolated between 256 and 1024 (§3, "a floor placed
+between two measured cells would be interpolating a fidelity result nobody took") — Metal's
+floor needs the same discipline if this run ships.
+```
+
+## TestPrefillGateReference.residentContext
+
+Moved from `decoder/prefill_ref_gen_test.go` (the comment in `TestPrefillGateReference`, above the Load call) on 2026-10-09.
+
+```text
+ResidentContext is a GPU-resident-KV concept (decoder/model.go's Options doc: "Ignored
+off the residency path") — it does not change what the CPU backend actually allocates,
+only what fitCheckFor prices the load's KV term at (decoder/fitguard.go's effCtx: pinned
+ResidentContext when set, else the model's own MaxPositions — 32768 here, priced whether
+or not this run ever reaches it). Pinning it to what this run actually touches
+(maxK+continuationN) turns an 8.4 GB / 12.0 GB-available guard threshold, priced against
+a context length nothing below ever requests, into an honest ~6.8 GB / 9.8 GB one.
+```
+
+## refWorkers
+
+Moved from `decoder/prefill_ref_gen_test.go` (the comment above `refWorkers`) on 2026-10-09.
+
+```text
+refWorkers lets a run cap how many prompts are prefilled CONCURRENTLY, via
+GOINFER_CPU_REF_WORKERS. The default (8) is unchanged and right for the shallow standing cells.
+
+AT DEPTH, CONCURRENCY IS A LOSS, NOT A WIN — measured, and expensively. The exact f64-accumulating
+attention materialises K x K score rows per head, which at K=8000 sit far outside the 3700X's
+32 MB of L3; eight prompts doing that at once contend for memory bandwidth until each is slower
+than running them in series:
+
+  - S (1.5B, f32) at K=8000: eight concurrent prompts took 88 min EACH; the last two, running as a
+    pair, took 10.6 min each. Throughput 0.091 -> 0.189 prompts/min on FEWER workers.
+  - D7 (7B, int8) at K=8000 with 8 workers wrote no file in 8h50m; its KV fill (RSS growth, which
+    matched S's own timeline to 2 min) put it ~8 of 28 layers in, projecting 24-28 h against a
+    16 h test timeout. One prompt alone at f32 fits K=1024/2048/4096 at 2.11/3.32/6.83 min and
+    projects ~17.5 min at K=8000: the 8-worker run was paying a 10x+ contention penalty.
+  - two workers at K=2048 (f32) bought +8.6% throughput over one — so the break-even is somewhere
+    between 2048 and 8000, and one worker is the safe choice at the deep cells.
+
+Record: docs/measurements/vsum-split-fidelity-2026-09-13.md, deviation D2.
+```
+
+## TestPrefillAttnPoolInvariance
+
+Moved from `decoder/prefillattnpool_test.go` (the comment above `TestPrefillAttnPoolInvariance`) on 2026-10-09.
+
+```text
+G16 gate — prefill attention's head-parallel fan-out must be BIT-IDENTICAL to
+the serial path it replaces.
+
+A1's constraint is the whole reason this is allowed at all: "Parallelism may
+only split independent outputs across workers/registers — heads, ...". Splitting
+heads across workers therefore cannot change any value, only who computes it.
+That is a claim about the code, and this is the test that makes it a fact.
+
+A1 asserted its own bit-identity through the parity goldens and left no
+pool-invariance test, so this is new: same prompt, same cache, pool len 1 vs
+the budgeted count, compared float-for-float. Exact equality, not a tolerance —
+a tolerance here would silently accept the reassociation A1 exists to prevent.
+```
+
+## TestPrefillAttnWorkerBudget
+
+Moved from `decoder/prefillattnpool_test.go` (the comment above `TestPrefillAttnWorkerBudget`) on 2026-10-09.
+
+```text
+The worker count must stay inside its caps and honor its override.
+
+NOTE — this test was rewritten when G20 landed, and the reason matters more
+than the assertions. As written for G16 it asserted that K=32768 "must fall
+back to serial, a 4 GB slot", because an untiled slot's scores buffer was
+K*nKeys floats. G20 tiles the query rows, so no such slot exists any more: a
+slot is one row tile wide (attnScoreTileBytes), and six workers at 32k cost
+~150 MB, not ~25 GB. The old assertion was not wrong when written; its premise
+was removed. That is why it is replaced rather than relaxed — the property it
+protected (unbounded per-slot growth must not happen) is now asserted directly,
+against the real tiled size, by TestAttnRowTileBoundsScratch.
+```
+
+## TestPrefillAttnWorkerBudget_countsFusedScratch
+
+Moved from `decoder/prefillattnpool_test.go` (the comment above `TestPrefillAttnWorkerBudget_countsFusedScratch`) on 2026-10-09.
+
+```text
+TestPrefillAttnWorkerBudget_countsFusedScratch is P-05's gate: prefillAttnWorkers' budget must
+bound what newHeadWorkerPool ACTUALLY allocates. newHeadWorkerPool allocates a fusedScratch
+(sBlk+tmp+acc+mRun+lRun+vBlk) ALONGSIDE the materialized shape (scores/kh/vt/qh/ch) whenever
+GOINFER_FUSED_ATTENTION is enabled — "both exist while fusion is a flag" — so the real per-slot
+footprint is the materialized shape PLUS fusedScratch, not the materialized shape alone. Before
+the fix, the budget counted only the materialized shape and oversubscribed
+prefillAttnScratchBudget by ~25% at K=nKeys=8192.
+```
+
+## TestNewHeadWorkerPool_skipsMaterializedWhenFused
+
+Moved from `decoder/prefillattnpool_test.go` (the comment above `TestNewHeadWorkerPool_skipsMaterializedWhenFused`) on 2026-10-09.
+
+```text
+TestNewHeadWorkerPool_skipsMaterializedWhenFused is P-05's completion (audit-2026-09-02): the
+budget-accounting fix above closed the measurable oversubscription, but left this doc's own
+disposition text recording that "vt is unused when fusion is ACTIVE ... and scores ... is unused
+whenever fusion is active REGARDLESS of useAcc64" as a genuine, un-eliminated allocation — real
+memory allocated and never touched. This asserts the elimination directly, not just that the
+paths it feeds still compute the right answer (TestFusedAttention_matchesMaterialized and
+TestAttendF32Fanout_bitIdentical already gate that): a caller that can promise fusedOK stays true
+for the whole pool's lifetime (wantFused=true) gets NIL vt/scores when fusion is actually enabled,
+and the ordinary fully-allocated pool otherwise — proving both the win and that no caller silently
+loses a buffer it needs (which is the nil-slice-access risk the original disposition declined to
+risk without this exact three-way condition pinned down).
+```
+
+## TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64
+
+Moved from `decoder/prefillattnpool_test.go` (the comment above `TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64`) on 2026-10-09.
+
+```text
+TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64 is P-03 (audit-2026-09-10), the decode-path
+sibling of P-05 (09-02, newHeadWorkerPool): the acc64 kernels (MatmulQKAcc64/MatmulAVAcc64) read
+keys/vals directly with strided addressing, so kh/vt are unused whenever useAcc64 is true — and
+attention.go's decode path hardcodes acc64 := true unconditionally, making this the ONLY case
+headWorkerPool's one caller ever reaches. Both states are checked directly (kh/vt nil under
+acc64, still allocated under !acc64) so this doesn't just prove "the acc64 case works" while
+silently also proving a caller that genuinely needs kh/vt would be left with nothing.
+```
+
+## prefillcancel_test.header
+
+Moved from `decoder/prefillcancel_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Gates for G18 — prefill honoring cancellation.
+
+The before-state these pin: the serve layer passed r.Context() into drive
+correctly, but the context stopped at generateInto — prefillLogits,
+forwardLayersN and runLayersFromEmbedN took no context at all. An abandoned
+client therefore left a core prefilling to completion, measured at 47:38 of
+CPU with nothing attached, and a retrying harness stacked one such generation
+per retry.
+
+These use an ALREADY-cancelled context and a mid-flight cancel rather than a
+long prompt, so they are fast and deterministic: what is being gated is that
+the loop looks at all, and that it stops promptly once it does.
+```
+
+## prefillpath_test.header
+
+Moved from `decoder/prefillpath_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+The prefill half of the seam gate (resident_seam_test.go).
+
+WHY THIS EXISTS. The resident DECODE path being silently CPU-only was one bug class; the batched
+PREFILL declining silently is the same class one layer down, and it shipped. `--backend cuda
+--quant int8int8` builds a full resident decode path (ResidentActive is true, decode runs at 0.7×
+int4 — everything looks healthy), but the batched prefill GEMV is int4-only, so every prompt takes
+the sequential per-token loop instead of one weight-stationary pass: measured 1.73 s vs 0.19 s on a
+300-token prompt (9×), 4.56 vs 0.22 CPU-seconds (20×). generateInto's fallback discards the decline
+error by design, so nothing — no log, no field, no error — said so.
+
+These tests need no GPU: they fake residents that decline the way the CUDA backend declines.
+```
+
+## defaultProgressInterval
+
+Moved from `decoder/progress_test.go` (the comment above `defaultProgressInterval`) on 2026-10-09.
+
+```text
+A long test must be legible WHILE it runs: at any moment the operator should be able to tell
+whether it is stuck and roughly how much is left. t.Logf cannot do that — it is buffered until
+the test returns, and dropped entirely for a passing test without -v. That is not a style
+preference; the tests wired to this helper each ran for 2–15 minutes emitting nothing at all,
+which is indistinguishable from a hang until the whole suite ends.
+
+So: os.Stderr, unbuffered, independent of -v, on a TIME ticker rather than an iteration count
+(an iteration count picked for one machine goes silent on a slower one, which is exactly when
+the heartbeat matters most). TEST_PROGRESS_INTERVAL overrides the cadence; "0" silences it.
+
+RUN THESE UNDER -v. `go test` buffers a package's output and DISCARDS it entirely when the
+package passes, so without -v these lines never appear — measured, not assumed: a passing run of
+TestA3FastAttentionDivergence emitted a 55-byte log holding only the "ok" line. os.Stderr does
+not dodge that; what it buys over t.Logf is that under -v the lines stream AS THEY HAPPEN
+(verified: 5s apart by wall clock mid-test) instead of arriving in one dump when the test ends.
+```
+
+## progress.emit.eta
+
+Moved from `decoder/progress_test.go` (the comment in `emit`, above the ETA) on 2026-10-09.
+
+```text
+From the RECENT rate, not from total elapsed over total done. A test whose counted
+work follows a long uncounted phase — an 80B checkpoint load, say — otherwise
+divides 14 minutes by one finished item and reports eta=2h20m for work that took
+six. Measured on exactly that run. Uneven() still turns it off entirely where the
+items differ in cost and no window makes the projection honest.
+```
+
+## progress.emit.rate
+
+Moved from `decoder/progress_test.go` (the comment in `emit`, above the rate) on 2026-10-09.
+
+```text
+Rate over the LAST interval, not the whole run. A cumulative average is still digesting
+cold-cache page-ins minutes in -- measured here: mellum2's cumulative eta read 31m, 25m,
+22m, 20m on successive ticks while the machine had not actually changed speed that much. A
+recent rate tracks what it is doing NOW, and stays honest on uneven work where an ETA cannot.
+```
+
+## progress.emit.io
+
+Moved from `decoder/progress_test.go` (the comment in `emit`, above the io field) on 2026-10-09.
+
+```text
+Bytes read by this process. A phase with nothing to count -- loading a 162GB checkpoint, say
+-- otherwise produces a heartbeat that proves only that the process is ALIVE, not that it is
+getting anywhere, and those are the two states the reader needs to tell apart. This is the
+exact signal that had to be dug out of /proc/PID/io by hand while the qwen3next oracle sat
+silent for ten minutes. Linux-only; absent elsewhere, and simply omitted there.
+```
+
+## progress.ioProgressFrom
+
+Moved from `decoder/progress_test.go` (the comment above `progress.ioProgressFrom`) on 2026-10-09.
+
+```text
+ioProgressFrom is the rate arithmetic, split from the /proc read so it can be driven with known
+values on any platform. The bug it now covers only showed on a real 162GB load.
+```
+
+## progress.ioProgressFrom.window
+
+Moved from `decoder/progress_test.go` (the comment in `ioProgressFrom`, above the lock) on 2026-10-09.
+
+```text
+Its own timestamp, NOT lastAt. emit() calls rate() first, which sets lastAt = now, so
+reusing it here made dt zero every time and the io rate never printed once — visible only
+on a real 162GB load, where the field showed a total and never a rate.
+```
+
+## TestIORateSurvivesTheItemRateWindow
+
+Moved from `decoder/progressmeta_test.go` (the comment above `TestIORateSurvivesTheItemRateWindow`) on 2026-10-09.
+
+```text
+emit() calls rate() before ioProgress(), and rate() stamps its own window. When both read the
+same timestamp field, ioProgress always saw dt == 0 and silently never printed a rate — the
+total appeared, the rate never did, and it took a 162GB load to notice. The windows are separate
+now, and this drives the arithmetic with known values so the regression cannot return unseen.
+```
+
+## TestRateTracksRecentWindowNotAllHistory
+
+Moved from `decoder/progressmeta_test.go` (the comment above `TestRateTracksRecentWindowNotAllHistory`) on 2026-10-09.
+
+```text
+The ETA is built from the recent rate. That matters when counted work follows a long UNCOUNTED
+phase: the qwen3next oracle spends ~13 minutes loading an 80B checkpoint before its first
+countable token, and a cumulative estimate divided that whole span by one finished item and
+announced eta=2h20m for work that took six minutes. The recent window has to dominate.
+```
+
+## hiddenAllGolden
+
+Moved from `decoder/prompt_hidden_all_test.go` (the comment above `hiddenAllGolden`) on 2026-10-09.
+
+```text
+D11's gate (docs/tasks/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must match HF's
+last_hidden_state[0, :] per position, cosine >= 0.9999 and relative L2 <= 1e-5, in f32, on the tiny Qwen3.5 checkpoints (dense, MoE, and the
+derived qwen3_5-tiny-normw whose random final-norm weight is what lets a missing, doubled or mis-weighted final norm fail: cosine alone cannot see
+a uniform scale, and the other tiny checkpoints' final-norm weights are all 0, a scale of exactly 1 under the add-one RMSNorm).
+
+UNLIKE TestPromptHidden_matchesHF, A MISSING CHECKPOINT OR GOLDEN FAILS: that test skips when qwen3_5-tiny-normw has no model.safetensors, and D2
+committed its config but not that file, so on a fresh checkout the one fixture that sees the final norm was skipped (found 2026-10-02; the file is
+committed now). A gate whose key subtest can vanish into a skip is not a gate.
+
+Both the public path and the sequential path are compared with HF, so a mutation of either final-norm site fails. Regenerate the golden with
+scripts/pin_prompt_hidden_all.py.
+```
+
+## TestPromptHiddenAll_batchedMatchesSequential.bar
+
+Moved from `decoder/prompt_hidden_all_test.go` (the comment in `TestPromptHiddenAll_batchedMatchesSequential`, above the bar) on 2026-10-09.
+
+```text
+f32: every position within 1e-6. int4: the activations are quantized to int8, so a few-ulp difference between the batched and
+per-token kernels can tip ONE activation code and move one position by about 1e-3 (measured on the Mac's arm64 CI runner, 2026-10-02:
+1 of 64 positions at 1.75e-3, position 47, the 16 after it back at <=1e-7, so it is a flip and not carried state; the same fixture
+unquantized has none above 1.2e-7). A real batched-path bug elevates many positions, so the int4 bar is a flip ALLOWANCE (at most 1
+position or 2% above 1e-6, each under 1e-2, the median still within 1e-6), not a looser per-position number.
+```
+
+## TestGiwInt4LabelNotMix
+
+Moved from `decoder/quant_label_test.go` (the comment above `TestGiwInt4LabelNotMix`) on 2026-10-09.
+
+```text
+TestGiwInt4LabelNotMix is the T1-6 regression. A .giw baked with `-quant int4` has int4
+projections but an int8-pinned embedding / LM head (the logit-critical default; the
+EmbedInt4 knob relaxes it). quantLabel used to scan those tables, see int4 coexisting with
+int8, and report "int4mix" — while the batched-prefill gate, which inspects only the seven
+int4 projections, correctly batched. So /health showed `decode_path: …(int4mix)` beside
+`prefill_batched: true`, and the label named a quant the bundle is not.
+
+The .giw path is what triggers the inference: a direct Load records the requested quant
+string and returns it verbatim, never inferring. So the round-trip through SerializeWeights
+is load-bearing here, not incidental.
+```
+
+## TestQuantNoiseFloor_gemma4MoE
+
+Moved from `decoder/quant_noise_floor_test.go` (the comment above `TestQuantNoiseFloor_gemma4MoE`) on 2026-10-09.
+
+```text
+TestQuantNoiseFloor_gemma4MoE is the Split-B pre-flight: it measures, on CPU, the two things that
+actually predict whether a resident (GPU) MoE kernel can hit parity on this fixture — measured
+BEFORE any kernel is written, at the cost of a few CPU forwards and no GPU.
+
+It began as a pure int4-vs-f32 "noise floor" (CPU-at-quant vs CPU-f32) gated at 0.97, on the theory
+that a resident backend can only agree with CPU-int4 as well as int4 agrees with f32. The 0.97 bar
+turned out UNCALIBRATED (not the floor irrelevant): the Split-A dense two-geometry control PASSES
+the resident gate (cuda-int4 vs cpu-int4) at cosine 0.979 while its own int4-vs-f32 floor is only
+0.880 (NOISE_FLOOR_CKPT=../testdata/gemma4-dense-twogeom-tiny). The floor is a CONDITIONING PROXY,
+correlated with — not independent of — resident parity (both moved together: hidden=64 floor bad +
+gate 0.82; hidden=256 floor 0.88 + gate 0.979). CUDA-vs-CPU-int4 is only PARTLY common-mode: same
+quantized weights, but each side quantizes activations with its own rounding/grouping, and how much
+that difference amplifies is exactly the conditioning the floor measures. One control point fixes
+0.88-was-fine for that fixture, not a general threshold — so keep the floor REPORTED as a warning
+signal, demoted from a hard gate.
+
+What a resident MoE kernel can get wrong that a dense one can't is a ROUTING FLIP: quant noise near
+a router tie picks a DIFFERENT expert — a different computation, not a small numeric error. So the
+gate is (1) routing agreement 100% and (2) a min routing MARGIN wide enough that the tighter
+cpu-int4-vs-gpu-int4 gap can't flip it either. (History: the Split-A dense fixture at hidden=64
+manufactured a phantom "bug" — cuda resident cosine drifted to 0.82, pure int8-activation
+sensitivity, fixed by hidden≥256. Same instinct built this fixture at hidden=64; measure first.)
+```
+
+## TestQuantNoiseFloor_gemma4MoE.gate
+
+Moved from `decoder/quant_noise_floor_test.go` (the comment in `TestQuantNoiseFloor_gemma4MoE`, above marginFloor) on 2026-10-09.
+
+```text
+GATE. What a resident MoE kernel can get wrong that dense can't is a ROUTING FLIP — the one
+discrete failure mode, unrecoverable by any kernel. So the pre-flight gates on:
+  (1) routing agreement 100% (int4 must not flip the top-k vs f32 — a flip is a fixture defect), and
+  (2) a min int4 routing margin comfortably above the perturbation, so the residual CUDA-vs-CPU-int4
+      gap can't flip it either. 0.02 ≈ 2 pts of router prob; mm4=0.12 gives ~6× headroom, and the
+      reported f32→int4 erosion shows the actual margin loss for context.
+
+The int4-vs-f32 logit floor is a WARNING SIGNAL, not a gate — a conditioning proxy, CORRELATED with
+(not independent of) resident parity: at hidden=64 the floor was bad AND the resident gate was 0.82;
+at hidden=256 the floor was 0.88 AND the gate was 0.979 — both moved together. The one control point
+(dense two-geom: f32-floor 0.880 → resident 0.979, NOISE_FLOOR_CKPT=…/gemma4-dense-twogeom-tiny)
+establishes 0.88 was fine FOR THAT FIXTURE, NOT that any lower value is fine in general. So the 0.97
+bar was uncalibrated, not wrong to measure — keep it REPORTED and demoted. If the resident MoE gate
+comes back marginal, this low floor (0.79) is the first suspect, and the number is already on record.
+```
+
+## qwen25vl_layout_split_real_test.header
+
+Moved from `decoder/qwen25vl_layout_split_real_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+G-S3c's root cause (docs/tasks/task-multimodal-support-2026-10.md, S3): on the Mac, the Qwen2.5-VL image turn's
+first token differs between `--backend metal` ("Table") and `--backend cpu` ("Quarter"), and the first token comes from
+the CPU prefill in both arms (Metal has no resident m-RoPE prefill). The suspect is the CPU's int4 layout, which Load
+keys on Options.Backend: canonical int4 under "metal" (wantsRow4Fallback false), the arm64 row4 repack under "cpu".
+```
+
+## qwen25vl_real_test.header
+
+Moved from `decoder/qwen25vl_real_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Real-model gate for Qwen2.5-VL (Qwen/Qwen2.5-VL-3B-Instruct, model_type "qwen2_5_vl") — the
+T3 promotion of the qwen2_5_vl family from tiny-golden to a released checkpoint.
+
+THE ORACLE SHAPE DIFFERS FROM EVERY OTHER FAMILY IN THIS BATCH. The existing tiny golden
+(TestQwen25VL_e2eChain) is already e2e encoder→decoder, but on SYNTHETIC pixel_values with
+no real processor in the loop. This gate instead runs the real AutoImageProcessor on a real
+image (testdata/qwen25vl_preprocess_image.png — pre-sized so smart_resize is a no-op,
+isolating decoder-on-real-weights from resize/bicubic parity, which
+pin_qwen25vl_preprocess.py already pins separately) through the real vision encoder and the
+real text decoder. Fixture: scripts/pin_qwen25vl_real.py.
+
+SCOPED TO THE PREFILL FORWARD ONLY — NOT GREEDY CONTINUATION. Every other real-checkpoint
+gate in this session's finishing pass checks a multi-step greedy continuation using
+m.forward(id, cache) for plain text tokens; decoding PAST an image block (m-RoPE position
+continuation from the image grid's max position) is a genuinely different code path that no
+existing Go test exercises yet. Building that here would risk conflating a new test
+harness's own correctness with the checkpoint's — this gate proves the real vision
+encoder + real decoder produce correct logits on the real weights, which is the claim that
+matters for T3; continuation-after-image is a separate, unbuilt capability, not silently
+assumed.
+```
+
+## TestQwen2Moe_forwardParity.stat
+
+Moved from `decoder/qwen2moe_test.go` (the comment in the forward-parity test, above the fixture stat loop) on 2026-10-09.
+
+```text
+Stat EVERY file Load needs, not just the dir and not just one of them. The failure mode runs
+both ways: the tokenizer/config JSONs can end up present (a stray `git add`) while the large
+model.safetensors stays uncommitted, and — as seen on a box where the HF download was
+interrupted — model.safetensors can be present while config.json is absent. Either way a
+partial fixture slips past a one-file guard and Fatalfs in Load, which reads as a numeric
+parity regression: it is what made scripts/refresh_parity_hashes.sh refuse a provably
+non-numeric refresh. An incomplete fixture must SKIP, like the siblings.
+```
+
+## TestQwen35GGUF_gate.fitguard
+
+Moved from `decoder/qwen35_gguf_gate_test.go` (the comment in `TestQwen35GGUF_gate`, above the Load call) on 2026-10-09.
+
+```text
+The fit guard is bypassed for this model only. This gate checks the LOADER's parity, not memory planning, and
+the guard now prices the 37 GB mapped checkpoint as resident for the whole load (79.5 GB needed against a 35.9 GB
+budget on nobara-pc's 62 GB, 2026-09-30), which refused a load this box completed in the v0.19.0 sweep: the
+mapping is page cache, not anonymous memory. requireHeavyModel keeps it to the box that holds it.
+```
+
+## TestQwen35GGUF_gate.coherence
+
+Moved from `decoder/qwen35_gguf_gate_test.go` (the comment in `TestQwen35GGUF_gate`, above the argmax bar) on 2026-10-09.
+
+```text
+Coherence-vs-bf16 bar. The GGUF path legitimately carries MORE quant error
+than Gate 2 (Q8_0→int8 double-quant vs a single bf16→int8 step), so it sits
+just under Gate-2's 74/80 + 0.99466: one box measured argmax 68/80, cosine min
+0.99445, the two misses being rank-2 near-ties (gap ~0.003 of logit range).
+
+The min-cosine value is BOX-SENSITIVE: the Q8_0 dequant→forward runs through
+SIMD/FMA whose reduction order differs across CPUs, so the worst-position cosine
+varies by ~0.0015 between machines with no code change. The v0.10.0 release box
+(Linux RTX-2070) measures argmax 69/80, cosine min 0.99298 — and a bisect confirmed
+v0.9.2 produces the IDENTICAL 0.99298 there (i.e. NOT a regression; the 0.99445
+above was a different machine). So the min-cosine floor is set below the lower
+observed machine with margin; the REAL loader-defect detectors are the guards
+ABOVE — minCos<0.98 (a bug craters well past this), the near-tie requirement
+(maxDivFrac>0.03), and argmax<66 — none of which are box-sensitive.
+```
+
+## TestQwen35GGUF_gate.rebaseline
+
+Moved from `decoder/qwen35_gguf_gate_test.go` (the comment in `TestQwen35GGUF_gate`, above the min-cosine floor) on 2026-10-09.
+
+```text
+RE-BASELINED 2026-08-22 for v0.15.0. The 0.992 min floor was set at 2583a2b and
+never revisited; `6d4fc79` ("qwen35 family: quantize the projections that were f32
+at every quant") crossed it. That commit is a DELIBERATE bandwidth trade — 1.60x
+decode, 7.4x TTFT — and it re-baked its SIBLING gate (TestQwen35Real_gate2FullModel,
+int8-vs-bf16, floor ≥0.98: 0.99333 -> 0.99069) while this one was missed. Bisected
+on this box at `5bcaf53`, adjacent pair, same toolchain both sides; the Go 1.27 bump
+was the obvious suspect and is REFUTED (bit-identical 0.98740 at go 1.26.6 and 1.27.0):
+
+	33879dd (parent)  argmax 69/80  min 0.99298  mean 0.99846   PASS
+	6d4fc79           argmax 68/80  min 0.98740  mean 0.99608   FAIL vs 0.992
+
+The MEAN now carries the systematic-drift duty and the min only catches catastrophic
+single steps — the same split TestQwen35GGUF_vsSafetensors was resolved to, and for
+the same reason: min is box-sensitive here (~0.0015 across CPUs, per the note above)
+so it cannot also police drift. Both bars sit below the measured value with margin
+rather than at it; nudging a floor to just-clear the observation is how a real
+regression gets blessed, which is the standard 6d4fc79's own message set.
+```
+
+## TestQwen35GGUF_locateDivergence.question
+
+Moved from `decoder/qwen35_gguf_locate_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+WHERE does the GGUF path diverge from the safetensors path? — the localizer for B13's last
+standing red (docs/queue-release.md; the v1.0 gate §1).
+
+THE QUESTION THIS ANSWERS, and why neither existing gate answers it.
+TestQwen35GGUF_vsSafetensors reports one number at the TOP of the stack (min cosine 0.987835
+over 80 teacher-forced steps, mean 0.998114) and calls it a loader bug. TestQwen35GGUF_weightDiff
+reports that every transform-bearing tensor in layers 0-3 agrees to cos >= 0.99998, with a
+UNIFORM relL2 ~0.0057 — the Q8_0-vs-bf16 dequant floor — and no tensor standing out. Those two
+results are consistent with two very different stories:
+```
+
+## TestQwen35GGUF_locateDivergence.diag
+
+Moved from `decoder/qwen35_gguf_locate_test.go` (the comment in `TestQwen35GGUF_locateDivergence`, above the env gate) on 2026-10-09.
+
+```text
+DIAGNOSTIC, NOT A GATE — and it must not sit in the release sweep's path (2026-08-19).
+the parity sweep's realckpt cell runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
+test's name matches. On the v0.14.0 prep sweep the two B13 diagnostics together burned ~41
+minutes of that budget and the run TIMED OUT inside this one — which pushed
+TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run entirely. A gate
+that DID NOT RUN is a blocker by the sweep's own rule, so an instrument that asserts almost
+nothing took a real gate down with it.
+
+Gated by env rather than renamed on purpose: Go's -run matches substrings, so excluding it by
+name would mean stripping "Qwen35" from a qwen3.5 test — worse discoverability to work around
+a scheduling problem. This way the name stays, and the sweep reports an honest SKIP.
+```
+
+## TestQwen35GGUF_vsSafetensors.floors
+
+Moved from `decoder/qwen35_gguf_oracle_test.go` (the comment in `TestQwen35GGUF_vsSafetensors`, above the floors) on 2026-10-09.
+
+```text
+THE FLOORS, AND WHY THEY ARE WHAT THEY ARE (reclassified 2026-08-18, decider Francis;
+evidence in docs/queue-release.md under B13).
+
+This gate previously asserted `min >= 0.998` and called any miss "loader bug (not Q8_0
+quant)". It failed at min 0.987835 (step 63) with mean 0.998114 — i.e. it required EVERY
+step to be at least as good as the average, which no spread can satisfy. Three measurements
+say the residual is quant noise, not a defect:
+
+  1. TestQwen35GGUF_weightDiff: every transform-bearing tensor bit-exact or at a UNIFORM
+     relL2 ~0.0057 (the Q8_0-vs-bf16 floor), worst 0.999980 — and the ROUTER is BIT-IDENTICAL
+     (maxAbs=0), so routing differences are not a mis-read router.
+  2. TestQwen35GGUF_locateDivergence: divergence is present at layer 0 and decays smoothly
+     and NON-MONOTONICALLY to the top with no step. A localized defect cannot recover; that
+     curve recovers repeatedly.
+  3. TestQwen35GGUF_routeFlipAtOutlier: the two containers pick different top-8 sets in 779
+     of 3200 (step,layer) pairs. With a bit-identical router that is the ROUTER'S INPUT
+     differing by quant noise at a decision boundary — top-8 of 128 near-tied scores flips
+     easily — and each flip is a legitimate alternative, not a wrong choice. It is also why
+     flip COUNT does not predict cosine (the flipped expert's WEIGHT is what matters) and
+     why a min-over-80 statistic is the wrong thing to floor.
+
+So the gate now floors the statistic that is stable (the mean) and keeps a min floor set
+from measurement with headroom, for catastrophic single steps. Both are derived from two
+independent reproductions of the same numbers (2026-08-12 and 2026-08-18), not chosen to
+make red green: the mean bar sits ~0.001 under a measured 0.998114 and the min bar ~0.008
+under a measured 0.987835. A real transform bug does not land in that gap — it craters
+cosine, which is what the three probes above independently confirm is not happening.
+
+MEAN RE-BASELINED 2026-09-03 (mechanism confirmed by commit bisection, not inferred). 6d4fc79
+("quantize the projections that were f32 at every quant") stopped keeping the DeltaNet
+in/out-proj and gated-softmax q/k/v/o projections f32-always: both loaders now independently
+quantize them to int8 via quantizeWM. Previously those tensors stayed in continuous f32 on
+both sides of this comparison, so the pre-existing Q8_0-vs-bf16 delta had nothing to round
+against; now each side re-quantizes its own slightly-different f32 view, and a delta that is
+small in f32 can land the two sides in different int8 buckets — new, systematic divergence on
+exactly the tensors this gate compares. Bisected on nobara (same box, same untouched
+checkpoints/golden since 2026-06-08): 33879dd (6d4fc79's parent) reproduces the ORIGINAL
+0.998114/0.987835 to six decimals; 6d4fc79 itself reproduces 0.995803/0.985140, also to six
+decimals, across four independent runs (three different commits plus the original overnight
+sweep). The commit already re-baselined a sibling gate hit by the same mechanism
+(TestQwen35Real_gate2FullModel, mean 0.99837->0.99644) but missed this one, which lives
+outside the gate-ledger manifest as an unlisted blocker — it went red silently for two weeks
+until an overnight parity sweep caught it. Min keeps its 2026-08-18 floor: 0.985140 still
+clears 0.980 with real headroom, so only the statistic that actually broke moves.
+```
+
+## TestQwen35GGUF_routeFlipAtOutlier.question
+
+Moved from `decoder/qwen35_gguf_routeflip_test.go` (the comment above `TestQwen35GGUF_routeFlipAtOutlier.question`) on 2026-10-09.
+
+```text
+DOES A ROUTER FLIP EXPLAIN THE DIP? — the mechanism experiment for B13's last standing red.
+
+The state of the argument before this test. TestQwen35GGUF_vsSafetensors reports min cosine
+0.987835 at step 63 against a mean of 0.998114 and calls it a loader bug. Two probes contradict
+that label: weightDiff finds every transform-bearing tensor bit-exact or at a uniform
+relL2 ~0.0057 Q8_0 floor, and locateDivergence finds a smooth, NON-MONOTONIC decay across all 40
+layers with no step (a localized defect cannot recover, and that curve recovers repeatedly).
+From those two, "a ~0.5% weight delta flips borderline top-k router choices at a few positions"
+is an INFERENCE about the outlier steps. This test measures it instead.
+
+THE PREDICTION, stated before the run so it can fail. Both containers are teacher-forced through
+the same 80 steps; every moeMLP call's top-k selection is recorded on each side (moeSelTrace, the
+existing seam). If routing flips are the mechanism:
+
+ 1. the steps with the LOWEST logit cosine carry the MOST flipped layers, and
+ 2. step 63 — the 0.987835 outlier — is at or near the top of the flip ranking, and
+ 3. the great majority of steps have ZERO flips (which is why the mean sits at 0.998).
+
+If instead flips are spread evenly across steps, or step 63 has none, the near-tie story is
+WRONG and the dip needs another explanation — which is a real finding, not a failed test. So
+this asserts only what any story must satisfy (the two runs are comparable) and prints the
+correlation for the recorded decision.
+```
+
+## TestQwen35GGUF_routeFlipAtOutlier.diag
+
+Moved from `decoder/qwen35_gguf_routeflip_test.go` (the comment in `TestQwen35GGUF_routeFlipAtOutlier`, above the env gate) on 2026-10-09.
+
+```text
+DIAGNOSTIC, NOT A GATE — and it must not sit in the release sweep's path (2026-08-19).
+the parity sweep's realckpt cell runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
+test's name matches. On the v0.14.0 prep sweep the two B13 diagnostics together burned ~41
+minutes of that budget and the run TIMED OUT inside this one — which pushed
+TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run entirely. A gate
+that DID NOT RUN is a blocker by the sweep's own rule, so an instrument that asserts almost
+nothing took a real gate down with it.
+
+Gated by env rather than renamed on purpose: Go's -run matches substrings, so excluding it by
+name would mean stripping "Qwen35" from a qwen3.5 test — worse discoverability to work around
+a scheduling problem. This way the name stays, and the sweep reports an honest SKIP.
+```
+
+## TestQwen35GGUF_weightDiff.header
+
+Moved from `decoder/qwen35_gguf_weightdiff_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Cheap loader-vs-quant disambiguator (no full-model forward, no 60-min oracle).
+The bf16-golden gate (qwen35_gguf_gate_test.go) failed by a hair (argmax 68/80,
+cosine 0.99445 vs the 74 / 0.99466 bars), with the divergences being rank-2
+near-ties. That's the signature of quant noise at the threshold, NOT a cratered
+loader — but the bf16 gate can't prove it. This does: it loads only the first 4
+layers of BOTH containers at f32 (the existing loadQwen35Slice for safetensors,
+a sibling for the GGUF) and diffs every TRANSFORM-bearing tensor directly —
+the V-head un-tile, the q‖gate fused q_proj, the −exp(A_log) bake, the norm(+1)
+un-bake. The safetensors loader is Gate-1 bit-exact vs HF, so it is the
+reference. A correct GGUF loader ⇒ each tensor matches to the Q8_0-vs-bf16
+dequant delta (cosine ≳ 0.9995); a transform bug ⇒ that one tensor's cosine
+craters, pinpointing it. Slice 0–3 spans both layer kinds (DeltaNet 0,1,2 +
+softmax 3).
+```
+
+## TestQwen35GGUF_weightDiff.router
+
+Moved from `decoder/qwen35_gguf_weightdiff_test.go` (the comment in `TestQwen35GGUF_weightDiff`, above the router comparison) on 2026-10-09.
+
+```text
+THE ROUTER, added 2026-08-18 and the reason is worth keeping. This probe was written to
+disambiguate loader-vs-quant for the oracle's cosine gap and it checked every
+transform-bearing tensor EXCEPT the one that decides which experts run. Then the
+mechanism experiment (qwen35_gguf_routeflip_test.go) measured routing directly and found
+the two containers choosing DIFFERENT top-8 sets in 779 of 3200 (step,layer) pairs — 79
+of 80 steps affected. Pervasive routing divergence with an undiffed router is exactly
+where a real loader defect could still hide, so the blind spot gets closed here.
+
+Both loaders keep the router at f32 on purpose ("the router is logit-critical", no
+quant), so this is a straight comparison: agreement at the same ~0.0057 Q8_0 floor as
+every other tensor means the flips are quant noise on near-tied experts; anything worse
+means the router itself is mis-read and the flips are a defect.
+```
+
+## wmDense
+
+Moved from `decoder/qwen35_gguf_weightdiff_test.go` (the comment above `wmDense`) on 2026-10-09.
+
+```text
+wmF32 exposes a WeightMat's values as f32 for comparison. The router is loaded unquantized by
+both paths, so this is a read rather than a dequant; it fails loudly if that ever changes,
+because comparing a quantized router against an f32 one would manufacture a difference this
+probe would report as a loader bug.
+wmDense reconstructs w as dense f32 whatever precision it is stored in.
+
+It used to be an f32-ONLY accessor whose failure message hardcoded "router". That held
+until `6d4fc79` made the qwen35 projections honour Options.Quant, after which this gate
+died on a PRECONDITION instead of a measurement — and blamed the wrong tensor while doing
+it, because t.Helper() reports the caller's line but the message named a tensor the helper
+knew nothing about. The tensor name is now a parameter for that reason.
+
+Dequantizing is sound for this probe: both sides run through the SAME quantizer from the
+same source values, so a real transform bug (wrong un-tile, q‖gate, un-bake) still craters
+cosine. Only the noise floor moves, and it moves for both columns equally.
+```
+
+## TestQwen38GGUF_load.fitguard
+
+Moved from `decoder/qwen3_5_gguf_test.go` (the comment in the Qwen3.8 GGUF gate, above the Load call) on 2026-10-09.
+
+```text
+The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate and TestLagunaGGUF_gate. This gate
+checks the LOADER's parity, not memory planning, and the guard prices the 15.3 GB mapped checkpoint as resident
+and the KV cache at the model's full context (66.6 GB needed against a 29.5 GB budget on nobara-pc, 2026-10-01).
+Whether that refuses depends on what the gates before it left in the process: the same box passed this gate in
+sweep run 2 and was refused in the scoped re-run that afternoon. requireHeavyModel keeps it to the box that holds it.
+```
+
+## TestQwen38GGUF_weightDiff.floor
+
+Moved from `decoder/qwen3_5_gguf_weightdiff_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+THE FLOOR IS PER TENSOR, AND THAT IS THE WHOLE POINT — it was not, and the gate was wrong
+for it. A single 0.999 bar was inherited from the MoE sibling, whose asset is a uniform
+Q8_0 file. This one's asset is unsloth's UD-Q4_K_M, a DYNAMIC quant carrying nine ggml
+types chosen per tensor by sensitivity, and under one whole-file bar the gate stopped being
+a statement about the loader: it became a statement about whichever tensor the quantizer
+spent the fewest bits on. It duly failed on its first-ever execution (2026-09-06) at
+k_proj 0.997047 / in_proj_z 0.996974, printing "loader transform bug" — and those are
+exactly, and only, the Q4_K tensors (blk.3.attn_k, blk.{1,2}.attn_gate), sitting where the
+first-principles Q4_K dequant estimate of ~0.9967 says they should, while their Q5_K and
+Q6_K siblings in the same layer cleared the bar. Nothing was wrong with the loader. See
+ggufQuantCosFloor (gguf_tensorquant_test.go) for the budgets and the arithmetic.
+```
+
+## TestQwen38Real_oracle
+
+Moved from `decoder/qwen3_5_realckpt_test.go` (the comment above `TestQwen38Real_oracle`) on 2026-10-09.
+
+```text
+TestQwen38Real_oracle is the T3 numeric row: the released bf16 weights matched against an
+HF bf16 forward of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py
+(accelerate disk offload, the same technique pin_qwen3next_real.py proved on an 80B model).
+Until this gate, TestQwen38Real_gate above was coherence-only — this doc's own manifest text
+said plainly that no bf16 reference forward had ever been run. The released checkpoint is a
+vision-language wrapper (Qwen3_5ForConditionalGeneration) even though only the text path is
+used; the pin script loads it via AutoModelForImageTextToText with pixel_values=None, the
+same shape mistral3's own real-checkpoint gate needed.
+
+int8, NOT int4 (changed 2026-09-18) — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md.
+This comment used to say int8 "does not fit alongside f32 activations in 62 GB of RAM" — WRONG,
+and never actually measured. Measured 2026-09-18: int8 peaks at ~27GB RSS here, ~90s. The int4
+gate this defended had a real, reproducible divergence at continuation[2] (int4: cosine
+0.993235, "Paris" repeating instead of a newline; confirmed via a floating-point-rounding-noise
+control as a genuine near-tie in int4's coarser grid, sharing the same signature Laguna showed
+despite the two families sharing no mixer — both resolved by the same fix). At int8: cosine
+0.999886, all 8 continuation tokens exact.
+```
+
+## TestQwen3MoeReal_oracle.quant
+
+Moved from `decoder/qwen3moe_real_test.go` (the comment in `TestQwen3MoeReal_oracle`, above the oracle call) on 2026-10-09.
+
+```text
+int8 WEIGHTS, f32 ACTIVATIONS as the starting quant, not int8int8: this family routes 8 of
+128 experts (6.25%), the same order of sparsity as nemotron_h's MoE variant, which measured
+a real router-flip cliff at int8 activations (cosine 0.978086 int8int8 vs 0.997668 int8) —
+docs/completed/queue-correctness.md G4. Starting from the safer quant and measuring int8int8
+separately (if this passes) avoids re-deriving that same finding the hard way.
+```
+
+## qwen3next_oracle_test.header
+
+Moved from `decoder/qwen3next_oracle_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Real-checkpoint T3 for Qwen3-Next (qwen3_next, 80B-A3B hybrid) — the row the family has been
+missing since 2026-08-17, when it was blocked as "no full reference forward of a 163GB bf16
+model fits 62GB".
+
+THAT BLOCKER WAS ABOUT CO-RESIDENCY, AND CO-RESIDENCY IS NOT REQUIRED. The reference and
+goinfer never have to be alive at the same instant: scripts/pin_qwen3next_real.py writes the
+bf16 logits to a JSON golden through accelerate's disk offload, and this test reads that file
+back in a separate process. Pinning offline is how every tiny golden in this repo is already
+made; the earlier slice route generalised the SLICE when what needed generalising was the
+PINNING.
+
+WHY THIS IS NOT COVERED BY qwen3_5_moe's T3, though the two share forward_qwen35.go. The
+shared-path proxy in docs/parity-coverage-policy.md needs the same forward file(s) AND the same
+deps_hash. qwen3_next has decoder/qwen3next.go of its own and a distinct hash, and that file is
+exactly where its three real deltas live — computed layer_types from full_attention_interval,
+flat partial_rotary_factor, and the fused in_proj_qkvz/in_proj_ba split. A proxy row would have
+asserted that qwen3_5_moe's oracle covered code qwen3_5_moe never executes.
+
+QUANT IS int4 BY CAPACITY, NOT BY CHOICE, and the number this produces has to be read knowing
+that. 80B at int8 is ~80 GB against 62 GB of RAM; int4 is ~40 GB and fits. There is no int8 run
+to fall back to on this box, so a low cosine here cannot be re-run at higher precision to
+separate quant noise from a defect — the per-layer SHAPE has to do that instead (smooth and
+non-monotonic is noise; a cliff is a defect, and a defect cannot recover). The decision rule
+was pre-registered in docs/queue-correctness.md G5 before this ran.
+
+The sparsity is the reason to expect trouble: 10 of 512 experts is 1.95% active, sparsest in the
+table by a factor of two. nemotron3nano at 6/128 (4.7%) measured 0.978 with int8 ACTIVATIONS
+against 0.9977 with f32 ones, and its recorded cause is the expert-flip cliff.
+```
+
+## TestR9_w4a8BatchAt7B
+
+Moved from `decoder/r9_decode_attribution_test.go` (the comment above `TestR9_w4a8BatchAt7B`) on 2026-10-09.
+
+```text
+TestR9_w4a8BatchAt7B is a follow-up to R-06 (docs/tasks/task-recompute-audit.md), which measured
+GOINFER_W4A8_BATCH's fused q/k/v and gate/up matmuls on the 1.5B only (1.071x arm64/Metal,
+1.066x amd64/CPU -- both ambiguous, parked). R9 step 1's own finding (MLP's share of the token
+grows with model size, largest at 7B) raises the natural follow-up: does R-06 behave differently
+at 7B? w4a8BatchEnabled (decoder/weightmat.go) is a package-level var read once from
+GOINFER_W4A8_BATCH at process start, so this test cannot toggle it mid-process -- it reports
+this run's own mean/stdev over repeated decode windows (fresh KV cache each, same loaded model,
+no reload between repeats) and is meant to be run TWICE, once per env setting, the results
+compared by hand (or by a small script) rather than paired within one process. That is a real
+limitation next to R-06's own interleaved design -- disclosed, not hidden -- see the record.
+```
+
+## r9_s05_fold_ab_test.header
+
+Moved from `decoder/r9_s05_fold_ab_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+arm64 only: the S-05 fold is an arm64 SDOT kernel, and aikit v1.47.0 declares its A/B toggle
+(linalg.SetW4A8RowFold / W4A8RowFold) in an arm64-tagged file, so this file does not compile
+on linux/amd64 without the tag (CI run 35763888743 found that the hard way).
+```
+
+## TestR9_s05FoldAB
+
+Moved from `decoder/r9_s05_fold_ab_test.go` (the comment above `TestR9_s05FoldAB`) on 2026-10-09.
+
+```text
+TestR9_s05FoldAB is the end-to-end arm of aikit S-05 (docs/task-simd-audit.md: the
+-8 centering folded into the SDOT accumulator of the M=1 W4A8 decode kernel,
+bit-identical). The kernel's single-core win is measured in aikit's own harness; this
+is the separate token-level number the decision rule asks for — one loaded 1.5B, depth
+128, 24 greedy tokens, the fold flipped IN-PROCESS via linalg.SetW4A8RowFold, ABBA
+pairs, paired ratio with a win count (the same shape as TestR9_cpuTuningAB). The
+per-component split names where any change lands: the matmul terms (q/k/v, o,
+gate+up, down, LM head) are the only ones the kernel touches.
+
+Pre-registered band (docs/measurements/s05-centering-fold-2026-09-22.md): expected
+~0 — step 0's split puts the 1.5B's MLP matmuls at 54% of the read ceiling and ~40% of
+the kernel's hot rate per worker, i.e. fan-out-bound (S-02), where a faster kernel is
+mostly hidden. ≥3% paired on 3/3 pairs = reaches the token; 1.5–3% = ambiguous, parked;
+<1.5% = does not reach the token, as predicted. The ship decision is the single-core
+harness either way; this number is reported beside it, not gated on.
+```
+
+## oracleCosFloor
+
+Moved from `decoder/real_oracle_test.go` (the comment above `oracleCosFloor`) on 2026-10-09.
+
+```text
+oracleCosFloor is the last-logit cosine bar for a T3 real-model oracle, BY PRECISION.
+
+There was one bar for a long time, 0.99, and its comment said what it was: "int8 W8A8 vs bf16 —
+same bar as the deepseek real gates". That was fine while every real oracle was int8. It stopped
+being fine when qwen3_next arrived at int4 — not by choice but by capacity, since 80B at int8 is
+~80 GB against 62 GB of RAM — and was measured against a bar calibrated on a population it is
+not in. int4 is a coarser grid than int8; holding both to one number is the same category of
+error as holding gpt2's int4 goldens to the tiny fixtures' absolute gate.
+
+An UNREGISTERED precision is a hard failure rather than a default. Silently inheriting a bar
+belonging to some other precision is exactly how the int4 gate ended up judged by an int8 number,
+and a default would let the next precision repeat it without anyone deciding anything.
+```
+
+## recurrent_census_test.header
+
+Moved from `decoder/recurrent_census_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+The recurrent-state census (audit 2026-09-10 C-03 / G-05): helpers that ASK THE STRUCT which
+recurrent kinds a KVCache holds, and generic fill / check-zero over them, so no test here carries
+a list of kinds or families to forget. hasRecurrentState's own comment predicted the failure —
+"the fourth kind will be added here, once, or it will be missed at four sites again" — and the
+fourth kind (KDA) was missed. With these, a fifth is covered the day its field is added.
+```
+
+## TestRequantBar_DoubleQuantCost
+
+Moved from `decoder/requant_test.go` (the comment above `TestRequantBar_DoubleQuantCost`) on 2026-10-09.
+
+```text
+TestRequantBar_DoubleQuantCost measures what Metal's DOUBLE quantization costs, per model.
+
+Metal's BuildResident cannot consume the decoder's int4 — it requires an int8 load and
+re-quantizes to its own W4A8, so a weight travels f32 → int8 (per-row, scale=max|row|/127)
+→ int4 (group-32, scale=maxabs/7). CUDA and WebGPU upload the decoder's int4 byte-identically
+and pay the int4 step ONCE. That asymmetry has always been known; what was never measured is
+whether it MATTERS, and the assumption was that it is a rounding detail.
+
+It should not be a detail for a model with high per-row dynamic range, and the mechanism is
+specific: the int8 step's scale is set by the row's LARGEST element. A group whose own maxabs
+is far below the row max therefore lands on only a handful of int8 levels BEFORE int4 ever
+sees it — the group scale then spreads 15 int4 levels over a signal already crushed to 3 or 4.
+Where a row is flat (row max ≈ group max) the int8 grid is finer than the int4 one everywhere
+and the first step is nearly free. So the cost is a property of the WEIGHTS, not the kernel,
+and it predicts exactly the split measured on Metal: gemma3 loses 0.104 of logit cosine
+against its own CPU-int4 twin while the qwen control loses nothing.
+```
+
+## fakeResidentAdapter
+
+Moved from `decoder/resident_adapter_seam_test.go` (the comment above `fakeResidentAdapter`) on 2026-10-09.
+
+```text
+It also implements Prefiller (PrefillLast) — audit C-01/G-06 (09-10): the real CUDA/Metal
+batched-prefill launch reads no adapter state at all, so it is not "the adapter's math done a
+different way" but a SEPARATE, adapter-blind path. Giving the fake the same shape (increments
+prefillCalls, otherwise identical to a per-token Forward loop) makes TestSeam_AdapterSession
+BindsAndClearsResidentAdapter's ≥8-token prompt able to actually reach it if
+residentPrefillSeed's hasAdapter guard were ever dropped — before this, the fake had no
+Prefiller method at all, so the 3-token prompt below the batching floor and the missing
+interface made the gate blind to C-01 by construction (G-06's own finding).
+```
+
+## TestWithResidency_releasesHostMemoryOnlyAfterASuccessfulBuild
+
+Moved from `decoder/resident_release_test.go` (the comment above `TestWithResidency_releasesHostMemoryOnlyAfterASuccessfulBuild`) on 2026-10-09.
+
+```text
+TestWithResidency_releasesHostMemoryOnlyAfterASuccessfulBuild pins the load-time release added after a measured
+leak-in-effect: with a real gpt-oss-20b on CUDA the process sat at ~39 GB RSS for ~5 minutes after the load
+finished (Go's scavenger returning the host-side packing lazily) and dropped to ~22 GB within ~10 s once the
+heap was released explicitly. The release must happen after a resident build succeeds — and must NOT happen for a
+decline, which built nothing and would only pay for a pointless collection.
+```
+
+## resident_seam_test.header
+
+Moved from `decoder/resident_seam_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+The seam gate.
+
+WHY THIS EXISTS. `serve --backend cuda|metal|webgpu` was silently CPU-only on EVERY backend
+for five weeks (0eefd77 -> 7557723). TWO independent bugs lived in the same gap, either of
+which alone was fatal:
+
+  - Options.Validate rejected the backend NAME, so `serve --backend cuda` failed at flag
+    validation even where the module was built in (727f198).
+  - Model.Generate gates the GPU on `useGPU := resident != nil && prefillFrom == 0 &&
+    commit == nil`, and Session.Generate ALWAYS sets commit — so routing a request through
+    the session cache silently disabled residency (7557723).
+
+Neither was caught, because nothing ever asserted "is this actually running on the GPU?".
+Every test called decoder.Forward directly; all 12 cmd/serve tests pin Backend: "cpu"; and
+ResidentActive() was asserted only inside gpu/. The flagship feature did not work at all and
+the suite was green. It was found by noticing a tok/s number, which is not a gate.
+
+The tests below need NO GPU and NO downloaded model — they fake the resident backend and use
+the committed tiny fixture — so this seam is gated in CI, on every push, rather than by a
+human remembering to look at throughput.
+```
+
+## loadAccountingFixture
+
+Moved from `decoder/residentneed_test.go` (the comment above `loadAccountingFixture`) on 2026-10-09.
+
+```text
+docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard
+(ResidentNeedBytes, via metal/backend.go's residentNeedBytes) must be the same number by construction. Before,
+Plan("metal") had no host-copy term and priced Metal's KV at f32, so on a directly loaded model it asked for
+about half of what the guard would then demand (measured: 2.34 vs 4.33 GB on qwen2.5-coder-1.5b).
+```
+
+## TestRopeParameters_singleBaseArchs
+
+Moved from `decoder/ropeparams_test.go` (the comment above `TestRopeParameters_singleBaseArchs`) on 2026-10-09.
+
+```text
+That is not a niche path — it is any Llama/Mistral/Qwen safetensors saved by a current
+transformers. It was found by generating a tiny Mistral fixture with transformers 5.12 and
+watching it fail to load, while the committed phi3-tiny (same transformers, same config
+shape) loaded fine. Each arch has its own architecture func, which is exactly how one got
+the fix and the others did not; the shared backfillFlatRope helper is the answer to that,
+and this table is what stops the next single-base arch from re-opening it.
+```
+
+## BenchmarkDecodeSerialVsParallel
+
+Moved from `decoder/s09_serial_bench_test.go` (the comment above `BenchmarkDecodeSerialVsParallel`) on 2026-10-09.
+
+```text
+BenchmarkDecodeSerialVsParallel — S-09.1, the corrected A/B.
+
+THE 2026-08-11 MEASUREMENT COMPARED TWO PARALLEL ARMS. BenchmarkDecode sets only the PROCESS
+GLOBAL (linalg.SetParallelThreshold), but since 2026-08-01 decode runs on a PER-WORKSPACE
+threshold that newDecodeScratch installs on every scratch it builds (scratch.go: `ws :=
+&linalg.Workspace{}; ws.SetThreshold(DefaultDecodeParallelThreshold)`). The global is
+therefore overridden before the first token, so GOINFER_PAR_THRESHOLD=<huge> did not make the
+"serial" arm serial — and "serial 54.77 vs parallel 54.34 tok/s" was two parallel runs
+differing by 0.8%, which is inside this box's noise.
+
+S-02's whole premise ("serial ties parallel, so fork/join is net-neutral") rests on that
+number, so it has to be re-taken against a genuinely serial arm.
+
+SERIAL IS PROVEN, NOT ASSUMED. Setting the threshold is the same kind of act that failed last
+time, so the arm also counts goroutine spawns: parallelSpawnCols starts one goroutine per
+shard per matmul, so a real serial arm shows a flat goroutine count while a parallel one
+spikes. The counter is sampled rather than instrumented because parallelSpawnCols is
+unexported in aikit — but a flat maximum across thousands of matmuls is unambiguous.
+```
+
+## sampler_chunked_test.header
+
+Moved from `decoder/sampler_chunked_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+SAMPLER MICROBENCHMARKS IN THIS PACKAGE MAY NOT PRODUCE QUOTABLE FIGURES.
+
+They are a tool for deciding WHERE TO LOOK. No number they emit belongs in a doc, a queue item, a
+commit message, or a comparison between two commits. This is a standing prohibition, not advice,
+and it was earned twice in a single investigation (G26, 2026-08-27):
+
+  1. BenchmarkExpChunked's ~96 us was used to argue that "sampling is a low-single-digit
+     percentage of per-token time, so no sampler change can move end-to-end by 5.9%." The real
+     in-situ sampled tail is 703-950 us — 7-10x larger. The bound retired the correct hypothesis
+     for two rounds.
+  2. A whole-path Sampler.Sample benchmark reported HEAD 23% SLOWER at 152k vocab. Measured
+     end-to-end on a 151936-vocab model, HEAD is 31% FASTER. Not a mis-scaled magnitude — an
+     INVERTED SIGN, and it had already been filed as a finding before the end-to-end run.
+```
+
+## benchExpChunked
+
+Moved from `decoder/sampler_chunked_test.go` (the comment above `benchExpChunked`) on 2026-10-09.
+
+```text
+G26. The temp-only draw (no truncation) goes through sampleChunked, NOT topFilterLogits — so the
+P10 benchmarks in sampler_selection_test.go measure the top_p path and say nothing about this one.
+phi3-mini regressed 5.9% at temperature 1.0 while gaining 2.7% at temp+top_p, which is the split
+those two paths would produce. P10 is the only functional change to this file since the anchor.
+```
+
+## registered-before-code.clauses
+
+Moved from the header comments of `decoder/pixtral_real_test.go`, `decoder/quant_consistency_real_test.go`, `decoder/qwen3asr_real_test.go`, `decoder/qwen3asr_test.go`, `decoder/qwen3asr_wer_real_test.go` and `decoder/qwen3vl_image_real_test.go` (the clause dropped from each) on 2026-10-09.
+
+```text
+pixtral_real_test.go:          (S10, Ministral 3 (Pixtral), registered 2026-10-09 before any code)
+quant_consistency_real_test.go: G-31a2 ... "Gemma 4 31B on nobara ... G-31a", registered before this code
+qwen3asr_real_test.go:         G-S14c1 ... and G-S14c3 ... (registered before this code)
+qwen3asr_test.go:              G-S14c1 and G-S14c2 ... (registered before this code)
+qwen3asr_wer_real_test.go:     G-S14c4's goinfer arms (..., registered before this code)
+qwen3vl_image_real_test.go:    G-S10c ... (S10, registered before this ran)
+```
+
+## TestPrefillCoverageAudit.oldclaims
+
+Moved from `decoder/prefill_coverage_test.go` (the doc comment above `TestPrefillCoverageAudit` and the comment in its body, above the reason check) on 2026-10-09. The doc comment named seven PrefillLast guards; the body asserts and models only not-resident and MoE, and the comment was reworded to say so. Recorded here because it is a coverage claim the body never made.
+
+```text
+TestPrefillCoverageAudit enumerates every validated family against the cuda PrefillLast guards
+(decline on: not-resident, MoE, gemma4-moe, sandwich norms, qk-norm, K=V, non-uniform geometry).
+It reports, per family, whether it GETS batched prefill or FALLS BACK, and which guard fires — so
+"extend the guard" work can be scoped by which guard blocks the most families. Guards are read from
+the resolved Architecture (the same flags cuda/backend.go sets the resident from); int4-weight and
+over-cap are checkpoint/prompt-specific, not family-inherent, so they are noted, not tabulated.
+
+qk-norm and sandwich norms are NO LONGER guards: batched prefill applies them via
+qk_norm_batched / rmsnorm_f32_batched (bit-identical per token; validated on real Qwen3-1.7B
+and Gemma-3-4B by cuda.TestPrefillLast_qwen3 / _gemma3). So qwen3 and gemma3 now BATCH; MoE
+(glm4_moe/qwen2_moe/mixtral) and the not-resident classes still decline. (gemma3 batches only
+when the gemma resident path is enabled — GOINFER_GEMMA4_RESIDENT; else it stays staged.)
+(K=V is a Gemma-4-only property, nested in gemma4Params; Gemma-4 trips sandwich/gemma4-moe
+first, so K=V never surfaces as the binding guard — omitted.)
+```
+
+## qwen3next_slice_test.header.dropped
+
+Moved from `decoder/qwen3next_slice_test.go` (the file header, two clauses) on 2026-10-09.
+
+```text
+REAL-WEIGHT layer-slice oracle for Qwen3-Next — the T3 the macbook's Phase 0/1 left
+open and tagged `linux`.
+...
+checkpoint-layout delta the macbook flagged — the FUSED DeltaNet input projections
+```
+
+## qwen3vl_real_test.header.dropped
+
+Moved from `decoder/qwen3vl_real_test.go` (the file header) on 2026-10-09.
+
+```text
+(testdata/assets.json) — not present on this box as of 2026-09-08, so this gate SKIPS cleanly
+rather than being silently absent from the registry.
+```
+
+## qwen3moe_test.tinygolden.dropped
+
+Moved from `decoder/qwen3moe_test.go` and `decoder/qwen2moe_test.go` (the tiny-golden comment above `emitParityRow`) on 2026-10-09; both claims were stale once the real-checkpoint gates (`TestQwen3MoeReal_oracle`, `TestQwen2MoeReal_oracle`) existed.
+
+```text
+The real Qwen3-30B-A3B (bf16 ~61GB) is a Linux-box T3, not yet run here.
+(real Qwen1.5-MoE-A2.7B not on this box)
+```
+
+## qwen2_real_test.header.dropped
+
+Moved from `decoder/qwen2_real_test.go` (the file header) on 2026-10-09; the model size was wrong for this file (the gate loads Qwen2.5-0.5B).
+
+```text
+1.7B fits an f32 forward in RAM
+```
+
+## perrow_phase0b.dropped
+
+Moved from `decoder/perrow_phase0b_test.go` (the comment above `TestPerRowScalePhase0b`) on 2026-10-09.
+
+```text
+(weight-space, 1.24× rel-error for per-row symmse)
+```
+
+## TestComputeLogprobs_reusesProvidedScratch
+
+Moved from `decoder/sampler_extra_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestComputeLogprobs_reusesProvidedScratch is P-07 (audit-2026-09-10): computeLogprobs called
+softmaxStable directly, allocating a fresh full-vocab []float64 on every logprobs:true
+request; SampleWithInfo now passes its own distBufN scratch through. Correctness (matches a
+nil-scratch call exactly) and the reuse itself (the internal softmax write lands in the
+caller's own buffer) are both asserted — a fix that reused the wrong buffer or silently
+stopped reusing would each pass a test that checked only one side.
+```
+
+## TestSampler_minPAboveOne
+
+Moved from `decoder/sampler_minp_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+M-08: MinP > 1 with no TopK panicked inside the sampler.
+
+The min-p threshold is maxL + T·ln(minP); for minP > 1 that sits ABOVE maxL, so the
+candidate set comes back EMPTY and the "always keep the top token" clamps then slice ips[:1]
+on an empty slice or read ips[len(ips)-1] at index −1. Measured before the fix:
+`index out of range [-1]`, panicking in the Generate goroutine. min_p is not on the HTTP
+surface, so this reached users through the library and `goinfer-chat --min-p`.
+
+TWO INDEPENDENT DEFENCES were added, and they are tested independently — together they mask
+each other, so a single end-to-end "does not panic" test would go green with either one
+removed and prove neither.
+```
+
+## TestTopFilterLogits_MatchesReference
+
+Moved from `decoder/sampler_selection_test.go` (the comment in the seed-sweep body) on 2026-10-09.
+
+```text
+The seed sweep is run in PARALLEL SHARDS. Every case still runs — the shards partition the
+same seed range and assert the same things — but wall time divides by the core count.
+
+Why it matters: CI runs `go test -race`, and this sweep is pure computation with no
+goroutines and no shared state, so the race detector finds nothing here while costing ~10×.
+At 400 seeds × 15 cfgs × 4 temps that pushed the whole decoder package past the 600 s default
+timeout on CI's slower runner (locally 63 s un-raced) — main went red on a TIMEOUT, not a
+failure. Sharding is the coverage-neutral fix; reducing the sweep would have traded away the
+exactness gate that justifies the optimization, which is the wrong thing to trade.
+Seed selection: every seed normally, an evenly-STRIDED subset under -race (the detector has
+nothing to find in this pure-compute sweep — see sampler_sweep_race_test.go). Striding rather
+than truncating keeps the selection spread across the whole range, so both logit shapes
+(tie-heavy / tie-free, which alternate on seed parity) stay represented. All 15 configs and
+all 4 temperatures run for every selected seed either way.
+
+C8 (docs/completed/task-ci-speed-2026-09.md): the stride below WAS this loop's whole point
+and it went missing in 324f63c9 ("go fix: modernize"), which rewrote
+`for s := 0; s < seeds; s += sweepSeedStride` into `for s := range seeds` — every seed ran
+under -race for months while the mode string said "strided subset", and this test was 217 s
+of every CI run. The check right after the loop is the guard that shape needs: a build that
+declares a stride must be seen to apply it.
+```
+
+## TestSamplingThroughputGate
+
+Moved from `decoder/sampler_selection_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSamplingThroughputGate asserts the top-p/top-k cliff is gone: sampling at
+temperature+top_p must run within a bounded factor of the TEMPERATURE-ONLY baseline
+(amendment 4 — gated against temp-only, not greedy). A full-vocab sort regression shows
+up as ~7× (the reported 100→15 tok/s); the gate factor sits below that and above the
+real post-fix ratio.
+```
+
+## TestSamplingThroughputGate.race
+
+Moved from `decoder/sampler_selection_test.go` (the comment in the test body, at the raceEnabled skip) on 2026-10-09.
+
+```text
+A WALL-CLOCK RATIO measured under the race detector measures the DETECTOR, not the sampler.
+Observed on CI: this gate passed on linux/-race and failed on darwin/-race at 3.86× and 3.99×
+against a 3.0× bound, on two commits that touched no sampler code — the instrumentation does
+not scale the two arms equally, and a shared runner adds noise on top. Left on, it is a
+permanently red gate that says "full-vocab selection has regressed" when nothing has.
+
+It is not skipped into oblivion: ci.yml runs this test WITHOUT -race on every push, which is
+where a real regression would show. Timing gates belong in an un-instrumented run.
+```
+
+## TestSamplingThroughputGate.bound
+
+Moved from `decoder/sampler_selection_test.go` (the comment in the test body, above the factor bound) on 2026-10-09.
+
+```text
+RE-BOUNDED after P2b (2026-08-09). This gate compares temp+top_p against temp-only, and P2b made
+the DENOMINATOR ~4.7× faster (parallel chunked normalization), so the ratio rose from 0.86× to
+3.88× at 262k WITHOUT the filtered path regressing — top_p itself went 6.98 ms → 6.72 ms over the
+same change. A gate whose baseline moves is measuring two things at once; the bound is raised to
+keep it catching real filtered-path regressions rather than firing on an improvement elsewhere.
+
+Note the synthetic logits here overstate top_p's cost: randLogits is near-Gaussian, so a 0.95
+nucleus over 262k entries retains an enormous candidate set, where REAL peaked decode logits
+retain a handful. The e2e A/B on real models shows the filtered path ~2× FASTER after P2b
+(gemma3-1b 56.3 → 117.0 tok/s), the opposite of what this ratio suggests in isolation.
+
+RE-ANCHORED after R7b (2026-09-20), the bar NOT moved. Production temperature-only sampling became
+Gumbel-max, ~1.3-1.8x cheaper on the CPU (1.49 -> 1.16 ms at 262k), which moved this ratio from 4.14x to
+5.26x while top_p itself was unchanged (6.17 -> 6.09 ms) — the same "baseline moved" hazard as above. The
+denominator is now the LEGACY chunked inverse-CDF draw, kept unchanged in sampler_chunked_ref_test.go, so
+the ratio means exactly what it meant when the 5.0x bar was set.
+```
+
+## benchSample
+
+Moved from `decoder/sampler_selection_test.go` (the comment above the function) on 2026-10-09.
+
+```text
+benchSample times one sampling configuration, taking the BEST of three runs rather than one.
+
+WHY BEST-OF-N AND NOT A SINGLE MEAN. testing.Benchmark's NsPerOp is a mean over b.N, and a mean
+tracks scheduling jitter upward — it has a floor but no ceiling. Measured 2026-08-31 on x86,
+three consecutive isolated runs of the temp-only arm at V=262144: 1.356 / 1.694 / 1.994 ms, a
+47% spread, while the temp+top_p arm over the same runs moved only 6% (6.54 / 6.72 / 6.93 ms).
+The RATIO those produce swings 3.48-4.83 — and none of that motion is the sampler.
+
+The minimum is the right estimator here because the quantity is floored: the fastest observed
+run is the one least contaminated by whatever else the machine was doing. It cuts the x86
+spread from 1.35x to 0.39x (3.48-4.83 becomes 3.85-4.24) and leaves arm64 where it was
+(4.81-4.85).
+
+IT DOES NOT MAKE THE RATIO MACHINE-INDEPENDENT, and an earlier draft of this comment claimed
+it would — predicted, not measured, and the measurement refuted it. x86 settles near 4.0 and
+arm64 near 4.83: a real 0.7x gap between machines, on the same code. So the bound below is
+effectively set by whichever machine runs hottest on this ratio, which is arm64, at ~3% margin.
+That is a property of the RATIO design (see the note on the bound), not something a better
+estimator fixes.
+```
+
+## BenchmarkFilterRef32k
+
+Moved from `decoder/sampler_selection_test.go` (the comment above the 32k benchmarks) on 2026-10-09.
+
+```text
+32k is phi3-mini's vocab, and it was NOT in this benchmark's population when P10 (4da116d)
+reused the full-vocab scratch buffer: only 152k and 262k were measured. The §B5 re-anchor then
+found phi3-mini DOWN 5.8% at temperature 1.0 while the 152k and 262k models gained 8-9% on the
+same configuration (G26). A change validated on two large vocabs and shipped for all of them
+needs the small one measured too.
+```
+
+## TestSweepCoverage_fullSweepRunsSomewhere
+
+Moved from `decoder/sampler_selection_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSweepCoverage_fullSweepRunsSomewhere is the gate on the gate.
+
+The exactness sweep is strided under -race, and BOTH root CI jobs run -race — so the full
+24,018-case sweep runs only because ci.yml carries an explicit non-race step for it. That is a
+coupling between a build tag and a YAML file, invisible from either side: delete the step and the
+gate silently shrinks to a subset in every job, with nothing red. (An earlier version of this
+change asserted the full sweep "still runs in the non-race job" when no such job existed.)
+
+This reads ci.yml and fails if the step is gone. It is deliberately a string check rather than a
+YAML parse: what matters is that SOME step runs this test without -race, and the cheapest honest
+way to assert that is to look for it.
+```
+
+## sweepSeedStride.race
+
+Moved from `decoder/sampler_sweep_race_test.go` (the comment above the const block) on 2026-10-09.
+
+```text
+Under -race the exactness sweep runs a STRIDED SUBSET of seeds rather than all of them.
+
+WHY. TestTopFilterLogits_MatchesReference is pure computation: no goroutines, no shared state,
+no channels. The race detector therefore has nothing to find in it, while costing ~34× (measured
+on this box: the sweep is 12.3 s sharded without -race; the decoder package went from a 600 s
+timeout panic to 414 s once sharded, and the sweep is the dominant term). On a 4-core CI runner —
+where the parallel sharding recovers much less than on a many-core box — the full sweep is
+plausibly 8–9 minutes of EVERY CI run, for a second execution of cases the non-race job already
+proved. Paying that indefinitely is the waste; the tax is not buying coverage.
+
+WHAT IS PRESERVED. This strides the SEED axis only. Every one of the 15 parameter configs and all
+4 temperatures still run, for every seed selected — so the parameter space is spanned, not
+truncated to a prefix. Striding (rather than taking the first N) keeps the selected seeds spread
+across the whole range, so the tie-heavy and tie-free logit shapes (which alternate on seed
+parity) both stay represented.
+
+COVERAGE NOTE (corrected). An earlier version of this comment claimed the full sweep "still runs
+in the non-race job" — it did not. BOTH root CI jobs run `go test -race`, so gating on race mode
+alone would have meant the full 24,018-case sweep ran in NO CI job at all: a real weakening,
+asserted to be none. ci.yml now carries an explicit non-race step that runs the full sweep (and
+the throughput gate) on every push. If that step is ever removed, this gate silently shrinks
+again — TestSweepCoverage_fullSweepRunsSomewhere fails if the two drift apart.
+The stride is ODD on purpose. The sweep picks its logit shape by seed parity (`s%2 == 0` →
+tie-heavy, else tie-free), so an EVEN stride would select only even seeds and silently drop the
+tie-free shape entirely — a subset that no longer spans the space it claims to. 7 alternates
+parity on every step, keeping both shapes represented.
+```
+
+## TestSampleFromTopK_matchesFullPath
+
+Moved from `decoder/sampler_topk_test.go` (the comment in the draw-count branch) on 2026-10-09.
+
+```text
+C8 (docs/completed/task-ci-speed-2026-09.md): under -race the DRAW axis is strided by
+the same constant the exactness sweep strides its seeds with — every (vocab, shape,
+config) cell still runs, with 1/7 of its draws — because this is pure computation the
+detector finds nothing in, and it was 369 s of every CI run (44 s un-raced). The full
+draw count runs in ci.yml's non-race sampler-gates step, which
+TestSweepCoverage_fullSweepRunsSomewhere requires to name this test.
+```
+
+## TestEnsureCPUSelfTest_recordsAPass
+
+Moved from `decoder/selftest_test.go` (the comment at the Elapsed check) on 2026-10-09.
+
+```text
+Windows' monotonic clock ticks every ~0.5-15 ms and the CPU self-test takes about 1 ms (less with the DotProd kernels
+aikit v1.56.0 enabled there), so a pass there can honestly record 0: root-windows-arm64 read "elapsed 0s" at ee07ced7.
+```
+
+## serialize_census_test.header
+
+Moved from `decoder/serialize_census_test.go` (the comment above the package clause's imports) on 2026-10-09.
+
+```text
+THE SILENT-DROP CENSUS: does a .giw round-trip preserve every per-layer field the loader
+populated? Generic over the struct, not over a remembered list.
+
+WHY THIS EXISTS. `canSerialize` is a hand-maintained blocklist of families the writer cannot
+express, and on 2026-08-19 it was found to have DRIFTED for two of them:
+
+  gpt_oss  accepted -> AttnSinks 8 -> 0, and the bundle LOADED CLEAN (silent wrong answers)
+  laguna   accepted -> reader rejected it at load ("layer 1 QProj: 128 rows, arch expects 64")
+
+Neither was exotic: gpt-oss needed ONE []float32 field written. The defect was not difficulty, it
+was that adding a field to LayerWeights and forgetting to add it to serialize.go produces no
+error anywhere — and the gate meant to catch that (TestCanSerialize_refusesUnrepresentable) asks
+only "is this family on the list?", which is the same memory that failed in the first place.
+
+So this test asks the struct instead: populate a model, serialize, load, and compare EVERY field
+of LayerWeights by reflection. A field that was non-empty and comes back empty is a silent drop,
+whatever family introduced it and whoever forgot it. Refused families are skipped — refusing is a
+correct answer; silently dropping is not.
+
+It runs on committed tiny fixtures only: no assets, no GPU, no network.
+```
+
+## censusList.lfm2
+
+Moved from `decoder/serialize_census_test.go` (the comment above the lfm2-tiny line) on 2026-10-09.
+
+```text
+Added 2026-09-02 by TestSerializeCensus_everyFixtureIsListedOrExcluded, which found
+eleven committed fixtures this list had never mentioned. lfm2-tiny is the one that
+mattered: serialize.go dropped its entire conv mixer (audit-2026-09-02 C-03).
+```
+
+## censusList.llama
+
+Moved from `decoder/serialize_census_test.go` (the comment above llama-tiny) on 2026-10-09.
+
+```text
+llama-tiny (2026-09-02): the plain `llama` arch had NO fixture anywhere in the tree, only
+goldens — so the census round-tripped 21 families without ever touching the most common
+architecture in the ecosystem, and a required parity gate's family at that. The only
+llama checkpoints here are the box's gitignored llama3.2-1b / tinyllama-awq /
+tinyllama-gptq, none of them tiny. scripts/pin_llama_tiny.py, 720 KB, tracked.
+```
+
+## censusList.glmocr
+
+Moved from `decoder/serialize_census_test.go` (the comment above glm-ocr-tiny) on 2026-10-09.
+
+```text
+glm-ocr-tiny (2026-10-01; tracked since glm_ocr O1, ff79b92a, but never listed — found red by the targeted
+decoder run for the pairwise-rope change): the pairwise rotation flag (ropeInterleave) and the m-RoPE
+sections are the per-Architecture fields a GIW round trip could drop.
+```
+
+## censusList.mistralwindow
+
+Moved from `decoder/serialize_census_test.go` (the comment above mistral-tiny-window) on 2026-10-09.
+
+```text
+mistral-tiny-window (2026-10-02): the exclusion said "config-only, Load cannot open it", which was a symptom, not a fact: the weights existed
+locally and were gitignored (*.safetensors), so on a fresh checkout Load had nothing to open. They are committed now. SlidingWindow is the
+per-Architecture field a GIW round trip could drop.
+```
+
+## censusExcluded
+
+Moved from `decoder/serialize_census_test.go` (the comment above the map) on 2026-10-09.
+
+```text
+censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with
+the reason. Every fixture must be in censusList or here — TestSerializeCensus_everyFixtureIsListedOrExcluded.
+
+A LIST THAT NOBODY CHECKS IS THE DEFECT THIS TEST WAS BUILT TO REPLACE, AND IT CAME BACK. The
+census's own preamble says the guard before it failed because it "asks only 'is this family on
+the list?'" — and the replacement asked a list too, 21 hand-maintained paths. ../testdata/lfm2-tiny
+has been committed since ed112b0 and was on none of them, so `grep shortConv decoder/serialize.go`
+returned zero matches for an entire shipped family while this census reported green over 21
+others (audit-2026-09-02 C-03). Discovery plus an explicit exclusion is what makes the list a
+decision instead of a memory.
+
+The reasons here are COST, measured, not judgement: the census loads, serializes and greedy-decodes
+every fixture, and 29 of them together take 0.27s.
+```
+
+## censusExcluded.localdrops
+
+Moved from `decoder/serialize_census_test.go` (the comment inside the map, above the gptoss120-slice entry) on 2026-10-09.
+
+```text
+The Linux box's nine local drops, 549 MB to 17 GB and ~44 GB together. Recorded as decisions
+rather than left to be re-reported every run. TWO reasons apply to all of them and both are
+measured, not judgement:
+
+ 1. COST. This census loads, serializes and greedy-decodes every fixture, and its whole design
+    point is that 30 of them together take 0.19 s — cheap enough to run in every CI. The
+    smallest of these is 549 MB; mellum-mellum2-slice at 4.0 GB was still running after 90 s.
+ 2. NO NEW FIELDS. Eight of the nine are an architecture the census already round-trips, and
+    the field set this test compares is a function of the ARCHITECTURE. A second gemma4 or a
+    third laguna adds bytes, not coverage.
+
+The ninth is different and is recorded in docs/QUEUE.md rather than hidden here: llama3.2-1b,
+tinyllama-awq and tinyllama-gptq are the ONLY fixtures anywhere for the plain `llama` arch,
+and there is no tiny one. See llama-tiny below, which is the answer to that.
+```
+
+## TestSerializeCensus_everyFixtureIsListedOrExcluded
+
+Moved from `decoder/serialize_census_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+EVERY TRACKED FIXTURE IS LISTED OR EXPLICITLY EXCLUDED.
+
+The census above is only as complete as its fixture list, and that list is hand-maintained — the
+exact shape whose failure it was written to replace. This walks both testdata roots, treats an
+entry with a config.json (or a .gguf/.giw file) as a model fixture, and requires each to be
+censused or excluded with a written reason. It is a STAT plus one `git ls-files`, not a load, so
+it costs nothing and cannot be the reason someone trims the list.
+
+TRACKED, NOT "PRESENT", AND CERTAINLY NOT "COMMITTED" — two wrong scopes, each caught by a
+machine that had a different set of files:
+
+  - "committed" was the first, and it was never checked. Most fixture checkpoints are GITIGNORED
+    local drops; 12 of the 35 this machine holds are tracked, and CI's checkout has 14 in total.
+    Four exclusions naming large untracked fixtures read as STALE there and turned CI red.
+  - "present in this checkout" was the second. The Linux box carries local drops nobody else has
+    — `gptoss120-slice`, `laguna-xs2-slice`, and three SCRATCH dot-directories — so a rule that
+    demands every present fixture be listed fails on any machine with extras, which makes the
+    gate an override habit rather than a gate.
+
+Tracked is the scope that is the same everywhere, and it is a real scope, not a retreat: a new
+family's tiny fixture gets committed, which is exactly how ../testdata/lfm2-tiny (the fixture
+whose absence from the list let serialize.go drop an entire family's conv mixer) got there. It
+is tracked, so the defect this gate exists for is inside the blocking set.
+
+An untracked fixture that is present and unlisted is REPORTED, never asserted on: it may be
+worth adding, and it may be somebody's scratch copy, and this test cannot tell.
+```
+
+## TestLFM2_serializeRoundTripsTheConvMixer
+
+Moved from `decoder/serialize_lfm2_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+C-03: A CRC-VALID BUNDLE THAT LOADS CLEAN AND NIL-DEREFS AT THE FIRST FORWARD.
+
+`grep shortConv decoder/serialize.go` returned ZERO matches. cmd/prequant loaded an LFM2
+checkpoint, wrote every field except the conv mixer, appended a valid CRC, and selfCheck passed
+because selfCheck only Loads. Serving the bundle, the first token reached conv layer 0 with
+lw.shortConv == nil and panicked in the decode goroutine. That is the R3 shape: the artifact is
+well-formed by every check that runs on it, and wrong.
+
+Two halves, and BOTH are needed. The v8 tail makes a correctly-written bundle round-trip. The
+validateShapes presence check makes an INCORRECTLY-written one — a pre-v8 bundle, or a future
+writer that forgets again — fail at load instead of at the first forward, where the panic is in
+a goroutine no handler recovers.
+```
+
+## TestSerializeWeights_roundTrip
+
+Moved from `decoder/serialize_test.go` (the comment at the aliasing check) on 2026-10-09.
+
+```text
+Aliasing: the deserialized q8 and its scales both point INTO blob (zero-copy). Scales were a copy until
+.giw weights v12 (cdae727d, 2026-09-24) aligned them so the reader aliases them; this heavy-model test still
+expected the copy and failed the first time it ran after (the v0.20.0 parity sweep).
+```
+
+## TestSerialize_unpopulatedLayersOmitsLabel
+
+Moved from `decoder/serialize_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSerialize_unpopulatedLayersOmitsLabel is the dangerous half of B11, gated directly and
+without a heavy asset. writeHeadGlobals used to decide whether to write the v5 quant-label
+field by asking `wr.sink == nil` — "are we the buffered writer" — as a proxy for "do we have
+the real weight data yet". Those disagree for the true GGUF streaming transcode, which writes
+the header on a freshly make()'d, all-zero Layers slice BEFORE any layer has streamed in: at
+that moment quantLabel()'s own "nothing matched" case returns "native" — a REAL quant mode, not
+an empty string — so calling it unconditionally would bake a FALSE "native" label into every
+genuinely-streamed bundle. hasPopulatedLayers() is the correct guard (data availability, not
+writer identity); this asserts it actually withholds the label when the data is not there.
+
+Walks the header by hand (no heavy checkpoint, no architecture resolution needed on write: only
+json.Marshal(w.Cfg) must succeed, and a zero Config does) rather than round-tripping through
+LoadSerializedWeights, which would additionally require a resolvable arch.
+```
+
+## TestSessionFastAttnDivergence
+
+Moved from `decoder/session_fastattn_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSessionFastAttnDivergence — THE TEST decoder/forwardn.go:cpuFastAttention HAS BEEN CITING ALL ALONG.
+
+It did not exist anywhere in the tree. The doc comment above cpuFastAttention says
+"TestSessionFastAttnDivergence pins the new behaviour", which is the exact "a doc comment
+claiming coverage is not coverage" class CLAUDE.md describes — one file away from where that
+rule was written. Whoever audited the claim would find a plausible name, match it to the
+sentence, and stop.
+
+What it now pins is the honest version of the contract: with the fast kernel on (the
+default), a prompt at or above fastAttnMinPrompt gives DIFFERENT logits from the exact
+kernel — the split-invariance loss the comment describes and docs/server.md used to deny —
+and below the floor the two are identical, because the floor turns the fast path off.
+```
+
+## TestLoadSession_allocationCeilingNotBodyRatio
+
+Moved from `decoder/session_hostile_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestLoadSession_allocationCeilingNotBodyRatio pins the guard that replaced the body-ratio bound
+on 2026-09-05, from both sides — the valid blob the old bound REJECTED, and the hostile one the
+new bound must still refuse.
+
+The old check bounded pos by `len(body)/(numLayers·kvDim)`, asserting that "each of the pos
+positions stores at least one byte across the numLayers·kvDim KV". kvsnapshot.go's own writer
+contradicts that: a never-written ring serialises count/nLive/stride and stops, and a KV-shared
+layer stores nothing, so a well-formed body can carry zero KV bytes at pos > 0. That made the
+guard reject valid snapshots — including, in production, any session longer than ~8·W on an
+all-sliding-window model, since a ring layer only ever stores min(count, W) rows.
+
+CI CANNOT SEE THIS FILE'S FAILURES WITHOUT A FIXTURE. loadTestModel skips when no model is
+present, so on a fixture-less runner these tests skip and the package reports ok — which is how
+the original defect sat on main unnoticed. If this test starts skipping in an environment that
+is supposed to have a model, that is the finding, not a pass.
+```
+
+## TestSession_cancelledSweepOnAWrappedRingGoesCold
+
+Moved from `decoder/session_rewind_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+C-05: A CANCELLED BATCHED PREFILL ON A WRAPPED RING LEAVES STALE K/V THAT THE NEXT WARM TURN
+READS AS HISTORY.
+
+G18 made the batched sweep abortable per LAYER. Layers below the abort point have already
+commitBatch'd — their ring count is startPos+K — while c.pos is still startPos, because advanceTo
+runs only at the end of a completed sweep. reconcile then truncates to c.pos, which rewinds those
+rings by K on a wrapped window: ring.truncate cannot restore the rows the commit evicted and
+returns false. reconcile discarded that bool, so the session stayed WARM over K/V RoPE'd at
+positions the next turn will read as much earlier history. The request that was cancelled reports
+a clean end, so nothing else in the stack notices.
+
+This drives reconcile directly. A full serve round-trip would need a client that disconnects
+mid-prefill; the cache state it produces is what is built here, and it is the state that matters.
+```
+
+## TestRopeInvFreqLayer_NoPEIsZero
+
+Moved from `decoder/smollm3_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/tasks/task-gpu-paths-2026-09.md, FeatNoPE):
+a resident backend's rope kernel gets an all-zero invFreq table for a NoPE layer instead of a
+new kernel path (RopeInvFreqLayer, decoder/residency.go), which is exact identity rotation by
+construction (cos(pos·0)=1, sin(pos·0)=0 for every position — verified against the shipped
+kernel math directly, cuda/gemv_fwd.cu and metal/kernels.go's rope2, both
+`c=cos(th)*scale,s=sin(th)*scale` with th=pos·invf[dd]).
+
+This is deliberately a PURE, backend-agnostic unit test of RopeInvFreqLayer itself, not a
+resident-vs-CPU cosine comparison on testdata/smollm3-tiny. Measured directly (not assumed):
+on that fixture (hidden=64, seeded/synthetic weights, `TestSmolLM3ResidentParityMetal`),
+zeroing ONLY the NoPE layer, zeroing NO layer, and zeroing EVERY layer's rope all land within
+~0.0006 cosine of each other against the CPU reference (worst cosine 0.9617/0.9619/0.9624) —
+the SAME "cannot discriminate a real bug from int8-on-random-weights noise" finding this
+backend's own Mellum-on-Metal note (features.go) already recorded for a different family. A
+resident-vs-CPU cosine floor on this fixture would therefore pass or fail independent of
+whether NoPE is implemented correctly, which is worse than no gate — this test is the real one.
+```
+
+## spark25_real_test.header
+
+Moved from `decoder/spark25_real_test.go` (the comment above the package clause) on 2026-10-09.
+
+```text
+Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM) — Gate 2
+(docs/tasks/task-spark-x2-5.md): the T3 promotion of the spark2_5 family from Gate 1's
+tiny-random synthetic fixture to a released checkpoint. 1.7B is the smaller of the two
+released sizes (task doc's own "start with the 1.7B... then the 4B"). Fixture:
+scripts/pin_spark2_5_real.py.
+
+TestSpark25Real_gate and TestSpark25Real_fitGuardLongContext need OPPOSITE fit-guard states and
+must be run as SEPARATE invocations, not together: this machine's real headroom (~8 GB) is
+narrower than the checkpoint's ~6.4 GB f32-resident need at the guard's 70% conservative margin
+(a real, monitored bypass was needed and approved to pass the first gate at all — see
+docs/measurements/ once Gate 2/3 are written up), so TestSpark25Real_gate needs
+GOINFER_NO_FIT_GUARD=1 to load; TestSpark25Real_fitGuardLongContext specifically checks that an
+oversized pin gets REFUSED, so it needs the guard ACTIVE (unset) to mean anything — run with
+GOINFER_NO_FIT_GUARD=1 set, it silently no-ops (Load succeeds, the test's own "expected a clean
+refusal" assertion fails on an unrelated cause).
+```
+
+## TestSpark25Real_fitGuardLongContext
+
+Moved from `decoder/spark25_real_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSpark25Real_fitGuardLongContext is Gate 3 (docs/tasks/task-spark-x2-5.md): "the fit guard
+must price KV correctly for a sliding-window model at long context — which is exactly the case
+where a naive calculation is most wrong. Verify the guard's behaviour on spark2_5 at 131072
+explicitly." The task doc's own hazard is real: an HF user hit a kernel OOM running
+Spark-X2.5-4B at -c 131072 with llama.cpp's --swa-full (which explicitly DISABLES that engine's
+sliding-window memory saving, so every layer priced at full context). goinfer's own M-28 fix
+(decoder/arch.go's kvPositionsAt/kvBytesForCtx) is the generic mechanism that's supposed to
+prevent the equivalent mistake here — this checks it against the REAL checkpoint's geometry,
+not just a synthetic fixture (fitkv_test.go's TestFitGuard_slidingWindowFlattensPastTheWindow
+already covers the generic mechanism on olmo3-tiny; this is the family-specific confirmation
+the task doc asks for, on real numbers).
+```
+
+## TestSpecAdaptiveSwitch_offByDefaultUnaffected
+
+Moved from `decoder/spec_adaptive_switch_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSpecAdaptiveSwitch_offByDefaultUnaffected: with -spec-adaptive off, a spec generation's own exclusive claim
+now goes through claimExclusive (holders == 0), not a bare CAS on resBusy — the hardening this file's other test
+forced (a bare CAS could succeed at the same moment an MC3 holder, admitted via bt.claim, was mid-step: bt.claim
+only READS resBusy, it never sets it). Production never creates this combination (-spec without -spec-adaptive
+forces concurrency to 1 in openai.go's setConcurrency, so a spec generation and an MC3 holder never coexist),
+but the test constructs it directly to prove the guard does not depend on that. Two outcomes are both correct:
+the spec generation wins the claim (resident, mc3Fake's path) or loses to an already-admitted holder and falls
+back to the staged CPU path (the tiny fixture's real weights, a genuinely different computation, not a
+degraded one) — this is the pre-existing M9 guard's own contract ("both still complete correctly, only the
+loser loses resident speed"), unrelated to this session's changes. NOT compared against an always-resident
+reference: unlike matchesPlainDecode, a mid-run fallback to a different code path is not expected to be
+id-identical to the path it did not take — that was this test's own first-draft mistake, not a real
+divergence (caught by running enough repeats: it failed ~1 run in 5, every time on a real, different, but
+individually valid continuation, e.g. `got=[171 197 164...]` vs `alone=[102 186 172...]` — two distinct valid
+greedy paths, not a wrong one).
+```
+
+## TestVerifyTheta_asksWhetherForwardNIsBatched
+
+Moved from `decoder/spec_adaptive_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+M-14: verifyTheta keyed on the BACKEND NAME, so every CUDA model got 0.251 — a value measured
+on dense 0.5B/1.5B, where the batched prefill pass actually runs. But cuda's ForwardN falls
+back to one `step` per row for every MoE / K=V / non-uniform / non-int4-or-int8 model, and a
+loop of single-token forwards has Theta ≈ 1 by construction.
+
+So on a resident MoE the controller was told a verify node costs a quarter of a decode step
+and drafted 8, when each node costs a FULL step: nine sequential steps per round for ~6.7
+committed tokens at high acceptance, worse below it. Metal hit the same shape, MEASURED it
+(1.006–1.048, linear to n=16) and ships 1.02 to disable speculation. This makes CUDA reach the
+same conclusion the same way — by asking the resident instead of inferring from its name.
+```
+
+## TestThetaFor_cudaConstantUnchanged
+
+Moved from `decoder/spec_adaptive_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+The CUDA constant itself is unchanged and still measured — M-14 is about WHEN it applies, not
+what it is. Pinned so a change to one is not mistaken for the other.
+
+Metal ships thetaFor("metal") = 0.96 (re-measured 2026-09-17 across {0.5B,1.5B} qwen2.5-coder and
+{0.6B,1.7B} Qwen3, depth 128-2048; down from 1.02+ when ForwardN was an unbatched loop). N-49
+tripwire: batched verify reports via VerifyPathReporter, unblocking speculative decoding on
+Metal for all non-paged models.
+```
+
+## TestSpecHitRate
+
+Moved from `decoder/spec_hitrate_probe_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSpecHitRate is Step-6 Step-0b: measure the SPECULATIVE hit rate for Metal MoE expert paging
+directly, on the CPU MoE path — the business case for building speculation at all. It does NOT
+rest on CUDA's 38-slot VRAM hit rate (81.6%, different hardware/ratio); it measures the strict
+quantity speculation needs: given the previous token's expert set plus a bounded per-layer LRU
+pool, is every expert in THIS token's top-8 already resident (no stall)?
+
+Model: gemma4-26b-A4B (the real target: 30 MoE layers, nE=128, top-8). Greedy autoregressive
+generation from a diverse seed (deterministic + repo-reproducible; a repetition guard flags the
+case where greedy loops, which would inflate locality). Router top-8 per MoE layer per token is
+captured via SetRouterCaptureForTest. Reports, per layer and aggregated:
+ 1. exact-set match  P(top8_t == top8_{t-1})   — strictest "speculate from previous token".
+ 2. coverage(N)      P(top8_t ⊆ per-layer LRU-N pool, which includes last token's set for N>=8).
+ 3. stalls/token(N) = Σ_layers (1 - coverage_L(N)); implied ms/token at 0.230 ms/stall.
+
+GATE: compare (3) at an affordable N against 6.9 ms/token (full synchronous paging = a stall at
+every one of the 30 MoE layers). Recovers most → build speculation. Recovers < half → synchronous
+paging ships and speculation is dropped.
+```
+
+## TestGenNgramInto_residentReusesWarmPrefix
+
+Moved from `decoder/spec_ngram_resident_reuse_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestGenNgramInto_residentReusesWarmPrefix is P-05 (audit-2026-09-10): R-03 already made this
+function COMMIT the accepted sequence correctly on exit (residentCommitIDs), but nothing on
+ENTRY ever consulted what that commit left behind — every round cold-prefilled the whole
+prompt from position 0 regardless, so a --spec/--drafter agent loop got no prefix reuse despite
+committing one every round. This drives two rounds back to back: round 1 cold (nothing
+committed yet), round 2 with a prompt that STRICTLY EXTENDS round 1's own committed sequence
+(the real agent-turn shape residentReuseLen exists for) — and asserts round 2's
+Generation.PrefillReused is nonzero, the same observable proof generate_vl.go's own reuse
+tests use, not just that generation still produces output.
+```
+
+## TestOptFwdEligible
+
+Moved from `decoder/spec_optfwd_test.go` (the comment in the temperature-cap loop) on 2026-10-09.
+
+```text
+Every NEGATIVE case below uses a temperature INSIDE the cap on purpose: at 0.7 they would be
+refused for being too hot, and would pass without exercising the property they name.
+The threshold itself. Above optFwdMaxTemp the overlap is a MEASURED loss (2.8-6.8% on
+phi3-mini across T=0.4-1.0), so the common chat range must be excluded -- this is the whole
+behaviour change, and 0.7 being ineligible is the point rather than a regression.
+```
+
+## realisticInputs.turn2
+
+Moved from `decoder/spec_suffix_probe_test.go` (the comment in realisticInputs, above agentTurn2) on 2026-10-09.
+
+```text
+Turn 2 of an agent loop. The system prompt, the first user turn, its search
+results and the first answer are all RE-SENT verbatim — that resend is the
+structural repetition an agent loop really has, and it is why cross-request
+scope buys less on a stateless surface than the paper's setting implies.
+
+The SECOND search returns DIFFERENT source, which is the whole correction
+here: a first attempt reused the same snippet for both turns, the model
+copied it back, and the pre-registered loop guard excluded the trace
+(distinct-trigram 0.297). That was a defect in the INPUT, not in the guard —
+a real second query retrieves different code — so the input was fixed and
+the guard left alone. Recorded because it is exactly the artifact
+arXiv 2604.26469 warns about, caught by the rule written in advance.
+```
+
+## policyMostRecentDeep
+
+Moved from `decoder/spec_suffix_replay_test.go` (the comment above the function) on 2026-10-09.
+
+```text
+policyMostRecentDeep is the shipped policy with the MaxMatch probe cap raised
+16 -> 64. Added because the step-1 histogram showed 14 of 20 hits sitting at
+EXACTLY 16 on code-continue-2 — matches pinned at the cap are matches being
+truncated, and match length is the alpha-hat signal (spec_ngram.go's
+ngramAlphaAnchors tops out at 16 => 0.97). This asks whether the cap is
+costing accepted tokens or only mis-reporting confidence.
+```
+
+## tailCycle
+
+Moved from `decoder/spec_suffix_replay_test.go` (the comment above the function) on 2026-10-09.
+
+```text
+tailCycle is the SECOND, INDEPENDENT loop detector, added when the first one
+turned out to be ambiguous on code. distinct-trigram measures REPETITIVENESS,
+and real Go source is legitimately repetitive (`float64`, `\n\t`, receiver
+names) — the shipped step-1 code trace scored 0.715 against a 0.70 bar written
+for PROSE coherence. Conflating "repetitive" with "looping" would either
+discard the exact traffic this task is about, or pass a genuinely degenerate
+trace. So this checks the actual failure mode instead: is the TAIL periodic?
+
+It returns the smallest period p (<= 32) such that the last `repeats*p` tokens
+are exactly periodic with period p, and how many repeats that runs for. A real
+infinite loop shows a small p repeating many times; repetitive-but-progressing
+code does not.
+
+Deliberately NOT a replacement for the pre-registered trigram rule: that rule
+stays binding, this one is reported beside it, and a DISAGREEMENT between them
+is itself the finding.
+```
+
+## spec_theta_test.header
+
+Moved from `decoder/spec_theta_test.go` (the comment above the first test) on 2026-10-09.
+
+```text
+Theta's domain and the per-backend wiring.
+
+The bug these pin: AdaptiveDepth documented and enforced Theta in [0,1) and
+reset anything outside it to 0.5. Metal measures 1.006-1.048 (two models, two
+depths, 2026-09-01), so EVERY value Metal actually has was rejected and
+replaced by 0.5 — the most over-drafting setting on the dial, chosen
+automatically at the one moment the measurement said "do not draft at all".
+```
+
+## TestTreeUpside
+
+Moved from `decoder/spec_tree_upside_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+It replays the drafters over a real constrained greedy generation (agent-loop
+case, where the router already wins 4.25 tok/round) and counts tree-recoverable
+positions. ~0 ⇒ trees add nothing for these greedy sources ⇒ defer.
+```
+
+## TestSSMPrecisionLocalize
+
+Moved from `decoder/ssm_precision_localize_test.go` (the comment before the D1 pass) on 2026-10-09.
+
+```text
+E1 refuted "f32 SSM compute is the lever" (100%). The one thing R2 keeps f32 but
+the resident quantizes is the int8 MAMBA projections (W8A8 weights + int8 act).
+D1 isolates that on the otherwise-perfect CPU path; D2 then forces R1's (f64)
+routing onto it — the REAL router-island test, on the path that reproduces the gap.
+```
+
+## TestSSMPrecisionLocalize.header
+
+Moved from `decoder/ssm_precision_localize_test.go` (the comment that sat above `ssmLocHeldOut`, away from the test it describes) on 2026-10-09. The new header above the test lists the D1 and D2 passes, which the old text did not, and drops the stale count of "three" passes.
+
+```text
+Precision-localization for the granite-resident quality gap (measurement only,
+docs/ssm-int8-quality.md). All runs use the cpu backend (f32 weights throughout),
+so weight precision is excluded BY CONSTRUCTION — the only variables are the SSM
+compute precision (f64 vs f32, ssmForceF32) and a forced high-precision routing
+override. One model load, three teacher-forced passes vs the f64 reference (R1):
+
+	E1: cpu f32 SSM                — does downcasting the SSM compute to f32 reproduce
+	                                 the ~66% resident drop? (confirms SSM compute is the
+	                                 lever, weights excluded)
+	E2: cpu f32 SSM + f64 routing  — force R1's (f64) expert selection+weights onto the
+	                                 f32-SSM forward. Recovers → router-selection island;
+	                                 doesn't → the whole SSM recurrence needs ~f64.
+```
+
+## TestDeclinedToCPUReason
+
+Moved from `decoder/staged_device_note_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md, corrected on review): "cuda-staged
+(int4)" on an 8 GB card sat at the idle VRAM baseline (464 MiB, unchanged) for a full request
+sampled at 1 Hz. Cuda's and metal's own Backend.MatmulBT implementations are bare CPU calls
+and neither implements QuantBackend at all, so their "staged" path never reaches the device at
+ANY quant — DecodePath() folds that into the same requested-vs-effective shape
+BackendSummary() already uses (see decoder/backend_report_test.go), rather than naming a
+"cuda-staged"/"metal-staged" path that was never real. declinedToCPUReason is the pure,
+Model-free piece of that string; DecodePath()'s own wiring is covered by R9's real-hardware
+verification (docs/tasks/task-first-hour.md), not a synthetic Model here.
+```
+
+## TestMain
+
+Moved from `decoder/suite_main_test.go` (the comment above TestMain) on 2026-10-09.
+
+```text
+The decoder test suite's process-wide setup: a soft memory limit and a periodic reclaimer so the
+suite's RSS tracks the working set (see boundSuiteMemory), and mem_probe_test.go's instruments.
+(This lived in eagle_fixture_test.go beside the EAGLE fixtures until EAGLE's code was removed.)
+```
+
+## boundSuiteMemory
+
+Moved from `decoder/suite_main_test.go` (the comment above the function) on 2026-10-09.
+
+```text
+boundSuiteMemory caps the suite's peak RSS with a soft GOMEMLIMIT. The heap-vs-RSS probe
+(mem_probe_test.go) delivered the verdict: `go test ./decoder/` balloons to ~31 GB RSS pre-GC but
+collapses to ~4 MB HeapInuse / ~8 GB RSS after a forced GC — the "in-use" 31 GB is transient
+allocation churn across the many tiny logic tests, freed but neither collected (pacing-based GC
+only triggers on heap doubling) nor returned (lazy MADV_FREE). NOT a leak (HeapInuse→4 MB) and NOT
+mmap (nonGo RSS-Sys negative). A soft memory limit paces GC to keep that garbage from piling up, so
+RSS tracks the working set (a few MB live) instead of the high-water — no thrash on a memory-tight
+box, no swap. It cannot starve a real test: nothing holds more than a few MB live. Respects a
+user-set GOMEMLIMIT (the runtime already applied it); tune or disable with GOINFER_TEST_MEMLIMIT
+(GiB, or "off").
+```
+
+## startMemReclaimer
+
+Moved from `decoder/suite_main_test.go` (the comment above the function) on 2026-10-09.
+
+```text
+startMemReclaimer returns freed heap pages to the OS on a short interval, so the suite's RSS
+tracks the CURRENT working set instead of accumulating a high-water. The probe verdict: the peak
+(~24-31 GB) is transient garbage from a cluster of legitimately heavy tests (serialize
+round-trips, GGUF loaders — each briefly a few GB live) whose freed pages the runtime holds under
+lazy MADV_FREE and never reclaims across the following tests. GODEBUG=madvdontneed=1 would return
+them eagerly but can only be set at process start; debug.FreeOSMemory() does the same on demand,
+and is CHEAP here because it does a GC over a live heap that is only ~4 MB — the cost is the
+madvise of freed spans, not a scan. Every ~3s keeps the peak near a single test's working set.
+stop() ends it (before the post-suite probe, so its GCs don't muddy the FreeOSMemory delta).
+Disable with GOINFER_TEST_MEMLIMIT=off (same knob as the soft limit).
+```
+
+## TestSwapWatch_keyingOnRSSWouldHaveMissedR11c
+
+Moved from `decoder/swapwatch_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestSwapWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check
+docs/tasks/task-never-swap-2026-09.md S3 asks for, encoded as a test so the mistake it guards
+against cannot come back silently. CLAUDE.md: "A guard that INVERTS under the condition it
+exists for is worse than no guard — it actively reassures." The real R11(c) run
+(docs/measurements/metal-moe-autopager-m26-2026-09-20.md) measured, in the SAME build, both
+figures below: swap-used genuinely grew from 2.3 to 12 GB and NEVER came back down, while the
+test's own RSS reading went "7 MB -> 892 MB -> falling" — because darwin reclaims MTLBuffer
+pages under pressure as fast as they are written, so RSS reports what survived, not what was
+asked for (S0's own reading of this run). Run BOTH trajectories through the exact same watch:
+a swap-keyed watch never resumes (correct — the machine never stopped losing memory); an
+RSS-keyed watch resumes mid-spiral, because its own falling tail reads as recovery. That
+resume-while-still-losing is the inversion, shown directly rather than argued.
+```
+
+## theta_probe_test.header
+
+Moved from `decoder/theta_probe_test.go` (the comment above thetaFit) on 2026-10-09.
+
+```text
+---------------------------------------------------------------------------
+Theta — the marginal cost of one extra verify node, measured.
+
+spec_adaptive.go's own words: "Theta is the relative cost of one extra verify
+node on *this backend* — measure it." The shipped default is 0.5, described as
+the batched-CPU ForwardN value. It has never been measured on any backend; the
+GPU-resident path uses the CPU constant today (docs/spec/02).
+
+DEFINITION, so the CPU control and the CUDA probe compute the same number:
+
+	T(n)  = wall time of one verify pass over n tokens at a fixed context depth
+	Theta = dT/dn / T(1)
+
+i.e. the slope of T(n) expressed in units of one single-token target step. The
+AdaptiveDepth rule D = floor(ln Theta / ln alpha) is exactly "extend while the
+chance of reaching depth d beats the marginal node cost", so this is the
+quantity the controller wants.
+
+THIS FILE IS THE CONTROL. It measures Theta on the staged CPU path, where the
+design says it should come out ~0.5. If the instrument cannot reproduce the one
+value already believed, its answer on CUDA is not trustworthy either — that is
+the whole reason the control exists and runs first.
+---------------------------------------------------------------------------
+```
+
+## TestMatmulInt4_MConsistent
+
+Moved from `decoder/w4a8_prefill_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestMatmulInt4_MConsistent verifies the int4 weight matmul gives bit-identical
+per-row results at M=1 (decode) and M=K (prefill). This holds only because both
+now run the W4A8 integer kernel (weightmat.go): before prefill was routed onto
+MatmulBTW4A8 it used the f32-activation MatmulBTQ4, so the two paths differed.
+The W4A8 dot product for a given (row, output) is independent of M, so the
+match is exact — this is the self-contained gate for the prefill→W4A8 switch
+and the prefill↔decode numerics-seam removal.
+```
+
+## TestRow4_coldTouchLatency
+
+Moved from `decoder/w4a8_row4_coldtouch_probe_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestRow4_coldTouchLatency is the experiment the first two ruled-out hypotheses
+(mmap-vs-heap: +1.7% noise; row4-vs-canonical on gemma4 shapes: row4 is +57-67%
+FASTER, matching the original 1.6-1.75x claim) point to directly: both of those
+tests reused the SAME small set of already-resident experts thousands of times,
+so they measured warm, steady-state kernel speed -- never the real production path
+(expertPager.touch() -> WILLNEED -> matmul) on a genuinely cold, first-ever touch.
+Real decode touches ~240 DISTINCT experts per token under a real cache budget; this
+test replicates that shape directly: many distinct experts, each touched exactly
+once, through the real pager, comparing kind-3 (canonical dispatch) against kind-4
+(row4 dispatch) per-touch latency.
+```
+
+## TestW4A8Row4GiwKind_loadTimeAndMemoryDelta
+
+Moved from `decoder/w4a8_row4_giwkind_loadcost_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestW4A8Row4GiwKind_loadTimeAndMemoryDelta measures the comparison the .giw
+kind-4 decision actually turns on: not kind-3-.giw vs kind-4-.giw load time
+(neither does an in-RAM repack — repackW4A8Row4IfEligible is wired only into
+the GGUF/safetensors streaming loaders, never into LoadSerializedWeights,
+docs/completed/task-w4a8-neon-bandwidth.md), but a GGUF load that pays the in-RAM
+repack cost (TestW4A8Row4_loadTimeAndMemoryDelta's own +100ms/+223.6MB
+numbers, on the same fixture) vs. a kind-4 .giw load that gets Int4Row4()
+populated for FREE — zero-copy mmap alias, no repack computation, per
+WrapInt4Row4's own contract.
+
+Same rigor as the sibling test: order-alternated best-of-3, real 0.5B GGUF
+fixture, informational (not a pass/fail gate).
+```
+
+## TestW4A8Row4_skippedForMetalBackend
+
+Moved from `decoder/w4a8_row4_metalskip_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestW4A8Row4_skippedForMetalBackend is the end-to-end wiring proof for M-07 (audit-
+metal-2026-09-12.md): a Backend:"metal" load must have NO row4 layout on its Q/K/V/gate/up
+projections (isBatchedProjTensor's five standard names — quantizeBatchedProjWM's own scope),
+while a Backend:""  (unspecified) load on the SAME checkpoint keeps row4 on those same tensors
+exactly as before this change. o_proj/down_proj are ALSO now row4-free on Metal (M-07's second
+half, 2026-09-13: quantizeWMSkipRow4 threaded through quantizeWM's ~40 family-specific call
+sites) — see TestW4A8Row4_skippedForMetalBackend_MoE for router/expert coverage, which this
+dense-only fixture doesn't exercise.
+```
+
+## TestRow4_mmapVsHeapResident
+
+Moved from `decoder/w4a8_row4_mmapvheap_probe_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestRow4_mmapVsHeapResident is the discriminating experiment: same kernel, same
+bytes, one variable (memory source), on a HANDFUL of experts -- not the whole
+model. The first version of this test heapified all ~7680 expert tensors at once
+(~14 GB of fresh heap on this 16 GB box) and drove the machine into severe swap
+thrashing (15 of 16 GB swap used) before being killed; this version times raw
+MatmulBTW4A8Into calls directly on a small, fixed set of experts instead of running
+full model decode, keeping the extra heap footprint under 100 MB.
+
+The resident-path 1.6-1.75x figure (docs/completed/task-w4a8-neon-bandwidth.md) was measured
+against heap-resident repacked bytes (RepackInt4Row4, the GGUF/safetensors streaming
+loaders). The kind-4 .giw path's row4 bytes are mmap-aliased even when NOT paged (no
+StreamWeights) -- Load() always mmaps a .giw file read-only regardless of streaming
+mode. If mmap-resident calls are slower than heap-resident calls on the identical
+bytes, the quiet-machine gemma4 gap (docs/completed/task-zeno-compare.md's "Quiet-machine
+re-measure") is memory-source mechanics (TLB/page-fault residue on mapped pages),
+not paging-machinery overhead.
+```
+
+## TestRow4_vsCanonical_gemma4Shapes
+
+Moved from `decoder/w4a8_row4_vs_canonical_probe_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestRow4_vsCanonical_gemma4Shapes is the follow-up the mmap-vs-heap result directly
+suggests: memory source is ruled out (TestRow4_mmapVsHeapResident, +1.7% noise), so
+if gemma4's paged decode is still ~47-49% slower with kind-4 than kind-3
+(docs/completed/task-zeno-compare.md's "Quiet-machine re-measure"), the remaining candidate is
+that the row4 kernel itself is not faster than canonical on THESE SPECIFIC expert
+shapes -- the original 1.6-1.75x figure (docs/completed/task-w4a8-neon-bandwidth.md) may have
+been measured on different tensor dimensions. Calls both free-function kernels
+directly on the same real gemma4 expert bytes, same activation, same dst -- isolates
+kernel choice as the only variable.
+```
+
+## TestRow4GiwKind_qwen35_pagedEviction
+
+Moved from `decoder/w4a8_row4_realmodel_test.go` (the comment above the budget const) on 2026-10-09.
+
+```text
+Post-fix, a kind-4 bundle registers only ONE span per expert (row4 when usable,
+canonical otherwise) -- the pageable total is back to matching kind-3's ~15.6 GB,
+not the pre-fix doubled ~31.2 GB. 3 GB (~19% residency) forces real eviction over
+a 40-token run without landing in the near-zero-residency, all-miss regime.
+```
+
+## TestResidentWeightBytesPaged_capsAtSlots
+
+Moved from `decoder/weightbytes_test.go` (the comment above the test) on 2026-10-09.
+
+```text
+TestResidentWeightBytesPaged_capsAtSlots is M-02's break-it-first gate for the accounting half
+of the fix: before it, the guard always used the unpaged sum, so a model that would fit under
+GOINFER_METAL_MOE_SLOTS paging (a few GB) was declined on the number it would need fully
+resident (tens of GB, per the audit's Qwen3.5-35B-A3B example). Verifies three properties, then
+cross-checks the exact paged byte count against an independently-written per-layer formula
+rather than trusting the production code's own arithmetic.
+```
+
+## TestLoadWeights_goldenChecksums
+
+Moved from `decoder/weights_test.go` (the comment above the P13 arms loop) on 2026-10-09.
+
+```text
+Run BOTH sides of P13, because they answer different questions and only
+one of them existed before P13 did.
+
+  p13_off     — the source mapping is retained, so every assertion below
+                runs, INCLUDING the stored-dtype check that proves the
+                BF16 widen path ran. That check reads w.st, which P13
+                closes by default, so without this arm it would quietly
+                stop running rather than fail.
+  p13_default — the shipped path, where the mapping is released at end of
+                load. The checksums here are what says that releasing it
+                did not corrupt the weights already loaded out of it,
+                which is the one thing P13 could plausibly break and the
+                exact risk mmapAliasRisk is guarding.
+
+P13 closing w.st is also why this test panicked rather than failed when it
+was first run against a checkpoint: the Mac skips it for want of the asset,
+so the nil deref only ever appeared on the box.
+```
+
+## TestSpecHitRate.input
+
+Moved from `decoder/spec_hitrate_probe_test.go` (the comment above the input-stream setup) on 2026-10-09.
+
+```text
+TRUSTWORTHY input needs a REAL, diverse token stream. This box has no in-package tokenizer, and
+self-generated text from the 26B BASE model (greedy OR temp=1.0 top-k=40 sampling) degenerates
+into a low-entropy loop (4–12% distinct tokens) whose expert-locality is NOT representative of
+real generation. So the primary path is GOINFER_SPEC_TOKENS=<file of whitespace-separated real
+token ids> (e.g. a corpus tokenized elsewhere / on the box), teacher-forced. Absent that, it
+falls back to seeded sampling and LOUDLY flags the result as unrepresentative.
+```
+
+## TestSpecHitRate.giwpath
+
+Moved from `decoder/spec_hitrate_probe_test.go` (the comment above the GOINFER_SPEC_PROBE_GIW read) on 2026-10-09.
+
+```text
+N-41: was a hardcoded /Users/<me>/ path — the last surviving dev-home path after G-06,
+so this probe could only ever run on one machine and silently did nothing anywhere else.
+```
+
+## benchFilterFreshScratch
+
+Moved from `decoder/sampler_selection_test.go` (the comment above the function) on 2026-10-09.
+
+```text
+benchFilterFreshScratch is the PRE-P10 shape: a fresh full-vocab buffer per call, which is what
+sampleChunked/chunkedZ did before 4da116d. Paired against benchFilter's reused scratch this
+isolates P10 itself, rather than the optimized path as a whole — the existing Ref/New pair
+compares two different algorithms and cannot answer the G26 question.
+```
