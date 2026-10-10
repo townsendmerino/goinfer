@@ -471,6 +471,38 @@ exactly that.
 
   A kill means the parallelism is not happening, or the kernel is no faster. It goes back to T0's profile, not to a
   wider band. T6 ships on G-T1 alone, because it only removes work; its ratio is recorded.
+- **G-T2c, the copy floor (the same night runs; recorded, not gated).** Added 2026-10-10 at the owner's request, before
+  any G-T2 run and before any T1–T5 code. It answers "how close to a file copy is the transcode", which new/old cannot.
+  - **Two copies per cell, timed inside the same ABAB sequence** (old, new, copy; then new, old, copy), in the directory
+    the sidecar is written to:
+    - **C-src, a real copy of the source:** `dd if=<source> of=<dir>/copyfloor.tmp bs=8m` (for a directory source,
+      each shard in turn, summed), then delete it.
+    - **C-io, the transcode's own I/O with no compute:** read the source to `/dev/null`, then `dd` the old arm's
+      output `.giw` to a temp file. These are the bytes a perfect transcode reads and writes.
+    - No fsync in either, matching the transcode, which closes its file without one. The page cache is warm exactly as
+      for the transcode arms.
+  - **Never `cp`.** On the Mac's APFS, `cp -c` and a Finder duplicate clone the file. On nobara, Fedora's default btrfs
+    plus coreutils' `cp --reflink=auto` default does the same. A clone finishes in milliseconds and measures nothing.
+  - **Disk space first.** C-src needs the source's size free (about 62 GB for the 30B). If free space is under the
+    source plus 10%, skip C-src for that cell and record why. C-io needs only the output's size.
+  - **Reported:** paired ratios old/C-src, new/C-src, old/C-io and new/C-io per cell.
+  - **Projections, written before the runs.** These use spec-sheet disk speeds: about 4–5 GB/s on the Mac's internal
+    SSD, an assumed 2–3.5 GB/s for nobara's NVMe (model not recorded). C-io in seconds, then transcode/C-io:
+
+    | cell | C-io | today | after T | after T + T4b |
+    |---|---|---|---|---|
+    | 1.5B int4, Mac cpu-arm64 | 0.5–1 s | 20–40× | 4–12× | 2–6× |
+    | 7B int4, nobara cpu-amd64 | 3–6 s | 15–30× | 3–10× | 2–6× |
+    | Qwen3-VL-30B-A3B int4 dir, nobara | 20–40 s | 17–33× | 3–8× | 2–5× |
+
+    The 30B writes 16.7 GB from a 62 GB source, so after T4b it may finish faster than C-src, its source's own copy
+    (about 40–70 s). Record whether it does.
+  - **Consequence (registered).** If new/C-io after T4b stays above 3× on either dense cell, open a follow-up for the two
+    levers this doc leaves out, re-ranked from T0's profile at that point:
+    - vectorized Q4_K/Q6_K dequantization in aikit;
+    - writing one window of layers while the next is built.
+
+    At 3× or below, the transcode is near its disk floor and no follow-up opens.
 - **G-T3, memory (the same night runs).** Peak footprint (`/usr/bin/time -l` on the Mac, `-v` on Linux).
   - Dense: at most the old peak plus 1.5× K layers' bytes, and never above Decision 3's budget.
   - MoE: at most the old peak plus workers × 3 × one expert's f32.
@@ -502,14 +534,14 @@ exactly that.
 
 The first night grades T; a later night grades V.
 
-- **T, nobara, about 45 min:**
+- **T, nobara, about 50 min** (G-T2c's copies add about 5, almost all of it the 30B's):
   - 1.5B and 7B int4 cpu-amd64, three ABAB pairs each: old about 20 s and 90 s, new about 5 s and 20 s, so about 7
     minutes.
   - 7B cuda target, two pairs: about 5 minutes.
   - Qwen3-VL-30B-A3B int4 directory, one warm-up per arm plus two pairs: old 11 minutes, new about 2, so about 30
     minutes.
-  - G-T1's real cells ride the same runs (the sha256 of each written file).
-- **T, Mac, about 12 min:** 1.5B int4 cpu-arm64 and Metal targets, three pairs each (about 4 minutes); 7B int4 Metal,
+  - G-T1's real cells and G-T2c's copies ride the same runs (the sha256 of each written file; the two `dd` copies).
+- **T, Mac, about 13 min** (G-T2c included): 1.5B int4 cpu-arm64 and Metal targets, three pairs each (about 4 minutes); 7B int4 Metal,
   two pairs (about 8 minutes).
 - **V, about 15 min:** G-V1 and G-V3 on the Mac's 1.5B and 7B Metal sidecars (about 8 minutes); G-V1 on nobara's 7B
   cuda and cpu-amd64 sidecars (about 5 minutes); G-V2's real sizes ride the same runs.
