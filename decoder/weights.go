@@ -1560,9 +1560,10 @@ func fusedLayout(name string, shape []int, nExpert, a, b int) (transposed bool, 
 // Qwen3.5-MoE row layout ([E, 2I, H] and [E, H, I]) or transformers 4.57's transposed one ([E, H, 2I] and [E, I, H],
 // Qwen3-VL-MoE's release), decided by shape as HF decides it (fusedLayout).
 //
-// It streams via Tensor.SubF32, one expert at a time, as streamExperts does for gemma4's fused experts: whole-tensor
-// TensorF32 reads would materialize both stacks as f32, a multi-GB transient per layer times every layer parallelLayers
-// has in flight. The experts are built through forExperts.
+// It streams one expert at a time, via Tensor.SubF32 or, for the transposed layout, Tensor.SubF32Transposed, as
+// streamExperts does for gemma4's fused experts: whole-tensor TensorF32 reads would materialize both stacks as f32, a
+// multi-GB transient per layer times every layer parallelLayers has in flight. The experts are built through
+// forExperts.
 func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4 bool, sink *giwWriter) ([]expertWeights, error) {
 	guT, err := st.Tensor(gateUpName)
 	if err != nil {
@@ -1590,50 +1591,52 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	if fusedExpertsTransposedForTest {
 		guTrans, dnTrans = false, false
 	}
+	// A slice read in place from an F32 tensor is a view of the mapping; every other read is a slice of its own.
+	guView, dnView := guT.DType == "F32" && !guTrans, dnT.DType == "F32" && !dnTrans
+	// q quantizes one expert matrix. A matrix that stays f32 and was a view of the mapping gets a slice of its own.
+	q := func(data []float32, rows, cols int, view bool) linalg.WeightMat {
+		var m linalg.WeightMat
+		if skipRow4 {
+			m = quantizeWMSkipRow4(linalg.WrapF32(data, rows, cols), quant)
+		} else {
+			m = quantizeWM(linalg.WrapF32(data, rows, cols), quant)
+		}
+		if f, ok := m.F32(); ok && view {
+			m = linalg.WrapF32(append([]float32(nil), f...), rows, cols)
+		}
+		return m
+	}
 	experts := make([]expertWeights, nExpert)
 	err = forExperts(nExpert, sink, func(e int) error {
-		guE, err := guT.SubF32(e*guStride, guStride)
-		if err != nil {
-			return err
-		}
-		dnE, err := dnT.SubF32(e*downStride, downStride)
-		if err != nil {
-			return err
-		}
+		var guE, dnE []float32
+		var err error
 		if guTrans { // [H, 2I] -> [2I, H]: gate rows first, then up
-			guE = transposeF32(guE, hidden, 2*inter)
+			guE, err = guT.SubF32Transposed(e*guStride, hidden, 2*inter)
+		} else {
+			guE, err = guT.SubF32(e*guStride, guStride)
+		}
+		if err != nil {
+			return err
 		}
 		if dnTrans { // [I, H] -> [H, I]
-			dnE = transposeF32(dnE, inter, hidden)
-		}
-		var gate, up, dn linalg.WeightMat
-		if skipRow4 {
-			gate = quantizeWMSkipRow4(linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden), quant)
-			up = quantizeWMSkipRow4(linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden), quant)
-			dn = quantizeWMSkipRow4(linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter), quant)
+			dnE, err = dnT.SubF32Transposed(e*downStride, inter, hidden)
 		} else {
-			gate = quantizeWM(linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden), quant)
-			up = quantizeWM(linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden), quant)
-			dn = quantizeWM(linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter), quant)
+			dnE, err = dnT.SubF32(e*downStride, downStride)
 		}
-		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
+		if err != nil {
+			return err
+		}
+		experts[e] = expertWeights{
+			Gate: q(guE[:half:half], inter, hidden, guView),
+			Up:   q(guE[half:], inter, hidden, guView),
+			Down: q(dnE, hidden, inter, dnView),
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return experts, nil
-}
-
-// transposeF32 returns the transpose of a row-major [rows, cols] matrix.
-func transposeF32(m []float32, rows, cols int) []float32 {
-	out := make([]float32, len(m))
-	for r := range rows {
-		for c := range cols {
-			out[c*rows+r] = m[r*cols+c]
-		}
-	}
-	return out
 }
 
 // loadGemma4MoE loads one gemma4 layer's parallel dense+MoE FFN sub-block (enable_moe_block) into a gemma4MoEWeights,
