@@ -484,3 +484,38 @@ observed rate is the same order as the model's DECODE rate, so a reader who
 hears "batched" as "fast" is being misled by this string (queue G17; the
 missing parallelism is G16). Say what it is and what it is not.
 ```
+
+## ResidentForward.ForwardN: per-backend paths
+
+Moved from `decoder/residency.go` (the comment above `ForwardN` in `ResidentForward`, as shortened by the pilot) on 2026-10-10.
+
+```text
+ForwardN runs K tokens at consecutive positions startPos..startPos+K-1,
+appending K KV positions and returning K logit rows — the batched verify for
+speculative decoding. Causal: row i attends to positions [0, startPos+i].
+Bit-identical to K sequential Forward calls (TestResidentForwardN_parity), so
+no implementation may change numerics to batch. nil/empty embeddings ⇒ no-op.
+
+"Batched" is an amortization OPPORTUNITY, not a structural guarantee every
+backend takes; each backend reports at load which it took (VerifyPathReporter).
+CUDA runs the whole batch in one weight-stationary pass when prefillCore admits
+the arch (a per-token loop otherwise: DeltaNet, non-int4 projections, geometries
+prefillCore declines); Metal encodes it layer-major into ONE command buffer (a
+per-token loop only for paged MoE); webgpu runs the K steps in one submit. Callers
+should not assume "K rows in" implies "one command buffer out".
+```
+
+## Model.DecodeRunnerEligible
+
+Moved from `decoder/residency.go` (the comment above `DecodeRunnerEligible`, as shortened by the pilot) on 2026-10-10.
+
+```text
+DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate:
+its arch is a shape the uniform-layer resident runners can express (decodeRunnerEligible
+below — own-forward families only once bridged, Granite-4.0-H behind GOINFER_SSM_RESIDENT,
+Nemotron-H's MoE block only on webgpu) and the load-time precision policy admits it
+(Nemotron-H is int4-only by default). It is not the whole answer: the per-backend gates —
+implemented features, MoE router capacity, per-layer geometry, Gemma 4 MoE — are
+residentGateReason's (features.go), and residentAdmission runs both. A decline → CPU (or
+webgpu's staged path).
+```

@@ -20,23 +20,16 @@ import (
 // History: docs/code-notes/decoder.md#isWebGPUBackend.
 func isWebGPUBackend(name string) bool { return strings.HasPrefix(name, "webgpu") }
 
-// GPU full-residency decode support. When a backend implements ResidencyBackend (cuda, metal,
-// webgpu) and admits the model — withResidency → residentAdmission: the runner-shape gate
-// (DecodeRunnerEligible), then every gate ResidentEligible applies (features.go) — the whole
-// per-token forward runs on the device through the backend's ResidentForward, instead of on the
-// CPU (or, on webgpu only, the per-matmul staged path). This file is the decoder-side seam: the
-// interfaces the backends implement, the admission gates, and (in generateInto) the routing.
-// Sampler / constrain / Session bookkeeping stay CPU-side — they consume the logits (or the
+// GPU full-residency decode support. When a backend implements ResidencyBackend (cuda, metal, webgpu) and admits the
+// model (withResidency → residentAdmission), the whole per-token forward runs on the device through the backend's
+// ResidentForward. This file is the decoder-side seam: the interfaces the backends implement, the admission gates, and
+// (in generateInto) the routing. Sampler, constrain and Session bookkeeping stay CPU-side and consume the logits (or
 // device-sampled ids) that come back.
 //
-// Scope:
-//   - the stateless Model.Generate path runs resident (so does an adapter Session's first turn,
-//     G3). It reuses the prefix already committed to the resident KV (resident_reuse.go) and
-//     prefills the rest with the backend's batched Prefiller where it has one. A plain Session
-//     drives a CPU-side KVCache the resident KV cannot share, so its turns stay on the CPU/staged
-//     path — which is why serve sends resident models down the stateless path (internal/serveapp,
-//     loadedModel.drive).
-//   - speculative verify on a resident model runs through ForwardN (below).
+// The stateless Model.Generate path runs resident, reusing the prefix already committed to the resident KV
+// (resident_reuse.go) and prefilling the rest with the backend's batched Prefiller where it has one. A plain Session
+// drives a CPU-side KVCache the resident KV cannot share, so its turns stay on the CPU/staged path (serve sends
+// resident models down the stateless path: loadedModel.drive). Speculative verify runs through ForwardN.
 
 // ResidentForward is one token's GPU forward: embedding[hidden] in, logits[vocab]
 // out, with the model + KV resident on the device. Implemented by the gpu package.
@@ -44,19 +37,13 @@ type ResidentForward interface {
 	// Forward runs token-at-pos: returns logits for the embedding at absolute
 	// position pos (the runner appends this position's K/V to its resident cache).
 	Forward(embedding []float32, pos int) (logits []float32, err error)
-	// ForwardN runs K tokens at consecutive positions startPos..startPos+K-1,
-	// appending K KV positions and returning K logit rows — the batched verify for
-	// speculative decoding. Causal: row i attends to positions [0, startPos+i].
-	// Bit-identical to K sequential Forward calls (TestResidentForwardN_parity), so
-	// no implementation may change numerics to batch. nil/empty embeddings ⇒ no-op.
+	// ForwardN runs K tokens at consecutive positions startPos..startPos+K-1, appending K KV positions and returning K
+	// logit rows — the batched verify for speculative decoding. Causal: row i attends to positions [0, startPos+i].
+	// Bit-identical to K sequential Forward calls (TestResidentForwardN_parity), so no implementation may change numerics
+	// to batch. nil/empty embeddings ⇒ no-op.
 	//
-	// "Batched" is an amortization OPPORTUNITY, not a structural guarantee every
-	// backend takes; each backend reports at load which it took (VerifyPathReporter).
-	// CUDA runs the whole batch in one weight-stationary pass when prefillCore admits
-	// the arch (a per-token loop otherwise: DeltaNet, non-int4 projections, geometries
-	// prefillCore declines); Metal encodes it layer-major into ONE command buffer (a
-	// per-token loop only for paged MoE); webgpu runs the K steps in one submit. Callers
-	// should not assume "K rows in" implies "one command buffer out".
+	// "Batched" is an amortization opportunity, not a guarantee: each backend reports at load which path it took
+	// (VerifyPathReporter). Callers must not assume "K rows in" means "one command buffer out".
 	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
 	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim]) into the resident GPU
 	// caches at absolute positions base..base+n-1 — the prefill bridge. base is normally 0
@@ -240,30 +227,23 @@ type Prefiller interface {
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
-// ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at
-// positions startPos..startPos+len-1 and return the LAST position's hidden state AFTER the
-// model's final norm — the resident twin of Prefiller, stopping before the LM head instead of
-// after it (decoder/embed.go's HiddenLast never needs logits, and the head is the single most
-// expensive matmul in a forward). Used by HiddenLast (docs/tasks/task-gpu-paths-2026-09.md, G4),
-// so an embedding request on a GPU box does not run the whole text decoder on the CPU.
-//
-// startPos is 0 for HiddenLast's callers today, but the parameter mirrors Prefiller's. Bit-identical
-// to the CPU path is the bar (embed.go's own doc comment): a backend whose batched forward is NOT
-// bit-identical to its own sequential one must implement this as a per-token sequential forward
-// that stops before the head, or not at all — never reuse a declining Prefiller.
+// ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
+// startPos..startPos+len-1 and return the LAST position's hidden state AFTER the model's final norm — the resident
+// twin of Prefiller, stopping before the LM head. Used by HiddenLast (G4) so an embedding request on a GPU box does
+// not run the whole text decoder on the CPU. Bit-identical to the CPU path is the bar (embed.go): a backend whose
+// batched forward is not bit-identical to its own sequential one must implement this as a per-token forward that
+// stops before the head, or not at all, never reuse a declining Prefiller.
 type ResidentHiddenLast interface {
 	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
 }
 
-// ResidentResidualAll is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions startPos..startPos+len-1 and return the residual stream of EVERY
-// row after the last layer and BEFORE the final norm, [len][hidden] f32, each row a fresh slice the caller owns. It is the resident twin of what
-// Model.PromptHiddenAll computes on the CPU (D11's follow-up, docs/tasks/task-constrained-confidence.md Route C: the Clef joint head reads every position's final-norm hidden
-// state), and it deliberately stops BEFORE the norm: the decoder applies the final norm on the host, in f32, exactly as its CPU path does. ResidentHiddenLast cannot serve
-// this: it returns the post-norm vector of the LAST row only, and on CUDA that vector has been through the int8 activation quantization the LM head reads, which a head that
-// consumes the hidden state itself should not inherit.
-//
-// startPos is 0 for the callers today (a fresh sequence, no prefix reuse). A backend whose batched forward is not what its decode computes must take the exact path here, as
-// ResidentHiddenLast's contract says; a decline (an OOM, a cap, a family the backend does not cover) falls back to the CPU, a cancellation returns.
+// ResidentResidualAll is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
+// startPos..startPos+len-1 and return the residual stream of EVERY row after the last layer and BEFORE the final
+// norm, [len][hidden] f32, each row a fresh slice the caller owns: the resident twin of Model.PromptHiddenAll
+// (docs/tasks/task-constrained-confidence.md, Route C). It stops before the norm because the decoder applies it on
+// the host in f32, as its CPU path does; ResidentHiddenLast cannot serve this (post-norm, last row only, and on CUDA
+// already through the int8 activation quantization). A backend whose batched forward is not what its decode computes
+// must take the exact path; a decline falls back to the CPU, a cancellation returns.
 type ResidentResidualAll interface {
 	ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) (residuals [][]float32, err error)
 }
@@ -319,18 +299,12 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 }
 
 // ResidentImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a contiguous
-// [imgStart,imgEnd) sub-range (Gemma 3's image-block mask, decoder/kvcache.go's SetImageBlocks/attendHi), the
-// resident twin of prefillLogitsVL's CPU forward (decoder/forwardn.go). GenerateVL's cold path tries this before
-// paying for the CPU prefill; without it, or on any decline, that turn takes the CPU-prefill-then-UploadKV
-// bridge (docs/multimodal.md).
-//
-// embeddings are the ALREADY-SPLICED per-position vectors (the text embedding lookup with the projected vision
-// features overwritten at [imgStart,imgEnd), no embed scale, as HF's masked_scatter), so no GPU-side embedding
-// table is needed.
-//
-// The whole prompt, image block included, must fit in ONE weight-stationary pass; a longer prompt or any other
-// decline returns an error rather than chunking, because a bidirectional block split across a chunk boundary is
-// unverified. cuda and metal implement it; webgpu image turns take the bridge (residentUploadPrefill).
+// [imgStart,imgEnd) sub-range (Gemma 3's image-block mask, SetImageBlocks/attendHi in decoder/kvcache.go), the
+// resident twin of prefillLogitsVL's CPU forward. embeddings are the ALREADY-SPLICED per-position vectors (text
+// embeddings with the projected vision features overwritten at [imgStart,imgEnd), no embed scale). The whole prompt,
+// image block included, must fit in ONE weight-stationary pass; a longer prompt or any other decline returns an
+// error rather than chunking, because a bidirectional block split across a chunk boundary is unverified. Without it
+// GenerateVL takes the CPU-prefill-then-UploadKV bridge (docs/multimodal.md).
 type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
@@ -354,16 +328,12 @@ type ResidentHybridMRoPEPrefill interface {
 }
 
 // ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
-// positions, the resident twin of prefillLogitsQwenVL's CPU forward (decoder/forwardn.go). Distinct from
-// ResidentMRoPE (decode's single-scalar ropePos split): this needs every row's own 3-component position up front.
-//
-// embeddings are the ALREADY-SPLICED per-position vectors (ResidentImagePrefill's convention). mropePos is
-// decoder/rope.go's mropePositions output, one (t,h,w) triple per ABSOLUTE sequence position over the WHOLE
-// prompt, which GenerateQwenVL already computes, so a backend must not re-derive it.
-//
-// UNLIKE ResidentImagePrefill, implementations MAY chunk: Qwen's image tokens attend causally and each row's
-// rotation is independent of every other row's, so a chunk boundary breaks nothing. Without it GenerateQwenVL's
-// m-RoPE prefill falls back to the CPU-prefill+UploadKV bridge.
+// positions, the resident twin of prefillLogitsQwenVL's CPU forward. Unlike ResidentMRoPE (decode's single ropePos
+// split) it needs every row's own position up front: mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
+// triple per ABSOLUTE position over the WHOLE prompt, which GenerateQwenVL already computes, so a backend must not
+// re-derive it. embeddings are the ALREADY-SPLICED vectors (ResidentImagePrefill's convention). Unlike it,
+// implementations MAY chunk: Qwen's image tokens attend causally and each row's rotation is independent. Without it
+// GenerateQwenVL falls back to the CPU-prefill+UploadKV bridge.
 type ResidentMRoPEPrefill interface {
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
@@ -377,15 +347,11 @@ type ResidentMRoPEDeepstackPrefill interface {
 	PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) (logits []float32, err error)
 }
 
-// PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
-// prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
-// Prefiller contract declines per call (arch/geometry/quant) and generateInto's fallback is silent
-// by design, so a decline is a large, invisible TTFT regression (a cuda int8int8 model takes the
-// per-token prefill; the batched GEMV is int4-only). Backends implement this so serve can state the
-// resolved prefill path at startup.
-//
-// reason is a human-readable phrase naming the ACTUAL condition and its cost, not "declined" —
-// e.g. "batched prefill requires int4 projections (int8int8 at layer 0)".
+// PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched prefill will be
+// taken for THIS model, and when it won't, why and what that costs. Prefiller declines per call and generateInto's
+// fallback is silent by design, so a decline is a large, invisible TTFT regression; serve states the resolved path at
+// startup. reason names the ACTUAL condition and its cost, not "declined", e.g. "batched prefill requires int4
+// projections (int8int8 at layer 0)".
 type PrefillPathReporter interface {
 	PrefillPath() (batched bool, reason string)
 }
@@ -487,14 +453,10 @@ func IsResidentDecline(err error) bool {
 	return errors.As(err, &d)
 }
 
-// DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate:
-// its arch is a shape the uniform-layer resident runners can express (decodeRunnerEligible
-// below — own-forward families only once bridged, Granite-4.0-H behind GOINFER_SSM_RESIDENT,
-// Nemotron-H's MoE block only on webgpu) and the load-time precision policy admits it
-// (Nemotron-H is int4-only by default). It is not the whole answer: the per-backend gates —
-// implemented features, MoE router capacity, per-layer geometry, Gemma 4 MoE — are
-// residentGateReason's (features.go), and residentAdmission runs both. A decline → CPU (or
-// webgpu's staged path).
+// DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate: its arch is a shape the
+// uniform-layer resident runners can express (decodeRunnerEligible) and the load-time precision policy admits it.
+// The per-backend gates (implemented features, MoE router capacity, per-layer geometry) are residentGateReason's
+// (features.go); residentAdmission runs both. A decline → CPU (or webgpu's staged path).
 func (m *Model) DecodeRunnerEligible() bool { return m.decodeRunnerDecline() == "" }
 
 // decodeRunnerDecline is DecodeRunnerEligible with its reason: "" when the arch is a shape the resident
@@ -601,23 +563,16 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// (FeatAttnSink) and the MoE bias-in-combine kernels are backend feature gates, not an
 		// arch-level decline, so a backend without them declines there instead of here.
 	case a.gemma4 != nil:
-		// Gemma 4 is admitted UNCONDITIONALLY. Do not re-gate a family on an env var without a gate behind
-		// it: the flag reads as caution and functions as a coverage hole. The gates behind this admission are
-		// cuda.TestGemma4MoEScaled_residentParity and TestGemma4DenseScaled_residentParity (real head dims
-		// and hidden/moe_inter geometry, asserting the calibrated CPU curve). Dense and MoE both fall through
-		// to the common checks below; softcap is a per-backend feature gate, so WebGPU declines on its own
-		// terms. The parallel dense‖MoE FFN (enable_moe_block) runs on its own cuda path (gemma4MoeMLP),
-		// routed around the generic MoE checks via HasGemma4MoEResident. An E-model (PLE) is admitted only
-		// by a backend that implements FeatGemma4EModel (TestGemma4EModel_realDeclinesResident).
+		// Gemma 4 is admitted UNCONDITIONALLY: do not re-gate a family on an env var without a gate behind it (the flag reads
+		// as caution and functions as a coverage hole). The gates are cuda.TestGemma4MoEScaled_residentParity and
+		// TestGemma4DenseScaled_residentParity. Dense and MoE both fall through to the common checks below; softcap and the
+		// E-model's PLE (FeatGemma4EModel) are per-backend feature gates. The parallel dense‖MoE FFN runs on cuda's own path,
+		// routed around the generic MoE checks via HasGemma4MoEResident.
 	case a.qwen35 != nil:
-		// Gated-DeltaNet hybrids fall through, same discipline as gemma4/gpt-oss above: the
-		// recurrence and the fused attention output gate are a BACKEND capability (FeatDeltaNet),
-		// so a backend without them declines at the feature gate rather than here. Falling
-		// through — rather than admitting early — is what keeps the checks below composing; see
-		// the note at the top of this switch.
-		//
-		// Note this covers all three siblings (qwen3_5_moe, qwen3_next, qwen3_5). The MoE ones
-		// additionally need FeatMoE, which they get from the ordinary MoE checks below.
+		// Gated-DeltaNet hybrids (qwen3_5, qwen3_5_moe, qwen3_next) fall through, same discipline as gemma4/gpt-oss: the
+		// recurrence and the fused output gate are a BACKEND capability (FeatDeltaNet), so a backend without them declines at
+		// the feature gate, and falling through is what keeps the checks below composing. The MoE siblings also need FeatMoE,
+		// from the ordinary MoE checks.
 	case a.llama4 != nil:
 		return false // own forward, not yet bridged
 	case a.lfm2 != nil:
@@ -649,15 +604,13 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	if a.MoE != nil && !a.moeResidentEligible() {
 		return false
 	}
-	// FFN / norm / head constraints common to both attention paths: sandwich norms, logit softcap, NonGatedMLP,
-	// LearnedPosEmbed and OutBias are all representable, and a backend that lacks one declines via the feature
-	// gate (FeatSandwichNorm / FeatAttnLogitSoftcap / FeatFinalLogitSoftcap / FeatNonGatedMLP / FeatLearnedPos /
-	// FeatOutBias), not here, so this stays an ARCH-shape predicate and the per-backend answer lives in one place
-	// (decoder/features.go). A capability blocked here for everyone is a family blocked for a backend that already
-	// implements it. GPT-2, the one family with LearnedPosEmbed, has no RoPE (finalizeRoPE leaves both inv-freq
-	// tables nil), so ropeResidentCompatible passes vacuously (0 == 0).
-	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner (gpu/mla.go), so the standard
-	// GQA/RoPE/QK-norm/sliding-window checks don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
+	// FFN / norm / head constraints common to both attention paths (sandwich norms, logit softcap, NonGatedMLP,
+	// LearnedPosEmbed, OutBias) are all representable, and a backend that lacks one declines via the feature gate
+	// (decoder/features.go), not here: this stays an ARCH-shape predicate, because a capability blocked here for everyone
+	// blocks the family for a backend that implements it. GPT-2, the only LearnedPosEmbed family, has no RoPE, so
+	// ropeResidentCompatible passes vacuously.
+	// MLA (DeepSeek/Kimi) runs its own latent-attention path (gpu/mla.go), so the GQA/RoPE/QK-norm/sliding-window checks
+	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
 	if a.mla != nil {
 		return true
 	}
@@ -669,17 +622,11 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	return a.ropeResidentCompatible()
 }
 
-// ropeResidentCompatible is an ARCH-level coarse gate on the GENERIC (finalizeRoPE) local/global
-// inv-freq tables: they must share a length. Gemma passes it trivially — finalizeRoPE builds both
-// from one model-level `rd`, so they are always equal-length — but that is NOT proof the runner
-// can rope Gemma correctly. Gemma's REAL per-layer tables (RopeInvFreqLayerResident: local full,
-// global proportional) genuinely differ in length, which is exactly the inequality this check
-// was written to catch; it just never sees them (it reads the generic tables).
-//
-// So the real per-layer invariant — that each bound invFreq buffer has exactly rhalf entries,
-// the count rope_kv indexes — lives PER LAYER, asserted where the buffer meets the geometry
-// (cuda/backend.go: len(invFreq_l) == rhalf_l), the same shape as the KV-cache guard. This
-// arch gate stays as the cheap legacy screen for families whose generic tables would mismatch.
+// ropeResidentCompatible is a coarse ARCH-level screen on the GENERIC (finalizeRoPE) local/global inv-freq tables:
+// they must share a length. Gemma passes it trivially (both come from one model-level rd), and that is NOT proof the
+// runner ropes Gemma correctly: its REAL per-layer tables (RopeInvFreqLayerResident) differ in length, an inequality
+// this check never sees. The real invariant (each bound invFreq buffer has exactly rhalf entries) is asserted per layer
+// where the buffer meets the geometry (cuda/backend.go).
 func (a *Architecture) ropeResidentCompatible() bool {
 	return len(a.ropeInvFreqLocal) == len(a.ropeInvFreqGlobal)
 }
@@ -706,13 +653,10 @@ func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, nor
 		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, mo.NGroup, mo.TopkGroup, true
 }
 
-// Gemma4MoEResidentBundle is everything the CUDA resident build needs to construct one gemma4
-// enable_moe_block layer (the parallel dense‖MoE FFN). RouterProjScaled has the learned routerScale
-// and the hidden^-0.5 factor FOLDED into its columns, so the resident router is
-// rmsnorm_nw(h) → gemv_f32_f32(RouterProjScaled) → moe_route — bit-identical scores to the CPU
-// rn = weightlessNorm(h)·routerScale·hidden^-0.5 ; scores = routerProj·rn (fold is exact in f32:
-// Σ_i proj[e,i]·(scale_i·norm_i) = Σ_i (proj[e,i]·scale_i)·norm_i). Weight-matrix pointers alias the
-// model's tensors (read-only, for packing).
+// Gemma4MoEResidentBundle is everything the CUDA resident build needs to construct one gemma4 enable_moe_block layer
+// (the parallel dense‖MoE FFN). RouterProjScaled has the learned routerScale and the hidden^-0.5 factor FOLDED into its
+// columns (exact in f32), so the resident router is rmsnorm_nw(h) → gemv_f32_f32(RouterProjScaled) → moe_route with
+// scores bit-identical to the CPU's. Weight-matrix pointers alias the model's tensors (read-only, for packing).
 type Gemma4MoEResidentBundle struct {
 	PreFFNNorm, PostFFNNorm1, PreFFNNorm2, PostFFNNorm2, PostFFNNorm []float32           // the 5 RMSNorm weights
 	MlpGate, MlpUp, MlpDown                                          *linalg.WeightMat   // parallel dense branch
@@ -874,13 +818,11 @@ func (m *Model) VFromKResident(i int) bool {
 	return i >= 0 && i < len(m.w.Layers) && m.w.Layers[i].VFromK
 }
 
-// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerScalar,
-// forward_gemma4.go's own `if lw.LayerScalar != 0 { h[i] *= lw.LayerScalar }`, applied AFTER the
-// dense MLP residual add and the PLE branch) for a PLAIN DENSE gemma4 layer — NOT the MoE
-// (enable_moe_block) case, which already carries its own copy via Gemma4MoEResidentBundle.
-// LayerScalar defaults to 1 when a checkpoint's tensor is absent (weights.go), so this is a
-// real, always-present multiply for every dense gemma4 layer, not an edge case. Returns 0 (the
-// CPU forward's own "skip" sentinel) for a non-gemma4 model or an out-of-range index.
+// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerScalar, applied AFTER the dense
+// MLP residual add and the PLE branch, as forward_gemma4.go does) for a PLAIN DENSE gemma4 layer; the MoE case carries
+// its own copy in Gemma4MoEResidentBundle. LayerScalar defaults to 1 when the tensor is absent, so this is a real
+// multiply for every dense gemma4 layer. Returns 0 (the CPU forward's "skip" sentinel) for a non-gemma4 model or an
+// out-of-range index.
 func (m *Model) Gemma4DenseLayerScalarAtResident(i int) float32 {
 	if m.w.arch.gemma4 == nil || i < 0 || i >= len(m.w.Layers) {
 		return 0
@@ -895,14 +837,11 @@ func (m *Model) Gemma4DenseLayerScalarAtResident(i int) float32 {
 // every gemma4 checkpoint with SharedKVLayers==0, e.g. 26B-A4B/31B) returns i unconditionally.
 func (m *Model) KVSrcAtResident(i int) int { return m.w.arch.gemma4KVSrcAt(i) }
 
-// RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i,
-// i.e. 2×rhalf. Gemma 4 rotates the FULL head width on every layer (rhalf = headDim/2, pairing
-// d with d+headDim/2 — the "split at headDim/2" convention of applyRoPE and gemma4InvFreq): its
-// GLOBAL layers are proportional/partial, but that is carried by ZERO frequencies in the tail
-// of RopeInvFreqLayerResident, NOT by a shorter rhalf. So this returns headDimAt(i) for gemma4,
-// full width. (rope_kv pairs base[d]/base[d+rhalf] — with rhalf=headDim/2 and the zero-freq tail
-// giving identity rotations, that reproduces gemma4InvFreq exactly.) Uniform families with a
-// genuine contiguous partial-rotary block (GLM/Phi) use the model-level rotary dim.
+// RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i, i.e. 2×rhalf. Gemma 4
+// rotates the FULL head width on every layer (rhalf = headDim/2, the "split at headDim/2" pairing of applyRoPE and
+// gemma4InvFreq); its GLOBAL layers' partial rotation is carried by ZERO frequencies in the tail of
+// RopeInvFreqLayerResident, not by a shorter rhalf, so this returns headDimAt(i). Uniform families with a contiguous
+// partial-rotary block (GLM/Phi) use the model-level rotary dim.
 func (m *Model) RotaryDimAtResident(i int) int {
 	if m.w.arch.gemma4 != nil {
 		return m.w.arch.headDimAt(i) // full-width pairing; partial-ness lives in the invFreq zeros
@@ -971,13 +910,10 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 // non-YaRN layers) — folded into the resident rope kernel per layer.
 func (m *Model) RopeMscaleLayer(i int) float64 { return m.w.arch.ropeMscale(i) }
 
-// AttnTempScale returns the query-side attention-temperature scale (Ministral 3's
-// AttnTempBeta/AttnTempOrigMaxPos — see that field's own comment for the formula and its
-// own-family caveats) for the resident forward at absolute position pos. G5
-// (docs/tasks/task-gpu-paths-2026-09.md), FeatAttnTemp. 1 (no-op) for every family without it — the
-// SAME beta==0 guard decoder/attention.go's sequential path uses, load-bearing here too:
-// evaluating the formula unconditionally would divide by AttnTempOrigMaxPos==0 (every family
-// that doesn't set this leaves it at its zero value) and poison Q with NaN.
+// AttnTempScale returns the query-side attention-temperature scale (Ministral 3's AttnTempBeta/AttnTempOrigMaxPos; see
+// that field's comment for the formula) for the resident forward at absolute position pos (FeatAttnTemp). 1 (no-op)
+// for every family without it: the beta==0 guard decoder/attention.go's sequential path uses is load-bearing here too,
+// since the formula would otherwise divide by AttnTempOrigMaxPos==0 and poison Q with NaN.
 func (m *Model) AttnTempScale(pos int) float32 {
 	a := m.w.arch
 	if a.AttnTempBeta == 0 {
@@ -1590,13 +1526,9 @@ func (m *Model) LogitScaleResident() (inv float32, ok bool) {
 // pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
 func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }
 
-// GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident
-// backend, and whether this model is that family at all. ok=false for every other family,
-// which is what a backend branches on to keep using the shared glu_quant path.
-//
-// Exported here rather than reached through arch.gptoss because the backends live in other
-// modules and cannot see unexported descriptor fields — the same reason GatedActResident and
-// FinalLogitSoftcapResident exist.
+// GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident backend and whether this model
+// is that family at all: ok=false for every other family, which is what a backend branches on to keep the shared
+// glu_quant path. Exported because the backends live in other modules and cannot see arch.gptoss.
 func (m *Model) GptOssActResident() (alpha, limit float32, ok bool) {
 	gp := m.w.arch.gptoss
 	if gp == nil {
@@ -1728,14 +1660,11 @@ func (m *Model) BackendReport() string {
 	return s
 }
 
-// int4LayoutSummary reports which int4 layout each tensor CLASS resolved to (aikit's
-// WeightMat.Int4Layout(), per class rather than per tensor — every tensor in one class shares
-// the same needCanonical decision from a single Load call, so one representative per class is
-// the whole story): "int4 layout: row4-only (embed, qkv, gate/up); canonical (down)" —
-// diagnosable by reading this line instead of by a tok/s comparison when a resident or staged
-// build declines for a reason that traces back to wantsCanonicalInt4's decision (M-22). ""
-// when the model has no layers (a degenerate/partial Weights) or nothing in it is int4-resident
-// at all (int8/f32 mode, or every candidate tensor's shape was ineligible for row4).
+// int4LayoutSummary reports which int4 layout each tensor CLASS resolved to (aikit's WeightMat.Int4Layout(), one
+// representative per class, since every tensor in a class shares one needCanonical decision): "int4 layout: row4-only
+// (embed, qkv, gate/up); canonical (down)". Diagnosable from this line instead of a tok/s comparison when a resident or
+// staged build declines for a reason that traces back to wantsCanonicalInt4 (M-22). "" when the model has no layers or
+// nothing in it is int4-resident.
 func (m *Model) int4LayoutSummary() string {
 	if m.w == nil || len(m.w.Layers) == 0 {
 		return ""

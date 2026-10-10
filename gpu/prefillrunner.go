@@ -46,13 +46,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// ropeBatchedShaderWGSL is ropeShaderWGSL (attention.go) widened to M rows in one
-// dispatch: grid (ceil(heads*half/64), M) instead of ropeShaderWGSL's one dispatch
-// per row with a fixed scalar pos. Positions are always contiguous within one
-// PrefillLastW8A8 call (positions[r] = start+r, residency.go's prefillLast closure),
-// so row r's position is recovered as p.start+row — the same theta/cos/sin math per
-// (row, head, d) as calling the M=1 kernel M times, bit-identical by construction,
-// gated by TestRoPEBatched_parity.
+// ropeBatchedShaderWGSL is ropeShaderWGSL (attention.go) widened to M rows in one dispatch, grid (ceil(heads*half/64), M).
+// Positions are contiguous within one PrefillLastW8A8 call, so row r's position is p.start+row. Same per-(row, head, d)
+// math as the M=1 kernel, so bit-identical (TestRoPEBatched_parity).
 const ropeBatchedShaderWGSL = `
 struct P { heads: u32, headDim: u32, half: u32, start: u32, scale: f32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read_write> vec:     array<f32>;  // [M, heads*headDim]
@@ -78,14 +74,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// attnBatchedShaderWGSL is attnShaderWGSL (attention.go) widened to M query rows in
-// one dispatch — grid (nH, M) instead of one dispatch per row with a fixed nKeys.
-// Each row's causal bound is basePos+row+1 (positions are always contiguous within
-// one PrefillLastW8A8 call — positions[r]=start+r, residency.go). No sink support:
-// runModelToModelW already declines any model with FeatAttnSink. Not bit-identical
-// to calling attnShaderWGSL M times in general (independent per-row reductions, so
-// in practice it likely is) — gated on cosine/maxAbs like every other attention
-// kernel pair in this file, not a bit-exact claim.
+// attnBatchedShaderWGSL is attnShaderWGSL (attention.go) widened to M query rows in one dispatch, grid (nH, M); row r's
+// causal bound is basePos+r+1 (positions are contiguous within one PrefillLastW8A8 call). No sink support:
+// runModelToModelW declines FeatAttnSink. Not claimed bit-identical to M calls of attnShaderWGSL: gated on
+// cosine/maxAbs like every attention kernel pair here.
 const attnBatchedShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, basePos: u32, group: u32, scale: f32, m: u32, _p: u32 };
 @group(0) @binding(0) var<storage, read>       q:     array<f32>;  // [M, nH*hd]  (RoPE'd)
@@ -138,13 +130,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// attnKeysBatchedShaderWGSL is attnKeysShaderWGSL (attention.go) widened to M query
-// rows the same way attnBatchedShaderWGSL widens the plain kernel — grid (nH, M),
-// each row's own causal tile loop from key 0 to basePos+row (inclusive). Selected
-// whenever attnKeysEligible(hd, kvDim, false, false) (attention.go), matching
-// attnKernel's own preference for the tiled/key-split decomposition — most real
-// dense architectures (hd and kvDim both multiples of 4) take this path, not the
-// plain kernel above.
+// attnKeysBatchedShaderWGSL is attnKeysShaderWGSL (attention.go) widened to M query rows the way
+// attnBatchedShaderWGSL widens the plain kernel: grid (nH, M), each row's own causal tile loop from key 0 to
+// basePos+row inclusive. Selected whenever attnKeysEligible(hd, kvDim, false, false), matching attnKernel's
+// preference for the tiled/key-split decomposition; most real dense architectures take this path.
 const attnKeysBatchedShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, basePos: u32, group: u32, scale: f32, m: u32, _p: u32 };
 @group(0) @binding(0) var<storage, read>       q4:    array<vec4<f32>>;  // [M, nH*hd/4]  (RoPE'd)
@@ -426,25 +415,14 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	}, true
 }
 
-// PrefillLastW8A8 is the batched-prefill analogue of DecodeTokenFusedBatched: it
-// runs M prompt-token rows through the dense W8A8 layers with weight-heavy
-// PROJECTIONS as ONE tiled GEMM each (weight streamed once across all M rows, via
-// the unbounded-M kernel in gemm.go — DP4A-accelerated when Context.hasDP4A), and
-// the cheap per-row ops (rmsnorm+quant, RoPE, KV-store, attention, SwiGLU,
-// residual) looped over the rows, mirroring DecodeTokenFusedBatched's exact
-// write-all-KV-then-attend structure and Metal command-buffer-cap handling
-// (flushPasses) — the difference is M is NOT capped at gemmRowMaxM (real prompts
-// run to hundreds/thousands of tokens, past gemmRow's array<i32,16> accumulator
-// limit), and only the LAST row's logits are computed (h[M-1] → norm → LM head),
-// matching decoder/forwardn.go's prefillLogits CPU contract and the
-// decoder.Prefiller.PrefillLast interface this feeds — the other M-1 rows' KV
-// entries are still written (the whole prompt's cache is filled either way), just
-// their logits are never needed for prefill and so are never computed.
+// PrefillLastW8A8 is the batched-prefill analogue of DecodeTokenFusedBatched: M prompt-token rows through the dense W8A8
+// layers with each projection as ONE tiled GEMM (the unbounded-M kernel in gemm.go, DP4A when Context.hasDP4A) and the
+// cheap per-row ops looped over the rows, in DecodeTokenFusedBatched's write-all-KV-then-attend order with its
+// flushPasses handling. M is not capped at gemmRowMaxM. Only the last row's logits are computed
+// (decoder.Prefiller.PrefillLast's contract); every row's KV is written.
 //
-// Bit-equivalent to M sequential DecodeRunner.Run calls at positions
-// start..start+M-1: same int8 inputs, same int32 accumulation (the tiled GEMM
-// equals the GEMV, gated bit-exact by TestTiledDP4A_parity), same per-row ops, same
-// KV-then-attend ordering. Gated by TestPrefillLastW8A8_parity.
+// Bit-equivalent to M sequential DecodeRunner.Run calls at positions start..start+M-1 (same int8 inputs, int32
+// accumulation, per-row ops and ordering); gated by TestPrefillLastW8A8_parity and TestTiledDP4A_parity.
 func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([]float32, error) {
 	M := len(xs)
 	if M == 0 {
