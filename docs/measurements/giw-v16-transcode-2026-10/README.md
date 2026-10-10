@@ -423,6 +423,18 @@ Transcode wall over C-io (read the source, write the output, no compute) and ove
   source in the sum (bundle plus source against total memory), or a direct check of what is cached. Not changed
   here; it is an open item for Decision 5. The larger-than-RAM branch has still not run on a real bundle.
 
+## The size rule counts the source, 2026-10-10 (`852ebd3e`): identity and `gate quick` only
+
+After the finding above, the owner chose the first candidate: a bundle is marked only when it and its source together
+are no larger than installed memory. The change is in which bundles get a marker, not in any byte written.
+
+- G-T1, tiny matrix, base `eee75d83`, new `852ebd3e`: 330 IDENTICAL, 0 DIFFERENT, 54 NOT RUN (the same nine
+  directories), 54 s. The real cells were not repeated: no code that writes a bundle changed.
+- `gate quick`: green, 2,315 tests passed.
+- On the T runs' cells the rule now leaves nobara's 30B unmarked (17.5 GB plus 58 GB against 62 GB) and marks the
+  other six. **Not re-measured:** the 30B's self-check time with the CRC back. `gt_night.py` now records the
+  available memory before each transcode, for the next run's G-T3.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
