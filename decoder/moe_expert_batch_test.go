@@ -3,12 +3,56 @@ package decoder
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// moeBenchIDs is the K-token input of the expert-major tests. GOINFER_MOE_BATCH_IDS selects it: "real" (the default) is the first K
+// tokens of docs/ARCHITECTURE.md and docs/flags.md, tokenized with the checkpoint's own tokenizer, so the routing sees the spread of experts a prompt
+// really produces; "periodic" is the 97-token cycle the first P18 record used, which repeats the same tokens (hence the same experts) every cycle and
+// is the best case for grouping rows by expert. The second return is a one-line description for the log.
+func moeBenchIDs(t *testing.T, K int) ([]int, string) {
+	t.Helper()
+	if os.Getenv("GOINFER_MOE_BATCH_IDS") == "periodic" {
+		ids := make([]int, K)
+		for i := range ids {
+			ids[i] = 700 + i%97
+		}
+		return ids, fmt.Sprintf("periodic: 700+i%%97, %d distinct tokens", 97)
+	}
+	tk, err := tokenizer.Load(assetPath(t, "GOINFER_MELLUM_CKPT"))
+	if err != nil {
+		t.Skipf("no tokenizer: %v", err)
+	}
+	var sb strings.Builder
+	for _, f := range []string{"../docs/ARCHITECTURE.md", "../docs/flags.md"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		sb.Write(b)
+		sb.WriteString("\n\n")
+	}
+	all, err := tk.Encode(sb.String(), false)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if len(all) < K {
+		t.Fatalf("the text tokenizes to %d tokens, under K=%d", len(all), K)
+	}
+	ids := all[:K]
+	seen := map[int]bool{}
+	for _, id := range ids {
+		seen[id] = true
+	}
+	return ids, fmt.Sprintf("real text: docs/ARCHITECTURE.md + docs/flags.md, first %d of %d tokens, %d distinct", K, len(all), len(seen))
+}
 
 // TestMoEExpertBatching_M1vsMN asks whether batching the MoE expert matmul over rows is worth anything: the
 // cheap check before anyone funds the restructuring. In the batched-prefill loop (forwardn.go) moeMLP is
@@ -133,10 +177,8 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	if !m.canBatchN(K) {
 		t.Skip("model has no batched prefill")
 	}
-	ids := make([]int, K)
-	for i := range ids {
-		ids[i] = 700 + i%97
-	}
+	ids, idsNote := moeBenchIDs(t, K)
+	t.Logf("input: %s", idsNote)
 	run := func(on string) []float32 {
 		t.Helper()
 		setKnob(t, m, knobMoEExpertMajor, on)
@@ -219,12 +261,12 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 	if !m.canBatchN(K) {
 		t.Skip("no batched prefill")
 	}
-	ids := make([]int, K)
-	for i := range ids {
-		ids[i] = 700 + i%97
-	}
+	ids, idsNote := moeBenchIDs(t, K)
+	t.Logf("input: %s", idsNote)
 	start := time.Now()
-	fmt.Fprintf(os.Stderr, "P18 e2e: start %s  K=%d pairs=%d\n", start.Format("15:04:05"), K, pairs)
+	load, _ := os.ReadFile("/proc/loadavg")
+	fmt.Fprintf(os.Stderr, "P18 e2e: start %s  K=%d pairs=%d\n  input: %s\n  host: NumCPU %d GOMAXPROCS %d loadavg %s",
+		start.Format("15:04:05"), K, pairs, idsNote, runtime.NumCPU(), runtime.GOMAXPROCS(0), strings.TrimSpace(string(load))+"\n")
 
 	run := func(on string) time.Duration {
 		t.Helper()

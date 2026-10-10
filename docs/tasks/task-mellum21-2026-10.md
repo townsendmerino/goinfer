@@ -204,3 +204,20 @@ Sessions ABBA (R S S R), ctx 2048, 3 prompts x 3 reps, greedy, 128 tokens. Resid
 - New: `docs/tasks/task-mellum21-2026-10.md` (this), `docs/measurements/mellum21-2026-10/run-mellum21-pull-pin.sh` and `run-mellum21-gates.sh`, and the two committed tests above with their fixtures (`testdata/chat_think_goldens/mellum21_think_history.json`, `testdata/mellum21-config/`); `scripts/pin_chat_think_history.py` gained a `PIN_CKPTS` override (default unchanged).
 - Gate 2 (new): `docs/measurements/mellum21-2026-10/run-mellum21-gate2.sh`; its binaries `~/goinfer-bench/mellum21/serve-cuda-tmpl` (built from this tree, rev file beside it) and, from earlier, `~/goinfer-bench/s6fix/serve-cuda`; and `~/models/mellum2.1-thinking.int4.e4h.cuda.giw` (6.4 GB) + `.verified` next to the checkpoint.
 - Outside git: `~/goinfer-bench/mellum21/` (the fetched small files `gate0/`, the staged tokenizer files `tok21/`, the pinned `decoder.test`, `rev` and `tree.diff`, the HF template golden `mellum21_think_history.json`); the night queue gains two jobs. Nothing else on disk moved; the `testdata/mellum2-tokenizer` symlink was repointed for one test run and restored.
+
+### B2. Does B's FUND survive a real prompt? (`run-mellum21-followup-b2.sh`, est 80 min queued, about 50 expected) — PRE-REGISTERED 2026-10-10, before the run
+
+**Why.** B's FUND (2.80x) came from `TestMoEExpertMajor_endToEnd`'s input, `700 + i%97`: a 97-token cycle repeated to K=4096. Expert-major wins by grouping rows that share an expert, and a
+cycle sends the same tokens to the same experts every 97 rows, so it is the best case for the mechanism; the question B asked ("does the RL checkpoint's routing still concentrate?") was put to an
+input built to concentrate. Two further gaps: the bit-identity test used the same cycle (at K=600 by default), and the absolute times (295 s per-row, 105 s expert-major) are 4.1x and 2.6x under the 2.0 record with no recorded cause.
+B's verdict is not retracted: B2 re-registers the INPUT and leaves P18's bar alone.
+
+- **Instrument.** The same two tests, with `moeBenchIDs` choosing the input (`GOINFER_MOE_BATCH_IDS`, test-side env): `real` (default) = the first 4096 tokens of `docs/ARCHITECTURE.md` + `docs/flags.md` through the checkpoint's own tokenizer (the log prints
+  how many distinct tokens); `periodic` = B's cycle. Both `int4`, CPU path, one process per step, flag on vs off interleaved with alternating lead after a discarded warm forward, 2 pairs. The log also prints NumCPU, GOMAXPROCS and loadavg.
+- **Steps.** (1) `TestMoEExpertMajor_bitIdentical` at K=4096 on real text. (2) `endToEnd` on real text: **graded**. (3) `endToEnd` on the periodic cycle in the same build and session: reference for attribution (how much of any drop is the input), **not graded**.
+- **Bars (written now).** Identity: any differing logit FAILS expert-major (it would not be usable at all, whatever its speed). Speed, on step 2's ratio, P18's own rule unchanged: net >= 15% FUND (keeps its default), < 8% PARK
+  (no longer earns the default on this checkpoint with real text: the finding), 8-15% AMBIGUOUS, parked pending a second mechanism. Step 3 never changes a verdict; it is read next to step 2.
+- **Stopping rule.** Fixed N (2 pairs per e2e step); no early stop.
+- **Cost basis.** B's record: warm 295 s + 2 x (295 s + 105 s) = about 1,100 s per e2e step, identity about 400 s, three loads of the int4 CPU model; queued at 80 for about 50.
+- **Prediction (mine, written before the run).** Identity PASS at 0.95. Speed on real text: FUND with a ratio of 1.5x-2.8x at 0.65; at or above the periodic ratio's 2.8x at 0.15; FUND below 1.5x at 0.10; AMBIGUOUS or PARK at 0.10. Periodic in this session near B's 2.80x at 0.8 (if it is not, the 4x absolute-time gap is a property of the build or the box, not of the input).
+- **What each result does next.** FUND with identity: B stands, the real-text ratio replaces 2.80x wherever it is quoted. PARK or AMBIGUOUS: owner decides whether the default stays (it is on by default today). Identity FAIL: expert-major is disabled by default until fixed.
