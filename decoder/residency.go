@@ -14,17 +14,10 @@ import (
 )
 
 // isWebGPUBackend reports whether a Backend.Name() string names the webgpu backend. NOT a plain
-// equality check: gpu.webgpuBackend's real Name() is "webgpu:" + the underlying GPU surface
-// (e.g. "webgpu:metal" on macOS, "webgpu:vulkan" on Linux) — every OTHER backend's Name() is a
-// bare string ("cpu", "cuda", "metal"), so this asymmetry is specific to webgpu.
-//
-// Found while wiring G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): a NEW `== "webgpu"` check
-// written for that row silently never matched on this exact Mac, which led straight to a
-// PRE-EXISTING bug this asymmetry already caused — DecodePath()'s own `case be != "webgpu":`
-// (below) has never matched a real webgpu backend on any platform, so a declined webgpu load has
-// always been reported through the cuda/metal branch's wording ("has no staged decode path" —
-// false; webgpu does have one) instead of the webgpu-staged branch meant for it. Fixed here, not
-// papered over with another exact-match string.
+// equality check: gpu.webgpuBackend's Name() is "webgpu:" + the underlying GPU surface ("webgpu:metal",
+// "webgpu:vulkan"), while every other backend's is a bare string ("cpu", "cuda", "metal"), so
+// a `== "webgpu"` comparison never matches a real webgpu backend.
+// History: docs/code-notes/decoder.md#isWebGPUBackend.
 func isWebGPUBackend(name string) bool { return strings.HasPrefix(name, "webgpu") }
 
 // GPU full-residency decode support. When a backend implements ResidencyBackend (cuda, metal,
@@ -59,14 +52,11 @@ type ResidentForward interface {
 	//
 	// "Batched" is an amortization OPPORTUNITY, not a structural guarantee every
 	// backend takes; each backend reports at load which it took (VerifyPathReporter).
-	// CUDA's prefillReady path runs the whole batch in one weight-stationary pass (one
-	// command submission) when prefillCore admits the arch, falling back to a per-token
-	// sequential loop otherwise (DeltaNet, non-int4 projections, and the geometries
-	// prefillCore declines). Metal's ForwardBatch encodes the whole batch layer-major into
-	// ONE command buffer (since a1640a6a, 2026-09-16 — it was the per-token loop before,
-	// N-26), falling back to the per-token loop only for paged MoE. webgpu runs the K steps
-	// in one submit. Callers should not assume "K rows in" implies "one command buffer
-	// out" for every backend.
+	// CUDA runs the whole batch in one weight-stationary pass when prefillCore admits
+	// the arch (a per-token loop otherwise: DeltaNet, non-int4 projections, geometries
+	// prefillCore declines); Metal encodes it layer-major into ONE command buffer (a
+	// per-token loop only for paged MoE); webgpu runs the K steps in one submit. Callers
+	// should not assume "K rows in" implies "one command buffer out".
 	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
 	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim]) into the resident GPU
 	// caches at absolute positions base..base+n-1 — the prefill bridge. base is normally 0
@@ -140,28 +130,21 @@ type ResidentBatchOut struct {
 	ID     int
 }
 
-// ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation
-// kernel can take a rope-angle position (ropePos) separate from the KV-cache/attention position
-// (pos). Forward(embedding, pos) alone cannot serve Qwen2.5-VL decode past an image block,
-// because decoder/rope.go's CPU reference computes the KV-cache position and the rotation angle
-// as two DIFFERENT quantities once decode moves past an image block — the merge-compressed image
-// grid makes mropeDelta = maxGridPos+1-seqLen nonzero, and the rotation needs pos+mropeDelta
-// while storage/attention still need plain pos. Deliberately a NEW capability rather than a
-// Forward signature change: Forward is the core method every family and every existing caller
-// uses, and only Qwen-VL decode needs the split. ForwardMRoPE(emb, pos, pos) must equal
-// Forward(emb, pos) exactly — the common (non-m-RoPE) case is the same computation, just spelled
-// with two equal arguments. Backends may skip implementing it (GenerateQwenVL's resident path
-// then declines to the CPU/staged decode, same as any other resident capability gap).
+// ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation kernel takes a
+// rope-angle position (ropePos) separate from the KV-cache/attention position (pos). Qwen2.5-VL decode past
+// an image block needs it: decoder/rope.go's CPU reference rotates by pos+mropeDelta while storage and
+// attention still use plain pos. A new capability rather than a Forward signature change, since only Qwen-VL
+// decode needs the split. ForwardMRoPE(emb, pos, pos) must equal Forward(emb, pos) exactly. Without it
+// GenerateQwenVL's resident path declines to the CPU/staged decode.
 type ResidentMRoPE interface {
 	ForwardMRoPE(embedding []float32, pos, ropePos int) (logits []float32, err error)
 }
 
 // ResidentGreedy is an optional capability on a ResidentForward: compute the token's greedy
-// argmax on-device and hand back just the id, skipping the full-logits readback (594 KB per
-// token at a 151936 vocab — ~1.7% of a 1.5B token, ~6.5% of a 0.5B one, measured on CUDA).
-// The decode loop uses it ONLY when Sampler.ArgmaxEquivalent() OR Sampler.GreedyEquivalent()
-// (the `top_k=1` shape, P1) holds and no LogitProcessor is set,
-// so the emitted tokens are identical to the logits path. Backends may skip implementing it.
+// argmax on-device and hand back just the id, skipping the full-logits readback. The decode loop
+// uses it ONLY when Sampler.ArgmaxEquivalent() OR Sampler.GreedyEquivalent() (the `top_k=1` shape)
+// holds and no LogitProcessor is set, so the emitted tokens are identical to the logits path.
+// Backends may skip implementing it.
 type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
@@ -248,33 +231,26 @@ type ResidentPrefillKV interface {
 // for long prompts when the backend has a real batched (e.g. MMA) forward. generateInto type-
 // asserts for this; backends without it fall back to the sequential prefill.
 type Prefiller interface {
-	// ctx is checked at whatever granularity the backend can honour — between passes, and inside
-	// them where the backend's own loop allows. It exists because a batched prefill is the ONE
-	// place where a cancelled request keeps a GPU busy with nothing watching: the sequential
-	// fallback checks ctx.Err() per token (G18, "an abandoned client leaves the whole prompt
-	// streaming through the device"), and a backend that ingests the prompt in one pass has no
-	// equivalent unless it is handed the context. Cancellation returns ctx.Err(); the caller
-	// treats that like any other decline and stops, rather than falling back to the sequential
-	// loop it was also cancelling.
+	// ctx is checked at whatever granularity the backend can honour: between passes, and inside
+	// them where the backend's own loop allows. A batched prefill is the one place a cancelled
+	// request keeps a GPU busy with nothing watching (the sequential fallback checks ctx.Err() per
+	// token; a backend that ingests the prompt in one pass has no equivalent unless handed the
+	// context). Cancellation returns ctx.Err(); the caller stops, rather than falling back to the
+	// sequential loop it was also cancelling.
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
 // ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at
 // positions startPos..startPos+len-1 and return the LAST position's hidden state AFTER the
-// model's final norm — the resident twin of Prefiller, but stopping before the LM head instead
-// of after it (decoder/embed.go's HiddenLast never needs logits, and the head is the single
-// most expensive matmul in a forward). Used by HiddenLast/G4 (docs/tasks/task-gpu-paths-2026-09.md):
-// an embedding request on a GPU box otherwise runs the whole text decoder on the CPU even when
-// the same arch decodes resident, the exact defect G2 documents for image turns.
+// model's final norm — the resident twin of Prefiller, stopping before the LM head instead of
+// after it (decoder/embed.go's HiddenLast never needs logits, and the head is the single most
+// expensive matmul in a forward). Used by HiddenLast (docs/tasks/task-gpu-paths-2026-09.md, G4),
+// so an embedding request on a GPU box does not run the whole text decoder on the CPU.
 //
-// startPos is always 0 for HiddenLast's callers today (a fresh KV per sequence, no prefix
-// reuse), but the parameter mirrors Prefiller's so a backend can share its prefill-chunking
-// scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
-// whose batched forward is NOT bit-identical to its own sequential one (Metal was, pre-gate —
-// see metal/backend.go's metalFastPrefillEnabled; default-on since 2026-09-09, above
-// metalFastPrefillFloor, 16 tokens since A-P02) must implement this some other way (a
-// per-token sequential forward that stops before the head) rather than reuse a declining
-// Prefiller, or must not implement this interface at all.
+// startPos is 0 for HiddenLast's callers today, but the parameter mirrors Prefiller's. Bit-identical
+// to the CPU path is the bar (embed.go's own doc comment): a backend whose batched forward is NOT
+// bit-identical to its own sequential one must implement this as a per-token sequential forward
+// that stops before the head, or not at all — never reuse a declining Prefiller.
 type ResidentHiddenLast interface {
 	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
 }
@@ -309,19 +285,12 @@ type ResidentAdapterLayer struct {
 	Q, K, V, O, Gate, Up, Down *ResidentAdapterProj
 }
 
-// ResidentAdapter is an OPTIONAL ResidentForward extension: a backend that can apply a
-// compute-time LoRA delta on the resident decode path. SetAdapter(nil) clears a previously-bound
-// adapter. generateInto holds the SAME resBusy exclusive-access window a Forward/ForwardN call
-// itself requires for the WHOLE bind→forward→clear sequence (resident access is already
-// serialized — see resBusy's own comment), so an implementation needs no locking of its own, and
-// two adapters sharing one base model's resident runner (the "N adapters, one shared resident"
-// architecture internal/serveapp/main.go documents) never race: only one generation's bind is
-// ever live at a time.
-//
-// A backend that does NOT implement this interface simply isn't type-asserted to it —
-// generateInto declines to the CPU/staged path exactly like any other missing resident
-// capability (compare ResidentHiddenLast's own fallback in decoder/embed.go), never silently
-// running an adapter session's tokens through the base model's resident weights.
+// ResidentAdapter is an OPTIONAL ResidentForward extension: a backend that can apply a compute-time LoRA
+// delta on the resident decode path. SetAdapter(nil) clears a previously-bound adapter. generateInto holds the
+// same resBusy exclusive-access window a Forward/ForwardN call requires for the WHOLE bind→forward→clear
+// sequence, so an implementation needs no locking and two adapters sharing one base model's resident runner
+// never race. A backend without it is simply not type-asserted: generateInto declines to the CPU/staged path,
+// never running an adapter session's tokens through the base weights.
 type ResidentAdapter interface {
 	SetAdapter(layers []ResidentAdapterLayer) error
 }
@@ -349,26 +318,19 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 	return out
 }
 
-// ResidentImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a
-// contiguous [imgStart,imgEnd) sub-range (Gemma 3's image-block mask — decoder/kvcache.go's
-// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward
-// (decoder/forwardn.go). GenerateVL's cold (first-time-seeing-this-image) path tries this BEFORE
-// paying for the CPU prefill; without it — or on any decline from it — that turn falls through
-// unchanged to the CPU-prefill-then-UploadKV bridge (gap 0, docs/multimodal.md).
+// ResidentImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a contiguous
+// [imgStart,imgEnd) sub-range (Gemma 3's image-block mask, decoder/kvcache.go's SetImageBlocks/attendHi), the
+// resident twin of prefillLogitsVL's CPU forward (decoder/forwardn.go). GenerateVL's cold path tries this before
+// paying for the CPU prefill; without it, or on any decline, that turn takes the CPU-prefill-then-UploadKV
+// bridge (docs/multimodal.md).
 //
-// embeddings are the ALREADY-SPLICED per-position vectors: the ordinary text embedding lookup
-// with the projected vision features overwritten at [imgStart,imgEnd) — exactly what
-// prefillLogitsVL already builds (embedN + a raw-feature copy, no embed scale, matching HF's
-// masked_scatter). This mirrors Prefiller's existing embed-by-vector convention, so no GPU-side
-// embedding table or embedding kernel is needed.
+// embeddings are the ALREADY-SPLICED per-position vectors (the text embedding lookup with the projected vision
+// features overwritten at [imgStart,imgEnd), no embed scale, as HF's masked_scatter), so no GPU-side embedding
+// table is needed.
 //
-// v1 (CUDA only) REQUIRES the whole prompt — the image block included — to fit in ONE
-// weight-stationary pass; a longer prompt, or any other decline (kernel unavailable, invalid
-// range), returns an error rather than chunking, because a bidirectional block split across a
-// chunk boundary is unverified. Backends may skip implementing it — cuda and metal (S17) implement it;
-// webgpu image turns take the CPU-prefill + UploadKV bridge (residentUploadPrefill) instead — and
-// GenerateVL's image-prefill fast path then never engages, same as any other optional resident
-// capability gap.
+// The whole prompt, image block included, must fit in ONE weight-stationary pass; a longer prompt or any other
+// decline returns an error rather than chunking, because a bidirectional block split across a chunk boundary is
+// unverified. cuda and metal implement it; webgpu image turns take the bridge (residentUploadPrefill).
 type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
@@ -391,24 +353,17 @@ type ResidentHybridMRoPEPrefill interface {
 	HybridMRoPEPrefill() bool
 }
 
-// ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's
-// m-RoPE 3D rotary positions — the resident twin of prefillLogitsQwenVL's CPU forward
-// (decoder/forwardn.go). Distinct from ResidentMRoPE (decode's single-scalar ropePos split,
-// above): this needs every row's own 3-component rotary position up front, not one extra scalar.
+// ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
+// positions, the resident twin of prefillLogitsQwenVL's CPU forward (decoder/forwardn.go). Distinct from
+// ResidentMRoPE (decode's single-scalar ropePos split): this needs every row's own 3-component position up front.
 //
-// embeddings are the ALREADY-SPLICED per-position vectors (ResidentImagePrefill's convention — no
-// GPU-side embedding table). mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
-// triple per ABSOLUTE sequence position, covering the WHOLE prompt — GenerateQwenVL already
-// computes this for its other branches (the image-reuse fast path, the CPU-prefill fallback), so
-// there is no reason for a resident backend to re-derive it and risk a second implementation
-// drifting from the CPU reference.
+// embeddings are the ALREADY-SPLICED per-position vectors (ResidentImagePrefill's convention). mropePos is
+// decoder/rope.go's mropePositions output, one (t,h,w) triple per ABSOLUTE sequence position over the WHOLE
+// prompt, which GenerateQwenVL already computes, so a backend must not re-derive it.
 //
-// UNLIKE ResidentImagePrefill, implementations MAY chunk: Qwen's image tokens attend causally (no
-// bidirectional mask — GenerateQwenVL's own doc comment), so attention geometry is unaffected by
-// an image block, and each row's rotation is independent of every other row's — there is no
-// cross-row coupling for a chunk boundary to break. Backends may skip implementing it (same
-// resident-capability-gap discipline as every other optional extension here) — GenerateQwenVL's
-// m-RoPE prefill fast path then never engages, falling back to the CPU-prefill+UploadKV bridge.
+// UNLIKE ResidentImagePrefill, implementations MAY chunk: Qwen's image tokens attend causally and each row's
+// rotation is independent of every other row's, so a chunk boundary breaks nothing. Without it GenerateQwenVL's
+// m-RoPE prefill falls back to the CPU-prefill+UploadKV bridge.
 type ResidentMRoPEPrefill interface {
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
@@ -424,14 +379,13 @@ type ResidentMRoPEDeepstackPrefill interface {
 
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
-// Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent
-// by design — correct, but a decline is a large, invisible TTFT regression: a cuda int8int8 model
-// takes the sequential per-token prefill (the batched GEMV is int4-only), measured 9× slower TTFT
-// and 20× the CPU on a 300-token prompt. Backends implement this so serve can state the resolved
-// prefill path at startup instead of leaving it to be discovered under load.
+// Prefiller contract declines per call (arch/geometry/quant) and generateInto's fallback is silent
+// by design, so a decline is a large, invisible TTFT regression (a cuda int8int8 model takes the
+// per-token prefill; the batched GEMV is int4-only). Backends implement this so serve can state the
+// resolved prefill path at startup.
 //
 // reason is a human-readable phrase naming the ACTUAL condition and its cost, not "declined" —
-// e.g. "batched prefill requires int4 projections (int8int8 at layer 0) — ~9× slower TTFT".
+// e.g. "batched prefill requires int4 projections (int8int8 at layer 0)".
 type PrefillPathReporter interface {
 	PrefillPath() (batched bool, reason string)
 }
@@ -441,10 +395,9 @@ type PrefillPathReporter interface {
 // positions, and its routing between its prefill lanes depends on the whole prompt's length, not the suffix's. Then a
 // reused prompt (resident_reuse.go) can hand the batched path a suffix of any length and get the cold run's bits.
 //
-// Without it residentPrefillSeed offers only suffixes of 8 tokens or more, so a repeated prompt (a 1-token suffix) ran
-// its last position through decode while the cold run had computed it in the batched pass, which is not bit-identical
-// to decode: on Metal the warm reply differed from the cold one some tens of tokens in (2026-10-04, found as the
-// "MC3 pass identity defect" in docs/tasks/task-metal-audit-2026-10.md's A-P02 result).
+// Without it residentPrefillSeed offers only suffixes of 8 tokens or more: a 1-token suffix would run its last
+// position through decode, which is not bit-identical to the batched pass the cold run used.
+// Found on Metal: docs/code-notes/decoder.md#PrefillTailExact.
 type PrefillTailExact interface {
 	PrefillTailExact() bool
 }
@@ -487,8 +440,7 @@ type ResidentFastPrefill interface {
 // floor, f16 MMA from it). PrefillKernelFloor is that length, or 0 when one class runs at every length.
 // Chunked prefill (mc3Prefill) reads it so no chunk straddles the boundary the whole prompt would not: a first
 // chunk below the floor ran on the other class, and the reply then depended on whether another generation was
-// decoding (option-path admission finding 3, 2026-10-08). A narrower contract than ResidentFastPrefill's,
-// which prefix reuse also reads; a backend can report this one without changing what it reuses.
+// decoding. A narrower contract than ResidentFastPrefill's, which prefix reuse also reads.
 type ResidentPrefillKernelFloor interface {
 	PrefillKernelFloor() int
 }
@@ -551,23 +503,19 @@ func (m *Model) decodeRunnerDecline() string {
 	a := m.w.arch
 	eligible := a.decodeRunnerEligible()
 	if !eligible && a.nemotron != nil && a.MoE != nil && m.be != nil && isWebGPUBackend(m.be.Name()) {
-		// G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nemotron branch
-		// hard-declines ANY MoE-block variant for every backend — a real crash-risk guard, since
-		// cuda/metal's own per-layer block-kind switches have no MoE case at all and would
-		// otherwise nil-dereference on the first token. webgpu now implements it for real
-		// (gpu/residency.go's switch has a case 3, gpu/decoderunner.go a real nemoKMoE dispatch),
-		// so this is a narrow, backend-specific override — NOT a general "trust the backend"
-		// escape hatch. cuda/metal still decline exactly as before.
+		// webgpu implements the Nemotron MoE block (gpu/residency.go's switch has a case 3, gpu/decoderunner.go a
+		// real nemoKMoE dispatch), so it overrides decodeRunnerEligible's blanket MoE-block decline, which stays for
+		// cuda and metal (their per-layer block-kind switches have no MoE case and would nil-dereference on the first
+		// token). A narrow backend-specific override, NOT a general "trust the backend" escape hatch
+		// (docs/tasks/task-gpu-paths-2026-09.md, G7 part 2).
 		eligible = true
 	}
 	if !eligible {
 		return "arch is not eligible for the resident decode runner"
 	}
-	// Nemotron-H resident is DEFAULT-on at int4 — characterized benign vs f32 (92.5% greedy /
-	// 99.6% top-2 agreement, perplexity 1.677≈1.695, KL 0.058; the ~7.5% disagreements are all
-	// at near-tied positions, int4 picking f32's #2, zero confident-token errors — see
-	// docs/completed/nemotron-resident.md). int8 (unmeasured on 8 GB; fits ≥12 GB) stays OPT-IN behind
-	// GOINFER_SSM_RESIDENT. Other resident families are unchanged.
+	// Nemotron-H resident is default-on at int4 only: its int4 disagreements with f32 are all at near-tied
+	// positions (docs/completed/nemotron-resident.md). int8 stays OPT-IN behind GOINFER_SSM_RESIDENT.
+	// Other resident families are unchanged.
 	if m.w.arch.nemotron != nil && m.knobs.get(knobSSMResident) == "" && !m.residentProjsInt4() {
 		return "Nemotron-H runs resident with int4 projections only by default (load with Quant int4, or set GOINFER_SSM_RESIDENT to allow int8)"
 	}
@@ -653,24 +601,14 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// (FeatAttnSink) and the MoE bias-in-combine kernels are backend feature gates, not an
 		// arch-level decline, so a backend without them declines there instead of here.
 	case a.gemma4 != nil:
-		// Gemma 4 is admitted UNCONDITIONALLY as of the Check-A backfill. It sat behind
-		// GOINFER_GEMMA4_RESIDENT through the Split-A/B bring-up (granite's GOINFER_SSM_RESIDENT
-		// precedent), and that flag outlived its purpose in a way worth recording: it had become
-		// load-bearing by accident. Every real Gemma-4 checkpoint reaching the resident path was
-		// compared only against ITSELF (cache on/off, graphs on/off), so the flag was the only thing
-		// standing between users and a forward whose numerics no gate asserted at real width.
-		//
-		// It comes off because that gate now exists and passes, not because the flag was tidy to
-		// remove: cuda.TestGemma4MoEScaled_residentParity (MoE, real hidden/moe_inter/head geometry,
-		// scales transplanted from the real 26B) and TestGemma4DenseScaled_residentParity (dense,
-		// real head dims) both assert the calibrated CPU curve. Do not re-gate a family on an env
-		// var without a gate behind it; the flag reads as caution and functions as a coverage hole.
-		//
-		// Split B lands the enable_moe_block parallel dense‖MoE FFN (arch.MoE != nil) on its OWN cuda
-		// path (gemma4MoeMLP) — the CUDA build routes it around the generic MoE checks via
-		// HasGemma4MoEResident. Both dense and MoE fall through to the common checks below (softcap
-		// is handled by the per-backend feature gate, so WebGPU still declines on its own terms).
-		// E-models (PLE) decline via the feature gate regardless — TestGemma4EModel_realDeclinesResident.
+		// Gemma 4 is admitted UNCONDITIONALLY. Do not re-gate a family on an env var without a gate behind
+		// it: the flag reads as caution and functions as a coverage hole. The gates behind this admission are
+		// cuda.TestGemma4MoEScaled_residentParity and TestGemma4DenseScaled_residentParity (real head dims
+		// and hidden/moe_inter geometry, asserting the calibrated CPU curve). Dense and MoE both fall through
+		// to the common checks below; softcap is a per-backend feature gate, so WebGPU declines on its own
+		// terms. The parallel dense‖MoE FFN (enable_moe_block) runs on its own cuda path (gemma4MoeMLP),
+		// routed around the generic MoE checks via HasGemma4MoEResident. An E-model (PLE) is admitted only
+		// by a backend that implements FeatGemma4EModel (TestGemma4EModel_realDeclinesResident).
 	case a.qwen35 != nil:
 		// Gated-DeltaNet hybrids fall through, same discipline as gemma4/gpt-oss above: the
 		// recurrence and the fused attention output gate are a BACKEND capability (FeatDeltaNet),
@@ -683,20 +621,12 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	case a.llama4 != nil:
 		return false // own forward, not yet bridged
 	case a.lfm2 != nil:
-		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only
-		// via FeatShortConv is deliberate — the two gates answer different questions and this
-		// one is the honest answer to THIS question. decodeRunnerEligible is an ARCH-SHAPE
-		// predicate, and 22 of 30 layers run a gated short convolution with a rolling window
-		// that no uniform-layer runner can express at all; that is a property of the family,
-		// not of any backend's kernel coverage.
-		//
-		// It also stops the capability matrix publishing a falsehood: the GPU-resident column
-		// is generated from exactly this predicate, and without this case LFM2 falls through
-		// every switch arm to ropeResidentCompatible(), whose local/global tables are equal
-		// length (one base), so it returned TRUE. The matrix then read "GPU-resident: yes" for
-		// a family no backend can run — caught 2026-08-31 by reading the generated row instead
-		// of trusting the column name, which is the G10 question about this column's semantics
-		// arriving as a concrete case.
+		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only via FeatShortConv is
+		// deliberate: decodeRunnerEligible is an ARCH-SHAPE predicate, and 22 of 30 layers run a gated short
+		// convolution with a rolling window that no uniform-layer runner can express, a property of the family
+		// rather than of any backend's kernels. It also keeps the capability matrix honest: its GPU-resident
+		// column is generated from this predicate, and without this case LFM2 would fall through to
+		// ropeResidentCompatible and read "yes".
 		return false
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
@@ -705,43 +635,29 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	if a.granite != nil {
 		return a.knobs.get(knobSSMResident) != ""
 	}
-	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA /
-	// relu² MLP, reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in
-	// precision gate is applied at the Model level (DecodeRunnerEligible).
+	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP,
+	// reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in precision gate is applied
+	// at the Model level (DecodeRunnerEligible).
 	//
-	// Nemotron 3 Nano adds a FOURTH block kind (MoE FFN, arch.MoE != nil — plain Nemotron-H never
-	// sets it) that no GPU resident builder knows about yet: gpu/residency.go's per-layer switch on
-	// NemotronBlockKind has cases 0/1/2 (mamba/attn/mlp) and NO default — an unhandled kind 3 would
-	// silently leave that layer's op buffers nil rather than erroring, a crash-or-garbage risk, not
-	// a clean decline. Decline here instead, at the one predicate every backend's admission funnels
-	// through, until a GPU backend actually implements the MoE block (verified against its
-	// dispatch, not assumed from "it's just another case").
+	// Nemotron 3 Nano adds a fourth block kind (MoE FFN, arch.MoE != nil). cuda and metal build no MoE block
+	// and their per-layer switch has no default, so an unhandled kind would leave that layer's buffers nil: a
+	// crash-or-garbage risk, not a clean decline. Decline here, at the one predicate every backend's admission
+	// funnels through; decodeRunnerDecline overrides it for webgpu, which implements the block.
 	if a.nemotron != nil {
 		return a.MoE == nil
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
 		return false
 	}
-	// FFN / norm / head constraints common to both attention paths. Sandwich norms (Gemma's
-	// 4-norm block), logit softcap, NonGatedMLP, LearnedPosEmbed and OutBias are all
-	// representable now — a backend that hasn't implemented one declines via the feature gate
-	// (FeatSandwichNorm / FeatAttnLogitSoftcap / FeatFinalLogitSoftcap / FeatNonGatedMLP /
-	// FeatLearnedPos / FeatOutBias), not here, so this stays an ARCH-shape predicate and the
-	// per-backend answer lives in one place (decoder/features.go). Softcap was moved OUT of this
-	// decline in 9a-P2 for the same reason Gemma 4 needed it: a per-backend capability blocked
-	// here for everyone is a family blocked for a backend that already implements it.
-	//
-	// NonGatedMLP/LearnedPosEmbed/OutBias's hard decline came off 2026-08-18 once Metal built the
-	// three matching kernels (layernorm_quant, act_quant, gemv_w4a8_sa_bias_resid/
-	// gemv_w4a8_resid_bias) for GPT-2 — the only family this reaches in practice: Nemotron-H's
-	// NonGatedMLP and gpt-oss's OutBias both short-circuit at the switch above before ever
-	// reaching here, and no arch sets LearnedPosEmbed but GPT-2. GPT-2 has no RoPE at all
-	// (finalizeRoPE returns early on LearnedPosEmbed, leaving BOTH ropeInvFreqLocal/Global nil),
-	// so it falls through to ropeResidentCompatible() below and passes vacuously (0==0) — no
-	// extra bypass needed for that check either.
-	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner
-	// (Lever C4 — gpu/mla.go), so the standard GQA/RoPE/QK-norm/sliding-window checks
-	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
+	// FFN / norm / head constraints common to both attention paths: sandwich norms, logit softcap, NonGatedMLP,
+	// LearnedPosEmbed and OutBias are all representable, and a backend that lacks one declines via the feature
+	// gate (FeatSandwichNorm / FeatAttnLogitSoftcap / FeatFinalLogitSoftcap / FeatNonGatedMLP / FeatLearnedPos /
+	// FeatOutBias), not here, so this stays an ARCH-shape predicate and the per-backend answer lives in one place
+	// (decoder/features.go). A capability blocked here for everyone is a family blocked for a backend that already
+	// implements it. GPT-2, the one family with LearnedPosEmbed, has no RoPE (finalizeRoPE leaves both inv-freq
+	// tables nil), so ropeResidentCompatible passes vacuously (0 == 0).
+	// MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner (gpu/mla.go), so the standard
+	// GQA/RoPE/QK-norm/sliding-window checks don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
 	if a.mla != nil {
 		return true
 	}
@@ -940,18 +856,14 @@ func (m *Model) LayerIsLocalResident(i int) bool {
 func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
 func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
 
-// VFromKResident reports whether layer i is a K=V layer (attention_k_eq_v): it carries NO
-// v_proj — V is v_norm(the raw k_proj output). Gemma 4 sets this on its GLOBAL layers (12B/26B;
-// off for E2B). This is arch.KVShared (the per-layer attention_k_eq_v), deliberately distinct
-// from SharedKVLayers (the unrelated cross-layer KV reuse the E-models use).
+// VFromKResident reports whether layer i is a K=V layer (attention_k_eq_v): it carries NO v_proj, V is
+// v_norm(the raw k_proj output). Gemma 4 sets this on its GLOBAL layers (12B/26B; off for E2B). It is
+// arch.KVShared, deliberately distinct from SharedKVLayers (the E-models' cross-layer KV reuse).
 //
-// Two sources, OR'd. The config flag (attention_k_eq_v, from config.json) and the per-layer
-// LayerWeights.VFromK the loader sets. The GGUF loader has no config flag to read — a GGUF carries
-// no attention_k_eq_v — so it marks a layer by the ABSENCE of attn_v.weight (gguf.go), leaving the
-// config flag false. Reading only the config flag made every GGUF-derived Gemma 4 K=V layer look like
-// an ordinary QKV layer with an empty V, so a resident backend fused a zero-row matrix and declined
-// (Metal: `int4Concat weight kind "" not int8 or int4`), while a config.json/safetensors-derived
-// bundle of the same model went resident. The per-layer flag is also what a .giw stores.
+// Two sources, OR'd: the config flag (attention_k_eq_v) and the per-layer LayerWeights.VFromK the loader sets.
+// A GGUF carries no config flag, so its loader marks a layer by the ABSENCE of attn_v.weight (gguf.go); reading
+// only the config flag would make a GGUF K=V layer look like a plain QKV layer with an empty V. The per-layer
+// flag is also what a .giw stores.
 func (m *Model) VFromKResident(i int) bool {
 	if m.w.arch.gemma4 == nil {
 		return false
@@ -1025,38 +937,19 @@ func (m *Model) RopeInvFreqLayerResident(i int) []float32 {
 // the per-layer-type RoPE selector (Lever C7). For single-rope models this is always true.
 func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 
-// RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32 — the global
-// or local table per the layer's attention type (Mellum YaRN-on-global vs default-local).
+// RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32: the global or local table per
+// the layer's attention type (Mellum YaRN-on-global vs default-local).
 //
-// G5 (docs/tasks/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
-// Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
-// real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
-// sin=sin(pos·invFreq)·mscale (cuda/gemv_fwd.cu, metal/kernels.go); at invFreq==0 that is
-// cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (RopeMscaleLayer). Every family
-// that sets layerNoPE today (SmolLM3) also has no YaRN scaling on those layers, so this holds;
-// it is NOT a general "any NoPE layer is safe" claim, and a future family combining YaRN with
-// NoPE would need this revisited (a parity test would catch it — a wrong scale is not a
-// discrete failure like a MoE routing bug, but a real forward divergence at every position).
-// This is a RESIDENT-ONLY accessor, so the CPU forward path (attention.go/forwardn.go, which
-// skip the ropeAt call entirely for a NoPE layer) is untouched by this.
+// A NoPE layer (SmolLM3's no_rope_layers, Cohere2's every-Nth global layer: arch.isNoPELayer, FeatNoPE) gets an
+// all-ZERO table of the same width. The resident rope kernels compute cos=cos(pos·invFreq)·mscale and
+// sin=sin(pos·invFreq)·mscale, so invFreq==0 is the identity rotation ONLY when mscale==1 (RopeMscaleLayer).
+// That holds for every family that sets layerNoPE today; a family combining YaRN with NoPE needs this revisited.
+// A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
 //
-// G5, Olmo Hybrid (found bringing up FeatPostOnlyNorm/FeatQKNormWhole): a WHOLE-MODEL no-RoPE
-// arch (rope_theta absent — arch.NoPositionEncoding, layerNoPE unconditionally true on every
-// layer) never populates ropeInvFreqGlobal/Local at all — finalizeRoPE's own early return, since
-// there is no base to compute a table from — so ropeInvFreq(i) is empty for EVERY layer, not
-// just the ones isNoPELayer would call NoPE anyway. The len(inv)-sized zero table above degrades
-// to a ZERO-LENGTH one in that case, not a same-width all-zero one, and a resident backend that
-// uploads it unconditionally (cuda/backend.go's L.invF = r.up32(h.invFreq), no length guard)
-// hits a 0-byte device allocation, which this driver treats as a hard error — measured directly:
-// "cuda: device allocation failed (typed-len, 0 bytes): cuda: invalid length" bringing up Olmo
-// Hybrid's full-attention layer, the first family combining whole-model NoPE with reaching this
-// resident code path at all. Metal happened not to crash on this (its build code already has an
-// unrelated len(invf)>0 guard, originally for GPT-2's LearnedPosEmbed case, that incidentally
-// also skips building L.invf here) — but that leaves Metal's rope dispatch reading a zero-VALUE,
-// never-written Buffer rather than a deliberately-zero one, which is the kind of "works by
-// accident" this fix removes for both backends: rotaryDim()/2 is the width every resident rope
-// kernel launch actually expects (rhalf), independent of whether this model has any real RoPE
-// table to inherit a width from.
+// A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
+// so ropeInvFreq(i) is empty for every layer. The table is then rotaryDim()/2 wide, the width every resident rope
+// kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
+// (docs/tasks/task-gpu-paths-2026-09.md, G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	a := m.w.arch
 	inv := a.ropeInvFreq(i)
@@ -1114,13 +1007,11 @@ func (m *Model) RopeInvFreq() []float32 {
 	return out
 }
 
-// AttnScale is the attention softmax q·k multiplier the resident backends (CUDA/Metal/WebGPU)
-// apply. It returns the registry-RESOLVED arch.AttnScale, which is 1/√headDim for the common case
-// but deliberately not for several archs: Gemma-3 uses query_pre_attn_scalar^-0.5 (== headDim for
-// 1B/4B/12B but hidden/heads for 27B), Granite uses attention_multiplier, and MLA uses the qk
-// head-dim. Hardcoding 1/√headDim here (the old behaviour) silently mis-scaled every attention
-// logit on those — invisible on the small parity fixtures (where the scalar == headDim) but wrong
-// on 27B/Granite. Falls back to 1/√headDim only if an arch left AttnScale unset (M19).
+// AttnScale is the attention softmax q·k multiplier the resident backends (CUDA/Metal/WebGPU) apply: the
+// registry-RESOLVED arch.AttnScale, which is 1/√headDim for the common case but deliberately not for several
+// archs (Gemma-3 uses query_pre_attn_scalar^-0.5, == headDim for 1B/4B/12B but hidden/heads for 27B; Granite uses
+// attention_multiplier; MLA uses the qk head-dim). Never hardcode 1/√headDim here: the small parity fixtures
+// (scalar == headDim) cannot see the difference. Falls back to 1/√headDim only if an arch left AttnScale unset.
 func (m *Model) AttnScale() float32 {
 	if s := m.w.arch.AttnScale; s != 0 {
 		return float32(s)
@@ -1238,16 +1129,11 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
-		// G7 (docs/tasks/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
-		// kind (MoE FFN) has no GPU resident implementation on cuda/metal — decodeRunnerEligible's
-		// own nemotron branch already declines this for them (`a.MoE == nil`), but that predicate
-		// returns a bare bool, so the generic "arch is not eligible" message below would otherwise
-		// hide WHY. Checked here, ahead of the generic call, so DecodePath/`serve check` name the
-		// actual gap instead of a family-agnostic decline. webgpu is EXCLUDED from this decline
-		// (part 2, same doc): it implements the MoE block for real now
-		// (gpu/residency.go/gpu/decoderunner.go's nemoKMoE case) — DecodeRunnerEligible's own
-		// backend-aware override admits it, so falling into this specific-reason branch would be
-		// wrong for webgpu (it isn't declining here at all).
+		// Nemotron 3 Nano / 3.5 Lightning's fourth block kind (MoE FFN) has no GPU resident implementation on cuda/metal.
+		// decodeRunnerEligible already declines it, but as a bare bool, so the generic "arch is not eligible" message
+		// would hide WHY; check here, ahead of the generic call, so DecodePath/`serve check` name the gap. webgpu is
+		// excluded: it implements the block (nemoKMoE) and decodeRunnerDecline admits it
+		// (docs/tasks/task-gpu-paths-2026-09.md, G7).
 		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
 		return m
 	}
@@ -1260,12 +1146,10 @@ func (m *Model) withResidency() *Model {
 		// Unconditional, for the same reason as the cuda side: a decline moves the entire forward to
 		// CPU, and the runtime's contract is to say so rather than quietly get slower.
 		fmt.Fprintf(os.Stderr, "[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path\n", ok, err)
-		// Falls back silently for correctness (a decline must never be fatal mid-load), but the
-		// REASON is kept: on a GPU backend this is the whole forward moving to CPU, which is the
-		// same silent-regression class as the prefill decline one layer down. A decline carries its
-		// reason as a *ResidentDeclineError; any other non-nil err is a driver or device failure —
-		// `--backend cuda` on a box with no usable GPU lands here, since the cuda factory always
-		// succeeds and the device is only touched at build time.
+		// Falls back for correctness (a decline must never be fatal mid-load) but keeps the REASON: on a GPU backend this
+		// is the whole forward moving to CPU. A decline carries its reason as a *ResidentDeclineError; any other non-nil
+		// err is a driver or device failure (`--backend cuda` on a box with no usable GPU lands here: the cuda factory
+		// always succeeds and the device is only touched at build time).
 		var d *ResidentDeclineError
 		switch {
 		case errors.As(err, &d):
@@ -1292,12 +1176,10 @@ func (m *Model) withResidency() *Model {
 		fmt.Fprintf(os.Stderr, "[resident] %s — continuing on the CPU/staged path\n", m.resDecline)
 		return m
 	}
-	// BuildResident's host-side work — the CUDA backend packs every layer's weights on the Go heap before it
-	// uploads them, and stages the expert stacks in pinned memory — is garbage the moment it returns, but Go hands
-	// freed heap back to the OS only when its background scavenger gets round to it. MEASURED 2026-09-20 on the
-	// real gpt-oss-20b (--backend cuda --moe-cache-experts): RSS sat at ~39 GB for ~5 minutes after the load
-	// finished, then fell to ~22 GB. Release it now, once, at load time: a resident model's whole point is that the
-	// host copy is no longer needed.
+	// BuildResident's host-side work (the CUDA backend packs every layer's weights on the Go heap before uploading,
+	// and stages the expert stacks in pinned memory) is garbage the moment it returns, but Go hands freed heap back
+	// to the OS only when its background scavenger gets round to it. Release it now, once, at load time: a resident
+	// model's whole point is that the host copy is no longer needed.
 	releaseHostMemory()
 	return m
 }
@@ -1440,22 +1322,10 @@ func (m *Model) DecodePath() string {
 		}
 		return s
 	case !isWebGPUBackend(be):
-		// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md, corrected on review):
-		// "cuda-staged (int4)" on an 8 GB card sat at the idle VRAM baseline (464 MiB,
-		// unchanged) for a full request sampled at 1 Hz. The first pass here found the int4
-		// half (matmul()/weightmat.go's int4 branch calls the CPU integer W4A8 kernel
-		// unconditionally, no backend parameter at all) and wrongly generalized that
-		// int8/int8int8/f32 "reach the backend" on every backend. They do not on cuda or
-		// metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU
-		// calls (cuda/backend.go, metal/backend.go — no device dispatch), and NEITHER
-		// implements QuantBackend at all, so the int8 branch's `be.(QuantBackend)` assertion
-		// fails for them too and falls to the same CPU kernel int4 uses. There is no quant at
-		// which cuda's or metal's staged path ever reaches the device — "cuda-staged"/
-		// "metal-staged" were never a real path, so this reports it the same shape
-		// BackendSummary already uses for a backend that failed to build at all: it is the
-		// same kind of claim (requested vs. actually executing), and hardware-matrix.md
-		// already only ever says "resident" or "CPU" per cell — this makes the banner agree
-		// with that page instead of inventing a third state it doesn't have.
+		// The cuda and metal staged paths never reach the device: both backends' MatmulBT are bare CPU calls and neither
+		// implements QuantBackend, so int4, int8 and f32 all run the same CPU kernels. There is no real "cuda-staged" or
+		// "metal-staged" path, so report it the way BackendSummary reports a backend that failed to build: requested vs.
+		// actually executing (docs/measurements/cold-user-2026-09-06-nobara-pc.md, R9).
 		req := be
 		if m.backendAuto { // the user asked for auto, which chose this backend (R17)
 			req = "auto (" + be + ")"
@@ -1468,21 +1338,11 @@ func (m *Model) DecodePath() string {
 	}
 }
 
-// residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a
-// live Model (see decoder/staged_device_note_test.go) — same shape as declinedToCPUReason below.
-//
-// G10 (docs/tasks/task-gpu-paths-2026-09.md), widened by M-15... M-25 (audit-2026-09-10): Metal has
-// no int8 GEMV kernel at all — ANY Int8()-kind weight is silently re-quantized to W4A8 (int4) at
-// resident-build time (metal/model.go's int4Buf falls back to w.Int8() whenever int4DirectWords
-// finds no already-int4 nibbles), not just under `--quant int8int8`. `--quant int8` produces the
-// same Int8-kind WeightMat and hits the identical fallback; `--quant int4mix`'s int8-kind tensors
-// (the ones it deliberately did NOT keep at int4) do too, so even a "mix" ends up effectively
-// uniform int4 on this backend. f32 is NOT affected: an f32-kind WeightMat has neither int4Buf
-// fallback available (int4DirectWords finds no nibbles, w.Int8() finds no q8) and int4Buf's own
-// call sites panic rather than silently proceed, so this backend never actually produces a
-// resident build to mislabel in the first place — it errors/declines well before DecodePath would
-// print anything. Every (backend, quant) pair outside these three metal cases is unaffected and
-// echoes the requested quant string exactly as before.
+// residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a live Model
+// (decoder/staged_device_note_test.go). Metal has no int8 GEMV kernel of its own: unless the resident reports
+// otherwise (ResidentQuantReporter), an Int8()-kind weight is re-quantized to W4A8 at resident-build time, under
+// `--quant int8` and `int8int8` and for `int4mix`'s int8-kind tensors, so the label says "→int4". f32 never produces
+// a resident build there. Every other (backend, quant) pair echoes the requested quant.
 func residentQuantLabel(backend, quant string) string {
 	if backend == "metal" && (quant == "int8" || quant == "int8int8" || quant == "int4mix") {
 		return quant + "→int4, no Metal int8 GEMV kernel"
@@ -1491,12 +1351,12 @@ func residentQuantLabel(backend, quant string) string {
 }
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
-// backend the user did not name must not change the precision they loaded at, such as the int8int8 bundle a
-// model-included goinfer-chat carries (R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, and since slice 1
-// of docs/tasks/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
-// models native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here
-// (slice 5: gate S-auto passed, 2026-10-04), and autoMetalKeepsPrecision checks afterwards that it ran natively; the
-// others stay on the CPU. A named -backend metal still runs them re-quantized.
+// backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
+// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident and dense
+// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models
+// native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
+// autoMetalKeepsPrecision checks afterwards that it ran natively; the others stay on the CPU. A named -backend
+// metal still runs them re-quantized.
 func autoMetalPrecision(auto bool, backend, quant string) string {
 	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" {
 		return ""
@@ -1534,18 +1394,12 @@ func declinedToCPUReason(backend, resDecline string) string {
 	return reason
 }
 
-// stagedDeviceNote names when webgpu's own staged path — the only one that has one, see
-// DecodePath above — still reaches no device for a given quant, so the path name alone does not
-// overclaim device use.
-//
-// WebGPU's Backend.MatmulBT and QuantBackend.MatmulW8A8 (gpu/backend.go) do real device work in
-// the staged path, unlike cuda/metal. Its int4 dispatch, QuantBackend4.MatmulW4A8 (G6, db81b08),
-// covers M=1 only: decode runs int4 on the device, and a multi-token prefill declines to the host
-// W4A8 kernel because this backend has no int4 GEMM. So int4's note splits decode from prefill,
-// and so does int4mix's, whose FFN tensors are int4 (its attention tensors are int8 and reach
-// QuantBackend). f32/int8/int8int8 DO reach webgpu's device and get no note. Until
-// audit-2026-09-10 G-13(a) the int4 note said no GPU dispatch existed at all, which db81b08 had
-// made false, and TestStagedDeviceNote pinned the false text.
+// stagedDeviceNote names when webgpu's own staged path (the only one that has one, see DecodePath) still reaches no
+// device for a given quant, so the path name alone does not overclaim device use. Its Backend.MatmulBT and
+// QuantBackend.MatmulW8A8 (gpu/backend.go) do real device work, unlike cuda/metal; its int4 dispatch,
+// QuantBackend4.MatmulW4A8, covers M=1 only, so decode runs int4 on the device and a multi-token prefill declines to
+// the host W4A8 kernel (no int4 GEMM). int4mix splits the same way (int4 FFN, int8 attention). f32/int8/int8int8
+// reach the device and get no note. TestStagedDeviceNote pins this text.
 func stagedDeviceNote(quant string) string {
 	switch quant {
 	case "int4":
@@ -1561,27 +1415,23 @@ func stagedDeviceNote(quant string) string {
 // print it and -require-backend can refuse to start on it.
 func (m *Model) ResidentDecline() string { return m.resDecline }
 
-// PrefillPath reports how a long prompt will actually be ingested — one batched pass, or the
-// sequential per-token loop — plus the reason when it is sequential. It is the load-time answer to
-// a decline that generateInto otherwise takes silently: the batched prefill is an OPTIONAL backend
-// capability that falls back per call, so a model can lose a 9× TTFT (measured: cuda int8int8,
-// 300-token prompt, 1.73 s vs 0.19 s) without emitting anything. serve prints this at startup and
-// -require-backend refuses to start on a decline.
+// PrefillPath reports how a long prompt will actually be ingested (one batched pass, or the sequential per-token
+// loop) plus the reason when it is sequential. It is the load-time answer to a decline that generateInto otherwise
+// takes silently: the batched prefill is an OPTIONAL backend capability that falls back per call, so a model can
+// lose most of its TTFT without emitting anything. serve prints this at startup and -require-backend refuses to
+// start on a decline.
 //
-// Both halves are covered: the resident path asks the backend (PrefillPathReporter), and the
-// staged/CPU path reports canBatchN, which excludes the families with their own sequential forward
-// (Gemma 4, qwen3_5, Mamba-2 hybrids, MLA, Llama 4, gpt-oss).
+// Both halves are covered: the resident path asks the backend (PrefillPathReporter), and the staged/CPU path
+// reports canBatchN, which excludes the families with their own sequential forward (Gemma 4, qwen3_5, Mamba-2
+// hybrids, MLA, Llama 4, gpt-oss).
 func (m *Model) PrefillPath() (batched bool, reason string) {
 	if m.resident == nil {
 		if !m.canBatchN(2) {
 			return false, "sequential — this arch has its own per-token forward (no batched CPU prefill)"
 		}
-		// The word "batched" here names the SHAPE (weights stream once per prompt at
-		// M=K instead of once per token), not a throughput claim. Measured on an M1
-		// Pro, dense 1.5B: the CPU prefill path is single-threaded and its best
-		// observed rate is the same order as the model's DECODE rate, so a reader who
-		// hears "batched" as "fast" is being misled by this string (queue G17; the
-		// missing parallelism is G16). Say what it is and what it is not.
+		// "batched" names the SHAPE (weights stream once per prompt at M=K instead of once per token), not a throughput
+		// claim: the CPU prefill path is single-threaded and runs at about the model's decode rate. Say what it is and
+		// what it is not.
 		return true, "batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — " +
 			"describes weight streaming, not throughput; this path is single-threaded"
 	}
@@ -1701,35 +1551,26 @@ func (m *Model) Gemma4PLEDimResident() int {
 // has to happen between the projection and the add.
 func (m *Model) SandwichNormResident() bool { return m.w.arch.NormPlacement == NormSandwich4 }
 
-// PostOnlyNormResident reports whether the arch has NO pre-norm at all — Olmo 3 / Olmo Hybrid's
-// full-attention layers (NormPlacement == NormPostOnly; see that value's own comment). Unlike
-// SandwichNormResident this is model-level, not per-layer, but it stays correct for Olmo Hybrid:
-// its DeltaNet layers reach NormPre2 only through NormPlacementLinear, and both backends' DeltaNet
-// mixer is a wholly separate dispatch path that never consults this flag (or Ly.preNorm) at all.
-// A backend that admits such a model must skip the pre-sublayer norm entirely (the sublayer reads
-// the RAW residual) and dispatch PostAttnNorm/PostMLPNorm on the sublayer OUTPUT before the
-// residual add — the post-norm half of what SandwichNormResident's family does, minus the pre half.
+// PostOnlyNormResident reports whether the arch has NO pre-norm at all (Olmo 3 / Olmo Hybrid's full-attention
+// layers, NormPlacement == NormPostOnly). Model-level, not per-layer: Olmo Hybrid's DeltaNet layers reach NormPre2
+// through NormPlacementLinear, and both backends' DeltaNet mixer never consults this flag. A backend that admits
+// such a model must skip the pre-sublayer norm (the sublayer reads the RAW residual) and dispatch
+// PostAttnNorm/PostMLPNorm on the sublayer OUTPUT before the residual add.
 func (m *Model) PostOnlyNormResident() bool { return m.w.arch.NormPlacement == NormPostOnly }
 
-// QKNormWholeResident reports whether QK-norm (HasQKNorm) reduces over the WHOLE projected q/k
-// vector (one RMSNorm over num_heads*head_dim) rather than per head — Olmo 3 / Olmo Hybrid,
-// verified against modeling_olmo3.py's Olmo3RMSNorm(num_attention_heads*head_dim, ...). A
-// resident backend can express this by reusing its existing per-head qk-norm kernel with the
-// grid collapsed to one Q block and one K block (nH=1, nKV=1, hd=nH_orig*hd_orig) — valid ONLY
-// when nH==nKV (MHA) at that layer, since the same hd argument sizes both blocks; a backend must
-// decline rather than silently mis-normalize if a future QKNormWhole family is GQA.
+// QKNormWholeResident reports whether QK-norm (HasQKNorm) reduces over the WHOLE projected q/k vector (one RMSNorm
+// over num_heads*head_dim) rather than per head: Olmo 3 / Olmo Hybrid (modeling_olmo3.py's
+// Olmo3RMSNorm(num_attention_heads*head_dim)). A backend can reuse its per-head qk-norm kernel with the grid
+// collapsed to one Q block and one K block (nH=1, nKV=1, hd=nH_orig*hd_orig), valid ONLY when nH==nKV (MHA); it
+// must decline rather than mis-normalize a GQA QKNormWhole family.
 func (m *Model) QKNormWholeResident() bool { return m.w.arch.QKNormWhole }
 
-// ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared
-// input norm and sums both into a single residual add (NormPlacement == NormParallel; see that
-// value's own comment for the exact formula) — Cohere/Command-R, Cohere2/Command-R7B. Model-level
-// like SandwichNormResident/PostOnlyNormResident: neither cohere family sets NormPlacementLinear
-// (that per-layer override is Olmo Hybrid's alone), so this is a flat model-wide value. A backend
-// that admits such a model must feed the MLP from the SAME normed+quantized activation the
-// attention branch already computed — not a fresh norm of the post-attention residual — and defer
-// both the attention and MLP outputs' residual adds; per-layer PreMLPNorm is absent for this
-// family (the tensor schema has no separate pre-MLP norm — see registry.go's cohere note), so a
-// backend must not require or upload one.
+// ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared input norm and sums
+// both into a single residual add (NormPlacement == NormParallel; see that value's own comment for the formula):
+// Cohere/Command-R, Cohere2/Command-R7B. Model-level, a flat model-wide value. A backend must feed the MLP from
+// the SAME normed+quantized activation the attention branch computed (not a fresh norm of the post-attention
+// residual), defer both outputs' residual adds, and not require a per-layer PreMLPNorm (the family has none;
+// registry.go's cohere note).
 func (m *Model) ParallelBlockResident() bool { return m.w.arch.NormPlacement == NormParallel }
 
 // LogitScaleResident returns the host-side final-logit multiplier for FeatLogitScale families
@@ -1874,17 +1715,11 @@ func (m *Model) Qwen35AttnWeights(i int) (qProj, kProj, vProj, oProj *linalg.Wei
 	return &a.qProj, &a.kProj, &a.vProj, &a.oProj, a.qNorm, a.kNorm
 }
 
-// BackendReport renders the load banner's backend field. It NEVER names a backend that is not
-// executing: when the requested one was unavailable it reads
-// "requested metal → running on cpu: <reason>" instead of "metal".
-//
-// See backendNames for why this exists — v0.16.0's banner printed Options.Backend, the REQUEST,
-// one line after the runtime had already said it was falling back to CPU.
-//
-// Appends int4LayoutSummary when non-empty (aikit audit M-22's repacked-only int4 policy,
-// wantsCanonicalInt4 in decoder/weightmat.go) — the visible counterpart to a load-time decision
-// that is otherwise invisible until a resident/staged build declines for a reason that traces
-// back to it. See int4LayoutSummary's own doc comment for the format and why this belongs here.
+// BackendReport renders the load banner's backend field. It NEVER names a backend that is not executing: when the
+// requested one was unavailable it reads "requested metal → running on cpu: <reason>" instead of "metal" (see
+// backendNames). Appends int4LayoutSummary when non-empty (the repacked-only int4 policy, wantsCanonicalInt4 in
+// decoder/weightmat.go): the visible counterpart to a load-time decision that is otherwise invisible until a
+// resident or staged build declines for a reason that traces back to it.
 func (m *Model) BackendReport() string {
 	s := BackendSummary(m.reqBackend, m.effBackend, m.beDecline)
 	if layout := m.int4LayoutSummary(); layout != "" {

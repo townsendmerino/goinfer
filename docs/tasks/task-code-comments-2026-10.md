@@ -183,6 +183,13 @@ seen red has not been shown to work.
 
 ## 6. CC3 — pilot, with the expectation written first
 
+> **Pilot done 2026-10-10: the result is below the band.** Comment lines `gpu/prefillrunner.go` 248 → 154 (−38%),
+> `decoder/residency.go` 941 → 776 (−18%), together 1,189 → 930 (−22%): under the 25% line below, so the owner decides (§10.1)
+> before any rollout. What the numbers say: only 32 of the 248 and 97 of the 941 comment lines carry a history marker at all (the §1
+> ceiling), so the two files are mostly contract, and `residency.go` is mostly interface documentation. The history that was there
+> moved verbatim (`docs/code-notes/gpu.md`, `docs/code-notes/decoder.md`); the rest of the cut is wording tightened to the rule's
+> "a sentence or two" with nothing dropped, listed as NOT FOUND by the moved-text report. Going further means cutting contract.
+
 Files: `gpu/prefillrunner.go` (248 comment lines of 1,039) and `decoder/residency.go` (941 of 1,816). Neither has an open
 branch against it on 2026-10-09. `decoder/forwardn.go` was the first choice; it is out because `s10-pixtral` edits it.
 
@@ -248,7 +255,12 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
 1. **After CC3:** roll out as is, adjust the rule, or stop at CC0 (which pays for itself without the rest).
 2. **After CC4:** CC6's diff mode stays a warning or becomes a refusal.
 3. **Open work found in comments with no owning doc** — listed here as packages are done:
-   - (none yet)
+   - **`gpu/prefillrunner.go:runModelToModelW`** (CC3 pilot): bias prefill on Metal still diverges past nKeys~15 (cosine
+     ~0.997-0.999 against sequential decode, not float noise), while Vulkan is bit-exact. The comment named the next step: a
+     fused residual-epilogue kernel for O-proj/down-proj (the first attempt regressed Vulkan and was removed), isolated
+     tests before wiring, and a check of whether the §3.2 pooled fidelity gate (`docs/completed/task-prefill-gap.md`)
+     already clears Metal. `BuildResident` declines bias prefill off Vulkan meanwhile. No doc or queue entry owns it; the
+     text is at `docs/code-notes/gpu.md#runModelToModelW`.
 
 ## 11. Not in scope
 
