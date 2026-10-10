@@ -10,14 +10,9 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// deltaNetTiming env-gates the sixth outing of this repo's component-stub timing
-// method (GOINFER_DELTANET_TIMING=1): splits gatedDeltaNetStep's ~19%-of-decode-token
-// cost (docs/completed/task-zeno-compare.md's diagnostic) into the three dominant projections
-// (already W4A8/W8A8-quantized, presumably fast), the delta-rule recurrence proper
-// (section 3 below — plain scalar Go, the DeltaNet-CPU-recurrence brief's suspect),
-// and everything else (conv, gates, gated RMSNorm). Atomic accumulators, not
-// Generate-loop-locals, so concurrent decode streams don't race on them — added,
-// used to record the split, then reverted, per this repo's own discipline.
+// deltaNetTiming (GOINFER_DELTANET_TIMING=1) is a diagnostic that splits gatedDeltaNetStep's cost into the three dominant
+// projections, the delta-rule recurrence proper (section 3 below, plain scalar Go) and everything else (conv, gates, gated
+// RMSNorm). The accumulators are atomics, not Generate-loop locals, so concurrent decode streams do not race on them.
 var deltaNetTiming = os.Getenv("GOINFER_DELTANET_TIMING") != ""
 
 var (
@@ -59,32 +54,24 @@ func PrintDeltaNetTiming() {
 		n, msPer(proj), pct(proj), msPer(recur), pct(recur), msPer(other), pct(other), nsPerElem, elems)
 }
 
-// Gated DeltaNet — the linear-attention primitive of Qwen3.5/3.6-MoE
-// (qwen3_5_moe). It replaces softmax attention on most layers with a gated
-// delta-rule recurrence over a fixed-size per-head matrix state, so its memory
-// is O(1) in sequence length rather than a growing KV cache. See
-// docs/qwen3_5_moe.md; the math mirrors HF's torch_recurrent_gated_delta_rule +
-// the surrounding conv / gates / gated-RMSNorm, validated op-for-op against a
-// traced golden (deltanet_test.go).
+// Gated DeltaNet, the linear-attention primitive of Qwen3.5/3.6-MoE (qwen3_5_moe). It replaces softmax attention on most layers
+// with a gated delta-rule recurrence over a fixed-size per-head matrix state, so memory is O(1) in sequence length rather than a
+// growing KV cache. The math mirrors HF's torch_recurrent_gated_delta_rule plus the surrounding conv, gates and gated RMSNorm,
+// validated op-for-op against a traced golden (deltanet_test.go); see docs/completed/qwen3_5_moe.md.
 //
-// This is the parity-first reference implementation: plain f32, sequential over
-// positions. Perf (a chunked/parallel scan, quantized projections) is a later
-// track.
+// This is the sequential reference implementation: the recurrence runs one position at a time in plain f32, with no chunked or
+// parallel scan, and only the projections are quantizable.
 
 // deltaNetWeights holds one Gated DeltaNet layer's parameters, row-major, as HF
 // stores them. All projections are bias-free; the depthwise conv is bias-free too.
 type deltaNetWeights struct {
-	// THE THREE DOMINANT PROJECTIONS ARE QUANTIZABLE (2026-08-19). They were []float32 —
-	// "parity-first", from the qwen3_5_moe bring-up — which meant a 27.8B Qwen3.8 at Quant:"int4"
-	// still streamed them as f32: 22.1 GB per token across 48 DeltaNet layers, against ~9.5 GB for
-	// the whole int4 FFN. Decode at this size is memory-bandwidth-bound, so that WAS the speed.
-	// WeightMat keeps f32 when the caller asks for no quant (the tiny goldens still match HF
-	// exactly), and carries int8/int4 when they do.
+	// The three dominant projections (inProjQKV, inProjZ, outProj) are quantizable WeightMats: they dominate the bytes streamed per
+	// token and decode is memory-bandwidth-bound, so holding them as f32 would stream them at f32 under any quant. WeightMat keeps f32
+	// when no quant is asked for (the tiny goldens still match HF exactly) and carries int8/int4 otherwise.
 	inProjQKV linalg.WeightMat // [convDim, hidden]   → [q;k;v]
 	inProjZ   linalg.WeightMat // [valueDim, hidden]  → output gate z
-	// A and B stay f32: [48, 5120] each is ~1 MB per layer (~94 MB total on the 27B) against the
-	// 22 GB above, and they feed the write/decay gates, where the recurrence is most sensitive to
-	// precision. Quantizing them would buy ~0.2% of the bytes for real numerical risk.
+	// A and B stay f32: they are small against the projections and feed the write/decay gates, where the recurrence is most
+	// sensitive to precision. Quantizing them would buy a fraction of a percent of the bytes for real numerical risk.
 	inProjB []float32        // [numV, hidden]      → write-gate logits β
 	inProjA []float32        // [numV, hidden]      → decay-gate input a
 	convW   []float32        // [convDim, K]        depthwise causal conv ([convDim,1,K] flattened)
@@ -153,7 +140,7 @@ func softplusf(x float32) float32 {
 // the recurrent matrix state S (one [head_k_dim, head_v_dim] block per value
 // head). Fixed size — independent of sequence length, and NOT position-
 // truncatable (why qwen3_5_moe falls back from prefix reuse / speculative; see
-// docs/qwen3_5_moe.md).
+// docs/completed/qwen3_5_moe.md).
 type deltaState struct {
 	convWin [][]float32 // up to K-1 prior mixed_qkv vectors, oldest first
 	s       []float32   // [numV * head_k_dim * head_v_dim]

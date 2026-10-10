@@ -24,18 +24,9 @@ func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) 
 	}
 }
 
-// dequantHeads reconstructs nKV int8 head-rows (each headDim wide, scale per
-// head) back to f32 in dst — the inverse of quantizeHeads, for the batched
-// prefill's dequant-into-scratch (the f32 matmul kernels stay unchanged).
-// dequantHeads expands one position's int8 KV into f32, one scale per KV head. The arithmetic
-// lives in aikit — this is the argument order goinfer's nine call sites use, nothing more.
-//
-// It WAS a duplicate of linalg.DequantizeRowsInt8Into (rows=nKV, cols=headDim, per-row scale), and
-// the duplication was removed rather than assumed: the two were gated RAW-BIT equal
-// (math.Float32bits, not a tolerance) over int8's full range including -128, per-head scales
-// spanning max-normal / min-normal / denormal / ±0 / Inf / NaN, and the tail shapes the cache
-// actually uses — then mutation-checked by perturbing one lane and watching the gate go red.
-// See aikit docs/task-goinfer-kernel-moves.md, M5.
+// dequantHeads expands one position's int8 KV (nKV head-rows of headDim, one scale per KV head) into f32 dst: the inverse of
+// quantizeHeads, for the batched prefill's dequant-into-scratch (the f32 matmul kernels stay unchanged). The arithmetic lives in
+// aikit (linalg.DequantizeRowsInt8Into); this is the argument order goinfer's call sites use.
 func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
 	linalg.DequantizeRowsInt8Into(dst, q, scales, nKV, headDim)
 }
@@ -58,28 +49,23 @@ type KVCache struct {
 	imgBlocks  [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
 	mropePos   [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position. (P5)
 	mropeDelta int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+mropeDelta (the image compresses positions, so delta is usually negative). (P5)
-	// deepstack is Qwen3-VL's DeepStack for the prefill that carries it (S10, docs/tasks/task-multimodal-support-2026-10.md):
-	// after decoder layer l, for l < len(rows), rows[l] ([n*hidden], one row per image position) is ADDED to the hidden
-	// state at the image positions [start, start+n), as HF's _deepstack_process does. nil for every other prefill; a
-	// decode step never touches it (a decode position is never an image position).
+	// deepstack is Qwen3-VL's DeepStack for the prefill that carries it: after decoder layer l, for l < len(rows), rows[l]
+	// ([n*hidden], one row per image position) is added to the hidden state at the image positions [start, start+n), as HF's
+	// _deepstack_process does. nil for every other prefill; a decode step never touches it.
 	deepstack *deepstackRows
 
 	keys [][]float32 // per layer, appended [pos*kvDim] (global / append-forever layers)
 	vals [][]float32
-	// stride is each global layer's KV width, learned on its first append — the authoritative
-	// per-layer row width. TruncateTo uses it instead of len/pos, which mis-derives the width when
-	// a mid-sweep forward error leaves earlier layers with one extra (ragged) row (M11). 0 for a
-	// KV-shared layer that never appends.
+	// stride is each global layer's KV width, learned on its first append: the authoritative per-layer row width. TruncateTo uses it
+	// instead of len/pos, which mis-derives the width when a mid-sweep forward error leaves earlier layers with one extra (ragged)
+	// row. 0 for a KV-shared layer that never appends.
 	stride []int
 	pos    int // number of positions stored (the next position index)
 
-	// rings holds a fixed-W ring buffer for each sliding-window (local) layer;
-	// nil entry = a global layer that append-forevers into keys/vals above. Set by
-	// enableRings (from NewCache) for the families that take the attendQuery /
-	// attendBatchedHeads paths — full-attention families (no local layers),
-	// gemma4, and qwen3_5_moe keep append-forever (rings all nil). A local layer
-	// stores only the W most recent positions (the only ones any future query can
-	// read), so its KV is O(W) not O(context). See docs/completed/task-kv-ring-eviction.md.
+	// rings holds a fixed-W ring buffer for each sliding-window (local) layer; a nil entry is a global layer that append-forevers
+	// into keys/vals above. Set by enableRings (from NewCache) for the families on the attendQuery/attendBatchedHeads paths. A local
+	// layer stores only the W most recent positions (the only ones any future query can read), so its KV is O(W), not O(context).
+	// See docs/completed/task-kv-ring-eviction.md.
 	rings    []*ring
 	localAny bool // any ring layer present (gates prefill's assembly scratch)
 
@@ -91,18 +77,17 @@ type KVCache struct {
 	keysQ, valsQ       [][]int8    // [pos*kvDim] (global int8 layers)
 	keyScale, valScale [][]float32 // [pos*nKV]   (per-(position,head) scale)
 
-	// manualPos decouples pos from Append's last-layer trigger. Gemma 4's last
-	// layer is KV-shared (never appends), so the caller advances pos explicitly
-	// via Advance() after each token's full layer sweep. qwen3_5_moe sets it too
-	// (its linear layers don't Append, so the last-layer trigger is unreliable).
+	// manualPos decouples pos from Append's last-layer trigger, for families whose last layer never appends (Gemma 4's is KV-shared;
+	// a hybrid's linear layers do not Append): the caller advances pos explicitly via Advance() after each token's full layer sweep.
 	manualPos bool
 
-	// recurrentResets counts resetRecurrent calls: a diagnostic, read by the R-16 test that proves a clean session does not zero its state twice. Nothing branches on it.
+	// recurrentResets counts resetRecurrent calls: a diagnostic the test that proves a clean session does not zero its state twice
+	// reads. Nothing branches on it.
 	recurrentResets int
 
 	// delta holds the Gated DeltaNet recurrent state for qwen3_5_moe's linear
 	// layers (nil entry on softmax layers, nil slice on every other family). This
-	// is the recurrent half of the hybrid cache — see docs/qwen3_5_moe.md.
+	// is the recurrent half of the hybrid cache — see docs/completed/qwen3_5_moe.md.
 	delta []*deltaState
 
 	// conv holds the LFM2 gated short-convolution rolling window for the conv layers
@@ -116,12 +101,10 @@ type KVCache struct {
 	// every other family). The Granite analogue of delta.
 	mamba []*mamba2State
 
-	// mlaLatent holds DeepSeek MLA's compressed-KV latent per layer, appended
-	// [pos*latentDim] where latentDim = kv_lora_rank + qk_rope_head_dim. This is
-	// the whole point of MLA: cache the low-rank latent (~576 floats/token), not a
-	// reconstructed full K+V (~41k). forward_deepseek rebuilds per-head K/V from it
-	// each step. nil slice on every other family. latentDim is the per-position
-	// stride (learned on the first append). The standard keys/vals stay empty.
+	// mlaLatent holds DeepSeek MLA's compressed-KV latent per layer, appended [pos*latentDim], latentDim = kv_lora_rank +
+	// qk_rope_head_dim (the per-position stride, learned on the first append). The cache holds the low-rank latent, not a
+	// reconstructed full K+V; forward_deepseek rebuilds per-head K/V from it each step. nil on every other family; the standard
+	// keys/vals stay empty.
 	mlaLatent [][]float32
 	latentDim int
 
@@ -132,11 +115,9 @@ type KVCache struct {
 
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 
-	// captureLayers, when non-nil, requests that runLayersFromEmbed copy the residual
-	// stream (the layer OUTPUT) after each listed layer index into captured[i] — the
-	// read-only hidden-state seam a draft head reads (05's EAGLE-3 head fused low/mid/high
-	// target states until its removal on 2026-09-24; block drafters read it now). nil = no capture, zero overhead. The
-	// copies never feed back into the forward, so the token output is byte-identical.
+	// captureLayers, when non-nil, requests that runLayersFromEmbed copy the residual stream (the layer output) after each listed
+	// layer index into captured[i]: the read-only hidden-state seam a draft head reads (block drafters). nil = no capture, zero
+	// overhead. The copies never feed back into the forward, so the token output is byte-identical.
 	captureLayers []int
 	captured      [][]float32
 
@@ -152,13 +133,10 @@ type KVCache struct {
 	subMLPpre  [][]float32 // [layer][hidden] MLP down output BEFORE the post-MLP sandwich norm
 	subCtx     [][]float32 // [layer][qDim] attention CONTEXT, pre-o-proj (attendBatchedHeads out)
 
-	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a
-	// linear causal chain to TREE attention (05 EAGLE tree drafting; nothing sets these since that
-	// head was removed on 2026-09-24 — kept as tested plumbing): row i takes its
-	// RoPE position from treeRowPos[i] (its depth) instead of startPos+i, and among the
-	// K new batch keys it attends only to columns j with treeMask[i][j] true (its
-	// ancestor path, including itself) plus the whole committed prefix. nil = the
-	// ordinary linear behavior, byte-identical (zero overhead on the common path).
+	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a linear causal chain to tree attention: row i
+	// takes its RoPE position from treeRowPos[i] (its depth) instead of startPos+i, and among the K new batch keys attends only to
+	// columns j with treeMask[i][j] true (its ancestor path, including itself), plus the whole committed prefix. nil = the ordinary
+	// linear behaviour, byte-identical, zero overhead. Nothing in production sets them; they are tested plumbing.
 	treeRowPos []int
 	treeMask   [][]bool
 
@@ -169,20 +147,14 @@ type KVCache struct {
 	lora *loraRuntime
 }
 
-// NewKVCache allocates an empty cache for a model with the given geometry.
-// capHint pre-sizes the per-layer slices to avoid reallocation during a
-// known-length generation; 0 is fine (grow on demand).
+// NewKVCache allocates an empty cache for a model with the given geometry. capHint pre-sizes the per-layer slices to avoid
+// reallocation during a known-length generation; 0 is fine (grow on demand).
 //
-// skipLayer (nil-safe: nil ⇒ no layer skipped) reports whether layer l never writes
-// c.keys[l]/c.vals[l] at all — a linear/mamba/conv mixer layer, or one of Nemotron's own
-// non-attention block kinds — in which case its capHint reservation is wasted capacity the
-// layer's forward pass never touches (P-02, docs/audit-2026-09-10.md): 100-200 MB+ per stream at
-// realistic context lengths on a hybrid family's non-attention layers, multiplied by however many
-// sessions the LRU keeps warm. This is independent of, and layered on top of, the caller's own
-// whole-cache decision to pass capHint=0 for an MLA family (model.go's own P-02 comment) — an MLA
-// layer DOES hold attention-shaped KV, just in the separate c.mlaLatent array skipLayer knows
-// nothing about, so that case is handled by the caller zeroing capHint itself, not by this
-// parameter.
+// skipLayer (nil-safe: nil means none skipped) reports whether layer l never writes c.keys[l]/c.vals[l] at all (a linear, mamba or
+// conv mixer layer, or one of Nemotron's non-attention block kinds): its capHint reservation would be wasted capacity, large per
+// stream at realistic context lengths on a hybrid family and multiplied by every session the LRU keeps warm. It is independent of
+// the caller's own decision to pass capHint=0 for an MLA family: an MLA layer does hold attention-shaped KV, in c.mlaLatent,
+// which skipLayer knows nothing about.
 func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer func(l int) bool) *KVCache {
 	if capHint < 0 { // defensive: a negative hint (e.g. from a negative max_tokens) would
 		capHint = 0 // panic makeslice with "cap out of range"; the HTTP surface rejects it
@@ -265,8 +237,9 @@ func (r *ring) write(p int, k, v []float32) {
 	}
 }
 
-// ringDirectDecode makes K=1 decode on an f32 ring read its window in place (audit R-12) instead of copying every resident row into scratch each token.
-// It is an A/B handle and a test seam, never read from the environment: tests flip it to compare the two paths bit for bit.
+// ringDirectDecode makes K=1 decode on an f32 ring read its window in place instead of copying every resident row into scratch
+// each token. It is an A/B handle and a test seam, never read from the environment: tests flip it to compare the two paths bit
+// for bit.
 var ringDirectDecode = true
 
 // mirrored reports whether the ring holds its second copy: slots [w, 2w) equal slots [0, w), so ANY run of up to w consecutive positions is one contiguous
@@ -303,13 +276,10 @@ func (r *ring) window(base, n int) (k, v []float32) {
 	return r.k[o:e], r.v[o:e]
 }
 
-// truncate drops logical positions ≥ p. Returns true iff the result is exact —
-// i.e. every position the post-truncation window [max(0,p-w), p) is still
-// physically resident. That holds whenever the ring never wrapped (count ≤ w);
-// a deeper rewind on a wrapped ring would need positions already evicted, so it
-// returns false and the caller must cold-prefill (the rewind rule, wired into
-// sessions in Increment 2). Spec-decode draft depths ≪ w on short contexts never
-// wrap, so they stay exact.
+// truncate drops logical positions >= p. It returns true iff the result is exact, i.e. every position of the post-truncation
+// window [max(0,p-w), p) is still physically resident. That holds whenever the ring never wrapped (count <= w); a deeper rewind
+// on a wrapped ring would need evicted positions, so it returns false and the caller must cold-prefill. Spec-decode draft depths
+// far below w on short contexts never wrap, so they stay exact.
 func (r *ring) truncate(p int) bool {
 	if p >= r.count {
 		return true
@@ -492,51 +462,22 @@ func (c *KVCache) Latent(layer int) []float32 { return c.mlaLatent[layer] }
 // Pos is the number of positions stored so far.
 func (c *KVCache) Pos() int { return c.pos }
 
-// TruncateTo drops every stored position at index ≥ pos in all layers and resets
-// Pos to pos — the rollback speculative decoding needs after a partial accept
-// (rejected draft positions were appended but aren't real), and the seam prefix
-// reuse rides on to rewind to a shared prompt prefix (see Session). Cheap: a
-// reslice that keeps the backing arrays, so re-appending doesn't reallocate. pos
-// must be in [0, Pos()].
-//
-// Per-position stride is derived per layer from what the layer actually holds
-// (len/Pos), not the cache's nominal kvDim, because two Gemma 4 facts break a
-// uniform stride: per-layer head_dim / KV-head counts make widths differ between
-// layers, and KV-shared tail layers Append nothing (length 0). Deriving the
-// stride handles both — a shared layer's stride is simply 0, so it stays empty.
-// TruncateTo rewinds the cache to hold exactly pos positions and returns whether the rewind was
-// EXACT. A wrapped sliding-window ring (count>w) rewound by more than one position cannot restore
-// the dropped positions — its window slots still physically hold them, and attention reads them as
-// history — so it returns exact=false. Callers reusing a rewound prefix (Session prefix reuse,
-// speculative rollback) MUST cold-prefill on an inexact rewind or produce silently wrong output
-// (C1). Global/int8/MLA layers store every position, so they always rewind exactly.
-// hasRecurrentState reports whether this cache carries state that is mutated IN PLACE per token
-// and has no per-position history — so TruncateTo cannot rewind it, Snapshot cannot persist it, and
-// a rolled-back session must go cold rather than warm-reuse it.
-//
-// THREE KINDS, ONE PREDICATE, BECAUSE THE THIRD WAS INVISIBLE TO ALL OF THEM. Mamba-2 (c.mamba) and
-// Gated DeltaNet (c.delta) were hand-listed at each site; LFM2's short-conv window (c.conv) is the
-// same kind of state — mutated in place per token, exactly like the other two windows — and was
-// named at none of them. resetRecurrent() already cleared c.conv, and was unreachable for an
-// LFM2-only cache because the guard that calls it did not mention conv. So TruncateTo(0) left the
-// window intact: conversation B's first K-1 tokens convolved over conversation A's last Bx
-// vectors, at every conv layer — the cross-conversation leak audit C-01 closed for the other two
-// kinds — and a partial rewind reported exact=true, so rewindForReuse warm-reused a prefix whose
-// windows still held the dropped positions (audit-2026-09-02 C-02, audit §0 theme 1).
-//
-// The fourth kind (KDA) WAS missed here, at every site (audit C-03); recurrent_census_test.go now asks the struct, so a fifth cannot be.
+// hasRecurrentState reports whether this cache carries state mutated in place per token with no per-position history: TruncateTo
+// cannot rewind it, Snapshot cannot persist it, and a rolled-back session must go cold rather than warm-reuse it. It is one
+// predicate over every kind (c.mamba, c.delta, c.conv, c.kda), read at every site: a kind missed at one site leaks one
+// conversation's window into the next (TruncateTo(0) leaving it intact) and reports a partial rewind exact, so a rewound prefix
+// is warm-reused over stale windows. recurrent_census_test.go asks the struct, so a new kind cannot be missed.
 func (c *KVCache) hasRecurrentState() bool {
 	return c.mamba != nil || c.delta != nil || c.conv != nil || c.kda != nil
 }
 
-// resetRecurrent re-zeroes the Mamba-2 / Gated DeltaNet / KDA rolling state (conv window(s) +
-// SSM/linear-attn state) so a reused cache doesn't leak the prior sequence's recurrence
-// into a fresh one (audit C-01). No-op on non-recurrent families (nil slices).
+// resetRecurrent re-zeroes the rolling state of every recurrent kind (Mamba-2, Gated DeltaNet, LFM2 conv, KDA: conv windows and
+// SSM / linear-attention state) so a reused cache does not leak the prior sequence's recurrence into a fresh one. No-op on
+// non-recurrent families (nil slices).
 func (c *KVCache) resetRecurrent() {
 	c.recurrentResets++
-	// LFM2's conv window is recurrent state in exactly the sense audit C-01 is about:
-	// leaving it would let the previous sequence's last K-1 tokens bleed into the first
-	// K-1 of the next one, which is a small, fluent, entirely wrong prefix.
+	// A conv window left behind would bleed the previous sequence's last K-1 tokens into the first K-1 of the next: a small, fluent,
+	// entirely wrong prefix.
 	for _, st := range c.conv {
 		if st != nil {
 			st.convWin = nil
@@ -558,8 +499,7 @@ func (c *KVCache) resetRecurrent() {
 			}
 		}
 	}
-	// Bailing Hybrid's KDA (audit C-03): three per-stream conv windows plus the per-head matrix
-	// state, all mutated in place per token — the same leak as the three kinds above.
+	// KDA: three per-stream conv windows plus the per-head matrix state, all mutated in place per token, the same leak as above.
 	for _, st := range c.kda {
 		if st != nil {
 			st.convWinQ, st.convWinK, st.convWinV = nil, nil, nil
@@ -570,28 +510,35 @@ func (c *KVCache) resetRecurrent() {
 	}
 }
 
-// resetMultimodal clears the per-sequence multimodal state — image attention blocks and
-// Qwen2.5-VL m-RoPE positions/delta — so a reused cache doesn't leak a prior sequence's
-// image blocks or m-RoPE offsets into a fresh one (audit M-25). Like the recurrent state,
-// these have no per-position rewind, so they're only cleared on a full reset. No-op on
-// text-only caches (nil slices / zero delta). Latent today (every VL generation uses a
-// fresh cache and warm-KV sessions are text-only), so this makes the reset complete before
-// VL is ever wired through the warm-KV session path rather than fixing a live leak.
+// resetMultimodal clears the per-sequence multimodal state (image attention blocks, Qwen2.5-VL m-RoPE positions and delta) so a
+// reused cache does not leak a prior sequence's image blocks or offsets into a fresh one. Like recurrent state it has no
+// per-position rewind, so it is cleared only on a full reset. No-op on text-only caches. Not a live leak today (every VL
+// generation uses a fresh cache and warm-KV sessions are text-only); it keeps the reset complete before VL reaches the session
+// path.
 func (c *KVCache) resetMultimodal() {
 	c.imgBlocks = nil
 	c.mropePos = nil
 	c.mropeDelta = 0
 }
 
+// TruncateTo rewinds the cache to hold exactly pos positions (pos in [0, Pos()]) and returns whether the rewind was exact. It is
+// the rollback speculative decoding needs after a partial accept, and the seam Session prefix reuse rewinds to a shared prefix
+// through. Cheap: a reslice that keeps the backing arrays. Callers reusing a rewound prefix MUST cold-prefill when exact is
+// false, or produce silently wrong output. A wrapped sliding-window ring (count>w) rewound by more than one position cannot
+// restore the dropped positions (its slots still physically hold them and attention reads them as history), and recurrent and
+// multimodal state have no per-position rewind; global, int8 and MLA layers store every position and always rewind exactly. A
+// rewind to 0 also resets the recurrent and multimodal state.
+//
+// The per-position stride is the per-layer width recorded at first append, not the nominal kvDim: Gemma 4's per-layer head_dim
+// and KV-head counts make widths differ, and its KV-shared tail layers append nothing (stride 0, so they stay empty).
 func (c *KVCache) TruncateTo(pos int) (exact bool) {
 	exact = true
 	if pos < 0 || pos > c.pos {
 		return exact // out-of-range no-op is exact
 	}
-	// Recurrent state is a single rolling state with no per-position history, so it cannot be
-	// exactly rewound (audit C-01). Reset it on a full clear (Session.Reset → TruncateTo(0), and
-	// sessionLRU.fresh), and report inexact on any rewind so rewindForReuse cold-prefills rather
-	// than decoding a new sequence from the previous one's leaked state.
+	// Recurrent state is a single rolling state with no per-position history, so it cannot be exactly rewound. Reset it on a full
+	// clear (Session.Reset → TruncateTo(0), and sessionLRU.fresh); a partial rewind is reported inexact below, so rewindForReuse
+	// cold-prefills rather than decoding a new sequence from the previous one's leaked state.
 	if c.hasRecurrentState() && pos == 0 {
 		c.resetRecurrent()
 	}
@@ -602,9 +549,8 @@ func (c *KVCache) TruncateTo(pos int) (exact bool) {
 	if pos > 0 && pos < c.pos && c.holdsStateHandled(lcRewind, hInexact) {
 		exact = false
 	}
-	// Multimodal state (image blocks + m-RoPE) also has no per-position rewind, and unlike
-	// the recurrent state can live on a non-recurrent (VL) family — so clear it on any full
-	// reset, outside the recurrent guard (audit M-25).
+	// Multimodal state (image blocks + m-RoPE) also has no per-position rewind, and unlike recurrent state can live on a
+	// non-recurrent (VL) family, so clear it on any full reset, outside the recurrent guard.
 	if pos == 0 {
 		c.resetMultimodal()
 	}
@@ -619,9 +565,8 @@ func (c *KVCache) TruncateTo(pos int) (exact bool) {
 			}
 			continue
 		}
-		// Global layers: truncate by the per-layer width recorded at first append (M11 — not
-		// len/pos, which mis-slices a ragged layer left by a mid-sweep forward error). min guards
-		// a KV-shared (stride 0) or shorter-than-pos layer.
+		// Global layers: truncate by the per-layer width recorded at first append, not len/pos, which mis-slices a ragged layer left by
+		// a mid-sweep forward error. min guards a KV-shared (stride 0) or shorter-than-pos layer.
 		st := c.stride[l]
 		if c.quant == kvI8 {
 			nKV := 0

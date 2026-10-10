@@ -6,11 +6,10 @@ import (
 	"math"
 )
 
-// RoPE frequency scaling. HF's rope_scaling object
-// transforms the base inverse-frequency table so a model trained at one context
-// length serves a longer one. Only the variants whose math this file implements
-// load; the rest (yarn, longrope/su, dynamic) are rejected loudly by the
-// adapter rather than loaded with the wrong positional frequencies.
+// RoPE frequency scaling. HF's rope_scaling object transforms the base inverse-frequency table so a model trained at one context
+// length serves a longer one. The supported rope_type values are linear, llama3, yarn and dynamic (accepted as unscaled; see
+// parseRopeScaling); any other (longrope/su) is rejected loudly by the adapter rather than loaded with the wrong positional
+// frequencies.
 
 // ropeScalingKind enumerates the rope_scaling.rope_type values this build
 // supports. "none" is the implicit default (no rope_scaling object).

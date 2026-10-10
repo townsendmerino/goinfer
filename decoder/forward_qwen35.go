@@ -1,25 +1,21 @@
 package decoder
 
-// Qwen3.5/3.6-MoE (qwen3_5_moe) forward path — the hybrid: most layers are Gated
-// DeltaNet (linear attention, recurrent state in the cache), the rest gated
-// softmax attention (KV cache), every layer a routed+shared MoE. Parity-first
-// f32, allocate-per-call, mirroring runLayersGemma4 (perf is a later track). One
-// token per call; the caller (forward) applies the final norm + LM head, and
-// prefill drives this sequentially so the DeltaNet recurrence sees every token.
-// See docs/qwen3_5_moe.md.
+// runLayersQwen35 is the Qwen3.5/3.6-MoE (qwen3_5_moe) forward, a hybrid: most layers are Gated DeltaNet (linear attention,
+// recurrent state in the cache), the rest gated softmax attention (KV cache), every layer a routed+shared MoE. Parity-first f32,
+// allocate-per-call, mirroring runLayersGemma4. One token per call; the caller (forward) applies the final norm and LM head, and
+// the per-token prefill drives this sequentially so the DeltaNet recurrence sees every token (runLayersQwen35N is the batched
+// twin). See docs/completed/qwen3_5_moe.md.
 func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 	h := make([]float32, m.w.arch.HiddenDim)
 	m.w.Embed.Row(id, h) // no embedding scale for qwen3_5_moe
 	return m.runLayersQwen35FromEmbed(h, cache)
 }
 
-// runLayersQwen35FromEmbed is runLayersQwen35's body for a position whose residual-stream
-// embedding is supplied directly — the image-splice seam (P8a): an image row is a tower feature,
-// not a table lookup. Same shape as runLayersGemma4FromEmbed. It consumes h (the layers mutate it
-// in place) and returns it. One token per call, like its wrapper: there is no batched qwen3_5
-// prefill to mirror (prefill is this same per-token loop, so the DeltaNet recurrence sees every
-// token), and GDN layers take no position ids, so an image row needs nothing the text row doesn't
-// except the m-RoPE positions the full-attention layers read from cache.mropePos.
+// runLayersQwen35FromEmbed is runLayersQwen35's body for a position whose residual-stream embedding is supplied directly: the
+// image-splice seam, since an image row is a tower feature, not a table lookup. Same shape as runLayersGemma4FromEmbed. It
+// consumes h (the layers mutate it in place) and returns it. One token per call, like its wrapper (runLayersQwen35N is the batched
+// twin); the GDN layers take no position ids, so an image row needs nothing a text row does not, except the m-RoPE positions the
+// full-attention layers read from cache.mropePos.
 func (m *Model) runLayersQwen35FromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
@@ -33,10 +29,8 @@ func (m *Model) runLayersQwen35FromEmbed(h []float32, cache *KVCache) ([]float32
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
 
-		// Resolved per layer, not assumed Pre2: Olmo Hybrid's full-attention layers
-		// use NormPostOnly (NormPlacementLinear nil for every other qwen35-shaped
-		// family, so placement is always arch.NormPlacement == NormPre2 there and
-		// postOnly is always false — behaviorally unchanged for them).
+		// Resolved per layer, not assumed Pre2: Olmo Hybrid's full-attention layers use NormPostOnly (NormPlacementLinear is nil for every
+		// other qwen35-shaped family, so postOnly is always false there).
 		postOnly := arch.normPlacementAt(l) == NormPostOnly
 
 		// Attention sub-block (Pre2: norm → mix → residual; postOnly: mix reads the
@@ -67,12 +61,9 @@ func (m *Model) runLayersQwen35FromEmbed(h []float32, cache *KVCache) ([]float32
 		}
 		addResidual(h, attn)
 
-		// FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
-		//
-		// The DENSE branch is Qwen3.8 (model_type qwen3_5): the same Gated-DeltaNet/softmax
-		// 3:1 hybrid as its MoE siblings, with a plain SwiGLU where they have a router. It is
-		// the ONLY structural difference in this forward — the DeltaNet step, the gated
-		// attention, the hybrid cache and the sequential prefill are all untouched — so it
+		// FFN sub-block (Pre2); post_attention_layernorm is the pre-MLP norm. The dense branch is Qwen3.8 (model_type qwen3_5): the same
+		// Gated-DeltaNet/softmax hybrid as its MoE siblings, with a plain SwiGLU where they have a router. That is the only structural
+		// difference in this forward (the DeltaNet step, the gated attention, the hybrid cache and the prefill are untouched), so it
 		// branches here rather than getting a forward of its own.
 		var n2 []float32
 		if !postOnly {

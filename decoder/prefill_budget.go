@@ -13,17 +13,15 @@ import (
 // the absence of a crash.
 var prefillEnters atomic.Int64
 
-// prefillAvailFraction is the share of CURRENTLY AVAILABLE memory a request's own KV+scratch may
-// consume. Same numeric value as fitguard.go's fitMemFraction, and inherited from it rather than
-// independently measured for this specific context (available-RAM headroom, not a fraction of
-// total RAM) — stated rather than hidden, pending a real measurement of its own.
+// prefillAvailFraction is the share of currently available memory a request's own KV+scratch may consume. It has the same value as
+// fitguard.go's fitMemFraction, inherited rather than independently measured for this context (available-RAM headroom, not a
+// fraction of total RAM); it has no measurement of its own.
 const prefillAvailFraction = fitMemFraction
 
-// availProbeTTL rate-limits the CURRENTLY-AVAILABLE memory probe (P-13, audit-2026-09-10):
-// hostRAMAvailable shells out (vm_stat on darwin, a /proc/meminfo read on linux) on every call,
-// and AdmitPrefillMemory runs it on every request that reaches prefill — a fork+exec per chat
-// request on darwin. Available memory does not need sub-250ms freshness for an admission check;
-// it changes on the timescale of other processes starting/exiting, not per-request.
+// availProbeTTL rate-limits the currently-available memory probe: hostRAMAvailable shells out (vm_stat on darwin, a /proc/meminfo
+// read on linux), and AdmitPrefillMemory runs it for every request that reaches prefill, a fork+exec per chat request on darwin.
+// Available memory changes on the timescale of other processes starting and exiting, not per request, so 250 ms of staleness is
+// acceptable.
 const availProbeTTL = 250 * time.Millisecond
 
 var (
@@ -32,12 +30,9 @@ var (
 	availProbeAt    time.Time
 )
 
-// cachedHostRAMAvailable is hostRAMAvailable (the raw, uncached, test-injectable indirection)
-// behind a short TTL cache. Kept as a separate wrapper rather than folded into hostRAMAvailable
-// itself so a test overriding hostRAMAvailable directly (fitguard_test.go, prefill_budget_test.go)
-// still sees its own value immediately — resetAvailProbeCache (called from those tests' inject
-// helper) clears the cache so a fresh override is never masked by a stale cached read from a
-// PRIOR test's value within the same 250ms window.
+// cachedHostRAMAvailable is hostRAMAvailable (the raw, uncached, test-injectable indirection) behind a short TTL cache. It is a
+// separate wrapper so a test overriding hostRAMAvailable still sees its own value immediately: resetAvailProbeCache, called from
+// those tests' inject helper, clears the cache so a fresh override is never masked by a prior test's cached read.
 func cachedHostRAMAvailable() int64 {
 	availProbeMu.Lock()
 	defer availProbeMu.Unlock()
@@ -58,45 +53,29 @@ func resetAvailProbeCache() {
 	availProbeMu.Unlock()
 }
 
-// AdmitPrefillMemory is the request-time counterpart to fitguard.go's load-time guard (R13,
-// docs/measurements/cold-user-2026-09-07-macbook-arm64.md). The load-time guard prices the WORST
-// CASE a request could reach — the model's own maximum context — once, at load, and either caps
-// or refuses on that basis. But an unpinned load whose auto-pinned (or never-needed-a-pin) context
-// leaves real headroom can still be handed a request whose actual prompt is enormous: a real
-// agent's system prompt plus its full tool schema, tens of thousands of tokens. That is exactly
-// what happened on the run that found this — a 7B int4 model the load-time guard rated "79% of
-// budget" (KV priced at 0, since nothing was pinned) reached 14 GB RSS and swapped a 16 GB Mac
-// hard on its first opencode request, not on load.
+// AdmitPrefillMemory is the request-time counterpart to fitguard.go's load-time guard. The load-time guard prices the worst case a
+// request could reach (the model's own maximum context) once, at load; an unpinned load can still be handed a request whose actual
+// prompt is enormous (a real agent's system prompt plus its tool schema runs to tens of thousands of tokens). This runs before
+// prefill begins (internal/serveapp calls it right after `prepare` resolves the prompt length and clamped max_tokens, for every
+// endpoint that reaches prefill) and prices KV(promptTokens+maxTokens) plus prefill scratch against what remains of currently
+// available memory, never starting a prefill that would page. It returns a descriptive error when the request would not fit, and
+// nil when it fits, when availability is unknown, or when GOINFER_NO_FIT_GUARD disables the check. residentPath says the request
+// runs the stateless GPU-resident path, which allocates no host KV.
 //
-// PRICED AGAINST CURRENTLY-AVAILABLE MEMORY, NOT A FRACTION OF TOTAL RAM (R13-follow-on, the same
-// report's live re-run of this fix). The first version of this function repeated fitguard.go's
-// load-time shape — a fixed fraction of TOTAL RAM, minus resident weights — which implicitly
-// assumes nothing else running on the machine ever needs more than the remaining fraction. On the
-// live re-run, the load-time guard correctly auto-pinned a smaller context and this function
-// correctly reported every check as fitting — and `serve check`'s own requests still drove 9.7 GB
-// of swap, because "70% of 16 GB total" was never actually free: other processes on a real,
-// shared machine were already using more than the remaining 30% assumed available. Weights are
-// NOT subtracted here (unlike the load-time guard): at request time the model is already
-// resident, so `HostRAMAvailableBytes` already excludes its footprint by construction — subtracting
-// it again would double-count. Reads live available memory through cachedHostRAMAvailable (P-13,
-// audit-2026-09-10: a 250ms TTL cache, not read fresh on every call as this comment used to say —
-// the raw probe forks+execs on darwin, and every request that reaches prefill was paying for one).
+// It is priced against currently available memory, not a fraction of total RAM: a fixed fraction of total RAM assumes nothing else
+// on the machine needs more than the remainder, which is false on a shared machine. Weights are not subtracted (unlike the
+// load-time guard): at request time the model is resident, so the available figure already excludes its footprint and subtracting
+// again would double-count. Available memory is read through cachedHostRAMAvailable (a short TTL cache).
 //
-// This runs BEFORE prefill begins (internal/serveapp calls it right after `prepare` resolves the
-// prompt length and clamped max_tokens, for every endpoint that reaches prefill), and prices
-// KV(promptTokens+maxTokens) plus prefill scratch against what remains of currently-available
-// memory — never starting a prefill that would page. It runs for CPU and Metal-resident alike:
-// Metal's own residency guard (metal/backend.go's residentFitsMemory) prices weights only,
-// against host RAM (Metal's unified memory IS host RAM), and has no per-request check at all — this
-// is additive to it, not a replacement.
+// It runs for CPU and Metal-resident alike: Metal's own residency guard prices weights only and has no per-request check, so this
+// is additive to it.
 func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int, residentPath bool) error {
 	return m.AdmitPrefillMemoryShare(promptTokens, maxTokens, residentPath, 1)
 }
 
-// AdmitPrefillMemoryShare is AdmitPrefillMemory for a server running up to share generations of this model at once
-// (MC3c, serve -max-concurrent): each request must fit in 1/share of the safety margin, because the concurrent
-// prefills all draw on the same available memory, which each one's own check reads before any has allocated.
-// share <= 1 is AdmitPrefillMemory exactly.
+// AdmitPrefillMemoryShare is AdmitPrefillMemory for a server running up to share generations of this model at once (serve
+// -max-concurrent): each request must fit in 1/share of the safety margin, because concurrent prefills all draw on the same
+// available memory, which each one's own check reads before any has allocated. share <= 1 is AdmitPrefillMemory exactly.
 func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPath bool, share int) error {
 	if m == nil || m.w == nil || m.knobs.get(knobNoFitGuard) != "" {
 		return nil
@@ -109,12 +88,9 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 
 	cfg := m.Config()
 	positions := promptTokens + maxTokens
-	// P-01 (audit-2026-09-10): a request that will actually run the stateless GPU-resident path
-	// (internal/serveapp/openai.go's own residentPath — false for vision and adapter requests,
-	// which stay on the CPU/staged session path and DO need this term) never allocates the host
-	// KV this prices: generateInto's lazy allocation (P-01's other half, model.go) only
-	// constructs one on the CPU fallback. Pricing it here anyway is what could 413 a request an
-	// 8 GB CUDA box would have served entirely in VRAM.
+	// A request on the stateless GPU-resident path (internal/serveapp's residentPath: false for vision and adapter requests, which
+	// stay on the CPU/staged session path and need this term) never allocates the host KV priced here: generateInto allocates one
+	// lazily, only on the CPU fallback. Pricing it anyway could reject a request an 8 GB CUDA box would have served entirely in VRAM.
 	var kv int64
 	if !(residentPath && m.ResidentActive()) {
 		kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)
@@ -135,19 +111,14 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 		float64(remaining)/fitGB, float64(avail)/fitGB)
 }
 
-// FitBudgetSummary reports the numbers R13's banner line states at every load: the context KV is
-// priced at (whatever the load-time guard actually used — the pin, the auto-pinned cap, or the
-// model's own maximum), KV at that context, the resident weight bytes, and the memory budget.
-// known=false when availability or the model's config was not readable, matching the guard's own
-// "unknown ⇒ say nothing" rule — a banner line with half its numbers missing is worse than no
-// line.
+// FitBudgetSummary reports the numbers the load banner states: the context KV is priced at (what the load-time guard actually
+// used: the pin, the auto-pinned cap, or the model's own maximum), KV bytes at that context, the resident weight bytes, and the
+// memory budget. known=false when availability or the model's config was not readable, matching the guard's "unknown means say
+// nothing" rule (a banner line with half its numbers missing is worse than none).
 //
-// budgetBytes is priced against CURRENTLY AVAILABLE memory (R13-follow-on), read at call time —
-// by the time this runs the model is already loaded, so weightBytes is ALREADY excluded from
-// availability by the OS's own accounting. The caller (internal/serveapp/banner.go) must NOT
-// subtract weightBytes from budgetBytes again when computing what remains — weightBytes is
-// returned for DISPLAY only, the same "no double-count" rule prefill_budget.go's
-// AdmitPrefillMemory applies at request time.
+// budgetBytes is priced against currently available memory, read at call time. By then the model is loaded, so weightBytes is
+// already excluded from availability by the OS's own accounting: the caller (internal/serveapp/banner.go) must not subtract
+// weightBytes from budgetBytes again. It is returned for display only.
 func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes int64, known bool) {
 	if m == nil || m.w == nil {
 		return 0, 0, 0, 0, false
@@ -159,9 +130,8 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 	}
 	cfg := m.Config()
 	budgetBytes = int64(float64(avail) * fitMemFraction)
-	// A resident holds its own KV: its capacity, at the precision its backend allocates (Metal: f16 whatever -kv says).
-	// Pricing it at the CPU's per-request ceiling over the model's whole window overstated E2B's Metal KV ~50x (A3,
-	// docs/completed/task-audit-followups-2026-10-06.md).
+	// A resident holds its own KV: its capacity, at the precision its backend allocates (Metal: f16 whatever -kv says), not the CPU's
+	// per-request ceiling over the model's whole window, which badly overstates it.
 	if capper, ok := m.resident.(ResidentCapped); ok && m.be != nil {
 		if c := capper.ContextCap(); c > 0 {
 			return c, m.ResidentKVBytes(m.be.Name(), c, m.kvF16, m.kvI8), weightBytes, budgetBytes, true
@@ -178,21 +148,15 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }
 
-// prefillScratchBytes is a stated approximation, not a full accounting — the honest scope cut
-// R13 makes rather than block the admission check on a complete scratch-byte model of every
-// backend's prefill path. Two terms:
+// prefillScratchBytes is a stated approximation, not a full accounting of every backend's prefill scratch. Two terms:
 //
-//  1. Attention scratch: decoder/scratch.go's prefillAttnScratchBudget (256 MiB) is a REAL,
-//     already-enforced hard cap — the batched-prefill worker pool throttles its slot count down
-//     to stay inside it (prefillAttnWorkers), so this term can never be more than what the prefill
-//     path already allows itself, on any prompt length.
-//  2. MLP/batched-matmul scratch: the dominant term prefillAttnScratchBudget does NOT cover —
-//     gate/up activations for a batched (M-token) prefill sweep, sized 2×IntermediateDim×M
-//     float32 (both buffers, f32 regardless of weight quant — activations are quantized into a
-//     separate, smaller int8 buffer the matmul path pools and reuses, decoder/weightmat.go's
-//     matmulWSPool, not counted here because it is pooled/reused rather than sized per-request).
-//     This is the term this function is honest about NOT having measured: it is a real, derivable
-//     upper bound from the model's own dimensions, not a number read off a profiler.
+//  1. Attention scratch: prefillAttnScratchBudget (scratch.go, 256 MiB) is a real, already-enforced hard cap (the batched-prefill
+//     worker pool throttles its slot count to stay inside it, prefillAttnWorkersK), so this term is never more than the prefill
+//     path already allows itself.
+//  2. MLP/batched-matmul scratch, the dominant term that budget does not cover: gate/up activations for a batched (M-token)
+//     sweep, 2×IntermediateDim×M float32 (f32 regardless of weight quant). The int8 activation buffer the matmul path pools and
+//     reuses (weightmat.go's matmulWSPool) is not counted, being pooled rather than sized per request. This term is a derivable
+//     upper bound from the model's dimensions, not a profiled number.
 func prefillScratchBytes(cfg *Config, promptTokens int) int64 {
 	if cfg == nil || cfg.IntermediateDim <= 0 || promptTokens <= 0 {
 		return prefillAttnScratchBudget

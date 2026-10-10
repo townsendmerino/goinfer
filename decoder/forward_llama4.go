@@ -5,24 +5,20 @@ import (
 	"unsafe"
 )
 
-// Llama 4 (llama4_text) forward path — the iRoPE text decoder. Each block is a standard
-// Pre2 residual stack (input_layernorm → attention → +residual → post_attention_layernorm →
-// FFN → +residual), but two things vary PER LAYER:
+// Llama 4 (llama4_text) forward path, the iRoPE text decoder. Each block is a standard Pre2 residual stack (input_layernorm →
+// attention → +residual → post_attention_layernorm → FFN → +residual), but two things vary per layer:
 //
-//   - Attention: RoPE layers (no_rope_layers[l]==1) apply interleaved RoPE over the full
-//     head_dim then a parameter-free L2 (RMS-over-head-dim) QK-norm; NoPE layers skip RoPE
-//     and instead scale the query by an attention "temperature"
+//   - Attention: RoPE layers (no_rope_layers[l]==1) apply interleaved RoPE over the full head_dim then a parameter-free L2
+//     (RMS-over-head-dim) QK-norm; NoPE layers skip RoPE and instead scale the query by an attention "temperature"
 //     (log1p(floor((pos+1)/floor_scale))·attn_scale + 1) for length generalization.
-//   - FFN: dense layers vs MoE layers (moe_layers) — handled by the shared mlp() dispatch
-//     (dense ⇒ gatedMLP; MoE ⇒ llama4MoE, below: top-1 sigmoid routing + an ungated shared expert).
+//   - FFN: dense layers vs MoE layers (moe_layers), handled by the shared mlp() dispatch (dense: gatedMLP; MoE: llama4MoE below,
+//     top-1 sigmoid routing plus an ungated shared expert).
 //
-// Chunked (local) attention on the RoPE layers: a query at position p attends only within its
-// own chunk, [(p/C)*C, p], where C is attention_chunk_size (8192 on Scout/Maverick). Below C
-// that is identical to full causal, which is what the parity gates exercise — and for a long
-// time it was ALL this did, because the config field was read and dropped, so from position C
-// on the RoPE layers saw keys HF masks out (M-05). The bound now comes from
-// Architecture.attnChunkStart, max()'d with the window start in attendQuery. NoPE layers stay
-// full-causal. Parity-first f32, one token per call; canBatchN excludes it.
+// Chunked (local) attention on the RoPE layers: a query at position p attends only within its own chunk, [(p/C)*C, p], where C is
+// attention_chunk_size (8192 on Scout/Maverick). Below C that is identical to full causal, which is all the parity gates
+// exercise, so they cannot catch a dropped chunk bound: from position C on the RoPE layers would see keys HF masks out. The bound
+// comes from Architecture.attnChunkStart, max()'d with the window start in attendQuery. NoPE layers stay full-causal. Parity-first
+// f32, one token per call; canBatchN excludes it.
 func (m *Model) runLayersLlama4(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	hidden := arch.HiddenDim
@@ -107,18 +103,16 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 	matmul(m.be, &lw.Router, h, logits, 1)
 	idx, _ := topK(logits, moe.TopK) // top-k by raw logit (== top-k by sigmoid, monotonic)
 
-	// P6: one gate/up pair for the token, shared by the shared expert and every routed one. They
-	// run sequentially, so k pairs were never simultaneously live.
+	// One gate/up pair for the token, shared by the shared expert and every routed one: they run sequentially, so k pairs are never
+	// simultaneously live.
 	sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)
 	l4gate, l4up := make([]float32, sc), make([]float32, sc)
 
 	// Shared expert on the unscaled input, ungated.
 	swiGLUExpert(&lw.SharedExpert, h, out, moe.SharedIntermediateDim, m.be, l4gate, l4up, nil)
 
-	// M-34 (audit-2026-09-10): touch every routed expert before evaluating it, same as
-	// moeMLP (decoder/mlp.go) — without this, m.pager's budget banner and SpanCache LRU are
-	// built but never consulted for Llama 4, so -stream-weights enforces no RAM bound at all
-	// on this family.
+	// Touch every routed expert before evaluating it, as moeMLP does: without it, m.pager's budget and SpanCache LRU are built but
+	// never consulted for Llama 4, so -stream-weights enforces no RAM bound on this family.
 	if m.pager != nil {
 		for _, e := range idx {
 			m.pager.touch(unsafe.Pointer(&lw.Experts[e]))

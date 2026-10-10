@@ -6,31 +6,17 @@ import (
 	"math"
 )
 
-// gemma4AttendRange returns the inclusive absolute key range [lo,hi] a query at
-// pos (on a layer with the given global/window setting) may attend to, given at
-// most one bidirectional image/audio block [imgPos, imgPos+imgLen) (imgLen<=0
-// means no block: plain causal/windowed, identical to cache.WindowStart(pos,
-// global)..pos, the same range the sequential path implicitly uses).
+// gemma4AttendRange returns the inclusive absolute key range [lo,hi] a query at pos (on a layer with the given global/window
+// setting) may attend to, given the bidirectional image/audio blocks in spans. With no block containing pos it is the plain
+// causal/windowed range, WindowStart(pos, global)..pos, the same range the sequential path implicitly uses.
 //
-// v1 supported exactly one contiguous block per prefill; S11 takes several,
-// each its own block (below).
-//
-// PROOF this is always a single interval, never two disjoint ones: for a query
-// at pos inside block [b0,b1), the causal/windowed interval is
-// [windowStart(pos), pos] and the block interval is [b0, b1-1]. Since
-// b0 <= pos <= b1-1 (the query is itself in the block) and windowStart(pos) <=
-// pos, `pos` is a member of BOTH intervals, so their union is connected:
-// [min(windowStart(pos), b0), max(pos, b1-1)]. A query not in the block gets
-// the plain range unchanged (HF's blockwise term requires block[q]>=0 too).
-// Verified against the real transformers masking_utils.py (create_causal_mask /
-// create_sliding_window_causal_mask, both apply
-// or_masks(windowed_causal, blockwise_overlay(block_ids)) unconditionally,
-// with NO layer-type gate — see docs/multimodal.md's P7 entry for the full
-// citation and the correction to this doc's own earlier, wrong claim that only
-// sliding layers get this treatment).
-//
-// Several blocks (S11, docs/tasks/task-multimodal-support-2026-10.md): a query sees its OWN block only, so the same
-// proof holds block by block, and a query outside every block gets the plain range.
+// A query inside a block sees its own block only, and the result is always a single interval, never two disjoint ones: for a query
+// at pos in block [b0,b1) the causal/windowed interval is [windowStart(pos), pos] and the block interval is [b0, b1-1]; since
+// b0 <= pos <= b1-1 and windowStart(pos) <= pos, pos is in both, so the union is connected:
+// [min(windowStart(pos), b0), max(pos, b1-1)]. A query outside every block gets the plain range (HF's blockwise term requires
+// block[q]>=0 too). This matches transformers' masking_utils.py, whose create_causal_mask and create_sliding_window_causal_mask
+// both apply or_masks(windowed_causal, blockwise_overlay(block_ids)) with no layer-type gate, so global and sliding layers both
+// get this treatment (docs/multimodal.md, P7 entry).
 func gemma4AttendRange(cache *KVCache, pos int, global bool, spans []ImageSpan) (lo, hi int) {
 	lo = cache.WindowStart(pos, global)
 	hi = pos
@@ -48,26 +34,16 @@ func gemma4AttendRange(cache *KVCache, pos int, global bool, spans []ImageSpan) 
 	return
 }
 
-// runLayersGemma4FromEmbedN is runLayersGemma4FromEmbed's batched twin: K
-// pre-embedded rows (h, [K*HiddenDim], image positions already spliced with
-// raw projected features by the caller) processed as ONE prefill pass instead
-// of K sequential per-token calls — the only way to give a query INSIDE an
-// image/audio block visibility into LATER block positions (gemma4AttendRange,
-// above), which a strict sequential KV-append forward cannot express.
+// runLayersGemma4FromEmbedN is runLayersGemma4FromEmbed's batched twin: K pre-embedded rows (h, [K*HiddenDim], image positions
+// already spliced with raw projected features by the caller) processed as one prefill pass instead of K sequential per-token
+// calls. That is the only way to let a query inside an image/audio block see later block positions (gemma4AttendRange), which a
+// strict sequential KV-append forward cannot express.
 //
-// Assumes a FRESH cache (cache.Pos()==0 at entry) — the only caller,
-// prefillLogitsGemma4VLBidirectional, always passes one, matching
-// prefillLogitsGemma4VL's own sequential twin. ids[row] is the row's real
-// token id, used only for PLE's token-identity lookup (image rows substitute
-// arch.gemma4.PadTokenID, exactly mirroring the sequential path — see
-// runLayersGemma4FromEmbed's own doc comment for why PAD, not the placeholder
-// token's own id).
-//
-// gemma4Attend (the existing, UNCHANGED single-query-row attention kernel) is
-// reused verbatim, called once per row with that row's own
-// gemma4AttendRange — the existing kernel already accepts an arbitrary
-// [start,nKeys) range into the full cache arrays, which the proof above shows
-// is exactly sufficient. No new attention math is introduced.
+// It assumes a fresh cache (cache.Pos()==0 at entry; its caller prefillLogitsGemma4VLBidirectional always passes one, as the
+// sequential twin prefillLogitsGemma4VL does). ids[row] is the row's real token id, used only for PLE's token-identity lookup
+// (image rows substitute arch.gemma4.PadTokenID, mirroring the sequential path; see runLayersGemma4FromEmbed). gemma4Attend, the
+// unchanged single-query-row kernel, is reused per row with that row's gemma4AttendRange; it already accepts an arbitrary
+// [start,nKeys) range into the full cache arrays, so no new attention math is introduced.
 func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	g4 := arch.gemma4
@@ -122,11 +98,8 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 		}
 	}
 
-	// Cross-layer KV sharing: identical to the sequential path (forward_gemma4.go)
-	// — a pure function of arch, carried unchanged even though this pass's target
-	// checkpoint (26B-A4B, SharedKVLayers=0) never exercises the "shared" branch,
-	// so this file stays structurally matched to the reference it must agree with
-	// on text-only input (the regression gate).
+	// Cross-layer KV sharing is a pure function of arch, identical to the sequential path (forward_gemma4.go), so this file stays
+	// structurally matched to the reference it must agree with on text-only input (the regression gate).
 	firstShared := arch.NumLayers - g4.SharedKVLayers
 	lastSliding, lastGlobal := -1, -1
 	for i := range firstShared {
@@ -233,10 +206,8 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 
 		// --- FFN sub-block ---
 		if lw.gemma4moe != nil {
-			// Not batchable across rows by construction (the router picks different
-			// experts per token) — gemma4MoEFFN is position-independent (confirmed:
-			// no position argument anywhere in it), so a per-row loop over the
-			// unchanged function is the correct and only shape.
+			// Not batchable across rows by construction (the router picks different experts per token). gemma4MoEFFN is position-independent
+			// (it takes no position argument), so a per-row loop over the unchanged function is the correct and only shape.
 			for row := range K {
 				hRow := h[row*hidden : (row+1)*hidden]
 				copy(hRow, gemma4MoEFFN(be, arch, hRow, lw.gemma4moe, m.pager))

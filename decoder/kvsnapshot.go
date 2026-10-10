@@ -60,29 +60,20 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
 	c := s.cache
-	// Some families carry recurrent / latent state this format does not persist: qwen3_5_moe's
-	// DeltaNet (c.delta), Granite/Nemotron's Mamba-2 state (c.mamba), LFM2's short-conv window
-	// (c.conv) and DeepSeek/Kimi's MLA compressed-KV latent (c.mlaLatent). Snapshotting any of them
-	// would restore from zeroed/empty state and continue silently wrong — refuse (caller skips →
-	// cold prefill). All other families serialize fully below, incl. ring (windowed) + int8 (C2).
-	//
-	// The recurrent kinds come from hasRecurrentState() rather than being re-listed: LFM2 was
-	// missing from this list too, so -session-dir and -kv-idle-demote restored an LFM2 session
-	// "warm" with empty conv windows (audit-2026-09-02 C-02, the C-05 shape).
-	//
-	// Since 2026-10-08 the refused kinds come from the cache-state grid (cachestate.go): every kind
-	// whose snapshot cell is "refused" — the four recurrent kinds and MLA as before, plus the
-	// multimodal image blocks and m-RoPE positions, which the format does not carry either.
+	// Refuse the state this format does not carry: every kind whose snapshot cell in the cache-state grid (cachestate.go) is
+	// "refused", i.e. recurrent state (DeltaNet, Mamba-2, LFM2's conv window, KDA), the MLA latent, and the multimodal image blocks
+	// and m-RoPE positions. Restoring any of them would start from zeroed or empty state and continue silently wrong, so Snapshot
+	// returns nil (the caller skips and cold-prefills). The grid is read, not a list re-typed here: a hand-listed set once missed
+	// LFM2 and a session was restored warm with empty conv windows. All other families serialize fully below, including ring
+	// (windowed) and int8 caches.
 	if c.holdsStateHandled(lcSnapshot, hRefused) {
 		return nil
 	}
-	// Gemma-4's global (append-forever) layers carry PER-LAYER KV widths — its E2B/E4B geometry
-	// gives some layers a different NumKVHeads·HeadDim than the cache's uniform c.kvDim. The
-	// snapshot format records no per-global-layer stride, so LoadSession restores every global
-	// layer to kvDim and the first TruncateTo mis-slices the odd-width ones — silently wrong on the
-	// serve session path (audit C-05). Refuse a non-uniform-width cache (caller → cold prefill), the
-	// same policy as the recurrent/latent families above. Ring-layer width mismatches are caught
-	// loudly by LoadSession instead (it rejects a ring stride != kvDim), so only globals leak.
+	// Gemma-4's global (append-forever) layers carry per-layer KV widths (E2B/E4B give some layers a different NumKVHeads·HeadDim
+	// than the cache's uniform c.kvDim). The format records no per-global-layer stride, so LoadSession restores every global layer to
+	// kvDim and the first TruncateTo would mis-slice the odd-width ones, silently wrong on the serve session path. Refuse a
+	// non-uniform-width cache (caller cold-prefills), as for the families above. Ring-layer width mismatches are caught loudly by
+	// LoadSession (it rejects a ring stride != kvDim), so only globals leak.
 	for l := 0; l < c.numLayers; l++ {
 		isRing := c.rings[l] != nil
 		if !isRing && c.stride[l] != 0 && c.stride[l] != c.kvDim {
@@ -232,30 +223,19 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		}
 	}
 
-	// M17: numLayers/kvDim/pos are blob-controlled and feed m.NewCache(pos), which allocates pos ×
-	// the model's KV footprint — an inflated pos (up to 4B) would makeslice TBs BEFORE the geometry
-	// guard below. Reject implausible header dims, and bound pos by what the body can hold (each of
-	// the pos positions stores ≥1 byte across the numLayers·kvDim KV; division avoids overflow).
-	// M-04: numLayers == 0 and kvDim == 0 USED TO PASS — only negatives and over-maxes were
-	// rejected. They are not merely implausible, they disable the next check: perPos becomes 0,
-	// the `perPos > 0` guard skips the pos bound entirely, and m.NewCache(pos) then allocates
-	// with the MODEL's geometry and the blob's pos (up to 2^31-1). A 20-byte header in
-	// -session-dir was a fatal `runtime: out of memory` at server boot.
+	// numLayers/kvDim/pos are blob-controlled and feed m.NewCache(pos), which allocates pos × the model's KV footprint, so an
+	// inflated pos would makeslice terabytes before the geometry guard below. Reject implausible header dims, zero included:
+	// numLayers == 0 or kvDim == 0 makes the per-position footprint 0 and disables any bound derived from it, so a 20-byte header in
+	// -session-dir could become a fatal out-of-memory at server boot.
 	if numLayers <= 0 || numLayers > maxSerializedLayers || kvDim <= 0 || kvDim > 1<<24 ||
 		headDim <= 0 || window < 0 || pos < 0 {
 		return nil, &SnapshotError{"implausible header dims"}
 	}
 
-	// GEOMETRY FIRST, THEN THE BOUND, THEN THE ALLOCATION (M-04).
-	//
-	// This used to allocate m.NewCache(pos) and compare afterwards, so the OOM happened before
-	// the check that would have rejected the blob. And the bound above divided by the BLOB's
-	// numLayers·kvDim while the allocation multiplied by the MODEL's — two different geometries,
-	// so a blob declaring a large per-position footprint could pass a bound it never had to meet.
-	//
-	// NewCache(0) derives the same geometry from the arch and allocates no capacity, so the
-	// comparison is free. Once it passes, blob and model geometry are equal by construction and
-	// the bound below is expressed in the units the allocation actually uses.
+	// Geometry first, then the bound, then the allocation. NewCache(0) derives the same geometry from the arch and allocates no
+	// capacity, so comparing against it is free; once it passes, blob and model geometry are equal by construction and the bound below
+	// is in the units the allocation actually uses. Never allocate NewCache(pos) before this comparison: the out-of-memory would
+	// precede the check that rejects the blob.
 	ref := m.NewCache(0)
 	if numLayers != ref.numLayers || kvDim != ref.kvDim || window != ref.window ||
 		headDim != ref.headDim || manualPos != ref.manualPos || quant != ref.quant {
@@ -263,32 +243,20 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			"geometry mismatch: snapshot {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d} vs model {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d}",
 			numLayers, kvDim, window, headDim, manualPos, quant, ref.numLayers, ref.kvDim, ref.window, ref.headDim, ref.manualPos, ref.quant)}
 	}
-	// TOKENS BEFORE THE ALLOCATION, AND A CEILING ON THE ALLOCATION ITSELF (2026-09-05).
+	// Tokens before the allocation, and a ceiling on the allocation itself. Do not bound pos by the payload size
+	// (len(data)/(numLayers·kvDim)): a well-formed body can carry zero KV bytes while pos > 0 (a never-written ring serialises as
+	// count/nLive/stride only, a KV-shared layer stores nothing, a ring stores only min(count, W) rows), so such a bound rejects valid
+	// snapshots, including any session longer than ~8·W on an all-sliding-window model. The guard exists to stop a blob-controlled
+	// pos from driving a huge m.NewCache(pos), and two checks serve that without assuming payload sizes:
 	//
-	// This used to bound pos by `len(data)/(numLayers·kvDim)`, on the stated premise that "each of
-	// the pos positions stores at least one byte across the numLayers·kvDim KV". THAT PREMISE IS
-	// CONTRADICTED BY THIS FILE'S OWN WRITER: a never-written ring serialises as count/nLive/stride
-	// and then `continue`s, and a KV-shared layer stores nothing, so a WELL-FORMED body can carry
-	// ZERO KV bytes while pos > 0 — the writer says so in as many words ("Empty fields (KV-shared /
-	// never-written rings) serialize as len 0"). The bound therefore rejected valid snapshots, and
-	// not only the hand-built one in TestLoadSession_rejectsCorrupt: a ring layer stores only
-	// min(count, W) rows, so on an ALL-sliding-window model any session longer than ~8·W failed it.
-	//
-	// The guard's actual purpose (M17/M-04) is to stop a blob-controlled pos from driving a huge
-	// m.NewCache(pos) — "a 20-byte header was a fatal runtime: out of memory at server boot". Two
-	// checks serve that better, and neither assumes anything about payload sizes:
-	//
-	//   1. pos == len(tokens), moved BEFORE the allocation. r.ints() already refuses to allocate
-	//      more than the body holds (`!r.need(n*4)`), so a 20-byte header yields no tokens and is
-	//      rejected here having allocated nothing. For the attack this was written for that is a
-	//      TIGHTER bound than the old ratio, and unlike it, an invariant the format guarantees.
-	//   2. an explicit ceiling on the BYTES the cache would occupy. The thing that OOM'd was the
-	//      allocation, so bound the allocation rather than a proxy that legitimate blobs fail.
+	//   1. pos == len(tokens), checked before the allocation. r.ints() refuses to allocate more than the body holds, so a 20-byte
+	//      header yields no tokens and is rejected having allocated nothing; the format guarantees this invariant.
+	//   2. an explicit ceiling on the bytes the cache would occupy (below): bound the allocation itself, not a proxy that
+	//      legitimate blobs fail.
 	tokens := r.ints()
-	// M-04: len(tokens) is blob-controlled and was never compared with pos. Too MANY tokens is
-	// the quiet one — rewindForReuse computes matched > c.pos, TruncateTo treats an
-	// out-of-range target as a no-op, and the reuse reports an exact match on a cache that was
-	// never rewound. No panic, no error: a session that silently continues from the wrong KV.
+	// len(tokens) is blob-controlled and must equal pos. Too many tokens is the quiet failure: rewindForReuse computes matched > c.pos,
+	// TruncateTo treats the out-of-range target as a no-op, and the reuse reports an exact match on a cache never rewound, a session
+	// silently continuing from the wrong KV.
 	if len(tokens) != pos {
 		return nil, &SnapshotError{fmt.Sprintf(
 			"tokens: %d ids for pos %d — a longer token list makes rewindForReuse report an "+
@@ -310,19 +278,17 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			nLive, st := int(r.u32()), int(r.u32())
 			rr.stride = st
 			if st == 0 || nLive == 0 {
-				// A never-written ring must also have count 0. count>0 with stride/nLive 0 is a state
-				// the writer never emits — it leaves rr.count set but the k/v buffers unallocated, so
-				// the first decode reads a nil ring and panics. The continue skips the geometry check
-				// below, so guard it here (audit R-15; crafted/corrupt-snapshot threat model).
+				// A never-written ring must also have count 0: count>0 with stride/nLive 0 is a state the writer never emits (it leaves rr.count
+				// set but the k/v buffers unallocated, so the first decode reads a nil ring and panics). The continue skips the geometry check
+				// below, so guard it here.
 				if rr.count != 0 {
 					return nil, &SnapshotError{"inconsistent ring geometry: nonzero count on an unwritten ring"}
 				}
 				continue // never-written ring
 			}
-			// M17: st/nLive/count are blob-controlled and drive make([]…, rr.w·st) + the slice
-			// copies below. A ring stores exactly kvDim per position; reject a mismatched stride,
-			// nLive past the window, or a count/nLive the payload can't back — else the make OOMs
-			// or the copies slice-panic. rr.headDim is model-derived (>0), so nKV is safe.
+			// st/nLive/count are blob-controlled and drive make([]…, rr.w·st) and the slice copies below. A ring stores exactly kvDim per
+			// position; reject a mismatched stride, nLive past the window, or a count/nLive the payload cannot back, or the make OOMs or the
+			// copies slice-panic. rr.headDim is model-derived (>0), so nKV is safe.
 			if st != kvDim || rr.count < 0 || nLive > rr.w || rr.count < nLive {
 				return nil, &SnapshotError{"inconsistent ring geometry"}
 			}
@@ -358,13 +324,10 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 		} else if quant == kvI8 {
 			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32(), r.f32()
-			// M-04: BLOB-CONTROLLED LENGTHS, NEVER COMPARED. The ring branch above checks its
-			// stride, nLive and payload; the global branch checked nothing. The forward derives
-			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array
-			// one row short is an out-of-range read in the generation goroutine — a panic that
-			// takes the process down. The CRC does not help: it covers the attacker's bytes.
-			//
-			// 0 is legal and means a KV-shared layer, which stores nothing of its own.
+			// Blob-controlled lengths must be compared, as the ring branch above does for its stride, nLive and payload. The forward derives
+			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array one row short is an out-of-range read in the
+			// generation goroutine, a panic that takes the process down; the CRC does not help, since it covers the attacker's bytes. 0 is
+			// legal and means a KV-shared layer, which stores nothing of its own.
 			if e := checkGlobalLen(l, "keysQ", len(ref.keysQ[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
@@ -390,13 +353,10 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			if v := r.f32(); v != nil {
 				ref.vals[l] = v
 			}
-			// stride[] is set only by Append, which LoadSession bypasses — without this a
-			// restored global layer has stride 0, so the first TruncateTo slices it to [:0]
-			// (or panics in attendBatchedHeads) while pos stays non-zero (audit C-05). A
-			// global layer's width is the cache's uniform kvDim (geometry-guarded above);
-			// KV-shared layers keep stride 0, which TruncateTo's min() already guards.
-			// M-04, the f32 arm of the same gap. See the kvI8 arm above for why an unchecked
-			// vals length is a panic rather than a wrong answer.
+			// stride[] is set only by Append, which LoadSession bypasses; without the assignment below a restored global layer has stride 0,
+			// so the first TruncateTo slices it to [:0] (or attendBatchedHeads panics) while pos stays non-zero. A global layer's width is the
+			// cache's uniform kvDim (geometry-guarded above); KV-shared layers keep stride 0, which TruncateTo's min() already guards. The
+			// lengths are checked as in the int8 arm above.
 			if e := checkGlobalLen(l, "keys", len(ref.keys[l]), pos*kvDim); e != nil {
 				return nil, e
 			}
@@ -438,12 +398,9 @@ func (r *giwReader) ints() []int {
 	return out
 }
 
-// checkGlobalLen validates one blob-controlled global-layer array against the length the
-// header's pos and the model's geometry imply. 0 is legal: a KV-shared layer stores nothing of
-// its own, and the cache keeps an empty-but-well-formed slice for it.
-//
-// Split out rather than inlined eight times so the two storage arms cannot drift apart — the
-// ring branch and the global branch drifting is exactly what M-04 is (M17 hardened one of them).
+// checkGlobalLen validates one blob-controlled global-layer array against the length the header's pos and the model's geometry
+// imply. 0 is legal: a KV-shared layer stores nothing of its own, and the cache keeps an empty-but-well-formed slice for it. It is
+// split out rather than inlined so the two storage arms cannot drift apart.
 func checkGlobalLen(layer int, name string, got, want int) *SnapshotError {
 	if got != 0 && got != want {
 		return &SnapshotError{fmt.Sprintf(

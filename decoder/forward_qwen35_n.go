@@ -5,21 +5,20 @@ import (
 )
 
 // The batched Qwen3.5 forward: runLayersQwen35FromEmbed over K rows at once, for PromptHidden (Route B's hidden state,
-// docs/tasks/task-constrained-confidence.md D6b). The per-token forward reads every weight once per token, which on a
-// CPU is decode speed and memory-bandwidth bound: JEV-9B's 150-item D6b sample measured ~0.2 s/token at int4 and ~1.2
-// s/token at f32. Here every projection is one M=K matmul, so a weight is read once per prompt:
+// docs/tasks/task-constrained-confidence.md). The per-token forward reads every weight once per token, which on a CPU is decode
+// speed and memory-bandwidth bound. Here every projection is one M=K matmul, so a weight is read once per prompt:
 //
-//   - DeltaNet layers: in_proj_qkv, in_proj_z and out_proj are batched. The conv window, the gates, the recurrence and
-//     the gated norm stay sequential per token, through deltaNetCore, the same code the per-token step runs.
-//   - Full-attention layers: q/k/v/o are batched and attention is attendBatchedHeads over the cache, with f64
-//     accumulation (useAcc64), which its own comment records as bit-identical to the sequential attendQuery.
+//   - DeltaNet layers: in_proj_qkv, in_proj_z and out_proj are batched. The conv window, the gates, the recurrence and the gated
+//     norm stay sequential per token, through deltaNetCore, the same code the per-token step runs.
+//   - Full-attention layers: q/k/v/o are batched and attention is attendBatchedHeads over the cache, with f64 accumulation
+//     (useAcc64), which its own comment records as bit-identical to the sequential attendQuery.
 //   - FFN: a dense SwiGLU is batched; an MoE runs moeMLP per row, as the generic batched path does.
 //
-// It is not claimed bit-identical to the per-token forward: a batched f32 or quantized matmul may reduce in a
-// different order from its matvec. TestPromptHidden_batchedMatchesSequential bounds the difference.
+// It is not claimed bit-identical to the per-token forward: a batched f32 or quantized matmul may reduce in a different order from
+// its matvec. TestPromptHidden_batchedMatchesSequential bounds the difference.
 //
-// qwen35BatchN reports whether it applies. Olmo Hybrid (PlainFullAttn, per-layer norm placement), a capture request
-// and a dense layer pager take the per-token path.
+// qwen35BatchN reports whether it applies. Olmo Hybrid (PlainFullAttn, per-layer norm placement), a capture request and a dense
+// layer pager take the per-token path.
 func (m *Model) qwen35BatchN(K int, cache *KVCache) bool {
 	return cache.mropePos == nil && m.qwen35BatchNAnyPos(K, cache)
 }
@@ -82,7 +81,7 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 			matmulPre(be, &d.inProjQKV, &hq, norm, mixed, K)
 			matmulPre(be, &d.inProjZ, &hq, norm, dnZ, K)
 			if deltaNetCoreNOK(K) {
-				// P26c: the gate projections per row, then the conv, the recurrence (heads in parallel) and the gated norm over all K rows at once;
+				// The gate projections per row, then the conv, the recurrence (heads in parallel) and the gated norm over all K rows at once;
 				// bit-identical to the per-token loop below (deltanet_n.go).
 				bts, ats := make([]float32, K*nv), make([]float32, K*nv)
 				fanOut(K, deltaNetWorkers(K), func(lo, hi int) {

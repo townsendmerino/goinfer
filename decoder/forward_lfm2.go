@@ -1,12 +1,10 @@
 package decoder
 
-// LFM2 / LFM2.5 forward — one token per call. The caller (forward) applies the final norm
-// and the tied LM head.
+// LFM2 / LFM2.5 forward, one token per call. The caller (forward) applies the final norm and the tied LM head.
 //
-// Every layer is Pre2: operator_norm → mixer → residual, then ffn_norm → SwiGLU → residual.
-// The mixer is a gated short convolution on 22 of 30 layers and GQA softmax attention on the
-// other 8 (layer_types). Both halves write into the same hidden vector, so the only thing the
-// layer kind changes is which mixer runs and which cache slot it touches.
+// Every layer is Pre2: operator_norm → mixer → residual, then ffn_norm → SwiGLU → residual. The mixer is a gated short convolution
+// on most layers and GQA softmax attention on the others (layer_types). Both halves write into the same hidden vector, so the only
+// thing the layer kind changes is which mixer runs and which cache slot it touches.
 
 // shortConvStep is the LFM2 gated short-convolution mixer for one token.
 //
@@ -59,13 +57,10 @@ func shortConvStep(n []float32, w *shortConvWeights, g lfm2Params, hidden int, s
 	return matvec(w.outProj, hidden, cd, y)
 }
 
-// lfm2Attention is GQA + RoPE with per-head RMSNorm on Q and K.
-//
-// The QK-norm is RMSNorm over head_dim, applied per head BEFORE RoPE — the ordering HF uses
-// and the one the existing hardcoded QK-norm path already implements, which is why declaring
-// QKNorm was enough and no new primitive was needed. (The original scoping brief said
-// LayerNorm; the released checkpoint carries q_layernorm.weight and no bias tensor anywhere,
-// and the reference builds Lfm2RMSNorm(head_dim). See lfm2Architecture.)
+// lfm2Attention is GQA + RoPE with per-head RMSNorm on Q and K. The QK-norm is RMSNorm over head_dim, applied per head before
+// RoPE, the ordering HF uses and the one the existing hardcoded QK-norm path already implements, so declaring QKNorm was enough.
+// It is RMSNorm, not LayerNorm: the released checkpoint carries q_layernorm.weight and no bias tensor, and the reference builds
+// Lfm2RMSNorm(head_dim) (see lfm2Architecture).
 func (m *Model) lfm2Attention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	hidden := arch.HiddenDim
