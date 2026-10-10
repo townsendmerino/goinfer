@@ -129,6 +129,16 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 	if d := load(true); d.LoadPath != src {
 		t.Errorf("-direct-load LoadPath = %q, want the directory", d.LoadPath)
 	}
+	// The fixture is a MoE, whose routers stay float32: an explicit --quant int4 must be accepted against the sidecar this
+	// load built at int4, and the sidecar must report int4.
+	ex, err := Load(context.Background(), Request{Spec: src, Opts: opts, ExplicitQuant: "int4"})
+	if err != nil {
+		t.Fatalf("an explicit --quant int4 through the sidecar: %v", err)
+	}
+	t.Cleanup(func() { ex.Model.Close() })
+	if ex.LoadPath != want || ex.Model.Quant() != "int4" {
+		t.Errorf("explicit int4: LoadPath %q, Quant() %q; want the sidecar and int4", ex.LoadPath, ex.Model.Quant())
+	}
 	for _, o := range []decoder.Options{{Quant: "int4", LoRA: "/an/adapter"}, {Quant: "q4k"}, {Quant: "int4", StreamWeights: true}} {
 		if dirSidecarApplies(src, o) {
 			t.Errorf("dirSidecarApplies(%+v) = true, want false", o)

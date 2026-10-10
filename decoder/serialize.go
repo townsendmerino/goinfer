@@ -120,6 +120,10 @@ const (
 	maxSnapshotCacheBytes int64 = 1 << 34
 )
 
+// giwLabelForTest, when set, is written as the header's quant label in place of the computed one: a bundle as a writer
+// with a different labelling rule produced it.
+var giwLabelForTest string
+
 // SerializeError is returned by LoadSerializedWeights on any magic/version/
 // quant/CRC mismatch. It is distinct so callers can fall back to building from
 // the source GGUF rather than treating a stale blob as fatal.
@@ -272,6 +276,9 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	if w.hasPopulatedLayers() {
 		label = w.quantLabel()
 	}
+	if giwLabelForTest != "" {
+		label = giwLabelForTest
+	}
 	wr.str(label)
 	wr.alignHead() // v12: variable-length header (the label, present or not) must not shift what follows
 
@@ -418,6 +425,11 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	}
 	if err := validateShapes(w, arch); err != nil {
 		return nil, err
+	}
+	if w.bakedQuant == "int4mix" {
+		// The one label an earlier rule could get wrong (it counted float32 body weights as a mix): take it from the
+		// weights, so a bundle written under that rule needs no rebuild. A real mix reads back as "int4mix".
+		w.bakedQuant = w.quantLabel()
 	}
 	w.int4F16 = r.f16
 	return w, nil
@@ -800,7 +812,11 @@ func (w *Weights) hasPopulatedLayers() bool {
 // quantLabel names the precision of the resident matmul weights for display and the KV-snapshot fingerprint, accounting
 // for mixed bundles. It scans the body matmuls (the per-layer attention/FFN projections, experts and routers: exactly
 // what `-quant int4|int4mix|int8int8` selects and what the batched-prefill gate inspects) and returns "int4mix" only
-// when int4 coexists with a higher-precision body weight. Pure bundles collapse to int4 / int8int8 / int8 / native.
+// when int4 coexists with an int8 body weight, which is what `-quant int4mix` produces. Pure bundles collapse to int4 /
+// int8int8 / int8 / native.
+//
+// A float32 body weight does not make a mix. No quant mode chooses one: a MoE's routers stay float32 at every quant, so
+// counting them would label every int4 MoE "int4mix" and refuse an explicit `-quant int4` against its own sidecar.
 //
 // The token embedding and LM head are excluded. int4 mode pins them to int8 by default (logit-critical; the EmbedInt4
 // knob relaxes them), so their precision is orthogonal to the int4-vs-int4mix distinction: a plain `-quant int4` bundle
@@ -808,7 +824,7 @@ func (w *Weights) hasPopulatedLayers() bool {
 // label would contradict the path the prefill gate takes. The .giw header's quant field derives from the first weight
 // (the int8 embed), so it is not a substitute.
 func (w *Weights) quantLabel() string {
-	var hasInt4, hasInt8I8, hasInt8, hasOther bool
+	var hasInt4, hasInt8I8, hasInt8 bool
 	// bodyMatmulWeights excludes the int8-pinned logit tables — the single definition of that
 	// exclusion (weights.go), so the label and the .giw resolved-quant field can never disagree.
 	for _, m := range w.bodyMatmulWeights() {
@@ -824,12 +840,10 @@ func (w *Weights) quantLabel() string {
 			} else {
 				hasInt8 = true
 			}
-		default:
-			hasOther = true
 		}
 	}
 	switch {
-	case hasInt4 && (hasInt8I8 || hasInt8 || hasOther):
+	case hasInt4 && (hasInt8I8 || hasInt8):
 		return "int4mix"
 	case hasInt4:
 		return "int4"

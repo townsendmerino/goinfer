@@ -152,8 +152,8 @@ func giwLabelOffset(t *testing.T, b []byte) int {
 }
 
 // transcodeBothWays returns the resident and streamed .giw bundles for one quant mode, plus the
-// resolved quant label the buffer path records — see residentLabelFor's own doc comment for why
-// that is NOT always simply the requested quant string.
+// resolved quant label the buffer path records: the live load's own Quant(). The fixture is a MoE
+// whose router stays f32 at every quant, which is a pin and not a mix, so at "int4" both say int4.
 func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []byte, label string) {
 	return transcodeBothWaysFor(t, gguf, quant, decoder.GIWTargetNone)
 }
@@ -166,7 +166,7 @@ func transcodeBothWaysFor(t *testing.T, gguf, quant string, target decoder.GIWTa
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	label = residentLabelFor(quant, m.Quant())
+	label = m.Quant()
 	resident, err = decoder.SerializeWeightsForTarget(m.Weights(), "glm-tiny.gguf", target)
 	m.Close()
 	if err != nil {
@@ -177,27 +177,6 @@ func transcodeBothWaysFor(t *testing.T, gguf, quant string, target decoder.GIWTa
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	return resident, buf.Bytes(), label
-}
-
-// residentLabelFor is what decoder.(*Weights).quantLabel() actually resolves to for
-// testdata/glm-tiny.gguf's RESIDENT (buffer-path) bundle at a given requested quant — which is
-// NOT always what decoder.Model.Quant() reports for a live load, and callers here must not
-// assume it is. liveQuant is m.Quant()'s own answer, the correct value for every case except the
-// one M-27 changed.
-//
-// M-27 (docs/audit-2026-09-10.md): glm-tiny's router stays f32 regardless of the ambient quant,
-// so an "int4" load is not uniformly int4 and quantLabel() reports "int4mix" (its documented
-// contract, decoder/serialize.go: "int4mix... when int4 coexists with a higher-precision BODY
-// weight", which classifies the router as a body weight). decoder.Model.Quant() (a LIVE, non-.giw
-// model) is unaffected and still reports what was requested for "int4" (Model.quant
-// short-circuits before calling quantLabel()); only the .giw bundle's own baked, inferred label
-// changes. Every other quant mode (including "", where Model.Quant() already falls through to
-// the real quantLabel() inference) is unaffected and liveQuant is already correct.
-func residentLabelFor(quant, liveQuant string) string {
-	if quant == "int4" {
-		return "int4mix"
-	}
-	return liveQuant
 }
 
 func giwFixture(t *testing.T) string {
