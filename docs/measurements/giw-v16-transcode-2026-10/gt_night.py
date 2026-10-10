@@ -41,6 +41,22 @@ def swap_used_mb():
     return float(m.group(1)) if m else None
 
 
+def mem_available_bytes():
+    """What the system calls available before a transcode: Linux's MemAvailable; on the Mac, vm_stat's free, inactive
+    and speculative pages. None when it cannot be read."""
+    try:
+        if MAC:
+            out = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+            page = int(re.search(r"page size of (\d+) bytes", out).group(1))
+            return page * sum(int(re.search(rf"Pages {k}:\s+(\d+)", out).group(1)) for k in ("free", "inactive", "speculative"))
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, AttributeError, ValueError):
+        pass
+    return None
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -75,11 +91,13 @@ def transcode(binary, cell, out):
     remove(out)
     cmd = ["/usr/bin/time", "-l" if MAC else "-v", binary, "-quant", cell["quant"], "-target", cell["target"], "-o", out, cell["source"]]
     swap0 = swap_used_mb()
+    avail = mem_available_bytes()
     t0 = time.monotonic()
     p = subprocess.run(cmd, capture_output=True, text=True, env=clean_env(), timeout=45 * 60)
     wall = time.monotonic() - t0
     text = p.stdout + p.stderr
-    ev = {"wall_s": round(wall, 3), "rc": p.returncode, "swap_used_mb_before": swap0, "swap_used_mb_after": swap_used_mb()}
+    ev = {"wall_s": round(wall, 3), "rc": p.returncode, "mem_available_bytes_before": avail,
+          "swap_used_mb_before": swap0, "swap_used_mb_after": swap_used_mb()}
     m = re.search(r"wrote .*?: (\d+) MB \((\w+)\)(?: in ([0-9.]+)s: stream ([0-9.]+)s, self-check ([0-9.]+)s)?", text)
     if m:
         ev["wrote_line"] = m.group(0)

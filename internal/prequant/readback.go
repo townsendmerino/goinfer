@@ -7,14 +7,15 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
-// hostRAMAvailable is the available-memory probe markWritten compares a bundle's size with.
-var hostRAMAvailable = decoder.HostRAMAvailableBytes
+// hostRAM is the installed-memory probe markWritten compares a bundle and its source with.
+var hostRAM = decoder.HostRAMBytes
 
 // wrapSinkForTest, when set, wraps the writer the weights are streamed into, beneath the read-back.
 var wrapSinkForTest func(io.Writer) io.Writer
@@ -127,14 +128,50 @@ func writeBundle(f *os.File, tok []byte, body func(io.Writer) (int64, error)) er
 	})
 }
 
-// markWritten records the verified-marker for a bundle the transcode has written and read back, when the bundle is no
-// larger than avail, the memory that was available before the write. Then the self-check's load and the first real
+// markWritten records the verified-marker for a bundle the transcode has written and read back, when the bundle and the
+// source it was built from are together no larger than the host's memory. Then the self-check's load and the first real
 // load skip the whole-file CRC (decoder.MarkGIWWritten).
 //
-// A larger bundle gets no marker: part of it has left the page cache, so the self-check's load runs the CRC over the
-// file and reads that part from the disk. An unknown avail (zero) is treated the same way.
-func markWritten(tmp string, avail int64) {
-	if fi, err := os.Stat(tmp); err == nil && avail > 0 && fi.Size() <= avail {
+// The source counts because the transcode maps it: a bundle that fits by itself is still pushed out of the page cache
+// by a source that fills memory, and what the read-back saw is then no longer what a load reads. Such a bundle gets no
+// marker, so the self-check's load runs the CRC over the file and reads that part from the disk. An unknown memory
+// size (zero) or an unreadable source is treated the same way. Available memory is not the measure: a system counts
+// the cache the source occupies as available.
+func markWritten(tmp, source string) {
+	total := hostRAM()
+	fi, err := os.Stat(tmp)
+	if err != nil || total <= 0 {
+		return
+	}
+	if src := sourceBytes(source); src >= 0 && fi.Size()+src <= total {
 		decoder.MarkGIWWritten(tmp)
 	}
+}
+
+// sourceBytes is the size of the weights a transcode of source maps: the file itself, or a directory's .safetensors
+// files. It is -1 when source cannot be read.
+func sourceBytes(source string) int64 {
+	fi, err := os.Stat(source)
+	if err != nil {
+		return -1
+	}
+	if !fi.IsDir() {
+		return fi.Size()
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return -1
+	}
+	var n int64
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".safetensors") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			return -1
+		}
+		n += info.Size()
+	}
+	return n
 }

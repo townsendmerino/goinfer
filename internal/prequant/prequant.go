@@ -102,7 +102,6 @@ func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, 
 	// the bundle loader is strings.HasSuffix(dir, ".giw"). A plain `out + ".tmp"` fails selfCheck for every
 	// GGUF Transcode.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
-	avail := hostRAMAvailable()
 	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -124,7 +123,7 @@ func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, 
 	// 3) Verify the bundle loads through the real (mmap) load path: it deserializes and its shapes validate. Whether
 	// that load recomputes the whole-file CRC is markWritten's rule. On the TEMP file, so a bundle that fails it never
 	// becomes the sidecar even for an instant.
-	markWritten(tmp, avail)
+	markWritten(tmp, in)
 	if afterWriteForTest != nil {
 		afterWriteForTest(tmp)
 	}
@@ -180,7 +179,6 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	// path is the most exposed to an interrupted write, since the resident fallback holds the whole
 	// quantized model in RAM while writing.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
-	avail := hostRAMAvailable()
 	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -210,7 +208,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
 	ph.Stream = time.Since(t0)
-	markWritten(tmp, avail)
+	markWritten(tmp, dir)
 	if afterWriteForTest != nil {
 		afterWriteForTest(tmp)
 	}

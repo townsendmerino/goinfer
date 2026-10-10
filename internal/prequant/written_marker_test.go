@@ -44,8 +44,8 @@ func flipLastPayloadByte(t *testing.T, path string) {
 	}
 }
 
-// TestTranscode_selfCheckRunsNoCRCPass: the transcode marks a bundle it wrote and read back, when the bundle fits in
-// the available memory, so its self-check loads the bundle without a second read for the CRC, and the marker follows
+// TestTranscode_selfCheckRunsNoCRCPass: the transcode marks a bundle it wrote and read back, when the bundle and its
+// source fit in memory together, so its self-check loads the bundle without a second read for the CRC, and the marker follows
 // the bundle to its final name. The proof is a payload
 // byte flipped between the write and the self-check: the transcode still succeeds and the sidecar still loads, and the
 // same sidecar under GOINFER_GIW_VERIFY=always is refused, which shows the flip is one a CRC pass catches.
@@ -54,8 +54,8 @@ func TestTranscode_selfCheckRunsNoCRCPass(t *testing.T) {
 		os.Unsetenv("GOINFER_GIW_VERIFY")
 		t.Cleanup(func() { os.Setenv("GOINFER_GIW_VERIFY", v) })
 	}
-	hostRAMAvailable = func() int64 { return 1 << 40 }
-	t.Cleanup(func() { hostRAMAvailable = decoder.HostRAMAvailableBytes })
+	hostRAM = func() int64 { return 1 << 40 }
+	t.Cleanup(func() { hostRAM = decoder.HostRAMBytes })
 	hooked := 0
 	afterWriteForTest = func(tmp string) {
 		hooked++
@@ -134,23 +134,49 @@ func TestTranscode_selfCheckStillRefusesAnUnloadableBundle(t *testing.T) {
 	}
 }
 
-// TestTranscode_largerThanRAMGetsTheCRCPass: a bundle larger than the memory that was available, or written on a host
-// whose available memory is unknown, gets no marker from the transcode, so the self-check's load runs the CRC: a
-// payload byte flipped after the write fails the transcode there. Left alone, the same bundle passes and carries the
-// marker that load earned.
+// TestTranscode_largerThanRAMGetsTheCRCPass: a bundle that, with its source, is larger than the host's memory, or that
+// is written on a host whose memory size is unknown, gets no marker from the transcode, so the self-check's load runs
+// the CRC: a payload byte flipped after the write fails the transcode there. Left alone, the same bundle passes and
+// carries the marker that load earned. The line is the sum: one byte under bundle plus source is unmarked, though the
+// bundle alone would fit many times over, and exactly the sum is marked.
 func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 	if v, was := os.LookupEnv("GOINFER_GIW_VERIFY"); was {
 		os.Unsetenv("GOINFER_GIW_VERIFY")
 		t.Cleanup(func() { os.Setenv("GOINFER_GIW_VERIFY", v) })
 	}
-	t.Cleanup(func() { hostRAMAvailable = decoder.HostRAMAvailableBytes; afterWriteForTest = nil })
+	t.Cleanup(func() { hostRAM = decoder.HostRAMBytes; afterWriteForTest = nil })
 	src := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
-	for _, avail := range []int64{1, 0} {
-		hostRAMAvailable = func() int64 { return avail }
+
+	// The bundle's size, from a transcode with memory to spare.
+	hostRAM = func() int64 { return 1 << 40 }
+	probe := filepath.Join(t.TempDir(), "p.giw")
+	if err := Transcode(context.Background(), src, probe, "int4", false, decoder.GIWTargetNone); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := fi.Size() + sourceBytes(src)
+	if sourceBytes(src) <= fi.Size() {
+		t.Fatalf("the source (%d bytes) is no larger than its bundle (%d): the sum's line would not show the source counts", sourceBytes(src), fi.Size())
+	}
+
+	for _, c := range []struct {
+		name   string
+		total  int64
+		marked bool
+	}{
+		{"one byte of memory", 1, false},
+		{"memory size unknown", 0, false},
+		{"one byte under bundle plus source", sum - 1, false},
+		{"exactly bundle plus source", sum, true},
+	} {
+		hostRAM = func() int64 { return c.total }
 		for _, flip := range []bool{true, false} {
 			afterWriteForTest = func(tmp string) {
-				if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(tmp)); err == nil {
-					t.Errorf("available %d: the transcode marked a bundle larger than that", avail)
+				if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(tmp)); (err == nil) != c.marked {
+					t.Errorf("%s: the transcode's own marker is present=%v, want %v", c.name, err == nil, c.marked)
 				}
 				if flip {
 					flipLastPayloadByte(t, tmp)
@@ -159,22 +185,44 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 			dir := t.TempDir()
 			out := filepath.Join(dir, "p.giw")
 			err := Transcode(context.Background(), src, out, "int4", false, decoder.GIWTargetNone)
-			if flip {
+			switch {
+			case flip && !c.marked:
 				if err == nil || !strings.Contains(err.Error(), "CRC") {
-					t.Fatalf("available %d: a flipped byte must fail the self-check's CRC, got: %v", avail, err)
+					t.Fatalf("%s: a flipped byte must fail the self-check's CRC, got: %v", c.name, err)
 				}
 				if left, _ := os.ReadDir(dir); len(left) != 0 {
-					t.Fatalf("available %d: a failed transcode left %d files behind (%s first)", avail, len(left), left[0].Name())
+					t.Fatalf("%s: a failed transcode left %d files behind (%s first)", c.name, len(left), left[0].Name())
 				}
-				continue
-			}
-			if err != nil {
-				t.Fatalf("available %d: %v", avail, err)
-			}
-			if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(out)); err != nil {
-				t.Errorf("available %d: the self-check's CRC pass left no marker at the final name: %v", avail, err)
+			case err != nil:
+				t.Fatalf("%s (flip %v): %v", c.name, flip, err)
+			default:
+				if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(out)); err != nil {
+					t.Errorf("%s: no marker at the final name: %v", c.name, err)
+				}
 			}
 		}
+	}
+}
+
+// TestSourceBytes: a file's own size; a directory's .safetensors files and nothing else in it; -1 for a missing path.
+func TestSourceBytes(t *testing.T) {
+	dir := t.TempDir()
+	for name, n := range map[string]int{"a.safetensors": 10, "b.safetensors": 5, "config.json": 100, "old.giw": 1000} {
+		if err := os.WriteFile(filepath.Join(dir, name), make([]byte, n), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub.safetensors"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := sourceBytes(dir); got != 15 {
+		t.Errorf("a directory: %d, want 15", got)
+	}
+	if got := sourceBytes(filepath.Join(dir, "config.json")); got != 100 {
+		t.Errorf("a file: %d, want 100", got)
+	}
+	if got := sourceBytes(filepath.Join(dir, "missing")); got != -1 {
+		t.Errorf("a missing path: %d, want -1", got)
 	}
 }
 

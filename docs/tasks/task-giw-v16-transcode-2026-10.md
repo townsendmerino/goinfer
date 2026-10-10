@@ -3,8 +3,8 @@
 **Status:** scoped 2026-10-10. **T0, T6, T1, T2, T3, T4a and T5 are built (branch `giw-v16-2026-10`, on aikit
 v1.65.0) and graded 2026-10-10** ([record](../measurements/giw-v16-transcode-2026-10/README.md)): G-T1 PASS on tiny and
 real cells on both boxes; G-T2 SHIP on every graded cell (new/old wall 0.28 on the Mac's 1.5B, 0.13 and 0.12 on
-nobara's 1.5B and 7B, 0.18 on the 30B directory); G-T3 within its bounds; G-T2c recorded. Open: the size rule of
-Decision 5 marked the 30B although it was not in memory (F9). Next: T4b, then T7 and V. The gates
+nobara's 1.5B and 7B, 0.18 on the 30B directory); G-T3 within its bounds; G-T2c recorded. The size rule of Decision 5
+marked the 30B although it was not in memory; it now counts the source (F9). Next: T4b, then T7 and V. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -209,6 +209,15 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
     whole-file CRC was skipped where the old read-back did reach the disk. Its self-check also got slower (19-25 s
     against 10-12 s): no CRC runs, and the load faults the file back in piecemeal. Candidates: put the source in the
     sum (bundle plus source against total memory), or ask the system what is cached. Not built; the owner's to choose.
+  - **Decided and built 2026-10-10 (owner: "yes" to comparing bundle plus source against total memory).**
+    `markWritten` now marks a bundle only when it and its source together are no larger than the host's installed
+    memory (`decoder.HostRAMBytes`); the source is the GGUF, or the directory's `.safetensors` files. An unknown
+    memory size or an unreadable source leaves it unmarked.
+    - What it changes on the cells of the T runs: nobara's 30B (17.5 GB plus 58 GB against 62 GB) is unmarked, so its
+      self-check runs the CRC again, as the old arm's did. Every other cell stays marked (the largest is the Mac's 7B,
+      5.6 GB plus 4.7 GB against 16 GB).
+    - It is a rule about installed memory, not free memory: a box whose memory is mostly taken by other work can
+      still evict a bundle the rule marks. The 30B's new self-check time has not been re-measured.
 
 ### Checked and not worth doing
 
@@ -633,7 +642,7 @@ owner chose the second ("2"). F9 has what each part checks.
    with `cmd/prequant`. Say if any of them has no source left.
 5. **The self-check after a transcode** (added 2026-10-10 from F9): keep reading the whole file back for its CRC, or
    stop. Decided: stop; then, the same day, read the weights back behind the write and keep the CRC pass for a bundle
-   larger than available RAM.
+   larger than available RAM; then, after the T runs, for a bundle that with its source is larger than installed RAM.
 
 ## Prior art read
 
