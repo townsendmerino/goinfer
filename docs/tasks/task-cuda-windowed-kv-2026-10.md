@@ -161,3 +161,25 @@ unmeasured, and the branch edits `decoder/` (pricing, the reuse floor) as well.
 below 0.97 FAIL, 0.97 to 0.98 ambiguous and parked; the verdict is the worse class. **Void:** a server not cuda-resident, or windowed KV engaged in either arm. **Cost:** about 10 minutes (queue est 20). **Prediction:** PASS at 0.8: the added work
 is a handful of integer comparisons per token against a 11 ms token; the 0.2 is the box's own session drift (about 0.8 percent on this card in follow-up C) and the first-vs-second-session ordering effect the smoke showed (0.968 against 1.065 at n=2).
 **Ship rule, amended:** the merge of this branch into main waits for G-W2, G-W3 AND this A/A, all read.
+
+## 11. Night results G-W2, G-W3 and the A/A, read 2026-10-10 (nobara-pc, RTX 2070 SUPER, driver 595.91.07, Mellum2.1 int4mix from `~/models`)
+
+Logs: `~/goinfer-logs/night/runs/2026-10-10/{windowed-kv-gates,windowed-kv-aa}.log`; both jobs on the pinned binaries under `~/goinfer-bench/windowed-kv/` (branch binary built at `4521a62a`, merge-base binary at `bdde4175`). Run times: 5 and 4 minutes against estimates of 25 and 20. No bar moved.
+
+**G-W2: PASS.** Greedy texts identical across both arms and all four sessions for every prompt, the long one included (186 tokens, past the 1,024-token window: compaction ran). At ctx 4096 the full-KV control declined (not resident) and the windowed server loaded resident and decoded three non-empty requests, each with the same text as the ctx-2048 windowed run (reported, not graded). VRAM idle/after, MiB: full 7511/7511, windowed 7513/7513 at ctx 2048; windowed 7571/7571 at ctx 4096 (not interpreted).
+
+**G-W3: PASS, 0.983 (the long class), not far inside the lower edge.** Sessions F W W F, W/F ratio of medians:
+
+| class | full median tok/s | windowed median tok/s | ratio |
+|---|---|---|---|
+| short, prompt 0 | 87.80 | 86.55 | 0.986 |
+| short, prompt 1 | 87.31 | 86.36 | 0.989 |
+| short, prompt 2 | 87.94 | 86.07 | 0.979 |
+| short (class ratio) | | | **0.988** |
+| long (1,500+ tokens, 384 decoded) | 87.10 | 85.58 | **0.983** |
+
+The bar is [0.98, 1.02] PASS, below 0.97 FAIL, 0.97 to 0.98 parked; the job's verdict is the worse class, 0.983: PASS. Read it with three facts the verdict does not carry: (1) every prompt reads below 1.0 (-1.1% to -2.1%), so the sign is consistent; (2) the F arm drifted -2.5% between its two sessions (88.63, then 86.39 tok/s) while W held (+0.1%), and the ABBA order puts the faster F session first, which flatters F; (3) the A/A below shows two builds with no windowed code engaged differing by 1.7-2.1% in the other direction, so an effect of the view of this size cannot be separated from build-to-build variation on this box. The honest statement is "no cost resolved at the bar's width", not "no cost".
+
+**A/A (default path, option off, branch against its merge base): PASS.** Texts identical across arms and sessions. Branch/main ratio of medians: short **1.017**, long **1.021** (the long class is over 1.02, which the rule reports as faster and does not grade); main's two sessions drifted -1.7% (85.77, 84.28), the branch's +0.2%. Read: the default path is not slower. The +2% is not claimed as a speedup: the main arm's own session drift is the same size, and nothing in the branch's default path does less work than main's. The prediction (PASS at 0.8) held.
+
+**Ship rule (section 10, amended):** the merge of this branch into main waited for G-W2, G-W3 and the A/A, all read. All three PASS, so the rule is met. What it does not decide: the option stays off by default (`--windowed-kv`); turning it on is the owner's call. What it buys on this card is ctx 2048 -> about 5,400 fully resident (section 9), not 16384. Merge mechanics, since the branch edits `decoder/`: `scripts/refresh_parity_hashes.sh` before the push, merge `origin/main` not rebase (cited hashes), CI read at the run level after.
