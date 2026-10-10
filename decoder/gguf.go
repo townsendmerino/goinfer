@@ -1317,6 +1317,9 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if err != nil {
 		return 0, err
 	}
+	if q.half16() {
+		return 0, fmt.Errorf("decoder: quant %q has no bundle form (a CPU-path load mode)", quant)
+	}
 	g, err := OpenGGUFMmap(path)
 	if err != nil {
 		return 0, err
@@ -1442,6 +1445,10 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 	if err != nil {
 		closeBackend(be)
 		return nil, err
+	}
+	if quant.half16() {
+		closeBackend(be)
+		return nil, fmt.Errorf("decoder: quant bf16/f16 applies to safetensors checkpoints, not a GGUF")
 	}
 	g, err := embed.OpenGGUFBytes(raw)
 	if err != nil {

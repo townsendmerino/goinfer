@@ -327,7 +327,7 @@ func (m *Model) MoECacheSlotsRequest() int {
 type Options struct {
 	noSelfTest bool   // set only by the resident self-test's own fixture loads (selftest_gpu.go); unexported so the type stays comparable and the API unchanged
 	Backend    string // "cpu" (default), "webgpu", "cuda", "metal", or "auto" (AutoBackend); a name not compiled in falls back to cpu
-	Quant      string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise)
+	Quant      string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), "int4" (group-wise), or "bf16" / "f16" (16-bit weights widened per tile: bit-identical to f32 over a bf16 / f16 checkpoint, half the memory, CPU only)
 	LoRA       string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
 	// KVPrecision selects the GPU residency KV cache precision: "" / "f32" (default, bit-exact), "f16" (lossy, twice the
 	// context) or "i8" (lossy, four times). Ignored off the residency path. See task-gpu-f16-kv.md / task-gpu-kv-i8.md.
@@ -622,6 +622,10 @@ func Load(dir string, opts Options) (*Model, error) {
 		closeBackend(be)
 		return nil, err
 	}
+	if err := checkHalf16Load(quant, dir, opts.Backend); err != nil {
+		closeBackend(be)
+		return nil, err
+	}
 
 	// Optional LoRA adapter, merged into the base weights at load (safetensors base
 	// only — PEFT targets HF module names).
@@ -759,9 +763,28 @@ func parseQuant(q string) (quantMode, error) {
 		return quantInt4Mix, nil
 	case "q4k":
 		return quantQ4K, nil
+	case "bf16":
+		return quantBF16, nil
+	case "f16":
+		return quantF16, nil
 	default:
-		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4, int4mix, q4k)", q)
+		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4, int4mix, q4k, bf16, f16)", q)
 	}
+}
+
+// checkHalf16Load refuses a 16-bit weight mode where it cannot run: it is a safetensors, CPU-path mode (no backend uploads a 16-bit
+// matrix, and a GGUF load or a bundle has no form for one).
+func checkHalf16Load(q quantMode, dir, backend string) error {
+	if !q.half16() {
+		return nil
+	}
+	if strings.HasSuffix(dir, ".gguf") {
+		return fmt.Errorf("decoder: quant bf16/f16 applies to safetensors checkpoints, not %s", dir)
+	}
+	if backend != "" && backend != "cpu" {
+		return fmt.Errorf("decoder: quant bf16/f16 runs on the CPU path only (backend %q); load with Backend \"cpu\"", backend)
+	}
+	return nil
 }
 
 // closeBackend closes a backend on a load-error path (nil-safe).

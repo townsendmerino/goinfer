@@ -32,6 +32,9 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	if q == quantInt4Mix || q == quantQ4K {
 		return 0, fmt.Errorf("decoder: %s is GGUF-only (got safetensors %s)", quant, dir)
 	}
+	if q.half16() {
+		return 0, fmt.Errorf("decoder: quant %q has no bundle form (a CPU-path load mode)", quant)
+	}
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
 	if err != nil {
 		return 0, err
