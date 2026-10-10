@@ -3015,8 +3015,13 @@ aikit expected 0: L, as registered for S10's MoE variants.
     job's 10-15 minutes per arm, so the job's wall time is nearer 15-20 minutes than 60. The CUDA arm, started exactly as the job
     starts it: the resident build **declines by name** (`CUDA_ERROR_OUT_OF_MEMORY` allocating expert buffers, "Try -moe-cache-experts"),
     serve then **continues on the CPU path** (`decode path: cpu`, 59 s load) with no `--quant` error: the default `--quant` leaves the
-    sidecar defect out of this job. Consequence for the reading: the "reported" CUDA arm's replies are CPU replies, so the job's
-    comparison with the CPU arm is now labelled "(CPU fallback, not a CUDA reply)" and reads as no CUDA evidence at all.
+    sidecar defect out of this job. So the plain CUDA arm yields CPU replies, and its comparison is labelled "(CPU fallback, not a
+    CUDA reply)" should it recur. **The CUDA arm now carries `--moe-cache-experts`** (the lever the decline names): checked by day, it
+    loads `decode path: cuda-resident (int4mix)` in 59 s, C' cache capped at 22 of 64 expert slots per layer (3.1 GB; 2.1 GB held
+    back for the vision tower, KV plan 1 conversation x 4096), the vision tower on CUDA; the job's one-image request answered in
+    52.4 s (cold) with a reply that is close to the CPU arm's but not identical ("...quarterly unit sales by region in thousands, with
+    data for Q1, Q2, Q3, Q4..." against the CPU's "...for different regions (North, South, East, West, Central)..."), the expected
+    difference between CPU and CUDA kernels, which is why this arm is reported and never graded.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the

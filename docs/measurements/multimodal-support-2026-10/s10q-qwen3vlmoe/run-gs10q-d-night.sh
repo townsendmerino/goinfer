@@ -6,8 +6,9 @@
 #                outlasts: the first run of this job was void that way (gs10q-d-void/).
 #   1. graded    two CPU arms through ONE pinned serve binary (=cpu,cpu), G-S10m-d's driver (run-gs10m-served.sh, the
 #                same one-image and two-image requests, 48 greedy tokens): PASS is identical replies on both requests.
-#   2. reported  one --backend cuda arm on the 8 GB card: resident (with expert paging) or a named decline, its replies
-#                set beside the CPU arm's. Not graded.
+#   2. reported  one --backend cuda --moe-cache-experts arm on the 8 GB card (expert paging: the plain resident build declines
+#                for memory, checked by day 2026-10-10; with the flag it loads at 22 of 64 expert slots per layer, ctx 4096, the
+#                vision tower on CUDA), its replies set beside the CPU arm's. Not graded.
 # Pinned in $BIN: serve (built at the rev in $BIN/rev) and run-gs10m-served.sh from that rev. Runs from $SRC (the driver
 # reads testdata/ images relative to it). Checkpoints from ~/models (local NVMe), never the archive. Correctness gate,
 # not timed.
@@ -63,7 +64,7 @@ rc1=${PIPESTATUS[0]}
 echo "[$(date +%T)] graded step rc=$rc1"
 
 echo "[$(date +%T)] 2/2 reported: --backend cuda"
-"$BIN/serve" "${FLAGS[@]}" --backend cuda --embed-int4=false --addr 127.0.0.1:$PORT >"$OUT/cuda/serve-cuda.log" 2>&1 </dev/null &
+"$BIN/serve" "${FLAGS[@]}" --backend cuda --embed-int4=false --moe-cache-experts --addr 127.0.0.1:$PORT >"$OUT/cuda/serve-cuda.log" 2>&1 </dev/null &
 pid=$!
 trap 'kill $pid 2>/dev/null || true' EXIT
 up=0
@@ -73,8 +74,8 @@ for _ in $(seq 1 1200); do
   sleep 1
 done
 grep -E "decode path|backend|resident|declin|paging|vision tower" "$OUT/cuda/serve-cuda.log" | cut -c1-240 | sed 's/^/  /' || true
-# On the 8 GB card the resident build declines by name and serve continues on the CPU path (checked by day, 2026-10-10: CUDA_ERROR_OUT_OF_MEMORY allocating experts,
-# then "decode path: cpu"). Replies from that server are CPU replies: comparing them with the CPU arm proves nothing, so the comparison is labelled.
+# Without --moe-cache-experts the resident build declines by name and serve continues on the CPU path, whose replies are CPU replies: if that ever happens here
+# (a decline of the paged build too), comparing them with the CPU arm proves nothing, so the comparison is labelled.
 FELL_BACK=0; grep -q "decode path: cpu" "$OUT/cuda/serve-cuda.log" 2>/dev/null && FELL_BACK=1
 [ "$FELL_BACK" = 1 ] && echo "  NOTE: the cuda arm fell back to the CPU path (a named decline); its replies below are CPU replies, not CUDA ones"
 if [ "$up" = 1 ]; then
