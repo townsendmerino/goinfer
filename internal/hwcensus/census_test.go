@@ -21,11 +21,10 @@ import (
 
 // H0, the hardware census: a census, deliberately not a verdict, in the shape of decoder/dispatch_census_test.go.
 //
-// The class: a code path selected by hardware our machines lack. aikit v1.47.1 fixed an AVX-512 VNNI kernel that was
-// 3.2e-3 per logit off the AVX2 path; none of our machines has AVX-512, and it surfaced only because GitHub's runner
-// pool mixes CPU models. Nothing here can tell whether such a path is correct. What it can do is make sure no
-// hardware-gated branch lands unseen: every predicate that selects code by hardware must have an entry in
-// docs/hardware-coverage.json, which says where that path last executed (or that it never has).
+// The class: a code path selected by hardware our machines lack (an AVX-512 VNNI kernel in aikit was off the AVX2 path and surfaced only
+// because GitHub's runner pool mixes CPU models; docs/code-notes/internal-hwcensus.md#hardwareCensus.header). Nothing here can tell whether
+// such a path is correct. What it can do is make sure no hardware-gated branch lands unseen: every predicate that selects code by hardware
+// must have an entry in docs/hardware-coverage.json, which says where that path last executed (or that it never has).
 //
 // So this detects CHANGE. A green result means "every hardware predicate in the source is in the census, and every
 // census predicate is still in the source". It does NOT mean the paths are tested; the entries' last_executed records
