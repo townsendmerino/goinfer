@@ -2933,6 +2933,24 @@ aikit expected 0: L, as registered for S10's MoE variants.
   to the family's declared layout (`TestFusedLayout`). Qwen3.5-MoE's and Granite's real fixtures load as before (58
   tests green with the fixtures present).
 - `num_local_experts` (a transformers 5.x save) is accepted beside `num_experts` (the released config).
+- **Serve:** `qwen3_vl_moe` takes the Qwen3-VL tower path with DeepStack (`qwen3TowerFamily`). It is its own family in
+  the capability matrix (43 families), with qwen3_moe's feature profile and admission, a census entry (the `.giw` round
+  trip keeps the m-RoPE section) and the support-table row.
+- **G-S10q-b: PASS** (nobara, 22:13-22:16 PDT). aikit's `Qwen3VisionEncoder` loads the 30B's tower unchanged, so no aikit
+  change is needed. HF's `Qwen3VLMoeVisionModel` ran alone in float32 (sdpa), built from the config with only the
+  shards' `model.visual.*` (`pin_qwen3vl_tower_real.py --tower-only`), on its own pixel values. aikit's
+  `TestQwen3VisionEncoder_realDeepstack` was pointed at the 30B and these artifacts. Every stage is graded: the
+  embedding, 27 blocks, the merger and the three DeepStack sets.
+
+  | image | grid | worst stage |
+  |---|---|---|
+  | gemma3_preprocess_image.png | 56x56 | 0.999999753 |
+  | qwen25vl_preprocess_image.png | 14x20 | 0.999999987 |
+  | glm_ocr/formula.png | 76x62 | 0.999999999 |
+  | glm_ocr/table.png | 56x76 | 0.999999980 |
+
+  Raw: `~/goinfer-logs/qwen3vlmoe/tower/` on nobara (aikit-test.log). The test's log label reads "G-S10b", the dense
+  model's gate, whose code it is.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
