@@ -366,7 +366,9 @@ traps worth knowing before you hit them:
   purpose — calling it a skip "would make the green cover nothing". So when `go.mod`'s pinned
   aikit is not in `~/go/pkg/mod` it refuses the push with `CANNOT SEARCH — no module cache and
   no checkout for: github.com/townsendmerino/aikit`. Fix with `go mod download`, **not**
-  `--no-verify` and not `--update`. It fires after every aikit bump you have not built since,
+  `--no-verify` and not `--update`. A record pinned to an older commit needs the aikit version THAT
+  commit required: `python3 scripts/queue_citation_lint.py --pinned-modules | xargs go mod download`
+  fetches them all (CI runs the same list). It fires after every aikit bump you have not built since,
   and on every fresh `git worktree` (which has no `go.work`). Measured 2026-08-31: a docs-only
   push refused because `origin/main` had moved v1.30.0 → v1.31.0.
 - **Read its exit code DIRECTLY, never through a pipe.** `python3 scripts/queue_citation_lint.py

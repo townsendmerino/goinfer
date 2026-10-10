@@ -1,0 +1,8 @@
+serve-metal: s2-towers eb882131d0f1ce032ae2056b628407c0d052889f
+ollama: Warning: client version is 0.32.5
+llama-server: version: 0.3.0 (build 10621, commit c1d0e7a00)
+started: 2026-10-10 13:16:40 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+13:16  up 16 days,  3:12, 1 user, load averages: 1.87 2.69 4.53
+finished: 2026-10-10 13:20:40 PDT rc=0

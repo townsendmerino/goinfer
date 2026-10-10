@@ -1,0 +1,480 @@
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total for all regions."
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 34.15467, max 47.79486 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.985, this "वसु" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.02974, max 0.40836 nats; argmax agrees at 30 of 32; first change at step 9: reference "," p 0.841, this " for" (reference p 0.121)
+[g3]   (its mean relative L2 from the CPU tower: 4.24e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.05817, max 0.61664 nats; argmax agrees at 29 of 32; first change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.04361, max 0.46586 nats; argmax agrees at 29 of 32; first change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.05725, max 1.18638 nats; argmax agrees at 31 of 32; first change at step 24: reference " along" p 0.383, this " and" (reference p 0.210)
+[g3] Metal int8 tower             KL mean 0.03190, max 0.26592 nats; argmax agrees at 30 of 32; first change at step 10: reference " broken" p 0.485, this " presented" (reference p 0.404)
+[g3]   (its mean relative L2 from the CPU tower: 0.0157)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.03438, max 0.26748 nats; argmax agrees at 30 of 32; first change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.04978, max 0.34295 nats; argmax agrees at 28 of 32; first change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.06219, max 0.94332 nats; argmax agrees at 30 of 32; first change at step 9: reference "," p 0.841, this " for" (reference p 0.121)
+--- PASS: TestGemma3TowerSensitivity (64.31s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image presents a table showing quarterly unit sales in thousands for different regions – North, South, East, West, and Central – along with a total for all"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 33.16713, max 43.49737 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.994, this "वसु" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.05911, max 0.40531 nats; argmax agrees at 30 of 32; first change at step 9: reference " in" p 0.525, this " (" (reference p 0.249)
+[g3]   (its mean relative L2 from the CPU tower: 4.24e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.17185, max 2.64805 nats; argmax agrees at 27 of 32; first change at step 5: reference " showing" p 0.527, this " detailing" (reference p 0.126)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.12576, max 1.85766 nats; argmax agrees at 29 of 32; first change at step 9: reference " in" p 0.525, this " (" (reference p 0.249)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.06465, max 0.56969 nats; argmax agrees at 30 of 32; first change at step 11: reference " for" p 0.397, this " by" (reference p 0.246)
+[g3] Metal int8 tower             KL mean 0.16439, max 2.54334 nats; argmax agrees at 29 of 32; first change at step 9: reference " in" p 0.525, this " (" (reference p 0.249)
+[g3]   (its mean relative L2 from the CPU tower: 0.0157)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.17880, max 2.60391 nats; argmax agrees at 28 of 32; first change at step 9: reference " in" p 0.525, this " (" (reference p 0.249)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.14268, max 1.03397 nats; argmax agrees at 28 of 32; first change at step 5: reference " showing" p 0.527, this " summarizing" (reference p 0.331)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.12154, max 0.78007 nats; argmax agrees at 28 of 32; first change at step 9: reference " in" p 0.525, this " (" (reference p 0.249)
+--- PASS: TestGemma3TowerSensitivity (64.12s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a note about the Gaussian integral and its connection to the normal distribution (bell curve) in probability and statistics. It presents the integral of e^(-"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 34.26867, max 60.12879 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.576, this " PVA" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.08417, max 0.67731 nats; argmax agrees at 30 of 32; first change at step 19: reference ")" p 0.826, this ")." (reference p 0.174)
+[g3]   (its mean relative L2 from the CPU tower: 6.7e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.07704, max 0.73623 nats; argmax agrees at 30 of 32; first change at step 2: reference " shows" p 0.378, this " presents" (reference p 0.193)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.07011, max 0.41769 nats; argmax agrees at 30 of 32; first change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.07989, max 0.42582 nats; argmax agrees at 30 of 32; first change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3] Metal int8 tower             KL mean 0.14922, max 1.23290 nats; argmax agrees at 27 of 32; first change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3]   (its mean relative L2 from the CPU tower: 0.0184)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.07923, max 0.73915 nats; argmax agrees at 29 of 32; first change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.10064, max 0.39315 nats; argmax agrees at 29 of 32; first change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.10182, max 1.07414 nats; argmax agrees at 29 of 32; first change at step 0: reference "The" p 0.576, this "This" (reference p 0.423)
+--- PASS: TestGemma3TowerSensitivity (66.31s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a mathematical note explaining the Gaussian integral and its connection to the normal distribution, a fundamental concept in probability and statistics.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 27 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 27 of 27; no change
+[g3] control: features negated    KL mean 35.18069, max 56.49348 nats; argmax agrees at 0 of 27; first change at step 0: reference "The" p 0.700, this " Hausdorff" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.05551, max 0.57293 nats; argmax agrees at 24 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3]   (its mean relative L2 from the CPU tower: 6.7e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.09355, max 0.73559 nats; argmax agrees at 24 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.08420, max 0.69356 nats; argmax agrees at 25 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.12537, max 1.21244 nats; argmax agrees at 24 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3] Metal int8 tower             KL mean 0.07165, max 0.38902 nats; argmax agrees at 24 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3]   (its mean relative L2 from the CPU tower: 0.0184)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.07803, max 0.44790 nats; argmax agrees at 25 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.10809, max 1.04728 nats; argmax agrees at 25 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.07046, max 0.54060 nats; argmax agrees at 24 of 27; first change at step 2: reference " is" p 0.513, this " presents" (reference p 0.477)
+--- PASS: TestGemma3TowerSensitivity (61.43s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a gradient blend of dark green and pink colors.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 14 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 14 of 14; no change
+[g3] control: features negated    KL mean 25.56550, max 37.30776 nats; argmax agrees at 0 of 14; first change at step 0: reference "The" p 1.000, this " নেত" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.16549, max 1.67745 nats; argmax agrees at 12 of 14; first change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   (its mean relative L2 from the CPU tower: 8.29e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.24225, max 1.61797 nats; argmax agrees at 12 of 14; first change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.47843, max 5.02746 nats; argmax agrees at 11 of 14; first change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.17546, max 0.81888 nats; argmax agrees at 11 of 14; first change at step 5: reference " blend" p 0.742, this " blending" (reference p 0.098)
+[g3] Metal int8 tower             KL mean 0.28240, max 2.82883 nats; argmax agrees at 13 of 14; first change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   (its mean relative L2 from the CPU tower: 0.0156)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.09789, max 0.50079 nats; argmax agrees at 11 of 14; first change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.10455, max 0.56695 nats; argmax agrees at 13 of 14; first change at step 11: reference " colors" p 0.362, this "." (reference p 0.290)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.48093, max 4.78186 nats; argmax agrees at 11 of 14; first change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+--- PASS: TestGemma3TowerSensitivity (56.52s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a gradient background transitioning from a dark purple to a bright green, blending into a light gray.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 23 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 23 of 23; no change
+[g3] control: features negated    KL mean 26.73470, max 37.79785 nats; argmax agrees at 0 of 23; first change at step 0: reference "The" p 0.977, this " নেত" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.04684, max 0.36204 nats; argmax agrees at 23 of 23; no change
+[g3]   (its mean relative L2 from the CPU tower: 8.29e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.06857, max 0.83430 nats; argmax agrees at 23 of 23; no change
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.04784, max 0.33233 nats; argmax agrees at 21 of 23; first change at step 16: reference " blending" p 0.687, this " with" (reference p 0.154)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.09201, max 1.29516 nats; argmax agrees at 22 of 23; first change at step 21: reference "." p 0.331, this " at" (reference p 0.207)
+[g3] Metal int8 tower             KL mean 0.04065, max 0.30783 nats; argmax agrees at 23 of 23; no change
+[g3]   (its mean relative L2 from the CPU tower: 0.0156)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.04202, max 0.28824 nats; argmax agrees at 23 of 23; no change
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.02305, max 0.10239 nats; argmax agrees at 23 of 23; no change
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.03168, max 0.20528 nats; argmax agrees at 23 of 23; no change
+--- PASS: TestGemma3TowerSensitivity (58.13s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a gradient blend of dark purple, green, and light purple.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 17 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 17 of 17; no change
+[g3] control: features negated    KL mean 25.72621, max 39.13568 nats; argmax agrees at 0 of 17; first change at step 0: reference "The" p 1.000, this " নেত" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.09704, max 0.96969 nats; argmax agrees at 17 of 17; no change
+[g3]   (its mean relative L2 from the CPU tower: 8.29e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.08835, max 1.00204 nats; argmax agrees at 17 of 17; no change
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.24980, max 2.20498 nats; argmax agrees at 16 of 17; first change at step 10: reference " green" p 0.882, this " gray" (reference p 0.092)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.20447, max 1.62279 nats; argmax agrees at 17 of 17; no change
+[g3] Metal int8 tower             KL mean 0.63597, max 7.11380 nats; argmax agrees at 14 of 17; first change at step 5: reference " blend" p 0.656, this " background" (reference p 0.233)
+[g3]   (its mean relative L2 from the CPU tower: 0.016)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.17839, max 1.18298 nats; argmax agrees at 16 of 17; first change at step 16: reference "<end_of_turn>" p 0.904, this " It" (reference p 0.059)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.24717, max 3.12104 nats; argmax agrees at 15 of 17; first change at step 8: reference " purple" p 0.682, this " green" (reference p 0.296)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.21727, max 2.05647 nats; argmax agrees at 17 of 17; no change
+--- PASS: TestGemma3TowerSensitivity (54.96s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a gradient background transitioning from a dark purple to a bright green, blending into a light gray in the middle.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 26 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 26 of 26; no change
+[g3] control: features negated    KL mean 26.25209, max 38.40644 nats; argmax agrees at 0 of 26; first change at step 0: reference "The" p 0.990, this " নেত" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.06977, max 0.39590 nats; argmax agrees at 26 of 26; no change
+[g3]   (its mean relative L2 from the CPU tower: 8.29e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.07628, max 0.55960 nats; argmax agrees at 25 of 26; first change at step 21: reference " in" p 0.420, this " towards" (reference p 0.174)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.06655, max 0.37875 nats; argmax agrees at 26 of 26; no change
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.06544, max 0.35829 nats; argmax agrees at 24 of 26; first change at step 16: reference " blending" p 0.371, this " fading" (reference p 0.253)
+[g3] Metal int8 tower             KL mean 0.06752, max 0.42710 nats; argmax agrees at 26 of 26; no change
+[g3]   (its mean relative L2 from the CPU tower: 0.016)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.09850, max 1.02487 nats; argmax agrees at 24 of 26; first change at step 16: reference " blending" p 0.371, this " fading" (reference p 0.253)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.04638, max 0.33496 nats; argmax agrees at 26 of 26; no change
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.06427, max 0.39887 nats; argmax agrees at 26 of 26; no change
+--- PASS: TestGemma3TowerSensitivity (61.19s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a gradient blend of dark green and pink.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 13 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 13 of 13; no change
+[g3] control: features negated    KL mean 25.34265, max 39.74850 nats; argmax agrees at 0 of 13; first change at step 0: reference "The" p 0.999, this " নেত" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.06116, max 0.40466 nats; argmax agrees at 12 of 13; first change at step 10: reference " pink" p 0.322, this " magenta" (reference p 0.313)
+[g3]   (its mean relative L2 from the CPU tower: 7.95e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.17719, max 1.48203 nats; argmax agrees at 10 of 13; first change at step 8: reference " green" p 0.984, this " purple" (reference p 0.014)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.08161, max 0.39936 nats; argmax agrees at 12 of 13; first change at step 10: reference " pink" p 0.322, this " dark" (reference p 0.160)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.03607, max 0.14558 nats; argmax agrees at 11 of 13; first change at step 10: reference " pink" p 0.322, this " magenta" (reference p 0.313)
+[g3] Metal int8 tower             KL mean 0.49906, max 5.08893 nats; argmax agrees at 10 of 13; first change at step 8: reference " green" p 0.984, this " purple" (reference p 0.014)
+[g3]   (its mean relative L2 from the CPU tower: 0.0156)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.09704, max 0.38642 nats; argmax agrees at 12 of 13; first change at step 10: reference " pink" p 0.322, this " magenta" (reference p 0.313)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.31432, max 1.71374 nats; argmax agrees at 9 of 13; first change at step 8: reference " green" p 0.984, this " purple" (reference p 0.014)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.32857, max 1.90718 nats; argmax agrees at 9 of 13; first change at step 8: reference " green" p 0.984, this " purple" (reference p 0.014)
+--- PASS: TestGemma3TowerSensitivity (52.83s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a gradient background transitioning from a dark purple to a vibrant green, blending into a light gray.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 23 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 23 of 23; no change
+[g3] control: features negated    KL mean 26.81416, max 39.57308 nats; argmax agrees at 0 of 23; first change at step 0: reference "The" p 0.745, this " নেত" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.06145, max 0.51350 nats; argmax agrees at 21 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+[g3]   (its mean relative L2 from the CPU tower: 7.95e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.08023, max 0.44299 nats; argmax agrees at 22 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.08322, max 0.62639 nats; argmax agrees at 22 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.07446, max 0.60761 nats; argmax agrees at 22 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+[g3] Metal int8 tower             KL mean 0.17603, max 1.14280 nats; argmax agrees at 20 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+[g3]   (its mean relative L2 from the CPU tower: 0.0156)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.06987, max 0.49106 nats; argmax agrees at 22 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.06783, max 0.41884 nats; argmax agrees at 22 of 23; first change at step 5: reference " background" p 0.530, this " blend" (reference p 0.244)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.08164, max 0.59545 nats; argmax agrees at 22 of 23; first change at step 13: reference " vibrant" p 0.521, this " bright" (reference p 0.456)
+--- PASS: TestGemma3TowerSensitivity (56.82s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a colorful, abstract background with several irregular shapes in various colors.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 17 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 17 of 17; no change
+[g3] control: features negated    KL mean 29.03063, max 41.57374 nats; argmax agrees at 0 of 17; first change at step 0: reference "The" p 1.000, this "}]_{" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.08648, max 0.51126 nats; argmax agrees at 14 of 17; first change at step 10: reference " irregular" p 0.444, this " overlapping" (reference p 0.166)
+[g3]   (its mean relative L2 from the CPU tower: 1.18e-05)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.05737, max 0.38774 nats; argmax agrees at 16 of 17; first change at step 10: reference " irregular" p 0.444, this " geometric" (reference p 0.125)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.05663, max 0.19180 nats; argmax agrees at 15 of 17; first change at step 10: reference " irregular" p 0.444, this " overlapping" (reference p 0.166)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.07097, max 0.41748 nats; argmax agrees at 15 of 17; first change at step 10: reference " irregular" p 0.444, this " irregularly" (reference p 0.156)
+[g3] Metal int8 tower             KL mean 0.06996, max 0.34794 nats; argmax agrees at 16 of 17; first change at step 10: reference " irregular" p 0.444, this " small" (reference p 0.028)
+[g3]   (its mean relative L2 from the CPU tower: 0.0199)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.08226, max 0.53011 nats; argmax agrees at 16 of 17; first change at step 10: reference " irregular" p 0.444, this " geometric" (reference p 0.125)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.05889, max 0.24785 nats; argmax agrees at 17 of 17; no change
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.14355, max 0.52584 nats; argmax agrees at 12 of 17; first change at step 6: reference " abstract" p 0.535, this " blurred" (reference p 0.418)
+--- PASS: TestGemma3TowerSensitivity (54.30s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a colorful, abstract background with a gradient of rainbow hues and several irregularly shaped, muted-colored blobs scattered across it.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 28 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 28 of 28; no change
+[g3] control: features negated    KL mean 28.07713, max 36.10980 nats; argmax agrees at 0 of 28; first change at step 0: reference "The" p 0.992, this "}]_{" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.06667, max 0.41224 nats; argmax agrees at 27 of 28; first change at step 22: reference " blobs" p 0.457, this " geometric" (reference p 0.422)
+[g3]   (its mean relative L2 from the CPU tower: 1.18e-05)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.07658, max 0.40441 nats; argmax agrees at 26 of 28; first change at step 16: reference " irregularly" p 0.632, this " irregular" (reference p 0.236)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.08378, max 0.71604 nats; argmax agrees at 27 of 28; first change at step 22: reference " blobs" p 0.457, this " geometric" (reference p 0.422)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.08732, max 0.55279 nats; argmax agrees at 26 of 28; first change at step 19: reference " muted" p 0.316, this " softly" (reference p 0.123)
+[g3] Metal int8 tower             KL mean 0.06217, max 0.27082 nats; argmax agrees at 27 of 28; first change at step 22: reference " blobs" p 0.457, this " geometric" (reference p 0.422)
+[g3]   (its mean relative L2 from the CPU tower: 0.0199)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.07689, max 0.83826 nats; argmax agrees at 26 of 28; first change at step 19: reference " muted" p 0.316, this " solid" (reference p 0.044)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.06311, max 0.65583 nats; argmax agrees at 26 of 28; first change at step 19: reference " muted" p 0.316, this " solid" (reference p 0.044)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.07990, max 0.37764 nats; argmax agrees at 25 of 28; first change at step 13: reference " hues" p 0.512, this " colors" (reference p 0.464)
+--- PASS: TestGemma3TowerSensitivity (61.51s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This image is an invoice from Harbor Light Supply Co. to Northwind Printing LLC for various office supplies and shipping services.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] 25 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 25 of 25; no change
+[g3] control: features negated    KL mean 34.93815, max 47.54986 nats; argmax agrees at 0 of 25; first change at step 0: reference "This" p 0.691, this " Waltz" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.24361, max 4.95069 nats; argmax agrees at 23 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+[g3]   (its mean relative L2 from the CPU tower: 6.9e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.18657, max 2.41604 nats; argmax agrees at 22 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.14682, max 1.52858 nats; argmax agrees at 23 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.24860, max 2.36161 nats; argmax agrees at 21 of 25; first change at step 0: reference "This" p 0.691, this "The" (reference p 0.309)
+[g3] Metal int8 tower             KL mean 0.10612, max 1.22618 nats; argmax agrees at 23 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+[g3]   (its mean relative L2 from the CPU tower: 0.0193)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.21774, max 2.85753 nats; argmax agrees at 23 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.32610, max 3.29149 nats; argmax agrees at 22 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.17970, max 2.18144 nats; argmax agrees at 22 of 25; first change at step 17: reference " various" p 0.497, this " the" (reference p 0.299)
+--- PASS: TestGemma3TowerSensitivity (63.79s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This is an invoice from Harbor Light Supply Co. to Northwind Printing LLC for various office supplies, totaling $1140.55 with a due"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 33.59544, max 45.48966 nats; argmax agrees at 0 of 32; first change at step 0: reference "This" p 0.555, this " PVA" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.06203, max 0.59675 nats; argmax agrees at 29 of 32; first change at step 0: reference "This" p 0.555, this "The" (reference p 0.444)
+[g3]   (its mean relative L2 from the CPU tower: 6.9e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.05441, max 0.69741 nats; argmax agrees at 31 of 32; first change at step 16: reference " various" p 0.722, this " the" (reference p 0.009)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.03963, max 0.44361 nats; argmax agrees at 32 of 32; no change
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.07671, max 1.24261 nats; argmax agrees at 30 of 32; first change at step 16: reference " various" p 0.722, this " the" (reference p 0.009)
+[g3] Metal int8 tower             KL mean 0.09703, max 1.72803 nats; argmax agrees at 30 of 32; first change at step 0: reference "This" p 0.555, this "The" (reference p 0.444)
+[g3]   (its mean relative L2 from the CPU tower: 0.0193)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.05890, max 0.79550 nats; argmax agrees at 30 of 32; first change at step 0: reference "This" p 0.555, this "The" (reference p 0.444)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.10037, max 1.00404 nats; argmax agrees at 30 of 32; first change at step 17: reference " office" p 0.985, this " printing" (reference p 0.015)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.12799, max 1.98318 nats; argmax agrees at 29 of 32; first change at step 0: reference "This" p 0.555, this "The" (reference p 0.444)
+--- PASS: TestGemma3TowerSensitivity (64.90s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This image shows an invoice from Harbor Light Supply Co. to Thistle & Rowan Ltd for the purchase of binding spine strips, hardwood flooring, and a design review"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 36.03073, max 54.51510 nats; argmax agrees at 0 of 32; first change at step 0: reference "This" p 0.779, this " Hausdorff" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.02648, max 0.31533 nats; argmax agrees at 32 of 32; no change
+[g3]   (its mean relative L2 from the CPU tower: 6.95e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.07970, max 1.17991 nats; argmax agrees at 31 of 32; first change at step 11: reference " to" p 0.933, this " for" (reference p 0.067)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.05946, max 1.14482 nats; argmax agrees at 31 of 32; first change at step 11: reference " to" p 0.933, this " for" (reference p 0.067)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.06294, max 1.36272 nats; argmax agrees at 31 of 32; first change at step 11: reference " to" p 0.933, this " for" (reference p 0.067)
+[g3] Metal int8 tower             KL mean 0.01834, max 0.26208 nats; argmax agrees at 32 of 32; no change
+[g3]   (its mean relative L2 from the CPU tower: 0.0211)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.04764, max 0.67287 nats; argmax agrees at 31 of 32; first change at step 17: reference " for" p 0.818, this "." (reference p 0.171)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.02726, max 0.65124 nats; argmax agrees at 32 of 32; no change
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.04751, max 0.64777 nats; argmax agrees at 31 of 32; first change at step 18: reference " the" p 0.521, this " materials" (reference p 0.338)
+--- PASS: TestGemma3TowerSensitivity (65.25s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This is an invoice from Harbor Light Supply Co. to Thistle & Rowan Ltd for the purchase of binding spine strips, hardwood flooring, and a design review,"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 35.58715, max 58.93936 nats; argmax agrees at 0 of 32; first change at step 0: reference "This" p 0.993, this " Hausdorff" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.03346, max 0.77170 nats; argmax agrees at 31 of 32; first change at step 18: reference " purchase" p 0.935, this " supply" (reference p 0.063)
+[g3]   (its mean relative L2 from the CPU tower: 6.95e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.05795, max 1.22201 nats; argmax agrees at 31 of 32; first change at step 16: reference " for" p 0.861, this "." (reference p 0.118)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.04683, max 0.70402 nats; argmax agrees at 31 of 32; first change at step 16: reference " for" p 0.861, this "." (reference p 0.118)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.02245, max 0.35935 nats; argmax agrees at 31 of 32; first change at step 16: reference " for" p 0.861, this "." (reference p 0.118)
+[g3] Metal int8 tower             KL mean 0.04394, max 0.53401 nats; argmax agrees at 31 of 32; first change at step 16: reference " for" p 0.861, this "." (reference p 0.118)
+[g3]   (its mean relative L2 from the CPU tower: 0.0211)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.10381, max 2.36614 nats; argmax agrees at 30 of 32; first change at step 16: reference " for" p 0.861, this "." (reference p 0.118)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.03028, max 0.40144 nats; argmax agrees at 31 of 32; first change at step 16: reference " for" p 0.861, this "." (reference p 0.118)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.04219, max 0.93530 nats; argmax agrees at 31 of 32; first change at step 23: reference "," p 0.996, this " and" (reference p 0.004)
+--- PASS: TestGemma3TowerSensitivity (63.90s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a tax invoice from Brightwater Logistics Ltd for Orchid Bay Hospitality, detailing the costs of various services like paper, labels, site surveys, and shipping"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 34.16208, max 46.19985 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.924, this " PVA" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.08992, max 0.67360 nats; argmax agrees at 29 of 32; first change at step 0: reference "The" p 0.924, this "This" (reference p 0.076)
+[g3]   (its mean relative L2 from the CPU tower: 6.09e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.16069, max 2.14623 nats; argmax agrees at 29 of 32; first change at step 18: reference " costs" p 0.571, this " cost" (reference p 0.305)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.08964, max 1.13146 nats; argmax agrees at 29 of 32; first change at step 18: reference " costs" p 0.571, this " cost" (reference p 0.305)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.05381, max 0.68674 nats; argmax agrees at 32 of 32; no change
+[g3] Metal int8 tower             KL mean 0.17766, max 3.18378 nats; argmax agrees at 30 of 32; first change at step 12: reference " Orchid" p 0.793, this " services" (reference p 0.206)
+[g3]   (its mean relative L2 from the CPU tower: 0.0195)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.05837, max 0.40629 nats; argmax agrees at 30 of 32; first change at step 18: reference " costs" p 0.571, this " cost" (reference p 0.305)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.05462, max 0.51174 nats; argmax agrees at 30 of 32; first change at step 0: reference "The" p 0.924, this "This" (reference p 0.076)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.07062, max 0.78745 nats; argmax agrees at 31 of 32; first change at step 18: reference " costs" p 0.571, this " cost" (reference p 0.305)
+--- PASS: TestGemma3TowerSensitivity (65.17s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a tax invoice from Brightwater Logistics Ltd for Orchid Bay Hospitality, detailing various services like paper, labels, site surveys, and shipping, with a"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 33.74000, max 45.94526 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.573, this " PVA" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.10229, max 0.96507 nats; argmax agrees at 31 of 32; first change at step 19: reference " like" p 0.499, this " and" (reference p 0.146)
+[g3]   (its mean relative L2 from the CPU tower: 6.09e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.13053, max 1.18866 nats; argmax agrees at 30 of 32; first change at step 0: reference "The" p 0.573, this "Here" (reference p 0.002)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.15873, max 2.32756 nats; argmax agrees at 29 of 32; first change at step 11: reference " for" p 0.483, this "." (reference p 0.073)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.08589, max 1.34534 nats; argmax agrees at 30 of 32; first change at step 0: reference "The" p 0.573, this "This" (reference p 0.425)
+[g3] Metal int8 tower             KL mean 0.12859, max 1.25541 nats; argmax agrees at 30 of 32; first change at step 20: reference " paper" p 0.710, this " A" (reference p 0.125)
+[g3]   (its mean relative L2 from the CPU tower: 0.0195)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.10425, max 1.52213 nats; argmax agrees at 30 of 32; first change at step 0: reference "The" p 0.573, this "This" (reference p 0.425)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.16462, max 1.87317 nats; argmax agrees at 30 of 32; first change at step 0: reference "The" p 0.573, this "This" (reference p 0.425)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.07189, max 0.79314 nats; argmax agrees at 32 of 32; no change
+--- PASS: TestGemma3TowerSensitivity (63.44s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows an invoice from Cedar & Pine Joinery for $10,580.96 due in 30 days to a company called"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 30.80097, max 41.80205 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.740, this " পাইনি" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.11386, max 2.59640 nats; argmax agrees at 30 of 32; first change at step 22: reference " due" p 0.649, this " to" (reference p 0.086)
+[g3]   (its mean relative L2 from the CPU tower: 9.33e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.11997, max 2.14395 nats; argmax agrees at 28 of 32; first change at step 0: reference "The" p 0.740, this "This" (reference p 0.260)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.04913, max 0.48925 nats; argmax agrees at 30 of 32; first change at step 12: reference " $" p 0.633, this " supplies" (reference p 0.314)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.08553, max 0.92379 nats; argmax agrees at 28 of 32; first change at step 0: reference "The" p 0.740, this "This" (reference p 0.260)
+[g3] Metal int8 tower             KL mean 0.08816, max 0.85147 nats; argmax agrees at 30 of 32; first change at step 22: reference " due" p 0.649, this " to" (reference p 0.086)
+[g3]   (its mean relative L2 from the CPU tower: 0.021)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.09791, max 1.59325 nats; argmax agrees at 29 of 32; first change at step 0: reference "The" p 0.740, this "This" (reference p 0.260)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.12583, max 1.17751 nats; argmax agrees at 28 of 32; first change at step 0: reference "The" p 0.740, this "This" (reference p 0.260)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.15329, max 3.17332 nats; argmax agrees at 29 of 32; first change at step 0: reference "The" p 0.740, this "This" (reference p 0.260)
+--- PASS: TestGemma3TowerSensitivity (68.76s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This is an invoice from Cedar & Pine Joinery for $10,580.96, totaling laminated menu cards and an ink cartridge, due"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 31.02097, max 48.74403 nats; argmax agrees at 0 of 32; first change at step 0: reference "This" p 0.749, this " PVA" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.05164, max 0.54788 nats; argmax agrees at 31 of 32; first change at step 21: reference "," p 0.318, this " due" (reference p 0.303)
+[g3]   (its mean relative L2 from the CPU tower: 9.33e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.09857, max 1.32478 nats; argmax agrees at 29 of 32; first change at step 0: reference "This" p 0.749, this "The" (reference p 0.235)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.07368, max 1.47666 nats; argmax agrees at 30 of 32; first change at step 0: reference "This" p 0.749, this "The" (reference p 0.235)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.17146, max 3.39564 nats; argmax agrees at 30 of 32; first change at step 21: reference "," p 0.318, this " due" (reference p 0.303)
+[g3] Metal int8 tower             KL mean 0.23293, max 4.03266 nats; argmax agrees at 30 of 32; first change at step 21: reference "," p 0.318, this " to" (reference p 0.137)
+[g3]   (its mean relative L2 from the CPU tower: 0.021)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.19303, max 1.97219 nats; argmax agrees at 30 of 32; first change at step 21: reference "," p 0.318, this " to" (reference p 0.137)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.06649, max 1.10154 nats; argmax agrees at 31 of 32; first change at step 21: reference "," p 0.318, this " to" (reference p 0.137)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.16601, max 2.22271 nats; argmax agrees at 29 of 32; first change at step 21: reference "," p 0.318, this " to" (reference p 0.137)
+--- PASS: TestGemma3TowerSensitivity (66.12s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This image shows an invoice from Kestrel Analytics GmbH for the purchase of hardwood flooring and ink cartridges from Redcliff Estates. The total due is £1,3"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 33.19119, max 46.50307 nats; argmax agrees at 0 of 32; first change at step 0: reference "This" p 0.611, this " Hausdorff" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.11410, max 1.75868 nats; argmax agrees at 31 of 32; first change at step 19: reference " from" p 0.787, this "." (reference p 0.133)
+[g3]   (its mean relative L2 from the CPU tower: 5.83e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.04180, max 0.85872 nats; argmax agrees at 31 of 32; first change at step 24: reference " The" p 0.508, this " It" (reference p 0.164)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.09831, max 1.64524 nats; argmax agrees at 30 of 32; first change at step 19: reference " from" p 0.787, this "." (reference p 0.133)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.10484, max 1.46662 nats; argmax agrees at 31 of 32; first change at step 10: reference " for" p 0.818, this " to" (reference p 0.182)
+[g3] Metal int8 tower             KL mean 0.06150, max 0.69020 nats; argmax agrees at 31 of 32; first change at step 10: reference " for" p 0.818, this " to" (reference p 0.182)
+[g3]   (its mean relative L2 from the CPU tower: 0.0187)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.06133, max 0.73452 nats; argmax agrees at 31 of 32; first change at step 24: reference " The" p 0.508, this "<end_of_turn>" (reference p 0.286)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.04870, max 1.25027 nats; argmax agrees at 32 of 32; no change
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.08374, max 0.98819 nats; argmax agrees at 30 of 32; first change at step 0: reference "This" p 0.611, this "The" (reference p 0.389)
+--- PASS: TestGemma3TowerSensitivity (67.08s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "This is an invoice from Kestrel Analytics GmbH for £1,331.85, due on August 4th, 2026"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 30.27035, max 44.36797 nats; argmax agrees at 0 of 32; first change at step 0: reference "This" p 0.490, this " Hausdorff" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.13200, max 2.25076 nats; argmax agrees at 29 of 32; first change at step 0: reference "This" p 0.490, this "The" (reference p 0.156)
+[g3]   (its mean relative L2 from the CPU tower: 5.83e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.05275, max 0.74214 nats; argmax agrees at 29 of 32; first change at step 0: reference "This" p 0.490, this "Here" (reference p 0.354)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.05475, max 0.79273 nats; argmax agrees at 30 of 32; first change at step 0: reference "This" p 0.490, this "The" (reference p 0.156)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.17346, max 3.11202 nats; argmax agrees at 29 of 32; first change at step 9: reference " for" p 0.540, this " to" (reference p 0.457)
+[g3] Metal int8 tower             KL mean 0.04589, max 0.56398 nats; argmax agrees at 30 of 32; first change at step 9: reference " for" p 0.540, this " to" (reference p 0.457)
+[g3]   (its mean relative L2 from the CPU tower: 0.0187)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.05810, max 1.24118 nats; argmax agrees at 31 of 32; first change at step 19: reference "," p 0.498, this " due" (reference p 0.443)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.12975, max 1.83483 nats; argmax agrees at 28 of 32; first change at step 0: reference "This" p 0.490, this "The" (reference p 0.156)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.06733, max 1.20356 nats; argmax agrees at 30 of 32; first change at step 9: reference " for" p 0.540, this " to" (reference p 0.457)
+--- PASS: TestGemma3TowerSensitivity (66.16s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a tax invoice from Northgate Office Products for Oakline Hotels plc, detailing the items purchased and the total amount due, including tax.<end_of_turn><end_of_turn>"
+[g3] 31 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 31 of 31; no change
+[g3] control: features negated    KL mean 34.43976, max 51.65933 nats; argmax agrees at 0 of 31; first change at step 0: reference "The" p 0.647, this " Relativity" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.07577, max 0.94177 nats; argmax agrees at 29 of 31; first change at step 16: reference "," p 0.664, this "." (reference p 0.320)
+[g3]   (its mean relative L2 from the CPU tower: 5.26e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.04143, max 0.45134 nats; argmax agrees at 29 of 31; first change at step 0: reference "The" p 0.647, this "This" (reference p 0.353)
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.04959, max 0.32737 nats; argmax agrees at 29 of 31; first change at step 16: reference "," p 0.664, this "." (reference p 0.320)
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.02074, max 0.24048 nats; argmax agrees at 29 of 31; first change at step 16: reference "," p 0.664, this "." (reference p 0.320)
+[g3] Metal int8 tower             KL mean 0.03890, max 0.29964 nats; argmax agrees at 30 of 31; first change at step 0: reference "The" p 0.647, this "This" (reference p 0.353)
+[g3]   (its mean relative L2 from the CPU tower: 0.0188)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.02770, max 0.40083 nats; argmax agrees at 30 of 31; first change at step 19: reference " items" p 0.644, this " cost" (reference p 0.316)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.07220, max 1.07315 nats; argmax agrees at 30 of 31; first change at step 19: reference " items" p 0.644, this " cost" (reference p 0.316)
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.08424, max 0.99754 nats; argmax agrees at 29 of 31; first change at step 0: reference "The" p 0.647, this "This" (reference p 0.353)
+--- PASS: TestGemma3TowerSensitivity (66.98s)
+PASS
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image is a tax invoice from Northgate Office Products for Oakline Hotels plc, detailing a purchase of various office supplies with a total due amount of £2"
+[g3] 32 graded positions
+[g3] control: CPU tower again     KL mean 0.00000, max 0.00000 nats; argmax agrees at 32 of 32; no change
+[g3] control: features negated    KL mean 34.64313, max 51.86494 nats; argmax agrees at 0 of 32; first change at step 0: reference "The" p 0.919, this " Relativity" (reference p 0.000)
+[g3] Metal f16 tower              KL mean 0.05537, max 1.38445 nats; argmax agrees at 31 of 32; first change at step 18: reference " a" p 0.444, this " various" (reference p 0.417)
+[g3]   (its mean relative L2 from the CPU tower: 5.26e-06)
+[g3] noise at Metal f16 tower's size, seed 1 KL mean 0.08438, max 2.15867 nats; argmax agrees at 32 of 32; no change
+[g3] noise at Metal f16 tower's size, seed 2 KL mean 0.11747, max 3.08258 nats; argmax agrees at 32 of 32; no change
+[g3] noise at Metal f16 tower's size, seed 3 KL mean 0.05233, max 0.95736 nats; argmax agrees at 32 of 32; no change
+[g3] Metal int8 tower             KL mean 0.11016, max 1.51407 nats; argmax agrees at 32 of 32; no change
+[g3]   (its mean relative L2 from the CPU tower: 0.0188)
+[g3] noise at Metal int8 tower's size, seed 1 KL mean 0.18158, max 4.00226 nats; argmax agrees at 30 of 32; first change at step 18: reference " a" p 0.444, this " six" (reference p 0.031)
+[g3] noise at Metal int8 tower's size, seed 2 KL mean 0.04322, max 0.47063 nats; argmax agrees at 32 of 32; no change
+[g3] noise at Metal int8 tower's size, seed 3 KL mean 0.11850, max 1.77627 nats; argmax agrees at 29 of 32; first change at step 18: reference " a" p 0.444, this " the" (reference p 0.064)
+--- PASS: TestGemma3TowerSensitivity (67.92s)
+PASS

@@ -47,6 +47,7 @@ demo/chat/dist/
 # EXCEPTION: whisper-tiny-rand is a 444 KB random-weight Whisper (encoder and decoder; scripts/pin_whisper_tiny.py) that transformers reloads, committed so the Whisper encoder gate (G-S14d1) runs in CI.
 !testdata/whisper-tiny-rand/
 !testdata/whisper-tiny-rand/model.safetensors
+!testdata/whisper-tiny-ts/model.safetensors
 # EXCEPTION: voxtral-tiny is a 642 KB random-weight Voxtral (audio tower, projector and a tiny Llama text decoder) in the REAL checkpoint's layout (scripts/pin_voxtral_tiny.py) that transformers reloads, committed so G-S14e2 runs in CI.
 !testdata/voxtral-tiny/
 !testdata/voxtral-tiny/model.safetensors

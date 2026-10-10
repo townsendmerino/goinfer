@@ -1,0 +1,13 @@
+[11:56:48] arm cpu (--backend cpu --embed-int4=false)
+  decode path: cpu (int4mix) [int4 layout: canonical (qkv)]
+  cpu one-image (64.6s, 1004 prompt tokens): 'This table shows the quarterly unit sales (in thousands) for different regions (North, South, East, West, Central) and the total sales across all regions for th'
+  cpu two-image (87.2s, 1786 prompt tokens): 'The first image is a table titled "Quarterly unit sales by region (thousands)," which presents sales data for different regions (North, South, East, West, Centr'
+  "qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+[11:59:47] arm cpu2 (--backend cpu --embed-int4=false)
+  decode path: cpu (int4mix) [int4 layout: canonical (qkv)]
+  cpu2 one-image (59.4s, 1004 prompt tokens): 'This table shows the quarterly unit sales (in thousands) for different regions (North, South, East, West, Central) and the total sales across all regions for th'
+  cpu2 two-image (86.7s, 1786 prompt tokens): 'The first image is a table titled "Quarterly unit sales by region (thousands)," which presents sales data for different regions (North, South, East, West, Centr'
+  "qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+reference arm cpu
+one-image: cpu2 against cpu: IDENTICAL replies
+two-image: cpu2 against cpu: IDENTICAL replies

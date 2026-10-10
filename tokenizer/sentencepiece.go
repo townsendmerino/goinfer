@@ -245,6 +245,10 @@ func Load(path string) (*Tokenizer, error) {
 			} else if !errors.Is(verr, ErrNoVocabMerges) {
 				return nil, verr
 			}
+			// A Mistral-format repo (Voxtral) ships tekken.json and no tokenizer.json.
+			if raw, terr := os.ReadFile(filepath.Join(path, "tekken.json")); terr == nil {
+				return LoadTekken(raw)
+			}
 		}
 		return nil, fmt.Errorf("tokenizer.Load: %w", err)
 	}

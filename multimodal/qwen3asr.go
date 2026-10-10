@@ -37,3 +37,21 @@ func QwenASRPrompt(tk *tokenizer.Tokenizer, system string, n int, language strin
 	}
 	return append(ids, tail...), audioPos, nil
 }
+
+// QwenASRLanguageWord is the token a Qwen3-ASR assistant turn opens with when the model detects the language itself ("language English<asr_text>...").
+const QwenASRLanguageWord = "language"
+
+// QwenASRPromptOpenLanguage is QwenASRPrompt with the assistant turn already opened with QwenASRLanguageWord: the one token the model would write first, as a prompt token. The model still
+// writes the language name and <asr_text> itself, so detection is kept. A reply built from this prompt lacks the word; a caller that wants the model's usual raw reply puts
+// QwenASRLanguageWord in front of the generated text.
+func QwenASRPromptOpenLanguage(tk *tokenizer.Tokenizer, system string, n int) (ids []int, audioPos int, err error) {
+	ids, audioPos, err = QwenASRPrompt(tk, system, n, "")
+	if err != nil {
+		return nil, 0, err
+	}
+	w, ok := tk.TokenID(QwenASRLanguageWord)
+	if !ok {
+		return nil, 0, fmt.Errorf("multimodal: the tokenizer has no %q token (not a Qwen3-ASR tokenizer)", QwenASRLanguageWord)
+	}
+	return append(ids, w), audioPos, nil
+}

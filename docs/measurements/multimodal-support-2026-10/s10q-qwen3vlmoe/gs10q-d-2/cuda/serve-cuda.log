@@ -1,0 +1,27 @@
+swap guard (load): not armed for /home/francis/models/qwen3-vl-30b-a3b-instruct.int4.cuda.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+[cuda] C′ cache: 64 slots/layer would need 8.2 GB VRAM but only 3.6 GB free (2.1 GB of 5.7 GB total reserved for a companion attach, --drafter) — capping to 22 (3.1 GB)
+loaded "qwen3-vl-30b-a3b-instruct": 48-layer model (vocab 151936) in 59.704s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4mix)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int8
+  context: 4096 tokens (backend default; model maximum 262144 — raise with --ctx) · KV f32
+  fit: 4096-token cap needs 0.8 GB KV (weights 16.3 GB, budget 29.3 GB, 28.5 GB left for a request's own prefill)
+  KV plan: 1 conversation x 4096 positions (4 asked for; 2.1 GB held back for the vision tower)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+Qwen3-VL vision for "qwen3-vl-30b-a3b-instruct": tower (CUDA) loads on first image (merge 2, image-pad id 151655, <= 1024 tokens/image) from /home/francis/models/qwen3-vl-30b-a3b-instruct
+"qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18459 [chat:[qwen3-vl-30b-a3b-instruct]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 128.0 MiB (text) / 160.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.83 GB swap-used
+vision: encoded a 59792-byte image in 6.51s (sha256 d4352b06); a resend of it will skip this
+vision: reused the cached encode of this image (59792 bytes, sha256 d4352b06)
+vision: encoded a 23028-byte image in 1.925s (sha256 07b31211); a resend of it will skip this
+swap guard: TRIPPED — swap grew 0.60 GB over baseline (6.43 GB used now); refusing new requests until it recovers
+vision: 2 image(s), 2 spans; the resident image prefill declined (decoder: the resident DeepStack prefill takes one image and the prompt has 2; using the CPU prefill and upload), so the CPU prefill ran and was uploaded
+
+shutting down…

@@ -66,11 +66,12 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 		t.Fatal(err)
 	}
 	type clip struct {
-		ids []int
-		pos int
-		emb []float32
-		n   int
+		ids, idsPF []int // idsPF: the prompt with the assistant turn opened with "language" (G-S14c4d), empty unless GOINFER_S14C4_PF=1
+		pos        int
+		emb        []float32
+		n          int
 	}
+	pf := os.Getenv("GOINFER_S14C4_PF") == "1"
 	clips := map[string]clip{}
 	for i, id := range ids {
 		wav, err := os.ReadFile(filepath.Join(data, id+".wav"))
@@ -93,18 +94,31 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		clips[id] = clip{pids, pos, emb, n}
+		c := clip{ids: pids, pos: pos, emb: emb, n: n}
+		if pf {
+			if c.idsPF, _, err = multimodal.QwenASRPromptOpenLanguage(tk, "", n); err != nil {
+				t.Fatal(err)
+			}
+		}
+		clips[id] = c
 		if (i+1)%10 == 0 || i+1 == len(ids) {
 			hb("encoder: %d/%d clips", i+1, len(ids))
 		}
 	}
 	result := map[string]map[string]string{}
-	for _, arm := range []struct {
+	type armSpec struct {
 		name string
 		opts Options
-	}{{"f32", Options{Backend: "cpu"}}, {"int4", Options{Backend: "cpu", Quant: "int4", EmbedInt4: true}},
+		pf   bool // open the assistant turn with "language" (G-S14c4d); the stored reply is "language" + the generated text, the string the unforced model writes
+	}
+	arms := []armSpec{{"f32", Options{Backend: "cpu"}, false}, {"int4", Options{Backend: "cpu", Quant: "int4", EmbedInt4: true}, false},
 		// Amendment A1 (2026-10-09), record only: serve's int4 with the head table at the int8 pin, to see whether the int4 head is what damages the first token.
-		{"int4h8", Options{Backend: "cpu", Quant: "int4", EmbedInt4: false}}} {
+		{"int4h8", Options{Backend: "cpu", Quant: "int4", EmbedInt4: false}, false}}
+	if pf {
+		arms = append(arms, armSpec{"f32pf", Options{Backend: "cpu"}, true}, armSpec{"int4pf", Options{Backend: "cpu", Quant: "int4", EmbedInt4: true}, true},
+			armSpec{"int4h8pf", Options{Backend: "cpu", Quant: "int4", EmbedInt4: false}, true})
+	}
+	for _, arm := range arms {
 		m, err := Load(dir, arm.opts)
 		if err != nil {
 			t.Fatalf("%s: Load: %v", arm.name, err)
@@ -113,7 +127,11 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 		res := map[string]string{}
 		for i, id := range ids {
 			c := clips[id]
-			ch, g := m.GenerateAudio(context.Background(), c.ids, c.pos, c.n, func() ([]float32, error) { return c.emb, nil }, 256, SamplingParams{})
+			prompt := c.ids
+			if arm.pf {
+				prompt = c.idsPF
+			}
+			ch, g := m.GenerateAudio(context.Background(), prompt, c.pos, c.n, func() ([]float32, error) { return c.emb, nil }, 256, SamplingParams{})
 			var toks []int
 			for tok := range ch {
 				toks = append(toks, tok)
@@ -122,6 +140,9 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 				t.Fatalf("%s %s: %v", arm.name, id, err)
 			}
 			res[id], _ = tk.Decode(toks)
+			if arm.pf {
+				res[id] = multimodal.QwenASRLanguageWord + res[id]
+			}
 			if (i+1)%10 == 0 || i+1 == len(ids) {
 				hb("arm %s: %d/%d clips, last %q", arm.name, i+1, len(ids), res[id])
 			}
@@ -133,5 +154,5 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 	if err := os.WriteFile(out, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	hb("done: %d clips, 3 arms, wrote %s", len(ids), out)
+	hb("done: %d clips, %d arms, wrote %s", len(ids), len(arms), out)
 }

@@ -1,0 +1,11 @@
+[13:25:48] arm cpu (-backend cpu -quant q4k -ctx 512)
+  decode path: cpu (q4k)
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  cpu (51.2s, 64 tokens): ' The history of the printing press is a fascinating journey that has shaped the world as we know it today. From its humble beginnings in the 15th century to the modern digital age, the printing press '
+[13:26:43] arm metal (-backend metal -quant q4k -ctx 512)
+  decode path: metal-resident (q4k)
+  prefill path: sequential — arch/geometry not supported by f16 MMA prefill kernel
+  metal (9.0s, 64 tokens): ' The history of the printing press is a fascinating journey that has shaped the modern world as we know it today. The printing press, invented <|im_start|>assistant|>The printing press, which was inve'
+first differing generated token 17: cpu ' world', metal ' modern'
+  cpu top-3: ' world' 0.477, ' modern' 0.331, ' course' 0.098
+G-Q3 PASS: near-tie (p(other) >= half p(top) = 0.238): True

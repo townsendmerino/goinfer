@@ -1,0 +1,24 @@
+swap guard (load): armed for /Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+swap guard (load): baseline 1.08 GB swap-used
+loaded "bench": 32-layer model (vocab 32064) in 3.393s [chat: phi3_orig]
+  decode path: metal-resident (q4k)
+  prefill path: sequential — arch/geometry not supported by f16 MMA prefill kernel
+  head table: int8
+  context: 512 tokens (--ctx; model maximum 4096) · KV f16
+  fit: 512-token cap needs 0.2 GB KV (weights 2.6 GB, budget 3.0 GB, 2.8 GB left for a request's own prefill)
+  KV plan: 2 conversations x 512 positions (4 asked for; --ctx 512)
+  session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions not given: Metal keeps 2 by default, and a memory guard may keep fewer; --kv-sessions 4 asks for 4)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18455 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 3.36s (map 10ms build 898ms resident 2.45s) — 73% resident; 2.23 GB source, 0.66 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 129-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+swap guard: baseline 1.08 GB swap-used
+
+shutting down…

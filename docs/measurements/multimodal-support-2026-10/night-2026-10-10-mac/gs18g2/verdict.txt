@@ -1,0 +1,32 @@
+24 units over 12 images, 660 graded positions
+image                              prompt                 steps   f16 KL  int8 KL   excess   agree f16/int8   noise at int8's size
+glm_ocr/table.png                  'What does this image'    32   0.0297   0.0319  +0.0022    30/ 30          0.034-0.062
+glm_ocr/table.png                  'Describe this image '    32   0.0591   0.1644  +0.1053    30/ 29          0.122-0.179
+glm_ocr/formula.png                'What does this image'    32   0.0842   0.1492  +0.0650    30/ 27          0.079-0.102
+glm_ocr/formula.png                'Describe this image '    27   0.0555   0.0717  +0.0161    24/ 24          0.070-0.108
+gemma3_preprocess_image.png        'What does this image'    14   0.1655   0.2824  +0.1169    12/ 13          0.098-0.481
+gemma3_preprocess_image.png        'Describe this image '    23   0.0468   0.0406  -0.0062    23/ 23          0.023-0.042
+qwen25vl_preprocess_image.png      'What does this image'    17   0.0970   0.6360  +0.5389    17/ 14          0.178-0.247
+qwen25vl_preprocess_image.png      'Describe this image '    26   0.0698   0.0675  -0.0022    26/ 26          0.046-0.098
+qwen25vl_preprocess_image_resize.png 'What does this image'    13   0.0612   0.4991  +0.4379    12/ 10          0.097-0.329
+qwen25vl_preprocess_image_resize.png 'Describe this image '    23   0.0614   0.1760  +0.1146    21/ 20          0.068-0.082
+qwen35vl_preprocess_image.png      'What does this image'    17   0.0865   0.0700  -0.0165    14/ 16          0.059-0.144
+qwen35vl_preprocess_image.png      'Describe this image '    28   0.0667   0.0622  -0.0045    27/ 27          0.063-0.080
+glm_ocr/invoice.png                'What does this image'    25   0.2436   0.1061  -0.1375    23/ 23          0.180-0.326
+glm_ocr/invoice.png                'Describe this image '    32   0.0620   0.0970  +0.0350    29/ 30          0.059-0.128
+glm_ocr/invoices/inv01.png         'What does this image'    32   0.0265   0.0183  -0.0081    32/ 32          0.027-0.048
+glm_ocr/invoices/inv01.png         'Describe this image '    32   0.0335   0.0439  +0.0105    31/ 31          0.030-0.104
+glm_ocr/invoices/inv02.png         'What does this image'    32   0.0899   0.1777  +0.0877    29/ 30          0.055-0.071
+glm_ocr/invoices/inv02.png         'Describe this image '    32   0.1023   0.1286  +0.0263    31/ 30          0.072-0.165
+glm_ocr/invoices/inv03.png         'What does this image'    32   0.1139   0.0882  -0.0257    30/ 30          0.098-0.153
+glm_ocr/invoices/inv03.png         'Describe this image '    32   0.0516   0.2329  +0.1813    31/ 30          0.066-0.193
+glm_ocr/invoices/inv04.png         'What does this image'    32   0.1141   0.0615  -0.0526    31/ 31          0.049-0.084
+glm_ocr/invoices/inv04.png         'Describe this image '    32   0.1320   0.0459  -0.0861    29/ 30          0.058-0.130
+glm_ocr/invoices/inv05.png         'What does this image'    31   0.0758   0.0389  -0.0369    29/ 30          0.028-0.084
+glm_ocr/invoices/inv05.png         'Describe this image '    32   0.0554   0.1102  +0.0548    31/ 32          0.043-0.182
+
+mean KL to the CPU tower: f16 0.0827, int8 0.1417 nats per position
+D (int8 minus f16)   +0.0590 [+0.0041, +0.1243]   bands on the upper bound: PASS <= 0.05, PARKED <= 0.2 -> PARKED
+A (f16 minus int8)   +0.61 points [-1.15, +2.62]   bands on the upper bound: PASS <= 5.0, PARKED <= 15.0 -> PASS
+
+G-S18g2: PARKED

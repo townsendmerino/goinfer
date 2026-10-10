@@ -1,0 +1,60 @@
+{
+ "decoder_start_token_id": 1601,
+ "eos_token_id": 1600,
+ "pad_token_id": 1600,
+ "bos_token_id": 1600,
+ "no_timestamps_token_id": 1607,
+ "max_initial_timestamp_index": 50,
+ "max_length": 64,
+ "is_multilingual": true,
+ "lang_to_id": {
+  "<|en|>": 1602,
+  "<|fr|>": 1603,
+  "<|de|>": 1604
+ },
+ "task_to_id": {
+  "translate": 1605,
+  "transcribe": 1606
+ },
+ "suppress_tokens": [
+  1,
+  2,
+  7,
+  8,
+  9,
+  10,
+  14,
+  25,
+  26,
+  27,
+  28,
+  29,
+  31,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63,
+  90,
+  91,
+  92,
+  93,
+  359,
+  503,
+  522,
+  542,
+  873,
+  893,
+  902,
+  918,
+  922,
+  931
+ ],
+ "begin_suppress_tokens": [
+  220,
+  1600
+ ],
+ "return_timestamps": false,
+ "prev_sot_token_id": 1599
+}

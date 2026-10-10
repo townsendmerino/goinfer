@@ -46,7 +46,7 @@ type visionInput struct {
 	qwen           bool
 	deepSets       int  // Qwen3-VL: features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
-	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR)
+	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR, Voxtral)
 	causal         bool // Ministral 3 and LFM2-VL, causal image tokens (GenerateVLCausalSpans)
 	images         int  // the images in the turn (a Pixtral image is one span per merged row, so not len(spans))
 	// Every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then returns
@@ -110,6 +110,9 @@ func (lm *loadedModel) visionFeatureCache() *featureCache {
 func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
 	if img.audio && lm.qwenASRDir != "" { // Qwen3-ASR has a fixed prompt layout: no user-turn text, no template rendering
 		return lm.qwenASRPrompt(system, img)
+	}
+	if img.audio && lm.voxtralDir != "" { // Voxtral builds its transcription request itself (no chat template ships with it)
+		return lm.voxtralPrompt(img)
 	}
 	if lm.tmpl == nil {
 		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
@@ -197,6 +200,8 @@ func (lm *loadedModel) towerFamily(audio bool) string {
 	switch {
 	case audio && lm.qwenASRDir != "":
 		return "Qwen3-ASR audio"
+	case audio && lm.voxtralDir != "":
+		return "Voxtral audio"
 	case audio:
 		return "Gemma 4 audio"
 	case lm.glm != nil:
@@ -673,6 +678,54 @@ func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput,
 		return emb, nil
 	}
 	ids, pos, err := multimodal.QwenASRPrompt(lm.tk, system, n, "")
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true}, nil
+}
+
+// voxtralMaxSeconds is the longest clip a request may carry. Each 30 s window is a full encoder pass (about a minute on a CPU), so this is a cost bound, not the model's limit; a clip over it is
+// refused rather than cut.
+const voxtralMaxSeconds = 600
+
+// voxtralEncoder is Voxtral's audio tower and projector (aikit's, CPU, float32), loaded on the first clip.
+func (lm *loadedModel) voxtralEncoder() (*audio.VoxtralAudio, error) {
+	lm.voxtralOnce.Do(func() { lm.voxtral, lm.voxtralErr = audio.LoadVoxtralAudio(lm.voxtralDir) })
+	return lm.voxtral, lm.voxtralErr
+}
+
+// voxtralPrompt is the Voxtral path: the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for the other audio models) through the Whisper-style 128-mel front end, one
+// 30 s window at a time (the clip is padded up to whole windows), into the transcription request mistral_common lays out (multimodal.VoxtralPrompt, with no language: the model detects
+// it). The tower and projector run lazily inside features(). The reply is the model's raw text; text in the user turn is ignored, the system message is not used.
+func (lm *loadedModel) voxtralPrompt(clip imageRef) (visionInput, error) {
+	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
+	if err != nil {
+		return visionInput{}, err
+	}
+	if len(samples) > voxtralMaxSeconds*audio.WhisperSampleRate {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(len(samples))/audio.WhisperSampleRate, voxtralMaxSeconds)
+	}
+	n := multimodal.VoxtralAudioTokens(len(samples))
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		wins, err := audio.WhisperFeaturesWindows(samples, 128)
+		if err != nil {
+			return nil, fmt.Errorf("audio features: %w", err)
+		}
+		enc, err := lm.voxtralEncoder()
+		if err != nil {
+			return nil, fmt.Errorf("voxtral audio encoder: %w", err)
+		}
+		emb, err := enc.Embed(wins)
+		if err != nil {
+			return nil, fmt.Errorf("voxtral audio encoder: %w", err)
+		}
+		if len(emb) != n*hiddenDim {
+			return nil, fmt.Errorf("voxtral audio encoder emitted %d values, want %d x %d", len(emb), n, hiddenDim)
+		}
+		return emb, nil
+	}
+	ids, pos, err := multimodal.VoxtralPrompt(lm.tk, n, "")
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}

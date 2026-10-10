@@ -728,6 +728,35 @@ class TestPinnedDocs(_LintRepo):
         self.doc(self.pinned("see `linalg/quant.go:3`\n", commit=c))
         self.assertRed("CANNOT SEARCH", "go mod download")
 
+    def test_pinned_modules_lists_what_the_pinned_records_need_and_nothing_else(self):
+        # Two records pinned to commits that required different aikit versions; neither version is downloaded.
+        self.write("go.mod", "module example.com/goinfer\n\ngo 1.22\n\nrequire github.com/townsendmerino/aikit v9.9.9\n")
+        c1 = _git_commit_all(self.repo, "go.mod pins aikit v9.9.9")
+        self.write("go.mod", "module example.com/goinfer\n\ngo 1.22\n\nrequire github.com/townsendmerino/aikit v9.9.10\n")
+        c2 = _git_commit_all(self.repo, "go.mod pins aikit v9.9.10")
+        self.doc(self.pinned("see `linalg/quant.go:3` and `linalg/quant.go:Quant`\n", commit=c1), name="rec-a.md")
+        self.doc(self.pinned("see `mmap/mmap_unix.go:46`\n", commit=c2), name="rec-b.md")
+        # A record whose citation is in THIS repository at its commit needs no module, whatever go.mod said there.
+        self.doc(self.pinned("see `pkg/svc.go:3`\n", commit=c2), name="rec-c.md")
+        code, out = self.run_lint(["--pinned-modules"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.split(), ["github.com/townsendmerino/aikit@v9.9.10", "github.com/townsendmerino/aikit@v9.9.9"])
+        # The list is what the lint then needs: with both in the cache it is green.
+        cache = pathlib.Path(self.repo) / "mc"
+        for ver, rel, body in (("v9.9.9", "linalg/quant.go", "package linalg\n\nfunc Quant() {}\n"),
+                               ("v9.9.10", "mmap/mmap_unix.go", "package mmap\n" + "// line\n" * 60)):
+            f = cache / "github.com" / "townsendmerino" / f"aikit@{ver}" / rel
+            f.parent.mkdir(parents=True)
+            f.write_text(body)
+        qcl._MODCACHE = cache
+        qcl.PINNED_FILE_CACHE.clear()
+        self.assertGreen()
+
+    def test_pinned_modules_prints_nothing_when_no_record_needs_one(self):
+        self.doc(self.pinned("see `pkg/svc.go:3`\n"))
+        code, out = self.run_lint(["--pinned-modules"])
+        self.assertEqual((code, out.strip()), (0, ""))
+
 
 class TestCloseTheDoor(_LintRepo):
     """CC0.c: a path:line in an unpinned doc is red once the door is closed. The switch is explicit so the

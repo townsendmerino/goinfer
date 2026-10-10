@@ -1,27 +1,49 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: ACTIVE (refreshed 2026-10-09).** The phases' state:
+**Status: ACTIVE (refreshed 2026-10-10).** The phases' state:
 - **Done:**
   - S1 (E-model decode on the GPU), Metal and CUDA.
   - S2 (Qwen3.5+ and GLM-OCR towers); `s2-towers` is merged into `main` (`471a500e`, 2026-10-08).
   - S3 (Gemma 3 and Qwen2.5-VL on Metal), root cause and follow-ups included.
   - S4 steps 0-5 (the CUDA towers) and the float32 SigLIP addendum.
   - S5 (E2B audio into the model; G-S5b PASS).
+  - S8 (the README and doc support table, computed from code and drift-checked) and S11 (several images per
+    message), both 2026-10-09.
   - S9 on Metal and CUDA.
-  - S10 for Qwen3-VL.
+  - S10 for Qwen3-VL, Ministral 3 (Pixtral) and LFM2.5-VL. "North" was dropped (2026-10-09).
   - S16 for Qwen2.5-VL and Qwen3-VL.
   - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
-    fix it needed (2026-10-09).
-  - S18's gates on both boxes. G-S18g read 2026-10-10: FAIL, so the int8 Metal tower is not a default (the code change
-    is owed).
+    fix it needed (2026-10-09). The owner kept the prefill on over G-IP4's registered FAIL.
+  - S7 and S13-lite on both boxes. The Mac's fourth pass (read 2026-10-10) has seven of eight S7 cells under the 5 s
+    bar.
+    - Gemma 3 4B reads 3.79 s with its resident image prefill, in S7's cell and in S13-lite, where Ollama reads 4.97 s
+      and llama.cpp 4.69 s the same session.
+    - Qwen2.5-VL-3B at 5.45 s is the one cell over; accepted as it is (owner, 2026-10-10: "we will just accept 5.51
+      as OK").
+  - The `--embed-int4` default's evaluation (option D): 7 of 7 models graded, none costly.
 - **In flight:**
-  - S6: Qwen3.6-35B images served on CUDA, the 31B's step (b'), E4B on Metal.
-  - S14 (speech).
-  - The Mac's third S7/S13-lite pass: read 2026-10-10, six of eight S7 cells under the 5 s bar.
-  - The `--embed-int4` default (option D).
-- **Done since:** S11 (several images per message) and S8 (the README and doc support table, computed from code and
-  drift-checked), both 2026-10-09.
-- **Not started:** S10's remaining families, S12, full S13, S15.
+  - S10 for Qwen3-VL MoE: G-S10q-a, b and c PASS. The served check G-S10q-d read 2026-10-10 (`gs10q-d-2`): the graded
+    CPU arms PASS (identical replies twice); the paged CUDA arm, graded by amendment A2, FAIL (its two-image reply
+    first differs at a token that is not a near-tie).
+  - S18: every gate has read. G-S18g read FAIL as registered, on a rule that cannot grade a tower on Gemma 3 (the f16
+    reference fails it too). The owner withdrew its consequence; G-S18g2 replaces it and read **PARKED** 2026-10-10
+    (D's upper bound 0.124 nats, between 0.05 and 0.20; A passes), so the decision is the owner's.
+  - S6: the 35B's served image check (G-S6m) and the 31B's step (b') PASS; Gemma 4 E4B PASS on CUDA. E4B on Metal
+    (G-E4B-1, G-E4B-2) has not run: its sidecar build was refused for memory on 2026-10-07. A Metal sidecar built by
+    serve has been on the Mac since 2026-10-09.
+  - S14 (speech), 2026-10-10: Qwen3-ASR's word-error-rate gate G-S14c4b failed on its re-read (2026-10-09); the partial
+    forced prefix (G-S14c4d) read 2026-10-10: (a) PASS, (b) PARKED (int4 +1.04 points over float32 with it, +4.17 without),
+    serve unchanged until the owner decides. Voxtral Mini is served (`input_audio`, G-S14e4a and b PASS; `s14e4c` read: int4
+    equals float32 on both clips, the float32 36 s arm was refused by the swap guard). A pure-Go Whisper is built and equal to
+    transformers on whisper-small: the decoder (G-S14f1, f2), timestamps and long-form (G-S14g1 to g3), the decode policy
+    (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record (G-S14f3)
+    PASSED 2026-10-10 (73/73 byte-equal, WER 6.70% both sides). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
+- **With the owner:**
+  - Decided 2026-10-10: the int8 Metal tower stays the tight-memory fallback (after G-S18g2's PARKED).
+  - Decided 2026-10-10: the `--embed-int4` default is on (option D's numbers). It already is everywhere but Metal;
+    on Metal it needs an int4 table in the resident, which is not built or scheduled.
+  - The paged CUDA arm of Qwen3-VL MoE: FAIL under A2 on one of two requests.
+- **Not started:** S15 (video), S12 (WebGPU), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
 measurement (CLAUDE.md, "Pre-registration").
@@ -3001,12 +3023,88 @@ aikit expected 0: L, as registered for S10's MoE variants.
   - **The reported CUDA arm:** its sidecar (`.int4.cuda.giw`, 16.7 GB) built in 11 min 5 s. The resident build then
     declined by name: `CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts …`,
     "continuing on the CPU/staged path". That is the decline the registration allowed for the 8 GB card.
-  - **A defect found after the decline, not yet investigated:** serve did not continue on the CPU. It exited with
-    `--quant "int4" cannot apply to the prequantized .giw bundle …int4.cuda.giw — it is baked at "int4mix"`. So
-    `--backend cuda --quant int4` on a model too large for the card ends in an error about the sidecar that same load
-    wrote.
-  - **Owed:** the job again, with a step ahead of the arms that builds the CPU sidecar under a long wait, so both graded
-    arms read a finished sidecar.
+  - **The exit after the decline, root cause found and fixed 2026-10-10 by day.** It is not about CUDA or the
+    decline. Serve exited with `--quant "int4" cannot apply to the prequantized .giw bundle …int4.cuda.giw — it is
+    baked at "int4mix"`.
+    - **Mechanism:** a `.giw` header records `Weights.quantLabel`, which reads `int4mix` whenever an int4 weight sits
+      beside any other kind among the body matmuls, and those include a MoE's routers. The routers stay float32 at
+      every quant, so every qwen3_moe-family model at `--quant int4` is labelled `int4mix`. A direct load reports the
+      quant that was asked for (`int4`); a load through a sidecar reports the header's label. `modelload.Load` then
+      runs `CheckGiwQuantMatch` on the user's explicit `--quant` against that label, and refuses the sidecar it has
+      just built.
+    - **Reproduced on tiny fixtures (the Mac, throwaway tests, not committed):**
+      - `qwen3vlmoe-tiny` and `qwen3moe-tiny` at int4: `quantLabel()` is `int4mix`, body kinds 112 int4 and 4 f32
+        (one router per layer). `llama-tiny`: `int4`, 28 int4.
+      - `modelload.Load` on a copy of `tiny-qwen2-moe`, backend CPU and Metal alike: with no explicit quant it loads
+        through `…int4.canonical.giw` / `…int4.metal.giw` and `Quant()` says `int4mix`; with `ExplicitQuant: "int4"`
+        it returns the refusal above.
+    - **Reach:** any MoE with float32 routers, named as a directory or a GGUF (both resolve to a sidecar), on any
+      backend, when `--quant int4` is typed. The default (no `--quant`) loads. The first run's CPU arms would have
+      failed the same way had the transcode finished.
+    - **The label is read elsewhere too (by reading the code, not run):** `autoMetalPrecision` keeps an `int4mix` model
+      on the CPU under `-backend auto` on a Mac, `residentQuantLabel` prints "int4mix→int4, no Metal int8 GEMV
+      kernel", and the KV-snapshot fingerprint carries it. The S6 night log shows the label on a prequant file named
+      for int4: `qwen3.6-35b-a3b-int4.giw` decodes "cuda-resident (int4mix)".
+    - **Fixed 2026-10-10 (owner: "fix now"), in the same format version.**
+      - `Weights.quantLabel` returns `int4mix` only when int4 sits beside an int8 body weight, which is what
+        `--quant int4mix` produces. A float32 body weight beside int4 is a by-design pin, as the int8 logit tables
+        already are.
+      - `LoadSerializedWeights` takes a header that says `int4mix` from the weights instead, so sidecars written
+        under the old rule load with the right label and need no rebuild.
+      - **No new `.giw` version (the owner asked).** The field keeps its values and the one the old rule got wrong
+        can be checked at load, so a version would buy nothing here; it would make every older binary, each pinned
+        night binary included, refuse the sidecars a new build writes and rebuild them.
+      - **Tests (each red before the fix except the control):** `TestQuantLabel_float32BesideInt4IsNotAMix` (the
+        committed `qwen3moe-tiny`: label, a baked bundle, an explicit int4 accepted, an explicit int8int8 still
+        refused), `TestQuantLabel_oldInt4MixHeaderIsRederived` (a bundle written with the old label),
+        `TestQuantLabel_int8BesideInt4IsAMix` (the control: a real mix is still a mix and still refuses int4), and an
+        explicit `--quant int4` through `modelload.Load`'s sidecar path in
+        `TestLoad_safetensorsDirGoesThroughSidecar`.
+      - **What changes for users:** an int4 MoE through a sidecar now reports `int4`. Its KV snapshots saved under the
+        old label no longer match and are prefilled again. Under `-backend auto` on a Mac such a model is no longer
+        held on the CPU for being "int4mix" (by reading `autoMetalPrecision`; not run).
+  - **Queued again on nobara for the night of 2026-10-10 as `gs10q-d-2`** (queued at est. 1 h 30 min, re-added by day at est. 30 min after the prep below; the same pinned serve binary, which predates the label fix). The
+    job builds the CPU sidecar first under a 40 min wait when it is missing, and leaves `--quant` at its int4 default.
+  - **Prep for the second run, 2026-10-10 by day (exploratory, nothing graded; logs `~/goinfer-logs/gs10q-d-prep-2026-10-10/`).**
+    The partial `.tmp.giw` was deleted and the CPU sidecar built with the job's own flags and pinned binary: **11m15s**,
+    `qwen3-vl-30b-a3b-instruct.int4.cpu-amd64.giw` (17.5 GB on disk, header int4mix), so step 0 of `gs10q-d-2` finds it present.
+    With it present serve is up in **1 s** (mmap), well inside the driver's 600 s wait. The job's exact one-image request
+    answered in **61.8 s** (1,004 prompt tokens, 42 completion tokens: "This table shows the quarterly unit sales ...") against the
+    job's 10-15 minutes per arm, so the job's wall time is nearer 15-20 minutes than 60. The CUDA arm, started exactly as the job
+    starts it: the resident build **declines by name** (`CUDA_ERROR_OUT_OF_MEMORY` allocating expert buffers, "Try -moe-cache-experts"),
+    serve then **continues on the CPU path** (`decode path: cpu`, 59 s load) with no `--quant` error: the default `--quant` leaves the
+    sidecar defect out of this job. So the plain CUDA arm yields CPU replies, and its comparison is labelled "(CPU fallback, not a
+    CUDA reply)" should it recur. **The CUDA arm now carries `--moe-cache-experts`** (the lever the decline names): checked by day, it
+    loads `decode path: cuda-resident (int4mix)` in 59 s, C' cache capped at 22 of 64 expert slots per layer (3.1 GB; 2.1 GB held
+    back for the vision tower, KV plan 1 conversation x 4096), the vision tower on CUDA; the job's one-image request answered in
+    52.4 s (cold) with a reply that is close to the CPU arm's but not identical ("...quarterly unit sales by region in thousands, with
+    data for Q1, Q2, Q3, Q4..." against the CPU's "...for different regions (North, South, East, West, Central)..."), the expected
+    difference between CPU and CUDA kernels.
+  - **Amendment A2 (owner, 2026-10-10, before the second run; the graded CPU arms' bar does not move): the CUDA arm is graded.**
+    The registration said "reported, not graded", because the plain CUDA build was expected to decline on the 8 GB card. It declines, and
+    the paged build (`--moe-cache-experts`, above) loads resident, so there is a CUDA path to grade. Rule, G-S10m-d's for a non-reference
+    arm: against the CPU arm's reply on each of the two requests, **PASS** = identical, or the first differing token is a near-tie (the
+    CPU arm's probability of the CUDA arm's token is at least half of its own top token's); **FAIL** = a first differing token that is not
+    a near-tie on either request; **VOID** (not graded either way) = the server did not come up, fell back to the CPU path, or did not
+    print `decode path: cuda-resident`. The job's exit code is the CPU arms' if they failed, else 0 / 3 / 4 for PASS / FAIL / VOID.
+    One arm, one load: determinism of the CUDA arm across loads is not asked here. **Disclosure:** the prep run showed the one-image CUDA
+    and CPU replies differ in text; I did not read the log-probabilities at the differing token, so the near-tie reading is unseen.
+    **Prediction (written now):** PASS at 0.60, FAIL at 0.25, VOID at 0.15 (a cold-run OOM at the first image, or a paged-build decline).
+  - **Read 2026-10-10 (`gs10q-d-2`, nobara, 10 minutes, exit 3; raw
+    `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/gs10q-d-2/`).**
+    - **The registered gate, the CPU arms: PASS.** Two loads through the pinned serve at int4 (`decode path: cpu
+      (int4mix)`, the sidecar present). One-image (1,004 prompt tokens, 64.6 s and 59.4 s) and two-image (1,786 tokens,
+      87.2 s and 86.7 s): identical replies on both requests.
+    - **The CUDA arm, graded by A2: FAIL.** It loaded `cuda-resident (int4mix)` with `--moe-cache-experts`, so the
+      reading is not void.
+      - One-image (85.6 s): first differs from the CPU arm at token 7 (CPU ' (', CUDA ' by'). The CPU arm gives ' ('
+        0.363 and ' by' 0.209, more than half: a near-tie, PASS.
+      - Two-image (116.8 s): first differs at token 23 (CPU ' different', CUDA ' six'). The CPU arm gives
+        ' different' 0.383, ' five' 0.211 and ' six' 0.147, under half of the top: not a near-tie, FAIL.
+      - The prediction put FAIL at 0.25. Both CUDA replies read as fluent descriptions of the same table.
+    - **What this does not say:** which side is nearer a float reference. The rule grades CUDA against the CPU arm at
+      one token; G-S10q-c's teacher-forced reading against HF is the instrument that would. Not run for the paged CUDA
+      path.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
@@ -4183,8 +4281,46 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **This binary (`74830779`) predates Gemma 3's resident image prefill on Metal.** G-IP4 read that lever by day at
       6.88 s before and 4.14 s after, so Gemma 3's row here is the 'before' build.
     - **Ranking for the next lever:** Qwen2.5-VL is the one cell over the bar with no lever already measured under it.
+      **Owner, 2026-10-10: accepted as it is** ("we will just accept 5.51 as OK"); no lever is owed for it.
     - The passes are on different nights and interleave nothing; a small difference (Qwen3.5-0.8B's 3.94 to 4.21 s)
       is not a resolved effect.
+
+- **S7 and S13-lite on the Mac, a fourth pass on 2026-10-10's tree, registered 2026-10-10 before it runs** (owner: "do
+  we need to queue or run something to get the 4.14 speed on the serve path?").
+  - **Nothing has to change in serve:** Gemma 3's resident image prefill is on by default since `f6b113ba`, which is
+    in `main`. What is missing is a night reading of it: the third pass's binary predates it, and 4.14 s is one
+    exploratory reading by day.
+  - **What:** the same scripts, cells, procedure and 5 s bar as the three passes above.
+  - **Binary:** `serve-metal` at `eb882131`, in `~/goinfer-bench/s7-2026-10-10/` (`BIN=`).
+  - **The reading it is for:** Gemma 3 4B's median TTFT in S7's cell and in S13-lite (nine requests, beside Ollama and
+    llama.cpp the same night), against the 5 s bar. The other cells repeat as a record.
+  - **Queue:** `s7-mac-1010` and `s13lite-mac-1010`, 20 minutes each (the third pass took 3 and 4), for the night of
+    2026-10-10.
+  - **Read 2026-10-10** (both jobs exit 0, 3 and 4 minutes; raw
+    `docs/measurements/multimodal-support-2026-10/night-2026-10-10-mac/`).
+    - **Conditions:** as the earlier passes, with one difference in when: the owner started the Mac's queue at 12:29,
+      by day, so these ran at 13:08 and 13:16 with the box in use. The load average was 2.3-3.1 during S7's cells and
+      1.6-2.2 during S13-lite's. The seconds are a record of that session.
+
+    | cell (median TTFT, s) | third pass | fourth pass | under 5 s |
+    |---|---|---|---|
+    | gemma-3-4b (S7's cell) | 6.27 | **3.79** | yes |
+    | gemma-3-4b (S13-lite, 9 requests) | 6.23 | **3.79** | yes; Ollama 4.97, llama.cpp 4.69 |
+    | gemma-4-e2b | 1.97 | 1.86 | yes |
+    | gemma-4-e2b audio | 0.57 | 0.57 | yes |
+    | gemma-4-e4b | 2.57 | 2.41 | yes |
+    | qwen2.5-vl-3b | 5.51 | 5.45 | no (accepted) |
+    | qwen3.5-0.8b | 4.21 | 4.13 | yes |
+    | qwen3-vl-2b | 2.83 | 2.83 | yes |
+    | glm-ocr | 3.09 | 3.06 | yes |
+
+    - **The reading it was for:** Gemma 3 4B is under the bar in both places, 3.79 s against the third pass's 6.2-6.3 s.
+      Its nine S13-lite requests read 3.78-3.84 s over three interleaved rounds; Ollama's nine 4.96-4.97 s and
+      llama.cpp's 4.69-4.78 s. So goinfer's median is 0.76 of Ollama's and 0.81 of llama.cpp's, same session.
+    - The by-day exploratory figure was 4.14 s; this is the reading that replaces it.
+    - Seven of eight S7 cells are under the bar. The eighth is Qwen2.5-VL, accepted.
+    - The other cells repeat the third pass within 0.2 s. The passes interleave nothing, so those small differences
+      are not resolved effects.
 
 - **S17's next Metal lever: Gemma 3's image turn prefills on the CPU. A resident image prefill on Metal, registered
   2026-10-09 before any code** (owner: "continue with image/audio track").
@@ -4638,6 +4774,129 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **The registered consequence, owed in code:** the int8 tower is not a default. `resolveGemma3VisionQuantMetal`
       takes it today when the budget does not hold the f16 tower; that choice has to go, leaving `-vision-quant int8`
       as the explicit option and the f16 tower where it fits, or the CPU tower.
+  - **G-S18g follow-up, 2026-10-10 by day (owner: "can we investigate before we just turn off int8"). Exploratory: not
+    registered, one run each, the Mac in use.** Raw:
+    `docs/measurements/multimodal-support-2026-10/s18-mac/gs18g-followup-2026-10-10/`.
+    - **The gate's reference is not ground truth.** A third served arm, the exact float32 tower on the CPU
+      (`-vision-device cpu`), same binary (`c2891555`), images and request. All three arms decode
+      `metal-resident (int4)` and prefill the image the same way (this build predates the resident image prefill), so
+      only the tower differs. Today's f16 and int8 arms repeat last night's byte for byte. First differences against
+      the CPU tower:
+
+      | image | f16 Metal tower | int8 Metal tower |
+      |---|---|---|
+      | `glm_ocr/table.png` | token 3, 0.844 against 0.156: not a near-tie | token 24, 0.400 against 0.295: near-tie |
+      | `gemma3_preprocess_image.png` | token 12, 0.840 against 0.078: not | token 10, 0.731 against 0.206: not |
+      | `qwen25vl_preprocess_image.png` | token 8, 0.771 against 0.213: not | token 8, 0.771 against 0.213: not |
+      | `glm_ocr/formula.png` | token 2, 0.241 against 0.000: not | token 2, 0.241 against 0.000: not |
+
+      **The f16 tower, serve's default, fails G-S18g's rule on four of four images when the exact tower is the
+      reference; the int8 tower fails on three.** The rule separates neither tower from the other. This is S3's
+      finding again (the decoder's sensitivity, read 2026-10-09 after G-S18g was registered): on Gemma 3 4B a tower
+      change at cosine 0.9999999 already moves a greedy reply at a token the reference holds with p 0.84.
+    - **Size, on S3's instrument** (`TestGemma3TowerDump` then `TestGemma3TowerSensitivity`, both extended with the
+      int8 tower and a noise control per tower): the int4 decoder on the CPU, teacher-forced 32 steps along the CPU
+      tower's own greedy path. Mean KL(CPU tower || arm), nats; the noise arms are the CPU tower's features plus
+      Gaussian noise at that tower's per-soft-token relative L2, three seeds:
+
+      | image | f16 tower | noise at its size | int8 tower | noise at its size |
+      |---|---|---|---|---|
+      | `glm_ocr/table.png` | 0.030 | 0.044-0.058 | 0.032 | 0.034-0.062 |
+      | `glm_ocr/formula.png` | 0.084 | 0.070-0.080 | 0.149 | 0.079-0.102 |
+      | `gemma3_preprocess_image.png` | 0.161 | 0.141-0.249 | 0.197 | 0.078-0.283 |
+      | `qwen25vl_preprocess_image.png` | 0.058 | 0.086-0.138 | 0.420 | 0.095-0.136 |
+
+      - **Feature space:** the f16 tower's mean relative L2 from the CPU tower is 4e-6 to 8e-6 per soft token; the
+        int8 tower's is 0.016-0.018, with single soft tokens at 0.04-0.51 (`tower-dump.txt`).
+      - **The decoder has a floor.** Noise 2,000-4,000 times larger moves it no more (0.03-0.28 at either size). The
+        f16 tower sits at that floor on every image.
+      - **The int8 tower sits at the floor on two images and above it on two:** `formula.png` (0.149 against 0.102 at
+        most) and `qwen25vl_preprocess_image.png` (0.420 against 0.136 at most, worst step 7.1 nats). Its error is not
+        noise-like there. Over the four images its mean KL is 0.199 against the f16 tower's 0.083.
+      - **Limits:** four images, one prompt, three seeds, one run. The decoder ran on the CPU (the served arms decode
+        on Metal). On the two gradient images the reply ends well before 32 tokens, so the later steps are forced past
+        the end of the turn, for every arm alike.
+    - **What turning the fallback off costs:** the CPU tower encodes these images in 25-34 s against 2.7-2.8 s on
+      Metal; today's served requests took 30-40 s with it and 7.0-7.6 s with the int8 tower. The fallback is taken
+      only when the budget does not hold the f16 tower.
+    - **Reading:** G-S18g's FAIL is not evidence against the int8 tower, because the tower it would be replaced by
+      fails the same rule. The int8 tower does cost more than the f16 one on some images (about 2.4x its mean KL on
+      these four), by an amount this exploratory run sizes but does not grade.
+    - **For the owner:** the registered consequence (int8 explicit-only) rests on a rule that cannot grade it. The
+      alternative is to keep the fallback and register a graded replacement for G-S18g on this instrument: more
+      images and prompts, the noise control, a margin written first, at night. Nothing in the code has changed.
+  - **Amendment to G-S18g, 2026-10-10 (owner: "do your recommendation").** G-S18g's registered consequence ("if it
+    fails, the int8 tower is not a default") is withdrawn. Its rule cannot grade a tower on Gemma 3: the f16 tower
+    fails it against the exact tower (the follow-up above). The int8 fallback stays as it is until G-S18g2 reads.
+    G-S18g's result stands in the record as FAIL as registered.
+  - **G-S18g2, registered 2026-10-10 before it runs: is the int8 Metal tower fit to stay the tight-memory default?**
+    - **Instrument:** `TestGemma3TowerDump` (the CPU float32 tower, the f16 Metal tower and the int8 Metal tower's
+      projected features for one image), then `TestGemma3TowerSensitivity` (Gemma 3 4B's int4 decoder on the CPU,
+      through its sidecar, teacher-forced along the CPU tower's own greedy reply). The graded positions run to the
+      reply's end of turn, 32 at most.
+    - **Units:** 24. Twelve committed images, each with two prompts.
+      - Images: the four F2a images; `qwen25vl_preprocess_image_resize.png`; `qwen35vl_preprocess_image.png`;
+        `glm_ocr/invoice.png`; `glm_ocr/invoices/inv01.png` to `inv05.png`. Six of the twelve are invoices and four
+        are synthetic gradients, so this is not a sample of ordinary photographs.
+      - Prompts: "What does this image show? Answer briefly." (G-S18g's) and "Describe this image in one sentence."
+    - **Statistics,** each with a 95% cluster bootstrap over the twelve images (10,000 resamples, seed 20261010):
+      - **D:** the mean over units of the int8 tower's mean KL(CPU tower || arm) minus the f16 tower's, nats per
+        position.
+      - **A:** the f16 tower's argmax agreement with the CPU tower's reply minus the int8 tower's, positions pooled,
+        percentage points.
+    - **Bands, read on each interval's upper bound; the verdict is the worse of the two:**
+
+      | | PASS | PARKED (to the owner) | FAIL |
+      |---|---|---|---|
+      | D, nats per position | at most 0.05 | above 0.05, at most 0.20 | above 0.20 |
+      | A, points | at most 5 | above 5, at most 15 | above 15 |
+
+      - 0.05 nats is the decoder's own floor on the least sensitive image in the follow-up (noise at either tower's
+        size reads 0.03-0.06 there): an excess under it is not distinguishable from a perturbation of any size.
+      - 0.20 nats is about what int4 quantization itself costs a decoder against a float reference (G-S10q-c read
+        0.07 and 0.17): an excess above it is a second quantization as large as the first.
+      - 5 and 15 points are G-S10q-c's bands.
+    - **Consequences:** PASS: the fallback stays. FAIL: the int8 tower becomes explicit-only (`-vision-quant int8`),
+      as G-S18g first registered. PARKED: the owner decides, with D, A and the cost of the alternative beside them
+      (the CPU tower: 30-40 s a request against 7.0-7.6 s, the follow-up's served arms).
+    - **Controls, per unit; a failure of either makes the run VOID:**
+      1. The CPU tower's features run again as an arm read KL exactly 0 with full agreement.
+      2. The CPU tower's features negated read at least 10 times that unit's f16 arm, and at least 0.5 nats.
+    - **Reported, not graded:** per tower, three noise arms (the CPU tower's features plus Gaussian noise at that
+      tower's per-soft-token relative L2), which show the decoder's floor on each unit.
+    - **What the exploratory run predicts, said before the graded one:** on the four F2a images with the first prompt
+      D was +0.116 (per image +0.002, +0.065, +0.036, +0.362), with positions forced past the end of turn on two of
+      them. That is inside the PARKED band. The graded run may differ: it stops at the end of turn and has 24 units.
+    - **Limits of the instrument:** the decoder runs on the CPU, while a served request decodes on Metal; the reply is
+      scored by distribution and argmax, not by a judgement of its quality.
+    - **Tier, cost, stopping rule:** night, the Mac. A fixed 24 units, no early stop. About 35 minutes, from the
+      follow-up's own times (a dump about 40 s an image, a nine-arm unit about 57 s), queued at 60.
+      `docs/measurements/multimodal-support-2026-10/s18-mac/run-gs18g2-night.sh`, graded by
+      `scripts/gs18g2_grade.py`; binaries pinned at the commit that carries this registration.
+    - **Read 2026-10-10: PARKED** (job `gs18g2`, 32 minutes, exit 3, the script's code for PARKED; binaries at
+      `5839762a`; raw `docs/measurements/multimodal-support-2026-10/night-2026-10-10-mac/gs18g2/`).
+      - 24 units over the 12 images, 660 graded positions. The grader's two control checks passed on every unit
+        (otherwise it prints VOID).
+      - Mean KL to the CPU tower: f16 0.0827, int8 0.1417 nats per position.
+
+      | | value | 95% interval | read on the upper bound |
+      |---|---|---|---|
+      | D (int8 minus f16), nats per position | +0.0590 | +0.0041 to +0.1243 | above 0.05, at most 0.20: **PARKED** |
+      | A (f16 minus int8), points | +0.61 | −1.15 to +2.62 | at most 5: PASS |
+
+      - **What drives D:** two units carry about two thirds of it (the per-unit excesses sum to +1.42):
+        `qwen25vl_preprocess_image.png` (+0.539) and its resized twin (+0.438), both on the first prompt, both
+        synthetic gradients with short replies (17 and 13 positions). The next four are +0.10 to +0.18. On ten of the
+        24 units the int8 tower reads closer to the CPU tower than f16 does. On 18 of the 24 the int8 tower's KL is at
+        or under the top of that unit's own noise range at its size; the six above it include the two gradients.
+      - **Agreement barely moves:** over the 660 positions the int8 tower loses 0.61 points of argmax agreement to
+        the f16 tower, with an interval that includes zero.
+      - **The exploratory run's prediction held:** it said PARKED (D +0.116 on four images).
+      - **To the owner, as registered:** keep the int8 tower as the tight-memory fallback, or make it explicit-only
+        (`-vision-quant int8`). Beside D and A, the alternative's cost is the CPU tower at 30-40 s a request against
+        7.0-7.6 s (the follow-up's served arms).
+      - **Owner, 2026-10-10: "keep it as the tight-memory fallback."** Nothing changes in the code; the fallback
+        stays as it is.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).
@@ -5284,6 +5543,129 @@ Nothing here moves a bar; it is the record the registration asked for, and it re
 - **Settles G-S14d3 as amended:** the Voxtral tower IS the large-v3 shape (1280, 32 layers, 128 mels) and it matches transformers at worst row cosine 0.999999849 in situ, so the 3 GB `whisper-large-v3` download is not needed.
 - **Still to read:** the RECORD-ONLY two-window case (the clip six times, 36 s, 750 audio tokens: chunking on real weights) is in tonight's queue as `voxtral-real` (est 45 min, about 20 expected); its readings are logged and never graded. The local aikit commits (`e5d586e` and the tower accessor) wait on an aikit tag before goinfer can be pushed.
 
+#### G-S14e4, Voxtral Mini served (`input_audio`): registered 2026-10-10 before any code (owner: "all of it" for S14, in order: Voxtral served first)
+
+**What is wrong now (measured today):** `serve --model ~/models/voxtral-mini-3b-2507 --backend cpu` transcodes the 3B in 58 s and then stops: `load tokenizer ... tokenizer.json: no such file`. The checkpoint ships `tekken.json` and no `tokenizer.json`, and `tokenizer.Load(dir)` knows only the JSON and (for Qwen3-ASR) `vocab.json` + `merges.txt`. Behind that there is no Voxtral audio path in `serve` at all (`internal/serveapp` has no reference to it).
+
+**What is built, in this order.** (1) `tokenizer.Load(dir)` falls back to `tekken.json` when a directory has no `tokenizer.json` and no vocab/merges pair. (2) `serve` recognises `model_type: voxtral` and turns audio input on the way it does for Qwen3-ASR: the encoder (`audio.LoadVoxtralAudio`, CPU float32) loads on the first clip, the WAV (16-bit PCM, any rate, downmixed and resampled to 16 kHz mono) goes through `audio.WhisperFeaturesWindows(samples, 128)`, the prompt is `multimodal.VoxtralPrompt(tk, VoxtralAudioTokens(n), "")` (no language: the model detects it; the processor's own `apply_transcription_request(language=None)` ends `[/INST] [TRANSCRIBE]`, checked today: 380 ids for a 3 s clip against `language="en"`'s 383), and generation is `GenerateAudio`. A clip over 600 s is refused, not cut. The reply is the model's raw text; text in the user turn is ignored. (3) Not claimed: a text-only chat message to Voxtral (the checkpoint ships no chat template), a language parameter, the GPU.
+
+**Gates.**
+- **G-S14e4a, controls, by day.** (i) `tokenizer.Load(dir)` and `tokenizer.LoadTekken` of the same `tekken.json` give identical ids on a fixed list of strings, on the real file. (ii) The Go prompt with no language equals the processor's `language=None` ids on the registered clip (the reference ids are written by a tokenizer-only run of `scripts/pin_voxtral_real.py`, no model). (iii) On `testdata/voxtral-tiny`, **amended before it ran (2026-10-10): a unit test of `voxtralPrompt`, not an HTTP request**, because the fixture has no tokenizer and a real `tekken.json` is not committed (the test builds a Tekken file of the 256 byte tokens and 40 special tokens, the prompt's seven at their real ids): the served prompt's ids equal `multimodal.VoxtralPrompt`'s, the placeholder count is 375 per 30 s window, the prompt ends `[/INST] [TRANSCRIBE]`, the features equal the encoder's own output bit for bit, and a generation through it runs; planted defects, each red against it (run): the language word left in the prompt, the placeholder count off by one. The HTTP path is G-S14e4b's.
+- **G-S14e4b, the real checkpoint, float32, graded, by day (about 5-8 min, not timed).** `serve --quant f32 --backend cpu` on `~/models/voxtral-mini-3b-2507` and the registered LibriSpeech clip (`testdata/speech/librispeech-1272-128104-0000.wav`, 5.9 s) as `input_audio`: **PASS** if the reply is byte-equal to transformers 5.15.0 float32's greedy generation for `apply_transcription_request(language=None)` on the same clip (the reference is `scripts/pin_voxtral_real.py` with a no-language switch, the model loaded with zero missing keys, the transcription asserted against the corpus text first), the stop token `</s>` ends it, and the served prompt token count is the processor's. **FAIL** otherwise.
+- **G-S14e4c, record only, by night (about 20 min).** The same request on (a) the six-times clip (36 s, two windows, 750 audio tokens) at float32, byte-compared with the reference's 133 tokens; (b) serve's DEFAULT quant (int4, int4 head) on the single clip and the six-times clip, compared word by word with the float32 reply, with the first-generated-token class tabulated (a transcript word, a control token, a stop). Nothing is graded: int4 on Voxtral is unvalidated (Qwen3-ASR's int4 first-token problem is why this is looked at at all), and the default users get is int4, so the reading goes to the owner. The word-error gate for int4 (G-S14c4's shape, on a subset of the 73 clips because the tower is 55 s per clip on this CPU) is the next registration if (b) shows damage.
+
+**Prediction (written now).** G-S14e4a (i)-(iii) PASS on the first build at 0.8; (iii)'s planted defects all red at 0.95 (the likeliest stumble is the tokenizer fallback's special-token handling, which the real-file comparison would show). G-S14e4b byte-equal at 0.85: the library path was byte-equal on this clip with `language="en"` (G-S14e3), and the only new thing is the empty-language prompt, which the same tokens end with on both sides. If the no-language reply differs from the English one, that is a reading about the model, not a defect, as long as serve equals the reference. G-S14e4c(b): int4 within three words of float32 on the single clip at 0.5; a control token or an empty first position in at least one of the two int4 replies at 0.3.
+
+**Tier and cost:** (a), (b) by day (the tokenizer-only reference, the tiny fixture, one real request); (c) night, queued at 30. **What each result does next:** (b) PASS closes the served Voxtral claim as "serves audio on the CPU, float32 verified against the processor's own request; int4 and the GPU not claimed"; the matrix row and `docs/` support table are regenerated from code by S8's generator.
+
+##### G-S14e4a and G-S14e4b read 2026-10-10 (by day, nobara; branch `s14c4d-partial-force`, code at `efc9815a`; reference and logs `~/goinfer-logs/s14e4/`)
+
+- **The code, as registered:** `tokenizer.Load(dir)` falls back to `tekken.json`; `serve` recognises `model_type: voxtral` (`loadVoxtral`) and turns on audio input the way Qwen3-ASR does (`voxtralPrompt`: the Whisper-style 128-mel windows, the tower and projector lazily on the first clip, `multimodal.VoxtralPrompt` with no language, `GenerateAudio`), a clip over 600 s refused. Nothing changed for any other model.
+- **G-S14e4a: PASS, first build.** (i) `Load(dir)` on a directory holding only the real `tekken.json` gives mistral_common's ids on every golden string and `[AUDIO]` = 24 (`TestLoad_tekkenDirectory`). (ii) `VoxtralPrompt(tk, n, "")` equals transformers 5.15.0's `apply_transcription_request(language=None)` ids on all three lengths (3 s: 380 ids, the 5.9 s clip: 380, the 36 s clip: 755; `TestVoxtralPrompt_noLanguageMatchesProcessor`, reference `testdata/voxtral_nolang_ids.json`). (iii), amended before it ran (above): `TestVoxtralPrompt_wiring` and `_refusals` on the tiny fixture with a built Tekken file; the wiring test goes red under the two planted defects I ran (the language word left in the prompt; the placeholder count one over).
+- **G-S14e4b: PASS.** `serve --quant f32 --backend cpu` on the real checkpoint and the registered 5.9 s clip as `input_audio`: the reply "Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel." is **byte-equal** to transformers float32's greedy generation for the no-language request (the reference loaded with zero missing and zero unexpected keys, 58 s); `prompt_tokens` 380 as the processor's; 22 completion tokens then `</s>` against the reference's 23 (serve does not count the stop token); `finish_reason` stop; 80 s for the request (tower, prefill, decode on the CPU). The registered prediction (byte-equal at 0.85) held. What it does not cover: int4, the GPU, a clip over one window (all G-S14e4c, by night), a language parameter, and a text-only message (the checkpoint's template comes up as `ministral`; not looked at).
+- **Queued:** `s14e4c` (record only; est 40, queued at `891a51ba`): the 36 s clip at float32 against the reference, and serve's default int4 on both clips against float32.
+
+#### G-S14f, the Whisper cross-attention decoder (S14.4c): registered 2026-10-10 before any code (owner: "all of it" for S14)
+
+**Desk read (transformers 5.15.0 `models/whisper`).** `WhisperDecoder`: learned token embeddings `embed_tokens` [vocab, d] (no embedding scale for the checkpoints here: `scale_embedding` false) plus learned positions `embed_positions` [448, d] indexed by absolute position; then per layer, pre-norm: `self_attn_layer_norm`, causal self-attention (`q_proj` and `v_proj` and `out_proj` with bias, `k_proj` without; the query is multiplied by `head_dim ** -0.5` before the product), residual; `encoder_attn_layer_norm`, cross-attention (the same projections, queries from the decoder, keys and values from the encoder's last hidden state, no mask: all 1,500 frames), residual; `final_layer_norm`, `fc1`, exact-erf GELU, `fc2`, residual; after the last layer `layer_norm`, then the head, which is `embed_tokens` transposed (`proj_out` tied). The encoder side is aikit's `audio.WhisperEncoder` (S14.4a, validated). Generation (`generate`, short form, greedy, `return_timestamps=False`): the prompt is `<|startoftranscript|>`, a language token, `<|transcribe|>`, `<|notimestamps|>`; with no language given, `detect_language` runs the decoder over `<|startoftranscript|>` alone and takes the argmax over the language tokens; the logits processors are `suppress_tokens` (always) and `begin_suppress_tokens` (`[220, 50257]`, at the first generated position), both from `generation_config.json`; generation ends at `<|endoftext|>` (50257) or at `max_length` 448 counting the prompt.
+
+**What is built.** `internal/whisper` (inside goinfer, not aikit: it uses aikit's public `embed` safetensors reader, `linalg` and `audio.WhisperEncoder`, so no aikit change and no tag): the decoder with a self-attention KV cache and the cross-attention keys and values computed once per request from the encoder output; `Detect`, greedy generation with the two processors and the stop rules; a `Transcriber` joining features, encoder, decoder and the tokenizer (`tokenizer.Load(dir)` reads Whisper's `tokenizer.json`) for ONE 30 s window. A clip over 30 s is refused by name (long form is S14.4d). No serve route here (S14.4d ends in `/v1/audio/transcriptions`, where timestamps surface). float32 on the CPU only.
+
+**Gates.**
+- **G-S14f1, tiny, by day.** `testdata/whisper-tiny-rand` (d_model 32, 2 decoder layers, 2 heads, ffn 64, vocab 160, 64 target positions: already holds the decoder's weights) with a new golden from transformers' own `WhisperDecoder` on the fixture's encoder output for its two clips (`scripts/pin_whisper_decoder_tiny.py`): teacher-forced logits at every position for a 12-token input, and a 12-token greedy continuation with no processors. **PASS** if the per-position worst cosine is >= 0.99999 and max |diff| <= 2e-3, the incremental (cached, one token at a time) logits equal the full forward's to 1e-5, and the greedy ids are exactly transformers'. **Planted defects, each red against it (run):** the query unscaled; positions shifted by one; cross-attention keys and values taken from the decoder's own hidden state; no final `layer_norm`; self-attention not causal; the `k_proj` bias the checkpoint does not have (a no-op for softmax, noted as the one defect that cannot be seen, as the encoder gate recorded); the head untied (a different matrix).
+- **G-S14f2, real, `openai/whisper-small` (241.7 M, 80 mels, d 768, 12 + 12 layers; `~/models/whisper-small`), by day, one clip.** The registered LibriSpeech clip, goinfer float32 on the CPU against transformers float32 (loaded with zero missing keys, the transcription asserted against the corpus text first): **(a)** language detection gives `<|en|>`, as transformers'; **(b)** the logits at the last prompt position, cosine >= 0.9999 and the same argmax; **(c)** the greedy transcription **byte-equal** (token ids and decoded text); **(d)** teacher-forced on the reference's own tokens, worst logit cosine >= 0.9999 and zero positions where goinfer's argmax is not the reference's token. **FAIL** otherwise.
+- **G-S14f3, WER, by night (record the estimate when it is measured; about 15 min).** The 73 LibriSpeech clips of G-S14c4: goinfer's `Transcriber` against transformers float32, each greedy with the language detected by each: **PASS** if byte-equal on at least 70 of 73 and |WER_goinfer - WER_transformers| <= 0.30 points (G-S14c4a's bars, same normaliser); the unequal clips are listed with their first differing word. Record only: the language each side detected on every clip.
+
+**Prediction (written now).** G-S14f1 PASS on the first build at 0.7 (the likeliest stumble: the positions offset or the tied head's transpose); every planted defect red except the `k_proj` bias at 0.9. G-S14f2 (a)-(d) PASS at 0.8: the encoder is already at cosine 0.9999999 against transformers on the real small model (G-S14d2), so what is new is the decoder, and the generation rules are short; the likeliest miss is the begin-suppress rule applied one position early or late, which byte-equality would show. G-S14f3 PASS at 0.75; if 70 of 73 is missed, the first differing word names whether it is a numerical near-tie or a rule.
+
+**Tier and cost:** f1 and f2 by day (a few minutes each; whisper-small's encoder is 12 layers at d 768 over 1,500 frames, seconds on this CPU); f3 at night. **What each result does next:** f1 and f2 PASS: the decoder is the stage's claim ("pure-Go Whisper, short form, greedy, float32, CPU"); f3 is its WER record. Then S14.4d (timestamps, long-form windows, temperature fallback, the `/v1/audio/transcriptions` route), registered when it starts.
+
+##### G-S14f1 and G-S14f2 read 2026-10-10 (by day, nobara; branch `s14c4d-partial-force`; code `internal/whisper` at `df2523a2` and `20ff51dd`; reference `~/goinfer-logs/s14f/ref/`)
+
+- **G-S14f1, tiny: PASS on the first build.** Against transformers' `WhisperDecoder` on `testdata/whisper-tiny-rand` for its two clips (golden `dec_golden.zip`, `scripts/pin_whisper_decoder_tiny.py`): worst per-position cosine **1.000000000**, max |diff| **5.3e-05** (bar 2e-3); the incremental (one token at a time, cached) logits equal the full forward's **exactly** (max |diff| 0); the 12-token greedy continuation equals transformers' on both clips. **Planted defects, all six red:** the query unscaled (cosine 0.861), positions shifted (0.268), cross-attention keys and values from the decoder's state (0.077), no final layer norm (0.833), self-attention not causal (0.379), the head untied (-0.108); the `k_proj` bias is the one defect no test can see, as registered. `TestGenerate_rules` also pins the generation mechanics on the tiny model (prompt order, suppress at every position, begin-suppress at the first only, stop token, length cap, unknown language and task refused, detection).
+- **G-S14f2, `openai/whisper-small`, the LibriSpeech clip: PASS, all four parts, first run (29 s).** The reference loaded with zero missing keys and transcribed the clip, asserted against the corpus text: " Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel." (23 generated tokens incl. `<|endoftext|>`). **(a)** goinfer's language detection `<|en|>` (id 50259), the reference's. **(b)** the logits at the last prompt position: cosine **1.000000000**, argmax 2221 on both. **(c)** the greedy transcription: the 23 ids, the 4-token prompt `[50258 50259 50359 50363]` and the decoded text byte-equal to transformers'. **(d)** teacher-forced on the reference's tokens over 23 positions: worst logit cosine **1.000000000**, **0** positions where the argmax (after the same suppression) differs. The registered prediction (0.8) held; the begin-suppress rule I named as the likeliest miss is exercised by the mechanics test and not distinguished by this clip (its first token is not in the begin-suppress list).
+- **What this establishes:** a pure-Go Whisper decoder at float32 on the CPU, short form, greedy, one 30 s window, agreeing with transformers to cosine 1.0 on whisper-small. **Not established:** any language but English, any clip but this one (G-S14f3 reads 73), a long clip (S14.4d), the GPU.
+- **Queued:** `s14f` (G-S14f3; est 40, queued at `55dbc0d8`): the 73 clips, byte-equal on at least 70 and |WER diff| <= 0.30.
+
+#### G-S14g, Whisper timestamps and long-form (first half of S14.4d): registered 2026-10-10 before any code (owner: "all of it")
+
+**Scope, split on purpose.** S14.4d is four things: timestamps, long-form windows, the temperature fallback (with its thresholds and conditioning on earlier text), and the `/v1/audio/transcriptions` route. This registration is the first two, because they are deterministic and can be held to transformers byte for byte. The fallback re-samples at a higher temperature, which no seed can make match transformers' random stream, so it gets its own registration (G-S14h) with a different instrument; the route is G-S14i. Nothing below touches sampling.
+
+**Desk read (transformers 5.15.0, `generation_whisper.py`, `logits_process.py`; the reference is its `generate(return_timestamps=True, return_segments=True)` with no `temperature`, no thresholds, `condition_on_prev_tokens` off).**
+- **Features for a clip over 30 s are not the short-form's.** The extractor is called with `truncation=False, padding="longest", return_attention_mask=True`: no padding to 30 s, the log-mel of the WHOLE clip (the centre padding reflects at the true ends, the clamp's maximum is the whole clip's), the last STFT frame dropped, so T = floor(n / 160) frames. Window k is frames [seek, seek + 3000) of those, padded with ZEROS in the feature domain (not with the log-mel of silence) when shorter. aikit's `WhisperFeatures` pads the waveform to 30 s and `WhisperFeaturesWindows` pads it to a multiple of 30 s (Voxtral's processor), so neither is this; the 150 lines of log-mel are ported into `internal/whisper` (not into aikit: no release is needed) and held to the extractor.
+- **Timestamps.** The prompt omits `<|notimestamps|>` (`<|startoftranscript|> <|lang|> <|transcribe|>`; `begin_index` is its length). The processors run in this order, each seeing the previous one's output: `begin_suppress_tokens` (first generated position only), `suppress_tokens`, then `WhisperTimeStampLogitsProcessor`: `<|notimestamps|>` is -inf; over the tokens generated so far, if the last was a timestamp and the one before was too, no timestamp may follow; if the last was a timestamp and the one before was not, no text token (ids below the stop token) may follow; timestamps may not decrease (the lower bound is the last timestamp, or last + 1 unless it just opened a pair); at the first generated position everything below `timestamp_begin` is -inf and nothing above `timestamp_begin + max_initial_timestamp_index` (50 on the OpenAI checkpoints) is allowed; then, on the log-softmax of the result, if the log of the summed probability over all timestamps exceeds the largest single text token's log-probability, every text token is -inf. `timestamp_begin` is `<|notimestamps|>` + 1.
+- **Segments (`_retrieve_segment`).** Over the generated tokens (the stop token removed): a "single timestamp ending" is `[text, timestamp]` at the end; a segment ends wherever two timestamps are adjacent; the segment tokens run from one cut to the next, start = the window's offset + 0.02 x (the first token's timestamp index), end likewise from the last timestamp in the segment (the last segment's own trailing timestamp when the text ended on a pair). With no adjacent pair at all, the whole generation is one segment ending at the last timestamp (or at the window's length when there is none). The window then advances by the whole window when the text ended on a single timestamp, else to the last timestamp that closed a segment (`last_timestamp_pos * input_stride`, input_stride 2). `seek_num_frames = min(max_frames - seek, 3000)`; the window's time offset is `seek * 0.02 / 2`. The language is detected once, on the first window; every window uses the same prompt (no conditioning on earlier text).
+
+**What is built (`internal/whisper`).** `LongestFeatures` (the port); timestamp-mode generation (the three processors, in that order); `Segments` (the rule above); `TranscribeLong` (the window loop, one request, greedy). float32, CPU, English or detected language as before. Not in this stage: `temperature` and the three thresholds (G-S14h), prompts and `condition_on_prev_tokens` (G-S14h), word-level timestamps (not built, not planned), the route (G-S14i).
+
+**Gates.**
+- **G-S14g1, the features, by day.** `LongestFeatures` against the extractor (`scripts/pin_whisper_longest.py`: `WhisperFeatureExtractor`, `truncation=False, padding="longest"`) on three clips: 5.9 s (T = 585), the 36 s clip (T = 3,813), a 70 s composite of LibriSpeech dummy clips with half-second gaps: the same shape, **max |diff| <= 1e-4 and mean |diff| <= 1e-6** (G-S14a's bars). Planted defects red: padded to 30 s as `WhisperFeatures` does, padded to a multiple of 30 s, the last frame kept, the clamp's maximum taken per window.
+- **G-S14g2, the rules on random weights, by day.** A second tiny random-weight Whisper whose vocabulary has the real layout in miniature (3,110 ids: text 0-1,599, stop 1,600, start 1,601, three languages, translate, transcribe, `<|notimestamps|>` 1,607, 1,501 timestamp tokens from 1,608 so 0.00-30.00 s exists), with a `generation_config.json` carrying the language and task tables, the suppression lists and `max_initial_timestamp_index` (`scripts/pin_whisper_ts_tiny.py`), and transformers' own `generate(return_timestamps=True, return_segments=True)` as the reference on two clips: **7 s (short form) and 68 s (three windows)**. **PASS** if goinfer's segments equal transformers' exactly: the same count, the same token ids in each, the same start and end (to 1e-9: both are 0.02 x an integer index), the same final token sequence, the same detected language. Random weights make the processors' branches fire in every combination (adjacent pairs, single endings, empty windows), which a real checkpoint's clean speech would not. **Planted defects red:** the pair rule ignoring the penultimate token; no non-decreasing rule; no first-position restriction; the logprob rule off; suppress run after the timestamp processor; the window always advancing by 30 s; the single-ending case treated as a pair; the time offset not added.
+- **G-S14g3, the real checkpoint, by day.** `openai/whisper-small` (float32, CPU) on (a) the registered 5.9 s clip with timestamps and (b) a 70 s composite of LibriSpeech dummy clips with half-second gaps, against transformers float32 `generate(return_timestamps=True, return_segments=True)`: **PASS** if for each the segments are identical (count, tokens, start and end) and the decoded text byte-equal. **FAIL** otherwise; a differing first segment names whether it is the features (g1), a rule (g2) or a numerical near-tie in the model.
+
+**Prediction (written now).** G-S14g1 PASS after at most one correction at 0.7 (the likeliest stumble: the frame count, floor against ceil, and the reflect at the end); g2 PASS on the first run with every planted defect red at 0.6 (the rules are long and the order-of-processors defect may not be seen on random weights: it is registered as red, so if it is not red the gate is amended to say what cannot be seen, as the `k_proj` bias was); g3 PASS at 0.7 (a near-tie flipped by 1e-6 numerical noise over 30-100 tokens is the way it fails, and would be a reading about float32 order, not a rule).
+
+**Tier and cost:** all by day (each a few minutes; whisper-small over 70 s is three encoder passes and about 120 decoded tokens). **What each result does next:** g1-g3 PASS: timestamps and long-form are the stage's claim ("pure-Go Whisper with timestamps and sequential long-form, greedy, float32, CPU, equal to transformers"); then G-S14h and G-S14i are registered.
+
+##### G-S14g1, g2 and g3 read 2026-10-10 (by day, nobara; branch `s14c4d-partial-force`; `internal/whisper` at `3c9bac5c` and the commits before it; references `~/goinfer-logs/s14g/`)
+
+- **G-S14g1, the features: PASS.** `LongestFeatures` against the extractor (`truncation=False, padding="longest"`) on the 5.9 s clip (T = 585), the 36 s clip (3,813) and a 70 s composite (7,446): the same shapes, **max |diff| 1.6e-05, mean |diff| 1.0e-07** (bars 1e-4, 1e-6). The attention mask counts exactly T frames. Planted defects red: padded to 30 s and padded to a multiple of 30 s (the shape differs), the last frame kept (the shape differs), no clamp (max |diff| 0.86), the clamp's maximum per window (max |diff| 0.049). No correction was needed. The registered prediction (PASS after at most one correction, 0.7) held.
+- **G-S14g2, the rules on random weights: PASS.** `testdata/whisper-tiny-ts` (3,110-id vocabulary, the real layout in miniature) against transformers' `generate(return_timestamps=True, return_segments=True, task="transcribe")` on three clips (7 s, 8 s, 68 s; the long one is three windows): **the same segments (count, tokens, start and end to 1e-9), the same sequence, the same language on all three** (5, 7 and 5 segments; the 8 s clip ends a window on a single timestamp). Two corrections before it passed, both mine and both in how I called the reference or read it: the reference call omitted `task`, and transformers adds the task token only when it is passed (the prompt was `[start, lang]`, not `[start, lang, task]`); and a short clip's padded 3,000 frames are stepped through by `seek` like any other window (I had reused the unshifted features for the second window). **Planted defects:** seven are red on the clips (the pair rule ignoring the penultimate, timestamps allowed to decrease, no first-position restriction, the logprob rule off, the window always advancing 30 s, a single ending treated as a pair, no time offset). **One the random clips cannot see, as registered it might not be:** `suppress_tokens` run after the timestamp rule: 56 clips of two lengths were searched and none differed, because a suppressed id is rarely the best text id. `TestProcessLogits_order` covers it with a hand-built score vector in which the suppressed token leads the text and the timestamps' mass sits between it and the next token: red under the defect, and it says in its comment that it checks the order I read from `_retrieve_logit_processors` and not transformers' behaviour. The single-ending defect needed a third clip (found by search; it is in the golden), so the registered "two clips" became three.
+- **G-S14g3, `openai/whisper-small`: PASS first run.** The registered clip (short form, 15 s here) and a 70 s composite of LibriSpeech clips (long form, three windows, 59 s): the 1 and 13 segments have **identical tokens and identical start and end times to 1e-9**, the sequences and the decoded texts are byte-equal, and the detected language is `<|en|>` on both. The registered prediction (0.7) held; the numerical near-tie I named as the likeliest failure did not occur.
+- **What this establishes:** pure-Go Whisper with timestamps and sequential long-form (greedy, float32, CPU) equal to transformers on a real checkpoint and on random weights that fire every branch of the rules. **Not established:** the other checkpoints (large-v3, 128 mels), a language but English, a clip with real silences and music (the composite has half-second gaps only), the fallback and thresholds (G-S14h), the route (G-S14i).
+
+#### G-S14h, Whisper's fallback, thresholds, silence skipping and conditioning on earlier text (second half of S14.4d, part 1): registered 2026-10-10 before any code (owner: "go")
+
+**Desk read (transformers 5.15.0 `generation_whisper.py`), the parts a gate can hold to it exactly.**
+- **Thresholds (`_need_fallback`).** After a window's generation at some temperature, on the generated tokens INCLUDING the stop token: the compression ratio is `len(bytes) / len(zlib.compress(bytes))` where each token id is written as `int(log2(vocab_size) / 8) + 1` little-endian bytes (2 for 51,865); above `compression_ratio_threshold` the window needs a fallback. The average log-probability is the sum over the generated tokens of the log-softmax of the scores the generation produced (the scores AFTER the logits processors, multiplied back by the temperature when it is above 0) at the chosen token, divided by the token count; below `logprob_threshold` the window needs a fallback. With `no_speech_threshold` set: if the average log-probability is below `logprob_threshold` AND the no-speech probability is above `no_speech_threshold`, the fallback is cancelled and the window is skipped: no segment, and `seek` advances by the whole window. The no-speech probability is the softmax of the RAW logits (no processors) at the `<|startoftranscript|>` position of the decoder input, taken at the token `<|notimestamps|>` minus one (`<|nospeech|>`).
+- **Fallback.** The temperatures are tried in order; a window that needs a fallback is generated again at the next temperature, and the last temperature's result is kept whatever the thresholds say. A temperature above 0 samples: the scores go through the processors, then `TemperatureLogitsWarper`, then top-k (the generation config's default 50), then a multinomial draw.
+- **Conditioning (`condition_on_prev_tokens`).** From the second window on, the decoder input is `<|startofprev|>` (`prev_sot_token_id`, else the second-to-last `suppress_tokens` entry), then the previous segments' tokens (a segment that ends on two timestamps drops its last token), cut to the last `max_target_positions / 2 - 1` (223), then the usual prompt; the window's `begin_index` is the full input's length; the maximum length is raised by `min(223, input length)`. A window decoded at a temperature of 0.5 or more does not feed the next window.
+
+**What is built (`internal/whisper`).** `TranscribeOptions` (temperatures, the three thresholds, conditioning, a seed) and `Transcriber.TranscribeWith`; the no-speech probability, the two decision statistics, the fallback loop, sampling (temperature, top-k 50, a seeded multinomial draw), and the conditioned prompt. One implementation: `TranscribeTimestamps` becomes `TranscribeWith` with the zero options.
+
+**What cannot be held to transformers, said now.** (1) A sampled attempt: its random stream is torch's and no seed here reproduces it, so the gates below stop at the decision to fall back and treat the sampled attempt by invariants. (2) The compression ratio: Go's zlib is not byte-identical to CPython's, so the compressed length can differ by a few bytes and a ratio within a hair of the threshold could flip; the real gate prints both ratios per window and a flip there is read as this, not as a rule.
+
+**Gates.**
+- **G-S14h1, the rules on random weights, by day.** The tiny model of G-S14g2, its `generation_config.json` gaining a `prev_sot_token_id`; transformers' own `generate` as the reference, `temperature=(0.0,)` (one attempt, so no sampling is reachable) on the 68 s clip and the 8 s clip, in four configurations: (a) `condition_on_prev_tokens=True`; (b) `logprob_threshold` and `compression_ratio_threshold` set so some windows "need a fallback" (nothing to fall back to: the result is kept); (c) `no_speech_threshold` and `logprob_threshold` set so some windows are SKIPPED; (d) all of them together. **PASS** if the segments (count, tokens, start and end to 1e-9) and the final sequence equal transformers' in every configuration, and the number of skipped windows is positive in (c). **Planted defects red:** conditioning feeding the whole previous text uncut; the double ending timestamp not trimmed; no `<|startofprev|>`; the no-speech probability taken from the processed scores; the skip advancing by nothing; the average log-probability divided by the count without the stop token.
+- **G-S14h2, the real checkpoint, by day.** `openai/whisper-small` on the 70 s composite and on a composite with long stretches of silence (10 s of zeros before and between two clips, so a window is silent), `temperature=(0.0,)`, `condition_on_prev_tokens=True`, `logprob_threshold=-1.0`, `compression_ratio_threshold=2.4`, `no_speech_threshold=0.6` (OpenAI's defaults): **PASS** if the segments and the sequence equal transformers' on both. The windows' two compression ratios and average log-probabilities are printed.
+- **G-S14h3, the fallback and sampling, by day, invariants only.** With temperatures `(0.0, 0.2, 0.4)` and thresholds forced to fail until the last attempt (`logprob_threshold` above anything reachable): every window is attempted at 0.0, 0.2, 0.4 in that order and the last attempt's result is kept; the same seed gives the same result and different seeds can differ; every sampled window obeys the timestamp structure (the three rules of G-S14g's desk read hold on its tokens); at temperature 1e-6 the sampled result equals the greedy one; the sampled token is always inside the top 50 of the processed scores (checked on a hand-built score vector); a window that stays under the thresholds is attempted once.
+
+**Prediction (written now).** G-S14h1 PASS on the first run for (a)-(d) at 0.5: conditioning has two trimming rules and a length formula, and the likeliest miss is the cut or the double-timestamp trim; (c) leaves a skipped window on the random model at 0.7 (if not, the thresholds are moved before the run and the move is recorded, not the bar). G-S14h2 PASS at 0.7. G-S14h3 PASS at 0.9 (it asserts what I build). The silent composite makes the no-speech probability visible on a real model for the first time.
+
+**Tier and cost:** all by day (each a few minutes). **What each result does next:** PASS: the pure-Go Whisper has transformers' decode policy except the sampled stream; the route (G-S14i) is registered next.
+
+##### G-S14h1, h2 and h3 read 2026-10-10 (by day, nobara; branch `s14c4d-partial-force`; `internal/whisper` at `fc602c0e` and `TranscribeWith`; references `~/goinfer-logs/s14h/`)
+
+- **G-S14h1, the policy on random weights: PASS on the first run.** The tiny model of G-S14g2 (its generation config gaining `prev_sot_token_id`), transformers' `generate` with `temperature=(0.0,)`: the five registered configurations (`cond`, `thr`, `skip`, `skip2`, `all`) on the 8 s and 68 s clips: **the same segments (count, tokens, start and end to 1e-9) and the same sequence in all ten**; windows skipped as silence: 1 on the 8 s clip in each skip configuration (every window of it is skipped, so transformers returns no segment: matched), 1 and 2 on the 68 s clip. Planted defects red on the clips: conditioning uncut (2 configurations differ), the double ending timestamp not trimmed (3), no `<|startofprev|>` (3), the no-speech probability read from the processed scores (6), a silent window not skipped (6). **One the clips cannot see, as the registration allowed for the processor order:** leaving the stop token's log-probability out of the average. The tiny model never writes the stop token in these windows (they end on the length cap), so the average is identical either way. `TestPolicy_avgLogprobCountsTheStopToken` covers it with a stop token chosen among the tokens the model does write: red under the defect.
+- **G-S14h2, `openai/whisper-small` with OpenAI's decode policy: PASS.** Conditioning, `logprob_threshold` -1.0, `compression_ratio_threshold` 2.4, `no_speech_threshold` 0.6, one greedy attempt: **identical segments, sequences and texts to transformers' on all three cases**: the 70 s composite (13 segments), the silent composite (35 s of zeros, a clip, 35 s of zeros, two clips: 3 segments), and the same silent composite with `logprob_threshold` -0.4 (3 segments, starting at 30.0 s: **the first window was skipped as silence**, no-speech probability 0.944, average log-probability -0.547, the rule firing on the real model). The registration's silent case as first run (threshold -1.0) did NOT skip the silent window: its average log-probability is -0.547, above -1.0, and the rule needs both conditions; the third case was added for that reason, the same audio, before it was graded. The windows' statistics are logged: compression ratios 0.38-0.98 and average log-probabilities -0.12 to -0.55, none near the 2.4 and -1.0 bars, so Go's zlib against CPython's, which the registration flagged, did not come into play here.
+- **G-S14h3, fallback and sampling by invariants: PASS.** Every window is attempted at 0, 0.2, 0.4 in order under a threshold nothing clears, and once under one everything clears; the accepted first attempt equals the greedy run; the same seed gives the same result and two seeds differ; sampled segments open on a timestamp, never decrease, never contain `<|notimestamps|>`; a temperature of 1e-6 equals greedy; top-k keeps exactly the 50 largest processed scores and a draw never leaves them.
+- **What this establishes:** the pure-Go Whisper has transformers' decode policy, greedy, on a real checkpoint. **What it does not:** a sampled attempt against transformers' random stream (cannot be held to it), a clip that really triggers the compression-ratio rule (none of the three does), other checkpoints and languages.
+
+#### G-S14i, `POST /v1/audio/transcriptions` and a Whisper model in `serve` (S14.4d, last part): registered 2026-10-10 before any code (owner: "go")
+
+**What is wrong now.** `serve --model ~/models/whisper-small` fails to start (Whisper is an encoder-decoder, not a `decoder.Model`), and no route takes an uploaded audio file.
+
+**Design.** A Whisper directory (`config.json` `model_type` "whisper") named by `--model` is loaded as a **speech model**, kept in its own registry (`server.speech`) and not in `server.models`, because everything keyed on `s.models` assumes a `decoder.Model` (sessions, KV slots, templates, adapters, the resident path). It is listed by `GET /v1/models` (`id`, `owned_by`, and a `capabilities` entry `["audio.transcriptions"]`), named in the 404 for an unknown model, and reachable only through the new route. Everything else about startup is unchanged; a server may hold speech models and decoders together.
+
+**The route (OpenAI's `audio/transcriptions`, multipart/form-data).** `file` (required): a 16-bit PCM WAV at any rate and channel count (downmixed and resampled to 16 kHz mono as for the other audio models), over 600 s refused; any other format is a 400 that names this limit. `model`: required when more than one speech model is served, else optional. `language`: an ISO code ("en") or the English name ("english"); unknown is a 400; absent means detected. `response_format`: `json` (default, `{"text"}`), `text`, `srt`, `vtt`, `verbose_json` (`task`, `language` as the English name, `duration`, `text`, and `segments` with `id`, `seek`, `start`, `end`, `text`, `tokens`, `temperature`, `avg_logprob`, `compression_ratio`, `no_speech_prob`). `temperature`: absent or 0 means OpenAI's policy, the ladder 0, 0.2, 0.4, 0.6, 0.8, 1.0 with `compression_ratio_threshold` 2.4, `logprob_threshold` -1.0, `no_speech_threshold` 0.6 and conditioning on earlier text; above 0 is one attempt at that temperature. `timestamp_granularities[]`: `segment` only (`word` is a 400). `prompt` is a 400 (not built), as is `stream`. Texts are stripped of the leading space Whisper writes; segment times are seconds from the start of the clip. The transcriber runs one request at a time per model; the route goes through the same auth, halt and in-flight gates as the other inference routes.
+
+**Gates.**
+- **G-S14i1, the shapes and refusals, by day.** Handler tests on a stub engine through the real mux: every response format against OpenAI's documented shape (`srt` and `vtt` timestamp formats `HH:MM:SS,mmm` and `HH:MM:SS.mmm`, `vtt`'s `WEBVTT` header, `verbose_json`'s fields and the language as a name); each refusal (no file, a non-WAV, over 600 s, unknown language, unknown model, `prompt`, word granularity, an unknown `response_format`) with the right status and a message that names the field; the model defaults; `temperature` mapping to the options. **PASS** if every case holds; a planted defect for each of three (the leading space kept, the srt separator a dot, the language as a code) is red.
+- **G-S14i2, the loading, by day.** `newServer` with a Whisper directory in `--model` loads it as a speech model, lists it in `/v1/models`, and still loads a decoder beside it; a duplicate name is refused; a Whisper directory with no `tokenizer.json` or no `generation_config.json` is refused at startup by name.
+- **G-S14i3, served on the real checkpoint, by day (about 5 minutes).** `serve --model ~/models/whisper-small` and, by HTTP: the registered 5.9 s clip and the 70 s composite, `response_format=verbose_json`: **PASS** if the segments (count, start, end, tokens) and the text equal G-S14h2's references for OpenAI's policy on the same audio (the 5.9 s clip one window; the 70 s composite the 13 segments), the language is "english", and `srt`, `vtt` and `text` of the same request are consistent with those segments (the same cuts and times, formatted). A second request on the same server returns the same result (the transcriber holds no state between requests).
+
+**Prediction (written now).** i1 PASS after at most one correction at 0.8; i2 PASS at 0.8 (the likeliest stumble: some startup code that iterates `cfg.models` and expects a decoder: `resolveBodyCaps`, the banner, `towerReserve`); i3 PASS at 0.8 (the library is already equal to transformers; what is new is the policy defaults and the formatting).
+
+**Tier and cost:** by day. **What each result does next:** PASS: S14.4d is done as registered, and S14 is complete but for the items it names as not built (word timestamps, the sampled stream, `prompt`, formats other than WAV, a GPU). A docs section in `docs/server.md` describes the route.
+
+##### G-S14i1, i2 and i3 read 2026-10-10 (by day, nobara; branch `s14c4d-partial-force`; `internal/serveapp/speech.go`, `internal/whisper`)
+
+- **The code, as registered:** a Whisper directory in `--model` (`model_type: whisper`) loads as a speech model in `server.speech` (not in `server.models`), is listed in `GET /v1/models` with `capabilities: ["audio.transcriptions"]` and no decoder paths, appears in the 404 for an unknown model and on the startup routes line, and answers `POST /v1/audio/transcriptions` under the same auth, halt and in-flight gates as the other inference routes (a body cap of `--max-body-bytes`, else 256 MiB). `internal/whisper` gained the language table (`LanguageCode`, `LanguageName`), `Transcriber.HasLanguage`, and the window statistics on each `Segment` (what `verbose_json` reports). `docs/server.md` has a "Speech to text" section.
+- **G-S14i1, the shapes and refusals: PASS.** Every response format on a stub engine through the handler: `json`, `text`, `srt` (`HH:MM:SS,mmm`, an arrow inside a text replaced), `vtt` (`WEBVTT` header, dots), `verbose_json` (the registered fields, the language as the name "english", the duration, texts stripped); the options the route hands the engine (OpenAI's ladder and thresholds by default; `temperature` 0.4 as one attempt; "French" as `fr`); eleven refusals each with the right status and the field named (no file, not a WAV, over 600 s, an unknown language, a language the model does not have, an unknown model, `prompt`, `stream`, word granularity, an unknown format, a bad temperature), two speech models with no `model` field, a JSON body. The three planted defects (the leading space kept, the srt separator a dot, the language as a code) each turn `TestTranscriptions_formats` red; they were planted by editing the source and restored, not by a switch left in the code.
+- **G-S14i2, the loading: PASS.** A Whisper directory without `tokenizer.json` is refused at startup naming the file; whisper-small loads (110 ms, mmap) as a speech model with no decoder in `s.models`; a duplicate name is refused; the default name is the directory's; it loads beside a decoder (`qwen2.5-coder-0.5b`) and `servedNames` lists both. No startup code that iterates `cfg.models` choked: the likeliest stumble I named did not occur.
+- **G-S14i3, served on whisper-small: PASS.** `serve --model ~/models/whisper-small` and HTTP multipart requests (script `scripts/s14i_served.py`): the registered 5.9 s clip (**1 segment**) and the 74 s composite (**13 segments, three windows**) have **segments identical to transformers' references** (tokens and times to 1e-9; the clip against G-S14g3's reference, the composite against G-S14h2's long70 under OpenAI's policy) and texts equal; the language is "english"; `srt`, `vtt` and `text` of the same audio are consistent with the segments; a repeated request returns the same tokens. The prediction (0.8 for each of the three) held; i1 needed no correction beyond the test's own expectation strings.
+- **What this establishes:** `serve` transcribes audio with a pure-Go Whisper over OpenAI's route, with transformers' decode policy, greedy, on whisper-small. **Not built, as registered:** word timestamps, `prompt`, `stream`, formats other than WAV, a GPU, `/v1/audio/translations`, the other checkpoints (large-v3's 128 mels loads by the same code and is unchecked).
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
@@ -5597,6 +5979,25 @@ Four jobs ran and read; the fifth, `s6-moe-image-3`, was queued onto this box's 
 - **Prediction scored.** R and F near 2-4% (held: 4.09, 4.09); F byte-equal on 90-100% (held: 100%); WER_I - WER_F within +0.5 (**missed**, +4.17); control tokens in at most two clips (**missed**, 33). The registered hypotheses for the first reading ((i) the int4 body or head damages the first token; (ii) the empties are the stop-id bug) read: (i) true of the body and false of the head as the cause; (ii) false.
 - **What this means for the control-token decision (still the owner's).** Forbidding or stripping control tokens would remove the visible symptom and cost nothing in WER terms, and would leave the premature and garbage first tokens (3 of 73 replies with the int4 head, 10 of 73 with the int8 head) and the 15 clips with changed words. What would address the cause is a decode constraint on the first tokens (the assistant turn must open `language <name><asr_text>`, which the Qwen3-ASR prompt layout already supports as a forced prefix), which the reference does not do and which is a product choice, not a repair; or finding why the int4 body flattens that one position.
 
+##### G-S14c4d, the partial forced prefix for Qwen3-ASR: registered 2026-10-10 before any code (owner: "yes do that", on the option list after the G-S14c4 re-read)
+
+**What is tried, and why this one.** The G-S14c4 re-read put the int4 damage at ONE position: the first generated token after `assistant\n`. Float32 writes `language` there on 73 of 73 clips; the int4 body (head int4) writes `language` on 37, `<|im_start|>` on 33, a stop token on 1, something else on 2. **The partial force prefills that one token**: the assistant turn is opened with `language` already in it (the id the model itself would have generated first), and the model writes ` English<asr_text>` and the transcript itself. It keeps what the full `language <Name><asr_text>` force would lose: the model still detects the language (no API surface, no wrong-language risk), and serve can keep the raw reply shape by emitting `language` first. The full force stays an option and is not tried here.
+
+**What it can and cannot show.** It removes the contested position, so the 33 stray `<|im_start|>` and the stop-first and garbage-first replies there cannot occur. It moves the fragility, it does not remove it: the new first generated token is the language NAME, and the first transcript token follows `<asr_text>`; whether the int4 body is steady at those positions is exactly what is not known and is what the gate reads. Nothing here speaks for non-English audio: the data is English (LibriSpeech), so "the model still detects the language" is a design property, **not a result**; a non-English check is out of scope and stated as not covered.
+
+**Arms (one binary, `TestQwen3ASRWER_arms` with `GOINFER_S14C4_PF=1`, which adds three arms to the three it has; the reference R and its refs are the 2026-10-09 `hf.json`, same 73 clips, checked by sha256 of `refs.json`):** `f32`, `int4`, `int4h8` as before (re-run in this binary, and compared byte for byte with 2026-10-09's `go.json` as a control that this change did not touch the unforced path); new `f32pf`, `int4pf` (serve's defaults plus the partial force), `int4h8pf` (record only). A partial-force reply is stored as `"language" + decode(generated tokens)`, which for a model that would have said `language` itself is the same string the unforced arm stores, so the arms compare directly.
+
+**Bars (the existing ones, applied to the new arms; nothing is re-based).**
+- **G-S14c4d-a, the force is harmless where the model was right:** `f32pf` byte-equal to `f32` on at least 72 of 73 clips and |WER_f32pf - WER_f32| <= 0.30 points (G-S14c4a's width). Float32 wrote `language` first on all 73, so any larger difference is the prompt, not the model. FAIL otherwise, and a FAIL here stops the idea.
+- **G-S14c4d-b, the point:** G-S14c4b's rule on `int4pf` against `f32`: **PASS** if WER_int4pf - WER_f32 <= +0.5 and its bootstrap 95% upper bound <= +1.5 (the same 10,000-resample cluster-by-clip bootstrap, seed 20261008); **PARKED** if the difference is <= +1.5; **FAIL** above. Control tokens in `int4pf` replies: more than 3 parks a PASS (G-S14c4b's rule). For reference the unforced arm read +4.17 [+0.61, +9.52] with 33 control tokens.
+- **Record only, never graded:** `int4h8pf`; the table of what the model writes at each position after the forced `language` (the name token: ` English` expected on 73; then `<asr_text>`; then the first transcript token: empty, a control token, garbage, a word); the count of clips where the detected language differs from `f32`'s; and the same table for `int4` and `f32` for comparison.
+
+**Stopping rule:** fixed (73 clips, greedy, 256 tokens at most). **Cost:** the Go side was 510 s for three arms on 2026-10-09 (f32 242 s, int4 86 s, int4h8 82 s), so six arms are about 14-16 minutes; no HF or Gemma rerun; queued at 30 on the night queue (over the by-day 10 minutes). **Tier:** night, correctness gate, not timed.
+
+**Prediction (written now).** d-a PASS at 0.90. d-b: PASS at 0.50, PARKED at 0.25, FAIL at 0.25. The reasoning: the empties and garbage first tokens were 3.3 of the 4.17 points and live at the removed position, which would leave about +0.9; against that, the int4 body is flat at one position and a new flat position (the first transcript token) would put empties back. Control tokens at most 2 in `int4pf` at 0.85.
+
+**What each result does next.** PASS: the partial force becomes serve's behaviour for Qwen3-ASR with the reply shape unchanged (serve emits `language` ahead of the model's text and counts one fewer completion token), after the owner's say; the unforced path stays reachable. PARKED or FAIL with the first-token table showing the fragility moved to the transcript's first token: the partial force is dropped and the full force or a constraint on the first K tokens is the next registration. d-a FAIL: the idea ends there.
+
 ##### Option D complete: 7 of 7 models graded, none COSTLY; the registered map matches nothing, so the numbers go to the owner (`~/goinfer-logs/head-precision-2026-10-09/`, 1 h 12 min, binary `hp2` at `9a021498`)
 
 | model (head) | agree int8 -> int4 | d_agree [95%] | dKL [95%] | ratio | reading |
@@ -5613,6 +6014,14 @@ Four jobs ran and read; the fifth, `s6-moe-image-3`, was queued onto this box's 
 - **Prediction scored:** at most two COSTLY (held: 0); 1-3 points and 0.02-0.06 nats on the tied small-vocabulary models (the agreement cost came in at or below the range: the two smallest read -0.29 and +0.10; the KL cost 0.018-0.045, mostly at its floor).
 - **What the fix of the inert flag did, measured:** phi3's int4-head arm is no longer VOID (`HeadTable()` read int8 then int4 across the arms on all three of this night's models), and its reading is MIXED with the interval of dKL touching zero.
 - **A control that did not run, disclosed.** The positive control step (both arms at the int8 pin must read exactly 0 / 0) failed in 0 s: it reads `qwen2.5-0.5b-instruct`, which is not among this night's three models, so there was no HF dump for it. **The exact-zero control was therefore not re-observed on this night's binary** (night 1's read exactly 0 / 0 on its own); what held on this binary is the `HeadTable()` assertion. A repeat would add the 0.5B to `HP_MODELS`.
+- **Owner, 2026-10-10, asked after G-S18g2 read: the default is on ("yes").** What that is in the tree:
+  - **Everywhere but Metal it is already on** (`internal/loadflags`' `embedInt4`), so nothing changes for the CPU, CUDA or
+    WebGPU.
+  - **On Metal the default is still off, and turning it on is not a flag change.** Metal's resident does not take an
+    int4 table, so with the flag on a `--backend metal` load declines the GPU (`TestEmbedInt4_offByDefaultOnMetal`
+    pins the current behaviour for that reason). This is the registration's option C, "the default on everywhere,
+    which needs an int4 table in Metal's resident". That work (the embedding lookup and the tied head from an int4
+    table on Metal) is not scoped, built or scheduled; the decision records that it is wanted.
 
 ##### (b'), the Gemma 4 31B against a layer-streaming Hugging Face float32 reference: both arms PASS as registered (`~/goinfer-logs/g31b-2026-10-09/`, 45 min against 150 queued, binaries `g31b` at `9d5e7943`)
 
@@ -5663,6 +6072,11 @@ S8's drift check keeps the README true through S14, which updates the table as p
 item 3, S16 and S17 have shipped their levers and S18 owes only G-S18g. Next by the owner's word ("lets do your
 suggestion"): G-IP4, then S11 (it unblocks S15), then S8.
 
+**Where the order stands, 2026-10-10:** in item 1, S6 owes E4B on Metal. Item 2 is read three times on the Mac. In
+item 3, S18 owes G-S18g2. In item 4, S10's families are done but for Qwen3-VL MoE's served check ("North" dropped, the
+Qwen3.5+ MoE images covered by S6's G-S6m), S11 and S8 are done, and S14 is in flight. What has not started, in the
+list's order: S15, S12, full S13.
+
 ## Decisions for the owner
 
 **Decided 2026-10-07 evening** (after the Cowork audit of this doc):
@@ -5688,3 +6102,22 @@ suggestion"): G-IP4, then S11 (it unblocks S15), then S8.
   four models; the flag is inert on nine families; Qwen2.5-VL-3B (where the 3.5x was seen) is read on the second night.
 - S14's speech family (P11's options; decided when S14 starts).
 - ~~Which VL checkpoint `pull` recommends per box class (P9(d)).~~ Decided and shipped 2026-10-08, "P9(d) done".
+
+##### S14 night reads, 2026-10-10 (queue run `2026-10-10` on nobara-pc, 11:56-14:05 PDT; logs `~/goinfer-logs/night/runs/2026-10-10/{s14c4d,s14e4c,s14f}.log`, records `~/goinfer-logs/{s14c4d,s14e4c,s14f}-2026-10-10/`)
+
+**G-S14c4d: (a) PASS, (b) PARKED.** Binary `s14c4d` at `79e31bdb`, 73 clips, 921 s, load 0.8.
+- **Controls held:** the three unforced arms (`f32`, `int4`, `int4h8`) are byte-equal to 2026-10-09's on 73/73 clips, so the change did not touch the unforced path.
+- **(a):** `f32pf` byte-equal to `f32` on 73/73 (bar >= 72), |WER diff| 0.00 points (bar <= 0.30): PASS. The force is harmless where the model was already right.
+- **(b):** WER_int4pf - WER_f32 = **+1.04 points, 95% interval [+0.45, +1.68]**; 14 clips differ in words from `f32`; control tokens in `int4pf` replies 0 (bar: more than 3 parks). The registered rule: PASS needs the difference <= +0.5 and the upper bound <= +1.5 (both missed: +1.04, +1.68); PARKED is a difference <= +1.5 (met); FAIL is above. **PARKED.**
+- **Record only:** WER f32 4.09%, f32pf 4.09%, int4 8.26% (33 control-token replies), **int4pf 5.13%**, int4h8 16.78%, int4h8pf 4.78%. The forced arms put 73/73 clips on `language` / a name / a word at the three positions; the language name written by `int4pf` differs from `f32`'s on 0/73 (English data, so detection itself is not tested).
+- **Prediction scored:** PASS 0.50, PARKED 0.25, FAIL 0.25: the reading is the 0.25 PARKED branch. The reasoning that the stray first token carried most of the damage held (4.17 -> 1.04 points, 33 control-token replies -> 0); the part that did not hold is that nothing else was left, +1.04 points remain at positions the force does not touch.
+- **Consequence, per the registration:** serve's behaviour for Qwen3-ASR is unchanged; the forced prefix is not shipped. Whether to ship it anyway (int4pf is 4.1 points better than the unforced int4 and is within about one point of float32) is the owner's call; nothing was changed in serve.
+
+**G-S14e4c (record only, nothing graded): partly read.** Binary `s14e4` at `891a51ba`.
+- **(a), float32 on the 36 s clip: NOT READ.** serve's swap guard refused the request with HTTP 503 (the float32 load, 18 GB, left swap +0.56 GB over the baseline, past the +512 MB limit), so `reply-f32-libri6x.json` does not exist and the 133-token comparison against the transformers reference was not made at float32. The 5.9 s float32 request (79 s) is **byte-equal** to the reference, reproducing G-S14e4b.
+- **(b), serve's default int4 (int4 head):** on the 5.9 s clip 22 completion tokens, finish stop, **0 word edits over 17 words** against float32, no control token; on the 36 s clip (two windows, 755 prompt tokens, 140 s) 132 completion tokens, finish stop, six repetitions of the sentence, **byte-equal to the transformers float32 reference's 133 generated tokens including the stop** (checked against the reference run in the same job, 265 s).
+- **Prediction scored:** "int4 within three words of float32 on the single clip" at 0.5, "a control token or empty first position in at least one int4 reply" at 0.3: the first held (0 edits), the second did not occur.
+- **Limit:** one voice, one sentence, six times; no WER gate on Voxtral's int4. The registration said a word-error gate would follow only if (b) showed damage, and it did not, so none is registered.
+- **Owed:** (a) on the 36 s clip needs the float32 server to start without the swap guard firing (a clean box, or a lower-RSS start); not re-queued, because int4 matched the float32 reference and the question it would answer is narrower than it was.
+
+**G-S14f3: PASS.** Binary at `55dbc0d8`; transformers 310 s, goinfer 1,088 s on the CPU. 73/73 texts byte-equal (bar >= 70), WER 6.70% on both sides, |WER diff| 0.00 points (bar <= 0.30). The language each side detected differs on 0/73 clips. The prediction (PASS at 0.75) held. Established: the pure-Go Whisper decoder at float32 on the CPU, short form, greedy, equals transformers on the 73 clips of G-S14c4, with whisper-small. Not established: any language but English, a long clip against a reference at WER level, the GPU.

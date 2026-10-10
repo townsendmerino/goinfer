@@ -1,0 +1,22 @@
+[06:49:37] arm f16: -vision-quant f32
+  f16 glm_ocr/table.png (9.5s): 'The image shows a table presenting quarterly unit sales by region (North, South, East, West, and Central) for '
+  f16 gemma3_preprocess_image.png (7.4s): 'The image shows a gradient blend of dark purple and bright green.'
+  f16 qwen25vl_preprocess_image.png (7.1s): 'The image shows a gradient blend of dark purple, gray, and light green.'
+  f16 glm_ocr/formula.png (7.7s): 'The image demonstrates the Gaussian integral and its connection to the normal distribution (also known as the '
+  decode path: metal-resident (int4)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/metal-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+[06:50:23] arm cpuf32: -vision-device cpu -vision-quant f32
+  cpuf32 glm_ocr/table.png (30.0s): 'The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, a'
+  cpuf32 gemma3_preprocess_image.png (29.8s): 'The image shows a gradient blend of dark purple and bright green, transitioning to a light gray.'
+  cpuf32 qwen25vl_preprocess_image.png (39.6s): 'The image shows a gradient blend of dark green and pink.'
+  cpuf32 glm_ocr/formula.png (31.9s): 'The image is a note explaining the Gaussian integral and its connection to the normal distribution (bell curve'
+  decode path: metal-resident (int4)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+[06:52:47] arm int8: -vision-quant int8
+  int8 glm_ocr/table.png (7.5s): 'The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, a'
+  int8 gemma3_preprocess_image.png (7.0s): 'The image shows a gradient blend of dark purple and green, transitioning to light purple.'
+  int8 qwen25vl_preprocess_image.png (7.2s): 'The image shows a gradient blend of dark purple and bright green, transitioning to a light gray.'
+  int8 glm_ocr/formula.png (7.6s): 'The image demonstrates the Gaussian integral and its connection to the normal (or Gaussian) distribution, whic'
+  decode path: metal-resident (int4)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder int8/metal-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+[06:53:30] done
