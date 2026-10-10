@@ -102,12 +102,13 @@ func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, 
 	// the bundle loader is strings.HasSuffix(dir, ".giw"). A plain `out + ".tmp"` fails selfCheck for every
 	// GGUF Transcode.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	avail := hostRAMAvailable()
 	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
 		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
-	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
+	werr := writeBundle(f, tokBytes, func(w io.Writer) (int64, error) {
 		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, embedInt4, target, filepath.Base(in))
 	})
 	runtime.GC()
@@ -120,10 +121,10 @@ func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, 
 	}
 	ph.Stream = time.Since(t0)
 
-	// 3) Verify the bundle loads through the real (mmap) load path: it deserializes and its shapes validate. The
-	// whole-file CRC is not recomputed (decoder.MarkGIWWritten). On the TEMP file, so a bundle that fails it never
+	// 3) Verify the bundle loads through the real (mmap) load path: it deserializes and its shapes validate. Whether
+	// that load recomputes the whole-file CRC is markWritten's rule. On the TEMP file, so a bundle that fails it never
 	// becomes the sidecar even for an instant.
-	decoder.MarkGIWWritten(tmp)
+	markWritten(tmp, avail)
 	if afterWriteForTest != nil {
 		afterWriteForTest(tmp)
 	}
@@ -179,6 +180,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	// path is the most exposed to an interrupted write, since the resident fallback holds the whole
 	// quantized model in RAM while writing.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	avail := hostRAMAvailable()
 	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -198,7 +200,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 			return n, serr
 		}
 	}
-	werr := giw.WriteStream(f, tokBytes, body)
+	werr := writeBundle(f, tokBytes, body)
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
@@ -208,7 +210,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
 	ph.Stream = time.Since(t0)
-	decoder.MarkGIWWritten(tmp)
+	markWritten(tmp, avail)
 	if afterWriteForTest != nil {
 		afterWriteForTest(tmp)
 	}
@@ -354,8 +356,8 @@ func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWT
 // fail at load. So freshness ends with the question that matters, does it load?, using the same mmap
 // load selfCheck uses. For a bundle with no verified-marker that load runs the whole-payload CRC, which
 // reads every byte of the file; it is done once per (size, mtime) (decoder/giwverify.go), and a bundle
-// this box transcoded is marked when it is written, so a full pass is paid only the first time a sidecar
-// from elsewhere is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
+// this box transcoded and read back is marked when it is written (markWritten), so a full pass is paid only
+// the first time a sidecar from elsewhere is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
 // of failing at boot with an error that names the .giw rather than the cause.
 //
 // Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion DOES
@@ -465,8 +467,8 @@ func quantLabel(q string) string {
 
 // selfCheck verifies a bundle loads through the real mmap path: the weights deserialize and their shapes validate
 // against the architecture. Whether the whole-payload CRC is recomputed is the load's own rule (decoder/giwverify.go):
-// it is for a file with no marker, such as a cache found on disk, and it is not for a bundle the transcode has just
-// marked as written.
+// it is for a file with no marker, such as a cache found on disk or a bundle markWritten left unmarked, and it is not
+// for a bundle the transcode has marked.
 //
 // Backend:"cpu", not Options{}: an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's
 // literal-"cpu"-is-a-promise rule), so Options{} would decline every kind-5 (row4-only) bundle this
@@ -485,7 +487,8 @@ func selfCheck(path string) error {
 	return m.Close()
 }
 
-// afterWriteForTest, when set, is called with the temp bundle once it is written and marked, before its self-check.
+// afterWriteForTest, when set, is called with the temp bundle once it is written and markWritten has run, before its
+// self-check.
 var afterWriteForTest func(tmp string)
 
 // removeTempGIW deletes a temp bundle and its verified-marker.

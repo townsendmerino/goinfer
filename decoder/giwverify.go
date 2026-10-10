@@ -56,11 +56,10 @@ func markGIWVerified(path string, fi os.FileInfo) {
 	_ = os.WriteFile(GIWVerifiedMarkerPath(path), []byte(giwMarkerBody(fi)), 0o644)
 }
 
-// MarkGIWWritten records the same marker for a .giw this process has just written and closed without error. The file's
-// trailing CRC is the writer's own running CRC over the bytes it handed to the file, so recomputing it straight away
-// compares the writer with itself, at the price of reading the whole file back. It is for the writer alone: a file from
-// anywhere else earns its marker by passing the CRC in a load. GOINFER_GIW_VERIFY=always still forces the pass, and
-// nothing after this reads the file back from the disk unless that is set.
+// MarkGIWWritten records the same marker for a .giw this process has just written and closed without error. The caller
+// vouches for the bytes: it is for a writer that has already read the file back against its CRC, so that the next load
+// does not read it all again. A file from anywhere else earns its marker by passing the CRC in a load.
+// GOINFER_GIW_VERIFY=always still forces the pass.
 func MarkGIWWritten(path string) {
 	if fi, err := os.Stat(path); err == nil {
 		markGIWVerified(path, fi)
