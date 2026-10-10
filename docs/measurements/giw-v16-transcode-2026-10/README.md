@@ -144,9 +144,93 @@ T2 is the row-parallel logit tables. Same instrument and box; base `eee75d83`, n
   read 2.4-6.3 s over eight runs, and the `e4h` one 4.1-4.5 s where T1 alone read 6.4-6.8 s. The self-check read 0.2-9.4 s
   in the same runs, more than the stream in five of the eight. Not a result: G-T2 measures the transcode at night.
 
+## G-T1 for the self-check change and T3, 2026-10-10: PASS, every cell that ran is IDENTICAL
+
+Two changes, one run: `f006a3dd` (the transcode marks its own bundle, so the self-check reads nothing back) and
+`bbb3bbeb` (T3, experts built across cores when streaming). Same instrument and box; base `eee75d83`, new `bbb3bbeb`,
+which has both.
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 384 | 330 | 0 | 54 | 1 min 4 s |
+| six real sources under `~/models`, four configurations each | 24 | 24 | 0 | 0 | 10 min 56 s |
+
+- The NOT RUN set is T6's, source for source.
+- **The real run is every source in the `-assets real` table that is on this box**, not the two GGUFs of T2's run: the
+  0.5B and 1.5B Q4_K_M GGUFs, and four safetensors directories (Qwen3 0.6B bf16, LFM2.5 2.6B, InternLM2 1.8B,
+  Spark 2.5 1.7B). It ran beside `gate quick`, which is why it took eleven minutes; an identity check, not a timing.
+- **No real MoE is among them.** T3 changes only how a MoE layer's experts are scheduled, so by day it rests on the
+  tiny fixtures (the matrix's MoE directories) and on `TestStreamTranscode_expertFanOutWritesTheSameBytes`, which
+  streams one source per expert loop with the fan-out on and held off and compares the bytes: per-expert tensors, the
+  fused stack in both layouts, Gemma 4's two stacks, Granite's, Nemotron's, Llama 4's, and the GGUF stacked experts.
+  The real MoE cell is nobara's Qwen3-VL-30B directory, at night, as registered.
+- **Also checked before the run:** `go test -race` over the streaming tests reports no race, and both planted defects
+  (never fan out; fan out in a resident build) turn the tests red.
+- The eight GGUF files are the files T2's run wrote: the same sha256 and byte counts as the table above.
+
+| source | configuration | verdict | sha256 (first 16) | bytes |
+|---|---|---|---|---|
+| `0.6b-bf16` | `int4:cpu-arm64` | IDENTICAL | `319e2fc2c405b007` | 571,805,953 |
+| `0.6b-bf16` | `int4:metal` | IDENTICAL | `d4d8e7f7d5240ed9` | 626,854,849 |
+| `0.6b-bf16` | `int4:cpu-arm64:e4h` | IDENTICAL | `5d8f9f50085d2215` | 434,455,809 |
+| `0.6b-bf16` | `int8int8:cpu` | IDENTICAL | `c9ae5cc135cccd5c` | 765,858,049 |
+| `2.6b` (LFM2.5) | `int4:cpu-arm64` | IDENTICAL | `39ca75ba0d8f011c` | 2,919,966,605 |
+| `2.6b` | `int4:metal` | IDENTICAL | `5a22007479411635` | 3,178,177,709 |
+| `2.6b` | `int4:cpu-arm64:e4h` | IDENTICAL | `f3c4fc20ec2b6bda` | 2,804,766,605 |
+| `2.6b` | `int8int8:cpu` | IDENTICAL | `236e78b395189fe0` | 3,826,698,125 |
+| `1.8b` (InternLM2) | `int4:cpu-arm64` | IDENTICAL | `b81fed8060005e18` | 1,229,561,571 |
+| `1.8b` | `int4:metal` | IDENTICAL | `9867373a04518d83` | 1,418,304,099 |
+| `1.8b` | `int4:cpu-arm64:e4h` | IDENTICAL | `e832d08e0f9a8bd4` | 1,062,982,371 |
+| `1.8b` | `int8int8:cpu` | IDENTICAL | `ec73311566ed00ea` | 1,892,523,747 |
+| `1.7b` (Spark 2.5) | `int4:cpu-arm64` | IDENTICAL | `58849182f6998e9b` | 1,090,631,742 |
+| `1.7b` | `int4:metal` | IDENTICAL | `43e11c541729f3bb` | 1,270,461,182 |
+| `1.7b` | `int4:cpu-arm64:e4h` | IDENTICAL | `a1d335e1b0604121` | 972,666,942 |
+| `1.7b` | `int8int8:cpu` | IDENTICAL | `62923763e14cd3dc` | 1,722,333,246 |
+
+### The self-check after the change (exploratory: one run each, by day, the box in use)
+
+From the 48 phase lines in `g-t1-t3-real-lines.txt` (24 cells, the new build twice):
+
+| file | self-check before (the runs above) | self-check now |
+|---|---|---|
+| 0.5B GGUF, 344–609 MB | 0.1 s in fifteen of sixteen runs | 0.0 s in eight of eight |
+| 1.5B GGUF, 959–1,704 MB | 0.2–9.4 s | 0.0–0.2 s |
+| the four directories up to 1.8 GB | not run before | 0.0–0.3 s |
+| LFM2.5 2.6B, 2.7–3.6 GB | not run before | 2.7–3.9 s |
+
+- **What changed:** the transcode writes the verified-marker for the bundle it has just written, so the self-check's
+  load skips the whole-file CRC. The load itself still runs: the bundle deserializes and its shapes validate.
+- **Why LFM2.5 still waits:** its load copies large f32 tensors out of the mapping (`giwReader.f32`, about 0.7 s of
+  CPU), so the load itself reads much of the file it has just written. A CPU profile of one such transcode shows no
+  CRC under the self-check. It is the load's own read, and the format change (V) is where it goes away.
+- **What is given up** is in the task doc's F9 and Decision 5: after a transcode nothing compares the bytes on disk
+  with the CRC unless `GOINFER_GIW_VERIFY=always` is set.
+- Not a result: G-T2 measures the transcode at night.
+
+## T4a on arm64, 2026-10-10: not adopted there (an in-process A/B, direction only)
+
+T4a replaces the int4 quantizer's `int(math.Round(float64(x)))`. Before changing aikit, three forms were timed in one
+process on this box, interleaved (old, branch, copysign; 31 rounds; each arm quantizes the same 256 rows of 8,960
+normal weights four times per round, 9.2M elements, group 32), and compared for equality over every float32.
+
+| form | time against `math.Round`, median (range) | faster in |
+|---|---|---|
+| `if f < 0 { int(f - 0.5) } else { int(f + 0.5) }` (the task doc's) | 1.783 (1.765–1.798) | 0 of 31 |
+| `int(f + math.Copysign(0.5, f))` | 1.007 (1.000–1.020) | 2 of 31 |
+
+- **Equality:** the three agree on all 2³² float32 bit patterns on arm64: 0 mismatches. NaN gives 0, +Inf the int64
+  maximum and −Inf the minimum, in all three.
+- **Reading:** `math.Round` is a single instruction on arm64 (`FRINTA`), and the sign test in the first form
+  mispredicts on weights of random sign. arm64 keeps `math.Round`.
+- **Owed:** the same A/B and exhaustive check on amd64, where `math.Round` is a function call. nobara held a timed run
+  (another campaign's night job) when this was measured, so it waits.
+- A kernel microbenchmark gives direction, not size. The harness was a scratch test in aikit's `linalg` and is not
+  committed.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
-- `g-t1-t1-*`, `g-t1-t2-*`: the same five files for T1's run and for T2's.
+- `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`: the same five files for T1's run, for T2's, and for the run that carries the
+  self-check change and T3.

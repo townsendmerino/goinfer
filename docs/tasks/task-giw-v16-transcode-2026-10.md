@@ -1,7 +1,9 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0, T6, T1 and T2 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
-the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). T3–T5, T7 and V are not started. The gates
+**Status:** scoped 2026-10-10. **T0, T6, T1, T2 and T3 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
+the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). The self-check no longer reads the
+file back (Decision 5). T4a is measured on arm64 and not adopted there; its amd64 measurement is owed. T5, T7 and V are
+not started. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -124,6 +126,10 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
     The GGUF dequantizer is about two thirds: `dequantQ4KBlock` 55%, of which `encoding/binary.LittleEndian.Uint16`
     17%, and `dequantQ6KBlock` 12%.
   - So on arm64 T4 can remove at most about 14%, and the dequantizer is the first cost there before T4, not after it.
+  - **That is the GGUF split. A bf16 directory is different (2026-10-10, the Mac, exploratory, two profiles of
+    LFM2.5 2.6B to int4):** `QuantizeGroupInt4Row` is about 50–60% of the CPU and the bf16 widening
+    (`Tensor.BFloat16sToF32`) 18–30%, with no dequantizer in the way. So T4b is worth more on arm64 for a directory
+    source than the GGUF profile says.
 - **F4. Safetensors experts are built one at a time.** `decoder/weights.go:loadFusedExperts`, `streamExperts`
   (gemma4), and the per-expert `loadMatQ` loop in the generic builder's layer loader all loop over experts
   sequentially. `buildGptOssWeights` does too, but gpt-oss directories still take the resident (layer-parallel) path.
@@ -164,6 +170,18 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
   - **After T1 and T2 it is often the larger half of a Mac transcode** (exploratory: stream 2.4–6.3 s, self-check
     0.2–9.4 s on the 1.5B). Whether to keep reading the whole file back straight after writing it is a decision this
     doc does not have yet.
+  - **Decided and built 2026-10-10 (Decision 5): the transcode no longer reads the file back.** It writes the
+    verified-marker for the bundle it has just written (`decoder.MarkGIWWritten`), so the self-check still loads the
+    bundle through the mmap path (it deserializes, and its shapes validate against the architecture) and skips the CRC
+    pass. The marker follows the bundle to its final name, so the first real load skips the pass too.
+    - Kept: a `.giw` with no marker (a cache found on disk, a sidecar copied from another box) is CRC'd on its first
+      load; `GOINFER_GIW_VERIFY=always` forces the pass on every load.
+    - Given up: after a transcode nothing compares the bytes on disk with the CRC unless that variable is set. For a
+      sidecar larger than free RAM the old read-back did read the disk; that check is gone with it.
+    - Exploratory, the Mac, by day (G-T1's phase lines, 48 transcodes): 0.0–0.3 s of self-check on every file up to
+      1.8 GB. LFM2.5 2.6B still reads 2.7–3.9 s: its load copies large f32 tensors out of the mapping
+      (`giwReader.f32`), which is the load's own read and not a CRC pass (a profile shows no CRC under the self-check).
+      That copy is V's to remove.
 
 ### Checked and not worth doing
 
@@ -171,7 +189,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
   but negligible. A large MoE makes more (about ten per matrix), still under a second.
 - **The self-check for a file that fits in RAM:** 0.13 s of 19.3 s. **Not so on the Mac (T0, 2026-10-10): up to 5.8 s
   of a transcode that takes 5–20 s, and as little as 0.2 s. See F9; it is an open question, not a closed one.** A sidecar larger than RAM (the 16.7 GB 30B on the
-  16 GB Mac) re-reads from disk. T0's phase line measures that before anything changes (F9).
+  16 GB Mac) re-reads from disk. T0's phase line measures that before anything changes (F9). **Closed 2026-10-10 by
+  Decision 5: the read-back is gone (F9).**
 - **The disk write:** about 0.5 s per GB on the cloud box. Not representative of the Mac's SSD, but not where the time
   is either.
 - **GGUF dequant (Q4_K/Q6_K, scalar):** 12.7% today. It becomes a larger share once T4 lands. Re-rank it from T0's
@@ -242,6 +261,15 @@ change what runs when and how fast, never what is written.
     over experts when building for a sink, sequential otherwise. In the resident build they already sit inside
     parallel layers, so nesting would multiply transients.
   - Each expert writes only its own slot; the source reads are pure.
+  - **Built 2026-10-10 (`bbb3bbeb`): `decoder/stream_layers.go:forExperts`.** What the tree made different from the
+    text above:
+    - There are five safetensors expert loops, not three. Nemotron's per-expert loop and Llama 4's (a whole-tensor
+      read, then a transpose per expert) have the same shape and take the same helper.
+    - The GGUF `stackedExperts` carried its own copy of the rule; it calls the helper now.
+  - **G-T1 for T3: PASS on the Mac, 2026-10-10** (330 tiny cells and 24 real cells IDENTICAL, 0 DIFFERENT; no data
+    race under `go test -race`). No real MoE directory is on the Mac: the real MoE cell is nobara's Qwen3-VL-30B at
+    night, as registered. By day the MoE paths are covered by the tiny fixtures and by
+    `TestStreamTranscode_expertFanOutWritesTheSameBytes`, one source per loop.
 - **T4. A fast int4 quantizer (aikit).**
   - **T4a, scalar, now.** Replace `int(math.Round(float64(x)))` with
     `f := float64(x); if f < 0 { int(f - 0.5) } else { int(f + 0.5) }`. For any float32 x the widening is exact, and
@@ -250,6 +278,15 @@ change what runs when and how fast, never what is written.
     - Checked exhaustively over every float32 with |x| ≤ 2²⁴ (1,266,679,809 bit patterns, both signs) plus ±Inf and
       NaN: zero mismatches.
     - Exploratory: −17% on the amd64 transcode, identical sha256. Expect less on arm64 (F3).
+    - **Measured on arm64, 2026-10-10 (the Mac, an in-process A/B interleaved in one process, 31 rounds of 9.2M
+      elements, normal weights; a kernel microbenchmark, so direction only): not adopted there.** The form above takes
+      1.78× the time of `math.Round` (range 1.77–1.80, slower in 31 of 31): `math.Round` is one `FRINTA` on arm64, and
+      the sign test mispredicts on weights of random sign. A branch-free form, `int(f + math.Copysign(0.5, f))`, is a
+      wash on arm64 (1.007×, faster in 2 of 31). So arm64 keeps `math.Round`, and T4a is an amd64 change.
+    - All three forms agree on every one of the 2³² float32 bit patterns on arm64, NaN and ±Inf included (NaN gives 0
+      there, +Inf the int64 maximum, −Inf the minimum, each in all three).
+    - **Owed: the same A/B and the same exhaustive check on amd64**, with the branch-free form as a third arm, before
+      anything ships. nobara was holding a timed run when this was written.
   - **T4b, SIMD.** `QuantizeGroupInt4Row` gets the int8 treatment.
     - Arch dispatch, with the current scalar body kept verbatim as `quantizeGroupInt4RowScalar`, the oracle.
     - Per 32-element group: SIMD max-abs (exact and order-independent, already argued for int8), the scalar scale and
@@ -352,6 +389,12 @@ exactly that.
 - **G-T2, speed (night, two arms: new and old binaries, no peer, TE5(a)).**
   - Measured: full transcode wall (stream plus self-check, from T0's phase line), source in `~/models`, one discarded
     warm-up per arm, then ABAB pairs. Graded on the paired new/old ratio.
+  - **Amended 2026-10-10, before any G-T2 run (Decision 5 changed what the new arm does; no band moves).** The graded
+    quantity stays the full wall, as registered. The new arm no longer reads the file back, so on the Mac part of its
+    gain is that removal and not the parallelism the bands were drawn from. So the record also gives the stream phase's
+    paired ratio beside the graded one, ungraded, and for that the old arm is `cf66f5b3` (T0: the phase line and none
+    of T1–T6), not `eee75d83`, which prints no phases. A full-wall ship with a stream-phase ratio in the kill band is
+    reported as such and goes back to T0's profile.
   - Bands are from § Audit: the single-core split, 8 cores at 0.6–0.85 efficiency, and T4a's 0.83× on amd64 (taken
     as 1.0 on arm64).
 
@@ -425,6 +468,9 @@ The first night grades T; a later night grades V.
 **Decided 2026-10-10, after T0 and T6:** Decision 1, T before V ("t before v"). Decision 3, option (a), a quarter of
 available RAM at transcode start ("a quarter of ram is fine"). Decisions 2 and 4 are open.
 
+**Decided 2026-10-10, after T2:** Decision 5, the transcode does not read its file back ("no self check makes sense to
+me"). Built as: the load check stays, the CRC read-back goes (F9 has what is kept and what is given up).
+
 1. **Order:** T first, then V (recommended, so the rebuild wave after v16 runs at the new speed), or V first.
 2. **Policy: read exactly one version** (recommended).
    - It is safe today because every `.giw` is a sidecar next to its source, or is built into a release binary at tag
@@ -440,6 +486,8 @@ available RAM at transcode start ("a quarter of ram is fine"). Decisions 2 and 4
    MoE keeps K = 1 in every option.
 4. **Hand-built `.giw` files** in `/srv/models` (the archive) stop loading at v16 and are rebuilt from their sources
    with `cmd/prequant`. Say if any of them has no source left.
+5. **The self-check after a transcode** (added 2026-10-10 from F9): keep reading the whole file back for its CRC, or
+   stop. Decided: stop.
 
 ## Prior art read
 
