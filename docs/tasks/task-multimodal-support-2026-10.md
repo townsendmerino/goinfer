@@ -2729,7 +2729,7 @@ these gates.
 **Size:** aikit about 400 lines, goinfer about 900, both with tests: M, as registered for S10.
 
 **S10 LFM2.5-VL progress (2026-10-09, Mac and nobara): G-S10l-a, b and d PASS; c PASS on its bar with one of its three
-planted defects BLIND.**
+planted defects BLIND, the cover accepted by the owner. S10 LFM2.5-VL is DONE.**
 - **The code:**
   - aikit, local branch `s10-lfm2vl` (6f73bb5; not pushed):
     - `Siglip2NaFlexEncoder` and `PatchifyNaFlex`: SigLIP's blocks through a `runBlocks(h, np)` split out of
@@ -2799,6 +2799,9 @@ planted defects BLIND.**
     - goinfer concatenates the features in that same layout order (`lfm2vlPrep`).
   - A per-position check over the image span would see the swap. That is an amendment for the owner, not something to
     add after the reading.
+  - **Owner decision, 2026-10-09 21:30 PDT: accept the cover.** G-S10l-c stands as PASS with planted defect 1 BLIND,
+    carried by G-S10l-a's per-tile pixel identity and the layout golden (the Qwen2.5-VL two-image BLIND precedent).
+    No amendment, no re-run.
 - **G-S10l-d, served: PASS.** Read 2026-10-09 20:59-21:17 PDT on the Mac. The Metal serve binary was built from the
   branch, with `--model`/`--vision ~/models/lfm25-vl-1.6b` (copied from nobara, byte counts checked) and
   `--embed-int4=false` on every arm. Arms `=cpu`, `cpu`, `metal`.
@@ -2814,9 +2817,10 @@ planted defects BLIND.**
   them (the reading, the production entry, three planted).
 - **Raw:** `docs/measurements/multimodal-support-2026-10/s10l-lfm2vl/` (the drivers, each step's log including the two
   refused runs, the reference summary, and G-S10l-d's run in `gs10l-d/`).
+- **Released and merged:** aikit v1.64.0 (tagged on the Mac 2026-10-09 21:38 PDT: releasegate 5/5, preflight 10/10,
+  vulncheck 16/16 clean at c605ba6 on nobara, perfgate exception, root CI green at 302bca2; backends re-pinned), and
+  goinfer on it.
 - **Owed:**
-  - aikit's release (`s10-lfm2vl`), then merging goinfer's branch with a parity refresh for the `decoder` core edits.
-  - The owner's call on planted defect 1 (accept the cover above, or amend G-S10l-c with a per-position check).
   - A batched lfm2 prefill: the per-token image prefill is the slow part of a served image turn.
   - The 450M and 3B sizes, never run.
 
