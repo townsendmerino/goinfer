@@ -110,7 +110,10 @@ def run(model_dir, golden, dump, out_dir):
     d = json.load(gzip.open(dump, "rt"))
     positions = d["positions"]
     assert d["n_ids"] == len(ids), f"dump is of {d['n_ids']} ids, golden has {len(ids)}"
-    assert d["argmax"] == d["golden_argmax"], "the goinfer dump is not of the run the window gate measured"
+    if d["quant"] == "int8int8":
+        assert d["argmax"] == d["golden_argmax"], "the goinfer dump is not of the run the window gate measured"
+    elif d["argmax"] != d["golden_argmax"]:
+        print(f"note: quant {d['quant']} argmax {d['argmax']} differs from the int8int8 golden's {d['golden_argmax']} (reported, not an error)")
     print(f"goinfer dump: quant {d['quant']}, argmax {d['argmax']}, sample-256 logit cosine {d['sample256_logit_cosine']:.5f}")
     model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=torch.bfloat16, low_cpu_mem_usage=True).eval()
     cfg = model.config
@@ -167,11 +170,73 @@ def selftest():
     print("selftest ok: hooks fire on all 4 layers of a tiny Mellum, residual shape", a[0].shape)
 
 
+# Follow-up A2 (docs/tasks/task-mellum21-2026-10.md): the three craters follow-up A found in the int8int8 dump, as (position, layer):
+# position 1030 at layer 5, position 1300 at layers 10 and 15. r = (1 - cos in the new arm) / (1 - cos in the int8int8 arm).
+CRATERS = [(1030, 5), (1300, 10), (1300, 15)]
+
+
+def compare(base_json, arm_json):
+    """Registered rule: Q if every crater has r <= 0.25 (the craters are quantization sensitivity); P if every r >= 0.75 (the craters
+    survive without that quantization: the window path, or a difference present in both arms); M otherwise. Control: at the short
+    positions 300 and 600 the arm's last-layer cosine must be no worse than the int8int8 arm's, or the arm is suspect (class X)."""
+    b, a = json.load(open(base_json)), json.load(open(arm_json))
+    pos = b["positions"]
+    assert pos == a["positions"], "the two dumps are not of the same positions"
+    rs = []
+    for p, l in CRATERS:
+        i = pos.index(p)
+        cb, ca = b["cos"][l][i], a["cos"][l][i]
+        r = (1 - ca) / (1 - cb)
+        rs.append(r)
+        print(f"crater position {p} layer {l}: int8int8 cos {cb:.5f}, arm cos {ca:.5f}, r = {r:.3f}")
+    last = len(b["cos"]) - 1
+    ctl = [(p, b["cos"][last][pos.index(p)], a["cos"][last][pos.index(p)]) for p in (300, 600)]
+    for p, cb, ca in ctl:
+        print(f"control position {p} last layer: int8int8 {cb:.5f}, arm {ca:.5f}")
+    if any(ca < cb - 1e-4 for _, cb, ca in ctl):
+        print("CLASS X: the arm is worse than int8int8 at the short control positions: suspect, no reading")
+    elif all(r <= 0.25 for r in rs):
+        print("CLASS Q: every crater is gone without int8 activations/weights: quantization sensitivity, not the window path")
+    elif all(r >= 0.75 for r in rs):
+        print("CLASS P: every crater survives the arm: the window path (or a difference common to both arms) is the cause")
+    else:
+        print("CLASS M: mixed: " + ", ".join(f"{r:.2f}" for r in rs) + " (parked)")
+
+
+def selftest_compare():
+    import tempfile
+    pos = [300, 600, 1030, 1300]
+    def mk(c):
+        C = [[0.9999] * 4 for _ in range(28)]
+        for (p, l), v in c.items():
+            C[l][pos.index(p)] = v
+        return {"cos": C, "positions": pos}
+    base = mk({(1030, 5): 0.9940, (1300, 10): 0.9700, (1300, 15): 0.9250})
+    cases = {"CLASS Q": mk({(1030, 5): 0.9999, (1300, 10): 0.9990, (1300, 15): 0.9990}),
+             "CLASS P": mk({(1030, 5): 0.9941, (1300, 10): 0.9705, (1300, 15): 0.9260}),
+             "CLASS M": mk({(1030, 5): 0.9999, (1300, 10): 0.9850, (1300, 15): 0.9500}),
+             "CLASS X": mk({(1030, 5): 0.9999, (1300, 10): 0.9990, (1300, 15): 0.9990})}
+    cases["CLASS X"]["cos"][27][0] = 0.9900
+    import io, contextlib
+    for want, arm in cases.items():
+        with tempfile.TemporaryDirectory() as d:
+            json.dump(base, open(d + "/b.json", "w")); json.dump(arm, open(d + "/a.json", "w"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                compare(d + "/b.json", d + "/a.json")
+            assert want in buf.getvalue(), (want, buf.getvalue())
+    print("selftest ok: compare returns Q, P, M and X on the four synthetic arms")
+
+
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "selftest":
         selftest()
     elif len(sys.argv) == 6 and sys.argv[1] == "run":
         run(*sys.argv[2:])
+    elif len(sys.argv) == 4 and sys.argv[1] == "compare":
+        compare(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 2 and sys.argv[1] == "selftest-compare":
+        selftest_compare()
     else:
         print(__doc__)
         sys.exit(2)
