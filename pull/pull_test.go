@@ -53,7 +53,7 @@ func TestParseRef(t *testing.T) {
 }
 
 // TestSelect_realWorldNaming pins the two naming facts that were MEASURED against the live
-// HF API on 2026-09-02, not assumed — the model-pull design doc explicitly refused to commit
+// HF API, not assumed — the model-pull design doc explicitly refused to commit
 // to a matching scheme without checking, and these are what the check found.
 //
 //  1. Case differs between publishers: Qwen ships "…-q4_k_m.gguf", bartowski ships
@@ -178,9 +178,9 @@ func TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative(t *testing.
 	}
 }
 
-// An EXACT shard filename took a different branch from the quant selector above and skipped its split
-// refusal: `pull owner/repo:big-Q4_K_M-00001-of-00003.gguf` downloaded one piece of a checkpoint no loader
-// can assemble (a cancelled one left a 4.7 GB .part in the cache). Same refusal, same shard list.
+// An EXACT shard filename must get the same split refusal as the quant selector above, not a download:
+// `pull owner/repo:big-Q4_K_M-00001-of-00003.gguf` would fetch one piece of a checkpoint no loader can
+// assemble. Same refusal, same shard list.
 func TestSelect_exactShardFilenameIsRefusedToo(t *testing.T) {
 	files := []File{
 		{Path: "big-Q4_K_M-00001-of-00003.gguf", Size: 4 << 30},

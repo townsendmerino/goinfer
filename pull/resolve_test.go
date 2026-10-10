@@ -70,7 +70,7 @@ func TestResolve_badRefsFailBeforeTheNetwork(t *testing.T) {
 	}
 }
 
-// TestResolveOffline_verifiedCacheHitNeedsNoNetwork pins V-16 (docs/review-2026-09-04.md):
+// TestResolveOffline_verifiedCacheHitNeedsNoNetwork pins V-16 (docs/completed/review-2026-09-04.md):
 // when a ref's exact file, size AND digest are all known WITHOUT asking HuggingFace anything
 // (a demo: ref's shape — File+Pin+Bytes all set from curated.json), an already-cached, matching
 // copy resolves offline. resolveOffline only ever touches CacheDir + the filesystem, so this
@@ -157,8 +157,7 @@ func TestResolveOffline_quantOnlyRefNeverQualifies(t *testing.T) {
 
 // TestResolve_callsResolveOfflineBeforeCheckAccess is the wiring guard: resolveOffline works in
 // isolation (the tests above), but that proves nothing about whether Resolve's actual request
-// path reaches it BEFORE the network call it exists to skip — the exact shape of gap this
-// session's audit keeps finding (a helper with a test, and a call site nobody checked).
+// path reaches it BEFORE the network call it exists to skip (a helper with a test and a call site nobody checked).
 func TestResolve_callsResolveOfflineBeforeCheckAccess(t *testing.T) {
 	src, err := os.ReadFile("resolve.go")
 	if err != nil {

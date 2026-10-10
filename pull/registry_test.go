@@ -75,13 +75,12 @@ func TestRegistry_noEntryOutrunsItsParity(t *testing.T) {
 }
 
 // R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `serve check`'s minimal-schema
-// tools row passed against a server that a real agent (opencode) then broke under its own,
-// larger tool schema — the registry recommended a checkpoint with no signal that this could
-// happen. The bar here is deliberately low (non-empty, not "measured"): recommendedCheckpoints'
-// own comments require an honest "not yet measured" placeholder rather than a guess for an
-// entry nobody has run `serve check` against yet, and this only catches the entry that forgot
-// the field entirely (an empty string) — it cannot tell a real measurement from a placeholder,
-// which is the one thing a human filling this in has to get right.
+// tools row can pass against a server that a real agent (opencode) then breaks under its own,
+// larger tool schema, so a registry entry has to carry a tools result. The bar here is deliberately
+// low (non-empty, not "measured"): recommendedCheckpoints' own comments require an honest "not yet
+// measured" placeholder rather than a guess for an entry nobody has run `serve check` against yet,
+// and this only catches the entry that forgot the field entirely (an empty string) — it cannot tell a
+// real measurement from a placeholder, which is the one thing a human filling this in has to get right.
 func TestRegistry_toolsColumnIsNonEmpty(t *testing.T) {
 	for _, c := range RecommendedAll() {
 		if c.Tools == "" {
@@ -186,12 +185,8 @@ func TestRegistry_doesNotCollideWithDemoTiers(t *testing.T) {
 }
 
 // TestRegistry_digestsMatchLocalFiles verifies each entry's sha256 and size against a real file,
-// when one is present. It is the only gate that can catch the failure that actually happened.
-//
-// MEASURED 2026-09-06: two of the three entries shipped with a FABRICATED digest and a wrong byte
-// count. Both were hand-typed from a truncated display — the first 16 hex characters were right,
-// because that is what had been printed, and the remaining 48 were invented. Every format check in
-// this file passed on them, because a fabricated digest is still well-formed lowercase hex of the
+// when one is present. It is the only gate that can catch a hand-typed digest: every format check in
+// this file passes on a fabricated one, because it is still well-formed lowercase hex of the
 // correct length. A digest can only be checked against the bytes it claims to describe.
 //
 // Skipped when the file is absent, which is most machines — set GOINFER_MODELS_DIR (or keep
@@ -249,7 +244,7 @@ func TestRegistry_digestsMatchLocalFiles(t *testing.T) {
 }
 
 // A directory entry is a recommendation that carries a vision tower, so it is only worth having if it can be told apart from a
-// GGUF one everywhere a list is printed, and if at least one exists for each box class the registry promises (P9(d), 2026-10-08).
+// GGUF one everywhere a list is printed, and if at least one exists for each box class the registry promises (P9(d)).
 func TestRegistry_directoryEntriesAreVisionLanguage(t *testing.T) {
 	var dirs int
 	for _, c := range RecommendedAll() {

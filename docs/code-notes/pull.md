@@ -183,3 +183,143 @@ one-function schema, "tools, harness-scale" a dozen-tool schema shaped like a re
 — the shape that broke under opencode with a server whose minimal-schema row was green.
 From a RECORDED `serve check` run, never guessed (TestRegistry_toolsColumnIsNonEmpty).
 ```
+
+## TestSelect_realWorldNaming
+
+Moved from `pull/pull_test.go` (the comment above `TestSelect_realWorldNaming`) on 2026-10-09.
+
+```text
+TestSelect_realWorldNaming pins the two naming facts that were MEASURED against the live
+HF API on 2026-09-02, not assumed — the model-pull design doc explicitly refused to commit
+to a matching scheme without checking, and these are what the check found.
+```
+
+## TestSelect_exactShardFilenameIsRefusedToo
+
+Moved from `pull/pull_test.go` (the comment above `TestSelect_exactShardFilenameIsRefusedToo`) on 2026-10-09.
+
+```text
+An EXACT shard filename took a different branch from the quant selector above and skipped its split
+refusal: `pull owner/repo:big-Q4_K_M-00001-of-00003.gguf` downloaded one piece of a checkpoint no loader
+can assemble (a cancelled one left a 4.7 GB .part in the cache). Same refusal, same shard list.
+```
+
+## TestIntegrationsDoc_everyHarnessTheReadmeNamesHasAPage
+
+Moved from `pull/integrations_doc_test.go` (the comment above `TestIntegrationsDoc_everyHarnessTheReadmeNamesHasAPage`) on 2026-10-09.
+
+```text
+R14 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the README named opencode
+alongside Claude Code as "a real agent" target for three releases before a recipe for it
+existed anywhere in the tree — a cold user had to reconstruct opencode's provider config from
+outside knowledge, and that reconstruction cost the whole run's only safety incident. The
+README's own claim ("Pointing a real agent (Claude Code, opencode) at it: docs/integrations/")
+is the thing that silently went stale; this reads it back and checks the promise against the
+directory it names, so a THIRD harness added to that sentence without a matching page fails
+here instead of waiting for the next cold-user run to find it.
+```
+
+## TestReadme_familyCountMatchesTheMatrix
+
+Moved from `pull/readme_family_count_test.go` (the comment above `TestReadme_familyCountMatchesTheMatrix`) on 2026-10-09.
+
+```text
+TestReadme_familyCountMatchesTheMatrix: the README's "N model families" is a claim the generated
+capability matrix can check, and it did drift — the README said 35 while docs/capability-matrix.json
+(and the site built from it) said 37. The matrix is the source of truth; every README occurrence must
+equal its length.
+```
+
+## TestRegistry_toolsColumnIsNonEmpty
+
+Moved from `pull/registry_test.go` (the comment above `TestRegistry_toolsColumnIsNonEmpty`) on 2026-10-09.
+
+```text
+R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `serve check`'s minimal-schema
+tools row passed against a server that a real agent (opencode) then broke under its own,
+larger tool schema — the registry recommended a checkpoint with no signal that this could
+happen. The bar here is deliberately low (non-empty, not "measured"): recommendedCheckpoints'
+own comments require an honest "not yet measured" placeholder rather than a guess for an
+entry nobody has run `serve check` against yet, and this only catches the entry that forgot
+the field entirely (an empty string) — it cannot tell a real measurement from a placeholder,
+which is the one thing a human filling this in has to get right.
+```
+
+## TestRegistry_digestsMatchLocalFiles
+
+Moved from `pull/registry_test.go` (the comment above `TestRegistry_digestsMatchLocalFiles`) on 2026-10-09.
+
+```text
+TestRegistry_digestsMatchLocalFiles verifies each entry's sha256 and size against a real file,
+when one is present. It is the only gate that can catch the failure that actually happened.
+
+MEASURED 2026-09-06: two of the three entries shipped with a FABRICATED digest and a wrong byte
+count. Both were hand-typed from a truncated display — the first 16 hex characters were right,
+because that is what had been printed, and the remaining 48 were invented. Every format check in
+this file passed on them, because a fabricated digest is still well-formed lowercase hex of the
+correct length. A digest can only be checked against the bytes it claims to describe.
+
+Skipped when the file is absent, which is most machines — set GOINFER_MODELS_DIR (or keep
+checkpoints under ~/models) to run it. A skip here is not a pass and the log says so.
+```
+
+## TestRegistry_directoryEntriesAreVisionLanguage
+
+Moved from `pull/registry_test.go` (the comment above `TestRegistry_directoryEntriesAreVisionLanguage`) on 2026-10-09.
+
+```text
+A directory entry is a recommendation that carries a vision tower, so it is only worth having if it can be told apart from a
+GGUF one everywhere a list is printed, and if at least one exists for each box class the registry promises (P9(d), 2026-10-08).
+```
+
+## registry_tokenizer_test.header
+
+Moved from `pull/registry_tokenizer_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): granite-4.0-h-tiny — a
+registry-recommended checkpoint — loaded with "tokenizer.ggml.pre=\"dbrx\" is not a known
+pre-tokenizer; falling back to cl100k" on every pull. A registry entry backed by parity gates
+cannot ship with a tokenizer this build declines to walk: recommending it to a first-time user
+means recommending a checkpoint whose token ids may differ from HF and llama.cpp, silently,
+unless they happen to read a startup warning.
+```
+
+## TestResolveOffline_verifiedCacheHitNeedsNoNetwork
+
+Moved from `pull/resolve_test.go` (the comment above `TestResolveOffline_verifiedCacheHitNeedsNoNetwork`) on 2026-10-09.
+
+```text
+TestResolveOffline_verifiedCacheHitNeedsNoNetwork pins V-16 (docs/review-2026-09-04.md):
+when a ref's exact file, size AND digest are all known WITHOUT asking HuggingFace anything
+(a demo: ref's shape — File+Pin+Bytes all set from curated.json), an already-cached, matching
+copy resolves offline. resolveOffline only ever touches CacheDir + the filesystem, so this
+needs no network stub to prove the property — the function has nothing in it that COULD reach
+the network.
+```
+
+## TestResolve_callsResolveOfflineBeforeCheckAccess
+
+Moved from `pull/resolve_test.go` (the comment above `TestResolve_callsResolveOfflineBeforeCheckAccess`) on 2026-10-09.
+
+```text
+TestResolve_callsResolveOfflineBeforeCheckAccess is the wiring guard: resolveOffline works in
+isolation (the tests above), but that proves nothing about whether Resolve's actual request
+path reaches it BEFORE the network call it exists to skip — the exact shape of gap this
+session's audit keeps finding (a helper with a test, and a call site nobody checked).
+```
+
+## TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart
+
+Moved from `pull/resume_test.go` (the comment above `TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart`) on 2026-10-09.
+
+```text
+TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart is N-70 (docs/audit-2026-09-10.md):
+f.Size <= 0 (a non-LFS file with no declared size) admits ANY existing .part into the resume
+path regardless of whether it is actually complete — there is no size to compare against. If
+a prior run fetched every byte but was interrupted before the digest-check-and-rename, the
+next run's Range request starts exactly at EOF and HuggingFace answers 416, not 206/200.
+Before this fix that fell into the catch-all default case: a confusing "HuggingFace returned
+416" error, AND the .part was never cleared — so every subsequent retry hit the identical 416
+forever. This drives that exact shape and asserts it now succeeds instead.
+```

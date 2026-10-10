@@ -9,9 +9,8 @@ import (
 )
 
 // TestReadme_familyCountMatchesTheMatrix: the README's "N model families" is a claim the generated
-// capability matrix can check, and it did drift — the README said 35 while docs/capability-matrix.json
-// (and the site built from it) said 37. The matrix is the source of truth; every README occurrence must
-// equal its length.
+// capability matrix can check. The matrix (docs/capability-matrix.json, and the site built from it) is the
+// source of truth; every README occurrence must equal its length.
 //
 // Mutation: change either "37 model families" in README.md and this goes red naming the number.
 func TestReadme_familyCountMatchesTheMatrix(t *testing.T) {
