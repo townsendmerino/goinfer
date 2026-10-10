@@ -23,28 +23,25 @@ import (
 	"sync"
 )
 
-// `gate quick`'s SELECTION (TE7(a), docs/tasks/task-test-efficiency-2026-09.md): changed files ->
-// their packages -> every test binary, in any of the five modules, that can observe them.
+// `gate quick`'s SELECTION (docs/tasks/task-test-efficiency-2026-09.md, TE7(a)): changed files -> their
+// packages -> every test binary, in any of the five modules, that can observe them.
 //
 // THREE TIERS, because "imports the change" is not the only way a test here observes one:
 //
 //   - AFFECTED: the test binary compiles a changed file (the file's package is in its
-//     `go list -deps -test` closure, or it embeds the file). Its binary is new, so it re-runs.
-//     This is the tier the equivalence property pins (quick_test.go): it never drops a package
+//     `go list -deps -test` closure, or it embeds the file). Its binary is new, so it re-runs. This is the
+//     tier the equivalence property pins (quick_test.go): it never drops a package
 //     `go list -deps -test` says depends on the change.
-//   - OBSERVER: the tests can READ the change as data. Measured 2026-09-28, not assumed: three
-//     decoder tests (TestEnvVars_docAndCodeAgree, TestBackendBanner_usesTheReport,
-//     TestGoldenNames_matchTheFileOnDisk) open 4,883 files across the whole tree — metal/, cuda/,
-//     gpu/, internal/, docs/, even the gitignored vendor/ and .claude/ — so an edit to a metal
-//     .go file is observable by decoder's tests although decoder imports nothing in metal. An
-//     import-graph selection alone would report GREEN on a change CI then fails.
-//   - CACHE-CHECKED: every other test binary. A test can open a path it builds at run time, which
-//     no static scan sees, so nothing is dropped: these run WITHOUT -count=1 and Go's test cache —
-//     which records every file, directory listing and env var a test binary actually read —
-//     replays each one whose recorded inputs did not change (TE7(b): decoder replays in 2 s).
-//     That is sound for reads inside the test's own module root, and the cache's one blind spot
-//     (cmd/go does not re-check files OUTSIDE the module root) is closed where determinable by
-//     forcing -count=1 on a cross-module reader (see crossModuleReader).
+//   - OBSERVER: the tests can READ the change as data. Some decoder tests open files across the whole tree
+//     (metal/, cuda/, gpu/, internal/, docs/), so an edit to a metal .go file is observable by decoder's
+//     tests although decoder imports nothing in metal. An import-graph selection alone would report GREEN
+//     on a change CI then fails.
+//   - CACHE-CHECKED: every other test binary. A test can open a path it builds at run time, which no static
+//     scan sees, so nothing is dropped: these run WITHOUT -count=1 and Go's test cache, which records every
+//     file, directory listing and env var a test binary read, replays each one whose recorded inputs did
+//     not change. That is sound for reads inside the test's own module root; the cache's one blind spot
+//     (cmd/go does not re-check files OUTSIDE the module root) is closed where determinable by forcing
+//     -count=1 on a cross-module reader (see crossModuleReader).
 
 // quickModule is one of the tree's Go modules as `gate quick` lists, vets and tests it. Each field
 // mirrors how CI treats that module (.github/workflows/ci.yml), because a day-loop check that
@@ -153,9 +150,8 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			Lint: []lintSpec{
 				{"build", []string{"gpu", "goinfer_testhooks"}, "", "affected", "gpu-darwin: go build -tags 'gpu goinfer_testhooks' ./gpu/..."},
 				{"vet", []string{"gpu", "goinfer_testhooks"}, "", "affected", "gpu-darwin: go vet -tags 'gpu goinfer_testhooks' ./gpu/..."},
-				// CI runs this one on linux. WebGPU is cgo, and cgo does not cross-compile from
-				// here (CGO_ENABLED=0 leaves webgpu's types undefined, measured), so this is the
-				// host's analysis of the same packages.
+				// CI runs this one on linux. WebGPU is cgo, and cgo does not cross-compile from here (CGO_ENABLED=0
+				// leaves webgpu's types undefined), so this is the host's analysis of the same packages.
 				{"staticcheck", []string{"gpu", "goinfer_testhooks"}, "", "changed", "gpu: staticcheck -tags 'gpu goinfer_testhooks' ./gpu/... (host target)"},
 			},
 		},
@@ -163,11 +159,9 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			Name: "cuda", Dir: "cuda", Work: []string{".", "cuda"},
 			ListTags: []string{"cuda", "goinfer_testhooks"}, TestTags: []string{"cuda", "goinfer_testhooks"},
 			TestArgs: []string{"-short"}, Env: map[string]string{"CGO_ENABLED": "0"},
-			// Measured 2026-09-28 on darwin/arm64: `CGO_ENABLED=0 go build -tags 'cuda
-			// goinfer_testhooks' ./cuda/...` fails (undefined: gpu.MappedHostBuffer, gpu.Graph,
-			// gpu.Event — aikit/gpu's CUDA surface is linux-only), while the same vet for
-			// GOOS=linux GOARCH=amd64 passes. So it is linted cross-target and its tests are NOT
-			// RUN off linux.
+			// `CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/...` fails on darwin/arm64 (aikit/gpu's
+			// CUDA surface is linux-only) while the same vet for GOOS=linux GOARCH=amd64 passes. So it is linted
+			// cross-target and its tests are NOT RUN off linux.
 			NativeGOOS: "linux", CrossTarget: "linux/amd64", Device: true,
 			Lint: []lintSpec{
 				{"build", []string{"cuda", "goinfer_testhooks"}, "linux/amd64", "affected", "cuda: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/..."},
@@ -183,8 +177,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 				{"build", nil, "", "affected", "metal-darwin: go build ./metal/..."},
 				{"vet", nil, "", "affected", "metal-darwin: go vet ./metal/..."},
 				{"vet", testhooks, "", "affected", "metal-darwin: go vet -tags goinfer_testhooks ./metal/..."},
-				// Not a CI step. Run because a local staticcheck is the only one this module gets;
-				// clean at 2026-09-28, so a red here is new.
+				// Not a CI step. Run because a local staticcheck is the only one this module gets.
 				{"staticcheck", testhooks, "", "changed", "(not in CI) staticcheck -tags goinfer_testhooks ./metal/..."},
 			},
 		},
@@ -271,20 +264,18 @@ func (qc *quickConfig) workFile(m *quickModule) (string, error) {
 }
 
 // cmdEnv is the environment for a go command about module m, built for target ("" = this host).
-// overlay, when set, is passed to every go command (the equivalence tests mutate through it, so no
-// real file is ever edited).
+// overlay, when set, is passed to every go command (the equivalence tests mutate through it, so no real
+// file is ever edited).
 //
-// forTest builds a TEST cell's environment, and differs in two ways, both measured on this Mac:
+// forTest builds a TEST cell's environment, and differs in two ways:
 //
-//   - GOWORK is left to auto-discovery wherever the repo's own go.work (or its absence, for the
-//     root) already resolves the module the way its CI job does. An explicit GOWORK is inherited by
-//     every `go` a test spawns: gpu's TestParentSelfSkipsWhenNoSubtestRan runs `go test` in a scratch
-//     module and fails with "setup failed" under an explicit workspace, and decoder's
-//     TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams runs `go doc`, which under GOWORK=off hits
-//     the stale vendor/ below. Both pass under a hand-typed `go test`, so the harness must not
-//     be what turns them red.
-//   - GOINFER_HEAVY_TESTS is removed: a shell that exported it would turn the day loop into the
-//     90-minute heavy tier.
+//   - GOWORK is left to auto-discovery wherever the repo's own go.work (or its absence, for the root)
+//     already resolves the module the way its CI job does. An explicit GOWORK is inherited by every `go` a
+//     test spawns, which fails tests that run `go test` in a scratch module (gpu's
+//     TestParentSelfSkipsWhenNoSubtestRan) or `go doc` (decoder's
+//     TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams, which under GOWORK=off hits a stale vendor/).
+//     The harness must not be what turns red a test that passes by hand.
+//   - GOINFER_HEAVY_TESTS is removed: a shell that exported it would turn the day loop into the heavy tier.
 func (qc *quickConfig) cmdEnv(m *quickModule, target, overlay string, forTest bool) ([]string, error) {
 	set := map[string]string{}
 	auto := forTest && qc.repoWorkCovers(m)
@@ -309,9 +300,8 @@ func (qc *quickConfig) cmdEnv(m *quickModule, target, overlay string, forTest bo
 		flags = append(flags, v)
 	}
 	if moduleMode && fileExists(filepath.Join(qc.Root, m.Dir, "vendor", "modules.txt")) {
-		// A gitignored, stale vendor/ (this Mac's root has one from 2026-09-20: aikit v1.46.0
-		// against go.mod's v1.50.1) puts module-mode builds in vendor mode and fails them with
-		// "inconsistent vendoring". CI's checkout has no vendor/, so -mod=readonly is what CI runs.
+		// A gitignored, stale vendor/ puts module-mode builds in vendor mode and fails them with "inconsistent
+		// vendoring". CI's checkout has no vendor/, so -mod=readonly is what CI runs.
 		flags = append(flags, "-mod=readonly")
 	}
 	if overlay != "" {
@@ -743,10 +733,8 @@ func (r *testRoot) scan() {
 	sort.Strings(tests)
 	r.tests = dedupe(tests)
 	for _, t := range r.tests {
-		// Only the tree walkers split off. A fixture helper that globs ../testdata is called by
-		// hundreds of decoder tests (measured: counting every enumerator put 337 of them in the
-		// "small" cell), and those re-run only when a fixture moves, which the rest cell's cache
-		// already handles.
+		// Only the tree walkers split off. A fixture helper that globs ../testdata is called by hundreds of
+		// decoder tests, and those re-run only when a fixture moves, which the rest cell's cache already handles.
 		if e := funcs[t]; e != nil && e.tree {
 			r.walkers = append(r.walkers, t)
 		}
@@ -767,11 +755,9 @@ func (r *testRoot) scan() {
 
 // ---- tests that load a real checkpoint ----
 
-// A real checkpoint is a model file of at least minCheckpointBytes. The tiny fixtures (the largest
-// is a few MB) load beside anything; a real one is what the fit guard refuses when other test
-// binaries hold memory. Measured 2026-09-28, the cold `gate quick` on the MacBook:
-// examples/confidence's f32 load of the 0.5B needed 3.6 GB against 3.2 GB available while decoder
-// and metal were loading the same checkpoint, and failed; alone it passes.
+// A real checkpoint is a model file of at least minCheckpointBytes. The tiny fixtures (the largest is a few
+// MB) load beside anything; a real one is what the fit guard refuses when other test binaries hold memory,
+// so a cell that loads one runs with nothing beside it (quickCell.Mem).
 const minCheckpointBytes = 64 << 20
 
 var checkpointExts = []string{".gguf", ".safetensors", ".giw"}
@@ -1004,25 +990,24 @@ func needle(rel string) string {
 	return filepath.Base(rel)
 }
 
-// crossModuleReader reports why the test cache cannot be trusted to see a change to rel on this
-// root's behalf, or "" when it can. cmd/go re-checks a test's recorded inputs only INSIDE the
-// module root ("Do not recheck files outside the module, GOPATH, or GOROOT root" — Go's
-// computeTestInputsID), so a metal test that read ../docs/x.md replays a stale result after x.md
-// changes. Where the read is determinable, the root is forced to re-run:
+// crossModuleReader reports why the test cache cannot be trusted to see a change to rel on this root's
+// behalf, or "" when it can. cmd/go re-checks a test's recorded inputs only INSIDE the module root ("Do
+// not recheck files outside the module, GOPATH, or GOROOT root", Go's computeTestInputsID), so a metal test
+// that read ../docs/x.md replays a stale result after x.md changes. Where the read is determinable, the
+// root is forced to re-run:
 //
 //   - its source names the file (see needle);
 //   - a "../…" string literal, resolved against the package directory, IS the file or one of its
-//     directories (metal's "../docs/audit-metal-2026-09-12.md" forces on that file only, not on
-//     every docs/ edit);
+//     directories (so "../docs/audit-metal-2026-09-12.md" forces on that file only, not on every docs/
+//     edit);
 //   - it has a bare ".." literal and every component of the file's path as a literal
-//     (filepath.Join("..", "testdata", "llama-tiny") plus "config.json"). Requiring every
-//     component, not just the top directory, is what stops metal's one
-//     Join("..", "docs", "measurements", …, "tickets.jsonl") from forcing it on every docs/ edit.
+//     (filepath.Join("..", "testdata", "llama-tiny") plus "config.json"). Requiring every component, not
+//     just the top directory, is what stops a Join("..", "docs", "measurements", …) from forcing on every
+//     docs/ edit.
 //
-// A read by a path assembled at run time outside the module root — including a walk of the whole
-// parent from a computed root — stays the cache's blind spot, exactly as it is for a hand-typed
-// `go test`; that is the risk TE7(b) accepted for day loops. At 2026-09-28 no submodule test does
-// that: cuda enumerates only its own directory, metal only ../testdata (both caught above).
+// A read by a path assembled at run time outside the module root, including a walk of the whole parent from
+// a computed root, stays the cache's blind spot, exactly as it is for a hand-typed `go test`; that is the
+// risk TE7(b) accepted for day loops.
 func (r *testRoot) crossModuleReader(root, rel string) string {
 	modRel := r.Mod.Dir
 	if modRel == "." || rel == modRel || strings.HasPrefix(rel, modRel+"/") {
@@ -1348,9 +1333,9 @@ type quickCell struct {
 	NotRun string // non-empty: cannot run on this host, and why
 }
 
-// minSplitRest is how many non-walking tests a package needs before its walkers get a cell of
-// their own. The split exists for decoder (hundreds of tests, ~5 min, and three census tests that
-// read the whole tree); for a ten-test package the second process costs more than it saves.
+// minSplitRest is how many non-walking tests a package needs before its walkers get a cell of their own.
+// The split exists for decoder (hundreds of tests, and census tests that read the whole tree); for a
+// ten-test package the second process costs more than it saves.
 const minSplitRest = 30
 
 // anchored builds ^(a|b|c)$ for exact top-level test names.

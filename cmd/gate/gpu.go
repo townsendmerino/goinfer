@@ -12,31 +12,26 @@ import (
 	"time"
 )
 
-// The pre-tag GPU correctness gate. Run it on EACH GPU box, paste the verdict, then tag.
+// The pre-tag GPU correctness gate (gate gpu). Run it on EACH GPU box, paste the verdict, then tag.
 //
-// WHY THIS IS THE GATE. CI never runs the GPU backends: ci.yml only BUILDS and VETS under -tags
-// cuda, because the runners have no GPU. Metal is darwin-only and CUDA is Linux+NVIDIA, so no single
-// machine — and no CI job — can cover both. Every GPU correctness claim this project makes therefore
-// rests on a human running tests by hand on two boxes. This makes that reproducible: one command,
-// one verdict, provenance attached.
+// CI never runs the GPU backends (ci.yml only builds and vets under -tags cuda), and no single machine
+// covers both Metal (darwin) and CUDA (Linux+NVIDIA), so GPU correctness rests on running tests by hand
+// on two boxes; this makes that one command, one verdict, provenance attached. It is deliberately NOT
+// "run everything": a gate that takes two hours gets skipped, and a skipped gate still implies assurance.
+// It runs the checks that map to bugs that shipped.
 //
-// It is deliberately NOT "run everything". A gate that takes two hours gets skipped, and a skipped
-// gate is worse than no gate because it still implies assurance. It runs the checks that map to bugs
-// we actually shipped.
+// Honesty rules; do not loosen them:
 //
-// HONESTY RULES, all learned the hard way:
+//   - A skip is NOT a pass. `go test` prints "ok" for a package whose tests all skipped, so real runs
+//     are counted and SKIPPED is reported separately. Green must mean tested.
+//   - Stray GPU processes invalidate results, so group 0 refuses to proceed past them.
+//   - The CUDA suite runs SEQUENTIALLY (-p 1): parallel packages contend for VRAM and the failures come
+//     back as bogus numerics ("cosine 0.000000") rather than "out of memory".
+//   - GROUP ACCOUNTING. A tally computed from what EMITTED cannot detect what did not (a block that dies
+//     mid-way emits nothing), so the expected groups are DECLARED up front and reconciled in verdict: a
+//     group that emits no verdict, or an unexpected group id, is itself a FAIL.
 //
-//   - A skip is NOT a pass. `go test` prints "ok" for a package whose tests all skipped, so real
-//     runs are counted and SKIPPED is reported separately. Green here must mean tested.
-//   - Stray GPU processes invalidate results. A clean-tree control once "confirmed" a pre-existing
-//     failure while 3.4 GB of leaked serve processes held the card — both sides equally poisoned.
-//   - The CUDA suite must run SEQUENTIALLY (-p 1). Its tests each build a context and several load
-//     real models; parallel packages contend for VRAM and the failures come back as bogus numerics
-//     ("cosine 0.000000") rather than "you are out of memory".
-//   - GROUP ACCOUNTING (audit G-01). A tally computed from what EMITTED can never detect what did
-//     not: a block that dies mid-way emits nothing, and "ran 3" and "ran 4" are both plausible
-//     numbers. The expected groups are DECLARED up front and reconciled at the end — a group that
-//     emits no verdict, or an unexpected group id, is itself a FAIL.
+// History: docs/code-notes/cmd-gate.md, "gpu gate header".
 
 // gpuGate carries the tally, the declared/emitted group sets and the notes block.
 type gpuGate struct {
@@ -90,12 +85,9 @@ func (g *gpuGate) skip(format string, a ...any) {
 	g.mark()
 }
 
-// detail prints the matching assertion lines, or the RAW TAIL if nothing matched.
-//
-// A group that fails and explains nothing is the silence-reads-as-health shape this gate exists to
-// prevent, one level up in the tooling. `go test` killed by a signal, an OOM or a timeout emits
-// neither "--- FAIL" nor a "file.go:N:" line — only "FAIL <pkg> <secs>" — so every filter reported
-// an EMPTY explanation for exactly the failures that are hardest to reproduce.
+// detail prints the matching assertion lines, or the RAW TAIL if nothing matched, so a failing group
+// never explains nothing: `go test` killed by a signal, an OOM or a timeout emits neither "--- FAIL" nor a
+// "file.go:N:" line, only "FAIL <pkg> <secs>".
 func (g *gpuGate) detail(out string, re *regexp.Regexp) {
 	// A process death is reported FIRST and on its own terms. It has no
 	// `--- FAIL` to match, and its stack head names the test that died — which a
@@ -137,16 +129,12 @@ func (g *gpuGate) detail(out string, re *regexp.Regexp) {
 	}
 }
 
-// vramNote fires on a cosine of EXACTLY zero.
+// vramNote fires on a cosine of EXACTLY zero: an all-zero buffer is what a failed allocation leaves
+// behind, so it is not by itself a parity result.
 //
-// A cosine of 0.000000 is not a parity result — an all-zero buffer is what a failed allocation
-// leaves behind, and this gate's own history records an OOM wearing a parity bug's clothes long
-// enough that two people concluded "the tests just interfere" and moved on.
-//
-// WORDING IS DELIBERATE: it states the READING and points at the entry; it does NOT name a
-// mechanism. "Suspect retention" was the obvious phrasing and is now DISPROVEN — A12 measured
-// Close() returning all 4892 MiB synchronously in 123 ms with a 0 MiB asynchronous tail. Naming a
-// mechanism a gate cannot see is how the last three explanations became someone's wasted afternoon.
+// The wording is deliberate: it states the READING and points at the docs/queue-engineering.md A12
+// entry; it does NOT name a mechanism. The obvious one (retention on Close) is refuted there, and a gate
+// cannot see a mechanism. History: docs/code-notes/cmd-gate.md, "vramNote".
 func (g *gpuGate) vramNote(out string) {
 	if !strings.Contains(out, "cosine 0.000000") {
 		return
@@ -164,8 +152,8 @@ func (g *gpuGate) vramNote(out string) {
 	fmt.Fprintf(g.w, "            REFUTED, and there is no leak. Do not assume; measure.\n")
 }
 
-// gpuRun executes one `go test` check and returns its results plus the reconstructed -v text.
-// It never aborts the gate: a check that cannot start is a red check, not an abandoned run.
+// run executes one `go test` cell and returns its results plus the reconstructed -v text. It never
+// aborts the gate: a cell that cannot start is a red check, not an abandoned run.
 func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 	cfg := &gateConfig{Name: "gpu", TopLevelOnly: true, RCIsFailure: true}
 	res := newResults()
@@ -176,28 +164,19 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 		}
 	}
 	cr := runCell(c, cfg, res, g.logDir)
-	// A FILTERED CELL THAT MATCHED NOTHING IS NOT A PASS, and the aggregate `g.ran == 0` check at
-	// the end cannot see it: one empty cell among several full ones leaves g.ran > 0, so the cell
-	// reports clean and its coverage is simply gone. Every -run pattern in this file is a literal
-	// test-name prefix or alternation, so renaming a test silently empties its cell — the same
-	// shape as the qwen3next oracle, where a -run pattern that could not match a required gate
-	// produced "DID NOT RUN" for five weeks (docs/tasks/task-verification-surface-audit.md).
+	// A FILTERED CELL THAT MATCHED NOTHING IS NOT A PASS, and the aggregate `g.ran == 0` check at the end
+	// cannot see it: one empty cell among full ones leaves g.ran > 0. Every -run pattern in this file is a
+	// literal test-name prefix or alternation, so renaming a test silently empties its cell.
 	g.noteIfEmpty(c, res)
 	g.noteIfAllSkipped(c, cr)
 	return res, cr, res.text()
 }
 
-// noteIfAllSkipped records a FILTERED cell whose tests all SKIPPED. noteIfEmpty
-// cannot see this: a skip is a result, so `len(res.final) > 0` and it returns
-// early — which is precisely how G-01 survived. Two Metal groups printed PASS,
-// with their specific claim text, across at least two archived release logs while
-// executing zero tests, because every test in them skipped for want of
-// GOINFER_HEAVY_TESTS and `go test` exits 0 on an all-skip package.
-//
-// This is the gate's own rule applied to the gate: A SKIP IS NOT A PASS. It is a
-// note rather than a hard failure because a cell CAN legitimately be all-skip on
-// a box without the assets — but it must say so loudly, since the alternative is
-// a green that vouches for nothing.
+// noteIfAllSkipped records a FILTERED cell whose tests all SKIPPED, which noteIfEmpty cannot see (a skip
+// is a result, so len(res.final) > 0). `go test` exits 0 on an all-skip package, so without this the cell
+// reads as a PASS that ran nothing. The cell goes into vacuousCells, which verdict turns into a failure;
+// it is a note here rather than a hard failure only because a cell CAN be all-skip on a box without the
+// assets, and must then say so loudly.
 func (g *gpuGate) noteIfAllSkipped(c cell, cr cellResult) {
 	if c.Run == "" || cr.Pass != 0 || cr.Fail != 0 || cr.Skip == 0 {
 		return
@@ -210,12 +189,12 @@ func (g *gpuGate) noteIfAllSkipped(c cell, cr cellResult) {
 	g.vacuousCells = append(g.vacuousCells, fmt.Sprintf("%s (-run %q, %d skipped)", c.Name, c.Run, cr.Skip))
 }
 
-// noteIfEmpty records a FILTERED cell that matched no test at all. Split out from run so it can be
-// tested without spawning `go test`: pointing a cell at "./" from inside cmd/gate re-runs this very
-// suite, which re-runs the cell, and the first draft of that test sat for ten minutes.
+// noteIfEmpty records a FILTERED cell that matched no test at all. Split out from run so a test can drive
+// it without spawning `go test` (a cell pointed at "./" from inside cmd/gate re-runs this suite, which
+// re-runs the cell).
 //
-// An unfiltered cell is exempt — an empty -run means "everything", so emptiness there is a
-// different bug (no packages, or a build failure) that runCell's own policies already cover.
+// An unfiltered cell is exempt: an empty -run means "everything", so emptiness there is a different bug
+// (no packages, or a build failure) that runCell's own policies already cover.
 func (g *gpuGate) noteIfEmpty(c cell, res *results) {
 	if c.Run == "" || len(res.final) > 0 {
 		return
@@ -237,11 +216,9 @@ func (g *gpuGate) skipCensus(res *results, indent string) int {
 	return len(sk)
 }
 
-// evidence prints the lines a passing group offered as its own proof — the `ok <pkg> <secs>` line,
-// a lifecycle trajectory, a prefill's argmax comparison. The shell greps these out after a PASS and
-// they are part of the scope line, not decoration: "PASS metal suite" says a verdict, while
-// `ok github.com/…/metal 31.2s` says what actually ran and for how long. Acceptance (d) is that
-// whatever the script printed about what it validated, the runner prints too.
+// evidence prints the lines a passing group offered as its own proof: the `ok <pkg> <secs>` line, a
+// lifecycle trajectory, a prefill's argmax comparison. They are part of the scope line, not decoration:
+// "PASS metal suite" says a verdict, `ok github.com/…/metal 31.2s` says what ran and for how long.
 func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
 	for ln := range strings.SplitSeq(out, "\n") {
 		if re.MatchString(ln) {
@@ -252,13 +229,9 @@ func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
 
 var okLineRe = regexp.MustCompile(`^ok\s`)
 
-// failLineRe matches a test-level failure header. It deliberately does NOT match
-// bare `file.go:N:` lines: every passing t.Log emits one, and when this pattern
-// included them a crashed run reported a dozen `cosine=1.0000000 — PARITY` lines
-// as its "failure detail" while the actual SIGSEGV went unshown — the breadth
-// defeated detail()'s own crash fallback, which only fires when nothing matches.
-// Assertion lines are still shown, but only the ones BELOW a failing test (see
-// failureLines).
+// failLineRe matches a test-level failure header. It deliberately does NOT match bare `file.go:N:` lines:
+// every passing t.Log emits one, and that breadth defeats detail()'s crash fallback, which fires only when
+// nothing matches. Assertion lines are still shown, but only the ones below a failing test (failureLines).
 var failLineRe = regexp.MustCompile(`^(---|    ---) FAIL`)
 
 // assertionLineRe is a test's own `file.go:N: …` output. Shown only while inside
@@ -319,11 +292,9 @@ func crashExcerpt(out string) []string {
 	if start < 0 {
 		return nil
 	}
-	// The head (signal, address, goroutine) plus — crucially — the first frames
-	// belonging to OUR code. A fixed prefix does not reach them: the real Metal
-	// crash puts ~8 runtime/purego/reflect frames above the goinfer frame, so a
-	// 24-line cap truncated exactly before the test name, which is the one fact
-	// worth printing.
+	// The head (signal, address, goroutine) plus the first frames belonging to OUR code: a fixed prefix does
+	// not reach them (runtime/purego/reflect frames sit above the goinfer frame), and the test name is the one
+	// fact worth printing.
 	var head, ours []string
 	for _, ln := range lines[start:] {
 		if registerDumpRe.MatchString(ln) {
@@ -368,24 +339,15 @@ var adapterProbeRe = regexp.MustCompile(`ADAPTER_PROBE: backend=(\S+) software=(
 var adapterProbeNoneRe = regexp.MustCompile(`ADAPTER_PROBE: none`)
 
 // detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/adapter_probe_test.go's
-// TestAdapterProbe) — cmd/gate stays free of the gpu build tag and its cgo dependency, matching
-// detectBackend's nvidia-smi/uname style. Independent of detectBackend's cuda|metal|none choice on
-// purpose (G-09): a CUDA Linux box can ALSO have a working Vulkan adapter, and before this fix
-// nothing ever checked — the gate saw nvidia-smi, picked "cuda", and the WebGPU resident-parity
-// gates (qwen3.5 DeltaNet, granite/nemotron Mamba-2) ran only when a human remembered a private
-// env var. A software adapter (CI's lavapipe/llvmpipe) still counts as present: the group's own
-// tests already skip hardware-sensitive cases on one (newOrSkipHW), the same way a heavy tier's
-// tests self-skip on a missing checkpoint rather than the gate deciding for them.
+// TestAdapterProbe), so cmd/gate stays free of the gpu build tag and its cgo dependency. It is independent
+// of detectBackend's cuda|metal|none choice on purpose: a CUDA Linux box can also have a working Vulkan
+// adapter. A software adapter (CI's lavapipe/llvmpipe) counts as present: the group's own tests skip
+// hardware-sensitive cases on one (newOrSkipHW).
 //
-// V-21 (docs/review-2026-09-04.md): the subprocess's error was discarded and a REGEX MISS on the
-// success line was read as "no adapter" regardless of WHY it missed — a genuine "TestAdapterProbe
-// ran and found nothing" (which prints its OWN "ADAPTER_PROBE: none" line) looked identical to a
-// build break of ./gpu/, a panic, or any other reason the subprocess never reached that line at
-// all. An operator debugging "why didn't WebGPU get detected" saw "no adapter" and had no way to
-// tell a driver/hardware question from a build failure. w gets a visible note when the probe's
-// own output shows NEITHER recognized line — present/backend still resolve to false/"" either
-// way, because there is genuinely nothing to report as detected, but now it says so instead of
-// looking exactly like the hardware case.
+// A miss is not read as "no adapter" regardless of why: when the probe's output shows NEITHER recognized
+// line (found-adapter, or TestAdapterProbe's own "ADAPTER_PROBE: none"), w gets a visible note, so a
+// driver/hardware question is not mistaken for a build break of ./gpu/. present and backend still resolve
+// to false and "" in that case.
 func detectWebGPU(w io.Writer) (present bool, backend string) {
 	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
 		return false, ""
@@ -398,13 +360,9 @@ func detectWebGPU(w io.Writer) (present bool, backend string) {
 	return present, backend
 }
 
-// classifyAdapterProbe is detectWebGPU's pure classification of the probe subprocess's captured
-// output, pulled out so a test can drive it with synthetic output instead of needing a real
-// build break to reproduce (V-21, docs/review-2026-09-04.md). note is non-empty exactly when
-// out shows NEITHER the found-adapter line nor TestAdapterProbe's own explicit no-adapter line —
-// meaning the subprocess never reached either print, which is what a build break, a panic, or
-// any other reason the test body never ran looks like, as opposed to the test genuinely running
-// and finding nothing.
+// classifyAdapterProbe is detectWebGPU's pure classification of the probe's captured output, split out so
+// a test can drive it with synthetic output. note is non-empty exactly when out shows neither the
+// found-adapter line nor TestAdapterProbe's explicit no-adapter line, i.e. the test body never ran.
 func classifyAdapterProbe(out []byte, err error) (present bool, backend, note string) {
 	if m := adapterProbeRe.FindStringSubmatch(string(out)); m != nil {
 		return true, m[1], ""
@@ -422,13 +380,11 @@ func runGPU(w io.Writer, logDir string) int {
 	g.backend = detectBackend()
 	g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
 
-	// THE GROUPS DEFINE THEIR OWN ENVIRONMENT. Each group sets what it needs; nothing unsets them
-	// for the groups that must NOT have them, so an operator who exports one "to be helpful"
-	// silently changes what the other groups MEAN. Three consecutive red runs came from invoking
-	// the gate as `GOINFER_HEAVY_TESTS=1 bash scripts/gpu_gate.sh`, which pulled the real-model
-	// tests into the parity group as well: it then ran 608s against go's DEFAULT 600s timeout and
-	// failed with no assertion line at all. Neutralised, and REPORTED rather than silently ignored —
-	// an operator who set one deliberately must see that it did not take effect.
+	// THE GROUPS DEFINE THEIR OWN ENVIRONMENT. Each group sets what it needs, so an ambient value changes what
+	// the other groups MEAN: GOINFER_HEAVY_TESTS exported "to be helpful" pulls the real-model tests into the
+	// parity group, which then overruns go's default 600s timeout and fails with no assertion line. The
+	// variables are unset and REPORTED, not silently ignored: an operator who set one deliberately must see
+	// that it did not take effect.
 	for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {
 		if val := os.Getenv(v); val != "" {
 			fmt.Fprintf(w, "note: %s=%s was set in the calling environment — UNSET.\n", v, val)
@@ -446,11 +402,9 @@ func runGPU(w io.Writer, logDir string) int {
 	default:
 		g.expect = []string{"cleangpu", "seam", "suite", "webgpu", "repo"}
 	}
-	// G-09: WebGPU is independent of detectBackend's cuda|metal|none choice — a CUDA Linux box can
-	// ALSO have a working Vulkan adapter — so it is detected and declared unconditionally, not as a
-	// case of the primary-backend switch above. ALWAYS in g.expect (every branch, just added), so a
-	// box with no adapter reads as an explicit SKIP (below) rather than a silent omission — the same
-	// visibility the "no GPU backend" default case already gives the primary suites.
+	// WebGPU is detected and declared unconditionally, independent of the cuda|metal|none switch above (a CUDA
+	// box can also have a Vulkan adapter). It is in g.expect on every branch, so a box with no adapter reads
+	// as an explicit SKIP rather than a silent omission.
 	hasWebGPU, wgBackend := detectWebGPU(w)
 
 	prov := gatherProvenance(nil)
@@ -575,13 +529,9 @@ func (g *gpuGate) seam() {
 
 // ---- 2a. CUDA kernel-level suite ----
 //
-// The header used to read "CUDA kernels + parity" while running NEITHER the resident parity gates
-// NOR anything that asserts a forward. Every resident parity gate is behind `goinfer_testhooks`, so
-// for the whole of v0.10.x/v0.11.0 this block ran 53 kernel-level tests and the release record said
-// "full cuda suite" — while parity_manifest.json's shared_sets cover decoder/*.go ONLY, so deps_hash
-// could not go stale on resident.go either. A change to CUDA forward numerics had no enforced signal
-// anywhere in the gate. TWO groups now, because they answer different questions and one is not
-// evidence for the other (audit G-01: the artifact must not be adjacent to what it is read as).
+// This group asserts no forward: every resident parity gate is behind goinfer_testhooks and runs in 2b
+// (cudaParity). The two are separate groups because they answer different questions and one is not
+// evidence for the other; "the suite passed" must never be read as "the forward is gated".
 func (g *gpuGate) cudaSuite() {
 	g.grp("suite")
 	g.hdr("2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint)")
@@ -632,19 +582,15 @@ func (g *gpuGate) cudaParity() {
 	g.evidence(out, okLineRe)
 }
 
-// drainingTests derives the drain group FROM A MARKER rather than a list.
-//
-// The draining tests take the device to refusal, which is A13's only reproducible poisoning
-// stimulus, so they run in their OWN process after the main tier and an exhausted device cannot
-// reach anything else. `drainsDevice(t, why)` in cuda/drain_marker_test.go is the marker; this walks
-// the test files tracking the enclosing `func TestX` and returns X for each one that calls it. A
-// hand-kept -run list would be a constant restating a property — the same drift shape the census
-// denominators keep making visible.
+// drainingTests derives the drain group from a MARKER rather than a list: `drainsDevice(t, why)` in
+// cuda/drain_marker_test.go. Those tests take the device to refusal, so they run in their OWN process
+// after the main tier. markedTests walks the test files tracking the enclosing `func TestX`; a hand-kept
+// -run list would be a constant restating a property, and would drift.
 func drainingTests() []string { return markedTests("drainsDevice(t,") }
 
 // isolatedTests derives the fresh-process group from needsFreshProcess(t, why) in
-// cuda/isolated_marker_test.go, the same way: edge-of-card tests that fit in a fresh process and not
-// after a few hundred others (measured 2026-09-28, see the marker's comment).
+// cuda/isolated_marker_test.go, the same way: edge-of-card tests that fit in a fresh process and not after
+// a few hundred others (see the marker's comment).
 func isolatedTests() []string { return markedTests("needsFreshProcess(t,") }
 
 // markedTests returns every top-level test in cuda/*_test.go whose body calls marker.
@@ -673,12 +619,10 @@ func markedTests(marker string) []string {
 	return sortedSet(set)
 }
 
-// ---- 2c. heavy tier: the real-model group NOTHING has ever run ----
+// ---- 2c. heavy tier: the real-model group ----
 //
-// This tier existed and was never executed by anything: no script set the variable, so the tests
-// behind it were written, committed, and skipped forever. Declared here so it cannot quietly stop
-// running again, and TIMED into the verdict so its cost is visible up front rather than discovered
-// by someone waiting 28 minutes for a gate they thought took one.
+// Declared here so it cannot quietly stop running, and TIMED into the verdict so its cost is visible up
+// front rather than discovered by someone waiting on a gate they thought took minutes.
 func (g *gpuGate) cudaHeavy() {
 	g.grp("heavy")
 	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; measured 78 min on 2026-09-28)")
@@ -710,29 +654,11 @@ func (g *gpuGate) cudaHeavy() {
 	fmt.Fprintf(g.w, "        main group         %d test(s)   [complement, by construction]\n", total-len(drain))
 
 	fmt.Fprintf(g.w, "      streaming (one line per test):\n")
-	// TIMEOUT 90m, RAISED FROM 60m ON 2026-09-01 BECAUSE 60m HAD NO MARGIN LEFT.
-	// Two runs of this tier on the same box, the same day, at adjacent commits:
-	//
-	//	11:48 run   3320 s (55.3 min)   PASSED, by 4.7 min
-	//	13:48 run   3612 s (60.2 min)   PROCESS DIED — "panic: test timed out after 1h0m0s"
-	//
-	// Nothing about the tier changed between them; it simply drifted across the
-	// line. A timeout that close reports a HANG when what happened was a slow
-	// afternoon, and it reports it as a dead process with no test-level failure —
-	// the most expensive kind of red to diagnose, because the crash head names
-	// whichever test was merely unlucky enough to be running (TestSplitKVCrossover,
-	// 31 s in, entirely innocent).
-	//
-	// This is the same fragility the retired scripts/heavy_gate.sh hit and fixed by
-	// going to 120m — measured there as "the decoder tier loads ~15+ big real
-	// checkpoints sequentially and needs ~50-60 min". cmd/gate did not inherit that
-	// lesson when it replaced the script. 90m is ~50% headroom over the observed
-	// 60.2 min, which is enough for drift without letting a genuine hang sit for
-	// two hours.
-	//
-	// 120m SINCE 2026-09-28: the tier measured 4,699 s (78 min) that day, 12 min under 90m — the
-	// no-margin state the note above describes. The fresh-process tests below moved ~15 min out of
-	// this process at the same time, so 120m is headroom, not a new expectation.
+	// The timeout needs real headroom over the tier's observed wall (the group header states the last
+	// measured one). A timeout that close to the wall reports a dead process with no test-level failure, and
+	// the crash head names whichever test was merely running: the most expensive red to diagnose. Do not lower
+	// it without re-measuring; the fresh-process tests below moved their share of the wall out of this process.
+	// History and the measurements: docs/code-notes/cmd-gate.md, "cudaHeavy: main-tier timeout".
 	mainRes, mainCR, mainOut := g.run(cell{
 		Name: "cuda-heavy", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
 		Serial: true, Timeout: "120m",
@@ -811,9 +737,8 @@ func (g *gpuGate) cudaHeavy() {
 		g.evidence(mainOut, okLineRe)
 	} else {
 		g.bad("heavy tier (real models) — %ds", secs)
-		// Name the failing TESTS first, then their assertion lines. Never a bare "file.go:N:" match,
-		// which under -v is every log line in the run — the filter copied from the non-verbose
-		// groups matched everything and `head` truncated the actual "--- FAIL" away.
+		// Name the failing TESTS first, then their assertion lines. Never a bare "file.go:N:" match, which under
+		// -v is every log line in the run.
 		g.detail(mainOut, failTestRe)
 		fmt.Fprintf(g.w, "      full output: %s\n", mainCR.LogPath)
 	}
@@ -829,11 +754,10 @@ func (g *gpuGate) cudaHeavy() {
 
 // ---- 2d. CUDA graphs bit-exactness, FORCED ----
 //
-// SEPARATE AND LABELLED, deliberately. admitGraphs declines under DEFAULT compute mode without MPS,
-// which is correct production behaviour and must stay that way — so on this box the graph
-// capture/replay path is never exercised at all. Forcing it here tests the CODE without changing the
-// admission POLICY. Keeping it out of 2b matters: a forced result must never be read as evidence
-// that graphs are admitted in production (audit G-01).
+// Separate and labelled, deliberately. admitGraphs declines under DEFAULT compute mode without MPS, which
+// is correct production behaviour and must stay, so on this box capture/replay is otherwise never
+// exercised. Forcing it tests the CODE without changing the admission POLICY. Keep it out of 2b: a forced
+// result must never be read as evidence that graphs are admitted in production.
 func (g *gpuGate) cudaGraphsForced() {
 	g.grp("graphsforced")
 	g.hdr("2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1)")
@@ -863,10 +787,9 @@ func (g *gpuGate) cudaGraphsForced() {
 func (g *gpuGate) cudaCgoFree() {
 	g.grp("cgofree")
 	g.hdr("3. cgo-free (the whole premise — verify, never assume)")
-	// Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve has been a DELIBERATE compile error
-	// under -tags cuda since v0.10.0 (the root command builds no backend, and failing loudly beats
-	// silently producing a CPU-only binary named as though it had CUDA). This check pointed at the
-	// root command for that entire period, so it could not pass — see audit G-01.
+	// Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve is a DELIBERATE compile error under -tags cuda
+	// (it builds no backend, and failing loudly beats a CPU-only binary named as though it had CUDA), so a
+	// check pointed at it could never pass.
 	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
 	build := exec.Command("go", "build", "-tags", "cuda", "-o", bin, "./cmd/serve")
 	build.Dir = "cuda"
@@ -899,23 +822,18 @@ func (g *gpuGate) cudaCgoFree() {
 
 // ---- 4. PTX reproduces from source, each at the NVRTC it records ----
 //
-// INTEGRITY: this block must ALWAYS reach pass/fail/skip. An earlier shell revision died on a bash
-// error midway and the gate still reported PASS — a check that can neither pass nor fail is the same
-// defect as one that can only fail (audit G-01). In Go the block cannot exit early without
-// returning, and the group reconciliation at the end catches it if it ever does.
+// This block must ALWAYS reach pass/fail/skip: a check that can neither pass nor fail is the same defect
+// as one that can only fail. In Go it cannot exit early without returning, and the group reconciliation
+// in verdict catches it if it ever does.
 //
-// Every .ptx states the toolchain that produced it in its own header:
+// Every .ptx states the toolchain that produced it in its own header
+// (`// Cuda compilation tools, release 12.6, V12.6.85`). That provenance is what we rebuild against, NOT
+// whatever NVRTC this box defaults to: the tree legitimately carries a MIX (kernels added after a
+// toolchain bump were built at the newer one, and the audited ones are pinned), so a single-toolchain
+// rebuild reports a false FAIL on every file from the other era.
 //
-//	// Cuda compilation tools, release 12.6, V12.6.85
-//
-// That is the artifact's provenance, and it is what we rebuild against — NOT whatever NVRTC this box
-// happens to default to. The tree legitimately carries a MIX (kernels added after a toolchain bump
-// were built at the newer one, and the audited ones are deliberately pinned), so a single-toolchain
-// rebuild reports a false FAIL on every file from the other era. That is what made this check
-// unpassable for the whole of v0.10.x/v0.11.0.
-//
-// NOTHING IS EXEMPTED BY NAME. A file is only skipped when the NVRTC version IT RECORDS is not
-// installed here, and the skip names the version so it is actionable.
+// NOTHING IS EXEMPTED BY NAME. A file is skipped only when the NVRTC version IT RECORDS is not installed
+// here, and the skip names the version so it is actionable.
 var ptxVersionRe = regexp.MustCompile(`Cuda compilation tools, release [0-9.]*, V([0-9.]*)`)
 
 func recordedNVRTC(path string) string {
@@ -1077,9 +995,9 @@ func (g *gpuGate) cudaPTX() {
 		g.ran++
 		g.bad("%d PTX differ from their committed form — the shipped kernels do not match their .cu", diff)
 	default:
-		// Zero artifacts verified is not a pass with a footnote (audit-2026-09-10 G-09). The
-		// device-free TestPTX_matchesSourcesAndBindings still guards kernel names and signatures,
-		// but this group exists to prove byte-identity, and here it proved nothing.
+		// Zero artifacts verified is not a pass with a footnote. The device-free
+		// TestPTX_matchesSourcesAndBindings still guards kernel names and signatures, but this group exists to
+		// prove byte-identity, and here it proved nothing.
 		g.ran++
 		g.bad("PTX reproducibility: no usable NVRTC for any recorded version — zero of %d artifacts verified", total)
 	}
@@ -1111,14 +1029,9 @@ func (g *gpuGate) metalCgoFree() {
 	g.grp("cgofree")
 	g.hdr("3. cgo-free")
 	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
-	// G-03: build the METAL submodule entrypoint, not the root one. Without
-	// `build.Dir` this compiled ./cmd/serve from the repo root -- a binary that
-	// imports no Metal code at all, as cmd/serve/backendtag_guard_metal.go says in
-	// so many words ("`-tags metal` does nothing on the root cmd/serve since
-	// v0.10.0 (it builds no backend)"). It therefore built fine forever and the
-	// group asserted "Metal is dlopen'd via purego-objc" about a binary with no
-	// Metal in it. The CUDA half of this was fixed at d2c4858 (build.Dir = "cuda");
-	// this half was not, so the gate has been passing on the wrong artifact.
+	// Build the METAL submodule entrypoint (build.Dir), not the root one: the root ./cmd/serve builds no
+	// backend (cmd/serve/backendtag_guard_metal.go says so), so building it would succeed forever and the
+	// group would assert "Metal is dlopen'd via purego-objc" about a binary with no Metal in it.
 	build := exec.Command("go", "build", "-o", bin, "./cmd/serve")
 	build.Dir = "metal"
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
@@ -1151,28 +1064,20 @@ func (g *gpuGate) metalCgoFree() {
 	g.ok("metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)")
 }
 
-// ---- Metal resident PARITY gates — the forward is asserted here ----
+// ---- Metal resident PARITY gates: the forward is asserted here ----
 //
-// G-02: no Metal cell passed `-tags goinfer_testhooks`, so the ritual's "full
-// metal suite" was the kernel tier plus the snapshot golden, and 59 files / 64
-// test funcs -- every Metal resident-parity gate among them -- were never
-// COMPILED, let alone run. RELEASING.md said the Metal run vouches for G10 and
-// G11; neither was built by the command it named. This is the hole cudaParity
-// describes closing for CUDA, mirrored.
-//
-// Filtered to the resident-parity gates rather than the whole tagged tree: the
-// tag also selects long device tests that belong to other groups, and a cell
-// that quietly runs everything is how a timeout becomes indistinguishable from a
-// crash. -timeout is declared for the same reason cudaParity declares it.
+// The Metal mirror of cudaParity. Without -tags goinfer_testhooks the "full metal suite" is the kernel
+// tier plus the snapshot golden, and no resident-parity gate is even compiled. The cell is filtered to
+// the resident-parity gates (metalParityRun) rather than the whole tagged tree: the tag also selects long
+// device tests that belong to other groups, and a cell that quietly runs everything makes a timeout
+// indistinguishable from a crash. -timeout is declared for the same reason cudaParity declares it.
 func (g *gpuGate) metalParity() {
 	g.grp("parity")
 	g.hdr("2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)")
 	_, cr, out := g.run(cell{
 		Name: "metal-parity", Pkgs: []string{"./metal/"}, Tags: []string{"goinfer_testhooks"},
-		// metalParityRun (parity.go): named so this cell and
-		// TestMetalGateIsListedOrExplicitlyNotRequired read the same string (V-07,
-		// docs/review-2026-09-04.md) — a hand-copied pattern here is exactly how KernelParity/
-		// metalParity/residentIdxParity went unmatched despite being gate-shaped.
+		// metalParityRun (parity.go) is named so this cell and TestMetalGateIsListedOrExplicitlyNotRequired read
+		// the same string; a hand-copied pattern here is how gate-shaped tests go unmatched.
 		Run:     metalParityRun,
 		Serial:  true,
 		Timeout: "20m",
@@ -1193,10 +1098,9 @@ func (g *gpuGate) metalModel() string {
 	return filepath.Join(home(), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 }
 
-// Metal HAD the same hole CUDA did — Close() froze a channel and freed nothing, leaking ~267 MB per
-// Load+Close on a 0.5B (aacec89). These run WITHOUT -short (the suite above uses it) because they
-// load real models, and they cover BOTH conditions: the sequential sawtooth, and a second model
-// alive — the case that made CUDA's first fix look correct when it was not.
+// metalLifecycle gates Close() actually freeing memory on Metal. It runs WITHOUT -short (the suite uses it)
+// because it loads real models, and covers both conditions: the sequential sawtooth, and a second model
+// alive, the case that made CUDA's first fix look correct when it was not.
 func (g *gpuGate) metalLifecycle() {
 	g.grp("lifecycle")
 	g.hdr("4. lifecycle")
@@ -1208,12 +1112,9 @@ func (g *gpuGate) metalLifecycle() {
 	_, cr, out := g.run(cell{
 		Name: "metal-lifecycle", Pkgs: []string{"./metal/"},
 		Run: "TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive",
-		// G-01: all four tests in the two Metal cells call requireHeavyModel, and
-		// the gate deliberately UNSETS GOINFER_HEAVY_TESTS above so no ambient
-		// value can change what a group means. The cells therefore have to set it
-		// themselves, exactly as cuda-heavy does -- without it every test skips,
-		// `go test` exits 0, and the group printed PASS while running nothing.
-		// Measured 2026-09-01: skip/skip in 0.4 s before, pass/pass in 27 s after.
+		// The cell sets GOINFER_HEAVY_TESTS itself: its tests call requireHeavyModel and the gate unsets the
+		// ambient value (see runGPU), so without it every test skips, `go test` exits 0 and the group would print
+		// PASS while running nothing.
 		Env: map[string]string{"GOINFER_HEAVY_TESTS": "1"},
 	}, false)
 	if cr.RC != 0 || cr.vacuous() {
@@ -1226,11 +1127,9 @@ func (g *gpuGate) metalLifecycle() {
 	g.evidence(out, regexp.MustCompile(`trajectory|A\+B alive`))
 }
 
-// The newest bug that maps to this doctrine. PrefillLast — the f16 simdgroup_matrix TTFT path —
-// emitted NaN logits at EVERY prompt length (including the minimal single-tile M=8) after the LM
-// head was pinned to int8: prefill still ran the int8 head weights through the int4 gemm_w4f16,
-// misreading them as packed nibbles (19ef47d). It hit the DENSE control, a model Metal ships.
-// Nothing exercised it against a real checkpoint until a hand-run, so it was invisible on push.
+// metalPrefill gates PrefillLast, the f16 simdgroup_matrix TTFT path, against a real checkpoint: it is a
+// shipped path that once emitted NaN logits at every prompt length (the int8 LM head was read as packed
+// int4), and nothing else exercises it on real weights.
 func (g *gpuGate) metalPrefill() {
 	g.grp("prefill")
 	g.hdr("4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN)")
@@ -1242,14 +1141,11 @@ func (g *gpuGate) metalPrefill() {
 	_, cr, out := g.run(cell{
 		Name: "metal-prefill", Pkgs: []string{"./metal/"},
 		Run: "TestPrefillParity|TestPrefillNoNaN",
-		// GOINFER_HEAVY_TESTS for the same reason as metal-lifecycle above (G-01).
+		// GOINFER_HEAVY_TESTS for the same reason as metal-lifecycle above.
 		Env: map[string]string{"GOINFER_METAL_MODEL": m, "GOINFER_HEAVY_TESTS": "1"},
 	}, false)
-	// V-21 (docs/review-2026-09-04.md): the sibling cells above (metal-parity, metal-lifecycle)
-	// already check cr.vacuous() alongside cr.RC != 0 — a cell whose named tests ALL skipped
-	// (Pass==0 && Fail==0 && Skip>0, e.g. TestPrefillParity/TestPrefillNoNaN both declining for a
-	// reason unrelated to "the gate needs a checkpoint," which os.Stat above already handles) has
-	// RC==0 and would otherwise print PASS despite verifying nothing. This one lacked the check.
+	// A cell whose named tests ALL skipped has RC==0 and would print PASS while verifying nothing, so check
+	// cr.vacuous() as the sibling cells do.
 	if cr.RC != 0 || cr.vacuous() {
 		g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model, " +
 			"or every test in it skipped and verified nothing")
@@ -1261,15 +1157,11 @@ func (g *gpuGate) metalPrefill() {
 	g.evidence(out, regexp.MustCompile(`argmax matches|faster TTFT`))
 }
 
-// ---- 5. repo hygiene: run what CI runs, DERIVED rather than duplicated (B0) ----
+// ---- W. WebGPU: adapter-independent of the primary backend ----
 //
-// ---- W. WebGPU: adapter-independent of the primary backend (audit G-09) ----
-//
-// Before this, the gate never ran ./gpu/ at all on a CUDA or "none" box (only on darwin, and even
-// then only by accident of detectBackend never being asked about WebGPU), and the resident-parity
-// gates it DOES have — qwen3.5 DeltaNet, granite/nemotron Mamba-2 — required a human to remember
-// GOINFER_DNET_PARITY / GOINFER_SSM_PARITY. This group sets both itself, the same way every other
-// group here sets what it needs (see runGPU's header comment on that rule).
+// Runs ./gpu/ whenever an adapter is detected, whatever the primary backend. The resident-parity gates
+// (qwen3.5 DeltaNet, granite/nemotron Mamba-2) need GOINFER_DNET_PARITY / GOINFER_SSM_PARITY; this group
+// sets both itself, like every group here (see runGPU's rule on the environment).
 func (g *gpuGate) webgpu(present bool, backend string) {
 	g.grp("webgpu")
 	g.hdr("W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks')")
@@ -1290,21 +1182,12 @@ func (g *gpuGate) webgpu(present bool, backend string) {
 	g.ok("webgpu suite (backend=%s)", backend)
 	g.evidence(out, okLineRe)
 
-	// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture
-	// (dense AND MoE) has its model.safetensors gitignored — only config.json is tracked — same
-	// as the granite/nemotron Mamba-2 fixtures; all skip gracefully when absent (their own tests
-	// stat the weights file, not the directory).
-	//
-	// V-06 (docs/review-2026-09-04.md): this comment used to claim the dense qwen3.5 fixture WAS
-	// tracked, "so this has real coverage on every clone" — wrong, and it hid a real bug: on a
-	// clone without the fixtures, TestQwen35ResidentParity's two t.Run subtests both skip, and Go
-	// reports a parent whose subtests ALL skipped as a top-level PASS, not SKIP. This cell counts
-	// top-level results only (TopLevelOnly: true, gpu.go's gateConfig above), so that vacuous pass
-	// registered as Pass=1 and made cr.vacuous() (Pass==0 && Fail==0 && Skip>0) false — a webgpu
-	// forward could be broken with nothing ever forwarded here and this cell would still print
-	// PASS. Fixed at the source: TestQwen35ResidentParity now tracks each subtest's own
-	// t.Skipped() and skips itself when none of them ran, so the tally sees a real Skip instead of
-	// a vacuous Pass.
+	// The resident-parity gates. The qwen3.5 fixtures (dense and MoE) and the granite/nemotron Mamba-2
+	// fixtures have model.safetensors gitignored (only config.json is tracked), so on a clone without them
+	// the tests skip; do not describe them as tracked. This cell counts top-level results only (TopLevelOnly),
+	// and Go reports a parent whose subtests ALL skipped as a top-level PASS, which would make cr.vacuous()
+	// false. TestQwen35ResidentParity therefore skips itself when none of its subtests ran, so the tally sees a
+	// real Skip.
 	_, cr2, out2 := g.run(cell{
 		Name: "webgpu-parity", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu", "goinfer_testhooks"},
 		Run:     webgpuParityRun, // parity.go; checked by TestWebGPUGateIsListedOrExplicitlyNotRequired (G-10)
@@ -1322,21 +1205,15 @@ func (g *gpuGate) webgpu(present bool, backend string) {
 	g.evidence(out2, okLineRe)
 }
 
-// This block used to run `gofmt -l .` and `go vet ./decoder/ ./cmd/...` — a hand-written list that
-// was a strict SUBSET of CI's: no staticcheck at all, vet without the goinfer_testhooks tag and over
-// narrower packages, no build. So CI went red on `staticcheck -tags cuda` and stayed red for three
-// commits, and running this gate — the thing you run INSTEAD of remembering — would not have caught
-// it either. Adding staticcheck would fix the instance and leave the class open: the next check CI
-// gains reopens the gap. So the list is DERIVED from .github/workflows/ci.yml by ci_checks.py, and a
-// check CI adds appears here with no edit to this file.
+// repoHygiene runs the checks CI runs, DERIVED from .github/workflows/ci.yml by scripts/ci_checks.py
+// rather than listed by hand, so a check CI gains appears here with no edit to this file. A hand-written
+// list is a subset of CI's, and CI then goes red on something this gate passed.
 func (g *gpuGate) repoHygiene() {
 	g.grp("repo")
 	g.hdr("5. repo hygiene (derived from .github/workflows/ci.yml)")
 
-	// The queue's citations, commit AND path:line. A state document is cited without being
-	// re-derived, so a wrong reference in it propagates with more confidence than the same error in
-	// conversation — 9e5f8fa was cited several times, from the file, without anyone opening it, and
-	// cuda/resident.go:244 kept an audit critical listed as open for weeks after it was fixed.
+	// The queue's citations, commit AND path:line: a state document is cited without being re-derived, so a
+	// wrong reference in it propagates with more confidence than the same error in conversation.
 	lint := exec.Command("python3", "scripts/queue_citation_lint.py")
 	lintOut, lintErr := lint.CombinedOutput()
 	if lintErr == nil {
@@ -1422,11 +1299,10 @@ func (g *gpuGate) repoHygiene() {
 	}
 }
 
-// withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck v0.8.1, built by .github/actions/staticcheck) with `go
-// install` and then calls them by bare name, which works there because setup-go puts GOPATH/bin on PATH.
-// A developer shell need not, and on nobara it did not: the gate reported "staticcheck: command not
-// found" as two failed CI checks (2026-09-28) while the pinned binary sat in ~/go/bin. Prepending the
-// same directory reproduces CI's environment; a missing binary still fails, now with the install hint.
+// withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck, built by
+// .github/actions/staticcheck) with `go install` and calls them by bare name, which works there because
+// setup-go puts GOPATH/bin on PATH; a developer shell need not. Prepending the same directory reproduces
+// CI's environment; a missing binary still fails, now with the install hint.
 func withGoBin(env []string) []string {
 	out, err := exec.Command("go", "env", "GOPATH").Output()
 	gp := strings.TrimSpace(string(out))
@@ -1457,10 +1333,8 @@ func unescapeCI(s string) string {
 
 // ---- 6. group reconciliation + verdict ----
 func (g *gpuGate) verdict() int {
-	// The generalisation of the per-block guard. A block that dies mid-way emits nothing, and a
-	// tally computed from what emitted cannot see the hole — "ran 3" and "ran 4" are both
-	// plausible-looking numbers. Reconciling against the DECLARED set is what makes silence
-	// detectable (audit G-01).
+	// Reconcile against the DECLARED group set: a block that dies mid-way emits nothing, and a tally computed
+	// from what emitted cannot see the hole.
 	g.cur = "" // reconciliation failures belong to no group
 	declared := map[string]bool{}
 	for _, e := range g.expect {
@@ -1487,8 +1361,7 @@ func (g *gpuGate) verdict() int {
 	}
 
 	g.hdr("verdict")
-	// ONE UNIT: check groups. "6 declared / 4 ran" previously sat next to an unrelated count and a
-	// reader deciding whether to ship could not tell at a glance whether something was missing.
+	// ONE UNIT: check groups, so a reader deciding whether to ship sees at a glance whether one is missing.
 	fmt.Fprintf(g.w, "  check groups: %d declared -> %d reported   |   verdicts within them: %d pass, %d skip, %d fail\n",
 		len(g.expect), len(g.emitted), g.pass, g.skipped, g.fail)
 	// The release record turns on this distinction: "the suite passed" is NOT "the forward is
@@ -1517,13 +1390,9 @@ func (g *gpuGate) verdict() int {
 		fmt.Fprintf(g.w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
 		return 1
 	}
-	// A FILTERED CELL WHOSE TESTS ALL SKIPPED IS THE SAME CLASS AS AN EMPTY ONE:
-	// coverage the verdict is vouching for did not run. It is separate from
-	// emptyCells because the failure LOOKS different -- the tests exist and were
-	// selected, they simply all opted out -- and because `go test` exits 0 on an
-	// all-skip package, so nothing upstream notices. This is G-01: two Metal
-	// groups printed PASS with their specific claim text across at least two
-	// archived release logs while executing nothing.
+	// A FILTERED CELL WHOSE TESTS ALL SKIPPED IS THE SAME CLASS AS AN EMPTY ONE: coverage the verdict vouches
+	// for did not run. It is separate from emptyCells because the tests exist and were selected, they all
+	// opted out, and `go test` exits 0 on an all-skip package, so nothing upstream notices.
 	if len(g.vacuousCells) > 0 {
 		fmt.Fprintf(g.w, "\n  %sVACUOUS CELL(S)%s — every test skipped, so the PASS above vouches for nothing:\n", red, off)
 		for _, c := range g.vacuousCells {
@@ -1553,14 +1422,10 @@ func (g *gpuGate) verdict() int {
 		fmt.Fprintf(g.w, "\n  %sFAIL%s — %s on %s @ %s%s. Do not tag.\n", red, off, g.backend, host, g.commit, d)
 		return 1
 	}
-	// THREE STATES, NOT TWO. Every check is green here. A dirty tree is not a failure of the CHECKS
-	// — it is a failure of PROVENANCE: this verdict names a commit, and an uncommitted edit means it
-	// does not describe what that commit contains. Collapsing the two loses the distinction a reader
-	// actually needs: is the CODE broken, or is the EVIDENCE broken? It used to print
-	// "repo <sha>+dirty" in the provenance block and then PASS as normal — so the gate could emit a
-	// verdict reading "PASS at <sha>" for a tree that is not <sha>, with the whole distinction
-	// carried by a three-character suffix in a different block. Verdicts get pasted into tag
-	// messages; that is what this gate is FOR.
+	// THREE STATES, NOT TWO. Every check is green here, but a dirty tree is a failure of PROVENANCE, not of
+	// the checks: the verdict names a commit, and an uncommitted edit means it does not describe what that
+	// commit contains. Collapsing the two loses the distinction a reader needs (is the CODE broken, or the
+	// EVIDENCE?). Verdicts get pasted into tag messages, which is what this gate is for.
 	if g.dirty {
 		fmt.Fprintf(g.w, "\n  %sINCONCLUSIVE%s — %d/%d groups green, but the working tree is DIRTY.\n",
 			amber, off, len(g.expect), len(g.expect))

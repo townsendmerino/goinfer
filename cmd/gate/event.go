@@ -1,31 +1,23 @@
-// Package main implements `gate` — one runner over `go test -json` for the tallying
-// gates and censuses that used to be six separate shell/Python scripts (QUEUE E8).
+// Package main implements `gate`: one runner over `go test -json` for the tallying gates and censuses.
+// Each gate runs `go test -json` over a matrix of package × family × quant × build-tag, tallies
+// PASS/SKIP/FAIL with SKIPs bucketed by reason, and applies a decision. They differ only in WHICH matrix
+// and WHICH decision, so the matrix and the decision are config and the tallying core is written once,
+// here.
 //
-// THE INSIGHT E8 IS BUILT ON. Three shell gates (parity_sweep, gpu_gate, heavy_gate) and
-// three Python censuses (skip_census, sweep_composition, selector_coverage) are one program
-// wearing six hats: each runs `go test -json` over a matrix of package × family × quant ×
-// build-tag, tallies PASS/SKIP/FAIL with SKIPs bucketed by reason, and applies a decision.
-// They differ only in WHICH matrix and WHICH decision. So the matrix and the decision become
-// config; the tallying core is written once, here.
+// Why Go rather than shell:
 //
-// WHY GO IS STRICTLY BETTER HERE, not merely same-language:
+//   - Running every cell and keeping every exit code is the natural shape of the code, not a restraint. A
+//     shell gate omits `set -e` deliberately (it aborts on the first failure and loses the count), a
+//     discipline you must remember not to "fix".
+//   - os/exec hands back each subprocess's exit code directly.
+//   - A missing tool is an error to handle (exec.LookPath), not a silent skip (`command -v tool && tool`
+//     passes when the tool is absent); "assets absent → refuse a verdict" lives in code that cannot fail
+//     open.
+//   - The tally consumes events instead of scraping text, which a grep gets right only as long as nothing
+//     else in the stream starts a line that way.
 //
-//   - The `-e`/tally tension disappears. The shell gates omit `set -e` deliberately — running
-//     N cells and tallying is the whole point, and `-e` aborts on the first failure and loses
-//     the count — which is a discipline you must remember not to "fix". Here, running every
-//     cell and keeping every exit code is the natural shape of the code, not a restraint.
-//   - PIPESTATUS capture vanishes: os/exec hands back each subprocess's code directly.
-//   - The silent-skip anti-pattern cannot recur. `command -v tool && tool` PASSES when the
-//     tool is absent; exec.LookPath returning not-found is an error you must handle. Same for
-//     asset detection: "assets absent → refuse a verdict" is a decision, and it lives in code
-//     that cannot fail open.
-//   - The tallying layer stops SCRAPING TEXT and starts consuming events. skip_census.py had
-//     already made this move ("a reader, not a parser"); the shell gates had not — heavy_gate
-//     counted `grep -cE '^--- PASS: '`, which is correct only as long as nothing else in the
-//     stream starts a line that way.
-//
-// It orchestrates `go test`; it does not reimplement it. Stdlib only — per E7's constraint,
-// a consumer's module graph must not grow because a gate changed language.
+// It orchestrates `go test`; it does not reimplement it. Stdlib only: a consumer's module graph must not
+// grow because a gate changed language.
 package main
 
 import (
@@ -49,27 +41,19 @@ type testEvent struct {
 	Elapsed float64 `json:"Elapsed"`
 }
 
-// testKey identifies one test result.
-//
-// ALL THREE FIELDS ARE LOAD-BEARING, and the third was added because a mutation test caught its
-// absence. Package is in the key because the same test NAME legitimately exists in several
-// packages. Cell is in the key because a matrix legitimately runs the SAME package AND test more
-// than once — parity_sweep and gpu_gate run one package under several tag/quant combinations,
-// which is the entire point of a matrix. Keying on (Pkg, Test) alone let a later cell overwrite an
-// earlier one, so N runs of a test reported as one: an UNDERCOUNT that still printed a confident
-// verdict, which is the failure shape this program exists to eliminate.
+// testKey identifies one test result. All three fields are load-bearing: Package, because the same test
+// NAME legitimately exists in several packages; Cell, because a matrix runs the SAME package and test more
+// than once under different tag/quant combinations. Keying on (Pkg, Test) alone lets a later cell
+// overwrite an earlier one, so N runs report as one: an undercount that still prints a confident verdict.
 type testKey struct {
 	Cell string
 	Pkg  string
 	Test string
 }
 
-// results is the accumulated view of one or more `go test -json` streams.
-//
-// Every field here exists because some gate's verdict reads it, and the union is smaller than
-// the six scripts suggested: a terminal action per test, that test's output (for the skip
-// reason), and the PACKAGE-level events — which are how a build error or a native crash shows
-// up at all, since a package that dies before running a test emits no per-test failure.
+// results is the accumulated view of one or more `go test -json` streams: a terminal action per test,
+// that test's output (for the skip reason), and the PACKAGE-level events, which are how a build error or a
+// native crash shows up at all, since a package that dies before running a test emits no per-test failure.
 type results struct {
 	final map[testKey]string   // last terminal action per test: pass | fail | skip
 	out   map[testKey][]string // that test's output lines, for reason extraction
@@ -87,24 +71,18 @@ type results struct {
 	// maps, so reading them would be a data race. These two are the only things it reads.
 	liveDone atomic.Int64
 	liveLast atomic.Value // string — the most recent test to reach a terminal action
-	// liveRun holds the tests that have started and not yet finished, keyed by name, valued by
-	// start time. "Last finished" alone cannot answer the question a stalled run actually raises:
-	// during the v0.15.0 sweep the count sat at 430 for four minutes while the line kept naming a
-	// test that had already completed, which says nothing about what is holding the cell up.
-	// sync.Map for the same reason the two atomics above exist — the heartbeat goroutine reads
-	// this while consume() writes it.
+	// liveRun holds the tests that have started and not yet finished, keyed by name, valued by start time.
+	// "Last finished" alone cannot say what is holding a stalled cell up: it keeps naming a test that already
+	// completed. sync.Map for the same reason as the atomics above.
 	liveRun sync.Map // string -> time.Time
 
-	// outAll is every output line in stream order — the reconstruction of what `go test -v` would
-	// have printed. The GPU gate's failure explainer needs it: a run killed by a signal, an OOM or a
-	// timeout emits neither a "--- FAIL" line nor a "file.go:N:" line, only "FAIL <pkg> <secs>", so
-	// a filter over structured results alone would report an EMPTY explanation for exactly the
-	// failures that are hardest to reproduce.
+	// outAll is every output line in stream order, the reconstruction of what `go test -v` would have
+	// printed. The GPU gate's failure explainer needs it: a run killed by a signal, an OOM or a timeout emits
+	// neither a "--- FAIL" line nor a "file.go:N:" line, only "FAIL <pkg> <secs>".
 	outAll []string
 
-	// stream, when set, is called for each terminal test result as it arrives. Liveness is
-	// load-bearing for a 28-minute group: buffering means a running tier and a HUNG one produce
-	// byte-identical output (none), so progress has to be visible as it happens.
+	// stream, when set, is called for each terminal test result as it arrives. Without it a running tier and a
+	// HUNG one produce byte-identical output (none).
 	stream func(pkg, test, action string)
 
 	// parityRows are `PARITY_ROW {json}` lines in stream order. The real-oracle gates emit them
@@ -113,8 +91,8 @@ type results struct {
 	// than by re-grepping a log, which is the whole point of consuming events.
 	parityRows []string
 
-	// runLines counts top-level `=== RUN` lines. heavy_gate reported this next to its tally so
-	// that "0 passed" could be told apart from "0 attempted", which are different bugs.
+	// runLines counts `=== RUN` lines (see noteOutput for the unit), so "0 passed" can be told apart from
+	// "0 attempted", which are different bugs.
 	runLines int
 }
 
@@ -190,13 +168,11 @@ func (r *results) add(ev testEvent) {
 
 // noteOutput folds one output line into the stream-wide accumulators.
 //
-// runLines counts EVERY `=== RUN` line, top-level and subtest alike. That is deliberate and it is
-// not the same unit as the skip count beside it: go test does NOT indent a subtest's `=== RUN` line
-// (only its `--- PASS` result line is indented), so the shell gate's `grep -cE '^=== RUN'` counted
-// subtests while its `grep -cE '^--- SKIP'` did not. The pair "ran 238 tests, skipped 22" therefore
-// mixes units — 238 tests-and-subtests started against 22 top-level skips. Reproduced exactly,
-// because E8 changes the substrate and not what a gate reports; flagged in
-// docs/completed/task-gate-runner.md §10 as a number that should probably say which unit it is in.
+// runLines counts EVERY `=== RUN` line, top-level and subtest alike, which is not the same unit as the
+// top-level skip count beside it: go test does NOT indent a subtest's `=== RUN` line (only its `--- PASS`
+// result line is indented). A pair like "ran 238 tests, skipped 22" therefore mixes units (tests and
+// subtests started against top-level skips); anyone quoting it should say which unit it is in
+// (docs/completed/task-gate-runner.md §10).
 func (r *results) noteOutput(out string) {
 	if strings.HasPrefix(out, "=== RUN ") {
 		r.runLines++
@@ -211,13 +187,11 @@ func (r *results) noteParityRow(out string) {
 	}
 }
 
-// lookupTop returns the LAST terminal action recorded for a TOP-LEVEL test of this exact name,
-// across every cell and package, and whether it was seen at all.
-//
-// "Last" and "exact" both reproduce `grep -E "^--- (PASS|FAIL|SKIP): NAME \(" | tail -1`: the sweep
-// runs some gates twice (the plain cell and the realckpt cell), and the trailing `(` in that grep is
-// what stops TestFoo from matching TestFooBar. Not-seen is a FOURTH outcome, not a flavour of skip —
-// a required gate that never ran is the one case where the sweep learned nothing at all.
+// lookupTop returns the LAST terminal action recorded for a TOP-LEVEL test of this exact name, across
+// every cell and package, and whether it was seen at all. "Last" because the sweep runs some gates twice
+// (the plain cell and the realckpt cell); "exact" so TestFoo does not match TestFooBar. Not-seen is a
+// FOURTH outcome, not a flavour of skip: a required gate that never ran is the one case where the sweep
+// learned nothing at all.
 func (r *results) lookupTop(name string) (string, bool) {
 	act, found := "", false
 	for _, k := range r.order {
@@ -238,14 +212,9 @@ func (r *results) noteOrder(key testKey) {
 	r.order = append(r.order, key)
 }
 
-// isSubtest reports whether the key names a subtest (`TestFoo/case`) rather than a top-level test.
-//
-// THIS DISTINCTION IS LOAD-BEARING AND THE TWO MIGRATED SCRIPTS DISAGREED ON IT. heavy_gate.sh
-// counted `^--- PASS:` anchored at column 0, so it tallied TOP-LEVEL tests only (go test indents
-// subtest result lines). skip_census.py keyed on (Package, Test) from the JSON, which counts
-// every subtest as its own result. Both are defensible; they are not the same number, and E8's
-// acceptance (a) requires each migrated gate to reproduce ITS OWN tally — so this is a per-config
-// choice (topLevelOnly), not a house style.
+// isSubtest reports whether the key names a subtest (`TestFoo/case`) rather than a top-level test. The
+// distinction is load-bearing: tallying top-level tests only and tallying every subtest as its own result
+// are not the same number, so which applies is a per-config choice (topLevelOnly), not a house style.
 func isSubtest(k testKey) bool { return strings.Contains(k.Test, "/") }
 
 // text reconstructs the `go test -v` output this stream carried.

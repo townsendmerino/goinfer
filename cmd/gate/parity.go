@@ -43,9 +43,9 @@ var parityGates = []gateCheck{
 	{"qwen2", "TestQwen2_forwardParity"},
 	{"qwen2-gguf", "TestGGUF_qwen2_parity"},
 	{"qwen3", "TestQwen3_forwardParity"},
-	{"qwen3_asr-text", "TestQwen3ASR_tinyTextParity"},               // 2026-10-08: Qwen3-ASR's decoder from the checkpoint's own layout, against transformers
+	{"qwen3_asr-text", "TestQwen3ASR_tinyTextParity"},               // Qwen3-ASR's decoder from the checkpoint's own layout, against transformers
 	{"qwen3_asr-composition", "TestQwen3ASR_tinyCompositionParity"}, // audio samples -> front end -> encoder -> splice -> decoder, against transformers
-	{"voxtral-text", "TestVoxtral_tinyTextParity"},                  // 2026-10-09: Voxtral's Llama decoder from the checkpoint's own layout (language_model.*, untied head, head_dim != hidden/heads), against transformers
+	{"voxtral-text", "TestVoxtral_tinyTextParity"},                  // Voxtral's Llama decoder from the checkpoint's own layout (language_model.*, untied head, head_dim != hidden/heads), against transformers
 	{"voxtral-composition", "TestVoxtral_tinyCompositionParity"},    // audio samples -> whole-signal front end -> tower -> stacking -> projector -> splice -> decoder, on 1 and 2 windows, against transformers
 	{"qwen3-gguf", "TestGGUF_qwen3_parity"},
 	{"qwen2moe", "TestQwen2Moe_forwardParity"},
@@ -84,10 +84,8 @@ var parityGates = []gateCheck{
 	{"gptq", "TestGPTQ_parity"},
 	{"awq", "TestAWQ_parity"},
 	{"w4a8-int4", "TestW4A8DecodeParity"},
-	// The int4 FORWARD gate (23 fixtures / 16 architectures) is the broadest quant check here, and
-	// it was missing from this list until 2026-08-26 -- so when it went red in the v0.15.0-prep
-	// sweep it surfaced only as an anonymous "1 fail" with no gate name, and attributing it took
-	// hours. A required gate that is not named here is a gate whose failure nobody can read.
+	// A required gate that is not named here is a gate whose failure nobody can read: the int4 forward gate,
+	// the broadest quant check, surfaces as an anonymous "1 fail" without its entry.
 	{"int4-forward", "TestInt4_forwardParity"},
 	{"tok-gemma", "TestEncodeDecode_goldenParity"},
 	{"tok-qwen3", "TestByteLevel_qwen3GoldenParity"},
@@ -111,13 +109,9 @@ var parityRealckptGates = []gateCheck{
 	{"qwen3next-oracle", "TestQwen3NextReal_oracle"},
 	{"nemotron35lightning-oracle", "TestNemotron35LightningReal_oracle"},
 	{"qwen3moe-oracle", "TestQwen3MoeReal_oracle"},
-	// ONE OR TWO CANONICAL GATES FOR SIX FAMILIES THAT HAD NONE (2026-09-02, audit G-05 follow-up).
-	// gpt_oss, granite, laguna, glm4_moe, cohere, cohere2 and dense qwen3.8 were shipped families
-	// with no required gate ANYWHERE in the checkset — not in parityGates either, since none has a
-	// tiny fixture. "Not required" was never a decision about them; it was the absence of one, and
-	// the sweep's own report could not distinguish the two. Every asset below is registered in
-	// testdata/assets.json and verified present on the sweep box, so none of these is a permanent
-	// SKIP-blocker.
+	// One or two canonical gates for families with no tiny fixture, so no gate in parityGates: "not required"
+	// is the absence of a decision, and the sweep's own report could not tell the two apart. Every asset
+	// below is registered in testdata/assets.json, so none is a permanent SKIP-blocker.
 	{"gpt_oss", "TestGptOssReal_gate"},
 	{"gpt_oss-logits", "TestGptOssReal_logitParity"},
 	{"granite-gguf", "TestGraniteReal_gate"},
@@ -125,7 +119,7 @@ var parityRealckptGates = []gateCheck{
 	{"laguna", "TestLagunaReal_gate"},
 	{"laguna-oracle", "TestLagunaReal_oracle"},
 	{"qwen25vl-real", "TestQwen25VLReal_gate"},
-	{"qwen3vl-real", "TestQwen3VLReal_gate"}, // 2026-10-08: Qwen3-VL-2B text forward against HF f32 (the image prompt is TestQwen3VLImageReal, which needs its own pin output)
+	{"qwen3vl-real", "TestQwen3VLReal_gate"}, // Qwen3-VL-2B text forward against HF f32 (the image prompt is TestQwen3VLImageReal, which needs its own pin output)
 	{"laguna-gguf", "TestLagunaGGUF_gate"},
 	{"glm4moe-air", "TestGlm4MoeAir_gate"},
 	{"cohere", "TestCohereAyaReal_gate"},
@@ -134,18 +128,9 @@ var parityRealckptGates = []gateCheck{
 	{"qwen3.8-dense-oracle", "TestQwen38Real_oracle"},
 	{"qwen3.8-gguf", "TestQwen38GGUF_gate"},
 	{"qwen3.8-gguf-weightdiff", "TestQwen38GGUF_weightDiff"},
-	// smollm3's asset (testdata/assets.json GOINFER_SMOLLM3_3B) and gate
-	// (decoder/smollm3_real_test.go) landed together; this line did not, leaving the family
-	// with a real gate the sweep could not even report on (TestRealckptGateIsListedOrExplicitly
-	// NotRequired). Caught by CI, not found by inspection — the two files can look complete on
-	// their own and still not be reachable.
+	// Register a real-checkpoint gate here in the SAME change that adds its asset and test:
+	// TestRealckptGateIsListedOrExplicitlyNotRequired fails otherwise.
 	{"smollm3-3b", "TestSmolLM3_3bReal_gate"},
-	// lfm2 and mistral3 repeated the exact smollm3 gap the comment above describes — their
-	// gates/assets landed (commit 493897af) without this line, so TestRealckptGateIsListed
-	// OrExplicitlyNotRequired was red on main until this fix. Landing three MORE real-checkpoint
-	// families in the same session as this fix is the reason to trust it's not a one-off: the
-	// check is doing its job, the discipline of registering in the SAME change is what was
-	// missing, not the check itself.
 	{"lfm2-2.6b", "TestLFM2Real_gate"},
 	{"mistral3-real", "TestMinistral3Real_gate"},
 	{"spark2_5-1.7b", "TestSpark25Real_gate"},
@@ -156,28 +141,17 @@ var parityRealckptGates = []gateCheck{
 	{"olmo3-oracle", "TestOlmo3Real_gate"},
 	{"gemma12-oracle", "TestGemma12Real_gate"},
 	{"olmo-hybrid-oracle", "TestOlmoHybridReal_gate"},
-	// internlm2 repeated the exact smollm3/lfm2/mistral3 registration gap: its gate and asset
-	// (commit d1449f4) landed without this line, leaving TestRealckptGateIsListedOrExplicitly
-	// NotRequired red on main. First run had FAILED anyway (cosine 0.87 — since found to be a
-	// corrupt reference, not a goinfer defect; see docs/parity-coverage-policy.md's RESOLVED
-	// note) so the missing registration was doubly invisible until the fix made the gate green.
 	{"internlm2-real", "TestInternLM2_1_8bReal_gate"},
 	{"qwen2moe-oracle", "TestQwen2MoeReal_oracle"},
 }
 
-// Not in parityRealckptGates/realckptNotRequired (and not found by realckptDirs' decoder-only
-// scan): cuda/qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate — gap 0's real-
-// checkpoint continuation of qwen25vl-real above (that gate is prefill-only; this one exercises
-// GenerateQwenVL's actual resident-decode path, one CPU-vs-hybrid step on the real image, via
-// UploadKV + ForwardMRoPE). It lives in package cuda (needs the cuda backend's init() to
-// register "cuda" with decoder — decoder itself cannot import cuda, an import cycle) and is
-// tagged `cuda && goinfer_testhooks`, the same convention as its siblings
-// (uploadkv_parity_test.go, forwardmrope_parity_test.go) — not `realckpt`, so it is outside this
-// list's discipline by construction, the same way those two already are.
+// Not listed here or in realckptNotRequired: cuda/qwen25vl_resident_real_test.go's
+// TestQwen25VLResidentReal_gate lives in package cuda (it needs the cuda backend's init(), and decoder
+// cannot import cuda) under `cuda && goinfer_testhooks`, not `realckpt`, so this list's discipline does
+// not reach it, as with its siblings in that package.
 
-// emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
-// Family here is the manifest family the gate writes, which is why the pair is the other way round
-// from the lists above — a detail that once produced six rows with the columns swapped.
+// emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST. Family is
+// the manifest family the gate writes, so the pair is the other way round from the lists above.
 var emitGates = []gateCheck{
 	{"phi3", "TestPhi3MiniReal_gate"},
 	{"deepseek_v2", "TestDeepseekV2LiteReal_gate"},
@@ -201,22 +175,16 @@ var emitGates = []gateCheck{
 	{"qwen3_vl", "TestQwen3VLReal_gate"}, // Qwen3-VL-2B text forward against HF f32; the image prompt is TestQwen3VLImageReal (needs scripts/pin_qwen3vl_image_real.py output, so not a required gate)
 }
 
-// assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
-// can make them green. They are reported and counted as coverage gaps, not blockers.
+// assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation can
+// make them green. They are reported and counted as coverage gaps, not blockers.
 //
-// THE LIST IS EMPTY, AND IT GOT THERE THE ONLY CORRECT WAY (2026-08-18, v1.0 gate 1.3):
-// TestW4A8DecodeParity was the sole entry — it needs a MATCHED int4+int8 .giw pair, and only int4
-// bundles had ever been produced — until the pair was built from one source GGUF (so "matched" is by
-// construction, not by belief) and the gate ran green on first invocation. The machinery stays: the
-// next gate whose asset has never been built belongs here, and an empty list is the honest current
-// state rather than a reason to delete the classification. The only correct way OFF this list is to
-// build the asset.
+// The list is empty, which is the honest state; the machinery stays for the next gate whose asset has
+// never been built. The only correct way OFF the list is to build the asset.
 var assetNeverBuilt = map[string]bool{}
 
-// gateRunFilter reads GATE_RUN — an optional narrowing filter for a granular re-run of the sweep
-// (e.g. after fixing a specific blocker, without paying for the full ~2h two-cell run again to get
-// the SAME checkset classification, ledger/neverConfirmed handling and verdict logic a targeted
-// `go test -run` alone would skip). "" (the default) means the full sweep, unchanged.
+// gateRunFilter reads GATE_RUN, an optional narrowing filter for a granular re-run of the sweep (e.g.
+// after fixing one blocker) that keeps the same checkset classification, ledger handling and verdict
+// logic a bare `go test -run` would skip. "" (the default) means the full sweep.
 func gateRunFilter() (re *regexp.Regexp, raw string) {
 	raw = env("GATE_RUN", "")
 	if raw == "" {
@@ -235,12 +203,10 @@ func gateRunFilter() (re *regexp.Regexp, raw string) {
 
 // scopeChecks narrows a required checkset to the entries a GATE_RUN filter selects.
 //
-// THIS NARROWS THE REQUIRED LIST ITSELF, NOT JUST WHICH TESTS EXECUTE — otherwise every required
-// gate outside the filter would report "DID NOT RUN (blocker)" and a deliberately scoped, fast
-// re-run would look identical to a broken sweep. The tradeoff this accepts: a scoped run's "ALL
-// REQUIRED GATES GREEN" verdict answers "is everything I selected green", not "is the release
-// ready" — it is a tool for checking a specific fix landed, never a substitute for the full
-// unfiltered sweep before a tag.
+// It narrows the required list itself, not just which tests execute: otherwise every gate outside the
+// filter would report "DID NOT RUN (blocker)" and a scoped re-run would look like a broken sweep. The
+// tradeoff: a scoped run's "ALL REQUIRED GATES GREEN" answers "is everything I selected green", not "is
+// the release ready", and never substitutes for the full unfiltered sweep before a tag.
 func scopeChecks(checks []gateCheck, filter *regexp.Regexp) []gateCheck {
 	var scoped []gateCheck
 	for _, g := range checks {
@@ -270,14 +236,10 @@ func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
 			Name: "realckpt real-model gates",
 			Pkgs: []string{"./decoder/"},
 			Tags: []string{"realckpt"},
-			// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could
-			// not reach TestQwen3NextReal_oracle for weeks — the sweep reported it "DID NOT RUN
-			// (blocker)" and every diagnosis went looking at the 163GB asset, which was present
-			// and resolving the whole time — and after that was patched it still missed five more
-			// (audit-2026-09-02 G-05). A -run filter that cannot reach a gate is not a skip; it is
-			// a gate that silently does not exist. The cell is still filtered rather than
-			// unfiltered because the realckpt tag also carries perf and diagnostic tests that the
-			// release sweep is not for; the filter selects on SHAPE now, not on a name list.
+			// DERIVED FROM THE TAGGED FILES (realckptRun), not hand-written: a -run filter that cannot reach a gate is
+			// not a skip, it is a gate that silently does not exist. The cell is still filtered because the realckpt
+			// tag also carries perf and diagnostic tests the release sweep is not for; the filter selects on SHAPE,
+			// not on a name list.
 			Run:     run,
 			Timeout: timeout,
 			Env:     env,
@@ -287,17 +249,13 @@ func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
 }
 
 // assetPreflight resolves the asset environment from the SHARED REGISTRY (testdata/assets.json) and
-// reports what it resolved.
+// reports what it resolved. The gates skip-if-absent and a skip is reported as a blocker, so an unset
+// variable and a genuinely missing checkpoint would be indistinguishable in the output; the registry is
+// the single implementation of "is this asset present" (a bare path-exists test is satisfied by a
+// directory where the loader wants the file inside).
 //
-// This exists because the same invocation error produced a false "15 BLOCKER(S)" three separate
-// times while the tree was fine every time: the gates skip-if-absent and a skip is reported as a
-// blocker, so an unset variable and a genuinely missing checkpoint were indistinguishable in the
-// output. The registry is the single implementation of "is this asset present" — an earlier table
-// inside the sweep tested `[ -e "$path" ]`, which a DIRECTORY satisfies, so it reported resolved for
-// three entries where the loader wanted the .gguf FILE inside.
-//
-// A preflight that does not run is announced LOUDLY rather than left to become a blocker cascade:
-// without python3 every asset-gated gate skips and the count is about the failure, not the tree.
+// A preflight that does not run is announced LOUDLY rather than left to become a blocker cascade: without
+// python3 every asset-gated gate skips and the count is about the failure, not the tree.
 func assetPreflight(w io.Writer) map[string]string {
 	env := map[string]string{
 		// SET, not required. This is the release sweep; loading multi-GB checkpoints is its entire
@@ -380,16 +338,13 @@ func runParity(w io.Writer, logDir string) int {
 	fmt.Fprintf(w, "\n%s== parity sweep provenance ==%s\n", bold, off)
 	prov.write(w)
 
-	// THE COMPOSITION, NOT JUST THE VERDICT. This gate's axes are family × quant × loader, and a
-	// pass COUNT alone cannot distinguish "the axes are covered" from "an axis collapsed to one
-	// value" — which is exactly how the forward goldens stayed f32-only through nine refreshes
-	// behind an accurate count.
+	// THE COMPOSITION, NOT JUST THE VERDICT. This gate's axes are family × quant × loader, and a pass COUNT
+	// alone cannot distinguish "the axes are covered" from "an axis collapsed to one value".
 	composition(w, false)
 
-	// RCIsFailure: a `go test` that exits non-zero with ZERO --- FAIL lines — a panic in a
-	// goroutine, a fatal error, a timeout, a build failure — is a red cell. It was false here, which
-	// meant a crashed realckpt cell could produce no named-gate result at all and the sweep would
-	// read that as gates it simply had nothing to say about (audit-2026-09-02 G-05).
+	// RCIsFailure: a `go test` that exits non-zero with ZERO --- FAIL lines (a panic in a goroutine, a fatal
+	// error, a timeout, a build failure) is a red cell. Otherwise a crashed realckpt cell produces no
+	// named-gate result and the sweep reads that as gates it had nothing to say about.
 	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: true}
 	cfg.Cells = parityCells(cellEnv, realckpt, timeout)
 	if realckpt {
@@ -495,11 +450,8 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 		case act == "pass":
 			mark = "✅ pass"
 		case act == "fail" && neverConfirmed[g.Test] != "":
-			// neverConfirmed's own promise ("its failure is reported as an ITEM and never blocks a
-			// tag") checked FIRST: until this case existed that promise was enforced only by the
-			// static TestParity_everyRequiredGateIsConfirmed, never by a live sweep's own FAIL
-			// classification below — a neverConfirmed gate that genuinely failed still counted as
-			// a blocker, the exact SKIP-side version of which is fixed by the case below.
+			// neverConfirmed's own promise ("its failure is reported as an ITEM and never blocks a tag") is checked
+			// FIRST, so a live sweep enforces it and not only the static TestParity_everyRequiredGateIsConfirmed.
 			mark = "FAIL - but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
 			gaps++
 		case act == "fail":
@@ -525,13 +477,9 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 				mark = "COVERAGE GAP - asset never built (NOT a blocker; see assetNeverBuilt)"
 				gaps++
 			case neverConfirmed[g.Test] != "":
-				// neverConfirmed's own doc comment already promises "never blocks a tag" —
-				// but until this branch existed that promise covered only a FAIL outcome
-				// (via the ledger classify path below), never a SKIP. Measured 2026-09-18:
-				// TestNemotron35LightningReal_oracle sat in neverConfirmed since 2026-09-13
-				// specifically because its asset was absent on this box, and its SKIP still
-				// counted as a blocker every run since — the deferral was written down but
-				// never actually took effect. This is the fix.
+				// neverConfirmed's promise ("never blocks a tag") covers a SKIP as well as a FAIL: an entry whose asset is
+				// absent on this box would otherwise block every run, and the deferral would be written down but never
+				// take effect.
 				mark = "SKIP - asset missing, but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
 				gaps++
 			default:
@@ -674,30 +622,17 @@ func sortedSet(m map[string]bool) []string {
 	return out
 }
 
-// whyNoResult distinguishes the two causes of "no result" that look identical in a report and are
-// fixed in completely different places.
+// whyNoResult distinguishes the two causes of "no result" that look identical in a report and are fixed in
+// completely different places. A gate no pattern selects cannot be fixed by any machine, asset or
+// environment; a gate that IS selected and still produced nothing is a different problem. Saying which
+// halves the search.
 //
-// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was reported as
-// "DID NOT RUN (blocker)" sweep after sweep; the realckpt cell selected on -run "Qwen35|Real_gate"
-// and the test is named ...Real_oracle, so no pattern could ever select it. The wording implied a
-// missing asset, so that is where three sessions looked — one of them verifying all 41 shards of a
-// 163 GB checkpoint that was present and resolving the whole time.
-//
-// A gate no pattern selects cannot be fixed by any machine, asset or environment. A gate that IS
-// selected and still produced nothing is a different problem entirely. Saying which halves the
-// search.
-//
-// KNOWN GAP (N-41, audit-2026-09-02.md, found 2026-09-11): this only checks -run REGEX selection,
-// not build-tag reachability. parityCells' base cell has an empty Run (deliberately — see
-// TestBaseCellIsUnfiltered) and no Tags, so the loop's first branch below fires for EVERY test name
-// via the sweep's one real call site, and the UNREACHABLE fallthrough is provably unreachable
-// there — see TestParity_missingGateSaysWhichCause. Worse, that means a realckpt-tagged test base
-// cannot even COMPILE would be diagnosed as "selected (unfiltered) but reported nothing" (implying
-// an asset/build problem) instead of UNREACHABLE (implying a pattern/name problem) — reproducing
-// the original TestQwen3NextReal_oracle misdiagnosis this function was built to stop, for the exact
-// shape of bug that caused it. A real fix needs per-cell reachability (e.g. `go test -tags <cell's
-// Tags> -list '^<test>$' <cell's Pkgs>` and checking for a match), not a -run string match against
-// Run alone. Filed, not fixed, to avoid rushing a change to a pre-push-adjacent gate's own logic.
+// KNOWN LIMITATION: it checks -run selection only, not build-tag reachability. parityCells' base cell has
+// an empty Run and no Tags, so the first branch fires for every test name at the sweep's one call site and
+// UNREACHABLE cannot fire there; a realckpt-tagged test that cannot even compile is reported as "selected
+// (unfiltered) but reported nothing", which reads as an asset or build problem. Open: needs per-cell
+// reachability (`go test -tags <cell's Tags> -list '^<test>$' <cell's Pkgs>`). See
+// docs/code-notes/cmd-gate.md, "whyNoResult".
 func whyNoResult(test string, cells []cell) string {
 	for _, c := range cells {
 		if c.Run == "" {
@@ -717,96 +652,48 @@ func whyNoResult(test string, cells []cell) string {
 		"environment could make it run. Fix the pattern or the test name, not the box."
 }
 
-// neverConfirmed names a REQUIRED gate that is deliberately absent from the ledger, with the reason.
-// A gate here stays permanently FIRST-RUN: its failure is reported as an ITEM and never blocks a
-// tag, so an entry is a decision to accept that, not a formality.
+// neverConfirmed names a REQUIRED gate that is deliberately absent from the ledger, with the reason. A
+// gate here stays permanently FIRST-RUN: its failure is reported as an ITEM and never blocks a tag, so an
+// entry is a decision to accept that, not a formality. Remove an entry the moment a real sweep on a box
+// with the asset runs the gate; do not let it persist past that.
 //
-// EMPTY, AND EMPTY IS THE HONEST STATE (2026-09-02, audit G-04). The ledger was bulk-seeded once on
-// 2026-08-14 and never touched again, so five required gates — TestInt4_forwardParity ("the broadest
-// quant check here"), TestW4A8DecodeParity, TestNemotron_textParity, TestNemotron3NanoMoE_textParity
-// and TestQwen3NextReal_oracle — sat FIRST-RUN for two and a half weeks WHILE A CONFIRMED PASS FOR
-// EACH SAT IN THE v0.15.0 SWEEP LOG. Nothing turned the one into the other: `reconcile` is advisory
-// by design, and no test asserted `required ⊆ ledger`. TestParity_everyRequiredGateIsConfirmed is
-// that assertion, and this map is its only escape hatch — deliberately a code change with a written
-// reason rather than a state the ledger can drift into by nobody doing anything.
+// The map is deliberately a code change with a written reason: `reconcile` is advisory by design, so
+// TestParity_everyRequiredGateIsConfirmed (required ⊆ ledger) is the only thing that stops a required
+// gate drifting into FIRST-RUN unnoticed, and this map is its only escape hatch.
 var neverConfirmed = map[string]string{
-	// 2026-09-18: 9 of the 10 v0.18.0-deferral entries above this line were REMOVED here, per
-	// this map's own instruction two paragraphs up ("move each back... the moment a real sweep
-	// on a box with the checkpoints actually runs it; do not let this entry persist past that").
-	// The v0.19.0 §C1 sweep ran all 10 for real: 9 PASSED and were promoted to the ledger
-	// (TestQwen3MoeReal_oracle, TestQwen38GGUF_weightDiff, TestSmolLM3_3bReal_gate,
-	// TestLFM2Real_gate, TestMinistral3Real_gate, TestGraniteDenseReal_gate,
-	// TestOlmoHybridReal_gate, TestInternLM2_1_8bReal_gate, and TestQwen2MoeReal_oracle/
-	// TestQwen25VLReal_gate promoted earlier the same day) — leaving them here would have kept
-	// asserting "not run this release" about a release that just ran them. TestOlmo3Real_gate
-	// also ran (FIRST-RUN, no confirmed prior result) and moved to awaitingFirstConfirmation
-	// instead, which is what running-but-unconfirmed actually means per this file's own
-	// three-state contract. Only TestNemotron35LightningReal_oracle's asset is still absent from
-	// this box, so only it stays.
 	"TestNemotron35LightningReal_oracle": "2026-09-13 — deferred for v0.18.0; needs the ~60GB bf16 checkpoint on the Linux box, not run this release. STILL TRUE 2026-09-18: the asset has still not been pulled to this box (its SKIP was, until today, incorrectly counting as a blocker regardless of this entry — see classifyChecks' neverConfirmed check in the SKIP branch, fixed the same day this was re-confirmed).",
 
-	// 2026-10-01: TestQwen35Real_gate2FullModel, the other gate this block named, left the list. It fit and passed on this
-	// box in the v0.20.0 sweep run 2 (bcf50a49) and the scoped re-validation (70be7081), and is in the ledger.
-	//
-	// v0.19.0 §C1 SWEEP FINDING (2026-09-18, Francis via Claude): these two gates genuinely ran
-	// (not asset-missing) and genuinely cannot fit THIS BOX under the fit-guard's 70% budget —
-	// not a flake, not a code defect. Both load Qwen3.6-35B-A3B or Qwen3Next-80B at
-	// full/pinned context (not auto-capped), and both now Skip (not Fatalf) on a
-	// decoder.ErrWontFitResident decline (decoder/real_oracle_test.go, decoder/qwen35_gate2_test.go)
-	// rather than treating capacity refusal as a test failure. Measured: this box has 62GB RAM,
-	// so the fit-guard's 70% ceiling never authorizes more than ~43.4GB even fully idle.
+	// TestQwen3NextReal_oracle genuinely runs and cannot fit THIS BOX under the fit-guard's 70% budget; it
+	// Skips (not Fatalf) on a decoder.ErrWontFitResident decline, so capacity refusal is not a test failure.
 	"TestQwen3NextReal_oracle": "2026-09-18 — needs ~59.3GB (47.3GB int4 weights + 12.0GB KV) against this box's ~43.4GB fit-guard ceiling. It passed on this box at bd085de/2026-08-27; between then and now dfd4bfe9 (2026-09-15, M-28) priced KV from real per-layer geometry (zero for a DeltaNet/mamba/conv mixer layer, the family's actual head_dim otherwise), which moved the estimate up. This one is not a close call either way (59.3GB vs a 43.4GB ceiling, not a few GB over). The gate's own doc comment's \"int4 is ~40GB and fits\" only ever estimated weights and omitted KV entirely. Needs a bigger box.",
 }
 
-// awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with
-// the date it became required and what will confirm it. It is the third state, and it is not the
-// same as either neighbour:
+// awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with the
+// date it became required and what will confirm it. It is the third state, and not the same as either
+// neighbour:
 //
-//	ledger entry          a person looked at a value and said it is correct.
-//	neverConfirmed        we have decided to accept a permanently non-blocking gate.
-//	awaitingFirstConfirmation   nothing has been decided yet, because the gate has not run.
+//   - ledger entry: a person looked at a value and said it is correct.
+//   - neverConfirmed: we have decided to accept a permanently non-blocking gate.
+//   - awaitingFirstConfirmation: nothing has been decided yet, because the gate has not run.
 //
-// COLLAPSING THIS INTO EITHER NEIGHBOUR WOULD BE A LIE IN A DIFFERENT DIRECTION. Promoting these
-// from "it did not appear in the sweep's SKIP list, so it must have passed" would bank an inferred
-// value as a baseline — exactly the auto-promotion `gate ledger` refuses to do — and the inference
-// is not even sound, since the sweep that ran them discarded unlisted FAIL counts (G-05). Filing
-// them under neverConfirmed would assert a decision to leave them non-blocking forever, which is
-// the opposite of the intent: they were made required BECAUSE their families need cover.
-//
-// So they are first-run, which is the correct and honest outcome — their failures are ITEMS until a
-// sweep produces a value a person promotes. The date is required so an entry that quietly becomes
-// permanent is visible as one.
-// EMPTY, 2026-09-18. The four gates that sat here since 2026-09-08 (TestQwen2MoeReal_oracle,
-// TestLagunaReal_oracle, TestQwen38Real_oracle, TestQwen25VLReal_gate) have all now produced a
-// confirmed PASS and been promoted to the ledger. Laguna and Qwen3.8's first-run FAILs (recorded
-// in the git history of this map) turned out to be genuine int4 near-tie sensitivity, not a code
-// defect — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md — and both now run
-// (and PASS) at int8 instead of int4; that document is also the retraction record for an earlier,
-// wrong plan to move both into neverConfirmed permanently on an unverified "int8 doesn't fit"
-// premise.
-// EMPTY again, 2026-10-01. TestOlmo3Real_gate, here since 2026-09-18, was confirmed and promoted to the ledger. Its
-// 0.992789 cosine was a wrong REFERENCE, not quantization (the gate is f32): the golden had been pinned under
-// transformers 5.12, whose Olmo3 applies YaRN to every layer, while the Olmo 3 paper and transformers 5.15 put it on
-// full-attention layers only, as goinfer does. Re-pinned under 5.15 it passes at cosine 1.000000
-// (docs/measurements/olmo3-golden-repin-2026-10-01/).
+// Do not collapse it into either neighbour. Promoting these from "not in the SKIP list, so it must have
+// passed" would bank an inferred value as a baseline, which `gate ledger` refuses to do; filing them under
+// neverConfirmed would assert a decision to leave them non-blocking forever, the opposite of why they were
+// made required. So they are first-run: their failures are ITEMS until a sweep produces a value a person
+// promotes. The date is required so an entry that quietly becomes permanent is visible as one.
 var awaitingFirstConfirmation = map[string]string{}
 
-// realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
-// but does not require, with the reason. Every such test must be here or in parityRealckptGates —
+// realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS but does
+// not require, with the reason. Every such test must be here or in parityRealckptGates;
 // TestRealckptGateIsListedOrExplicitlyNotRequired fails otherwise.
 //
-// WHAT AN ENTRY COSTS, EXACTLY. Since the sweep counts an unlisted FAIL as a blocker, an entry here
-// does NOT make a failure harmless. What it forgoes is the other two outcomes: a SKIP does not block
-// (the asset may not exist on this box), and the gate gets no named row in the checkset table. That
-// is a much smaller claim than "not required" used to be, and it is the one being made.
+// An entry does NOT make a failure harmless: the sweep counts an unlisted FAIL as a blocker. What it
+// forgoes is a named row in the checkset table, and a SKIP does not block (the asset may not exist on this
+// box).
 //
-// EVERY ENTRY IS NOW "THE FAMILY IS COVERED ELSEWHERE", AND THAT IS THE ONLY ACCEPTABLE REASON.
-// The second kind this map briefly held — "this family has no required gate anywhere" — was not a
-// reason, it was the absence of a decision: gpt_oss, granite, laguna, glm4_moe, cohere, cohere2 and
-// dense qwen3.8 were shipped families the checkset said nothing about. All seven are required gates
-// now, their assets registered and verified present, so what remains here is genuinely extra depth
-// on a family that already has a canonical gate. A new entry claiming anything else is a coverage
-// hole wearing a reason, and reviewing it is the point of making it a code change.
+// The only acceptable reason is "the family is covered elsewhere", naming the required gate. "This family
+// has no required gate anywhere" is the absence of a decision, not a reason: such an entry is a coverage
+// hole wearing a reason.
 var realckptNotRequired = map[string]string{
 	"TestVoxtralReal_gate": "voxtral is required through the tiny gates (decoder TestVoxtral_tinyTextParity and TestVoxtral_tinyCompositionParity); this adds the real Voxtral Mini 3B, whose reference " +
 		"needs scripts/pin_voxtral_real.py's output directory (GOINFER_VOXTRAL_REF), not a plain registered asset",
@@ -839,8 +726,8 @@ var realckptNotRequired = map[string]string{
 // realckptDirs are the packages the realckpt cell runs, and so the packages scanned for its gates.
 var realckptDirs = []string{"decoder"}
 
-// legacyRealckptRun is the hand-written -run the realckpt cell used until 2026-09-02. Kept ONLY as
-// the fallback for a tree the scan cannot read, and named so a report saying "fell back" is
+// legacyRealckptRun is the hand-written -run the realckpt cell used before the pattern was derived. Kept
+// ONLY as the fallback for a tree the scan cannot read, and named so a report saying "fell back" is
 // unambiguous about which pattern ran.
 const legacyRealckptRun = "Qwen35|Real_gate|Real_oracle"
 
@@ -869,11 +756,10 @@ func realckptTests(root string, want func(string) bool) []string {
 	return buildTaggedTests(root, realckptDirs, realckptWordRe, want)
 }
 
-// buildTaggedTests scans dirs for *_test.go files whose //go:build line matches tagWord, and
-// returns the sorted set of top-level test function names satisfying want. realckptTests is the
-// original, single-tag caller; metalGateTests (V-07, docs/review-2026-09-04.md) is the second —
-// generalised here rather than duplicated, so the two scans can never drift in HOW they read a
-// build line, only in which one they're looking for.
+// buildTaggedTests scans dirs for *_test.go files whose //go:build line matches tagWord, and returns the
+// sorted set of top-level test function names satisfying want. realckptTests, metalGateTests and
+// webgpuGateTests share it, so the scans cannot drift in HOW they read a build line, only in which tag
+// they look for.
 func buildTaggedTests(root string, dirs []string, tagWord *regexp.Regexp, want func(string) bool) []string {
 	seen := map[string]bool{}
 	for _, d := range dirs {
@@ -902,39 +788,33 @@ func buildTaggedTests(root string, dirs []string, tagWord *regexp.Regexp, want f
 	return sortedSet(seen)
 }
 
-// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged tests
-// (V-07). Mirrors realckptDirs' role for the decoder-side scan.
+// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged tests, the role
+// realckptDirs plays for the decoder-side scan.
 var metalDirs = []string{"metal"}
 
 var metalTesthooksWordRe = regexp.MustCompile(`\bgoinfer_testhooks\b`)
 
-// metalGateTests scans metal/'s goinfer_testhooks-tagged test files for gate-shaped top-level
-// tests — the Metal analogue of realckptGateTests, which V-07 found had no equivalent: a
-// regression of the exact class G-08 repaired (TestBatchedVerifyKernelParity, the Metal
-// decode==verify bit-identity gate) could pass `gate gpu` on the Mac simply by not being matched
-// by any cell's -run pattern, with nothing to say the cell had nothing to say about it.
+// metalGateTests scans metal/'s goinfer_testhooks-tagged test files for gate-shaped top-level tests, the
+// Metal analogue of realckptGateTests: a gate that no cell's -run pattern matches would pass `gate gpu` on
+// the Mac with nothing saying the cell had nothing to say about it.
 func metalGateTests(root string) []string {
 	return buildTaggedTests(root, metalDirs, metalTesthooksWordRe, gateShaped)
 }
 
-// metalParityRun is metal-parity's -run pattern (cmd/gate/gpu.go's metalParity), pulled out to a
-// named constant so the cell definition and TestMetalGateIsListedOrExplicitlyNotRequired read the
-// SAME string rather than two copies that can drift the way V-07 found them already had.
+// metalParityRun is metal-parity's -run pattern (metalParity in gpu.go), a named constant so the cell
+// definition and TestMetalGateIsListedOrExplicitlyNotRequired read the SAME string rather than two copies
+// that can drift.
 const metalParityRun = "ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity"
 
 // metalNotRequired names a gate-shaped, goinfer_testhooks-tagged Metal test that
-// TestMetalGateIsListedOrExplicitlyNotRequired's scan finds but metalParityRun does not match,
-// with the reason it is deliberately excluded rather than required. Mirrors realckptNotRequired's
-// role and its EMPTY-REASON-IS-AN-ERROR rule (an unexplained exemption is exactly the state that
-// map exists to prevent). Empty for now — every gate-shaped test found as of V-07's fix is
-// covered by metalParityRun; add here, with a reason, if a future one is deliberately not.
+// TestMetalGateIsListedOrExplicitlyNotRequired's scan finds but metalParityRun does not match, with the
+// reason it is deliberately excluded. Like realckptNotRequired, an empty reason is an error. Empty: every
+// gate-shaped test is covered by metalParityRun; add here, with a reason, if one deliberately is not.
 var metalNotRequired = map[string]string{}
 
-// webgpuDirs, webgpuGateTests, webgpuParityRun and webgpuNotRequired are the WebGPU twin of the
-// Metal scan above (audit-2026-09-10 G-10). webgpu-parity used to select only "ResidentParity",
-// so gate-shaped goinfer_testhooks-tagged gpu/ tests like the staged-int4 matmul gate, ForwardN
-// parity, both DeltaNet kernel parities, MoE route and the int4 expert GEMV ran in no gate cell
-// and no CI runner.
+// webgpuDirs, webgpuGateTests, webgpuParityRun and webgpuNotRequired are the WebGPU twin of the Metal scan
+// above: webgpu-parity must select every gate-shaped goinfer_testhooks-tagged gpu/ test, or that test
+// runs in no gate cell and no CI runner.
 var webgpuDirs = []string{"gpu"}
 
 // webgpuGateShaped widens gateShaped (capital "Parity", _gate, _oracle) with the forms WebGPU's
@@ -957,17 +837,12 @@ const webgpuParityRun = "Parity|_parity|matchesCPU|matchesSequential"
 // with the reason. An empty reason is an error, as for metalNotRequired.
 var webgpuNotRequired = map[string]string{}
 
-// realckptRun derives the realckpt cell's -run from the tree, and returns a note saying how.
+// realckptRun derives the realckpt cell's -run from the tree, and returns a note saying how. Deriving it
+// makes "a gate exists" and "the sweep can reach it" the same fact: a hand-widened pattern still left
+// required gates matching nothing, and being unlisted as well they were not even reported as DID NOT RUN.
 //
-// THE PATTERN THAT COULD NOT REACH A REQUIRED GATE, GENERALISED. legacyRealckptRun was widened by
-// hand each time someone noticed a miss, and on 2026-09-02 five gates still matched nothing:
-// TestGemma4_26B_gate, TestGlm4MoeAir_gate, TestLagunaGGUF_gate, TestQwen38GGUF_gate and
-// TestGptOssReal_logitParity. Being unlisted as well as unselected, they were not even reported as
-// DID NOT RUN — the sweep had no way to say a word about them. Deriving the pattern from the tagged
-// files makes "a gate exists" and "the sweep can reach it" the same fact.
-//
-// The union with parityRealckptGates is not belt-and-braces: TestQwen35GGUF_weightDiff is required
-// and is NOT gate-shaped, so the scan alone would drop it.
+// The union with parityRealckptGates is not belt-and-braces: TestQwen35GGUF_weightDiff is required and is
+// NOT gate-shaped, so the scan alone would drop it.
 func realckptRun() (pattern, note string) {
 	root, err := repoRoot()
 	if err != nil {
@@ -979,13 +854,11 @@ func realckptRun() (pattern, note string) {
 		set[t] = true
 	}
 	scanned := len(set)
-	// THE CHANGE IS ADDITIVE ON PURPOSE. legacyRealckptRun's bare "Qwen35" alternative also selected
-	// four tests that are not gate-shaped — TestQwen35GGUF_vsSafetensors, _locateDivergence,
-	// _routeFlipAtOutlier and TestQwen35Real_loaderSlice. Nobody decided those belong in a release
-	// sweep, but nobody decided they do not either: they have been running in it. Dropping them as a
-	// side effect of fixing a FILTER would be exactly the silent coverage loss this repo keeps
-	// finding, so the derived pattern is unioned with what the old one selected. Removing one is
-	// then its own change, with its own reason.
+	// THE CHANGE IS ADDITIVE ON PURPOSE. legacyRealckptRun's bare "Qwen35" alternative also selects tests that
+	// are not gate-shaped (TestQwen35GGUF_vsSafetensors, TestQwen35Real_loaderSlice, ...). Nobody decided they
+	// do not belong in a release sweep, and dropping them as a side effect of fixing a FILTER is the silent
+	// coverage loss this repo keeps finding, so the derived pattern is unioned with what the old one selects.
+	// Removing one is its own change, with its own reason.
 	legacy := regexp.MustCompile(legacyRealckptRun)
 	carried := realckptTests(root, legacy.MatchString)
 	for _, t := range carried {
@@ -1023,18 +896,13 @@ func realckptRun() (pattern, note string) {
 		"union with parityRealckptGates%s", scanned, len(carried), len(sortedSet(set)), filterNote)
 }
 
-// unlistedFailures returns the tests that FAILED and are not one of the named gates.
-//
-// THE FAIL COUNT THE SWEEP USED TO THROW AWAY. `blockers` came only from the checkset, so a FAIL in
-// any of the ~36 family parity tests outside it changed nothing: the cell line printed "N fail" and
-// the verdict still read ALL REQUIRED GATES GREEN, exit 0. The checkset is still the thing that says
-// a NAMED gate is green — that is the decision this gate exists to make — but "nothing else in the
-// sweep failed" is a separate and much cheaper claim, and it was not being made at all.
+// unlistedFailures returns the tests that FAILED and are not one of the named gates. The checkset says a
+// NAMED gate is green; "nothing else in the sweep failed" is a separate claim, and without it a FAIL in a
+// family test outside the checkset leaves the verdict reading ALL REQUIRED GATES GREEN.
 //
 // EXACT match, unlike catchAllSkips' containment: a test whose name merely CONTAINS a gate name is a
-// different test, and hiding its failure is the defect, not the feature. Exactness is also what
-// keeps B14 intact — a named gate's FIRST-RUN failure is excluded here because its name matches
-// exactly, so it stays an ITEM.
+// different test, and hiding its failure is the defect. Exactness also keeps B14 intact: a named gate's
+// FIRST-RUN failure matches exactly, so it is excluded here and stays an ITEM.
 func unlistedFailures(res *results, checks []gateCheck) []string {
 	named := map[string]bool{}
 	for _, g := range checks {
@@ -1068,13 +936,10 @@ func sortedKeys(m map[string]string) []string {
 	return out
 }
 
-// extraBlockers is everything blocking that the CHECKSET CANNOT SEE, and it returns the count so
-// there is exactly one place to get the arithmetic wrong.
-//
-// `blockers` used to come only from classifyChecks over the named gates, which meant the sweep
-// discarded two whole categories: a FAIL in any of the ~36 family parity tests outside the checkset,
-// and a cell that died without printing a single --- FAIL line. Both left the verdict reading ALL
-// REQUIRED GATES GREEN, exit 0 (audit-2026-09-02 G-05).
+// extraBlockers is everything blocking that the CHECKSET CANNOT SEE, and it returns the count so there is
+// exactly one place to get the arithmetic wrong: a FAIL in a family parity test outside the checkset, and
+// a cell that died without printing a single --- FAIL line. Either would leave the verdict reading ALL
+// REQUIRED GATES GREEN.
 func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellResult, realckpt bool) int {
 	extra := 0
 

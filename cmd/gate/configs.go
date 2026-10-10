@@ -7,8 +7,7 @@ import (
 	"strings"
 )
 
-// The committed matrix configs. One per migrated script — this is where "six scripts are one
-// program" becomes literal: each former script is a value, not a file.
+// The committed matrix configs: each gate is a value, not a file.
 
 func heavyConfig() *gateConfig {
 	models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
@@ -33,12 +32,10 @@ func heavyConfig() *gateConfig {
 			Serial: true,
 			Env: map[string]string{
 				"GOINFER_HEAVY_TESTS": "1",
-				// Both names, not just one (audit-2026-09-02.md N-41): GOINFER_MODELS_DIR is
-				// realckpt-tagged tests' own root (decoder/modelsdir_test.go's modelPath, G-06),
-				// GOINFER_MODELS is the shared asset registry's (decoder/assets.go's modelsRoot(),
-				// what assetPath/GOINFER_MELLUM_CKPT-style tests resolve through) — the SAME cell
-				// runs both kinds of heavy test, so GOINFER_GATE_MODELS pointing elsewhere used to
-				// reach only the first kind, silently splitting one run across two roots.
+				// Both names: GOINFER_MODELS_DIR is realckpt-tagged tests' own root (decoder/modelsdir_test.go's
+				// modelPath), GOINFER_MODELS is the shared asset registry's (decoder/assets.go's modelsRoot()). The SAME
+				// cell runs both kinds of heavy test, so GOINFER_GATE_MODELS must reach both or one run splits across two
+				// roots.
 				"GOINFER_MODELS_DIR": models,
 				"GOINFER_MODELS":     models,
 			},
@@ -66,8 +63,8 @@ func heavyConfig() *gateConfig {
 	}
 }
 
-// censusConfig is skip_census.py: PASS/SKIP/FAIL over the whole tree with every SKIP bucketed by
-// why. passthrough replaces the default cell entirely (`gate census -- -tags cuda ./cuda/`).
+// censusConfig is `gate census`: PASS/SKIP/FAIL over the whole tree with every SKIP bucketed by why.
+// passthrough replaces the default cell entirely (`gate census -- -tags cuda ./cuda/`).
 func censusConfig(passthrough []string) *gateConfig {
 	c := cell{
 		Name: "./...",
@@ -89,8 +86,7 @@ func censusConfig(passthrough []string) *gateConfig {
 		Desc:     "the release-ritual test census — PASS/SKIP/FAIL with SKIPs bucketed by reason",
 		Cells:    []cell{c},
 		Decision: "census",
-		// Subtests count. skip_census.py keyed on (Package, Test) straight out of the JSON, which
-		// includes them; heavy_gate did not. See gateConfig.TopLevelOnly.
+		// Subtests count: the census keys on (Package, Test) straight out of the JSON. See gateConfig.TopLevelOnly.
 		TopLevelOnly:     false,
 		ZeroPolicy:       "no-tests",
 		RCIsFailure:      false,

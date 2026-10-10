@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// cell is one `go test` invocation in a gate's matrix: a package set under a tag set, with an
-// env and a -run filter. The six migrated scripts differ mostly in what their cells ARE.
+// cell is one `go test` invocation in a gate's matrix: a package set under a tag set, with an env and a
+// -run filter.
 type cell struct {
 	Name    string            // display name (usually the package)
 	Pkgs    []string          // package patterns, e.g. ./decoder/
@@ -26,8 +26,8 @@ type cell struct {
 
 }
 
-// gateConfig is a whole gate: its matrix, and the knobs its DECISION needs. Everything that
-// varies between the migrated scripts is here; nothing that varies lives in the runner.
+// gateConfig is a whole gate: its matrix, and the knobs its DECISION needs. Everything that varies between
+// gates is here; nothing that varies lives in the runner.
 type gateConfig struct {
 	Name string
 	Desc string
@@ -37,33 +37,29 @@ type gateConfig struct {
 	// Decision selects the report+verdict shape: "tally" (the shell gates) or "census".
 	Decision string
 
-	// TopLevelOnly counts top-level tests only, excluding subtests. heavy_gate.sh did this by
-	// anchoring its grep at column 0; skip_census.py did not. See isSubtest.
+	// TopLevelOnly counts top-level tests only, excluding subtests. See isSubtest.
 	TopLevelOnly bool
 
 	// ZeroPolicy says which flavour of "nothing happened" is RED:
-	//   "no-pass"  — zero PASSES is red even if tests ran and skipped (heavy_gate)
-	//   "no-tests" — zero test EVENTS at all is red (skip_census: an empty stream is the
-	//                absence of a census, not a clean one)
+	//   "no-pass"  — zero PASSES is red even if tests ran and skipped
+	//   "no-tests" — zero test EVENTS at all is red (an empty stream is the absence of a census, not a
+	//                clean one)
 	ZeroPolicy string
 
-	// RCIsFailure counts a non-zero `go test` exit with zero --- FAIL lines as a failure. This is
-	// heavy_gate's hard-won rc-awareness: a panic in a goroutine, a fatal error, a timeout or a
-	// zero-match all abort the binary WITHOUT a per-test FAIL line, and counting only FAIL lines
-	// reports GREEN on a crashed package.
+	// RCIsFailure counts a non-zero `go test` exit with zero --- FAIL lines as a failure: a panic in a
+	// goroutine, a fatal error, a timeout or a zero-match all abort the binary WITHOUT a per-test FAIL line,
+	// and counting only FAIL lines reports GREEN on a crashed package.
 	RCIsFailure bool
 
 	// PkgFailIsFailure counts a package-level fail (build error / native crash) toward the verdict.
 	//
-	// FALSE FOR THE CENSUS ON PURPOSE, AND IT IS NOT A TYPO. skip_census.py computes `rc = 1 if
-	// nfail else 0` and prints package-level fails without counting them — so a build error in one
-	// package exits 0 today. E8 changes the SUBSTRATE, not what a gate decides (acceptance a), so
-	// the runner reproduces that. The knob exists so flipping it later is one bool rather than an
-	// archaeology exercise; see the warning the census report prints when it suppresses one.
+	// False for the census on purpose, not a typo: the census prints package-level fails without counting
+	// them, so a build error in one package exits 0. The runner reproduces that rather than change what a gate
+	// decides; the knob is one bool, and the census report prints a warning when it suppresses one.
 	PkgFailIsFailure bool
 
-	// Precondition refuses a verdict rather than reporting one. heavy_gate exits 2 when the models
-	// dir is missing: with no assets, both "green" and "red" would be lies.
+	// Precondition refuses a verdict rather than reporting one (e.g. the models dir is missing): with no
+	// assets, both "green" and "red" would be lies.
 	Precondition func() (why string, ok bool)
 }
 
@@ -80,12 +76,8 @@ type cellResult struct {
 	Dur              time.Duration
 }
 
-// runCell executes one cell and folds its events into res. It returns a cellResult and NEVER a
-// fatal error: a cell that fails to start is a red cell, not an abandoned matrix. That property —
-// run every cell, keep every count — is the one `set -e` would have broken, and here it is the
-// shape of the code rather than a comment asking you not to add `-e`.
-// cellHeartbeatInterval is how often a running cell reports progress. A var so tests can drive
-// it; GOINFER_GATE_HEARTBEAT overrides it (e.g. "0" to silence it in a noisy CI log).
+// cellHeartbeatInterval is how often a running cell reports progress. A var so tests can drive it;
+// GOINFER_GATE_HEARTBEAT overrides it (e.g. "0" to silence it in a noisy CI log).
 var cellHeartbeatInterval = 60 * time.Second
 
 // startCellHeartbeat prints one progress line per interval until the returned stop is called.
@@ -126,6 +118,9 @@ func startCellHeartbeat(cell string, res *results, t0 time.Time) (stop func()) {
 	return func() { close(done); <-finished }
 }
 
+// runCell executes one cell and folds its events into res. It returns a cellResult and NEVER a fatal
+// error: a cell that fails to start is a red cell, not an abandoned matrix. Running every cell and keeping
+// every count is the shape of the code, not a comment asking you not to add `-e`.
 func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	args := []string{"test", "-json", "-count=1"}
 	if len(c.Tags) > 0 {
@@ -143,9 +138,8 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	args = append(args, c.Extra...)
 	args = append(args, c.Pkgs...)
 
-	// `go` itself must be present. exec.LookPath failing is an ERROR here — the shell idiom
-	// `command -v go && go test` would have passed silently, which is the exact fail-open this
-	// migration exists to make impossible.
+	// `go` itself must be present: a failing exec.LookPath is an ERROR, not a silent pass (the shell idiom
+	// `command -v go && go test` would pass).
 	if _, err := exec.LookPath("go"); err != nil {
 		return cellResult{Cell: c, RC: -1, Err: fmt.Errorf("go toolchain not on PATH: %w", err), Fail: 1, Hidden: true}
 	}
@@ -176,16 +170,12 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	if err := cmd.Start(); err != nil {
 		return cellResult{Cell: c, RC: -1, Err: err, Fail: 1, Hidden: true}
 	}
-	// HEARTBEAT while the cell runs (~/.claude/rules/long-tests.md). `go test -json` reports a
-	// cell only when it finishes, and the realckpt cells run 55-90 minutes — so without this a
-	// reader cannot tell a working gate from a hung one without ps'ing the box, which is exactly
-	// what happened on 2026-08-26. Prints elapsed, tests finished so far, and the most recent
-	// test name. There is no done-of-TOTAL because `go test` never announces a total; claiming
-	// one would be inventing it.
-	//
-	// stderr, not the report writer: the report is a verdict document and a progress line is not
-	// part of it. Interval is env-tunable per the rule's "make it configurable rather than
-	// removing it" — 0 or a bad value disables.
+	// HEARTBEAT while the cell runs (~/.claude/rules/long-tests.md): `go test -json` reports a cell only when
+	// it finishes, so without this a reader cannot tell a working gate from a hung one. Prints elapsed, tests
+	// finished so far, and the most recent test name; there is no done-of-TOTAL because `go test` never
+	// announces a total, and claiming one would be inventing it. It goes to stderr, not the report writer (a
+	// progress line is not part of the verdict document); the interval is env-tunable, and 0 or a bad value
+	// disables it.
 	stopBeat := startCellHeartbeat(c.Name, res, t0)
 	// Tee: the raw stream survives on disk (a panic that kills test2json mid-line still leaves
 	// evidence) while being parsed in one pass.
@@ -212,9 +202,9 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	return cr
 }
 
-// tally counts one cell's results out of the shared set. Cell-stamped keys make this exact — an
-// earlier design diffed a before/after snapshot of the map, which silently lost any test whose
-// result did not CHANGE between cells (a skip that stayed a skip counted once for two runs).
+// tally counts one cell's results out of the shared set. Cell-stamped keys make this exact: diffing a
+// before/after snapshot of the map loses any test whose result did not change between cells (a skip that
+// stayed a skip counted once for two runs).
 func (r *results) tally(cellName string, topOnly bool) cellResult {
 	var cr cellResult
 	for k, act := range r.final {
@@ -238,8 +228,6 @@ func sanitize(s string) string {
 	return strings.Trim(rep.Replace(s), "_")
 }
 
-// vacuous reports a cell in which every test that ran chose to skip. `go test`
-// exits 0 on an all-skip package, so RC alone cannot tell this from a real pass —
-// which is how two Metal groups in `gate gpu` vouched for claims they never
-// executed (audit 2026-09-02 G-01).
+// vacuous reports a cell in which every test that ran chose to skip. `go test` exits 0 on an all-skip
+// package, so RC alone cannot tell this from a real pass.
 func (c cellResult) vacuous() bool { return c.Pass == 0 && c.Fail == 0 && c.Skip > 0 }

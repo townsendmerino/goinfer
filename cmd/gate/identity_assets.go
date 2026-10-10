@@ -395,10 +395,10 @@ func loadIdentityTokenizer(p string) (*tokenizer.Tokenizer, error) {
 
 // defaultIdentityQuants: on CPU the tiny fixtures run at f32 (what their goldens load) AND at the two
 // shipped quantized paths, because a numerically-neutral claim about a W8A8 or int4 kernel is not
-// exercised by an f32 run at all. A GPU backend declines f32 residency, so it runs the quantized
-// paths only: both on Metal (the whole tiny set takes ~40 s there), int4 alone on WebGPU, where most
-// tiny families run staged — one dispatch per matmul — and both quants took 13 min on the M1 Pro
-// (2026-09-28); -quant int4,int8int8 restores the second. Real checkpoints run int4, the served quant.
+// exercised by an f32 run at all. A GPU backend declines f32 residency, so it runs the quantized paths
+// only: both on Metal, int4 alone on WebGPU, where most tiny families run staged (one dispatch per
+// matmul) and both quants made the run too slow for the day loop; -quant int4,int8int8 restores the
+// second. Real checkpoints run int4, the served quant.
 func defaultIdentityQuants(backend, assets string) []string {
 	switch {
 	case assets == "real":

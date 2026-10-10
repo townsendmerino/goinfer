@@ -10,37 +10,22 @@ import (
 	"strings"
 )
 
-// Tests that EXIST versus tests any selector actually RUNS.
-//
-// Three coverage gaps this campaign found were PLUMBING, not authorship — every one a test that
-// existed, passed when invoked, and was simply never selected:
-//
-//	the three int8int8 goldens      — skipped on GOINFER_HEAVY_TESTS being unset
-//	gpt_oss's int8 golden           — behind //go:build realckpt, AND a missing checkpoint
-//	eleven GGUF quant-format gates  — outside the goldens selector's regexp
-//
-// Each was found by someone asking a different question and noticing in passing. This asks it
-// directly: enumerate what exists, enumerate what the selectors reach, print the difference.
-//
-// DESIGN, from what the other censuses learned:
+// Tests that EXIST versus tests any selector actually RUNS. A test can exist, pass when invoked, and simply
+// never be selected (plumbing, not authorship): skipped because GOINFER_HEAVY_TESTS is unset, behind
+// //go:build realckpt plus a missing checkpoint, or outside the goldens selector's regexp. This
+// enumerates what exists, enumerates what the selectors reach, and prints the difference.
 //
 //   - DERIVE BOTH SIDES. The selectors come from refresh_parity_hashes.sh's GOLDEN_RE and from the
-//     sweep's own gate list, never restated here. (The Python read the gate list by regexping
-//     `GATES=(…)` out of parity_sweep.sh — which is why this had to migrate in the same commit as
-//     the sweep rather than "later as a config": deleting that file would have broken it outright.
-//     It now reads the same Go slice the sweep checks, so the second copy is gone rather than
-//     re-implemented.)
+//     sweep's own gate list (the same Go slice the sweep checks), never restated here.
 //   - SEPARATE THE REASONS. never-selected, build-tag-excluded, env-gated and asset-blocked have
-//     different remedies and different costs; collapsing them into one "uncovered" number is what
-//     made the int8int8 rows look as expensive as authoring new fixtures when they cost one env var.
+//     different remedies and costs; one "uncovered" number makes a one-env-var fix look as expensive as
+//     authoring a fixture.
 //   - ERR TOWARD FLAGGING. The env detection matches any GOINFER_* read in the file, so it flags
-//     TestInt4_forwardParity for GOINFER_INT4_GOLDEN_UPDATE — which gates REGENERATION, not the
-//     test. That false positive is deliberate: a census that UNDER-reports is the failure mode that
-//     produced all three gaps above, and a reader dismisses a flagged line in seconds where a
-//     missing one costs weeks.
-//   - PRINT THE DIFFERENCE, NOT A VERDICT. A test can be selected and still vacuous, so a green
-//     here means "nothing became unreachable since a person last looked", not "coverage is
-//     adequate".
+//     TestInt4_forwardParity for GOINFER_INT4_GOLDEN_UPDATE (which gates REGENERATION, not the test).
+//     That false positive is deliberate: a census that UNDER-reports is the failure mode, and a reader
+//     dismisses a flagged line in seconds.
+//   - PRINT THE DIFFERENCE, NOT A VERDICT. A test can be selected and still vacuous, so a green here
+//     means "nothing became unreachable since a person last looked", not "coverage is adequate".
 
 var (
 	testFnRe    = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
