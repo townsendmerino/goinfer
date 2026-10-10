@@ -7,20 +7,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// attachBlockDrafter attaches an already-loaded block drafter (--drafter) to an already-loaded
-// model, so requests can take the block-speculative path.
+// attachBlockDrafter attaches an already-loaded block drafter (--drafter) to an already-loaded model, so requests can
+// take the block-speculative path.
 //
-// dw is loaded by the caller, in loadDecoder, BEFORE the target model itself — task-fit-to-
-// hardware.md §2's drafter-aware sizing needs the drafter's byte footprint priced into
-// Options.ExtraResidentBytes ahead of BuildResident, which means the load has already happened
-// by the time this runs. Taking the loaded value here (rather than a directory to load itself,
-// as this used to) means that pricing and this attach see the EXACT SAME weights, not two
-// independent reads of the same file that could in principle disagree.
+// The caller loads dw in loadDecoder before the target model, because drafter-aware sizing needs the drafter's byte
+// footprint priced into Options.ExtraResidentBytes ahead of BuildResident (docs/tasks/task-fit-to-hardware.md section 2). Taking
+// the loaded value here means that pricing and this attach see the same weights, not two independent reads of one
+// file.
 //
-// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wants block
-// drafting; a wrong pairing or a backend that cannot host one should be a startup error they see
-// once, not a fleet quietly serving at 1x. The one exception is a sampler the spec path does not
-// support, which is a per-REQUEST property and falls back per request by design.
+// It fails startup rather than degrading silently: an operator who passed --drafter wants block drafting, and a wrong
+// pairing or a backend that cannot host one should be a startup error seen once, not a fleet quietly serving at 1x.
+// The one exception is a sampler the spec path does not support, a per-request property that falls back per request
+// by design.
 func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
 	if lm.model == nil || !lm.model.BlockSpecCapable() {
 		return fmt.Errorf("this model has no resident GPU decode path that can host a block " +
@@ -43,19 +41,10 @@ func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
 	return nil
 }
 
-// warnThinkingTemplate says so when the served template will put the target in THINKING mode.
-//
-// This is the one deployment footgun that survives every other safeguard, because it is
-// INVISIBLE: block drafting is lossless, so a thinking-mode target returns correct responses at
-// reduced speed and nothing in any log says why. Measured on Qwen3-4B, same model, same
-// hardware, only the template differing:
-//
-//	non-thinking   5.76 accepted/round   1.57x
-//	THINKING       3.00 accepted/round   0.82x   (0.96x once the acceptance guard trips)
-//
-// The runtime guard stops the bleeding, so this is a warning and not a refusal — a thinking
-// deployment is merely not getting the win, rather than being harmed. But an operator who chose
-// --drafter deserves to be told that this configuration is why it is not paying off.
+// warnThinkingTemplate warns when the served template will put the target in thinking mode. Block drafting is
+// lossless, so a thinking-mode target returns correct responses at reduced speed and nothing in any log says why: the
+// pretrained drafters are trained on non-thinking output, so acceptance falls sharply and --drafter can turn from a
+// win into a loss. The runtime acceptance guard limits the harm, so this is a warning and not a refusal.
 func warnThinkingTemplate(lm *loadedModel) {
 	if lm.tk == nil {
 		return

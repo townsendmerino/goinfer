@@ -25,19 +25,19 @@ type embedReq struct {
 	User           string          `json:"user"`            // accepted, ignored
 }
 
-// taskEmbedder is the optional capability of an embedder whose quality depends on a named task prompt
-// (EmbeddingGemma 2's twenty, from its config_sentence_transformers.json). The handler then chooses the prompt
-// (embedTask) instead of the query/document flag, and echoes the one it applied.
+// taskEmbedder is the optional capability of an embedder whose quality depends on a named task prompt (EmbeddingGemma
+// 2's prompts, from its config_sentence_transformers.json). The handler then chooses the prompt (embedTask) instead
+// of the query/document flag, and echoes the one it applied.
 type taskEmbedder interface {
 	PromptNames() []string
 	PromptText(name string) (string, error)
 	EncodeTasks(texts []string, prompt string) ([][]float32, []int, error)
 }
 
-// embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md, Gate 3, owner decision
-// 2026-10-06): an explicit task names one of the model's prompts ("none" for none); else input_type maps onto the
-// model's own "query" and "document" prompts; else no prompt, which is what sentence-transformers applies by default,
-// so a client that knows nothing about prompts gets the reference's own output.
+// embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md): an explicit task names one
+// of the model's prompts ("none" for none); else input_type maps onto the model's own "query" and "document" prompts;
+// else no prompt, which is what sentence-transformers applies by default, so a client that knows nothing about
+// prompts gets the reference's own output.
 func embedTask(te taskEmbedder, task, inputType string) (string, error) {
 	if task != "" {
 		if task == "none" {
@@ -61,13 +61,11 @@ func embedTask(te taskEmbedder, task, inputType string) (string, error) {
 	return "document", nil
 }
 
-// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the encoder is
-// goroutine-safe and parallelizes internally), so without a per-request cap a single body drives an
-// unbounded allocation and N concurrent requests multiply it: a 4 MiB body of empty strings is ~2M
-// inputs, and the response builder materializes 2M maps + 2M []float32 of HiddenDim (~6 GB at dim 768)
-// before writing a byte; with a decoder-as-embedder (maxTokens 0) one multi-MiB string prefills ~1M
-// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes bounds a single
-// input to text sizes (an embedding input is a query/passage, not a document dump).
+// Embedding request bounds. /v1/embeddings is deliberately un-queued (the encoder is goroutine-safe and parallelizes
+// internally), so without a per-request cap one body drives an unbounded allocation and N concurrent requests
+// multiply it: a 4 MiB body of empty strings is ~2M inputs, and the response builder would materialize 2M maps and 2M
+// vectors before writing a byte. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes bounds a
+// single input to text sizes (an embedding input is a query or passage, not a document dump).
 const (
 	maxEmbedInputs     = 2048
 	maxEmbedInputBytes = 1 << 20 // 1 MiB
@@ -92,11 +90,10 @@ func checkEmbedInputBounds(inputs []string) error {
 // field truncates each vector and renormalizes (Matryoshka-style). encoding_format
 // "base64" returns little-endian float32 bytes, else a JSON number array.
 func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
-	// G7: the route is registered unconditionally so an unconfigured server gives a JSON
-	// error naming the constraint and the flag that fixes it — not Go's default text/plain
-	// "404 page not found", which SDKs surface as NotFoundError (reads as a wrong URL rather
-	// than an unconfigured server). Same shape as the .giw --quant decline. 501 Not
-	// Implemented: the endpoint exists, this server just has no embedding model loaded.
+	// The route is registered unconditionally so an unconfigured server gives a JSON error naming the constraint and
+	// the flag that fixes it, not Go's default text/plain "404 page not found", which SDKs surface as NotFoundError
+	// (reading as a wrong URL rather than an unconfigured server). 501 Not Implemented: the endpoint exists, this
+	// server just has no embedding model loaded.
 	if s.embed == nil {
 		writeErr(w, http.StatusNotImplemented, "no embedding model is loaded; start the server with -embed-model <path> to enable /v1/embeddings")
 		return
@@ -106,7 +103,7 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inputs, err := parseEmbedInput(req.Input)
-	var mediaItems []embedItem // set only when the request carries an image (Phase V) or audio (Phase A)
+	var mediaItems []embedItem // set only when the request carries an image or audio
 	if err != nil {
 		items, ierr := parseEmbedItems(req.Input)
 		if ierr != nil {
@@ -178,14 +175,11 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	for i := range isQueries {
 		isQueries[i] = isQuery
 	}
-	// Encoder is goroutine-safe and EncodeBatch parallelizes internally, so no
-	// s.mu (that guards only the single shared decoder).
-	//
-	// embedBatchCounter (audit R-07) reports each input's token count as a byproduct of the SAME
-	// tokenize pass EncodeBatch already makes, for encoders that can — the decoder-backed
-	// embedder does. Encoders that can't (the aikit-embed.Tokenizer path, an external interface
-	// this server does not control) fall back to the original EncodeBatch + a second,
-	// count-only tokenize pass (countEmbedTokens).
+	// The encoder is goroutine-safe and EncodeBatch parallelizes internally, so there is no server mutex (that guards
+	// only the single shared decoder). embedBatchCounter reports each input's token count as a byproduct of the
+	// tokenize pass EncodeBatch already makes, for encoders that can (the decoder-backed embedder); the rest (the
+	// aikit-embed.Tokenizer path, an external interface this server does not control) fall back to EncodeBatch plus a
+	// second, count-only tokenize pass (countEmbedTokens).
 	var vecs [][]float32
 	var promptTokens int
 	if mediaItems != nil {
@@ -287,18 +281,14 @@ func parseInputType(t string) (isQuery bool, err error) {
 	}
 }
 
-// resolveDimensions validates the optional output-dimension override against the
-// model's native width. nil/0 means full width.
+// resolveDimensions validates the optional output-dimension override against the model's native width; nil or 0 means
+// full width.
 //
-// Truncation is only legitimate for models trained with Matryoshka Representation Learning.
-// Slicing any other embedder returns a unit-length, entirely plausible vector that simply
-// RETRIEVES WORSE — a silent-wrong, and measured rather than theoretical: aikit's
-// TestEmbedderCoverage_matryoshka shows multilingual-e5-base sliced to a quarter width dropping
-// paraphrase-pair recall 1.00 → 0.80, while genuine MRL models hold their documented floor. So a
-// dimensions request below the model's floor, or ANY dimensions for a non-MRL model, is a 400
-// rather than a quietly degraded vector. s.embedMRLMin carries that floor (0 = not truncatable),
-// resolved at load from aikit's exported registry — the same source of truth that generates its
-// published Truncatable column.
+// Truncation is legitimate only for models trained with Matryoshka Representation Learning: slicing any other
+// embedder returns a unit-length, plausible vector that simply retrieves worse, a silent wrong. So a dimensions
+// request below the model's floor, or any dimensions for a non-MRL model, is a 400, not a quietly degraded vector.
+// s.embedMRLMin carries that floor (0 = not truncatable), resolved at load from aikit's exported registry, the source
+// of its published Truncatable column; s.embedWidths, when set, is the exact set of allowed widths instead.
 func (s *server) resolveDimensions(d *int) (int, error) {
 	if d == nil || *d == 0 || *d == s.embedDim {
 		return s.embedDim, nil // unset, or explicitly the native width: nothing to truncate
@@ -372,20 +362,18 @@ func float32sToBase64(v []float32) string {
 	return base64.StdEncoding.EncodeToString(buf)
 }
 
-// embedTokenCounter is implemented by embedders that carry their OWN tokenizer instead of an aikit
-// embed.Tokenizer — the decoder-backed embedder (docs/completed/task-decoder-as-embedder.md). s.embedTok is
-// nil for those, so without this the count below would silently report prompt_tokens: 0 on every
-// response. Preferring this interface keeps usage honest for both embedder kinds.
+// embedTokenCounter is implemented by embedders that carry their own tokenizer instead of an aikit embed.Tokenizer:
+// the decoder-backed embedder (docs/completed/task-decoder-as-embedder.md). s.embedTok is nil for those, so without
+// this prompt_tokens would silently report 0 on every response.
 type embedTokenCounter interface {
 	CountTokens(text string, isQuery bool) int
 }
 
-// embedBatchCounter is the OPTIONAL capability an embedder implements when it can report each
-// input's token count as a byproduct of the same tokenize pass EncodeBatch already makes,
-// instead of the handler falling back to EncodeBatch + a second, count-only tokenize over every
-// input (embedTokenCounter/countEmbedTokens below) — audit R-07's "tokenises each input twice".
-// The decoder-backed embedder implements it; the aikit-embed.Tokenizer path does not (it is an
-// external interface this server does not control), so it keeps using the two-pass fallback.
+// embedBatchCounter is the optional capability of an embedder that can report each input's token count as a byproduct
+// of the tokenize pass EncodeBatch already makes, so the handler need not tokenize every input twice
+// (embedTokenCounter and countEmbedTokens below). The decoder-backed embedder implements it; the
+// aikit-embed.Tokenizer path does not (an external interface this server does not control), so it keeps the two-pass
+// fallback.
 type embedBatchCounter interface {
 	EncodeBatchCounted(texts []string, isQueries []bool, concurrency int) (vecs [][]float32, tokenCounts []int, err error)
 }

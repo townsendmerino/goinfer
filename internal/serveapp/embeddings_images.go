@@ -9,18 +9,18 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
-// Image inputs to /v1/embeddings (docs/tasks/task-embeddinggemma2.md, Phase V; owner: accept both shapes). `input`
-// is a string, an object, or an array whose every element is one input; an element is a string, an
-// {"image": ..., "text": ...} object (the dict sentence-transformers takes), or an OpenAI content-part array
-// ([{"type": "image_url", "image_url": {"url": "data:..."}}, {"type": "text", "text": "..."}]). A lone part object
-// with a "type" is a one-part input. Images are inline base64 only (a data: URI, or bare base64 in the object form),
-// never a fetched URL (decodeDataURI's SSRF guard). One image per input, and text only after it, the layout
-// EmbeddingGemma 2's reference builds for an image followed by text.
+// Image inputs to /v1/embeddings (docs/tasks/task-embeddinggemma2.md). `input` is a string, an object, or an array
+// whose every element is one input; an element is a string, an {"image": ..., "text": ...} object (the dict
+// sentence-transformers takes), or an OpenAI content-part array ([{"type": "image_url", "image_url": {"url":
+// "data:..."}}, {"type": "text", "text": "..."}]). A lone part object with a "type" is a one-part input. Images are
+// inline base64 only (a data: URI, or bare base64 in the object form), never a fetched URL (decodeDataURI's SSRF
+// guard). One image per input, and text only after it, the layout EmbeddingGemma 2's reference builds for an image
+// followed by text.
 //
-// Audio (Phase A) takes the same two shapes: {"audio": <a data: URI or bare base64 of a WAV>, "text": ...}, and the
-// OpenAI part {"type": "input_audio", "input_audio": {"data": <base64>, "format": "wav"}}. The WAV is 16-bit PCM,
-// mono, at 16 kHz, at most 30 s (embeddinggemma2.DecodeWAV and MaxAudioSeconds; nothing is resampled or cut). An
-// input carries one image or one audio clip, not both.
+// Audio takes the same two shapes: {"audio": <a data: URI or bare base64 of a WAV>, "text": ...}, and the OpenAI part
+// {"type": "input_audio", "input_audio": {"data": <base64>, "format": "wav"}}. The WAV is 16-bit PCM, mono, at 16
+// kHz, at most 30 s (embeddinggemma2.DecodeWAV and MaxAudioSeconds; nothing is resampled or cut). An input carries
+// one image or one audio clip, not both.
 
 const (
 	maxEmbedImages     = 16
@@ -47,8 +47,8 @@ type imageEmbedder interface {
 	EmbedImageTask(img []byte, text, prompt string) ([]float32, int, error)
 }
 
-// parseEmbedItems reads `input` in every accepted shape. A request with no image yields only text items, which the
-// handler serves exactly as before.
+// parseEmbedItems reads `input` in every accepted shape. A request with no image or audio yields only text items,
+// which the handler serves as plain text inputs.
 func parseEmbedItems(raw json.RawMessage) ([]embedItem, error) {
 	if len(raw) == 0 {
 		return nil, nil

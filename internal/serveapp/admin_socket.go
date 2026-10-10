@@ -12,17 +12,14 @@ import (
 	"time"
 )
 
-// K5 (docs/tasks/task-halt-2026-09.md): a second http.Server, on a Unix socket, serving ONLY /admin/*
-// with no -api-key check — the socket's own file permissions (mode 0600, owned by whoever started
-// serve) are the auth. Deliberately separate from the TCP listener rather than a second mux on the
-// same *http.Server: a Unix socket has no host/port to bind wrong, and closing it independently at
-// shutdown (main.go's closeAdminSock) can't accidentally also close the TCP listener or vice versa.
+// A second http.Server, on a Unix socket, serving only /admin/* with no -api-key check: the socket's file permissions
+// (mode 0600, owned by whoever started serve) are the auth. It is separate from the TCP listener, not a second mux on
+// the same *http.Server, so closing it at shutdown (main.go's closeAdminSock) cannot also close the TCP listener or
+// vice versa.
 
-// defaultAdminSocketPath is the suggested -admin-socket path used in --help text and as the K5
-// CLI's own default (`serve status`, etc.) when -admin-socket is not repeated on that command
-// line. NOT used as the flag's own default value — -admin-socket is off (empty) unless a caller
-// explicitly sets it; this only gives the two sides (the running server and the CLI that talks to
-// it) a path to agree on without either one hardcoding the other's invocation.
+// defaultAdminSocketPath is the suggested -admin-socket path for --help text and the admin CLI's default when
+// -admin-socket is not repeated on its command line. It is not the flag's own default: -admin-socket is off (empty)
+// unless set; this only gives the running server and the CLI a path to agree on.
 func defaultAdminSocketPath() string {
 	if runtime.GOOS == "darwin" {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -32,12 +29,10 @@ func defaultAdminSocketPath() string {
 	return "/run/goinfer/admin.sock"
 }
 
-// startAdminSocket creates path fresh (unlinking anything already there — a stale socket from a
-// prior crashed process, not a live one; nothing else would still be listening on it once this
-// process owns it), listens on it at mode 0600, and serves every /admin/* route (registerAdminRoutes,
-// admin.go) on it with no auth wrapper. The returned close func shuts the listener down and unlinks
-// the socket file; main.go calls it unconditionally at shutdown (a no-op when -admin-socket was
-// never set, since this function is then never called at all).
+// startAdminSocket creates path fresh (unlinking whatever is there: a stale socket from a crashed process, since
+// nothing live can still be listening once this process owns it), listens on it at mode 0600, and serves every
+// /admin/* route (registerAdminRoutes, admin.go) on it with no auth wrapper. The returned close func shuts the
+// listener down and unlinks the socket file; main.go calls it at shutdown.
 func startAdminSocket(s *server, path string, textCap int64) (close func(), err error) {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("removing stale socket: %w", err)

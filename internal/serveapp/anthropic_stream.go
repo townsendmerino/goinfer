@@ -32,9 +32,8 @@ func anthropicEvent(ss *sseWriter, event string, v any) {
 	ss.frame("event: %s\ndata: %s\n\n", event, b)
 }
 
-// anthropicStreamErr emits an Anthropic `error` event mid-stream, when a
-// generation fails after message_start has already been sent (200, headers
-// flushed — no status code left to set). M1.
+// anthropicStreamErr emits an Anthropic `error` event mid-stream, for a generation that fails after message_start was
+// sent (200, headers flushed: no status code left to set).
 func anthropicStreamErr(ss *sseWriter, msg string) {
 	anthropicEvent(ss, "error", map[string]any{
 		"type": "error", "error": map[string]any{"type": "api_error", "message": msg},
@@ -53,7 +52,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		return
 	}
 	id := "msg_" + reqID()
-	gr.id = id // K1: registers this generation for cancel-by-id
+	gr.id = id // registers this generation for cancel-by-id
 	anthropicEvent(ss, "message_start", map[string]any{
 		"type": "message_start",
 		"message": map[string]any{
@@ -87,9 +86,8 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		"type": "content_block_start", "index": 0,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
-	// N-24 (docs/audit-2026-09-10.md): the ping above is a one-shot liveness check, not a
-	// keep-alive — nothing else is sent until the first token, which on CPU is after the whole
-	// prefill (minutes for an image, ~270s for an 8k agent prompt) against a 300s idle timeout.
+	// The ping above is a one-shot liveness check, not a keep-alive: nothing else is sent until the first token, and
+	// on CPU that is after the whole prefill, so a heartbeat keeps a client's idle timeout from firing.
 	stopBeat := sseHeartbeat(ss)
 	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
@@ -108,14 +106,9 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 }
 
-// streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block
-// while the model writes it (G21, where the family can stream prose safely — the shared tool turn,
-// tool_turn.go), then one tool_use block per parsed call. With no call it is one text block.
-//
-// Before this, the route Claude Code uses buffered the WHOLE generation and sent only heartbeats
-// (audit-2026-09-02 M-19 added those: the single `ping` at message_start was the only byte for the
-// entire generation, measured elsewhere at 1682.6s against a 300s idle timeout) — only the OpenAI
-// route streamed prose during a tool call.
+// streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block while the model
+// writes it (where the family can stream prose safely: the shared tool turn, tool_turn.go), then one tool_use block
+// per parsed call. With no call it is one text block.
 func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool, th *anthropicThink) {
 	ts := &anthropicTextStream{ss: ss, think: th}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, ts.push)
@@ -129,8 +122,8 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		return
 	}
 	if t.cancelReason != "" {
-		// K1: cancelled mid-generation — a partial buffer, no tool call is parsed out of it. Close any
-		// open prose block so the stream stays well-formed.
+		// Cancelled mid-generation: a partial buffer, so no tool call is parsed out of it. Close any open prose block
+		// so the stream stays well-formed.
 		ts.close()
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
 		anthropicMessageEnd(ss, reason, seq, t.nComp, t.cancelReason)
@@ -165,10 +158,9 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 	anthropicMessageEnd(ss, "tool_use", nil, t.nComp, "")
 }
 
-// anthropicTextStream is the prose half of a streamed tool turn: text content block 0, opened lazily.
-// Whitespace-only prose before a call has never produced a text block on this route (the buffered
-// version dropped a lead that was only whitespace), so leading whitespace is held until real text
-// arrives; if a call comes first, it is dropped exactly as before.
+// anthropicTextStream is the prose half of a streamed tool turn: text content block 0, opened lazily. Whitespace-only
+// prose before a call never produces a text block on this route, so leading whitespace is held until real text
+// arrives; if a call comes first, it is dropped.
 type anthropicTextStream struct {
 	ss       *sseWriter
 	think    *anthropicThink // may be nil; its block, when emitted, is index 0 and the text block follows it
@@ -300,7 +292,7 @@ func streamMessagesThinking(ss *sseWriter, th *anthropicThink, run func(onText f
 	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 }
 
-// pushPlain is push without the tool path's whitespace holding: the no-tools route has always streamed every byte.
+// pushPlain is push without the tool path's whitespace holding: the no-tools route streams every byte.
 func (a *anthropicTextStream) pushPlain(text string) {
 	if !a.open {
 		a.think.close()
@@ -332,11 +324,10 @@ func streamTextBlock(ss *sseWriter, index int, text string) {
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": index})
 }
 
-// anthropicMessageEnd writes the closing message_delta (stop reason + final
-// output token count) and message_stop. There is no [DONE] terminator.
-// cancelReason, when non-empty (K1, docs/tasks/task-halt-2026-09.md), adds one more named event
-// naming the admin-cancel reason before message_stop — reason == "cancelled" alone doesn't
-// carry WHY, and a client must not be able to mistake this for a natural end_turn.
+// anthropicMessageEnd writes the closing message_delta (stop reason and final output token count) and message_stop;
+// there is no [DONE] terminator. A non-empty cancelReason adds one more named event with the admin-cancel reason
+// before message_stop: the stop reason alone does not say why, and a client must not mistake this for a natural
+// end_turn.
 func anthropicMessageEnd(ss *sseWriter, reason string, seq any, nComp int, cancelReason string) {
 	anthropicEvent(ss, "message_delta", map[string]any{
 		"type":  "message_delta",

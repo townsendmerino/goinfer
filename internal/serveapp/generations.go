@@ -6,53 +6,40 @@ import (
 	"time"
 )
 
-// K1 (docs/tasks/task-halt-2026-09.md): a process-wide registry of in-flight generations, keyed by the
-// id each handler already mints (reqID(), via chatcmpl-/msg_/resp_ prefixes). It exists so an
-// operator can cancel one generation, or every generation of one model, from outside the
-// process that started it — the handle a cancel-by-id needs already existed (helpers.go's
-// reqID); it was just never registered anywhere.
+// generation is one in-flight generation in the process-wide registry (generationRegistry), keyed by the id each
+// handler already mints (reqID(), via the chatcmpl-/msg_/resp_ prefixes), so an operator can cancel one generation,
+// or every generation of one model, from outside the process that started it (docs/tasks/task-halt-2026-09.md).
 //
-// Registration happens inside drive/driveVL (the two places EVERY generation path funnels
-// through — openai.go's own doc comment on drive), not in each of the ~15 call sites, so the
-// bookkeeping lives in one place. A handler that wants cancellation opts in by setting
-// genRequest.id before calling drive/driveVL; gr.id == "" (a caller that hasn't been wired, or a
-// test) skips registration entirely — nil-safe, not an error.
+// Registration happens inside drive/driveVL, which every generation path funnels through, not at each call site. A
+// handler that wants cancellation opts in by setting genRequest.id before calling drive/driveVL; gr.id == "" (a
+// caller that has not been wired, or a test) skips registration, nil-safe.
 //
-// NOTE ON "SESSION" (found while implementing, not assumed): docs/tasks/task-halt-2026-09.md's K1 also
-// asks for `POST /admin/sessions/{id}/cancel` ("every generation of that session, since an agent
-// loop is a session"). That endpoint is NOT implemented here. goinfer's own "session"
-// (sessionLRU/decoder.Session, sessions.go) is a content-addressed KV-reuse cache selected by
-// longest-common-prefix match (bestExtend) — it has no client-visible, stable identifier an
-// operator could type into a cancel request. None of the four request surfaces (chat
-// completions, completions, responses, messages) carry a session/user/thread id either
-// (embeddings.go's `User` field is the only "user" field in the tree, and it is explicitly
-// "accepted, ignored"). Inventing one here would be exactly the kind of undocumented design
-// decision the task asked to be flagged instead of worked around — see the report accompanying
-// this commit.
+// There is no cancel-by-session. goinfer's session (sessionLRU/decoder.Session, sessions.go) is a content-addressed
+// KV-reuse cache selected by longest-common-prefix match (bestExtend) and has no client-visible, stable identifier an
+// operator could type into a cancel request, and none of the four request surfaces carries a session, user or thread
+// id (embeddings' `User` field is accepted and ignored). The task doc's `POST /admin/sessions/{id}/cancel` is
+// therefore not implemented (the task doc defers it to its K4 item); inventing an id would be a design decision to
+// take, not to work around.
 type generation struct {
 	id      string
 	model   string
 	started time.Time
 	cancel  func()
 
-	// tokens counts onText callback firings, a proxy for "tokens so far" (drive's onText is
-	// called once per emitted UTF-8-complete/stop-string-safe chunk, which is 1:1 with tokens
-	// on the common path and briefly lags it under UTF-8/stop-string holdback — close enough
-	// for an operator's live status view, not a billing count).
+	// tokens counts onText callback firings, a proxy for tokens so far: drive's onText fires once per emitted
+	// UTF-8-complete, stop-string-safe chunk, which is 1:1 with tokens on the common path and briefly lags it under
+	// holdback. Close enough for an operator's live status view, not a billing count.
 	tokens atomic.Int64
 
-	// cancelReason is set ONCE, by the first admin cancel to reach this generation (empty =
-	// not cancelled). Read by drive/driveVL after the stream ends to decide whether an
-	// externally-cancelled generation (parent.Err() != nil) was an admin cancel specifically,
-	// as opposed to a client disconnect or graceful shutdown, which report "length" as before
-	// (M-23's existing distinction; see openai.go's streamTokens doc comment).
+	// cancelReason is set once, by the first admin cancel to reach this generation (empty = not cancelled).
+	// drive/driveVL read it after the stream ends to tell an admin cancel from a client disconnect or graceful
+	// shutdown, which report "length" (see streamTokens).
 	cancelMu     sync.Mutex
 	cancelReason string
 }
 
-// cancelOnce sets the reason (first caller wins) and cancels the generation's context. Safe to
-// call more than once (e.g. a session-wide cancel racing a by-id cancel of the same generation);
-// only the first reason sticks, and cancel() is idempotent (context.CancelFunc always is).
+// cancelOnce sets the reason (first caller wins) and cancels the generation's context. Safe to call more than once (a
+// global halt racing a by-id cancel of the same generation): only the first reason sticks, and cancel is idempotent.
 func (g *generation) cancelOnce(reason string) {
 	g.cancelMu.Lock()
 	if g.cancelReason == "" {
@@ -69,9 +56,8 @@ func (g *generation) reason() string {
 	return g.cancelReason
 }
 
-// snapshot is generation's read-only view for GET /admin/generations — a plain struct rather
-// than *generation itself, so a lister never holds a reference into the live registry entry
-// past the RLock that produced it.
+// generationSnapshot is a generation's read-only view for GET /admin/generations: a plain struct, so a lister never
+// holds a reference into the live registry entry past the lock that produced it.
 type generationSnapshot struct {
 	ID          string    `json:"id"`
 	Model       string    `json:"model"`
@@ -91,8 +77,8 @@ func newGenerationRegistry() *generationRegistry {
 	return &generationRegistry{gens: map[string]*generation{}}
 }
 
-// register adds a generation under construction's entry. Called by drive/driveVL, never by a
-// handler directly — id is whatever the handler already minted via reqID().
+// register adds an entry for a generation. Called by drive/driveVL, never by a handler directly; id is whatever the
+// handler already minted via reqID().
 func (r *generationRegistry) register(id, model string, cancel func()) *generation {
 	g := &generation{id: id, model: model, started: time.Now(), cancel: cancel}
 	r.mu.Lock()
@@ -122,8 +108,7 @@ func (r *generationRegistry) cancel(id, reason string) bool {
 	return true
 }
 
-// cancelAll cancels every currently-registered generation with reason (K2's global halt) and
-// returns how many it hit.
+// cancelAll cancels every currently registered generation with reason (the global halt) and returns how many it hit.
 func (r *generationRegistry) cancelAll(reason string) int {
 	r.mu.Lock()
 	gens := make([]*generation, 0, len(r.gens))
@@ -155,13 +140,11 @@ func (r *generationRegistry) count() int {
 	return len(r.gens)
 }
 
-// waitEmpty polls until no generation is registered, or timeout elapses, and returns how long it
-// actually took (K2's time-to-quiescence — docs/tasks/task-halt-2026-09.md). Each registered generation
-// stops at its next per-token ctx check (already the fastest signal there is; see generations.go's
-// top doc comment), so this is normally fast — the poll interval trades a little latency in the
-// measurement for not spinning a goroutine per halt. Used by K2's halt path after cancelAll: the
-// cancel calls return immediately (they only flip a context), but "halted" should mean the work
-// actually stopped, not merely that stopping was requested.
+// waitEmpty polls until no generation is registered, or timeout elapses, and returns how long it took (the halt's
+// time to quiescence, docs/tasks/task-halt-2026-09.md). Each registered generation stops at its next per-token ctx
+// check, the fastest signal there is, so this is normally fast; the poll interval trades a little latency in the
+// measurement for not spinning a goroutine per halt. The halt path calls it after cancelAll: the cancel calls return
+// immediately (they only flip a context), but "halted" should mean the work actually stopped.
 func (r *generationRegistry) waitEmpty(timeout time.Duration) time.Duration {
 	start := time.Now()
 	const poll = 10 * time.Millisecond

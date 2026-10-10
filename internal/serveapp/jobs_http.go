@@ -5,16 +5,14 @@ import (
 	"time"
 )
 
-// J3 (task-work-queue-2026-09.md): POST /v1/jobs submits a generation and returns its id
-// immediately; GET /v1/jobs/{id} polls state+result; GET /v1/jobs/{id}/events re-attaches to its
-// output (replay-then-live); DELETE /v1/jobs/{id} cancels it. Text-only chat body for this pass —
-// see jobs_run.go's own doc comment and the task doc's closure note for what's scoped out
-// (vision, tools, the K4 user/user_id key that doesn't exist yet).
+// POST /v1/jobs submits a generation and returns its id immediately; GET /v1/jobs/{id} polls state and result; GET
+// /v1/jobs/{id}/events re-attaches to its output (replay, then live); DELETE /v1/jobs/{id} cancels it. The body is a
+// text-only chat body: images and tools are refused, and docs/tasks/task-work-queue-2026-09.md has what else is
+// scoped out (see jobs_run.go).
 
-// handleCreateJob is POST /v1/jobs. Deliberately NOT routed through withModel/handleChat: those
-// bake in "hold the model for exactly this synchronous handler's lifetime", which is precisely
-// wrong here — resolveAndLock is called directly so the returned release can be handed to the
-// background goroutine instead of deferred in this handler.
+// handleCreateJob is POST /v1/jobs. It is deliberately not routed through withModel/handleChat: those hold the model
+// for exactly one synchronous handler's lifetime, which is wrong here. resolveAndLock is called directly so the
+// returned release can be handed to the background goroutine instead of deferred in this handler.
 func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
 	if !decodeJSON(w, r, &req) {
@@ -95,10 +93,9 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": string(jobPending)})
 }
 
-// handleGetJob is GET /v1/jobs/{id}: state + result, a plain JSON projection of a job snapshot.
-// Uses snapshot(), not get() — this handler's goroutine is a genuine concurrent reader against
-// whichever goroutine (runJob, or a synchronous handler) is still mutating this job via
-// markRunning/finish; see jobStore.snapshot's own doc comment.
+// handleGetJob is GET /v1/jobs/{id}: state and result, a plain JSON projection of a job snapshot. It uses snapshot(),
+// not get(): this goroutine is a concurrent reader against whichever goroutine (runJob, or a synchronous handler) is
+// still mutating the job via markRunning/finish (see jobStore.snapshot).
 func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	j, ok := s.jobs.snapshot(r.PathValue("id"))
 	if !ok {
@@ -123,8 +120,8 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	if j.result != nil {
 		out["result"] = j.result
 	}
-	// W28: a waiting job's place in line — its own request's state, the only queue information the page may
-	// see (task-web-ui-2026-09.md W5's rule). Absent once it runs, and briefly before it joins the line.
+	// A waiting job's place in line: its own request's state, the only queue information the page may see
+	// (docs/tasks/task-web-ui-2026-09.md). Absent once it runs, and briefly before it joins the line.
 	if j.State == jobPending {
 		if lm := s.modelByName(j.Model); lm != nil {
 			if place, waiting, running, ok := lm.turns.position(j.ID); ok {
@@ -135,11 +132,10 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleCancelJob is DELETE /v1/jobs/{id} — K1's cancel, addressed by job id (task doc: "the two
-// registries are joined, not parallel"). 200 either way (found or not), mirroring
-// handleAdminGenerationCancel's own idempotent shape (admin.go:38) — a caller cancelling an id
-// that already finished, or never existed, is not an error: the job is stopped either way, which
-// is what was asked for.
+// handleCancelJob is DELETE /v1/jobs/{id}: the cancel, addressed by job id (the job and generation registries are
+// joined, not parallel). 200 either way (found or not), mirroring handleAdminGenerationCancel's idempotent shape: a
+// caller cancelling an id that already finished, or never existed, is not an error, since the job is stopped either
+// way.
 func (s *server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	found := s.jobs.cancel(id)

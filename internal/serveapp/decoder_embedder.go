@@ -2,15 +2,12 @@ package serveapp
 
 // Decoder-as-embedder (docs/completed/task-decoder-as-embedder.md).
 //
-// qwen3-embedding and embeddinggemma are causal decoders used as EMBEDDERS. goinfer already runs
-// those decoders and already serves /v1/embeddings against an aikit encoder; the only genuinely new
-// piece is a pooling head + instruction-prefix convention:
-//
-//	decoder forward → last-token pool (decoder.HiddenLast) → out the existing /v1/embeddings
-//
-// This type satisfies aikit's encoder.Encoder structurally (Encode / EncodeBatch / HiddenDim), so
-// it drops straight into server.embed and every downstream behavior — input_type asymmetry,
-// dimensions truncate+renormalize, encoding_format, L2 normalization, usage counting — is unchanged.
+// qwen3-embedding and embeddinggemma are causal decoders used as embedders. Beyond running the decoder and serving
+// /v1/embeddings, the only new piece is a pooling head and an instruction-prefix convention: decoder forward,
+// last-token pool (decoder.HiddenLast), out through the existing /v1/embeddings. decoderEmbedder satisfies aikit's
+// encoder.Encoder structurally (Encode / EncodeBatch / HiddenDim), so it drops into server.embed and every downstream
+// behavior (input_type asymmetry, dimensions truncate+renormalize, encoding_format, L2 normalization, usage counting)
+// is unchanged.
 
 import (
 	"fmt"
@@ -25,19 +22,16 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Qwen3-Embedding conventions. Read from the model's own config files AND — the part config-reading
-// alone gets wrong — from what sentence-transformers actually feeds the model:
+// Qwen3-Embedding conventions, read from the model's config files and from what sentence-transformers actually feeds the
+// model:
 //   - config_sentence_transformers.json prompts: query carries the Instruct preamble, document "".
-//   - 1_Pooling/config.json: pooling_mode_lasttoken=true, include_prompt=true — so the query prompt
-//     is part of the pooled input and is NOT stripped before pooling.
-//   - tokenizer_config.json: add_bos_token=false, add_eos_token ABSENT -> no BOS, and the plain
-//     tokenizer call appends nothing.
-//   - BUT sentence-transformers appends <|endoftext|> (151643) to EVERY input. Nothing in the
-//     configs or the model card says so — `model.tokenize()` had to be inspected to see it. This is
-//     not cosmetic: last-token pooling pools THAT token, so omitting it pools the final content
-//     token instead and yields a plausible, semantically-ordered, but WRONG vector (cosine ~0.4-0.8
-//     vs the reference, while retrieval still looks fine). Note it is <|endoftext|>, NOT the
-//     configured eos_token <|im_end|> (151645) — reading eos_token would also have been wrong.
+//   - 1_Pooling/config.json: pooling_mode_lasttoken=true, include_prompt=true, so the query prompt is part of the pooled
+//     input and is not stripped before pooling.
+//   - tokenizer_config.json: add_bos_token=false, add_eos_token absent: no BOS, and the plain tokenizer call appends
+//     nothing.
+//   - sentence-transformers appends <|endoftext|> (151643) to every input, which no config or model card says. It is not
+//     cosmetic: last-token pooling pools that token, so omitting it pools the final content token and yields a plausible,
+//     semantically ordered, but wrong vector. It is <|endoftext|>, not the configured eos_token <|im_end|> (151645).
 const (
 	qwen3EmbedQueryPrompt = "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"
 	qwen3EmbedDocPrompt   = ""
@@ -47,10 +41,10 @@ const (
 
 // decoderEmbedder adapts a loaded goinfer decoder into the embedder seam.
 type decoderEmbedder struct {
-	// mu serializes EVERYTHING. The /v1/embeddings handler deliberately runs without the server
-	// mutex because an aikit encoder is goroutine-safe for concurrent Encode — a DECODER is not:
-	// it has one shared KV cache and one decode scratch. Without this, parallel embedding requests
-	// would interleave writes into the same cache and return plausible-but-wrong vectors (and race).
+	// mu serializes everything. The /v1/embeddings handler runs without the server mutex because an aikit encoder is
+	// goroutine-safe for concurrent Encode, but a decoder is not: it has one shared KV cache and one decode scratch,
+	// so parallel embedding requests would interleave writes into the same cache and return plausible but wrong
+	// vectors.
 	mu sync.Mutex
 
 	m   *decoder.Model
@@ -63,11 +57,8 @@ type decoderEmbedder struct {
 	maxTokens   int    // truncate to this many tokens (0 = no limit), mirroring HF truncation=True
 }
 
-// newDecoderEmbedder builds the embedder and resolves the appended EOD token id.
-//
-// Construct through this, never as a struct literal: appendID's ZERO value is 0, which is a real
-// token id, so a literal silently appends token 0 and pools it. (That is exactly what a first cut
-// of the tests did — the tokenizer-agreement gate caught it.)
+// newDecoderEmbedder builds the embedder and resolves the appended EOD token id. Construct through this, never as a
+// struct literal: appendID's zero value is 0, a real token id, so a literal silently appends token 0 and pools it.
 func newDecoderEmbedder(m *decoder.Model, tk *tokenizer.Tokenizer, queryPrompt, docPrompt string) *decoderEmbedder {
 	appendID := -1
 	if id, ok := tk.TokenID(qwen3EmbedEOD); ok {
@@ -80,20 +71,13 @@ func newDecoderEmbedder(m *decoder.Model, tk *tokenizer.Tokenizer, queryPrompt, 
 		queryPrompt: queryPrompt,
 		docPrompt:   docPrompt,
 		appendID:    appendID,
-		// BOUNDED BY THE MODEL'S CONTEXT, always. The reference imposes nothing shorter than the
-		// tokenizer's model_max_length (Qwen3-Embedding ships no sentence_bert_config.json), but
-		// "nothing shorter" is not "unbounded": HiddenLast preallocates KV for len(ids) positions
-		// and runs a sequential per-token forward with no context, so 0 here meant the ONLY bound
-		// was C-21's 1 MiB byte cap — about 500k tokens of short words. For a 28-layer, kvDim-1024
-		// embedder that is ~114 GB of KV and attention over up to 500k keys per token: hours of one
-		// pinned core, every other /v1/embeddings request blocked behind the embed mutex, and then
-		// an OOM kill. Uncancellable, and un-queued.
-		//
-		// Even a legitimate 200 KB document (~45k tokens) silently exceeded Qwen3-Embedding's 40k
-		// window and returned a vector pooled from out-of-range RoPE positions — plausible, and
-		// wrong. MaxPositions is HF's truncation=True semantics, which is what the aikit encoder
-		// path already does; only this one was unbounded (audit-2026-09-02 C-07, an incomplete
-		// closure of the 2026-08-05 audit's C-21).
+		// Bounded by the model's context, always. The reference imposes nothing shorter than the tokenizer's
+		// model_max_length, but HiddenLast preallocates KV for len(ids) positions and runs a sequential per-token
+		// forward with no context, so an unbounded value leaves only the request byte cap (about 500k tokens of short
+		// words): hours of one pinned core, every other /v1/embeddings request blocked behind the embed mutex, then
+		// an OOM kill, uncancellable and un-queued. A long legitimate document would also exceed the model's window
+		// and return a vector pooled from out-of-range RoPE positions: plausible, and wrong. MaxPositions is HF's
+		// truncation=True semantics, as the aikit encoder path already does.
 		maxTokens: m.Config().MaxPositions,
 	}
 }
@@ -109,23 +93,16 @@ func (s *server) loadDecoderEmbedder(cfg config) error {
 	if err != nil {
 		return fmt.Errorf("load embedding tokenizer (%s): %w", cfg.embedPath, err)
 	}
-	// M-17 (docs/audit-2026-09-10.md): Backend/Quant were left zero-valued here, so this embedder
-	// always loaded CPU-only regardless of -backend, and -embed-quant was silently never read for
-	// a .gguf embed model — the resident HiddenLast path (decoder/embed.go) this model may
-	// implement was shipped but never reachable from serve. decoder.Load builds m.resident off
-	// Options.Backend alone (decoder/model.go's .withResidency()), so this is sufficient for
-	// reachability — no separate resident-build step, matching how chat models get residency
-	// (modelSpec.options, main.go:172). A resident embedder gets its own resBusy CAS
-	// (decoder/model.go), structurally identical to a second resident chat model — nothing shared
-	// needs a new guard.
+	// Backend and Quant must be set here: left zero-valued, the embedder always loads CPU-only whatever -backend
+	// says, and the resident HiddenLast path (decoder/embed.go) is unreachable from serve. decoder.Load builds the
+	// resident runner from Options.Backend alone, so this is sufficient, with no separate resident-build step, as for
+	// chat models (modelSpec.options). A resident embedder gets its own resBusy CAS (decoder/model.go), like a second
+	// resident chat model.
 	//
-	// cfg.embedQuant is NOT passed through as decoder.Options.Quant directly: the two use
-	// different vocabularies (-embed-quant's "f32"|"q8", the aikit-encoder path's own precision
-	// names, vs decoder.Options.Quant's ""|"int8"|"int8int8"|"int4", decoder/model.go's
-	// parseQuant) — parseQuant hard-errors on any string it doesn't recognize, so passing "q8"
-	// straight through would make -embed-quant q8 FAIL TO LOAD instead of silently ignoring it, a
-	// worse regression than the bug this fixes. "q8" maps to Quant's own "int8" (weight-only
-	// per-row), the same precision class the aikit encoder's LoadQ8 path uses.
+	// cfg.embedQuant is not passed through as decoder.Options.Quant: the vocabularies differ (-embed-quant's
+	// "f32"|"q8" against Options.Quant's ""|"int8"|"int8int8"|"int4"), and parseQuant hard-errors on a string it does
+	// not recognize, so passing "q8" straight through would make -embed-quant q8 fail to load. "q8" maps to Quant's
+	// "int8" (weight-only per-row), the precision class the aikit encoder's LoadQ8 path uses.
 	quant := ""
 	if strings.EqualFold(cfg.embedQuant, "q8") {
 		quant = "int8"
@@ -145,10 +122,9 @@ func (s *server) loadDecoderEmbedder(cfg config) error {
 			cfg.embedPath, qwen3EmbedEOD)
 	}
 	s.embed, s.embedTok, s.embedID, s.embedDim = e, nil, name, e.HiddenDim()
-	// Not truncatable, explicitly. Qwen3-Embedding documents MRL support, but nothing here has
-	// MEASURED it the way aikit's coverage gate measures its own rows, and an unmeasured floor is
-	// exactly the guess resolveDimensions exists to refuse. Refusing `dimensions` is the safe
-	// direction; certifying a floor (aikit's paraphrase-pair-recall method) is what would change it.
+	// Not truncatable, explicitly. Qwen3-Embedding documents MRL support, but nothing here has measured it the way
+	// aikit's coverage gate measures its own rows, and an unmeasured floor is the guess resolveDimensions exists to
+	// refuse. Certifying a floor (aikit's paraphrase-pair-recall method) is what would change it.
 	s.embedMRLMin = 0
 	fmt.Fprintf(os.Stderr, "loaded decoder-backed embedding model %q (dim %d, last-token pooling) in %s\n",
 		name, s.embedDim, time.Since(t0).Round(time.Millisecond))
@@ -167,12 +143,9 @@ func (e *decoderEmbedder) Encode(text string, isQuery bool) ([]float32, error) {
 	return v, err
 }
 
-// EncodeBatch embeds each text in turn.
-//
-// concurrency is deliberately IGNORED (i.e. clamped to 1): the aikit encoder can fan out because it
-// is stateless per call, but this embedder is one decoder with one KV cache. Running texts in
-// parallel would corrupt that shared state, so the batch is sequential — the honest contract, rather
-// than accepting a concurrency argument we cannot satisfy.
+// EncodeBatch embeds each text in turn. concurrency is ignored (clamped to 1): the aikit encoder can fan out because
+// it is stateless per call, but this embedder is one decoder with one KV cache, so running texts in parallel would
+// corrupt that shared state.
 func (e *decoderEmbedder) EncodeBatch(texts []string, isQueries []bool, concurrency int) ([][]float32, error) {
 	if len(isQueries) != len(texts) {
 		return nil, fmt.Errorf("decoder embedder: %d texts but %d isQuery flags", len(texts), len(isQueries))
@@ -190,12 +163,9 @@ func (e *decoderEmbedder) EncodeBatch(texts []string, isQueries []bool, concurre
 	return out, nil
 }
 
-// EncodeBatchCounted is EncodeBatch plus each input's token count, read off the SAME tokenize
-// call encodeLocked already makes rather than a second pass over the text (audit R-07: this
-// embedder's EncodeBatch's ids were tokenized once and thrown away, then countEmbedTokens
-// (embeddings.go) tokenized every input again from scratch purely to report prompt_tokens).
-// embedBatchCounter in embeddings.go is the optional capability the handler prefers this
-// through; encoders that don't implement it (the aikit-embed.Tokenizer path) are unaffected.
+// EncodeBatchCounted is EncodeBatch plus each input's token count, read off the tokenize call encodeLocked already
+// makes instead of a second pass over the text. embedBatchCounter (embeddings.go) is the optional capability the
+// handler prefers; encoders that do not implement it (the aikit-embed.Tokenizer path) are unaffected.
 func (e *decoderEmbedder) EncodeBatchCounted(texts []string, isQueries []bool, concurrency int) ([][]float32, []int, error) {
 	if len(isQueries) != len(texts) {
 		return nil, nil, fmt.Errorf("decoder embedder: %d texts but %d isQuery flags", len(texts), len(isQueries))
@@ -215,10 +185,9 @@ func (e *decoderEmbedder) EncodeBatchCounted(texts []string, isQueries []bool, c
 	return vecs, counts, nil
 }
 
-// CountTokens reports how many tokens this embedder actually feeds the model for text — prefix
-// included, truncation applied. See embedTokenCounter in embeddings.go for why this exists. Kept
-// for callers that only want a count (not a batch encode) — EncodeBatchCounted is the byproduct
-// path for the /v1/embeddings handler itself.
+// CountTokens reports how many tokens this embedder feeds the model for text, prefix included and truncation applied
+// (see embedTokenCounter in embeddings.go). For callers that only want a count; EncodeBatchCounted is the byproduct
+// path for the /v1/embeddings handler.
 func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -229,8 +198,8 @@ func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
 	return len(ids)
 }
 
-// encodeLocked is Encode's body; callers hold e.mu. Returns the token ids alongside the vector
-// so EncodeBatchCounted can report their count without a second tokenize pass (R-07).
+// encodeLocked is Encode's body; callers hold e.mu. It returns the token ids with the vector so EncodeBatchCounted
+// can report their count without a second tokenize pass.
 func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, []int, error) {
 	ids, err := e.tokenize(text, isQuery)
 	if err != nil {
@@ -267,12 +236,9 @@ func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {
 	return ids, nil
 }
 
-// truncateForContext is tokenize's C-07 truncation arithmetic, pulled out so a test can call the
-// SAME code the request path runs instead of re-deriving it beside it (V-21,
-// docs/review-2026-09-04.md: the old test re-implemented room--/ids[:room], so a bug in tokenize's
-// own arithmetic — not this function's, since it didn't exist yet — would have passed unnoticed).
-// Truncates BEFORE the caller appends appendID, reserving its slot, so the appended token is
-// never the thing truncation drops — it must stay last, because it is the pooled position.
+// truncateForContext is tokenize's truncation arithmetic, pulled out so a test calls the same code the request path
+// runs instead of re-deriving it beside it. It truncates before the caller appends appendID, reserving its slot, so
+// the appended token is never what truncation drops: it must stay last, because it is the pooled position.
 func truncateForContext(ids []int, maxTokens, appendID int) []int {
 	if maxTokens <= 0 {
 		return ids

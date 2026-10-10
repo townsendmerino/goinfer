@@ -5,11 +5,9 @@ import (
 	"time"
 )
 
-// storedFile is OpenAI's Files API object (task-work-queue-2026-09.md J4) — a batch's input
-// JSONL, or an assembled output/error JSONL, held in memory keyed by id. Write-once: nothing
-// mutates a storedFile's fields after put() returns it, so unlike job (job.go), get() can hand
-// back the live pointer directly — no snapshot-style copy is needed, and no lock is needed to
-// read one after it's been looked up.
+// storedFile is OpenAI's Files API object: a batch's input JSONL, or an assembled output or error JSONL, held in
+// memory keyed by id. Write-once: nothing mutates its fields after put() returns it, so unlike job (job.go), get()
+// hands back the live pointer directly, with no snapshot copy and no lock needed to read it.
 type storedFile struct {
 	ID        string
 	Filename  string
@@ -18,11 +16,10 @@ type storedFile struct {
 	CreatedAt time.Time
 }
 
-// fileStore is a bounded, in-memory, process-wide registry, mirroring responseStore's own FIFO
-// cap pattern (responses.go:49) — but deliberately WITHOUT jobStore's "never evict a live one"
-// protection (job.go:198's evictLocked): nothing polls a file the way a client polls a job's
-// state, so there is no in-flight condition eviction could corrupt. A generous cap is the whole
-// answer here; this is a scope choice, not an oversight (see this package's J4 closure note).
+// fileStore is a bounded, in-memory, process-wide registry, mirroring responseStore's FIFO cap pattern but
+// deliberately without jobStore's "never evict a live one" protection (jobStore.evictLocked): nothing polls a file
+// the way a client polls a job's state, so there is no in-flight condition eviction could corrupt. A generous cap is
+// the whole answer; this is a scope choice, not an oversight.
 type fileStore struct {
 	mu    sync.Mutex
 	files map[string]*storedFile

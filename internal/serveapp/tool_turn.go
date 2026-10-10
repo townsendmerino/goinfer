@@ -8,11 +8,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// toolTurn is the outcome of one tool-bearing generation. /v1/chat/completions, /v1/responses and
-// /v1/messages each used to run this turn their own way — drive, buffer, parse, reconcile — and only
-// the OpenAI route streamed prose while the model wrote it (G21); /v1/messages, the route Claude
-// Code uses, sent nothing but heartbeats until the whole generation was done. runToolTurn is the one
-// implementation; each front end keeps only its wire format.
+// toolTurn is the outcome of one tool-bearing generation. /v1/chat/completions, /v1/responses and /v1/messages share
+// runToolTurn (drive, buffer, parse, reconcile); each front end keeps only its wire format.
 type toolTurn struct {
 	raw   string          // everything the model generated
 	calls []chat.ToolCall // parsed calls; empty when the model answered in prose
@@ -33,13 +30,13 @@ var errProseDiverged = errors.New("internal: streamed prose diverged from the pa
 
 // runToolTurn runs one tool-bearing generation.
 //
-//   - ss non-nil: a heartbeat covers the silence before the first token and inside a call (G19).
-//   - onProse non-nil and the family can stream prose safely (Template.ToolCallOpener): prose goes out
-//     incrementally as the model writes it (G21), each chunk guaranteed to be a prefix of the lead the
-//     parser will compute. Every other family keeps the buffered behaviour exactly.
+//   - ss non-nil: a heartbeat covers the silence before the first token and inside a call.
+//   - onProse non-nil and the family can stream prose safely (Template.ToolCallOpener): prose goes out incrementally as
+//     the model writes it, each chunk guaranteed to be a prefix of the lead the parser will compute. Every other family
+//     keeps the buffered behaviour.
 //
-// A generation error is returned as the error. A cancelled turn returns with cancelReason set and no
-// parse (the buffer is partial). errProseDiverged is returned alongside a filled toolTurn.
+// A generation error is returned as the error. A cancelled turn returns with cancelReason set and no parse (the buffer
+// is partial). errProseDiverged is returned alongside a filled toolTurn.
 func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest, tools []chat.Tool, ss *sseWriter, onProse func(string)) (toolTurn, error) {
 	var prose *chat.ProseStreamer
 	if onProse != nil && lm.tmpl != nil {
@@ -82,7 +79,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 		return turn, gerr
 	}
 	if turn.cancelReason != "" {
-		turn.lead = turn.raw // K1: a partial buffer — never parse a call out of it
+		turn.lead = turn.raw // a partial buffer: never parse a call out of it
 		return turn, nil
 	}
 	var parsedLead string
@@ -92,17 +89,15 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	return turn, err
 }
 
-// reconcileProse settles a finished turn's prose against what already streamed. lead is the turn's
-// prose for the final message: the parser's lead when there are calls, the raw output when there are
-// none (as every route has always returned it). rest is what the front end still has to send so the
-// streamed prose adds up to the turn's prose.
+// reconcileProse settles a finished turn's prose against what already streamed. lead is the turn's prose for the
+// final message: the parser's lead when there are calls, the raw output when there are none. rest is what the front
+// end still has to send so the streamed prose adds up to the turn's prose.
 //
-// What streamed is held against the PARSER's lead, never the raw output: the prose streamer trims the
-// leading whitespace and withholds trailing whitespace exactly as every family's parser trims its
-// lead (chat.ProseStreamer), so a no-call answer that opens with a newline streams "Hello" where the
-// raw text is "\nHello". Checking that against the raw text — what the OpenAI route did before this
-// was shared — reported a false divergence and ended the stream in an error. When nothing streamed
-// (a family that cannot stream prose, or a non-streaming request) rest is lead itself, unchanged.
+// What streamed is held against the parser's lead, never the raw output: the prose streamer trims the leading
+// whitespace and withholds trailing whitespace exactly as every family's parser trims its lead (chat.ProseStreamer),
+// so a no-call answer that opens with a newline streams "Hello" where the raw text is "\nHello". Checking that
+// against the raw text reports a false divergence and ends the stream in an error. When nothing streamed (a family
+// that cannot stream prose, or a non-streaming request) rest is lead itself, unchanged.
 func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lead, rest string, err error) {
 	lead = raw
 	if hasCalls {
@@ -120,11 +115,11 @@ func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lea
 
 // settleCalls reads a finished turn's tool calls and the prose before them.
 //
-// Every family but gpt-oss writes its call inline, so it is in the buffered text and the template's parser finds it. A Harmony call
-// is a MESSAGE addressed to a function, which the reasoning router routes out of both the reasoning and the answer — the buffered
-// text never contains it — so with a router attached the calls are read from the router. (With -reasoning-format none there is no
-// router and the buffer holds the raw reply, markers included, which the template's parser reads itself.) The prose is what the
-// parsers have always returned: trimmed.
+// Every family but gpt-oss writes its call inline, so it is in the buffered text and the template's parser finds it.
+// A Harmony call is a message addressed to a function, which the reasoning router routes out of both the reasoning
+// and the answer, so the buffered text never contains it: with a router attached the calls are read from the router.
+// (With -reasoning-format none there is no router and the buffer holds the raw reply, markers included, which the
+// template's parser reads itself.) The prose is trimmed, as the parsers return it.
 func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) ([]chat.ToolCall, string) {
 	calls, lead := tmpl.ParseToolCallsFor(raw, tools)
 	if len(calls) == 0 && th != nil {

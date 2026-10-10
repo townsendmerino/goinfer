@@ -8,18 +8,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// GET /health — a goinfer-native operator surface, deliberately NOT an OpenAI-compatible one.
+// GET /health is goinfer's operator surface, deliberately not an OpenAI-compatible one.
 //
-// WHY IT EXISTS SEPARATELY FROM /v1/models. The resolved decode/prefill paths are also attached to
-// each /v1/models entry, where they are a vendor extension: extra keys on a schema somebody else
-// owns. The Go, Python and JS OpenAI clients ignore unknown keys, but a strictly-typed decoder in
-// another language may reject the whole response, and that would be goinfer breaking a client to
-// report a diagnostic. /health carries the same three fields on a payload with no compatibility
-// contract at all, so an operator or a batch job never has to choose between reading the resolved
-// path and holding to the OpenAI schema.
+// It exists apart from /v1/models because the resolved decode and prefill paths are also attached to each /v1/models
+// entry as a vendor extension: extra keys on a schema somebody else owns. The Go, Python and JS OpenAI clients ignore
+// unknown keys, but a strictly typed decoder in another language may reject the whole response, and goinfer must not
+// break a client to report a diagnostic. /health carries the same fields on a payload with no compatibility contract,
+// so an operator or a batch job never has to choose between reading the resolved path and holding to the OpenAI
+// schema.
 //
-// The fields come from server.pathFields — the same function /v1/models uses — so the two surfaces
-// cannot drift apart.
+// The fields come from server.pathFields, the same function /v1/models uses, so the two surfaces cannot drift apart.
 func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	models := []map[string]any{}
 	for _, name := range s.servedNames() {
@@ -38,9 +36,8 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.regMu.RUnlock()
 	sort.Strings(draining)
 
-	// K2 (docs/tasks/task-halt-2026-09.md): halted is always present so a client's shape doesn't
-	// change between the two states; reason/at are null when not halted rather than omitted,
-	// for the same reason.
+	// halted is always present so a client's shape does not change between the two states; reason and at are null
+	// when not halted, not omitted, for the same reason.
 	var haltedFields map[string]any
 	if hi := s.haltState(); hi != nil {
 		haltedFields = map[string]any{"halted": true, "halt_reason": hi.reason, "halt_at": hi.at}
@@ -52,7 +49,8 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"backend":  s.cfg.load.Backend,
 		"models":   models,
 		"draining": draining,
-		// H2 (docs/tasks/task-hardware-coverage-2026-10.md): each backend's startup self-test, so an operator can see that a kernel tier was stepped down or a backend declined without reading a log.
+		// each backend's startup self-test, so an operator can see that a kernel tier was stepped down or a backend
+		// declined without reading a log.
 		"selftest": selfTestFields(),
 	}
 	maps.Copy(resp, haltedFields)

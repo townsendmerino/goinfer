@@ -9,16 +9,14 @@ import (
 
 // The startup banner is the UI.
 //
-// A harness user reads exactly one thing before their first request: the lines `serve` prints
-// before it says it is listening. Everything below is a fact the runtime already knows and
-// used to keep private — which is how someone discovers, one request at a time, that their
-// agent loop re-prefills every turn (docs/tasks/task-embed-and-harness-ux.md §3.3, and
-// docs/server.md's dsh recipe: "set expectations, don't let the harness discover them").
+// A harness user reads exactly one thing before their first request: the lines `serve` prints before it says it is
+// listening. Everything below is a fact the runtime already knows, so nobody has to discover one request at a time
+// that their agent loop re-prefills every turn (docs/tasks/task-embed-and-harness-ux.md section 3.3, and the dsh
+// recipe in docs/server.md: "set expectations, don't let the harness discover them").
 //
-// Built as a function returning lines rather than a run of Fprintf calls so a test can assert
-// the banner against the runtime's own state. A banner that drifts from what the server does
-// is worse than no banner: it is the M-07 class (the doc says exact, the code does not)
-// applied to the one document every user reads. See TestBanner_tellsTheTruth.
+// The banner is built as a function returning lines, not a run of Fprintf calls, so a test can assert it against the
+// runtime's own state (TestBanner_tellsTheTruth). A banner that drifts from what the server does is worse than no
+// banner.
 
 // bannerFacts is everything the banner reports, read off the runtime once. Split out so the
 // banner is a pure function of resolved state and can be asserted against that state in a
@@ -33,10 +31,9 @@ type bannerFacts struct {
 	spec         bool
 	blockDrafter bool
 
-	// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the context cap, KV at that
-	// cap, and what remains of the RAM budget — printed at every load, not only when something is
-	// tight, because "79% of budget" at load time and "14 GB RSS, swapping" on the first real
-	// request were the same load with no line connecting them.
+	// The context cap, KV at that cap, and what remains of the RAM budget, printed at every load and not only when
+	// something is tight: a load reading "79% of budget" and a first request swapping at 14 GB RSS are the same load,
+	// with no line connecting them.
 	fitKnown       bool
 	fitCtx         int
 	fitKVBytes     int64
@@ -59,18 +56,18 @@ type bannerFacts struct {
 	// residentDecline: why a backend that was asked for did not build a resident path (decoder.Model.ResidentDecline), "" when it did or none was asked.
 	residentDecline string
 
-	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots; MC1,
-	// docs/tasks/task-concurrency-2026-09.md) — 1 for a backend or family without them, 0 off the resident path.
+	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots); 1 for
+	// a backend or family without them, 0 off the resident path.
 	kvSlots int
 
 	// towerReserve: the VRAM held back for this model's CUDA vision tower when the resident plan was made (towerReserve; 0 when there is none or it is not CUDA).
 	towerReserve int64
 
-	// concurrent: how many generations of this model run at once (loadedModel.concurrent; MC3c).
+	// concurrent: how many generations of this model run at once (loadedModel.concurrent).
 	concurrent int
 
-	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps (MC3c step 2,
-	// decoder.Model.EnableCPUBatch).
+	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps
+	// (decoder.Model.EnableCPUBatch).
 	cpuBatched bool
 }
 
@@ -105,9 +102,9 @@ func factsOf(lm *loadedModel) bannerFacts {
 	return f
 }
 
-// modelBanner returns the resolved-state lines for one loaded model, in the order §3.3 asks
-// for: what it is, where it runs, how much context, whether turns are reused, what it can do.
-// Each line is indented two spaces by the caller to sit under the "loaded ..." line.
+// modelBanner returns the resolved-state lines for one loaded model, in the order a harness user wants them: what it
+// is, where it runs, how much context, whether turns are reused, what it can do. The caller indents each line two
+// spaces to sit under the "loaded ..." line.
 func modelBanner(lm *loadedModel, cfg config) []string {
 	f := factsOf(lm)
 	f.towerReserve = towerReserve(cfg, lm.source)
@@ -130,15 +127,12 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		out = append(out, line)
 	}
 
-	// How much context, and at what KV precision — the two numbers that decide whether a
-	// harness's turn fits at all.
-	//
-	// THE RESOLVED NUMBER, NOT THE REQUEST. This line used to print "backend default" when -ctx was
-	// unset, and the -ctx value when it was set — neither of which is the limit. The limit is
-	// min(model maximum, resident KV cap), and an invisible default found out by degradation is the
-	// exact complaint users make about other local servers. It now prints ctxWindow (what prepare
-	// enforces and /v1/models publishes), and says what set it. cfg.load.Ctx is the REQUESTED -ctx for
-	// this model (the caller passes the per-model ctx= override when there is one).
+	// How much context, and at what KV precision: the two numbers that decide whether a harness's turn fits at all.
+	// The line prints the resolved limit, ctxWindow (what prepare enforces and /v1/models publishes), and says what
+	// set it. The limit is min(model maximum, resident KV cap), and neither "backend default" nor the -ctx value is
+	// that; an invisible default found out by degradation is the exact complaint users make about other local
+	// servers. cfg.load.Ctx is the requested -ctx for this model (the caller passes the per-model ctx= override when
+	// there is one).
 	ctxLine := "context: "
 	switch {
 	case f.ctxWindow <= 0:
@@ -148,7 +142,8 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions:
 		ctxLine += fmt.Sprintf("%d tokens (backend default; model maximum %d — raise with --ctx)", f.ctxWindow, f.maxPositions)
 	case f.maxPositions == 0 && cfg.load.Ctx > 0:
-		// A config that declares no max_position_embeddings (Gemma 3's does not): the figure is the resident KV capacity, not a model limit, and calling it the maximum was wrong.
+		// A config that declares no max_position_embeddings (Gemma 3's): the figure is the resident KV capacity, not
+		// a model limit.
 		ctxLine += fmt.Sprintf("%d tokens (--ctx; the model declares no maximum)", f.ctxWindow)
 	case f.maxPositions == 0:
 		ctxLine += fmt.Sprintf("%d tokens (backend default; the model declares no maximum — raise with --ctx)", f.ctxWindow)
@@ -157,10 +152,10 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	default:
 		ctxLine += fmt.Sprintf("%d tokens (model maximum)", f.ctxWindow)
 	}
-	// R20 (docs/tasks/task-first-hour.md): on the CPU path the window is the model's whole maximum — -ctx is the GPU-resident KV capacity and caps nothing
-	// here — and KV is allocated per request, so the figure (and the "fit:" KV cost below) is a ceiling a request reaches only by filling the window. A
-	// cold-user run read "262144 tokens, 10.4 GB KV" after a CUDA decline beside a `fit` that had priced the GPU plan at 8192, and took them for the same
-	// question. Said here, beside the figure, so it is not left to be worked out.
+	// On the CPU path the window is the model's whole maximum (-ctx is the GPU-resident KV capacity and caps nothing
+	// here) and KV is allocated per request, so this figure and the "fit:" KV cost below are a ceiling a request
+	// reaches only by filling the window. Said here, beside the figure: after a CUDA decline the two lines otherwise
+	// read as the same question with different answers.
 	cpuNote := ""
 	if cpuCeiling := f.ctxWindow > 0 && !f.resident && f.ctxWindow == f.maxPositions; cpuCeiling {
 		cpuNote += " — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held"
@@ -184,15 +179,12 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	ctxLine += cpuNote
 	out = append(out, ctxLine)
 
-	// R13: the memory this context cap actually costs, and what is left — the line a harness
-	// user needs to judge whether their own turn size fits, before finding out from swap.
-	//
-	// R13-follow-on: fitBudgetBytes is now priced against CURRENTLY AVAILABLE memory
-	// (decoder.FitBudgetSummary), read after the model is already resident — so weightBytes is
-	// ALREADY excluded from it by the OS's own accounting. Subtracting it again here would
-	// double-count a footprint that is not there to subtract (the same bug AdmitPrefillMemory
-	// had at request time). weights are still shown, for the reader's own arithmetic, not this
-	// function's.
+	// The memory this context cap actually costs, and what is left: the line a harness user needs to judge whether
+	// their own turn size fits, before finding out from swap. fitBudgetBytes is priced against currently available
+	// memory (decoder.FitBudgetSummary), read after the model is already resident, so the weights are already
+	// excluded from it by the OS's own accounting. Subtracting them again would double-count a footprint that is not
+	// there (the bug AdmitPrefillMemory once had at request time). Weights are still shown, for the reader's own
+	// arithmetic.
 	if f.fitKnown {
 		remaining := f.fitBudgetBytes - f.fitKVBytes
 		fitLine := fmt.Sprintf(
@@ -205,13 +197,11 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		out = append(out, fitLine)
 	}
 
-	// Prefix reuse, and WHY when it is off or narrower than it sounds. This is the line that makes
-	// an agent loop's per-turn re-prefill visible before it is paid for. A resident model does not
-	// use the CPU-side session LRU (its KV lives on the device; see loadedModel.drive), but its own
-	// cache reuses the prefix committed by the last generation (decoder/resident_reuse.go) — so a
-	// continuing conversation prefills only its new suffix, and a DIFFERENT conversation re-prefills
-	// in full. This line used to say every resident turn re-prefilled everything, which stopped being
-	// true when resident reuse shipped (2026-09-03).
+	// Prefix reuse, and why when it is off or narrower than it sounds: the line that makes an agent loop's per-turn
+	// re-prefill visible before it is paid for. A resident model does not use the CPU-side session LRU (its KV lives
+	// on the device; see loadedModel.drive), but its own cache reuses the prefix committed by the last generation
+	// (decoder/resident_reuse.go): a continuing conversation prefills only its new suffix, and a different
+	// conversation re-prefills in full.
 	if f.resident && f.kvSlots > 0 && f.ctxWindow > 0 {
 		out = append(out, kvPlanLine(f, cfg))
 	}
@@ -225,7 +215,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			line += fmt.Sprintf(" (--kv-sessions not given: Metal keeps %d by default, and a memory guard may keep fewer; --kv-sessions %d asks for %d)",
 				f.kvSlots, cfg.kvSessions, cfg.kvSessions)
 		} else if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet {
-			// Not Metal: this used to print "Metal keeps N by default" for the count a CUDA card had granted.
+			// Not Metal: the Metal wording would misreport the count a CUDA card was granted.
 			line += fmt.Sprintf(" (--kv-sessions not given: the default asks for %d and the memory guard allowed %d; --kv-sessions %d asks for %d)",
 				cfg.kvSessions, f.kvSlots, cfg.kvSessions, cfg.kvSessions)
 		} else if cfg.kvSessions > f.kvSlots {
@@ -285,10 +275,10 @@ func serverBanner(s *server, cfg config) []string {
 		routes = append(routes, "/admin/models/{load,unload}", "/admin/generations", "/admin/generations/{id}/cancel")
 	}
 	out := []string{"routes: " + strings.Join(routes, " ")}
-	// Load cost, split by phase. docs/tasks/task-embed-and-harness-ux.md 3.3 already names the banner as the
-	// UI for a harness user; this is one line of it. The SPLIT is what makes it actionable — "load
-	// 9.2s" is a number to be annoyed by, "9.2s, 82% build" says the disk is not the problem and a
-	// different quant might be. Printed only for a model whose loader instrumented it.
+	// Load cost, split by phase. The split is what makes it actionable: "load 9.2s" is a number to be annoyed by,
+	// "9.2s, 82% build" says the disk is not the problem and a different quant might be. Printed only for a model
+	// whose loader instrumented it (docs/tasks/task-embed-and-harness-ux.md section 3.3 names the banner as the
+	// harness user's UI).
 	for _, lm := range s.models {
 		if sum := lm.model.LoadProfile().Summary(); sum != "" {
 			out = append(out, sum)
@@ -301,10 +291,10 @@ func serverBanner(s *server, cfg config) []string {
 	return out
 }
 
-// concurrencyLine is how many generations of a model run at once (MC3c / MC3, -max-concurrent) and why fewer than asked
-// when that happens; "" when nothing needs saying. It is NOT part of the load-time banner: concurrency is decided by
-// setConcurrency after every model, adapter and vision tower has loaded, so a line printed with the banner would
-// report the undecided value (it did, 2026-09-26: every model's banner said "one generation at a time").
+// concurrencyLine says how many generations of a model run at once (-max-concurrent) and why fewer than asked when
+// that happens; "" when nothing needs saying. It is not part of the load-time banner: setConcurrency decides after
+// every model, adapter and vision tower has loaded, so a line printed with the banner would report the undecided
+// value.
 func concurrencyLine(f bannerFacts, cfg config) string {
 	switch {
 	case f.concurrent > 1 && f.resident:
@@ -337,9 +327,10 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 	return ""
 }
 
-// kvPlanLine is S18's "KV plan" line (docs/tasks/task-multimodal-support-2026-10.md): what the resident plan chose and, when it is less than was asked for, why. The numbers are the resolved ones
-// (decoder.Model.ResidentKVSlots and the enforced context window), not the request; the reasons are the ones the banner can state without the planner's own arithmetic: slots asked for beyond
-// those granted, an explicit -ctx, and the VRAM held back for a CUDA vision tower.
+// kvPlanLine is the "KV plan" line: what the resident plan chose and, when it is less than was asked for, why. The
+// numbers are the resolved ones (decoder.Model.ResidentKVSlots and the enforced context window), not the request; the
+// reasons are those the banner can state without the planner's own arithmetic: slots asked for beyond those granted,
+// an explicit -ctx, and the VRAM held back for a CUDA vision tower.
 func kvPlanLine(f bannerFacts, cfg config) string {
 	noun := "conversations"
 	if f.kvSlots == 1 {

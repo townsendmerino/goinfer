@@ -12,11 +12,9 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// OpenAI Responses API (/v1/responses) — Track B Inc4. Phase A is stateless
-// (input + instructions + text.format + tools + streaming); Phase B adds
-// store/previous_response_id via an in-memory ring, so a continued response is a
-// prompt-prefix extension that rides the per-model sessionLRU for warm KV.
-// Out of scope: hosted tools, reasoning items, file inputs.
+// OpenAI Responses API (/v1/responses). Stateless input (input, instructions, text.format, tools, streaming) plus
+// store/previous_response_id through an in-memory ring, so a continued response is a prompt-prefix extension that
+// rides the per-model sessionLRU for warm KV. Out of scope: hosted tools, reasoning items, file inputs.
 
 type respText struct {
 	Format *struct {
@@ -53,7 +51,7 @@ func (r responseReq) thinkRequest() thinkRequest {
 	return tr
 }
 
-// --- Phase B: in-memory response store (id → conversation) ---
+// --- in-memory response store (id → conversation) ---
 
 type responseEntry struct {
 	model    string
@@ -122,13 +120,10 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	messages = append(messages, inputMsgs...)
 
-	// G1c, extended (audit-2026-09-02 M-21). Placed BEFORE the tools/plain branch so one guard
-	// covers both — /v1/responses was two of the five routes that tokenized an arbitrary body
-	// before rejecting it, and the assembled `messages` here include anything a stored
-	// previous_response_id dragged in, which is the input the BPE would actually run over.
-	// M-15 (audit-2026-09-10): req.Tools' schema bytes are added unconditionally too, matching
-	// this guard's own "covers both branches" design — if tools end up active below,
-	// RenderToolsSegments renders every one of them into the prompt.
+	// Reject an over-context body before tokenizing it. Placed before the tools/plain branch so one guard covers
+	// both: the assembled messages include anything a stored previous_response_id dragged in, which is the input the
+	// BPE would actually run over. req.Tools' schema bytes are added unconditionally too, matching that design: if
+	// tools end up active below, RenderToolsSegments renders every one of them into the prompt.
 	if err := lm.promptTooLargeForContext(chatInputBytes(messages) + toolSchemaBytes(req.Tools)); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -155,12 +150,11 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	created := time.Now().Unix()
 	store := req.Store == nil || *req.Store // OpenAI default: store=true
 
-	// Tool path: render declarations, constrain when unambiguous, buffer the full
-	// output, parse into function_call items (buffered, like the chat tools path).
+	// Tool path: render declarations, constrain when unambiguous, buffer the full output, parse into function_call
+	// items (buffered, like the chat tools path).
 	//
-	// toolsActive mirrors serveChatToolsWith/anthropic.go's own gate: a template with no tool form
-	// must 400, not silently fall through to the tools-less prompt below and drop the caller's
-	// tools (M-16, audit-2026-09-10) — the other two surfaces already refuse this.
+	// toolsActive mirrors serveChatToolsWith and anthropic.go's gate: a template with no tool form must 400, not
+	// silently fall through to the tools-less prompt below and drop the caller's tools.
 	toolsActive := len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none"
 	if len(imgs) > 0 {
 		if toolsActive {
@@ -199,7 +193,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	gr.id = id                                // K1: registers this generation for cancel-by-id
+	gr.id = id                                // registers this generation for cancel-by-id
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // reasoning is dropped on this route
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
@@ -216,9 +210,8 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		// N-24 (docs/audit-2026-09-10.md): nothing is sent between response.created and the
-		// first token — on CPU that gap is the whole prefill. The tools-active branch below
-		// already starts one (G19); this plain-text branch did not.
+		// Nothing is sent between response.created and the first token, and on CPU that gap is the whole prefill: a
+		// heartbeat covers it, as it does on the tools-active branch.
 		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
@@ -259,7 +252,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
 }
 
-// serveVisionResponses is serveResponsesWith's plain-text branch for input that carries images (S11): the prompt from
+// serveVisionResponses is serveResponsesWith's plain-text branch for input that carries images: the prompt from
 // visionPromptN, generation through driveVL, rendered as a Responses object (or its event stream).
 func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm *loadedModel, req responseReq, messages []chatMessage, imgs []imageRef, sm sampling, id string, created int64, store bool) {
 	if imgs[0].audio {
@@ -311,7 +304,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		stopBeat := sseHeartbeat(ss) // N-24: the image turn's tower and prefill are the silent window
+		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
 		finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			sseEvent(ss, "response.output_text.delta", map[string]any{
@@ -367,7 +360,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
-	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
+	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
@@ -377,11 +370,11 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	gr.id = id // K1: registers this generation for cancel-by-id
+	gr.id = id // registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
-		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
+		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400
 		return
 	}
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // reasoning is dropped on this route; AFTER the tool constraint, which the budget composes with
@@ -390,9 +383,8 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	defer lm.exit()
 	inTok := len(gr.promptIDs)
-	// G19: same buffered-and-therefore-silent shape as the chat tools path — start
-	// SSE first and keep the stream alive with comment frames while the buffer
-	// fills, so a slow generation is not indistinguishable from a dead server. See
+	// Same buffered-and-therefore-silent shape as the chat tools path: start SSE first and keep the stream alive with
+	// comment frames while the buffer fills, so a slow generation is not indistinguishable from a dead server. See
 	// tools.go for the full rationale and the 500-vs-sseErr consequence.
 	var ss *sseWriter
 	if req.Stream {
@@ -401,9 +393,8 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 			return
 		}
 	}
-	// The shared tool turn (tool_turn.go). Streaming: response.created goes out first, as on the
-	// plain-text path, and prose streams as output_text.delta while the model writes it where the
-	// family allows (G21) — before, this path sent nothing but heartbeats until the generation ended.
+	// The shared tool turn (tool_turn.go). Streaming: response.created goes out first, as on the plain-text path, and
+	// prose streams as output_text.delta while the model writes it, where the family allows.
 	var onProse func(string)
 	if ss != nil {
 		sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
@@ -429,9 +420,9 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	finish, nComp := t.finish, t.nComp
 	if t.cancelReason != "" {
-		// K1: cancelled mid-generation — a partial buffer, no tool call is parsed out of it; report it
-		// as a plain (partial) text message instead, same as the "model produced nothing parseable"
-		// fallback below, so a client still gets a well-formed response object with real usage.
+		// Cancelled mid-generation: a partial buffer, so no tool call is parsed out of it. Report it as a plain
+		// (partial) text message, as the "nothing parseable" fallback below does, so a client still gets a
+		// well-formed response object with real usage.
 		resp := responseObject(id, lm.name, created, respStatus(finish), []any{outputMessage(id+"-msg", t.raw)}, inTok, nComp)
 		if ss != nil {
 			sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
@@ -453,7 +444,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 
 	var out []any
-	var toolCalls []apiToolCall // V-18 (docs/review-2026-09-04.md): stored for previous_response_id continuity below
+	var toolCalls []apiToolCall // stored for previous_response_id continuity below
 	if lead != "" {
 		out = append(out, outputMessage(id+"-msg", lead))
 	}
@@ -474,8 +465,8 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if len(out) == 0 { // model produced nothing parseable → empty message
 		out = append(out, outputMessage(id+"-msg", t.raw))
 	}
-	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is
-	// "incomplete", not "completed" (audit R-16 — the N-15 residual in the tools branch).
+	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
+	// not "completed".
 	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
 	if req.Stream {
 		sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
@@ -488,19 +479,15 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	s.maybeStore(store, id, lm.name, messages, lead, toolCalls)
 }
 
-// maybeStore records this turn's assistant output for a later previous_response_id
-// continuation — serveResponsesWith appends prior.messages VERBATIM onto the next request's
-// input, so whatever is missing here is missing from every stateful continuation.
+// maybeStore records this turn's assistant output for a later previous_response_id continuation. serveResponsesWith
+// appends prior.messages verbatim onto the next request's input, so whatever is missing here is missing from every
+// stateful continuation.
 //
-// V-18 (docs/review-2026-09-04.md): toolCalls used to be dropped — only the lead text (often
-// empty, when the model went straight into a tool call) was stored. M-18's fix taught the DECODE
-// side to turn a resent function_call/function_call_output pair back into ToolCalls/a tool turn,
-// but that only helps a STATELESS caller that resends the whole conversation itself. The SDK
-// DEFAULT is previous_response_id (stateful): the client sends only the new
-// function_call_output, and the server is expected to have kept the matching function_call from
-// its own prior turn. Without ToolCalls here, that turn reconstructs as user → assistant("") →
-// tool(result) — a tool result answering a call that, as far as the stored conversation shows,
-// was never made.
+// toolCalls are stored along with the lead text (often empty, when the model went straight into a tool call). The SDK
+// default is previous_response_id: the client sends only the new function_call_output, and the server is expected to
+// have kept the matching function_call from its own prior turn. Without ToolCalls here, that turn reconstructs as
+// user, assistant(""), tool(result): a tool result answering a call that, as far as the stored conversation shows,
+// was never made. (A stateless caller that resends the whole conversation is handled by responseInputToMessages.)
 func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assistant string, toolCalls []apiToolCall) {
 	if !store || s.responses == nil {
 		return
@@ -522,14 +509,11 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 	if json.Unmarshal(raw, &str) == nil {
 		return []chatMessage{{Role: "user", Content: rawStr(str)}}, nil
 	}
-	// `type` and the function-call fields are decoded, not just {role, content}. A Responses tool
-	// loop feeds the model's own `function_call` back with a `function_call_output`, and NEITHER
-	// carries a role or a content field — so both used to fall through to the default below and
-	// become `{Role:"user", Content:""}`: two empty user turns. The model never saw the tool
-	// result, so it either answered without it or called the same tool again, forever, under HTTP
-	// 200. docs/server.md and this file's own comment both claim the round-trip works;
-	// TestServe_responses step 4 never feeds a result back, which is why nothing caught it
-	// (audit-2026-09-02 M-18).
+	// `type` and the function-call fields are decoded, not just {role, content}. A Responses tool loop feeds the
+	// model's own `function_call` back with a `function_call_output`, and neither carries a role or a content field,
+	// so both would fall through to the default below as `{Role:"user", Content:""}`: two empty user turns. The model
+	// would never see the tool result and would answer without it or call the same tool again, forever, under HTTP
+	// 200.
 	var items []struct {
 		Type      string          `json:"type"`
 		Role      string          `json:"role"`
@@ -578,9 +562,9 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 	return msgs, nil
 }
 
-// responsesContent is a Responses message content as a chat message's (S11): plain text when it carries no image, as it
-// always was; otherwise a chat content array, each input_image an image_url part in its place among the text parts, so
-// the vision path sees the order the caller sent. An image by file_id is refused (this server stores no files).
+// responsesContent is a Responses message content as a chat message's: plain text when it carries no image; otherwise
+// a chat content array, each input_image an image_url part in its place among the text parts, so the vision path sees
+// the order the caller sent. An image by file_id is refused (this server stores no files).
 func responsesContent(raw json.RawMessage) (json.RawMessage, error) {
 	var parts []struct {
 		Type     string          `json:"type"`
@@ -630,10 +614,9 @@ func responsesContent(raw json.RawMessage) (json.RawMessage, error) {
 	return b, err
 }
 
-// toolOutputText flattens a `function_call_output`'s `output`: a plain string when it is one, the
-// content-part text when it is an array, and the raw JSON otherwise. Never empty for a non-empty
-// input — an empty tool turn is the M-18 failure, so the fallback keeps SOMETHING the model can
-// read rather than silently dropping the result.
+// toolOutputText flattens a `function_call_output`'s `output`: a plain string when it is one, the content-part text
+// when it is an array, and the raw JSON otherwise. Never empty for a non-empty input: an empty tool turn means the
+// model never sees the result, so the fallback keeps something it can read rather than silently dropping it.
 func toolOutputText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -690,18 +673,18 @@ func responseObject(id, model string, created int64, status string, output []any
 		"output": output,
 		"usage":  map[string]any{"input_tokens": inTok, "output_tokens": outTok, "total_tokens": inTok + outTok},
 	}
-	// A generation cut off by max_output_tokens is "incomplete", not "completed" (N-15).
+	// A generation cut off by max_output_tokens is "incomplete", not "completed".
 	if status == "incomplete" {
 		o["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
 	}
 	return o
 }
 
-// respStatus maps drive's finish reason to a Responses status: "length" (truncated by
-// max_output_tokens) → "incomplete"; everything else → "completed" (N-15).
+// respStatus maps drive's finish reason to a Responses status: "length" (truncated by max_output_tokens) is
+// "incomplete"; everything else is "completed".
 func respStatus(finish string) string {
 	switch finish {
-	case "cancelled": // K1, docs/tasks/task-halt-2026-09.md — a real value in OpenAI's own Responses status enum
+	case "cancelled": // docs/tasks/task-halt-2026-09.md: a real value in OpenAI's own Responses status enum
 		return "cancelled"
 	case "length":
 		return "incomplete"

@@ -32,24 +32,20 @@ import (
 
 const defaultMaxTokens = 512
 
-// maxTopLogprobs is the largest `top_logprobs` a request may ask for — OpenAI's own documented
-// ceiling, so no compatible client is refused by it. Unbounded, one request retains
-// max_tokens x top_logprobs entries and materializes a map per entry before writing a byte
-// (audit-2026-09-02 C-08).
+// maxTopLogprobs is the largest `top_logprobs` a request may ask for: OpenAI's own documented ceiling, so no
+// compatible client is refused by it. Unbounded, one request retains max_tokens x top_logprobs entries and builds a
+// map per entry before writing a byte.
 const maxTopLogprobs = 20
 
-// maxOutputTokensCeiling is a hard upper bound on a request's max_tokens. KV is
-// preallocated as len(prompt)+max_tokens per layer, so an unbounded value (e.g.
-// {"max_tokens": 2000000000}) triggers a fatal, unrecoverable Go "out of memory"
-// throw that kills the server for every client (audit C-18). A request above this
-// is rejected 400 rather than clamped, so the caller learns its request was too big.
+// maxOutputTokensCeiling is the hard upper bound on a request's max_tokens. KV is preallocated as
+// len(prompt)+max_tokens per layer, so an unbounded value would trigger a fatal Go out-of-memory throw that kills the
+// server for every client. A request above it is rejected 400, not clamped, so the caller learns its request was too
+// big.
 const maxOutputTokensCeiling = 131072
 
-// loadedModel is one resident generative model and the per-model state a request
-// needs: its tokenizer, chat template, stop ids, vocab, warm-KV sessions, and the
-// mutex that serializes its generations (one model = one shared compute stream).
-// The server registry holds N of them keyed by served name; each has its own
-// mutex, so requests to distinct models run in parallel.
+// loadedModel is one resident generative model and the per-model state a request needs: its tokenizer, chat template,
+// stop ids, vocab, warm-KV sessions, and the admission (turns) that serializes its generations. The server registry
+// holds them keyed by served name; requests to distinct models run in parallel.
 type loadedModel struct {
 	featCacheOnce sync.Once // vision_serve.go: the tower-output cache, made on first image
 	featCache     *featureCache
@@ -64,66 +60,53 @@ type loadedModel struct {
 	source        string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
 	adapter       string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
 	spec          bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
-	specAdaptive  bool   // --spec-adaptive: MC4 candidate, speculate only while alone, join MC3's batch otherwise
-	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. Attached
-	// ONCE at load: the weight upload is a per-process cost, and doing it per request measured
-	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).
+	specAdaptive  bool   // --spec-adaptive: speculate only while alone, join the batched decode otherwise
+	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
+	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
 	blockSpec *decoder.BlockSpec
 	sessions  *sessionLRU // prefix-keyed KV reuse across requests
-	// decisions (D5): the decider POST /v1/systemone answers with, built on first use — its label tokens are resolved
-	// once per tokenizer. head is the entry's trained decision head (head=, D4), nil for label scoring.
+	// head is the entry's trained decision head, nil for label scoring. The decider POST /v1/systemone answers with
+	// is built on first use, since its label tokens are resolved once per tokenizer.
 	head *decide.Head
-	// clef is the entry's Clef decision model (Route C, D13): set when the model directory carries joint_head.safetensors. It answers /v1/systemone
-	// instead of the label decider.
+	// clef is the entry's Clef decision model, set when the model directory carries joint_head.safetensors. It
+	// answers /v1/systemone instead of the label decider.
 	clef        *clef.Model
 	deciderOnce sync.Once
 	decider     *decide.Decider
 	deciderErr  error
-	turns       admission // J1: FIFO, context-aware turn-granter serializing this model's single
-	// decode worker — replaces the OLD lm.mu's admission role. A mutex has no notion of context,
-	// so a waiting request could not notice its own client disconnecting (or a K2 halt) without
-	// first being granted the lock. Zero value ready to use, same as the mutex it replaces.
-	//
-	// sessMu guards the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin, and the
-	// background goroutines (admin.go's load-time restore, liveness.go's idle-close save, main.go's graceful-shutdown
-	// save and idle-demote ticker). It is held around those operations only, NOT across a generation (MC3c,
-	// docs/tasks/task-concurrency-2026-09.md): the session a generation is using is CHECKED OUT instead
-	// (sessionLRU.busy), and the LRU never hands out, evicts, demotes, saves or even reads a busy session. That is
-	// what lets several generations of one CPU model run at once (-max-concurrent), and it keeps the old safety
-	// property — nothing frees or moves memory out from under a running generation — for one generation too.
+	turns       admission // FIFO, context-aware granter of decode turns; a waiter can give up on disconnect or halt
+	// sessMu guards sessions, the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin
+	// and the background save, restore and demote goroutines take it. It is held around those operations only, not
+	// across a generation: the session a generation is using is checked out instead (sessionLRU.busy), and the LRU
+	// never hands out, evicts, demotes, saves or reads a busy session. That is what lets several generations of one
+	// CPU model run at once (-max-concurrent) while nothing frees or moves memory under a running generation.
 	sessMu sync.Mutex
 
-	// tokenBytes is the constraint masker's token→bytes table (one entry per vocab id, up to
-	// ~152k). It's a pure function of (vocab, tokenizer), so build it ONCE per model rather than
-	// on every constrained request before the queue gate (N-14).
+	// tokenBytes is the constraint masker's token-to-bytes table (one entry per vocab id). It is a pure function of
+	// (vocab, tokenizer), so it is built once per model, not per constrained request.
 	tokenBytesOnce sync.Once
 	tokenBytes     [][]byte
-	// maxTokBytes is the byte length of the longest token in the vocab, computed once. It
-	// bounds tokenization cost (G1): a servable prompt is ≤ ctx tokens, so its text is ≤
-	// ctx·maxTokBytes bytes; any longer input needs > ctx tokens and cannot fit — reject it
-	// before the O(n) BPE runs, instead of tokenizing a multi-MiB body to completion (~27 s
-	// on a 32 MiB body) and only then comparing against the context window.
+	// maxTokBytes is the byte length of the longest token in the vocab, computed once. It bounds tokenization cost: a
+	// servable prompt is at most ctx tokens, so its text is at most ctx*maxTokBytes bytes, and a longer input cannot
+	// fit and is rejected before the O(n) BPE runs.
 	maxTokBytesOnce sync.Once
 	maxTokBytes     int
-	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue
-	// waiting); a request claims a slot before mu. nil = unbounded. Honest
-	// backpressure, not continuous batching — queue-full returns 429 Retry-After.
+	// queue bounds in-flight plus waiting requests (cap = concurrent + --max-queue); a request claims a slot before
+	// its turn. nil = unbounded. Backpressure, not batching: a full queue returns 429 Retry-After.
 	queue chan struct{}
-	// concurrent is how many generations of this model may run at once (setConcurrency; MC3c). 1 = serialized.
+	// concurrent is how many generations of this model may run at once (see setConcurrency); 1 = serialized.
 	concurrent int
 
-	// Vision tower (--vision): nil unless a multimodal model is loaded. When
-	// present the model is "vision-capable" — serve accepts image content parts,
-	// runs them through preprocess → encoder → projector, and routes the turn to
-	// GenerateVL. The decode mutex above serializes vision turns too.
+	// Vision tower (--vision): nil unless a multimodal model is loaded. A model with one is vision-capable: serve
+	// accepts image content parts, runs them through preprocess, encoder and projector, and routes the turn to
+	// GenerateVL.
 	venc    *vision.Encoder
 	vproj   *multimodal.Projector
 	vcfg    vision.Config
 	vimgTok int // image-soft-token id (the placeholder embed-by-vector overrides); -1 if unresolved
 
-	// Qwen2.5-VL vision tower (P5; nil ⇒ Gemma3/text). The merger is in the encoder
-	// (no separate projector); preprocessing + m-RoPE are Qwen-specific, so the image
-	// path branches on qwenEnc != nil.
+	// Qwen2.5-VL vision tower (nil for Gemma 3 or text). The merger is in the encoder (no separate projector);
+	// preprocessing and m-RoPE are Qwen-specific, so the image path branches on qwenEnc != nil.
 	qwenEnc     *vision.QwenVisionEncoder
 	qwenDevMu   sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
 	qwenRequire bool       // -require-backend: a device-memory failure of the Qwen2.5-VL tower fails the request instead of falling back to the CPU
@@ -131,33 +114,32 @@ type loadedModel struct {
 	qwenMerge   int // spatial_merge_size
 	qwenImgTok  int // <|image_pad|> id
 
-	// Qwen3.5+ vision tower (P8a; nil ⇒ not Qwen3.5 / no tower). Shares qwenPP/qwenMerge/qwenImgTok
-	// and the GenerateQwenVL route with the Qwen2.5-VL path above, but the tower itself loads LAZILY
-	// on the first image request (qwen3Tower): every Qwen3.5 checkpoint carries one, so eager loading
-	// would tax every text-only user's startup and memory for a tower they never call.
+	// Qwen3.5+ vision tower (nil: not Qwen3.5, or no tower). It shares qwenPP/qwenMerge/qwenImgTok and the
+	// GenerateQwenVL route with the Qwen2.5-VL path above, but loads lazily on the first image request (qwen3Tower):
+	// every Qwen3.5 checkpoint carries one, so eager loading would tax every text-only user's startup and memory.
 	qwen3 *qwen3Tower
 
-	// GLM-OCR vision tower (O3; nil ⇒ not GLM-OCR / no tower). Shares qwenPP/qwenMerge/qwenImgTok and the GenerateQwenVL route
-	// with the two Qwen paths above, but its tower, prompt block and template are GLM's (glm_ocr_vision.go). Loaded lazily.
+	// GLM-OCR vision tower (nil: not GLM-OCR, or no tower). It shares qwenPP/qwenMerge/qwenImgTok and the
+	// GenerateQwenVL route with the two Qwen paths above, but its tower, prompt block and template are GLM's
+	// (glm_ocr_vision.go). Loaded lazily.
 	glm *glmOcrTower
 
-	// Ministral 3's Pixtral image path (S10; nil ⇒ not Ministral 3 / no tower), pixtral_vision.go.
+	// Ministral 3's Pixtral image path (nil: not Ministral 3, or no tower); see pixtral_vision.go.
 	pixtral *pixtralTower
 
-	// Gemma 4 vision tower (P7 serving integration; nil ⇒ not gemma4/no tower). No
-	// separate projector — Gemma4Encoder.Forward bakes the embed_vision projection
-	// in. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
-	// (vision.Gemma4Preprocess's maxSoftTokens); the actual per-image token count
-	// is data-dependent and computed per request via multimodal.Gemma4PooledTokens.
+	// Gemma 4 vision tower (nil: not gemma4, or no tower). There is no separate projector: Gemma4Encoder.Forward
+	// includes the embed_vision projection. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
+	// (vision.Gemma4Preprocess's maxSoftTokens); the actual per-image token count is data-dependent and computed per
+	// request via multimodal.Gemma4PooledTokens.
 	gemma4Enc     *vision.Gemma4Encoder
-	gemma4Tower   multimodal.Gemma4TowerAccelerator // nil: the CPU tower (F2, docs/multimodal.md)
+	gemma4Tower   multimodal.Gemma4TowerAccelerator // nil: the CPU tower (docs/multimodal.md)
 	gemma4MaxSoft int
 	gemma4ImgTok  int // <|image|> id
-	// Gemma 4 audio (S5 of docs/tasks/task-multimodal-support-2026-10.md): set when the checkpoint has an audio_config.
-	// The tower loads on the first audio request (gemma4AudioEncoder), so a server that never hears audio never pays
-	// its memory. gemma4AudioTok is <|audio|>.
+	// Gemma 4 audio: set when the checkpoint has an audio_config. The tower loads on the first audio request
+	// (gemma4AudioEncoder), so a server that never hears audio never pays its memory. gemma4AudioTok is <|audio|>.
 	gemma4AudioDir string
-	// Qwen3-ASR (S14.3): the checkpoint directory (its audio encoder is in the same safetensors as the decoder), the <|audio_pad|> id, and the encoder, loaded on the first clip.
+	// Qwen3-ASR: the checkpoint directory (its audio encoder is in the same safetensors as the decoder), the
+	// <|audio_pad|> id, and the encoder, loaded on the first clip.
 	qwenASRDir      string
 	qwenASRTok      int
 	qwenASR         *audio.QwenASREncoder
@@ -167,14 +149,14 @@ type loadedModel struct {
 	gemma4AudioOnce sync.Once
 	gemma4Audio     *audio.Gemma4AudioEncoder
 	gemma4AudioErr  error
-	// gemma4AudioDevice is "metal" when the tower's conformer blocks run on Metal (G-S5d, EmbeddingGemma 2's accelerator),
+	// gemma4AudioDevice is "metal" when the tower's conformer blocks run on Metal (EmbeddingGemma 2's accelerator),
 	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
 	gemma4AudioDevice string
 	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
 }
 
-// cachedTokenBytes returns the constraint masker's token→bytes table, built once per model
-// and reused across constrained requests (N-14 — it was rebuilt every request before the queue).
+// cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
+// constrained requests.
 func (lm *loadedModel) cachedTokenBytes() [][]byte {
 	lm.tokenBytesOnce.Do(func() {
 		lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
@@ -182,8 +164,8 @@ func (lm *loadedModel) cachedTokenBytes() [][]byte {
 	return lm.tokenBytes
 }
 
-// maxTokenBytes returns the byte length of the longest token in the vocab (≥ 1), computed
-// once and cached. It is the per-token byte ceiling the tokenization guard uses (G1).
+// maxTokenBytes returns the byte length of the longest token in the vocab (at least 1), computed once and cached. It
+// is the per-token byte ceiling of the tokenization guard.
 func (lm *loadedModel) maxTokenBytes() int {
 	lm.maxTokBytesOnce.Do(func() {
 		m := 1
@@ -197,12 +179,11 @@ func (lm *loadedModel) maxTokenBytes() int {
 	return lm.maxTokBytes
 }
 
-// promptTooLargeForContext cheaply rejects an input whose tokenizable text cannot fit the
-// model's context window, BEFORE the expensive tokenize (G1c). It is a conservative upper
-// bound — it never rejects a servable prompt (a prompt of ctx tokens has text ≤ ctx·maxTok
-// bytes) — so the exact token-count check (contextLengthError, post-tokenize) still runs for
-// inputs that pass here. Uses MaxPositions, not the (smaller) resident cap, to stay an upper
-// bound; the resident-cap tightening remains in prepare.
+// promptTooLargeForContext cheaply rejects an input whose tokenizable text cannot fit the model's context window,
+// before the expensive tokenize. It is a conservative upper bound that never rejects a servable prompt (ctx tokens
+// have text of at most ctx*maxTok bytes), so the exact post-tokenize check (contextLengthError) still runs for what
+// passes. It uses MaxPositions, not the smaller resident cap, to stay an upper bound; prepare applies the resident
+// cap.
 func (lm *loadedModel) promptTooLargeForContext(inputBytes int) error {
 	if lm.model == nil {
 		return nil
@@ -219,14 +200,11 @@ func promptByteBudgetError(inputBytes, ctx, maxTokenBytes int) error {
 	return nil
 }
 
-// chatInputBytes sums the tokenizable text across chat messages — the input the BPE runs
-// over (JSON structure and image data are not tokenized), so it is what the G1c guard bounds.
-//
-// M-15 (audit-2026-09-10): also sums each message's REPLAYED tool_calls[].function.arguments.
-// messagesToTurns converts an assistant message's ToolCalls into chat.Turn.ToolCalls
-// unconditionally — a chat template renders that replay into the prompt whenever it appears in
-// history, regardless of whether tools are active THIS turn — so a large replayed arguments blob
-// used to pass this guard in constant time and then run the full BPE over it anyway.
+// chatInputBytes sums the tokenizable text across chat messages: the input the BPE runs over (JSON structure and
+// image data are not tokenized), so it is what the promptTooLargeForContext guard bounds. It includes each message's
+// replayed tool_calls[].function.arguments: messagesToTurns converts an assistant message's ToolCalls
+// unconditionally, and a chat template renders them into the prompt whenever they appear in history, tools active
+// this turn or not, so an unpriced arguments blob would run the full BPE past the guard.
 func chatInputBytes(msgs []chatMessage) int {
 	n := 0
 	for _, m := range msgs {
@@ -238,10 +216,9 @@ func chatInputBytes(msgs []chatMessage) int {
 	return n
 }
 
-// toolSchemaBytes sums an OpenAI-shaped tool declaration list's rendered bytes (M-15,
-// audit-2026-09-10): RenderToolsSegments renders every tool's name/description/parameters into
-// the prompt whenever tools are active, so a large schema list must be priced at the same guard
-// that already prices the messages, not left to run the full BPE unpriced.
+// toolSchemaBytes sums an OpenAI-shaped tool declaration list's rendered bytes. RenderToolsSegments renders every
+// tool's name, description and parameters into the prompt whenever tools are active, so a large schema list is priced
+// at the same guard as the messages, not left to run the full BPE unpriced.
 func toolSchemaBytes(tools []toolSpec) int {
 	n := 0
 	for _, t := range tools {
@@ -250,24 +227,23 @@ func toolSchemaBytes(tools []toolSpec) int {
 	return n
 }
 
-// setConcurrency decides how many generations of this model run at once (MC3c, docs/tasks/task-concurrency-2026-09.md)
-// and sizes the admission and queue to match: -max-concurrent, but 1 unless the model is safe to run concurrently on
-// the CPU (decoder.Model.CPUConcurrentSafe: not GPU-resident, not weight-streaming) and has no vision tower, and never
-// more than -kv-sessions keeps — each running generation holds a session, and the LRU must always have an idle one
-// or room. The queue holds the running generations plus -max-queue waiting ones.
+// setConcurrency decides how many generations of this model run at once and sizes the admission and queue to match:
+// -max-concurrent, but 1 unless the model is safe to run concurrently on the CPU (decoder.Model.CPUConcurrentSafe:
+// not GPU-resident, not weight-streaming) and has no vision tower, and never more than -kv-sessions keeps, since each
+// running generation holds a session and the LRU must always have an idle one or room. The queue holds the running
+// generations plus -max-queue waiting ones.
 func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	n := max(1, cfg.maxConcurrent)
 	switch {
 	case n <= 1 || lm.model == nil || lm.visionCapable():
 		n = 1
 	case lm.model.ResidentActive():
-		// MC3: a GPU-resident model runs n generations at once only when its resident can batch their decode tokens
-		// (decoder.Model.EnableResidentConcurrency — a dense family on at least two resident KV slots; capped by the
-		// slot count, which --kv-sessions sets). Speculative decode and adapters take the resident exclusively, so a
-		// model serving them keeps one generation at a time — UNLESS --spec-adaptive is also set (MC4 candidate,
-		// docs/tasks/task-concurrency-2026-09.md): then a spec generation gives the resident up at a round boundary
-		// whenever another is waiting, so MC3 can still run. Block drafters and adapters are unaffected by
-		// --spec-adaptive; they still take the resident exclusively for the whole generation.
+		// A GPU-resident model runs n generations at once only when its resident can batch their decode tokens
+		// (decoder.Model.EnableResidentConcurrency: a dense family on at least two resident KV slots, capped by the
+		// slot count that --kv-sessions sets). Speculative decode, block drafters and adapters take the resident
+		// exclusively for a whole generation, so a model serving them keeps one generation at a time, unless
+		// --spec-adaptive is also set: then a spec generation gives the resident up at a round boundary whenever
+		// another is waiting. Block drafters and adapters are unaffected by --spec-adaptive.
 		if lm.blockSpec != nil || lm.adapter != "" || (lm.spec && !lm.specAdaptive) {
 			n = 1
 		} else {
@@ -282,7 +258,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if cfg.kvSessions > 0 {
 		n = min(n, cfg.kvSessions)
 	}
-	// MC3c step 2: a CPU model's concurrent generations may also join their decode tokens into batched steps
+	// A CPU model's concurrent generations may also join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch decides from -cpu-batch, the family and the model's size).
 	cpuBatched := false
 	if lm.model != nil && !lm.model.ResidentActive() {
@@ -308,20 +284,14 @@ func (lm *loadedModel) visionCapable() bool {
 	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.glm != nil || lm.gemma4Enc != nil || lm.pixtral != nil
 }
 
-// tryEnter claims a queue slot then waits for this model's turn (J1's admission — the decode
-// worker). It returns (false, "") when the queue is full, so each API surface can render the
-// backpressure failure in its own error shape. ctx ending while queued (client disconnect, or a
-// K2 halt racing the wait) also returns (false, ""): admission.enter itself is what makes that
-// possible without waiting to be granted the turn first (see admission.go's own doc comment) —
-// this replaces the second, post-acquisition-only halt check the old mutex-based version needed
-// because sync.Mutex.Lock() could not be interrupted.
+// tryEnter claims a queue slot, then waits for this model's turn. It returns (false, "") when the queue is full, so
+// each API surface can render the backpressure failure in its own error shape, and also when ctx ends while queued
+// (client disconnect, or a halt racing the wait): admission.enter returns without first being granted the turn.
 //
-// haltState, when non-nil, is ALSO checked once the turn is actually granted, and its non-nil
-// result is returned as (false, reason) with the turn and queue slot released again — a halt that
-// lands in the narrow window between admission.enter granting the turn and this check running is
-// still caught here; K2's haltGate (main.go) only runs once, at the front of the chain, before a
-// request is admitted, and nothing has registered this generation in K1's registry yet (that
-// happens inside drive/driveVL, further down the call stack than this).
+// haltState, when non-nil, is also checked once the turn is granted; a non-nil result is returned as (false, reason)
+// with the turn and queue slot released again. That catches a halt landing between the grant and this check: haltGate
+// (main.go) runs once, at the front of the chain, before admission, and nothing has registered this generation in the
+// generations registry yet (that happens inside drive/driveVL).
 func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltState func() *haltInfo) (ok bool, haltReason string) {
 	if lm.queue != nil {
 		select {
@@ -366,11 +336,9 @@ func (lm *loadedModel) enter(w http.ResponseWriter, r *http.Request, rec admissi
 	return false
 }
 
-// queueFullMsg is the 429's text when a model's queue is full (W28: say how busy, not just that it
-// is — cap(lm.queue)-1 is the configured -max-queue depth, the one number that is always true of a
-// FULL queue, since a live waiting count would already be stale by the time a client reads it).
-// lm.queue == nil (unbounded, -max-queue 0) can't actually reach this — see tryEnter — but a message
-// with no number, rather than a bogus one, is the safe fallback if that ever changes.
+// queueFullMsg is the 429's text when a model's queue is full. cap(lm.queue) minus the concurrency is the configured
+// -max-queue depth, the one number always true of a full queue (a live waiting count would be stale by the time a
+// client reads it). A nil queue (unbounded) cannot reach this, but a message with no number is the safe fallback.
 func (lm *loadedModel) queueFullMsg() string {
 	if lm.queue != nil {
 		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, cap(lm.queue)-max(1, lm.concurrent))
@@ -378,9 +346,8 @@ func (lm *loadedModel) queueFullMsg() string {
 	return fmt.Sprintf("model %q queue full; retry", lm.name)
 }
 
-// exit releases the turn, then the queue slot (paired with enter — reverse order of acquisition). Unconditional for
-// whichever request holds a turn: turns are interchangeable, so admission.release() needs no per-caller identity. The
-// session this generation used is checked back in by drive itself (sessMu is no longer held across a generation).
+// exit releases the turn, then the queue slot (the reverse of enter's acquisition). Turns are interchangeable, so
+// release needs no per-caller identity. drive itself checks the session back in.
 func (lm *loadedModel) exit() {
 	lm.turns.release()
 	if lm.queue != nil {
@@ -389,12 +356,10 @@ func (lm *loadedModel) exit() {
 }
 
 type server struct {
-	// Generative (decoder) registry — served name → model. Empty when only an
-	// embedding model is served. Requests route on the OpenAI `model` field via
-	// pick; each model has its own mutex, so distinct models run in parallel.
-	// regMu guards the map structure (dynamic load/unload mutate it concurrently
-	// with request routing); a request holds the picked *loadedModel beyond the
-	// RLock, so unload uses the model's own mutex to refuse a busy model.
+	// Generative (decoder) registry: served name to model, empty when only an embedding model is served. Requests
+	// route on the OpenAI `model` field through withModel. regMu guards the map structure (dynamic load and unload
+	// mutate it concurrently with routing); a request holds the picked *loadedModel beyond the RLock, and unload
+	// drains in-flight requests through liveness before freeing the model.
 	regMu  sync.RWMutex
 	models map[string]*loadedModel
 	cfg    config // backend/quant/lora/kv/session-dir/allow-admin for admin loads
@@ -404,11 +369,10 @@ type server struct {
 	// loads serialises -web model loads the same way (webui.go handleWebLoad).
 	loads pullState
 
-	// liveness tracks, per underlying *decoder.Model, the request holders (rw) and the number of
-	// registry entries backed by it (refs) — the machinery that lets unload DRAIN in-flight work
-	// before freeing native memory instead of racing it into a use-after-free. A base and its
-	// compute-time adapters share one *decoder.Model and thus one entry here. Guarded by regMu;
-	// see liveness.go and docs/completed/task-admin-unload-drain.md.
+	// liveness tracks, per underlying *decoder.Model, the request holders (rw) and the number of registry entries
+	// backed by it (refs), so unload can drain in-flight work before freeing native memory instead of racing it into
+	// a use-after-free. A base and its compute-time adapters share one *decoder.Model and thus one entry. Guarded by
+	// regMu; see liveness.go and docs/completed/task-admin-unload-drain.md.
 	liveness map[*decoder.Model]*modelLiveness
 	// draining is the set of served names whose entry has been unpublished but whose native memory
 	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can
@@ -433,48 +397,43 @@ type server struct {
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore
 
-	// gens is the K1 cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every
-	// generation surface. Never nil after newServer.
+	// gens is the cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every generation surface. Never
+	// nil after newServer.
 	gens *generationRegistry
 
-	// jobs is J2's job registry (docs/tasks/task-work-queue-2026-09.md), shared by every
-	// generation surface the same way gens is. Never nil after newServer — every generation gets
-	// a job whether or not -job-dir is set; jobs.journal is what's nil in that case.
+	// jobs is the job registry (docs/tasks/task-work-queue-2026-09.md), shared by every generation surface the way
+	// gens is. Never nil after newServer: every generation gets a job whether or not -job-dir is set; jobs.journal is
+	// what is nil without it.
 	jobs *jobStore
 
-	// files and batches are J4's stores (task-work-queue-2026-09.md): OpenAI's uploaded/assembled
-	// files, and both dialects' batch records. Never nil after newServer, same convention as jobs.
+	// files and batches hold OpenAI's uploaded and assembled files and both dialects' batch records. Never nil after
+	// newServer.
 	files   *fileStore
 	batches *batchStore
 
-	// halted is K2's global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See
-	// halt.go. Zero value is nil, so no explicit init in newServer is needed.
+	// halted is the global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See halt.go. The
+	// zero value is nil, so newServer needs no init.
 	halted atomic.Pointer[haltInfo]
 
-	// swapGuardTripped and swapWatch are S3's serving-side tripwire (task-never-swap-2026-09.md);
-	// see swapguard.go. Zero value (false, nil) is "not armed yet" — startSwapGuard sets swapWatch
-	// during newServer; a nil swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
+	// swapGuardTripped and swapWatch are the serving-side swap tripwire (docs/tasks/task-never-swap-2026-09.md); see
+	// swapguard.go. The zero values mean not armed yet: startSwapGuard sets swapWatch during newServer, and a nil
+	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool
 	swapWatch        *decoder.SwapWatch
 }
 
-// pick resolves the OpenAI `model` field to a loaded generative model: an exact
-// served-name match, else (for single-model OpenAI compatibility, where clients
-// send an arbitrary name) the sole model when only one is loaded. nil otherwise —
-// the handler returns an OpenAI-shaped 404.
-// lookupLocked resolves a request's model name to a loaded entry. The CALLER MUST HOLD regMu
-// (read or write). It is deliberately unexported and lock-requiring so it cannot be the route a
-// handler uses — withModel (liveness.go) is the ONLY way a request reaches a *loadedModel, because
-// withModel also takes the liveness read-lock that keeps the model alive for the request's duration.
-// Adding a handler that calls this directly would skip that lock; there is no exported pick to call.
+// lookupLocked resolves a request's model name to a loaded entry: an exact served-name match, else the sole model
+// when the name is empty on a single-model server; nil otherwise, and the handler answers the OpenAI-shaped 404. The
+// CALLER MUST HOLD regMu (read or write). It is unexported and lock-requiring so it cannot be the route a handler
+// uses: withModel (liveness.go) is the only way a request reaches a *loadedModel, because it also takes the liveness
+// read lock that keeps the model alive for the request. A handler calling this directly would skip that lock.
 func (s *server) lookupLocked(name string) *loadedModel {
 	if lm, ok := s.models[name]; ok {
 		return lm
 	}
-	// G6: an OMITTED model on a single-model server routes to that model (convenience — the
-	// client named nothing, so nothing is served-under-a-wrong-name). A NON-EMPTY unknown name
-	// is rejected by the caller (modelNotFound) rather than silently served, so a client that
-	// sent the wrong id gets an error naming what IS served instead of confident wrong output.
+	// An omitted model on a single-model server routes to that model. A non-empty unknown name is rejected by the
+	// caller (modelNotFound) rather than served, so a client that sent the wrong id gets an error naming what is
+	// served instead of confident wrong output.
 	if name == "" && len(s.models) == 1 {
 		for _, lm := range s.models {
 			return lm
@@ -483,16 +442,14 @@ func (s *server) lookupLocked(name string) *loadedModel {
 	return nil
 }
 
-// resolveBodyCaps returns the (text, vision, embed) request-body caps in bytes (G1d). override > 0
-// sets all three verbatim; otherwise the text cap is derived from the largest served DECODER's
-// context window — ctx tokens × the longest token's byte length × 4 (JSON structure/escaping) —
-// and floored at maxBodyBytes so a small-context model keeps a usable budget. The vision cap adds
-// base64-image headroom on top (at least maxVisionBodyBytes).
+// resolveBodyCaps returns the (text, vision, embed, file) request-body caps in bytes. override > 0 sets all four
+// verbatim; otherwise the text cap is derived from the largest served decoder's context window (ctx tokens x the
+// longest token's byte length x 4 for JSON structure and escaping), floored at maxBodyBytes so a small-context model
+// keeps a usable budget. The vision cap adds base64-image headroom on top (at least maxVisionBodyBytes).
 //
-// The embed cap is INDEPENDENT of both: /v1/embeddings is served by the encoder, which is not in
-// s.models, so a decoder-derived cap is measuring the wrong thing entirely — see maxEmbedBodyBytes.
-// fileCap (J4) is independent for the identical reason — see maxBatchFileBytes. All four are
-// reported on startup.
+// The embed cap is independent of both: /v1/embeddings is served by the encoder, which is not in s.models, so a
+// decoder-derived cap would measure the wrong thing (see maxEmbedBodyBytes). fileCap is independent for the same
+// reason (see maxBatchFileBytes). All four are reported on startup.
 func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, fileCap int64) {
 	textCap = maxBodyBytes // 4 MiB floor
 	if override > 0 {
@@ -530,10 +487,8 @@ func (s *server) modelNotFound(w http.ResponseWriter, name string) {
 	writeErr(w, http.StatusNotFound, fmt.Sprintf("model %q not found (served: %s)", name, strings.Join(s.servedNames(), ", ")))
 }
 
-// servedNames lists the loaded generative + embedding model ids (sorted).
-// modelByName is an EXACT registry lookup under the read lock — unlike pick, which falls back to
-// "the only loaded model" for any name (right for request routing, wrong for listing: it would
-// attach a decoder's paths to the embedding-model entry).
+// modelByName is an exact registry lookup under the read lock. Unlike lookupLocked it has no single-model fallback,
+// which is right for listing: the fallback would attach a decoder's paths to the embedding-model entry.
 func (s *server) modelByName(name string) *loadedModel {
 	s.regMu.RLock()
 	defer s.regMu.RUnlock()
@@ -553,26 +508,24 @@ func (s *server) pathFields(name string) map[string]any {
 		"decode_path":     lm.model.DecodePath(),
 		"prefill_batched": batched,
 		"prefill_path":    why,
-		// W32: quant and resident size, so the web UI's Models tab can list what's actually
-		// resident (and show a free-able size on an Unload button) from the one request it
-		// already makes, rather than a second web-only route just to ask the registry twice.
+		// Quant and resident size, so the web UI's Models tab can list what is resident (and size an Unload button)
+		// from the one request it already makes.
 		"quant":          lm.model.Quant(),
 		"resident_bytes": lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes(),
 	}
-	// W8: the context window a TEXT chat request is held to — the same residentPath the text routes
-	// pass prepare (lm.adapter == ""). Vision requests are bounded by MaxPositions instead, which is
-	// never smaller, so this is the conservative number for a client to plan against. Omitted when
-	// unknown rather than published as 0.
+	// context_window is the cap a text chat request on a base model is held to (contextWindow). Vision requests are
+	// bounded by MaxPositions, which is never smaller, so this is the conservative number for a client to plan
+	// against. Omitted when unknown, not published as 0.
 	if ctx := lm.contextWindow(lm.adapter == ""); ctx > 0 {
 		f["context_window"] = ctx
 	}
-	// W11: whether image content parts are accepted — the same visionCapable the vision path checks
-	// before answering "this model has no vision tower", so a client can hide image input on a model
-	// that would refuse it instead of finding out from a 400.
+	// vision reports whether image content parts are accepted, by the same visionCapable the vision path checks, so a
+	// client can hide image input on a model that would refuse it.
 	f["vision"] = lm.visionCapable()
 	return f
 }
 
+// servedNames lists the loaded generative and embedding model ids, sorted.
 func (s *server) servedNames() []string {
 	s.regMu.RLock()
 	names := make([]string, 0, len(s.models)+1)
@@ -602,10 +555,10 @@ type sampling struct {
 	Logprobs            bool            `json:"logprobs"`
 	TopLogprobs         *int            `json:"top_logprobs"`
 	ResponseFormat      *respFormat     `json:"response_format"`
-	// Confidence is the goinfer_confidence vendor extension (C1, docs/tasks/task-constrained-confidence.md):
-	// with response_format json_schema, the response carries each enum, boolean and integer field's confidence.
-	// Only the routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route
-	// can accept it and silently drop the result.
+	// Confidence is the goinfer_confidence vendor extension (docs/tasks/task-constrained-confidence.md): with
+	// response_format json_schema, the response carries each enum, boolean and integer field's confidence. Only the
+	// routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route can accept it
+	// and silently drop the result.
 	Confidence   bool `json:"goinfer_confidence"`
 	confidenceOK bool
 }
@@ -629,18 +582,16 @@ type chatReq struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
-	// StreamOptions follows OpenAI's shape: with include_usage, a FINAL chunk is sent carrying an
-	// empty choices array and a usage object. It exists because a streaming client otherwise has
-	// no token count at all — and counting SSE chunks is not a substitute, since a token held back
-	// for an incomplete UTF-8 rune or a partial stop-string match emits no chunk, and the token
-	// that resolves the holdback emits one chunk covering several tokens' bytes.
+	// StreamOptions follows OpenAI's shape: with include_usage, a final chunk carries an empty choices array and a
+	// usage object. Counting SSE chunks is no substitute for a token count: a token held back for an incomplete UTF-8
+	// rune or a partial stop-string match emits no chunk, and the token that resolves the holdback emits one chunk
+	// covering several tokens' bytes.
 	StreamOptions *streamOptions  `json:"stream_options"`
 	Tools         []toolSpec      `json:"tools"`
 	ToolChoice    json.RawMessage `json:"tool_choice"` // "auto"|"none"|{"type":"function","function":{"name":…}}
-	// N is OpenAI's "how many choices" field (N-30, docs/audit-2026-09-10.md — this repo
-	// generates exactly one). Was entirely unparsed: an unrecognized JSON key is silently
-	// dropped, so `n: 3` used to get one choice back under a 200 rather than an error naming
-	// what was ignored. *int (not int) so n:0 and "omitted" are distinguishable from n:1.
+	// N is OpenAI's "how many choices" field; this server generates exactly one. It is parsed (see validateN) because
+	// an unrecognized JSON key is silently dropped, so n:3 would otherwise get one choice back under a 200. *int so
+	// that n:0 and omitted are distinguishable from n:1.
 	N *int `json:"n"`
 	// Thinking controls (think.go): vLLM/llama.cpp's chat_template_kwargs.enable_thinking, OpenAI's reasoning_effort, and
 	// llama.cpp's reasoning_format. Absent = the server defaults (-thinking, -reasoning-format).
@@ -712,17 +663,15 @@ type completionReq struct {
 	Model  string          `json:"model"`
 	Prompt json.RawMessage `json:"prompt"` // string | []string
 	Stream bool            `json:"stream"`
-	// Logprobs shadows sampling.Logprobs (embedded below) for the /v1/completions surface.
-	// The legacy Completions API types logprobs as an INTEGER (# of top alternatives), not the
-	// chat API's bool — the standard SDK sends `logprobs: 5`, which failed to decode into a bool
-	// and returned a 400 leaking Go struct/field names (audit M-06). The outer (shallower) field
-	// wins during JSON decode, so req.sampling.Logprobs stays false and the expensive per-token
-	// logprobs path never engages; the handler 400s explicitly when it is set (unimplemented here).
+	// Logprobs shadows sampling.Logprobs (embedded below) for the /v1/completions surface. The legacy Completions API
+	// types logprobs as an integer (the number of top alternatives), not the chat API's bool: the standard SDK sends
+	// `logprobs: 5`, which would fail to decode into a bool. The outer (shallower) field wins during JSON decode, so
+	// req.sampling.Logprobs stays false and the expensive per-token logprobs path never engages; the handler answers
+	// 400 when it is set (unimplemented here).
 	Logprobs *int `json:"logprobs"`
-	// M-26: /v1/completions never parsed stream_options, so include_usage was silently
-	// ignored on this surface rather than unsupported-with-an-error.
+	// StreamOptions is parsed so include_usage is honored on this surface too.
 	StreamOptions *streamOptions `json:"stream_options"`
-	// N-30 (docs/audit-2026-09-10.md): same unparsed "n" gap as chatReq's own N field.
+	// N is rejected unless 1, as in chatReq (see validateN).
 	N *int `json:"n"`
 	sampling
 }
@@ -733,13 +682,11 @@ type usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
-	// PrefillReusedTokens is a goinfer VENDOR EXTENSION (not part of the OpenAI schema, same
-	// convention as pathFields's decode_path/prefill_path on /v1/models, :312-326 below): how
-	// many leading prompt tokens this generation's prefill skipped because they were already
-	// resident from a prior turn (decoder.Generation.PrefillReused, decoder/model.go:1430-1437).
-	// 0 on a cold prefill, on a path that doesn't track reuse, or when nothing was reused —
-	// those are indistinguishable from the number alone. Ignorable by any standard OpenAI
-	// client (an unrecognised JSON key).
+	// PrefillReusedTokens is a goinfer vendor extension (not part of the OpenAI schema; the same convention as
+	// pathFields's decode_path and prefill_path on /v1/models): how many leading prompt tokens this generation's
+	// prefill skipped because a prior turn left them resident (decoder.Generation.PrefillReused). 0 on a cold
+	// prefill, on a path that does not track reuse, or when nothing was reused; the number alone cannot tell those
+	// apart. An unrecognised JSON key, so any standard OpenAI client ignores it.
 	PrefillReusedTokens int `json:"prefill_reused_tokens"`
 }
 
@@ -750,13 +697,12 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	data := []map[string]any{}
 	for _, name := range s.servedNames() {
 		e := map[string]any{"id": name, "object": "model", "created": created, "owned_by": "goinfer"}
-		// VENDOR EXTENSION (goinfer-only, not in the OpenAI schema): the RESOLVED compute paths.
-		// Both the resident decode path and the batched prefill fall back silently per model, so a
-		// client that cares about TTFT (batch jobs, benchmarks) can read which one it actually got
-		// instead of inferring it from latency. Absent for encoder-only entries, which have neither.
-		// Unknown keys are ignored by the Go/Python/JS OpenAI clients, but a strict typed decoder in
-		// another language may reject them — GET /health carries the same three fields on a payload
-		// with no compatibility contract, for operators who need a surface that can't break a client.
+		// Vendor extension (goinfer-only, not in the OpenAI schema): the resolved compute paths. The resident decode
+		// path and the batched prefill each fall back silently per model, so a client that cares about TTFT (batch
+		// jobs, benchmarks) can read which one it got instead of inferring it from latency. Absent for encoder-only
+		// entries. Unknown keys are ignored by the Go, Python and JS OpenAI clients, but a strict typed decoder in
+		// another language may reject them: GET /health carries the same fields on a payload with no compatibility
+		// contract, for operators who need a surface that cannot break a client.
 		maps.Copy(e, s.pathFields(name))
 		if d := s.decisionsField(name); d != nil {
 			e["decisions"] = d // vendor extension, same convention: POST /v1/systemone's support for this entry
@@ -766,9 +712,9 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
 
-// decisionsField is a /v1/models entry's decisions support (D5): the route, kinds and template POST /v1/systemone
-// answers with, and whether a calibration was loaded. nil for an entry that cannot answer (an encoder, or a
-// compute-time adapter, which label scoring would answer with the base model).
+// decisionsField is a /v1/models entry's decisions support: the route, kinds and template POST /v1/systemone answers
+// with, and whether a calibration was loaded. nil for an entry that cannot answer (an encoder, or a compute-time
+// adapter, which label scoring would answer with the base model).
 func (s *server) decisionsField(name string) map[string]any {
 	s.regMu.RLock()
 	lm := s.models[name]
@@ -801,8 +747,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// G5: a request that dropped (or emptied) messages must be a 400, not a confident
-	// generation from a BOS-only prompt. Naming the field so the client sees what is missing.
+	// A request with no messages is a 400 naming the field, not a confident generation from a BOS-only prompt.
 	if len(req.Messages) == 0 {
 		writeErr(w, http.StatusBadRequest, "messages is required and must contain at least one message")
 		return
@@ -816,8 +761,8 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(imgs) > 0 {
-		// serveVisionChat neither renders nor parses tools, so a tools+image request would
-		// silently drop the tools — fail loudly instead (N-16).
+		// serveVisionChat neither renders nor parses tools, so a tools+image request would silently drop the tools:
+		// fail loudly instead.
 		if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {
 			writeErr(w, http.StatusBadRequest, "tools are not supported together with image inputs; send images or tools, not both")
 			return
@@ -840,8 +785,8 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 // serveChatText runs the text (non-vision, non-tool) chat generation. Reached ONLY through withModel,
 // so the model's liveness RLock is held for this whole call — unload cannot free it out from under us.
 func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatReq, lm *loadedModel) {
-	// Reject an over-context prompt before tokenizing it (G1c): turns a multi-MiB body from
-	// ~27 s of BPE + gigabytes of ids into a byte-length comparison.
+	// Reject an over-context prompt before tokenizing it, so a multi-MiB body costs a byte-length comparison, not a
+	// full BPE pass.
 	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -876,7 +821,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 	defer lm.exit()
 	id := "chatcmpl-" + reqID()
-	gr.id = id // K1: registers this generation for cancel-by-id, drive/driveVL's job
+	gr.id = id // drive/driveVL register the generation for cancel-by-id
 	created := time.Now().Unix()
 
 	if req.Stream {
@@ -886,10 +831,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
-		// N-24 (docs/audit-2026-09-10.md): nothing else is sent between here and the first
-		// token — on CPU that gap is the whole prefill (an 8k agent prompt ~270s), against a
-		// 300s harness idle timeout. Streaming per token once generation starts does not cover
-		// the prefill window itself, same shape as the buffer-then-stream sites M-19 fixed.
+		// Nothing else is sent between here and the first token, and on CPU that gap is the whole prefill: a
+		// heartbeat keeps a client's idle timeout from firing during it.
 		stopBeat := sseHeartbeat(ss)
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
@@ -908,8 +851,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
 		if cancelReason != "" {
-			// K1: one final SSE event naming the reason, so a client cannot mistake this for
-			// a natural stop even though finish_reason alone is already "cancelled" above.
+			// One final SSE event naming the reason, so a client cannot mistake this for a natural stop even though
+			// finish_reason is already "cancelled" above.
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
@@ -964,11 +907,9 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveCompletion(w, r, req, lm) })
 }
 
-// validateN rejects an explicit "n" other than 1 (N-30, docs/audit-2026-09-10.md): this server
-// always generates exactly one choice, and "n" used to be an unrecognized JSON key that decoded
-// silently — a request asking for n:3 got ONE choice back under a 200, with nothing in the
-// response naming what was ignored. n omitted (nil) is the default (1) and passes; n:1 passes;
-// anything else is a clean 400 rather than a silently wrong choice count.
+// validateN rejects an explicit "n" other than 1: this server always generates exactly one choice, and an n:3 request
+// would otherwise get one choice back under a 200 with nothing in the response naming what was ignored. n omitted
+// (nil) is the default and passes, as does n:1.
 func validateN(n *int) error {
 	if n != nil && *n != 1 {
 		return fmt.Errorf("n=%d is not supported; this server always returns exactly one choice", *n)
@@ -978,7 +919,7 @@ func validateN(n *int) error {
 
 // serveCompletion runs a /v1/completions generation. Reached ONLY through withModel (liveness RLock held).
 func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req completionReq, lm *loadedModel) {
-	if req.Logprobs != nil { // legacy Completions logprobs (integer) is unimplemented — reject cleanly (M-06)
+	if req.Logprobs != nil { // legacy Completions logprobs (integer) is unimplemented: reject cleanly
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported on /v1/completions; use /v1/chat/completions with logprobs:true")
 		return
 	}
@@ -987,7 +928,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, http.StatusBadRequest, perr.Error())
 		return
 	}
-	if err := lm.promptTooLargeForContext(len(prompt)); err != nil { // G1c: reject before tokenizing
+	if err := lm.promptTooLargeForContext(len(prompt)); err != nil { // reject before tokenizing
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1015,9 +956,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
-		// N-24 (docs/audit-2026-09-10.md): same prefill-silence gap as the chat-completions
-		// stream above — nothing is sent until the first token, which on CPU is after the
-		// whole prefill.
+		// Same prefill silence as the chat stream: heartbeat until the first token.
 		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
@@ -1068,9 +1007,9 @@ type genRequest struct {
 	sp          decoder.SamplingParams
 	maxTokens   int
 	stopStrings []string
-	// id, when set, registers this generation in the server's K1 cancel-by-id registry for the
-	// duration of drive/driveVL. "" (the zero value) skips registration — a caller that hasn't
-	// been wired for cancellation (or a test calling drive/driveVL directly) is unaffected.
+	// id, when set, registers this generation in the server's cancel-by-id registry for the duration of
+	// drive/driveVL. "" (the zero value) skips registration, so a caller not wired for cancellation (or a test
+	// calling drive/driveVL directly) is unaffected.
 	id     string
 	masker *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
 	// conf, when the request asked for goinfer_confidence, receives the per-field confidences once streamTokens
@@ -1100,19 +1039,15 @@ func (c *confResult) payload() any {
 	return c.fields
 }
 
-// contextWindow is the context cap prepare enforces for one request: the model's MaxPositions,
-// lowered to the resident KV cap when the request runs the stateless resident path. ONE function for
-// both the enforcement and what /v1/models publishes as context_window (W8), so the number a client
-// plans against is the number that rejects it. 0 = unknown.
+// contextWindow is the context cap prepare enforces for one request: the model's MaxPositions, lowered to the
+// resident KV cap when the request runs the stateless resident path (residentPath). One function serves both the
+// enforcement and what /v1/models publishes as context_window, so the number a client plans against is the number
+// that rejects it. 0 = unknown.
 //
-// Why the resident cap: on a resident backend the stateless path prefills the fixed-size resident KV,
-// which is often smaller than MaxPositions. A prompt in (residentCap, MaxPositions) passes the
-// MaxPositions check, then dies mid-prefill with a 500 whose body leaks the internal "use the staged
-// path" hint (there is no staged fallback on the stateless resident path) — so it is rejected as a
-// clean context_length_exceeded 400 instead (audit R-10). Only when the request actually runs
-// stateless-resident — never for vision (CPU VL) or adapter (session path; N-39: not purely staged
-// since G3, but this specific check is about the STATELESS path's own fixed KV cap, which adapter
-// requests never enter) requests, which are bounded by MaxPositions, not the resident cap (audit F-01).
+// Why the resident cap: the stateless resident path prefills the fixed-size resident KV, which is often smaller than
+// MaxPositions. A prompt between the two would pass the MaxPositions check and die mid-prefill with a 500 whose body
+// leaks an internal hint, so it is rejected as a clean context_length_exceeded 400 instead. Vision requests (CPU VL)
+// pass residentPath false and are bounded by MaxPositions.
 func (lm *loadedModel) contextWindow(residentPath bool) int {
 	if lm.model == nil {
 		return 0
@@ -1135,49 +1070,36 @@ func (lm *loadedModel) modelContextWindow() int {
 	return lm.model.Config().MaxPositions
 }
 
-// residentPath reports whether a text-completion request against lm will actually run the
-// stateless GPU-resident decode path, for contextWindow/prepare's residentPath argument (M-01,
-// docs/audit-2026-09-10.md). NOT `lm.adapter == ""`: an adapter model's FIRST turn
-// (prefillFrom==0) still runs resident GPU decode when one is active
-// (decoder/model.go's generateInto useGPU condition doesn't exclude adapters), so keying this on
-// "no adapter" left an adapter+resident request enforced against the uncapped MaxPositions while
-// generateInto actually bound it to the smaller ResidentContextCap() — dying mid-prefill with a
-// leaking 500 instead of a clean 400 (the R-10 regression this fixes). ResidentActive() is safe on
-// every other combination too: not resident (adapter or not) makes ResidentContextCap() report 0,
-// so contextWindow's own `rc > 0` guard no-ops regardless of what residentPath says — this only
-// tightens the one case that was actually broken. Guarded against lm.model == nil (an embedding-only
-// entry) the same way contextWindow itself is, even though no text-completion caller should reach
-// prepare with one.
+// residentPath reports whether a text-completion request against lm will run the stateless GPU-resident decode path,
+// for contextWindow and prepare's residentPath argument. It is not `lm.adapter == ""`: an adapter model's first turn
+// (prefillFrom==0) still runs resident GPU decode (decoder/model.go's generateInto useGPU admits it), so keying on
+// "no adapter" enforced the uncapped MaxPositions against a request that generateInto binds to the smaller
+// ResidentContextCap(), and it died mid-prefill with a leaking 500 instead of a clean 400. ResidentActive() is safe
+// for every other combination: where nothing is resident ResidentContextCap() reports 0, so contextWindow's `rc > 0`
+// guard makes the value irrelevant. Guarded against lm.model == nil (an embedding-only entry) as contextWindow is.
 func (lm *loadedModel) residentPath() bool {
 	return lm.model != nil && lm.model.ResidentActive()
 }
 
-// prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
-// wires response_format into a constraint masker, and resolves stop strings.
-// residentPath tells prepare whether THIS request will actually run the stateless GPU-resident
-// decode path (so the resident context cap binds) — see the residentPath() helper above for what
-// determines it. Every text-completion caller passes lm.residentPath(); it's unconditionally false
-// for vision requests (GenerateVL is CPU-prefilled; the resident image-reuse fast path, P9a, is a
-// separate cap check of its own in decoder/generate_vl.go, not this one).
+// prepare translates the OpenAI sampling fields into goinfer's SamplingParams, wires response_format into a
+// constraint masker, and resolves stop strings. residentPath says whether this request will run the stateless
+// GPU-resident decode path, so the resident context cap binds (see residentPath): text-completion callers pass
+// lm.residentPath(), and vision requests pass false (GenerateVL is CPU-prefilled; the resident image-reuse path
+// checks its own cap in decoder/generate_vl.go).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
-		Seed:        seedOrRandom(sm.Seed), // M-03: omitted seed → fresh random, not deterministic seed 0
+		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
 		TopLogprobs: deref(sm.TopLogprobs, 0),
 	}
-	// G4: temperature has the same lower bound as top_p (rejected < 0), for consistency —
-	// previously top_p=-1 was a 400 but temperature=-1 was accepted. It is not silently-wrong
-	// output: SampleWithInfo short-circuits Temperature <= 0 to greedy argmax before any logit
-	// scaling, so a negative temperature decoded greedily rather than inverting the ordering.
-	// 0 is the documented greedy/deterministic setting and stays valid; only negatives are rejected.
+	// A negative temperature is rejected, as a negative top_p is. 0 is the documented greedy setting and stays valid.
 	if sm.Temperature != nil && *sm.Temperature < 0 {
 		return genRequest{}, fmt.Errorf("temperature must be >= 0 (got %v); 0 selects greedy/deterministic decoding", *sm.Temperature)
 	}
-	// M-02: top_p == 0 is the tightest nucleus (the single most-likely token), which is greedy — the old
-	// `< 1` path stored 0, and the sampler treats TopP == 0 as DISABLED, so the request asking for the
-	// tightest filter got a full-vocab draw. Reject outside [0,1]; map explicit 0 to greedy.
+	// top_p == 0 is the tightest nucleus, which is greedy, but the sampler treats TopP == 0 as disabled and would
+	// draw from the full vocabulary: reject outside [0,1] and map an explicit 0 to greedy.
 	if sm.TopP != nil {
 		switch p := *sm.TopP; {
 		case p < 0 || p > 1:
@@ -1188,14 +1110,10 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 			sp.TopP = p
 		}
 	}
-	// C-08: top_logprobs was the one sampling field `prepare` passed through unvalidated, and it is
-	// the most expensive one to get wrong. Each retained entry is a TokenLogprob, and the response
-	// builder then materializes a map[string]any per entry BEFORE writing a byte, so
-	// {logprobs:true, top_logprobs:150000, max_tokens:4096} on a 152k-vocab model retains
-	// 4096 x 150k of them (~9.8 GB) and OOM-kills the process — a fatal Go allocation failure, not
-	// a 500. top_logprobs:20000 with max_tokens:2000 already reaches ~6 GB. One request does it.
-	//
-	// [0,20] is OpenAI's own documented range, so this rejects nothing a compatible client sends.
+	// top_logprobs is validated because it is the most expensive sampling field to get wrong: each retained entry is
+	// a TokenLogprob, and the response builder materializes a map per entry before writing a byte, so a huge value
+	// with a large max_tokens exhausts memory in one request (a fatal allocation failure, not a 500). [0,20] is
+	// OpenAI's own documented range, so this rejects nothing a compatible client sends.
 	if n := deref(sm.TopLogprobs, 0); n < 0 || n > maxTopLogprobs {
 		return genRequest{}, fmt.Errorf("top_logprobs must be in [0,%d] (got %d)", maxTopLogprobs, n)
 	}
@@ -1213,11 +1131,9 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		maxTok = sm.MaxCompletionTokens
 	}
 	if maxTok != nil {
-		// A negative/zero value reaches NewCache(len(prompt)+maxTokens) → makeslice with a
-		// negative cap → an unrecovered panic (fatal on the VL path's bare goroutine — audit
-		// C-19); a huge value OOM-kills the server (C-18). Reject both here so every endpoint
-		// that calls prepare (OpenAI/responses/tools/vision) gets a clean 400. The Anthropic
-		// endpoint already rejects <= 0 upstream.
+		// A zero or negative value reaches NewCache(len(prompt)+maxTokens) as a negative makeslice cap, an
+		// unrecovered panic (fatal on the VL path's bare goroutine), and a huge value exhausts memory. Reject both
+		// here so every endpoint that calls prepare answers a clean 400.
 		if *maxTok < 1 {
 			return genRequest{}, fmt.Errorf("max_tokens must be >= 1 (got %d)", *maxTok)
 		}
@@ -1231,13 +1147,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: parseStop(sm.Stop),
 	}
-	// C-18: bound max_tokens by the model's context window. The KV cache is preallocated as
-	// NewCache(len(prompt)+max_tokens); the server ceiling above (131072) is far larger than most
-	// models' context, so a request at the ceiling against a small-context model preallocates tens of
-	// GiB per layer and OOM-kills the server. The model cannot attend past MaxPositions, so tokens
-	// beyond it are wasted anyway — clamp to what fits, matching the resident path's ContextCap clamp
-	// (decoder/model.go). Only shrinks; a request already within context is untouched. (A prompt that
-	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
+	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
 		if err := contextLengthErrorFor(len(promptIDs), ctx, lm.modelContextWindow()); err != nil {
@@ -1267,17 +1177,15 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		gr.sp.LogitProcessor = m.Process
 		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}
-	// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time fit guard
-	// prices the worst case a request COULD reach, once, at load — it cannot see the request
-	// that actually arrives. Runs LAST, after gr.promptIDs/gr.maxTokens are fully resolved
-	// (including the C-18 clamp above), so the numbers in a refusal are the real ones, and every
-	// prepare() caller gets this for free rather than needing its own copy of the check.
+	// The load-time fit guard prices the worst case a request could reach, once, at load; it cannot see the request
+	// that arrives. This check runs last, after promptIDs and maxTokens are fully resolved (including the clamp
+	// above), so the numbers in a refusal are the real ones, and every prepare caller gets it without its own copy.
 	if lm.model != nil {
-		// MC3c: with several generations allowed at once, this request's prefill shares the margin with the ones running
-		// or queued ahead of it — counted now, capped at the model's concurrency. A lone request keeps the whole margin.
-		// So does a request that prefills on a GPU resident: its prefill passes run one at a time (MC3's exclusive
-		// section), and the margin is live memory, which already excludes what the other generations hold. Split there,
-		// it refused ~1000-token 7B prompts under MC3 (docs/measurements/spec-vs-batching-metal-2026-09-27.md §5).
+		// With several generations allowed at once, this request's prefill shares the memory margin with the ones
+		// running or queued ahead of it: counted now, capped at the model's concurrency. A lone request keeps the
+		// whole margin, and so does one that prefills on a GPU resident: its prefill passes run one at a time, and
+		// the margin is live memory, which already excludes what the other generations hold. Splitting it there
+		// refuses ordinary prompts (docs/measurements/spec-vs-batching-metal-2026-09-27.md section 5).
 		share := 1
 		if lm.concurrent > 1 && !(residentPath && lm.model.ResidentActive()) {
 			share = min(lm.concurrent, lm.turns.load()+1)
@@ -1289,18 +1197,17 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	return gr, nil
 }
 
-// prefillMemoryError distinguishes an R13 admission refusal from prepare's other, ordinary
-// validation errors (bad field, out-of-range value) so every call site can answer with 413
-// instead of prepare's usual 400 — a request that would page is not a malformed request, and a
-// client's retry logic should treat the two differently. See writePrepareErr.
+// prefillMemoryError marks the prefill-memory admission refusal, as distinct from prepare's ordinary validation
+// errors (bad field, out-of-range value), so every call site can answer 413 instead of 400: a request that would page
+// is not a malformed request, and a client's retry logic should treat the two differently. See prepareErrStatus.
 type prefillMemoryError struct{ err error }
 
 func (e *prefillMemoryError) Error() string { return e.err.Error() }
 func (e *prefillMemoryError) Unwrap() error { return e.err }
 
-// prepareErrStatus is the one place every prepare() call site decides its status code, in
-// EITHER response format (writeErr's OpenAI shape or writeAnthropicErr's), so the 413 split
-// above cannot silently regress back to a flat 400 at a site someone forgets to update.
+// prepareErrStatus is the one place every prepare call site decides its status code, in either response format
+// (writeErr's OpenAI shape or writeAnthropicErr's), so the 413 split cannot regress to a flat 400 at a site someone
+// forgets to update.
 func prepareErrStatus(err error) int {
 	if _, ok := errors.AsType[*prefillMemoryError](err); ok {
 		return http.StatusRequestEntityTooLarge
@@ -1308,11 +1215,9 @@ func prepareErrStatus(err error) int {
 	return http.StatusBadRequest
 }
 
-// contextLengthError rejects a prompt that alone fills or exceeds the model's context window (C-20).
-// MaxPositions is loaded but was never compared to len(prompt): a multi-MiB body tokenizes to ~1M ids
-// and preallocates tens of GiB of KV (NewCache is sized len(prompt)+max_tokens) → OOM-kill; and even
-// within memory, positions past the trained context drive out-of-range RoPE and return plausible
-// garbage under HTTP 200 instead of a 400. ctx ≤ 0 (unknown) never rejects.
+// contextLengthError rejects a prompt that alone fills or exceeds the model's context window. Unchecked, a multi-MiB
+// body tokenizes to ~1M ids and preallocates tens of GiB of KV, and within memory a position past the trained context
+// drives out-of-range RoPE and returns plausible garbage under HTTP 200. ctx <= 0 (unknown) never rejects.
 func contextLengthError(promptLen, ctx int) error {
 	if ctx > 0 && promptLen >= ctx {
 		return fmt.Errorf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, ctx)
@@ -1320,11 +1225,10 @@ func contextLengthError(promptLen, ctx int) error {
 	return nil
 }
 
-// contextLengthErrorFor is contextLengthError plus the remedy, for the case where the window that rejected the prompt is the
-// server's resident KV capacity and not the model's own (ctx < modelWindow): a coding agent's first request is ~11k tokens
-// (R19, docs/tasks/task-first-hour.md), the default resident capacity is 8192 on CUDA and 4096 on Metal, and the 400 used to
-// say only "context window is 8192" — which reads as the model's limit, so the client (opencode) compacted 34 times instead of
-// the operator raising -ctx. When the model's own window is the limit, -ctx cannot help and the message is unchanged.
+// contextLengthErrorFor is contextLengthError plus the remedy, for when the window that rejected the prompt is the
+// server's resident KV capacity, not the model's own (ctx < modelWindow): "context window is 8192" reads as the
+// model's limit, so the client compacts instead of the operator raising -ctx. When the model's own window is the
+// limit, -ctx cannot help and the message is unchanged.
 func contextLengthErrorFor(promptLen, ctx, modelWindow int) error {
 	err := contextLengthError(promptLen, ctx)
 	if err == nil || modelWindow <= ctx {
@@ -1334,10 +1238,9 @@ func contextLengthErrorFor(promptLen, ctx, modelWindow int) error {
 		err, modelWindow, promptLen+1, modelWindow)
 }
 
-// seedOrRandom returns the request's seed, or a fresh random seed when absent (M-03). OpenAI's contract
-// is that an OMITTED seed varies output run to run — best-of-N, "regenerate", and agent retry-for-
-// diversity all depend on it — but deref(sm.Seed, 0) pinned every seedless request to the deterministic
-// seed-0 stream. A supplied seed (including 0) is still honored verbatim for reproducibility.
+// seedOrRandom returns the request's seed, or a fresh random seed when absent. OpenAI's contract is that an omitted
+// seed varies output run to run (best-of-N, "regenerate" and agent retry-for-diversity depend on it). A supplied
+// seed, including 0, is honored verbatim for reproducibility.
 func seedOrRandom(seed *int64) int64 {
 	if seed != nil {
 		return *seed
@@ -1345,13 +1248,13 @@ func seedOrRandom(seed *int64) int64 {
 	return rand.Int63()
 }
 
-// clampMaxTokens bounds max_tokens by the model's context window (C-18). The KV cache is preallocated
-// as NewCache(len(prompt)+max_tokens); the server ceiling (131072) is far larger than most models'
-// context, so a request at the ceiling against a small-context model preallocates tens of GiB per layer
-// and OOM-kills the server. The model cannot attend past ctx (MaxPositions) anyway, so tokens beyond it
-// are wasted — clamp to what fits, matching the resident path's ContextCap clamp (decoder/model.go). It
-// only shrinks: ctx ≤ 0 (unknown) or a request already within context is returned unchanged, and a
-// prompt that itself meets/exceeds ctx is left to C-20's prompt-length check rather than clamped to 0.
+// clampMaxTokens bounds max_tokens by the model's context window. The KV cache is preallocated as
+// NewCache(len(prompt)+max_tokens), and the server ceiling is far larger than most models' context, so a request at
+// the ceiling against a small-context model would preallocate tens of GiB per layer and OOM-kill the server. The
+// model cannot attend past ctx (MaxPositions) anyway, so tokens beyond it are wasted: clamp to what fits, as the
+// resident path's ContextCap clamp does (decoder/model.go). It only shrinks: ctx <= 0 (unknown) or a request already
+// within context is returned unchanged, and a prompt that itself meets or exceeds ctx is left to contextLengthError,
+// not clamped to 0.
 func clampMaxTokens(maxTokens, promptLen, ctx int) int {
 	if ctx > 0 && promptLen < ctx {
 		if room := ctx - promptLen; room < maxTokens {
@@ -1381,19 +1284,14 @@ func grammarFor(rf *respFormat) (constrain.Grammar, error) {
 	}
 }
 
-// messagesToTurns maps OpenAI messages to chat turns, carrying tool history
-// (assistant tool_calls and tool-result turns). The system message is returned
-// separately (families place it differently).
+// messagesToTurns maps OpenAI messages to chat turns, carrying tool history (assistant tool_calls and tool-result
+// turns). The system message is returned separately because families place it differently.
 //
-// "developer" is an alias for "system" (queue G12). OpenAI's newer APIs send the
-// system prompt under that role for reasoning-class models, and agent harnesses
-// have followed. It is an alias and nothing more: same position, same
-// last-one-wins precedence that two "system" messages already have, no new
-// concept downstream — by the time a template sees it, it is the system prompt.
-// This is NOT a general unknown-role tolerance; every other unrecognized role
-// keeps the default arm below. Before this arm existed, "developer" fell through
-// to default: and was silently demoted to a USER turn, which delivered a
-// harness's entire agent scaffold as the user's first message.
+// "developer" is an alias for "system": OpenAI's newer APIs send the system prompt under that role for
+// reasoning-class models, and agent harnesses follow. It is an alias and nothing more: same position, same
+// last-one-wins precedence two "system" messages already have, no new concept downstream. It is not a general
+// unknown-role tolerance; every other unrecognized role keeps the default arm below, which demotes it to a user turn
+// (for "developer" that delivered a harness's entire agent scaffold as the user's first message).
 func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 	var system string
 	var turns []chat.Turn
@@ -1432,19 +1330,16 @@ func rawPrompt(system string, turns []chat.Turn) string {
 	return b.String()
 }
 
-// encode tokenizes a rendered prompt; rendered templates already include the
-// family BOS marker, so only the raw fallback asks the tokenizer to add one.
-// encode tokenizes prompt. The error is a server-side condition (a decode-only
-// vocab, or a tokenizer that failed to load) — it was silently dropped before
-// (M1), yielding an empty prompt and a generation from BOS alone.
+// encode tokenizes a rendered prompt; rendered templates already include the family BOS marker, so only the raw
+// fallback asks the tokenizer to add one. The error is a server-side condition (a decode-only vocab, or a tokenizer
+// that failed to load) and must be surfaced: dropped, it yields an empty prompt and a generation from BOS alone.
 func (lm *loadedModel) encode(prompt string) ([]int, error) {
 	return lm.tk.Encode(prompt, lm.tmpl == nil)
 }
 
-// genErr filters a generation's terminal error (gen.Err()) down to what's worth
-// surfacing to the client: context.Canceled — our own stop-string cancel, or a
-// client disconnect — is a clean end, not a failure. A non-nil result becomes a
-// 500 (or an error SSE event mid-stream). M1.
+// genErr filters a generation's terminal error (gen.Err()) down to what is worth surfacing to the client:
+// context.Canceled (our own stop-string cancel, or a client disconnect) is a clean end, not a failure. A non-nil
+// result becomes a 500, or an error SSE event mid-stream.
 func genErr(err error) error {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return err
@@ -1452,36 +1347,25 @@ func genErr(err error) error {
 	return nil
 }
 
-// drive runs the generation, applying stop strings and UTF-8 holdback, calling
-// onText with each newly-completed text fragment. Returns the finish reason
-// ("stop" | "length" | "cancelled" — K1, docs/tasks/task-halt-2026-09.md), the completion
-// token count, (non-stream) per-token logprobs, the stop string that was hit
-// (empty unless a stop sequence ended the turn), how many leading prompt tokens
-// this generation's prefill skipped via resident/session reuse
-// (decoder.Generation.PrefillReused — 0 when nothing was reused or the path
-// doesn't track it), the K1 admin-cancel reason (empty unless an admin cancel —
-// not a client disconnect or shutdown — ended the turn), and any terminal
-// generation error (nil on a clean end — see genErr). The context is cancelled
-// on a stop-string hit to end generation.
+// drive runs the generation, applying stop strings and UTF-8 holdback, and calls onText with each newly completed
+// text fragment. It returns the finish reason ("stop", "length" or "cancelled"), the completion token count, the
+// per-token logprobs (non-stream), the stop string that was hit (empty unless a stop sequence ended the turn), how
+// many leading prompt tokens the prefill skipped through resident or session reuse (decoder.Generation.PrefillReused;
+// 0 when nothing was reused or the path does not track it), the admin-cancel reason (empty unless an admin cancel,
+// not a client disconnect or shutdown, ended the turn), and the terminal generation error (nil on a clean end; see
+// genErr). It cancels its derived context on a stop-string hit to end generation.
 //
-// gens is the server's K1 registry; nil (or gr.id == "") skips registration — every
-// generation funnels through here or driveVL, so this is the one place that bookkeeping
-// lives, not each of the ~15 call sites (see generations.go's own doc comment).
-//
-// jobs is J2's store (task-work-queue-2026-09.md) — every job store instance always exists (see
-// newJobStore), so this is nil only in a unit test calling drive directly. Gated on the SAME
-// gr.id != "" condition as K1's registration, sharing the same id, so the two records can be
-// joined by id later (J3) without a retrofit.
+// gens is the server's cancel-by-id registry; nil, or gr.id == "", skips registration. Every generation funnels
+// through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
+// job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
+// so the job and registry records join by id.
 func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	var g *generation
 	if gens != nil && gr.id != "" {
-		// K1's cancel must land on `parent` itself, not on `ctx` below (drive's own
-		// stop-string-derived child context) — streamTokens tells an admin cancel apart from a
-		// stop-string hit by checking parent.Err(), specifically BECAUSE the stop-string cancel
-		// only ever touches ctx (see streamTokens' own doc comment, M-23). Registering ctx's
-		// cancel here would make an admin cancel indistinguishable from a natural stop:
-		// discovered by the K1 gate test failing to see "cancelled" even though the generation
-		// genuinely stopped — cancelling ctx silences the loop but parent.Err() stays nil.
+		// The admin cancel must land on parent itself, not on ctx below (drive's stop-string-derived child):
+		// streamTokens tells an admin cancel apart from a stop-string hit by checking parent.Err(), because the
+		// stop-string cancel only ever touches ctx. Registering ctx's cancel would silence the loop but leave
+		// parent.Err() nil, making an admin cancel indistinguishable from a natural stop.
 		var adminCancel context.CancelFunc
 		parent, adminCancel = context.WithCancel(parent)
 		defer adminCancel()
@@ -1496,15 +1380,13 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 	if jobs != nil && gr.id != "" {
 		j := jobs.getOrCreate(gr.id, lm.name, gr.promptIDs)
-		// J3's result content: accumulated independently of whatever the caller's own onText does
-		// (SSE send, a handler-local strings.Builder, …) — every job gets one uniformly, whether
-		// or not the caller happens to read it back itself.
+		// The job's result text accumulates independently of whatever the caller's own onText does, so every job gets
+		// one uniformly.
 		var resultText strings.Builder
 		wrapped := onText
 		onText = func(t string) { resultText.WriteString(t); wrapped(t) }
-		// Reads the function's own named return values — set by whichever return statement below
-		// actually fires — so this sees the FINAL finish/nComp/prefillReused/cancelReason/err
-		// regardless of which of drive's several return points ran.
+		// Reads the named return values, so it sees the final finish, nComp, prefillReused, cancelReason and err
+		// whichever return statement ran.
 		defer func() {
 			state := jobDone
 			var errMsg string
@@ -1525,40 +1407,29 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	var stream <-chan int
 	var gen *decoder.Generation
 
-	// GPU-resident models take the STATELESS path. decoder.Generate only engages the resident
-	// DecodeRunner when there is no session commit and no prefix reuse (model.go:
-	// useGPU = resident != nil && prefillFrom == 0 && commit == nil) — the resident's KV lives
-	// on the GPU, while a session's prefix-reuse cache is CPU-side, so the two cannot both be
-	// the source of truth. Going through a session therefore silently dropped every request to
-	// the staged/CPU path: measured 13 tok/s vs ~460 resident on a 0.5B (RTX 2070 SUPER).
+	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
+	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
+	// prefix-reuse cache is CPU-side, so the two cannot both be the source of truth, and going through a session
+	// would silently drop the request to the staged CPU path. The OpenAI API is stateless (the client resends the
+	// whole conversation), so sessions here are only a TTFT optimisation and trading prefix reuse for resident decode
+	// is safe.
 	//
-	// Trading prefix reuse for resident decode is a large net win and semantically safe: the
-	// OpenAI API is stateless (the client resends the whole conversation), so sessions here are
-	// purely a TTFT optimisation, not correctness.
+	// N-gram speculative decode does mix with residency: the drafter is pure Go and the verify is the resident
+	// batched ForwardN. genNgramInto claims the shared resident KV (resBusy) like Generate. Constrained and tool
+	// requests (grammar masker) keep plain resident Generate; a validation error (sampler not on the spec path) falls
+	// back to plain Generate before the KV is touched, so the fallback is exact.
 	//
-	// N-gram spec-decode DOES mix with residency: the drafter is pure-Go (prompt-lookup, no GPU
-	// memory, unlike the two-model draft that measured 0.11x against a GPU target), and the verify
-	// is the resident batched ForwardN (one weight stream for the whole [cur, draft…] run — the D1
-	// win, ~1.8x mid-context on copy-heavy traffic). genNgramInto claims the shared resident KV
-	// (resBusy) like Generate. Constrained/tool requests (grammar masker) keep plain resident
-	// Generate for now; a validation error (sampler not yet on the spec path) falls back to plain
-	// Generate before the KV is touched, so the fallback is exact.
-	// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoRA is
-	// applied only through the session binding (sessionLRU.bindAdapter → Session.UseAdapter → the
-	// cache's lora), and the stateless Generate/GenerateNgram… run on a fresh cache with lora == nil,
-	// so they'd silently return BASE-model output. Route adapter requests down the session path below
-	// instead; base models keep the resident fast path here (audit R-01). Since G3
-	// (docs/tasks/task-gpu-paths-2026-09.md), the session path itself is NOT always staged/CPU for
-	// an adapter: generateInto's useGPU (decoder/model.go) admits prefillFrom==0 with a bound
-	// resident adapter onto the resident GPU path — a session's FIRST turn. A later turn on the
-	// same session (prefillFrom>0, continuing off the reused warm prefix) still drops to CPU;
-	// nothing wires compute-time LoRA into the resident prefix-reuse path yet (N-39).
+	// Adapter (compute-time LoRA) models must not take this path: the LoRA is applied only through the session
+	// binding (sessionLRU.bindAdapter, Session.UseAdapter), and the stateless Generate runs on a fresh cache with no
+	// LoRA, so it would silently return base-model output. Adapter requests take the session path below. There a
+	// session's first turn can still run on the resident GPU path (generateInto's useGPU, decoder/model.go); a later
+	// turn continuing off the reused warm prefix drops to CPU, since compute-time LoRA is not wired into the resident
+	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
 		if lm.blockSpec != nil && gr.masker == nil {
-			// Pretrained BLOCK drafter (--drafter): a whole block per round, verified in one
-			// batched pass. Same try/fallback shape as the n-gram path below — GenerateStream
-			// validates the sampler and returns an error BEFORE touching any state, so a
-			// request with temperature or penalties falls back exactly.
+			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
+			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
+			// temperature or penalties falls back exactly.
 			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, gr.sp); err == nil {
 				stream, gen = s, gn
 			} else {
@@ -1581,11 +1452,10 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 	}
 
-	// Reuse the KV of whichever cached session already holds this prompt as a
-	// prefix (continuing chat / agent loop): only the new suffix is prefilled. The session is CHECKED OUT for this
-	// generation (MC3c): sessMu covers the LRU operation only, and checkin runs once streamTokens has drained the
-	// stream — the generation goroutine reconciles the session before closing it — so the next acquire, or a
-	// background demote/save, sees a consistent session.
+	// Reuse the KV of whichever cached session already holds this prompt as a prefix (continuing chat, agent loop):
+	// only the new suffix is prefilled. The session is checked out for this generation: sessMu covers the LRU
+	// operation only, and checkin runs once streamTokens has drained the stream (the generation goroutine reconciles
+	// the session before closing it), so the next acquire, or a background demote or save, sees a consistent session.
 	lm.sessMu.Lock()
 	sess := lm.sessions.acquire(gr.promptIDs)
 	lm.sessMu.Unlock()
@@ -1596,17 +1466,16 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}()
 	switch {
 	case gr.conf != nil:
-		// goinfer_confidence: plain constrained decode. The speculative paths below drive the masker without Process
-		// (grammar-fused) or batch verify positions past what is accepted (n-gram), and the capture records in
-		// Process, one call per emitted position.
+		// goinfer_confidence needs plain constrained decode: the speculative paths below drive the masker without
+		// Process (grammar-fused) or batch verify positions past what is accepted (n-gram), and the capture records
+		// in Process, one call per emitted position.
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
-		// Constrained request (response_format / tool grammar), greedy: grammar-fused
-		// speculative decode (01/03). A RouterDrafter fuses the grammar's forced byte-run
-		// (structural tokens) with an n-gram copy of free values that echo the context;
-		// the masked verify keeps output identical to constrained Generate. A miss costs
-		// ~nothing, so it's safe to always run here. Falls back to plain constrained
-		// decode on any validation error (the error precedes touching the session cache).
+		// Constrained request (response_format or tool grammar), greedy: grammar-fused speculative decode. A
+		// RouterDrafter fuses the grammar's forced byte-run (structural tokens) with an n-gram copy of free values
+		// that echo the context; the masked verify keeps output identical to constrained Generate, and a miss costs
+		// almost nothing. Any validation error, which precedes touching the session cache, falls back to plain
+		// constrained decode.
 		spSpec := gr.sp
 		spSpec.LogitProcessor = nil // the verify applies the grammar mask itself
 		drafter := &decoder.RouterDrafter{Sources: []decoder.Drafter{
@@ -1619,11 +1488,10 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
 	case lm.spec:
-		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain
-		// Generate when the request's sampler isn't yet supported on the spec path
-		// (repetition/presence/frequency penalties, logit bias, or a constrained/tool
-		// LogitProcessor with temperature>0) — the validation error is returned before
-		// the session cache is touched, so the fallback is exact.
+		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain Generate when the request's
+		// sampler is not supported on the spec path (repetition, presence or frequency penalties, logit bias, or a
+		// constrained or tool LogitProcessor with temperature>0); the validation error precedes touching the session
+		// cache, so the fallback is exact.
 		var err error
 		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp)
 		if err != nil {
@@ -1640,13 +1508,11 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
-// cancelledReason reports the K1 admin-cancel reason for this generation's finish, or "" if it
-// wasn't an admin cancel. g is nil for an unregistered generation (gr.id == "" or gens == nil).
-// Conditions mirror streamTokens' own "length" fallback (M-23): parent (not the stop-string
-// derived ctx) carries the external-cancel signal, and a stop-string hit always wins (the
-// generation completed naturally at essentially the same moment, so the natural "stop" reason
-// is reported rather than a race with the timing of an admin cancel that arrived too late to
-// matter).
+// cancelledReason reports the admin-cancel reason for this generation's finish, or "" if it was not an admin cancel.
+// g is nil for an unregistered generation (gr.id == "" or gens == nil). Like streamTokens' "length" fallback, it
+// reads parent (not the stop-string-derived ctx) for the external-cancel signal, and a stop-string hit always wins:
+// the generation completed naturally at about the same moment, so the natural "stop" is reported rather than a race
+// with an admin cancel that arrived too late to matter.
 func cancelledReason(g *generation, parent context.Context, stopHit string) string {
 	if g == nil || parent.Err() == nil || stopHit != "" {
 		return ""
@@ -1654,18 +1520,12 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 	return g.reason()
 }
 
-// driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the
-// projected vision features (from vi.features, invoked lazily) spliced in at the
-// [imgPos, imgPos+imgLen) placeholder run (GenerateVL), then streams the
-// continuation through the same stop/UTF-8 machinery as drive. No warm-KV
-// decoder.Session (multimodal opts out of that CPU-side prefix reuse) — but on a
-// resident backend, GenerateVL/GenerateQwenVL do their own resident-GPU-KV image
-// reuse when the SAME image is resent (P9a); vi.features is then never invoked at
-// all. Returns finish reason ("stop" | "length" | "cancelled" — K1), completion
-// token count, the per-token logprobs (nil unless requested), stop string, how many leading prompt tokens were reused (see
-// drive's doc comment), the K1 admin-cancel reason (empty unless an admin cancel
-// ended the turn), and any terminal generation error (nil on a clean end — see
-// genErr). gens and jobs are drive's own K1/J2 parameters; see drive's doc comments.
+// driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the projected vision features (from
+// vi.features, invoked lazily) spliced in at the image placeholder spans, then streams the continuation through the
+// same stop and UTF-8 machinery as drive. There is no warm-KV decoder.Session (multimodal opts out of that CPU-side
+// prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
+// image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
+// see drive.
 func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1702,14 +1562,14 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	defer cancel()
 	var stream <-chan int
 	var gen *decoder.Generation
-	// S11: the image paths take every image's span; a one-media builder (GLM-OCR, audio) set only the first.
+	// The image paths take every image's span; a one-media builder (GLM-OCR, audio) sets only the first.
 	spans, grids := vi.spans, vi.grids
 	if len(spans) == 0 {
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
-	if vi.asr { // Qwen3-ASR (S14.3): the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
+	if vi.asr { // Qwen3-ASR: the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
 		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, gr.sp)
-	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL (S10): split the flat features into the merged rows and the DeepStack sets
+	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL: split the flat features into the merged rows and the DeepStack sets
 		total := 0
 		for _, sp := range spans {
 			total += sp.Len
@@ -1733,22 +1593,22 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else if vi.gemma4 {
 		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
-	} else if vi.pixtral { // S10: Ministral 3's image tokens are causal, one span per merged row
+	} else if vi.pixtral { // Ministral 3's image tokens are causal, one span per merged row
 		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	} else {
 		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // S11: say why a multi-span turn prefilled on the CPU
+	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
 	}
-	if vi.gemma4 { // S1 G4 evidence (docs/tasks/task-multimodal-support-2026-10.md): where this image turn decoded
+	if vi.gemma4 { // log where this image turn decoded
 		where := "cpu"
 		if gen.DecodeResident {
 			where = "resident"
 		}
 		prefill := "cpu"
-		if gen.ImgPrefillResident { // S9: the image turn's prefill ran on the resident too
+		if gen.ImgPrefillResident { // the image turn's prefill ran on the resident too
 			prefill = "resident"
 		}
 		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path (prefill %s)\n", n, where, prefill)
@@ -1760,30 +1620,23 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
-// streamTokens consumes a token-id channel, applying stop strings (including
-// holdback of a trailing partial stop match), UTF-8 holdback, and calling onText
-// with each newly-completed fragment. It is the
-// shared tail of every generation path (text via Session.Generate, multimodal
-// via driveVL) — the token *source* is orthogonal to this stop/stream logic.
-// cancel ends the producing generation on a stop-string hit. Returns the finish
-// reason ("stop" | "length"), the completion token count, and the stop string
-// that was hit (empty unless a stop sequence ended the turn).
+// streamTokens consumes a token-id channel, applying stop strings (holding back a trailing partial stop match) and
+// UTF-8 holdback, and calls onText with each newly completed fragment. It is the shared tail of every generation path
+// (text via Session.Generate, multimodal via driveVL): the token source is orthogonal to this stop/stream logic.
+// cancel ends the producing generation on a stop-string hit. Returns the finish reason ("stop" or "length"), the
+// completion token count, and the stop string that was hit (empty unless a stop sequence ended the turn).
 func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
-	// Reasoning is taken out BEFORE the stop logic below, so a stop string is matched against the ANSWER only (see thinkOut): the
-	// reasoning goes to its own callback, and what the stop logic watches, holds back and emits is the answer text. With no
-	// splitter (th == nil) the stop logic watches everything the model wrote, exactly as it always did.
+	// Reasoning is taken out before the stop logic below, so a stop string is matched against the answer only (see
+	// thinkOut): the reasoning goes to its own callback, and what the stop logic watches, holds back and emits is the
+	// answer text. With no splitter (th == nil) the stop logic watches everything the model wrote.
 	th := gr.think
 	var ids []int
-	// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole `ids`
-	// sequence every token (audit R-08: was O(n^2) in output length). decode()'s per-token loop
-	// (tokenizer/sentencepiece.go) has no state that depends on chunk boundaries — a byte-fallback
-	// token's raw byte is written out whenever a later flush happens, and concatenation is
-	// associative regardless of WHEN that flush lands — so DecodePiece(id) appended one token at a
-	// time is byte-identical to DecodeContinuation(ids) computed fresh each time.
-	// TestDecodeContinuation_isIncrementallyAssociative (tokenizer/) proves this directly across a
-	// multi-byte-emoji byte-fallback run, the case this used to be cautious about. strings.Builder,
-	// not `text += piece`: Go strings are immutable, so naive concatenation is itself O(n) per
-	// append and would silently reintroduce the O(n^2) this exists to remove.
+	// sb accumulates the decoded text incrementally instead of re-decoding the whole ids sequence every token, which
+	// is O(n^2) in output length. Decode's per-token loop (tokenizer/sentencepiece.go) has no state that depends on
+	// chunk boundaries, so DecodePiece(id) appended one token at a time is byte-identical to DecodeContinuation(ids)
+	// computed fresh (TestDecodeContinuation_isIncrementallyAssociative in tokenizer/ proves it across a
+	// multi-byte-emoji byte-fallback run). A strings.Builder, not `text += piece`: Go strings are immutable, so naive
+	// concatenation is itself O(n) per append.
 	var sb strings.Builder
 	printed := 0
 	finish := ""
@@ -1793,16 +1646,12 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	// the safe boundary. Once per token, and once more when the splitter hands back what it held at the end.
 	step := func() {
 		text := sb.String() // O(1): a view over the Builder's buffer, not a copy
-		// tail is text[printed:] — the not-yet-emitted suffix, bounded (does not grow with total
-		// output length). Scanning it instead of the whole text is the other half of R-08's fix:
-		// text[:printed] provably never contains a stop match, complete or in progress. Any
-		// complete match either lies entirely in tail (found here), or would have to start before
-		// printed and extend into it — impossible, because stopTailHold's own invariant is exactly
-		// "hold back every suffix of the CURRENT text that could be a stop's prefix", so printed
-		// never advances past the start of a still-possible match; if one completes, it completes
-		// within what stopTailHold already held back, i.e. within tail. firstStop returns an
-		// offset into whatever string it searches, so cut/end below are translated back to
-		// absolute offsets into text (+= printed) before use.
+		// tail is text[printed:], the not-yet-emitted suffix, bounded however long the total output grows; scanning
+		// it instead of the whole text keeps the loop linear. text[:printed] provably never contains a stop match:
+		// stopTailHold holds back every suffix of the current text that could be a stop's prefix, so printed never
+		// passes the start of a still-possible match, and a match that completes lies within tail. firstStop returns
+		// an offset into whatever string it searches, so cut and end are translated back to absolute offsets (+=
+		// printed) before use.
 		tail := text[printed:]
 		if cut, which, hit := firstStop(tail, gr.stopStrings); hit {
 			cut += printed
@@ -1813,8 +1662,8 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			cancel()
 			return
 		}
-		// Emit up to the UTF-8 boundary, but never past a trailing partial stop
-		// match — those bytes wait until the next token proves them stop or not (M2).
+		// Emit up to the UTF-8 boundary, but never past a trailing partial stop match: those bytes wait until the
+		// next token proves them stop or not.
 		end := completeUTF8(tail) + printed
 		if safe := printed + len(tail) - stopTailHold(tail, gr.stopStrings); safe < end {
 			end = safe
@@ -1833,9 +1682,9 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			tr.firstToken()
 		}
 		ids = append(ids, id)
-		// DecodePiece, not Decode/DecodeContinuation: these ids CONTINUE the prompt (no
-		// sequence-level dummy-prefix strip — M-25), and appending each token's own piece is
-		// exactly what the whole-sequence decode does internally, one token at a time.
+		// DecodePiece, not Decode or DecodeContinuation: these ids continue the prompt (no sequence-level
+		// dummy-prefix strip), and appending each token's own piece is exactly what the whole-sequence decode does
+		// internally.
 		piece, _ := lm.tk.DecodePiece(id)
 		if th != nil {
 			piece = th.feed(piece)
@@ -1855,26 +1704,24 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		if text := sb.String(); len(text) > printed {
 			onText(text[printed:])
 		}
-		// Compare against the EFFECTIVE budget, not the requested max_tokens: a resident
-		// context-cap clamp ends the turn short of the request, and reporting that as a clean
-		// "stop" tells the client the model finished when it was truncated (audit M-04). gen is
-		// safe to read here — the stream has closed.
+		// Compare against the effective budget, not the requested max_tokens: a resident context-cap clamp ends the
+		// turn short of the request, and reporting that as a clean "stop" tells the client the model finished when it
+		// was truncated. gen is safe to read here: the stream has closed.
 		if len(ids) >= effectiveBudget(gen, gr.maxTokens) {
 			finish = "length"
 		} else {
 			finish = "stop" // EOS / turn-stop
 		}
 	}
-	// M-23: the generation was cut short from OUTSIDE and no stop string ended it, so the text is
-	// TRUNCATED and must not be reported as a clean finish. `parent`, not `ctx`: drive's own
-	// stop-string cancel fires on the derived context, so this sees only external cancellation —
-	// graceful shutdown (main.go's srvCancel() runs BEFORE Shutdown, so the client is still
+	// A generation cut short from outside with no stop string is truncated, and must not be reported as a clean
+	// finish. This reads parent, not ctx: the stop-string cancel fires on the derived context, so parent sees only
+	// external cancellation: graceful shutdown (main.go's srvCancel() runs before Shutdown, so the client is still
 	// connected and gets a 200 with a partial answer) or a client disconnect.
 	//
-	// "length" rather than an error, deliberately. It is truthful in BOTH cases, where a 500 would
-	// be wrong for a disconnect (nobody is reading) and the two are indistinguishable here — both
-	// arrive as a cancelled request context. What matters is that a client never reads a truncated
-	// answer as complete: "length" is the signal it already knows how to act on.
+	// "length" rather than an error, deliberately. It is truthful in both cases, where a 500 would be wrong for a
+	// disconnect (nobody is reading), and the two are indistinguishable here: both arrive as a cancelled request
+	// context. What matters is that a client never reads a truncated answer as complete, and "length" is the signal
+	// it already acts on.
 	if parent.Err() != nil && stopHit == "" {
 		finish = "length"
 	}
@@ -1889,16 +1736,15 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	return finish, len(ids), stopHit
 }
 
-// effectiveBudget returns the token budget a finish_reason must be judged against: the
-// resident context-cap-clamped budget when the decoder published one (gen.Budget > 0), else
-// the requested max_tokens. A generation the resident truncated at the KV cap emits fewer
-// tokens than requested; judging finish_reason against the request would report "stop"
-// (clean finish) instead of "length" (truncated), so the client never continues (audit M-04).
-// gen is nil / Budget 0 on paths that don't clamp (VL, speculative) → fall back to requested.
+// effectiveBudget returns the token budget a finish_reason is judged against: the resident context-cap-clamped budget
+// when the decoder published one (gen.BudgetClamped), else the requested max_tokens. A generation the resident
+// truncated at the KV cap emits fewer tokens than requested, so judging against the request would report "stop"
+// (clean) instead of "length" (truncated), and the client would never continue. gen is nil on paths that do not clamp
+// (VL, speculative), which fall back to the requested value.
 func effectiveBudget(gen *decoder.Generation, requested int) int {
-	// Trust Budget only when the resident cap actually clamped this turn — Budget can be a genuine 0
-	// (prompt fills the whole context → 0 tokens emitted → "length") which a `> 0` test mis-read as
-	// "unclamped" and fell back to the requested value, mis-reporting the empty turn as "stop" (R-09).
+	// Trust Budget only when the resident cap actually clamped this turn: Budget can be a genuine 0 (the prompt fills
+	// the whole context, so 0 tokens are emitted and the turn is "length"), which a `> 0` test mis-reads as
+	// unclamped.
 	if gen != nil && gen.BudgetClamped {
 		return gen.Budget
 	}
@@ -1920,9 +1766,11 @@ func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {
 	return map[string]any{"content": content}
 }
 
-// logprobImpossible is the logprob reported for a token whose probability is exactly zero: OpenAI's own convention (-9999.0), because -Inf, the true value, cannot be written in JSON.
-// A zero-probability candidate is normal, not an error: when the thinking budget forces the end-of-thinking token, that token has probability 1 and every other candidate, including the
-// filler entries that pad the top-k list, has none (S6's 35B image check, 2026-10-09: step 24 of a 32-token answer). NaN is NOT mapped: it would be a bug, and writeJSON reports it.
+// logprobImpossible is the logprob reported for a token whose probability is exactly zero: OpenAI's own convention
+// (-9999.0), because -Inf, the true value, cannot be written in JSON. A zero-probability candidate is normal, not an
+// error: when the thinking budget forces the end-of-thinking token, that token has probability 1 and every other
+// candidate, including the filler entries that pad the top-k list, has none. NaN is not mapped: it would be a bug,
+// and writeJSON reports it.
 const logprobImpossible = -9999.0
 
 func jsonLogprob(x float64) float64 {

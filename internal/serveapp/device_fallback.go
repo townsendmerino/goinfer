@@ -9,11 +9,12 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// A device vision tower that runs out of VRAM on a request falls back to the CPU tower for that request and every later one, and gives its VRAM back (S4,
-// docs/tasks/task-multimodal-support-2026-10.md). The towers load or grow their scratch after the resident decoder has taken the card, so the reserve in tower_reserve.go
-// is an estimate and a large image can still miss it; failing the request (or, before recoverDeviceTower, the process) is worse than a slower tower. Only a device
-// MEMORY failure triggers it: any other error is the caller's. Under -require-backend there is no fallback: the request fails with the reason and the device tower
-// stays (a smaller image may fit), because -require-backend means "never run off the requested backend", at load or later.
+// A device vision tower that runs out of VRAM on a request falls back to the CPU tower for that request and every
+// later one, and gives its VRAM back. The towers load or grow their scratch after the resident decoder has taken the
+// card, so the reserve in tower_reserve.go is an estimate and a large image can still miss it; failing the request
+// (or the process) is worse than a slower tower. Only a device memory failure triggers it: any other error is the
+// caller's. Under -require-backend there is no fallback: the request fails with the reason and the device tower stays
+// (a smaller image may fit), because -require-backend means "never run off the requested backend", at load or later.
 
 func isDeviceMemoryError(err error) bool {
 	if err == nil {
