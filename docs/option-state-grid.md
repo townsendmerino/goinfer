@@ -27,6 +27,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
 | `ResidentKVSlots` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
 | `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | tested: `TestOptionPathMetal_prefillChunk` | n/a | n/a |
+| `ResidentWindowedKV` | n/a | n/a | n/a | tested: `TestWindowedKV_decodeIdentity` | tested: `TestWindowedKV_prefillIdentity` | tested: `TestWindowedKV_verifyIdentity` | tested: `TestWindowedKV_reuseFloor` |
 | `StreamWeights` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `WeightCacheBytes` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 
@@ -53,6 +54,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 - `ResidentPrefillChunk`: chunks prefill; decode is one token
 - `ResidentPrefillChunk`: chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative paths claim the resident exclusively (claimExclusive) and prefill whole
 - `ResidentPrefillChunk`: schedules a prefill; the session's cache is the same either way (chunk-invariant)
+- `ResidentWindowedKV`: a CUDA resident's KV layout; the CPU cache keeps its own ring
 - `StreamWeights`: CPU expert paging of an mmap-backed .giw ("the CPU's expert paging is StreamWeights")
 - `StreamWeights`: pages weights, not the session's cache
 - `WeightCacheBytes`: the budget of StreamWeights, a CPU paging option
