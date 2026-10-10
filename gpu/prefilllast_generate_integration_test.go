@@ -11,22 +11,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGenerate_batchedPrefillMatchesSequential is the integration gate docs/completed/task-gpu-batched-prefill.md's
-// Increment 3 calls for ("TestDecodeParity-class greedy continuation unchanged") but through the
-// REAL production entry point, not an isolated PrefillLast call.
+// TestGenerate_batchedPrefillMatchesSequential is the integration gate for batched prefill
+// through the REAL production entry point, not an isolated PrefillLast call
+// (docs/completed/task-gpu-batched-prefill.md, Increment 3: "TestDecodeParity-class greedy
+// continuation unchanged"). decoder/model.go's residentPrefillSeed (shared by every resident
+// generation path) takes the batched path whenever the resident type satisfies decoder.Prefiller,
+// and gpu.residentDecoder does, so every WebGPU resident Generate() on an eligible prompt (>=8
+// tokens, no adapter) takes PrefillLastW8A8; before this test only PrefillLast itself was gated,
+// in isolation (TestResidentPrefillLast_parity/_TTFT).
 //
-// Increment 3 ("wire into decoder.Generate") reads as not-yet-started in this doc's own Definition
-// of Done, but it already is: decoder/model.go's residentPrefillSeed (shared by every resident
-// generation path) has a backend-agnostic `if pf, ok := m.resident.(Prefiller); ok` check that
-// fires automatically the moment a resident type satisfies decoder.Prefiller — and
-// gpu.residentDecoder has satisfied it since 813be4e7 (Increment 3's own commit, predating this
-// branch's dispatch-count fix). So the moment PrefillLastW8A8 works AND is fast, every WebGPU
-// resident Generate() call on an eligible prompt (>=8 tokens, no adapter) already takes the batched
-// path — nobody had confirmed that through Generate() itself, only through PrefillLast in
-// isolation (TestResidentPrefillLast_parity/_TTFT). This test closes that gap: same real prompt,
-// same greedy sampling, GOINFER_BATCHED_PREFILL=0 (forced sequential, the trusted baseline) vs the
-// default (batched prefill on — automatically hits PrefillLastW8A8 for this checkpoint's dense
-// W8A8 Qwen2 shape) must produce the IDENTICAL token stream.
+// Same real prompt, same greedy sampling, GOINFER_BATCHED_PREFILL=0 (forced sequential, the
+// trusted baseline) vs the default (batched prefill, which hits PrefillLastW8A8 for this
+// checkpoint's dense W8A8 Qwen2 shape) must produce the IDENTICAL token stream.
 //
 //	GOINFER_RESIDENT_GGUF=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 //	  GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestGenerate_batchedPrefillMatchesSequential -v

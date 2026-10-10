@@ -16,14 +16,14 @@ import (
 )
 
 // TestKVCacheF16_fit is the Increment-2 measurement gate (task-gpu-f16-kv.md +
-// task-gpu-kv-i8.md): a 7B int4 model with a 64k int8 / 32k f16 KV cache must fit
-// 8 GB (real allocation, no OOM), and lossy-KV decode should be no slower than f32
-// at equal context (the attention kernel is KV-read-bound → fewer bytes). Loading
-// the real model with KVPrecision="i8" also exercises the full residency int8 path
-// (NewKVCacheI8 + the on-device WRITE/READ kernels over real RoPE'd K/V), the real-
-// distribution complement to the synthetic TestKVCacheI8_parity. Measures peak VRAM
-// (nvidia-smi) and steady-state decode tok/s per precision. Asset-gated on a 7B
-// GGUF; skips if the model isn't residency-eligible in int4.
+// task-gpu-kv-i8.md): a 7B int4 model with a 64k int8 / 32k f16 KV cache must fit 8 GB (real
+// allocation, no OOM; peak VRAM is asserted at or under 8192 MiB). Decode speed against f32 at
+// equal context is logged, not asserted (the attention kernel is KV-read-bound, so fewer KV bytes
+// should not be slower). Loading the real model with KVPrecision="i8" also exercises the full
+// residency int8 path (NewKVCacheI8 + the on-device WRITE/READ kernels over real RoPE'd K/V), the
+// real-distribution complement to the synthetic TestKVCacheI8_parity. Measures peak VRAM
+// (nvidia-smi) and steady-state decode tok/s per precision. Asset-gated on a 7B GGUF; skips if
+// the model isn't residency-eligible in int4.
 func TestKVCacheF16_fit(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.Getenv("GOINFER_GPU_7B")

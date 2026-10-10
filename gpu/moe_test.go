@@ -66,11 +66,11 @@ func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float32) 
 	return idx, wts
 }
 
-// TestMoERoute_parity gates the C3a GPU router top-k kernel against the reference for
-// the routing flavors the MoE families use (nGroup==1): Mixtral (softmax + renorm),
-// Qwen2-MoE (softmax, no renorm), and the DeepSeek/GLM sigmoid + selection-bias + scale
-// path (group-limit deferred to C3d). Same chosen experts (as a set; the kernel emits
-// them in descending selection order, matching the reference sort) and weights to f32 tol.
+// TestMoERoute_parity pins the GPU router top-k kernel against the reference for the routing
+// flavors the MoE families use (nGroup==1): Mixtral (softmax + renorm), Qwen2-MoE (softmax, no
+// renorm), and the DeepSeek/GLM sigmoid + selection-bias + scale path. Same chosen experts (as a
+// set; the kernel emits them in descending selection order, matching the reference sort) and
+// weights to f32 tolerance.
 func TestMoERoute_parity(t *testing.T) {
 	c, err := gpu.New()
 	if err != nil {
@@ -110,14 +110,14 @@ func TestMoERoute_parity(t *testing.T) {
 	}
 }
 
-// TestMoERoute_pastOldCap is the gate for raising the router cap 256 -> 512 (MAXE in gpu/moe.go,
-// MOE_MAX_E in cuda/moe.cu). The cap bounds the ROUTER's per-invocation scratch and nothing else —
-// the expert GEMVs select by index arithmetic into row-stacked weights, so they are expert-count
-// agnostic. That makes "does moe_route still agree with the CPU reference at nE > 256" the whole
-// correctness question, and this is it.
+// TestMoERoute_pastOldCap pins that moe_route still agrees with the CPU reference past the former
+// 256-expert cap, up to the current cap of 512 (MAXE in gpu/moe.go, MOE_MAX_E in cuda/moe.cu).
+// The cap bounds the ROUTER's per-invocation scratch and nothing else (the expert GEMVs select by
+// index arithmetic into row-stacked weights, so they are expert-count agnostic), which makes
+// agreement with the reference at nE > 256 the whole correctness question.
 //
-// 384 is Kimi-K2's real routed-expert count, which is the shipped family the old cap declined.
-// 512 is the new cap exactly (the boundary that must still work). Both run the deepseek-shaped
+// 384 is Kimi-K2's real routed-expert count, the shipped family the old cap declined; 512 is the
+// cap exactly (the boundary that must still work). Both run the deepseek-shaped
 // sigmoid+bias+scale config, since that is what a real K2-class router uses.
 func TestMoERoute_pastOldCap(t *testing.T) {
 	c, err := gpu.New()

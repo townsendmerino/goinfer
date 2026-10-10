@@ -25,12 +25,12 @@ func srcOf(t *testing.T, name string) string {
 	return string(b)
 }
 
-// N-12: BuildResident admits Nemotron regardless of DecodeRunnerEligible, and the block-kind
-// switch had NO default — so an unhandled kind (nemoMoE) appended a layer with nil weights and
-// decoderunner.go's gemv nil-dereferenced on the first token. decoder/residency.go calls
-// DecodeRunnerEligible "the one predicate every backend's admission funnels through" and
-// documents declining there; this bypass skips exactly that, which makes the switch the last
-// place the shape is checked. Reachable through the exported ResidencyBackend.BuildResident.
+// TestNemotronBlockKind_hasADefault pins, on the source, that BuildResident's block-kind switch
+// for Nemotron has a default. BuildResident admits Nemotron regardless of DecodeRunnerEligible
+// (decoder/residency.go calls that predicate "the one predicate every backend's admission funnels
+// through"), so this switch is the last place the shape is checked, and an unhandled kind
+// (nemoMoE) would append a layer with nil weights that decoderunner.go's gemv nil-dereferences on
+// the first token. Reachable through the exported ResidencyBackend.BuildResident.
 func TestNemotronBlockKind_hasADefault(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "residency.go", nil, 0)
@@ -65,10 +65,10 @@ func TestNemotronBlockKind_hasADefault(t *testing.T) {
 	}
 }
 
-// N-14: ensureAttnWide compiles THREE variants (f32, f16 KV, int8 KV) and returned early when
-// the FIRST existed — so a failure on the second or third left those nil while the next call
-// reported success, and a kvF16/kvI8 plan then bound a nil pipeline. The R-30 class, in the file
-// R-30 fixed.
+// TestEnsureAttnWide_guardsOnTheLastPipeline pins, on the source, that ensureAttnWide guards on
+// the LAST of the three variants it compiles (f32, f16 KV, int8 KV): returning early when the
+// first exists would leave the others nil after a partial failure while the next call reports
+// success, and a kvF16/kvI8 plan would then bind a nil pipeline.
 func TestEnsureAttnWide_guardsOnTheLastPipeline(t *testing.T) {
 	src := srcOf(t, "attention.go")
 	i := strings.Index(src, "func (c *Context) ensureAttnWide()")
@@ -86,10 +86,11 @@ func TestEnsureAttnWide_guardsOnTheLastPipeline(t *testing.T) {
 	}
 }
 
-// N-15: DecodeRunner.ReadMambaCap is EXPORTED and panicked on a failed buffer map — "test-only"
-// is a comment, not a compiler constraint. And residentDecoder.Reset dropped every WriteBuffer
-// error, so a failed C-01 re-zero left the previous sequence's recurrent state in place and the
-// next generation continued from it silently.
+// TestGPU_deviceBoundaryErrorsAreNotDropped pins, on the source, that device-boundary errors
+// surface. DecodeRunner.ReadMambaCap is exported and must return a failed buffer map as an error
+// rather than panic ("test-only" is a comment, not a compiler constraint). residentDecoder.Reset
+// must not drop WriteBuffer errors: a failed re-zero would leave the previous sequence's
+// recurrent state in place and the next generation would continue from it silently.
 func TestGPU_deviceBoundaryErrorsAreNotDropped(t *testing.T) {
 	dr := srcOf(t, "decoderunner.go")
 	i := strings.Index(dr, "func (r *DecodeRunner) ReadMambaCap")

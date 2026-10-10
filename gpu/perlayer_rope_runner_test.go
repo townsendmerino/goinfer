@@ -9,11 +9,11 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestDecodeRunnerPerLayerRoPE_parity gates Lever C7: the resident runner binding a
-// DIFFERENT RoPE table + cos/sin scale (mscale) per layer — Mellum's YaRN-on-global vs
-// default-local interleave. Two dense layers use distinct (invFreq, ropeScale) pairs; a
-// CPU int8 oracle ropes each layer with its own table+scale. A bug that shared one rope
-// across layers (the pre-C7 behavior) would diverge here. Cosine must be ~1.0.
+// TestDecodeRunnerPerLayerRoPE_parity pins the resident runner binding a DIFFERENT RoPE table +
+// cos/sin scale (mscale) per layer (Mellum's YaRN-on-global vs default-local interleave). Two
+// dense layers use distinct (invFreq, ropeScale) pairs and a CPU int8 oracle ropes each layer
+// with its own table+scale, so a bug that shared one rope across layers would diverge here.
+// Cosine must be ~1.0.
 func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

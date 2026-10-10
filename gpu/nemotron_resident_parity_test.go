@@ -10,13 +10,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// P3/P4 whole-model parity: resident Nemotron-H (single-op-per-block Mamba-2 / NoPE-GQA / relu²
-// MLP) vs the CPU runLayersNemotron, feeding the SAME fixed token sequence to both and comparing
-// logits at 1/16/256/1k/2k. State (conv ring + ssm + KV) COMPOUNDS, so a wiring error — a
-// block-kind misroute, NoPE slip, single-op pairing bug, or pos off-by-one — shows as a cosine
-// that DRIFTS long. Matched precision (resident int8 vs CPU int8 via GOINFER_SSM_CPUQ8) isolates
-// WIRING from int8 quality: the engine should track ~flat near the int8-activation floor (the
-// resident quantizes the relu²/conv/proj activations the CPU keeps f32). Opt-in (tiny fixture).
+// TestNemotronResidentParity is the whole-model parity gate: resident Nemotron-H
+// (single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP) vs the CPU runLayersNemotron, feeding the
+// SAME fixed token sequence to both and comparing logits at 1/16/256/1k/2k. State (conv ring +
+// ssm + KV) COMPOUNDS, so a wiring error (a block-kind misroute, NoPE slip, single-op pairing
+// bug, or pos off-by-one) shows as a cosine that DRIFTS long. Matched precision (resident int8 vs
+// CPU int8 via GOINFER_SSM_CPUQ8) isolates WIRING from int8 quality: the engine should track
+// ~flat near the int8-activation floor (the resident quantizes the relu²/conv/proj activations
+// the CPU keeps f32). Opt-in (tiny fixture).
 func TestNemotronResidentParity(t *testing.T) {
 	if os.Getenv("GOINFER_SSM_PARITY") == "" {
 		t.Skip("nemotron resident parity (set GOINFER_SSM_PARITY=1; +GOINFER_SSM_CPUQ8=1 for matched int8)")

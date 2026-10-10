@@ -11,9 +11,9 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The WebGPU twin of cuda's TestEmbedInt4_residentDecisionDoesNotChange. Options.EmbedInt4 reaches every family loader since 2026-10-09, so the families that
-// used to be handed an int8 head by default are now handed an int4 one. The resident must take it without changing its decision: the same decode path with
-// either table, and the head reading int8 then int4.
+// The WebGPU twin of cuda's TestEmbedInt4_residentDecisionDoesNotChange. Options.EmbedInt4 reaches every family loader, so families that used to be handed an
+// int8 head by default are now handed an int4 one. The resident must take it without changing its decision: the same decode path with either table, and the
+// head reading int8 then int4.
 func TestEmbedInt4_residentDecisionDoesNotChange(t *testing.T) {
 	// A runner with no WebGPU adapter (or a software one) never builds a resident, and then there is nothing for this test to look at: the control model decides, before any
 	// family is judged, so the skip is for the missing device and not for a family that declined.

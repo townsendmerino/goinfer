@@ -9,11 +9,10 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestW4A8_parity_and_bandwidth is the W4A8 probe: it validates the int4
-// group-wise GEMV kernel against a CPU reference (the exact same grouped
-// int8×int4 math) and measures its standalone bandwidth, then projects the
-// decode token. The question: does int4 actually cut the 4.3 ms gemv floor, and
-// by how much once the per-group f32 scales (~⅛ extra bytes) are counted?
+// TestW4A8_parity_and_bandwidth is the W4A8 probe: it validates the int4 group-wise GEMV kernel
+// against a CPU reference (the exact same grouped int8×int4 math), measures its standalone
+// bandwidth, then projects the decode token. The question: does int4 cut the gemv floor, and by
+// how much once the per-group f32 scales (~⅛ extra bytes) are counted?
 func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
@@ -153,10 +152,9 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	t.Logf("W4A8 GEMV (f16 scales): %.1f µs/dispatch | %.2f MB (%.0f%% of int8's %.2f MB) | %.1f GB/s",
 		perUs, wBytes/1e6, wBytes/int8Bytes*100, int8Bytes/1e6, gbs)
 
-	// --- project the decode token vs the measured int8 baseline ---
-	// int8 token = 11.15 ms = gemv 4.3 (1.55 GB @ ~360 GB/s) + (glue+attn+
-	// barriers+host) 6.85 (fixed — W4A8 doesn't touch it). The W4A8 token gemv
-	// streams the whole model at the measured per-matrix byte ratio AND the
+	// Project the decode token against the measured int8 baseline: the baseline's gemv streams
+	// int8TokenGemvGB, and fixedMs is the glue+attn+barriers+host remainder, which W4A8 does not
+	// touch. The W4A8 gemv streams the whole model at the measured per-matrix byte ratio and the
 	// measured W4A8 GB/s (int4 unpack is more ALU-bound than int8).
 	const int8TokenGemvGB, fixedMs = 1.55, 6.85
 	w4GemvMs := int8TokenGemvGB * (wBytes / int8Bytes) / gbs * 1e3

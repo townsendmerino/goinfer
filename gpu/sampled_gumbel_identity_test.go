@@ -12,12 +12,13 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledGumbelStreamIdentity is the WebGPU end-to-end gate for the device Gumbel-max sampler (R7b): with a
-// fixed seed, the tokens drawn on-device are IDENTICAL to the host's (GOINFER_NO_SAMPLE_FASTPATH=1) on real
-// checkpoints. Same PRE-REGISTERED rule as the CUDA test: any divergence fails and is investigated, and the test
-// fails if the device path never engaged (DeviceSampled == 0), so it cannot pass vacuously. WGSL's log/mulhi are
-// weaker than CUDA's, so a rounding-level divergence is somewhat likelier here (~1e-5 per token at worst); at 2,000
-// tokens that is still a low-percent event, so a failure is more likely a bug than rounding.
+// TestSampledGumbelStreamIdentity is the WebGPU end-to-end gate for the device Gumbel-max
+// sampler: with a fixed seed, the tokens drawn on-device are IDENTICAL to the host's
+// (GOINFER_NO_SAMPLE_FASTPATH=1) on real checkpoints. Same pre-registered rule as the CUDA test:
+// any divergence fails and is investigated, and the test fails if the device path never engaged
+// (DeviceSampled == 0), so it cannot pass vacuously. WGSL's log/mulhi are weaker than CUDA's, so
+// a rounding-level divergence is somewhat likelier here, but over thousands of tokens it is still
+// a low-percent event: a failure is more likely a bug than rounding.
 //
 // Run: GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' -run TestSampledGumbelStreamIdentity -v ./gpu/
 func TestSampledGumbelStreamIdentity(t *testing.T) {

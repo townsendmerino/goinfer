@@ -9,25 +9,23 @@ import (
 	"time"
 )
 
-// TestDecodeRunnerW4A8_7B_fit is the W4A8 footprint gate: it builds the FULL
-// Qwen2.5-7B shape as a resident int4 model on the GPU with a 16k-context f32 KV
-// cache (F2), confirms it FITS the 8 GB card (no OOM, resident bytes logged vs
-// budget), and measures decode throughput. The footprint is shape-determined
-// (weight values don't affect resident bytes or bandwidth), so synthetic int4
-// weights of the exact 7B shape give the real fit + tok/s — the same way the
-// 1.5B int8 throughput bench works; bit-exact correctness is gated separately on
-// the 1.5B (TestDecodeRunnerW4A8_parity). The claim under test: a model that does
-// NOT fit at int8 (7.07 GB weights) runs at int4.
+// TestDecodeRunnerW4A8_7B_fit is the W4A8 footprint gate: it builds the full Qwen2.5-7B shape as
+// a resident int4 model with a 16k-context f32 KV cache, confirms it fits the 8 GB card (no OOM;
+// resident bytes logged against budget) and measures decode throughput. Footprint and bandwidth
+// are shape-determined, so synthetic int4 weights of the exact 7B shape give the real numbers, as
+// in the 1.5B int8 throughput bench; bit-exact correctness is gated separately on the 1.5B
+// (TestDecodeRunnerW4A8_parity). The claim under test: a model that does not fit at int8 (7.07 GB
+// of weights) runs at int4.
 func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("7B fit")
 	}
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	// Everything below is CALLER-owned: ctx.Close() releases the device handle but not these
-	// buffers, and runner.Release frees only scratch ("not the resident model"). Unreleased,
-	// this test's ~5.6 GB stayed live for the rest of the process and every later test failed
-	// with "failed to request device" — an out-of-memory wearing an unrelated message.
+	// Everything below is caller-owned: ctx.Close() releases the device handle but not these
+	// buffers, and runner.Release frees only scratch. Unreleased, the resident buffers stay live for
+	// the rest of the process and every later test fails with "failed to request device": an
+	// out-of-memory under an unrelated message.
 	var owned []interface{ Close() error }
 	defer func() {
 		for _, o := range slices.Backward(owned) {

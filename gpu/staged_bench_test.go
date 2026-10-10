@@ -13,17 +13,13 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestStagedGPU_nonDense is Lever A / B14 (docs/task-benchmark-refresh.md): the honest
-// staged-path GPU decode number for residency-INELIGIBLE families (MoE / Mamba-2 hybrid
-// / MLA). These never enter the resident DecodeRunner, but under -tags gpu their int8
-// (W8A8) matmuls still dispatch to the GPU backend (decoder/weightmat.go matmul →
-// QuantBackend.MatmulW8A8), CPU glue between — so a real "staged GPU" tok/s exists today
-// with no code. It is glue/dispatch-bound, NOT the resident megakernel path; report it
-// in its own table, NEVER as the GPU headline (which is dense-only residency).
-//
-// int8 ONLY: the int4 (W4A8) matmul branch dispatches straight to linalg.MatmulBTW4A8
-// with no backend routing, so -tags gpu does nothing for an int4 model (that gap is
-// Lever B). Loads here are Quant "int8int8" so the matmuls actually reach the GPU.
+// TestStagedGPU_nonDense gives the honest staged-path GPU decode number for residency-INELIGIBLE
+// families (MoE / Mamba-2 hybrid / MLA). These never enter the resident DecodeRunner, but under
+// -tags gpu their int8 (W8A8) matmuls still dispatch to the GPU backend (decoder/weightmat.go
+// matmul → QuantBackend.MatmulW8A8), with CPU glue between. It is glue/dispatch-bound, NOT the
+// resident megakernel path: report it in its own table, NEVER as the GPU headline (which is
+// dense-only residency). Loads here are Quant "int8int8" so the matmuls actually reach the GPU
+// through that route.
 //
 // Pairs staged-GPU vs CPU per family so the staged-vs-CPU delta is visible — on a
 // hybrid the Mamba-2 scan stays on the CPU regardless, so the GPU only accelerates the

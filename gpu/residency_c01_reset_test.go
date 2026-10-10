@@ -10,16 +10,16 @@ import (
 )
 
 // TestResident_C01_pos0ResetsRecurrent is the resident-half gate for audit C-01: the compounding
-// Mamba-2 {win,ssm} state must be re-zeroed at the start of a fresh sequence, or a second Generate
-// on the same *Model decodes its first token from the PRIOR sequence's state (cross-conversation
-// leak, silently wrong output). residentDecoder.Reset() existed but "was called by nothing"; the fix
-// wired it into Forward at pos==0. This reproduces the leak directly: run token T at pos 0 from a
-// fresh resident, COMPOUND the state by decoding several more tokens, then run token T at pos 0
-// AGAIN — with the fix the second pos-0 logits are identical to the first; without it they diverge.
+// Mamba-2 {win,ssm} state must be re-zeroed at the start of a fresh sequence (Forward calls
+// residentDecoder.Reset() at pos==0), or a second Generate on the same *Model decodes its first
+// token from the PRIOR sequence's state (cross-conversation leak, silently wrong output). It
+// reproduces the leak directly: run token T at pos 0 from a fresh resident, COMPOUND the state by
+// decoding several more tokens, then run token T at pos 0 AGAIN; with the reset the second pos-0
+// logits equal the first.
 //
-// Requires an SSM (Mamba-2 hybrid) resident, which only exists as a real model — this Mac carries no
-// such checkpoint, so it runs on the CUDA/webgpu box (set GOINFER_HEAVY_TESTS=1; override the path
-// with GOINFER_SSM_MODEL). The CPU rewind half is covered by decoder.TestTruncateTo_resetsRecurrent.
+// Requires an SSM (Mamba-2 hybrid) resident, which only exists as a real model: set
+// GOINFER_HEAVY_TESTS=1 (override the path with GOINFER_SSM_MODEL). The CPU rewind half is
+// covered by decoder.TestTruncateTo_resetsRecurrent.
 func TestResident_C01_pos0ResetsRecurrent(t *testing.T) {
 	requireHeavyModel(t)
 	if _, err := New(); err != nil {

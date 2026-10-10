@@ -15,13 +15,11 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestResidentPrefillLast_TTFT is the real end-to-end number the whole
-// docs/completed/task-gpu-batched-prefill.md build was for: sequential per-token Forward (today's
-// shipped residentPrefillSeed loop) vs one PrefillLast call, at realistic prompt
-// lengths, on the actual resident decode pipeline (not an isolated matmul
-// microbenchmark like TestTiledDP4A_microbench — that one only measured the
-// projection GEMM in isolation and found DP4A's own contribution modest; this is
-// the trustworthy comparison for whether batching prefill is worth shipping).
+// TestResidentPrefillLast_TTFT is the end-to-end TTFT number the batched-prefill build exists for
+// (docs/completed/task-gpu-batched-prefill.md): sequential per-token Forward (the
+// residentPrefillSeed loop) vs one PrefillLast call, at realistic prompt lengths, on the actual
+// resident decode pipeline, not an isolated matmul microbenchmark like TestTiledDP4A_microbench
+// (which measures the projection GEMM alone).
 //
 //	GOINFER_RESIDENT_GGUF=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 //	  GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestResidentPrefillLast_TTFT -v -timeout 20m
@@ -86,8 +84,8 @@ func TestResidentPrefillLast_TTFT(t *testing.T) {
 			embs[i] = emb()
 		}
 
-		// SEQUENTIAL — today's shipped default (decoder/model.go's residentPrefillSeed
-		// per-token loop): one Forward call per prompt token, from an empty cache.
+		// SEQUENTIAL: the residentPrefillSeed per-token loop (decoder/model.go), one Forward call per
+		// prompt token from an empty cache.
 		rf.Reset()
 		t0 := time.Now()
 		for i := range p {

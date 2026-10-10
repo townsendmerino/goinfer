@@ -13,20 +13,15 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestLocalize_BiasEpilogue is the other Claude session's step-1 localization,
-// narrowed to the single most likely stage: does production's FUSED gemvBias
-// kernel (dst = f32(acc)*aScale*bScale + bias, one dispatch, computed in
-// decoderunner.go for every biased W8A8 projection) produce a BIT-DIFFERENT
-// result than PrefillLastW8A8's UNFUSED approach (tiled GEMM -> store -> separate
-// residual-kernel bias add) given the IDENTICAL quantized activation and the
-// SAME real resident Q weight + bias from layer 0 of a real checkpoint?
-//
-// If these two disagree even in isolation (no attention, no multi-layer
-// compounding — just one projection), that's the first differing stage and the
-// bug is the epilogue fusion (FMA contraction inside one shader vs a forced f32
-// round-trip through memory between two shaders). If they agree exactly, the
-// bug is further downstream (rope, the KV cache write, or compounding through
-// 24 layers of an even-smaller difference this test can't see with one call).
+// TestLocalize_BiasEpilogue is a localization step: does production's FUSED gemvBias kernel (dst
+// = f32(acc)*aScale*bScale + bias, one dispatch, built in decoderunner.go for every biased W8A8
+// projection) produce a BIT-DIFFERENT result than PrefillLastW8A8's UNFUSED approach (tiled GEMM
+// → store → separate residual-kernel bias add), given the IDENTICAL quantized activation and the
+// SAME real resident Q weight + bias from layer 0 of a real checkpoint? If the two disagree even
+// in isolation (no attention, no multi-layer compounding), the epilogue fusion is the first
+// differing stage (FMA contraction inside one shader vs a forced f32 round-trip through memory
+// between two shaders). If they agree exactly, the difference is further downstream (rope, the KV
+// cache write, or compounding over layers).
 //
 //	GOINFER_RESIDENT_GGUF=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 //	  GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestLocalize_BiasEpilogue -v

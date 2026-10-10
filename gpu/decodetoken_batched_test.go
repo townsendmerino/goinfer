@@ -8,12 +8,11 @@ import (
 	"time"
 )
 
-// TestDecodeTokenFusedBatched_parity is the Stage-B (docs/spec/07) increment-1 gate:
-// the batched M=K verify forward (projections as one tiled GEMM, attention per-row)
-// must be BIT-IDENTICAL to M sequential DecodeTokenFused calls at consecutive
-// positions sharing one KV cache — the per-row path it will replace. Same int8
-// inputs + int32 accumulation ⇒ exact equality, including each row attending to the
-// earlier rows of the block via the shared cache.
+// TestDecodeTokenFusedBatched_parity pins that the batched M=K verify forward (projections as one
+// tiled GEMM, attention per row) is bit-identical to M sequential DecodeTokenFused calls at
+// consecutive positions sharing one KV cache, the per-row path it replaces (Stage B,
+// docs/spec/07). Same int8 inputs and int32 accumulation make equality exact, including each row
+// attending to the earlier rows of its block through the shared cache.
 func TestDecodeTokenFusedBatched_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
@@ -90,10 +89,10 @@ func TestDecodeTokenFusedBatched_parity(t *testing.T) {
 	}
 
 	// Reference: M sequential DecodeTokenFused over one shared KV cache.
-	// Release at TEST scope, not inside buildMW. A `defer mw.Release()` in the builder fires
-	// when the BUILDER returns — and since `return mw` copies to the return slot before defers
-	// run, the caller receives a struct whose buffers are all already closed, then nil-derefs
-	// on the first use. Resident weights are caller-owned; Context.Close does not free them.
+	// Release at test scope, not inside buildMW: a `defer mw.Release()` in the builder fires when
+	// the builder returns, after `return mw` copied the struct out, so the caller would get closed
+	// buffers and nil-deref on first use. Resident weights are caller-owned; Context.Close does not
+	// free them.
 	mwSeq := buildMW()
 	defer mwSeq.Release()
 	ref := make([][]float32, M)
@@ -126,12 +125,11 @@ func TestDecodeTokenFusedBatched_parity(t *testing.T) {
 	}
 }
 
-// TestDecodeTokenFusedBatched_microbench is the Stage-B increment-2 go/no-go: does
-// the batched M=K verify forward (one tiled GEMM per projection, weights streamed
-// once) actually beat M sequential per-row forwards (the runBatch model, weights
-// re-streamed per row) on the GPU? Realistic qwen2.5-coder-0.5b dims. Logs the
-// per-block wall and the speedup; a ratio ≤ ~1 means the thin-M tile wastes the win
-// and production wiring isn't worth it (the docs/spec/07 kill gate). Run -v.
+// TestDecodeTokenFusedBatched_microbench times the batched M=K verify forward (one tiled GEMM per
+// projection, weights streamed once) against M sequential per-row forwards (the runBatch model,
+// weights re-streamed per row) at qwen2.5-coder-0.5b dims, and logs the per-block wall and the
+// speedup. A ratio at or below ~1 means the thin-M tile wastes the win and production wiring is
+// not worth it (the docs/spec/07 kill gate). Run -v.
 func TestDecodeTokenFusedBatched_microbench(t *testing.T) {
 	if testing.Short() {
 		t.Skip("microbench")

@@ -10,15 +10,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKVI8ScaleWrittenAtTruePosition gates audit-2026-09-10 C-09. The int8 rope-store kernel wrote
-// each key's per-(position, KV-head) scale at the ROPE position instead of the true sequential one.
-// So any decode with ropePos != pos (Qwen2.5-VL past an image) overwrote an earlier position's scale
-// and left its own slot unset. The reader indexes scales by the true position.
-//
-// The check is the mechanism itself, not a logit cosine. On this model, int8 KV already sits at
-// ~0.96 cosine against f32 on a random-token prompt, which is too noisy to hold a shift bar. Instead:
-// a fresh model (so the scale buffer starts zeroed) decodes N steps with every rope angle shifted by
-// delta, and every layer's scale slots [0, N) must then be written, with nothing written past N.
+// TestKVI8ScaleWrittenAtTruePosition pins that the int8 rope-store kernel writes each key's
+// per-(position, KV-head) scale at the TRUE sequential position, not the rope position: with
+// ropePos != pos (Qwen2.5-VL past an image) it would overwrite an earlier position's scale and
+// leave its own slot unset, and the reader indexes scales by the true position. The check is the
+// mechanism, not a logit cosine (int8 KV is too noisy against f32 on a random-token prompt to
+// hold a shift bar): a fresh model (so the scale buffer starts zeroed) decodes N steps with every
+// rope angle shifted by delta, and every layer's scale slots [0, N) must then be written, with
+// nothing written past N.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestKVI8ScaleWrittenAtTruePosition -v -timeout 20m
 func TestKVI8ScaleWrittenAtTruePosition(t *testing.T) {

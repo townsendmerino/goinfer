@@ -14,9 +14,8 @@ import (
 )
 
 // TestGIWInt4_loadtime times JUST the int4 .giw resident load (no direct cross-load), isolating
-// the upload from the bf16-read / quantize noise of a direct load. (Its old comparison arm,
-// GOINFER_INT4_SLOWPATH, was retired 2026-09-24; the fast-vs-slow result is in
-// docs/completed/mellum2-resident.md.)
+// the upload from the bf16-read/quantize noise of a direct load. The fast-vs-slow comparison is
+// recorded in docs/completed/mellum2-resident.md.
 //
 //	GOINFER_GIW_INT4=/tmp/mellum2.int4.giw go test -tags gpu ./gpu/ -run TestGIWInt4_loadtime -v
 func TestGIWInt4_loadtime(t *testing.T) {
@@ -40,12 +39,12 @@ func TestGIWInt4_loadtime(t *testing.T) {
 	t.Logf("int4 .giw resident load: %v  resident=%v", load.Round(time.Millisecond), m.ResidentActive())
 }
 
-// TestGIWInt4_resident gates the int4 `.giw` → GPU-resident seam (docs/task-mellum2-fast-load.md
-// acceptance #2): a prequant int4 bundle must deserialize into the int4 linalg.WeightMat that the
-// resident builders (dense uploadProj + the stacked-MoE buildStacked "int4" path) consume — i.e.
-// loading the bundle goes RESIDENT at int4 with NO requant, and decodes token-IDENTICALLY to a
-// direct int4 load of the source model (the bundle is just those same int4 weights serialized).
-// This is the one previously-untested step in the fast-load path.
+// TestGIWInt4_resident pins the int4 `.giw` → GPU-resident seam
+// (docs/completed/task-mellum2-fast-load.md, acceptance #2): a prequant int4 bundle must
+// deserialize into the int4 linalg.WeightMat that the resident builders (dense uploadProj and the
+// stacked-MoE buildStacked "int4" path) consume, so loading the bundle goes RESIDENT at int4 with
+// NO requant and decodes token-identically to a direct int4 load of the source model (the bundle
+// is just those same int4 weights serialized).
 //
 // Build the bundle first (any model with an embedded tokenizer):
 //

@@ -12,19 +12,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGEMVLMHeadIsolation is G38's decisive step: TestGEMVNSweep found the GEMV KERNEL clean and
-// on-roofline (874us at N=151936, ~267 GB/s) when isolated to its own process with a synthetic
-// buffer -- yet the SAME shape, SAME N, inside a loaded real model (TestDecodeArgmaxHeadroom) costs
-// 8512us, a ~10x gap the kernel itself does not explain. This isolates the remaining variable: is
-// it the REAL model's OWN resident lm-head buffer specifically (co-residency/allocator state from
-// the rest of the model's weights and KV cache), or is it something about running the GEMV as the
-// LAST dispatch of a big multi-layer pass (Run()'s own recording shape) rather than standalone?
-//
-// Calls the model's OWN r.lmHead buffer directly via ctx.MatmulW8A8GEMV, in its own
-// encoder/pass/submit, with a synthetic activation -- BEFORE any Forward() has run (so nothing else
-// in the process has touched the allocator except the load itself), and again AFTER 200 real decode
-// steps (so the KV cache and everything else is now also resident, matching TestDecodeArgmaxHeadroom's
-// own state) -- same buffer, same call shape, two points in the model's own lifetime.
+// TestGEMVLMHeadIsolation measures the LM-head GEMV on the model's OWN resident lm-head buffer,
+// to separate buffer/allocator state from the kernel. It calls r.lmHead directly via
+// ctx.MatmulW8A8GEMV, in its own encoder/pass/submit with a synthetic activation, before any
+// Forward() has run and again after 200 real decode steps (so the KV cache and the rest of the
+// model are resident): same buffer, same call shape, two points in the model's lifetime. It was
+// written to explain a ~10x LM-head gap that TestDecodeArgmaxHeadroom first reported and later
+// retracted as a bug in its own method, so the gap it chases does not exist. The retraction is at
+// docs/code-notes/gpu.md#TestDecodeArgmaxHeadroom
 //
 //	GOINFER_DECODE_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 //	  go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestGEMVLMHeadIsolation -v

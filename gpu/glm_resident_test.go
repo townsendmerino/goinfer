@@ -11,15 +11,13 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestGLMResidency_matchesCPU is the end-to-end gate for Lever C5 (partial RoPE): the
-// tiny GLM-4.5 checkpoints (glm4_moe — sigmoid routing + selection bias + ungated shared
-// expert + dense prefix + partial_rotary_factor 0.5) must go GPU-resident — proving the
-// partial-RoPE eligibility relaxation + the rotaryDim/2 rope dispatch — and decode
-// greedily in agreement with the CPU f32 forward. Two fixtures: plain, and with q/k/v
-// bias + qk-norm. The resident path runs int8, the CPU path f32, so a tiny-random model's
-// logits eventually flip an argmax under int8 rounding; the gate is the FIRST generated
-// token, with full sequences logged. Before C5, GLM was off the resident path (partial
-// rotary tripped the RotaryDim==HeadDim check) — stranding the C3d shared-expert support.
+// TestGLMResidency_matchesCPU is the end-to-end gate for partial RoPE on the resident path: the
+// tiny GLM-4.5 checkpoints (glm4_moe: sigmoid routing + selection bias + ungated shared expert +
+// dense prefix + partial_rotary_factor 0.5) must go GPU-resident (the partial-RoPE eligibility
+// relaxation and the rotaryDim/2 rope dispatch) and decode greedily in agreement with the CPU f32
+// forward. Two fixtures: plain, and with q/k/v bias + qk-norm. The resident path runs int8, the
+// CPU path f32, so a tiny-random model's logits eventually flip an argmax under int8 rounding;
+// the gate is the FIRST generated token, with full sequences logged.
 func TestGLMResidency_matchesCPU(t *testing.T) {
 	if _, err := gpu.New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)

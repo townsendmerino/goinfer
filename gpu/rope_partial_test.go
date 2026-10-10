@@ -9,11 +9,12 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestRopeStorePartialRotary_tailStored gates C4: for partial rotary (rotaryDim < headDim — GLM,
-// some Phi), the K-store kernels must store the un-rotated pass-through tail [2*half, headDim), not
-// just the rotated span. Dropping it makes attention read zeros for those key dims at every cached
-// position — plausible-looking, silently wrong logits. Compares the resident f32 ropeStore + the
-// fused qkvFinalize against a CPU reference that rotates [0,2*half) and passes the tail through.
+// TestRopeStorePartialRotary_tailStored pins that for partial rotary (rotaryDim < headDim: GLM,
+// some Phi) the K-store kernels store the un-rotated pass-through tail [2*half, headDim), not
+// just the rotated span. Dropping it makes attention read zeros for those key dims at every
+// cached position: plausible-looking, silently wrong logits. Compares the resident f32 ropeStore
+// + the fused qkvFinalize against a CPU reference that rotates [0,2*half) and passes the tail
+// through.
 func TestRopeStorePartialRotary_tailStored(t *testing.T) {
 	c := newOrSkipHW(t)
 	defer c.Close()
@@ -50,7 +51,7 @@ func TestRopeStorePartialRotary_tailStored(t *testing.T) {
 		}
 		return w
 	}
-	// assertTail fails if any tail dim was dropped (the C4 bug wrote zeros there).
+	// assertTail fails if any tail dim was dropped (a dropped tail is written as zeros).
 	assertTail := func(label string, got, src []float32) {
 		for h := range nKV {
 			for d := 2 * half; d < hd; d++ {

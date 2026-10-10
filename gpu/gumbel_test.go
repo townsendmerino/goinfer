@@ -11,8 +11,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGumbelDeviceAgreesWithHost is the WebGPU kernel gate for the Gumbel-max sampler (R7b). Same PRE-REGISTERED
-// rule as cuda/gumbel_test.go, written before the first run:
+// TestGumbelDeviceAgreesWithHost is the WebGPU kernel gate for the Gumbel-max sampler, under the
+// same pre-registered rule as cuda/gumbel_test.go:
 //
 //  1. Overall agreement with the host reference (decoder.gumbelDraw) >= 99.99% of draws.
 //  2. EVERY mismatch is a genuine near-tie: the HOST's own keys for the device's token and the host's token differ

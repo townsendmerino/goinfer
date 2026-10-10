@@ -15,27 +15,19 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDecodeArgmaxHeadroom is R10's "measure before building" step for the greedy-decode item named
-// in docs/tasks/red-october.md R10 ("on-device argmax for the greedy path with a K-entry MapAsync ...
-// so the 608 KB readback goes"): ForwardSample's greedy branch (gpu/resident_sample.go) still calls
-// Run() — full LM-head GEMV + a vocab*4-byte staging copy + MapAsync + a host linear scan — where a
-// device-side argmax kernel would need only the GEMV (unavoidable either way) plus a tiny readback.
-// Isolates the piece a device-argmax kernel would remove: RunNoLogits skips the LM-head GEMV
-// dispatch, the staging copy, AND the MapAsync/readback entirely, so Run-vs-RunNoLogits bounds what
-// ANY logits-avoiding scheme (device argmax included) could recover.
+// TestDecodeArgmaxHeadroom bounds what an on-device argmax for the greedy path could recover
+// (docs/tasks/red-october.md, R10). ForwardSample's greedy branch (gpu/resident_sample.go) still
+// calls Run(): the full LM-head GEMV, a vocab*4-byte staging copy, MapAsync and a host linear
+// scan, where a device-side argmax kernel would need only the GEMV (unavoidable either way) plus
+// a tiny readback. RunNoLogits skips the GEMV dispatch, the staging copy and the
+// MapAsync/readback entirely, so Run-vs-RunNoLogits bounds what any logits-avoiding scheme,
+// device argmax included, could recover.
 //
-// RETRACTION, 2026-09-21 (docs/QUEUE.md G38-CORRECTED): the first version of this test read the
-// delta at 81-85% of the token and reported an "LM-head GEMV 10-17x over roofline" finding — WRONG,
-// and wrong for a reason worth stating plainly: RunNoLogits calls c.device.Poll(false, nil) —
-// NON-BLOCKING — while Run() calls Poll(true, nil). Timing RunNoLogits back-to-back without an
-// explicit blocking poll measures CPU-side submission only, not GPU completion, so the very first
-// delta compared "wait for everything" against "don't wait at all" — an apples-to-oranges bug in
-// THIS test, not in RunNoLogits itself (whose real callers do not need synchronous timing). Fixed
-// by adding an explicit c.device.Poll(true, nil) after RunNoLogits and alternating small blocks of
-// each arm (not two long back-to-back runs) so drift cannot bias one side. The corrected delta is
-// 4.7-4.8% of the token, reproduced across two independent runs — the on-device-argmax item really
-// is low-value, but not for the reason first reported, and the "LM-head GEMV" finding is retracted
-// in full; it does not exist.
+// Timing guardrail: RunNoLogits polls non-blocking (Poll(false, nil)) while Run() polls blocking,
+// so the test adds an explicit c.device.Poll(true, nil) after RunNoLogits and alternates small
+// blocks of each arm, so that neither arm compares CPU-side submission against GPU completion and
+// drift cannot bias one side. The first version omitted the poll and reported a finding that was
+// retracted; the story is at docs/code-notes/gpu.md#TestDecodeArgmaxHeadroom.
 //
 //	GOINFER_DECODE_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 //	  go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestDecodeArgmaxHeadroom -v

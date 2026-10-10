@@ -11,14 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// D3 — the last localization control (docs/ssm-int8-quality.md). The CPU experiments
-// (decoder/ssm_precision_localize_test.go) showed every precision/quant change lands at
-// 95-100% vs the f32 reference: E1 f32-SSM=100%, D1 int8-mamba=97%, R2 int8-attn/MoE=95%.
-// None reproduce the resident's 66%. D3 stacks ALL of them on the staged path — int8
-// mamba (ssmQ8CPU) + int8 attn/MoE (staged webgpu) + (f32 SSM is equivalent to f64 per
-// E1, so left f64) — with the mamba COMPUTE on the CPU (mamba2Step), not the GPU kernels.
-// If D3 ≈ 95% while the int8 GPU-resident is 66%, the only remaining variable is the GPU
-// mamba kernels (conv/ssm/gatedNorm) — i.e. the gap is a kernel discrepancy, not precision.
+// TestSSMKernelControlD3 is the last localization control for the resident granite int8 gap
+// (docs/ssm-int8-quality.md). The CPU experiments (decoder/ssm_precision_localize_test.go) showed
+// every precision/quant change alone agrees with the f32 reference at 95-100%, and none
+// reproduces the resident's gap. D3 stacks ALL of them on the staged path (int8 mamba via
+// ssmQ8CPU + int8 attn/MoE via staged webgpu; the f32 SSM is equivalent to f64, so left f64) with
+// the mamba COMPUTE on the CPU (mamba2Step), not the GPU kernels. If D3 lands near the ~95% level
+// while the int8 GPU-resident does not, the only remaining variable is the GPU mamba kernels
+// (conv/ssm/gatedNorm): the gap would be a kernel discrepancy, not precision.
 func TestSSMKernelControlD3(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {

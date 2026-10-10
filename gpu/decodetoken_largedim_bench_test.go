@@ -9,14 +9,13 @@ import (
 	"time"
 )
 
-// TestDecodeTokenFusedBatched_largedim is the docs/spec/07 follow-up kill-gate: the
-// Stage-B batched verify is ~0.98× (no win) at qwen2.5-0.5b dims because at M=8 the
-// resident decode is COMPUTE-bound, so batching's weight-reuse saving recovers nothing.
-// The open hypothesis: on LARGE models (big hidden/inter) decode becomes
-// BANDWIDTH-bound on streaming the projection weights, so batching M rows reads each
-// weight once for all M → real amortization → batched beats per-row×M. This sweeps a
-// dim ladder and prints the batched-vs-sequential speedup at each. ≥~1.3× at large dims
-// would justify the (high-risk) Stage-B runner surgery; ~1× confirms it's dead. Run -v.
+// TestDecodeTokenFusedBatched_largedim is a kill gate for the Stage-B batched verify
+// (docs/spec/07). At small dims decode is compute-bound, so batching's weight reuse recovers
+// nothing; the hypothesis here is that on large models (big hidden/inter) decode is
+// bandwidth-bound on streaming the projection weights, so batching M rows reads each weight once
+// for all M and beats per-row x M. It sweeps a dim ladder and prints the batched-vs-sequential
+// speedup at each: about 1.3x or more at large dims would justify the high-risk runner surgery,
+// about 1x confirms it is dead. Run -v.
 func TestDecodeTokenFusedBatched_largedim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("microbench")
@@ -28,9 +27,9 @@ func TestDecodeTokenFusedBatched_largedim(t *testing.T) {
 		name                          string
 		hidden, nH, nKV, hd, inter, L int
 	}
-	// vocab fixed small (32k) so the LM head doesn't dominate/OOM — we are measuring the
-	// PROJECTION amortization (q/k/v/o + gate/up/down), which is where a big model's
-	// decode bandwidth goes. L kept small at the biggest dims to fit 8 GB.
+	// vocab is fixed small (32k) so the LM head does not dominate or OOM: the sweep measures
+	// projection amortization (q/k/v/o + gate/up/down). L is kept small at the biggest dims to fit 8
+	// GB.
 	const vocab = 32000
 	configs := []cfg{
 		{"qwen0.5b", 896, 14, 2, 64, 4864, 8},
@@ -49,15 +48,10 @@ func TestDecodeTokenFusedBatched_largedim(t *testing.T) {
 	// ceiling is what would make Stage-B + a model drafter viable end-to-end.
 	t.Log("--- M-sweep @ llama70b-layer dims ---")
 	for _, mm := range []int{4, 8, 16, 32, 48} {
-		// gemmRowMaxM is a HARD kernel limit, not a tuning knob: the thin-M gemmRow kernel
-		// accumulates into a private array<i32, gemmRowMaxM> (gemm_rows.go:19), and
-		// DecodeTokenFusedBatched returns a clean error above it. This sweep used to request
-		// M=32/48 anyway and t.Fatalf on that error, so the whole test reported FAIL for asking
-		// the API to do something it documents it cannot — charging every unrelated leg an
-		// investigation. (Proven unrelated to the MoE cap work in 0018114 by stashing that
-		// commit's only gpu/ change and re-running: identical failure.) The measurable part of
-		// the sweep is M <= gemmRowMaxM; beyond it the answer is "chunk the block", which is a
-		// Stage-B design question, not a measurement.
+		// gemmRowMaxM is a hard kernel limit, not a tuning knob: the thin-M gemmRow kernel accumulates
+		// into a private array<i32, gemmRowMaxM> and DecodeTokenFusedBatched returns a clean error
+		// above it. The sweep measures M <= gemmRowMaxM; beyond it the answer is to chunk the block, a
+		// Stage-B design question rather than a measurement.
 		if mm > gemmRowMaxM {
 			t.Logf("70b-M%d: SKIPPED — exceeds gemmRowMaxM=%d (kernel limit; batching past it needs "+
 				"block chunking, tracked as Stage-B runner surgery in docs/spec/07)", mm, gemmRowMaxM)

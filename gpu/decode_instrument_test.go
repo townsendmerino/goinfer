@@ -9,24 +9,17 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestDecode_instrument decomposes the ~44.7 ms/token that the §1 single-pass
-// DecodeRunner leaves on the table (34.7 GB/s = ~10% of roofline). Two
-// hypotheses about this code have already missed by ~4× (the §0.5 1.48× probe,
-// then §1's "93% pass overhead" → actually ~24 µs/pass), so instead of guessing
-// where the time goes a third time we measure it:
+// TestDecode_instrument decomposes the per-token time the single-pass DecodeRunner leaves on the
+// table, by measuring where it goes: (a) one resident gate GEMV standalone, for its real GB/s
+// (the fork: a bandwidth-correct kernel means the cost is dispatch count, so fusion pays; a slow
+// kernel means fusion will not save it); (b) a 1-workgroup dependent no-op dispatch, the
+// per-dispatch launch+barrier floor isolated from kernel work; (c) the token reconstructed as
+// fixed cost + gemv dispatches + glue dispatches, checked against the measured token time, giving
+// matmul-time vs glue-time.
 //
-//	(a) one resident gate GEMV (13.76 MB) standalone → its real GB/s. The fork:
-//	    bandwidth-correct kernel ⇒ the cost is dispatch count → §2/§3 pays;
-//	    slow kernel ⇒ fusion won't save it.
-//	(b) a 1-workgroup dependent no-op dispatch → the per-dispatch launch+barrier
-//	    floor, isolated from kernel work.
-//	(c) reconstruct the token: fixed + 197 gemv-dispatches + 338 glue-dispatches,
-//	    and check it sums to the measured 44.7 ms → matmul-time vs glue-time.
-//
-// Method: record K identical dispatches into ONE compute pass, ONE submit, ONE
-// blocking Poll; the slope (t(Khi)-t(Klo))/(Khi-Klo) is the per-dispatch GPU
-// cost with the fixed submit/poll/encode overhead differenced out; the intercept
-// is that fixed overhead. Logs; run -v.
+// Method: record K identical dispatches into ONE compute pass, ONE submit, ONE blocking Poll. The
+// slope (t(Khi)-t(Klo))/(Khi-Klo) is the per-dispatch GPU cost with the fixed submit/poll/encode
+// overhead differenced out, and the intercept is that fixed overhead. Logs; run -v.
 func TestDecode_instrument(t *testing.T) {
 	if testing.Short() {
 		t.Skip("instrument")
@@ -75,7 +68,7 @@ func TestDecode_instrument(t *testing.T) {
 		return slope, intercept
 	}
 
-	// ---- (a) resident gate GEMV [inter=8960, hidden=1536], ~13.76 MB int8 ----
+	// ---- (a) resident gate GEMV [inter=8960, hidden=1536], int8 ----
 	const inter, hidden = 8960, 1536
 	bq, s := quantW(inter, hidden, 42)
 	gate, err := ctx.UploadW8A8(bq, s, inter, hidden)
@@ -186,15 +179,15 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) { dst[lid.x] = src[lid.x] 
 	t.Logf("(b2) distinct-buffer RAW chain  %.1f µs/dispatch  (50→%.0fµs, 550→%.0fµs)  ← the real pass's per-dispatch cost",
 		cSlope, float64(clo.Microseconds()), float64(chi.Microseconds()))
 
-	// ---- (c) reconstruct the 44.7 ms token from the measured pieces ----
+	// (c) reconstruct the token from the measured pieces
 	// Per-token dispatch census (DecodeRunner, 28 layers):
 	//   gemv: q,k,v,o,gate,up,down = 7/layer ×28 + 1 lm_head        = 197
 	//   glue: 2 rmsnorm + 3 quant + rope + ropeStore + vStore + attn
 	//         + swiglu + 2 residual = 12/layer ×28 + final norm+quant = 338
 	const nGemv, nGlue = 197, 338
-	// gemv dispatches stream weights of many sizes; scale the measured 13.76 MB
-	// gemv cost by total weight bytes so size mix is accounted for, not dispatch
-	// count alone. glue dispatches touch only a few KB → ≈ the no-op floor.
+	// gemv dispatches stream weights of many sizes: scale the measured gate-GEMV cost by total
+	// weight bytes so the size mix is accounted for, not dispatch count alone. glue dispatches touch
+	// only a few KB, so they cost about the no-op floor.
 	totalWeightBytes := 1.55e9
 	matmulMs := totalWeightBytes / (gemvGBs * 1e9) * 1e3
 	glueMs := float64(nGlue) * nSlope / 1e3

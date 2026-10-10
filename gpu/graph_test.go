@@ -9,15 +9,13 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestGraph_oneFencePerToken is the §0.5 probe: does recording a whole token's
-// dispatches into ONE command buffer with ONE fence beat the current staged path
-// (113 submit+poll syncs/token for the dense 1.5B)? It records the real per-token
-// dispatch sequence — 28 layers × [rmsnorm×2, quantize×3, 7 gemv, swiglu] + final
-// rmsnorm/quantize/lm_head = 367 dispatches at real shapes (H=1536, FFN=8960,
-// vocab=151936) against resident weights — then times two replays of the IDENTICAL
-// work: (A) one submit + one Poll; (B) flushed at 113 points (one Poll each). Data
-// is not a correct forward pass (no attention compute); this measures the fence
-// cost structure only. Logs; run -v.
+// TestGraph_oneFencePerToken probes whether recording a whole token's dispatches into ONE command
+// buffer with ONE fence beats the staged path (a submit+poll sync per stage). It records the real
+// per-token dispatch sequence (28 layers × [rmsnorm×2, quantize×3, 7 gemv, swiglu] + final
+// rmsnorm/quantize/lm_head, at real shapes H=1536, FFN=8960, vocab=151936, against resident
+// weights) and times two replays of the IDENTICAL work: (A) one submit + one Poll; (B) flushed at
+// the staged path's sync count (one Poll each). The data is not a correct forward pass (no
+// attention compute); this measures the fence cost structure only. Logs; run -v.
 func TestGraph_oneFencePerToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("graph probe")

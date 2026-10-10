@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// TestDecodeTokenFusedBatched_Mbound_C13 gates C-13: the thin-M gemmRow kernel accumulates into a
-// private array<i32, gemmRowMaxM>, so a block of M > gemmRowMaxM rows would silently alias the last
-// accumulator under WGSL robustness clamping — wrong logits, no error. The entry point must reject
-// it. The bound check runs before any device call, so no adapter is needed.
+// TestDecodeTokenFusedBatched_Mbound_C13 pins that the entry point rejects a block of M >
+// gemmRowMaxM rows: the thin-M gemmRow kernel accumulates into a private array<i32, gemmRowMaxM>,
+// so more rows would silently alias the last accumulator under WGSL robustness clamping (wrong
+// logits, no error). The bound check runs before any device call, so no adapter is needed.
 func TestDecodeTokenFusedBatched_Mbound_C13(t *testing.T) {
 	var c *Context // the M>gemmRowMaxM guard returns before touching the device
 	xs := make([][]float32, gemmRowMaxM+1)

@@ -33,21 +33,17 @@ func TestQwen35ResidentParity(t *testing.T) {
 	if _, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)
 	}
-	// BOTH siblings, because the resident bridge composes differently for each and "two proven
-	// halves" is the argument that has been wrong here before. The dense one pairs the DeltaNet
-	// mixer with a plain SwiGLU; the MoE one pairs it with the sparse router + stacked experts +
-	// shared expert in the same layer. Mixer+MoE is gated for Mamba-2 (Granite) and the mixer
-	// alone is gated by the dense fixture — neither gates THIS pairing.
+	// BOTH siblings, because the resident bridge composes differently for each: the dense one pairs
+	// the DeltaNet mixer with a plain SwiGLU, the MoE one with the sparse router + stacked experts +
+	// shared expert in the same layer. Mixer+MoE is gated for Mamba-2 (Granite) and the mixer alone
+	// by the dense fixture; neither gates THIS pairing.
 	//
-	// V-06 (docs/review-2026-09-04.md): BOTH fixtures' model.safetensors are gitignored
-	// (qwen35ResidentParity's own comment says so — only config.json is tracked), so on a fresh
-	// clone every t.Run below skips. Go reports a parent whose subtests all skipped as a top-level
-	// PASS, not SKIP -- and cmd/gate/gpu.go's webgpu-parity cell counts top-level results only
-	// (TopLevelOnly: true), so that vacuous pass registered as real coverage and made
-	// cr.vacuous() return false. subTs captures each subtest's *testing.T so the parent can check
-	// Skipped() itself after every t.Run returns (checking it INSIDE the subtest closure, after
-	// calling qwen35ResidentParity, would never run: Skip/Skipf call runtime.Goexit, which unwinds
-	// the rest of that closure) and skip itself when nothing actually ran.
+	// Both fixtures' model.safetensors are gitignored (only config.json is tracked), so on a fresh
+	// clone every t.Run below skips, and Go reports a parent whose subtests all skipped as a
+	// top-level PASS, which cmd/gate's webgpu-parity cell (TopLevelOnly) counts as real coverage
+	// (docs/review-2026-09-04.md, V-06). subTs captures each subtest's *testing.T so the parent can
+	// check Skipped() itself after every t.Run returns (inside the closure it would never run: Skip
+	// calls runtime.Goexit) and skip itself when nothing ran.
 	var subTs []*testing.T
 	for _, fx := range []string{"qwen3_5-tiny", "qwen3_5_moe-tiny"} {
 		t.Run(fx, func(st *testing.T) {
@@ -162,19 +158,15 @@ func qwen35ResidentParity(t *testing.T, ckpt string) {
 		t.Errorf("worst cosine %.6f < 0.95 — below the resident-path floor the other families hold", worst)
 	}
 
-	// SECOND GENERATION on the same model — a REPLAY, not another CPU comparison.
-	//
-	// The recurrent state compounds and is NOT positional, so unlike a KV cache the next sequence
-	// cannot simply overwrite it; it has to be zeroed (audit C-01). The first loop cannot see
-	// that: the state buffers are allocated zeroed, so a runner that never resets still passes
-	// its first generation.
-	//
-	// Comparing generation 2 against the CPU does not see it either — measured. Deleting the
-	// DeltaNet arm of residentDecoder.Reset and re-running left the cosine above 0.95, because
-	// the decay gate shrinks the stale state faster than 16 tokens of comparison can notice. So
-	// this replays the FIRST run's opening tokens and requires the resident to reproduce ITS OWN
-	// logits. Same inputs + same (reset) state ⇒ the same output, to f32 determinism — a bound
-	// nothing but leftover state can break, and one no tolerance argument can absorb.
+	// SECOND GENERATION on the same model: a REPLAY, not another CPU comparison. The recurrent state
+	// compounds and is NOT positional, so unlike a KV cache the next sequence cannot overwrite it;
+	// it has to be zeroed (audit C-01), and the first loop cannot see that because the state buffers
+	// are allocated zeroed. Comparing generation 2 against the CPU does not see it either (deleting
+	// the DeltaNet arm of residentDecoder.Reset left the cosine above 0.95: the decay gate shrinks
+	// the stale state faster than 16 tokens can notice). So this replays the FIRST run's opening
+	// tokens and requires the resident to reproduce ITS OWN logits: same inputs + same (reset) state
+	// give the same output to f32 determinism, a bound only leftover state can break and no
+	// tolerance argument can absorb.
 	const replay = 16
 	rf.Reset()
 	worstReplay := 1.0
@@ -195,17 +187,13 @@ func qwen35ResidentParity(t *testing.T, ckpt string) {
 	}
 }
 
-// TestParentSelfSkipsWhenNoSubtestRan pins the anti-vacuity mechanism V-06 (docs/review-2026-09-04.md)
-// added to TestQwen35ResidentParity, portably: a stub in place of qwen35ResidentParity so this runs
-// on any machine regardless of whether the real fixtures are present, and asserts on go test's own
-// JSON action rather than hardware behaviour.
-//
-// The bug: Go reports a parent test whose every t.Run subtest skipped as a top-level PASS, not
-// SKIP — and cmd/gate's webgpu-parity cell counts top-level results only, so that vacuous pass
-// registered as real coverage and cr.vacuous() stayed false. The fix tracks each subtest's own
-// t.Skipped() (checked from the OUTER test after t.Run returns — checking it inside the subtest
-// closure, after a call that itself calls Skip, would never run: Skip calls runtime.Goexit, which
-// unwinds the rest of that closure) and has the parent skip itself when nothing ran.
+// TestParentSelfSkipsWhenNoSubtestRan pins, portably, the anti-vacuity mechanism of
+// TestQwen35ResidentParity: a stub stands in for qwen35ResidentParity so this runs on any machine
+// whatever fixtures are present, and it asserts on go test's own JSON action rather than hardware
+// behaviour. The mechanism: Go reports a parent whose every t.Run subtest skipped as a top-level
+// PASS, not SKIP, and cmd/gate's webgpu-parity cell counts top-level results only, so the parent
+// tracks each subtest's t.Skipped() (checked from the OUTER test after t.Run returns, since Skip
+// calls runtime.Goexit) and skips itself when nothing ran (docs/review-2026-09-04.md, V-06).
 func TestParentSelfSkipsWhenNoSubtestRan(t *testing.T) {
 	bin, err := exec.LookPath("go")
 	if err != nil {

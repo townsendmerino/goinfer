@@ -9,13 +9,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestDecodeRunnerSlidingWindow_parity gates Lever C6: the resident dense forward with
-// sliding-window (local) attention. All layers are local with a window W small enough to
-// BITE at the test position (start = max(0, pos+1-W) > 0), so the runner must attend only
-// the last W cached keys — not the full history. A CPU int8 oracle that windows the same
-// way must match (cosine ~1.0). Mirrors Mistral's all-local attention; full-attention
-// layers (isLocal=false) keep the unwindowed start and are covered by the other runner
-// gates. The window biting is the point: at W≥nKeys it would be a no-op.
+// TestDecodeRunnerSlidingWindow_parity pins the resident dense forward with sliding-window
+// (local) attention. All layers are local with a window W small enough to BITE at the test
+// position (start = max(0, pos+1-W) > 0), so the runner must attend only the last W cached keys,
+// not the full history. A CPU int8 oracle that windows the same way must match (cosine ~1.0).
+// Mirrors Mistral's all-local attention; full-attention layers (isLocal=false) keep the
+// unwindowed start and are covered by the other runner gates. The window biting is the point: at
+// W>=nKeys it would be a no-op.
 func TestDecodeRunnerSlidingWindow_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

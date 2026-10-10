@@ -137,14 +137,9 @@ func TestDecodeTWE_split(t *testing.T) {
 		bestTot, runNPerTok(8), runNPerTok(16))
 }
 
-// gpuTimePlanTWE returns the min/30 on-GPU ms for the runner's dispatch plan via a
-// timestamp query, or -1 if the device lacks the timestamp feature (so the harness
-// degrades to TSync wall-clock). The old cogentcore/webgpu binding lacked
-// pass-descriptor TimestampWrites, so this used to bracket the pass with a
-// standalone encoder WriteTimestamp instead; oliverbestmann/webgpu removed that
-// method entirely (it never survived into the current WebGPU spec — native
-// backends couldn't implement it reliably outside a pass) and only exposes
-// TimestampWrites on the pass descriptor, so this now uses that directly.
+// gpuTimePlanTWE returns the min/30 on-GPU ms for the runner's dispatch plan via a timestamp
+// query on the pass descriptor (TimestampWrites), or -1 if the device lacks the timestamp
+// feature, so the harness degrades to TSync wall-clock.
 func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 	bestTicks := math.MaxFloat64
 	for range 30 {

@@ -9,14 +9,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestDecodeRunnerMoE_parity gates Lever C3c: the integrated resident MoE forward
-// (router top-k → indexed gate/up GEMVs → SwiGLU → weighted down-combine, all on the
-// device in one command buffer) must match a CPU oracle running the SAME math. Both
-// sides share the int8 expert/router weights and the int8 activation quantization, so
-// this is a wiring/kernel gate (cosine ~1.0): it proves the on-GPU router selects the
-// right experts and the stacked indexed GEMVs combine them into the residual exactly
-// as moeMLP does. Mixtral-class shape: 8 experts, top-2, softmax + NormTopKProb, no
-// shared expert, every layer MoE.
+// TestDecodeRunnerMoE_parity pins the integrated resident MoE forward (router top-k → indexed
+// gate/up GEMVs → SwiGLU → weighted down-combine, all on the device in one command buffer)
+// against a CPU oracle running the SAME math. Both sides share the int8 expert/router weights and
+// the int8 activation quantization, so this is a wiring/kernel gate (cosine ~1.0): it proves the
+// on-GPU router selects the right experts and the stacked indexed GEMVs combine them into the
+// residual exactly as moeMLP does. Mixtral-class shape: 8 experts, top-2, softmax + NormTopKProb,
+// no shared expert, every layer MoE.
 func TestDecodeRunnerMoE_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

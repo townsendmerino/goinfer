@@ -18,8 +18,8 @@ import (
 // architecture actually dispatches (q/k/v bias for Qwen2.5, qk-norm for Qwen3, …),
 // so a fusion that only fires for those families can be measured here.
 //
-// Default model is the Qwen2.5-coder-1.5B GGUF (has qkv bias → the target for the
-// Increment-2 bias→GEMV-epilogue fusion). Override with GOINFER_DECODE_GGUF.
+// Default model is the Qwen2.5-coder-1.5B GGUF (it has qkv bias, so the bias-epilogue fusion
+// fires). Override with GOINFER_DECODE_GGUF.
 //
 //	go test -tags gpu -run TestDecodeRealModel_throughput -v
 //

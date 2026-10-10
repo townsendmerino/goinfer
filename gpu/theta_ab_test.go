@@ -14,31 +14,28 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestWebGPUThetaAB — does wiring the MEASURED Theta actually make WebGPU speculative decode
-// faster (or at least no worse)?
-//
-// Theta was reachable only as 0.5 on this backend (P22, docs/queue-performance.md): WebGPU's
-// residentDecoder implemented neither VerifyPathReporter nor PrefillPathReporter, so
-// decoder.verifyTheta() fell through to the unmeasured default. Theta actually measures
-// 0.978-1.028 (gpu/theta_probe_test.go) — ForwardN's single-submit structure does not make the
-// marginal row cheap, it just removes Go-side dispatch overhead between rows. Under 0.5 the
-// controller drafts several nodes deep; under the measured value it should decline almost
-// entirely, because a WebGPU verify node costs very close to a full target step.
+// TestWebGPUThetaAB asks whether wiring the MEASURED Theta makes WebGPU speculative decode faster
+// (or at least no worse). residentDecoder implements VerifyPathReporter/PrefillPathReporter, so
+// decoder.verifyTheta() supplies the measured Theta (~1.0, gpu/theta_probe_test.go) instead of
+// the unmeasured 0.5 default: ForwardN's single-submit structure does not make the marginal row
+// cheap, it only removes Go-side dispatch overhead between rows. Under 0.5 the controller drafts
+// several nodes deep; under the measured value it should decline almost entirely, since a WebGPU
+// verify node costs very close to a full target step.
 //
 // That predicts the speculative path under Theta=0.5 is SLOWER than not speculating at all on
-// this backend, and that VerifyPath's fix recovers it by declining. This measures that rather
-// than asserting it. Three arms, one prompt, interleaved (mirrors metal/theta_ab_test.go exactly,
-// same reasoning, same backend-agnostic decoder API):
+// this backend, and that the measured value recovers it by declining. This measures that rather
+// than asserting it. Three arms, one prompt, interleaved (mirrors metal/theta_ab_test.go, same
+// reasoning, same backend-agnostic decoder API):
 //
 //	off        plain Generate, no speculation — the do-nothing arm, which is the whole point:
 //	           "beats every configuration" means nothing if off wins, and here off is EXPECTED
 //	           to win against Theta=0.5
-//	theta=0.5  the shipped-until-now behaviour, forced explicitly
+//	theta=0.5  the unmeasured default, forced explicitly
 //	wired      Theta unset, so verifyTheta() supplies the measured ~1.02 via VerifyPath
 //
 // The assertion is deliberately weak in one direction and strong in the other: `wired` must not
-// be materially slower than `off` (it should be within noise of it, since it declines to draft),
-// and it must beat `theta=0.5`.
+// be materially slower than `off` (within noise of it, since it declines to draft), and it must
+// beat `theta=0.5`.
 func TestWebGPUThetaAB(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("GOINFER_THETA_AB") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1")
@@ -55,10 +52,10 @@ func TestWebGPUThetaAB(t *testing.T) {
 		t.Skipf("missing model %s: %v", tpath, err)
 	}
 	newOrSkipHW(t).Close() // real-HW gate — a software adapter's timings would not answer P22
-	// Quant int8int8, not int4: M-09 (decoder/spec_verify_guard.go) refuses ALL speculative
-	// decoding on a staged webgpu-int4 model outright (M=1 decode and M>1 verify are two
-	// different kernels with no measured tolerance) — a correctness guard this test must not
-	// route around. int8int8 is not covered by that guard and still resides on WebGPU.
+	// Quant int8int8, not int4: decoder/spec_verify_guard.go refuses ALL speculative decoding on a
+	// staged webgpu-int4 model outright (M=1 decode and M>1 verify are two different kernels with no
+	// measured tolerance), a correctness guard this test must not route around. int8int8 is not
+	// covered by that guard and still resides on WebGPU.
 	target, err := decoder.Load(tpath, decoder.Options{Backend: "webgpu", Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("load target: %v", err)

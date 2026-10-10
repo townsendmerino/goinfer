@@ -7,20 +7,17 @@ import (
 	"testing"
 )
 
-// TestAttnHeadDimSupported_M12 gates M-12: newDecodeRunner must decline a resident plan whose
-// head_dim exceeds what the single-query attention kernels can dot, at both the model level and
-// any per-layer geometry override (Gemma 4). Before the guard an admitted arch with an oversized
-// head_dim silently dotted only the first workgroup's worth of dims and the o-projection consumed
-// half-zero context.
-//
-// The bound used to be the 128-wide workgroup. It is now the WIDE kernel's stride reach, which is
-// 2048 — head_dim is no longer a practical reason to decline. The guard stays because the failure
-// mode it protects against (silent truncation, no error) has not changed, only moved.
+// TestAttnHeadDimSupported_M12 pins that newDecodeRunner declines a resident plan whose head_dim
+// exceeds what the single-query attention kernels can dot, at the model level and for any
+// per-layer geometry override (Gemma 4). Without the guard an oversized head_dim silently dots
+// only the first workgroup's worth of dims and the o-projection consumes half-zero context. The
+// bound is now the wide kernel's stride reach, no longer a practical limit; the guard stays
+// because silent truncation with no error is the failure it prevents. Background:
+// docs/code-notes/gpu.md#TestAttnHeadDimSupported_M12.
 func TestAttnHeadDimSupported_M12(t *testing.T) {
-	// The invariant is no longer "== the workgroup width". The wide kernel strides, so its reach
-	// is width × dims-per-lane, and attnMaxHeadDim must track THAT product — if a future change
-	// shrinks attnMaxPerLane without shrinking the limit, the predicate would admit a head_dim
-	// the kernel's per-lane array cannot hold.
+	// The invariant is attnMaxHeadDim == attnWGWide*attnMaxPerLane, the wide kernel's stride reach:
+	// if attnMaxPerLane shrinks without the limit, the predicate would admit a head_dim the kernel's
+	// per-lane array cannot hold.
 	if attnMaxHeadDim != attnWGWide*attnMaxPerLane {
 		t.Fatalf("attnMaxHeadDim=%d but the wide kernel reaches %d×%d — keep them equal",
 			attnMaxHeadDim, attnWGWide, attnMaxPerLane)

@@ -12,17 +12,13 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestDecodeStaged_prize sizes the §2 (widen resident-runner eligibility) lever: the
-// per-token cost of the STAGED fallback path (recreates ~330 bind groups + uniforms +
-// scratch buffers per token) vs the resident DecodeRunner. It measures the SAME model
-// both ways (resident, then GOINFER_NO_RESIDENCY=1 → staged) so the delta is purely the
-// path, no size-normalization. A genuinely-ineligible family (Gemma-4 softcap) is also
-// measured to confirm the staged cost on weights that REQUIRE the fallback.
-//
-// Pure measurement; reports best (throttle-free) inter-token rate via decoder.Generate.
-// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*
-// its green said only that the harness ran — not that the effect it maps is there.
-// Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
+// BenchmarkDecodeStaged_prize sizes the lever of widening resident-runner eligibility: the
+// per-token cost of the staged fallback path (recreates ~330 bind groups, uniforms and scratch
+// buffers per token) against the resident DecodeRunner. It measures the same model both ways
+// (resident, then GOINFER_NO_RESIDENCY=1 for staged), so the delta is purely the path, and also a
+// family that requires the fallback (Gemma-4 softcap). Pure measurement of the best inter-token
+// rate via decoder.Generate; it asserts nothing, which is why it is a Benchmark and not a Test (a
+// Test's green would say only that the harness ran). Go runs a benchmark this slow exactly once.
 func BenchmarkDecodeStaged_prize(b *testing.B) {
 	requireHeavyModel(b)
 	if testing.Short() {

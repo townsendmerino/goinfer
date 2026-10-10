@@ -15,23 +15,20 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefill_dispatchProfile is R10's prefill investigation (docs/tasks/red-october.md): "extend
-// the ablation harness to the batched path at P in {256, 1024}: per-class time with one class
-// omitted, so the GEMM, the attention, the batched norms/rope and the KV write each carry a
-// number. Then one arithmetic line: GFLOPS achieved by the GEMM class against the card's
-// naive-f32 and its shared-memory-tiled expectations."
+// TestPrefill_dispatchProfile gives each batched-prefill class (the GEMM, the attention, the
+// batched norms/rope, the KV write) a per-class time at P in {256, 1024}, plus the GEMM class's
+// achieved GFLOPS against the card's naive-f32 and shared-memory-tiled expectations
+// (docs/tasks/red-october.md, R10).
 //
-// TestDecode_dispatchProfile's own ABLATION method (re-record R times into one pass, omit one
-// pipeline class, difference against the full plan) does not transfer: PrefillLastW8A8 is not a
-// recorded/replayable step list (it builds fresh buffers and issues M-row-scaled dispatches
-// inline, flushing every 32 passes for Metal's uncommitted-command-buffer cap) — re-running it
-// with a class's dispatches skipped would cascade into shape/buffer errors for every downstream
-// stage in the same layer, not a clean subtraction. Instead this uses PER-CATEGORY WALL-CLOCK
-// ACCUMULATION (gpu/prefill_prof.go's profTic/profToc, wired into PrefillLastW8A8 itself, nil by
-// default so it costs nothing when off) — the SAME method cuda/prefill_decomp_test.go already
-// uses for the CUDA side, including its own accepted trade-off: category boundaries are syncs
-// (c.device.Poll(true, nil)), so the category sum runs a bit over the pipelined wall time — "the
-// price of per-kernel attribution", reported as such, not hidden.
+// TestDecode_dispatchProfile's ablation method (re-record R times into one pass, omit one
+// pipeline class) does not transfer: PrefillLastW8A8 is not a replayable step list (it builds
+// fresh buffers and issues M-row-scaled dispatches inline, flushing every 32 passes for Metal's
+// uncommitted-command-buffer cap), so skipping a class's dispatches would cascade into
+// shape/buffer errors downstream in the layer. This uses per-category wall-clock accumulation
+// instead (gpu/prefill_prof.go's profTic/profToc, wired into PrefillLastW8A8 itself, nil by
+// default so it costs nothing when off), the same method as cuda/prefill_decomp_test.go, with its
+// accepted trade-off: category boundaries are syncs (c.device.Poll(true, nil)), so the category
+// sum runs a bit over the pipelined wall time, the price of per-kernel attribution.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags gpu -run TestPrefill_dispatchProfile -v ./gpu/ -timeout 20m
 func TestPrefill_dispatchProfile(t *testing.T) {
@@ -87,10 +84,11 @@ func TestPrefill_dispatchProfile(t *testing.T) {
 	// The line above double-counts O (hidden*qDim, same shape as Q's qDim*hidden) correctly since
 	// both directions cost the same MACs; written out for clarity rather than algebraic minimalism.
 
-	// GOINFER_PREFILL_PROF_P overrides the depth list. The 1.5B int8int8 OOMs at P=1024 on this 8 GB
-	// card (the WebGPU path does not chunk the way cuda's prefillChunked does; O(M*inter) scratch), so
-	// its 1024 cell comes from the 0.5B — which is also the model the doc's own prior P=1024 reference
-	// (prefill-batched-ttft-2026-09-13.md) used. Recorded, not silently narrowed.
+	// GOINFER_PREFILL_PROF_P overrides the depth list. The 1.5B int8int8 OOMs at P=1024 on an 8 GB
+	// card (the WebGPU path does not chunk the way cuda's prefillChunked does; O(M*inter) scratch),
+	// so its 1024 cell comes from the 0.5B, the model
+	// docs/measurements/prefill-batched-ttft-2026-09-13.md used for P=1024. The narrowing is
+	// recorded, not silent.
 	ps := []int{256, 1024}
 	if v := os.Getenv("GOINFER_PREFILL_PROF_P"); v != "" {
 		ps = ps[:0]
@@ -102,11 +100,10 @@ func TestPrefill_dispatchProfile(t *testing.T) {
 			ps = append(ps, n)
 		}
 	}
-	// WARM-UP, discarded — the decode profiler warms explicitly for the same reason: the first
-	// prefill in a process pays one-time driver JIT for every WGSL pipeline it touches, booked into
-	// whichever category dispatches each one first. Unwarmed, the first P cell read normsRope at
-	// 496 ms (P=256) against 50 ms at P=512 for the 1.5B — O(P) work cannot shrink 10x as P doubles.
-	// A single warm call at a small P touches every pipeline the timed cells will use.
+	// WARM-UP, discarded: the first prefill in a process pays one-time driver JIT for every WGSL
+	// pipeline it touches, booked into whichever category dispatches each one first, which makes the
+	// first cell read implausibly high (O(P) work cannot shrink tenfold as P doubles). One warm call
+	// at a small P touches every pipeline the timed cells will use.
 	{
 		warm := make([][]float32, 64)
 		for i := range warm {
@@ -164,10 +161,9 @@ func TestPrefill_dispatchProfile(t *testing.T) {
 			t.Logf("%-12s %10.2f %7.1f%%", row.name, float64(row.d.Microseconds())/1000, 100*float64(row.d)/float64(catSum))
 		}
 		t.Logf("GEMM class: %.1f GFLOP over %s -> %.1f GFLOPS achieved", totalFLOPs/1e9, gemm.Round(time.Microsecond), gflops)
-		// Instrument self-check: causal attention is O(P^2), so its booked time MUST grow with P. The
-		// first version of this profiler booked 544 ms at P=256 and 55 ms at P=512 — the boundary
-		// poll was waiting only for SUBMITTED work while dispatches still sat in the open encoder —
-		// and this assertion is what would have caught it on the spot.
+		// Instrument self-check: causal attention is O(P^2), so its booked time MUST grow with P. This
+		// catches a boundary poll that waits only for SUBMITTED work while dispatches still sit in the
+		// open encoder, which books far less attention at the larger P.
 		if lastP > 0 && p > lastP && attn <= lastAttn {
 			t.Errorf("attention booked %s at P=%d but %s at P=%d — cannot shrink with P for an O(P^2) kernel; the category attribution is scrambled (boundary poll not covering unsubmitted work?)",
 				attn.Round(time.Microsecond), p, lastAttn.Round(time.Microsecond), lastP)

@@ -25,11 +25,9 @@ func randF(rng *rand.Rand, n int) []float32 {
 	return s
 }
 
-// dispatch binds storage buffers (binding 0..k-1) + one or more trailing uniforms (binding
-// k, k+1, …) and runs. G6 (docs/tasks/task-gpu-paths-2026-09.md) widened this from a single trailing
-// uniform to a slice: attnI8ShaderWGSL now carries TWO (the shared geometry P, and the
-// genuinely-per-layer HS attention-sink flag — see attnShaderWGSL's own comment for why they
-// can't be merged into one).
+// dispatchI8 binds storage buffers (binding 0..k-1) plus one or more trailing uniforms (binding
+// k, k+1, …) and runs. attnI8ShaderWGSL carries two (the shared geometry P, and the genuinely
+// per-layer HS attention-sink flag; see attnShaderWGSL's comment for why they cannot be merged).
 func (c *Context) dispatchI8(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, groups int, storage []*wgpu.Buffer, unis ...*wgpu.Buffer) error {
 	entries := make([]wgpu.BindGroupEntry, 0, len(storage)+len(unis))
 	for i, b := range storage {

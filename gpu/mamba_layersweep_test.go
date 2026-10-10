@@ -10,12 +10,12 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Phase-A localization: the mamba path is exonerated (in_proj + mixer correct). The 93.6%→66%
-// gap is the resident attn/MoE (W8A8 GEMVs) vs D3's staged matmuls. This sweeps
-// the layer-sweep seam (ssmStopLayerForTest / decoder.SetSSMStopLayerForTest) — rebuilding the resident plan to emit logits from the hidden after
-// each layer L — and compares the resident's token-0 logits to the f32 CPU reference per L. The
-// first L where cosine drops names the buggy layer; a gradual drop from every layer ⇒ MoE
-// (every layer), a jump at 5/15/25/35 ⇒ attention.
+// TestMambaResidentLayerSweep localizes where the resident granite diverges from the f32 CPU
+// reference. It sweeps the layer-sweep seam (ssmStopLayerForTest /
+// decoder.SetSSMStopLayerForTest), rebuilding the resident plan to emit logits from the hidden
+// after each layer L, and compares the resident's token-0 logits to the CPU reference per L. The
+// first L where cosine drops names the suspect layer; a gradual drop from every layer points at
+// the MoE (every layer), a jump at 5/15/25/35 at attention.
 func TestMambaResidentLayerSweep(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
@@ -35,8 +35,8 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	ids, _ := tk.Encode("The capital of France is Paris.", true)
 	tok := ids[0]
 
-	// f32 CPU reference, truncated per layer through the test hook (this used to os.Setenv
-	// GOINFER_SSM_STOP_LAYER, which the decoder read once at init, so every "reference" was the full model).
+	// f32 CPU reference, truncated per layer through the test hook (an env var would be read once at
+	// init, leaving every "reference" the full model).
 	os.Unsetenv("GOINFER_SSM_RESIDENT")
 	mc, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
 	if err != nil {

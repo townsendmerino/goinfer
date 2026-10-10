@@ -13,11 +13,12 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Benign-vs-harmful characterization of int4-resident Nemotron-H's ~7.5% argmax disagreements vs
-// f32. Near-lossless perplexity/KL with sub-95% agreement should mean the disagreements are
-// coin-flips on near-tied tokens (int4 picked f32's #2/#3 where f32 was itself indifferent), not
-// confident-token mistakes. The robust signal is the CORRELATION: benign ⇒ disagreements
-// concentrate at SMALL f32 top1–top2 margins; harmful ⇒ at LARGE margins (f32 confident, int4 wrong).
+// Benign-vs-harmful characterization of int4-resident Nemotron-H's argmax disagreements vs f32.
+// Near-lossless perplexity/KL with sub-95% agreement should mean the disagreements are coin-flips
+// on near-tied tokens (int4 picked f32's #2/#3 where f32 was itself indifferent), not
+// confident-token mistakes. The robust signal is the CORRELATION: benign means disagreements
+// concentrate at SMALL f32 top1–top2 margins; harmful means LARGE margins (f32 confident, int4
+// wrong).
 func TestNemotronBenignHarmful(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {

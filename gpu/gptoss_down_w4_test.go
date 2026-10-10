@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-// TestGptOssDownW4_parity gates gpt-oss's down-projection combine on an INT4 stacked expert set.
-// That is the layout Quant "int4" uploads, and the only one that fits gpt-oss-20b on an 8 GB card
-// (audit-2026-09-10 C-06). It runs through gptOssDownPipelineFor, the resident builder's own kernel
-// choice, and checks it against the CPU reference: dst + wgt·(W4A8 matmul + down bias).
+// TestGptOssDownW4_parity pins gpt-oss's down-projection combine on an INT4 stacked expert set:
+// the layout Quant "int4" uploads, and the only one that fits gpt-oss-20b on an 8 GB card
+// (docs/audit-2026-09-10.md, C-06). It runs through gptOssDownPipelineFor, the resident builder's
+// own kernel choice, and checks it against the CPU reference dst + wgt·(W4A8 matmul + down bias).
 //
-// The matmul term is made to dominate the bias ON PURPOSE. G-07 is the record of a bias-dominated
-// gate that could not see this term collapse.
+// The matmul term is made to dominate the bias ON PURPOSE: a bias-dominated gate cannot see that
+// term collapse (docs/audit-2026-09-10.md, G-07).
 func TestGptOssDownW4_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

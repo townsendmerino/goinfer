@@ -13,13 +13,14 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestGraniteResidentSpeedup is the P7 deliverable: resident granite-4.0-h-tiny generates
-// coherently on the resident SSM DecodeRunner, and the measured decode rate beats the CPU
-// (300 ms/tok) and staged-webgpu (498 ms/tok) baselines. The resident path runs W8A8 (int8);
-// its logits diverge from the f32 CPU reference (cosine ~0.37 — granite's 64-expert MoE
-// selection + SSM are int8-sensitive, see docs/ssm-residency-build.md), but the engine is
-// computationally correct (matches an int8 reference at cosine ~0.99) and the int8 output is
-// coherent + factual. A tight f32 gate would need f16 weights (follow-up).
+// TestGraniteResidentSpeedup checks that resident granite-4.0-h-tiny generates coherently on the
+// resident SSM DecodeRunner (it asserts the SSM engine went resident and the greedy continuation
+// contains the factual answer) and logs the decode rate against the CPU and staged-webgpu
+// baselines; the speedup itself is logged, not asserted. The resident path runs W8A8 (int8) and
+// its logits diverge from the f32 CPU reference (granite's 64-expert MoE selection and SSM are
+// int8-sensitive, see docs/completed/ssm-residency-build.md), but the engine is computationally
+// correct (it matches an int8 reference) and the int8 output is coherent and factual. A tight f32
+// gate would need f16 weights (a follow-up).
 func TestGraniteResidentSpeedup(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {

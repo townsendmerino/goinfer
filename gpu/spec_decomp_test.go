@@ -86,9 +86,8 @@ func TestSpeculativeResident_decomp(t *testing.T) {
 	targetGPU, _ := msPerTok(tpath, gpuOpt, "(b) GPU target (1.5B)")
 	draftGPU, gpuDraftOK := msPerTok(dpath, gpuOpt, "(c) GPU draft  (0.5B)")
 
-	// Spec ceiling: per round = K·draft + verify; ideal Stage-B verify ≈ 1 target
-	// token. speedup ≈ (tokens/round) / (round_ms / target_ms). Use a representative
-	// tokens/round ≈ 3.3 at K=4 (measured acceptance 0.58).
+	// Spec ceiling: per round = K·draft + verify; ideal Stage-B verify ≈ 1 target token. speedup ≈
+	// (tokens/round) / (round_ms / target_ms), with a representative tokens/round ≈ 3.3 at K=4.
 	const K, tpr = 4, 3.3
 	ceiling := func(draftMs float64) float64 {
 		roundMs := K*draftMs + targetGPU // ideal verify == one target token

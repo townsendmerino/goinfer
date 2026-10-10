@@ -74,11 +74,6 @@ func TestSoftwareAdapterDetection(t *testing.T) {
 	}
 }
 
-// newOrSkipHW builds a Context or skips on no-adapter OR a software adapter —
-// for hardware-sensitive tests: bit-exact parity gates (imprecise on software),
-// perf/microbenches (meaningless on software), and full-model tests (their large
-// buffers exceed software-adapter binding limits). Keeps the bit-exact gates
-// running on real hardware while making CI robust to environment drift.
 // reportLive logs the number of Contexts currently open, so a full-suite run shows WHICH test
 // leaked one. The driver allows 63 live at once; past that every later test loses its GPU and
 // skips, which is how TestWebGPU_forwardParity and TestResidentForwardN_parity stopped being
@@ -94,18 +89,15 @@ func reportLive(t *testing.T) {
 
 // gpuWasAvailable records that some earlier test in THIS process successfully got a device.
 //
-// It is the difference between the two reasons a device request fails, which used to be
-// indistinguishable and were both reported as a skip:
+// It is the difference between the two reasons a device request fails:
 //
 //	never worked  → this machine has no usable GPU. Skipping is right.
-//	worked, then stopped → the process EXHAUSTED it (measured: VRAM climbing to 7,782 MiB
-//	                       of 8,192 as tests retain resident weights). Skipping is wrong:
-//	                       it silently converts every later gate into a no-op, which is how
-//	                       TestWebGPU_forwardParity and TestResidentForwardN_parity stopped
-//	                       verifying anything without anyone noticing.
+//	worked, then stopped → the process EXHAUSTED it (resident weights retained across tests).
+//	                       Skipping is wrong: it silently converts every later gate into a no-op,
+//	                       as TestWebGPU_forwardParity and TestResidentForwardN_parity once were.
 //
-// So the second case now FAILS. A red suite that names the cause is worth more than a green
-// one that ran nothing — the same reason this project treats a skip as not-a-pass.
+// So the second case FAILS. A red suite that names the cause is worth more than a green one that
+// ran nothing: the same reason this project treats a skip as not-a-pass.
 var gpuWasAvailable atomic.Bool
 
 // requireGPU converts a lost device into a loud failure, and a genuinely absent one into a
@@ -124,6 +116,11 @@ func requireGPU(t *testing.T, err error) {
 	t.Skipf("no GPU available: %v", err)
 }
 
+// newOrSkipHW builds a Context or skips on no-adapter OR a software adapter —
+// for hardware-sensitive tests: bit-exact parity gates (imprecise on software),
+// perf/microbenches (meaningless on software), and full-model tests (their large
+// buffers exceed software-adapter binding limits). Keeps the bit-exact gates
+// running on real hardware while making CI robust to environment drift.
 func newOrSkipHW(t *testing.T) *Context {
 	t.Helper()
 	reportLive(t)
@@ -198,13 +195,11 @@ func TestMatmulBT_inputValidation(t *testing.T) {
 	}
 }
 
-// BenchmarkMatmulBT_GPU measures the full offload (upload + dispatch +
-// readback) at forward-pass shapes. Compare the reported GFLOP/s
-// (MB/s column ÷ 1000, since SetBytes = 2*M*K*N FLOPs) against the
-// encoder package's BenchmarkMatmul{Serial,Parallel}_* CPU numbers.
-// EXPECT the GPU to trail the CPU here at these shapes — per-call
-// transfer dominates; this benchmark exists to quantify that gap and
-// track it as the resident-buffer follow-up lands.
+// benchGPU is the body of the BenchmarkMatmulBT_GPU_* benchmarks: it measures the full offload
+// (upload + dispatch + readback) at forward-pass shapes. Compare the reported GFLOP/s (MB/s
+// column ÷ 1000, since SetBytes = 2*M*K*N FLOPs) against the encoder package's
+// BenchmarkMatmul{Serial,Parallel}_* CPU numbers. Expect the GPU to trail the CPU here: per-call
+// transfer dominates, which is the gap resident buffers exist to close.
 func benchGPU(b *testing.B, M, K, N int) {
 	c, err := New()
 	if err != nil {
