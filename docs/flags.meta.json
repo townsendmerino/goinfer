@@ -184,6 +184,12 @@
    "summary": "The same, for the CPU backend only: the f64-accumulating attention kernel instead of the faster f32 default."
   },
   {
+   "name": "windowed-kv",
+   "group": "Backend, precision and context",
+   "summary": "CUDA only: each sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer context in the same VRAM. Output is meant to be identical. Off by default; ignored by other backends and by models with no sliding-window layers.",
+   "see": "docs/tasks/task-cuda-windowed-kv-2026-10.md"
+  },
+  {
    "name": "max-concurrent",
    "group": "Concurrency and queues",
    "summary": "How many generations of one model run at once, capped by `--kv-sessions`. GPU-resident models run several only where the backend can batch their decode; vision and weight-streaming models, and `--spec` without `--spec-adaptive`, run one."
