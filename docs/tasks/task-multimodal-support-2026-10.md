@@ -38,9 +38,9 @@
     (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record is queued
     (`s14f`). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
 - **With the owner:**
-  - The `--embed-int4` default, from option D's numbers. To be asked after G-S18g2 reads (owner, 2026-10-10): it has
-    read.
-  - The int8 Metal tower as the tight-memory default: G-S18g2 read PARKED, which hands it to the owner.
+  - Decided 2026-10-10: the int8 Metal tower stays the tight-memory fallback (after G-S18g2's PARKED).
+  - Decided 2026-10-10: the `--embed-int4` default is on (option D's numbers). It already is everywhere but Metal;
+    on Metal it needs an int4 table in the resident, which is not built or scheduled.
   - The paged CUDA arm of Qwen3-VL MoE: FAIL under A2 on one of two requests.
 - **Not started:** S15 (video), S12 (WebGPU), full S13.
 
@@ -4894,6 +4894,8 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       - **To the owner, as registered:** keep the int8 tower as the tight-memory fallback, or make it explicit-only
         (`-vision-quant int8`). Beside D and A, the alternative's cost is the CPU tower at 30-40 s a request against
         7.0-7.6 s (the follow-up's served arms).
+      - **Owner, 2026-10-10: "keep it as the tight-memory fallback."** Nothing changes in the code; the fallback
+        stays as it is.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).
@@ -6011,6 +6013,14 @@ Four jobs ran and read; the fifth, `s6-moe-image-3`, was queued onto this box's 
 - **Prediction scored:** at most two COSTLY (held: 0); 1-3 points and 0.02-0.06 nats on the tied small-vocabulary models (the agreement cost came in at or below the range: the two smallest read -0.29 and +0.10; the KL cost 0.018-0.045, mostly at its floor).
 - **What the fix of the inert flag did, measured:** phi3's int4-head arm is no longer VOID (`HeadTable()` read int8 then int4 across the arms on all three of this night's models), and its reading is MIXED with the interval of dKL touching zero.
 - **A control that did not run, disclosed.** The positive control step (both arms at the int8 pin must read exactly 0 / 0) failed in 0 s: it reads `qwen2.5-0.5b-instruct`, which is not among this night's three models, so there was no HF dump for it. **The exact-zero control was therefore not re-observed on this night's binary** (night 1's read exactly 0 / 0 on its own); what held on this binary is the `HeadTable()` assertion. A repeat would add the 0.5B to `HP_MODELS`.
+- **Owner, 2026-10-10, asked after G-S18g2 read: the default is on ("yes").** What that is in the tree:
+  - **Everywhere but Metal it is already on** (`internal/loadflags`' `embedInt4`), so nothing changes for the CPU, CUDA or
+    WebGPU.
+  - **On Metal the default is still off, and turning it on is not a flag change.** Metal's resident does not take an
+    int4 table, so with the flag on a `--backend metal` load declines the GPU (`TestEmbedInt4_offByDefaultOnMetal`
+    pins the current behaviour for that reason). This is the registration's option C, "the default on everywhere,
+    which needs an int4 table in Metal's resident". That work (the embedding lookup and the tied head from an int4
+    table on Metal) is not scoped, built or scheduled; the decision records that it is wanted.
 
 ##### (b'), the Gemma 4 31B against a layer-streaming Hugging Face float32 reference: both arms PASS as registered (`~/goinfer-logs/g31b-2026-10-09/`, 45 min against 150 queued, binaries `g31b` at `9d5e7943`)
 

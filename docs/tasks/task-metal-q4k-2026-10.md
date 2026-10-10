@@ -204,6 +204,11 @@ Job exit 0 in 1 minute at 13:25, with the queue started by day. Raw:
     owner's word again.
   - **The script reported success on a skip.** `run-gq-mac.sh` takes the test binary's exit code, and a skipped Go test
     exits 0. It should fail on `--- SKIP`.
+  - **Owner, 2026-10-10: queue it again with the bypass ("3 yes").** The bypass and its swap watch are as decided
+    above; nothing in the registration moves. `run-gq-mac.sh` now refuses to start without the reference's GGUF and
+    sidecar, exits 5 when G-Q2's test prints no PASS line of its own, and takes `GQ_GATES` (here `gq2`: G-Q3 has read
+    at this revision and is not repeated). Queued as `metal-q4k-gq-3` on the Mac, 45 minutes, the same pinned binaries
+    (`eee75d83`).
 - **G-Q3: PASS by the registered rule.** Both arms served Phi-3 at q4k, context 512, the fit guard bypassed, swap flat
   (1,029.5 MB before and after).
   - CPU: `decode path: cpu (q4k)`, 64 tokens in 51.2 s. Metal: `decode path: metal-resident (q4k)`, 64 tokens in 9.0 s.

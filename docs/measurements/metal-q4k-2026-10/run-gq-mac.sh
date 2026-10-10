@@ -13,6 +13,11 @@ OUT=$B/results-$(date +%F)
 R=$HOME/tmcode/goinfer
 WT=$B/wt-$REV
 PHI3=$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+# G-Q2's reference arm loads the 1.5B through its int4 Metal sidecar (metal/q4k_phi3_real_test.go); without both files
+# the test skips, and a skipped Go test exits 0.
+REF=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m
+GATES=${GQ_GATES:-gq2 gq3}
+for f in "$PHI3" "$REF.gguf" "$REF.int4.metal.giw"; do [ -e "$f" ] || { echo "FATAL: $f is missing"; exit 2; }; done
 mkdir -p "$OUT"
 [ -d "$WT" ] || git -C "$R" worktree add --detach "$WT" "$REV" || exit 1
 [ "$(git -C "$WT" rev-parse --short=8 HEAD)" = "$REV" ] || { echo "worktree is not at $REV"; exit 1; }
@@ -47,18 +52,28 @@ if [ -n "${GQ_NO_FIT_GUARD:-}" ]; then
   export GOINFER_NO_FIT_GUARD=1
   echo "the load-time fit guard is BYPASSED for this run (GQ_NO_FIT_GUARD), swap watch at +${KILL_MB} MB" | tee -a "$OUT/provenance.txt"
 fi
+rc=0
+case " $GATES " in *" gq2 "*)
 echo "=== $(date -u +%FT%TZ) START G-Q2"
 start_watch gq2
 # A pinned test binary runs from its package directory (it resolves ../testdata from there).
 (cd "$WT/metal" && GOINFER_HEAVY_TESTS=1 "$B/metal-$REV.test" -test.run '^TestQ4KLane_realPhi3NonInferiority$' -test.v -test.count=1 -test.timeout 40m) 2>&1 | tee "$OUT/gq2.log"
 rc=${PIPESTATUS[0]}
 stop_watch
+# A skip is not a pass: the gate ran only if its test printed a PASS or FAIL line of its own.
+if [ $rc -eq 0 ] && ! grep -q '^--- PASS: TestQ4KLane_realPhi3NonInferiority' "$OUT/gq2.log"; then
+  echo "G-Q2 DID NOT RUN: no PASS line for the test (a skip exits 0)"; rc=5
+fi
 echo "=== $(date -u +%FT%TZ) END G-Q2 rc=$rc; swap $(sysctl -n vm.swapusage)"
+;; esac
+rc2=0
+case " $GATES " in *" gq3 "*)
 echo "=== $(date -u +%FT%TZ) START G-Q3"
 start_watch gq3
 (cd "$WT" && bash docs/measurements/metal-q4k-2026-10/run-gq3-served.sh "$B/serve-metal-$REV" "$OUT/gq3" "$PHI3") 2>&1 | tee "$OUT/gq3.log"
 rc2=${PIPESTATUS[0]}
 stop_watch
 echo "=== $(date -u +%FT%TZ) END G-Q3 rc=$rc2; swap $(sysctl -n vm.swapusage)"
+;; esac
 [ $rc -eq 0 ] && rc=$rc2
 exit $rc
