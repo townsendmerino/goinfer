@@ -1,28 +1,38 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: ACTIVE (refreshed 2026-10-09).** The phases' state:
+**Status: ACTIVE (refreshed 2026-10-10).** The phases' state:
 - **Done:**
   - S1 (E-model decode on the GPU), Metal and CUDA.
   - S2 (Qwen3.5+ and GLM-OCR towers); `s2-towers` is merged into `main` (`471a500e`, 2026-10-08).
   - S3 (Gemma 3 and Qwen2.5-VL on Metal), root cause and follow-ups included.
   - S4 steps 0-5 (the CUDA towers) and the float32 SigLIP addendum.
   - S5 (E2B audio into the model; G-S5b PASS).
+  - S8 (the README and doc support table, computed from code and drift-checked) and S11 (several images per
+    message), both 2026-10-09.
   - S9 on Metal and CUDA.
-  - S10 for Qwen3-VL.
+  - S10 for Qwen3-VL, Ministral 3 (Pixtral) and LFM2.5-VL. "North" was dropped (2026-10-09).
   - S16 for Qwen2.5-VL and Qwen3-VL.
   - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
-    fix it needed (2026-10-09).
-  - S18's gates on both boxes. G-S18g read 2026-10-10: FAIL as registered. The same day's follow-up shows its rule
-    cannot grade a tower on Gemma 3 (the f16 reference fails it too); the owner withdrew its consequence and G-S18g2
-    replaces it (registered, queued for the night of 2026-10-10).
+    fix it needed (2026-10-09). The owner kept the prefill on over G-IP4's registered FAIL.
+  - S7 and S13-lite on both boxes. The Mac's third pass (read 2026-10-10) has six of eight S7 cells under the 5 s bar.
+    - Qwen2.5-VL-3B at 5.51 s is accepted as it is (owner, 2026-10-10: "we will just accept 5.51 as OK").
+    - Gemma 3 4B read 6.2 s on a build that predates its image prefill, which read 4.14 s by day (G-IP4).
+  - The `--embed-int4` default's evaluation (option D): 7 of 7 models graded, none costly.
 - **In flight:**
-  - S6: Qwen3.6-35B images served on CUDA, the 31B's step (b'), E4B on Metal.
-  - S14 (speech).
-  - The Mac's third S7/S13-lite pass: read 2026-10-10, six of eight S7 cells under the 5 s bar.
-  - The `--embed-int4` default (option D).
-- **Done since:** S11 (several images per message) and S8 (the README and doc support table, computed from code and
-  drift-checked), both 2026-10-09.
-- **Not started:** S10's remaining families, S12, full S13, S15.
+  - S10 for Qwen3-VL MoE: G-S10q-a, b and c PASS. The served check G-S10q-d is queued on nobara for the night of
+    2026-10-10 (`gs10q-d-2`; the first run was void).
+  - S18: every gate has read. G-S18g read FAIL as registered, on a rule that cannot grade a tower on Gemma 3 (the f16
+    reference fails it too). The owner withdrew its consequence; G-S18g2 replaces it and is queued on the Mac for the
+    night of 2026-10-10.
+  - S6: the 35B's served image check (G-S6m) and the 31B's step (b') PASS; Gemma 4 E4B PASS on CUDA. E4B on Metal
+    (G-E4B-1, G-E4B-2) has not run: its sidecar build was refused for memory on 2026-10-07. A Metal sidecar built by
+    serve has been on the Mac since 2026-10-09.
+  - S14 (speech): Qwen3-ASR, the Whisper encoder and Voxtral Mini's gates have passed, except Qwen3-ASR's
+    word-error-rate gate G-S14c4b, which failed again on its re-read (2026-10-09).
+- **With the owner:**
+  - The `--embed-int4` default, from option D's numbers. To be asked after G-S18g2 reads (owner, 2026-10-10).
+  - The int8 Metal tower as the tight-memory default, from G-S18g2.
+- **Not started:** S15 (video), S12 (WebGPU), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
 measurement (CLAUDE.md, "Pre-registration").
@@ -4220,6 +4230,7 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **This binary (`74830779`) predates Gemma 3's resident image prefill on Metal.** G-IP4 read that lever by day at
       6.88 s before and 4.14 s after, so Gemma 3's row here is the 'before' build.
     - **Ranking for the next lever:** Qwen2.5-VL is the one cell over the bar with no lever already measured under it.
+      **Owner, 2026-10-10: accepted as it is** ("we will just accept 5.51 as OK"); no lever is owed for it.
     - The passes are on different nights and interleave nothing; a small difference (Qwen3.5-0.8B's 3.94 to 4.21 s)
       is not a resolved effect.
 
@@ -5798,6 +5809,11 @@ S8's drift check keeps the README true through S14, which updates the table as p
 **Where the order stands, 2026-10-09:** item 1 is done except S6. Item 2 is read (the Mac's third pass is queued). In
 item 3, S16 and S17 have shipped their levers and S18 owes only G-S18g. Next by the owner's word ("lets do your
 suggestion"): G-IP4, then S11 (it unblocks S15), then S8.
+
+**Where the order stands, 2026-10-10:** in item 1, S6 owes E4B on Metal. Item 2 is read three times on the Mac. In
+item 3, S18 owes G-S18g2. In item 4, S10's families are done but for Qwen3-VL MoE's served check ("North" dropped, the
+Qwen3.5+ MoE images covered by S6's G-S6m), S11 and S8 are done, and S14 is in flight. What has not started, in the
+list's order: S15, S12, full S13.
 
 ## Decisions for the owner
 
