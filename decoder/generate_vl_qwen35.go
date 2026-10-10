@@ -5,15 +5,14 @@ import (
 	"fmt"
 )
 
-// prefillLogitsQwen35VL is prefillLogitsQwenVL for the Gated-DeltaNet hybrid (qwen3_5 /
-// qwen3_5_moe, P8a): the same splice — the merged tower rows replace the placeholder run
-// [imgPos, imgPos+imgLen) raw, no embed scale, exactly HF's inputs_embeds.masked_scatter — and the
-// same m-RoPE positions on the full-attention layers, but through the per-token
-// runLayersQwen35FromEmbed loop, because the recurrent state must see every token in order and
-// there is no batched hybrid prefill (canBatchN is false for this family).
+// prefillLogitsQwen35VL is prefillLogitsQwenVL for the Gated-DeltaNet hybrid (qwen3_5 / qwen3_5_moe): the same splice
+// (the merged tower rows replace the placeholder run [imgPos, imgPos+imgLen) raw, no embed scale, as HF's
+// inputs_embeds.masked_scatter does) and the same m-RoPE positions on the full-attention layers, but through
+// prefillQwen35VLBatched when qwen35BatchNAnyPos allows it and otherwise the per-token prefillQwen35VLPerToken loop,
+// because the recurrent state must see every token in order.
 //
-// It leaves cache.mropePos / cache.mropeDelta set so decode past the prompt rotates at
-// seqPos+delta, exactly as prefillLogitsQwenVL does.
+// It leaves cache.mropePos / cache.mropeDelta set so decode past the prompt rotates at seqPos+delta, as
+// prefillLogitsQwenVL does.
 func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	hidden := arch.HiddenDim
@@ -34,12 +33,12 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 	return m.prefillQwen35VLPerToken(ctx, ids, imageFeats, spans, cache)
 }
 
-// prefillQwen35VLBatched is P26: every projection one M=len(ids) matmul, so each weight is read once for the prompt instead of
-// once per token (a 662-token image turn on Qwen3.5-0.8B took ~34 s one token at a time, which is decode speed). The DeltaNet
-// recurrence stays sequential inside runLayersQwen35N; its full-attention layers rotate q and k by cache.mropePos exactly as the
-// per-token loop does. NOT bit-identical to that loop (a batched matmul can reduce in a different order):
-// TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the HF-golden tests hold either path to the same bars.
-// The caller has checked qwen35BatchNAnyPos and set cache.mropePos / mropeDelta.
+// prefillQwen35VLBatched runs every projection as one M=len(ids) matmul, so each weight is read once for the prompt
+// instead of once per token. The DeltaNet recurrence stays sequential inside runLayersQwen35N; its full-attention layers
+// rotate q and k by cache.mropePos exactly as the per-token loop does. It is not bit-identical to that loop (a batched
+// matmul can reduce in a different order): TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the
+// HF-golden tests hold either path to the same bars. The caller has checked qwen35BatchNAnyPos and set cache.mropePos
+// and mropeDelta.
 func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	hidden := m.w.arch.HiddenDim
 	h := make([]float32, len(ids)*hidden)

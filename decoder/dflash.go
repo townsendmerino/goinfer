@@ -11,18 +11,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// DFlashDrafter is an imported z-lab DFlash block drafter (P10 / docs/spec/08): a small
-// non-causal transformer trunk that reads the target's hidden states (the ForwardCapture
-// seam) and proposes a whole BLOCK of tokens in one pass, instead of one token per head
-// forward the way 05's EAGLE head did (removed 2026-09-24). That is the draft-side economics the spec
-// program's scorecard said was the lever.
+// DFlashDrafter is an imported z-lab DFlash block drafter (docs/spec/08): a small non-causal transformer trunk that
+// reads the target's hidden states (the ForwardCapture seam) and proposes a whole block of tokens in one pass.
 //
-// It is deliberately smaller than it looks. The checkpoint ships ONLY the trunk —
-// 5 decoder layers + `fc` + two norms, 58 tensors — with **no embedding, no LM head, no
-// Markov head and no confidence head** (verified against the published file byte-for-byte,
-// see docs/spec/08). Both ends are the TARGET's: the block is embedded with the target's
-// embed_tokens and the draft logits come out of the target's lm_head. So this type holds
-// no vocab-sized weight at all, and the caller supplies both ends.
+// The z-lab checkpoint ships only the trunk (decoder layers, fc, two norms), with no embedding, LM head, Markov head
+// or confidence head: the block is embedded with the target's embed_tokens and the draft logits come out of the
+// target's lm_head, so the caller supplies both ends. Drafters that do ship their own head and embedding use the
+// lmHead and embed fields below.
 //
 // One round, given the target's captured hidden states for the committed context:
 //
@@ -31,26 +26,19 @@ import (
 //	trunk    = layers(blockIn, attending over concat(fused, block))    bidirectional
 //	logits   = targetLMHead(norm(trunk)[1:])                           blockSize-1 drafts
 //
-// The attention is CROSS-attention and NON-causal: queries come only from the block,
-// keys/values from the fused context concatenated with the block, and every block
-// position sees every other. That is what makes the block one pass — and it is also why
-// the block width is not truncatable (each position's hidden depends on all of them, so
-// a narrower block is off the trained distribution).
+// The attention is cross-attention and non-causal: queries come only from the block, keys/values from the fused
+// context concatenated with the block, and every block position sees every other. That is what makes the block one
+// pass, and why the block width is not truncatable: each position's hidden depends on all of them, so a narrower block
+// is off the trained distribution.
 type DFlashDrafter struct {
 	blockTrunk
 	blockSize, maskTokenID int
 	targetLayerIDs         []int
 
-	// OWN head + embedding, present only on drafters that ship them (poolside's
-	// Laguna speculators do; z-lab's do not and borrow the target's — see
-	// DrafterHeadLogits). When lmHead is set the drafter emits ids in its OWN
-	// REDUCED vocabulary, which d2t maps back to target ids:
-	//
-	//	target_id = i + d2t[i]   for draft index i
-	//
-	// That is the same scheme the EAGLE head used (removed 2026-09-24, be9aeea8); the
-	// arithmetic was kept identical to it rather than re-derived. embed is the drafter's own token embedding over the TARGET vocab
-	// (it is fed target ids and produces the trunk's block input).
+	// Own head and embedding, present only on drafters that ship them (poolside's Laguna speculators; z-lab's borrow the
+	// target's, see DrafterHeadLogits). When lmHead is set the drafter emits ids in its own reduced vocabulary, which d2t
+	// maps back to target ids: target_id = i + d2t[i] for draft index i. embed is the drafter's own token embedding over
+	// the target vocab (it is fed target ids and produces the trunk's block input).
 	lmHead     linalg.WeightMat // [draftVocab, hidden]; zero-valued when the drafter borrows the target's
 	embed      linalg.WeightMat // [vocab, hidden]; zero-valued when it borrows the target's
 	d2t        []int32          // draft index → target id OFFSET
@@ -64,16 +52,10 @@ type DFlashDrafter struct {
 // head. Callers use it to pick between DraftTokenID and DrafterHeadLogits.
 func (d *DFlashDrafter) HasOwnHead() bool { return d.lmHead.Rows() > 0 }
 
-// DraftTokenID turns one already-normed trunk hidden row into a TARGET token id
-// using the drafter's own reduced-vocab head, mapping the argmax back through d2t.
-//
-// The reduced vocab is the whole point of the design — a 32000-row head over a
-// 100352-token target vocab is ~3x less work per drafted position — but it means an
-// unmapped argmax is a VALID-LOOKING id in the wrong space. Drafting is lossless by
-// construction (the target re-verifies every token), so a missed mapping would not
-// corrupt output; it would silently destroy acceptance and read as "this pairing is
-// just bad", which is exactly the failure P10 spent a day chasing on a wrong mask
-// token. Hence the mapping lives here, next to the argmax, rather than in the caller.
+// DraftTokenID turns one already-normed trunk hidden row into a target token id using the drafter's own reduced-vocab
+// head, mapping the argmax back through d2t. An unmapped argmax is a valid-looking id in the wrong space. Drafting is
+// lossless (the target re-verifies every token), so it would not corrupt output, but it would silently destroy
+// acceptance. Hence the mapping lives here, next to the argmax, not in the caller.
 func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 	logits := make([]float32, d.draftVocab)
 	matmul(be, &d.lmHead, h, logits, 1)
@@ -85,14 +67,10 @@ func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 // without their own embedding use the target's (Model.embedResident).
 func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) { d.embed.Row(id, dst) }
 
-// EmbedBlock builds the trunk's block input for ids, using the DRAFTER's own
-// embedding when it has one and falling back to the target's otherwise.
-//
-// The fallback is not cosmetic. A drafter that ships embed_tokens was trained
-// against THOSE vectors; feeding it the target's instead is a silent
-// off-distribution input — the trunk still runs, still emits ids, and the pairing
-// still produces lossless output, so the only symptom is acceptance quietly landing
-// below what the pairing is worth. Same failure shape as the mask token.
+// EmbedBlock builds the trunk's block input for ids, using the drafter's own embedding when it has one and the
+// target's otherwise. The fallback is not cosmetic: a drafter that ships embed_tokens was trained against those
+// vectors, and the target's are a silent off-distribution input. The trunk still runs and output stays lossless, so
+// the only symptom is acceptance landing below what the pairing is worth.
 func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
 	if d.embed.Rows() == 0 {
 		return m.DrafterEmbedBlock(ids)
@@ -121,18 +99,10 @@ func (d *DFlashDrafter) DraftIDs(m *Model, rows [][]float32) []int {
 	return out
 }
 
-// blockTrunk is the non-causal block trunk shared by DFlash and DSpark.
-//
-// Shared because they compute it IDENTICALLY, which was established from first-party source
-// rather than assumed: DeepSpec's `_forward_backbone` is `hidden_norm(fc(ctx))` → rotary →
-// N layers → `norm`, its attention sets `is_causal=False` and takes K/V from
-// concat(raw fused context, block), and its `apply_rotary_pos_emb` — q taking
-// `cos[..., -q_len:, :]` while k takes the full `cos` — is byte-identical to z-lab's. Two
-// separately-developed drafters converged on the same trunk; carrying two copies of it here
-// would be the third copy this repo's own rule warns about.
-//
-// What differs between them lives in the enclosing type: DFlash borrows the target's embedding
-// and LM head and predicts from slot 1; DSpark ships its own, predicts from slot 0, and adds a
+// blockTrunk is the non-causal block trunk shared by DFlash and DSpark, which compute it identically: hidden_norm(fc(ctx)),
+// rotary, N layers, norm; attention is non-causal (is_causal=False) with K/V from concat(raw fused context, block); q
+// takes cos[..., -q_len:, :] while k takes the full cos. What differs lives in the enclosing type: DFlash borrows the
+// target's embedding and LM head and predicts from slot 1; DSpark ships its own, predicts from slot 0, and adds a
 // rank-256 Markov chain plus a confidence head.
 type blockTrunk struct {
 	hidden, nHeads, nKV, headDim, inter int
@@ -183,41 +153,33 @@ type dflashConfig struct {
 	HeadDim           int     `json:"head_dim"`
 	IntermediateSize  int     `json:"intermediate_size"`
 	RMSNormEps        float64 `json:"rms_norm_eps"`
-	// RoPE in both spellings too — flat on Qwen3-4B-DFlash-b16, nested rope_parameters on
-	// Qwen3.6-35B-A3B-DFlash (and on every DSpark checkpoint). Three checkpoints, three
-	// config dialects; reading only the first one's is how a supported pairing looks broken.
+	// RoPE comes in two spellings: flat rope_theta, or nested rope_parameters (as on DSpark checkpoints). Read both.
 	RopeTheta      float64         `json:"rope_theta"`
 	RopeParameters json.RawMessage `json:"rope_parameters"`
-	// block_size appears in BOTH places across z-lab's own checkpoints: top-level on
-	// Qwen3-4B-DFlash-b16, nested in dflash_config on Qwen3.6-35B-A3B-DFlash. One publisher,
-	// two spellings — so read either rather than assume the one the first checkpoint used.
+	// block_size is top-level on some checkpoints and nested in dflash_config on others. Read either.
 	BlockSize int `json:"block_size"`
 	DFlash    struct {
 		BlockSize      int   `json:"block_size"`
 		MaskTokenID    int   `json:"mask_token_id"`
 		TargetLayerIDs []int `json:"target_layer_ids"`
-		// DFlash 2 markers. This loader implements v1, and a v2 checkpoint is field-compatible
-		// with it — same trunk tensor names, same config keys — so without these it LOADS, which
-		// is the whole problem. See the refusal in LoadDFlashDrafter.
+		// DFlash 2 markers. This loader implements v1, and a v2 checkpoint is field-compatible with it (same trunk tensor
+		// names, same config keys), so without these it would load silently. See the refusal in LoadDFlashDrafter.
 		ConvKernelSize int `json:"conv_kernel_size"`
 		ConvGroupSize  int `json:"conv_group_size"`
 		SelectorRank   int `json:"selector_rank"`
 		SelectorTopK   int `json:"selector_top_k"`
 	} `json:"dflash_config"`
 
-	// vLLM "speculators" dialect (v0.5), which poolside's Laguna drafters ship —
-	// a FOURTH config spelling for the same model. It differs from z-lab's in three
-	// ways, all handled in LoadDFlashDrafter:
+	// vLLM "speculators" dialect (v0.5), which poolside's Laguna drafters ship: a fourth config spelling for the same
+	// model. It differs from z-lab's in three ways, all handled in LoadDFlashDrafter:
 	//
-	//   * the layer geometry is nested under transformer_layer_config (whose
-	//     model_type says "llama" even though the layers carry Qwen3-style per-head
-	//     q_norm/k_norm),
+	//   * the layer geometry is nested under transformer_layer_config (whose model_type says "llama" even though the
+	//     layers carry Qwen3-style per-head q_norm/k_norm),
 	//   * the taps are aux_hidden_state_layer_ids rather than target_layer_ids,
 	//   * mask_token_id is top-level rather than inside dflash_config.
 	//
-	// DraftVocabSize marks the OTHER structural difference: this drafter ships its
-	// own embed_tokens and a REDUCED-vocab lm_head plus d2t/t2d, where z-lab's
-	// borrow the target's. See the drafter head fields on DFlashDrafter.
+	// DraftVocabSize marks the other structural difference: this drafter ships its own embed_tokens and a reduced-vocab
+	// lm_head plus d2t/t2d, where z-lab's borrow the target's. See the own-head fields on DFlashDrafter.
 	MaskTokenIDTop         *int            `json:"mask_token_id"`
 	AuxHiddenStateLayerIDs []int           `json:"aux_hidden_state_layer_ids"`
 	DraftVocabSize         int             `json:"draft_vocab_size"`
@@ -238,21 +200,13 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	if err := json.Unmarshal(cfgBytes, &c); err != nil {
 		return nil, fmt.Errorf("dflash: parse config: %w", err)
 	}
-	// REFUSE DFlash 2. Measured on the real checkpoint (incoai/Qwen3.8-27B-DFlash2, 2026-08-20):
-	// v2's config carries every field this loader reads, and 76.2% of its tensors are v1-shaped,
-	// so it loads WITHOUT ERROR and silently drops 914,309,120 bytes — 23.8% of the file — of
-	// two-tap dynamic convolutions (`layers.N.{attention,mlp}_conv.*`) and the candidate selector
-	// (`candidate_selector.*`).
-	//
-	// The convs are inserted before AND after every attention and FFN sublayer, so dropping them
-	// changes every layer's output. The failure is not wrong tokens — DFlash verify is lossless,
-	// so the target still gates everything — it is a drafter that drafts badly: LOWER acceptance,
-	// slower than v1, and no diagnostic anywhere. Exactly the silent-degradation shape this
-	// program keeps paying for.
-	//
-	// Detected from config rather than tensor names because it is cheaper and it is what the
-	// publisher controls; a v2 checkpoint that omitted these keys would still be caught by the
-	// missing-tensor path, since v1 requires nothing v2 lacks. Revisit when P15 implements v2.
+	// Refuse DFlash 2. A v2 config carries every field this loader reads and most of its tensors are v1-shaped, so it would
+	// load without error and silently drop the two-tap dynamic convolutions (layers.N.{attention,mlp}_conv.*) and the
+	// candidate selector (candidate_selector.*). The convs sit before and after every attention and FFN sublayer, so
+	// dropping them changes every layer's output. Verify is lossless, so the failure is not wrong tokens but a drafter
+	// that drafts badly (lower acceptance, slower than v1) with no diagnostic. Detected from config rather than tensor
+	// names because it is cheaper and is what the publisher controls; a v2 checkpoint that omitted these keys would still
+	// be caught by the missing-tensor path. DFlash 2 support is unbuilt: docs/spec/08-dspark-dflash.md, section "DFlash 2".
 	if c.DFlash.ConvKernelSize > 0 || c.DFlash.SelectorRank > 0 {
 		return nil, fmt.Errorf("dflash: %s is a DFlash 2 checkpoint (conv_kernel_size=%d, "+
 			"selector_rank=%d) and this loader implements v1 — it would load and silently ignore "+
@@ -354,11 +308,9 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 	if err := vec(&d.finalNorm, "norm.weight", h); err != nil {
 		return nil, err
 	}
-	// OWN head + embedding + d2t, when this drafter ships them (draft_vocab_size).
-	// Loaded together and validated against each other: a reduced-vocab head with a
-	// mismatched d2t maps argmaxes into the wrong ids, which is invisible in output
-	// (drafting is lossless — the target re-verifies) and shows up only as acceptance
-	// collapsing to noise.
+	// Own head, embedding and d2t, when this drafter ships them (draft_vocab_size), loaded together and validated against
+	// each other: a mismatched d2t maps argmaxes into the wrong ids, which is invisible in output (drafting is lossless)
+	// and shows up only as acceptance collapsing.
 	if c.DraftVocabSize > 0 {
 		d.draftVocab = c.DraftVocabSize
 		if err := mat(&d.lmHead, "lm_head.weight", c.DraftVocabSize, h); err != nil {
@@ -458,18 +410,13 @@ func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, e
 	return fused, nil
 }
 
-// DFlashContext caches the committed context's PROJECTED K/V per layer — K already
-// RoPE'd at its absolute position, V neither roped nor normed.
+// DFlashContext caches the committed context's projected K/V per layer: K already RoPE'd at its absolute position, V
+// neither roped nor normed. The context is projected once per position and read by every later round; without the
+// cache each round re-projects the whole context in every layer, O(ctx x layers) of repeat work
+// (BenchmarkDFlashTrunk).
 //
-// It exists because the context is projected once per position and then read by every
-// subsequent round: without it, each round re-projects the whole context in every layer,
-// which is O(ctx x layers) of pure repeat work per round and made the CPU trunk scale
-// 1.6 s/block at ctx 64 to 12.9 s at ctx 2048 (measured, BenchmarkDFlashTrunk). Both
-// reference implementations cache it — mlx-dspark's CtxCache and dflash.py's DynamicCache
-// — so this matches them rather than inventing a shortcut.
-//
-// Append-only, plus TruncateTo for the speculative rollback: the drafter's context only
-// ever grows with COMMITTED tokens, and a rejected draft's positions must come back off.
+// Append-only, plus TruncateTo for the speculative rollback: only committed tokens extend it, and a rejected draft's
+// positions must come back off.
 type DFlashContext struct {
 	k, v [][][]float32 // [layer][pos][nKV*headDim]
 }
@@ -571,9 +518,8 @@ func (d *blockTrunk) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]flo
 // cannot just call it. The post-head transforms (Gemma softcap, Granite logit scale) ARE
 // applied, mirroring the reference's compute_logits.
 //
-// Declared here rather than in model.go on purpose: model.go is in the parity manifest's
-// `core` set, and adding a drafter-only accessor there would re-stale all 23 families'
-// deps_hash for a function no existing forward calls.
+// Declared here rather than in model.go on purpose: model.go is in the parity manifest's core set, and adding a
+// drafter-only accessor there would re-stale every family's deps_hash for a function no existing forward calls.
 func (m *Model) DrafterHeadLogits(h []float32) []float32 {
 	arch := m.w.arch
 	logits := make([]float32, arch.VocabSize)

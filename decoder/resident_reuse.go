@@ -1,74 +1,50 @@
 package decoder
 
-// Prefix reuse on the RESIDENT positional KV.
+// Prefix reuse on the resident positional KV.
 //
-// A resident model decodes statelessly: decoder.Generate engages the resident runner only
-// when there is no session commit and no prefix reuse, because a session's prefix cache is
-// CPU-side while the resident KV lives on the GPU and both cannot be the source of truth. The
-// consequence is that every turn re-prefills its whole prompt — measured 8.85 s for a
-// 2,293-token Claude Code agent turn on a 7B int4 (docs/integrations/claude-code.md), on every
-// turn, growing with the conversation.
+// A resident model decodes statelessly by default: a session's prefix cache is CPU-side while the resident KV lives on
+// the GPU, and both cannot be the source of truth, so every turn would re-prefill its whole prompt. Reuse done natively
+// on the GPU cache avoids the conflict, and the resident cache suits it: it is positional (the token at position p
+// lives at slot p), so "truncate to P" costs nothing (residentDecoder.TruncateTo is a no-op for that reason, and
+// attention reads only nKeys = pos+1), and an agent turn is a strict prefix extension of the last (turn N+1 is turn N
+// plus the assistant's tool call plus the tool result). So the mechanism is bookkeeping: remember which ids are
+// committed to the cache and prefill only the divergent suffix. The measured gain is in docs/integrations/claude-code.md.
 //
-// That trade is only forced for the CPU-side session cache. Doing the reuse NATIVELY on the
-// GPU cache has no such conflict, and the resident cache is unusually well suited to it:
+// Correctness is the entire risk: a wrong prefix match produces confidently wrong output with no error anywhere. Four
+// rules keep it honest:
 //
-//   - It is POSITIONAL — token at position p lives at slot p — so "truncate to P" costs
-//     nothing. residentDecoder.TruncateTo is already a no-op for exactly this reason, and
-//     attention reads only nKeys = pos+1, so entries past the new length are never consulted.
-//   - An agent turn is a strict PREFIX EXTENSION: turn N+1 is turn N plus the assistant's tool
-//     call plus the tool result. Measured deltas in a real /v1/messages loop were 45 and 51
-//     tokens against prompts of 255 and 306.
-//
-// So the whole mechanism is bookkeeping: remember which ids are committed to the cache, and
-// prefill only the divergent suffix.
-//
-// CORRECTNESS IS THE ENTIRE RISK. A wrong prefix match produces confidently wrong output with
-// no error anywhere — no exception, no NaN, just a reply conditioned on someone else's
-// context. Four rules keep it honest:
-//
-//  1. Match on TOKEN IDS, never text. A client that edits its last message shifts
-//     tokenisation, and the longest-common-prefix is exactly what absorbs that.
-//  2. The recorded ids are cleared to nil (meaning "unknown, cold-prefill next time") on ANY
-//     path that is not a fully completed generation — an error, a cancellation, a resident
-//     claim lost to a concurrent generation. Conservative by construction: the failure mode of
-//     forgetting is a slow turn, and the failure mode of remembering wrongly is a wrong answer.
-//  3. At least one token is always prefilled, so the seed logits that start decode are always
-//     freshly computed rather than assumed.
-//  4. The record names the WEIGHTS as well as the ids (audit C-02, 2026-09-10). A LoRA adapter
-//     changes every targeted projection, hence the residual stream, hence every later layer's
-//     K/V — so an identical id prefix built under a different adapter (or none) is someone
-//     else's context exactly as surely as a different prompt is. residentCommitIDs records the
-//     bound *loraRuntime and residentReuseLen refuses on any mismatch, which keeps
-//     adapter->same-adapter reuse (the agent-loop win) while closing every crossing. Pointer
-//     identity is sound: LoadAdapter always builds a fresh runtime and registerAdapter RETIRES
-//     the one it displaces rather than freeing it, so a reload under one name never compares equal.
+//  1. Match on token ids, never text. A client that edits its last message shifts tokenisation, and the longest common
+//     prefix is what absorbs that.
+//  2. The recorded ids are cleared to nil ("unknown, cold-prefill next time") on any path that is not a fully
+//     completed generation: an error, a cancellation, a resident claim lost to a concurrent generation. Forgetting
+//     costs a slow turn; remembering wrongly gives a wrong answer.
+//  3. At least one token is always prefilled, so the seed logits that start decode are freshly computed.
+//  4. The record names the weights as well as the ids. A LoRA adapter changes every targeted projection and so every
+//     later layer's K/V, so an identical id prefix built under a different adapter (or none) is someone else's
+//     context. residentCommitIDs records the bound *loraRuntime and residentReuseLen refuses on any mismatch, which
+//     keeps same-adapter reuse and closes every crossing. Pointer identity is sound: LoadAdapter always builds a fresh
+//     runtime and registerAdapter retires the one it displaces rather than freeing it, so a reload under one name
+//     never compares equal.
 
 // residentReuseDisabled is the escape hatch / A-B switch, same convention as
 // GOINFER_NO_GREEDY_FASTPATH and GOINFER_NO_KVONLY_PREFILL.
 func (m *Model) residentReuseDisabled() bool { return m.knobs.get(knobNoResidentReuse) != "" }
 
-// residentImageBlock records one image block committed to the resident KV: its absolute
-// position span within resIDs and a content hash of the raw image bytes that produced it (P9a,
-// docs/multimodal.md). Every position inside [start,end) attended every OTHER position in the
-// same block under a bidirectional mask during its CPU prefill (prefillLogitsVL/
-// prefillLogitsQwenVL) — there is no such thing as "half the block's KV, causally consistent
-// with a differently-completed other half," so a reuse match must treat the block as one atomic
-// unit: either the whole span verifies and gets skipped together, or none of it does.
+// residentImageBlock records one image block committed to the resident KV: its absolute position span within resIDs and
+// a content hash of the raw image bytes that produced it (docs/multimodal.md). Every position inside [start,end)
+// attended every other position in the block under a bidirectional mask during its CPU prefill, so a reuse match must
+// treat the block as one atomic unit: either the whole span verifies and is skipped together, or none of it is.
+//
+// hash == 0 means "no claim": a caller with no reuse story of its own may pass 0, and residentReuseLen's block-match
+// guard requires blk.hash != 0 before comparing, so two callers who both pass 0 cannot satisfy claim.Hash == blk.hash
+// by coincidence. The block is still recorded with hash 0 rather than omitted: an unrecorded region falls through to
+// the per-position id comparison, which would treat two different images sharing a slot as identical, because image
+// placeholder ids are content-independent. Recording keeps the atomicity check in play; the guard ensures it never
+// emits a false positive.
 type residentImageBlock struct {
 	start, end int
 	hash       uint64
 }
-
-// hash == 0 means "no claim" (M-06, audit-2026-09-10.md): a caller with no reuse story of its
-// own may pass 0 for imgHash, and residentReuseLen's block-match guard requires blk.hash != 0
-// before comparing against a claim's hash — otherwise two callers who both pass 0 satisfy
-// `claim.Hash == blk.hash` by coincidence (0 == 0) and the block is treated as verified when
-// nothing was actually checked. The block itself is still RECORDED with hash 0 (residentCommitIDs
-// makes no exception for it) rather than omitted: an unrecorded region falls through to the
-// plain per-position id comparison, which is exactly M-07's hazard — image placeholder ids are
-// content-independent, so that comparison would silently treat two different images sharing a
-// slot as identical. Recording the block (even hash-less) keeps the atomicity check in play; the
-// guard here just ensures it can never emit a false positive.
 
 // residentImageClaim describes one image block in the PROMPT being checked for reuse.
 // GenerateVL/GenerateQwenVL each produce exactly one claim per call (today's one-image-per-turn
@@ -102,26 +78,17 @@ func (m *Model) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []re
 	if lora != resLora {
 		return 0 // rule 4: same ids, different weights — the KV is not this generation's
 	}
-	// RECURRENT FAMILIES CAN ONLY REUSE AN EXACT, STRICT EXTENSION. The three rules below (LCP
-	// matching, capping at len(prompt)-1) police WHICH PREFIX of the resident KV is matched for an
-	// attention-only family; none of them can help a recurrent one, because its state cannot be
-	// rewound to an arbitrary earlier position at all. A Gated DeltaNet's conv ring and matrix
-	// state (and Mamba-2's, and LFM2's conv window) are mutated in place per token with no
-	// per-position history, and the resident path re-zeroes them only at pos == 0. So the ONLY
-	// safe continuation point is exactly len(m.resIDs): the live recurrent state right now already
-	// equals the state after resIDs (residentCommitIDs's invariant, held by R-00 forgetting on
-	// every other writer), so a prompt that is resIDs plus at least one new token can decode
-	// forward from there with no rewind needed at all — which is exactly what an agent turn is
-	// (previous prompt + reply + tool result, a strict prefix extension).
+	// Recurrent families can only reuse an exact, strict extension. The attention-only matching below (longest common
+	// prefix, capped at len(prompt)-1) cannot help a recurrent family, whose state cannot be rewound to an arbitrary
+	// earlier position: a Gated DeltaNet's conv ring and matrix state (and Mamba-2's, and LFM2's conv window) are mutated
+	// in place per token with no per-position history, and the resident path re-zeroes them only at pos == 0. The only
+	// safe continuation point is exactly len(resIDs), where the live recurrent state already equals the state after
+	// resIDs (residentCommitIDs's invariant, held by every other writer calling residentForgetIDs). A prompt that is
+	// resIDs plus at least one new token can decode forward from there, which is what an agent turn is.
 	//
-	// Anything else — an edited earlier message, a shorter resend, an identical resend — has no
-	// safe continuation point (the state would have to run BACKWARD) and falls to 0, cold. An
-	// identical resend is the qwen3.6-35B-A3B repro that motivated the original blanket refusal:
-	// measured 2026-09-02, repeated identical greedy prompts diverged at token 0, differently on
-	// every repeat, decaying to a one-token reply, with no error anywhere. len(prompt) <= n below
-	// is exactly that case (no new token to extend with) and keeps falling to 0.
-	// TestPagerDeterminism is the gate (reuse-on red before this guard, green after; still green
-	// with this narrower rule since an identical resend has len(prompt) == n).
+	// Anything else (an edited earlier message, a shorter resend, an identical resend) has no safe continuation point,
+	// because the state would have to run backward, and returns 0. An identical resend has len(prompt) == n and takes that
+	// branch: reusing there diverged from token 0 with no error. TestPagerDeterminism is the gate.
 	if m.hasRecurrentState() {
 		n := len(resIDs)
 		if len(prompt) <= n {
@@ -132,13 +99,11 @@ func (m *Model) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []re
 				return 0
 			}
 		}
-		// Image blocks (P8a). The placeholder id is the SAME for every image, so an id match over an
-		// image block proves nothing about which image the recurrent state was built from, and the
-		// state cannot be rewound to an image boundary to repair a wrong guess. So the extension is
-		// honoured only if the committed blocks and this prompt's claims are the same set over the
-		// reused span: every committed block has a claim with the same start, length and NONZERO
-		// hash, and no claim reaches into [0, n) without a committed block behind it (a prompt saying
-		// "an image is here" over positions the state saw as plain tokens). Anything else is cold.
+		// Image blocks. The placeholder id is the same for every image, so an id match over an image block proves nothing about
+		// which image the recurrent state was built from, and the state cannot be rewound to an image boundary to repair a
+		// wrong guess. So the extension is honoured only if the committed blocks and this prompt's claims are the same set
+		// over the reused span: every committed block has a claim with the same start, length and nonzero hash, and no claim
+		// reaches into [0, n) without a committed block behind it. Anything else is cold.
 		for _, blk := range resImgBlocks {
 			c, ok := findImageClaim(imgs, blk.start)
 			if !ok || blk.hash == 0 || c.Hash != blk.hash || c.Len != blk.end-blk.start {
@@ -218,12 +183,10 @@ func (m *Model) residentSlotCount() int {
 }
 
 // residentAcquire binds the resident KV slot a generation over prompt will use and returns how many leading tokens of
-// prompt that slot already holds (residentReuseLen's contract, for the slot it bound). With one slot it IS
+// prompt that slot already holds (residentReuseLen's contract, for the slot it bound). With one slot it is
 // residentReuseLen. With several it scores every slot and binds pickResidentSlot's choice, parking the previously bound
-// slot's bookkeeping. Call it where residentReuseLen was called — under the resident claim, before the forget.
-//
-// Switching slots also clears resDrafterSynced: a block drafter's own context follows ONE conversation, and it is the
-// one the previous slot was serving.
+// slot's bookkeeping (residentBind). Call it where residentReuseLen was called: under the resident claim, before the
+// forget.
 func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
 	reuse, _ := m.residentAcquireSlot(prompt, imgs, lora, nil)
 	return reuse
@@ -236,11 +199,12 @@ func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lor
 	return m.declineShortLeadReuse(prompt, reuse), slot
 }
 
-// minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels (ResidentFastPrefill), for a prompt that will run them. Below it
-// the reused rows are a SHARED LEAD (a chat template's preamble, a few tokens left by an unrelated short request), re-prefilling them costs next to nothing, and keeping them
-// can change the reply: they were computed by the exact kernels while the rest of the prompt runs fast. Observed lead lengths were 3 to 16 tokens (the chat header under the
-// default templates, ~20 to 25 with a default system prompt), so 64 leaves a margin; a longer reuse is a continuation and is kept. Not an Options field: it is a correctness
-// margin, not an operator choice.
+// minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels
+// (ResidentFastPrefill), for a prompt that will run them. Below it the reused rows are a shared lead (a chat
+// template's preamble, a few tokens left by an unrelated short request): re-prefilling them costs next to nothing, and
+// keeping them can change the reply, because they were computed by the exact kernels while the rest of the prompt runs
+// fast. A longer reuse is a continuation and is kept. Not an Options field: it is a correctness margin, not an
+// operator choice.
 const minLeadReuseFast = 64
 
 // declineShortLeadReuse zeroes a short reuse when the resident prefills this prompt on non-exact kernels, so the prompt is prefilled whole by one kernel class. Every caller
@@ -319,10 +283,10 @@ func (m *Model) residentBind(slot int) error {
 
 // pickResidentSlot chooses a slot for a prompt from each slot's reuse score (tokens of the prompt it holds), its
 // committed length, and its last-use tick. The best-scoring slot wins when reusing it keeps at least as much of it as
-// the new suffix will overwrite — a continuation of that slot's own conversation. A match shorter than what it would
+// the new suffix will overwrite: a continuation of that slot's own conversation. A match shorter than what it would
 // discard is a shared lead (a chat template's preamble), not a continuation: taking it would truncate another
-// conversation's history to save re-prefilling a few tokens, the same trap serve's session LRU fell into
-// (internal/serveapp pickSession, 2026-09-26). Such a prompt takes an empty slot, else the least recently used one.
+// conversation's history to save re-prefilling a few tokens, the trap serve's session LRU also had to avoid
+// (internal/serveapp pickSession). Such a prompt takes an empty slot, else the least recently used one.
 //
 // busy (nil: none) marks slots another running generation holds (MC3); they are never picked. -1 when all are busy.
 func pickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
@@ -360,12 +324,11 @@ func findImageClaim(imgs []residentImageClaim, pos int) (residentImageClaim, boo
 	return residentImageClaim{}, false
 }
 
-// residentCommitIDs records the exact token sequence now committed to the resident KV: the
-// prompt followed by everything decode emitted, since decode writes its own K/V at each
-// position as it goes. newBlocks records the image blocks this turn added or re-verified, in
-// prompt order (nil for plain text — the common case; several for a multi-image turn, S11).
+// residentCommitIDs records the exact token sequence now committed to the resident KV: the prompt followed by
+// everything decode emitted, since decode writes its own K/V at each position as it goes. newBlocks records the image
+// blocks this turn added or re-verified, in prompt order (nil for plain text; several for a multi-image turn).
 //
-// Called ONLY on the fully-completed path. Everything else leaves resIDs (and resImgBlocks) nil.
+// Called only on the fully completed path. Everything else leaves resIDs (and resImgBlocks) nil.
 func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentImageBlock, lora *loraRuntime) {
 	ids := make([]int, 0, len(prompt)+len(generated))
 	ids = append(ids, prompt...)
@@ -392,5 +355,5 @@ func (m *Model) residentForgetIDs() {
 	m.resIDsLora = nil
 	m.resIDs = nil
 	m.resImgBlocks = nil
-	m.resDrafterSynced = nil // P-05: any resident write invalidates a block drafter's own reuse too
+	m.resDrafterSynced = nil // any resident write invalidates a block drafter's own reuse too
 }

@@ -12,7 +12,7 @@ import (
 // the *exact* per-position acceptance (a low-variance continuous signal), not just
 // the realized Accepted bit. For the n-gram drafter q is the point mass on the
 // proposed token, so TV(p, q) = 1 − p(token) and AcceptProb = p(token); QTop1 is 1.
-// Field json tags match the §06 schema so dumps are directly analyzable offline.
+// Field json tags match the docs/spec/06 schema so dumps are directly analyzable offline.
 type SpecTrace struct {
 	Step       int     `json:"step"`            // verify round index within the sequence
 	Pos        int     `json:"pos"`             // depth within the draft block (0-based)

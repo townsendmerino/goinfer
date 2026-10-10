@@ -10,12 +10,10 @@ import "slices"
 // sampler's distribution exactly (in-distribution lossless), where p is the
 // sampler's *actual* draw distribution — temperature + top-k/top-p/min-p.
 
-// distVector returns the sampler's normalized next-token distribution for one
-// logit row as a full-vocab vector (0 outside the kept set, summing to 1) — the
-// exact distribution Sample draws from. It is history-independent: it does NOT
-// apply the repetition/presence/frequency penalties, LogitBias, or LogitProcessor
-// (those depend on per-position history, which the speculative verify does not yet
-// thread — genNgram rejects them on the sampled path). Greedy (temp ≤ 0) returns
+// distVector returns the sampler's normalized next-token distribution for one logit row as a full-vocab vector (0
+// outside the kept set, summing to 1): the exact distribution Sample draws from. It is history-independent: it does not
+// apply the repetition, presence or frequency penalties, LogitBias or LogitProcessor (distVectorHist threads the
+// history-dependent ones per position; a LogitProcessor is refused on the speculative path). Greedy (temp <= 0) returns
 // the argmax as a point mass.
 func (s *Sampler) distVector(logits []float32) []float64 {
 	return s.distVectorFrom(logits)
@@ -25,19 +23,16 @@ func (s *Sampler) distVector(logits []float32) []float64 {
 // have ALREADY had any history-dependent transforms (bias/penalties) applied.
 func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 	if s.p.Temperature <= 0 {
-		// P-14: distBufN reuses one full-vocab scratch across verify positions instead
-		// of a fresh make() each call — safe because the caller (spec_ngram.go's verify
-		// loop) consumes the returned vector synchronously before requesting the next.
+		// distBufN reuses one full-vocab scratch across verify positions instead of a fresh make() each call: safe because the
+		// caller (genNgramInto's verify loop) consumes the returned vector synchronously before requesting the next.
 		v := s.distBufN(len(logits))
 		clear(v)
 		v[argmax(logits)] = 1
 		return v
 	}
 	if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {
-		// P-04 (audit-2026-09-10): P-14 (09-02) reused distBufN on the greedy and filtered
-		// branches above/below but left this one — the server's DEFAULT sampling shape
-		// (temperature 1, no top_k/top_p/min_p) — calling the always-allocating softmaxStable
-		// directly. softmaxStableInto shares the same scratch the other two branches already use.
+		// The server's default sampling shape (temperature 1, no top_k/top_p/min_p): softmaxStableInto shares the scratch the
+		// other two branches use.
 		return softmaxStableInto(logits, s.p.Temperature, s.distBufN(len(logits))) // drawFull draws from this directly
 	}
 	// Same canonical selection the plain sampler uses (topFilterLogits), so the
@@ -62,13 +57,13 @@ func (s *Sampler) distVectorHist(logits []float32, history []int) []float64 {
 	return s.distVectorFrom(s.histLogits(logits, history))
 }
 
-// histLogits returns the logits with the history-dependent transforms (bias, penalties over `history`)
-// applied — the row itself when none is configured, otherwise a reused scratch copy (P-14).
+// histLogits returns the logits with the history-dependent transforms (bias, penalties over history) applied: the row
+// itself when none is configured, otherwise a reused scratch copy.
 func (s *Sampler) histLogits(logits []float32, history []int) []float32 {
 	if !s.needsHistory() {
 		return logits
 	}
-	work := s.specLogitsBufN(len(logits)) // P-14: reused scratch instead of a fresh slices.Clone
+	work := s.specLogitsBufN(len(logits)) // reused scratch instead of a fresh clone
 	copy(work, logits)
 	s.applyLogitBias(work)
 	if s.penaltiesConfigured() {
