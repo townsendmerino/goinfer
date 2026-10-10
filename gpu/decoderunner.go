@@ -13,8 +13,7 @@ import (
 )
 
 // ssmStopLayerForTest truncates a newly built decode plan after this layer (-1 = every layer): the
-// resident-SSM bring-up's layer-sweep seam, set only by tests in this package
-// (mamba_layersweep_test.go). It was the env var GOINFER_SSM_STOP_LAYER until 2026-09-24.
+// resident-SSM layer-sweep seam, set only by tests in this package (mamba_layersweep_test.go).
 var ssmStopLayerForTest = -1
 
 // DecodeRunner is the production one-command-buffer decode forward: it builds every
@@ -28,22 +27,16 @@ type DecodeRunner struct {
 	steps                []runStep
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
-	lmHead               decodeWeight // kept for LMHeadForTest (G38 root-cause isolation); gemv() closures already capture it too
-	smp                  *gumbelState // device Gumbel-max sampling resources, built on first RunSample (R7b)
+	lmHead               decodeWeight // kept for LMHeadForTest; the gemv() closures already capture it too
+	smp                  *gumbelState // device Gumbel-max sampling resources, built on first RunSample
 	vocab                int
 	uniScratch           [16]uint32
-	// logitsHost is the reused host-side logits buffer Run copies the mapped staging range
-	// into and returns — allocated once (vocab is fixed for the runner's life) instead of a
-	// make([]float32, vocab) every token. The returned slice is reused across calls, so the
-	// caller must consume it before the next Run (the single-request decode loop does, and the
-	// two production callers — backend copy(dst,out) and residency.Forward → generateInto —
-	// both consume per-token). Mirrors CUDA's pinned host scratch and Metal's reused logitsHost.
+	// logitsHost is the reused host-side logits buffer Run fills and returns, allocated once (vocab is fixed for the
+	// runner's life). The returned slice is overwritten by the next Run, so the caller must consume it first.
 	logitsHost []float32
-	// geomVariants is the number of distinct attention geometries in the resident plan
-	// (len of geomFor's cache): 1 for every uniform-geometry family, 2 for Gemma 4's
-	// local/global interleave. A refactor that allocated one uniform per layer instead of
-	// per distinct tuple would leave logits byte-identical while quietly multiplying this
-	// by the layer count — the GeomVariantCount test asserts it stays 1 for uniform models.
+	// geomVariants counts the distinct attention geometries in the plan (geomFor's cache): 1 for every uniform-geometry
+	// family, 2 for Gemma 4's local/global interleave. Allocating one uniform per layer instead of per distinct tuple would
+	// leave logits byte-identical while multiplying it by the layer count; the GeomVariantCount tests assert it stays 1.
 	geomVariants int
 	keep         []func()
 
@@ -57,24 +50,18 @@ type DecodeRunner struct {
 	// (gpu/mamba_resident_capture_test.go). nil for non-hybrid; zero production cost.
 	mcapProj, mcapConv, mcapY, mcapGated *wgpu.Buffer
 
-	// Per-layer residual-stream capture (GOINFER_GPU_CAPTURE=1, docs/tasks/
-	// task-webgpu-nogqa-decode-bug.md): the attention context (pre-o-proj, [nH*hd]), the
-	// residual after the attention sublayer's add and after the MLP's add ([hidden] each), per
-	// generic-attention layer, copied by an extra kv-store dispatch recorded into the plan at
-	// build. They hold the LAST run's values; ReadCapture copies them back. This is the WebGPU
-	// twin of decoder.Model.ForwardSubCapture's subCtx/subAttn/subMLP so a resident-vs-CPU
-	// divergence can be localised to a sublayer of a layer in ONE run (CLAUDE.md: "prefer
-	// differencing per layer over reasoning from final logits"). nil unless the env var is set;
-	// no dispatch is recorded and nothing is allocated otherwise.
+	// Per-layer residual-stream capture, built only when GOINFER_GPU_CAPTURE is set (nothing is allocated or recorded
+	// otherwise): for each generic-attention layer, the attention context (pre-o-proj, [nH*hd]) and the residual after the
+	// attention add and after the MLP add ([hidden] each), copied by an extra kv-store dispatch recorded into the plan. They
+	// hold the LAST run's values; ReadCapture reads them back. The WebGPU twin of decoder.Model.ForwardSubCapture, so a
+	// resident-vs-CPU divergence can be localised to a sublayer of a layer in one run
+	// (docs/completed/task-webgpu-nogqa-decode-bug.md).
 	capCtx, capAttn, capMLP []*wgpu.Buffer
 	capCtxN, capHidden      int
 
-	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — see lora_resident.go).
-	// baseSteps is the pristine plan built above (no adapter) — SetAdapter never mutates it,
-	// only rebuilds r.steps from it plus loraHooks, so clearing an adapter is a cheap restore
-	// rather than a re-derivation. loraHooks are recorded in construction order (which is
-	// strictly increasing afterIdx order), one per (layer, projection) this arch's dense forward
-	// exposes; loraLayers is nil until SetAdapter binds one.
+	// Compute-time LoRA (lora_resident.go). baseSteps is the pristine adapter-free plan: SetAdapter never mutates it, only
+	// rebuilds r.steps from it plus loraHooks (one per (layer, projection) the dense forward exposes, recorded in strictly
+	// increasing afterIdx order), so clearing an adapter is a cheap restore. loraLayers is nil until SetAdapter binds one.
 	baseSteps  []runStep
 	loraHooks  []loraHook
 	loraLayers []loraRunLayer
@@ -123,10 +110,9 @@ const (
 	nemoKMamba
 	nemoKAttn
 	nemoKMLP
-	// nemoKMoE (G7 part 2, docs/tasks/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's
-	// fourth block kind — routed non-gated relu² experts (NOT moeMLP's gated SwiGLU; this
-	// family's experts have only up_proj/down_proj) plus an always-on ungated shared expert of
-	// the same shape. Single-op-per-block like the other three: no mixer, no separate FFN pass.
+	// nemoKMoE is Nemotron-H's fourth block kind: routed NON-gated relu² experts (up_proj/down_proj only, unlike
+	// moeMLP's gated SwiGLU) plus an always-on ungated shared expert of the same shape. Single-op-per-block like the other
+	// three: no mixer, no separate FFN pass.
 	nemoKMoE
 )
 
@@ -140,28 +126,17 @@ type posUni struct {
 	fill func(dst *[16]uint32, pos, ropePos int) int
 }
 
-// attnGeom is one distinct per-layer attention shape: head_dim (hd), KV-head count
-// (nKV), rotary half-width (half = rotaryDim/2), and the attention_k_eq_v flag (kEqV).
-// Gemma 4 interleaves two shapes (local hd=256/nKV=8; global hd=512/nKV=2, K=V); every
-// other family has exactly one. The per-token uniforms that carry these dims (v-store,
-// attn, the windowed-attn variant, and — keyed additionally by rope scale — q-rope /
-// k-rope-store / the fused qkv-finalize) are deduplicated by value: geomFor caches one
-// attnGeom per distinct {hd, nKV, half, kEqV} tuple, so a uniform-geometry model
-// collapses to a single entry with the same buffers, bind groups, and dispatch it had
-// before this seam existed. Byte-identity for non-Gemma models is thus structural (a
-// shared *attnGeom), not asserted.
+// attnGeom is one distinct per-layer attention shape: head_dim (hd), KV-head count (nKV), rotary half-width
+// (half = rotaryDim/2) and the attention_k_eq_v flag (kEqV). Gemma 4 interleaves two shapes (local hd=256/nKV=8; global
+// hd=512/nKV=2, K=V); every other family has one. geomFor caches one attnGeom per distinct {hd, nKV, half, kEqV} tuple,
+// and the per-token uniforms that carry these dims (v-store, attn, the windowed-attn variant and, additionally keyed by
+// rope scale, q-rope / k-rope-store / the fused qkv-finalize) hang off it. A uniform-geometry model therefore collapses
+// to a single shared *attnGeom, so byte-identity for non-Gemma models is structural, not asserted.
 //
-// kEqV is in the key because the geom OWNS the v-store uniforms (vStoreUni/vStoreI8Uni):
-// two layers with equal {hd, nKV, half} but different attention_k_eq_v want different
-// v-store behaviour — a K=V layer derives V from K instead of storing a projected V — so
-// they must not share a geom. The K=V forward itself (V = v_norm(k), no v_proj, the
-// attention V binding aliasing the K cache) lands with Gemma-4 admission, where v_norm
-// exists and it is testable; keying on it now keeps that future branch sound.
-//
-// nH (query-head count) is deliberately NOT in the key: it is a model-level constant, and
-// GQA still tracks per-layer nKV because the group ratio is recomputed as nH/nKV per geom
-// (see geomFor's attnUni). A family with per-layer QUERY-head counts would have to add nH
-// to the key too; none on this seam has that (Gemma 4 is 16 query heads in both variants).
+// kEqV is in the key because the geom OWNS the v-store uniforms: a K=V layer derives V from K instead of storing a
+// projected V, so it must not share a geom with an otherwise equal layer. nH (query-head count) is deliberately NOT in
+// the key: it is a model-level constant and the GQA ratio is recomputed as nH/nKV per geom. A family with per-layer
+// QUERY-head counts would have to add nH to the key.
 type attnGeom struct {
 	hd, nKV, half, kvDim             int
 	kEqV                             bool
@@ -181,42 +156,33 @@ type runLayer struct {
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
 
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): gpt-oss's o-proj bias (FeatOutBias) and Gemma's
-	// sandwich-norm post-sublayer norms (FeatSandwichNorm) — both nil ⇒ off, same "optional,
-	// nil-checked" convention as qBias/qNorm above. Both defeat the fused gemvAdd residual
-	// epilogue: the o-proj/down-proj GEMV runs bare, then bias/norm applies, THEN a separate
-	// residual add via biasAdd(xd, out, hidden) (biasAdd is really "xd += out", see its own doc).
+	// gpt-oss's o-proj bias (FeatOutBias) and Gemma's sandwich post-sublayer norms (FeatSandwichNorm); nil ⇒ off. Both
+	// defeat the fused gemvAdd residual epilogue: the o-proj/down-proj GEMV runs bare, then the bias/norm applies, THEN a
+	// separate residual add via biasAdd (xd += out).
 	oBias                     *wgpu.Buffer // gpt-oss o_proj bias [hidden]; nil ⇒ none
 	postAttnNorm, postMLPNorm *wgpu.Buffer // Gemma sandwich post-sublayer norms [hidden]; nil ⇒ none
 
-	// attnSinks/hasSink: gpt-oss's per-head learned attention sink [nH] (FeatAttnSink). UNLIKE
-	// every other "nil ⇒ off" field on this struct, attnSinks is ALWAYS bound (a real one-
-	// element dummy for every non-gpt-oss family) and hasSink is the actual on/off flag — WGSL
-	// bind groups can't bind a null storage buffer, so this mirrors Metal's exact convention
-	// (metal/model.go's L.attnSinks/L.uHasSink) rather than CUDA's null-pointer sentinel.
+	// attnSinks/hasSink: gpt-oss's per-head learned attention sink [nH] (FeatAttnSink). Unlike every other "nil ⇒ off" field
+	// here, attnSinks is ALWAYS bound (a one-element dummy for every other family) and hasSink is the on/off flag, because
+	// WGSL bind groups cannot bind a null storage buffer. This is Metal's convention, not CUDA's null-pointer sentinel.
 	attnSinks *wgpu.Buffer
 	hasSink   bool
-	isLocal   bool    // sliding-window (local) attention layer (Lever C6); false ⇒ full
-	ropeScale float32 // per-layer RoPE cos/sin scale = mscale (Lever C7); 0 ⇒ 1.0
+	isLocal   bool    // sliding-window (local) attention layer; false ⇒ full
+	ropeScale float32 // per-layer RoPE cos/sin scale = mscale; 0 ⇒ 1.0
 
-	// Per-layer attention geometry (P1, own-forward residency bridge): this layer's
-	// head_dim / KV-heads / rotaryDim-half + attention_k_eq_v. Zero ghd ⇒ use the
-	// model-level nH-relative shape (every non-Gemma family leaves these unset); gKEqV is
-	// read independently (a K=V layer always sets its full tuple). The plan loop resolves
-	// these into a shared *attnGeom via geomFor (per-layer local, deduped by value); kvDim
-	// for this layer is gnKV*ghd.
+	// Per-layer attention geometry: this layer's head_dim / KV-heads / rotaryDim-half and attention_k_eq_v. Zero ghd ⇒ the
+	// model-level nH-relative shape; gKEqV is read independently (a K=V layer always sets its full tuple). The plan loop
+	// resolves these into a shared *attnGeom via geomFor; this layer's kvDim is gnKV*ghd.
 	ghd, gnKV, ghalf int
 	gKEqV            bool
 	layerScalar      float32 // Gemma 4 dense per-layer output scalar (1 if absent/unscaled)
-	// vNorm: a Gemma 4 layer that owns its K/V but is NOT K=V takes the scale-less v_norm on its v_proj output, as HF and the
-	// CPU do on every K/V-owning layer (S1.0, docs/tasks/task-multimodal-support-2026-10.md). K=V layers always had it (gKEqV).
+	// vNorm: a Gemma 4 layer with its own v_proj (not K=V) applies the scale-less v_norm to the v_proj output, as the CPU
+	// does on every K/V-owning layer; K=V layers always do (gKEqV). See g4DropVNormForTest.
 	vNorm bool
 
-	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
-	// mixture of experts instead of the dense gate/up/down above. router scores all
-	// nE experts; the on-GPU top-k (moeRoute) writes the chosen indices/weights,
-	// then k indexed GEMVs per projection read the right expert out of the stacked
-	// buffers (expGate/expUp/expDown) and the down-combine folds the router weight.
+	// MoE: when isMoE, this layer's FFN is a sparse mixture of experts instead of the dense gate/up/down above. router scores
+	// all nE experts; the on-GPU top-k (moeRoute) writes the chosen indices/weights, then k indexed GEMVs per projection read
+	// the right expert out of the stacked buffers (expGate/expUp/expDown) and the down-combine folds the router weight.
 	isMoE                   bool
 	router                  decodeWeight         // [nE, hidden] router logits
 	routerBias              *wgpu.Buffer         // [nE] selection bias (DeepSeek/GLM); nil ⇒ none
@@ -225,27 +191,22 @@ type runLayer struct {
 	// gateUpBias is [nE*2*inter] (gate then up per expert); downBias is [nE*hidden].
 	gateUpBias, downBias *wgpu.Buffer
 
-	// Always-on shared expert (Lever C3d, qwen2_moe / GLM). nil shGate ⇒ no shared
-	// expert (Mixtral). shGateW is the [1,hidden] sigmoid gate for the qwen2_moe gated
-	// combine; nil ⇒ GLM/DeepSeek add the shared expert ungated (plain residual).
+	// Always-on shared expert: nil shGate ⇒ none. shGateW is the [1,hidden] sigmoid gate of the gated combine; nil ⇒ the
+	// shared expert is added ungated (plain residual).
 	shGate, shUp, shDown, shGateW decodeWeight
 
-	// MLA attention (Lever C4c, DeepSeek/Kimi). Populated when runModel.mla != nil, in
-	// which case the runner takes the latent-attention path instead of the q/k/v/o
-	// block above. mlaQA/mlaQANorm/mlaQB are the q-LoRA bottleneck (nil mlaQA ⇒ the
-	// direct mlaQ, V2-Lite); mlaKVA down-projects to the latent, mlaKVANorm normalizes
-	// it; mlaWUK/mlaWUV are the per-head absorb/lift f32 weights; mlaO is the output
-	// projection; latCache is this layer's compressed-latent KV cache [ctxCap*latDim].
+	// MLA attention. Populated when runModel.mla != nil, in which case the runner takes the latent-attention path instead of
+	// the q/k/v/o block above. mlaQA/mlaQANorm/mlaQB are the q-LoRA bottleneck (nil mlaQA ⇒ the direct mlaQ); mlaKVA
+	// down-projects to the latent, mlaKVANorm normalizes it; mlaWUK/mlaWUV are the per-head absorb/lift f32 weights; mlaO is
+	// the output projection; latCache is this layer's compressed-latent KV cache [ctxCap*latDim].
 	mlaQA, mlaQB, mlaQ, mlaKVA, mlaO decodeWeight
 	mlaQANorm, mlaKVANorm            *wgpu.Buffer
 	mlaWUK, mlaWUV                   *wgpu.Buffer
 	latCache                         *wgpu.Buffer
 
-	// Mamba-2 SSM mixer (P5b, Granite-4.0-H/Nemotron-H hybrids). When isMamba, this
-	// layer's sequence-mixer is the resident SSM step (mamba.go kernels) instead of
-	// attention: in/out_proj are W8A8; convW/convB/headP/normW are f32 resident; win
-	// (causal-conv ring) + ssm (selective state) are build-once persistent state,
-	// updated in place per token and reset per generation. ResidMul is folded into
+	// Mamba-2 SSM mixer. When isMamba, this layer's sequence-mixer is the resident SSM step (mamba.go kernels) instead of
+	// attention: in/out_proj are W8A8; convW/convB/headP/normW are f32 resident; win (causal-conv ring) + ssm (selective state)
+	// are build-once persistent state, updated in place per token and reset per generation. ResidMul is folded into
 	// mambaOutProj's scale (the residual add). isMamba=false ⇒ attention layer (above).
 	isMamba bool
 	// Nemotron-H single-op-per-block: each layer is exactly ONE op (no mixer+FFN pairing).
@@ -255,13 +216,11 @@ type runLayer struct {
 	mambaConvW, mambaConvB, mambaHeadP, mambaNormW *wgpu.Buffer
 	mambaWin, mambaSSM                             *wgpu.Buffer
 
-	// Gated-DeltaNet mixer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8). When isDeltaNet, this
-	// layer's mixer is the recurrent delta rule (deltanet.go kernels) instead of attention.
-	// The causal conv is Mamba-2's — same shape, same SiLU, same ring window — so it reuses
-	// mambaConvW/mambaWin and binds an all-zero convB (DeltaNet's conv is bias-free).
-	// dnState is the [nv*hv*hk] recurrent state, TRANSPOSED relative to the CPU's [hk,hv]
-	// so each thread owns a contiguous row; build-once, updated in place, reset per
-	// generation alongside mambaWin.
+	// Gated-DeltaNet mixer. When isDeltaNet, this layer's mixer is the recurrent delta rule (deltanet.go kernels) instead of
+	// attention. The causal conv is Mamba-2's (same shape, same SiLU, same ring window), so it reuses mambaConvW/mambaWin and
+	// binds an all-zero convB (DeltaNet's conv is bias-free). dnState is the [nv*hv*hk] recurrent state, TRANSPOSED relative
+	// to the CPU's [hk,hv] so each thread owns a contiguous row; build-once, updated in place, reset per generation alongside
+	// mambaWin.
 	isDeltaNet                            bool
 	dnQKV, dnZ, dnOut                     decodeWeight // the three dominant projections, quantized
 	dnB, dnA                              decodeWeight // the two small gate projections
@@ -283,19 +242,13 @@ type runModel struct {
 	mla           *mlaRunParams   // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
 	mamba         *mambaRunParams // non-nil ⇒ hybrid: some layers (runLayer.isMamba) are SSM mixers
 	dnet          *dnetRunParams  // non-nil ⇒ hybrid: some layers (runLayer.isDeltaNet) are DeltaNet mixers
-	ropeHalf      int             // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
-	slidingWindow int             // >0 ⇒ local layers attend only the last N positions (Lever C6)
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU, model-level like ropeHalf/
-	// slidingWindow above (every gated-MLP family shares one activation). Deliberately a bool
-	// with SiLU as the zero value, NOT decoder.ActKind's own ordinal (where 0=GELU-tanh,
-	// 1=SiLU) — a runModel built by hand (every gpu/*_test.go that constructs one directly,
-	// rather than through BuildResident) leaves this at its Go zero value, and that zero value
-	// must be the behavior every one of those tests already assumed (SiLU), not silently
-	// switch them to an activation this row just added. Measured: mirroring decoder's own
-	// ordinal directly broke TestDecodeRunnerW4A8_parity et al. (cosine 0.9995, not ~1.0) the
-	// first time this was wired, because their hand-built runModel left the field at 0 = GELU
-	// under that convention. residency.go sets this to `m.GatedActResident() == 0` — true only
-	// for the family that actually needs it.
+	ropeHalf      int             // rotated pairs per head = rotaryDim/2 (partial RoPE); 0 ⇒ HeadDim/2
+	slidingWindow int             // >0 ⇒ local layers attend only the last N positions
+	// gatedGELU (FeatGatedGELU) selects gelu_tanh(gate)·up over the default SiLU in the gated MLP; model-level like
+	// ropeHalf/slidingWindow, since every gated-MLP family shares one activation. It is deliberately a bool with SiLU as the
+	// zero value, NOT decoder.ActKind's ordinal (where 0 = GELU-tanh): a runModel built by hand (every gpu/*_test.go that
+	// does not go through BuildResident) leaves it at its Go zero value, and that must stay the SiLU behavior those tests
+	// assume. BuildResident sets it to `m.GatedActResident() == 0`. Why: docs/code-notes/gpu.md#runModel.gatedGELU.
 	gatedGELU bool
 }
 
@@ -332,11 +285,9 @@ type moeRunParams struct {
 	sharedInter       int  // shared-expert FFN width (qwen2_moe / GLM); 0 ⇒ no shared expert
 	sharedUngated     bool // GLM/DeepSeek add the shared expert with no sigmoid gate
 	nGroup, topkGroup int  // DeepSeek group-limited routing; nGroup ≤ 1 ⇒ plain global top-k
-	// gpt-oss (FeatAttnSink, G6 docs/tasks/task-gpu-paths-2026-09.md): a THIRD MoE dispatch shape,
-	// alongside the plain top-k above and the group-limited DeepSeek variant — its own router
-	// contract (biased logits select AND weight), its own clamped-gated activation, its own
-	// biased down-combine. gptossAlpha/gptossLimit are the clamped-SwiGLU constants, uniform
-	// across every gpt-oss layer (decoder.Model.GptOssActResident).
+	// gptoss selects a THIRD MoE dispatch shape, beside the plain top-k and DeepSeek's group-limited routing: its own router
+	// contract (biased logits select AND weight), clamped-gated activation (gptossAlpha/gptossLimit, uniform across every
+	// gpt-oss layer, from decoder.Model.GptOssActResident) and biased down-combine.
 	gptoss                   bool
 	gptossAlpha, gptossLimit float32
 }
@@ -374,14 +325,11 @@ func (c *Context) NewDecodeRunner(m ModelW, hidden, nH, nKV, hd, inter, start in
 	return c.newDecodeRunner(w8Model(m), hidden, nH, nKV, hd, inter, start, eps, scale, addOne)
 }
 
-// newDecodeRunner builds the persistent decode plan for either precision.
-// attnHeadDimSupported declines a resident decode plan whose model-level or any per-layer
-// head_dim exceeds what the single-query attention kernels can dot. Those kernels run at
-// @workgroup_size(128) with a fixed 128-entry `red` reduction array (attention.go, one lane per
-// dim), so a head_dim above attnMaxHeadDim would leave the tail dims un-dotted and the
-// o-projection would consume half-zero context — plausible-looking WRONG output, no error. The
-// caller falls back to the staged/CPU path on this error. MLAAttn guards its own analogous rank
-// limit; this covers the softmax/GQA runners including Gemma 4's per-layer head_dim (audit M-12).
+// attnHeadDimSupported declines a resident decode plan whose model-level or any per-layer head_dim exceeds attnMaxHeadDim,
+// the widest the single-query attention kernels serve (see attnWG: one lane per dim, so a head_dim beyond the kernel's
+// reach would leave tail dims un-dotted and the o-projection would consume half-zero context, which is plausible-looking
+// WRONG output with no error). The caller falls back to the staged/CPU path on this error. MLAAttn guards its own rank
+// limit; this covers the softmax/GQA runners, including Gemma 4's per-layer head_dim.
 func attnHeadDimSupported(hd int, layers []runLayer) error {
 	if hd > attnMaxHeadDim {
 		return fmt.Errorf("gpu: resident decode declines head_dim=%d > %d (attention kernel workgroup is %d-wide)", hd, attnMaxHeadDim, attnMaxHeadDim)
@@ -394,19 +342,13 @@ func attnHeadDimSupported(hd int, layers []runLayer) error {
 	return nil
 }
 
+// newDecodeRunner builds the persistent decode plan for either precision.
 func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start int, eps, scale float32, addOne bool) (*DecodeRunner, error) {
-	// The single-query attention kernels (attention.go) parallelize over head_dim at
-	// @workgroup_size(128) with a fixed 128-wide workgroup reduction array (`red: array<f32,128>`).
-	// A head_dim > 128 would dot only dims 0..127 and leave ctxv[128..hd) zeroed — the o-projection
-	// then consumes half-zero context: plausible-looking WRONG output, no error. Decline here (like a
-	// VRAM-exhaustion decline) so the caller falls back to the staged/CPU path; MLAAttn guards its own
-	// analogous rank limit (audit M-12). Covers the model-level shape and any per-layer geometry
-	// override (Gemma 4's per-layer head_dim), so an admitted arch can never silently truncate.
-	// MLA (DeepSeek/Kimi) attention runs the mlaAttn kernel family (mla.go) with its own rank-bounded
-	// accumulator, NOT the 128-wide GQA kernels attnHeadDimSupported protects — its qk head dim
-	// (qk_nope+qk_rope) is 192 on real V2-Lite/V3/Kimi and legitimately exceeds 128. Applying the GQA
-	// guard here regressed EVERY MLA checkpoint off residency (audit R-05, collateral of M-12). Exempt
-	// MLA, but enforce the analogous per-lane rank cap MLAAttn itself checks (rank ≤ 1024; audit R-24).
+	// Decline (the caller falls back to the staged/CPU path, as for a VRAM-exhaustion decline) a plan whose head_dim the
+	// single-query attention kernels cannot cover rather than emit plausible-looking wrong output; see attnHeadDimSupported.
+	// MLA is exempt from that check: its attention runs the mlaAttn kernel family with its own rank-bounded accumulator, and
+	// applying the GQA guard to it once regressed every MLA checkpoint off residency. It is held to the per-lane rank cap
+	// MLAAttn itself checks (rank <= 1024). History: docs/code-notes/gpu.md#newDecodeRunner.guards.
 	if m.mla != nil {
 		if m.mla.kvLoRARank > 1024 {
 			return nil, fmt.Errorf("gpu: newDecodeRunner: MLA kv-LoRA rank %d exceeds the resident per-lane cap 1024; declining to CPU", m.mla.kvLoRARank)
@@ -414,10 +356,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	} else if err := attnHeadDimSupported(hd, m.layers); err != nil {
 		return nil, err
 	}
-	// The mamba causal-conv kernel (mamba.go) holds the window in a fixed `array<f32, 8>` indexed
-	// by conv_kernel-1, so a conv_kernel > 8 would overrun it (and == 0 underflow) — plausible-looking
-	// WRONG output, no error. Decline here (like the head-dim guard above) so the caller falls back to
-	// CPU rather than silently corrupting (N-08; real Mamba-2 uses conv_kernel 4).
+	// The mamba causal-conv kernel holds its window in a fixed `array<f32, 8>` indexed by conv_kernel-1, so a conv_kernel > 8
+	// would overrun it (and 0 underflow): plausible-looking WRONG output, no error. Decline to CPU instead (real Mamba-2 uses
+	// conv_kernel 4).
 	if m.mamba != nil && (m.mamba.dConv > 8 || m.mamba.dConv < 1) {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: mamba conv_kernel %d out of range [1,8] for the resident conv kernel; declining to CPU", m.mamba.dConv)
 	}
@@ -429,7 +370,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
 			ensures = append(ensures, c.ensureSharedGate)
 		}
-		if m.moe.gptoss { // G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink's three MoE kernels
+		if m.moe.gptoss { // FeatAttnSink's MoE kernels
 			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown, c.ensureMoEExpertGptOssDownW4)
 		}
 	}
@@ -440,9 +381,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureRelu2)
 	}
 	if hd > attnWG || slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.ghd > attnWG }) {
-		// Only now, and only for a plan that needs it. A device that cannot do 256-invocation
-		// workgroups errors here, which the caller turns into a staged fallback — the same
-		// treatment the old hard head_dim decline gave, but reached only by models that need it.
+		// Only for a plan that needs it. A device that cannot do 256-invocation workgroups errors here, which the caller turns
+		// into a staged fallback.
 		ensures = append(ensures, c.ensureAttnWide)
 	}
 	if slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.gKEqV }) {
@@ -464,9 +404,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 	}
 	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers), lmHead: m.lmHead}
-	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
-	// bind helpers short-circuit once it's set and the constructor returns it, so VRAM
-	// exhaustion is an error the caller can fall back on — never a panic in library code.
+	// buildErr holds the FIRST device-allocation/bind failure: the storF/uni/bind helpers short-circuit once it is set and the
+	// constructor returns it, so VRAM exhaustion is an error the caller can fall back on, never a panic in library code.
 	var buildErr error
 	keepBuf := func(b *wgpu.Buffer) *wgpu.Buffer {
 		if b != nil {
@@ -525,33 +464,24 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// link on the serialized decode spine (§2). Bit-exact with rms→quant.
 	rmsQuant := func(in, w *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv that reads to the weight's kPad==padK32;
-		// padK (mult-16) under-sizes it when K%32 ∈ [1,16] → OOB read + int4 zero-pad nibbles decode
-		// to −8 (audit R-18 / N-05). Latent since real dims are mult-32; matches the siblings below.
+		// padK (a multiple of 16) under-sizes it when K%32 is 1..16: an OOB read, and the int4 zero-pad nibbles decode to −8.
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), f32bits(eps), boolU32(addOne), uint32(kp)})
 		add(c.rmsQuantPipeline, bind(c.rmsQuantLayout, in, w, q, s, p), 1, 1)
 		return q, s
 	}
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink's shared fallback for any runLayer that
-	// leaves attnSinks nil — every gpu/*_test.go file that builds a runLayer{} literal by hand
-	// (rather than through residency.go's BuildResident, which always populates a real dummy or
-	// real sinks) does exactly this, and the bind() closure below hard-errors on a nil buffer
-	// ("nil buffer for binding N") rather than silently binding garbage. Falling back HERE, at
-	// the one dispatch site, means a new hand-built test fixture can never miss this the way a
-	// scattered per-caller default could.
+	// noAttnSinks is the fallback bound for a runLayer that leaves attnSinks nil, as every hand-built runLayer literal in the
+	// gpu tests does (BuildResident always populates a dummy or real sinks); bind() hard-errors on a nil buffer, so the
+	// fallback lives at the one dispatch site rather than in each caller, and a new hand-built fixture cannot miss it.
 	noAttnSinks := storF(1)
-	r.loraT = storF(loraRMax) // G3: compute-time LoRA scratch — always allocated, cheap
-	// swigluQuant fuses SwiGLU→quantize: the inter-wide product never materializes
-	// or crosses a barrier — one fewer link and the big buffer stays off the spine.
-	//
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) branches to the geglu(Quant)
-	// pipelines instead — same fused shape, gelu_tanh(gate)·up instead of silu(gate)·up. Every
-	// other family (m.gatedAct==1, SiLU) is byte-identical to before this branch existed.
+	r.loraT = storF(loraRMax) // compute-time LoRA scratch: always allocated, cheap
+	// swigluQuant fuses SwiGLU→quantize: the inter-wide product never materializes or crosses a barrier, one fewer link and
+	// the big buffer stays off the spine. With gatedGELU it uses the geglu(Quant) pipelines instead (gelu_tanh(gate)·up);
+	// otherwise it is byte-identical to the SiLU path.
 	gelu := m.gatedGELU
 	swigluQuant := func(gate, up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 down-proj gemv, which reads to the weight's
-		// kPad == padK32; padK (mult-16) under-sizes it when K%32 != 0 (N-08→N-05: OOB read; latent
-		// since real dims are mult-32). padK32 also zeroes the tail, matching the zero-padded weight.
+		// kPad == padK32 (see rmsQuant); padK32 also zeroes the tail, matching the zero-padded weight.
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
 		pl, ly := c.swigluQuantPipeline, c.swigluQuantLayout
@@ -564,14 +494,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// relu2Quant fuses Nemotron-H's non-gated relu²(up)→int8 (the squared-ReLU MLP), the
 	// unary analog of swigluQuant. Bindings: up / qout / scales / dims (4 — no gate).
 	relu2Quant := func(up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see swigluQuant (N-05)
+		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see rmsQuant
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
 		add(c.relu2Pipeline, bind(c.relu2Layout, up, q, s, p), 1, 1)
 		return q, s
 	}
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see swigluQuant (N-05)
+		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see rmsQuant
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
 		add(c.quantizePipeline, bind(c.quantizeLayout, in, q, s, p), 1, 1)
@@ -603,10 +533,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		add(c.gemvBiasPipeline, bind(c.gemvBiasLayout, aq, w.wbuf(), as, w.sbuf(), out, p, bias), gx, gy)
 		return out
 	}
-	// Mamba-2 SSM mixer dispatches (P5b): the conv/ssm/gatedNorm kernels read slices of
-	// the in_proj output (z|xBC|dt) via bind-group offsets (256-aligned for granite), so
-	// no extra split kernel. The dispatches are pos-independent — {win, ssm} state carries
-	// the recurrence. mamba* are nil for non-hybrid models (the closures go unused).
+	// Mamba-2 SSM mixer dispatches: the conv/ssm/gatedNorm kernels read slices of the in_proj output (z|xBC|dt) from the full
+	// proj buffer at base offsets carried in their uniforms, so no extra split kernel is needed (bindOff can bind sub-ranges,
+	// but every caller here passes 0/0). The dispatches are pos-independent: the {win, ssm} state carries the recurrence.
 	type bgEnt struct {
 		b         *wgpu.Buffer
 		off, size uint64
@@ -708,30 +637,20 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, weight, out, p), 1, 1)
 		return out
 	}
-	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
-	// on pos, NOT on layer index — their contents are identical across all 28
-	// layers. So allocate ONE buffer per type and let every layer's dispatch bind
-	// it; Run then writes 4 small uniforms per token instead of ~112. The builders
-	// below reference these shared buffers and no longer append per-call posUnis.
-	// Rotated pairs per head: rotaryDim/2 = len(invFreq). m.ropeHalf carries it for
-	// partial RoPE (GLM/Phi rotary_dim < HeadDim, Lever C5); 0 ⇒ full HeadDim/2. The
-	// rope kernels pair vec[off+d] with vec[off+half+d] for d<half, leaving the trailing
-	// HeadDim-rotaryDim dims untouched — exactly decoder.applyRoPE's partial layout.
+	// The per-token uniforms (rope-q, rope-store-k, v-store, attn) depend on pos but not on the layer index, so one buffer per
+	// distinct geometry and rope scale is shared by every layer's dispatch and Run writes a few small uniforms per token
+	// instead of one set per layer. half is the rotated pairs per head, rotaryDim/2 = len(invFreq); m.ropeHalf carries it for
+	// partial RoPE, 0 ⇒ HeadDim/2. The rope kernels pair vec[off+d] with vec[off+half+d] for d<half and leave the trailing
+	// HeadDim-rotaryDim dims untouched, as decoder.applyRoPE's partial layout does.
 	half := hd / 2
 	if m.ropeHalf > 0 {
 		half = m.ropeHalf
 	}
-	// Per-layer RoPE scale (Lever C7): the cos/sin are multiplied by the layer's mscale
-	// (YaRN attention_factor; 1.0 for non-YaRN). Most models use one scale; the per-layer-
-	// rope interleave families (Mellum: YaRN on the global/full layers, default on the local/
-	// sliding ones) use two. Build one shared rope uniform per distinct scale, keyed by value.
-	// slot 6 of the K uniform carries nKV for the int8 ropeStore (it indexes
-	// scales[pos*nKV+head]); the f32/f16 ropeStore ignore it (their unused _b pad).
-	// §4.5 per-layer attention geometry. geomFor builds one attnGeom per distinct
-	// {hd, nKV, half} tuple and caches it by value — a uniform-geometry model yields
-	// exactly one entry (same buffers/dispatch as before this seam), Gemma 4 two. Each
-	// geom owns the per-token uniforms that carry its dims: the v-store, the attn, and the
-	// windowed-attn variant here; the rope uniforms below hang off it keyed by rope scale.
+	// The cos/sin are multiplied by the layer's RoPE scale (YaRN attention_factor; 1.0 otherwise). Most models use one scale;
+	// families with per-layer RoPE (YaRN on the global layers, default on the local ones) use two, so the rope uniforms are
+	// keyed by scale value. Per-layer attention geometry: geomFor builds one attnGeom per distinct {hd, nKV, half, kEqV} tuple
+	// and caches it by value; each geom owns the v-store, attn and windowed-attn uniforms, and the rope uniforms hang off it
+	// keyed by rope scale.
 	geomCache := map[[4]int]*attnGeom{}
 	geomFor := func(ghd, gnKV, ghalf int, kEqV bool) *attnGeom {
 		kb := 0
@@ -784,10 +703,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			dst[7] = 0
 			return 8
 		}})
-		// Sliding-window (local) layers attend only the last `slidingWindow` positions: the
-		// attention start advances to max(0, pos+1-W) once pos reaches the window (Lever C6),
-		// matching decoder.KVCache.WindowStart. Full layers keep attnUni (start fixed). Only
-		// built when the model windows; local layers bind this instead of attnUni.
+		// Sliding-window (local) layers attend only the last `slidingWindow` positions: the attention start advances to
+		// max(0, pos+1-W) once pos reaches the window, matching decoder.KVCache.WindowStart. Full layers keep attnUni. Only built
+		// when the model windows; local layers bind this instead of attnUni.
 		g.attnUniLocal = g.attnUni
 		if m.slidingWindow > 0 {
 			w := m.slidingWindow
@@ -835,12 +753,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		g.ropeQUnis[rs] = b
 		return b
 	}
-	// ropeKUniFor feeds ropeStoreShaderWGSL, whose P struct has TWO distinct roles: slot 3
-	// ("pos") is the rotation angle, slot 5 ("base") is the KV-cache write offset pos*kvDim —
-	// confirmed directly against the shader source (attention.go). Only slot 3 switches to
-	// ropePos; slot 5 stays keyed on the true sequential pos. Slot 7 ("spos") carries the true pos
-	// too: the int8 variant indexes its per-(position, KV-head) scale by it, and the f32/f16 variants
-	// never read it. The int8 variant used slot 3, the rope angle, until audit-2026-09-10 C-09.
+	// ropeKUniFor feeds ropeStoreShaderWGSL, whose P struct has TWO roles: slot 3 ("pos") is the rotation angle and takes
+	// ropePos; slot 5 ("base") is the KV-cache write offset pos*kvDim and stays keyed on the true pos. Slot 7 ("spos") carries
+	// the true pos too: the int8 variant indexes its per-(position, KV-head) scale by it (it must not read the rope-angle
+	// slot), and the f32/f16 variants never read it. History: docs/code-notes/gpu.md#ropeKUniFor.
 	ropeKUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.ropeKUnis[rs]; ok {
 			return b
@@ -860,10 +776,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		g.ropeKUnis[rs] = b
 		return b
 	}
-	// Fused q-rope + k-rope-store + v-store uniform (decode fusion, f32 KV), per (geom,
-	// scale): {nH, nKV, hd, half, pos, base=pos*kvDim, scale, kvDim}. Same split as
-	// ropeKUniFor above (confirmed against qkvFinalizeShaderWGSL): slot 4 ("pos") is the
-	// rotation angle for both q and k, slot 5 ("base") is the KV-cache write offset.
+	// Fused q-rope + k-rope-store + v-store uniform (decode fusion, f32 KV), per (geom, scale): {nH, nKV, hd, half, pos,
+	// base=pos*kvDim, scale, kvDim}. Same split as ropeKUniFor: slot 4 ("pos") is the rotation angle for both q and k, slot 5
+	// ("base") is the KV-cache write offset.
 	qkvFinUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.qkvFinUnis[rs]; ok {
 			return b
@@ -904,8 +819,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return
 		}
 		if m.kvF16 {
-			// word-based (2 f16/word): kvDim/2 = nKV·hd/2 words, covering the rotated span AND the
-			// partial-rotary pass-through tail (C4).
+			// word-based (2 f16/word): kvDim/2 = nKV·hd/2 words, covering the rotated span AND the partial-rotary pass-through tail.
 			add(c.ropeStoreF16Pipeline, bind(c.ropeStoreF16Layout, src, invFreq, cache, ku), uint32(g.nKV*g.hd/2+63)/64, 1)
 		} else {
 			// element-based: nKV·half rotation pairs + nKV·(hd-2·half) pass-through tail = nKV·(hd-half).
@@ -936,15 +850,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		n := max(g.kvDim, nH*g.half)
 		add(c.qkvFinPipeline, bind(c.qkvFinLayout, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(g, ropeScale)), uint32(n+63)/64, 1)
 	}
-	// biasAdd adds a per-output bias into a projection result (Qwen2 q/k/v bias),
-	// reusing the residual kernel (vec[i] += bias[i]); n is the projection width.
+	// biasAdd computes vec[i] += bias[i] by reusing the residual kernel: the Qwen2 q/k/v bias (n is the projection width), and
+	// the plain `xd += out` residual add where the fused gemvAdd epilogue cannot be used.
 	biasAdd := func(vec, bias *wgpu.Buffer, n int) {
 		p := uni([]uint32{uint32(n), 0, 0, 0})
 		add(c.residualPipeline, bind(c.residualLayout, vec, bias, p), uint32(n+63)/64, 1)
 	}
-	// qkNorm RMS-normalizes each of `heads` heads of vec (q or k) over headDim in place
-	// with weight[hd], before RoPE (Qwen3/GLM/Mellum). One workgroup per head; the
-	// uniform is pos-independent so it's a plain uni, not a posUni.
+	// qkNorm RMS-normalizes each of `heads` heads of vec (q or k) over headDim in place with weight[hd], before RoPE. One
+	// workgroup per head; the uniform is pos-independent so it is a plain uni, not a posUni.
 	qkNorm := func(vec, weight *wgpu.Buffer, heads, lhd int) {
 		p := uni([]uint32{uint32(heads), uint32(lhd), f32bits(eps), boolU32(addOne)})
 		add(c.qkNormPipeline, bind(c.qkNormLayout, vec, weight, p), uint32(heads), 1)
@@ -959,9 +872,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		p := uni([]uint32{uint32(n), f32bits(scale), 0, 0})
 		add(c.scaleVecPipeline, bind(c.scaleVecLayout, vec, p), uint32(n+255)/256, 1)
 	}
-	// MoE op builders (Lever C3c). moeRoute records the on-GPU router top-k SELECTION
-	// (logits[nE] + optional bias → idx[k], wgt[k]); the p uniform is pos-independent
-	// (model-level shape), so it's a plain uni. nE is tiny ⇒ one single-lane workgroup.
+	// MoE op builders. moeRoute records the on-GPU router top-k SELECTION (logits[nE] + optional bias → idx[k], wgt[k]); the p
+	// uniform is pos-independent (model-level shape), so it is a plain uni. nE is tiny ⇒ one single-lane workgroup.
 	var moeRoute func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool)
 	var moeExpert func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dst *wgpu.Buffer, slot, mode int)
 	if m.moe != nil {
@@ -984,10 +896,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			add(c.moeExpertPipeline, bind(c.moeExpertLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
 		}
 	}
-	// gpt-oss's three MoE dispatch builders (FeatAttnSink, G6 docs/tasks/task-gpu-paths-2026-09.md) —
-	// separate closures from moeRoute/moeExpert above because the contract genuinely differs
-	// (see routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments), not a
-	// parameterization of them.
+	// gpt-oss's three MoE dispatch builders are separate closures from moeRoute/moeExpert because the contract genuinely
+	// differs (see routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL), not a parameterization of them.
 	var routeGptOss func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool)
 	var gptossActQuant func(gate, up, biasGU, idx *wgpu.Buffer, slot, K int) (*wgpu.Buffer, *wgpu.Buffer)
 	var moeExpertGptOssDown func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dbias, dst *wgpu.Buffer, slot int)
@@ -1018,9 +928,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		add(c.sharedGatePipeline, bind(c.sharedGateLayout, dst, src, gl, p), uint32(n+63)/64, 1)
 	}
 
-	// MLA op builders (Lever C4c). The latent store + attention uniforms are
-	// pos-dependent (base = pos·latDim, nKeys = pos+1), so they register posUnis like
-	// the standard attention path; the absorb/lift matvecs are pos-independent shapes.
+	// MLA op builders. The latent store + attention uniforms are pos-dependent (base = pos·latDim, nKeys = pos+1), so they
+	// register posUnis like the standard attention path; the absorb/lift matvecs are pos-independent shapes.
 	var mlaStore func(kvDown, normW, invFreq, latCache *wgpu.Buffer)
 	var mlaAbsorb func(q, wuk, qAbs *wgpu.Buffer)
 	var mlaQRopeOp func(q, invFreq, qAbs *wgpu.Buffer)
@@ -1149,14 +1058,11 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			continue
 		}
 		if lw.nemoKind == nemoKMoE {
-			// Nemotron-H MoE block (G7 part 2, single-op-per-block, no mixer): norm → route (the
-			// SAME moeRoute kernel DeepSeek/GLM use — Nemotron's router is sigmoid + selection
-			// bias + group-limited top-k with nGroup=1, degenerating to plain top-k, which
-			// moeRouteWGSL already handles as its nGroup==1 path) → k routed experts, each a
-			// NON-GATED relu² FFN (moeExpert is already generic per single projection — called
-			// here for up/down only, no expGate at all, unlike Mixtral/DeepSeek's gated SwiGLU
-			// experts) weighted-summed into xd → the always-on UNGATED shared expert (same
-			// non-gated relu² shape, added once, not per top-k slot).
+			// Nemotron-H MoE block (single-op-per-block, no mixer): norm → route with the SAME moeRoute kernel DeepSeek/GLM use
+			// (Nemotron's sigmoid + selection bias + group-limited top-k with nGroup=1 degenerates to plain top-k, moeRouteWGSL's
+			// nGroup==1 path) → k routed experts, each a NON-gated relu² FFN (moeExpert is generic per projection; called for up/down
+			// only, no expGate) weighted-summed into xd → the always-on UNGATED shared expert of the same shape, added once, not per
+			// top-k slot.
 			mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
 			mp := m.moe
 			logits := gemv(mq, ms, lw.router)
@@ -1180,9 +1086,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			continue
 		}
 		if lw.isMamba {
-			// Mamba-2 SSM mixer (P5b): norm → in_proj → conv(ring) → ssm(state) → gatedNorm
-			// → out_proj+residual. State {win, ssm} persists in lw, updated in place per token.
-			// ResidMul folded into the out_proj weights. The FFN sub-block below is shared.
+			// Mamba-2 SSM mixer: norm → in_proj → conv(ring) → ssm(state) → gatedNorm → out_proj+residual. State {win, ssm} persists
+			// in lw, updated in place per token. ResidMul is folded into the out_proj weights. The FFN sub-block below is shared.
 			mp := m.mamba
 			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
 			proj := gemv(aq, as, lw.mambaInProj)
@@ -1225,8 +1130,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			gq, gs := quant(gated, dp.valueDim)
 			gemvAdd(gq, gs, lw.dnOut, r.xd)
 		} else if m.mla != nil {
-			// MLA latent attention (Lever C4c): input-norm → q (LoRA/direct) + kv-down →
-			// latent store → W_UK-absorb + qRope → rank-space attend → W_UV-lift → o-proj.
+			// MLA latent attention: input-norm → q (LoRA/direct) + kv-down → latent store → W_UK-absorb + qRope → rank-space attend →
+			// W_UV-lift → o-proj.
 			mp := m.mla
 			latDim := mp.kvLoRARank + mp.qkRope
 			rank := mp.kvLoRARank
@@ -1252,9 +1157,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			gemvAdd(cq, cs, lw.mlaO, r.xd) // o-proj + residual into xd; FFN below is shared
 		} else {
 			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
-			// Resolve this layer's attention geometry (P1): its own head_dim/KV-heads/
-			// rotaryDim, or the model-level shape when the layer carries no override (every
-			// non-Gemma family). geomFor dedups by value, so uniform models reuse one geom.
+			// Resolve this layer's attention geometry: its own head_dim/KV-heads/rotaryDim, or the model-level shape when the layer
+			// carries no override. geomFor dedups by value, so uniform models reuse one geom.
 			ghd, gnKV, ghalf := hd, nKV, half
 			if lw.ghd != 0 {
 				ghd, gnKV, ghalf = lw.ghd, lw.gnKV, lw.ghalf
@@ -1286,12 +1190,10 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				v = storF(g.kvDim)
 				vNorm(k, v, g.nKV, g.hd)
 			}
-			// G3 (docs/tasks/task-gpu-paths-2026-09.md): compute-time LoRA hooks for q/k/v — right after
-			// the base projection, before qGate's split/qNorm/RoPE, so a delta applies to the FULL
-			// (possibly qGate double-width) buffer the base matmul actually produced, matching
-			// applyLoRA's CPU order exactly. All three share one afterIdx (the last of the three
-			// base dispatches just recorded, whichever branch produced them) since nothing else
-			// runs between them.
+			// Compute-time LoRA hooks for q/k/v go right after the base projection, before qGate's split/qNorm/RoPE, so a delta
+			// applies to the FULL (possibly qGate double-width) buffer the base matmul produced, in applyLoRA's CPU order. All three
+			// share one afterIdx (the last of the three base dispatches just recorded, whichever branch produced them) since nothing
+			// else runs between them.
 			after := len(r.steps) - 1
 			r.loraHooks = append(r.loraHooks,
 				loraHook{afterIdx: after, layer: i, kind: loraQ, aq: aq, ascale: as, dst: q, k: hidden},
@@ -1303,9 +1205,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				)
 			}
 			if lw.vNorm && !lw.gKEqV {
-				// Gemma 4, a layer with a real v_proj (S1.0): scale-less v_norm of the v_proj output, after the LoRA hooks above
-				// (they splice in after the base projection) and before the KV store. The shader reads src and writes dst, and one
-				// buffer cannot be bound as both, so it writes a fresh buffer, as the K=V branch does.
+				// Gemma 4, a layer with a real v_proj: scale-less v_norm of the v_proj output, after the LoRA hooks above (they splice in
+				// after the base projection) and before the KV store. The shader reads src and writes dst, and one buffer cannot be bound
+				// as both, so it writes a fresh buffer, as the K=V branch does.
 				vn := storF(g.kvDim)
 				vNorm(v, vn, g.nKV, g.hd)
 				v = vn
@@ -1326,7 +1228,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				qkvFinalize(g, q, k, v, lw.invFreq, lw.kCache, lw.vCache, lw.ropeScale)
 			}
 			ctxv := storF(nH * g.hd)
-			aUni := g.attnUni // local (sliding-window) layers use the windowed start (Lever C6)
+			aUni := g.attnUni // local (sliding-window) layers use the windowed start
 			if lw.isLocal {
 				aUni = g.attnUniLocal
 			}
@@ -1335,10 +1237,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			// off this layer's resolved geometry, not the model's, because Gemma 4 already
 			// proves per-layer head_dim is a real thing here.
 			wide := g.hd > attnWG
-			// G6 (docs/tasks/task-gpu-paths-2026-09.md): gpt-oss's per-head attention sink
-			// (FeatAttnSink) — always bound (WGSL bind groups can't bind a null storage
-			// buffer), gated by the per-layer hasSinkUni flag. Built once per layer here (the
-			// fixed dispatch plan), not per token.
+			// gpt-oss's per-head attention sink (FeatAttnSink) is always bound (WGSL cannot bind a null storage buffer) and gated by
+			// the per-layer hasSinkUni flag, built once per layer in the fixed plan, not per token.
 			hasSinkUni := uni([]uint32{boolU32(lw.hasSink), 0, 0, 0})
 			attnSinks := lw.attnSinks
 			if attnSinks == nil {
@@ -1362,10 +1262,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				r.capCtx = append(r.capCtx, capStep(ctxv, nH*g.hd))
 			}
 			cq, cs := quant(ctxv, nH*g.hd)
-			// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatOutBias (gpt-oss o_proj bias) / FeatSandwichNorm
-			// (Gemma's post-attn norm) both need the sublayer output BEFORE the residual add — the
-			// fused gemvAdd epilogue can't express that, so defeat it: bare gemv, bias/norm, then a
-			// separate residual add (biasAdd is really "xd += out"; see its own doc comment).
+			// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm (Gemma's post-attn norm) need the sublayer output BEFORE the
+			// residual add, which the fused gemvAdd epilogue cannot express: bare gemv, bias/norm, then a separate residual add
+			// (biasAdd).
 			if lw.oBias != nil || lw.postAttnNorm != nil {
 				attnOut := gemv(cq, cs, lw.o)
 				r.loraHooks = append(r.loraHooks,
@@ -1408,10 +1307,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				bias, hasBias = lw.routerBias, true
 			}
 			if mp.gptoss {
-				// gpt-oss: own router (biased logits select AND weight), own clamped-gated
-				// activation (per-expert gate‖up bias), own biased down-combine — see
-				// routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments
-				// for the exact contract each departs from the generic path above on.
+				// gpt-oss: own router (biased logits select AND weight), own clamped-gated activation (per-expert gate‖up bias), own
+				// biased down-combine; see routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL for each contract.
 				routeGptOss(logits, bias, idx, wgt, hasBias)
 				gateOut, upOut := storF(mp.inter), storF(mp.inter)
 				for j := 0; j < mp.k; j++ {
@@ -1445,8 +1342,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 		} else {
 			gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)
-			// G3: gate/up deltas BEFORE the SwiGLU activation below — matching decoder/mlp.go's own
-			// comment ("delta into gate/up before the activation") word for word.
+			// LoRA gate/up deltas land BEFORE the activation below, as in decoder/mlp.go.
 			r.loraHooks = append(r.loraHooks,
 				loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraGate, aq: mq, ascale: ms, dst: gate, k: hidden},
 				loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraUp, aq: mq, ascale: ms, dst: up, k: hidden},
@@ -1471,9 +1367,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			r.capMLP = append(r.capMLP, capStep(r.xd, hidden))
 		}
 	}
-	// Distinct attention geometries the plan actually built (1 for uniform families, 2 for
-	// Gemma 4). The GeomVariantCount test asserts this stays 1 for uniform models — a
-	// regression that allocated per-layer instead of per-tuple would silently inflate it.
+	// Distinct attention geometries the plan built; see DecodeRunner.geomVariants.
 	r.geomVariants = len(geomCache)
 	fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)
 	logits := gemv(fq, fs, m.lmHead)
@@ -1486,22 +1380,19 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			r.stag = keepBuf(stag)
 		}
 	}
-	// M21: any device-allocation/bind failure during construction (VRAM exhaustion is the
-	// common one) is returned so the caller falls back to the staged/CPU path — never a panic.
+	// A device-allocation or bind failure during construction (VRAM exhaustion is the common one) is returned so the caller
+	// falls back to the staged/CPU path, never a panic.
 	if buildErr != nil {
 		r.release()
 		return nil, fmt.Errorf("gpu: newDecodeRunner: device allocation failed (VRAM exhausted?): %w", buildErr)
 	}
-	// G3: snapshot the pristine (no-adapter) plan — SetAdapter rebuilds r.steps from this plus
-	// r.loraHooks rather than mutating it, so clearing an adapter is a cheap restore.
+	// Snapshot the pristine (no-adapter) plan: SetAdapter rebuilds r.steps from it plus r.loraHooks rather than mutating it.
 	r.baseSteps = r.steps
 	return r, nil
 }
 
-// GeomVariantCount reports how many distinct attention geometries (hd, nKV, rotaryDim)
-// the resident plan built: 1 for every uniform-geometry family, 2 for Gemma 4's
-// local/global interleave. Tests assert it is 1 for uniform models — the value-keyed
-// dedup collapsing to a single entry is what makes non-Gemma byte-identity structural.
+// GeomVariantCount reports how many distinct attention geometries (hd, nKV, rotaryDim) the resident plan built: 1 for
+// every uniform-geometry family, 2 for Gemma 4's local/global interleave. Tests assert it is 1 for uniform models.
 func (r *DecodeRunner) GeomVariantCount() int { return r.geomVariants }
 
 // writeInputs uploads the per-token input embedding + pos-dependent uniforms (the
@@ -1521,19 +1412,10 @@ func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
 	return nil
 }
 
-// record appends this runner's dispatch plan to an existing compute pass. The plan
-// reads r.xd / r.posUnis (set by writeInputs) and the resident weights + KV caches,
-// leaving logits in r.lastLogits. WebGPU inserts the storage barriers between
-// data-dependent dispatches; across batched runners sharing one KV cache, a row's
-// kv-store thus correctly precedes a later row's attention read.
-// ReadMambaCap copies the first mamba layer's captured proj/conv/y/gated buffers (their
-// values from the most recent Run) back to the host — the resident's actual per-token kernel
-// I/O, for diffing against mamba2Step (gpu/mamba_resident_capture_test.go). projN/convN/dInner
-// are the element counts. Test-only; allocates fresh staging per call.
-//
-// N-15: this is EXPORTED and used to panic on a failed buffer map. "Test-only" is a comment, not
-// a compiler constraint — an exported method on an exported type is callable by anyone, and a
-// panic on a device-boundary failure takes the caller's process down. Returns an error now.
+// ReadMambaCap copies the first mamba layer's captured proj/conv/y/gated buffers (their values from the most recent Run)
+// back to the host, the resident's actual per-token kernel I/O, for diffing against mamba2Step
+// (gpu/mamba_resident_capture_test.go). projN/convN/dInner are the element counts. For tests, but exported: it allocates
+// fresh staging per call and returns an error, never panics, on a failed buffer map.
 func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32, err error) {
 	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
 		stag, _ := r.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
@@ -1637,6 +1519,10 @@ func (r *DecodeRunner) ReadCapture() (ctx, attn, mlp [][]float32, err error) {
 	return ctx, attn, mlp, nil
 }
 
+// record appends this runner's dispatch plan to an existing compute pass. The plan reads r.xd and
+// r.posUnis (set by writeInputs) and the resident weights + KV caches, leaving logits in r.lastLogits.
+// WebGPU inserts the storage barriers between data-dependent dispatches; across batched runners sharing
+// one KV cache, a row's kv-store thus correctly precedes a later row's attention read.
 func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {
 	for _, s := range r.steps {
 		pass.SetPipeline(s.pl)
@@ -1707,16 +1593,13 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 		return nil, err
 	}
 	defer enc.Release()
-	// One compute pass for the whole token: WebGPU runs the dispatches in record
-	// order and the backend inserts the minimal storage-buffer barriers between
-	// data-dependent dispatches. The KV appends are now compute kernels (rope-store
-	// / kv-store), so nothing forces a pass break.
+	// One compute pass for the whole token: WebGPU runs the dispatches in record order and the backend inserts the minimal
+	// storage-buffer barriers between data-dependent dispatches. The KV appends are compute kernels (rope-store / kv-store),
+	// so nothing forces a pass break.
 	pass := enc.BeginComputePass(nil)
 	r.record(pass)
-	// N-84 (docs/audit-2026-09-10.md): these two used to discard their error returns, unlike
-	// every other fallible call in this function (and unlike gpu.go's run(), the reference this
-	// mirrors) — a validation error here surfaced only later as an opaque "DecodeRunner map
-	// failed" with no indication which call actually caused it.
+	// TryEnd and the logits copy are checked, not discarded, so a validation error names its call instead of surfacing later
+	// as an opaque "DecodeRunner map failed".
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
@@ -1747,13 +1630,11 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	return r.logitsHost, nil
 }
 
-// runBatch executes K runners (sharing the resident weights + KV caches, distinct
-// scratch) over inputs xs[i] at positions startPos+i in ONE command buffer — one
-// Submit, one Poll, K logit rows. The runners' steps are recorded in row order into a
-// single compute pass, so each row's kv-store is visible to the next row's attention
-// (causal: row i sees positions [0, startPos+i]). This amortizes the cgo-encode glue
-// + the sync over K (the dominant decode cost — see gpu-assessment.md §0.5), which is
-// the speculative-decode win. len(runners) must be ≥ len(xs).
+// runBatch executes K runners (sharing the resident weights + KV caches, distinct scratch) over inputs xs[i] at positions
+// startPos+i in ONE command buffer: one Submit, one Poll, K logit rows. The runners' steps are recorded in row order into a
+// single compute pass, so each row's kv-store is visible to the next row's attention (causal: row i sees positions
+// [0, startPos+i]). This amortizes the encode glue and the sync over K but does not make the per-row GPU work cheaper (see
+// residentDecoder.VerifyPath). len(runners) must be ≥ len(xs).
 func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int) ([][]float32, error) {
 	n := len(xs)
 	if n == 0 {
@@ -1773,8 +1654,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	for i := range n {
 		runners[i].record(pass)
 	}
-	// N-84 (docs/audit-2026-09-10.md): see Run's identical fix above for why these must be
-	// checked rather than discarded.
+	// Checked rather than discarded, as in Run.
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
@@ -1801,11 +1681,9 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 		}
 	}
 	c.device.Poll(true, nil) // one sync settles every requested map (success or not)
-	// runners[i].stag is a PERSISTENT per-runner buffer. Returning while any stag is still mapped
-	// leaves it mapped forever, and every future MapAsync on it fails — poisoning the runner for the
-	// process lifetime (audit C-28). consumed[i] marks rows the readback already Unmapped; this
-	// deferred sweep Unmaps any that mapped but weren't consumed, on ALL return paths (a MapAsync
-	// error, a non-Success status, or a clean finish — where nothing is left to sweep).
+	// runners[i].stag is a PERSISTENT per-runner buffer. Returning while any stag is still mapped leaves it mapped forever, and
+	// every future MapAsync on it fails, poisoning the runner for the process lifetime. consumed[i] marks rows the readback
+	// already Unmapped; this deferred sweep Unmaps any that mapped but were not consumed, on ALL return paths.
 	consumed := make([]bool, n)
 	defer func() {
 		for i := range n {
@@ -1838,7 +1716,7 @@ func (r *DecodeRunner) release() {
 	r.keep = nil
 }
 
-// Release frees the runner's scratch (not the resident model).
+// Close frees the runner's scratch (not the resident model).
 func (r *DecodeRunner) Close() error { r.c.releaseOwned(r.release); return nil }
 
 // dnetRunParams carries the model-level Gated-DeltaNet geometry (uniform across the linear
@@ -1857,6 +1735,7 @@ type dnetRunParams struct {
 	eps        float32
 }
 
-// g4DropVNormForTest re-drops S1.0's Gemma 4 v_norm on the layers that are not K=V, so a gate can show the fix is what moved
-// the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test seam; never in production.
+// g4DropVNormForTest turns off the v_norm that Gemma 4 layers with their own v_proj apply (runLayer.vNorm), so a test can
+// show that v_norm is what moves the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test
+// seam; never in production.
 var g4DropVNormForTest bool
