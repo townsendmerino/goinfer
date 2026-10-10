@@ -556,8 +556,8 @@ func IsDirNoStream(err error) bool {
 // loadEmbedTable loads a [rows, cols] logit table (the token embedding or an untied head) at the embedding precision mode:
 // whole and then quantized for the resident build, a row at a time when streaming (a 256k x 4096 table is 4.2 GB as f32,
 // the largest single allocation of a transcode). Both give the same bytes (G-DS1, docs/tasks/task-prequant-dir-streaming-2026-10.md).
-func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode quantMode, needCanonical, stream bool) (linalg.WeightMat, error) {
-	if !stream {
+func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode quantMode, needCanonical bool, sink *giwWriter) (linalg.WeightMat, error) {
+	if sink == nil {
 		m, err := loadMat(st, name, rows, cols)
 		if err != nil {
 			return m, err
@@ -576,7 +576,7 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 	const block = 1024
 	var buf []float32
 	base := -1
-	return streamQuantizedEmbed(rows, cols, mode, needCanonical, func(r int, dst []float32) error {
+	return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), func(r int, dst []float32) error {
 		if base < 0 || r >= base+block {
 			base = r - r%block
 			var rerr error
@@ -629,6 +629,7 @@ func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, s
 // about the globals plus one layer rather than the whole model. The dedicated builders stream their layers the same way
 // (their embedding still loads whole); a family whose builder does not stream returns errDirNoStream.
 func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, sink *giwWriter, id string) (*Weights, error) {
+	skipRow4 = skipRow4 || !repackForDecode(sink) // every builder below takes it from here
 	if sink != nil {
 		switch {
 		case arch.Name == "gpt2", arch.Name == "internlm2", arch.gptoss != nil:
@@ -872,7 +873,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 	// head, so it is logit-critical — quantize it with the embedding policy
 	// (int8 even in int4 mode), not the projection mode.
 	embedTable := func(name string, rows int) (linalg.WeightMat, error) {
-		return loadEmbedTable(st, name, rows, hd, quant.embeddingWith(embedInt4), needCanonical, sink != nil)
+		return loadEmbedTable(st, name, rows, hd, quant.embeddingWith(embedInt4), needCanonical, sink)
 	}
 	if w.Embed, err = embedTable(mp(s.Embed), cfg.VocabSize); err != nil {
 		return nil, err
@@ -1218,7 +1219,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			if len(t.Shape) != 2 || t.Shape[0] != pleVocab || t.Shape[1] != pleTotal {
 				return nil, fmt.Errorf("gemma4: %q shape %v, want [%d %d]", name, t.Shape, pleVocab, pleTotal)
 			}
-			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, func(r int, dst []float32) error {
+			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), func(r int, dst []float32) error {
 				row, rerr := t.SubF32(r*pleTotal, pleTotal)
 				copy(dst, row)
 				return rerr
@@ -2452,14 +2453,14 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2570,8 +2571,8 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 	// transformers' own NemotronH names it backbone.embedding.weight, which is the only
 	// spelling the tiny fixture (built by instantiating the config) ever produced. Every
 	// other tensor name agrees, so this one word is the whole delta — try both.
-	if w.Embed, err = loadEmbedTable(st, "backbone.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
-		if w.Embed, err = loadEmbedTable(st, "backbone.embeddings.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "backbone.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
+		if w.Embed, err = loadEmbedTable(st, "backbone.embeddings.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 			return nil, err
 		}
 	}
@@ -2579,7 +2580,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2714,14 +2715,14 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2789,14 +2790,14 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, s.Embed, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, s.Embed, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32(s.FinalNorm, hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, s.LMHead, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, s.LMHead, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2872,14 +2873,14 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2955,14 +2956,14 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}

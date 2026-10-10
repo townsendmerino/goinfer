@@ -1350,7 +1350,8 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	//
 	// needCanonical=true unconditionally, regardless of target: the writer needs canonical bytes in RAM to choose what to
 	// write (repackRow4ForEmit computes row4 from canonical), even on a cpu-arm64 target that writes kind 5
-	// (canonical-absent) to disk; per layer, that is one layer's canonical bytes. abort=nil: this is the cmd/prequant
+	// (canonical-absent) to disk; per layer, that is one layer's canonical bytes. With a sink the build keeps nothing
+	// else in RAM (repackForDecode). abort=nil: this is the cmd/prequant
 	// transcode path, which observes ctx per layer through ctxWriter; the swap tripwire's load-time consumer is scoped to
 	// decoder.Load's resident build only (see Options.LoadAbort).
 	wr := &giwWriter{sink: out, target: target}
@@ -1521,6 +1522,7 @@ func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int)
 func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
+	skipRow4 = skipRow4 || !repackForDecode(sink) // every closure and family branch below takes it from here
 
 	// streamMat builds a [out, in] linalg.WeightMat by streaming the tensor's rows through
 	// the GGUF dequantizer and quantizing each row directly into the resident
@@ -1590,7 +1592,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		return streamQuantizedEmbed(out, in, quant.embeddingWith(embedInt4), needCanonical, func(r int, dst []float32) error {
+		return streamQuantizedEmbed(out, in, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), func(r int, dst []float32) error {
 			return into(r*in, dst)
 		})
 	}

@@ -201,10 +201,11 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, sk
 }
 
 // streamQuantizedEmbed is streamQuantizedRepackable for Embed/LMHead (the safety argument is quantizeEmbedWM's). skipRow4
-// is always false: Embed/LMHead are read via .Row() on the host on every backend, so the row4-skip trade (a slower CPU
-// fallback for less resident memory) is not this class's call; quantizeEmbedWM makes the same choice.
-func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-	return streamQuantizedRepackable(rows, cols, mode, needCanonical, false, rowInto)
+// is false for every load that will decode: Embed/LMHead are read via .Row() on the host on every backend, so the
+// row4-skip trade (a slower CPU fallback for less resident memory) is not this class's call, and quantizeEmbedWM makes
+// the same choice. Only a build for a sink passes true (!repackForDecode(sink)): nothing reads the table there.
+func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+	return streamQuantizedRepackable(rows, cols, mode, needCanonical, skipRow4, rowInto)
 }
 
 // streamQuantizedBatchedProj is streamQuantizedRepackable for attention Q/K/V and MLP gate/up; the batch-path safety
@@ -271,6 +272,9 @@ func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.Weight
 // Limitation: non-paged .giw tensors get no row4 repack. Extending it needs the decision sequenced after newExpertPager
 // picks its experts (docs/code-notes/decoder.md#repackW4A8Row4IfEligible).
 func repackW4A8Row4IfEligible(wm linalg.WeightMat) linalg.WeightMat {
+	if c := row4RepackCallsForTest; c != nil {
+		c.Add(1)
+	}
 	if !w4a8Row4RepackEnabled {
 		return wm
 	}
@@ -351,6 +355,17 @@ func repackW4A8IfEligible(wm linalg.WeightMat) linalg.WeightMat {
 func repackW4A8IfEligibleSkipRow4(wm linalg.WeightMat) linalg.WeightMat {
 	return repackW4A8SplitHalfIfEligible(wm)
 }
+
+// repackForDecode reports whether an int4 tensor built now also gets this CPU's row4 decode layout in RAM. It is false
+// while building for a sink: a transcode decodes nothing, and the writer derives the layout a target's file needs from
+// the canonical bytes itself (repackRow4ForEmit). Every row4 decision in a build that can have a sink goes through it:
+// buildWeightsFromGGUF and buildWeightsFromSafetensorsTo fold it into skipRow4 before any tensor is built, and the logit
+// tables, which never skip row4 otherwise, ask it directly. The amd64 split-half repack is off by default and is not
+// covered.
+func repackForDecode(sink *giwWriter) bool { return sink == nil }
+
+// row4RepackCallsForTest, when set, counts the tensors offered to the in-RAM row4 repack.
+var row4RepackCallsForTest *atomic.Int64
 
 // wantsCanonicalInt4 reports whether this load might need canonical int4 bytes (packed nibbles + scales) for a tensor,
 // that is, whether the repacked-only layout is unsafe. Two consumers read them directly rather than through WeightMat's
