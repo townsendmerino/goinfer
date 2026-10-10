@@ -275,7 +275,11 @@ def _git_commit_all(repo, msg):
     where a test needs a real, resolving commit to cite before the file it commits exists yet."""
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", msg, "--allow-empty")
-    return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
+    # The FULL hash, never --short. The lint only recognises a hash that holds both a digit and a letter (looks_like_sha), so a
+    # 7-character one is all digits about 4% of the time, and then QUEUE.md has "ZERO SHA citations" and setUp fails. Commits made in
+    # the same second from the same tree get the same hash, so the tests of one class failed together: 7 of 40 runs red, clumps of
+    # 3, 4 and 22 tests, found 2026-10-10 while adding CC0's tests. A 40-character hash is all digits with probability ~6e-9.
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
                            capture_output=True, text=True, check=True).stdout.strip()
 
 
@@ -307,6 +311,428 @@ class TestHookGitDirDoesNotRedirectSiblingLookups(unittest.TestCase):
                 else:
                     os.environ["GIT_DIR"] = saved
             self.assertTrue(isinstance(got, str) and got.endswith("in b"), f"subject_of = {got!r}, want the sibling's subject")
+
+
+# ---------------------------------------------------------------------------------------------------
+# CC0 (docs/tasks/task-code-comments-2026-10.md): symbol citations `path.go:Name`, pinned records
+# `<!-- citations-at: <commit> -->`, and the closing of the path:line door. Mutation-checked: each
+# red case below is a mistake someone will make, and each green case is an edit that used to cost a
+# citation re-point and must not any more.
+# ---------------------------------------------------------------------------------------------------
+
+GO_FIXTURE = """package svc
+
+import (
+	"fmt"
+)
+
+// Server serves.
+type Server struct {
+	addr string
+	Port int
+}
+
+type Stack[T any] struct{ items []T }
+
+type Pair[K comparable, V any] struct {
+	k K
+	v V
+}
+
+type Alias = Server
+
+type (
+	Reader interface{ Read() int }
+	Writer interface {
+		Write(p []byte) int
+	}
+)
+
+const Version = "1"
+
+const (
+	ModeA = iota
+	ModeB
+	// ModeC has a doc comment inside the block.
+	ModeC
+	First, Second = 1, 2
+)
+
+var global = 1
+
+var Left, Right = 3, 4
+
+var (
+	tableA = []int{
+		1, 2,
+	}
+	tableB = func() int {
+		return 2
+	}
+	_ = fmt.Sprint
+)
+
+// NewServer builds one.
+func NewServer(addr string) *Server { return &Server{addr: addr} }
+
+func (s *Server) Handle(n int) int {
+	var local = 5
+	const localConst = 6
+	type localType int
+	return n + local + localConst
+}
+
+func (s Server) Addr() string { return s.addr }
+
+func (*Server) NoName() {}
+
+func (Server) NoNameValue() {}
+
+func (s *Stack[T]) Push(v T) { s.items = append(s.items, v) }
+
+func (p *Pair[K, V]) Swap() (V, K) { return p.v, p.k }
+
+func Map[T, U any](in []T, f func(T) U) []U { return nil }
+
+func init() {}
+
+const raw = `
+func FakeInRaw() {}
+const FakeConstInRaw = 1
+type FakeTypeInRaw int
+`
+
+/*
+func FakeInBlockComment() {}
+*/
+
+// func FakeInLineComment() {}
+
+func Last() {}
+"""
+
+PY_FIXTURE = """class Tool:
+    def run(self):
+        return 1
+
+    async def arun(self):
+        return 2
+
+
+def helper():
+    return 3
+
+
+async def ahelper():
+    return 4
+"""
+
+
+class TestGoDeclarations(unittest.TestCase):
+    """The declaration forms a `path.go:Name` citation can name, and the look-alikes that must not count."""
+
+    def setUp(self):
+        self.names = qcl.go_declarations(GO_FIXTURE)
+
+    def test_every_declaration_form_is_found(self):
+        want = {
+            # types: plain, generic, alias, grouped (one-line and multi-line specs)
+            "Server", "Stack", "Pair", "Alias", "Reader", "Writer",
+            # consts and vars: single, grouped, iota continuation, multi-name specs, func-valued
+            "Version", "ModeA", "ModeB", "ModeC", "First", "Second",
+            "global", "Left", "Right", "tableA", "tableB", "raw",
+            # funcs: plain, generic, init
+            "NewServer", "Map", "init", "Last",
+            # methods: pointer, value, unnamed pointer/value receivers, generic receivers (one and two parameters)
+            "Server.Handle", "Server.Addr", "Server.NoName", "Server.NoNameValue", "Stack.Push", "Pair.Swap",
+        }
+        missing = want - self.names
+        self.assertFalse(missing, f"declarations not found: {sorted(missing)}")
+
+    def test_look_alikes_are_not_declarations(self):
+        for fake in ("FakeInRaw", "FakeConstInRaw", "FakeTypeInRaw", "FakeInBlockComment", "FakeInLineComment",
+                     "local", "localConst", "localType", "addr", "Port", "Read", "Write", "_", "Handle", "Push"):
+            self.assertNotIn(fake, self.names, f"{fake} must not count as a declaration")
+
+    def test_python_def_and_class(self):
+        names = qcl.py_declarations(PY_FIXTURE)
+        for want in ("Tool", "Tool.run", "Tool.arun", "helper", "ahelper"):
+            self.assertIn(want, names)
+        self.assertNotIn("run", names)  # a method is cited as Class.method
+
+    def test_symbol_regex_does_not_collide_with_path_or_bare_citations(self):
+        t = "see `decoder/x.go:42` and `decoder/x.go:Model.run` and `decoder/x.go` and `a/b.py:helper`"
+        self.assertEqual([m.group(2) for m in qcl.PATH_RE.finditer(t)], ["42"])
+        self.assertEqual([(m.group(1), m.group(2)) for m in qcl.SYMBOL_RE.finditer(t)],
+                         [("decoder/x.go", "Model.run"), ("a/b.py", "helper")])
+        # a bare reference is one NOT followed by a colon, so neither citation form is also a bare one
+        self.assertEqual([m.group(1) for m in qcl.BARE_RE.finditer(t)], ["decoder/x.go"])
+
+    def test_enclosing_declaration_for_migration(self):
+        lines = GO_FIXTURE.split("\n")
+        at = lambda needle: next(i for i, l in enumerate(lines, 1) if needle in l)
+        enc = lambda line: (lambda d: d.name if d else None)(qcl.enclosing_declaration(lines, line))
+        self.assertEqual(enc(at("return n + local")), "Server.Handle")
+        self.assertEqual(enc(at("func (s *Stack[T]) Push")), "Stack.Push")
+        self.assertEqual(enc(at("ModeB")), "ModeB")
+        self.assertEqual(enc(at("tableB = func")), "tableB")
+        self.assertEqual(enc(at("return 2")), "tableB")                   # a line inside a func literal in a var spec
+        self.assertEqual(enc(at("// ModeC has a doc comment")), "ModeC")  # a doc comment inside a block belongs to its spec
+        self.assertEqual(enc(at("// NewServer builds one.")), "NewServer")  # a doc comment belongs to the decl below it
+        self.assertIsNone(enc(at('"fmt"')))                                # the import block is outside any declaration
+        self.assertIsNone(enc(1))                                          # the package clause too
+
+
+class _LintRepo(unittest.TestCase):
+    """An isolated git repo with a cited Go file, a Python file, a QUEUE.md and a bootstrapped index, the lint pointed at it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = self.tmp.name
+        _git(self.repo, "init", "-q")
+        _git(self.repo, "config", "user.email", "test@example.com")
+        _git(self.repo, "config", "user.name", "Test")
+        os.makedirs(os.path.join(self.repo, "pkg"))
+        os.makedirs(os.path.join(self.repo, "docs"))
+        self.write("pkg/svc.go", GO_FIXTURE)
+        self.write("pkg/tool.py", PY_FIXTURE)
+        self.base = _git_commit_all(self.repo, "init")  # a real commit: the pin target and QUEUE.md's required SHA citation
+        self.write("docs/QUEUE.md", f"# QUEUE\n\ncommit {self.base} — init\n")
+        _git(self.repo, "add", "docs/QUEUE.md")
+        _git(self.repo, "commit", "-q", "-m", "queue")
+        self._orig = (qcl.ROOT, qcl.QUEUE, getattr(qcl, "CLOSE_THE_DOOR", False), qcl._MODCACHE)
+        qcl.ROOT = pathlib.Path(self.repo)
+        qcl.QUEUE = qcl.ROOT / "docs" / "QUEUE.md"
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+        qcl._MODCACHE = pathlib.Path(self.repo) / "no-module-cache-here"   # never the developer's real cache
+        qcl.PINNED_FILE_CACHE.clear()
+        code, out = self.run_lint(["--update"])
+        assert code == 0, out
+        _git(self.repo, "add", "docs/QUEUE.md", "docs/citation-index.md")
+        _git(self.repo, "commit", "-q", "-m", "index")
+
+    def tearDown(self):
+        qcl.ROOT, qcl.QUEUE, qcl.CLOSE_THE_DOOR, qcl._MODCACHE = self._orig
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+        qcl.PINNED_FILE_CACHE.clear()
+        self.tmp.cleanup()
+
+    def write(self, rel, text):
+        p = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(text)
+
+    def read(self, rel):
+        with open(os.path.join(self.repo, rel)) as f:
+            return f.read()
+
+    def doc(self, text, name="task-x.md", track=True):
+        """Write and (by default) track a live doc, so the lint sees it."""
+        self.write(f"docs/{name}", text)
+        if track:
+            _git(self.repo, "add", f"docs/{name}")
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+
+    def run_lint(self, argv=()):
+        old = sys.argv
+        sys.argv = ["queue_citation_lint.py"] + list(argv)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                code = qcl.main()
+        finally:
+            sys.argv = old
+        return code, buf.getvalue()
+
+    def assertGreen(self, argv=()):
+        code, out = self.run_lint(argv)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def assertRed(self, *needles, argv=()):
+        code, out = self.run_lint(argv)
+        self.assertNotEqual(code, 0, out)
+        for n in needles:
+            self.assertIn(n, out)
+        return out
+
+
+class TestSymbolCitations(_LintRepo):
+    """CC0.b: the file must declare the name. Survives every edit that does not rename or move it ACROSS FILES."""
+
+    def test_declared_names_are_green_in_every_form(self):
+        self.doc("cites `pkg/svc.go:Server.Handle`, `pkg/svc.go:Stack.Push`, `pkg/svc.go:Pair.Swap`, "
+                 "`pkg/svc.go:ModeB`, `pkg/svc.go:Right`, `pkg/svc.go:Reader`, `pkg/svc.go:Map`, "
+                 "`pkg/tool.py:Tool.run`, and `pkg/tool.py:helper`.\n")
+        self.assertGreen()
+
+    def test_renamed_func_is_red(self):
+        self.doc("see `pkg/svc.go:NewServer`\n")
+        self.assertGreen()
+        self.write("pkg/svc.go", GO_FIXTURE.replace("func NewServer(", "func BuildServer("))
+        self.assertRed("pkg/svc.go:NewServer", "task-x.md")
+
+    def test_renamed_method_receiver_is_red(self):
+        self.doc("see `pkg/svc.go:Server.Handle`\n")
+        self.write("pkg/svc.go", GO_FIXTURE.replace("func (s *Server) Handle(", "func (s *Server) Serve("))
+        self.assertRed("Server.Handle")
+
+    def test_removed_const_inside_a_block_is_red(self):
+        self.doc("see `pkg/svc.go:ModeB`\n")
+        self.assertGreen()
+        self.write("pkg/svc.go", GO_FIXTURE.replace("\tModeB\n", ""))
+        self.assertRed("pkg/svc.go:ModeB")
+
+    def test_name_declared_only_in_a_raw_string_is_red(self):
+        self.doc("see `pkg/svc.go:FakeInRaw`\n")
+        self.assertRed("pkg/svc.go:FakeInRaw")
+
+    def test_a_file_that_exists_nowhere_is_a_hard_error(self):
+        self.doc("see `pkg/gone.go:Anything`\n")
+        self.assertRed("pkg/gone.go")
+
+    def test_cited_func_moved_within_its_file_is_green(self):
+        self.doc("see `pkg/svc.go:Last` and `pkg/svc.go:NewServer`\n")
+        self.assertGreen()
+        moved = GO_FIXTURE.replace("func Last() {}\n", "")
+        moved = moved.replace("// NewServer builds one.", "func Last() {}\n\n// NewServer builds one.")
+        self.write("pkg/svc.go", "// a new header comment\n// of three lines\n// above everything\n" + moved)
+        self.assertGreen()
+
+    def test_comments_rewritten_above_a_cited_func_are_green(self):
+        self.doc("see `pkg/svc.go:Server.Handle`\n")
+        self.write("pkg/svc.go", GO_FIXTURE.replace(
+            "func (s *Server) Handle(", "// Handle was rewritten, and now says a good many more words\n// than it did when this citation was written.\n// It runs to three lines.\nfunc (s *Server) Handle("))
+        self.assertGreen()
+
+    def test_live_sh_line_citations_are_counted_and_reported(self):
+        self.write("pkg/run.sh", "#!/bin/sh\necho one\necho two\n")
+        _git_commit_all(self.repo, "a script")
+        self.doc("the script prints at `pkg/run.sh:2` and `pkg/run.sh:3`\n")
+        self.assertGreen(["--update"])
+        out = self.assertGreen()
+        self.assertIn("2 live .sh line citation(s)", out)
+
+    def test_python_removed_method_is_red(self):
+        self.doc("see `pkg/tool.py:Tool.arun`\n")
+        self.assertGreen()
+        self.write("pkg/tool.py", PY_FIXTURE.replace("    async def arun(self):\n        return 2\n", ""))
+        self.assertRed("pkg/tool.py:Tool.arun")
+
+
+class TestPinnedDocs(_LintRepo):
+    """CC0.a: a record is checked against the commit it describes, never against HEAD, and --update never rewrites it."""
+
+    def pinned(self, body, commit=None):
+        return f"# A record\n\n<!-- citations-at: {commit or self.base} -->\n\n{body}"
+
+    def test_pinned_doc_whose_code_changed_at_head_is_green(self):
+        self.doc(self.pinned("the guard is at `pkg/svc.go:60` and `pkg/svc.go:61-62`\n"))
+        self.assertGreen()
+        # HEAD's file is now a different, shorter file: an unpinned doc would be red several ways
+        self.write("pkg/svc.go", "package svc\n")
+        _git_commit_all(self.repo, "rewrite")
+        self.assertGreen()
+
+    def test_pinned_path_absent_at_its_commit_is_red(self):
+        self.doc(self.pinned("see `pkg/later.go:3`\n"))
+        self.write("pkg/later.go", "package svc\n\nfunc Later() {}\n")
+        _git_commit_all(self.repo, "add later.go after the pin")
+        self.assertRed("pkg/later.go", "absent at", argv=())
+
+    def test_pinned_line_past_eof_at_its_commit_is_red(self):
+        n = len(GO_FIXTURE.rstrip("\n").split("\n"))
+        self.doc(self.pinned(f"see `pkg/svc.go:{n + 5}`\n"))
+        self.assertRed("pkg/svc.go", "past the end")
+
+    def test_pinned_range_end_past_eof_is_red(self):
+        n = len(GO_FIXTURE.rstrip("\n").split("\n"))
+        self.doc(self.pinned(f"see `pkg/svc.go:{n - 1}-{n + 9}`\n"))
+        self.assertRed("past the end")
+
+    def test_a_marker_quoted_in_code_is_notation_not_a_pin(self):
+        """The doc that introduces the scheme quotes the marker in a code span and a fence; neither pins it, and neither is a misplaced marker."""
+        self.doc("# Scheme\n\n" + "\n" * 60 + "A record carries `<!-- citations-at: <commit> -->` near its top, e.g.\n\n"
+                 "```\n<!-- citations-at: abcdef1 -->\n```\n\nsee `pkg/svc.go:Server.Handle`\n")
+        self.assertGreen()
+        self.assertEqual(qcl.pinned_marker(self.read("docs/task-x.md")), (None, None))
+
+    def test_pinned_to_a_commit_that_does_not_resolve_is_red(self):
+        self.doc(self.pinned("see `pkg/svc.go:3`\n", commit="deadbeefdeadbeef"))
+        self.assertRed("deadbeef")
+
+    def test_marker_must_be_near_the_top(self):
+        self.doc("# A record\n" + "\n" * 60 + f"<!-- citations-at: {self.base} -->\nsee `pkg/svc.go:3`\n")
+        self.assertRed("near the top")
+
+    def test_update_never_rewrites_a_pinned_doc_and_indexes_nothing_for_it(self):
+        text = self.pinned("see `pkg/svc.go:60`\n")
+        self.doc(text, name="record-x.md")
+        _git(self.repo, "commit", "-q", "-am", "pinned doc")
+        # shift the cited line at HEAD: an unpinned doc would be re-pointed
+        self.write("pkg/svc.go", "// two\n// new lines\n" + GO_FIXTURE)
+        _git_commit_all(self.repo, "shift")
+        self.assertGreen(["--update"])
+        self.assertEqual(self.read("docs/record-x.md"), text)
+        self.assertNotIn("record-x.md", pathlib.Path(self.repo, "docs", "citation-index.md").read_text())
+        self.assertGreen()
+
+    def test_unpinned_doc_in_the_same_state_does_need_repointing(self):
+        """The control for the case above: the same shift on an UNPINNED doc is noticed (accepted as moved, then re-pointed)."""
+        self.doc("see `pkg/svc.go:60`\n", name="live-x.md")
+        self.assertGreen(["--update"])
+        self.write("pkg/svc.go", "// two\n// new lines\n" + GO_FIXTURE)
+        out = self.assertGreen()
+        self.assertIn("MOVED but are unchanged", out)
+
+    def test_aikit_path_in_a_pinned_doc_resolves_in_the_module_cache_at_the_commits_version(self):
+        # go.mod at the pinned commit requires aikit v9.9.9; the cache holds that version only
+        self.write("go.mod", "module example.com/goinfer\n\ngo 1.22\n\nrequire github.com/townsendmerino/aikit v9.9.9\n")
+        c = _git_commit_all(self.repo, "go.mod pins aikit v9.9.9")
+        cache = pathlib.Path(self.repo) / "mc"
+        mod = cache / "github.com" / "townsendmerino" / "aikit@v9.9.9" / "linalg"
+        mod.mkdir(parents=True)
+        (mod / "quant.go").write_text("package linalg\n\nfunc Quant() {}\n")
+        qcl._MODCACHE = cache
+        qcl.PINNED_FILE_CACHE.clear()
+        self.doc(self.pinned("see `linalg/quant.go:3`\n", commit=c))
+        self.assertGreen()
+        # past the end of THAT version's file: red
+        self.doc(self.pinned("see `linalg/quant.go:40`\n", commit=c))
+        qcl.PINNED_FILE_CACHE.clear()
+        self.assertRed("past the end")
+
+    def test_missing_module_is_a_missing_download_not_a_skip(self):
+        self.write("go.mod", "module example.com/goinfer\n\ngo 1.22\n\nrequire github.com/townsendmerino/aikit v9.9.9\n")
+        c = _git_commit_all(self.repo, "go.mod pins aikit v9.9.9")
+        self.doc(self.pinned("see `linalg/quant.go:3`\n", commit=c))
+        self.assertRed("CANNOT SEARCH", "go mod download")
+
+
+class TestCloseTheDoor(_LintRepo):
+    """CC0.c: a path:line in an unpinned doc is red once the door is closed. The switch is explicit so the
+    tests state which behaviour they exercise whatever the shipped default is."""
+
+    def test_line_citation_in_an_unpinned_doc_is_red_when_the_door_is_closed(self):
+        self.doc("see `pkg/svc.go:60`\n")
+        qcl.CLOSE_THE_DOOR = False
+        self.assertGreen(["--update"])
+        qcl.CLOSE_THE_DOOR = True
+        self.assertRed("pin this doc (`citations-at`) or name the declaration", "pkg/svc.go:60")
+
+    def test_symbol_and_pinned_citations_stay_green_when_the_door_is_closed(self):
+        self.doc("see `pkg/svc.go:Server.Handle`\n", name="live-x.md")
+        self.doc(f"# R\n\n<!-- citations-at: {self.base} -->\n\nsee `pkg/svc.go:60`\n", name="record-x.md")
+        qcl.CLOSE_THE_DOOR = True
+        self.assertGreen()
+
+    def test_the_door_message_names_every_offending_doc(self):
+        self.doc("see `pkg/svc.go:60`\n", name="live-a.md")
+        self.doc("see `pkg/svc.go:61` and `pkg/tool.py:2`\n", name="live-b.md")
+        qcl.CLOSE_THE_DOOR = True
+        self.assertRed("live-a.md", "live-b.md", "pkg/tool.py:2")
+
 
 
 if __name__ == "__main__":

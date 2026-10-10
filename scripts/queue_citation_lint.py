@@ -63,6 +63,7 @@ rather than silencing it — see `untracked_live_docs()` and its doc comment.
 """
 
 import collections
+import functools
 import os
 import pathlib
 import re
@@ -378,6 +379,10 @@ def modcache_root():
     return _MODCACHE
 
 
+# `\tgithub.com/townsendmerino/aikit v1.2.3` inside a require block, or the single-line `require github.com/... v1.2.3` form.
+_REQUIRE_RE = re.compile(r"^\s*(?:require\s+)?(github\.com/townsendmerino/aikit(?:/gpu)?)\s+(v[0-9][^\s]*)\s*$", re.M)
+
+
 def required_modules():
     """{module path: version} for the cross-repo modules goinfer cites, read from the ROOT go.mod.
 
@@ -396,8 +401,7 @@ def required_modules():
             text = mod_file.read_text()
         except OSError:
             continue
-        for m in re.finditer(r"^\s*(github\.com/townsendmerino/aikit(?:/gpu)?)\s+(v[0-9][^\s]*)\s*$",
-                             text, re.M):
+        for m in _REQUIRE_RE.finditer(text):
             if m.group(1) == want:
                 out[m.group(1)] = m.group(2)
     return out
@@ -601,6 +605,350 @@ def resolve_path(rel: str, line: int):
 BARE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py))(?![\w:])")
 
 
+# ---- SYMBOL CITATIONS (CC0.b, docs/tasks/task-code-comments-2026-10.md) ----
+#
+# A live doc names a declaration, not a line: `decoder/forwardn.go:Model.forwardN`, `gpu/residency.go:residentDecoder.PrefillLast`,
+# `scripts/x.py:Tool.run`. The check is that the file DECLARES that name. It survives every edit that does not rename the declaration
+# or move it to another file, and a rename is exactly when the doc should go red. There is no content key and no index row: the
+# declaration is the key, and it is read from the file each run.
+#
+# Never colliding with the other two forms: PATH_RE needs DIGITS after the colon, BARE_RE refuses a following colon, and a symbol
+# starts with a letter or underscore. Only .go and .py have a symbol form (`def` and `class` count in Python); there is no .sh form,
+# and none was needed — the tree carried zero live .sh line citations when CC0 was written (2026-10-10).
+SYMBOL_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|py)):([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?!\w)")
+
+# A line citation with an optional range end (`x.go:10-20`): PATH_RE keeps only the first number, which is all a CONTENT key needs but
+# not what a pinned record needs — its range end must lie inside the file at its commit too.
+PATH_RANGE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py)):(\d+)(?:-(\d+))?(?![\d])")
+
+
+def _go_line_starts_in_code(lines):
+    """For each line, True when it BEGINS outside a raw string and outside a block comment.
+
+    Declarations are found by their first column, so a line that merely begins inside a raw string must not count: this repo embeds
+    MSL, CUDA and WGSL kernel sources in Go raw strings, and WGSL has `const NAME: u32 = 64;` at column 0. A scanner that read those
+    as Go declarations would let a doc cite a name that exists only inside a shader and call it declared."""
+    in_raw = in_block = False
+    out = []
+    for ln in lines:
+        out.append(not in_raw and not in_block)
+        i, n = 0, len(ln)
+        while i < n:
+            if in_raw:
+                j = ln.find("`", i)
+                if j < 0:
+                    break
+                in_raw, i = False, j + 1
+            elif in_block:
+                j = ln.find("*/", i)
+                if j < 0:
+                    break
+                in_block, i = False, j + 2
+            else:
+                c = ln[i]
+                if c == "/" and ln[i + 1:i + 2] == "/":
+                    break
+                if c == "/" and ln[i + 1:i + 2] == "*":
+                    in_block, i = True, i + 2
+                elif c == "`":
+                    in_raw, i = True, i + 1
+                elif c in "\"'":
+                    i += 1
+                    while i < n and ln[i] != c:
+                        i += 2 if ln[i] == "\\" else 1
+                    i += 1
+                else:
+                    i += 1
+    return out
+
+
+# func [receiver] Name[typeparams](  — receivers `(s *T)`, `(s T)`, `(*T)`, `(T)`, `(s *T[K, V])`; the receiver's TYPE is what a citation names.
+_GO_FUNC = re.compile(r"^func\s+(?:\(\s*(?:[A-Za-z_]\w*\s+)?\*?\s*([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\s*\)\s*)?([A-Za-z_]\w*)\s*[\[(]")
+_GO_TYPE = re.compile(r"^type\s+([A-Za-z_]\w*)")
+_GO_VALUE = re.compile(r"^(?:const|var)\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)")
+_GO_BLOCK = re.compile(r"^(const|var|type)\s*\(\s*(?://.*)?$")
+_GO_SPEC = re.compile(r"^\t([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)(?=[\s=,]|$)")
+_GO_TOPLEVEL = re.compile(r"^(?:func|type|const|var|import|package)\b")
+
+Decl = collections.namedtuple("Decl", "name kind start end doc_start")  # 1-based inclusive lines; start is the keyword/spec line
+
+
+def go_decls(lines):
+    """Every top-level Go declaration of a file as a Decl, one per NAME (a multi-name spec yields one each, sharing its span).
+
+    Funcs and methods (`Type.Method`, the receiver's type with pointer and type parameters removed), types, consts and vars, including
+    each spec of a grouped `const (`/`var (`/`type (` block. Only a column-0 keyword or a one-tab spec inside such a block counts, so a
+    local `var x` in a function body, a struct field and a comment all stay out. gofmt'd source is assumed (CI refuses anything else).
+
+    The span is what migration needs to say which declaration a LINE is inside: from the keyword to the last line before the next
+    column-0 non-closer, trailing blank lines trimmed; doc_start reaches up over the contiguous `//` run directly above."""
+    mask = _go_line_starts_in_code(lines)
+    n = len(lines)
+    out = []
+
+    def doc_start(i):  # 0-based index of the declaration line -> 1-based start of its contiguous comment run
+        j = i
+        while j > 0 and mask[j - 1] and lines[j - 1].startswith("//"):
+            j -= 1
+        return j + 1
+
+    def extent_end(i):  # last 0-based line index belonging to the top-level declaration that starts at i
+        j = i + 1
+        while j < n:
+            ln = lines[j]
+            if mask[j] and ln and ln[0] not in " \t})":
+                break
+            j += 1
+        j -= 1
+        while j > i and not lines[j].strip():
+            j -= 1
+        return j
+
+    i = 0
+    while i < n:
+        ln = lines[i]
+        if not mask[i] or not ln or ln[0] in " \t":
+            i += 1
+            continue
+        m = _GO_BLOCK.match(ln)
+        if m:
+            kind, end = m.group(1), extent_end(i)
+            specs = [j for j in range(i + 1, end + 1) if mask[j] and _GO_SPEC.match(lines[j])]
+            for k, j in enumerate(specs):
+                names = [x.strip() for x in _GO_SPEC.match(lines[j]).group(1).split(",")]
+                nxt = specs[k + 1] if k + 1 < len(specs) else end  # the block's closing paren belongs to nobody
+                # a comment run directly above the NEXT spec is that spec's doc, not this one's tail
+                stop = nxt - 1
+                while stop > j and lines[stop].startswith("\t//"):
+                    stop -= 1
+                while stop > j and not lines[stop].strip():
+                    stop -= 1
+                ds = j
+                while ds > i + 1 and lines[ds - 1].startswith("\t//"):
+                    ds -= 1
+                for nm in names:
+                    if nm != "_":
+                        out.append(Decl(nm, kind, j + 1, stop + 1, ds + 1))
+            i = end + 1
+            continue
+        m = _GO_FUNC.match(ln)
+        if m:
+            recv, name = m.group(1), m.group(2)
+            if name != "_":
+                out.append(Decl(f"{recv}.{name}" if recv else name, "func", i + 1, extent_end(i) + 1, doc_start(i)))
+            i = extent_end(i) + 1
+            continue
+        m = _GO_TYPE.match(ln)
+        if m:
+            if m.group(1) != "_":
+                out.append(Decl(m.group(1), "type", i + 1, extent_end(i) + 1, doc_start(i)))
+            i = extent_end(i) + 1
+            continue
+        m = _GO_VALUE.match(ln)
+        if m:
+            e = extent_end(i)
+            for nm in (x.strip() for x in m.group(1).split(",")):
+                if nm != "_":
+                    out.append(Decl(nm, "value", i + 1, e + 1, doc_start(i)))
+            i = e + 1
+            continue
+        i += 1
+    return out
+
+
+@functools.lru_cache(maxsize=256)
+def go_declarations(text: str):
+    """The set of names a `path.go:Name` citation may use for this source."""
+    return frozenset(d.name for d in go_decls(text.split("\n")))
+
+
+_PY_DECL = re.compile(r"^(\s*)(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)")
+
+
+@functools.lru_cache(maxsize=256)
+def py_declarations(text: str):
+    """`def` and `class` names; a def indented under a class is `Class.method`. Nested helpers deeper than one level are not citable."""
+    out, cls = set(), None
+    for ln in text.split("\n"):
+        m = _PY_DECL.match(ln)
+        if not m:
+            continue
+        indent, name = len(m.group(1)), m.group(2)
+        if indent == 0:
+            cls = name if ln.lstrip().startswith("class") else None
+            out.add(name)
+        elif cls and indent <= 8:
+            out.add(f"{cls}.{name}")
+    return frozenset(out)
+
+
+def declared_names(rel: str, text: str):
+    return py_declarations(text) if rel.endswith(".py") else go_declarations(text)
+
+
+def enclosing_declaration(lines, line: int):
+    """The Decl a 1-based line lies inside (its doc comment included), or None when it is outside every declaration: the package
+    clause, the import block, a file-level comment, a blank line between declarations. The innermost wins (a block spec, not the
+    block). This is what anchor_for used to approximate by scanning up for a `func|type|const|var` line, which also claimed the
+    gap lines after a closing brace for the function above."""
+    best = None
+    for d in go_decls(lines):
+        if d.doc_start <= line <= d.end and (best is None or d.start >= best.start):
+            best = d
+    return best
+
+
+# ---- PINNED RECORDS (CC0.a) ----
+#
+# A dated record — an audit, a review, a measurement write-up — describes code at a point in time and is not maintained as current
+# state. It says `<!-- citations-at: <commit> -->` near its top, and every path:line in it is resolved AT THAT COMMIT: the file existed
+# there and has that many lines. No content is recorded (the record's claim was true of that tree by construction), and --update never
+# rewrites a pinned doc, because rewriting it to match HEAD would make it describe code it never audited.
+CITATIONS_AT_RE = re.compile(r"<!--\s*citations-at:\s*([0-9a-f]{7,40})\s*-->")
+CITATIONS_AT_ANY_RE = re.compile(r"<!--\s*citations-at:")
+PIN_NEAR_TOP = 40  # the marker must sit in the first N lines; a marker buried in a doc is invisible to a reader
+
+# (repo root, commit, rel) -> (label, text) | None
+PINNED_FILE_CACHE = {}
+
+# Set True by step CC0.c (the door): a path:line in an UNPINNED doc is then a red. Off while live docs are being migrated.
+CLOSE_THE_DOOR = False
+DOOR_MESSAGE = "pin this doc (`citations-at`) or name the declaration"
+
+
+_FENCE_RE = re.compile(r"^(```|~~~).*?^\1[^\n]*$", re.M | re.S)
+_CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
+
+
+def _without_code(text: str) -> str:
+    """The prose of a markdown doc: fenced blocks and inline code spans blanked, newlines kept so line numbers hold. A marker QUOTED in
+    code is notation (the task doc that introduces `citations-at` quotes it in running text), and reading it as a marker would red the
+    doc that explains the scheme."""
+    text = _FENCE_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    return _CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+def pinned_marker(text: str):
+    """(commit, None) for a pinned doc, (None, None) for an unpinned one, (None, error) for a marker that is present but not near the top."""
+    prose = _without_code(text)
+    head = "\n".join(prose.split("\n")[:PIN_NEAR_TOP])
+    m = CITATIONS_AT_RE.search(head)
+    if m:
+        return m.group(1), None
+    if CITATIONS_AT_ANY_RE.search(prose):
+        return None, f"a `citations-at` marker exists but not near the top (first {PIN_NEAR_TOP} lines), where a reader would see it"
+    return None, None
+
+
+def commit_resolves(commit: str) -> bool:
+    r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"],
+                       capture_output=True, text=True, cwd=str(ROOT), env=_repo_env())
+    return r.returncode == 0
+
+
+def _git_show(commit: str, rel: str):
+    r = subprocess.run(["git", "show", f"{commit}:{rel}"], capture_output=True, cwd=str(ROOT), env=_repo_env())
+    return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+
+
+def modules_at(commit: str):
+    """{module: version} the aikit modules goinfer required AT that commit — what the record's aikit paths were about."""
+    out = {}
+    for mod_file, want in (("go.mod", "github.com/townsendmerino/aikit"), ("cuda/go.mod", "github.com/townsendmerino/aikit/gpu")):
+        t = _git_show(commit, mod_file)
+        if t is None:
+            continue
+        for m in _REQUIRE_RE.finditer(t):
+            if m.group(1) == want:
+                out[m.group(1)] = m.group(2)
+    return out
+
+
+class CannotSearch(Exception):
+    """A module the commit required is not in the module cache: the search did not happen, so the answer is not 'absent'."""
+
+
+def file_at(commit: str, rel: str):
+    """(label, text) of `rel` as it was at `commit`: this repo first, then the aikit module(s) at the version that commit's go.mod
+    required, read from the module cache. None when the file existed in neither. Raises CannotSearch when it was not found AND a
+    required module is not downloaded — a missing download is not an absence, and calling it one would be a green that covers nothing.
+
+    This repo wins when a path exists in both: a goinfer record cites goinfer first, and the live-doc resolver's aikit-first order
+    exists to pin versions, which a commit already does."""
+    key = (str(ROOT), commit, rel)
+    if key in PINNED_FILE_CACHE:
+        return PINNED_FILE_CACHE[key]
+    hit = None
+    t = _git_show(commit, rel)
+    if t is not None:
+        hit = (repo_name(ROOT), t)
+    else:
+        missing = []
+        for mod, ver in modules_at(commit).items():
+            d = modcache_dir(mod, ver)
+            if d is None:
+                missing.append(f"{mod}@{ver}")
+            elif (d / rel).is_file():
+                hit = (repo_name(d), (d / rel).read_text(errors="replace"))
+                break
+        if hit is None and missing:
+            raise CannotSearch(f"{rel} is not in this repository at {commit[:10]}, and the module(s) it may belong to are not downloaded: "
+                               + ", ".join(missing) + " — run `go mod download " + " ".join(missing) + "`")
+    PINNED_FILE_CACHE[key] = hit
+    return hit
+
+
+def check_pinned(doc_rel: str, commit: str, text: str, allow):
+    """Red lines for one pinned doc: every path:line must exist at the commit (the file, and the line, and a range's end), and every
+    symbol citation must name a declaration the file had there. Nothing is recorded."""
+    bad = []
+    seen = set()
+    for m in PATH_RANGE_RE.finditer(text):
+        rel, a, b = m.group(1), int(m.group(2)), m.group(3)
+        if rel in allow or rel.split("/")[0] in allow or (rel, a, b) in seen:
+            continue
+        seen.add((rel, a, b))
+        cite = f"{rel}:{a}" + (f"-{b}" if b else "")
+        try:
+            got = file_at(commit, rel)
+        except CannotSearch as e:
+            bad.append(f"  {doc_rel}|{cite}  CANNOT SEARCH — {e}")
+            continue
+        if got is None:
+            bad.append(f"  {doc_rel}|{cite}  PINNED PATH ABSENT — {rel} is absent at {commit[:10]}, the commit this record is pinned to")
+            continue
+        nlines = len(got[1].split("\n")) - (1 if got[1].endswith("\n") else 0)
+        end = int(b) if b else a
+        if a < 1 or max(a, end) > nlines:
+            bad.append(f"  {doc_rel}|{cite}  PINNED LINE past the end of {rel} at {commit[:10]} ({nlines} lines)")
+    for m in SYMBOL_RE.finditer(text):
+        rel, name = m.group(1), m.group(2)
+        if rel in allow or rel.split("/")[0] in allow or (rel, name) in seen:
+            continue
+        seen.add((rel, name))
+        try:
+            got = file_at(commit, rel)
+        except CannotSearch as e:
+            bad.append(f"  {doc_rel}|{rel}:{name}  CANNOT SEARCH — {e}")
+            continue
+        if got is None:
+            bad.append(f"  {doc_rel}|{rel}:{name}  PINNED PATH ABSENT — {rel} is absent at {commit[:10]}, the commit this record is pinned to")
+        elif name not in declared_names(rel, got[1]):
+            bad.append(f"  {doc_rel}|{rel}:{name}  PINNED SYMBOL GONE — {rel} declared no `{name}` at {commit[:10]}")
+    return bad
+
+
+def check_symbol(rel: str, name: str):
+    """('ok'|'gone'|'nofile', repo) for a `path:Name` citation in an UNPINNED doc, resolved through the same roots as a line citation
+    (the module cache at go.mod's version first, then the checkouts)."""
+    for rname, base in path_repos():
+        f = base / rel
+        if f.is_file():
+            RESOLVED_FROM[("module cache" if is_modcache(base) else "checkout", rname)] += 1
+            return ("ok" if name in declared_names(rel, f.read_text(errors="replace")) else "gone"), rname
+    return "nofile", ""
+
+
 ALLOW_RE = re.compile(r"<!--\s*sha-lint:\s*allow\s+([0-9a-f]{7,40})\s+(.+?)\s*-->")
 # Path citations into a project that is not checked out here — the Go stdlib, llama.cpp's gguf-py.
 # Same mechanism and same reasoning as the commit allowlist: it does not make the citation correct,
@@ -709,6 +1057,15 @@ _REPOINT_PASSES = 0
 
 
 def main() -> int:
+    """The entry point. The re-point recursion below is capped at 3 passes PER INVOCATION; the counter is module state, so a caller that
+    runs main() repeatedly in one process (the tests, a harness) must start each invocation from zero, or the fourth re-point anywhere
+    in the process reads "citations still shifting after 3 passes" (found 2026-10-10 mutating the lint's own tests)."""
+    global _REPOINT_PASSES
+    _REPOINT_PASSES = 0
+    return _main()
+
+
+def _main() -> int:
     update = "--update" in sys.argv
     text = QUEUE.read_text()
     body = body_without_index(text)
@@ -745,15 +1102,45 @@ def main() -> int:
                          "so the extractor is broken rather than the file being clean.\n")
         return 1
 
-    paths = []
+    paths, symbols, pre_bad, pinned_docs = [], [], [], {}
+    pallow = path_allowlist()
     for doc in live_docs():
         dtxt = doc.read_text(errors="replace")
         dbody = body if doc == QUEUE else dtxt
         rel_doc = str(doc.relative_to(ROOT))
+        # A PINNED record is checked at its commit and then left alone: its citations never enter the path index, --update never
+        # reaches it (repoint_citation is only ever called for a key in `paths`), and HEAD's version of the code is irrelevant to it.
+        commit, perr = pinned_marker(dbody)
+        if perr:
+            pre_bad.append(f"  {rel_doc}  {perr}")
+        if commit:
+            if commit_resolves(commit):
+                pre_bad += check_pinned(rel_doc, commit, dbody, pallow)
+                pinned_docs[rel_doc] = commit
+            else:
+                pre_bad.append(f"  {rel_doc}  pinned to {commit}, which does not resolve in this repository (a rebased-away or mistyped commit)")
+            continue
         for m in PATH_RE.finditer(dbody):
             key = f"{rel_doc}|{m.group(1)}:{m.group(2)}"
             if key not in [p[0] for p in paths]:
                 paths.append((key, m.group(1), int(m.group(2))))
+        for m in SYMBOL_RE.finditer(dbody):
+            if (rel_doc, m.group(1), m.group(2)) not in symbols:
+                symbols.append((rel_doc, m.group(1), m.group(2)))
+    if CLOSE_THE_DOOR:
+        # CC0.c: the door is shut. A line number in an unpinned doc is a pointer that goes stale on the next edit above it.
+        per_doc = collections.defaultdict(list)
+        for key, rel, ln in paths:
+            if rel in pallow or rel.split("/")[0] in pallow:
+                continue
+            per_doc[key.split("|", 1)[0]].append(f"{rel}:{ln}")
+        for d, cs in sorted(per_doc.items()):
+            pre_bad.append(f"  {d}  {len(cs)} path:line citation(s) in an unpinned doc ({', '.join(cs[:6])}"
+                           f"{', ...' if len(cs) > 6 else ''}) — {DOOR_MESSAGE}")
+    if pre_bad:
+        sys.stderr.write("queue_citation_lint: docs/QUEUE.md citations are not sound:\n")
+        sys.stderr.write("\n".join(pre_bad) + "\n")
+        return 1
 
     bares = []
     for m in BARE_RE.finditer(body):   # bare refs: QUEUE.md only, where they carry decisions
@@ -801,7 +1188,6 @@ def main() -> int:
             m = re.match(r"\|\s*`([^`]+:\d+)`\s*\|\s*([^|]*?)\s*\|\s*`(.*)`\s*\|$", line.strip())
             if m:
                 pidx0[m.group(1)] = m.group(2)
-    pallow = path_allowlist()
     # The index AS IT STANDS, read before --update rewrites it — the only record of what each
     # citation was keyed to before this run, and what the launder check compares against.
     pindex_prior = {}
@@ -822,6 +1208,16 @@ def main() -> int:
             pmissing.append((key, rel))
         else:
             presolved[key] = (repo, content)
+    sym_bad = []
+    for rel_doc, rel, name in symbols:
+        if rel in pallow or rel.split("/")[0] in pallow:
+            continue
+        st, _repo = check_symbol(rel, name)
+        if st == "nofile":
+            pmissing.append((f"{rel_doc}|{rel}:{name}", rel))
+        elif st == "gone":
+            sym_bad.append(f"  {rel_doc}|{rel}:{name}  SYMBOL GONE — {rel} declares no `{name}` (renamed, moved to another file, or deleted); "
+                           f"name the declaration it became, or pin this record (`citations-at`)")
     if pmissing:
         sys.stderr.write("queue_citation_lint: path citation(s) resolve in NO repository:\n")
         for key, rel in pmissing:
@@ -829,6 +1225,10 @@ def main() -> int:
         sys.stderr.write("  A path that resolves nowhere is a hard error, not a not-found: either the\n"
                          "  citation names no real file, or it omits the repo it belongs to.\n")
         return 2
+    if sym_bad:
+        sys.stderr.write("queue_citation_lint: docs/QUEUE.md citations are not sound:\n")
+        sys.stderr.write("\n".join(sym_bad) + "\n")
+        return 1
 
     bresolved, bmissing = {}, []
     for rel in bares:
@@ -912,7 +1312,7 @@ def main() -> int:
             print("\n".join(repointed))
             if _REPOINT_PASSES < 3:
                 _REPOINT_PASSES += 1
-                return main()  # rebuild the index from the corrected documents
+                return _main()  # rebuild the index from the corrected documents
             sys.stderr.write("queue_citation_lint --update: citations still shifting after 3 passes\n")
             return 1
         lines = [MARK_BEGIN, "", "## SHA index", "",
@@ -1143,6 +1543,12 @@ def main() -> int:
         for k, r in sorted(skipped_foreign):
             print(f"    {k}  (recorded in: {r})")
     ndocs = len({k.split("|", 1)[0] for k, _, _ in paths})
+    n_sh = sum(1 for _k, rel, _ln in paths if rel.endswith(".sh") and rel not in pallow)
+    print(f"queue_citation_lint: {n_sh} live .sh line citation(s) — shell has no symbol form, so a line number is the only way to cite one; "
+          f"CC0 counts them rather than inventing a form (zero when it was written, 2026-10-10).")
+    print(f"queue_citation_lint: {len(symbols)} symbol citation(s) (path.go:Name) across "
+          f"{len({d for d, _, _ in symbols})} live document(s), each checked against the declarations the file has now; "
+          f"{len(pinned_docs)} PINNED record(s) checked at their commits (citations-at), never against HEAD and never rewritten.")
     # DENOMINATOR, stated every run alongside the numerator. "VALIDATED N" alone cannot distinguish
     # a clean tree from a scanner whose universe shrank — an rglob that stops matching, or a doc that
     # moved under an excluded prefix, both report a smaller green N.

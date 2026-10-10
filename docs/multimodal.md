@@ -158,7 +158,7 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    before, but its resulting KV is pushed into the resident GPU cache (`UploadKV`, extended with a
    `base` position — a sliding-window ring's live K/V can start at a nonzero absolute position
    once wrapped) and decode continues on GPU from there
-   (`decoder/generate_vl_resident.go:residentUploadPrefill`, wired into both functions behind the
+   (`decoder/generate_vl_resident.go:Model.residentUploadPrefill`, wired into both functions behind the
    existing `resBusy` claim). Qwen2.5-VL specifically needed one real kernel change on both
    backends — `Forward(embedding, pos)`'s single position can't serve m-RoPE decode, which needs a
    DIFFERENT rotation angle (`pos+mropeDelta`) than the KV-storage/attention position (`pos`) once

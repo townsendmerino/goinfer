@@ -363,6 +363,9 @@ traps worth knowing before you hit them:
 
 `git push --no-verify` exists and is almost never the right answer — the lint is usually right.
 
+<!-- citation-lint: allow-path file.go the placeholder in this repo's own descriptions of the citation forms (file.go:NNN, file.go:NN), not a citation -->
+<!-- citation-lint: allow-path path.go the placeholder in the symbol-citation examples (path.go:Name, path.go:Type.Method), not a citation -->
+
 ## Measurement discipline
 
 This repo's measurements are the product, so the standards are load-bearing:
