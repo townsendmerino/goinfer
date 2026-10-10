@@ -486,6 +486,20 @@ exactly that.
   A kill means the parallelism is not happening, or the kernel is no faster. It goes back to T0's profile, not to a
   wider band. T6 ships on G-T1 alone, because it only removes work; its ratio is recorded.
 
+  **Amended 2026-10-10, before any T4b reading (the row named no cell and no instrument that exists; no band moves).**
+  - **Cells.** The band (0.4-0.6 expected, ship at most 0.70) was drawn from the amd64 audit, where the quantizer is
+    about 80% of a transcode's CPU. It can only be met where the quantizer leads, so the row is read on two cells:
+    **nobara, the 1.5B Q4_K_M GGUF to int4 `cpu-amd64`** (the audit's shape), and **the Mac, the Qwen3 0.6B bf16
+    directory to int4 `cpu-arm64`** (F3: on arm64 the quantizer leads for a bf16 directory, not for a GGUF). Recorded
+    beside them, ungraded: the Mac's 1.5B GGUF, where the quantizer is about 14% of the CPU and the ratio cannot go
+    under about 0.86 whatever the kernel does, and nobara's 0.6B directory.
+  - **Instrument.** Not in one process: the kernel lives in aikit, so the two arms are two builds of `cmd/prequant`
+    from one goinfer revision, old on aikit v1.65.0 (T4a) and new on the T4b commit. Each transcode runs with
+    `GOMAXPROCS=1`; the quantity is its user plus system CPU time from `time`. One discarded warm-up per arm, then five
+    pairs in alternating order; the ratio is paired, new over old. Both arms must write the same sha256
+    (`docs/measurements/giw-v16-transcode-2026-10/t4b_cpu_ab.py`).
+  - **Tier.** Day, as registered: CPU time on one thread, a few minutes a cell. The full-wall effect is the night's.
+
   **Read 2026-10-10: SHIP on all three graded cells.** Paired new/old wall, medians: Mac 1.5B `cpu-arm64` 0.278
   (three pairs, 0.278-0.279); nobara 1.5B `cpu-amd64` 0.131 and 7B `cpu-amd64` 0.117 (three pairs each); the 30B
   directory 0.178 (two pairs, 0.189 and 0.168). The stream phase's ratios are beside them in the record and none is in
