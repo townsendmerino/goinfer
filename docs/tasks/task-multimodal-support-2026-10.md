@@ -54,13 +54,14 @@ The last phase puts the answer where users look first, the README, with a check 
 | Qwen3.5+ MoE | not run | GPU: tower gate passed, served check passed (G-S6m, 2026-10-09) | not run | not run |
 | Qwen3-VL (dense) | CPU / CPU | GPU with DeepStack (S10) / GPU, resident DeepStack prefill on (owner, 2026-10-09, over G-S10k's FAIL) | GPU with DeepStack / GPU, image prefill on the GPU (S16) | not run |
 | GLM-OCR | CPU / CPU | GPU / GPU | GPU / GPU, batched image prefill (pairwise RoPE, 2026-10-09) | CPU / staged |
+| Ministral 3 (Pixtral) | CPU / CPU | CPU / GPU (not run) | CPU / GPU, image prefill on the CPU then uploaded (G-S10m-d) | not run |
 | EmbeddingGemma 2 (text, image, audio) | CPU | CPU | GPU | CPU |
 
 **Gaps in coverage:**
 - **Models:**
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
   - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
-  - Ministral 3 (Pixtral) and LFM2.5-VL have no tower (S10). North was dropped, never identified.
+  - LFM2.5-VL has no tower (S10). Ministral 3 (Pixtral) reads images since 2026-10-09 (S10, G-S10m-a to d), its tower on the CPU in float32 on every backend. North was dropped, never identified.
   - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
@@ -2554,7 +2555,7 @@ families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models
 
 **Size:** aikit about 500 lines, goinfer about 800, both with tests: M, as registered for S10.
 
-**S10 Pixtral progress (2026-10-09, Mac and nobara): G-S10m-a, b and c PASS; d owed.**
+**S10 Pixtral progress (2026-10-09, Mac and nobara): G-S10m-a, b, c and d PASS. S10 Ministral 3 is DONE.**
 - **The code:**
   - aikit, local branch `s10-pixtral` (96259e5, 419c9b3; not pushed): `PixtralVisionEncoder` and `PixtralPatchify`.
     The tiny tower's weights now ship, un-ignored like the other tiny towers' (a fresh checkout on nobara failed both
@@ -2608,13 +2609,38 @@ families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models
   done 16:39:46.
 - **Raw:** `docs/measurements/multimodal-support-2026-10/s10m-pixtral/` (the driver, every step's log, the two refused
   runs, and the reference summary without its float arrays).
-- **Owed:**
-  - G-S10m-d, served CPU against Metal. The 3B is not on the archive, and its HF files are about 7.7 GB against
-    15 GiB free on the Mac (owner's call).
-  - The parity manifest refresh for the `forwardn.go` core edit (`scripts/refresh_parity_hashes.sh`, at merge, in the
-    main checkout, which has the tiny checkpoints).
-  - aikit's release, then merging goinfer's branch.
-  - The README and `docs/multimodal.md` prose that still calls Pixtral "not yet".
+- **Released and merged:** aikit v1.63.0 (the Pixtral tower; tagged on the Mac 2026-10-09 19:05 PDT, releasegate 5/5,
+  vulncheck 16/16 clean at 0f5a008 on nobara, perfgate exception: no `linalg/`/`mmap/` change), and goinfer `main` at
+  62009e1e on it. The parity manifest refresh for the `forwardn.go` edit is 443e0d05 (43 forward goldens green, 0 failed). The
+  site's Ollama snapshot moved mistral-small3.2 from T to S (`docs/measurements/ollama-coverage-2026-10-09.md`, f31e1435).
+- **A third defect, found by G-S10m-d's first arm:** the checkpoint ships no chat template, and `chat.Detect`'s vocab
+  fallback had no Ministral case. Serve refused every image request ("this model has no chat template for vision"), and
+  text from this directory fell back to raw completion. `Detect` now takes `[SYSTEM_PROMPT]` with `[INST]` as control tokens
+  for `Ministral()`. Mistral v0.3's `[INST]`-only vocab is not taken for it (`TestDetect_fallback`).
+- **G-S10m-d, served: PASS.** Read 2026-10-09 19:42-19:49 PDT on the Mac. The Metal serve binary was built from `main` plus
+  the template fix. `--model` and `--vision` were `~/models/ministral3-3b-bf16` (the HF files copied from nobara, byte
+  counts checked), with `--embed-int4=false` on every arm. An explicit system message, 48 greedy tokens. Arms `=cpu`,
+  `metal`, then `cpu` again.
+
+  | request | prompt tokens | Metal against CPU | second CPU run against the first |
+  |---|---|---|---|
+  | one image (`table.png`) | 1,474 | first differs at token 2: CPU " displays" 0.253, Metal's " presents" 0.247 there, a near-tie | identical |
+  | two images (`table.png`, then the 896x896) | 2,527 | first differs at token 25: CPU `)"` 0.420, Metal's `),"` 0.396 there, a near-tie | identical |
+
+  - The Metal arm decoded `metal-resident (int4)`. Its resident image prefill declined ("prefill not implemented for this
+    arch's FFN shape"), so the prefill ran on the CPU and was uploaded. The support table's Metal cell (CPU tower, GPU
+    decode) says what ran, and its note now says where the prefill runs.
+  - The one-image prompt is exactly G-S10m-c's 1,474 ids, so the served path built the same prompt the reference graded.
+  - Request times were 55.6-69.9 s, the CPU float32 tower being most of it (exploratory, one reading each).
+  - Two refused runs before the reading are kept in `gs10m-d/refused/`. The first is the template defect above. The second
+    found the port held by the first run's server, which the driver had leaked on the failed request; it now kills its
+    server on exit.
+- **Raw:** `docs/measurements/multimodal-support-2026-10/s10m-pixtral/gs10m-d/` (the run, each arm's serve log, replies and
+  log-probabilities).
+- **Owed, none of them gates:**
+  - A Metal resident prefill for this FFN shape (the image turn's prefill is on the CPU today).
+  - A GPU Pixtral tower (none declared on any backend).
+  - Mistral Small 3.x's 24B: the same `PixtralVisionModel` architecture, never run.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the

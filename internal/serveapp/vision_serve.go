@@ -48,6 +48,7 @@ type visionInput struct {
 	gemma4         bool // selects GenerateGemma4VL in driveVL
 	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR)
 	pixtral        bool // S10: Ministral 3, causal image tokens (GenerateVLCausalSpans)
+	images         int  // the images in the turn (S10: a Pixtral image is one span per merged row, so not len(spans))
 	// S11: every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then
 	// returns every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the
 	// one-media builders (GLM-OCR, audio), whose single span driveVL reads from imgPos/imgLen.

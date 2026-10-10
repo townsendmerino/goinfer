@@ -39,6 +39,7 @@ for be in "${arms[@]}"; do
   echo "[$(date '+%H:%M:%S')] arm $lab (--backend $be --embed-int4=false)"
   "$BIN" "$@" --backend "$be" --embed-int4=false --addr 127.0.0.1:$PORT >"$OUT/serve-$lab.log" 2>&1 </dev/null &
   pid=$!
+  trap 'kill $pid 2>/dev/null || true' EXIT # a failed request (set -e) must not leave this arm's server holding the port
   for _ in $(seq 1 600); do
     curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:$PORT/v1/models 2>/dev/null | grep -q 200 && break
     kill -0 $pid 2>/dev/null || { echo "serve exited; see $OUT/serve-$lab.log" >&2; exit 1; }

@@ -387,7 +387,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 <!-- END images-and-audio support table -->
 
-Not yet: Pixtral (Ministral 3), LFM2.5-VL, Qwen3-VL MoE images, video, and images on WebGPU beyond Gemma 3's tower.
+Not yet: LFM2.5-VL, Qwen3-VL MoE images, video, and images on WebGPU beyond Gemma 3's tower.
 
 ## Docs
 

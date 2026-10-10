@@ -1,0 +1,30 @@
+[19:42:41] arm cpu (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+loaded Pixtral vision tower for "ministral3-3b-bf16" (24 layers, image token id 10, tower on CPU, float32) from /Users/francistownsend-merino/models/ministral3-3b-bf16
+  cpu one-image (55.6s, 1474 prompt tokens): 'The table displays quarterly unit sales by region in thousands for the fiscal year 2025, showing a steady increase in sales across all regions from Q1 to Q4.'
+  cpu two-image (59.4s, 2527 prompt tokens): 'The image you\'ve shared is a screenshot of a table titled "Table 2. Quarterly unit sales by region (thousands)" showing sales data across different regions (Nor'
+  "ministral3-3b-bf16" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+[19:44:39] arm metal (--backend metal --embed-int4=false)
+  decode path: metal-resident (int4)
+loaded Pixtral vision tower for "ministral3-3b-bf16" (24 layers, image token id 10, tower on CPU, float32) from /Users/francistownsend-merino/models/ministral3-3b-bf16
+  metal one-image (62.9s, 1474 prompt tokens): 'The table presents quarterly unit sales by region in thousands for the fiscal year 2025, showing a steady increase in sales across all regions from Q1 to Q4.'
+  metal two-image (69.9s, 2527 prompt tokens): 'The image you\'ve shared is a screenshot of a table titled "Table 2. Quarterly unit sales by region (thousands)," which displays quarterly sales data across diff'
+  metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+    decode path: metal-resident (int4)
+    session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions not given: Metal keeps 2 by default, and a memory guard may keep fewer; --kv-sessions 4 asks for 4)
+  "ministral3-3b-bf16" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+  vision: 33 images; the resident image prefill declined (metal: prefill not implemented for this arch's FFN shape (use the sequential path)), so the CPU prefill ran and was uploaded
+  vision: 65 images; the resident image prefill declined (metal: prefill not implemented for this arch's FFN shape (use the sequential path)), so the CPU prefill ran and was uploaded
+[19:47:37] arm cpu2 (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+loaded Pixtral vision tower for "ministral3-3b-bf16" (24 layers, image token id 10, tower on CPU, float32) from /Users/francistownsend-merino/models/ministral3-3b-bf16
+  cpu2 one-image (55.9s, 1474 prompt tokens): 'The table displays quarterly unit sales by region in thousands for the fiscal year 2025, showing a steady increase in sales across all regions from Q1 to Q4.'
+  cpu2 two-image (58.3s, 2527 prompt tokens): 'The image you\'ve shared is a screenshot of a table titled "Table 2. Quarterly unit sales by region (thousands)" showing sales data across different regions (Nor'
+  "ministral3-3b-bf16" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+reference arm cpu
+one-image: metal against cpu: first differing token 2: cpu ' displays', metal ' presents'; cpu top-3 ' displays' 0.253, ' presents' 0.247, ' shows' 0.110; near-tie True
+one-image: cpu2 against cpu: IDENTICAL replies
+two-image: metal against cpu: first differing token 25: cpu ')"', metal '),"'; cpu top-3 ')"' 0.420, '),"' 0.396, ').' 0.090; near-tie True
+two-image: cpu2 against cpu: IDENTICAL replies
+rc=0
+19:49:36 PDT

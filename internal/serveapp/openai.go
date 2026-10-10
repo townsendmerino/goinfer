@@ -1739,8 +1739,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // S11: say why a multi-image turn prefilled on the CPU
-		fmt.Fprintf(os.Stderr, "vision: %d images; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", len(spans), gen.ImgPrefillDecline)
+	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // S11: say why a multi-span turn prefilled on the CPU
+		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
 	}
 	if vi.gemma4 { // S1 G4 evidence (docs/tasks/task-multimodal-support-2026-10.md): where this image turn decoded
 		where := "cpu"
