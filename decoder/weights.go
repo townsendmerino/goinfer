@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -1133,7 +1134,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			expInter := arch.MoE.IntermediateDim // expert FFN width (Mellum: moe_intermediate_size)
 			if fusedExperts {
 				// Real qwen3_5_moe: all experts in two stacked 3-D tensors.
-				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, skipRow4); err != nil {
+				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, skipRow4, arch.Name == "qwen3_vl_moe"); err != nil {
 					return err
 				}
 			} else {
@@ -1538,15 +1539,36 @@ func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *A
 	return nil
 }
 
-// loadFusedExperts unpacks the real qwen3_5_moe MoE FFN, which stores all experts as two stacked 3-D tensors: gate_up_proj
-// [nExpert, 2*inter, hidden] (gate || up on the row axis) and down_proj [nExpert, hidden, inter]. It splits the fused
-// gate_up and de-stacks per expert (the safetensors analogue of the GGUF stackedExperts path), then quantizes each into
-// the resident format.
+// fusedExpertsTransposedForTest, when set, reads every fused expert tensor in the row layout whatever its shape: a
+// planted defect for the transposed (transformers 4.57) layout.
+var fusedExpertsTransposedForTest bool
+
+// fusedLayout decides how a fused expert tensor is laid out from its shape: rows is the layout read as [E, a, b] (a
+// rows of b), cols the transposed [E, b, a]. A shape matching exactly one decides; when both match (a == b) the
+// family's declared layout (legacy) decides; anything else is refused. Element counts alone cannot tell the two apart,
+// so a check on them loads the transposed layout as garbage with no error.
+func fusedLayout(name string, shape []int, nExpert, a, b int, legacy bool) (transposed bool, err error) {
+	rows := slices.Equal(shape, []int{nExpert, a, b})
+	cols := slices.Equal(shape, []int{nExpert, b, a})
+	switch {
+	case rows && cols:
+		return legacy, nil
+	case rows:
+		return false, nil
+	case cols:
+		return true, nil
+	}
+	return false, fmt.Errorf("experts %q: shape %v is neither [%d %d %d] nor [%d %d %d]", name, shape, nExpert, a, b, nExpert, b, a)
+}
+
+// loadFusedExperts reads a fused+stacked MoE expert set: gate_up_proj and down_proj, each [experts, ...], in either the
+// Qwen3.5-MoE row layout ([E, 2I, H] and [E, H, I]) or transformers 4.57's transposed one ([E, H, 2I] and [E, I, H],
+// Qwen3-VL-MoE's release), decided by shape (fusedLayout). legacy names the family's layout for the square case.
 //
 // It streams via Tensor.SubF32, one expert at a time, as streamExperts does for gemma4's fused experts: whole-tensor
 // TensorF32 reads would materialize both stacks as f32, a multi-GB transient per layer times every layer parallelLayers
 // has in flight.
-func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4 bool) ([]expertWeights, error) {
+func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4, legacy bool) ([]expertWeights, error) {
 	guT, err := st.Tensor(gateUpName)
 	if err != nil {
 		return nil, err
@@ -1562,6 +1584,17 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	if dnT.Elements() != nExpert*downStride {
 		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", downName, dnT.Elements(), nExpert*downStride, nExpert, hidden, inter)
 	}
+	guTrans, err := fusedLayout(gateUpName, guT.Shape, nExpert, 2*inter, hidden, legacy)
+	if err != nil {
+		return nil, err
+	}
+	dnTrans, err := fusedLayout(downName, dnT.Shape, nExpert, hidden, inter, legacy)
+	if err != nil {
+		return nil, err
+	}
+	if fusedExpertsTransposedForTest {
+		guTrans, dnTrans = false, false
+	}
 	experts := make([]expertWeights, nExpert)
 	for e := range experts {
 		guE, err := guT.SubF32(e*guStride, guStride)
@@ -1571,6 +1604,12 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		dnE, err := dnT.SubF32(e*downStride, downStride)
 		if err != nil {
 			return nil, err
+		}
+		if guTrans { // [H, 2I] -> [2I, H]: gate rows first, then up
+			guE = transposeF32(guE, hidden, 2*inter)
+		}
+		if dnTrans { // [I, H] -> [H, I]
+			dnE = transposeF32(dnE, inter, hidden)
 		}
 		var gate, up, dn linalg.WeightMat
 		if skipRow4 {
@@ -1585,6 +1624,17 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
 	}
 	return experts, nil
+}
+
+// transposeF32 returns the transpose of a row-major [rows, cols] matrix.
+func transposeF32(m []float32, rows, cols int) []float32 {
+	out := make([]float32, len(m))
+	for r := range rows {
+		for c := range cols {
+			out[c*rows+r] = m[r*cols+c]
+		}
+	}
+	return out
 }
 
 // loadGemma4MoE loads one gemma4 layer's parallel dense+MoE FFN sub-block (enable_moe_block) into a gemma4MoEWeights,
@@ -2478,7 +2528,7 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		if lw.Router, e = loadMat(st, tn("block_sparse_moe.router.layer.weight"), arch.MoE.NumExperts, hidden); e != nil {
 			return e
 		}
-		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant, skipRow4); e != nil {
+		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant, skipRow4, false); e != nil {
 			return e
 		}
 		sInter := arch.MoE.SharedIntermediateDim

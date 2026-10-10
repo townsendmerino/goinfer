@@ -2911,6 +2911,29 @@ in the S10 order). Checkpoint `Qwen/Qwen3-VL-30B-A3B-Instruct` (Apache-2.0, bf16
 **Size:** goinfer about 600 lines (the architecture, the loader's shape check, serve), the streaming script about 250,
 aikit expected 0: L, as registered for S10's MoE variants.
 
+- **Amendment A1 (2026-10-09 22:10 PDT, before G-S10q-a ran; no bar moves).** G-S10q-a's planted defect 2, "the
+  router's softmax taken after the top-8", is not a defect. A softmax over the top-8 logits equals softmax-over-all,
+  top-8 and renormalise, exactly, so it would read green by construction. It is replaced by **the router not
+  renormalised over the top 8**, which changes the weights.
+
+**S10 Qwen3-VL MoE progress (2026-10-09, Mac):**
+- **G-S10q-a: PASS.** `decoder/qwen3vlmoe_test.go` on `testdata/qwen3vlmoe-tiny` (committed; the experts on disk in the
+  4.57 layout, `[8, 64, 48]`, so the shape decides the layout as on the 30B).
+  - Text: every position at cosine 1.000000000 (14 positions).
+  - Image: one 4x6-patch image with three DeepStack sets; goinfer's m-RoPE positions equal HF's `get_rope_index`;
+    every position at cosine 1.000000000 (15 positions).
+  - Planted defects, each red: the experts read without the transpose 0.795; the router not renormalised 0.945; the
+    m-RoPE chunked 0.966; DeepStack one layer late 0.913.
+- **A defect found by G-S10q-a: the batched prefill's MoE branch never added DeepStack.** Its `continue` skipped the
+  add, the same shape as audit C-07's capture seam in the same branch. The image prompt read 0.666, equal to the
+  planted one-layer-late defect because both added nothing. Fixed in `runLayersFromEmbedN`. No family that has
+  DeepStack was MoE until now, and no MoE family without DeepStack is affected (its `cache.deepstack` is nil).
+- **The fused-expert loader reads by shape.** `fusedLayout` decides `[E, 2I, H]` against `[E, H, 2I]` from the
+  tensor's shape and refuses anything else. Element counts alone could not tell the two apart. The square case falls
+  to the family's declared layout (`TestFusedLayout`). Qwen3.5-MoE's and Granite's real fixtures load as before (58
+  tests green with the fixtures present).
+- `num_local_experts` (a transformers 5.x save) is accepted beside `num_experts` (the released config).
+
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
 owner's choice is that decision. The dev checkpoint is `Qwen/Qwen3-VL-2B-Instruct`, downloaded on nobara (`~/models/

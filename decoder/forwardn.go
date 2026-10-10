@@ -446,8 +446,13 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 					hi[j] += ff[j]
 				}
 			}
+			// DeepStack, as on the dense path below: after the layer's residual, before the capture. The `continue` below
+			// skips the dense path's copy of both.
+			if ds := cache.deepstack; ds != nil && l < len(ds.rows) {
+				addDeepstack(h, ds, l, startPos, K, hidden)
+			}
 			// Hidden-state seam, as in the dense path below: MoE layers must also record captured[ci], or a capture against a sparse-MoE
-			// target leaves captured all-nil and fuseAt slices a nil slice. The `continue` below skips the dense path's copy.
+			// target leaves captured all-nil and fuseAt slices a nil slice.
 			if cache.captureLayers != nil {
 				for ci, cl := range cache.captureLayers {
 					if cl == l {

@@ -32,6 +32,7 @@ var registry = map[string]archAdapter{
 	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
+	"qwen3_vl_moe":        qwen3VLMoeArchitecture, // Qwen3-VL-30B-A3B (S10): qwen3_moe + qwen3_vl's interleaved m-RoPE; DeepStack images through the dense Qwen3-VL's path
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
 	"smollm3":             smollm3Architecture,    // SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers) on every 4th layer, tied embeddings
 	"olmo3":               olmo3Architecture,      // Olmo 3 (7B/32B): NormPostOnly (no pre-norm at all) + whole-vector QK-norm + sliding/full 3:1 + YaRN
@@ -1461,6 +1462,23 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // text position, load-bearing once an image path runs, so it is wired here. vision_config/deepstack_visual_indexes are ignored: no vision
 // tower and no DeepStack injection in this adapter.
 func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	section, err := qwen3VLMRopeSection(cfg, "qwen3_vl")
+	if err != nil {
+		return nil, nil, err
+	}
+	arch, schema, err := qwen3Architecture(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	arch.Name = "qwen3_vl"
+	arch.MRopeSection = section
+	arch.MRopeInterleaved = true
+	return arch, schema, nil
+}
+
+// qwen3VLMRopeSection reads a Qwen3-VL text_config's m-RoPE section (and rope_theta, when nested) for the family name, and
+// clears rope_scaling of it (m-RoPE is not a parseRopeScaling kind). Shared by qwen3_vl and qwen3_vl_moe.
+func qwen3VLMRopeSection(cfg *Config, name string) ([]int, error) {
 	// Same extraction qwen2_5_vlArchitecture uses: mrope_section + rope_theta live under
 	// EITHER the nested rope_parameters (the common transformers-5.x shape) OR the older
 	// top-level rope_scaling {type:mrope, mrope_section} + rope_theta.
@@ -1471,7 +1489,7 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			MRopeSection []int   `json:"mrope_section"`
 		}
 		if err := json.Unmarshal(cfg.RopeParameters, &rp); err != nil {
-			return nil, nil, fmt.Errorf("decoder(qwen3_vl): parse rope_parameters: %w", err)
+			return nil, fmt.Errorf("decoder(%s): parse rope_parameters: %w", name, err)
 		}
 		section = rp.MRopeSection
 		if cfg.RoPEGlobalBase == 0 {
@@ -1485,7 +1503,7 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			MRopeSection []int  `json:"mrope_section"`
 		}
 		if err := json.Unmarshal(cfg.RopeScaling, &rs); err != nil {
-			return nil, nil, fmt.Errorf("decoder(qwen3_vl): parse rope_scaling: %w", err)
+			return nil, fmt.Errorf("decoder(%s): parse rope_scaling: %w", name, err)
 		}
 		// The released Qwen3-VL checkpoints write rope_scaling {mrope_interleaved: true, mrope_section: [...], rope_type: "default"}: m-RoPE is
 		// marked by the section being there, not by the type, so a section present is taken whatever the type says.
@@ -1505,14 +1523,29 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if len(section) != 3 {
 		// Refuse: a Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A stale .giw sidecar that
 		// dropped it then fails its self-check and rebuilds.
-		return nil, nil, fmt.Errorf("decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it")
+		return nil, fmt.Errorf("decoder(%s): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it", name)
 	}
 	cfg.MRopeSection = section
-	arch, schema, err := qwen3Architecture(cfg)
+	return section, nil
+}
+
+// qwen3VLMoeArchitecture expresses Qwen3-VL MoE's text decoder (Qwen3-VL-30B-A3B, S10): qwen3_moe's attention, experts and
+// router (128 experts, top 8, renormalised; no shared expert) with qwen3_vl's interleaved m-RoPE. The released checkpoint
+// stores its experts in transformers 4.57's fused layout, which loadFusedExperts reads by shape. The vision tower and
+// DeepStack are the dense Qwen3-VL's (aikit's tower, GenerateQwenVLDeepstack).
+func qwen3VLMoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	section, err := qwen3VLMRopeSection(cfg, "qwen3_vl_moe")
 	if err != nil {
 		return nil, nil, err
 	}
-	arch.Name = "qwen3_vl"
+	if cfg.NumExperts == 0 { // the released config (transformers 4.57) says num_experts; a 5.x save writes num_local_experts
+		cfg.NumExperts = cfg.NumLocalExperts
+	}
+	arch, schema, err := qwen3MoeArchitecture(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	arch.Name = "qwen3_vl_moe"
 	arch.MRopeSection = section
 	arch.MRopeInterleaved = true
 	return arch, schema, nil
