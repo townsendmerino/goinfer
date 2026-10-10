@@ -20,10 +20,9 @@ func parse(t *testing.T, app App, args ...string) (*flag.FlagSet, *Flags) {
 	return fs, f
 }
 
-// TestRegister_chatAndServeGetTheSameFlags is the drift this package exists to end: chat lacked
-// --ctx, --stream-weights and --moe-cache-experts/--moe-cache-slots while serve had them, and a
-// cold-user run reached for --moe-cache-experts in chat. Same names, same defaults; the help may
-// differ only by serve's per-model-override notes and its serve-only fallback wording.
+// TestRegister_chatAndServeGetTheSameFlags is the drift this package exists to end: chat and serve register the same
+// flags with the same names and defaults; the help may differ only by serve's per-model-override notes and its
+// serve-only fallback wording. Origin: docs/code-notes/internal-loadflags.md#TestRegister_chatAndServeGetTheSameFlags.
 func TestRegister_chatAndServeGetTheSameFlags(t *testing.T) {
 	chat, _ := parse(t, Chat)
 	serve, _ := parse(t, Serve)
@@ -69,8 +68,8 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		"moe-cache-slots":   {"--moe-cache-slots=7", func(o decoder.Options, _ *Flags) bool { return o.MoECacheSlots == 7 }},
 		"moe-pager":         {"--moe-pager=" + otherPager(), func(o decoder.Options, _ *Flags) bool { return o.MoEPager == otherPager() }},
 		"accept-slow":       {"--accept-slow", func(o decoder.Options, _ *Flags) bool { return o.AcceptSlowMoE }},
-		// Default is true (2026-09-28): the row must probe the opt-out, not the (now-default) bare
-		// flag, or the "default does NOT look like the non-default value" check below is vacuous.
+		// Default is true: the row must probe the opt-out, not the (now-default) bare flag, or the "default does NOT look like
+		// the non-default value" check below is vacuous.
 		"embed-int4": {"--embed-int4=false", func(o decoder.Options, _ *Flags) bool { return !o.EmbedInt4 }},
 		"fit":        {"--fit=off", func(o decoder.Options, _ *Flags) bool { return o.DisableFit }},
 		"exact-prefill": {"--exact-prefill", func(o decoder.Options, _ *Flags) bool {
@@ -157,8 +156,8 @@ func TestCPUExactPrefillDisclosesTheDefaultsTrade(t *testing.T) {
 			t.Errorf("--cpu-exact-prefill help does not mention %q — the default's trade must be disclosed in --help:\n%s", must, CPUExactPrefillHelp)
 		}
 	}
-	// --exact-prefill's help quotes each backend's floor; Metal's is 16 (metal/backend.go metalFastPrefillFloor, A-P02),
-	// which the help used to give as 512 and then 64 (and the removed --metal-fast-prefill's as 256).
+	// --exact-prefill's help quotes each backend's floor; Metal's is 16 (metal/backend.go metalFastPrefillFloor), and the
+	// help must follow it.
 	if !strings.Contains(ExactPrefillHelp, "above 16 prompt tokens") {
 		t.Errorf("--exact-prefill help does not give Metal's 16-token floor:\n%s", ExactPrefillHelp)
 	}

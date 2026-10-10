@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-// R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `goinfer-chat --version` was
-// unanswerable — "flag provided but not defined: -version" — and a bare `version` positional
-// (a plausible typo reaching for it) was silently swallowed and started an interactive chat
-// session with the embedded model instead of erroring or printing anything.
+// TestIsVersionArg_recognizesAllForms pins the spellings isVersionArg accepts (--version, -version, a bare `version`) and
+// rejects. R6: the two binary-level tests below pin the behaviour behind it; history in
+// docs/code-notes/internal-chatapp.md#TestIsVersionArg_recognizesAllForms.
 func TestIsVersionArg_recognizesAllForms(t *testing.T) {
 	for _, a := range []string{"--version", "-version", "version"} {
 		if !isVersionArg(a) {
@@ -25,8 +24,7 @@ func TestIsVersionArg_recognizesAllForms(t *testing.T) {
 	}
 }
 
-// The mutation this guards against: deleting the dispatch check makes this go red with exactly
-// v0.17.0's own error text, "flag provided but not defined: -version".
+// Deleting the dispatch check makes this go red with the old error text, "flag provided but not defined: -version".
 func TestChatVersionFlag_answersWithoutAModel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
@@ -44,8 +42,8 @@ func TestChatVersionFlag_answersWithoutAModel(t *testing.T) {
 		t.Skipf("cannot build demo/chat here: %v\n%s", err, out)
 	}
 
-	// Both spellings, and both positions (bare first arg, and the registered flag after one
-	// that would otherwise require a model) — R6 found the first broken and the second untested.
+	// Both spellings, and both positions (bare first arg, and the registered flag after one that would otherwise require a
+	// model).
 	for _, args := range [][]string{{"--version"}, {"version"}, {"-model", "/nonexistent.gguf", "--version"}} {
 		out, err := exec.Command(bin, args...).CombinedOutput()
 		if err != nil {
@@ -64,10 +62,9 @@ func TestChatVersionFlag_answersWithoutAModel(t *testing.T) {
 	}
 }
 
-// The other half of R6: a bare unrecognized positional must error and name the real
-// subcommands, not fall through into loading a model. The mutation this guards against:
-// removing the flag.Args() check reproduces v0.17.0's silent fallthrough exactly — no error,
-// exit 0, and (on an embed build) an interactive session started on a typo.
+// The other half of R6: a bare unrecognized positional must error and name the real subcommands, not fall through into
+// loading a model. Removing the flag.Args() check restores the silent fallthrough: no error, exit 0, and (on an embed
+// build) an interactive session started on a typo.
 func TestChatUnknownPositional_namesTheSubcommands(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")

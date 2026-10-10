@@ -28,7 +28,7 @@ func cosRows(got, want []float32, d int) (float64, float64) {
 	return worst, md
 }
 
-// TestReal_audio is Phase A's gates A1-A4 (docs/tasks/task-embeddinggemma2.md, pre-registered before this ran) on the
+// TestReal_audio is Phase A's gates A1-A4 (docs/tasks/task-embeddinggemma2.md, pre-registered) on the
 // real google/embeddinggemma-2 (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2) against sentence-transformers'
 // references: testdata/embeddinggemma2-audio/golden.json and its WAVs (committed), and GOINFER_EG2_AUDIO_ARTIFACTS
 // (default ~/goinfer-logs/embeddinggemma2-audio), HF's own log-mel and tower stages per clip

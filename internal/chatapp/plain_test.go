@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-// R26 (docs/tasks/task-first-hour.md): piped stdin used to print a banner, a `you>` label, ANSI escapes and a trailing `bye`. Through the REPL loop
-// itself (the caller of every one of those prints) a scripted session must print the answer and nothing else; an interactive one is unchanged.
+// R26 (docs/tasks/task-first-hour.md): through the REPL loop itself (the caller of every print), a scripted session
+// (piped stdin) must print the answer and nothing else: no banner, `you>` label, ANSI escapes or trailing `bye`. An
+// interactive one is unchanged. Origin: docs/code-notes/internal-chatapp.md#TestRepl_plainWhenScripted.
 func TestRepl_plainWhenScripted(t *testing.T) {
 	run := func(plain bool) string {
 		var out bytes.Buffer

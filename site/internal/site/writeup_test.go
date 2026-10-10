@@ -165,8 +165,8 @@ func TestVerify_refusesADraftInADeploy(t *testing.T) {
 	}
 }
 
-// The templates escape an apostrophe as &#39;, so the output check must compare escaped titles. A title like "Batching that
-// doesn't change the answer" failed the build before this (found while drafting the first batch).
+// The templates escape an apostrophe as &#39;, so the output check must compare escaped titles: a title like "Batching
+// that doesn't change the answer" must not fail the build.
 func TestVerify_acceptsATitleWithAnApostrophe(t *testing.T) {
 	needRepo(t)
 	out := t.TempDir()

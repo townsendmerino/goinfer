@@ -6,11 +6,9 @@ import (
 	"testing"
 )
 
-// Track 2.3 (testing campaign): the .giw bundle frame is goinfer's own untrusted
-// binary input (cmd/prequant writes it, the demo embeds it). Read's magic /
-// version / CRC-style guards exist; these targets fuzz PAST them — valid header,
-// hostile body, truncation at every boundary, and the u64 v2 length path — to
-// hold the "typed error, never a panic" bar.
+// The .giw bundle frame is goinfer's own untrusted binary input (cmd/prequant writes it, the demo embeds it). Read's
+// magic / version / CRC-style guards exist; these targets fuzz PAST them (valid header, hostile body, truncation at
+// every boundary, and the u64 v2 length path) to hold the "typed error, never a panic" bar.
 
 // validBundle frames a v2 bundle the way Write does, for seeding.
 func validBundle(weights, tok []byte) []byte { return Write(weights, tok) }

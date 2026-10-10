@@ -1,9 +1,10 @@
 //go:build cuda && goinfer_testhooks
 
-// Package s4siglip reads aikit's CUDA SigLIP tower (gpu/visioncuda) at real size, alone. It is its own package because both aikit's visioncuda and goinfer's
-// own cuda.VisionEncoder (cuda/vision_register.go) register through the one global vision.RegisterResident hook and the LAST registration wins: inside package
-// cuda the goinfer tower wins, so a test there measures goinfer's tower, not aikit's (found 2026-10-07; the attached type was *cuda.VisionEncoder).
-// This package imports nothing from goinfer's cuda, so only visioncuda registers. Information for the aikit defect report, not a gate (G-S4q).
+// Package s4siglip reads aikit's CUDA SigLIP tower (gpu/visioncuda) at real size, alone. It is its own package because
+// aikit's visioncuda and goinfer's cuda.VisionEncoder (cuda/vision_register.go) both register through the one global
+// vision.RegisterResident hook and the last registration wins: inside package cuda the goinfer tower wins, so a test
+// there would measure goinfer's tower, not aikit's. This package imports nothing from goinfer's cuda, so only visioncuda
+// registers. Information for the aikit defect report, not a gate. Origin: docs/code-notes/cuda-s4siglip.md#s4siglip.
 package s4siglip
 
 import (

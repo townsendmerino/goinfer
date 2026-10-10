@@ -154,9 +154,8 @@ func TestCheckClaims_theRealClaimsHold(t *testing.T) {
 	}
 }
 
-// The claims check has to be able to fail. Each case corrupts one claim and must be refused, naming it. The first is
-// the mockup's own error: it showed the 1.5B on CUDA at 253.1 tok/s, the first of three runs, where the record's median
-// is 252.9.
+// The claims check has to be able to fail. Each case corrupts one claim and must be refused, naming it. The first is the
+// mockup's own error: a first-of-three-runs figure where the record gives the median.
 func TestCheckClaims_refusesDrift(t *testing.T) {
 	cases := []struct {
 		name   string

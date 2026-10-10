@@ -50,7 +50,7 @@ func cos64(a []float32, b []float64) float64 {
 	return dot / math.Sqrt(na*nb)
 }
 
-// TestReal_vision is Phase V's gates (docs/tasks/task-embeddinggemma2.md, pre-registered before this ran), on the real
+// TestReal_vision is Phase V's gates (docs/tasks/task-embeddinggemma2.md, pre-registered), on the real
 // google/embeddinggemma-2 (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2) against sentence-transformers'
 // references (testdata/embeddinggemma2-vision/golden.json, committed; and GOINFER_EG2_VISION_ARTIFACTS, default
 // ~/goinfer-logs/embeddinggemma2-vision, HF's own patches, positions and image features per image):
@@ -60,11 +60,9 @@ func cos64(a []float32, b []float64) float64 {
 //	    on every soft token.
 //	V3: aikit's preprocessing gives HF's patch grid and soft-token count; the patches' max |diff| is reported.
 //	V4: every case's end-to-end embedding (aikit's preprocessing and tower, then the encoder) has cosine >= 0.999 with
-//	    the reference, and the same embedding from HF's own pixels has cosine >= 0.9999. The pre-registered bar was
-//	    0.9999 end to end; the read landed in its ambiguous band (0.99924-0.99986) with the whole gap in the resize
-//	    (aikit bilinear, the reference bicubic; 1.000000000 from HF's pixels), and the owner accepted it on 2026-10-06
-//	    ("since we understand the difference i'm ok with it"). The loose bar covers only the resize: everything after it
-//	    is still held to 0.9999 through HF's pixels. V3 and V4 are read for bilinear.
+//	    the reference, and the same embedding from HF's own pixels has cosine >= 0.9999. The loose bar covers only the
+//	    resize (aikit bilinear, the reference bicubic): everything after it is still held to 0.9999 through HF's pixels.
+//	    V3 and V4 are read for bilinear (docs/code-notes/embeddinggemma2.md#TestReal_vision.V4).
 //	R1: with the reference's bicubic (preprocess.go), V3's patch max |diff| is at most one uint8 step on every image.
 //	R2: with bicubic, every case's end-to-end cosine is >= 0.9999. (Its float64 control lives with the resize, in
 //	    aikit's vision tests, since the resize moved there.)
@@ -108,7 +106,7 @@ func TestReal_vision(t *testing.T) {
 		t.Fatal(err)
 	}
 	H := e.Model().Config().Hidden
-	// The modes read: aikit's bilinear (V3/V4) and the reference's bicubic (R1/R2), both aikit's since 2026-10-06.
+	// The modes read: aikit's bilinear (V3/V4) and the reference's bicubic (R1/R2), both implemented in aikit.
 	modes := []struct {
 		name   string
 		resize ImageResize

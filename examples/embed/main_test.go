@@ -11,21 +11,17 @@ import (
 	"testing"
 )
 
-// R10 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): a README+pkg.go.dev-only reader's
-// own ≤40-line embed program compiled and ran on the first try — a genuine success — but printed
-// "Hello. Hello. Hello. Hello. ..." instead of a coherent reply, because it encoded the raw
-// prompt directly with no chat template. This example already applies one (chat.Detect); this
-// test is the gate that would have caught a regression back to that shape: it runs the REAL
-// binary against a real, tiny, chat-tuned checkpoint and asserts the output is not one token (or
-// one short phrase) repeated into a loop.
+// TestEmbedExample_outputIsNotARepeatedToken pins that the example applies the model's chat template (chat.Detect)
+// instead of encoding the raw prompt, which makes a model print one token or short phrase repeated into a loop. It runs
+// the REAL binary against a real, tiny, chat-tuned checkpoint and asserts the output is not one token (or one short
+// phrase) repeated. Origin (R10): docs/code-notes/examples-embed.md#TestEmbedExample_outputIsNotARepeatedToken.
 func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary and loads a real checkpoint")
 	}
-	// A fixture whose chat template chat.Detect RECOGNISES (ChatML), so the example's templated path
-	// is the one this drives (audit-2026-09-10 G-13(g)). TinyLlama's Zephyr-style template is not one
-	// Detect knows: the example fed it the raw prompt with or without chat.Detect, and its output was
-	// byte-identical either way, so removing the call could not fail this test.
+	// A fixture whose chat template chat.Detect RECOGNISES (ChatML), so the example's templated path is the one this drives.
+	// TinyLlama's Zephyr-style template is not one Detect knows: the example fed it the raw prompt with or without
+	// chat.Detect, and its output was byte-identical either way, so removing the call could not fail this test.
 	fixture := "../../testdata/qwen2-gguf/qwen2.5-0.5b-instruct-q8_0.gguf"
 	if _, err := os.Stat(fixture); err != nil {
 		t.Skipf("no fixture at %s", fixture)
@@ -59,9 +55,9 @@ func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 	if text == "" {
 		t.Fatal("embed example produced no output")
 	}
-	// A templated instruct model answers and ENDS its turn; fed the raw prompt it runs on to the
-	// 256-token cap. Measured on this fixture: 32 chars with the template, 852 without it. The 400
-	// bound was fixed before the run that tested it.
+	// A templated instruct model answers and ENDS its turn; fed the raw prompt it runs on to the 256-token cap, so a length
+	// bound of 400 characters separates them
+	// (docs/code-notes/examples-embed.md#TestEmbedExample_outputIsNotARepeatedToken.bound).
 	if len(text) > 400 {
 		t.Fatalf("the reply ran %d chars — the model never ended its turn, which is the shape of a prompt "+
 			"sent without its chat template:\n%s", len(text), text)
@@ -73,13 +69,12 @@ func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 	t.Logf("output (%d chars): %s", len(text), text)
 }
 
-// TestBuildPrompt_rendersOnlyOneLeadingBOS is M-39 (audit-2026-09-10): buildPrompt must not
-// prepend a second BOS when the chat template it just rendered already carries the family's own
-// BOS marker. chatml-tiny.gguf (tokenizer/testdata) is a small fixture whose ChatML template
-// chat.Detect recognizes AND whose vocab carries a real BOS id (unlike Qwen's real ChatML
-// checkpoints, whose BOS is -1 — the reason the full-binary integration test above can't exercise
-// this path at all, per the audit's own note). Encoding the rendered text with addBOS=true (the
-// pre-fix bug) visibly double-prepends the BOS id; this asserts exactly one.
+// TestBuildPrompt_rendersOnlyOneLeadingBOS pins that buildPrompt does not prepend a second BOS when the chat template it
+// just rendered already carries the family's BOS marker: encoding the rendered text with addBOS=true would show the BOS
+// id twice, and this asserts exactly one. The fixture is chatml-tiny.gguf (tokenizer/testdata), whose ChatML template
+// chat.Detect recognizes and whose vocab carries a real BOS id; Qwen's real ChatML checkpoints have BOS -1, so the
+// full-binary test above cannot exercise this path. Origin (M-39):
+// docs/code-notes/examples-embed.md#TestBuildPrompt_rendersOnlyOneLeadingBOS.
 func TestBuildPrompt_rendersOnlyOneLeadingBOS(t *testing.T) {
 	fixture := filepath.Join("..", "..", "tokenizer", "testdata", "chatml-tiny.gguf")
 	tok, err := tokenizer.LoadGGUF(fixture)
@@ -112,11 +107,10 @@ func TestBuildPrompt_rendersOnlyOneLeadingBOS(t *testing.T) {
 	}
 }
 
-// longestConsecutiveRepeat checks every window size from minLen up to a cap for a substring
-// that occurs immediately followed by itself two or more times running (the repeating unit's
-// PERIOD, which a real loop can land on at any width — a fixed handful of guessed widths missed
-// a real one: "Byeagain.User:Byeagain.Assistant:" repeating at period 34), and returns the
-// occurrence covering the most total text along with its repeat count.
+// longestConsecutiveRepeat checks every window size from minLen up to a cap for a substring that occurs immediately
+// followed by itself two or more times running (the repeating unit's period, which a real loop can land on at any width,
+// so no fixed set of widths is enough), and returns the occurrence covering the most total text along with its repeat
+// count.
 func longestConsecutiveRepeat(s string, minLen int) (string, int) {
 	bestUnit, bestReps := "", 1
 	maxW := minLen * 8

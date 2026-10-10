@@ -9,12 +9,10 @@ import (
 	"testing"
 )
 
-// TestRun_zeroModelsReportsSkippedNotFullyPassed pins V-17 (docs/review-2026-09-04.md): against
-// a server with zero models loaded, Chat/Structured/Stop/CountTokens never run at all (Run's own
-// else-if branch appends a single Skip row instead) — but the summary line used to print "all N
-// checks passed" unconditionally, reading as full coverage when only the models-list row and a
-// skip actually happened. Same "a SKIP IS NOT A PASS" doctrine this repo already applies to Go
-// test output (CLAUDE.md).
+// TestRun_zeroModelsReportsSkippedNotFullyPassed pins V-17: against a server with zero models loaded,
+// Chat/Structured/Stop/CountTokens never run (Run's own else-if branch appends a single Skip row instead), so the
+// summary line must not read "all N checks passed" as if that were full coverage when only the models-list row and a
+// skip happened. A SKIP IS NOT A PASS, as for Go test output (CLAUDE.md).
 func TestRun_zeroModelsReportsSkippedNotFullyPassed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

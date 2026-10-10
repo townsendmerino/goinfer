@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// The dry run and the real load must agree on the default context: cuda/resident.go's fitDefaultCtx says goinfer-chat fit's -ctx default is "the same
-// figure, so the dry run and the real load agree" — and nothing checked it, so R19's change (8192 to 16384, docs/tasks/task-first-hour.md) had two
-// places to forget. The cuda module cannot be imported from here (it is its own module, behind a build tag), so the constant is read from its source.
-// It must also hold a coding agent's first request: opencode's was 11,137 tokens.
+// The dry run and the real load must agree on the default context: cuda/resident.go's fitDefaultCtx says goinfer-chat
+// fit's -ctx default is "the same figure, so the dry run and the real load agree", so this reads the constant from that
+// source (the cuda module is its own module, behind a build tag, and cannot be imported here). It must also hold a
+// coding agent's first request with headroom: 11,137 tokens, opencode's (R19, docs/tasks/task-first-hour.md).
 func TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn(t *testing.T) {
 	src, err := os.ReadFile("../../cuda/resident.go")
 	if err != nil {

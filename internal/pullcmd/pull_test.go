@@ -7,16 +7,15 @@ import (
 	"github.com/townsendmerino/goinfer/pull"
 )
 
-// R15 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): `pull` and `--model` are meant
-// to take the same reference forms — a ref copied from one flag to the other should just work.
-// Before this fix, resolveRunRef (then inlined in Run) called pull.ParseRef directly, which has
-// no idea what "hf:" means; --model's path (pull.Resolve, pull/resolve.go:59) strips it first.
-// So every hf:-prefixed form --model accepts (pull.IsRef reports true for it) was refused by
-// `pull` with a validRepo error naming "hf" as the owner.
+// R15 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): `pull` and `--model` take the same reference forms,
+// so a ref copied from one flag to the other just works. Every hf:-prefixed form --model accepts (pull.IsRef reports
+// true; pull.Resolve strips the prefix first) must also be accepted by resolveRunRef, which would otherwise hand
+// pull.ParseRef an "hf" owner and fail with a validRepo error.
 //
-// Mutation: delete the `refArg = strings.TrimPrefix(refArg, "hf:")` line in resolveRunRef — the
-// hf:-prefixed cases below go red with exactly that "hf" owner error, while the bare and demo:
-// cases (which never carried the prefix) stay green, proving the assertion isolates the fix.
+// Mutation: delete the `refArg = strings.TrimPrefix(refArg, "hf:")` line in resolveRunRef and the hf:-prefixed cases
+// below go red with exactly that "hf" owner error, while the bare and demo: cases (which never carried the prefix) stay
+// green, proving the assertion isolates it. History:
+// docs/code-notes/internal-pullcmd.md#TestResolveRunRef_everyFormModelAcceptsPullAcceptsToo.
 func TestResolveRunRef_everyFormModelAcceptsPullAcceptsToo(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -95,10 +94,9 @@ func TestResolveRunRef_registryShortNameRewrites(t *testing.T) {
 	if got.Repo == "" {
 		t.Errorf("resolveRunRef(%q): empty repo in resolved ref", names[0])
 	}
-	// M-32 (audit-2026-09-10.md): a recommended checkpoint's SHA256/Bytes used to be dropped
-	// on the round trip through ParseRef(c.Ref()), which only ever sets Pin for a "demo:" ref
-	// — so every OTHER registry entry verified against whatever HF's API reports today instead
-	// of the digest this build vouches for.
+	// A recommended checkpoint's SHA256/Bytes must survive the round trip through ParseRef(c.Ref()), which only ever sets
+	// Pin for a "demo:" ref; otherwise every OTHER registry entry verifies against whatever HF's API reports today instead
+	// of the digest this build vouches for (M-32).
 	c, ok := pull.Recommended(names[0])
 	if !ok {
 		t.Fatalf("pull.Recommended(%q): not found (was in RecommendedNames)", names[0])
