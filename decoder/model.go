@@ -86,6 +86,7 @@ type Model struct {
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
 	resSlotsDef   bool         // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
+	windowedKV    bool         // Options.ResidentWindowedKV
 	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
@@ -232,6 +233,30 @@ func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 // ResidentKVSlotsIsDefault reports Options.ResidentKVSlotsDefault: the slot request is the caller's default, which a backend
 // may lower to its own (Metal: 2).
 func (m *Model) ResidentKVSlotsIsDefault() bool { return m.resSlotsDef }
+
+// WindowedKVSlack is the headroom, in positions, a windowed-KV layer holds beyond its window: a layer keeps window+WindowedKVSlack
+// positions and compacts (copies its live tail to the start) once per slack positions written. It must cover the widest batch of rows
+// written in one pass: a prefill chunk (512 by default), a verify batch, an MC3 row. The CUDA allocation and decoder's pricing both use
+// it, so priced bytes equal allocated bytes.
+const WindowedKVSlack = 512
+
+// ResidentWindowedKVCap is how many positions a windowed-KV layer of the given window holds at a resident context of ctx: the whole
+// context when that is no larger than the window plus its slack, else window+WindowedKVSlack.
+func ResidentWindowedKVCap(window, ctx int) int { return min(ctx, window+WindowedKVSlack) }
+
+// ResidentWindowedKV reports Options.ResidentWindowedKV: the caller asked for windowed K/V on a backend that supports it.
+func (m *Model) ResidentWindowedKV() bool { return m.windowedKV }
+
+// WindowedKVLayer reports whether layer l's resident K/V is windowed under Options.ResidentWindowedKV: the option is on and the layer is
+// a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
+// bounded by a window). Every windowed layer shares SlidingWindowResident's one window.
+func (m *Model) WindowedKVLayer(l int) bool {
+	if !m.windowedKV || m.SlidingWindowResident() <= 0 || !m.LayerIsLocalResident(l) {
+		return false
+	}
+	a := m.w.arch
+	return a != nil && a.mla == nil && a.kvDimAt(l) > 0
+}
 
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1 for a
 // family with recurrent state. A residency builder that supports slots (ResidentKVSlotter) allocates up to this many,
@@ -387,6 +412,12 @@ type Options struct {
 	// -kv-sessions was not given). A backend may then lower it to its own default: Metal keeps 2 slots, since every slot's KV is
 	// resident from the first token on unified memory.
 	ResidentKVSlotsDefault bool
+	// ResidentWindowedKV asks the CUDA resident to keep only a window's worth of K/V (plus WindowedKVSlack positions of headroom) for each
+	// sliding-window layer instead of the whole context, which lets a windowed model such as Mellum2.1 fit a long context fully resident
+	// beside its weights (docs/tasks/task-cuda-windowed-kv-2026-10.md). Off by default: it changes how much memory a load takes. A
+	// backend or family that cannot honour it keeps the full cache and says why (ResidentWindowedKVDecline); the decode is bit-identical
+	// either way. Only CUDA reads it today.
+	ResidentWindowedKV bool
 	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the
 	// whole prompt (docs/tasks/task-concurrency-2026-09.md). 0 = off: whole prefill. Sound only where the resident's batched
@@ -446,7 +477,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,

@@ -1510,6 +1510,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
 		// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
 		// caches are allocated is what makes `free` mean "what is actually left for KV".
@@ -1538,7 +1539,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if r.layers[l].kvShared {
 				continue // aliased below, once every owning layer has its buffers
 			}
-			r.kc[l], r.vc[l] = r.af(r.ctxCap*r.layers[l].kvDim), r.af(r.ctxCap*r.layers[l].kvDim)
+			r.kc[l], r.vc[l] = r.af(r.kvPositions(l)*r.layers[l].kvDim), r.af(r.kvPositions(l)*r.layers[l].kvDim)
+		}
+		if r.kvWin {
+			r.kvAllocScratch()
 		}
 		// A KV-shared layer's cache IS its source's: every launch indexes r.kc[l]/r.vc[l], so aliasing the buffers needs no launch-site
 		// change (the device teardown is ledger-based, so a buffer held twice is released once). UploadKV refuses these layers by name.
@@ -1744,7 +1748,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// with the g4cap diagnostic, which syncs inside a segment. admitGraphs gates it: replay is bit-exact only under
 	// EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT declines to the live path
 	// (docs/cuda-graphs-investigation.md).
-	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA
+	// A windowed layer's K/V pointer moves with its base, so a captured graph would replay a stale one: graphs decline under windowed KV.
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin
 	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
 	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
 	if e := r.admitGraphs(); e != nil {

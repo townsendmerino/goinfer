@@ -81,13 +81,16 @@ func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Res
 // them and bQuant reads the context.
 func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, qBb, kBb, vBb, cctxB Buffer) error {
 	qB, kB, vB, cctx := r.qB, r.kB, r.vB, r.cctx
-	kc, vc := r.kc, r.vc
-	defer func() { r.qB, r.kB, r.vB, r.cctx, r.kc, r.vc = qB, kB, vB, cctx, kc, vc }()
+	kc, vc, kvBase := r.kc, r.vc, r.kvBase
+	defer func() { r.qB, r.kB, r.vB, r.cctx, r.kc, r.vc, r.kvBase = qB, kB, vB, cctx, kc, vc, kvBase }()
 	for m, rw := range rows {
 		r.qB, r.cctx = qBb.At(m*Ly.qDim*4), cctxB.At(m*Ly.qDim*4)
 		r.kB, r.vB = kBb.At(m*Ly.kvDim*4), vBb.At(m*Ly.kvDim*4)
 		if len(r.kvSlotBufs) > 0 {
 			r.kc, r.vc = r.kvSlotBufs[rw.slot].kc, r.kvSlotBufs[rw.slot].vc
+			if r.kvWin {
+				r.kvBase = r.kvBases[rw.slot] // each row reads its own slot's shifted view
+			}
 		}
 		if e := r.decodeAttnGap(Ly, l, rw.pos, rw.pos, r.qTempScaleAt(rw.pos)); e != nil {
 			return e

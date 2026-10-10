@@ -65,7 +65,27 @@ type residentImageClaim struct {
 // lora is the adapter bound for THIS generation (nil = base weights); rule 4 refuses any reuse
 // of KV that was built under a different one.
 func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
-	return m.reuseLenOf(m.resIDs, m.resIDsLora, m.resImgBlocks, prompt, imgs, lora)
+	return m.residentReuseFloor(m.reuseLenOf(m.resIDs, m.resIDsLora, m.resImgBlocks, prompt, imgs, lora))
+}
+
+// ResidentReusableKV is implemented by a resident whose KV for some layers holds only a recent window of positions (Options.ResidentWindowedKV).
+// ReusableKV(prefix) is how many of the first prefix positions of the bound slot's sequence it can serve to a forward that continues at
+// position prefix: prefix itself, or 0 when the window that forward attends to has already been dropped, in which case the caller prefills
+// the prompt from the start. A positive answer other than prefix is never returned.
+type ResidentReusableKV interface {
+	ReusableKV(prefix int) int
+}
+
+// residentReuseFloor caps a reuse length of the BOUND slot at what its resident can serve (ResidentReusableKV); a resident that keeps every
+// position is untouched. A cap only ever lengthens the prefill, never changes what it computes.
+func (m *Model) residentReuseFloor(reuse int) int {
+	if reuse <= 0 {
+		return reuse
+	}
+	if rk, ok := m.resident.(ResidentReusableKV); ok {
+		return rk.ReusableKV(reuse)
+	}
+	return reuse
 }
 
 // reuseLenOf is residentReuseLen over one slot's bookkeeping (ids, the adapter that built it, its image blocks) — the
@@ -196,7 +216,8 @@ func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *l
 // another running generation's). With every slot busy it binds nothing and returns slot -1.
 func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
 	reuse, slot = m.residentAcquireSlotAll(prompt, imgs, lora, busy)
-	return m.declineShortLeadReuse(prompt, reuse), slot
+	// the slot is bound now, so its window is the one to ask (a parked slot's score was not floored when it was counted)
+	return m.residentReuseFloor(m.declineShortLeadReuse(prompt, reuse)), slot
 }
 
 // minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels

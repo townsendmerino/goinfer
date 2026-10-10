@@ -352,6 +352,9 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
 		chunk = learned // a previous prompt already found the default too wide for this card
 	}
+	if r.kvWin {
+		chunk = min(chunk, kvWindowSlack+1) // a windowed layer's slack bounds the rows one pass can add (kvRoomFor)
+	}
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, e
 	}
@@ -764,6 +767,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}
 	} else if e := r.checkCap(startPos, M); e != nil {
 		return nil, nil, e
+	} else if !r.kvRoomFor(startPos, M) {
+		return nil, nil, fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, kvWindowSlack, errPrefillDeclined)
 	}
 	if rows == nil {
 		if e := r.checkPrefillShmem(startPos, M); e != nil {
@@ -822,6 +827,15 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		defer func() { r.forceExactKernels = false }()
 		r.launchErr = nil // clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
+		if rows != nil {
+			for _, rw := range rows {
+				if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
+					return e
+				}
+			}
+		} else if e := r.kvEnsure(startPos, M); e != nil {
+			return e
+		}
 		// M-sized scratch (device), freed at the end. The free list and its defer are registered BEFORE the first allocation,
 		// and each buffer joins the list as it is created: allocation panics on OOM (gpu.NewBufferLenOf's contract), runJob
 		// recovers the panic into a decline, and at M=3000 this is hundreds of MB, so a partial allocation is an expected
@@ -1084,7 +1098,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					t = r.profTic()
 					ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 					ropeArgs := []gpu.KernelArg{
-						Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
+						Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)),
 						gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(hd)),
 						gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 						gpu.ArgValue(Ly.mscale),
@@ -1127,7 +1141,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					// argument list is identical for all of them, so it is built once; the launches differ only in pipeline, grid and shared
 					// memory. Each names its pipeline field directly (see useAttnFused for why a local variable will not do).
 					attnArgs := []gpu.KernelArg{
-						Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
+						Arg(qBb), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 						gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
 						// r.sinkArg(l), not ArgNull(): decode threads the gpt-oss learned sink through, and this launch must not depend on a
 						// different check declining gpt-oss.
