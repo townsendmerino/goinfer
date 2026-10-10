@@ -10,23 +10,15 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestWebGPUBackend_MatmulW4A8_matchesCPU is G6's staged-int4 gate (docs/tasks/task-gpu-paths-2026-09.md):
-// webgpuBackend.MatmulW4A8, the actual decoder.QuantBackend4 entry point matmulInto/matmul now
-// call, against the CPU reference (linalg.MatmulBTW4A8Into) — the same comparison
-// TestWebGPUBackend_matchesCPU does for the f32 path, but nothing previously did this directly
-// for MatmulW8A8 either (worth noting: this establishes the pattern, not just mirrors it).
+// TestWebGPUBackend_MatmulW4A8_matchesCPU is the staged-int4 gate
+// (docs/tasks/task-gpu-paths-2026-09.md, G6): webgpuBackend.MatmulW4A8, the decoder.QuantBackend4
+// entry point matmulInto/matmul call, against the CPU reference linalg.MatmulBTW4A8Into.
 //
-// K=517 is deliberately NOT a multiple of 32 (w4a8GroupSize): it exercises both the fallback
-// unpack-and-repack upload path (K%32==0 is the fast path) and GEMVRunner's zero-tail-padding
-// invariant (aBuf is sized to kPad() bytes, and CreateBuffer zero-inits the untouched tail —
-// see GEMVRunner.Run's own comment).
-//
-// N-88 (docs/audit-2026-09-10.md): K=517 alone only ever drove the fallback path — the
-// production K%32==0 fast path (residentW4A8For's UploadW4A8Packed branch, the byte-identical
-// straight-upload one real checkpoints with 32-aligned dims actually take) was covered only
-// transitively by whatever else happened to call it, not by this dedicated correctness gate.
-// K=512 below is a real, common 32-aligned dim (checked directly against the same CPU
-// reference) added alongside 517 so this gate exercises both upload paths itself.
+// K=517 is deliberately not a multiple of 32 (w4a8GroupSize): it takes the fallback
+// unpack-and-repack upload and exercises GEMVRunner's zero-tail-padding invariant (aBuf is sized
+// to kPad() bytes and CreateBuffer zero-inits the tail; see GEMVRunner.Run). K=512 is the common
+// 32-aligned dim, residentW4A8For's UploadW4A8Packed straight-upload path that real checkpoints
+// take, so this gate covers both upload paths itself.
 func TestWebGPUBackend_MatmulW4A8_matchesCPU(t *testing.T) {
 	for name, K := range map[string]int{
 		"K=517 (not a multiple of 32 -- fallback unpack-and-repack path)": 517,

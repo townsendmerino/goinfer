@@ -4,21 +4,16 @@ package gpu
 
 import "testing"
 
-// Audit C-26 — Context.Close must release everything, exactly once, however many times it is called.
+// Context.Close must release everything, exactly once, however many times it is called. It once
+// ran a hand-maintained list of per-field Release calls that lagged the ensure* builders, and was
+// not idempotent, so `defer m.Close()` next to an explicit `m.Close()` re-released live wgpu
+// handles: a use-after-free in the native layer. The structure now: objects register a release
+// closure at creation (mkPipeline / track), Close drains that list LIFO, and a `closed` flag
+// makes a second call a no-op. These tests pin the drain and the guard. Background:
+// docs/code-notes/gpu.md#TestClose_drainsTrackedReleasesLIFO.filecomment.
 //
-// WHY THIS EXISTS. Close carried a hand-maintained list of per-field Release calls that had drifted
-// to 14 of ~40 pipelines: every ensure* builder added after the list was written simply leaked, and
-// ensureVision's five shader modules were never even stored, so no later code could release them.
-// Worse, Close was not idempotent — and `defer m.Close()` next to an explicit `m.Close()` is the
-// ordinary Go shape, while decoder.Model.Close calls m.be.Close() unconditionally. The second call
-// re-released live wgpu handles: a use-after-free inside the native layer, on GPU machines only.
-//
-// The fix is structural rather than a longer list: objects register a release closure AT CREATION
-// (mkPipeline / track), Close drains that list LIFO, and a `closed` flag makes the whole thing a
-// no-op the second time. These tests pin the two properties a hand-list could not guarantee.
-//
-// NO DEVICE NEEDED: track takes plain closures, and Close nil-checks the base handles, so a
-// zero-value Context exercises the drain and the idempotency guard.
+// No device needed: track takes plain closures and Close nil-checks the base handles, so a
+// zero-value Context exercises both.
 
 // TestClose_drainsTrackedReleasesLIFO: everything registered must run, newest first (pipelines are
 // created after the device they depend on, so teardown reverses creation).

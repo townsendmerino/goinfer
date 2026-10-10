@@ -14,17 +14,15 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestSpeculativeResident_e2eThroughput is the Lever 2 KILL-GATE measurement: real
-// end-to-end tokens/sec for resident GPU speculative decoding (1.5B target on webgpu,
-// 0.5B CPU draft) vs plain resident greedy on the SAME target, on code prompts where
-// acceptance is high. It also re-asserts the parity invariant (spec output ==
-// greedy output) so a throughput regression can't hide behind a correctness break.
+// TestSpeculativeResident_e2eThroughput measures real end-to-end tokens/sec for resident GPU
+// speculative decoding (1.5B target and 0.5B draft, both on webgpu) vs plain resident greedy on
+// the SAME target, on code prompts where acceptance is high. It also re-asserts the parity
+// invariant (spec output == greedy output) so a throughput regression cannot hide behind a
+// correctness break.
 //
-// This measures Stage A (the batched ForwardN amortizes only the (K-1) Submit/Poll
-// syncs, not the K×~420 dispatch records — see gpu-next-levers-assessment.md §7), so a
-// speedup BELOW ~1.3× here is the expected, documented signal that Stage B (the true
-// M=K GEMM verify) is what unlocks the predicted 1.4–2.0×. The number is logged, not
-// asserted as a floor (Stage A is not where the win lives); only parity is hard-gated.
+// It measures Stage A, where the batched ForwardN amortizes only the (K-1) Submit/Poll syncs, not
+// the K×~420 dispatch records (docs/completed/gpu-next-levers-assessment.md §7). The speedup is
+// logged, not asserted as a floor; only parity is hard-gated.
 //
 //	GOINFER_SPEC_TARGET=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 //	GOINFER_SPEC_DRAFT=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
@@ -62,9 +60,9 @@ func TestSpeculativeResident_e2eThroughput(t *testing.T) {
 	if !target.ResidentActive() {
 		t.Skip("target not GPU-resident (ineligible / no residency)")
 	}
-	// Draft is ALSO GPU-resident: a CPU draft is slower per token than the GPU target
-	// (measured), which makes speculation a net loss regardless of verify cost. Two
-	// resident models = two Contexts/devices sharing the 8 GB pool.
+	// Draft is ALSO GPU-resident: a CPU draft is slower per token than the GPU target, which makes
+	// speculation a net loss regardless of verify cost. Two resident models = two Contexts/devices
+	// sharing the 8 GB pool.
 	draft, err := decoder.Load(dpath, decoder.Options{Backend: "webgpu", Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("load draft: %v", err)

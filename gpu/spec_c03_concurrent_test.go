@@ -14,22 +14,21 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestSpeculative_C03_concurrentResidentClaim is the gate for audit C-03: GenerateSpeculative must
-// claim the shared resident KV (resBusy CAS) before any device write, exactly as generateInto and
-// the n-gram path do. Before the fix it skipped the claim, so a second concurrent generation on the
-// same *Model — which the Model doc explicitly permits for distinct sequences — prefilled into the
-// SAME positional device KV, interleaving writes and silently corrupting both streams.
+// TestSpeculative_C03_concurrentResidentClaim pins audit C-03: GenerateSpeculative must claim the
+// shared resident KV (resBusy CAS) before any device write, exactly as generateInto and the
+// n-gram path do. Without the claim, a second concurrent generation on the same *Model (which the
+// Model doc permits for distinct sequences) prefills into the SAME positional device KV,
+// interleaving writes and silently corrupting both streams.
 //
-// The bug is a missing mutual-exclusion claim, so it only manifests under real concurrency: this
-// runs a plain resident Generate and a GenerateSpeculative CONCURRENTLY on one *Model. Whichever
-// loses the CAS falls back to the staged CPU cache — separate state — so each stream is a VALID
-// greedy decode on EITHER the resident or the CPU backend (the two can differ by a token at a
-// near-tie: the documented resident-vs-CPU parity gap, NOT a bug). The test asserts each output
-// equals one of those two references; a C-03 corruption (interleaved resident KV) matches neither.
-// Deterministically passes on the fixed code regardless of which side wins the race.
+// A missing mutual-exclusion claim only manifests under real concurrency, so this runs a plain
+// resident Generate and a GenerateSpeculative CONCURRENTLY on one *Model. Whichever loses the CAS
+// falls back to the staged CPU cache (separate state), so each stream is a VALID greedy decode on
+// EITHER the resident or the CPU backend (the two can differ by a token at a near-tie: the
+// documented resident-vs-CPU parity gap, not a bug). The test asserts each output equals one of
+// those two references; interleaved resident KV matches neither.
 //
-// Target = 1.5B (resident), draft = 0.5B (CPU), both dense Qwen2 and vocab-matched — the same models
-// as TestSpeculativeResident_parity. Heavy + webgpu gated.
+// Target = 1.5B (resident), draft = 0.5B (CPU), both dense Qwen2 and vocab-matched, as in
+// TestSpeculativeResident_parity. Heavy + webgpu gated.
 func TestSpeculative_C03_concurrentResidentClaim(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
@@ -87,11 +86,11 @@ func TestSpeculative_C03_concurrentResidentClaim(t *testing.T) {
 	resRefA := resGreedy(promptA)
 	resRefB := resGreedy(promptB)
 
-	// CPU-path greedy references. The CAS loser falls back to the STAGED CPU path (model.go:782),
-	// whose greedy output can differ from the resident's at a near-tied token (documented
-	// resident-vs-CPU parity gap) — so a contended stream may legitimately land on EITHER sequence.
-	// A C-03 corruption (interleaved resident KV) matches NEITHER. We assert membership in the two
-	// valid backends; that distinguishes a backend switch (fine) from corruption (the bug).
+	// CPU-path greedy references. The CAS loser falls back to the STAGED CPU path
+	// (decoder/model.go), whose greedy output can differ from the resident's at a near-tied token
+	// (the documented resident-vs-CPU parity gap), so a contended stream may legitimately land on
+	// EITHER sequence; interleaved resident KV matches NEITHER. Asserting membership in the two
+	// valid backends distinguishes a backend switch (fine) from corruption (the bug).
 	cpuTarget, err := decoder.Load(tpath, decoder.Options{Backend: "cpu", Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("load cpu target (for staged reference): %v", err)

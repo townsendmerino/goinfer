@@ -32,14 +32,14 @@ func mlaRopeRef(vec []float32, ropeDim, pos int, invFreq []float32, interleave b
 	return rot
 }
 
-// TestDecodeRunnerMLA_parity gates Lever C4c: the full MLA latent-attention forward on
-// the resident runner, end-to-end against a CPU int8 oracle that mirrors the same absorb
-// math. The tiny model is DeepSeek-V3-shaped — q-LoRA bottleneck, compressed-KV latent
-// cache, decoupled interleaved RoPE, and a DeepSeekMoE FFN (sigmoid routing + selection
-// bias + group-limited top-k + ungated shared expert). Every int8 GEMV runs identical
-// math both sides (W8A8); the absorb/lift/attention are f32. Cosine must be ~1.0, proving
-// the latent store, W_UK absorb, qRope, rank-space attend, W_UV lift, group routing, and
-// the shared-expert combine all land correctly on top of the C3 MoE machinery.
+// TestDecodeRunnerMLA_parity pins the full MLA latent-attention forward on the resident runner,
+// end-to-end against a CPU int8 oracle that mirrors the same absorb math. The tiny model is
+// DeepSeek-V3-shaped: q-LoRA bottleneck, compressed-KV latent cache, decoupled interleaved RoPE,
+// and a DeepSeekMoE FFN (sigmoid routing + selection bias + group-limited top-k + ungated shared
+// expert). Every int8 GEMV runs identical math on both sides (W8A8); the absorb/lift/attention
+// are f32. Cosine must be ~1.0, proving the latent store, W_UK absorb, qRope, rank-space attend,
+// W_UV lift, group routing and the shared-expert combine all land correctly on top of the MoE
+// machinery.
 func TestDecodeRunnerMLA_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
@@ -371,12 +371,10 @@ func TestDecodeRunnerMLA_parity(t *testing.T) {
 	}
 }
 
-// TestMLAHeadMatvec_parity gates Lever C4b's per-head block-diagonal matvec — the W_UK
-
-// TestMLALatentStore_parity gates Lever C4b's latent append: kvA-norm the rank latent +
-// decoupled-RoPE the key, mirroring decoder.cache.AppendLatent's normalized/roped form
-// (cn ‖ krj). Both V3 GPT-J interleave and plain NeoX are covered against a CPU f64
-// reference (rmsNorm + mlaRope) at a nonzero position so the rope-at-pos path is real.
+// TestMLALatentStore_parity pins the latent append: kvA-norm the rank latent + decoupled-RoPE the
+// key, mirroring decoder.cache.AppendLatent's normalized/roped form (cn ‖ krj). Both V3 GPT-J
+// interleave and plain NeoX are covered against a CPU f64 reference (rmsNorm + mlaRope) at a
+// nonzero position so the rope-at-pos path is real.
 func TestMLALatentStore_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
@@ -437,9 +435,9 @@ func TestMLALatentStore_parity(t *testing.T) {
 	}
 }
 
-// TestMLAHeadMatvec_parity gates Lever C4b's per-head block-diagonal matvec — the W_UK
-// absorb (a=q with a wider stride than K, so the qk_rope tail is skipped) and the W_UV
-// lift (aStride==K). A CPU f64 reference over random per-head a/w must match (cosine ~1.0).
+// TestMLAHeadMatvec_parity pins the per-head block-diagonal matvec: the W_UK absorb (a=q with a
+// wider stride than K, so the qk_rope tail is skipped) and the W_UV lift (aStride==K). A CPU f64
+// reference over random per-head a/w must match (cosine ~1.0).
 func TestMLAHeadMatvec_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
@@ -478,13 +476,13 @@ func TestMLAHeadMatvec_parity(t *testing.T) {
 	}
 }
 
-// TestMLAAttn_parity gates Lever C4a: the absorb-path MLA rank-space attention kernel.
-// It mirrors decoder.mlaAttentionAbsorb steps 4b+5 — score each cached latent by the
-// full latDim dot (qNopeAbs·cn + qRope·krj), per-head softmax, then collapse V to the
-// rank-space weighted latent sum wsum[h] = Σ_j p_j·cn_j. A CPU f64 reference over the
-// same random qAbs/latent must match the GPU online-softmax kernel (cosine ~1.0). Uses
-// DeepSeek-V3-ish dims (rank 512 > the 128-lane width) so the strided score/value paths
-// are exercised, plus a small-rank case so the rank ≤ WG path is covered too.
+// TestMLAAttn_parity pins the absorb-path MLA rank-space attention kernel. It mirrors
+// decoder.mlaAttentionAbsorb steps 4b+5: score each cached latent by the full latDim dot
+// (qNopeAbs·cn + qRope·krj), per-head softmax, then collapse V to the rank-space weighted latent
+// sum wsum[h] = Σ_j p_j·cn_j. A CPU f64 reference over the same random qAbs/latent must match the
+// GPU online-softmax kernel (cosine ~1.0). It uses DeepSeek-V3-ish dims (rank 512 > the 128-lane
+// width) so the strided score/value paths are exercised, plus a small-rank case so the rank ≤ WG
+// path is covered too.
 func TestMLAAttn_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

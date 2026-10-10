@@ -15,22 +15,17 @@ import (
 var gptOssParityPrompt = []int{1, 7, 42, 20, 5, 30, 13, 40}
 
 // TestGptOssResidentParityWebGPU is G6's gpt-oss gate (docs/tasks/task-gpu-paths-2026-09.md):
-// FeatAttnSink + FeatOutBias against the REAL, committed decoder/testdata/gptoss_tiny.gguf —
-// not a seeded/synthetic fixture, so this is a genuine numeric floor, the same class of evidence
-// gpu/gemma3_resident_parity_test.go established for the Gemma set.
+// FeatAttnSink + FeatOutBias against the REAL, committed decoder/testdata/gptoss_tiny.gguf, not a
+// seeded/synthetic fixture, so the floor is numeric (the same class of evidence as
+// gpu/gemma3_resident_parity_test.go). gpt-oss disagrees with the generic MoE path on what the
+// router bias means and what the activation clamps: see routeGptOssWGSL, gptossGluQuantWGSL and
+// the gpt-oss down kernel in gpu/moe.go.
 //
-// This is the hardest of G6's six features: it needed a per-head softmax sink threaded through
-// every attention kernel (attn, attn-keys, attn-f16, attn-i8, and all three wide variants — 7
-// pipelines), plus three brand-new MoE kernels (gpt-oss disagrees with the generic MoE path on
-// what the router bias means and what the activation clamps — see routeGptOssWGSL/
-// gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments in gpu/moe.go).
-//
-// The floor was 0.95 (Metal's own tiny-fixture bar), and this backend measured 0.9943-0.9967
-// against it. That margin was the defect. The fixture is bias-dominated (audit-2026-09-10 G-07),
-// so C-06, where every int4 routed expert's down matmul collapsed to its bias, moved the logits only
-// a few percent and passed. The bar is now cosine >= 0.998 with argmax matching at every position.
-// It was registered before C-06's fix, from Metal's 0.9989 on the same fixture, and the 0.9943
-// baseline fails it.
+// The bar is cosine >= 0.998 with argmax matching at every position, registered from Metal's
+// reading on the same fixture. It sits well above Metal's own 0.95 tiny-fixture floor on purpose:
+// the fixture is bias-dominated (docs/audit-2026-09-10.md, G-07), so a collapsed int4 down matmul
+// (C-06) moved the logits only a few percent and passed at 0.95. Background:
+// docs/code-notes/gpu.md#TestGptOssResidentParityWebGPU.
 func TestGptOssResidentParityWebGPU(t *testing.T) {
 	dir := "../decoder/testdata/gptoss_tiny.gguf"
 	if _, err := os.Stat(dir); err != nil {

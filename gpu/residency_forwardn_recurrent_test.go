@@ -8,21 +8,19 @@ import (
 	"testing"
 )
 
-// Audit C-17 — batched verify must DECLINE on a recurrent model.
+// Batched verify must DECLINE on a recurrent model (audit C-17). residentDecoder.TruncateTo is a
+// no-op on the premise that "the resident cache is positional", true of the KV but false of the
+// Mamba-2 {win,ssm} state the same runner owns: mamba2Step mutates it in place, so ForwardN(K)
+// advances it K times and a partial accept cannot undo the rejected rows (silently wrong output,
+// not a crash).
 //
-// WHY THIS EXISTS. residentDecoder.TruncateTo is a no-op, documented on the premise that "the
-// resident cache is positional" — true of the KV, false of the Mamba-2 {win,ssm} state the same
-// runner owns. mamba2Step mutates that state in place, so ForwardN(K) advances it K times and a
-// partial accept cannot undo the rejected rows: the next round decodes from over-advanced state.
-// Silently wrong output, not a crash.
+// Nothing calls this with mamba set today, because decoder.specRollbackSafe refuses the recurrent
+// families at the speculative entry points. That protection lives in ANOTHER PACKAGE, one
+// indirection from the state it protects, and a change that re-enables recurrent speculation
+// relaxes that check without reading this function, so the guard belongs on the runner that owns
+// the state; this test pins it there.
 //
-// WHY IT WAS UNREACHABLE AND STILL NEEDS A GATE. decoder.specRollbackSafe refuses the recurrent
-// families at the four speculative entry points, so nothing calls this today with mamba set. That
-// protection lives in ANOTHER PACKAGE, one indirection away from the state it protects — a future
-// "re-enable recurrent speculation" change relaxes that check and never reads this function. The
-// guard therefore belongs on the runner that owns the state. This test pins it there.
-//
-// NO DEVICE NEEDED: the guard runs before any runner/queue is touched, and newRunner is a func
+// No device needed: the guard runs before any runner/queue is touched, and newRunner is a func
 // field, so the control case is stubbable.
 
 // recurrentDecoder builds the minimal residentDecoder the guard inspects: a context cap big enough

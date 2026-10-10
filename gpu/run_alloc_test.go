@@ -10,11 +10,10 @@ import (
 )
 
 // TestZZ_decodeRunAllocs reports allocs/op and B/op for DecodeRunner.Run via testing.Benchmark,
-// isolating the per-token host logits allocation. Uses realistic qwen3-class vocab (151936) with
-// only 2 layers so setup is fast and Run is cheap — the vocab-sized readback slice dominates the
-// alloc delta this change targets (make([]float32, vocab) → reused r.logitsHost). Compare the
-// numbers on main (before) vs this branch (after): B/op should drop by ~vocab*4 = 607744 and
-// allocs/op by ~1. Opt-in diagnostic, not a gate.
+// isolating the per-token host logits allocation. It uses a realistic qwen3-class vocab (151936)
+// with only 2 layers so setup is fast and Run is cheap; the vocab-sized readback slice
+// (r.logitsHost, reused rather than allocated per call) dominates the delta. Opt-in diagnostic,
+// not a gate.
 func TestZZ_decodeRunAllocs(t *testing.T) {
 	if os.Getenv("GOINFER_GPU_ALLOC_BENCH") == "" {
 		t.Skip("Run alloc/op diagnostic; set GOINFER_GPU_ALLOC_BENCH=1")

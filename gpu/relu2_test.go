@@ -11,9 +11,10 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// P2 parity: the resident non-gated squared-ReLU FFN — up(W8A8) → relu²→int8 (relu2Quant) →
-// down(W8A8) — vs the CPU reference down(relu²(up(x))). int8 weights, real-ish f32 activations
-// over many tokens (state-free FFN, so per-token), like the mamba-kernel isolation parities.
+// TestNemotronRelu2FFN_parity pins the resident non-gated squared-ReLU FFN (up(W8A8) → relu²→int8
+// (relu2Quant) → down(W8A8)) against the CPU reference down(relu²(up(x))): int8 weights, real-ish
+// f32 activations over many tokens (a state-free FFN, so per token), like the mamba-kernel
+// isolation parities.
 func TestNemotronRelu2FFN_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

@@ -10,11 +10,10 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestDecodeToken_throughput times the one-fence DecodeToken on the real Qwen-1.5B
-// shapes (28 layers, hidden 1536, GQA 12/2, FFN 8960, vocab 151936) with resident
-// random weights — the shapes drive the timing. This is the practical payoff: the
-// per-token decode rate of the one-command-buffer forward, to compare against the
-// staged W8A8 path (25.6 tok/s E2E, 3.07× CPU). Logs; run -v.
+// TestDecodeToken_throughput times the one-fence DecodeToken on the real Qwen-1.5B shapes (28
+// layers, hidden 1536, GQA 12/2, FFN 8960, vocab 151936) with resident random weights; the shapes
+// drive the timing. It gives the per-token decode rate of the one-command-buffer forward, to
+// compare against the staged W8A8 path. Logs; run -v.
 func TestDecodeToken_throughput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("throughput")
@@ -93,10 +92,9 @@ func TestDecodeToken_throughput(t *testing.T) {
 	}
 	perRun := time.Since(t2) / iters
 
-	// §5 attribution: time the built plan with only the gemv dispatches vs only
-	// the non-gemv (glue) dispatches, each one pass + submit + blocking Poll, min
-	// over reps. Correctness is irrelevant here — this splits the 42 ms of GPU
-	// execution into matmul-kernel time vs glue-kernel time directly.
+	// Attribution: time the built plan with only the gemv dispatches vs only the non-gemv (glue)
+	// dispatches, each one pass + submit + blocking Poll, min over reps. Correctness is irrelevant
+	// here; this splits GPU execution into matmul-kernel time and glue-kernel time.
 	timeSteps := func(keep func(s runStep) bool) time.Duration {
 		best := time.Hour
 		for range 30 {
@@ -138,10 +136,9 @@ func TestDecodeToken_throughput(t *testing.T) {
 		mss(byPipe(ctx.ropePipeline)), mss(byPipe(ctx.ropeStorePipeline)), mss(byPipe(ctx.kvStorePipeline)),
 		mss(byPipe(ctx.swigluPipeline)), mss(byPipe(ctx.residualPipeline)))
 
-	// Resident int8 weight bytes streamed once per token (the decode roofline
-	// denominator): per-layer qkv+o+gate+up+down, plus the LM head, plus the f32
-	// per-row scales. effective GB/s = weightBytes × tok/s, vs ~448 peak / ~350
-	// streaming on this card.
+	// Resident int8 weight bytes streamed once per token (the decode roofline denominator):
+	// per-layer qkv+o+gate+up+down, plus the LM head, plus the f32 per-row scales. effective GB/s =
+	// weightBytes x tok/s, to compare with the card's peak and streaming bandwidth.
 	perLayer := qDim*hidden + 2*kvDim*hidden + hidden*qDim + 3*inter*hidden
 	scales := (qDim + 2*kvDim + hidden + 3*inter) * 4 // f32 scale per row, per layer
 	weightBytes := float64(L*(perLayer+scales) + vocab*hidden + vocab*4)

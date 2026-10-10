@@ -586,15 +586,16 @@ func captureStderrGPU(t *testing.T, fn func()) string {
 	return <-out
 }
 
-// TestWebGPUKVSlots_realClamp is item 26 of docs/prompts/nobara-mc1-webgpu-2026-09.md, §2: the discrete-GPU clamp
-// (a slot whose allocation fails, or whose headroom probe after it fails, stops buildKVSlots) has only run under an
-// injected failure (TestWebGPUKVSlots_clampedBuild) — nobody has seen what wgpu-native on Vulkan does when a real
-// buffer allocation runs out of VRAM. This is that measurement, on real hardware and a real checkpoint, not a
-// synthetic one: load with 4 slots requested, run every granted slot, and check the device comes back clean.
+// TestWebGPUKVSlots_realClamp exercises the discrete-GPU clamp on real hardware and a real
+// checkpoint (docs/prompts/nobara-mc1-webgpu-2026-09.md, §2, item 26). A slot whose allocation
+// fails, or whose headroom probe after it fails, stops buildKVSlots; that path otherwise only
+// runs under an injected failure (TestWebGPUKVSlots_clampedBuild). It loads with 4 slots
+// requested, runs every granted slot, and checks the device comes back clean.
 //
-// It records what happened rather than asserting an expected count (the brief's own instruction) — but DOES fail
-// hard on any device-lost or validation error, on a slot that isn't bit-identical to a fresh one-slot load, or on
-// memory that does not return to baseline. A skip here is not a pass; only a missing checkpoint file skips.
+// It records the granted count rather than asserting an expected one, but DOES fail hard on any
+// device-lost or validation error, on a slot that is not bit-identical to a fresh one-slot load,
+// or on memory that does not return to baseline. A skip here is not a pass; only a missing
+// checkpoint file skips.
 func TestWebGPUKVSlots_realClamp(t *testing.T) {
 	requireHeavyModel(t)
 	if runtime.GOOS == "darwin" {
@@ -604,11 +605,11 @@ func TestWebGPUKVSlots_realClamp(t *testing.T) {
 	for _, tc := range []struct {
 		name, envVar, defaultFile string
 	}{
-		// ~4.4 GB of int4 weights + ~1.88 GB/slot at the default 16k f32 KV on an 8 GB card: the brief
-		// expects 1 slot, with slot 2 failing — CLAUDE.md's own model-storage rule applies (~/models
-		// NVMe only; a path under /srv/models or /Volumes/ would be measuring a 5400 rpm SMR disk).
+		// Weights plus one slot's KV at the default 16k f32 cache leave room for one slot on an 8 GB
+		// card, with slot 2 failing. Checkpoints load from ~/models on NVMe only (CLAUDE.md's
+		// model-storage rule: a path under /srv/models or /Volumes/ would measure a 5400 rpm SMR disk).
 		{"qwen2.5-7b", "GOINFER_WEBGPU_KVSLOTS_REALCLAMP_7B", "qwen2.5-7b-instruct-q4_k_m.gguf"},
-		// ~0.94 GB/slot: the brief expects all 4 to fit.
+		// Small enough per slot that all 4 requested slots are expected to fit.
 		{"qwen2.5-coder-1.5b", "GOINFER_WEBGPU_KVSLOTS_REALCLAMP_1_5B", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

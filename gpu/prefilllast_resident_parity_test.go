@@ -76,13 +76,10 @@ func TestResidentPrefillLast_parity(t *testing.T) {
 	rf.Reset()
 	last, err := pf.PrefillLast(context.Background(), embs, 0)
 	if err != nil {
-		// A decline (this model uses a feature outside PrefillLastW8A8's scope —
-		// see runModelToModelW's doc comment, e.g. Qwen2 bias is deliberately
-		// declined pending a real bug fix) is the SAFE, EXPECTED outcome for many
-		// checkpoints, not a test failure — decoder/model.go's residentPrefillSeed
-		// treats any PrefillLast error identically, by falling back to the
-		// sequential loop. Skip rather than fail; this gate only asserts
-		// correctness for models PrefillLast actually accepts.
+		// A decline (a feature outside PrefillLastW8A8's scope, see runModelToModelW's doc comment) is
+		// the SAFE, EXPECTED outcome for many checkpoints, not a test failure: decoder/model.go's
+		// residentPrefillSeed treats any PrefillLast error by falling back to the sequential loop. Skip
+		// rather than fail; this gate only asserts correctness for models PrefillLast actually accepts.
 		t.Skipf("PrefillLast declined or failed (falls back to sequential in production): %v", err)
 	}
 	if len(last) != vocab {

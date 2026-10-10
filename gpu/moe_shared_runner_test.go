@@ -9,12 +9,12 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestDecodeRunnerMoEShared_parity gates Lever C3d: the resident MoE forward with an
-// always-on shared expert. Two flavors run through the integrated runner — GLM-style
-// (sigmoid routing + selection bias, UNGATED shared expert) and qwen2_moe-style
-// (softmax routing, sigmoid-GATED shared expert). Each must match a CPU oracle running
-// the identical int8 math (cosine ~1.0): proves the shared-expert add (gated/ungated)
-// and the sigmoid+bias routing land correctly on top of the C3c routed-expert combine.
+// TestDecodeRunnerMoEShared_parity pins the resident MoE forward with an always-on shared expert.
+// Two flavors run through the integrated runner: GLM-style (sigmoid routing + selection bias,
+// UNGATED shared expert) and qwen2_moe-style (softmax routing, sigmoid-GATED shared expert). Each
+// must match a CPU oracle running the identical int8 math (cosine ~1.0), proving the
+// shared-expert add (gated/ungated) and the sigmoid+bias routing land correctly on top of the
+// routed-expert combine (TestDecodeRunnerMoE_parity).
 func TestDecodeRunnerMoEShared_parity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

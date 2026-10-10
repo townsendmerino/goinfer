@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// TestResidentDecoderCheckCap gates M20/C3: writes at/past the resident KV cap are refused
-// (a real Forward there is a silent out-of-bounds device write, WGSL-clamped → garbage reads).
-// Pure logic — no device.
+// TestResidentDecoderCheckCap pins that writes at/past the resident KV cap are refused (a real
+// Forward there is a silent out-of-bounds device write, WGSL-clamped → garbage reads). Pure
+// logic, no device.
 func TestResidentDecoderCheckCap(t *testing.T) {
 	rd := &residentDecoder{ctxCap: 8}
 	if rd.ContextCap() != 8 {

@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// canonF32ToF16 is a local copy of decoder.f32ToF16bits (unexported, another module) — THE
+// canonF32ToF16 is a local copy of decoder.f32ToF16bits (unexported, another module): the
 // canonical resident-backend f16 representation that cuda/kernels.go's f32tof16, metal/pack.go
 // and the GOINFER_INT4_F16_SCALES CPU diagnostic all replicate. Same shape as
-// cuda/f16_convert_test.go's copy, which gates the identical property for C-15.
+// cuda/f16_convert_test.go's copy, which gates the identical property.
 func canonF32ToF16(f float32) uint16 {
 	b := math.Float32bits(f)
 	sign := uint16((b >> 16) & 0x8000)
@@ -40,16 +40,13 @@ func canonF32ToF16(f float32) uint16 {
 	}
 }
 
-// N-04: gpu/ carried TWO float32→half converters and neither matched the canonical one.
-//
-//	gemv_w4a8.go's f32to16   flushed the ENTIRE subnormal range (exp <= 0 → sign), and it is the
-//	                         load-bearing one — every W4A8 group-scale upload and NewKVCacheF16.
-//	                         An int4 group with scale < 2^-14 therefore read as all-zero on
-//	                         WebGPU and nowhere else.
-//	mamba_f16.go's f32ToF16  handled subnormals but rounded to nearest EVEN in the normal range,
-//	                         where every other backend rounds half up.
-//
-// C-15 fixed this class in cuda/ and gpu/ was not in that disposition. This is the same gate.
+// TestF32ToF16_N04 pins that f32ToF16 matches the canonical converter (canonF32ToF16) and that
+// f32to16, the alias the W4A8 path uses, is the same function. gpu/ once carried two converters
+// that disagreed with it: gemv_w4a8.go's flushed the entire subnormal range, so an int4 group
+// with scale < 2^-14 read as all-zero on WebGPU and nowhere else (it was load-bearing: every W4A8
+// group-scale upload and NewKVCacheF16), and mamba_f16.go's rounded to nearest even in the normal
+// range where every other backend rounds half up. cuda/'s equivalent gate is
+// cuda/f16_convert_test.go.
 func TestF32ToF16_N04(t *testing.T) {
 	// (1) Bit-identity with the canonical algorithm across the exponent range that matters for
 	// group scales, plus the boundaries.

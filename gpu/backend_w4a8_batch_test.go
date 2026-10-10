@@ -27,12 +27,11 @@ func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.W4A8Op, []float32) {
 	return linalg.W4A8Op{W4: bQ4, Scales: scales, Dst: dst, N: N}, dst
 }
 
-// TestWebGPUBackend_MatmulW4A8Batch_matchesCPU is P-16 (audit-2026-09-10): the int4 twin of
-// TestWebGPUBackend_MatmulW4A8_matchesCPU, but batched — mimics a fused q/k/v projection (three
-// ops sharing one activation) the way the qkv/gate-up batch call sites in
-// decoder/attention.go and decoder/mlp.go actually build them. Compares the ONE-SUBMIT GPU batch
-// against linalg.MatmulBTW4A8Batch, the CPU reference matmulW4A8Batch falls back to when no GPU
-// backend implements QuantBatchBackend4 — the exact bar P-16 closes.
+// TestWebGPUBackend_MatmulW4A8Batch_matchesCPU is the batched int4 twin of
+// TestWebGPUBackend_MatmulW4A8_matchesCPU: three ops sharing one activation, the way the
+// qkv/gate-up call sites in decoder/attention.go and decoder/mlp.go build them. It compares the
+// one-submit GPU batch against linalg.MatmulBTW4A8Batch, the CPU reference matmulW4A8Batch falls
+// back to when no backend implements QuantBatchBackend4.
 func TestWebGPUBackend_MatmulW4A8Batch_matchesCPU(t *testing.T) {
 	be, err := newWebGPUBackend("decoder")
 	if err != nil {
@@ -104,13 +103,11 @@ func TestWebGPUBackend_MatmulW4A8Batch_declinesPrefill(t *testing.T) {
 	}
 }
 
-// TestWebGPUBackend_MatmulW4A8Batch_oneSubmit is the actual claim P-16 makes: the batch call
-// dispatches all ops in ONE GPU submit (one increment to b.fallbacks-free success), not one
-// submit per op — proven indirectly by asserting the SAME cached *ResidentW4A8 (by identity via
-// residentW4A8For's key map) is reused across repeated batch calls with the SAME weight bytes,
-// which only holds if MatmulW4A8Batch and MatmulW4A8 share the upload/cache path. A prior
-// MatmulW4A8 call on op 0's bytes must make the batch call for the SAME bytes a cache hit (no
-// re-upload), proving both paths route through the one shared cache this fix introduced.
+// TestWebGPUBackend_MatmulW4A8Batch_oneSubmit pins that MatmulW4A8Batch and MatmulW4A8 share one
+// upload/cache path: a prior MatmulW4A8 call on op 0's bytes must make the batch call on the same
+// bytes a cache hit, with the same cached resident weight (identity, via residentW4A8For's key
+// map) and no re-upload. It does not count GPU submits itself, so the one-submit property of the
+// batch is not asserted here.
 func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 	be, err := newWebGPUBackend("decoder")
 	if err != nil {

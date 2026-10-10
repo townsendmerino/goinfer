@@ -11,16 +11,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestE2E_webgpu loads a real model on both the CPU and WebGPU backends and
-// compares (1) greedy output — the GPU W8A8 path must track the CPU's tokens —
-// and (2) prefill + decode timing. Gated on GOINFER_E2E_MODEL (a .gguf).
-//
-// Honest scope: only the NON-fused W8A8 matmuls (o_proj, down, lm_head, router)
-// route to the GPU today; the fused qkv / gate-up batch dispatches stay on CPU
-// (QuantBackend doesn't cover MatmulBTW8A8Batch yet). And each GPU matmul still
-// pays one sync, which the Stage-2 finding showed is the decode floor. So this
-// measures partial offload — the number that scopes the remaining work, not a
-// finished decode win.
+// TestE2E_webgpu loads a real model on both the CPU and WebGPU backends and compares (1) greedy
+// output, where the GPU W8A8 path must track the CPU's tokens, and (2) prefill + decode timing.
+// Gated on GOINFER_E2E_MODEL (a .gguf). Timing is end to end through decoder.Load's WebGPU
+// backend, whichever path it takes.
 func TestE2E_webgpu(t *testing.T) {
 	path := os.Getenv("GOINFER_E2E_MODEL")
 	if path == "" {

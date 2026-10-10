@@ -15,28 +15,24 @@ import (
 var gemma3ParityPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88}
 
 // TestGemma3ResidentParityWebGPU is G6's Gemma set gate (docs/tasks/task-gpu-paths-2026-09.md):
-// FeatEmbedScale + FeatSandwichNorm + FeatGatedGELU (+ the already-declared FeatQKNorm/
-// FeatSlidingWindow/FeatRMSAddOne) against a REAL, non-seeded checkpoint
-// (testdata/gemma3-vl-tiny's text tower — a real small Gemma3 VL model, not a tiny-random
-// fixture), unlike every G5 smoke test this session wrote. That makes this a genuine numeric
-// floor, not just an admission-and-no-NaN check: resident vs CPU, both int4, at every position.
+// FeatEmbedScale + FeatSandwichNorm + FeatGatedGELU (plus the already-declared
+// FeatQKNorm/FeatSlidingWindow/FeatRMSAddOne) against a real, non-seeded checkpoint
+// (testdata/gemma3-vl-tiny's text tower, not a tiny-random fixture), so the floor is numeric
+// rather than admission-and-no-NaN: resident vs CPU, both int4, at every position.
 //
-// FeatFinalLogitSoftcap is NOT exercised here (this fixture has no final_logit_softcapping) —
-// its own correctness rests on TestApplySoftcap_bitIdentical (softcap_test.go), a direct port of
+// FeatFinalLogitSoftcap is NOT exercised here (this fixture has no final_logit_softcapping); its
+// correctness rests on TestApplySoftcap_bitIdentical (softcap_test.go), a direct port of
 // cuda/metal's own gate, since gpu/softcap.go is a byte-identical copy of their applySoftcap.
 //
-// Gemma 4's dense-twogeom/dense-scaled fixtures are NOT used here: both have a per-layer
-// head_dim that differs between local and global attention layers (head_dim 256 vs
-// global_head_dim 512), and gpu/residency.go's per-layer geometry seam (runLayer.ghd/gnKV) is
-// never actually set anywhere in this backend — confirmed by grep, and by BuildResident failing
-// on gemma4-dense-twogeom-tiny with "unsupported projection precision \"\"" even after this row's
-// four features are declared. That is a SEPARATE, pre-existing gap (per-layer attention geometry
-// on WebGPU) this row does not touch — CUDA/Metal both implement it, WebGPU does not yet.
+// Gemma 4's dense-twogeom/dense-scaled fixtures are not used here: their per-layer head_dim
+// differs between local and global attention layers, and they are gated by
+// TestGemma4DenseTwoGeom_residentParity and TestGemma4DenseScaled_webgpuParity
+// (gemma4_twogeom_test.go).
 func TestGemma3ResidentParityWebGPU(t *testing.T) {
 	dir := "../testdata/gemma3-vl-tiny"
-	// Stat the WEIGHTS, not the directory (audit-2026-09-10 G-13(h)). The dir and its config.json
-	// are tracked while the weights are gitignored, so a dir stat passes on every clone. Then Load
-	// failed on the missing weights, and the test skipped saying "no webgpu device".
+	// Stat the WEIGHTS, not the directory: the dir and its config.json are tracked while the weights
+	// are gitignored, so a dir stat passes on every clone and the test would then skip saying "no
+	// webgpu device" when Load failed on the missing weights.
 	if _, err := os.Stat(dir + "/model.safetensors"); err != nil {
 		t.Skipf("no fixture weights (%s/model.safetensors; config.json alone is tracked)", dir)
 	}
@@ -107,8 +103,8 @@ func TestGemma3ResidentParityWebGPU(t *testing.T) {
 		t.Logf("  pos %2d cosine %.6f", i, cos)
 	}
 	t.Logf("gemma3-vl-tiny text tower, resident vs CPU (int4 both sides): minCosine=%.6f", minCos)
-	// A REAL numeric floor, not a smoke-test bar: 0.999, matched against a genuine checkpoint,
-	// not a seeded/synthetic one — measured 0.9998 on this fixture at implementation time.
+	// A real numeric floor, not a smoke-test bar: 0.999, against a genuine checkpoint rather than a
+	// seeded or synthetic one.
 	if minCos < 0.999 {
 		t.Errorf("minCosine %.6f < 0.999 — resident diverges from CPU on a real checkpoint", minCos)
 	}

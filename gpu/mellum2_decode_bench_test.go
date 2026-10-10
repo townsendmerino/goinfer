@@ -14,15 +14,12 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestMellum2_decodeThroughput measures decode tok/s of the real Mellum2 (12B-class,
-// 64-expert top-8 MoE, 3:1 sliding/full attention, sliding window 1024) on the webgpu
-// backend, and reports whether it runs RESIDENT (full-residency DecodeRunner) or STAGED
-// (per-matmul backend) + the path reason.
-//
-// On an 8 GB card Mellum2 stages: int8 MoE experts (the only kind the resident builder
-// stacks) make the model ~12 GB > VRAM, while int4 fits VRAM but the resident MoE
-// stacking is int8-only (gpu/residency.go). So this measures the STAGED number here;
-// set GOINFER_MELLUM_QUANT + a bigger card to get the resident one.
+// TestMellum2_decodeThroughput measures decode tok/s of the real Mellum2 (12B-class, 64-expert
+// top-8 MoE, 3:1 sliding/full attention, sliding window 1024) on the webgpu backend, and reports
+// whether it runs RESIDENT (full-residency DecodeRunner) or STAGED (per-matmul backend) plus the
+// path reason. The resident builder stacks int8 MoE experts only, so on an 8 GB card the ~12 GB
+// model stages and this measures the staged number; set GOINFER_MELLUM_QUANT and use a bigger
+// card to get the resident one.
 //
 //	GOINFER_MELLUM_BENCH=1 [GOINFER_MELLUM_QUANT=int8int8] \
 //	  go test -tags gpu -run TestMellum2_decodeThroughput -v -timeout 40m

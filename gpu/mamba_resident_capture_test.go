@@ -11,15 +11,15 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Phase-A wiring diff (docs/ssm-int8-quality.md). The GPU mamba kernels are proven correct on
-// real inputs IN ISOLATION (TestMambaRealInputParity). This test captures the resident's ACTUAL
-// per-token layer-0 kernel I/O from the full plan (in_proj output proj, conv, ssm-out y, mixer
-// gated) and replays the resident's OWN proj through the CPU reference mixer (mamba2.go steps
-// 2-5) with fresh evolving state. Per stage (conv/ssm/gatedNorm):
-//   - resident matches CPU-on-resident-proj  → the mixer-in-plan is correct on its proj; the bug
-//     is upstream (proj: in_proj GEMV / activation quant) or in attn/MoE.
-//   - resident DIVERGES                       → a PLAN/STATE bug (the kernels run differently in
-//     the full command buffer than in isolation — barrier/race/state corruption).
+// TestMambaResidentCapture diffs the resident's wiring against the isolated kernels
+// (docs/ssm-int8-quality.md). The GPU mamba kernels are proven correct on real inputs in
+// isolation (TestMambaRealInputParity); this captures the resident's ACTUAL per-token layer-0
+// kernel I/O from the full plan (in_proj output proj, conv, ssm-out y, mixer gated) and replays
+// the resident's OWN proj through the CPU reference mixer (mamba2.go steps 2-5) with fresh
+// evolving state. Per stage (conv/ssm/gatedNorm): a match with CPU-on-resident-proj means the
+// mixer-in-plan is correct on its proj and any bug is upstream (in_proj GEMV / activation quant)
+// or in attn/MoE; a divergence is a PLAN/STATE bug (the kernels run differently in the full
+// command buffer than in isolation: barrier, race, state corruption).
 func TestMambaResidentCapture(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {

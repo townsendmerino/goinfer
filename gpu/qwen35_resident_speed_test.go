@@ -10,20 +10,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Decode rate, resident vs CPU, for the Gated-DeltaNet hybrid.
+// Decode rate, resident vs CPU, for the Gated-DeltaNet hybrid. Residency is a capability and
+// speed is a separate claim ("admitted but not faster" is a real outcome), so this attaches a
+// measurement to it.
 //
-// This exists because residency was landed as a CAPABILITY and the plan's second kill criterion
-// is still unanswered: "residency is admitted but not faster" is a real outcome, and the
-// CUDA-graphs precedent says a 1.01× is a safety improvement mislabelled as a speed one. A
-// capability with no measurement attached tends to get quoted as a speedup by whoever reads the
-// hardware matrix next.
-//
-// READ THE FIXTURE SIZE BEFORE READING THE RATIO. On the tiny fixtures (hidden 64, 4 layers) the
-// per-dispatch overhead dominates completely — roughly 20 GPU dispatches per DeltaNet layer
-// against a few microseconds of actual arithmetic — so a ratio below 1 here says nothing about the
-// 27B and everything about dispatch cost. The number that matters comes from a real-WIDTH fixture
-// (GOINFER_DNET_SPEED_CKPT), where the arithmetic is large enough to pay for the dispatches. Both
-// are reported rather than only the flattering one.
+// READ THE FIXTURE SIZE BEFORE READING THE RATIO. On the tiny fixtures (hidden 64, 4 layers)
+// per-dispatch overhead dominates completely (about 20 GPU dispatches per DeltaNet layer against
+// a few microseconds of arithmetic), so a ratio below 1 there says nothing about the 27B. The
+// number that matters comes from a real-WIDTH fixture (GOINFER_DNET_SPEED_CKPT), where the
+// arithmetic is large enough to pay for the dispatches. Both are reported rather than only the
+// flattering one.
 func TestQwen35ResidentDecodeRate(t *testing.T) {
 	if os.Getenv("GOINFER_DNET_SPEED") == "" {
 		t.Skip("qwen3.5 resident decode rate (set GOINFER_DNET_SPEED=1)")
@@ -106,12 +102,11 @@ func qwen35DecodeRate(t *testing.T, ckpt string) {
 	t.Logf("  resident %.1f tok/s (%.2f ms/tok, %.3f ms/layer) | cpu %.1f tok/s (%.2f ms/tok, %.3f ms/layer) | %.2fx",
 		resRate, 1000/resRate, 1000/resRate/float64(nLayers),
 		cpuRate, 1000/cpuRate, 1000/cpuRate/float64(nLayers), resRate/cpuRate)
-	// ms/LAYER is the transferable quantity and the ratio is the robust one; the absolute
-	// per-token figure is not, because this fixture omits the released vocab (248320, whose LM
-	// head is ~5% of the real per-token MACs) and runs a short context. Extrapolating
-	// ms/layer × real layer count overstates the CPU side by roughly 2× against the 0.656 tok/s
-	// actually measured on the real 27B — so quote the RATIO, and treat any absolute
-	// extrapolation as indicative only.
+	// ms/LAYER is the transferable quantity and the ratio is the robust one; the absolute per-token
+	// figure is not, because this fixture omits the released vocab (248320, whose LM head is ~5% of
+	// the real per-token MACs) and runs a short context. Extrapolating ms/layer × real layer count
+	// overstates the CPU side, so quote the RATIO and treat any absolute extrapolation as indicative
+	// only.
 
 	// Deliberately NOT a pass/fail threshold. The tiny fixtures are dispatch-bound and would
 	// fail any honest speed bar; asserting one here would either be vacuous or would pressure a

@@ -41,9 +41,9 @@ func TestStagedLayerSweep(t *testing.T) {
 	}
 	_, nLayers, _, _, _, _, _ := mc.Dims()
 	cpuLogits := make([][]float32, nLayers)
-	// Both loops run the DECODER's granite forward; the truncation goes through the test hook (this
-	// used to os.Setenv GOINFER_SSM_STOP_LAYER, which the decoder read once at init, so both sides ran
-	// every layer and each row compared two full-model forwards).
+	// Both loops run the DECODER's granite forward; the truncation goes through the test hook (an
+	// env var would be read once at init, so both sides would run every layer and each row would
+	// compare two full-model forwards).
 	for L := range nLayers {
 		restore := decoder.SetSSMStopLayerForTest(L)
 		cache := mc.NewCache(8)

@@ -11,15 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestMLAResidency_matchesCPU is the end-to-end bridge gate for Lever C4d: the tiny
-// DeepSeek-V3 checkpoint (q-LoRA + compressed-KV latent attention + group-limited
-// DeepSeekMoE + dense prefix + ungated shared expert) loaded on the webgpu backend must
-// go GPU-resident (proving decodeRunnerEligible + BuildResident accept MLA) and decode
-// greedily in agreement with the CPU f32 forward. The resident path runs int8, the CPU
-// path f32, so a tiny-random model's logits can eventually flip an argmax under int8
-// rounding — the gate is the FIRST generated token (single forward, minimal quant
-// accumulation), with the full sequences logged. Numerical correctness of the MLA kernels
-// themselves is pinned bit-identically by TestDecodeRunnerMLA_parity.
+// TestMLAResidency_matchesCPU is the end-to-end bridge gate for MLA residency: the tiny
+// DeepSeek-V3 checkpoint (q-LoRA + compressed-KV latent attention + group-limited DeepSeekMoE +
+// dense prefix + ungated shared expert) loaded on the webgpu backend must go GPU-resident
+// (decodeRunnerEligible + BuildResident accept MLA) and decode greedily in agreement with the CPU
+// f32 forward. The resident path runs int8, the CPU path f32, so a tiny-random model's logits can
+// eventually flip an argmax under int8 rounding: the gate is the FIRST generated token (single
+// forward, minimal quant accumulation), with the full sequences logged. Numerical correctness of
+// the MLA kernels themselves is pinned bit-identically by TestDecodeRunnerMLA_parity.
 func TestMLAResidency_matchesCPU(t *testing.T) {
 	const ckpt = "../testdata/deepseek-tiny"
 	if _, err := os.Stat(ckpt); err != nil {

@@ -14,14 +14,12 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestGEMVNSweep is R10/G38's root-cause step. First run (in-process, many N in one binary) found a
-// wild-looking cliff between N=65536 and N=100000 with the SAME N reading up to 15x apart depending
-// on what ran before it -- which turned out to be an ARTIFACT of the sweep's own methodology
-// (allocating and releasing a differently-sized weight buffer for every N in one process, unlike a
-// real model, which allocates its LM-head buffer ONCE at load and never touches the allocator again).
-// This variant runs ONE N per PROCESS (GOINFER_GEMV_SWEEP_N), matching this repo's own
-// separate-process-per-arm convention for exactly this contamination reason, so each reading reflects
-// a clean, isolated allocation the way a real model's own load does.
+// TestGEMVNSweep times the GEMV at ONE N per process (GOINFER_GEMV_SWEEP_N), so each reading
+// reflects a clean, isolated allocation the way a real model's load does: an in-process sweep
+// over many N (allocating and releasing a differently-sized weight buffer for each, unlike a real
+// model, which allocates its LM-head buffer once at load) read the same N up to 15x apart
+// depending on what ran before it, an artifact of that method. This is the repo's
+// separate-process-per-arm convention for exactly this contamination.
 //
 //	for n in 512 65536 100000 151936 200000; do GOINFER_GEMV_SWEEP_N=$n go test -tags gpu ./gpu/ -run TestGEMVNSweep -v; done
 func TestGEMVNSweep(t *testing.T) {

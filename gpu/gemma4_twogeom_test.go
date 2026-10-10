@@ -88,7 +88,8 @@ func TestGemma4DenseTwoGeom_residentParity(t *testing.T) {
 		t.Logf("  pos %2d cosine %.6f maxAbs %.4e argmax cpu=%d webgpu=%d", i, c, m, argmax(cpuL), argmax(gpuL))
 	}
 	t.Logf("webgpu two-geometry K=V resident parity: minCosine=%.6f maxAbs=%.4e exact-argmax %d/%d", minCos, maxMaxAbs, exact, len(twoGeomPrompt))
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977930 -> 1.000000.
+	// The bar sits between the readings before and after the v_norm fix, and the fix is the mechanism: never loosened
+	// (docs/tasks/task-multimodal-support-2026-10.md, S1.0).
 	if minCos < 0.995 {
 		t.Errorf("minCosine %.6f < 0.995 — the resident two-geometry/K=V forward diverges from CPU", minCos)
 	}
@@ -142,7 +143,8 @@ func TestGemma4DenseScaled_webgpuParity(t *testing.T) {
 		t.Logf("  pos %2d  cosine %.6f maxAbs %.4e argmax cpu=%d webgpu=%d", i, c, m, argmax(cpuL), argmax(gpuL))
 	}
 	t.Logf("scaled dense (256-local / 512-global, 12 layers): minCosine=%.6f exact-argmax %d/%d pos0=%.6f", minCos, exact, len(prompt), c0)
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300 (exact-argmax 15/16 -> 16/16 on nobara's RTX 2070 SUPER only; the Apple GPU reads 15/16 either way, so the argmax bar below stays at 15/16).
+	// The bar sits between the readings before and after the v_norm fix, and the fix is the mechanism: never loosened
+	// (docs/tasks/task-multimodal-support-2026-10.md, S1.0).
 	if c0 < 0.999 {
 		t.Errorf("pos-0 cosine %.6f < 0.999 — the 256-local/512-global resident geometry diverges at first token", c0)
 	}
@@ -150,9 +152,9 @@ func TestGemma4DenseScaled_webgpuParity(t *testing.T) {
 		t.Errorf("minCosine %.6f < 0.9 — the scaled-dense resident forward diverges from CPU (v_norm on the sliding layers? S1.0)", minCos)
 	}
 	if exact < 15 {
-		// 15 of 16 is the pre-S1.0 bar, restored 2026-10-07: the 16/16 this line asked for was one device's reading (RTX 2070 SUPER, Vulkan). The
-		// Apple GPU's WebGPU reads 15/16 with the fix, and 15/16 without it, so an argmax count is a near-tie flip and not the discriminating metric.
-		// pos0 and minCosine above carry the fix's signature: with v_norm re-dropped they fail on both devices.
+		// 15 of 16 stays the bar: the exact-argmax count differs by device (16/16 on one, 15/16 on another with or without the fix), so it is a
+		// near-tie flip and not the discriminating metric. pos0 and minCosine above carry the fix's signature: with v_norm re-dropped they fail
+		// on both devices.
 		t.Errorf("exact-argmax %d/%d < 15/16", exact, len(prompt))
 	}
 }

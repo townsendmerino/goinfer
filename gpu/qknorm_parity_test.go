@@ -15,9 +15,8 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestResidentQKNorm_parity is the gate for Lever C increment 1: per-head QK-norm in the
-// resident DecodeRunner (gpu/qknorm.go), which makes Qwen3 (and any dense QK-norm arch)
-// GPU-resident — previously decodeRunnerEligible excluded QKNorm outright. Two checks:
+// TestResidentQKNorm_parity is the gate for per-head QK-norm in the resident DecodeRunner
+// (gpu/qknorm.go), which keeps Qwen3 (and any dense QK-norm arch) GPU-resident. Two checks:
 //
 //  1. the model goes RESIDENT (the eligibility unlock actually engaged); and
 //  2. the resident greedy next token matches the HF f32 oracle's argmax — proving the
@@ -26,7 +25,7 @@ import (
 //     drift; the prompt prefill still applies QK-norm at every position.
 //
 // Real Qwen3-1.7B (Q8_0 GGUF → W8A8 resident). The CPU forward already gates this golden
-// (decoder.TestQwen3_forwardParity); here it's the resident path.
+// (decoder.TestQwen3_forwardParity); here it is the resident path.
 //
 //	go test -tags gpu ./gpu/ -run TestResidentQKNorm_parity -v -timeout 20m
 func TestResidentQKNorm_parity(t *testing.T) {

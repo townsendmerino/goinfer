@@ -15,25 +15,21 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDecode_dispatchProfile answers "which of the ~13 dispatches/layer actually
-// pins the decode critical path NOW" — the question every fusion proposal has to
-// clear first, and the one this repo has already mispredicted twice (§0.0's
-// link-counting missed by ~3×; the Increment-3 qk-norm fold shipped a −2.7%
-// regression that the dependent-fold heuristic predicted as a win).
+// TestDecode_dispatchProfile answers which of the ~13 dispatches per layer pins the decode
+// critical path: the question every fusion proposal has to clear first, and one this repo has
+// mispredicted before (link-counting, and a qk-norm fold the dependent-fold heuristic predicted
+// as a win).
 //
-// Method: ABLATION, not attribution. For each distinct compute pipeline the
-// resident plan uses, re-record the whole token plan R times into ONE pass with
-// that pipeline's dispatches OMITTED, submit once, poll once (blocking → GPU
-// done), and difference against the unablated plan. The delta / R is what
-// deleting that class would save — barrier effects included, which is exactly the
-// quantity a fusion buys. Attribution by per-kernel timing would NOT answer this:
-// a dispatch that fully overlaps its neighbours costs wall-clock nothing to run
-// and nothing to remove.
+// Method: ablation, not attribution. For each distinct compute pipeline the resident plan uses,
+// re-record the whole token plan R times into ONE pass with that pipeline's dispatches omitted,
+// submit once, poll once (blocking), and difference against the unablated plan. The delta / R is
+// what deleting that class would save, barrier effects included, which is exactly what a fusion
+// buys. Per-kernel timing would not answer it: a dispatch that fully overlaps its neighbours
+// costs nothing to run and nothing to remove.
 //
-// Values go garbage after the first repetition (residual epilogues accumulate R
-// times). That is deliberate and harmless — both arms are equally garbage, and on
-// NVIDIA f32 there is no denormal/NaN timing cliff to bias the comparison. This
-// is a timing harness; TestResidentForwardN_parity is the correctness gate.
+// Values go garbage after the first repetition (residual epilogues accumulate R times). Both arms
+// are equally garbage and NVIDIA f32 has no denormal/NaN timing cliff to bias the comparison.
+// This is a timing harness; TestResidentForwardN_parity is the correctness gate.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags gpu -run TestDecode_dispatchProfile -v ./gpu/
 func TestDecode_dispatchProfile(t *testing.T) {
@@ -72,8 +68,8 @@ func TestDecode_dispatchProfile(t *testing.T) {
 		t.Skip("model did not go GPU-resident — the profile needs the resident plan")
 	}
 	// Close the RESIDENT model, not just the backend: its weight buffers are caller-owned and
-	// b.Close() does not free them. Unreleased, this profiler held ~2.4 GB for the rest of the
-	// process — the first of the two leaks that were emptying the GPU mid-suite.
+	// b.Close() does not free them, so unreleased they stay live for the rest of the process and
+	// starve later tests of the GPU.
 	defer func() { _ = rf.Close() }()
 	rd, isRD := rf.(*residentDecoder)
 	if !isRD {

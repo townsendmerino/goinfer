@@ -12,10 +12,10 @@ import (
 // argmax preserved every step (the 3%-near-tie rule), full-logit cosine ≥ 0.99. It
 // mirrors TestKVCacheF16_parity's shape: both caches are prefilled with `prior` (8k)
 // positions — the f32 cache exact, the int8 cache per-head quantized — so per-element
-// int8 rounding acts over thousands of keys and a long-range near-tie can flip. int8
-// is coarser than f16 (8-bit vs 10-bit), so this lands a touch below f16's measured
-// 0.99868 but comfortably ≥ 0.99 (GPU residency = full-attention Qwen2/Llama, the
-// least outlier-prone post-RoPE case). The f32 default stays bit-exact elsewhere.
+// int8 rounding acts over thousands of keys and a long-range near-tie can flip. int8 is coarser
+// than f16 (8-bit vs 10-bit), so its cosine lands a little below f16's but within the 0.99 bar
+// (GPU residency = full-attention Qwen2/Llama, the least outlier-prone post-RoPE case). The f32
+// default stays bit-exact elsewhere.
 //
 // This synthetic shape (random weights, i.i.d.-normal K/V) is a floor, not the real
 // distribution — the per-head-quant kernels are exactness-checked vs the CPU in
@@ -185,8 +185,8 @@ func TestKVCacheI8_parity(t *testing.T) {
 	// int8's 8-bit mantissa is two bits coarser than f16's, and on this synthetic
 	// i.i.d.-normal-K/V shape the logits are near-uniform (see the sub-3% flip gaps),
 	// so a single worst step dips below 0.99 from pure rounding, not degradation. The
-	// doc's "≥0.99" prediction was for a real Qwen-7B distribution; the kernels' bit-
-	// exactness (TestKVI8Kernels/Attn, cosine 1.000000) is the exactness proof.
+	// doc's "≥0.99" prediction was for a real Qwen-7B distribution; the kernels' bit-exactness
+	// (TestKVI8Kernels/Attn) is the exactness proof.
 	if meanCos < 0.99 {
 		t.Errorf("mean cosine %.5f < 0.99 — int8 KV degrades decode beyond the quant floor", meanCos)
 	}

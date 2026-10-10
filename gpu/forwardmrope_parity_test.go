@@ -10,11 +10,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestForwardMRoPE_constantShiftInvariance is ForwardMRoPE's FIRST real correctness test on the
-// WebGPU backend — the CUDA twin lives in cuda/forwardmrope_parity_test.go; see that file's doc
-// comment for the full rationale (RoPE's relative-angle invariance: a decode run where every
-// step's rope angle is shifted by the same constant delta must match delta=0 exactly, a property
-// independent of any specific family's m-RoPE usage).
+// TestForwardMRoPE_constantShiftInvariance is the WebGPU twin of
+// cuda/forwardmrope_parity_test.go, whose doc comment has the full rationale: RoPE's
+// relative-angle invariance means a decode run where every step's rope angle is shifted by the
+// same constant delta must match delta=0 exactly, a property independent of any family's m-RoPE
+// usage.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestForwardMRoPE_constantShiftInvariance -v -timeout 20m
 func TestForwardMRoPE_constantShiftInvariance(t *testing.T) {

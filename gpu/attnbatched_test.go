@@ -9,23 +9,19 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestAttnBatched_parity gates docs/completed/task-gpu-batched-prefill.md's Increment 1: does ONE
-// grid-(nH,M) dispatch of attnBatchedKernel's chosen kernel match M separate
-// dispatches of attnKernel's chosen kernel (the shape PrefillLastW8A8 used before
-// this fix, and what decode still uses today) over the SAME fully-pre-populated
-// K/V cache? No checkpoint needed — synthetic Q/K/V, a fresh cache (basePos=0), M
-// rows each attending to keys [0, row].
+// TestAttnBatched_parity pins that ONE grid-(nH,M) dispatch of attnBatchedKernel's chosen kernel
+// matches M separate dispatches of attnKernel's chosen kernel (what PrefillLastW8A8 did before
+// batching, and what decode still does) over the same fully populated K/V cache
+// (docs/completed/task-gpu-batched-prefill.md, Increment 1). No checkpoint: synthetic Q/K/V, a
+// fresh cache (basePos=0), M rows each attending to keys [0, row].
 //
-// Two geometries, one per attnKernel/attnBatchedKernel branch (attention.go's
-// attnKeysEligible): hd=64/kvDim=128 (both %4==0, both KEYS-eligible — the common
-// dense-architecture shape, e.g. qwen2.5-coder-0.5b) and hd=48/kvDim=48 (kvDim not
-// a multiple of 4 via nKV=1 group — falls to the plain kernel).
+// Two geometries, one per attnKernel/attnBatchedKernel branch (attnKeysEligible): hd=64/kvDim=128
+// (both %4==0, keys-eligible) and hd=48/kvDim=48 (kvDim not a multiple of 4, so the plain
+// kernel).
 //
-// NOT bit-exact, unlike TestRMSNormBatched_parity/TestRoPEBatched_parity: attention
-// kernels in this file are never bit-identical to each other even for the SAME
-// math (attnKeysShaderWGSL's own comment: "the denominator sums in a different
-// order and the tiled rescale reassociates" vs attnShaderWGSL) — cosine/maxAbs,
-// the same standard TestAttention_parity holds every attention kernel pair to.
+// Not bit-exact, unlike TestRMSNormBatched_parity and TestRoPEBatched_parity: the attention
+// kernels differ in summation order (attnKeysShaderWGSL's own comment says so), so the bar is
+// cosine/maxAbs, the standard TestAttention_parity holds every attention kernel pair to.
 //
 //	go test -tags gpu ./gpu/ -run TestAttnBatched_parity -v
 func TestAttnBatched_parity(t *testing.T) {

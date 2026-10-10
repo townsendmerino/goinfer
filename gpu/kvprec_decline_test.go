@@ -11,20 +11,19 @@ import (
 	"testing"
 )
 
-// M-32: only the generic GQA branch honoured --kv i8 / --kv f16. The Nemotron, Qwen3.5 and MLA
-// branches always allocated f32 NewKVCache, while ctxCap was raised by the flag and the kernel
-// selection was model-wide. Two shapes, both bad in a way the operator cannot diagnose:
+// TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches pins that the resident builder
+// declines --kv i8 / --kv f16 on the non-generic branches (Nemotron, Qwen3.5, MLA). Those
+// branches always allocate an f32 NewKVCache while the flag raised ctxCap and kernel selection
+// was model-wide, so with --kv i8 rl.kScale stays nil and bind fails with a misleading "device
+// allocation failed (VRAM exhausted?)" that sends the whole model to CPU for a reason that is not
+// true, and with --kv f16 each cache is ctxCap×kvDim×4 at the raised cap, twice the intended f16
+// footprint. Declining is chosen over implementing quantized KV for MLA's rank-space latent
+// unvalidated.
 //
-//	--kv i8  rl.kScale stays nil → bind reports "nil buffer for binding 3 (allocation failed)"
-//	         → "device allocation failed (VRAM exhausted?)" → the whole model runs on CPU for
-//	         a reason that is not true.
-//	--kv f16 each cache is ctxCap×kvDim×4 at the RAISED cap: 2x the intended f16 footprint and
-//	         2x the f32 default, inverting the "f16 halves KV bytes so 32k fits" premise.
-//
-// The fix declines instead of implementing quantized KV for MLA's rank-space latent unvalidated.
-// This asserts the SHAPE of that decision on the source, because reaching the branch needs one
-// of those three model families resident on a GPU — which no fixture here provides, and a test
-// that silently skipped would be exactly the "a skip is not a pass" trap.
+// The test asserts the SHAPE of that decision on the source, because reaching the branch needs
+// one of those three model families resident on a GPU, which no fixture here provides, and a test
+// that silently skipped would be exactly the "a skip is not a pass" trap. Background:
+// docs/code-notes/gpu.md#TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches.
 func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "residency.go", nil, parser.ParseComments)
@@ -58,8 +57,8 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	if !strings.Contains(src, "kvI8 || kvF16") {
 		t.Error("no combined kvI8||kvF16 guard: the two flags fail differently but both fail")
 	}
-	// And the -ctx request must be consulted. It was read nowhere under gpu/, so -ctx 32768
-	// kept 16k and -ctx 2048 still allocated 16k per layer.
+	// And the -ctx request must be consulted (ResidentContextRequest), or -ctx would not change the
+	// allocated cap.
 	if !strings.Contains(src, "ResidentContextRequest") {
 		t.Error("BuildResident ignores ResidentContextRequest: `serve -ctx` is silently a no-op " +
 			"on webgpu (M-32)")

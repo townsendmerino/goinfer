@@ -14,22 +14,19 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestLoRAResidentParityWebGPU is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-
-// time LoRA applied on this backend's resident decode path must match the CPU reference (the
-// same adapter applied via decoder's generic gatedMLP/causalAttention forward). Mirrors
-// metal/lora_resident_parity_test.go — same fixture (testdata/llama-tiny, GQA 4-heads/2-kv-heads
-// so o-proj and the differently-widthed q/k/v sites are all genuinely exercised), same
-// vacuousness check, same reasoning for the 0.95 floor (gpt2_resident_parity_test.go's
-// established resident-vs-CPU decode-logit bar on the Metal side; this backend has no
-// resident-vs-CPU whole-model floor of its own narrower than that, so it is the right anchor
-// here too) — but drives decoder.ResidentAdapter directly via ResidentForwardForTest/
-// ResidentAdapterLayersForTest to isolate the KERNEL correctness question, same as every other
-// resident parity test in this file's package.
+// TestLoRAResidentParityWebGPU is the numeric gate for compute-time LoRA on this backend's
+// resident decode path (docs/tasks/task-gpu-paths-2026-09.md, G3): it must match the CPU
+// reference (the same adapter applied via decoder's generic gatedMLP/causalAttention forward). It
+// mirrors metal/lora_resident_parity_test.go: same fixture (testdata/llama-tiny, GQA 4 heads/2 kv
+// heads so o-proj and the differently-widthed q/k/v sites are all genuinely exercised), same
+// vacuousness check, same 0.95 floor (gpt2_resident_parity_test.go's resident-vs-CPU decode-logit
+// bar; this backend has no narrower whole-model floor of its own). It drives
+// decoder.ResidentAdapter directly via ResidentForwardForTest/ResidentAdapterLayersForTest to
+// isolate the KERNEL correctness question.
 //
-// Architecturally this backend's SetAdapter (gpu/lora_resident.go) is a genuinely different
-// mechanism from Metal's — a flat, Go-side dispatch-step list rebuilt from a saved pristine plan
-// plus spliced-in LoRA steps, not a per-token re-encode with a plain `if` — so this test is the
-// gate for THAT mechanism specifically, not just a kernel port's numerics.
+// This backend's SetAdapter (gpu/lora_resident.go) is a different mechanism from Metal's, a flat
+// Go-side dispatch-step list rebuilt from a saved pristine plan plus spliced-in LoRA steps, so
+// this is the gate for THAT mechanism, not just a kernel port's numerics.
 func TestLoRAResidentParityWebGPU(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)

@@ -47,13 +47,10 @@ func TestRoPE_parity(t *testing.T) {
 	}
 }
 
-// TestRoPE_parityAtLongContextCeiling is N-85 (docs/audit-2026-09-10.md): TestRoPE_parity above
-// only exercises pos=37, so the concern this measures — WGSL sin/cos range-reducing a large
-// angle differently from the CPU's f64 reference — was flagged but never actually checked at a
-// position a real served request can reach. decoder/fitplan.go's fit-by-default heuristic can
-// grow context capacity to 65536 positions at int8 KV quant (the "i8 ceiling" the finding cites),
-// so pos=65535 here is that real ceiling, not an arbitrary large number. theta at d=0 (invFreq≈1)
-// lands at ~65535 rad, matching the finding's own "~6.5e4 rad" figure.
+// TestRoPE_parityAtLongContextCeiling measures the GPU RoPE at pos=65535, the context ceiling
+// decoder/fitplan.go's fit-by-default can reach at int8 KV quant (TestRoPE_parity above only
+// reaches pos=37). The concern is WGSL sin/cos range-reducing a ~6.5e4 rad angle differently from
+// the CPU f64 reference. Background: docs/code-notes/gpu.md#TestRoPE_parityAtLongContextCeiling.
 func TestRoPE_parityAtLongContextCeiling(t *testing.T) {
 	ctx, err := New()
 	if err != nil {
@@ -90,13 +87,10 @@ func TestRoPE_parityAtLongContextCeiling(t *testing.T) {
 	t.Logf("RoPE parity at pos=%d (theta up to ~%.0f rad at d=0): cosine=%.8f maxAbs=%.3e "+
 		"(TestRoPE_parity's pos=37 case measures cosine=1.00000000 maxAbs=3.1e-06 for comparison)",
 		pos, float64(pos)*float64(invFreq[0]), cos, maxAbs)
-	// MEASUREMENT, not a pass/fail gate: N-85's own point is that this was UNMEASURED, and
-	// reusing TestRoPE_parity's pos=37 tolerance here would silently assert a quality bar this
-	// batch has no basis to pick — whether ~2.9e-3 maxAbs at the realistic long-context ceiling
-	// (decoder/fitplan.go's int8-KV fit-by-default can reach 65536 positions) is ACCEPTABLE for
-	// real model quality is a product decision, not something to decide by copy-pasting a
-	// threshold calibrated for a 1700x shorter position. Recorded here so the real number is on
-	// record instead of "unmeasured" — see docs/audit-2026-09-10.md's N-85 closure note.
+	// A measurement, not a pass/fail gate: reusing TestRoPE_parity's pos=37 tolerance here would
+	// assert a quality bar nobody chose, and whether the error at this ceiling is acceptable for
+	// model quality is a product decision. The number is logged, not asserted. Record:
+	// docs/code-notes/gpu.md#TestRoPE_parityAtLongContextCeiling.measurement.
 }
 
 // TestAttention_parity checks the GPU single-query attention against the CPU

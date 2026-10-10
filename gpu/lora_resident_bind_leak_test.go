@@ -8,20 +8,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSetAdapter_partialBindErrorRestoresSteps is N-82 (docs/audit-2026-09-10.md): SetAdapter's
-// conversion loop used to return immediately on the first mk error, leaking every already-built
-// projection in built (metal/lora.go's own C-04, audit-metal-2026-09-12.md, already fixed the
-// identical shape there — TestSetAdapter_partialBindErrorReleasesBuffers is its regression gate).
+// TestSetAdapter_partialBindErrorRestoresSteps pins that a SetAdapter that fails partway through
+// its conversion loop restores r.steps to r.baseSteps' length. SetAdapter clears and releases
+// r.loraLayers unconditionally at the top of the call, so a mid-loop error that left r.steps (the
+// flat, Go-side dispatch-step list Run walks) pointing at the previously bound adapter, whose
+// bind groups were just released, would make a later Run() dispatch against freed WebGPU
+// resources.
 //
-// Worse than a leak alone here: this backend's SetAdapter clears and releases r.loraLayers
-// UNCONDITIONALLY at the top of the call (correct), but on the old code a mid-loop error left
-// r.steps — the flat, Go-side dispatch-step list Run actually walks — pointing at whatever
-// adapter was bound BEFORE this call, which just had its bind groups released one line above by
-// that same top-of-function release. A Run() after a failed rebind would then dispatch against
-// freed WebGPU resources. This backend has no buffer ledger to assert a leak count directly
-// (unlike Metal's d.LedgerLen()), so this test pins the more severe, directly observable half:
-// r.steps must be reset to r.baseSteps' length on a failed rebind, not left at a stale adapter's
-// larger spliced-in step count.
+// This backend has no buffer ledger to assert a leak count directly (unlike Metal's
+// d.LedgerLen(); metal's TestSetAdapter_partialBindErrorReleasesBuffers is the leak gate), so
+// this test pins the more severe, directly observable half: r.steps must not stay at a stale
+// adapter's larger spliced-in step count. Background:
+// docs/code-notes/gpu.md#TestSetAdapter_partialBindErrorRestoresSteps.
 func TestSetAdapter_partialBindErrorRestoresSteps(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)

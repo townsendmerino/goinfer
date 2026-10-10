@@ -80,8 +80,8 @@ func firstBitDiff(a, b []float32) int {
 	return -1
 }
 
-// TestTiledRB64_microbench is the kernel-level signal, at the 1.5B shapes the profile put
-// the class at ~975 GFLOPS: the two kernels back to back, same buffers, alternating.
+// TestTiledRB64_microbench is the kernel-level signal at the 1.5B shapes: the two kernels back to
+// back, same buffers, alternating.
 func TestTiledRB64_microbench(t *testing.T) {
 	if testing.Short() {
 		t.Skip("microbench")

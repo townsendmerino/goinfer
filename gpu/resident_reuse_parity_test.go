@@ -62,13 +62,11 @@ func TestResidentPrefixReuse_tokenIdentical(t *testing.T) {
 
 		greedy := decoder.SamplingParams{Temperature: 0}
 		prompt, _ := tk.Encode("Write one short line about recursion.", true)
-		// Turn 4 DIVERGES: it shares only the opening words with what the cache holds. That
-		// turn is what makes this gate real. A first version used three strict prefix
-		// extensions only, and a deliberately broken matcher — one that claimed the prefix
-		// WITHOUT comparing ids — passed it, because on an ever-extending transcript the
-		// wrong answer and the right answer coincide. The bug was invisible in exactly the
-		// dimension being tested (CLAUDE.md's minimal-repro trap). Divergence is the only
-		// thing that distinguishes "compared the ids" from "assumed they matched".
+		// Turn 4 DIVERGES: it shares only the opening words with what the cache holds, and that turn is
+		// what makes this gate real. On an ever-extending transcript the wrong answer and the right
+		// answer coincide, so a matcher that claimed the prefix WITHOUT comparing ids would pass three
+		// strict prefix extensions (CLAUDE.md's minimal-repro trap). Divergence is the only thing that
+		// distinguishes "compared the ids" from "assumed they matched".
 		divergeAt := 3
 		var outs [][]int
 		var reused []int

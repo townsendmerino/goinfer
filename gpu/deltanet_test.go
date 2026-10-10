@@ -11,32 +11,30 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDeltaRule_cpuParity — the whole Gated-DeltaNet mixer chain on the GPU vs the CPU reference,
-// at REAL head geometry, driven for enough tokens that a drifting state shows.
+// TestDeltaRule_cpuParity pins the whole Gated-DeltaNet mixer chain on the GPU against the CPU
+// reference at real head geometry, driven for enough tokens that a drifting state shows.
 //
-// Four kernels, run CHAINED (each consumes the previous one's real GPU output, not the CPU's), so
-// this gates the composition the resident runner will execute rather than four isolated
-// primitives — the A′ zero-copy post-mortem's lesson, recorded as "isolation proves the primitive,
-// never the composition". Each stage is scored separately so a failure names the culprit:
+// Four kernels run chained (each consumes the previous one's GPU output, not the CPU's), so this
+// gates the composition the resident runner will execute rather than four isolated primitives (an
+// isolated primitive proves itself, never the composition). Each stage is scored separately so a
+// failure names the culprit:
 //
 //	deltaGates → (beta, decay)   deltaNorm → (q̂, k̂)   deltaRule → core   deltaGNorm → gated
 //
-// The two GEMVs and the causal conv are deliberately outside: they are ordinary matmuls and
-// mambaConv, both already gated.
+// The two GEMVs and the causal conv are outside: they are ordinary matmuls and mambaConv, both
+// gated elsewhere.
 //
-// WHY REAL GEOMETRY AND NOT THE TINY GOLDEN. testdata/qwen35_deltanet_golden.json pins a real HF
-// layer, but at hk=hv=8, nv=4: 32 threads, and a state row shorter than a cache line. Qwen3.8 runs
-// hk=hv=128, nk=16, nv=48 — 6144 threads each owning a 128-float row. Those are the numbers the
-// kernel has to be right at, and the scaled-fixture discipline exists here
-// (TestGemma4MoEScaled_residentParity) precisely because toy widths hide this class of bug.
+// Real geometry, not the tiny golden: testdata/qwen35_deltanet_golden.json pins a real HF layer
+// but at hk=hv=8, nv=4 (32 threads, a state row shorter than a cache line), while Qwen3.8 runs
+// hk=hv=128, nk=16, nv=48 (6144 threads each owning a 128-float row). Toy widths hide this class
+// of bug (cf. TestGemma4MoEScaled_residentParity).
 //
-// WHY COMPARE TO THE CPU AND NOT TO HF. The CPU recurrence is already gated against transformers'
-// torch_recurrent_gated_delta_rule (decoder's DeltaNet golden), so this makes the chain
-// kernel ≡ CPU ≡ HF. A reference written inside this package would be a second unvalidated
-// implementation of the thing under test.
+// Compared to the CPU, not HF: the CPU recurrence is already gated against transformers'
+// torch_recurrent_gated_delta_rule (decoder's DeltaNet golden), so this makes the chain kernel =
+// CPU = HF; a reference written in this package would be a second unvalidated implementation.
 //
-// WHY MANY STEPS. A recurrence can agree at step 1 and be visibly wrong at step 50 — the state is
-// the carrier. Same reasoning as TestMambaSSM_driftParity; the running worst is logged so a
+// Many steps: a recurrence can agree at step 1 and be visibly wrong at step 50, since the state
+// is the carrier (same reasoning as TestMambaSSM_driftParity). The running worst is logged so a
 // failure says whether the error is constant (a formula bug) or growing (a state bug).
 func TestDeltaRule_cpuParity(t *testing.T) {
 	ctx := newOrSkipHW(t)
@@ -175,10 +173,8 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		return o
 	}
 
-	// Worst-over-steps per stage, so a failure names WHICH kernel drifted rather than only that
-	// the chain did. The stages run chained (deltaRule consumes deltaGates' and deltaNorm's real
-	// GPU output, not the CPU's), so an error in an early kernel reaches the late ones — which is
-	// the composition the resident runner will actually execute.
+	// Worst-over-steps per stage, so a failure names which kernel drifted rather than only that the
+	// chain did. The stages run chained, so an error in an early kernel reaches the late ones.
 	type stage struct {
 		name string
 		cos  float64

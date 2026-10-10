@@ -9,12 +9,11 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestMoEExpertGEMV_indexing gates C3b: the indexed sparse-expert GEMV must read the
-// RIGHT expert's row out of the stacked buffer (the dynamic index comes from the routing
-// buffer, not a record-time constant). For each expert e it runs the indexed GEMV with
-// idx[0]=e and checks the result equals a direct int8 GEMV of expert e's weight — proving
-// the stacked addressing + W8A8 math. (The full gate→up→SwiGLU→down combine is gated
-// end-to-end on mixtral-tiny in C3c.)
+// TestMoEExpertGEMV_indexing pins that the indexed sparse-expert GEMV reads the RIGHT expert's
+// row out of the stacked buffer (the dynamic index comes from the routing buffer, not a
+// record-time constant). For each expert e it runs the indexed GEMV with idx[0]=e and checks the
+// result equals a direct int8 GEMV of expert e's weight, proving the stacked addressing + W8A8
+// math. (The full gate→up→SwiGLU→down combine is gated end-to-end by TestDecodeRunnerMoE_parity.)
 func TestMoEExpertGEMV_indexing(t *testing.T) {
 	c, err := gpu.New()
 	if err != nil {

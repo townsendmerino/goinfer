@@ -13,12 +13,12 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Phase-A reconciliation (docs/ssm-int8-quality.md): the GPU conv/ssm/gatedNorm kernels pass
-// isolation parity on RANDOM inputs over 300 tokens (TestMambaLayer_compose) yet the resident
-// granite drops to 66%. This test feeds the kernels REAL granite layer-0 inputs — captured from
-// an actual model run — over a multi-token sequence and diffs the GPU mixer output against
-// mamba2Step's. Diverge → kernel-math bug in the real-input regime; match → the bug is wiring
-// (the resident hands the kernels different inputs/state than mamba2Step gets).
+// TestMambaRealInputParity feeds the GPU conv/ssm/gatedNorm kernels REAL granite layer-0 inputs,
+// captured from an actual model run over a multi-token sequence, and diffs the GPU mixer output
+// against mamba2Step's (docs/ssm-int8-quality.md). The kernels pass isolation parity on random
+// inputs (TestMambaLayer_compose), so a divergence here is a kernel-math bug in the real-input
+// regime, and a match means any resident error is wiring (the resident hands the kernels
+// different inputs/state than mamba2Step gets).
 func TestMambaRealInputParity(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {

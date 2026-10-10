@@ -4,24 +4,14 @@ package gpu
 
 import "testing"
 
-// TestNoBufferLeak pins V-22 (docs/review-2026-09-04.md): bufaccount.go's own comment has
-// pointed callers here since before this test existed ("See TestNoBufferLeak") — a doc comment
-// claiming coverage that isn't there is worse than no comment, because it reads as verified.
-//
-// Two real accounting bugs let LiveBufferBytes grow without bound even though the underlying GPU
-// memory WAS correctly released:
-//   - Readback(newDeviceBuffer(buf, n)) built a throwaway *DeviceBuffer (accountAlloc), read it,
-//     and threw it away — nothing ever called Close (accountFree). Fixed via readbackRaw, which
-//     owns the wrapper for exactly the call and closes it before returning.
-//   - FusedMLP wrapped the SAME xn/mid buffer in newDeviceBuffer TWICE — once kept in `keep`
-//     (released at the end) and once more, locally, for quantizeDevice — double-accounting one
-//     real allocation. Fixed by reusing the single kept wrapper instead of building a second.
-//
-// This drives each fixed path several times and asserts LiveBufferBytes returns to its PRE-CALL
-// baseline every time — not just "does not exceed some threshold," which a slow leak could still
-// pass for a while. A resident weight fixture (rmsWDev/gateRM/upRM/downRM) is created once and
-// deliberately stays live across iterations — that is real, intended residency, not a leak — so
-// the baseline is taken AFTER the fixture, not before it.
+// TestNoBufferLeak pins that LiveBufferBytes returns to its pre-call baseline after each path
+// that once leaked accounting while the GPU memory itself was released: Readback (readbackRaw now
+// owns the throwaway *DeviceBuffer wrapper and closes it) and FusedMLP (the xn/mid buffer is
+// wrapped once, not twice). It drives each path several times and asserts the exact baseline
+// every time, which a threshold check could pass for a while on a slow leak. The resident weight
+// fixture (rmsWDev/gateRM/upRM/downRM) is created once and stays live across iterations on
+// purpose, so the baseline is taken after it. bufaccount.go points callers here. Background:
+// docs/code-notes/gpu.md#TestNoBufferLeak.
 func TestNoBufferLeak(t *testing.T) {
 	ctx, err := New()
 	if err != nil {
@@ -48,10 +38,8 @@ func TestNoBufferLeak(t *testing.T) {
 	})
 
 	t.Run("vision host wrappers", func(t *testing.T) {
-		// Same shape TestVisionLayerNorm_parity already exercises — a smaller, ad hoc size here
-		// once triggered a SIGTRAP inside the wgpu-native driver on CreateBuffer, unrelated to
-		// the accounting this test is actually about; reusing a proven-safe size avoids
-		// introducing a second, unrelated flake into a test meant to pin V-22.
+		// Reuse TestVisionLayerNorm_parity's shape: a smaller ad hoc size once SIGTRAPed inside the
+		// wgpu-native driver on CreateBuffer, unrelated to the accounting under test.
 		const rows, h = 257, 1152
 		src := make([]float32, rows*h)
 		w := make([]float32, h)

@@ -11,27 +11,22 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestThetaProbe_WebGPU measures Theta — the marginal cost of one extra verify node, in units of
-// one single-token target step — on the cgo WebGPU resident path.
+// TestThetaProbe_WebGPU measures Theta, the marginal cost of one extra verify node in units of
+// one single-token target step, on the cgo WebGPU resident path.
 //
-// WHY THIS EXISTS. decoder/spec_adaptive.go says Theta "is the relative cost of one extra verify
-// node on *this backend* — measure it", ships 0.5 as the batched-CPU value, and CPU/CUDA/Metal
-// have each had a real probe since (decoder/theta_probe_test.go, cuda/theta_probe_test.go,
-// metal/theta_probe_test.go — docs/measurements/theta-per-backend-2026-09-01.md,
-// theta-cuda-ab-2026-09-01.md) — P22 (docs/queue-performance.md) named WebGPU as the one backend
-// still falling through to the unmeasured 0.5 default, filed open rather than assumed either way.
-// The Metal probe found the domain check itself excluded Metal's real value (1.00–1.05) and
-// silently substituted 0.5 — the WORST available choice, since a smaller Theta drafts deeper, not
-// shallower (spec_adaptive.go's `Depth()` is monotone-decreasing in Theta). Whether WebGPU has the
-// same shape of defect is exactly what this measures.
+// decoder/spec_adaptive.go says Theta "is the relative cost of one extra verify node on *this
+// backend* — measure it" and ships 0.5 as the batched-CPU value; CPU, CUDA and Metal each have a
+// probe (decoder/theta_probe_test.go, cuda/theta_probe_test.go, metal/theta_probe_test.go;
+// docs/measurements/theta-per-backend-2026-09-01.md, theta-cuda-ab-2026-09-01.md). A backend with
+// no measured value falls through to 0.5, the WORST available choice, since a smaller Theta
+// drafts deeper (spec_adaptive.go's Depth() is monotone-decreasing in Theta).
 //
 // METHOD, identical to the CPU control and the CUDA/Metal probes so all four numbers are directly
 // comparable: seed a context of `depth` positions, then time ForwardN over n tokens for a ladder
 // of n, truncating back to `depth` between every call. Theta = (least-squares slope of T(n)) /
-// T(1). residentDecoder.TruncateTo is a documented no-op on this backend (gpu/residency.go: the
-// cache is positional, Forward sets nKeys=pos+1, so entries past pos are simply never read and get
-// overwritten next round) — safe for this probe specifically because every call passes the SAME
-// startPos, so nothing past `depth` is ever read regardless of what a prior wider call left there.
+// T(1). residentDecoder.TruncateTo is a documented no-op on this backend (the cache is positional
+// and Forward sets nKeys=pos+1, so entries past pos are never read and get overwritten next
+// round), which is safe for this probe only because every call passes the SAME startPos.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1 go test -tags "gpu goinfer_testhooks" -run TestThetaProbe_WebGPU -v ./gpu/
 func TestThetaProbe_WebGPU(t *testing.T) {

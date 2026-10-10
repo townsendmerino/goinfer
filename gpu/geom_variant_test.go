@@ -7,17 +7,16 @@ import (
 	"testing"
 )
 
-// TestGeomVariants_dedup is the P1 (own-forward residency bridge) unit gate for the
-// value-keyed attention-geometry dedup. TestDecodeToken_parity already proves the
-// *collapse* direction (a uniform multi-layer model dedups to one attnGeom, so
-// non-Gemma models stay byte-identical). This proves the *expand* direction and that
-// the key actually depends on every field: two layers whose {hd, nKV, half} tuples
-// differ in ANY one component must produce two distinct geoms, not one. If the key
-// silently dropped a field, the matching case below would collapse to a single variant.
+// TestGeomVariants_dedup is the unit gate for the value-keyed attention-geometry dedup.
+// TestDecodeToken_parity already proves the collapse direction (a uniform multi-layer model
+// dedups to one attnGeom, so non-Gemma models stay byte-identical); this proves the expand
+// direction and that the key depends on every field: two layers whose {hd, nKV, half} tuples
+// differ in ANY one component must produce two distinct geoms. If the key silently dropped a
+// field, the matching case below would collapse to a single variant.
 //
-// It asserts GeomVariantCount only — the plan is built, never run — so the second
-// layer's tuple may diverge from its (uniform) weight shapes without consequence; the
-// dedup count is decided at build time from the tuples alone.
+// It asserts GeomVariantCount only (the plan is built, never run), so the second layer's tuple
+// may diverge from its uniform weight shapes without consequence; the dedup count is decided at
+// build time from the tuples alone.
 func TestGeomVariants_dedup(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()

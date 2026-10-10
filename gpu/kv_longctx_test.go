@@ -12,19 +12,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKVLongCtx sweeps decode tok/s vs context depth for int8 / f16 / f32 KV on the
-// residency path — the residual the GPU int8-KV + f16-KV tasks left open: the
-// attention kernel is KV-read-bound, so at long context fewer KV bytes (f32 > f16 >
-// i8) should make decode FASTER, but the shipped fit test only measured ~1k (0.96×,
-// weight-stream-bound). This maps the curve at 1k/4k/8k to locate any crossover —
-// far cheaper than a single 16k point (prefill is O(L²), no batched prefill). One
-// model load per precision, reused across depths.
+// BenchmarkKVLongCtx sweeps decode tok/s vs context depth for int8 / f16 / f32 KV on the
+// residency path. The attention kernel is KV-read-bound, so at long context fewer KV bytes (f32 >
+// f16 > i8) should make decode faster, while the 7B fit test only measures ~1k, which is
+// weight-stream-bound. This maps the curve at 1k/4k/8k to locate any crossover, far cheaper than
+// a single 16k point (prefill is O(L²), no batched prefill). One model load per precision, reused
+// across depths.
 //
 //	go test -tags gpu -run TestKVLongCtx -v -timeout 5400s
 //
-// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*
-// its green said only that the harness ran — not that the effect it maps is there.
-// Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
+// A Benchmark, not a Test: it reports numbers and asserts nothing, so as a Test* its green would
+// say only that the harness ran, not that the effect it maps is there. Go runs a benchmark this
+// slow exactly once (N=1 already exceeds benchtime).
 func BenchmarkKVLongCtx(b *testing.B) {
 	requireHeavyModel(b)
 	path := os.Getenv("GOINFER_GPU_7B")

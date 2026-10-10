@@ -18,8 +18,8 @@ import (
 // arbitrary moment (the webgpu-parity hang; gpu.go finalizerSerial). The live-buffer gauge (bufaccount.go) is exact and the tests run one at a time, so a Context that is closed while the gauge is
 // above its value at New had something outlive it. Close calls leakAtClose on the test's goroutine, where the stack names the test.
 //
-// The report is printed at the end of the run and any entry FAILS the package (the suite was made leak-free on 2026-10-08, so a new leak is a regression); GOINFER_GPU_LEAKS_FATAL=0 turns the failure off (a test-only switch,
-// not a production read).
+// The report is printed at the end of the run and any entry FAILS the package (the suite is leak-free, so a new leak is a regression); GOINFER_GPU_LEAKS_FATAL=0 turns the failure off (a test-only
+// switch, not a production read).
 // leakExempt is set by the two reproducers, which leak a matrix per round on purpose.
 var leakExempt atomic.Bool
 

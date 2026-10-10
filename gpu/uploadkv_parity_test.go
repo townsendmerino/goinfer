@@ -11,11 +11,9 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestUploadKV_matchesSequentialForward is UploadKV's FIRST real correctness test on the WebGPU
-// backend (P6b / gap-0, docs/multimodal.md) — the CUDA twin of this test lives in
-// cuda/uploadkv_parity_test.go; see that file's doc comment for the full rationale. Before this,
-// UploadKV had zero non-test call sites and every fake stub ignored its arguments and returned
-// nil.
+// TestUploadKV_matchesSequentialForward pins UploadKV on the WebGPU backend (docs/multimodal.md,
+// P6b/gap-0); the CUDA twin is cuda/uploadkv_parity_test.go, whose doc comment has the full
+// rationale.
 //
 // Two arms on the SAME resident handle (Reset between them):
 //
@@ -25,14 +23,10 @@ import (
 //
 // Two cases: base=0 (no sliding-window ring wrap) and base>0 (prompt long enough to wrap the
 // ring). Model: tinymistral-248m (Mistral, ALL layers sliding-window, sliding_window=32 per its
-// own config.json) rather than Gemma 3 — confirmed by running this suite for real: gemma3
-// declines WebGPU residency on this build ("arch needs unimplemented feature(s) [embed-scale
-// gated-gelu sandwich-norm]", a pre-existing WebGPU feature gap, unrelated to this change), so it
-// cannot exercise this test at all on WebGPU. tinymistral's tiny window (32, vs gemma3's 1024)
-// also makes the ring-wrap case cheap to trigger — no need for a >1000-token prefill. The WebGPU
-// UploadKV implementation additionally has real per-precision byte-offset arithmetic (f32/f16/
-// int8, and int8's separate scale buffers) that the base=0 case alone cannot exercise, since an
-// all-zero offset is degenerate for every precision.
+// config.json), whose tiny window makes the ring-wrap case cheap to trigger (gemma3's would need
+// a >1000-token prefill). The WebGPU UploadKV also has real per-precision byte-offset arithmetic
+// (f32/f16/int8, and int8's separate scale buffers) that the base=0 case alone cannot exercise,
+// since an all-zero offset is degenerate for every precision.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestUploadKV_matchesSequentialForward -v -timeout 20m
 func TestUploadKV_matchesSequentialForward(t *testing.T) {
