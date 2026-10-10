@@ -60,10 +60,10 @@ func TestLoadGuarded_swapGuardAbortReachesTheLoad(t *testing.T) {
 	}
 }
 
-// A load the tripwire does not cover must say so. The cold-user run on gemma-4-26b-a4b (2026-10-05) loaded a
-// non-.gguf source with an empty log, and the operator could not tell a guarded, quiet load from an unguarded one.
-// Through loadGuarded, both ways: the streamed load prints the notice naming the path, and a .gguf direct build
-// (guard seam stubbed to arm) prints none.
+// A load the tripwire does not cover must say so, or the operator cannot tell a guarded, quiet load from an unguarded
+// one. Through loadGuarded, both ways: the streamed load prints the notice naming the path, and a .gguf direct build
+// (guard seam stubbed to arm) prints none. Origin:
+// docs/code-notes/internal-modelload.md#TestLoadGuarded_saysWhenTheLoadIsNotGuarded.
 func TestLoadGuarded_saysWhenTheLoadIsNotGuarded(t *testing.T) {
 	gguf := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
 	origOut, origGuard := loadNoticeOut, startLoadGuard

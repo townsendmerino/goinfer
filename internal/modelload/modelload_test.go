@@ -11,9 +11,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/prequant"
 )
 
-// N-25, now in the one place all three apps read a .giw's tok half: when the bytes are neither a GGUF
-// nor a tokenizer.json, the error names BOTH attempts. serve's copy used to return only the JSON one,
-// so a corrupt GGUF-sourced bundle reported "invalid JSON" and pointed at the wrong half of the file.
+// TestTokenizerFromTok_reportsBothErrors (N-25): this is the one place all three apps read a .giw's tok half; when the
+// bytes are neither a GGUF nor a tokenizer.json, the error names BOTH attempts, since a JSON-only error points at the
+// wrong half of a corrupt GGUF-sourced bundle.
 func TestTokenizerFromTok_reportsBothErrors(t *testing.T) {
 	_, err := TokenizerFromTok([]byte("neither a GGUF nor JSON"))
 	if err == nil {
@@ -63,10 +63,10 @@ func TestLoad_loraOnAQuantizedFileIsRefusedBeforeTranscoding(t *testing.T) {
 	}
 }
 
-// TestLoad_safetensorsDirGoesThroughSidecar is G-S18d's load half (docs/tasks/task-multimodal-support-2026-10.md, S18 on
-// the Mac): where the sidecar default holds, a safetensors directory loads through a sidecar built beside it once; the
-// second load reuses it without a rebuild; the tokenizer, chat template included, is still the directory's; and
-// -direct-load keeps the directory. Red before S18: the directory loaded directly.
+// TestLoad_safetensorsDirGoesThroughSidecar is G-S18d's load half (docs/tasks/task-multimodal-support-2026-10.md): where
+// the sidecar default holds, a safetensors directory loads through a sidecar built beside it once; the second load
+// reuses it without a rebuild; the tokenizer, chat template included, is still the directory's; and -direct-load keeps
+// the directory.
 func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 	if !prequant.DefaultToSidecar(false) {
 		t.Skip("the sidecar default does not hold on this platform")
