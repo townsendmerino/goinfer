@@ -86,6 +86,8 @@ var supportRows = []supportRow{
 		"DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09)."},
 	{"GLM-OCR", "glm_ocr", multimodal.TowerGlmOcr, rep("glm_ocr", nil),
 		"One image per request (2026-10-09)."},
+	{"LFM2.5-VL", "lfm2_vl", multimodal.TowerSiglip2NaFlex, rep("lfm2_vl", nil),
+		"SigLIP2 NaFlex tower, CPU float32; the lfm2 decoder runs on the CPU only (no backend implements its short convolution) (S10, 2026-10-09)."},
 	{"Ministral 3", "mistral3", multimodal.TowerPixtral, rep("mistral3", nil),
 		"Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU."},
 }

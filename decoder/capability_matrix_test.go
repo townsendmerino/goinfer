@@ -395,8 +395,8 @@ func representativeConfig(modelType string) *Config {
 			HiddenAct:           "silu",
 			AttentionMultiplier: 0.5,
 		}
-	case "lfm2":
-		// LFM2/LFM2.5: a conv/attention hybrid whose per-layer kind rides on LayerTypes.
+	case "lfm2", "lfm2_vl":
+		// LFM2/LFM2.5 (and LFM2-VL's text_config, S10): a conv/attention hybrid whose per-layer kind rides on LayerTypes.
 		// 4 layers with both kinds present so the conv path and the attention path are each
 		// exercised. NormEps (NOT RMSNormEps) is the eps this family reads -- see
 		// Config.NormEps; a representative config that set rms_norm_eps here would resolve to
@@ -584,7 +584,8 @@ var familyDocs = map[string]familyDoc{
 	"glm_ocr_text":     {"GLM-OCR", "Zhipu GLM-OCR (0.9B document OCR): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; its own vision tower (aikit, CPU) feeds merged rows through the Qwen-shaped image path", "safetensors", "text"},
 	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
 	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)", "safetensors, GGUF", "text"},
-	"lfm2":             {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text"},
+	"lfm2":             {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text (+ vision tower)"},
+	"lfm2_vl":          {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text (+ vision tower)"},
 }
 
 // siteDoc is what goinfer.dev's model pages say about a family in plain words (docs/tasks/task-site-2026-09.md, 4a). Keyed by
@@ -619,7 +620,7 @@ var siteDocs = map[string]siteDoc{
 	"gemma4":           {"Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.", []string{"chat", "vision"}},
 	"granite":          {"IBM's Granite 4.2 dense, 3B to 30B.", []string{"chat"}},
 	"internlm2":        {"Shanghai AI Lab's InternLM2.", []string{"chat"}},
-	"lfm2":             {"Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention.", []string{"chat"}},
+	"lfm2":             {"Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention. LFM2.5-VL reads images (SigLIP2 tower).", []string{"chat", "vision"}},
 	"laguna":           {"poolside's Laguna coding models.", []string{"code"}},
 	"llama":            {"Meta's Llama 2 and 3, plus InternLM3. The one family that also loads GPTQ and AWQ.", []string{"chat"}},
 	"llama4_text":      {"Meta's Llama 4 Scout and Maverick, text only.", []string{"chat"}},

@@ -66,7 +66,11 @@ func (lm *loadedModel) pixtralPrep(img imageRef) (imagePrep, error) {
 	grid := [2]int{h / patch, w / patch}
 	rows, cols := grid[0]/px.pp.MergeSize, grid[1]/px.pp.MergeSize
 	hidden := lm.model.Config().HiddenDim
-	p := imagePrep{n: rows * cols, runs: rows, runLen: cols, hash: multimodal.HashImageBytes(img.data), block: multimodal.PixtralImageBlock(rows, cols)}
+	runLens := make([]int, rows)
+	for i := range runLens {
+		runLens[i] = cols
+	}
+	p := imagePrep{n: rows * cols, runLens: runLens, hash: multimodal.HashImageBytes(img.data), block: multimodal.PixtralImageBlock(rows, cols)}
 	p.features = func() ([]float32, error) {
 		patches, g, err := vision.PixtralPatchify(chw, 3, h, w, patch)
 		if err != nil {

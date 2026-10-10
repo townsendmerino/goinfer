@@ -1720,6 +1720,9 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
 // the LM head), so a test can grade every position, not only the last, through the production path.
 func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
+	if causal && m.w.arch.lfm2 != nil { // S10, LFM2-VL: lfm2 has no batched pass; its own forward, one row at a time
+		return m.prefillHiddenLFM2VL(ctx, ids, spans, imageEmbeds, cache)
+	}
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
 	}
@@ -1733,6 +1736,31 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 		cache.SetImageBlocks(imageSpanBlocks(spans))
 	}
 	return m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
+}
+
+// prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL, S10): the text embeddings with the image rows spliced
+// in, each run through runLayersLFM2FromEmbed in order (the conv windows see every row, image rows included), and each
+// position's hidden state final-normed, as the batched entry returns them.
+func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
+	hidden := arch.HiddenDim
+	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
+		return nil, err
+	}
+	h := m.embedN(ids)
+	spliceImageSpans(h, spans, imageEmbeds, hidden)
+	for i := range ids {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		row := h[i*hidden : (i+1)*hidden]
+		out, err := m.runLayersLFM2FromEmbed(row, cache)
+		if err != nil {
+			return nil, err
+		}
+		normalize(arch, out, m.w.FinalNorm, m.w.FinalNormBias, hidden)
+	}
+	return h, nil
 }
 
 // prefillLogitsQwenVL prefills a Qwen2.5-VL multimodal prompt and returns the

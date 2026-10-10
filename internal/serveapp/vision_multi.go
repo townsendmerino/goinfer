@@ -20,9 +20,8 @@ import (
 // imagePrep is one image of an image prompt: its block text, its placeholder count, the lazy tower that fills it, and
 // what decoding needs (the Qwen grid, the DeepStack set count).
 type imagePrep struct {
-	n        int // the image's feature rows
-	runs     int // placeholder runs it fills (0 = 1: one block; Pixtral: one per merged row, the breaks between them text)
-	runLen   int // each run's length (when runs > 1)
+	n        int   // the image's feature rows
+	runLens  []int // the placeholder runs it fills, one span each (Pixtral's merged rows, LFM2-VL's tiles and thumbnail; the markers between them are text); nil = one run of n
 	block    string
 	features func() ([]float32, error)
 	hash     uint64
@@ -36,6 +35,8 @@ func (lm *loadedModel) imageKind() string {
 	switch {
 	case lm.pixtral != nil:
 		return "pixtral"
+	case lm.lfm2vl != nil:
+		return "lfm2vl"
 	case lm.qwenEnc != nil || lm.qwen3 != nil:
 		return "qwen"
 	case lm.gemma4Enc != nil:
@@ -49,6 +50,8 @@ func (lm *loadedModel) imageTok(kind string) int {
 	switch kind {
 	case "pixtral":
 		return lm.pixtral.imgTok
+	case "lfm2vl":
+		return lm.lfm2vl.imgTok
 	case "qwen":
 		return lm.qwenImgTok
 	case "gemma4":
@@ -61,6 +64,9 @@ func (lm *loadedModel) imageTok(kind string) int {
 func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 	if kind == "pixtral" {
 		return lm.pixtralPrep(img)
+	}
+	if kind == "lfm2vl" {
+		return lm.lfm2vlPrep(img)
 	}
 	hiddenDim := lm.model.Config().HiddenDim
 	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
@@ -197,9 +203,10 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 	if err != nil {
 		return visionInput{}, err
 	}
-	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", pixtral: kind == "pixtral", deepSets: preps[0].deepSets, spans: spans, grids: grids, images: len(preps)}
+	causal := kind == "pixtral" || kind == "lfm2vl" // image tokens attend causally, plain 1-D positions
+	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", causal: causal, deepSets: preps[0].deepSets, spans: spans, grids: grids, images: len(preps)}
 	vi.imgPos, vi.imgLen, vi.imgHash, vi.grid = vi.spans[0].Pos, vi.spans[0].Len, vi.spans[0].Hash, preps[0].grid
-	if kind == "pixtral" {
+	if causal {
 		vi.grids = nil // no m-RoPE
 	}
 	vi.features = concatImageFeatures(preps, lm.model.Config().HiddenDim)
@@ -212,7 +219,7 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageSpan, [][3]int, error) {
 	want := 0
 	for _, p := range preps {
-		want += max(p.runs, 1)
+		want += max(len(p.runLens), 1)
 	}
 	if len(runs) != want {
 		return nil, nil, fmt.Errorf("found %d image placeholder runs, want %d (tokenizer/template mismatch)", len(runs), want)
@@ -221,18 +228,18 @@ func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageS
 	var grids [][3]int
 	r := 0
 	for _, p := range preps {
-		if p.runs > 1 {
-			for range p.runs {
-				if runs[r][1] != p.runLen {
-					return nil, nil, fmt.Errorf("image placeholder run = %d tokens, want %d (tokenizer/template mismatch)", runs[r][1], p.runLen)
+		if len(p.runLens) > 0 {
+			for _, ln := range p.runLens {
+				if runs[r][1] != ln {
+					return nil, nil, fmt.Errorf("image placeholder run = %d tokens, want %d (tokenizer/template mismatch)", runs[r][1], ln)
 				}
-				spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: p.runLen, Hash: p.hash})
+				spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: ln, Hash: p.hash})
 				r++
 			}
 			continue
 		}
 		if runs[r][1] != p.n {
-			unit := map[string]string{"qwen": "pads", "gemma4": "soft tokens", "gemma3": "soft tokens", "pixtral": "tokens"}[kind]
+			unit := map[string]string{"qwen": "pads", "gemma4": "soft tokens", "gemma3": "soft tokens", "pixtral": "tokens", "lfm2vl": "tokens"}[kind]
 			return nil, nil, fmt.Errorf("image placeholder run = %d %s, want %d (tokenizer/template mismatch)", runs[r][1], unit, p.n)
 		}
 		spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: p.n, Hash: p.hash})

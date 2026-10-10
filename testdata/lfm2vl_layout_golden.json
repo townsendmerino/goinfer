@@ -1,0 +1,762 @@
+{
+"note": "Lfm2VlProcessor from lfm25-vl-1.6b, transformers 5.12.0",
+"cases": [
+{
+"size": [
+56,
+84
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+14,
+20
+]
+],
+"runs": [
+70
+],
+"ids": 72,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+20,
+1000
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+4,
+114
+]
+],
+"runs": [
+114
+],
+"ids": 116,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+1000,
+20
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+114,
+4
+]
+],
+"runs": [
+114
+],
+"ids": 116,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+300,
+300
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+18,
+18
+]
+],
+"runs": [
+81
+],
+"ids": 83,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+400,
+400
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+24,
+24
+]
+],
+"runs": [
+144
+],
+"ids": 146,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+512,
+512
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+32,
+32
+]
+],
+"runs": [
+256
+],
+"ids": 258,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+600,
+600
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+32,
+32
+]
+],
+"runs": [
+256
+],
+"ids": 258,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+700,
+500
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+36,
+26
+]
+],
+"runs": [
+234
+],
+"ids": 236,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+896,
+896
+],
+"rows": 2,
+"cols": 2,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256
+],
+"ids": 1287,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+900,
+1200
+],
+"rows": 2,
+"cols": 3,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+26,
+36
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256,
+256,
+234
+],
+"ids": 1779,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_1_col_3|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_row_2_col_3|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+1200,
+1000
+],
+"rows": 3,
+"cols": 3,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+34,
+28
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+238
+],
+"ids": 2554,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_1_col_3|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_row_2_col_3|>",
+"<|img_row_3_col_1|>",
+"<|img_row_3_col_2|>",
+"<|img_row_3_col_3|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+1000,
+1250
+],
+"rows": 3,
+"cols": 3,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+28,
+34
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+238
+],
+"ids": 2554,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_1_col_3|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_row_2_col_3|>",
+"<|img_row_3_col_1|>",
+"<|img_row_3_col_2|>",
+"<|img_row_3_col_3|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+768,
+1024
+],
+"rows": 2,
+"cols": 3,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+26,
+36
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256,
+256,
+234
+],
+"ids": 1779,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_1_col_3|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_row_2_col_3|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+2000,
+3000
+],
+"rows": 2,
+"cols": 3,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+26,
+38
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256,
+256,
+247
+],
+"ids": 1792,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_1_col_3|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_row_2_col_3|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+64,
+4000
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+4,
+250
+]
+],
+"runs": [
+250
+],
+"ids": 252,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+4000,
+64
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+250,
+4
+]
+],
+"runs": [
+250
+],
+"ids": 252,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+511,
+1025
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+22,
+44
+]
+],
+"runs": [
+242
+],
+"ids": 244,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+360,
+640
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+22,
+40
+]
+],
+"runs": [
+220
+],
+"ids": 222,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+1080,
+1920
+],
+"rows": 2,
+"cols": 4,
+"tile_patches": [
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+32,
+32
+],
+[
+24,
+42
+]
+],
+"runs": [
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+256,
+252
+],
+"ids": 2311,
+"markers": [
+"<|image_start|>",
+"<|img_row_1_col_1|>",
+"<|img_row_1_col_2|>",
+"<|img_row_1_col_3|>",
+"<|img_row_1_col_4|>",
+"<|img_row_2_col_1|>",
+"<|img_row_2_col_2|>",
+"<|img_row_2_col_3|>",
+"<|img_row_2_col_4|>",
+"<|img_thumbnail|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+100,
+3000
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+4,
+174
+]
+],
+"runs": [
+174
+],
+"ids": 176,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+},
+{
+"size": [
+720,
+720
+],
+"rows": 1,
+"cols": 1,
+"tile_patches": [
+[
+32,
+32
+]
+],
+"runs": [
+256
+],
+"ids": 258,
+"markers": [
+"<|image_start|>",
+"<|image_end|>"
+]
+}
+]
+}

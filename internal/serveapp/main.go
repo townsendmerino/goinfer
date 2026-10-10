@@ -1143,6 +1143,8 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if visionModelType(cand) == "mistral3" { // Ministral 3's Pixtral tower (S10)
 					dir = cand
+				} else if visionModelType(cand) == "lfm2_vl" { // LFM2-VL's SigLIP2 NaFlex tower (S10)
+					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
 				}
@@ -1187,6 +1189,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if mt == "mistral3" { // S10: Ministral 3's Pixtral tower, on the CPU in float32
 		return s.loadPixtralVisionTower(dir)
+	}
+	if mt == "lfm2_vl" { // S10: LFM2-VL's SigLIP2 NaFlex tower, on the CPU in float32
+		return s.loadLfm2VLVisionTower(dir)
 	}
 	// On CUDA the unset default is the float32 tower (towerInt8); if it does not attach, attachGemma3Tower releases it and attaches the int8 device
 	// tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset default was already settled before the plan was made:
@@ -1244,7 +1249,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 		return false
 	}
 	switch modelType {
-	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "gemma4", "glm_ocr", "mistral3":
+	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "gemma4", "glm_ocr", "mistral3", "lfm2_vl":
 		return false
 	}
 	return backend == "webgpu" || (backend == "cuda" && modelType != "gemma3") // gemma3 on cuda: float32 by default

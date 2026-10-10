@@ -99,6 +99,15 @@ func (m *Model) lfm2Attention(n []float32, lw *LayerWeights, arch *Architecture,
 }
 
 func (m *Model) runLayersLFM2(id int, cache *KVCache) ([]float32, error) {
+	h := make([]float32, m.w.arch.HiddenDim)
+	m.w.Embed.Row(id, h) // no embedding scale
+	return m.runLayersLFM2FromEmbed(h, cache)
+}
+
+// runLayersLFM2FromEmbed is runLayersLFM2 from an embedding row instead of a token id (S10, LFM2-VL: an image row
+// spliced in place of an <image> token runs through the same conv and attention layers). h is consumed in place and
+// returned, before the final norm.
+func (m *Model) runLayersLFM2FromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
 		cache.scr = newDecodeScratch(arch)
@@ -109,9 +118,6 @@ func (m *Model) runLayersLFM2(id int, cache *KVCache) ([]float32, error) {
 
 	// manualPos: the conv layers never Append, so position cannot be read off the KV length.
 	pos := cache.Pos()
-
-	h := make([]float32, hidden)
-	m.w.Embed.Row(id, h) // no embedding scale
 
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
