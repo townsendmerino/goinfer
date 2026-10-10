@@ -132,6 +132,13 @@ carrying figures), docs linking to code by declaration name and dated records pi
 a `gate comments-only` check, notes files for moved text, a pilot with its band written first, and the package order.
 Its rule is `CLAUDE.md` § "Code comments".
 
+[`task-giw-v16-transcode-2026-10.md`](tasks/task-giw-v16-transcode-2026-10.md) (T0–T7 and V1–V7, filed 2026-10-10, scoped)
+makes the transcode fast, then makes `.giw` one readable layout. The transcode half is byte-identical work: windowed layer
+parallelism in the nine streaming loops, row-parallel logit tables, parallel safetensors experts, a fast int4 quantizer
+in aikit, a tiled transpose, and no in-RAM repack while building for a sink. The format half is v16: the reader reads
+exactly one version, kinds 4 and 7 and the Metal files' dead f32 scale arrays go, and so does the f16 side map. Its
+exploratory profile is [`measurements/transcode-audit-2026-10/`](measurements/transcode-audit-2026-10/README.md).
+
 Two are the outside view rather than a design. [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.

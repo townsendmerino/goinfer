@@ -1,0 +1,112 @@
+//go:build synthprofile
+
+package prequant
+
+import (
+	"bufio"
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"hash"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/giw"
+)
+
+// countingDiscard counts bytes and Write calls, so the unbuffered sink's syscall count is visible.
+type countingDiscard struct {
+	n, calls int64
+	h        hash.Hash
+}
+
+func (c *countingDiscard) Write(p []byte) (int, error) {
+	c.n += int64(len(p))
+	c.calls++
+	if c.h != nil {
+		c.h.Write(p)
+	}
+	return len(p), nil
+}
+
+// TestSynthTranscodeProfile times the transcode phases on SYNTH_GGUF. Exploratory only (cloud box).
+func TestSynthTranscodeProfile(t *testing.T) {
+	src := os.Getenv("SYNTH_GGUF")
+	if src == "" {
+		t.Skip("SYNTH_GGUF unset")
+	}
+	quant := os.Getenv("SYNTH_QUANT")
+	if quant == "" {
+		quant = "int4"
+	}
+	target, err := decoder.ParseGIWTarget(os.Getenv("SYNTH_TARGET"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode := os.Getenv("SYNTH_MODE") // "discard" | "bufio" | "" (file, as Transcode does it)
+	ctx := context.Background()
+
+	head, err := readHead(src, metaPrefixCap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix, err := metadataPrefixLen(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := head[:prefix]
+
+	if mode == "discard" {
+		c := &countingDiscard{h: sha256.New()}
+		t0 := time.Now()
+		n, err := decoder.StreamTranscodeGGUF(ctx, src, c, quant, false, target, filepath.Base(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		el := time.Since(t0).Seconds()
+		fmt.Printf("RESULT mode=discard quant=%s target=%q bytes=%d writes=%d stream=%.2fs sha256=%x\n", quant, os.Getenv("SYNTH_TARGET"), n, c.calls, el, c.h.Sum(nil)[:8])
+		return
+	}
+
+	dir := os.Getenv("SYNTH_OUTDIR")
+	if dir == "" {
+		dir = t.TempDir()
+	}
+	tmp := filepath.Join(dir, "synth.tmp.giw")
+	defer removeTempGIW(tmp)
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &countingDiscard{}
+	t0 := time.Now()
+	werr := giw.WriteStream(f, tok, func(w io.Writer) (int64, error) {
+		if mode == "bufio" {
+			bw := bufio.NewWriterSize(w, 4<<20)
+			n, err := decoder.StreamTranscodeGGUF(ctx, src, io.MultiWriter(bw, c), quant, false, target, filepath.Base(src))
+			if err != nil {
+				return n, err
+			}
+			return n, bw.Flush()
+		}
+		return decoder.StreamTranscodeGGUF(ctx, src, io.MultiWriter(w, c), quant, false, target, filepath.Base(src))
+	})
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		t.Fatal(werr)
+	}
+	tStream := time.Since(t0)
+	fi, _ := os.Stat(tmp)
+	t1 := time.Now()
+	if err := selfCheck(tmp); err != nil {
+		t.Fatal(err)
+	}
+	tCheck := time.Since(t1)
+	fmt.Printf("RESULT mode=%q quant=%s target=%q size=%d writes=%d stream=%.2fs selfcheck=%.2fs\n", mode, quant, os.Getenv("SYNTH_TARGET"), fi.Size(), c.calls, tStream.Seconds(), tCheck.Seconds())
+}
