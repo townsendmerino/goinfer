@@ -200,9 +200,10 @@ func TestStreamTokens_thinkUnmanagedIsPassthrough(t *testing.T) {
 	}
 }
 
-// Stop strings are matched against the ANSWER only. A stop string is a request about what the model says to the client; the
-// reasoning is scratch work, and one that appears in it used to end the reply there with no answer at all. (Not so in
-// deepseek-legacy, where `content` is the raw text, tags included — what the client sees is what the stop logic watches.)
+// Stop strings are matched against the ANSWER only. A stop string is a request about what the model says to
+// the client; the reasoning is scratch work, and one that appears in it must not end the reply there with no
+// answer at all. (Not so in deepseek-legacy, where `content` is the raw text, tags included: what the client
+// sees is what the stop logic watches.)
 func TestStreamTokens_thinkStopStrings(t *testing.T) {
 	tk, vocab := thinkTokenizer(t, thinkAlphabet)
 	tm := templateFromGolden(t, "qwen3-4b")
@@ -249,8 +250,9 @@ func TestStreamTokens_thinkStopStrings(t *testing.T) {
 	}
 }
 
-// Reasoning no longer rides through the stop logic, which used to hold a partial UTF-8 rune back for it. A multi-byte character
-// split across two tokens inside the reasoning must still reach the client whole — every reported fragment valid UTF-8.
+// Reasoning does not ride through the stop logic (which holds a partial UTF-8 rune back). A multi-byte
+// character split across two tokens inside the reasoning must still reach the client whole: every reported
+// fragment valid UTF-8.
 func TestStreamTokens_thinkReasoningNeverSplitsARune(t *testing.T) {
 	tk, vocab := thinkTokenizer(t, thinkAlphabet+"Ã©")
 	tm := templateFromGolden(t, "qwen3-4b")

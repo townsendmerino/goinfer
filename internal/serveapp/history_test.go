@@ -182,8 +182,8 @@ func TestHistory_gemmaToolLoopKeepsReasoning(t *testing.T) {
 	}
 }
 
-// A reply to a Gemma 4 thinking-on prompt that ends after a tool response starts INSIDE an open thought channel, so the
-// splitter must start forced-open or the reasoning leaks into content (found by the history goldens).
+// A reply to a Gemma 4 thinking-on prompt that ends after a tool response starts INSIDE an open thought
+// channel, so the splitter must start forced-open or the reasoning leaks into content.
 func TestSplitter_gemmaToolResponsePromptIsForcedOpen(t *testing.T) {
 	on := templateFromGolden(t, "gemma-4-26b-a4b-it").WithThinking(chat.ThinkOn)
 	toolLast := []chat.Turn{{Role: "user", Content: "q"}, {Role: "assistant", ToolCalls: []chat.ToolCall{{Name: "f"}}}, {Role: "tool", Content: "r"}}

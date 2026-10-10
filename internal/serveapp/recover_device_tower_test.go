@@ -25,8 +25,8 @@ func TestRecoverDeviceTower(t *testing.T) {
 	}
 }
 
-// Every family's tower runs through withFeatureCache, so a tower that panics there (Gemma 3's SigLIP, Gemma 4's image or audio tower, on any device) fails the
-// request with an error, not the server. Before 2026-10-07 only Qwen2.5-VL's forward was recovered.
+// Every family's tower runs through withFeatureCache, so a tower that panics there (Gemma 3's SigLIP, Gemma 4's image or audio tower, on any device) fails the request with
+// an error, not the server.
 func TestWithFeatureCache_recoversAnyTower(t *testing.T) {
 	lm := &loadedModel{}
 	vi := visionInput{features: func() ([]float32, error) { panic("metal: device allocation failed (out of memory)") }}

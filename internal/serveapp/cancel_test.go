@@ -13,19 +13,16 @@ import (
 	"time"
 )
 
-// K1 gate (docs/tasks/task-halt-2026-09.md): start a long generation, cancel it by id partway
-// through, and assert (1) the stream stops promptly after the cancel request completes —
-// the practical form of "no token timestamped after the cancel" this test can check without
-// per-token wall-clock instrumentation that does not exist anywhere in the tree today, (2) the
-// final SSE event names the cancel reason, the finish_reason chunk says "cancelled", and the
-// registry no longer lists the id, and (3) a FOLLOWING request on the same model produces
-// byte-identical output to one taken BEFORE the cancel — proof the resident/session state the
-// cancelled generation touched was left exactly as clean as the existing error path leaves it
-// (drive/driveVL add no new cleanup; see generations.go's doc comment for why).
+// K1 gate (docs/tasks/task-halt-2026-09.md): start a long generation, cancel it by id partway through, and
+// assert (1) the stream stops promptly after the cancel request completes (the practical form of "no token
+// timestamped after the cancel"; there is no per-token wall-clock instrumentation), (2) the final SSE event
+// names the cancel reason, the finish_reason chunk says "cancelled", and the registry no longer lists the id,
+// and (3) a FOLLOWING request on the same model is byte-identical to one taken BEFORE the cancel: the
+// resident/session state the cancelled generation touched was left as clean as the error path leaves it
+// (drive/driveVL add no new cleanup; see generations.go's doc comment).
 //
-// Gated on GOINFER_SERVE_MODEL (a real .gguf) like this package's other real-model tests
-// (chaos_test.go, admin_test.go) — CI skips it for want of the asset; run it locally with the
-// env var set.
+// Gated on GOINFER_SERVE_MODEL (a real .gguf) like chaos_test.go and admin_test.go; CI skips it for want of
+// the asset.
 func TestServe_cancelByID(t *testing.T) {
 	path := os.Getenv("GOINFER_SERVE_MODEL")
 	if path == "" {

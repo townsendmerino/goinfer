@@ -61,8 +61,8 @@ func TestDeviceFallback(t *testing.T) {
 	}
 }
 
-// Under -require-backend a device tower's memory failure fails the request: no CPU run, the accelerator kept (S4 audit, 2026-10-07: the fallback used to run the
-// CPU tower even when the user had asked never to leave the backend).
+// Under -require-backend a device tower's memory failure fails the request: no CPU run, the accelerator kept (the fallback must not run the CPU tower
+// when the user asked never to leave the backend).
 func TestDeviceFallback_requireBackendRefuses(t *testing.T) {
 	var f deviceFallback
 	oom := errors.New("cuda: device allocation failed (typed-len, 75294720 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")

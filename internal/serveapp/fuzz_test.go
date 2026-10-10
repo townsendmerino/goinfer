@@ -5,12 +5,10 @@ import (
 	"testing"
 )
 
-// Track 2.6 (testing campaign): the request JSON for /v1/chat/completions and
-// /v1/responses is attacker-supplied. These targets fuzz the model-free request
-// shaping — decode + sampling/stop/content/message translation + the
-// response_format → grammar dispatch — which must never panic. (The grammar
-// COMPILE itself is fuzzed harder in constrain; the end-to-end handler path with
-// a loaded model is the maintainer-only soak in Track 5.)
+// The request JSON for /v1/chat/completions and /v1/responses is attacker-supplied. These targets fuzz the
+// model-free request shaping (decode + sampling/stop/content/message translation + the response_format →
+// grammar dispatch), which must never panic. The grammar COMPILE itself is fuzzed harder in constrain; the
+// end-to-end handler path with a loaded model is the maintainer-only soak in chaos_test.go.
 
 var chatSeeds = []string{
 	`{"model":"m","messages":[{"role":"user","content":"hi"}],"temperature":0.5,"stop":["x","y"]}`,

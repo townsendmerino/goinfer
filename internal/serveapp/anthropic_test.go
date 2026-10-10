@@ -60,9 +60,8 @@ func TestAnthropicTurns_cacheControlAndUnknownIgnored(t *testing.T) {
 	}
 }
 
-// anthropicTurns now SKIPS image blocks (they're collected by anthropicImages and
-// routed to the vision path); the handler 400s an image when no vision tower is
-// loaded. So turn-building drops the image and keeps the text.
+// anthropicTurns SKIPS image blocks (anthropicImages collects them and routes them to the vision path; the
+// handler 400s an image when no vision tower is loaded), so turn-building drops the image and keeps the text.
 func TestAnthropicTurns_imageSkipped(t *testing.T) {
 	req := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
 		Content: json.RawMessage(`[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"x"}},{"type":"text","text":"caption it"}]`)}}}
@@ -437,8 +436,7 @@ func TestServe_anthropic_streamAbort(t *testing.T) {
 	cancel()
 	resp.Body.Close()
 
-	// sessMu (held for the duration of a generation, same span the old lm.mu covered — J1,
-	// task-work-queue-2026-09.md) must free promptly once the request context is cancelled.
+	// sessMu (held for the duration of a generation) must free promptly once the request context is cancelled.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if lm.sessMu.TryLock() {
@@ -571,11 +569,10 @@ func TestServe_anthropic_tools(t *testing.T) {
 	}
 	t.Logf("tool_use: %s(location=%q) id=%s", call.name, call.location, call.id)
 
-	// Replay the call + a result → expect a grounded text answer (end_turn). tool_choice "none" on the
-	// replay: what this checks is the SERVER — the tool_use/tool_result history renders and the model can
-	// answer from it. Under "auto" the next move is the model's own choice, and the 0.5B fixture re-calls
-	// get_weather (its prompt still ends in "Use the tool."; the rendering matches Qwen's template, checked
-	// 2026-09-25), which failed this test for a reason no server change could fix.
+	// Replay the call + a result → expect a grounded text answer (end_turn). tool_choice "none" on the replay:
+	// this checks the SERVER (the tool_use/tool_result history renders and the model can answer from it). Under
+	// "auto" the next move is the model's own choice, and the 0.5B fixture re-calls get_weather, which no server
+	// change could fix.
 	replay := `{"model":"test-model","max_tokens":80,"temperature":0,` + tools + `,"tool_choice":{"type":"none"},
 		"messages":[
 			{"role":"user","content":"What is the weather in Paris? Use the tool."},

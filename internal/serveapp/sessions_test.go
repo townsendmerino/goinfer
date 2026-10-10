@@ -127,17 +127,12 @@ func TestMoveToFront(t *testing.T) {
 	}
 }
 
-// TestBestExtend_stopStringTokensReuse is L-15's fix for the P-18 gate: a
-// session that ends with tokens generated AFTER a stop-string hit is committed
-// to the session's Tokens() (openai.go's streamTokens appends every generated id
-// to ids regardless of the stop cut, and Session.Generate's commit records the
-// whole thing), even though only the text up to the cut point ever reached the
-// client. The client's NEXT prompt is built from what it actually saw, so it
-// never contains those invisible tokens — the old whole-containment rule missed
-// on every such turn, forcing a cold prefill plus an eviction of a session that
-// was almost entirely reusable. bestExtend now picks it anyway (the decoder's
-// own rewindForReuse truncates to the shared prefix, discarding just the
-// invisible tail).
+// TestBestExtend_stopStringTokensReuse (L-15, P-18): a session that ends with tokens generated AFTER a
+// stop-string hit is committed to the session's Tokens() (streamTokens appends every generated id regardless
+// of the stop cut), although only the text up to the cut reached the client. The client's NEXT prompt never
+// contains those invisible tokens, so a whole-containment rule misses on every such turn, forcing a cold
+// prefill plus an eviction of an almost entirely reusable session. bestExtend must pick it anyway; the
+// decoder's rewindForReuse truncates to the shared prefix.
 func TestBestExtend_stopStringTokensReuse(t *testing.T) {
 	turn1 := []int{1, 2, 3, 4} // system preamble + turn 1
 	visible := append(append([]int(nil), turn1...), 10, 11, 12)
@@ -169,11 +164,11 @@ func TestBestExtend_editedLastMessageReuse(t *testing.T) {
 	}
 }
 
-// TestPickSession_sparePreambleGoesFresh is the bug MC0 found (docs/tasks/task-concurrency-2026-09.md, 2026-09-26):
-// with one resident session, bestExtend's floor (what a candidate shares with every OTHER session) is 0, so the shared
-// chat-template preamble alone qualified. Two interleaved conversations then took each other's single session, each
-// truncating the other to the 7-token preamble, and the LRU never grew past one session despite -kv-sessions 4. On the
-// CPU W7 workload that read prefill_reused_tokens = 7 on every turn at 2 clients, and 0.69x the 1-client aggregate.
+// TestPickSession_sparePreambleGoesFresh (docs/tasks/task-concurrency-2026-09.md, MC0): with one resident
+// session, bestExtend's floor (what a candidate shares with every OTHER session) is 0, so the shared
+// chat-template preamble alone would qualify. Two interleaved conversations would then take each other's
+// single session, each truncating the other to the preamble, and the LRU would never grow past one session
+// despite -kv-sessions 4.
 func TestPickSession_sparePreambleGoesFresh(t *testing.T) {
 	pre := []int{1, 2, 3, 4, 5, 6, 7}                          // the chat template's shared lead
 	convA := append(append([]int(nil), pre...), 100, 101, 102) // conversation A's turn 1 + reply ...

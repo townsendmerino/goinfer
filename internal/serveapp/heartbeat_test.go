@@ -12,12 +12,9 @@ import (
 	"time"
 )
 
-// Gates for G19 — SSE heartbeats while the tool path buffers.
-//
-// The before-state: `stream: true` with tools declared sent ZERO bytes until the
-// whole generation finished (measured 1682.6s to first byte against a client
-// whose idle timeout was 300s). The buffering is correct — a tool call can only
-// be parsed from the complete output — so the fix keeps the buffer and adds
+// Gates for the SSE heartbeats while the tool path buffers (G19): `stream: true` with tools declared sent no
+// bytes until the whole generation finished, longer than a client's idle timeout. The buffering is correct,
+// since a tool call can only be parsed from the complete output, so the fix keeps the buffer and adds
 // content-free comment frames, which every SSE parser drops.
 
 func newToolsTestServer(t *testing.T) *httptest.Server {

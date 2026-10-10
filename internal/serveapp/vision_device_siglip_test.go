@@ -21,9 +21,9 @@ func (fakeSiglipResident) ForwardPatches([]float32) ([]float32, error) {
 }
 func (fakeSiglipResident) Close() {}
 
-// TestLoadVisionTower_siglipHonoursVisionDevice: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, f32, under a
-// device backend. It used to follow --backend alone: under cuda (and webgpu) the tower loaded int8 and the device tower
-// attached whatever the flag said, so G-S3c's "tower on the CPU in every arm" did not hold on CUDA.
+// TestLoadVisionTower_siglipHonoursVisionDevice: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, f32, under a device backend. It must not
+// follow --backend alone: under cuda (and webgpu) the tower would load int8 and the device tower attach whatever the flag said, so G-S3c's "tower on the
+// CPU in every arm" would not hold on CUDA.
 func TestLoadVisionTower_siglipHonoursVisionDevice(t *testing.T) {
 	var calls, int8Calls int
 	vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {

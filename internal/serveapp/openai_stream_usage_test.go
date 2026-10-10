@@ -10,11 +10,10 @@ import (
 	"testing"
 )
 
-// A streaming client has no token count unless the server sends one, and counting SSE chunks is not
-// a substitute: streamTokens emits a chunk only when `end > printed`, so a token held back for an
-// incomplete UTF-8 rune or a partial stop-string match produces NO chunk, and the token that
-// resolves the holdback produces one chunk carrying several tokens' bytes. Chunks <= tokens, always
-// in the same direction. bench_peer.py counted chunks and called them tokens.
+// A streaming client has no token count unless the server sends one, and counting SSE chunks is not a
+// substitute: streamTokens emits a chunk only when `end > printed`, so a token held back for an incomplete
+// UTF-8 rune or a partial stop-string match produces NO chunk, and the token that resolves the holdback
+// produces one chunk carrying several tokens' bytes. Chunks <= tokens, always in the same direction.
 func TestStreamOptions_includeUsageShape(t *testing.T) {
 	got := usageChunk("chatcmpl-x", 1234, "m", usage{PromptTokens: 7, CompletionTokens: 11, TotalTokens: 18})
 
@@ -61,16 +60,13 @@ func TestStreamOptions_parsing(t *testing.T) {
 	}
 }
 
-// M-26: include_usage was honoured on the plain chat stream ONLY. The tool and vision streams
-// silently omitted the usage chunk, and /v1/completions did not even parse stream_options.
-// Agent harnesses declare tools on every turn and rely on that chunk for context accounting,
-// so the one surface that worked was the one they least often use.
+// include_usage must be honoured on every streaming surface, the tool and vision streams and /v1/completions
+// (which must parse stream_options) included: agent harnesses declare tools on every turn and rely on the
+// usage chunk for context accounting. Audit M-26.
 //
-// THE ANTI-DRIFT GATE, in the shape this audit's "N of M sites" findings keep calling for:
-// count the sites rather than list them. Every streaming surface reaches sseDone at its normal
-// completion; each such path must send the usage chunk first, and they all now go through the
-// one sendUsage helper. Reading the AST means a fifth surface added later cannot slip past by
-// being formatted differently.
+// The anti-drift gate counts the sites rather than listing them: every streaming surface reaches sseDone at
+// its normal completion, and each such path must send the usage chunk first, through the one sendUsage helper.
+// Reading the AST means a surface added later cannot slip past by being formatted differently.
 func TestStreamSurfaces_allSendUsageBeforeDone(t *testing.T) {
 	// The files that terminate an OpenAI-shaped SSE stream. anthropic_stream.go is excluded on
 	// purpose: it is a different protocol with its own terminator and no stream_options.
@@ -165,23 +161,14 @@ func TestSendUsage_onlyWhenRequested(t *testing.T) {
 	}
 }
 
-// M-25, AT THE CALL SITE. The tokenizer tests prove DecodePiece/DecodeContinuation keep the
-// leading space; they cannot prove the streaming loop calls one of them. Measured: reverting
-// streamTokens to Decode broke NO test — the component was correct and vouched for behaviour
-// the system did not produce, which is the trap CLAUDE.md names. So the assertion belongs here.
+// The streaming loop must never decode the generated ids with Decode (audit M-25). The tokenizer tests prove
+// DecodePiece/DecodeContinuation keep the leading space; they cannot prove streamTokens calls one of them,
+// which is the component-test trap in CLAUDE.md § Tests, so the assertion is here. streamTokens is shared by
+// chat, /v1/completions and vision. The generated ids continue the prompt, and Decode applies SentencePiece's
+// sequence-level dummy-prefix strip to them, eating the response's leading space on Llama-2/Mistral.
 //
-// streamTokens is shared by chat, /v1/completions and vision, so all three carried the defect
-// the audit scoped to /v1/completions. The generated ids must never go through Decode: those
-// ids continue the prompt, and Decode applies SentencePiece's sequence-level dummy-prefix strip
-// to them — eating the response's leading space on Llama-2/Mistral.
-//
-// R-08 (audit-2026-09-02 / docs/tasks/task-recompute-audit.md) replaced the per-token DecodeContinuation(ids)
-// re-decode of the WHOLE generated sequence (O(n^2) in output length) with DecodePiece(id)
-// appended incrementally. DecodePiece is the same non-stripping contract DecodeContinuation was
-// relied on for here — its own doc comment states it explicitly ("does NOT apply the
-// whole-sequence dummy-prefix strip... a caller printing piece-by-piece emitted
-// 'Theanswerisfour'" if it did) — so this guard now requires DecodePiece instead of
-// DecodeContinuation, and forbids Decode exactly as before.
+// The guard requires DecodePiece, the incremental non-stripping form (docs/tasks/task-recompute-audit.md,
+// R-08: a per-token re-decode of the whole sequence is O(n^2) in output length), and forbids Decode.
 func TestStreamTokens_decodesAsAContinuation(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "openai.go", nil, 0)

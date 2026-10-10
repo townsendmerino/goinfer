@@ -67,12 +67,11 @@ func TestRetainRelease(t *testing.T) {
 	}
 }
 
-// TestCloseEntryNatives_dropsGemma4Enc is N-32 (docs/audit-2026-09-10.md): closeEntryNatives
-// nils venc/qwenEnc/vproj but, until this fix, never touched gemma4Enc at all — so unloading a
-// served Gemma 4 vision model left its encoder (weights, no native Close of its own — same
-// shape as vproj) referenced from the closed entry, retaining that memory past unload.
-// gemma4Enc has no Close method (unlike venc/qwenEnc), so this only needs to observe the
-// reference is dropped, not that anything was called on it.
+// TestCloseEntryNatives_dropsGemma4Enc is N-32 (docs/audit-2026-09-10.md): closeEntryNatives nils
+// venc/qwenEnc/vproj and must also drop gemma4Enc, or unloading a served Gemma 4 vision model leaves its
+// encoder (weights, no native Close of its own, same shape as vproj) referenced from the closed entry,
+// retaining that memory past unload. gemma4Enc has no Close method, so this only observes that the reference
+// is dropped.
 func TestCloseEntryNatives_dropsGemma4Enc(t *testing.T) {
 	lm := &loadedModel{gemma4Enc: &vision.Gemma4Encoder{}}
 	lm.closeEntryNatives()

@@ -384,7 +384,7 @@ func TestHandleEmbeddings_badRequests(t *testing.T) {
 // TestServe_embedIntegration runs the real encoder end to end. Gated on
 // GOINFER_EMBED_MODEL (a CodeRankEmbed HF dir) so it skips in normal CI.
 //
-//	GOINFER_EMBED_MODEL=~/models/coderankembed go test ./cmd/serve -run embedIntegration -v
+//	GOINFER_EMBED_MODEL=~/models/coderankembed go test ./internal/serveapp -run embedIntegration -v
 func TestServe_embedIntegration(t *testing.T) {
 	dir := os.Getenv("GOINFER_EMBED_MODEL")
 	if dir == "" {
@@ -444,15 +444,10 @@ func equalStrs(a, b []string) bool {
 	return true
 }
 
-// TestHandleEmbeddings_dimensionsRequiresMatryoshka is the guard against a silent-wrong: honoring
-// `dimensions` for a model not trained with Matryoshka Representation Learning returns a
-// unit-length, entirely plausible vector that simply RETRIEVES WORSE. That is measured, not
-// theoretical — aikit's TestEmbedderCoverage_matryoshka shows multilingual-e5-base sliced to a
-// quarter width dropping paraphrase-pair recall 1.00 → 0.80, while genuine MRL models hold their
-// documented floor. Only two of aikit's eight certified embedders qualify.
-//
-// Both directions are asserted, because a guard that only rejects is as broken as one that only
-// accepts: it would refuse the legitimate MRL truncation the parameter exists for.
+// TestHandleEmbeddings_dimensionsRequiresMatryoshka is the guard against a silent-wrong: honoring `dimensions`
+// for a model not trained with Matryoshka Representation Learning returns a unit-length, plausible vector that
+// simply RETRIEVES WORSE (aikit's TestEmbedderCoverage_matryoshka measures it). Both directions are asserted,
+// because a guard that only rejects would refuse the legitimate MRL truncation the parameter exists for.
 func TestHandleEmbeddings_dimensionsRequiresMatryoshka(t *testing.T) {
 	t.Run("non-MRL model rejects any truncation", func(t *testing.T) {
 		s := newNonMRLEmbedTestServer()

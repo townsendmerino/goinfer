@@ -9,21 +9,18 @@ import (
 	"testing"
 )
 
-// Route-specific body-cap gates (v0.10.3 pre-tag review of the G1 default).
+// Route-specific body-cap gates. The derived body cap is a default that can reject requests that used to work,
+// so each route's cap must be justified by what that route carries.
 //
-// The derived body cap is a NEW DEFAULT that can reject requests which previously worked, so each
-// route's cap has to be justified by what that route actually carries. Two of the four checks had
-// real answers:
+// Multimodal is SAFE, and this pins why: the pre-tokenization guard measures only `type:"text"` content parts,
+// so a multi-megabyte base64 image never counts against a context window it does not consume, and the byte cap
+// on the chat/messages routes (visionCap) exceeds textCap, so the payload fits too (asserted below as
+// visionCap > textCap, not as the exact 32 MiB margin). Both halves must hold, or VL requests start failing on
+// small-context models.
 //
-//   - Multimodal is SAFE, and this pins why: the pre-tokenization guard measures only `type:"text"`
-//     content parts, so a multi-megabyte base64 image never counts against a context window it does
-//     not consume (an image is a few hundred tokens). The byte cap on the chat/messages routes is
-//     visionCap = textCap + 32 MiB, so the payload itself fits too. Both halves must hold — if
-//     either regresses, VL requests start failing on small-context models.
-//
-//   - Embeddings was WRONG: /v1/embeddings is served by the encoder, which is not in s.models, so a
-//     cap derived from decoder context windows measured the wrong thing. On an embed-only server it
-//     collapsed to the 4 MiB text floor and rejected a batch the route's own bounds accept.
+// Embeddings must not derive its cap from decoder windows: /v1/embeddings is served by the encoder, which is
+// not in s.models, so on an embed-only server a derived cap collapses to the 4 MiB text floor and rejects a
+// batch the route's own bounds accept.
 func TestBodyCaps_embeddingsIsIndependentOfDecoderContext(t *testing.T) {
 	// An embed-only server: no decoder loaded, so the derived TEXT cap falls to its 4 MiB floor.
 	s := &server{models: map[string]*loadedModel{}}
@@ -78,9 +75,9 @@ func TestBodyCaps_explicitOverrideGovernsEveryRoute(t *testing.T) {
 	}
 }
 
-// TestPromptGuard_ignoresImageBytes is the multimodal half (Step 1a). A VL request carries megabytes
-// of base64 image and a short text prompt; only the text may count toward the context window, or a
-// small-context VL model rejects every image request.
+// TestPromptGuard_ignoresImageBytes is the multimodal half. A VL request carries megabytes of base64 image and
+// a short text prompt; only the text may count toward the context window, or a small-context VL model rejects
+// every image request.
 func TestPromptGuard_ignoresImageBytes(t *testing.T) {
 	// ~3 MB of base64 image data — a realistic photo payload — plus a short instruction.
 	img := "data:image/png;base64," + strings.Repeat("A", 3<<20)
@@ -110,11 +107,9 @@ func TestPromptGuard_ignoresImageBytes(t *testing.T) {
 	}
 }
 
-// TestAnthropicInputBytes_excludesImages is the /v1/messages half of the pre-tokenization guard.
-// The guard was added to the Anthropic route in v0.10.3 (it previously ran only on the OpenAI
-// routes, so a body under the cap still tokenized in full before rejection). It must bound the same
-// thing the OpenAI side bounds — tokenizable TEXT — or it becomes a new way to reject valid vision
-// requests on small-context models, trading one defect for a worse one.
+// TestAnthropicInputBytes_excludesImages is the /v1/messages half of the pre-tokenization guard. It must bound
+// the same thing the OpenAI side bounds, tokenizable TEXT, or it becomes a new way to reject valid vision
+// requests on small-context models.
 func TestAnthropicInputBytes_excludesImages(t *testing.T) {
 	img := strings.Repeat("A", 3<<20) // ~3 MB of base64 image data
 	blocks, err := json.Marshal([]map[string]any{
@@ -145,12 +140,10 @@ func TestAnthropicInputBytes_excludesImages(t *testing.T) {
 	}
 }
 
-// TestAnthropicInputBytes_countsToolUseAndSchemas is M-15's Anthropic-side gate
-// (docs/audit-2026-09-10.md): a message's tool_use block (an assistant's own replayed call,
-// rendered into the prompt by anthropicTurns regardless of whether tools are active THIS turn)
-// and a declared tool's input_schema (rendered whenever tools ARE active) must both be counted —
-// anthropicText's own text-only sum explicitly skips both, by design, for the text field it
-// bounds, but nothing else was pricing them either.
+// TestAnthropicInputBytes_countsToolUseAndSchemas (M-15, docs/audit-2026-09-10.md): a message's tool_use block
+// (an assistant's own replayed call, rendered into the prompt by anthropicTurns whether or not tools are
+// active this turn) and a declared tool's input_schema (rendered whenever tools ARE active) must both be
+// counted; anthropicText's text-only sum skips both, by design.
 func TestAnthropicInputBytes_countsToolUseAndSchemas(t *testing.T) {
 	// Realistic shapes: input_schema/input are JSON OBJECTS on the wire, not bare strings —
 	// embedded as json.RawMessage (inserted verbatim by json.Marshal, unlike a Go string value

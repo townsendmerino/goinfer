@@ -18,11 +18,10 @@ import (
 	"time"
 )
 
-// Track 5 (testing campaign): the untested interaction is multi-model + admin +
-// sessions under concurrency. These tests drive real small GGUFs (env-gated, so
-// CI skips) and run under -race. Bars: zero races, zero goroutine leaks, every
-// response a valid OpenAI shape or the correct status, and a --session-dir
-// restart restores warm KV without corrupting the continuation.
+// The interaction under test is multi-model + admin + sessions under concurrency. These tests drive real small
+// GGUFs (env-gated, so CI skips) and run under -race. Bars: zero races, zero goroutine leaks, every response a
+// valid OpenAI shape or the correct status, and a --session-dir restart restores warm KV without corrupting
+// the continuation.
 
 // chaosModels builds a 2-model registry from GOINFER_SERVE_MODEL (+ optional
 // GOINFER_SERVE_MODEL2; absent ⇒ the same file served under a second name).
@@ -343,10 +342,9 @@ func TestServe_warmKVRestore(t *testing.T) {
 	t.Logf("warm-restored continuation byte-identical to cold prefill: %q", cold)
 }
 
-// TestServe_tieredKVDemoteFaultBack exercises idea #8 (tiered KV): a warm session
-// that goes idle is demoted to disk (RAM freed), and the next continuation faults
-// it back transparently — producing a continuation byte-identical to a cold
-// prefill. The LRU's clock is injected so idle demotion is deterministic.
+// TestServe_tieredKVDemoteFaultBack exercises tiered KV: a warm session that goes idle is demoted to disk (RAM
+// freed), and the next continuation faults it back transparently, producing a continuation byte-identical to a
+// cold prefill. The LRU's clock is injected so idle demotion is deterministic.
 func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	path := os.Getenv("GOINFER_SERVE_MODEL")
 	if path == "" {

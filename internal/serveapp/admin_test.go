@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// TestServe_admin is the Inc3 gate: --allow-admin off → 403; with it on, a
-// load → generate → unload → 404 → reload cycle, and unload-while-busy → 409.
+// TestServe_admin: --allow-admin off → 403; with it on, a load → generate → unload → 404 → reload cycle.
+// Unloading a busy model drains rather than refusing (TestUnloadDrain_*); this cycle asserts no busy case.
 // Gated on GOINFER_SERVE_MODEL (a .gguf).
 func TestServe_admin(t *testing.T) {
 	path := os.Getenv("GOINFER_SERVE_MODEL")
@@ -80,9 +80,9 @@ func TestServe_admin(t *testing.T) {
 		t.Errorf("generate after load: %d, want 200", code)
 	}
 
-	// unload an idle model → 200 freed (the drain completes at once; native memory released). The
-	// old contract was "busy → 409"; unload now DRAINS instead of refusing — the in-flight-vs-unload
-	// race is the drain regression test's job (TestUnloadDrain_*), not this cycle test.
+	// unload an idle model → 200 freed (the drain completes at once; native memory released). Unload DRAINS an
+	// in-flight request instead of refusing it with 409; that race is the drain regression test's job
+	// (TestUnloadDrain_*), not this cycle test.
 	if code := post(ts, "/admin/models/unload", `{"name":"t"}`); code != 200 {
 		t.Errorf("unload status %d, want 200", code)
 	}

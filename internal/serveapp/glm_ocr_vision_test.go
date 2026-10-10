@@ -79,9 +79,10 @@ func TestSetupGlmOcrVision(t *testing.T) {
 	}
 }
 
-// TestSetupGlmOcrVision_pixelCap: -vision-max-pixels (O4, owner decision 2026-10-04: the default stays the model's own 4.82 MP ceiling, the flag only lowers it).
-// It is tested through setupGlmOcrVision, the one function serve's loader calls: a cap below the ceiling lowers MaxPixels and nothing else; 0 leaves the ceiling; a cap
-// ABOVE the ceiling does not raise it (the tower and the context were gated for 6,144 image tokens, no more); a cap below the model's own floor is refused by name.
+// TestSetupGlmOcrVision_pixelCap: -vision-max-pixels (O4): the default stays the model's own 4.82 MP ceiling, the flag only lowers it. It is tested
+// through setupGlmOcrVision, the one function serve's loader calls: a cap below the ceiling lowers MaxPixels and nothing else; 0 leaves the ceiling; a
+// cap ABOVE the ceiling does not raise it (the tower and the context were gated for 6,144 image tokens, no more); a cap below the model's own floor is
+// refused by name.
 func TestSetupGlmOcrVision_pixelCap(t *testing.T) {
 	dir := writeQwen35Dir(t, glmConf, glmPre)
 	const ceiling = 4816896

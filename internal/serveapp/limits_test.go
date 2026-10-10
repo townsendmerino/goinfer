@@ -20,13 +20,9 @@ import (
 	"math/big"
 )
 
-// C-08: top_logprobs was the one sampling field `prepare` passed through without a range check.
-//
-// Each retained entry is a TokenLogprob and the response builder then materializes a
-// map[string]any per entry BEFORE writing a byte, so {logprobs:true, top_logprobs:150000,
-// max_tokens:4096} on a 152k-vocab model retains ~9.8 GB of them and OOM-kills the process — a
-// fatal Go allocation failure, not a 500 anyone can catch. One request does it, and every other
-// sampling field on the same struct was already validated.
+// top_logprobs must be range-checked in `prepare`: each retained entry is materialized as a map[string]any
+// before the response is written, so an unbounded value (150000 with max_tokens 4096 on a 152k-vocab model) is
+// a fatal allocation failure no handler can catch. Audit C-08.
 func TestPrepare_rejectsUnboundedTopLogprobs(t *testing.T) {
 	lm := &loadedModel{}
 	n := func(v int) *int { return &v }
@@ -55,14 +51,10 @@ func TestPrepare_rejectsUnboundedTopLogprobs(t *testing.T) {
 	}
 }
 
-// M-23: graceful shutdown cancels every in-flight generation, and `genErr` treats every
-// context.Canceled as a clean end — so the truncated text came back as a 200 with
-// finish_reason:"stop". The client cannot tell it from a model that finished.
-//
-// srvCancel() runs BEFORE Shutdown, so the client is still connected and reads a partial answer as
-// complete. A client disconnect looks identical here (both arrive as a cancelled request context),
-// which is why the answer is "length" rather than an error: truthful in both cases, and the signal
-// a client already knows how to act on.
+// A generation cancelled from outside (shutdown cancels every in-flight request before Shutdown, or the client
+// vanished) must end as finish_reason "length", not a clean "stop": `genErr` treats context.Canceled as a
+// clean end, and the client would read truncated text as complete. "length" is truthful in both cases and a
+// signal clients already act on. Audit M-23.
 func TestStreamTokens_externallyCancelledIsTruncatedNotClean(t *testing.T) {
 	lm := &loadedModel{tk: &tokenizer.Tokenizer{}}
 	gr := genRequest{maxTokens: 64}
@@ -92,17 +84,11 @@ func TestStreamTokens_externallyCancelledIsTruncatedNotClean(t *testing.T) {
 	}
 }
 
-// M-21: EVERY ROUTE THAT TOKENIZES MUST REJECT AN OVERSIZED BODY FIRST.
-//
-// G1c added `promptTooLargeForContext` to three routes and left five running a full O(n) BPE over
-// an arbitrary body before rejecting it — the G1c comment prices that at "~27 s of BPE + gigabytes
-// of ids" on a multi-MiB body. anthropic.go's own comment called its half "the same defect this
-// release claims to fix, left half-covered on one surface", and count_tokens was the worst of them:
-// it never enters the per-model queue, so up to -max-inflight (128) such tokenizations run at once.
-//
-// Three routes guarded and five not is a COUNTING failure, so it is counted rather than remembered.
-// A route here is a handler that tokenizes: it takes a ResponseWriter and calls one of the
-// tokenizing entry points. Each must call the guard, or name itself as guarded by its caller.
+// Every route that tokenizes must reject an oversized body first (`promptTooLargeForContext`), or it runs a
+// full O(n) BPE over an arbitrary body; count_tokens is the worst, since it never enters the per-model queue
+// and up to -max-inflight tokenizations run at once. Guarded and unguarded routes are counted rather than
+// remembered: a route is a handler that takes a ResponseWriter and calls a tokenizing entry point, and it must
+// call the guard or name itself as guarded by its caller. Audit M-21.
 func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	// Guarded by a caller, with the reason. A private helper reached from exactly one guarded
 	// handler does not need its own check — but it has to say so here rather than be forgotten.
@@ -110,10 +96,8 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 		"respondTools":         "reached only from serveResponsesWith, which guards before the tools/plain branch",
 		"serveVisionResponses": "reached only from serveResponsesWith, which guards before the images/tools/plain branch (S11)",
 	}
-	// Direct calls, plus the prompt builders that tokenize TRANSITIVELY. The vision routes were the
-	// hole in the first cut of this check: serveVisionChatWith contains no tokenizer call of its
-	// own — visionPrompt does — so the gate passed over the very route whose guard it was written
-	// to protect, and dropping that guard produced no failure. Caught by mutation, not by reading.
+	// Direct calls, plus the prompt builders that tokenize TRANSITIVELY: serveVisionChatWith has no tokenizer call
+	// of its own (visionPrompt does), so a check on direct calls alone passes over the route the guard protects.
 	tokenizers := []string{
 		"lm.promptForT(", "lm.tk.EncodeSegments(", "lm.tk.Encode(", "lm.encode(",
 		"lm.visionPrompt(", "lm.visionPromptN(", "lm.imagesPrompt(",
@@ -177,15 +161,11 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	t.Logf("%d tokenizing route(s), all guarded (%d by a caller)", routes, len(guardedByCaller))
 }
 
-// C-07, the serving half: the decoder-as-embedder must TRUNCATE to the model's context window.
-//
-// C-21 capped one input at 1 MiB of BYTES and left the token count unbounded, so ~1 MiB of short
-// words is ~500k tokens: HiddenLast preallocates KV for every one of them and runs a sequential
-// per-token forward with no context, under the embed mutex, until the process is OOM-killed. The
-// decoder-side guard (TestHiddenLast_refusesMoreTokensThanTheContextWindow) makes that an error
-// rather than an OOM — but an ERROR is not the right answer for the embedder, which should do what
-// HF's truncation=True does and what the aikit encoder path already did. So both halves are pinned:
-// the decoder refuses, and this one never sends it more than it can take.
+// The decoder-as-embedder must TRUNCATE to the model's context window (HF truncation=True), not send
+// HiddenLast more tokens than it can take: ~1 MiB of short words is ~500k tokens, and HiddenLast preallocates
+// KV for all of them under the embed mutex until the process is OOM-killed. The decoder-side guard
+// (TestHiddenLast_refusesMoreTokensThanTheContextWindow) makes that an error; both halves are pinned. Audit
+// C-07, C-21.
 func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
 	const window = 16
 	e := &decoderEmbedder{
@@ -195,9 +175,8 @@ func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
 	if e.maxTokens == 0 {
 		t.Fatal("premise broke: maxTokens 0 is the unbounded state this test is about")
 	}
-	// truncateForContext is the EXACT function tokenize() calls (V-21, docs/review-2026-09-04.md):
-	// this used to re-derive the room--/ids[:room] arithmetic beside it instead of calling it, so
-	// a bug in the real code — not a paraphrase of it — would have passed this test unnoticed.
+	// truncateForContext is the exact function tokenize() calls (docs/review-2026-09-04.md, V-21): the test calls
+	// it rather than re-deriving the arithmetic, so a bug in the real code cannot pass unnoticed.
 	ids := truncateForContext(make([]int, window*4), e.maxTokens, e.appendID)
 	if len(ids) != window {
 		t.Fatalf("truncated to %d, want %d", len(ids), window)
@@ -236,12 +215,9 @@ func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
 	}
 }
 
-// N-16: BOTH decoders must shape a JSON error the same way, and neither may echo the raw one.
-//
-// M-06 and R-11 removed the Go struct/field/type leak from decodeJSON; decodeAnthropicJSON still
-// appended err.Error() verbatim, so "invalid request body: json: cannot unmarshal string into Go
-// struct field anthropicReq.max_tokens of type int" went straight to the client. §0 theme 2 again:
-// one route hardened, its twin not.
+// Both JSON decoders must shape an error the same way, and neither may echo the raw one: Go struct, field and
+// type names ("json: cannot unmarshal string into Go struct field anthropicReq.max_tokens of type int") must
+// not reach the client. Audit N-16.
 func TestJSONDecodeMessage_neverLeaksGoTypeNames(t *testing.T) {
 	type inner struct {
 		N int `json:"n"`
@@ -276,8 +252,8 @@ func TestJSONDecodeMessage_neverLeaksGoTypeNames(t *testing.T) {
 	}
 }
 
-// The Anthropic decoder must USE it. The test above proves the shaper is clean and says nothing
-// about the call site — the same gap that let M-21's vision route and M-22's call site pass.
+// The Anthropic decoder must USE the shared shaping: the test above proves the shaper is clean, not the call
+// site.
 func TestAnthropic_decodeUsesTheSharedShaping(t *testing.T) {
 	b, err := os.ReadFile("anthropic.go")
 	if err != nil {
@@ -294,9 +270,9 @@ func TestAnthropic_decodeUsesTheSharedShaping(t *testing.T) {
 	}
 }
 
-// N-21: session persistence is the CONVERSATION. A .giw-kv blob replays what the user said and what
-// the model answered, and it was written 0o644 inside a 0o755 directory — readable by every local
-// account. The directory matters as much as the files: a readable one lists the session ids.
+// Session persistence is the conversation: a .giw-kv blob replays what the user said and the model answered,
+// so the blobs and their directory (whose listing exposes the session ids) must be owner-only, not
+// world-readable. Audit N-21.
 func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
 	if sessionFilePerm != 0o600 {
 		t.Errorf("session blobs are written %#o, want 0o600", sessionFilePerm)
@@ -308,9 +284,8 @@ func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Code lines only. The comment above the constants NAMES the old modes, and a substring scan
-	// over the whole file matches its own explanation of the defect — the second time a check in
-	// this batch did that, so it is worth doing deliberately rather than rediscovering.
+	// Code lines only: the comment above the constants names the old modes, and a substring scan over the whole
+	// file would match its own explanation.
 	for line := range strings.SplitSeq(string(b), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "//") {
 			continue
@@ -324,22 +299,14 @@ func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
 	}
 }
 
-// M-24: two concurrent admin loads of the same name leaked the loser's model.
+// Two concurrent loads of the same name must not leak the loser's model. loadDecoder runs outside the registry
+// lock, so both load and the post-check in publishLoaded (admin.go, shared with the web UI load in webui.go)
+// refuses the second; the refused *loadedModel holds resident device memory, the .giw mmap and an uploaded
+// block drafter, and purego installs no finalizers, so it must be closed explicitly.
 //
-// loadDecoder runs OUTSIDE the registry lock (deliberately — it takes seconds), so two
-// requests for the same name both load, and the post-check refuses to publish the second.
-// The refused *loadedModel holds resident device memory, the .giw mmap and an uploaded block
-// drafter, and dropping the pointer released none of it: purego installs no finalizers, which
-// is the whole reason the drain design exists.
-//
-// Asserted on the SOURCE because the leak has no observable behaviour to test — nothing
-// errors, nothing is slower, the memory is simply never returned. A test that loaded two real
-// models to watch RSS would be measuring Darwin's UBC rather than the defect (the audit's own
-// note about RSS-based guards inverting under pressure).
-//
-// Since W5 the post-check lives in publishLoaded (admin.go), shared by the admin load and the web
-// UI's load (webui.go). So this checks two things: the refusal branch in publishLoaded closes what
-// it refuses, and neither handler publishes into s.models on its own, around that branch.
+// Asserted on the SOURCE because the leak has no observable behaviour: a test watching RSS would measure
+// Darwin's UBC, not the defect. It checks that the refusal branch in publishLoaded closes what it refuses, and
+// that neither handler publishes into s.models around that branch. Audit M-24.
 func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "admin.go", nil, 0)
@@ -430,11 +397,9 @@ func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
 	}
 }
 
-// N-17: response/message/tool-call ids were a SEQUENTIAL counter. Seeding it from UnixNano hid
-// that without fixing it — each id is exactly one more than the previous, so a client holding
-// its own `resp_<hex>` can walk ±1 onto other clients' ids. `previous_response_id` continues a
-// stored conversation from an id, so with `-addr 0.0.0.0` and one shared key that reads back
-// someone else's turns.
+// Response, message and tool-call ids must not be guessable: a sequential counter, even one seeded from
+// UnixNano, gives consecutive ids, and previous_response_id continues a stored conversation from an id, so
+// with -addr 0.0.0.0 and one shared key a client could walk onto another client's turns. Audit N-17.
 func TestReqID_isNotGuessable(t *testing.T) {
 	const n = 512
 	seen := make(map[string]bool, n)
@@ -450,8 +415,8 @@ func TestReqID_isNotGuessable(t *testing.T) {
 	if len(ids[0]) < 24 {
 		t.Errorf("id %q is %d chars — too short to resist enumeration", ids[0], len(ids[0]))
 	}
-	// THE PROPERTY THAT WAS BROKEN: consecutive ids must not be consecutive integers. Parsed as
-	// big-endian hex, a counter gives a difference of exactly 1 every time.
+	// Consecutive ids must not be consecutive integers: parsed as big-endian hex, a counter differs by exactly 1
+	// every time.
 	var consecutive int
 	for i := 1; i < len(ids); i++ {
 		a, ok1 := new(big.Int).SetString(ids[i-1], 16)
@@ -469,15 +434,13 @@ func TestReqID_isNotGuessable(t *testing.T) {
 	}
 }
 
-// N-20: demoteLoop mutates the session LRU on its own ticker while the unload drain saved it
-// without holding lm.sessMu. The drain waits out in-flight REQUESTS, which is a different thing —
-// the idle-demote goroutine is not a request and holds no ml.rw. sessions.go documents the LRU
-// as not goroutine-safe, so this is a concurrently-mutated map: a process crash, not a wrong
-// answer.
+// The unload drain must save sessions under lm.sessMu: demoteLoop mutates the session LRU on its own ticker,
+// the drain waits out in-flight requests but the idle-demote goroutine is not one and holds no ml.rw, and
+// sessions.go documents the LRU as not goroutine-safe, so an unlocked save is a concurrent map access (a
+// crash).
 //
-// Asserted on the source. Reproducing it needs -kv-idle-demote and -session-dir and an unload
-// landing inside a tick, and a test that raced for it would be flaky in the direction that
-// reports success.
+// Asserted on the source: reproducing it needs -kv-idle-demote, -session-dir and an unload landing inside a
+// tick, and a test that raced for it would be flaky in the direction that reports success. Audit N-20.
 func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
 	src, err := os.ReadFile("liveness.go")
 	if err != nil {
@@ -508,9 +471,9 @@ func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
 	}
 }
 
-// N-19: admin-load set c.quant from the request but inherited c.quantSet from the CLI, and
-// explicitQuant() — which drives the .giw baked-quant mismatch check — reads quantSet. Both
-// directions were wrong, and they are opposite failures, so a fix has to be checked both ways:
+// Admin load must take c.quantSet from the request, not inherit it from the CLI: explicitQuant(), which drives
+// the .giw baked-quant mismatch check, reads it. Both directions fail and they are opposite failures, so both
+// are checked. Audit N-19:
 //
 //	no CLI --quant + admin asks int8  → not treated as explicit → the bundle's baked int4
 //	                                    loads SILENTLY under an int8 request
@@ -544,8 +507,7 @@ func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
 		})
 	}
 
-	// And the handler must actually do that resolution — the table above is the RULE, this is
-	// the call site. Same gap that made M-25's component test vouch for nothing.
+	// And the handler must do that resolution: the table is the rule, this is the call site.
 	src, err := os.ReadFile("admin.go")
 	if err != nil {
 		t.Fatalf("read admin.go: %v", err)
@@ -556,10 +518,9 @@ func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
 	}
 }
 
-// N-18: a NAMED tool_choice whose function is not in tools decoded completely unconstrained,
-// having asked for one specific function. The 2026-08-05 audit made "named but unconstrainable"
-// a 400 and left "named but nonexistent" falling through — the louder of the two, since it
-// means a typo or a stale tool list and the prose answer looks like a free choice.
+// A NAMED tool_choice whose function is not in tools must be a 400: decoded unconstrained, it asked for one
+// function and gets prose that looks like a free choice. ("Named but unconstrainable" is already a 400.) Audit
+// N-18.
 func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
 	tools := []chat.Tool{{Name: "get_weather"}, {Name: "get_time"}}
 	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
@@ -581,12 +542,11 @@ func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
 	}
 }
 
-// M-15 (audit-2026-09-10): the G1c guard's argument counted message TEXT only — tool schemas and
-// replayed tool_calls[].arguments are rendered into the prompt too (via RenderToolsSegments and
-// messagesToTurns respectively) but were never priced, so a small message with a huge schema or
-// huge replayed arguments passed the guard in constant time and then ran the full BPE anyway. The
-// existing TestServe_everyTokenizingRouteGuardsItsInputSize only checks the guard is PRESENT, not
-// what it measures — these test what it measures, directly and end to end.
+// The input-size guard must price everything rendered into the prompt, not message text only: tool schemas
+// (RenderToolsSegments) and replayed tool_calls[].arguments (messagesToTurns) too, or a small message with a
+// huge schema passes in constant time and then runs the full BPE.
+// TestServe_everyTokenizingRouteGuardsItsInputSize checks only that the guard is present; the tests below
+// check what it measures. Audit M-15.
 
 // TestChatInputBytes_countsReplayedToolCallArguments is the direct unit gate: an assistant
 // message's ToolCalls (OpenAI/Responses shape) must be counted, not just its own text.
@@ -624,14 +584,10 @@ func TestToolSchemaBytes_countsFunctionFields(t *testing.T) {
 	}
 }
 
-// TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage matches the audit's own
-// worst-case example (a tiny message, a huge schema): composed the exact way
-// serveChatToolsWith's real guard call does (chatInputBytes(msgs) + toolSchemaBytes(tools)), the
-// combined byte count must trip a budget the message text alone would pass. This is NOT a call
-// through the real HTTP handler — promptTooLargeForContext short-circuits to nil without a real
-// *decoder.Model, which a unit test here does not load — so it instead proves the composition
-// this session's fix sites now share is correct, leaving the direct per-function unit tests above
-// to prove each addend's own arithmetic.
+// A tiny message plus a huge tool schema, composed as serveChatToolsWith's guard call does
+// (chatInputBytes(msgs) + toolSchemaBytes(tools)), must trip a budget the message text alone passes. This is
+// not a call through the real HTTP handler: promptTooLargeForContext returns nil without a real
+// *decoder.Model, so this pins the composition and the per-function tests above pin each addend.
 func TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage(t *testing.T) {
 	msgs := []chatMessage{{Role: "user", Content: rawStr("hi")}}
 	tools := []toolSpec{{Type: "function"}}

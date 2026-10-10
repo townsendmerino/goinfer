@@ -178,9 +178,8 @@ func TestResolveGemma3VisionQuant(t *testing.T) {
 			}
 		})
 	}
-	// The sidecar it asks about is the one a Metal load reads: int4 with the plain head (embed-int4 resolves off on Metal
-	// unless asked for). It asked for the ".e4h" one before, which a Metal load never builds or reads (found 2026-10-08
-	// by G-S18a: the default arm transcoded "gemma-3-4b-it.int4.metal.giw" beside a fresh ".e4h" one).
+	// The sidecar it asks about is the one a Metal load reads: int4 with the plain head (embed-int4 resolves off
+	// on Metal unless asked for), not the ".e4h" one, which a Metal load never builds or reads.
 	oldF := sidecarFresh
 	t.Cleanup(func() { sidecarFresh = oldF })
 	var askedE4H []bool

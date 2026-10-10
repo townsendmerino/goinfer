@@ -19,9 +19,8 @@ func unsetenvT(t *testing.T, name string) {
 }
 
 // The prompt-ingestion flags reach each model through its decoder.Options, never the process environment
-// (phase 5, docs/tasks/task-env-config-2026-09.md — they used to be applied by applyExactPrefillEnv's
-// os.Setenv, process-wide). M-48 still holds: --exact-prefill covers all three backends, now because
-// Options.ExactPrefill is consulted by each (CPU, CUDA resident build, Metal resident) per model.
+// (docs/tasks/task-env-config-2026-09.md, phase 5). M-48 holds: --exact-prefill covers all three backends,
+// because Options.ExactPrefill is consulted by each (CPU, CUDA resident build, Metal resident) per model.
 func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 	for _, v := range []string{"GOINFER_METAL_FAST_PREFILL", "GOINFER_CUDA_FAST_PREFILL", "GOINFER_CPU_FAST_ATTENTION"} {
 		unsetenvT(t, v)
@@ -53,7 +52,7 @@ func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 }
 
 // TestMoEPagerFlag_reachesTheDecoderThroughOptions: --moe-pager is carried to decoder.Load in
-// Options.MoEPager (it used to be applied by setting GOINFER_MOE_PREAD_CPU, process-wide).
+// Options.MoEPager, not through the process-wide GOINFER_MOE_PREAD_CPU.
 func TestMoEPagerFlag_reachesTheDecoderThroughOptions(t *testing.T) {
 	unsetenvT(t, "GOINFER_MOE_PREAD_CPU")
 	for _, mode := range []string{"pool", "mmap"} {

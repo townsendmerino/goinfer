@@ -7,14 +7,14 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// PRE-REGISTERED (docs/queue-correctness.md G39). `serve check`'s `tools, OpenAI` row failed with "turn two asked for the tool
-// again instead of answering — the agent-livelock shape" on BOTH Qwen2.5-Coder-7B and Qwen2.5-7B-Instruct, and the same turn
-// with a second tool in the request, or with the identical prompt sent as a raw completion, got a normal answer. Cause: with
-// exactly ONE tool and tool_choice auto, forcedTool constrained the reply to that tool's call from its first token on EVERY turn,
-// including the one after the tool's result, so a client with a single tool could never get an answer.
+// PRE-REGISTERED (docs/queue-correctness.md G39). With exactly ONE tool and tool_choice auto, forcedTool must
+// not constrain the reply to that tool's call on EVERY turn: on the turn after the tool's result a client with
+// a single tool could never get an answer (`serve check`'s `tools, OpenAI` row failed with "turn two asked for
+// the tool again instead of answering — the agent-livelock shape").
 //
-// The rule: the lone-tool convenience is for the model's FIRST call. It is lifted when the conversation already ends in a tool
-// result and tool_choice is auto (or absent). An explicit "required", a named function, and "none" mean what they always meant.
+// The rule: the lone-tool convenience is for the model's FIRST call. It is lifted when the conversation
+// already ends in a tool result and tool_choice is auto (or absent). An explicit "required", a named function,
+// and "none" mean what they always meant.
 
 func TestForcedTool_loneToolConvenienceEndsAtTheToolResult(t *testing.T) {
 	lone := []chat.Tool{{Name: "get_weather", Parameters: json.RawMessage(`{"type":"object"}`)}}

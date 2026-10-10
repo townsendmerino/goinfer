@@ -14,13 +14,12 @@ import (
 	"time"
 )
 
-// TestServe_generationRoutesExistWithoutAStartupModel: a server started with only --web (or
-// --allow-admin / --admin-socket) loads its model later, but the mux is built once, and the
-// generation routes used to be registered only when a model existed at startup. That server had no
-// /v1/chat/completions and no /v1/jobs for its whole life — the web UI's own chat got the mux's bare
-// "404 page not found" even after loading a model through the UI. Driven through the real binary,
-// since the mux is built in Main: with no model loaded, a chat request must reach the handler and get
-// its JSON "model not found", not the mux's plain-text 404.
+// TestServe_generationRoutesExistWithoutAStartupModel: a server started with only --web (or --allow-admin /
+// --admin-socket) loads its model later, but the mux is built once, so the generation routes must be
+// registered whether or not a model exists at startup: otherwise the web UI's own chat gets the mux's bare
+// "404 page not found" even after loading a model through the UI. Driven through the real binary, since the
+// mux is built in Main: with no model loaded, a chat request must reach the handler and get its JSON "model
+// not found", not the mux's plain-text 404.
 func TestServe_generationRoutesExistWithoutAStartupModel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs a binary")

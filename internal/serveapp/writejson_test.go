@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// writeJSON used to send the status line and then stream the encoder's output with its error dropped, so a body JSON cannot carry (NaN, an infinity) reached the client as
-// HTTP 200 with an EMPTY body: S6's served check on the 35B read "no answer" for a night (2026-10-09). An unencodable body must be a 500 that names the problem, and an ordinary body
-// must be byte-for-byte what it was (200, the JSON and its trailing newline).
+// writeJSON must not send the status line and then stream the encoder's output with its error dropped: a body JSON cannot carry (NaN, an infinity) would reach the client as
+// HTTP 200 with an EMPTY body. An unencodable body must be a 500 that names the problem, and an ordinary body must be byte-for-byte unchanged (200, the JSON and its
+// trailing newline).
 func TestWriteJSON_unencodableBodyIsAServerError(t *testing.T) {
 	for _, bad := range []float64{math.NaN(), math.Inf(-1), math.Inf(1)} {
 		rec := httptest.NewRecorder()
