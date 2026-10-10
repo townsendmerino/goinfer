@@ -14,16 +14,20 @@
   - S16 for Qwen2.5-VL and Qwen3-VL.
   - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
     fix it needed (2026-10-09). The owner kept the prefill on over G-IP4's registered FAIL.
-  - S7 and S13-lite on both boxes. The Mac's third pass (read 2026-10-10) has six of eight S7 cells under the 5 s bar.
-    - Qwen2.5-VL-3B at 5.51 s is accepted as it is (owner, 2026-10-10: "we will just accept 5.51 as OK").
-    - Gemma 3 4B read 6.2 s on a build that predates its image prefill, which read 4.14 s by day (G-IP4).
+  - S7 and S13-lite on both boxes. The Mac's fourth pass (read 2026-10-10) has seven of eight S7 cells under the 5 s
+    bar.
+    - Gemma 3 4B reads 3.79 s with its resident image prefill, in S7's cell and in S13-lite, where Ollama reads 4.97 s
+      and llama.cpp 4.69 s the same session.
+    - Qwen2.5-VL-3B at 5.45 s is the one cell over; accepted as it is (owner, 2026-10-10: "we will just accept 5.51
+      as OK").
   - The `--embed-int4` default's evaluation (option D): 7 of 7 models graded, none costly.
 - **In flight:**
-  - S10 for Qwen3-VL MoE: G-S10q-a, b and c PASS. The served check G-S10q-d is queued on nobara for the night of
-    2026-10-10 (`gs10q-d-2`; the first run was void).
+  - S10 for Qwen3-VL MoE: G-S10q-a, b and c PASS. The served check G-S10q-d read 2026-10-10 (`gs10q-d-2`): the graded
+    CPU arms PASS (identical replies twice); the paged CUDA arm, graded by amendment A2, FAIL (its two-image reply
+    first differs at a token that is not a near-tie).
   - S18: every gate has read. G-S18g read FAIL as registered, on a rule that cannot grade a tower on Gemma 3 (the f16
-    reference fails it too). The owner withdrew its consequence; G-S18g2 replaces it and is queued on the Mac for the
-    night of 2026-10-10.
+    reference fails it too). The owner withdrew its consequence; G-S18g2 replaces it and read **PARKED** 2026-10-10
+    (D's upper bound 0.124 nats, between 0.05 and 0.20; A passes), so the decision is the owner's.
   - S6: the 35B's served image check (G-S6m) and the 31B's step (b') PASS; Gemma 4 E4B PASS on CUDA. E4B on Metal
     (G-E4B-1, G-E4B-2) has not run: its sidecar build was refused for memory on 2026-10-07. A Metal sidecar built by
     serve has been on the Mac since 2026-10-09.
@@ -34,8 +38,10 @@
     (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record is queued
     (`s14f`). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
 - **With the owner:**
-  - The `--embed-int4` default, from option D's numbers. To be asked after G-S18g2 reads (owner, 2026-10-10).
-  - The int8 Metal tower as the tight-memory default, from G-S18g2.
+  - The `--embed-int4` default, from option D's numbers. To be asked after G-S18g2 reads (owner, 2026-10-10): it has
+    read.
+  - The int8 Metal tower as the tight-memory default: G-S18g2 read PARKED, which hands it to the owner.
+  - The paged CUDA arm of Qwen3-VL MoE: FAIL under A2 on one of two requests.
 - **Not started:** S15 (video), S12 (WebGPU), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -3083,6 +3089,21 @@ aikit expected 0: L, as registered for S10's MoE variants.
     One arm, one load: determinism of the CUDA arm across loads is not asked here. **Disclosure:** the prep run showed the one-image CUDA
     and CPU replies differ in text; I did not read the log-probabilities at the differing token, so the near-tie reading is unseen.
     **Prediction (written now):** PASS at 0.60, FAIL at 0.25, VOID at 0.15 (a cold-run OOM at the first image, or a paged-build decline).
+  - **Read 2026-10-10 (`gs10q-d-2`, nobara, 10 minutes, exit 3; raw
+    `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/gs10q-d-2/`).**
+    - **The registered gate, the CPU arms: PASS.** Two loads through the pinned serve at int4 (`decode path: cpu
+      (int4mix)`, the sidecar present). One-image (1,004 prompt tokens, 64.6 s and 59.4 s) and two-image (1,786 tokens,
+      87.2 s and 86.7 s): identical replies on both requests.
+    - **The CUDA arm, graded by A2: FAIL.** It loaded `cuda-resident (int4mix)` with `--moe-cache-experts`, so the
+      reading is not void.
+      - One-image (85.6 s): first differs from the CPU arm at token 7 (CPU ' (', CUDA ' by'). The CPU arm gives ' ('
+        0.363 and ' by' 0.209, more than half: a near-tie, PASS.
+      - Two-image (116.8 s): first differs at token 23 (CPU ' different', CUDA ' six'). The CPU arm gives
+        ' different' 0.383, ' five' 0.211 and ' six' 0.147, under half of the top: not a near-tie, FAIL.
+      - The prediction put FAIL at 0.25. Both CUDA replies read as fluent descriptions of the same table.
+    - **What this does not say:** which side is nearer a float reference. The rule grades CUDA against the CPU arm at
+      one token; G-S10q-c's teacher-forced reading against HF is the instrument that would. Not run for the paged CUDA
+      path.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
@@ -4274,6 +4295,31 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     llama.cpp the same night), against the 5 s bar. The other cells repeat as a record.
   - **Queue:** `s7-mac-1010` and `s13lite-mac-1010`, 20 minutes each (the third pass took 3 and 4), for the night of
     2026-10-10.
+  - **Read 2026-10-10** (both jobs exit 0, 3 and 4 minutes; raw
+    `docs/measurements/multimodal-support-2026-10/night-2026-10-10-mac/`).
+    - **Conditions:** as the earlier passes, with one difference in when: the owner started the Mac's queue at 12:29,
+      by day, so these ran at 13:08 and 13:16 with the box in use. The load average was 2.3-3.1 during S7's cells and
+      1.6-2.2 during S13-lite's. The seconds are a record of that session.
+
+    | cell (median TTFT, s) | third pass | fourth pass | under 5 s |
+    |---|---|---|---|
+    | gemma-3-4b (S7's cell) | 6.27 | **3.79** | yes |
+    | gemma-3-4b (S13-lite, 9 requests) | 6.23 | **3.79** | yes; Ollama 4.97, llama.cpp 4.69 |
+    | gemma-4-e2b | 1.97 | 1.86 | yes |
+    | gemma-4-e2b audio | 0.57 | 0.57 | yes |
+    | gemma-4-e4b | 2.57 | 2.41 | yes |
+    | qwen2.5-vl-3b | 5.51 | 5.45 | no (accepted) |
+    | qwen3.5-0.8b | 4.21 | 4.13 | yes |
+    | qwen3-vl-2b | 2.83 | 2.83 | yes |
+    | glm-ocr | 3.09 | 3.06 | yes |
+
+    - **The reading it was for:** Gemma 3 4B is under the bar in both places, 3.79 s against the third pass's 6.2-6.3 s.
+      Its nine S13-lite requests read 3.78-3.84 s over three interleaved rounds; Ollama's nine 4.96-4.97 s and
+      llama.cpp's 4.69-4.78 s. So goinfer's median is 0.76 of Ollama's and 0.81 of llama.cpp's, same session.
+    - The by-day exploratory figure was 4.14 s; this is the reading that replaces it.
+    - Seven of eight S7 cells are under the bar. The eighth is Qwen2.5-VL, accepted.
+    - The other cells repeat the third pass within 0.2 s. The passes interleave nothing, so those small differences
+      are not resolved effects.
 
 - **S17's next Metal lever: Gemma 3's image turn prefills on the CPU. A resident image prefill on Metal, registered
   2026-10-09 before any code** (owner: "continue with image/audio track").
@@ -4826,6 +4872,28 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       follow-up's own times (a dump about 40 s an image, a nine-arm unit about 57 s), queued at 60.
       `docs/measurements/multimodal-support-2026-10/s18-mac/run-gs18g2-night.sh`, graded by
       `scripts/gs18g2_grade.py`; binaries pinned at the commit that carries this registration.
+    - **Read 2026-10-10: PARKED** (job `gs18g2`, 32 minutes, exit 3, the script's code for PARKED; binaries at
+      `5839762a`; raw `docs/measurements/multimodal-support-2026-10/night-2026-10-10-mac/gs18g2/`).
+      - 24 units over the 12 images, 660 graded positions. The grader's two control checks passed on every unit
+        (otherwise it prints VOID).
+      - Mean KL to the CPU tower: f16 0.0827, int8 0.1417 nats per position.
+
+      | | value | 95% interval | read on the upper bound |
+      |---|---|---|---|
+      | D (int8 minus f16), nats per position | +0.0590 | +0.0041 to +0.1243 | above 0.05, at most 0.20: **PARKED** |
+      | A (f16 minus int8), points | +0.61 | −1.15 to +2.62 | at most 5: PASS |
+
+      - **What drives D:** two units carry about two thirds of it (the per-unit excesses sum to +1.42):
+        `qwen25vl_preprocess_image.png` (+0.539) and its resized twin (+0.438), both on the first prompt, both
+        synthetic gradients with short replies (17 and 13 positions). The next four are +0.10 to +0.18. On ten of the
+        24 units the int8 tower reads closer to the CPU tower than f16 does. On 18 of the 24 the int8 tower's KL is at
+        or under the top of that unit's own noise range at its size; the six above it include the two gradients.
+      - **Agreement barely moves:** over the 660 positions the int8 tower loses 0.61 points of argmax agreement to
+        the f16 tower, with an interval that includes zero.
+      - **The exploratory run's prediction held:** it said PARKED (D +0.116 on four images).
+      - **To the owner, as registered:** keep the int8 tower as the tight-memory fallback, or make it explicit-only
+        (`-vision-quant int8`). Beside D and A, the alternative's cost is the CPU tower at 30-40 s a request against
+        7.0-7.6 s (the follow-up's served arms).
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

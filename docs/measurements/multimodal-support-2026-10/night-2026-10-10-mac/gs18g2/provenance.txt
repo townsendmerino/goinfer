@@ -1,0 +1,7 @@
+binaries: /Users/francistownsend-merino/goinfer-bench/gs18g2 (rev 5839762a1a1be7fb834c122d9d23830f7efaca8f)
+started: 2026-10-10 12:32:17 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 2048.00M  used = 1037.50M  free = 1010.50M  (encrypted)
+12:32  up 16 days,  2:27, 1 user, load averages: 0.98 1.89 2.74
+finished: 2026-10-10 13:03:52 PDT rc=3

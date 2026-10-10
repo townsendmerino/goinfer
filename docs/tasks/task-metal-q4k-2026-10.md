@@ -1,6 +1,6 @@
 # `--quant q4k` on Metal: Phi-3 mini resident (2026-10)
 
-**Status: the decode lane is BUILT 2026-10-08; G-Q1 PASS; G-Q2 and G-Q3 owed.** Their first night (2026-10-08) was
+**Status: the decode lane is BUILT 2026-10-08; G-Q1 PASS; G-Q3 PASS (2026-10-10); G-Q2 owed** (its 2026-10-10 run skipped on a missing reference sidecar). Their first night (2026-10-08) was
 void on memory, the fit guard on. They are queued again for the night of 2026-10-10 with the load-time fit guard
 bypassed on the owner's word, under a swap watch (below). Registered 2026-10-08, before any code. Owner decision 2026-10-08: "for Phi-3, Mac Metal lets do the code fix
 now".
@@ -188,3 +188,27 @@ run. Nothing else in the registration moves: the procedure, the reference, the b
 - **The binaries:** re-pinned to the commit that carries this decision (the 2026-10-08 pin, `1d3ba518`, never produced
   a reading). The job is `docs/measurements/metal-q4k-2026-10/run-gq-mac.sh` with `GQ_REV` and `GQ_NO_FIT_GUARD=1`.
 - **Queue:** `metal-q4k-gq-2` on the Mac for the night of 2026-10-10, 45 minutes.
+
+### The run of 2026-10-10 (`metal-q4k-gq-2`): G-Q2 did not run; G-Q3 PASS
+
+Job exit 0 in 1 minute at 13:25, with the queue started by day. Raw:
+`docs/measurements/metal-q4k-2026-10/night-2026-10-10/`. An exit 0 here is not a pass of G-Q2.
+
+- **G-Q2: NOT RUN (a skip).** The test skipped at its first step: its reference arm loads Qwen2.5-Coder-1.5B through
+  `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw`, and that sidecar was gone.
+  - **Cause:** it was deleted two hours before the run, with eleven other sidecars, to free disk on the Mac (the giw v16
+    session, at the owner's request). The check that was made looked at the model paths in the queued scripts; this
+    path is inside the test, not in `run-gq-mac.sh`.
+  - **Repair:** the sidecar is rebuilt (the same bytes: sha256 `5b6c6956e9cb…`, 1,375,265,859 bytes, as every build
+    writes). The gate is owed again. The fit-guard bypass was given for this one run, so a re-queue with it needs the
+    owner's word again.
+  - **The script reported success on a skip.** `run-gq-mac.sh` takes the test binary's exit code, and a skipped Go test
+    exits 0. It should fail on `--- SKIP`.
+- **G-Q3: PASS by the registered rule.** Both arms served Phi-3 at q4k, context 512, the fit guard bypassed, swap flat
+  (1,029.5 MB before and after).
+  - CPU: `decode path: cpu (q4k)`, 64 tokens in 51.2 s. Metal: `decode path: metal-resident (q4k)`, 64 tokens in 9.0 s.
+  - First differing token 17: CPU ' world', Metal ' modern'. The CPU arm gives ' world' 0.477 and ' modern' 0.331,
+    more than half of the top: a near-tie.
+  - **Observed, not graded:** after the divergence the Metal reply runs into chat-template text ("…invented
+    <|im_start|>assistant|>The printing press, which was inve…") inside its 64 tokens; the CPU reply does not. The rule
+    stops at the first differing token and does not see this. Worth a look before the peer cell M1.

@@ -1,0 +1,44 @@
+=== night job gs10q-d-2
+=== cmd      bash docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/run-gs10q-d-night.sh
+=== cwd      /home/francis/wt/goinfer-gs10qd
+=== rev      queued at 8fbb76ae, now 606f08ca
+=== host     nobara-pc
+=== est      30.0 min, timeout 60.0 min
+=== by       Claude (Mac session) + nobara prep, S10 Qwen3-VL MoE G-S10q-d, second run (the first was void)
+=== doc      docs/tasks/task-multimodal-support-2026-10.md
+=== START    2026-10-10 11:56:48 PDT  loadavg 0.07
+binaries: /home/francis/goinfer-bench/gs10q-d (rev f5fa5a30445b3426cc725e45c5f99ab4410af58c)
+started: 2026-10-10 11:56:48 PDT
+free: 220 GB; load: 0.07 0.56 1.99 1/808 3067649
+Mem:              62           4          27           0          31          57
+595.91.07, 8192 MiB, 468 MiB
+[11:56:48] 0/2 sidecar: present (/home/francis/models/qwen3-vl-30b-a3b-instruct.int4.cpu-amd64.giw)
+[11:56:48] 1/2 graded: =cpu,cpu
+[11:56:48] arm cpu (--backend cpu --embed-int4=false)
+  decode path: cpu (int4mix) [int4 layout: canonical (qkv)]
+  cpu one-image (64.6s, 1004 prompt tokens): 'This table shows the quarterly unit sales (in thousands) for different regions (North, South, East, West, Central) and the total sales across all regions for th'
+  cpu two-image (87.2s, 1786 prompt tokens): 'The first image is a table titled "Quarterly unit sales by region (thousands)," which presents sales data for different regions (North, South, East, West, Centr'
+  "qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+[11:59:47] arm cpu2 (--backend cpu --embed-int4=false)
+  decode path: cpu (int4mix) [int4 layout: canonical (qkv)]
+  cpu2 one-image (59.4s, 1004 prompt tokens): 'This table shows the quarterly unit sales (in thousands) for different regions (North, South, East, West, Central) and the total sales across all regions for th'
+  cpu2 two-image (86.7s, 1786 prompt tokens): 'The first image is a table titled "Quarterly unit sales by region (thousands)," which presents sales data for different regions (North, South, East, West, Centr'
+  "qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+reference arm cpu
+one-image: cpu2 against cpu: IDENTICAL replies
+two-image: cpu2 against cpu: IDENTICAL replies
+[12:02:17] graded step rc=0
+[12:02:17] 2/2 graded (A2): --backend cuda --moe-cache-experts
+    decode path: cuda-resident (int4mix)
+    context: 4096 tokens (backend default; model maximum 262144 — raise with --ctx) · KV f32
+    KV plan: 1 conversation x 4096 positions (4 asked for; 2.1 GB held back for the vision tower)
+    session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV 
+  "qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+  cuda one-image (85.6s): differs from the cpu arm: 'This table shows the quarterly unit sales by region in thousands, with data for Q1, Q2, Q3, Q4, and a total for each region, as well as a total for all regions '
+  cuda two-image (116.8s): differs from the cpu arm: 'The first image is a table titled "Quarterly unit sales by region (thousands)," which presents sales data for six regions—North, South, East, West, Central, and'
+one-image: cuda against cpu: first differing token 7: cpu ' (', cuda ' by'; cpu top-3 ' (' 0.363, ',' 0.339, ' by' 0.209; near-tie True: PASS
+two-image: cuda against cpu: first differing token 23: cpu ' different', cuda ' six'; cpu top-3 ' different' 0.383, ' five' 0.211, ' six' 0.147; near-tie False: FAIL
+G-S10q-d CUDA GRADE: FAIL
+[12:07:09] done; graded (cpu) rc=0, cuda grade rc=3 (0 pass, 3 fail, 4 void)
+
+=== END      2026-10-10 12:07:09 PDT  rc=3

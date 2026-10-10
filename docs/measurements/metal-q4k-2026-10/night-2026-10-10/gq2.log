@@ -1,0 +1,4 @@
+=== RUN   TestQ4KLane_realPhi3NonInferiority
+    q4k_phi3_real_test.go:39: no sidecar /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw: stat /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw: no such file or directory
+--- SKIP: TestQ4KLane_realPhi3NonInferiority (0.00s)
+PASS
