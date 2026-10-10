@@ -13,27 +13,24 @@ import (
 	"unsafe"
 )
 
-// This file defines a versioned binary format for an already-quantized *Weights
-// bundle (a ".giw" — goinfer weights), so the resident weights can be produced
-// once at build time and embedded, skipping the GGUF dequant+requant on every
-// launch. The big int8/int4 weight arrays are ALIASED directly over the input
-// slice at load (zero-copy — this is the speed/RAM win); the small per-row scale
-// floats and the norm/bias vectors are COPIED (the input isn't guaranteed
-// 4-byte aligned, and unaligned float reads are UB).
+// This file defines a versioned binary format for an already-quantized *Weights bundle (a ".giw", goinfer weights), so the
+// resident weights can be produced once at build time and embedded, skipping the GGUF dequant and requant on every launch.
+// The big int8/int4 weight arrays are aliased directly over the input slice at load (zero-copy: this is the speed and RAM
+// win); the small per-row scale floats and the norm/bias vectors are copied (the input is not guaranteed 4-byte aligned,
+// and unaligned float reads are UB).
 //
-// Discipline mirrors ken's index_serialize.go: magic + version + a config/quant
-// guard + CRC — any mismatch returns a typed error and never panics. There is no automatic
-// fallback to the GGUF: a sidecar that fails its freshness check is rebuilt (internal/prequant),
-// and an embedded or explicitly named bundle refuses to load.
+// Discipline mirrors ken's index_serialize.go: magic + version + a config/quant guard + CRC; any mismatch returns a typed
+// error and never panics. There is no automatic fallback to the GGUF: a sidecar that fails its freshness check is rebuilt
+// (internal/prequant), and an embedded or explicitly named bundle refuses to load.
 //
 // Format (little-endian throughout):
 //
 //	magic   [5]byte = "GINFW"
 //	version uint32
-//	quant   uint32   (quantMode enum: first-weight kind — the legacy tag, validated on read)
-//	id      str      (model identity — the source's basename; not validated on read)
+//	quant   uint32   (quantMode enum: first-weight kind, the legacy tag, validated on read)
+//	id      str      (model identity, the source's basename; not validated on read)
 //	config  str      (Config as JSON; arch is re-derived from it on load)
-//	quantLabel str   (v5+: the resolved quant label — int4|int4mix|int8int8|int8|native — or "" to
+//	quantLabel str   (v5+: the resolved quant label (int4|int4mix|int8int8|int8|native), or "" to
 //	                  fall back to inference; the reader PREFERS this over re-deriving from kinds)
 //	Embed, LMHead, PosEmbed     weightMat
 //	FinalNorm, FinalNormBias    f32
@@ -44,49 +41,63 @@ import (
 //	crc     uint32   (CRC32-IEEE over every preceding byte)
 //
 // str  = uint32 len + len bytes
-// f32  = uint32 len + len*4 LE-float32 bytes   (len 0 ⇒ nil on load)
+// f32  = uint32 len + len*4 LE-float32 bytes   (len 0 => nil on load)
 // i8   = uint32 len + len bytes                (aliased on load)
 // raw  = uint32 len + len bytes                (aliased on load)
-// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4|5 q4-row4-only); if
-//             non-empty: int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
-//             kind 4 (v7+, legacy — no longer emitted, still read) is kind 3's arrays
-//             (q4s, q4 — canonical) followed by q4Row4Scales, q4Row4 (the arm64
-//             split-half + 4-row-interleaved layout, docs/completed/task-w4a8-neon-bandwidth.md
-//             "Format follow-on") — both layouts, so any reader could use the file.
-//             Opt-in via SerializeWeightsRow4/SerializeWeightsToRow4, for shapes
-//             RepackW4A8Row4/RepackW4A8Row4Scales accept; every other int4 tensor
-//             still writes kind 3.
+// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4|5 q4-row4-only|6 fused-group member|7 q4 with f16 scales);
+//             if non-empty: int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
+//             kind 4 (v7+, legacy: no longer emitted, still read) is kind 3's arrays (q4s, q4: canonical) followed by
+//             q4Row4Scales, q4Row4 (the arm64 split-half + 4-row-interleaved layout), both layouts, so any reader could
+//             use the file. Opt-in via SerializeWeightsRow4/SerializeWeightsToRow4, for shapes
+//             RepackW4A8Row4/RepackW4A8Row4Scales accept; every other int4 tensor still writes kind 3.
 //
-//             kind 5 (v11+) is q4Row4Scales, q4Row4 ALONE — no canonical arrays at
-//             all, the on-disk form of aikit audit M-22's repacked-only WeightMat
-//             (docs/tasks/task-int4-layout-2026-09.md's L2). Chosen per tensor by
-//             giwWriter.target: only on a cpu-arm64 target, only for a tensor whose
-//             call site opted into kind-5 eligibility (weightMat, not
-//             weightMatKind3Only — see that function's doc for which tensors are
-//             excluded and why), and only when repackRow4ForEmit succeeds for this
-//             shape/core; everything else stays kind 3. Loaded with
-//             linalg.WrapInt4Row4Only, which declines (a named *SerializeError, not a
-//             panic or silent fallback) when Int4Row4Usable is false for the
-//             reader's own core — a kind-5 file is a promise to ONE target, unlike
-//             kind 4's "usable anywhere" portability. Bit-identical dispatch either
-//             way (TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical) — this is a
-//             storage choice, not a numerics one, so no golden depends on which kind
-//             a tensor took.
+//             kind 5 (v11+) is q4Row4Scales, q4Row4 ALONE, no canonical arrays at all: the on-disk form of a
+//             repacked-only WeightMat. Chosen per tensor by giwWriter.target: only on a cpu-arm64 target, only for a
+//             tensor whose call site opted into kind-5 eligibility (weightMat, not weightMatKind3Only; see that
+//             function for which tensors are excluded and why), and only when repackRow4ForEmit succeeds for this
+//             shape/core; everything else stays kind 3. Loaded with linalg.WrapInt4Row4Only, which declines (a named
+//             *SerializeError, not a panic or silent fallback) when Int4Row4Usable is false for the reader's own
+//             core: a kind-5 file is a promise to ONE target, unlike kind 4's "usable anywhere". Dispatch is
+//             bit-identical either way (TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical): this is a storage choice,
+//             not a numerics one, so no golden depends on which kind a tensor took.
 //
-// v2 added the per-layer hybrid tail so the qwen3_5_moe (DeltaNet + gated-softmax)
-// family round-trips through .giw; v1 blobs (no tail) are rejected by the version
-// guard and rebuilt from the source GGUF.
+// Versions. Each version only adds: a reader refuses a newer file via the version guard, and reads every older layout
+// back to giwMinReadV (older bundles stay valid and fall back to inference).
 //
-// v8 added the per-layer LFM2 short-conv mixer (presence byte + inProj/convW/outProj), the same
-// shape as the v6 Mamba-2 block. Before it, `grep shortConv decoder/serialize.go` returned nothing:
-// cmd/prequant wrote a CRC-valid bundle with every conv layer's mixer missing, selfCheck passed
-// because it only Loads, and the first forward nil-dereferenced in the decode goroutine
-// (audit-2026-09-02 C-03, a regression of R3).
+//	v2   per-layer hybrid tail (qwen3_5_moe DeltaNet / gated-softmax); v1 blobs (no tail) are rejected and rebuilt from
+//	     the source GGUF.
+//	v3   per-layer RouterBias (DeepSeek/GLM e_score_correction_bias).
+//	v4   the gemma4-gated tail.
+//	v5   the quant-label field.
+//	v6   the completeness tail (GProj, AttnSinks, per-expert biases, MLA, Mamba-2), written unconditionally (v6Layer).
+//	v7   kind 4.
+//	v8   the LFM2 short-conv mixer (presence byte + inProj/convW/outProj), the same shape as the v6 Mamba-2 block.
+//	v9   Bailing Hybrid's KDA mixer + MLA's optional attention-output gate.
+//	v10  a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused.
+//	v11  adds kind 5, gated on version so a pre-v11 reader refuses the file rather than hitting an unknown kind byte.
+//	v12  no new kind: every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4
+//	     nibbles) is preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray),
+//	     which lets the reader alias the group scales instead of copying them to the heap. Needs the v3 bundle header
+//	     (blob at offset 64) to be aligned in the file.
+//	v13  adds kind 6: an int4 tensor whose nibbles live in a shared group block after the group's headers, so the
+//	     members' nibbles are adjacent in the file (a Metal fused QKV / gate|up buffer can then alias them). Written
+//	     only for GIWTargetMetal, the only writer that emits version 13; every other target still emits 12, so a
+//	     pre-v13 reader keeps reading them.
+//	v14  metal target only: every canonical group-32 int4 tensor also carries its group scales pre-converted to f16
+//	     (decoder.F16Bits, the kernels' own conversion), so a Metal no-copy buffer can alias them too. A kind-6 group
+//	     gains an f16 block after its nibbles (members' scales back to back), and an eligible single int4 tensor is
+//	     written as kind 7 (f32 scales, nibbles, f16 scales, each 16-aligned), a distinct kind so a group's per-member
+//	     fallback records can never be mistaken for group members. Other targets still emitted v12.
+//	v15  every target: int4 kinds 3/4/5 store their group scales as binary16 (a u32 count + little-endian uint16
+//	     payload, 16-aligned like every array) instead of f32, which is aikit's in-RAM representation, so the reader
+//	     aliases them as the WeightMat's storage; kinds 6/7 keep their v14 layout and the reader takes their f16 block as
+//	     the storage. A v15 reader converts an older file's f32 scales at load (the same rounding fresh quantization
+//	     applies).
 
 const (
 	giwMagic        = "GINFW"
-	giwVersion      = 15 // v15: every target — int4 kinds 3/4/5 store their group scales as binary16 (a u32 count + little-endian uint16 payload, 16-aligned like every array) instead of f32: aikit v1.50.0's in-RAM representation, so the reader aliases them as the WeightMat's storage (v12's scale aliasing, which converting at load had lost); kinds 6/7 keep their v14 layout and the reader takes their f16 block as the storage; a pre-v15 reader refuses the file via the version guard, a v15 reader converts an older file's f32 scales at load (the same rounding fresh quantization applies); v14: metal target only — every canonical group-32 int4 tensor also carries its group scales pre-converted to f16 (decoder.F16Bits, the kernels' own conversion), so a Metal no-copy buffer can alias them too: a kind-6 group gains an f16 block after its nibbles (members' scales back to back), and an eligible SINGLE int4 tensor is written as kind 7 (f32 scales, nibbles, f16 scales, each 16-aligned) — a distinct kind so a group's per-member fallback records can never be mistaken for group members; other targets still emit v12; v13: adds kind 6 — an int4 tensor whose nibbles live in a shared GROUP BLOCK after the group's headers, so the members' nibbles are ADJACENT in the file (a Metal fused QKV / gate|up buffer can then alias them, S6); written only for GIWTargetMetal, which is the only writer that emits version 13 (every other target still emits 12, so a pre-v13 reader keeps reading them); a pre-v13 reader refuses a v13 file via the version guard, a v13 reader still reads every older layout; v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
-	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
+	giwVersion      = 15 // format version; what each version added is under Versions in the file comment above
+	giwMinReadV     = 3  // read v3/v4 too (each version only adds; see Versions above)
 	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
 	giwVAligned     = 12 // the version from which weight-matrix payload arrays are 16-byte aligned (see giwVersion)
 	giwVFused       = 13 // the version from which int4 fused-group blocks (kind 6) exist (see giwVersion)
@@ -96,21 +107,16 @@ const (
 	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	giwV8ShortConv  = 8  // the version at/after which the LFM2 short-conv tail is present
 	giwV9KDAGate    = 9  // the version at/after which the KDA tail + MLA's optional attention-output gate are present
-	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
-	// Sanity ceilings on the count fields, generous vs any real checkpoint
-	// (largest models: ~120 layers, a few hundred experts) but low enough that a
-	// corrupt/hostile blob can't drive a multi-GB make() before the body reader
-	// hits its first short read. A LayerWeights is a large struct, so an unbounded
-	// layer count is the worst offender.
+	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
+	// cannot drive a multi-GB make() before the body reader hits its first short read. A LayerWeights is a large struct, so an
+	// unbounded layer count is the worst offender.
 	maxSerializedLayers  = 4096
 	maxSerializedExperts = 4096
 
-	// maxSnapshotCacheBytes caps the KV cache a SESSION SNAPSHOT may ask LoadSession to allocate
-	// (kvsnapshot.go). It bounds the ALLOCATION rather than the blob, because the allocation is
-	// what OOM'd (M-04) and because a well-formed snapshot body can be SMALL while pos is LARGE:
-	// a never-written ring and a KV-shared layer each serialise zero KV bytes, and a ring layer
-	// stores only min(count, W) rows. 16 GiB is far above any legitimate session (a 7B at
-	// pos 32768 wants ~3.8 GB) and far below the TBs the unbounded path could reach.
+	// maxSnapshotCacheBytes caps the KV cache a session snapshot may ask LoadSession to allocate (kvsnapshot.go). It bounds the
+	// allocation rather than the blob, because a well-formed snapshot body can be small while pos is large: a never-written
+	// ring and a KV-shared layer each serialise zero KV bytes, and a ring layer stores only min(count, W) rows. 16 GiB is far
+	// above any legitimate session and far below the TBs the unbounded path could reach.
 	maxSnapshotCacheBytes int64 = 1 << 34
 )
 
@@ -121,27 +127,15 @@ type SerializeError struct{ Reason string }
 
 func (e *SerializeError) Error() string { return "decoder: serialized weights: " + e.Reason }
 
-// canSerialize reports why a model's per-layer state cannot round-trip through the .giw format,
-// or nil if it can. The writer expresses the standard attention+MLP(+MoE) block plus
-// qwen3_5_moe's DeltaNet/gated-softmax extras and (v4) the gemma4 PLE / layer_scalar /
-// KV-share / MoE tail; it does NOT write MLA latent projections (DeepSeek/Kimi) or Mamba-2
-// SSM weights (Granite/Nemotron) — so serializing those yields a CRC-valid bundle that
-// nil-derefs at the first forward. Refuse those families up front rather than emit silent
-// garbage (C2).
+// canSerialize reports why a model's per-layer state cannot round-trip through the .giw format, or nil if it can. It
+// returns nil for every registered family today. Refusing a family up front beats emitting a CRC-valid bundle that
+// nil-derefs at the first forward.
 func canSerialize(a *Architecture) *SerializeError {
-	// EMPTY AS OF v6 (2026-08-19), and that is the point: every registered family is representable.
-	//
-	// This used to be a hand-maintained blocklist of families the writer could not express — and it
-	// DRIFTED, twice, silently: gpt-oss rode it while dropping its attention sinks (bundles loaded
-	// clean and generated wrong text) and Laguna rode it while producing bundles the reader refused.
-	// The v6 completeness tail writes GProj, AttnSinks, per-expert biases, and the MLA / Mamba-2
-	// sub-structs, so there is nothing left to list.
-	//
-	// KEEP THE FUNCTION. A future family may genuinely be unrepresentable (a new per-layer state
-	// with no field here), and refusing is the correct answer for it — an empty list is today's
-	// truth, not a reason to delete the mechanism. What guards against the drift returning is
-	// TestSerializeCensus_noSilentFieldDrop, which asks the STRUCT whether a round-trip lost
-	// anything rather than asking a human whether they remembered to update this.
+	// Empty on purpose: every registered family is representable. A hand-maintained blocklist drifted silently (a family could
+	// ride it while the writer dropped state, so bundles loaded clean and generated wrong text); the guard against drift is
+	// TestSerializeCensus_noSilentFieldDrop, which asks the struct whether a round-trip lost anything. Keep the function: a
+	// future family may genuinely be unrepresentable (a new per-layer state with no field here), and refusing is the correct
+	// answer for it.
 	return nil
 }
 
@@ -176,15 +170,11 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 	return wr.n + 4, nil
 }
 
-// SerializeWeightsRow4 is SerializeWeights, but ALSO opts every eligible int4
-// tensor into weightMat kind 4 — the on-disk arm64 split-half + 4-row-
-// interleaved layout (docs/completed/task-w4a8-neon-bandwidth.md's "Format follow-on"),
-// so the paged-MoE path can use the faster kernel without an in-RAM repack.
-// Never the default: SerializeWeights (kind 3 only) is what every existing
-// caller gets and stays unaffected by this function's existence. A tensor
-// whose shape RepackW4A8Row4/RepackW4A8Row4Scales reject (the router, or any
-// int4 tensor not a multiple of 4 rows / group cols), or a run on a non-arm64
-// build, falls back to kind 3 automatically — this is always safe to call.
+// SerializeWeightsRow4 is SerializeWeights, but also opts every eligible int4 tensor into weightMat kind 4, the on-disk
+// arm64 split-half + 4-row-interleaved layout, so the paged-MoE path can use the faster kernel without an in-RAM repack.
+// Legacy and opt-in: SerializeWeights (kind 3 only) is what every existing caller gets. A tensor whose shape
+// RepackW4A8Row4/RepackW4A8Row4Scales reject (the router, or any int4 tensor not a multiple of 4 rows / group cols), or a
+// run on a non-arm64 build, falls back to kind 3 automatically, so this is always safe to call.
 func SerializeWeightsRow4(w *Weights, id string) ([]byte, error) {
 	wr := &giwWriter{row4: true}
 	if err := wr.writeBundle(w, id); err != nil {
@@ -209,14 +199,11 @@ func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)
 	return wr.n + 4, nil
 }
 
-// SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE
-// consumer (docs/tasks/task-int4-layout-2026-09.md's L2): on a cpu-arm64 target, every
-// eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5
-// (row4-only — no canonical arrays at all) instead of kind 3; every other target,
-// including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
-// SerializeWeights. This is what internal/prequant.Transcode/EnsureCachedGIW and
-// cmd/prequant drive now — SerializeWeightsRow4/kind 4 is legacy, kept for its own
-// "usable on any core" contract, not for this one.
+// SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE consumer (docs/tasks/task-int4-layout-2026-09.md):
+// on a cpu-arm64 target, every eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5 (row4-only)
+// instead of kind 3; every other target, including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
+// SerializeWeights. internal/prequant.Transcode/EnsureCachedGIW and cmd/prequant drive this; SerializeWeightsRow4 and
+// kind 4 are legacy, kept for their "usable on any core" contract.
 func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte, error) {
 	wr := &giwWriter{target: target}
 	if err := wr.writeBundle(w, id); err != nil {
@@ -275,24 +262,12 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.str(id)
 	wr.bytesField(cfgJSON)
 
-	// v5: the resolved quant label, so the reader need not re-infer it (the source of truth is
-	// recorded, not reconstructed).
-	//
-	// GATED ON DATA AVAILABILITY, NOT ON WHICH WRITER IS IN USE (B11). The condition used to be
-	// `wr.sink == nil` — "are we the buffered writer" — on the theory that only the buffered path
-	// has full weights in hand. That conflated two different questions: which io.Writer the bytes
-	// go to, and whether w.Layers is actually populated yet. They agree for the true incremental
-	// GGUF transcode (gguf.go's per-family streaming path calls writeHeadGlobals on a freshly
-	// make()'d, all-zero Layers slice BEFORE streaming any layer in — quantLabel() truly cannot see
-	// real data there, and its default case returns "native", a REAL quant mode, not an empty
-	// string, so calling it unconditionally would have baked a FALSE "native" label into every
-	// genuinely-streamed bundle). But they disagree for a caller that already has a fully-loaded
-	// *Weights and simply chooses the streaming API for its I/O shape — internal/prequant and the
-	// qwen35 GGUF branch (a dedicated loader that fully materializes w, THEN calls
-	// SerializeWeightsTo) both do exactly this — and there the label WAS resolvable, just skipped
-	// because the wrong signal was being tested. That mismatch is B11: a buffered and a streamed
-	// call on the SAME fully-loaded model produced non-identical bytes for no reason tied to the
-	// data itself, differing by exactly len("int8int8") = 8 bytes in the length-prefixed field.
+	// v5: the resolved quant label, recorded so the reader need not re-infer it. It is gated on whether w.Layers is
+	// populated, not on which writer is in use. The incremental GGUF transcode calls writeHeadGlobals on a freshly make()'d,
+	// all-zero Layers slice before any layer streams, where quantLabel() cannot see real data and its default case returns
+	// "native", a real quant mode, so calling it unconditionally would bake a false "native" label into every streamed
+	// bundle. A caller that already holds a fully loaded *Weights (internal/prequant) and merely chooses the streaming API
+	// for its I/O shape does get the label, so a buffered and a streamed call on the same model produce identical bytes.
 	label := ""
 	if w.hasPopulatedLayers() {
 		label = w.quantLabel()
@@ -327,17 +302,11 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	return wr.err
 }
 
-// LoadSerializedWeights reconstructs a *Weights from a SerializeWeights blob
-// WITHOUT any dequant/requant. Big int8/int4 arrays are aliased into data
-// (zero-copy); float arrays are copied. data MUST stay alive for the returned
-// model's lifetime (the aliased slices point into it). On any magic/version/
-// quant/arch/CRC mismatch it returns a *SerializeError.
-//
-// N-34: that used to end "so the caller can fall back to the GGUF". No caller does —
-// decoder/model.go and internal/chatapp both return the error, the latter telling the operator
-// to rebuild the bundle or pass --model <gguf> themselves. The typed error is still worth having
-// (it distinguishes a corrupt bundle from an I/O failure); the fallback it promised was never
-// built.
+// LoadSerializedWeights reconstructs a *Weights from a SerializeWeights blob without any dequant or requant. Big
+// int8/int4 arrays are aliased into data (zero-copy); float arrays are copied. data MUST stay alive for the returned
+// model's lifetime (the aliased slices point into it). On any magic/version/quant/arch/CRC mismatch it returns a
+// *SerializeError, which distinguishes a corrupt or stale bundle from an I/O failure. There is no fallback to the GGUF:
+// callers return the error.
 func LoadSerializedWeights(data []byte) (*Weights, error) {
 	return loadSerializedWeights(data, false)
 }
@@ -390,10 +359,9 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 		return nil, &SerializeError{"arch: " + err.Error()}
 	}
 	r.arch = arch // gates the v4 gemma4 model-level + per-layer tail
-	// Audit C-05: before v10 the GGUF loader left dense Granite's q/k in llama.cpp's permuted RoPE
-	// order, so an older granite bundle can be CRC-valid, shape-valid, mtime-fresh and wrong.
-	// Refusing it is what makes prequant's selfCheck see a stale sidecar and rebuild it; a bundle
-	// that came from safetensors is refused too, which costs one rebuild and nothing else.
+	// Before v10 the GGUF loader left dense Granite's q/k in llama.cpp's permuted RoPE order, so an older granite bundle can be
+	// CRC-valid, shape-valid, mtime-fresh and wrong. Refusing it is what makes prequant's selfCheck see a stale sidecar and
+	// rebuild it; a bundle that came from safetensors is refused too, which costs one rebuild and nothing else.
 	if r.version < giwV10GraniteQK && arch.Name == "granite" {
 		return nil, &SerializeError{fmt.Sprintf("dense-granite bundle is format v%d: before v%d the GGUF "+
 			"loader left q/k in llama.cpp's permuted RoPE order (audit C-05) — rebuild it from the source",
@@ -403,10 +371,9 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	w := &Weights{Cfg: cfg, arch: arch, backing: data, bakedQuant: bakedQuant}
 	w.Embed = r.weightMat()
 	w.LMHead = r.weightMat()
-	// A tied checkpoint (Qwen3/Qwen2.5-0.5B/Llama-3.2 with no output.weight) round-trips with an
-	// empty LMHead; every other loader sets TiedLMHead from lm_head presence, so mirror that here.
-	// Without it the head reads as untied+empty and the forward emits ALL-ZERO logits — greedy
-	// loops on token 0, sampling is uniform noise, with no error (C2).
+	// A tied checkpoint (no output.weight) round-trips with an empty LMHead; every other loader sets TiedLMHead from lm_head
+	// presence, so mirror that here. Without it the head reads as untied+empty and the forward emits all-zero logits (greedy
+	// loops on token 0, sampling is uniform noise) with no error.
 	arch.TiedLMHead = w.LMHead.Rows() == 0
 	w.PosEmbed = r.weightMat()
 	w.FinalNorm = r.f32()
@@ -431,10 +398,9 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	if n < 0 || n > maxSerializedLayers {
 		return nil, &SerializeError{"implausible layer count"}
 	}
-	// N-07: compare with the ARCH BEFORE allocating, not after. validateShapes catches a
-	// mismatched count, but only once every layer struct exists — maxSerializedLayers is ~40x a
-	// real model, so a hostile count amplifies that far on an EXPORTED entry point before any
-	// check runs. The arch is already resolved by this point; the comparison is free.
+	// Compare with the arch before allocating, not after. validateShapes catches a mismatched count, but only once every layer
+	// struct exists, and maxSerializedLayers is ~40x a real model, so a hostile count amplifies that far on an exported entry
+	// point before any check runs. The arch is already resolved by this point, so the comparison is free.
 	if arch != nil && arch.NumLayers > 0 && n != arch.NumLayers {
 		return nil, &SerializeError{fmt.Sprintf(
 			"layer count: blob has %d, arch expects %d", n, arch.NumLayers)}
@@ -457,20 +423,16 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	return w, nil
 }
 
-// validateShapes cross-checks the deserialized tensors against the architecture's
-// expected dims (audit C-06). The .giw reader validates only internal consistency
-// (array length vs the blob's own rows/cols), so a bundle whose Router declares
-// rows = NumExperts+K, or an Embed/LMHead with the wrong vocab, passes every reader
-// check and then writes past a config-sized scratch slice at decode
-// (moeMLP's `make([]float32, NumExperts)`, the qDim/kvDim/vocab decodeScratch
-// buffers) — a heap corruption from caller-supplied bytes (LoadSerializedWeights is
-// exported). The GGUF/safetensors loaders already do this cross-check; only .giw skipped.
+// validateShapes cross-checks the deserialized tensors against the architecture's expected dims. The .giw reader
+// validates only internal consistency (array length vs the blob's own rows/cols), so a bundle whose Router declares
+// rows = NumExperts+K, or an Embed/LMHead with the wrong vocab, passes every reader check and then writes past a
+// config-sized scratch slice at decode (moeMLP's `make([]float32, NumExperts)`, the qDim/kvDim/vocab decodeScratch
+// buffers): heap corruption from caller-supplied bytes (LoadSerializedWeights is exported). The GGUF and safetensors
+// loaders do this cross-check too.
 //
-// Universal invariants (vocab + expert count are uniform in every serializable
-// family) are always checked. The attention/FFN projection dims are checked only for
-// uniform-geometry families: gemma-4 carries per-layer geometry (FFNPerLayer / two-geom
-// head dims), so a model-level dim would false-reject it — its own descriptor + tiny
-// goldens cover that path.
+// Universal invariants (vocab and expert count are uniform in every serializable family) are always checked. The
+// attention/FFN projection dims are checked per layer through the per-layer accessors, so gemma-4's per-layer geometry
+// (FFNPerLayer, two-geom head dims) is covered without a model-level dim that would false-reject it.
 func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 	eq := func(name string, got, want int) *SerializeError {
 		if got != want {
@@ -478,22 +440,20 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		return nil
 	}
-	// vec checks a per-layer f32 vector (bias / norm weight) whose length the blob controls but the
-	// forward indexes at an arch-derived width — addBias iterates over the projection output and
-	// rmsNorm indexes weight[0:dim], so a short vector slice-panics in the decode goroutine and a long
-	// one is silently mis-consumed (audit R-07). 0 = absent (a family that omits it), allowed.
+	// vec checks a per-layer f32 vector (bias / norm weight) whose length the blob controls but the forward indexes at an
+	// arch-derived width: addBias iterates over the projection output and rmsNorm indexes weight[0:dim], so a short vector
+	// slice-panics in the decode goroutine and a long one is silently mis-consumed. 0 = absent (a family that omits it),
+	// allowed.
 	vec := func(name string, got, want int) *SerializeError {
 		if got != 0 && got != want {
 			return &SerializeError{fmt.Sprintf("%s: len %d, arch expects %d", name, got, want)}
 		}
 		return nil
 	}
-	// req is vec for a vector the family's forward dereferences UNCONDITIONALLY, where
-	// "absent" is not a family that omits it but a bundle that is missing it. vec's `got == 0
-	// ⇒ allowed` is what let a pre-v6 gpt-oss sidecar through: it is still within
-	// giwMinReadV, still "fresh" by mtime, reads AttnSinks as nil, passes validateShapes, and
-	// panics at forward_gptoss.go's `lw.AttnSinks[qh]` on the first request (M-11). Same
-	// shape as the LFM2 conv presence check below (C-03).
+	// req is vec for a vector the family's forward dereferences unconditionally, where "absent" is not a family that omits it
+	// but a bundle that is missing it. vec's `got == 0 => allowed` is what would let a pre-v6 gpt-oss sidecar through: it is
+	// within giwMinReadV, "fresh" by mtime, reads AttnSinks as nil, passes validateShapes, and panics at forward_gptoss.go's
+	// `lw.AttnSinks[qh]` on the first request. Same shape as the LFM2 conv presence check below.
 	req := func(name string, got, want int) *SerializeError {
 		if got == 0 {
 			return &SerializeError{fmt.Sprintf("%s: absent, arch requires len %d — the bundle "+
@@ -512,24 +472,20 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			return e
 		}
 	}
-	// The blob controls len(w.Layers), but the forward indexes arch.NumLayers — a short blob is an
-	// out-of-bounds layer read the per-layer checks below never reach (C-06).
+	// The blob controls len(w.Layers), but the forward indexes arch.NumLayers: a short blob is an out-of-bounds layer read the
+	// per-layer checks below never reach.
 	if len(w.Layers) != arch.NumLayers {
 		return &SerializeError{fmt.Sprintf("layer count: blob has %d, arch expects %d", len(w.Layers), arch.NumLayers)}
 	}
-	// The per-layer accessors (headDimAt/kvHeadsAt/ffnAt) collapse to the uniform Architecture fields
-	// for every non-gemma-4 family, so ONE per-layer check set covers all families — gemma-4 included,
-	// closing the old `uniform := arch.gemma4 == nil` skip that left its projections unvalidated. Each
-	// check is guarded by Rows()>0, so a family that legitimately omits a projection (a routed layer's
-	// empty dense FFN, gemma-4's MLP living in the MoE sub-block) is not false-rejected.
+	// The per-layer accessors (headDimAt/kvHeadsAt/ffnAt) collapse to the uniform Architecture fields for every non-gemma-4
+	// family, so one per-layer check set covers all families, gemma-4 included. Each check is guarded by Rows()>0, so a family
+	// that legitimately omits a projection (a routed layer's empty dense FFN, gemma-4's MLP living in the MoE sub-block) is
+	// not false-rejected.
 	for i := range w.Layers {
 		lw := &w.Layers[i]
 		hd := arch.headDimAt(i)
-		// headsAt(i), not NumHeads: Laguna varies the QUERY head count per layer (48 on its
-		// full-attention layers, 64 on the sliding ones), and this line was the last uniform-geometry
-		// assumption in the reader — it rejected a correctly-written Laguna bundle with
-		// "layer 1 QProj: 128 rows, arch expects 64". headDimAt/kvHeadsAt/ffnAt were already
-		// per-layer here; this one was missed because no serializable family had needed it yet.
+		// headsAt(i), not NumHeads: some families (Laguna) vary the query head count per layer, so a uniform NumHeads would
+		// reject a correctly written bundle. headDimAt/kvHeadsAt/ffnAt are per-layer here too.
 		qDim, kvDim, ffn := arch.headsAt(i)*hd, arch.kvHeadsAt(i)*hd, arch.ffnAt(i)
 		for _, c := range []struct {
 			name string
@@ -558,12 +514,10 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			return &SerializeError{fmt.Sprintf("layer %d GProj: %d rows, arch expects %d (per-head) or %d (per-element)",
 				i, g, arch.headsAt(i), qDim)}
 		}
-		// Per-layer f32 vectors: biases feed addBias over the projection output, norm weights feed
-		// rmsNorm at their consumed width (QK-norm is per-head-dim hd normally, but the WHOLE
-		// projected width when the family sets QKNormWhole — olmo3's whole-vector QK-norm, which
-		// reuses rmsNorm at rows=1/dim=qDim instead of rows=numHeads/dim=hd; the block norms are
-		// hidden). The blob controls their length; the forward indexes an arch width with no check
-		// (R-07).
+		// Per-layer f32 vectors: biases feed addBias over the projection output, norm weights feed rmsNorm at their consumed width
+		// (QK-norm is per-head-dim hd normally, but the whole projected width when the family sets QKNormWhole: olmo3's
+		// whole-vector QK-norm, which reuses rmsNorm at rows=1/dim=qDim; the block norms are hidden). The blob controls their
+		// length; the forward indexes an arch width with no check.
 		qNormWant, kNormWant := hd, hd
 		if arch.QKNormWhole {
 			qNormWant, kNormWant = qDim, kvDim
@@ -584,12 +538,10 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 				return e
 			}
 		}
-		// LFM2's short-conv mixer. Its three tensors are flat f32 slices the forward indexes at
-		// arch-derived widths, so a short one slice-panics in the decode goroutine exactly as R-07
-		// describes for the bias vectors. And the PRESENCE check is the load-bearing half here: a
-		// conv layer whose mixer is absent is what a pre-v8 .giw hands back, and the panic it
-		// produces at the first forward is the defect this validation exists to convert into a
-		// refusal at load (audit-2026-09-02 C-03).
+		// LFM2's short-conv mixer. Its three tensors are flat f32 slices the forward indexes at arch-derived widths, so a short one
+		// slice-panics in the decode goroutine, as for the bias vectors. The presence check is the load-bearing half: a conv layer
+		// whose mixer is absent is what a pre-v8 .giw hands back, and the panic it produces at the first forward is the defect
+		// this validation converts into a refusal at load.
 		if arch.lfm2 != nil {
 			cd, k := arch.lfm2.ConvDim, arch.lfm2.ConvLCache
 			isConv := lw.QProj.Rows() == 0 // a conv layer loads no attention projections
@@ -616,9 +568,8 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 				}
 			}
 		}
-		// gemma-4 per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm
-		// rmsNorm'd at fixed widths; a wrong-rows blob OOB-panics or silently truncates the PLE
-		// activation (audit F-02, R-07 remainder).
+		// gemma-4 per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm rmsNorm'd at fixed widths; a
+		// wrong-rows blob OOB-panics or silently truncates the PLE activation.
 		if arch.gemma4 != nil {
 			if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
 				if lw.PLEGate.Rows() > 0 {
@@ -636,10 +587,9 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 				return e
 			}
 		}
-		// gemma-4 dense‖MoE sub-block (l.gemma4moe): the standard Router/Experts are empty for gemma-4,
-		// so the arch.MoE block below never validates it. The router feeds make([]float32, nE) and each
-		// expert index runs to nE — a short router mis-routes silently, a long one or ne != NumExperts
-		// panics in the decode goroutine (R-07). Cross-check against the arch.
+		// gemma-4 dense||MoE sub-block (l.gemma4moe): the standard Router/Experts are empty for gemma-4, so the arch.MoE block
+		// below never validates it. The router feeds make([]float32, nE) and each expert index runs to nE: a short router
+		// mis-routes silently, a long one or ne != NumExperts panics in the decode goroutine. Cross-check against the arch.
 		if mo := lw.gemma4moe; mo != nil && arch.MoE != nil {
 			nE, moeInter := arch.MoE.NumExperts, arch.MoE.IntermediateDim
 			if e := eq(fmt.Sprintf("layer %d gemma4moe router", i), mo.routerProj.Rows(), nE); e != nil {
@@ -651,8 +601,8 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			if e := vec(fmt.Sprintf("layer %d gemma4moe perExpertScale", i), len(mo.perExpertScale), nE); e != nil {
 				return e
 			}
-			// routerScale scales the [hidden] router input; the three branch norms rmsNorm at hidden —
-			// a short slice OOB-panics in the decode goroutine (audit F-02, R-07 remainder).
+			// routerScale scales the [hidden] router input; the three branch norms rmsNorm at hidden. A short slice OOB-panics in the
+			// decode goroutine.
 			for _, c := range []struct {
 				name string
 				got  int
@@ -676,9 +626,8 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			}
 		}
 		if arch.MoE != nil {
-			// RouterBias is addBias'd over the [NumExperts] router logits; the shared expert's
-			// Gate/Up write SharedIntermediateDim scratch, Down writes hidden, and SharedGate is the
-			// scalar sigmoid gate (1 row). A short blob panics; validate them (audit F-02).
+			// RouterBias is addBias'd over the [NumExperts] router logits; the shared expert's Gate/Up write SharedIntermediateDim
+			// scratch, Down writes hidden, and SharedGate is the scalar sigmoid gate (1 row). A short blob panics; validate them.
 			if e := vec(fmt.Sprintf("layer %d RouterBias", i), len(lw.RouterBias), arch.MoE.NumExperts); e != nil {
 				return e
 			}
@@ -726,11 +675,9 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			}
 		}
 
-		// M-11: the v6 completeness tail. forward_gptoss.go indexes AttnSinks[qh] for every
-		// head and addBias iterates every expert bias with no nil check, so for THIS family
-		// these are required, not optional — and the trigger is real rather than theoretical:
-		// a gpt-oss sidecar written before v6 is sink-free, within giwMinReadV, and judged
-		// fresh by mtime.
+		// The v6 completeness tail. forward_gptoss.go indexes AttnSinks[qh] for every head and addBias iterates every expert bias
+		// with no nil check, so for this family these are required, not optional; a gpt-oss sidecar written before v6 is
+		// sink-free, within giwMinReadV, and judged fresh by mtime.
 		if arch.gptoss != nil {
 			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.NumHeads); e != nil {
 				return e
@@ -757,16 +704,12 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 	}
 
-	// M-11: the model-level PLE tail. gemma4's forward reads all three unconditionally when
-	// the arch declares PLE, and a bundle from before v4 has none of them.
+	// The model-level PLE tail: gemma4's forward reads all three unconditionally when the arch declares PLE, and a bundle from
+	// before v4 has none of them.
 	//
-	// PerLayerModelProj is [NumLayers*HiddenSizePerLayerInput, HiddenDim] — gguf.go builds it as
-	// mat("per_layer_model_proj.weight", pleTotal, hidden) and forward_gemma4.go's
-	// matmul(&PerLayerModelProj, h /*[hidden]*/, ctxAware /*[pleTotal]*/, 1) both agree Rows() is
-	// pleTotal, not HiddenDim. This check originally asserted Rows()==HiddenDim — the wrong axis —
-	// so it failed on every real gemma4-E2B round-trip (observed: 8960 rows, "expects" 1536) even
-	// though the loader, forward pass, and serializer all round-trip the tensor correctly. Caught
-	// 2026-09-03 by TestSerializeGemma4E2B_roundTrip on an overnight parity sweep.
+	// PerLayerModelProj is [NumLayers*HiddenSizePerLayerInput, HiddenDim]: gguf.go builds it as
+	// mat("per_layer_model_proj.weight", pleTotal, hidden) and forward_gemma4.go's matmul(&PerLayerModelProj, ...) agrees that
+	// Rows() is pleTotal, not HiddenDim.
 	if arch.gemma4 != nil && w.PerLayerTokenEmbed.Rows() > 0 {
 		pleTotal := arch.NumLayers * arch.gemma4.HiddenSizePerLayerInput
 		if e := eq("PerLayerModelProj", w.PerLayerModelProj.Rows(), pleTotal); e != nil {
@@ -775,12 +718,8 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		if got := w.PerLayerModelProj.Cols(); got != arch.HiddenDim {
 			return &SerializeError{fmt.Sprintf("PerLayerModelProj: %d cols, arch expects %d", got, arch.HiddenDim)}
 		}
-		// Same wrong-axis bug as PerLayerModelProj above, on a second field: gguf.go's
-		// vnorm("per_layer_proj_norm.weight", g4.HiddenSizePerLayerInput) and forward_gemma4.go's
-		// normalize(arch, row, m.w.PerLayerProjNorm, nil, pleDim) both size it at
-		// HiddenSizePerLayerInput (the RMSNorm runs over one pleDim-wide row of ctxAware), not
-		// HiddenDim. Unreached by the real-model round-trip until PerLayerModelProj's check above
-		// was fixed, since validateShapes returns on the first failure.
+		// PerLayerProjNorm is sized HiddenSizePerLayerInput (the RMSNorm runs over one pleDim-wide row of ctxAware), not
+		// HiddenDim; gguf.go's vnorm and forward_gemma4.go's normalize agree.
 		if e := req("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.gemma4.HiddenSizePerLayerInput); e != nil {
 			return e
 		}
@@ -788,12 +727,10 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 	return nil
 }
 
-// Weights exposes the loaded weight bundle, e.g. so a build-time tool can
-// SerializeWeights(m.Weights(), …). It returns the LIVE bundle (a defensive copy would
-// duplicate gigabytes and the device buffers), so the forward pass's correctness depends on it
-// being treated as IMMUTABLE — the derived *Architecture, RoPE tables and resident buffers are
-// built from it at load and are not rebuilt, so any mutation silently desyncs them (audit M-23).
-// Read-only.
+// Weights exposes the loaded weight bundle, e.g. so a build-time tool can SerializeWeights(m.Weights(), ...). It returns
+// the live bundle (a defensive copy would duplicate gigabytes and the device buffers), so the forward pass depends on it
+// being treated as IMMUTABLE: the derived *Architecture, RoPE tables and resident buffers are built from it at load and
+// are not rebuilt, so any mutation silently desyncs them. Read-only.
 func (m *Model) Weights() *Weights { return m.w }
 
 // Quant names the precision the model's matmul weights are resident in
@@ -815,20 +752,17 @@ func (m *Model) Quant() string {
 	return m.w.quantLabel()
 }
 
-// CheckGiwQuantMatch returns a startup error when an EXPLICIT weight-quant request cannot take
-// effect because the model is an already-baked prequant .giw whose quant differs. A .giw is
-// serialized at a fixed precision, so --quant is inert for it (Load ignores it); today it is
-// silently dropped, which the T1-7 report flagged. This surfaces the mismatch instead.
+// CheckGiwQuantMatch returns a startup error when an explicit weight-quant request cannot take effect because the model
+// is an already-baked prequant .giw whose quant differs. A .giw is serialized at a fixed precision, so --quant is inert
+// for it (Load ignores it); this surfaces the mismatch instead of dropping the flag silently.
 //
-// `requested` is the quant the user EXPLICITLY asked for — pass "" when they did not (relied on the
-// default). A bare default must NOT conflict: a .giw carries its own quant, and running it with
-// process defaults is the normal cross-format case (the caller, which alone knows whether the flag
-// was set, is responsible for passing "" then). For a non-.giw model (GGUF/safetensors), where
-// --quant IS honored at load, this is a no-op.
+// `requested` is the quant the user explicitly asked for: pass "" when they did not (relied on the default). A bare
+// default must not conflict: a .giw carries its own quant, and running it with process defaults is the normal
+// cross-format case (the caller, which alone knows whether the flag was set, passes "" then). For a non-.giw model
+// (GGUF/safetensors), where --quant is honored at load, this is a no-op.
 //
-// The comparison uses the corrected Quant() label (commit 9020160) — the resident weight kinds —
-// not the raw .giw header field. Message shape mirrors the safetensors int4mix decline
-// (weights.go): the constraint, the requested value, the baked value, and the file.
+// The comparison uses the Quant() label (the resident weight kinds), not the raw .giw header field. The message mirrors
+// the safetensors int4mix decline (weights.go): the constraint, the requested value, the baked value, and the file.
 func (m *Model) CheckGiwQuantMatch(requested string) error {
 	path := m.GiwPath()
 	if requested == "" || path == "" {
@@ -850,12 +784,10 @@ func flagQuant(q string) string {
 	return q
 }
 
-// hasPopulatedLayers reports whether w's body matmul weights actually hold data, as opposed to a
-// freshly make()'d Layers slice whose elements are still zero-valued (the true streaming GGUF
-// transcode's state at header-write time, before any layer has streamed in). MUST be checked
-// before calling quantLabel() to decide whether to trust its answer: quantLabel()'s own "nothing
-// matched" case returns "native", a real quant mode, not an empty string — so an unpopulated w
-// would silently produce a FALSE "native" label rather than a distinguishable absence (B11).
+// hasPopulatedLayers reports whether w's body matmul weights actually hold data, as opposed to a freshly make()'d Layers
+// slice whose elements are still zero-valued (the streaming GGUF transcode's state at header-write time, before any layer
+// has streamed in). Check it before trusting quantLabel(): its "nothing matched" case returns "native", a real quant mode,
+// not an empty string, so an unpopulated w would silently produce a false "native" label.
 func (w *Weights) hasPopulatedLayers() bool {
 	for _, m := range w.bodyMatmulWeights() {
 		if m.Rows() > 0 {
@@ -865,22 +797,16 @@ func (w *Weights) hasPopulatedLayers() bool {
 	return false
 }
 
-// quantLabel names the precision of the resident matmul weights for display + the
-// KV-snapshot fingerprint, accounting for MIXED bundles. It scans the BODY matmuls — the
-// per-layer attention/FFN projections, experts, and routers, i.e. exactly what
-// `-quant int4|int4mix|int8int8` selects and what the batched-prefill gate inspects — and
-// returns "int4mix" only when int4 coexists with a higher-precision BODY weight. Pure
-// bundles collapse to int4 / int8int8 / int8 / native.
+// quantLabel names the precision of the resident matmul weights for display and the KV-snapshot fingerprint, accounting
+// for mixed bundles. It scans the body matmuls (the per-layer attention/FFN projections, experts and routers: exactly
+// what `-quant int4|int4mix|int8int8` selects and what the batched-prefill gate inspects) and returns "int4mix" only
+// when int4 coexists with a higher-precision body weight. Pure bundles collapse to int4 / int8int8 / int8 / native.
 //
-// The token embedding and LM head are EXCLUDED. int4 mode pins them to int8 by DEFAULT
-// (logit-critical; the EmbedInt4 knob relaxes them), so their precision is orthogonal to
-// the int4-vs-int4mix distinction — a plain `-quant int4` bundle keeps an int8 head.
-// Including them made such a bundle mislabel as "int4mix" (audit/T1-6) even though every
-// projection is int4 and the prefill gate correctly batched it: the label contradicted the
-// path. Excluding them also sidesteps the older quantMode failure this comment used to cite
-// (that .giw header field derives from the FIRST weight — the int8 embed — so it reports
-// plain "int8" for the same all-int4-body bundle). Both mislabels have the same root: the
-// int8-pinned logit tables are not part of the quant the user chose.
+// The token embedding and LM head are excluded. int4 mode pins them to int8 by default (logit-critical; the EmbedInt4
+// knob relaxes them), so their precision is orthogonal to the int4-vs-int4mix distinction: a plain `-quant int4` bundle
+// keeps an int8 head. Including them would mislabel such a bundle "int4mix" even though every projection is int4, and the
+// label would contradict the path the prefill gate takes. The .giw header's quant field derives from the first weight
+// (the int8 embed), so it is not a substitute.
 func (w *Weights) quantLabel() string {
 	var hasInt4, hasInt8I8, hasInt8, hasOther bool
 	// bodyMatmulWeights excludes the int8-pinned logit tables — the single definition of that
@@ -979,27 +905,18 @@ type giwWriter struct {
 	err  error         // first sink error (stream mode)
 	arch *Architecture // set in writeBundle; gates the v4 gemma4 model-level + per-layer tail
 
-	// row4 opts weightMat into emitting kind 4 (the on-disk split-half + 4-row
-	// layout, BOTH canonical and row4) for every eligible int4 tensor, instead of
-	// always kind 3. Legacy: set only by SerializeWeightsRow4/SerializeWeightsToRow4
-	// (kept for their own "usable on any core" portability and their existing
-	// tests) — no current production caller sets it; StreamTranscodeGGUF and
-	// internal/prequant now drive target (below) instead. docs/task-w4a8-neon-
-	// bandwidth.md's "Format follow-on" requires this be opt-in, since a tensor's
-	// WeightMat may ALREADY carry an in-RAM row4 repack (repackW4A8Row4IfEligible,
-	// wired into the GGUF/safetensors streaming loaders unconditionally) that has
-	// nothing to do with whether THIS serialize call should bake it onto disk.
+	// row4 opts weightMat into emitting kind 4 (the on-disk split-half + 4-row layout, both canonical and row4) for every
+	// eligible int4 tensor, instead of always kind 3. Legacy: set only by SerializeWeightsRow4/SerializeWeightsToRow4, kept for
+	// their "usable on any core" portability; no production caller sets it (StreamTranscodeGGUF and internal/prequant drive
+	// target). It must stay opt-in, since a tensor's WeightMat may already carry an in-RAM row4 repack
+	// (repackW4A8Row4IfEligible) that has nothing to do with whether this serialize call should bake it onto disk.
 	row4 bool
 
-	// target opts weightMat into emitting kind 5 (row4-only — NO canonical arrays)
-	// for every eligible int4 tensor on a cpu-arm64 target, instead of kind 3
-	// (docs/tasks/task-int4-layout-2026-09.md's L2 — the one-representation-per-target
-	// policy, .giw's counterpart to wantsCanonicalInt4's in-RAM decision).
-	// GIWTargetNone (the zero value) keeps kind 3 for every int4 tensor, exactly
-	// today's default — so every existing caller that never sets this field is
-	// unaffected. Checked ahead of row4 in weightMat: a caller has no reason to set
-	// both, but if it did, the newer, narrower promise (one target) should win over
-	// the older, broader one (any core).
+	// target opts weightMat into emitting kind 5 (row4-only, no canonical arrays) for every eligible int4 tensor on a
+	// cpu-arm64 target, instead of kind 3: the one-representation-per-target policy, .giw's counterpart to
+	// wantsCanonicalInt4's in-RAM decision (docs/tasks/task-int4-layout-2026-09.md). GIWTargetNone (the zero value) keeps
+	// kind 3 for every int4 tensor. Checked ahead of row4 in weightMat: if a caller set both, the newer, narrower promise
+	// (one target) wins over the older, broader one (any core).
 	target GIWTarget
 }
 
@@ -1049,13 +966,11 @@ func (w *giwWriter) pos() int64 {
 // offset, so writer and reader compute the same answer without recording it.
 func giwArrayPad(off int64) int { return int((-(off + 4)) & 15) }
 
-// alignHead ends the variable-length header on a 16-byte boundary (v12+). The header carries a
-// length-prefixed quant label that the resident writer emits and the streaming writer deliberately
-// does not (B11), so the two paths' offsets differ by the label's length. Every later array's
-// padding is a function of its absolute offset, so without this the two would lay out the SAME
-// weights with DIFFERENT padding and stop being byte-identical
-// (internal/prequant TestStreamTranscodeMatchesResident caught exactly that). With it, everything
-// after the header is at the same offsets in both.
+// alignHead ends the variable-length header on a 16-byte boundary (v12+). The header carries a length-prefixed quant label
+// that the resident writer emits and the streaming writer deliberately does not, so the two paths' offsets differ by the
+// label's length. Every later array's padding is a function of its absolute offset, so without this the two would lay out
+// the same weights with different padding and stop being byte-identical (internal/prequant
+// TestStreamTranscodeMatchesResident). With it, everything after the header is at the same offsets in both.
 func (w *giwWriter) alignHead() {
 	if giwEmitVersion < giwVAligned {
 		return
@@ -1142,27 +1057,17 @@ func (w *giwWriter) i8(s []int8) {
 // see weightMatKind3Only for the tensors that must never take kind 5.
 func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
 
-// weightMatKind3Only is weightMat for a tensor that must never take kind 5
-// regardless of target — it always writes kind 3 (or, under the legacy row4
-// opt-in, kind 4) for an int4 tensor. Two independent reasons land a call site
-// here, per docs/tasks/task-int4-layout-2026-09.md's L2:
+// weightMatKind3Only is weightMat for a tensor that must never take kind 5 regardless of target: it always writes kind 3
+// (or, under the legacy row4 opt-in, kind 4) for an int4 tensor. Two reasons put a call site here:
 //
-//   - MoE-paged experts (l.Experts[*], gemma4's mo.expertsGateUp/expertsDown): the
-//     doc's ground rule — decoder/moepaging.go reads these off the mmap with no
-//     load-time repack step, so the file must carry whatever layout the pager
-//     needs, chosen once at write time, not per-reader. (decoder/layerpaging.go's
-//     DENSE per-layer pager pages QProj/KProj/VProj/OProj/GateProj/UpProj/DownProj
-//     too, and already prefers WeightMat.MappedSpanRow4 over MappedSpan — so on
-//     inspection it does NOT need this exclusion; those stay kind-5-eligible via
-//     plain weightMat. Flagged as a finding in the L2 status line rather than
-//     silently narrowing the ground rule to MoE alone.)
-//   - Not yet scoped: KDA/DeltaNet/qattn mixer projections and gemma4's fused-MoE
-//     router (mo.routerProj). These are absent from Weights.matmulWeights(), which
-//     decoder.Load's post-load kind-5-vs-backend check walks (see repackedOnlyInt4Count)
-//     — routing them through plain weightMat would let a kind-5 instance of one of
-//     these slip past that check, relying solely on the (soft, logged-not-fatal)
-//     residency decline downstream. Kept kind-3-only until they get their own
-//     entry in that census, rather than widening the census for this cut.
+//   - MoE-paged experts (l.Experts[*], gemma4's mo.expertsGateUp/expertsDown): moepaging.go reads these off the mmap with
+//     no load-time repack step, so the file must carry whatever layout the pager needs, chosen once at write time, not
+//     per reader. (layerpaging.go's dense per-layer pager prefers WeightMat.MappedSpanRow4 over MappedSpan, so the dense
+//     QProj..DownProj stay kind-5-eligible through plain weightMat.)
+//   - Not yet scoped: KDA/DeltaNet/qattn mixer projections and gemma4's fused-MoE router (mo.routerProj). These are absent
+//     from Weights.matmulWeights(), which decoder.Load's post-load kind-5-vs-backend check walks (see
+//     repackedOnlyInt4Count), so a kind-5 instance would slip past that check and rely solely on the soft downstream
+//     residency decline. They stay kind-3-only until they get their own entry in that census.
 func (w *giwWriter) weightMatKind3Only(m *linalg.WeightMat) { w.weightMatKind(m, false) }
 
 func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
@@ -1271,13 +1176,8 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	}
 }
 
-// fusedEligible reports whether ms can be written as one fused group (kind 6): a Metal-target
-// writer at v13+, at least two members, every member a canonical group-32 int4 with the same K
-// (K%32==0, so every member's nibble bytes are a multiple of 16 and the members stay 16-aligned
-// back to back). Anything else — an absent V on a K=V layer, an int8 tensor, a mixed K — is
-// written the ordinary way, one record at a time.
-// f16SingleEligible reports whether m is written as kind 7 (v14, metal target): a canonical group-32 int4
-// tensor with K%32==0 — the same member rule as a fused group, for a tensor written on its own.
+// f16SingleEligible reports whether m is written as kind 7 (v14, metal target): a canonical group-32 int4 tensor with
+// K%32==0, the same member rule as a fused group, for a tensor written on its own.
 func (w *giwWriter) f16SingleEligible(m *linalg.WeightMat) bool {
 	if w.target != GIWTargetMetal || w.emitVersion() < giwVF16 || m.Rows() == 0 || m.Cols()%32 != 0 {
 		return false
@@ -1286,6 +1186,10 @@ func (w *giwWriter) f16SingleEligible(m *linalg.WeightMat) bool {
 	return ok && group == 32
 }
 
+// fusedEligible reports whether ms can be written as one fused group (kind 6): a Metal-target writer at v13+, at least
+// two members, every member a canonical group-32 int4 with the same K (K%32==0, so every member's nibble bytes are a
+// multiple of 16 and the members stay 16-aligned back to back). Anything else (an absent V on a K=V layer, an int8
+// tensor, a mixed K) is written the ordinary way, one record at a time.
 func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
 	if w.target != GIWTargetMetal || w.emitVersion() < giwVFused || len(ms) < 2 {
 		return false
@@ -1302,16 +1206,16 @@ func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
 	return true
 }
 
-// fusedGroup writes ms — in the order a resident backend fuses them (q,k,v / gate,up) — as ONE group
-// whose nibbles are contiguous (S6: a Metal fused GEMV wants its rows in one buffer, and an mmap'd
-// file can only be aliased into one if the rows are adjacent there). Layout:
+// fusedGroup writes ms, in the order a resident backend fuses them (q,k,v / gate,up), as ONE group whose nibbles are
+// contiguous: a Metal fused GEMV wants its rows in one buffer, and an mmap'd file can only be aliased into one if the rows
+// are adjacent there. Layout:
 //
 //	per member:  kind 6 | rows | cols | group | w8a8=0 | pad | u32 nScales | f32 scales     (no nibbles)
-//	then:        pad to 16 | nibbles of member 0 | nibbles of member 1 | …                 (no length prefixes)
+//	then:        pad to 16 | nibbles of member 0 | nibbles of member 1 | ...                (no length prefixes)
 //
-// The nibble lengths are a pure function of each member's shape (rows*cols/2), so the block needs no
-// prefixes — a prefix between two members would be exactly the gap this exists to remove. A group that
-// is not eligible is written as plain consecutive records, byte-for-byte what weightMat writes.
+// The nibble lengths are a pure function of each member's shape (rows*cols/2), so the block needs no prefixes: a prefix
+// between two members would be exactly the gap this exists to remove. A group that is not eligible is written as plain
+// consecutive records, byte-for-byte what weightMat writes.
 func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 	if !w.fusedEligible(ms) {
 		for _, m := range ms {
@@ -1395,13 +1299,10 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.v9Layer(l) // v9 KDA + MLA-gate tail — see below
 }
 
-// v6Layer writes the state that made five families unrepresentable, in one unconditional tail.
-//
-// WHY UNCONDITIONAL RATHER THAN ARCH-GATED like the gemma4 tail: every field here is empty on the
-// families that do not use it, so the cost is a handful of zero lengths per layer, and an
-// arch-gated tail is precisely how gpt-oss's sinks went missing — the gate is another place to
-// remember. A tail that always writes what the struct holds cannot be forgotten for the next
-// family, and TestSerializeCensus_noSilentFieldDrop checks that claim against the struct itself.
+// v6Layer writes the state that made five families unrepresentable, in one unconditional tail. Unconditional rather than
+// arch-gated like the gemma4 tail: every field here is empty on the families that do not use it, so the cost is a handful
+// of zero lengths per layer, and an arch-gated tail is how a family's state goes missing (the gate is another place to
+// remember). TestSerializeCensus_noSilentFieldDrop checks that claim against the struct itself.
 func (w *giwWriter) v6Layer(l *LayerWeights) {
 	w.weightMat(&l.GProj) // Laguna's attention output gate (per-head or per-element)
 	w.f32(l.AttnSinks)    // gpt-oss per-head attention sinks
@@ -1448,19 +1349,13 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	}
 }
 
-// v8Layer writes the LFM2 gated short-convolution mixer: presence byte then the three tensors.
+// v8Layer writes the LFM2 gated short-convolution mixer: presence byte then the three tensors. Unconditional like the v6
+// tail and for the same reason; the cost is one zero byte per layer on every other family. A writer that omits this field
+// produces a CRC-valid bundle whose first forward nil-dereferences on conv layer 0 (lw.shortConv == nil), and prequant's
+// selfCheck cannot see it because it only Loads.
 //
-// UNCONDITIONAL, LIKE THE v6 TAIL AND FOR THE SAME REASON. An arch-gated tail is how gpt-oss's
-// attention sinks went missing, and the cost here is one zero byte per layer on every other family.
-//
-// This field existed for a whole family and serialize.go did not mention it once — `grep shortConv
-// decoder/serialize.go` returned zero matches. cmd/prequant loaded an LFM2 checkpoint, wrote every
-// field EXCEPT this one, appended a valid CRC, and selfCheck passed because selfCheck only Loads.
-// Serving the bundle, the first token reached conv layer 0 with lw.shortConv == nil and
-// nil-dereferenced in the decode goroutine (audit-2026-09-02 C-03, a regression of R3).
-//
-// As with mamba, only the WEIGHTS are here — the rolling conv window is per-sequence state that
-// lives in the KVCache and is rebuilt at load.
+// As with mamba, only the weights are here: the rolling conv window is per-sequence state that lives in the KVCache and
+// is rebuilt at load.
 func (w *giwWriter) v8Layer(l *LayerWeights) {
 	if l.shortConv == nil {
 		w.raw([]byte{0})
@@ -1473,14 +1368,11 @@ func (w *giwWriter) v8Layer(l *LayerWeights) {
 	w.f32(c.outProj)
 }
 
-// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attention-output
-// gate (l.mla.gProj — added to mlaWeights after v6Layer's MLA block already shipped, so it rides a
-// new version rather than retrofitting v6Layer's fixed byte layout, which would corrupt every
-// existing v6/v7/v8 file's read), then the KDA mixer (presence byte + the thirteen tensors,
-// kdaWeights' own field count — N-63, docs/audit-2026-09-10.md: this used to say nine) —
-// caught by TestSerializeCensus_noSilentFieldDrop the same way v8Layer's LFM2 gap was (R3/C-03):
-// l.kda existed and this file did not mention it once, so a round-tripped bailing_hybrid bundle
-// nil-dereferenced in kdaMixerStep on the first KDA layer.
+// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attention-output gate (l.mla.gProj, added to
+// mlaWeights after v6Layer's MLA block shipped, so it rides a new version rather than retrofitting v6Layer's fixed byte
+// layout, which would corrupt the read of every existing v6/v7/v8 file), then the KDA mixer (presence byte + the thirteen
+// tensors, kdaWeights' own field count). Without it a round-tripped bailing_hybrid bundle nil-dereferences in
+// kdaMixerStep on the first KDA layer; TestSerializeCensus_noSilentFieldDrop catches a missing field.
 func (w *giwWriter) v9Layer(l *LayerWeights) {
 	var gProj []float32
 	if l.mla != nil {
@@ -1574,8 +1466,7 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 		w.f32(q.qNorm)
 		w.f32(q.kNorm)
 	default:
-		// MLA / Mamba-2 used to be refused here. They are written by v6Layer below (the
-		// completeness tail), so this stays the "no hybrid extras" marker it was named for.
+		// The "no hybrid extras" marker. MLA and Mamba-2 are written by v6Layer.
 		w.raw([]byte{0})
 	}
 }
@@ -1713,9 +1604,8 @@ func (r *giwReader) i8() []int8 {
 	return unsafe.Slice((*int8)(unsafe.Pointer(&b[0])), n)
 }
 
-// rawAlias ALIASES a []byte (int4 packed nibbles) — a plain subslice of data.
-// u16View returns n little-endian uint16s at the cursor as an ALIAS of the blob when 2-byte aligned on a
-// little-endian host, else a copy — f32Alias's rule for f16 scales.
+// u16View returns n little-endian uint16s at the cursor as an ALIAS of the blob when 2-byte aligned on a little-endian
+// host, else a copy: f32Alias's rule for f16 scales.
 func (r *giwReader) u16View(n int) []uint16 {
 	if n == 0 || !r.need(2*n) {
 		return nil
@@ -1752,6 +1642,7 @@ func (r *giwReader) recordF16(q4 []byte, f16 []uint16) {
 	r.f16[uintptr(unsafe.Pointer(&q4[0]))] = f16
 }
 
+// rawAlias ALIASES a []byte (int4 packed nibbles): a plain subslice of data.
 func (r *giwReader) rawAlias() []byte {
 	n := int(r.u32())
 	if n == 0 || !r.need(n) {
@@ -1777,10 +1668,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	}
 	w8a8 := r.data[r.off] == 1
 	r.off++
-	// M17: rows/cols/group are blob-controlled. linalg.Wrap{Int8,Int4} PANIC on a length
-	// mismatch or group<=0, and a wrong-length WrapF32 defers the panic to first use — a one-byte
-	// flip with a recomputed CRC would crash the loader. Validate dims + array lengths here (the
-	// arrays were already bounded by r.need); a mismatch is a *SerializeError via r.fail, not a
+	// rows/cols/group are blob-controlled. linalg.Wrap{Int8,Int4} PANIC on a length mismatch or group<=0, and a wrong-length
+	// WrapF32 defers the panic to first use, so a one-byte flip with a recomputed CRC would crash the loader. Validate dims
+	// and array lengths here (the arrays were already bounded by r.need); a mismatch is a *SerializeError via r.fail, not a
 	// panic. The maxWeightDim cap keeps rows*cols from overflowing int before the equality check.
 	const maxWeightDim = 1 << 26
 	if rows <= 0 || cols <= 0 || rows > maxWeightDim || cols > maxWeightDim {
@@ -1863,11 +1753,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		wm, ok := linalg.WrapInt4Row4OnlyF16(q4Row4, q4Row4Scales, rows, cols, group)
 		if !ok {
-			// Named and actionable, per docs/tasks/task-int4-layout-2026-09.md's ground rules — a
-			// kind-5 file is a promise to ONE target (the box/core that wrote it), unlike
-			// kind 4's "usable anywhere". ok=false here means Int4Row4Usable rejected this
-			// core: wrong arch (this file was written on/for arm64), or a shape this core's
-			// build cannot run the row4 kernel for.
+			// Named and actionable: a kind-5 file is a promise to one target (the box/core that wrote it), unlike kind 4's "usable
+			// anywhere". ok=false here means Int4Row4Usable rejected this core: wrong arch (the file was written on/for arm64), or a
+			// shape this core's build cannot run the row4 kernel for.
 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d is stored row4-only (kind 5, a cpu-arm64 prequant target) but this core cannot use that layout — rebuild with `go run ./cmd/prequant -target <this core>` (or delete the stream-weights cache so it rebuilds automatically)", rows, cols, group))
 			return linalg.WeightMat{}
 		}
@@ -2001,9 +1889,8 @@ func (r *giwReader) layer(l *LayerWeights) {
 		r.fail("implausible expert count")
 		return
 	}
-	// N-07, the per-layer half: same amplification, multiplied by the layer count. The reader
-	// already holds the resolved arch, so a blob claiming more experts than the family has is
-	// refused before the structs exist rather than after.
+	// The per-layer half of the same bound, multiplied by the layer count: the reader already holds the resolved arch, so a
+	// blob claiming more experts than the family has is refused before the structs exist rather than after.
 	if r.arch != nil && r.arch.MoE != nil && r.arch.MoE.NumExperts > 0 && ne > r.arch.MoE.NumExperts {
 		r.fail(fmt.Sprintf("expert count: blob has %d, arch expects at most %d",
 			ne, r.arch.MoE.NumExperts))
@@ -2173,9 +2060,8 @@ func (r *giwReader) hybridLayer(l *LayerWeights) {
 	case 0:
 		// no hybrid extras (every non-qwen3_5_moe family)
 	case 1:
-		// FIELD ORDER IS THE WIRE ORDER: the three projections are WeightMats as of the
-		// quantization change, and a struct literal evaluates its fields in source order, so these
-		// must be read in exactly the order hybridLayer writes them.
+		// Field order is the wire order: a struct literal evaluates its fields in source order, so these must be read in exactly
+		// the order hybridLayer writes them.
 		d := &deltaNetWeights{}
 		d.inProjQKV = r.weightMat()
 		d.inProjZ = r.weightMat()

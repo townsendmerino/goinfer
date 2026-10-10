@@ -11,13 +11,10 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Weight matrices are linalg.WeightMat (aikit): one type that hides f32 / per-row
-// int8 / group-wise int4 storage behind uniform accessors + the linalg kernels.
-// goinfer keeps the model POLICY here — which table gets which precision
-// (quantMode), the int4 group size, and the matmul backend routing (the staged
-// GPU hooks below) — while the storage wrapper, quantize primitives, and Row
-// dequant live in linalg. (Consolidates the wrapper formerly open-coded as
-// decoder.weightMat; see aikit linalg.WeightMat.)
+// Weight matrices are linalg.WeightMat (aikit): one type that hides f32, per-row int8 and group-wise int4 storage behind
+// uniform accessors and the linalg kernels. goinfer keeps the model policy here (which table gets which precision, the
+// int4 group size, the matmul backend routing) while the storage wrapper, quantize primitives and Row dequant live in
+// linalg.
 
 // quantMode selects the resident weight precision the loader streams into (see
 // loadWeights). The f32 path keeps the widened weights; int8 is per-row symmetric
@@ -29,10 +26,8 @@ const (
 	quantInt8
 	quantInt4
 	quantInt8I8 // weights int8 (as quantInt8) but matmul is full int8×int8 (W8A8)
-	// quantInt4Mix is a per-tensor mixed mode (idea #5): attention (+ embed/head/
-	// router) at int8 where a calibration spike found the int4→int8 quality loss
-	// concentrated, the FFN bulk (gate/up/down/experts) at int4. It is a LOAD-TIME
-	// policy only — matmulQuant resolves it to int8/int4 per tensor, so the resident
+	// quantInt4Mix is a per-tensor mixed mode: attention (and embed/head/router) at int8, the FFN bulk
+	// (gate/up/down/experts) at int4. It is a load-time policy only: matmulQuant resolves it per tensor, so the resident
 	// weights and the .giw never carry quantInt4Mix itself. GGUF load path only.
 	quantInt4Mix
 	// quantQ4K keeps every tensor the GGUF stores as Q4_K in its own super-block layout
@@ -54,15 +49,10 @@ func matmulQuant(base quantMode, name string) quantMode {
 	if base != quantInt4Mix {
 		return base
 	}
-	// M-27 (docs/audit-2026-09-10.md): the router (ffn_gate_inp) must stay out of the "ffn_"
-	// bulk even though its own name contains that prefix — top-k selection is discrete, so
-	// quantizing it flips which experts win rather than adding rounding noise (the same
-	// reasoning that keeps it out of quantInt4 entirely at every other quant mode). Every
-	// current call site already routes the router through streamMat(..., quantNone, ...)
-	// directly and never reaches matmulQuant at all; this is a guardrail against a future
-	// family adding a router through the generic mat() helper and repeating that mistake —
-	// it would then degrade to int8 (this function's own "attention stays int8" branch)
-	// rather than int4.
+	// The router (ffn_gate_inp) must stay out of the "ffn_" bulk though its name contains that prefix: top-k selection is
+	// discrete, so quantizing it flips which experts win rather than adding rounding noise. Current call sites send the router
+	// through streamMat(..., quantNone, ...) and never reach matmulQuant; this guards a future family that adds a router
+	// through the generic mat() helper, which would then get int8 rather than int4.
 	if strings.Contains(name, "ffn_gate_inp") {
 		return quantInt8
 	}
@@ -72,20 +62,11 @@ func matmulQuant(base quantMode, name string) quantMode {
 	return quantInt8
 }
 
-// embedding returns the precision to use for the token-embedding table (and the
-// LM head, tied or not). Full W8A8 (int8 weights AND int8 activations), not
-// weight-only Q8 — changed 2026-08-24 (docs/completed/lmhead-workspace-fix.md Step
-// 2, after the W4A8 plumbing phase found the LM head running weight-only Q8 was
-// the single largest per-token cost in int4 decode, achieving only 11-13 GB/s
-// against W8A8's 97.12 GB/s at the same shape — 7.7x). Precision measured before
-// switching, teacher-forced real-continuation comparison against the old
-// weight-only-Q8 pin, both real model sizes: 1.5% argmax flip rate, mean cosine
-// 0.9998+ (200 positions each, docs/completed/task-w4a8-neon-bandwidth.md). Small and real,
-// nowhere near int4-weight quantizing these same tensors ("flips the argmax and
-// tanks the cosine" — mirrors why GGUF Q4_K_M keeps token_embd/output at Q6_K
-// while the projections go 4-bit) — kept as the unconditional int4-mode default,
-// not opt-in, given the size of the win against the size of the cost. int8 and
-// f32 modes use themselves, unaffected.
+// embedding returns the precision for the token-embedding table and the LM head, tied or not. In the int4 modes it is
+// full W8A8 (int8 weights and int8 activations), not weight-only Q8: the LM head on weight-only Q8 was the largest
+// per-token cost in int4 decode. It is not int4 either: int4-weight quantizing these tensors flips the argmax and tanks
+// the cosine (GGUF Q4_K_M likewise keeps token_embd/output above 4 bits). The pin is the unconditional int4-mode default.
+// int8 and f32 modes use themselves. Evidence: docs/code-notes/decoder.md#quantMode.embedding.
 func (q quantMode) embedding() quantMode {
 	if q == quantInt4 || q == quantInt4Mix || q == quantQ4K {
 		return quantInt8I8
@@ -93,11 +74,9 @@ func (q quantMode) embedding() quantMode {
 	return q
 }
 
-// embeddingWith resolves the embed/head precision allowing the int8 pin to be
-// relaxed to int4 (Options.EmbedInt4): in int4 mode the table goes int4 too,
-// halving what is the single largest resident tensor on a big-vocab small model.
-// Lossy and opt-in — a 1.5B Q4_K_M spike measured ~2.3 pts top-1 vs the pin (≈0 on
-// frequent tokens, ~3 on rare). Off (the pin) is the default and the bit-exact path.
+// embeddingWith resolves the embed/head precision, allowing the int8 pin to be relaxed to int4 (Options.EmbedInt4): in
+// int4 mode the table goes int4 too, halving the largest resident tensor on a big-vocab small model. Lossy and opt-in;
+// off (the pin) is the default and the bit-exact path.
 func (q quantMode) embeddingWith(embedInt4 bool) quantMode {
 	if embedInt4 && q == quantInt4 {
 		return quantInt4
@@ -111,30 +90,15 @@ func (q quantMode) embeddingWith(embedInt4 bool) quantMode {
 // stays ~0.125 byte/element.
 const int4GroupSize = 32
 
-// int4ParThreshold lowers the fan-out threshold for the int4 (W4A8) matmul below aikit's
-// default (parThreshold = 1<<24 = 16.78M MACs) so the small int4 DECODE matmuls parallelize.
-// At decode (M=1) every Gemma-4 int4 matmul is small — expert gate‖up 3.96M, down 1.98M,
-// dense ~5.9M, attention ~11.5M MACs — so ALL of them fell under aikit's default and ran
-// SERIAL, while only the int8 LM head (738M) parallelized. That serial fast-path (NOT a
-// barrier) capped 8-core scaling at 1.61× and decode at ~2.3 tok/s (profiled on the real
-// gemma4-26b int4 .giw). 1<<20 ≈ 1.05M sits below the 1.98M smallest decode matmul, so all of
-// them fan out, while truly tiny ops (<1M) stay serial. Byte-identical (aikit partitions
-// output columns in 8-wide groups — the width-invariant contract), measured ~2.3× decode
-// (2.3→5.3 tok/s) + TTFT 7.3→3.2s. Only widens fan-out (never narrows it), so prefill's
-// already-parallel large-M matmuls are unaffected. See docs/task-gemma4-moe.md.
+// int4ParThreshold sets the fan-out threshold for the int4 (W4A8) matmul below aikit's default (parThreshold = 1<<24 MACs)
+// so the small int4 decode matmuls parallelize. At M=1 every Gemma-4 int4 matmul (expert gate||up 3.96M, down 1.98M,
+// dense ~5.9M, attention ~11.5M MACs) falls under the aikit default and would run serial. 1<<20 sits below the smallest
+// decode matmul (1.98M), so all of them fan out, while tiny ops (<1M) stay serial; threshold 0, which fans out everything,
+// over-parallelizes on the 8-core Ryzen.
 //
-// PROVENANCE: 1<<20 was **Ryzen 7 3700X (8-core) measured**. On that rig it does not regress
-// the small end — a 0.5B int4 decodes 1.9× faster than serial at this value (26.8 vs 13.9
-// tok/s, 4 cores) because it parallelizes the ~4M-MAC matmuls while leaving truly tiny (<1M)
-// ops serial (thr=0, which fans out everything, was *slower* there — over-parallelizes).
-//
-// M1 PRO SWEEP (6P+2E, BenchmarkInt4ParThresholdSweep): the value TRANSFERS — it sits in the
-// flat-optimal region. All four gemma4-26b decode shapes are ≥1.98M, so 1<<20 (1.05M)
-// parallelizes every one, capturing 1.46× (down 1.98M), 1.84× (gate_up 3.96M), 1.9× (dense
-// 5.9M), 2.56× (attn 11.5M) vs serial. And UNLIKE the Ryzen, thr=0 shows NO over-parallelize
-// penalty on M1 Pro (thr=0 ties the low thresholds), so the Ryzen value is if anything slightly
-// conservative here but lands squarely in the optimum for every real decode op. No per-platform
-// split warranted. Re-run the benchmark if the core topology or aikit's kernel changes.
+// Output is byte-identical (aikit partitions output columns in 8-wide groups, the width-invariant contract), and it only
+// widens fan-out, so prefill's already-parallel large-M matmuls are unaffected. Re-run BenchmarkInt4ParThresholdSweep if
+// the core topology or aikit's kernel changes. Measurements on both rigs: docs/code-notes/decoder.md#int4ParThreshold.
 const int4ParThreshold = 1 << 20
 
 // streamQuantized builds a [rows, cols] linalg.WeightMat in the target precision
@@ -149,12 +113,10 @@ func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []f
 	return streamQuantizedRow4(rows, cols, mode, true, rowInto)
 }
 
-// streamQuantizedSkipRow4 is streamQuantized with the arm64 row4 side-copy skipped (M-07,
-// audit-metal-2026-09-12.md) — for a tensor reached only through streamQuantized's own
-// non-batched callers (o_proj/down_proj/router via streamMat, MoE experts via stackedExperts,
-// gpt-oss's expert gate/up/down, fused-tensor splits via fusedSplit). These are exactly the ones
-// quantizeWMSkipRow4 covers for the safetensors path; this is streamQuantized's GGUF/streaming
-// twin, same narrower "canonical alone, no needCanonical branch" scope as quantizeWMSkipRow4.
+// streamQuantizedSkipRow4 is streamQuantized with the arm64 row4 side-copy skipped, for a tensor reached only through
+// streamQuantized's non-batched callers (o_proj/down_proj/router via streamMat, MoE experts via stackedExperts, gpt-oss's
+// expert gate/up/down, fused-tensor splits via fusedSplit). It is the GGUF/streaming twin of quantizeWMSkipRow4, with the
+// same scope: canonical alone, no needCanonical branch.
 func streamQuantizedSkipRow4(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	return streamQuantizedRow4(rows, cols, mode, false, rowInto)
 }
@@ -211,17 +173,11 @@ func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func
 	}
 }
 
-// streamQuantizedRepackable is streamQuantized's twin for the GGUF streaming path, shared by
-// streamQuantizedEmbed (Embed/LMHead) and streamQuantizedBatchedProj (attention Q/K/V, MLP
-// gate/up) — see decoder/weightmat.go's quantizeEmbedWM/quantizeBatchedProjWM/
-// repackedOnlyOrCanonical for the full policy and each caller's own safety argument. The
-// row-quantize loop is identical regardless of final layout — the quantized BYTES are the same —
-// so this only differs from streamQuantized in the last step for quantInt4: the repack decision
-// routes through repackedOnlyOrCanonical (row4-only when needCanonical is false and the shape/
-// core qualify; canonical, optionally row4-skipped, when needCanonical is true) instead of
-// streamQuantized's own hardcoded canonical+row4 "both" — this is why quantInt4 no longer
-// early-returns into streamQuantized the way it used to (that hardcoding is exactly what made
-// skipRow4 (M-07, audit-metal-2026-09-12.md) unreachable from the GGUF streaming path).
+// streamQuantizedRepackable is streamQuantized's twin for the GGUF streaming path, shared by streamQuantizedEmbed and
+// streamQuantizedBatchedProj; the policy and each caller's safety argument are on quantizeEmbedWM,
+// quantizeBatchedProjWM and repackedOnlyOrCanonical. The row-quantize loop is the same whatever the final layout; the
+// twin differs only in the last step for quantInt4, where the repack decision goes through repackedOnlyOrCanonical
+// (row4-only, or canonical optionally row4-skipped) instead of streamQuantized's fixed canonical plus row4.
 func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	if mode != quantInt4 || fakeQuantScheme != "" {
 		return streamQuantized(rows, cols, mode, rowInto)
@@ -244,47 +200,36 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, sk
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4), nil
 }
 
-// streamQuantizedEmbed is streamQuantizedRepackable applied to Embed/LMHead — see
-// quantizeEmbedWM's own doc comment for why this tensor class is safe. skipRow4 is always false:
-// Embed/LMHead are read via .Row() on the host on every backend, so M-07's row4-skip trade (a
-// slower CPU fallback in exchange for less resident memory) is not this tensor class's call to
-// make — quantizeEmbedWM makes the identical choice on the non-streaming path.
+// streamQuantizedEmbed is streamQuantizedRepackable for Embed/LMHead (the safety argument is quantizeEmbedWM's). skipRow4
+// is always false: Embed/LMHead are read via .Row() on the host on every backend, so the row4-skip trade (a slower CPU
+// fallback for less resident memory) is not this class's call; quantizeEmbedWM makes the same choice.
 func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	return streamQuantizedRepackable(rows, cols, mode, needCanonical, false, rowInto)
 }
 
-// streamQuantizedBatchedProj is streamQuantizedRepackable applied to the attention Q/K/V and MLP
-// gate/up projections — see quantizeBatchedProjWM's own doc comment for the batch-path safety
-// argument this shares.
+// streamQuantizedBatchedProj is streamQuantizedRepackable for attention Q/K/V and MLP gate/up; the batch-path safety
+// argument is quantizeBatchedProjWM's.
 func streamQuantizedBatchedProj(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	return streamQuantizedRepackable(rows, cols, mode, needCanonical, skipRow4, rowInto)
 }
 
-// quantizeWM returns w streamed to the requested resident precision — the
-// immutable-WeightMat replacement for the old in-place weightMat.quantize (the
-// freed-f32 memory win comes from dropping the old f32 reference at the call site).
-// No-op for quantNone or if w isn't f32-resident (already quantized / empty).
+// quantizeWM returns w streamed to the requested resident precision; the f32 memory is freed by dropping the old
+// reference at the call site. No-op for quantNone or if w is not f32-resident (already quantized, or empty).
 func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 	return quantizeWMRow4(w, mode, true)
 }
 
-// quantizeWMSkipRow4 is quantizeWM with the arm64 row4 side-copy skipped (M-07,
-// audit-metal-2026-09-12.md) — for a projection reached only through quantizeWM's ~40
-// family-specific call sites (o_proj, down_proj, router, MoE experts, shared-expert — everything
-// isBatchedProjTensor doesn't already cover via quantizeBatchedProjWM). Unlike
-// quantizeBatchedProjWM/quantizeEmbedWM, there is no needCanonical branch here: repacked-only
-// (dropping canonical entirely) is specifically the CPU-batched-dispatch trade
-// repackedOnlyOrCanonical exists for, and none of these tensor classes go through that dispatch —
-// this only ever chooses between "canonical + row4" (today's default) and "canonical alone",
-// mirroring repackW4A8IfEligibleSkipRow4's own narrower role.
+// quantizeWMSkipRow4 is quantizeWM with the arm64 row4 side-copy skipped, for a projection reached only through
+// quantizeWM's family-specific call sites (o_proj, down_proj, router, MoE experts, shared expert: everything
+// isBatchedProjTensor does not cover). Unlike quantizeBatchedProjWM and quantizeEmbedWM it has no needCanonical branch:
+// repacked-only is the CPU-batched-dispatch trade repackedOnlyOrCanonical exists for, and none of these tensor classes
+// go through that dispatch. It only chooses between canonical plus row4 and canonical alone.
 func quantizeWMSkipRow4(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 	return quantizeWMRow4(w, mode, false)
 }
 
-// quantizeWMRow4 is quantizeWM/quantizeWMSkipRow4's shared body; row4 selects which of
-// repackW4A8IfEligible (canonical+row4, today's default) or repackW4A8IfEligibleSkipRow4
-// (canonical alone) runs the int4 case. Every other quant mode is unaffected by row4 either way
-// (row4 is int4-only), so both wrappers behave identically for int8/i8/none.
+// quantizeWMRow4 is the shared body of quantizeWM and quantizeWMSkipRow4: row4 selects repackW4A8IfEligible (canonical
+// plus row4) or repackW4A8IfEligibleSkipRow4 (canonical alone) for the int4 case. Every other quant mode ignores row4.
 func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.WeightMat {
 	f32, ok := w.F32()
 	if !ok {
@@ -312,28 +257,19 @@ func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.Weight
 	}
 }
 
-// repackW4A8Row4IfEligible opts wm into the arm64 split-half + 4-row-interleaved
-// W4A8 layout (docs/completed/task-w4a8-neon-bandwidth.md's item-3+4 harness, GO
-// 2026-08-23/24) by calling linalg.WeightMat.RepackInt4Row4 — a no-op on
-// non-int4 WeightMats, non-arm64 builds, and any shape the repack rejects
-// (rows not a multiple of 4, cols not a multiple of the int4 group size), so
-// always safe to call unconditionally.
+// repackW4A8Row4IfEligible opts wm into the arm64 split-half, 4-row-interleaved W4A8 layout by calling
+// linalg.WeightMat.RepackInt4Row4: a no-op on non-int4 WeightMats, non-arm64 builds and shapes the repack rejects (rows
+// not a multiple of 4, cols not a multiple of the int4 group size), so always safe to call unconditionally.
 //
-// ONLY wired into streamQuantized/quantizeWM — the GGUF/safetensors streaming
-// paths, which always allocate fresh heap-backed q4/q4s. Deliberately NOT
-// wired into the .giw loader (decoder/serialize.go): .giw tensors zero-copy
-// mmap-alias their packed bytes, and SOME of those (MoE experts, when
-// newExpertPager's paging is active) are later released from RAM on demand
-// via madvise DONTNEED (moepaging.go) — a heap-resident row4 copy sitting
-// alongside a pageable mmap alias would pin that memory permanently, defeating
-// paging's whole point for exactly the tensors it exists to bound. Every
-// GGUF/safetensors-streamed int4 tensor is heap-backed regardless (never
-// paged — moepaging.go's own MappedSpan check silently skips heap-backed
-// weights), so repacking here adds no new pageability constraint. Extending
-// this to non-paged .giw tensors is a real follow-up, out of scope for this
-// pass: it needs the repack decision sequenced after newExpertPager decides
-// which specific experts it's managing, not made at load time before that
-// decision exists.
+// Only wired into streamQuantized and quantizeWM, the GGUF/safetensors streaming paths, which allocate fresh heap-backed
+// q4/q4s. Deliberately not wired into the .giw loader (serialize.go): .giw tensors zero-copy mmap-alias their packed
+// bytes, and some (MoE experts under newExpertPager) are later released from RAM via madvise DONTNEED (moepaging.go). A
+// heap-resident row4 copy beside a pageable alias would pin that memory permanently, defeating paging for exactly the
+// tensors it exists to bound. Streamed int4 tensors are heap-backed and never paged (moepaging.go skips them), so
+// repacking here adds no pageability constraint.
+//
+// Limitation: non-paged .giw tensors get no row4 repack. Extending it needs the decision sequenced after newExpertPager
+// picks its experts (docs/code-notes/decoder.md#repackW4A8Row4IfEligible).
 func repackW4A8Row4IfEligible(wm linalg.WeightMat) linalg.WeightMat {
 	if !w4a8Row4RepackEnabled {
 		return wm
@@ -342,53 +278,35 @@ func repackW4A8Row4IfEligible(wm linalg.WeightMat) linalg.WeightMat {
 	return wm
 }
 
-// w4a8Row4RepackEnabled is a load-time-measurement toggle ONLY — production
-// code never sets it, so it stays true always in a real build. A test
-// measuring the repack's load-time/resident-memory delta (the two numbers
-// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-
-// bandwidth.md) flips it off to get an apples-to-apples "without repack"
-// baseline from the exact same load path, rather than comparing against a
-// differently-built binary.
+// w4a8Row4RepackEnabled is a load-time-measurement toggle only: production never sets it, so it stays true in a real
+// build. A test measuring the repack's load-time and resident-memory delta flips it off to get a baseline from the same
+// load path.
 var w4a8Row4RepackEnabled = true
 
-// repackW4A8SplitHalfIfEligible is the amd64 counterpart to
-// repackW4A8Row4IfEligible: it opts wm into the split-half W4A8 nibble layout
-// (byte i holds weight i's low nibble and weight i+16's high nibble, so the
-// AVX2 kernel's two per-group VPUNPCK{L,H}BW disappear — docs/queue-
-// performance.md P14 item 3, measured 1.12x hot AND cold on Zen 2). A no-op on
-// non-int4 WeightMats, on non-amd64 builds, on CPUs without AVX2, and on any
-// shape the repack rejects, so it is always safe to call unconditionally.
+// repackW4A8SplitHalfIfEligible is the amd64 counterpart to repackW4A8Row4IfEligible: it opts wm into the split-half W4A8
+// nibble layout (byte i holds weight i's low nibble and weight i+16's high nibble, which removes the AVX2 kernel's two
+// per-group VPUNPCK{L,H}BW). A no-op on non-int4 WeightMats, non-amd64 builds, CPUs without AVX2 and any shape the repack
+// rejects, so always safe to call unconditionally.
 //
-// ALSO a no-op on hosts WITH AVX-512 VNNI, which is the surprising one: aikit's
-// canonical W4A8 dot prefers its VNNI tier there and split-half exists only at
-// AVX2, so the layout would swap a faster kernel for a slower one. aikit
-// declines rather than pessimize. The consequence here is that this repack —
-// and the +2.10% below — applies to AVX2-WITHOUT-VNNI hosts only, which is a
-// narrower audience than "amd64".
+// Also a no-op on hosts with AVX-512 VNNI: aikit's canonical W4A8 dot prefers its VNNI tier there and split-half exists
+// only at AVX2, so the layout would swap a faster kernel for a slower one. The repack therefore applies to
+// AVX2-without-VNNI hosts only.
 //
-// Wired into exactly the same two call sites as the row4 repack and for the
-// same reason — see that function's comment for why the .giw loader is
-// deliberately excluded. The constraint is identical here: the repack
-// ALLOCATES a second buffer and never writes through the canonical bytes,
-// which for a .giw kind=3 tensor are a zero-copy mmap alias of the file.
-// Rewriting them in place would silently misdecode every existing bundle, with
-// no error and wrong numbers; aikit's TestWeightMatSplitHalf_canonicalUntouched
-// pins that it does not.
+// Wired into the same two call sites as the row4 repack and for the same reason (see that function for why the .giw
+// loader is excluded). The repack allocates a second buffer and never writes through the canonical bytes, which for a
+// .giw kind=3 tensor are a zero-copy mmap alias of the file; rewriting them in place would silently misdecode every
+// existing bundle (aikit's TestWeightMatSplitHalf_canonicalUntouched pins that it does not).
 //
-// MEMORY: this is a second copy of every eligible tensor's nibbles, and
-// canonical is NOT dropped. The cost, the measurement that priced it, and why
-// it is default-off live on w4a8SplitHalfRepackEnabled below — deliberately in
-// ONE place, so the figures cannot drift apart from each other.
+// Memory: a second copy of every eligible tensor's nibbles, with canonical kept. The cost and why it is default-off live
+// on w4a8SplitHalfRepackEnabled, in one place so the figures cannot drift apart.
 func repackW4A8SplitHalfIfEligible(wm linalg.WeightMat) linalg.WeightMat {
 	if !w4a8SplitHalfRepackEnabled {
 		return wm
 	}
 	if wm.RepackInt4SplitHalf() {
 		w4a8SplitHalfRepacked.Add(1)
-		// What the second copy actually cost, asked of the layout's owner rather
-		// than re-derived from rows x ceil(cols/2) out here — the memory half of
-		// this trade has to be a quantity we compute, not one we estimate, and
-		// duplicating aikit's arithmetic is how it would drift from the truth.
+		// The second copy's actual cost, asked of the layout's owner rather than re-derived from rows x ceil(cols/2): the memory
+		// half of the trade must be a computed quantity, and duplicating aikit's arithmetic would let it drift.
 		w4a8SplitHalfBytes.Add(int64(wm.SplitHalfBytes()))
 	} else {
 		w4a8SplitHalfSkipped.Add(1)
@@ -396,53 +314,28 @@ func repackW4A8SplitHalfIfEligible(wm linalg.WeightMat) linalg.WeightMat {
 	return wm
 }
 
-// w4a8SplitHalfRepacked / w4a8SplitHalfSkipped count what the repack actually
-// did, at LOAD only (one atomic add per weight tensor, never in a hot loop).
-//
-// They exist because the repack is otherwise SILENT: it returns a bool nobody
-// reads, and a wiring that quietly repacked nothing — wrong quant, wrong load
-// path, a shape rule that rejects every tensor — would produce a benchmark that
-// confidently measures no difference and gets written down as "flat". That is
-// the same failure mode loadBenchModel's own quant comment warns about, one
-// layer down. An A/B against this repack MUST read these first and confirm the
-// repacked count is non-zero, or its result means nothing.
+// w4a8SplitHalfRepacked, w4a8SplitHalfSkipped and w4a8SplitHalfBytes count what the repack did, at load only (one atomic
+// add per weight tensor). They exist because the repack is otherwise silent: it returns a bool nobody reads, and a wiring
+// that repacked nothing (wrong quant, wrong load path, a shape rule rejecting every tensor) would yield a benchmark that
+// measures no difference and gets recorded as flat. An A/B against this repack must read these first and confirm the
+// repacked count is non-zero.
 var w4a8SplitHalfRepacked, w4a8SplitHalfSkipped, w4a8SplitHalfBytes atomic.Int64
 
-// w4a8SplitHalfRepackEnabled is DEFAULT-OFF, and that is a measured decision,
-// not caution. Set GOINFER_W4A8_SPLITHALF=1 to opt in.
+// w4a8SplitHalfRepackEnabled is default-off by decision, not caution; GOINFER_W4A8_SPLITHALF=1 opts in. The repack is a
+// second copy of every eligible tensor's nibbles (+0.5 byte per weight on top of an int4 tensor's 0.625, about +80% int4
+// weight bytes), and canonical is never dropped (M>1 prefill and every non-AVX2 path read it). Its decode gain landed in
+// the band the pre-registration named in advance as ambiguous, so it is parked with the code and wiring intact.
 //
-// The A/B is recorded in docs/measurements/w4a8-splithalf-decode-ab-
-// PREREGISTERED.md: on Qwen2.5-Coder-1.5B at int4, Ryzen 7 3700X, interleaved,
-// same binary both arms, the repack is worth **+2.10% decode tok/s** — real
-// (floor 0.75%, and the two arms' sample ranges do not overlap at all), but
-// short of the +4% that was pre-registered as the bar for accepting its memory
-// cost. It landed in the band the pre-registration named in advance as
-// AMBIGUOUS -> PARKED, so it parks, with the code and the wiring kept intact.
-//
-// The cost it is short against: a second copy of every eligible tensor's
-// nibbles, +0.5 bytes/weight on top of the 0.625 an int4 tensor already pays,
-// so int4 weight bytes grow ~80%. MEASURED on that 1.5B model, not estimated:
-// 196 tensors repacked, **+624.8 MiB** of duplicate nibbles, taking its int4
-// weights from 781 MiB to 1.37 GiB.
-// Canonical is never dropped — M>1 prefill and every non-AVX2 path read it.
-//
-// Turning this on is defensible where decode latency outranks resident memory
-// and the machine is amd64 with AVX2 and NO AVX-512 VNNI (aikit declines on
-// VNNI hosts — see above). It is not defensible as a default, which is why it
-// is not one. Re-open the decision if the kernel gets faster than
-// 1.12x, or if canonical can be dropped for a build that only ever decodes.
+// Turning it on is defensible where decode latency outranks resident memory, on amd64 with AVX2 and no AVX-512 VNNI
+// (aikit declines on VNNI hosts). It is not defensible as a default. Re-open the decision if the kernel gets faster or
+// canonical can be dropped for a decode-only build. The A/B and the figures:
+// docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md and docs/code-notes/decoder.md#w4a8SplitHalfRepackEnabled.
 var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""
 
-// w4a8BatchEnabled runs a layer's q/k/v (and gate/up, where the fused gate+up does not take them) as
-// one W4A8 fork/join instead of one per projection (audit R-06, aikit MatmulBTW4A8Batch). Bit-identical:
-// every output column is the same dot product either way. Default per architecture (w4a8BatchDefault,
-// cpu_tuning_{arm64,other}.go); GOINFER_W4A8_BATCH=0 opts out, =1 forces it on.
-//
-// History: parked by audit R-06 at 1.08x on the 1.5B against S-02's ≥1.15x ship bar (ambiguous), and a null on
-// the M1 Pro's 7B (docs/measurements/w4a8-batch-7b-2026-09-20.md). Turned on for non-arm64 by owner
-// decision 2026-09-27 under docs/tasks/task-cpu-decode-peer-gap-2026-09.md's L2 gates: logits
-// bit-identical on the real 0.5B/1.5B/7B, and on top of today's fused gate+up (so only q/k/v changes)
-// paired ABBA 1.016x / 1.030x / 1.018x on the Ryzen 7 3700X, no size regressing.
+// w4a8BatchEnabled runs a layer's q/k/v (and gate/up, where the fused gate+up does not take them) as one W4A8 fork/join
+// instead of one per projection (aikit MatmulBTW4A8Batch). Bit-identical: every output column is the same dot product
+// either way. The default is per architecture (w4a8BatchDefault, cpu_tuning_{arm64,other}.go); GOINFER_W4A8_BATCH=0
+// opts out and =1 forces it on. Why the defaults differ: docs/code-notes/decoder.md#w4a8BatchEnabled.
 var w4a8BatchEnabled = envBoolDefault("GOINFER_W4A8_BATCH", w4a8BatchDefault)
 
 // repackW4A8IfEligible applies whichever ISA-specific W4A8 layout THIS build
@@ -453,47 +346,29 @@ func repackW4A8IfEligible(wm linalg.WeightMat) linalg.WeightMat {
 	return repackW4A8SplitHalfIfEligible(repackW4A8Row4IfEligible(wm))
 }
 
-// repackW4A8IfEligibleSkipRow4 is repackW4A8IfEligible's twin for a backend that has committed
-// to GPU residency and will never read the arm64 row4 layout (M-07, audit-metal-2026-09-12.md;
-// wantsRow4Fallback has the measurement): applies only the amd64 split-half repack (a no-op on
-// arm64/non-int4/etc, same as always), skipping row4 entirely.
+// repackW4A8IfEligibleSkipRow4 is repackW4A8IfEligible's twin for a backend committed to GPU residency that will never
+// read the arm64 row4 layout (see wantsRow4Fallback): it applies only the amd64 split-half repack and skips row4.
 func repackW4A8IfEligibleSkipRow4(wm linalg.WeightMat) linalg.WeightMat {
 	return repackW4A8SplitHalfIfEligible(wm)
 }
 
-// wantsCanonicalInt4 reports whether this load might need canonical int4 bytes (packed nibbles +
-// scales) for a tensor somewhere in its lifetime — the two consumers that read them directly
-// rather than through WeightMat's own layout-agnostic methods:
+// wantsCanonicalInt4 reports whether this load might need canonical int4 bytes (packed nibbles + scales) for a tensor,
+// that is, whether the repacked-only layout is unsafe. Two consumers read them directly rather than through WeightMat's
+// layout-agnostic methods:
 //
-//   - The staged per-token GPU consult (QuantBackend4.MatmulW4A8 / QuantBatchBackend4.
-//     MatmulW4A8Batch in matmul()/matmulInto()/matmulW4A8Batch): hands q4/q4s to the backend on
-//     EVERY call, no persistent upload. A repacked-only tensor has nothing to hand it —
-//     reconstructing canonical on demand there would cost a canonical-sized allocation per
-//     token, the wrong shape for a per-call path, not merely a deferred optimization.
-//   - A resident GPU build (ResidencyBackend.BuildResident — cuda/resident.go, metal/model.go,
-//     gpu/residency.go all read w.Int4() directly to upload a tensor once at build time).
+//   - The staged per-token GPU consult (QuantBackend4.MatmulW4A8, QuantBatchBackend4.MatmulW4A8Batch in matmul,
+//     matmulInto, matmulW4A8Batch) hands q4/q4s to the backend on every call. A repacked-only tensor has nothing to hand
+//     it, and rebuilding canonical per token is the wrong shape for a per-call path.
+//   - A resident GPU build (ResidencyBackend.BuildResident) reads w.Int4() directly to upload once at build time.
 //
-// backendName is Options.Backend AS THE CALLER WROTE IT, not be's resolved capabilities — this
-// is the load of the decision: repacked-only is a PROMISE ("no GPU backend will ever touch this
-// *Model, resident or staged") that must be STATED, never INFERRED from an omission. Only the
-// literal "cpu" states it. Empty/unspecified is not a promise of anything — it is simply what a
-// caller wrote before deciding, or a generic load a DIFFERENT package's code may later hand to
-// ANY backend's own resident-build machinery outside decoder.Load's own dispatch entirely (this
-// is not hypothetical: metal's own test suite does exactly this at ~87 call sites — load
-// generically, then call metal.buildResident on the result directly, which decoder.Load has no
-// way to see coming). Getting this wrong previously (keying on be's interfaces alone, which are
-// only known for the backend the CALLER already named) broke exactly that pattern: a model
-// loaded with Backend unset resolves to the plain CPU backend, which implements none of the
-// interfaces below, so the interface-only check said "safe" — and a later, out-of-band Metal
-// residency attempt on that same model then found no canonical bytes to upload.
+// backendName is Options.Backend as the caller wrote it, not be's resolved capabilities. Repacked-only is a promise that
+// no GPU backend will ever touch this *Model, resident or staged, and a promise must be stated, never inferred from an
+// omission: only the literal "cpu" states it. An empty name promises nothing, because a generic load may later be handed
+// to any backend's resident-build machinery outside decoder.Load's dispatch (metal's tests do exactly this), and keying
+// on be's interfaces alone sees the plain CPU backend, which implements none of them, and calls it safe.
 //
-// The interface assertions stay as a SECOND, belt-and-braces guard for the "cpu" case itself:
-// if some future build ever registers a "cpu" name whose Backend value also happens to
-// implement one of these (should never happen — NewBackend("cpu") always returns the plain CPU
-// backend, in every configuration), this still declines to repacked-only rather than trust the
-// name alone. Every other backendName (a real GPU name, or empty/unspecified) returns true
-// unconditionally: canonical(+row4) stays today's default, never worse than before this policy
-// existed.
+// The interface assertions are a second guard for the "cpu" case itself: a "cpu" backend that implemented one of these
+// would still decline repacked-only. Every other backendName returns true, so canonical(+row4) stays the default.
 func wantsCanonicalInt4(backendName string, be Backend) bool {
 	if backendName != "cpu" {
 		return true
@@ -508,46 +383,28 @@ func wantsCanonicalInt4(backendName string, be Backend) bool {
 	return ok
 }
 
-// wantsRow4Fallback reports whether the arm64 row4 repack should be built ALONGSIDE canonical, as
-// a safety net for a CPU fallback (M-07, audit-metal-2026-09-12.md). Row4 is read ONLY by the
-// CPU's own decode kernel (arm64 SIMD dotprod) — no GPU backend's kernels ever read it, resident
-// or staged; it exists purely so a model that falls back to CPU decode (a declined residency
-// build, LoRA/session paths outside a resident backend's coverage) keeps its ~1.1-1.3x speed.
+// wantsRow4Fallback reports whether the arm64 row4 repack should be built alongside canonical as a safety net for a CPU
+// fallback. Only the CPU's decode kernel reads row4; no GPU backend does. It exists so a model that falls back to CPU
+// decode (a declined residency build, LoRA/session paths outside a resident backend's coverage) keeps its speed.
 //
-// False specifically for backendName == "metal": Options.Backend is the caller's own explicit
-// commitment to that backend (same "stated, never inferred" discipline wantsCanonicalInt4 above
-// already applies to "cpu"), and row4 is measured to exactly DOUBLE the resident int4 footprint
-// of every layer projection it applies to (TestW4A8Row4_loadTimeAndMemoryDelta: 223.6 MB
-// canonical + 223.6 MB row4 on the 0.5B fixture, 100.0% additional RAM). Accepting a slower CPU
-// fallback in the rare case Metal residency later declines is the trade this backs out of paying
-// on every load. True for every other backendName (cpu, cuda, webgpu, empty/unspecified) — this
-// is intentionally narrower than wantsCanonicalInt4's own "any non-cpu name" rule: CUDA/WebGPU
-// residency have not been measured against this same trade, so they keep today's default.
+// False only for backendName == "metal": Options.Backend is the caller's commitment to that backend (stated, never
+// inferred; see wantsCanonicalInt4), and row4 doubles the resident int4 footprint of every projection it applies to, so a
+// slower CPU fallback after a declined Metal residency is the price. CUDA and WebGPU residency have not been measured
+// against this trade and keep the default. Measurement: docs/code-notes/decoder.md#wantsRow4Fallback.
 func wantsRow4Fallback(backendName string) bool {
 	return backendName != "metal"
 }
 
-// repackedOnlyOrCanonical is the shared decision behind quantizeEmbedWM and
-// quantizeBatchedProjWM: given an already-quantized CANONICAL int4 WeightMat, build it
-// repacked-only (aikit audit M-22) when needCanonical is false and this core/shape can build
-// row4 (linalg.Int4Row4Usable) — closing the double nibble+scale residency the canonical+row4
-// "both" repackW4A8IfEligible policy otherwise pays (aikit's own audit M-22, cross-referenced
-// from goinfer's audit-2026-09-10.md's own M-22, an unrelated finding sharing the same label by
-// coincidence of two repos' independent numbering). Falls back to repackW4A8IfEligible's
-// existing policy whenever needCanonical is true, this core can't build row4 at all (non-arm64,
-// no dotprod), or the shape doesn't qualify — identical to what every other int4 tensor already
-// gets from quantizeWM, so this never produces a WORSE outcome than today's default.
+// repackedOnlyOrCanonical is the decision shared by quantizeEmbedWM and quantizeBatchedProjWM: given a canonical int4
+// WeightMat, build it repacked-only when needCanonical is false and this core and shape can build row4
+// (linalg.Int4Row4Usable), which avoids the double nibble+scale residency of canonical+row4. Otherwise (needCanonical,
+// no row4 on this core, or a shape that does not qualify) it applies repackW4A8IfEligible's policy, what every other int4
+// tensor gets from quantizeWM, so it is never worse than the default.
 //
-// amd64 split-half repacked-only is out of scope for both callers: split-half repacking itself
-// is already a separate, measured-marginal, parked feature (w4a8SplitHalfRepackEnabled, default
-// off), so there is no default-on amd64 path this closes yet.
+// amd64 split-half repacked-only is out of scope: split-half is parked (w4a8SplitHalfRepackEnabled, default off).
 //
-// skipRow4 (M-07, audit-metal-2026-09-12.md; wantsRow4Fallback's own doc comment has the
-// measurement) — only consulted in the needCanonical branch, since the !needCanonical branch
-// below is the CPU-only repacked-only path row4 exists FOR; skipRow4 there would defeat its own
-// purpose. Callers that must never skip row4 regardless of the backend (Embed/LMHead, read via
-// .Row() on the host on every backend) pass false unconditionally rather than threading a real
-// decision through.
+// skipRow4 is consulted only when needCanonical: the other branch is the CPU-only repacked-only path row4 exists for.
+// Callers that must never skip row4 (Embed/LMHead) pass false.
 func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if needCanonical {
 		if skipRow4 {
@@ -565,19 +422,11 @@ func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical, skipRow4 boo
 	return repackW4A8IfEligible(canon) // Int4Row4Usable said yes, so this shouldn't miss — no silent data loss either way
 }
 
-// quantizeEmbedWM is quantizeWM's Embed/LMHead-specific twin (see repackedOnlyOrCanonical for
-// the shared repacked-only-or-canonical policy). needCanonical is computed ONCE per Load call
-// (wantsCanonicalInt4(be)) and threaded down rather than a *Backend* itself, since the weight
-// builders that call this are already several calls removed from where be is constructed.
-//
-// Embed/LMHead: read via WeightMat.Row() (per-token embed lookup, layout-independent per
-// aikit's own TestWeightMatRow_repackedMatchesCanonical) and driven through matmul()/
-// matmulInto() as the LM head (single-op dispatch, gated on IsInt4() — see those functions' own
-// comments) — never through the batched q/k/v or gate/up W4A8 dispatch this same policy is ALSO
-// safe for now (quantizeBatchedProjWM, below), so this function stays even though the two now
-// share the identical repackedOnlyOrCanonical body: Embed/LMHead's safety argument (Row() +
-// single-op dispatch) is independent of the batched path's own (M=1-only, N%4==0), and a future
-// change to either dispatch shape should not silently start covering the other tensor class too.
+// quantizeEmbedWM is quantizeWM's Embed/LMHead twin; the policy is repackedOnlyOrCanonical. needCanonical is computed once
+// per Load (wantsCanonicalInt4) and threaded down. Embed/LMHead are read via WeightMat.Row() (layout-independent) and
+// driven through matmul/matmulInto as the LM head (single-op dispatch gated on IsInt4), never through the batched q/k/v
+// or gate/up dispatch. It stays separate from quantizeBatchedProjWM although the bodies match: the two safety arguments
+// are independent, and a change to one dispatch shape must not silently start covering the other tensor class.
 func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) linalg.WeightMat {
 	if mode != quantInt4 || fakeQuantScheme != "" {
 		return quantizeWM(w, mode)
@@ -587,46 +436,26 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 		return quantizeWM(w, mode) // already quantized, or empty — quantizeWM's own no-op path
 	}
 	canon := linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
-	// skipRow4 is always false here: Embed/LMHead are read via .Row() on the host on every
-	// backend, so M-07's row4-skip trade is not this tensor class's call to make (see
-	// streamQuantizedEmbed's own doc comment — the streaming path makes the identical choice).
+	// skipRow4 is false: Embed/LMHead are read via .Row() on the host on every backend, so the row4-skip trade is not this
+	// class's call (streamQuantizedEmbed makes the same choice).
 	return repackedOnlyOrCanonical(canon, needCanonical, false)
 }
 
-// quantizeBatchedProjWM is quantizeWM's twin for the attention Q/K/V and MLP gate/up
-// projections — the tensors reached through the batched W4A8 dispatch (matmulW4A8Batch /
-// wmW4A8Op / isW4A8), which aikit's own audit M-22 note flags as unsafe for a repacked-only op
-// in general: MatmulBTW4A8Batch has no row4 TILE (unlike WeightMat.MatmulBTW4A8Into's own M>1
-// case), so a repacked-only op PANICS if it is ever reached at M>1, or when a fan-out shard
+// quantizeBatchedProjWM is quantizeWM's twin for attention Q/K/V and MLP gate/up, the tensors reached through the
+// batched W4A8 dispatch (matmulW4A8Batch, wmW4A8Op, isW4A8). That dispatch is unsafe for a repacked-only op in general:
+// MatmulBTW4A8Batch has no row4 tile, so a repacked-only op panics if it is reached at M>1 or when a fan-out shard
 // boundary splits one of its quads (N%4 != 0 at the boundary).
 //
-// Verified safe for THIS codebase's actual two batch call sites (decoder/attention.go's
-// causalAttention, decoder/mlp.go's gatedMLP): both are decode-only functions that call
-// matmulW4A8Batch with a hardcoded M=1 literal — never reached from the batched-M prefill path,
-// which uses matmul()/matmulInto() per projection instead (safe at any M, since those dispatch
-// through WeightMat.MatmulBTW4A8Into directly, not the batch entry point). wmW4A8Op itself needs
-// no change: it already builds the correct W4:nil/Row4:.../Row4Scales:... op shape for a
-// repacked-only tensor (aikit's audit confirms this), and isW4A8's IsInt4() gate (already fixed,
-// this same audit item) is what makes such a tensor reach it at all. The remaining condition —
-// N%4==0 — is exactly linalg.Int4Row4Usable's own rows%4==0 check, applied per tensor by
-// repackedOnlyOrCanonical below, so a shape that would violate the quad-boundary constraint
-// never gets built repacked-only in the first place.
+// It is safe for the two batch call sites, causalAttention and gatedMLP: both are decode-only and call matmulW4A8Batch
+// with a literal M=1, while prefill uses matmul/matmulInto per projection, which are safe at any M. wmW4A8Op builds the
+// right op shape for a repacked-only tensor and isW4A8's IsInt4 gate lets it through. The N%4==0 condition is
+// linalg.Int4Row4Usable's rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
+// built repacked-only.
 //
-// Down-proj, the router, and MoE expert weights are deliberately NOT covered here: down-proj is
-// unverified against this same batch-path constraint (it is never one of the two batched
-// tensors today, but has not been separately audited), and expert/layer weights read through a
-// read-only mmap span (paged .giw loading) are explicitly excluded by aikit's own note — paging
-// has no load-time repack step, so they stay canonical-only regardless of this policy.
-//
-// skipRow4 (M-07, audit-metal-2026-09-12.md) is ALSO scoped to just this function's own tensor
-// class for the same reason: down-proj/router/MoE-expert weights route through quantizeWM
-// (weightmat.go's own generic quantizer), a SEPARATE function with its OWN unconditional
-// repackW4A8IfEligible call that takes no needCanonical/backend signal at all — used from ~40
-// family-specific call sites across weights.go's per-architecture builders. Reaching those too
-// would multiply this fix's blast radius well past what this pass measured or verified; left as
-// a separate, larger follow-up. This function's own scope (Q/K/V/gate/up) is a real, smaller
-// slice of the measured 223.6 MB/223.6 MB row4 overhead (TestW4A8Row4_loadTimeAndMemoryDelta),
-// not the whole of it.
+// Down-proj, the router and MoE expert weights are deliberately not covered: down-proj has not been audited against the
+// batch-path constraint, and expert weights read through a read-only mmap span (paged .giw loading) have no load-time
+// repack, so they stay canonical-only. skipRow4 is scoped to this class too; those other projections take the row4 skip
+// through quantizeWMSkipRow4.
 func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if mode != quantInt4 || fakeQuantScheme != "" {
 		return quantizeWM(w, mode)
@@ -639,15 +468,10 @@ func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, sk
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4)
 }
 
-// isBatchedProjTensor reports whether name — llama.cpp's own GGUF tensor-name convention — is
-// one of the two batched-W4A8-dispatch projection groups quantizeBatchedProjWM covers: attention
-// Q/K/V or MLP gate/up. Suffix-matched against the EXACT standard names (not a substring check),
-// so an MoE expert tensor ("ffn_gate_exps.weight") or router ("ffn_gate_inp.weight") never
-// matches — both are already excluded from this policy for their own reasons (see
-// quantizeBatchedProjWM's doc comment) — and a family-specific split projection (e.g. an MLA
-// q_a_proj/q_b_proj pair) simply stays on the existing quantizeWM/streamQuantized path
-// automatically, with no per-family audit needed: only names this repo/llama.cpp's own
-// convention actually produces for a plain dense Q/K/V/gate/up ever match.
+// isBatchedProjTensor reports whether name (llama.cpp's GGUF tensor-name convention) is attention Q/K/V or MLP gate/up,
+// the groups quantizeBatchedProjWM covers. It suffix-matches the exact standard names, not a substring, so an MoE expert
+// ("ffn_gate_exps.weight") or router ("ffn_gate_inp.weight") never matches, and a family-specific split projection (an
+// MLA q_a_proj/q_b_proj pair) stays on the quantizeWM/streamQuantized path with no per-family audit.
 func isBatchedProjTensor(name string) bool {
 	for _, suf := range [...]string{"attn_q.weight", "attn_k.weight", "attn_v.weight", "ffn_gate.weight", "ffn_up.weight"} {
 		if strings.HasSuffix(name, suf) {
@@ -657,13 +481,10 @@ func isBatchedProjTensor(name string) bool {
 	return false
 }
 
-// GIWTarget names the single consumer a .giw bundle (or one cmd/prequant run) is
-// built for, so the writer can choose the one on-disk int4 layout that consumer
-// actually reads (docs/tasks/task-int4-layout-2026-09.md's L2 — the .giw analogue of
-// wantsCanonicalInt4's load-time decision). GIWTargetNone ("") means
-// unknown/multi-consumer and always keeps every int4 tensor canonical (kind 3) —
-// the safe default: a bundle nobody has promised to a single reader must stay
-// portable, mirroring wantsCanonicalInt4's own "never infer from an omission" rule.
+// GIWTarget names the single consumer a .giw bundle (or one cmd/prequant run) is built for, so the writer can choose the
+// one on-disk int4 layout that consumer reads. GIWTargetNone ("") means unknown or multi-consumer and keeps every int4
+// tensor canonical (kind 3), the safe default: a bundle nobody has promised to a single reader must stay portable, as
+// wantsCanonicalInt4 never infers a promise from an omission.
 type GIWTarget string
 
 const (
@@ -689,9 +510,10 @@ func GIWTargetForBackend(backendName string) GIWTarget {
 	case "cpu":
 		switch runtime.GOARCH {
 		case "arm64":
-			// A kind-5 (row4-only) file is a promise that THIS core can read it, and aikit's row4 kernels need DotProd (Int4Row4Usable). A core without it (a Raspberry Pi 4, or Windows on ARM,
-			// where aikit assumes none) that wrote a cpu-arm64 sidecar would refuse to load its own file and rebuild it on every start: found 2026-10-04 by the first windows-arm64 CI run.
-			// Such a core builds canonical bundles, which any core loads. A cpu-arm64 bundle can still be built for a DotProd reader by naming the target (-target cpu-arm64).
+			// A kind-5 (row4-only) file promises that this core can read it, and aikit's row4 kernels need DotProd
+			// (Int4Row4Usable). A core without it (a Raspberry Pi 4, Windows on ARM, where aikit assumes none) would refuse to load
+			// its own cpu-arm64 file and rebuild it on every start, so it builds canonical bundles, which any core loads. A
+			// cpu-arm64 bundle can still be built for a DotProd reader by naming the target (-target cpu-arm64).
 			if linalg.Int4Row4Usable(4, 32, 32) {
 				return GIWTargetCPUArm64
 			}
@@ -746,11 +568,9 @@ func isW8A8(w *linalg.WeightMat) bool {
 func wmInt8(w *linalg.WeightMat) []int8      { q8, _, _, _ := w.Int8(); return q8 }
 func wmScales(w *linalg.WeightMat) []float32 { _, s, _, _ := w.Int8(); return s }
 
-// isW4A8 reports whether w is int4-resident, the only precision with a batched
-// dispatch on the W4A8 path (audit R-06). IsInt4(), not Int4()'s narrower "canonical
-// bytes present" ok — a repacked-only WeightMat (aikit audit M-22) is still int4 and
-// still routes here; wmW4A8Op already builds the correct W4:nil/Row4:... op shape for
-// it, once this gate stops excluding it.
+// isW4A8 reports whether w is int4-resident, the only precision with a batched dispatch on the W4A8 path. It uses
+// IsInt4(), not Int4()'s narrower "canonical bytes present": a repacked-only WeightMat is still int4 and routes here, and
+// wmW4A8Op builds the matching op shape for it.
 func isW4A8(w *linalg.WeightMat) bool {
 	return w.IsInt4()
 }
@@ -767,44 +587,35 @@ func Int4F32(w *linalg.WeightMat) (q4 []byte, scales []float32, group int, ok bo
 	return q4, scales, group, ok
 }
 
-// wmW4A8Op builds one linalg.W4A8Op for the batched W4A8 dispatch: canonical
-// nibbles/scales are always present when isW4A8(w), and Row4/Row4Scales are
-// populated only when RepackInt4Row4 has already run for this tensor (arm64,
-// heap-backed weights only — see repackW4A8Row4IfEligible) — nil otherwise, which
-// linalg.MatmulBTW4A8Batch reads as "run canonical for this op". group is read
-// separately (assumed shared across the batch, exactly like MatmulBTW4A8Into's own
-// single-scalar signature) since every op in one call comes from the same layer's
-// quant config.
+// wmW4A8Op builds one linalg.W4A8Op for the batched W4A8 dispatch. Canonical nibbles and scales are present unless the
+// tensor is repacked-only (then W4 is nil and Row4 carries the data). Row4/Row4Scales are populated only after
+// RepackInt4Row4 has run (arm64, heap-backed weights; see repackW4A8Row4IfEligible) and are nil otherwise, which
+// linalg.MatmulBTW4A8Batch reads as "run canonical for this op". group is shared across the batch, as in
+// MatmulBTW4A8Into: every op in one call comes from the same layer's quant config.
 func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) {
 	q4, q4s, group, _ := w.Int4F16()
 	row4, row4s, _ := w.Int4Row4F16()
 	return linalg.W4A8Op{W4: q4, ScalesF16: q4s, Row4: row4, Row4ScalesF16: row4s, Dst: dst, N: w.Rows()}, group
 }
 
-// matmulWSPool recycles the Workspace matmul() falls back to when the caller has no
-// decodeScratch to hand in (dflash/dspark, and every forward_*.go family that
-// hasn't been threaded onto matmulInto). A fresh `var ws linalg.Workspace` per call
-// starts with nil i8/f32 scratch, so Into() reallocates BOTH the Workspace and its
-// internal quant buffers on every single matmul (P8-class allocation, same shape as
-// moeMLP's — see scratch.go). Pooling reuses the grown i8/f32 backing arrays across
-// calls; sync.Pool's own GC-driven eviction keeps a workspace that briefly saw one
-// huge call (e.g. the vocab-sized LM head) from pinning that size forever.
+// matmulWSPool recycles the Workspace matmul falls back to when the caller has no decodeScratch. A fresh Workspace per
+// call would reallocate its quant buffers on every matmul. sync.Pool's GC-driven eviction keeps a workspace that saw one
+// huge call (the vocab-sized LM head) from pinning that size forever.
 var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
 
-// w4a8Act is one activation quantized once for several CPU W4A8 matmuls over it (audit R-13): q, k and v of one
-// normed row, gate and up, every expert of a MoE layer. aikit's quantizing entry re-quantized the same input in each
-// call; quantization is deterministic, so the repeats were dead work. prepare quantizes exactly as matmul's CPU W4A8
-// path would (a workspace carrying the weight's activation group), and matmulPre runs aikit's Pre entry on it, so the
-// result is the bits matmul gives. A weight the block does not fit (another K, another activation group, a backend
-// that may take the call) runs matmul instead.
-// w4a8PreOff (tests only) makes prepare leave every block unset, so each matmul quantizes its own input as before
-// R-13, for the gate that compares the two and the A/B that times them. w4a8PreCalls counts the matmuls that ran on a
-// shared block (a test reads it to see the path was taken).
+// w4a8PreOff (tests only) makes prepare leave every block unset, so each matmul quantizes its own input, for the gate
+// that compares the two paths and the A/B that times them. w4a8PreCalls counts the matmuls that ran on a shared block, so
+// a test can see the path was taken.
 var (
 	w4a8PreOff   = false
 	w4a8PreCalls atomic.Int64
 )
 
+// w4a8Act is one activation quantized once for several CPU W4A8 matmuls over it: q, k and v of one normed row, gate and
+// up, every expert of a MoE layer. Quantization is deterministic, so repeating it per call was dead work. prepare
+// quantizes exactly as matmul's CPU W4A8 path would, and matmulPre runs aikit's Pre entry on it, so the result is the bits
+// matmul gives. A weight the block does not fit (another K, another activation group, a backend that may take the call)
+// runs matmul instead.
 type w4a8Act struct {
 	q        linalg.ActQ
 	set      bool
@@ -837,7 +648,7 @@ func (p *w4a8Act) prepare(be Backend, w *linalg.WeightMat, a []float32, M int) {
 	p.set, p.group, p.M = true, w.ActQuantGroup(), M
 }
 
-// matmulPre is matmul(be, w, a, dst, M), using p's block when it was quantized for an input w can take (R-13).
+// matmulPre is matmul(be, w, a, dst, M), using p's block when it was quantized for an input w can take.
 func matmulPre(be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
 	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
 		matmul(be, w, a, dst, M)
@@ -851,61 +662,32 @@ func matmulPre(be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M 
 	w4a8PreCalls.Add(1)
 }
 
-// matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
-// with goinfer's backend routing: the f32, W8A8 and W4A8 paths can run on a GPU backend
-// (be.MatmulBT / QuantBackend.MatmulW8A8 / QuantBackend4.MatmulW4A8, the last a G6
-// docs/tasks/task-gpu-paths-2026-09.md addition); weight-only int8 (Q8) stays CPU. (The old
-// weightMat.matmul, now a free function over linalg.WeightMat.)
+// matmul computes dst[M, rows] = a[M, cols] . w^T, dispatching on w's precision with goinfer's backend routing: the f32,
+// W8A8 and W4A8 paths can run on a GPU backend (be.MatmulBT, QuantBackend.MatmulW8A8, QuantBackend4.MatmulW4A8);
+// weight-only int8 (Q8) stays on the CPU.
 func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if w.IsInt4() {
-		// G6 (docs/tasks/task-gpu-paths-2026-09.md): staged int4 backend consult, mirroring the W8A8
-		// branch below — matmulInto's own int4 branch gets the same fix, for the same reason.
-		//
-		// Nested under Int4()'s narrower ok (canonical bytes present), not the outer IsInt4():
-		// the staged consult hands q4/q4s to the GPU backend on EVERY call (no persistent
-		// upload), so a repacked-only tensor (no canonical bytes, aikit audit M-22) has nothing
-		// to hand it here — reconstructing canonical on demand would cost a canonical-sized
-		// allocation per token, the wrong shape for a per-call path. It falls through to
-		// w.MatmulBTW4A8Into below instead, which dispatches on whichever layout is actually
-		// present (canonical, row4, or split-half) via aikit's own per-arch method.
-		// A per-group activation weight (ActQuantGroup) skips the staged consult: no staged GPU
-		// kernel reads per-group activation scales.
+		// Staged int4 backend consult, mirrored in matmulInto and the W8A8 branch below. Nested under Int4()'s ok (canonical
+		// bytes present), not IsInt4(): the consult hands q4/q4s to the backend on every call, so a repacked-only tensor has
+		// nothing to hand it, and rebuilding canonical per token would allocate on a per-call path. It falls through to
+		// w.MatmulBTW4A8Into, which dispatches on whichever layout is present. A per-group activation weight (ActQuantGroup)
+		// skips the consult: no staged GPU kernel reads per-group activation scales.
 		if q4, q4s, group, ok := w.Int4F16(); ok && w.ActQuantGroup() == 0 {
 			if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
 		}
-		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M this CPU
-		// path reaches (decode AND prefill): it stays integer (int4 weight × int8
-		// activation) and benchmarks faster than the dequant-to-f32 Q4 path at every M,
-		// and its own per-output result is M-independent so, taken alone, batched
-		// prefill is bit-identical to sequential decode ON THIS KERNEL.
+		// int4 weights run the int8-activation W4A8 integer kernel at every M this CPU path reaches. Its per-output result is
+		// M-independent, so batched prefill matches sequential decode on this kernel. That does not make the whole matmul call
+		// M-independent: the QuantBackend4 consult above takes M=1 on a staged webgpu backend (its MatmulW4A8 declines any
+		// M != 1) through a different kernel, so decode and verify run two kernels there. Model.SpecDecodeConflict refuses
+		// speculative decoding for that combination; read it before assuming this path covers a device-backed one.
 		//
-		// THAT DOES NOT MAKE THE WHOLE matmul() CALL M-INDEPENDENT (M-09,
-		// docs/audit-2026-09-10.md): the QuantBackend4 consult just above intercepts
-		// M=1 for a staged webgpu backend (its own MatmulW4A8 declines any M != 1,
-		// gpu/backend.go) and routes it through a completely different kernel (a WGSL
-		// f32 GEMV with f16 group scales) — only M>1 (prefill, speculative verify)
-		// actually falls through to the bit-identical-with-itself CPU kernel this
-		// comment describes. A staged-int4 model on webgpu therefore decodes and
-		// verifies on two DIFFERENT kernels — decoder.Model.SpecDecodeConflict
-		// (decoder/spec_verify_guard.go) now refuses speculative decoding for exactly
-		// this combination (a webgpu backend + int4/int4mix quant); see that guard
-		// before assuming this comment covers the device-backed path too.
+		// The pooled Workspace lowers the fan-out threshold (see int4ParThreshold). Each Get is exclusive to this call, so
+		// concurrent decode streams never share one.
 		//
-		// The pooled Workspace lowers the fan-out threshold below aikit's default so the
-		// small int4 DECODE matmuls parallelize instead of running serial — see
-		// int4ParThreshold. Each Get is exclusive to this call (Put deferred until
-		// return), so concurrent decode streams never share one — same race-freedom as
-		// the old per-call ws, just with its buffers surviving between calls.
-		//
-		// w.MatmulBTW4A8Into (not the raw linalg.MatmulBTW4A8Into free function) so the
-		// load-time layout repacks actually get used here — the repack alone does
-		// nothing without this call using it. BOTH arches depend on this one line:
-		// arm64's split-half + 4-row-interleave (RepackInt4Row4, docs/task-w4a8-neon-
-		// bandwidth.md) and amd64's split-half (RepackInt4SplitHalf, queue-performance
-		// P14 item 3). Neither has a dispatch of its own — aikit picks the layout
-		// inside this method, at M=1 only, whenever the repack populated it.
+		// Use w.MatmulBTW4A8Into, not the raw linalg free function: aikit picks the repacked layout (arm64 row4, amd64
+		// split-half) inside it, at M=1 only, and the load-time repacks do nothing without this call.
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)
@@ -918,13 +700,9 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			if qb, ok := be.(QuantBackend); ok && w.ActQuantGroup() == 0 && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
-			// Pooled Workspace with the int8 decode threshold — the free-matmul path
-			// (e.g. gemma4's own forward) has no scratch Workspace, so without this its
-			// W8A8 decode matmuls would run at aikit's conservative 16.78M default. Same
-			// mechanism as the int4 branch above. matmulInto() gets this via the
-			// decodeScratch Workspace instead. Threshold differs from int4's (300K vs
-			// 1<<20) — the crossover is kernel- and model-specific, measured separately;
-			// see DefaultDecodeParallelThreshold + int4ParThreshold.
+			// Pooled Workspace with the int8 decode threshold: the free-matmul path (e.g. gemma4's own forward) has no scratch
+			// Workspace, and without this its W8A8 decode matmuls would run at aikit's conservative default. matmulInto gets the same
+			// through decodeScratch. The threshold differs from int4's (see DefaultDecodeParallelThreshold and int4ParThreshold).
 			ws := matmulWSPool.Get().(*linalg.Workspace)
 			defer matmulWSPool.Put(ws)
 			ws.SetThreshold(DefaultDecodeParallelThreshold)
@@ -932,10 +710,8 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 			return
 		}
-		// Pooled Workspace, same reason as the W8A8 case just above — the bare
-		// linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every call
-		// (docs/completed/lmhead-workspace-fix.md, Step 1: the LM head's own weight-only
-		// Q8 path, the largest per-token cost measured in the W4A8 plumbing phase).
+		// Pooled Workspace, as in the W8A8 case: the bare linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every
+		// call, and the weight-only Q8 LM head is the largest per-token cost on this path.
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
@@ -943,8 +719,8 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		return
 	}
 	if w.Kind() == "q4k" {
-		// Native Q4_K (quantQ4K): CPU only — no backend has a Q4_K kernel yet, and residency declines
-		// the mode. Per-32 activations are built into the kind.
+		// Native Q4_K (quantQ4K) runs on the CPU here: there is no staged-backend consult for it. Per-32 activations are built
+		// into the kind.
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)
@@ -955,24 +731,8 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	be.MatmulBT(a, f32, dst, M, w.Cols(), w.Rows())
 }
 
-// matmulInto is matmul using the caller's Workspace, so steady-state decode quantizes the activation
-// once into reusable scratch instead of allocating per call.
-//
-// P7 — this used to dispatch on `isW8A8(w)` and send EVERYTHING ELSE to matmul, which allocates a
-// fresh Workspace. So W4A8 never reached the per-stream Workspace its six call sites already hand
-// in, purely because the dispatch named one quantization instead of asking the question it meant.
-// That is the DISPATCH form of sibling drift (see parity-coverage-policy.md): a check that names one
-// member fails to CATCH divergences, a dispatch that names one member CREATES them.
-//
-// The question it meant is "does this weight have an Into form that takes a Workspace", so that is
-// what it asks now. Adding a third such quantization needs a case here and nothing else.
-//
-// Race-freedom is unchanged and does not need a new argument: `ws` is the per-stream Workspace on
-// decodeScratch, and "a cache is one generation stream, so the buffers are never shared
-// concurrently" (decoder/scratch.go). The per-call Workspace in matmul stays exactly as it was, for
-// callers that have no scratch at all.
-// matmulIntoPre is matmulInto(ws, be, w, a, dst, M), using p's block when it was quantized for an input w can take
-// (R-13; see w4a8Act).
+// matmulIntoPre is matmulInto(ws, be, w, a, dst, M), using p's block when it was quantized for an input w can take (see
+// w4a8Act).
 func matmulIntoPre(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
 	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
 		matmulInto(ws, be, w, a, dst, M)
@@ -984,6 +744,13 @@ func matmulIntoPre(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, p *w4a
 	w4a8PreCalls.Add(1)
 }
 
+// matmulInto is matmul using the caller's Workspace, so steady-state decode quantizes the activation once into reusable
+// scratch instead of allocating per call. It dispatches on the question "does this weight have an Into form that takes a
+// Workspace", not on one quantization's name (a dispatch that names one member creates sibling drift, see
+// docs/parity-coverage-policy.md); adding a third such quantization needs a case here and nothing else.
+//
+// Race-freedom: ws is the per-stream Workspace on decodeScratch, and a cache is one generation stream, so the buffers are
+// never shared concurrently (decoder/scratch.go). matmul's per-call Workspace stays for callers with no scratch at all.
 func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if isW8A8(w) {
 		q8, scales, _, _ := w.Int8()
@@ -995,29 +762,23 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		return
 	}
 	if q8, scales, w8a8, ok := w.Int8(); ok && !w8a8 {
-		// Weight-only Q8 (the int8-pinned LM head, in int4 mode): thread the
-		// caller's own scratch Workspace directly, the same as the branches
-		// above/below, instead of falling through to matmul()'s pool round-trip.
-		// docs/completed/lmhead-workspace-fix.md Step 1.
+		// Weight-only Q8 (the int8-pinned LM head in int4 mode): thread the caller's own scratch Workspace rather than falling
+		// through to matmul's pool round-trip.
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
 		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
 	if w.IsInt4() {
-		// G6 (docs/tasks/task-gpu-paths-2026-09.md): the staged int4 backend consult this branch
-		// never had, mirroring the isW8A8 branch's QuantBackend check above.
-		//
-		// Nested under Int4()'s ok, not the outer IsInt4() — see matmul()'s own comment on
-		// this same shape for why a repacked-only tensor cannot serve the staged consult.
+		// Staged int4 backend consult, as in matmul: nested under Int4()'s ok (canonical bytes present), not IsInt4(), because a
+		// repacked-only tensor has no canonical bytes to hand a staged backend.
 		if q4, q4s, group, ok := w.Int4F16(); ok && w.ActQuantGroup() == 0 {
 			if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
 		}
 		ws.SetActQuantGroup(w.ActQuantGroup())
-		// Same threshold matmul's fresh Workspace sets — the point of the reuse is to stop
-		// allocating one per projection per token, not to change how the work is fanned out.
-		// w.MatmulBTW4A8Into, not the raw free function — see matmul's own comment above.
+		// Same threshold as matmul's fresh Workspace: reusing one only stops a per-projection, per-token allocation and does not
+		// change how the work fans out. w.MatmulBTW4A8Into, not the raw free function (see matmul).
 		ws.SetThreshold(int4ParThreshold)
 		w.MatmulBTW4A8Into(ws, a, dst, M)
 		return
