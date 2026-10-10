@@ -7,7 +7,8 @@
 >
 > **CC0 DONE 2026-10-09/10 on `comment-diet-2026-10` (not merged, not pushed):** lint support (symbol citations, pinned records) with tests
 > first; 284 live-doc citations now name declarations; 35 records pinned (`docs/measurements/code-comments-2026-10/pins.tsv`); the door is
-> closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC1–CC6 not started.
+> closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC2 (`gate comments-only`) built and
+> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 wave A done (§7). Waves B and C, CC5 and CC6 not started.
 
 ## 1. Why
 
@@ -236,6 +237,27 @@ Wave A is what no open branch touches today. Wave B waits for `s10-pixtral` and 
 `git diff --name-only main...<branch> -- <pkg>` for each. A file an open branch touches is skipped and picked up after
 that branch merges; rewriting a comment block someone else is editing guarantees a conflict for no gain.
 
+> **Wave A done 2026-10-10 (branches merged into `comment-diet-2026-10`, not pushed).** Comment lines, whole non-test package, before →
+> after (`scripts/comment_diet.py census`; the "skipped" column is the files left alone because an unmerged branch edits them):
+>
+> | package | before → after | cut | history-marked | skipped (open branch) |
+> |---|---|---|---|---|
+> | `cuda` | 4,112 → 3,293 | −20% | 477 → 262 | `resident.go` (`q4k-narrow`) |
+> | `metal` | 3,471 → 3,349 | −4% | 586 → 547 | `alias`, `backend`, `gemma4_moe`, `model`, `moe`, `prefill`, `gumbel`, `gumbel_sample`, `kernels` (`config-phase4-metal`, `r7b-metal-verify-mac`) |
+> | `gpu` | 2,739 → 2,456 | −11% | 307 → 244 | `decoderunner.go`, `residency.go` (`webgpu-nogqa-second-pass`); `prefillrunner.go` was the pilot |
+> | `cmd/gate` | 1,719 → 1,341 | −22% | 137 → 33 | none (`comments_only.go` is new, under the rule) |
+> | `constrain` | 678 → 600 | −12% | 55 → 12 | none |
+> | `tokenizer` | 756 → 652 | −14% | 51 → 8 | none |
+> | `pull` | 388 → 360 | −8% | 33 → 13 | none |
+> | `internal/prequant` | 258 → 217 | −16% | 33 → 8 | none |
+> | **total** | **14,121 → 12,268** | **−14%** | **1,679 → 1,127** | |
+>
+> Over only the files that were worked the cut is larger (`cuda` −32%, `cmd/gate` −24%, `gpu` −18%, `metal` −16%). The four skipped
+> branches are 2-3 weeks old and one to four commits each; `metal` is where it costs most (about 3,400 of its 4,341 comment lines are in
+> skipped files). The combined diff against the pre-wave base is `gate comments-only` GREEN over 117 `.go` files, with `gofmt`,
+> `go vet` (tagged variants) and the citation lint. History-marked lines that remain are mostly `docs/` pointers, which the marker
+> regex counts. Moved history is in `docs/code-notes/{cuda,metal,gpu,cmd-gate,constrain,tokenizer,pull,internal-prequant}.md`.
+
 One commit per package, or per file group in `decoder`. Subject:
 `comments(<pkg>): history to docs/code-notes, guardrails kept (<before> → <after> comment lines)`. Body: the CC2
 moved-text report, and any open work found (CC1.3).
@@ -268,6 +290,22 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
 1. **After CC3:** roll out as is, adjust the rule, or stop at CC0 (which pays for itself without the rest).
 2. **After CC4:** CC6's diff mode stays a warning or becomes a refusal.
 3. **Open work found in comments with no owning doc** — listed here as packages are done:
+   - **`gpu/kv_slots.go:slotsBeforeContext`**: context shrinking on a discrete Vulkan GPU waits on a measurement of how a failed
+     allocation behaves on real Vulkan hardware (`docs/QUEUE.md` says only "clamp-only"). `docs/code-notes/gpu.md#slotsBeforeContext`.
+   - **`gpu/attention.go` (top of file)**: Metal's `float(pos)*invf[dd]` sin/cos pattern is unmeasured at long context.
+     `docs/code-notes/gpu.md`, section "Stage 3 attention primitives: long-context RoPE".
+   - **`metal/batch.go:promptStepAboveFloor`** is off "until the owner decides", and **`metal/paged_fence.go:pagedFenceOn`** is off
+     (measured 0.85-0.88x); neither has a queue entry. The `pagedFenceOn` "re-measure on M26 before turning it on" is the wave-A
+     agent's gloss, not the original text.
+   - **`cuda/vision_encoder.go:addInPlaceHost`**: the tower's residual add round-trips through the host; a device-side kernel was
+     noted as a natural follow-on. `docs/code-notes/cuda.md`.
+   - **`cmd/gate/parity.go:whyNoResult`** checks `-run` selection only, not build-tag reachability, so a tagged test that cannot
+     compile is reported as "selected … but reported nothing". Recorded only in `docs/completed/audit-2026-09-02.md` (N-41).
+   - **`tokenizer`, `byteLevelKnobs`**: a GGUF with `pre="default"` (or none) is walked with GPT-2's shape; llama.cpp's default is a
+     different multi-pass shape and needs a new `splitShape` and goldens. Recorded only in `docs/completed/audit-2026-09-10.md` (N-72).
+   - Already owned, listed so they are not re-found: `cuda` `PrefillSeedArgmax` cannot be cancelled (`docs/queue-performance.md`);
+     `constrain` N-79 control tokens in constrained JSON strings (`docs/audit-2026-09-10.md`, deferred); `metal` qGate LoRA gap
+     (`docs/tasks/task-gpu-paths-2026-09.md`).
    - **`gpu/prefillrunner.go:runModelToModelW`** (CC3 pilot): bias prefill on Metal still diverges past nKeys~15 (cosine
      ~0.997-0.999 against sequential decode, not float noise), while Vulkan is bit-exact. The comment named the next step: a
      fused residual-epilogue kernel for O-proj/down-proj (the first attempt regressed Vulkan and was removed), isolated
