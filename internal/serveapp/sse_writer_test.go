@@ -17,17 +17,14 @@ import (
 	"time"
 )
 
-// C-06: THE HEARTBEAT GOROUTINE AND THE HANDLER WRITE THE SAME ResponseWriter.
+// The heartbeat goroutine and the handler write the same ResponseWriter, and net/http's response/bufio.Writer
+// is not safe for concurrent Write/Flush: the ticker owns w while the handler is silent, and the incremental
+// tool paths emit prose deltas to the same w in that window. heartbeat_test.go's model never emits prose, so
+// the overlap never happens there and -race has nothing to observe.
 //
-// G19 started a ticker that owns w while the handler is silent; G21 then made the incremental tool
-// paths emit prose deltas to that same w during the same window. net/http's response/bufio.Writer
-// is not safe for concurrent Write/Flush. The existing gate could not see it:
-// heartbeat_test.go's model "never emits prose", so the overlap never happens there and -race has
-// nothing to observe.
-//
-// This drives the overlap directly. Run with -race, which is what turns it from "probably fine" to
-// a verdict — the failure mode is a torn frame or a bufio panic, and the panic would be in the
-// TICKER goroutine, outside net/http's per-request recover, i.e. the process.
+// This drives the overlap directly. Run with -race, which is what makes it a verdict: the failure is a torn
+// frame or a bufio panic, and the panic would be in the TICKER goroutine, outside net/http's per-request
+// recover, i.e. the process. Audit C-06.
 func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ss := newSSEWriter(rec, rec)
@@ -38,11 +35,10 @@ func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 
 	stop := sseHeartbeat(ss)
 	var wg sync.WaitGroup
-	// Send until the ticker has written at least one heartbeat into the stream, not for a fixed time: 800 small
-	// writes, or then 20ms of them, can finish before the first tick on a runner with a coarse timer. It failed
-	// that way with "no heartbeat frame at all" on the macOS runner and three times on the Windows ones (about
-	// 15.6ms timer granularity; 2026-10-08, -09, -09). The watcher reads the recorder under the writer's own lock,
-	// so the check is race-free; the 5s cap turns a heartbeat that never comes into the failure below, not a hang.
+	// Send until the ticker has written at least one heartbeat, not for a fixed time: a few hundred small writes
+	// can finish before the first tick on a runner with a coarse timer (about 15.6ms on the Windows and macOS
+	// runners). The watcher reads the recorder under the writer's own lock, so the check is race-free; the 5s cap
+	// turns a heartbeat that never comes into the failure below, not a hang.
 	var pinged atomic.Bool
 	watchDone := make(chan struct{})
 	go func() {
@@ -89,12 +85,10 @@ func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 	}
 }
 
-// M-17: a client that stops READING must not pin the handler forever.
-//
-// sseSend's Flush blocked in net.Conn.Write with no deadline, so a stalled reader held the model's
-// queue slot — r.Context() cancels when the connection CLOSES, which a stalled client never does —
-// and every other request queued then 429'd. The fix is a per-write deadline, which is not the
-// server-wide WriteTimeout the M3 comment conflated it with.
+// A client that stops READING must not pin the handler: sseSend's Flush would block in net.Conn.Write with no
+// deadline, holding the model's queue slot (r.Context() cancels when the connection CLOSES, which a stalled
+// client never does) so every request queued behind it gets a 429. The fix is a per-write deadline, distinct
+// from the server-wide WriteTimeout. Audit M-17.
 func TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking(t *testing.T) {
 	old := sseWriteTimeout
 	sseWriteTimeout = 30 * time.Millisecond
@@ -125,13 +119,10 @@ func TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking(t *testing.T) {
 	}
 }
 
-// TestSSEJSONSender_cancelsOnWriteFailure is N-23's other half (docs/audit-2026-09-10.md):
-// sseWriter.frame's write deadline (proven above) stops a stalled write from blocking forever,
-// but handleWebPull (webui.go) still needs THAT failure to actually stop the pull — otherwise
-// the goroutine returns from send but pull.Download keeps running against a dead client, still
-// pinning the single-flight pullState until the download finishes or errors on its own. This
-// pins the wiring sseJSONSender exists for: a failed frame must call the CancelFunc, the same
-// way the r.Context() cancellation already stops Download for an outright closed tab.
+// TestSSEJSONSender_cancelsOnWriteFailure: sseWriter.frame's write deadline (proven above) stops a stalled
+// write blocking forever, but handleWebPull (webui.go) needs that failure to stop the pull, or pull.Download
+// keeps running against a dead client and pins the single-flight pullState. This pins the wiring sseJSONSender
+// exists for: a failed frame must call the CancelFunc. Audit N-23.
 func TestSSEJSONSender_cancelsOnWriteFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var cancelled int32
@@ -218,21 +209,12 @@ type nopFlusher struct{}
 
 func (nopFlusher) Flush() {}
 
-// N-24 (docs/audit-2026-09-10.md): EVERY lm.drive/driveVL STREAMING SITE MUST START A HEARTBEAT,
-// NOT ONLY THE BUFFER-THEN-STREAM ONES.
-//
-// TestSSE_everyBufferedStreamSiteHeartbeats below (M-19) only classifies buffer-then-stream
-// callbacks, and only ones that literally call lm.drive( — a site that streams per token as it
-// generates is deliberately exempted there (unconditionalStreamCall), and a site that calls
-// lm.driveVL( instead of lm.drive( is invisible to driveCallback's own substring search. Neither
-// exemption holds for the gap N-24 is about: the PREFILL window, which is silent no matter how a
-// site streams once tokens start, and applies identically to drive and driveVL. Six sites had it —
-// serveChatText and serveCompletion (openai.go, drive), streamMessages's plain-text branch
-// (anthropic_stream.go, drive), serveVisionChatWith and serveVisionMessages (vision_serve.go,
-// driveVL), and serveResponsesWith's plain-text branch (responses.go, drive) — found by reading
-// every lm.drive(/lm.driveVL( call site directly rather than trusting either classifier's
-// coverage. This pins them explicitly rather than trying to widen the delicate M-19 classifier
-// (driveCallback/unconditionalStreamCall) to a shape it was not designed for.
+// Every lm.drive/driveVL STREAMING site must start a heartbeat, not only the buffer-then-stream ones.
+// TestSSE_everyBufferedStreamSiteHeartbeats below classifies only callbacks that literally call lm.drive( and
+// exempts sites that stream per token (unconditionalStreamCall); neither holds for the PREFILL window, which
+// is silent however a site streams once tokens start, and which applies identically to drive and driveVL. The
+// sites are listed in the body rather than widening that classifier to a shape it was not designed for. Audit
+// N-24.
 func TestSSE_everyStreamingDriveSiteHeartbeats(t *testing.T) {
 	sites := []struct{ file, fn string }{
 		{"openai.go", "serveChatText"},
@@ -268,17 +250,10 @@ func TestSSE_everyStreamingDriveSiteHeartbeats(t *testing.T) {
 	}
 }
 
-// M-19: EVERY BUFFER-THEN-STREAM SITE MUST START A HEARTBEAT.
-//
-// G19 fixed two of three. The third — streamMessagesTools, the Anthropic tool path — emitted
-// nothing after message_start's single `ping` until the whole generation finished, on the surface
-// docs/server.md markets for Claude Code, where tool-bearing requests are the norm. The existing
-// gates (heartbeat_test.go) cannot catch a missing site: they need GOINFER_SERVE_MODEL and skip
-// without it, and they test the sites that already had one.
-//
-// A buffer-then-stream site is definable, so it is checked rather than remembered: a handler that
-// drives a generation whose callback only appends to a builder — writing nothing to the client —
-// must start a heartbeat, because it is silent for the whole generation by construction.
+// Every buffer-then-stream site must start a heartbeat. The set is definable, so it is checked rather than
+// remembered: a handler that drives a generation whose callback only appends to a builder, writing nothing to
+// the client, is silent for the whole generation by construction. The runtime gates (heartbeat_test.go) cannot
+// catch a missing site: they need GOINFER_SERVE_MODEL and test only sites that already have one. Audit M-19.
 func TestSSE_everyBufferedStreamSiteHeartbeats(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -312,10 +287,9 @@ func TestSSE_everyBufferedStreamSiteHeartbeats(t *testing.T) {
 			if !onStream {
 				continue
 			}
-			// THE CALLBACK, NOT THE BODY. streamMessagesTools writes plenty — tool_use blocks,
-			// message_end — but all of it AFTER drive returns. What makes a site silent for the
-			// whole generation is that its drive CALLBACK sends nothing, and an earlier cut of
-			// this check looked at the whole function and so excluded the one site it exists for.
+			// THE CALLBACK, NOT THE BODY: streamMessagesTools writes plenty (tool_use blocks, message_end), but all of it
+			// AFTER drive returns. What makes a site silent for the whole generation is that its drive CALLBACK sends
+			// nothing.
 			cb := driveCallback(body)
 			if cb == "" {
 				continue // not the literal-callback shape this classifier understands
@@ -370,21 +344,13 @@ func driveCallback(body string) string {
 	return ""
 }
 
-// unconditionalStreamCall reports whether cb — a driveCallback result — calls one of the
-// per-token streaming sends AT THE CALLBACK'S OWN TOP LEVEL, i.e. on every invocation, not
-// merely somewhere inside it behind a conditional.
-//
-// V-21 (docs/review-2026-09-04.md): a plain strings.Contains(cb, "sseSend(") used to exempt a
-// call site the moment the literal substring appeared anywhere in the callback — including
-// inside an `if` that is frequently false. serveChatToolsWith's callback is exactly that shape:
-// sb.WriteString(t); if prose == nil { return }; if out := prose.Push(t); out != "" {
-// sseSend(...) } — sseSend is reachable only for incremental families, and even then only once
-// prose.Push has enough content to flush, so most tokens (and the whole non-incremental family
-// case) hit NEITHER branch. The old check still saw the substring and skipped the site entirely,
-// so it never even looked for sseHeartbeat(...) in the enclosing function — dropping that
-// heartbeat would have failed nothing. This walks brace depth relative to the callback's own `{`
-// (depth 1 = the callback's own top level) and only counts a marker call found there, exactly as
-// driveCallback already walks depth to find the callback's closing brace.
+// unconditionalStreamCall reports whether cb, a driveCallback result, calls one of the per-token streaming
+// sends at the callback's OWN TOP LEVEL, i.e. on every invocation, not somewhere inside it behind a
+// conditional. serveChatToolsWith's callback is the shape that matters: sseSend is reachable only once
+// prose.Push has enough content to flush, so most tokens hit neither branch, and a plain strings.Contains(cb,
+// "sseSend(") would exempt the site without ever looking for its sseHeartbeat. It walks brace depth relative
+// to the callback's own `{` (depth 1 is the top level), as driveCallback does to find the closing brace. V-21
+// (docs/review-2026-09-04.md).
 func unconditionalStreamCall(cb string) bool {
 	markers := []string{"sseSend(", "sseEvent(", "anthropicEvent(", "ss.frame("}
 	depth := 0

@@ -7,10 +7,9 @@ import (
 	"testing"
 )
 
-// TestPrepare_temperatureValidation gates G4: temperature has the same lower bound as top_p.
-// A negative temperature is rejected (previously it was accepted and decoded greedily, since
-// SampleWithInfo treats Temperature <= 0 as argmax — a validation inconsistency, not inverted
-// output). 0 (greedy) and positive values stay valid.
+// TestPrepare_temperatureValidation gates G4: temperature has the same lower bound as top_p. A negative
+// temperature is rejected (SampleWithInfo treats Temperature <= 0 as argmax, so accepting it was a validation
+// inconsistency, not inverted output). 0 (greedy) and positive values stay valid.
 func TestPrepare_temperatureValidation(t *testing.T) {
 	lm := &loadedModel{}
 	f := func(v float64) *float64 { return &v }
@@ -31,9 +30,9 @@ func TestPrepare_temperatureValidation(t *testing.T) {
 	}
 }
 
-// TestPick_modelValidation gates G6: an unknown NON-EMPTY model name is rejected on both a
-// single-model and a multi-model server, while an omitted name still routes on a single-model
-// server. Previously a single-model server served any name (confident wrong-model output).
+// TestPick_modelValidation gates G6: an unknown NON-EMPTY model name is rejected on both a single-model and a
+// multi-model server (a single-model server must not serve any name: confident wrong-model output), while an
+// omitted name still routes on a single-model server.
 func TestPick_modelValidation(t *testing.T) {
 	single := &server{models: map[string]*loadedModel{"m": {name: "m"}}}
 	if single.pickTest("m") == nil {
@@ -128,9 +127,8 @@ func TestEmbeddings_unconfigured(t *testing.T) {
 	}
 }
 
-// pickTest is a test-only wrapper for the request-path lookup (lookupLocked requires regMu). It
-// exists because pick was removed in favor of withModel; the resolution logic under test (exact
-// match + single-model fallback, G6) is unchanged.
+// pickTest is a test-only wrapper for the request-path lookup (lookupLocked requires regMu), standing in for
+// the removed pick; the resolution logic under test is exact match + single-model fallback (G6).
 func (s *server) pickTest(name string) *loadedModel {
 	s.regMu.RLock()
 	defer s.regMu.RUnlock()

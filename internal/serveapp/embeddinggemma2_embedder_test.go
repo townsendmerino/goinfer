@@ -54,10 +54,10 @@ func newTaskTestServer() (*server, *string) {
 	return &server{embed: enc, embedDim: 8, embedID: "eg2", embedWidths: []int{8, 4, 2}}, last
 }
 
-// TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/tasks/task-embeddinggemma2.md, owner decision
-// 2026-10-06): with no task and no input_type the model gets no prompt (sentence-transformers' own default); input_type
-// maps onto the model's query and document prompts; task names any of its prompts, and "none" means none. The prompt
-// applied is echoed in goinfer_task and the X-Goinfer-Embedding-Task header.
+// TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/tasks/task-embeddinggemma2.md, owner
+// decision): with no task and no input_type the model gets no prompt (sentence-transformers' own default);
+// input_type maps onto the model's query and document prompts; task names any of its prompts, and "none" means
+// none. The prompt applied is echoed in goinfer_task and the X-Goinfer-Embedding-Task header.
 func TestEmbeddings_taskPromptChoice(t *testing.T) {
 	for _, c := range []struct {
 		body, wantPrompt, wantName string

@@ -216,9 +216,9 @@ func TestAdmission_load(t *testing.T) {
 	a.release()
 }
 
-// TestSetConcurrency_reportsTheDecidedValue: the concurrency line serve prints comes from setConcurrency itself, after
-// it has decided — not from the load banner, which runs before (every model's banner once said "one generation at a
-// time" whatever -max-concurrent was, because it read the value before setConcurrency set it).
+// TestSetConcurrency_reportsTheDecidedValue: the concurrency line serve prints comes from setConcurrency
+// itself, after it has decided, not from the load banner, which runs before and would read the value before
+// setConcurrency set it.
 func TestSetConcurrency_reportsTheDecidedValue(t *testing.T) {
 	m, err := decoder.Load(buildSyntheticBase(t), decoder.Options{Backend: "cpu"})
 	if err != nil {

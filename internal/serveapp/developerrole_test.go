@@ -9,18 +9,12 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// Gates for the `role: "developer"` → `role: "system"` alias (queue G12).
-//
-// The before-state these replace, verified at dc8355e and pinned by a test shown
-// failing against the fix: "developer" matched no arm of messagesToTurns' switch
-// and fell through `default:` to a USER turn — not a 400, not a drop. A harness
-// that sends its system prompt as "developer" (OpenAI's newer APIs, and the
-// agent harnesses following them) had its entire scaffold delivered as the
-// user's first message, and the resulting behavior read as a bad model rather
-// than a mangled request. The equality gates below are what keep that silent
-// failure from returning: they assert the aliased form renders BYTE-IDENTICALLY
-// to the equivalent system message, so a future edit that half-recognizes the
-// role fails here rather than in someone's agent loop.
+// Gates for the `role: "developer"` → `role: "system"` alias (queue G12). Without the alias "developer"
+// matches no arm of messagesToTurns' switch and falls through `default:` to a USER turn (not a 400, not a
+// drop): a harness that sends its system prompt as "developer" would have its entire scaffold delivered as the
+// user's first message, and the result reads as a bad model rather than a mangled request. The equality gates
+// below assert the aliased form renders BYTE-IDENTICALLY to the equivalent system message, so an edit that
+// half-recognizes the role fails here rather than in someone's agent loop.
 
 // templates covers every family the alias must be invisible to. It is invisible
 // by construction — the alias resolves before a template is reached — so this is
@@ -166,9 +160,8 @@ func TestDeveloperRoleResponsesInstructions(t *testing.T) {
 	}
 }
 
-// TestDeveloperRoleIsNotGeneralRoleTolerance is the non-goal guard. The alias
-// names exactly one role; every other unrecognized role keeps the default arm's
-// behavior, unchanged by this work.
+// TestDeveloperRoleIsNotGeneralRoleTolerance is the non-goal guard. The alias names exactly one role; every
+// other unrecognized role keeps the default arm's behavior.
 func TestDeveloperRoleIsNotGeneralRoleTolerance(t *testing.T) {
 	for _, role := range []string{"deve1oper", "Developer", "DEVELOPER", "system_", "root", "instructions", ""} {
 		system, turns := messagesToTurns([]chatMessage{{Role: role, Content: rawStr("X")}})
@@ -181,18 +174,11 @@ func TestDeveloperRoleIsNotGeneralRoleTolerance(t *testing.T) {
 	}
 }
 
-// TestAnthropicRejectsIllegalRoles is the G12 pin, FLIPPED by G13.
-//
-// It used to assert that /v1/messages silently demoted a developer-role message
-// to a user turn — pinned deliberately, so the behavior was visible rather than
-// silent while the decision was pending. The decision came out the other way:
-// the Anthropic Messages API accepts only "user" and "assistant" and rejects
-// anything else, so demote-vs-alias was the wrong menu for this surface and
-// rejection is the faithful answer.
-//
-// The class matters more than the instance. "developer" was never special here —
-// ANY typo'd or invented role was folded into the conversation, restructuring
-// what the model saw. Each case below is a shape that used to be swallowed.
+// TestAnthropicRejectsIllegalRoles (G12, G13): the Anthropic Messages API accepts only "user" and "assistant"
+// and rejects anything else, so /v1/messages must reject any other role rather than demote it to a user turn.
+// The class matters more than the instance: "developer" was never special, ANY typo'd or invented role would
+// be folded into the conversation, restructuring what the model saw. Each case below is a shape that must not
+// be swallowed.
 func TestAnthropicRejectsIllegalRoles(t *testing.T) {
 	for _, role := range []string{
 		"developer", // the instance that exposed the class

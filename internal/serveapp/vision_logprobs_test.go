@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// An image request used to accept logprobs:true and answer 200 with no logprobs at all: driveVL threw them away. They are now
-// returned on the buffered reply (TestGemma4VLReal_E2B_logprobs is the through-the-model proof), and the streamed vision reply,
-// which has no logprobs field, refuses the combination the way the text route does rather than dropping them again.
+// An image request must not accept logprobs:true and answer 200 with no logprobs (driveVL discarded them). They are returned on the buffered reply
+// (TestGemma4VLReal_E2B_logprobs is the through-the-model proof), and the streamed vision reply, which has no logprobs field, refuses the combination
+// the way the text route does rather than dropping them.
 func TestHandleChat_imageStreamLogprobsRejected(t *testing.T) {
 	s := &server{models: map[string]*loadedModel{}}
 	img := `{"type":"image_url","image_url":{"url":"data:image/png;base64,` + png1x1b64 + `"}}`

@@ -13,9 +13,9 @@ type fakeResidentEnc struct {
 
 func (f *fakeResidentEnc) EnableResident() error { f.calls++; return f.err }
 
-// A resident GPU vision tower that cannot be attached (no VRAM left for it, a build without the backend) used to abort serve
-// startup: loadVisionTower returned the EnableResident error and the model already loaded on the GPU was thrown away. The attach
-// is now a warning, and the tower runs on the CPU path EnableResident leaves intact.
+// A resident GPU vision tower that cannot be attached (no VRAM left for it, a build without the backend) must not abort serve startup: loadVisionTower
+// must not return the EnableResident error and throw away the model already loaded on the GPU. The attach is a warning, and the tower runs on the CPU
+// path EnableResident leaves intact.
 func TestEnableResidentTower(t *testing.T) {
 	for _, backend := range []string{"cuda", "webgpu", "metal"} {
 		t.Run(backend+"/fails", func(t *testing.T) {

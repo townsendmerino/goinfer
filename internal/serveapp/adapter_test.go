@@ -56,11 +56,10 @@ func TestLoadAdapters_errors(t *testing.T) {
 	}
 }
 
-// TestServe_multiAdapter is the end-to-end #7 proof: one synthetic safetensors base
-// serves two compute-time LoRA adapters. It asserts the adapters SHARE the base's
-// resident decoder.Model (the RAM win), route by served name, and produce distinct
-// greedy outputs (base vs each adapter, and the two adapters vs each other) — i.e.
-// the per-session adapter binding is live and isolated.
+// TestServe_multiAdapter is the end-to-end multi-adapter proof: one synthetic safetensors base serves two
+// compute-time LoRA adapters. It asserts the adapters SHARE the base's resident decoder.Model (the RAM win),
+// route by served name, and produce distinct greedy outputs (base vs each adapter, and the two adapters vs
+// each other), i.e. the per-session adapter binding is live and isolated.
 func TestServe_multiAdapter(t *testing.T) {
 	base := buildSyntheticBase(t)
 	a1 := buildSyntheticAdapter(t, +1)
@@ -271,16 +270,13 @@ func writeST(t *testing.T, path string, data map[string][]float32, shapes map[st
 	}
 }
 
-// TestLoadVisionTower_countsCfgModelsNotSMap is N-28 (docs/audit-2026-09-10.md):
-// loadVisionTower's "-vision needs exactly one --model" check counted len(s.models), which
-// loadAdapters (called just before it in main()) already populated with each --adapter's OWN
-// served name too — so `--model base --adapter ft=base=dir --vision dir` had s.models holding
-// TWO entries ("base" and "ft") and refused a perfectly valid single-base-model vision setup.
-// Reuses TestServe_multiAdapter's synthetic base+adapter (a real decoder.Model is required —
-// loadAdapters calls Model.LoadAdapter before any of its own early-return guards could avoid it)
-// and asserts the refusal is gone: -vision must still fail past the count check (LoadEncoder
-// rejects the empty temp dir this test passes), but with a DIFFERENT error — proof the count
-// check itself let it through.
+// TestLoadVisionTower_countsCfgModelsNotSMap is N-28 (docs/audit-2026-09-10.md): loadVisionTower's "-vision
+// needs exactly one --model" check must count the configured models, not len(s.models), which loadAdapters
+// (called just before it in main()) has already filled with each --adapter's own served name: `--model base
+// --adapter ft=base=dir --vision dir` holds TWO entries and would refuse a valid single-base-model vision
+// setup. Reuses TestServe_multiAdapter's synthetic base+adapter (loadAdapters calls Model.LoadAdapter before
+// any early return, so a real decoder.Model is required) and asserts -vision still fails past the count check
+// (LoadEncoder rejects the empty temp dir) but with a DIFFERENT error: proof the count check let it through.
 func TestLoadVisionTower_countsCfgModelsNotSMap(t *testing.T) {
 	base := buildSyntheticBase(t)
 	adapterDir := buildSyntheticAdapter(t, +1)

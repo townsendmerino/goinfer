@@ -14,23 +14,17 @@ import (
 	"time"
 )
 
-// K2 gate (docs/tasks/task-halt-2026-09.md): 32 concurrent generations at -max-inflight 32
-// (saturated), halt, assert every one of them stopped because of the halt (not a natural
-// completion), and measure time-to-quiescence. Then resume and assert a request succeeds.
+// K2 gate (docs/tasks/task-halt-2026-09.md): 32 concurrent generations at -max-inflight 32 (saturated), halt,
+// assert every one of them stopped because of the halt (not a natural completion), and measure
+// time-to-quiescence. Then resume and assert a request succeeds.
 //
-// "Every stream ended cancelled" (the doc's own words) needs one honest caveat, found while
-// building this test, not assumed going in: goinfer serializes ALL generations for one model
-// behind a single mutex (loadedModel.mu, "the single decode worker" — openai.go's own doc
-// comment). With -max-inflight 32 admitting all 32 requests, only ONE of them is ever actually
-// registered in K1's cancel registry and streaming at a time; the other 31 are blocked
-// acquiring that mutex, which is not context-aware and would otherwise run to natural
-// completion one at a time regardless of a halt (a real bug this task's own K2 work found and
-// fixed in tryEnter/enter — see halt.go and openai.go's doc comments on both). The fixed
-// behavior: a request already streaming when halt lands gets finish_reason "cancelled"; a
-// request still queued behind the mutex gets refused with a 503 {"error":"halted"} the moment
-// it would otherwise have started, WITHOUT ever running a real generation. Both are "the halt
-// switch worked" outcomes; neither is "ran to completion after being told to stop". This test
-// asserts exactly that split, not a literal 32/32 "cancelled".
+// "Every stream ended cancelled" needs a caveat: goinfer serializes ALL generations for one model behind a
+// single mutex (loadedModel.mu, openai.go's doc comment), so with 32 requests admitted only ONE is registered
+// in K1's cancel registry and streaming at a time; the other 31 are blocked acquiring that mutex, which is not
+// context-aware. tryEnter/enter (halt.go, openai.go) therefore refuse a queued request with a 503
+// {"error":"halted"} the moment it would otherwise have started, WITHOUT running a real generation. The test
+// asserts exactly that split: a request already streaming gets finish_reason "cancelled", a queued one gets
+// the 503; neither may run to completion after being told to stop.
 //
 // Gated on GOINFER_SERVE_MODEL like this package's other real-model tests.
 func TestServe_haltUnderLoad(t *testing.T) {
@@ -77,9 +71,8 @@ func TestServe_haltUnderLoad(t *testing.T) {
 			launched.Done() // the goroutine is about to call Do — NOT the same as the request being
 			// admitted: Do() blocks until the server sends response headers, which for a request
 			// still queued behind the model's single decode mutex does not happen until its turn
-			// comes up. Waiting on Do() to return here (as an earlier version of this test did)
-			// self-deadlocks — nothing frees that mutex until the halt this goroutine is itself
-			// blocking the issuing of.
+			// comes up. Waiting on Do() to return here would self-deadlock: nothing frees that
+			// mutex until the halt this goroutine is itself blocking the issuing of.
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Errorf("request %d: %v", i, err)

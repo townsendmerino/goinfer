@@ -12,10 +12,10 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// A real gpt-oss-20b reply (goinfer-chat, temperature 0, 2026-09-30; the same capture chat/harmony_parse_test.go pins) through
-// serve's own reasoning router — newThinkOut is the object streamTokens holds for every route — cut into token-sized pieces the
-// way a decode loop delivers it. Before the Harmony parser every marker reached `content`; here the client-facing streams must
-// carry the analysis as reasoning and the final channel as the answer, and nothing else.
+// A real gpt-oss-20b reply (goinfer-chat, temperature 0; the same capture chat/harmony_parse_test.go pins)
+// through serve's own reasoning router (newThinkOut is the object streamTokens holds for every route), cut
+// into token-sized pieces the way a decode loop delivers it. The client-facing streams must carry the analysis
+// as reasoning and the final channel as the answer, and nothing else: no Harmony marker may reach `content`.
 const realGptOssReply = "<|channel|>analysis<|message|>The user asks: \"What is 17 times 3? Then write one short sentence about the sea.\"\n\nWe need to answer the multiplication: 17 times 3 equals 51. Then write one short sentence about the sea. Provide short sentence about the sea. Probably something like \"The sea is vast and full of mysteries.\" Provide short sentence. Ensure short.<|end|><|start|>assistant<|channel|>final<|message|>17 × 3 = 51.  \nThe sea stretches endlessly, its waves whispering ancient secrets."
 
 func TestThinkOut_harmonyRealReply(t *testing.T) {

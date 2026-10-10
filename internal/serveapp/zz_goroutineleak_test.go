@@ -19,7 +19,7 @@ import (
 // goroutine is left permanently blocked. Skips when the experiment is off (profile nil) or the
 // tiny fixture is absent. Run with:
 //
-//	GOEXPERIMENT=goroutineleakprofile go test ./cmd/serve -run TestServe_goroutineLeakCheck -v
+//	GOEXPERIMENT=goroutineleakprofile go test ./internal/serveapp -run TestServe_goroutineLeakCheck -v
 func TestServe_goroutineLeakCheck(t *testing.T) {
 	p := pprof.Lookup("goroutineleak")
 	if p == nil {

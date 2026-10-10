@@ -9,15 +9,12 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// M-18: A RESPONSES TOOL LOOP COULD NOT COMPLETE.
-//
-// `function_call` and `function_call_output` carry no `role` and no `content`, so decoding items as
-// {role, content} turned both into `{Role:"user", Content:""}` — two empty user turns. The model
-// never saw the tool result, so it answered without it or re-called the same tool forever, under
-// HTTP 200. docs/server.md and responses.go both claim the round-trip; TestServe_responses step 4
-// never feeds a result back, which is exactly why nothing caught it.
-//
-// This is the step-4 that was missing, at the decode layer where the loss happened.
+// A Responses tool loop must be able to complete (M-18). `function_call` and `function_call_output` items
+// carry no `role` and no `content`, so decoding items as {role, content} turned both into `{Role:"user",
+// Content:""}`: the model never saw the tool result, and answered without it or re-called the same tool
+// forever, under HTTP 200. docs/server.md and responses.go both claim the round-trip, and TestServe_responses
+// step 4 never feeds a result back. This test is that missing step, at the decode layer where the loss
+// happened.
 func TestResponses_toolLoopItemsSurviveDecoding(t *testing.T) {
 	input := `[
       {"role":"user","content":"weather in Paris?"},

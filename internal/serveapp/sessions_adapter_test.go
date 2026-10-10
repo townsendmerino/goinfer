@@ -6,16 +6,15 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSessionLRU_restoreBindsTheLRUsAdapter drives serve's -session-dir round trip with a
-// compute-time adapter: a session saved from an adapter LRU and loaded back through
-// sessionLRU.load continues as that adapter when the LRU binds it, and as the base when the LRU
-// is a base pool. Since snapshot format v3 the restored session arrives bound to the adapter it
-// was built under, so bindAdapter has to clear it for a base pool; before, it only ever set an
-// adapter, and a base pool would have answered with the adapter's projections.
+// TestSessionLRU_restoreBindsTheLRUsAdapter drives serve's -session-dir round trip with a compute-time
+// adapter: a session saved from an adapter LRU and loaded back through sessionLRU.load continues as that
+// adapter when the LRU binds it, and as the base when the LRU is a base pool. Since snapshot format v3 the
+// restored session arrives bound to the adapter it was built under, so bindAdapter must clear it for a base
+// pool as well as set it for an adapter pool, or a base pool would answer with the adapter's projections.
 //
-// Production keeps each adapter's snapshots in their own fingerprint namespace, so a base pool
-// does not meet an adapter's blob there; the test shares one fingerprint on purpose, to check the
-// binding rule rather than the namespacing.
+// Production keeps each adapter's snapshots in their own fingerprint namespace, so a base pool does not meet
+// an adapter's blob there; the test shares one fingerprint on purpose, to check the binding rule rather than
+// the namespacing.
 func TestSessionLRU_restoreBindsTheLRUsAdapter(t *testing.T) {
 	base := buildSyntheticBase(t)
 	m, err := decoder.Load(base, decoder.Options{Backend: "cpu"})

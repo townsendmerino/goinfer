@@ -159,13 +159,12 @@ func TestChatChunkShape(t *testing.T) {
 	}
 }
 
-// TestServe_multiModel is the Inc2 gate: two generative models in one process,
-// requests routed on the OpenAI `model` field, /v1/models listing both, unknown
-// model → 404, and concurrent cross-model requests running in parallel (per-model
-// mutex). Gated on two .gguf paths so it skips in normal CI.
+// TestServe_multiModel pins two generative models in one process: requests routed on the OpenAI `model` field,
+// /v1/models listing both, unknown model → 404, and concurrent cross-model requests running in parallel
+// (per-model mutex). Gated on two .gguf paths so it skips in normal CI.
 //
 //	GOINFER_SERVE_MODEL=~/models/a.gguf GOINFER_SERVE_MODEL2=~/models/b.gguf \
-//	  go test ./cmd/serve -run TestServe_multiModel -v
+//	  go test ./internal/serveapp -run TestServe_multiModel -v
 func TestServe_multiModel(t *testing.T) {
 	p1, p2 := os.Getenv("GOINFER_SERVE_MODEL"), os.Getenv("GOINFER_SERVE_MODEL2")
 	if p1 == "" || p2 == "" {
@@ -246,7 +245,7 @@ func TestServe_multiModel(t *testing.T) {
 // TestServe_integration exercises the real HTTP path end to end against a loaded
 // model. Gated on GOINFER_SERVE_MODEL (a .gguf path) so it skips in normal CI.
 //
-//	GOINFER_SERVE_MODEL=~/models/gemma-4-E2B_q4_0-it.gguf go test ./cmd/serve -run Integration -v
+//	GOINFER_SERVE_MODEL=~/models/gemma-4-E2B_q4_0-it.gguf go test ./internal/serveapp -run Integration -v
 func TestServe_integration(t *testing.T) {
 	path := os.Getenv("GOINFER_SERVE_MODEL")
 	if path == "" {
@@ -546,10 +545,9 @@ func TestConstrainForcedTool_M05(t *testing.T) {
 	if err := constrainForcedTool(lmG, &genRequest{}, tool, false, "", []chat.Tool{*tool}); err != nil {
 		t.Errorf("lone-tool on gemma4 should not error, got %v", err)
 	}
-	// N-18: forced == nil now depends on WHY. With namedForce, the caller named a function that
-	// is not in tools — a typo or a stale tool list — and generating unconstrained answers a
-	// different question than the one asked, so it is a 400. This case previously asserted the
-	// opposite ("nil forced tool should not error"), which is the defect N-18 describes.
+	// forced == nil depends on WHY. With namedForce, the caller named a function that is not in tools (a typo or a
+	// stale tool list), and generating unconstrained answers a different question than the one asked, so it is a
+	// 400 (N-18).
 	if err := constrainForcedTool(lmG, &genRequest{}, nil, true, "", []chat.Tool{*tool}); err == nil {
 		t.Error("a named tool_choice matching no tool returned nil: the request generates " +
 			"completely unconstrained after asking for one specific function (N-18)")
@@ -660,11 +658,11 @@ func TestLimitInflight_M01(t *testing.T) {
 	}
 }
 
-// TestConstrainToolUnion_wiring pins T1-T3's routing decisions (docs/tasks/task-tool-grammar-union-2026-09.md):
-// 2+ tools under auto arm the union LAZILY (a LogitProcessor, never the fused-spec masker, which
-// assumes a grammar live from token 1); required forces it from token 1 (masker set, so fused
-// spec applies); a family with no opener (llama3) stays unconstrained under auto but is still
-// constrained under required; GOINFER_TOOL_UNION=0 restores the pre-T1 behaviour exactly.
+// TestConstrainToolUnion_wiring pins the tool-grammar union's routing decisions
+// (docs/tasks/task-tool-grammar-union-2026-09.md): 2+ tools under auto arm the union LAZILY (a LogitProcessor,
+// never the fused-spec masker, which assumes a grammar live from token 1); required forces it from token 1
+// (masker set, so fused spec applies); a family with no opener (llama3) stays unconstrained under auto but is
+// still constrained under required; GOINFER_TOOL_UNION=0 restores the behaviour before the union exactly.
 func TestConstrainToolUnion_wiring(t *testing.T) {
 	tools := []chat.Tool{
 		{Name: "get_weather", Parameters: []byte(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`)},
@@ -715,7 +713,7 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 	if err := constrainForcedTool(chatml, gr0, nil, false, "auto", tools[:1]); err != nil || gr0.sp.LogitProcessor == nil || gr0.masker != nil {
 		t.Errorf("Anthropic-auto lone tool: err=%v proc=%v masker=%v — want the lazy union only", err, gr0.sp.LogitProcessor != nil, gr0.masker != nil)
 	}
-	// a speculative server keeps its pre-T1 auto behaviour (its drafter), but still gets required
+	// a speculative server keeps its auto behaviour from before the union (its drafter), but still gets required
 	specLM := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}, spec: true}
 	grS := &genRequest{}
 	if err := constrainForcedTool(specLM, grS, nil, false, "auto", tools); err != nil || grS.sp.LogitProcessor != nil {

@@ -105,14 +105,10 @@ func TestWebUI_rejectsBadRepo(t *testing.T) {
 	}
 }
 
-// TestWebUI_pullRefReplacesSelector pins the fix for a real bug hit from the page: typing
-// "owner/repo:q4_k_m" into the repo box (List works fine — handleWebList parses req.Repo alone)
-// and then clicking a file button used to send {repo: "owner/repo:q4_k_m", file: "x.gguf"},
-// concatenated into "owner/repo:q4_k_m:x.gguf" and re-parsed. pull.ParseRef cuts at the FIRST
-// colon, so that became repo="owner/repo", selector="q4_k_m:x.gguf" — a string that still ends in
-// ".gguf" and is therefore looked up as a literal filename no repo publishes, in a repo that
-// actually has "x.gguf" under a normal name. Every Pull button failed while List kept working,
-// which reads like a bad repo rather than a bad concatenation — exactly what the user hit.
+// TestWebUI_pullRefReplacesSelector pins that the page's file buttons resolve the pull reference from the repo
+// box's own parse. Sending {repo: "owner/repo:q4_k_m", file: "x.gguf"} concatenated into
+// "owner/repo:q4_k_m:x.gguf", and pull.ParseRef cuts at the FIRST colon, so the selector became
+// "q4_k_m:x.gguf" and was looked up as a literal filename: every Pull button failed while List worked.
 func TestWebUI_pullRefReplacesSelector(t *testing.T) {
 	const repo = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
 	cases := []struct {
@@ -157,20 +153,13 @@ func TestWebUI_pullRefReplacesSelector(t *testing.T) {
 	}
 }
 
-// TestWebUI_pageIsSelfContained guards the offline property: the UI of an engine that runs
-// offline must not need the network to RENDER. A CDN <script>/<link> would break that
-// silently — the page would still look fine on the machine that added it.
-//
-// This does NOT forbid an <a href="https://…"> — an out-bound link the user may click (the
-// AmbientCSS restyle, docs/completed/task-web-ui-ambient.md, added one to the published book)
-// does not cost the page anything at render time; only an asset the page's own load depends on
-// does.
-// A blanket "no http(s):// substring anywhere" check would have banned that link too, which is
-// a different property than the one this test is for.
+// TestWebUI_pageIsSelfContained guards the offline property: the UI of an engine that runs offline must not
+// need the network to RENDER, and a CDN <script>/<link> would break that silently. It does not forbid an
+// out-bound <a href="https://…"> (the book link, docs/completed/task-web-ui-ambient.md): only an asset the
+// page's own load depends on counts, and a blanket "no http(s):// anywhere" check would ban the link too.
 func TestWebUI_pageIsSelfContained(t *testing.T) {
-	// EVERY EMBEDDED FILE, not just index.html. The page is split across webui/ (§6.1 of
-	// docs/tasks/task-web-ui-2026-09.md); a check that still read only index.html would pass while
-	// a CDN import sat in ui/app.js — narrowing silently exactly when the page grew.
+	// EVERY EMBEDDED FILE, not just index.html: the page is split across webui/ (docs/tasks/task-web-ui-2026-09.md
+	// §6.1), and a check reading only index.html would pass with a CDN import in ui/app.js.
 	var all strings.Builder
 	nFiles := 0
 	if err := fs.WalkDir(webUIFS, "webui", func(p string, d fs.DirEntry, err error) error {
@@ -195,7 +184,7 @@ func TestWebUI_pageIsSelfContained(t *testing.T) {
 	if len(webUIPage) == 0 {
 		t.Fatal("embedded index.html is empty")
 	}
-	// A LOCAL stylesheet link (href="ui/...") is now expected; an external one is still banned.
+	// A LOCAL stylesheet link (href="ui/...") is expected; an external one is banned.
 	for _, bad := range []string{
 		"<script src=\"http", "<script src='http", "<script src=\"//", "<script src='//",
 		"<link rel=\"stylesheet\" href=\"http", "<link rel=\"stylesheet\" href=\"//",
@@ -205,12 +194,10 @@ func TestWebUI_pageIsSelfContained(t *testing.T) {
 			t.Errorf("embedded page references %q — it must be fully self-contained (no external assets)", bad)
 		}
 	}
-	// The two allowed external references, neither a render-time asset: an out-bound link to
-	// the book, and a plain-text attribution comment naming the vendored CSS's source (never
-	// fetched — browsers strip CSS comments). Both pinned exactly rather than left as
-	// "anything goes" — a DIFFERENT http(s) reference slipping in later (a tracking pixel, a
-	// font @import, a fetch to an analytics host) is still exactly the kind of silent
-	// offline-break this test exists to catch.
+	// The two allowed external references, neither a render-time asset: an out-bound link to the book, and a
+	// plain-text attribution comment naming the vendored CSS's source (never fetched, since browsers strip CSS
+	// comments). Both are pinned exactly: a DIFFERENT http(s) reference (a tracking pixel, a font @import, a fetch
+	// to an analytics host) is the offline-break this test exists to catch.
 	bookLink := `<a class="book-link" href="https://goinfer.dev/book/" target="_blank" rel="noopener">`
 	if !strings.Contains(page, bookLink) {
 		t.Errorf("embedded page's book link is missing or no longer matches the pinned shape: want %q", bookLink)
@@ -365,9 +352,9 @@ func TestWebUI_markdownGateInBrowser(t *testing.T) {
 }
 
 // TestWebUI_appGateInBrowser runs scripts/webui_app_gate.mjs: the SHIPPED index.html driven through its own
-// send() with a fake SSE stream — W1's streamed rendering end to end, and W2's Copy on both clipboard
-// paths (async API, and the textarea fallback an insecure http://<lan-ip> page needs), on a stopped
-// answer, and after a re-render rebuilds every code-block button.
+// send() with a fake SSE stream. It covers streamed rendering end to end, and Copy on both clipboard paths
+// (the async API, and the textarea fallback an insecure http://<lan-ip> page needs), on a stopped answer, and
+// after a re-render rebuilds every code-block button.
 func TestWebUI_appGateInBrowser(t *testing.T) {
 	runBrowserGate(t, "../../scripts/webui_app_gate.mjs", "web UI app")
 }
@@ -452,17 +439,14 @@ func TestPullState_singleFlight(t *testing.T) {
 	}
 }
 
-// TestWebUI_rootRouteIsUnauthenticated guards V-02 (docs/review-2026-09-04.md): GET /{$} used to
-// be wrapped in auth(...), so a browser's plain navigation -- which sends no Authorization header
-// -- got the 401 JSON instead of the page, whenever -api-key was set (required off loopback). The
-// page is the ONLY place a user could type the key in, so this was a deadlock: loading the page
-// needed the key, and there was nowhere to enter the key without the page. auth stays on
-// /web/models/list and /web/models/pull, which actually act.
+// TestWebUI_rootRouteIsUnauthenticated guards V-02 (docs/review-2026-09-04.md): GET /{$} must not be wrapped
+// in auth(...). A browser's plain navigation sends no Authorization header, so with -api-key set (required off
+// loopback) it would get the 401 JSON instead of the only page where the key can be typed. auth stays on
+// /web/models/list and /web/models/pull, which act.
 //
-// main()'s mux-building is inline, not a separately testable function (this is exactly why the
-// bug went unguarded -- webui_test.go could exercise handleWebUI directly but never through the
-// auth-wrapped mux registration), so this is asserted structurally: mux.HandleFunc("GET /{$}", ...)
-// must NOT wrap its handler in the auth closure, while the /web/models/* registrations must.
+// main()'s mux-building is inline, not a separately testable function, so this is asserted structurally:
+// mux.HandleFunc("GET /{$}", ...) must NOT wrap its handler in the auth closure, while the /web/models/*
+// registrations must.
 func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "main.go", nil, 0)
@@ -484,10 +468,9 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 		if !ok {
 			return true
 		}
-		// Searches the WHOLE wrapper chain, not just the outermost call — V-20
-		// (docs/review-2026-09-04.md) nested list/pull one layer deeper as
-		// sameOrigin(auth(maxBytes(...))), and a check anchored on the outermost call alone
-		// would have silently stopped seeing auth(...) the moment that landed.
+		// Searches the WHOLE wrapper chain, not only the outermost call: list/pull nest as
+		// sameOrigin(auth(maxBytes(...))) (V-20, docs/review-2026-09-04.md), and a check anchored on the outermost
+		// call would stop seeing auth(...).
 		wrapsInAuth := func(e ast.Expr) bool {
 			found := false
 			ast.Inspect(e, func(n ast.Node) bool {
@@ -611,11 +594,10 @@ func TestWebUI_pageRoutesExistOnlyUnderWebFlag(t *testing.T) {
 	}
 }
 
-// TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone pins V-20 (docs/review-2026-09-04.md):
-// on the key-free loopback default, auth() alone is a no-op (requireAuth returns h unchanged
-// when key==""), so list/pull had NO protection against a cross-origin POST — any page open in
-// the same browser could drive a caller-named multi-GB download onto the user's disk. Mirrors
-// N-26's identical sameOrigin in demo/agent/cmd/agent-web/main.go.
+// TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone pins V-20 (docs/review-2026-09-04.md): on the
+// key-free loopback default auth() alone is a no-op (requireAuth returns h unchanged when key==""), so a
+// cross-origin POST from any page open in the same browser could drive a caller-named multi-GB download onto
+// the user's disk. Mirrors sameOrigin in demo/agent/cmd/agent-web/main.go.
 func TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone(t *testing.T) {
 	called := false
 	h := sameOrigin(func(w http.ResponseWriter, r *http.Request) { called = true })
@@ -648,10 +630,8 @@ func TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone(t *testing.T) {
 	}
 }
 
-// TestWebUI_listAndPullAreWrappedInSameOrigin is the wiring guard: the unit test above proves
-// sameOrigin works in isolation, but that says nothing about whether the actual routes call it —
-// the exact shape of gap this session's audit keeps finding (a helper with a test, and a call
-// site nobody checked).
+// TestWebUI_listAndPullAreWrappedInSameOrigin is the wiring guard: the unit test above proves sameOrigin works
+// in isolation, not that the routes call it.
 func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "main.go", nil, 0)

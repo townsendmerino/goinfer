@@ -19,15 +19,11 @@ func bannerLine(lines []string, prefix string) string {
 	return ""
 }
 
-// TestBanner_sessionReuseMatchesTheDecodePath is G6's core assertion, and the one worth
-// having: the banner may claim prefix reuse ONLY when the server would actually use it.
-//
-// decoder.Generate engages the resident DecodeRunner only when there is no session commit and
-// no prefix reuse — the resident KV lives on the GPU while a session's prefix cache is
-// CPU-side, and the two cannot both be the source of truth (loadedModel.drive). So a resident
-// model is stateless and re-prefills every turn, whatever --kv-sessions says. A banner that
-// reported "session reuse: on" there would be telling an agent-loop author the opposite of
-// what their latency will do.
+// TestBanner_sessionReuseMatchesTheDecodePath: the banner may claim prefix reuse ONLY when the server would
+// actually use it. decoder.Generate engages the resident DecodeRunner only when there is no session commit and
+// no prefix reuse (loadedModel.drive): the resident KV lives on the GPU and a session's prefix cache is
+// CPU-side, so a resident model re-prefills every turn whatever --kv-sessions says. A banner reporting
+// "session reuse: on" there would tell an agent-loop author the opposite of what their latency will do.
 func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -38,7 +34,7 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 		kvSlots    int  // resident KV slots allocated (MC1); 0/1 = one conversation
 		byDefault  bool // -kv-sessions not given (E-P09: Metal keeps 2 then)
 	}{
-		// A resident model reuses the most recent conversation's prefix on the device (resident_reuse.go);
+		// A resident model reuses the most recent conversation's prefix on the device (decoder/resident_reuse.go);
 		// the CPU session LRU does not apply to it, so --kv-sessions does not change the answer.
 		{"resident, sessions configured", true, false, 4, true, 0, false},
 		{"resident, sessions off", true, false, 0, true, 0, false},
@@ -153,10 +149,10 @@ func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
 	if !strings.Contains(got, fmt.Sprintf("context: %d tokens", want)) {
 		t.Errorf("banner context line %q does not state the enforced window %d", got, want)
 	}
-	// On cpu the resident cap does not exist, so window == MaxPositions and a factsOf that read
-	// MaxPositions directly would pass the check above. The GPU case — where they differ, 8192 against
-	// 40960 on the 2070 — is held by the source: factsOf must take the window from contextWindow, and
-	// the load path must hand the banner the -ctx THIS model resolved (a per-model ctx= override wins).
+	// On cpu the resident cap does not exist, so window == MaxPositions and a factsOf that read MaxPositions
+	// directly would pass the check above. The GPU case, where they differ, is held by the source: factsOf must
+	// take the window from contextWindow, and the load path must hand the banner the -ctx THIS model resolved (a
+	// per-model ctx= override wins).
 	src, err := os.ReadFile("banner.go")
 	if err != nil {
 		t.Fatal(err)
@@ -340,8 +336,9 @@ func TestFactsOf_carriesTheResidentDecline(t *testing.T) {
 	}
 }
 
-// A plain CPU load is not a decline: the CPU was the choice. decoder sets ResidentDecline for it too ("backend does not implement residency (… the CPU backend)"), so
-// the banner must not report that as a GPU load that fell through — found when a real gpt-oss CPU run printed "this model declined one".
+// A plain CPU load is not a decline: the CPU was the choice. decoder sets ResidentDecline for it too ("backend
+// does not implement residency (… the CPU backend)"), so the banner must not report that as a GPU load that
+// fell through.
 func TestFactsOf_aPlainCPULoadDeclinedNothing(t *testing.T) {
 	_, lm := tinyServed(t) // decoder.Load with Backend "cpu"
 	if lm.model.ResidentDecline() == "" {
@@ -401,7 +398,7 @@ func TestKVPlanLine(t *testing.T) {
 	}
 }
 
-// The session-reuse line used to say "Metal keeps N by default" for a CUDA card's granted count. It names Metal only for a Metal decode path.
+// The session-reuse line names Metal only for a Metal decode path, not for a CUDA card's granted count.
 func TestBanner_sessionReuseNamesMetalOnlyOnMetal(t *testing.T) {
 	cfg := config{kvSessions: 4}
 	cuda := bannerLine(modelBannerFrom(bannerFacts{resident: true, hasTemplate: true, kvSlots: 2, decodePath: "cuda-resident (int4)"}, cfg), "session reuse:")
@@ -426,8 +423,9 @@ func TestBanner_contextWhenTheModelDeclaresNoMaximum(t *testing.T) {
 	}
 }
 
-// The head table's precision is on the banner (D of the --embed-int4 decision, 2026-10-08): the same checkpoint is a different model under a different table, and the default differs by backend.
-// Two halves: the line itself from the facts, and the facts from a real load with the flag both ways.
+// The head table's precision is on the banner: the same checkpoint is a different model under a different
+// table, and the default differs by backend (--embed-int4). Two halves: the line itself from the facts, and
+// the facts from a real load with the flag both ways.
 func TestBanner_headTable(t *testing.T) {
 	for _, c := range []struct{ kind, want string }{
 		{"int4", "head table: int4 (--embed-int4; --embed-int4=false pins int8)"},

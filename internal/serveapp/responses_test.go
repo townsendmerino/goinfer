@@ -168,14 +168,12 @@ func TestServe_responses(t *testing.T) {
 	}
 }
 
-// TestMaybeStore_preservesToolCallsForPreviousResponseID pins V-18 (docs/review-2026-09-04.md):
-// maybeStore used to store only the lead text (often empty, when the model went straight into a
-// tool call), dropping the tool calls entirely. serveResponsesWith appends a stored entry's
-// messages VERBATIM onto the next request's input (see the previous_response_id branch), so a
-// later request's own function_call_output — correctly decoded into a {Role:"tool"} turn by
-// M-18's fix — would answer a call that, as far as the reconstructed conversation shows, was
-// never made: user → assistant("") → tool(result). No model or HTTP server needed — maybeStore
-// and the store it writes to are plain Go values.
+// TestMaybeStore_preservesToolCallsForPreviousResponseID pins V-18 (docs/review-2026-09-04.md): maybeStore
+// must store the tool calls, not only the lead text (often empty when the model goes straight into a tool
+// call). serveResponsesWith appends a stored entry's messages VERBATIM onto the next request's input (the
+// previous_response_id branch), so a later request's function_call_output (decoded into a {Role:"tool"} turn,
+// M-18) would answer a call the reconstructed conversation never shows: user → assistant("") → tool(result).
+// No model or HTTP server needed: maybeStore and its store are plain Go values.
 func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
 	s := &server{responses: newResponseStore(8)}
 	tc := apiToolCall{ID: "call_1", Type: "function"}
@@ -221,10 +219,8 @@ func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
 	}
 }
 
-// TestRespondTools_callsMaybeStoreWithTheToolCalls is the wiring guard: the unit test above
-// proves maybeStore preserves tool calls when GIVEN them, not that respondTools actually passes
-// them — the exact shape of gap this session's audit keeps finding (a helper with a test, and a
-// call site nobody checked).
+// TestRespondTools_callsMaybeStoreWithTheToolCalls is the wiring guard: the unit test above proves maybeStore
+// preserves tool calls when GIVEN them, not that respondTools actually passes them.
 func TestRespondTools_callsMaybeStoreWithTheToolCalls(t *testing.T) {
 	src, err := os.ReadFile("responses.go")
 	if err != nil {

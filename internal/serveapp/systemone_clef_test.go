@@ -280,9 +280,10 @@ func TestSystemOne_clefChoiceProbabilitiesInRequestOrder(t *testing.T) {
 	}
 }
 
-// A Clef model is not served at int4 (owner decision 2026-10-03, D13). The refusal is tested through loadDecoder, the one caller that matters: a refusal function
-// that nothing calls would pass its own unit test. It must fire for an explicit quant=int4, name the measured figures, and not fire for the decision-model default
-// (int8int8) or for f32. The tiny directory carries only a head, so a load that gets past the quant check fails later for a different reason, which is what is asserted.
+// A Clef model is not served at int4 (owner decision, D13). The refusal is tested through loadDecoder, the one caller that matters: a refusal function that
+// nothing calls would pass its own unit test. It must fire for an explicit quant=int4, name the measured figures, and not fire for the decision-model default
+// (int8int8) or for f32. The tiny directory carries only a head, so a load that gets past the quant check fails later for a different reason, which is what is
+// asserted.
 func TestLoadDecoder_clefRefusesInt4(t *testing.T) {
 	ctx := t.Context()
 	int4, int8, f32 := "int4", "int8int8", "f32"

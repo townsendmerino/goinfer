@@ -93,12 +93,10 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 	return lm
 }
 
-// askAboutImage drives the REAL serving-side vision wiring end to end on real weights:
-// lm.imagesPrompt (real tower forward, real preprocessing) -> lm.prepare -> lm.driveVL
-// (real GenerateGemma4VL). This is the first-ever real run of this exact seam — every prior
-// gemma4 VL gate this session called decoder-level functions directly with precomputed
-// image_features, never imagesPrompt's own real-tower invocation (docs/multimodal.md's
-// Phase B "HTTP-level integration smoke test" gap).
+// askAboutImage drives the REAL serving-side vision wiring end to end on real weights: lm.imagesPrompt (real
+// tower forward, real preprocessing) -> lm.prepare -> lm.driveVL (real GenerateGemma4VL). The decoder-level
+// gates call GenerateGemma4VL with precomputed image_features and never exercise imagesPrompt's own tower
+// invocation; this closes Phase B's "HTTP-level integration smoke test" gap (docs/multimodal.md).
 func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byte, maxTokens int) string {
 	t.Helper()
 	turns := []chat.Turn{{Role: "user", Content: question}}
@@ -155,10 +153,10 @@ func TestGemma4VLReal_E2B(t *testing.T) {
 	}
 }
 
-// TestGemma4VLReal_E2B_logprobs: an image turn's driveVL returns the per-token logprobs the request asked for (they were
-// discarded before, so an image request with logprobs:true answered 200 with none). One entry per generated token, each with
-// the asked-for number of alternatives, the chosen token's logprob <= 0 and (greedy) no better than the top alternative,
-// and the OpenAI-shaped rendering carries the same count.
+// TestGemma4VLReal_E2B_logprobs: an image turn's driveVL returns the per-token logprobs the request asked for
+// (an image request with logprobs:true must not answer 200 with none). One entry per generated token, each
+// with the asked-for number of alternatives, the chosen token's logprob <= 0 and (greedy) no better than the
+// top alternative, and the OpenAI-shaped rendering carries the same count.
 func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	modelPath := filepath.Join(home, "models", "gemma-4-E2B_q4_0-it.gguf")
@@ -195,12 +193,9 @@ func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 }
 
 // TestGemma4VLReal_26BA4B is the real-checkpoint end-to-end gate for the 26B-A4B/31B-class
-// (use_bidirectional_attention: "vision", batched blockwise prefill, Phase C) path — the
-// first real-checkpoint proof of the batched forward, not just the tiny/scaled synthetic
-// fixtures. 26B-A4B carries NO PLE (hidden_size_per_layer_input=0, confirmed directly against
-// the real config — corrects docs/multimodal.md's earlier, over-generalized claim that every
-// real vision-capable checkpoint has PLE), so this loads straight off safetensors, no GGUF
-// needed.
+// (use_bidirectional_attention: "vision", batched blockwise prefill, Phase C) path. 26B-A4B carries NO PLE
+// (hidden_size_per_layer_input=0 in the real config; docs/multimodal.md), so this loads straight off
+// safetensors, no GGUF needed.
 func TestGemma4VLReal_26BA4B(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GOINFER_GEMMA4_26B")

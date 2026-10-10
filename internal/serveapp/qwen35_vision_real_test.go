@@ -25,9 +25,8 @@ import (
 //	    from Qwen3.5's own template with enable_thinking unset (golden_{A,B,C}.json) — serve's default
 //	    is `-thinking template`, this checkpoint's own default (0.8B: thinking off, so the template
 //	    closes an empty `<think>\n\n</think>\n\n` after the generation prompt) — and the reply text is
-//	    HF's 32 greedy tokens over those ids, decoded, for each of the 3 images. Before 2026-09-30 serve
-//	    rendered nothing there (goinfer's generic ChatML renderer) and this test pinned a named 4-token
-//	    delta; `-thinking asis` still renders those old bytes, and (a1) keeps checking that (serve_{A,B,C}.json);
+//	    HF's 32 greedy tokens over those ids, decoded, for each of the 3 images. `-thinking asis` renders the
+//	    generic ChatML bytes instead, and (a1) checks that (serve_{A,B,C}.json);
 //	(b) usage.prompt_tokens is that id count, completion_tokens is 32;
 //	(c) the same request twice returns identical text (cold determinism).
 //

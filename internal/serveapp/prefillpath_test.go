@@ -14,19 +14,15 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The serve half of the prefill-path report.
+// The serve half of the prefill-path report. Both fast paths a GPU backend advertises, the resident decode
+// runner and the batched prefill, fall back SILENTLY when a model does not qualify: `--backend cuda --quant
+// int8int8` loads clean, reports a GPU and decodes resident, then takes one forward per prompt token because
+// the batched GEMV is int4-only (9× TTFT on a 300-token prompt). serve therefore states the resolved paths at
+// startup, publishes them on /v1/models, and -require-backend turns a decline into a startup failure.
 //
-// WHY THIS EXISTS. Both fast paths a GPU backend advertises — the resident decode runner and the
-// batched prefill — fall back SILENTLY when a model doesn't qualify. `--backend cuda --quant
-// int8int8` loads clean, reports a GPU, decodes resident, and then takes one forward per prompt
-// token because the batched GEMV is int4-only: 9× TTFT on a 300-token prompt, discovered only by
-// timing it. serve therefore states the resolved paths at startup, publishes them on /v1/models, and
-// -require-backend turns a decline into a startup failure for clients that can't absorb a 9×.
-//
-// The registry is built directly from decoder.Load rather than newServer: the committed tiny GGUF
-// carries no embedded tokenizer (serve's loadDecoder needs one), and neither the /v1/models handler
-// nor requireFastPaths touches the tokenizer. That keeps this gate in CI instead of behind a
-// GOINFER_SERVE_MODEL download.
+// The registry is built directly from decoder.Load rather than newServer: the committed tiny GGUF carries no
+// embedded tokenizer (serve's loadDecoder needs one), and neither the /v1/models handler nor requireFastPaths
+// touches it. That keeps this gate in CI instead of behind GOINFER_SERVE_MODEL.
 func tinyServed(t *testing.T) (*server, *loadedModel) {
 	t.Helper()
 	p := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")

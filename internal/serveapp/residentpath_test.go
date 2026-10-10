@@ -124,12 +124,11 @@ func TestLoadedModel_residentPathNilModel(t *testing.T) {
 	}
 }
 
-// TestServe_prepareEnforcesResidentCapForAdapter reproduces M-01's exact failure scenario end to
-// end: an adapter model whose resident backend has a smaller context cap than MaxPositions must
-// have prepare enforce the SMALLER (resident) cap, matching what generateInto's useGPU condition
-// actually admits for an adapter's first turn — not the old behavior, which enforced the uncapped
-// MaxPositions and let a resident prefill past the cap die mid-request instead of being rejected
-// cleanly up front.
+// TestServe_prepareEnforcesResidentCapForAdapter reproduces M-01's scenario end to end: an adapter model whose
+// resident backend has a smaller context cap than MaxPositions must have prepare enforce the SMALLER cap,
+// matching what generateInto's useGPU condition admits for an adapter's first turn. Enforcing the uncapped
+// MaxPositions lets a resident prefill past the cap die mid-request instead of being rejected cleanly up
+// front.
 func TestServe_prepareEnforcesResidentCapForAdapter(t *testing.T) {
 	lm, rf := residentServed(t)
 	lm.adapter = "ft"
@@ -148,8 +147,8 @@ func TestServe_prepareEnforcesResidentCapForAdapter(t *testing.T) {
 	if _, err := lm.prepare(sm, make([]int, capPos-1), lm.residentPath()); err != nil && strings.Contains(err.Error(), "context_length_exceeded") {
 		t.Errorf("a prompt under the resident cap (%d) was rejected: %v", capPos-1, err)
 	}
-	// A prompt past the resident cap, but still under MaxPositions, must now be rejected cleanly —
-	// the old `lm.adapter == ""` predicate let this through to die mid-prefill instead (M-01).
+	// A prompt past the resident cap, but still under MaxPositions, must be rejected cleanly: a `lm.adapter == ""`
+	// predicate would let it die mid-prefill (M-01).
 	if _, err := lm.prepare(sm, make([]int, capPos+1), lm.residentPath()); err == nil || !strings.Contains(err.Error(), "context_length_exceeded") {
 		t.Errorf("a prompt past the resident cap (%d) but under MaxPositions (%d) was not rejected as context_length_exceeded: %v", capPos+1, maxPos, err)
 	}

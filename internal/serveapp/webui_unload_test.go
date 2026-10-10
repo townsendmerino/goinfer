@@ -49,9 +49,9 @@ func TestWebUnload_publishesRemoval(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unload body not JSON: %s", w.Body.String())
 	}
-	// freed is false here, honestly: fakeLoads's entries carry no real *decoder.Model (retainLocked
-	// is a no-op for a nil model, liveness.go:30-32), so there is nothing for the liveness tracker
-	// to own — the same reason every other load test in this file never asserts freed at all.
+	// freed is false here: fakeLoads's entries carry no real *decoder.Model (retainLocked is a no-op for a nil
+	// model), so there is nothing for the liveness tracker to own, the same reason every other load test in this
+	// file never asserts freed at all.
 	if body["id"] != "gone" || body["status"] != "unloaded" || body["freed"] != false {
 		t.Errorf("unload body = %+v, want id=gone status=unloaded freed=false", body)
 	}

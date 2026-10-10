@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// The S4 addendum (docs/tasks/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters for the
-// fallback, attachGemma3Tower). Unset is float32 on CUDA since 2026-10-08 (owner) and int8 on WebGPU, which has no float32 device tower; an explicit f32 selects the float32 tower;
-// int8 stays int8 everywhere.
+// The S4 addendum (docs/tasks/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters
+// for the fallback, attachGemma3Tower). Unset is float32 on CUDA (owner decision) and int8 on WebGPU, which has no float32 device tower; an explicit f32 selects the float32
+// tower; int8 stays int8 everywhere.
 func TestTowerInt8_gemma3ExplicitF32(t *testing.T) {
 	cases := []struct {
 		quant, backend string
@@ -25,8 +25,8 @@ func TestTowerInt8_gemma3ExplicitF32(t *testing.T) {
 	}
 }
 
-// Gemma 3's SigLIP tower is priced into the resident plan on CUDA: the default (float32 since 2026-10-08) and an explicit f32 reserve about 2 GB (27 layers of hidden 1152 / intermediate
-// 4304 in float32 plus the 4096-patch scratch; measured at about 1.7 GiB, so the figure is generous), an explicit int8 about 558 MiB.
+// Gemma 3's SigLIP tower is priced into the resident plan on CUDA: the default (float32) and an explicit f32 reserve about 2 GB (27 layers of hidden 1152 / intermediate
+// 4304 in float32 plus the 4096-patch scratch; the measured footprint is about 1.7 GiB, so the figure is generous), an explicit int8 about 558 MiB.
 func TestTowerReserve_gemma3(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`
@@ -55,8 +55,9 @@ func TestTowerReserve_gemma3(t *testing.T) {
 	}
 }
 
-// TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/tasks/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under its backend, int8 included, and
-// zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Red on the code before S18 for Gemma 3 under cuda, where the shipped default (the int8 device tower) was priced at zero.
+// TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/tasks/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under
+// its backend, int8 included, and zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Gemma 3 under cuda is the case that matters: its
+// shipped default (the int8 device tower) was priced at zero.
 func TestTowerReserve_everyDeviceTower(t *testing.T) {
 	old, oldM := cudaTowerRegistered, metalTowerRegistered // stand in for cuda and metal builds, whose imports fill the tower registries
 	cudaTowerRegistered = func(string) bool { return true }
@@ -100,7 +101,7 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 	if mib := float64(towerReserve(c, dir)) / (1 << 20); mib < 520 || mib > 640 {
 		t.Errorf("gemma3 int8 reserve %.0f MiB, want 520-640 (measured 558)", mib)
 	}
-	// G-S18c-Mac: Gemma 3's Metal figures within 25% of the phys_footprint its towers measured (metal TestS18TowerHostMemory, 2026-10-08)
+	// G-S18c-Mac: Gemma 3's Metal figures within 25% of the phys_footprint its towers measured (metal TestS18TowerHostMemory)
 	c.load.Backend = "metal"
 	for _, m := range []struct {
 		quant    string

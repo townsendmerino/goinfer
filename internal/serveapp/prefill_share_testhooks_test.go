@@ -65,8 +65,8 @@ func prepareWithAhead(t *testing.T, lm *loadedModel, ahead int) error {
 //   - A GPU resident's prefills run one at a time (MC3's exclusive section), and the margin is live memory, which
 //     already excludes what the other generations hold. So the same request is admitted.
 //
-// Before the fix the resident request was split four ways too: on the 7B, MC3 cells lost ~1000-token prompts to 413
-// (docs/measurements/spec-vs-batching-metal-2026-09-27.md §5).
+// Without that, the resident request would be split four ways too: on the 7B, MC3 cells lost ~1000-token
+// prompts to 413 (docs/measurements/spec-vs-batching-metal-2026-09-27.md §5).
 func TestPrepare_prefillShare(t *testing.T) {
 	t.Run("cpu workers split the margin", func(t *testing.T) {
 		_, lm := tinyServed(t)

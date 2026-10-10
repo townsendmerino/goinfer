@@ -12,14 +12,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// R2 gate (docs/measurements/cold-user-2026-09-06.md, finding #3). On v0.16.0 there was no way
-// to ask a binary which backends it contained: `serve --version` printed
-// "flag provided but not defined: -version" and exited 2. The darwin asset linked no Metal
-// backend, and the only signal was a warning line that scrolled past the load banner.
-//
-// Two halves. This one pins that the `backends:` line is DERIVED from the registry rather than
-// a hand-written string — a hard-coded "cpu cuda metal" would satisfy a text check while being
-// exactly the lie the finding is about.
+// R2 gate (docs/measurements/cold-user-2026-09-06.md, finding #3): `serve --version` must report which
+// backends the binary contains. Two halves. This one pins that the `backends:` line is DERIVED from the
+// registry rather than a hand-written string: a hard-coded "cpu cuda metal" would satisfy a text check while
+// being exactly the lie the finding is about.
 func TestVersionReport_backendsLineIsDerived(t *testing.T) {
 	got := backendsLine(t, versionReport("goinfer-serve"))
 	want := strings.Join(decoder.CompiledBackends(), " ")
@@ -85,10 +81,9 @@ func TestServeVersionFlag_reportsOnlyCPUForTheRootBinary(t *testing.T) {
 	}
 }
 
-// R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized
-// subcommand/positional fell through silently on v0.17.0 (flag.Args() went unchecked). The
-// mutation this guards against: removing the flag.Args() check makes this go red — the process
-// exits 0 with no error, instead of naming the argument as unrecognized.
+// R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized subcommand/positional
+// must be named as unrecognized, not fall through silently. Removing the flag.Args() check turns this red: the
+// process exits 0 with no error.
 func TestServeUnknownPositional_namesTheSubcommands(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
@@ -134,17 +129,12 @@ func backendsLine(t *testing.T, report string) string {
 	return ""
 }
 
-// TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered is R4's gate for the scenario-B friction
-// entry "--help is 13,583 bytes / 39 flags / 100 lines … I could not skim it for the flag I
-// needed" (docs/measurements/cold-user-2026-09-06.md).
-//
-// That is not a style complaint. The same tester then drove a 16 GB machine +7.8 GB into swap
-// because they never found `-stream-weights`, whose own help text names their exact model and
-// their exact RAM. The flag was present and the page was too long to find it in.
-//
-// So the assertion is not "the help is short" — the long text is deliberate and every paragraph in
-// it is a disclosure some measurement earned. It is that a MAP exists above the dump, that the map
-// names the flag whose absence did the damage, and that it comes FIRST.
+// TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered is R4's gate
+// (docs/measurements/cold-user-2026-09-06.md, scenario B). The long help text is deliberate, every paragraph a
+// disclosure some measurement earned, but a reader must be able to find the flag that matters:
+// `-stream-weights`, whose help names the exact model and RAM that went into swap for a user who never found
+// it. So the assertion is not "the help is short": a MAP must exist above the dump, name that flag, and come
+// FIRST.
 func TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
@@ -180,11 +170,9 @@ func TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered(t *testing.T) {
 	if dump := strings.Index(help, "  -adapter"); dump >= 0 && dump < idx {
 		t.Error("the flag dump starts before the skimmable header — the map must come first")
 	}
-	// The flag count must be DERIVED. A hand-typed count is the same defect class as the parity
-	// manifest's hand-typed aikit_version, which sat seventeen versions stale.
-	// Count only the DUMP's entries. The header's own "  --model" lines start the same way, so
-	// counting the whole page conflates the map with the territory — which this test did on its
-	// first run, reporting 47 against a real 40.
+	// The flag count must be DERIVED: a hand-typed count is the same defect class as the parity manifest's
+	// hand-typed aikit_version. Count only the DUMP's entries: the header's own "  --model" lines start the same
+	// way, so counting the whole page conflates the map with the territory.
 	dumpAt := strings.Index(help, "flags, with the trade-offs")
 	if dumpAt < 0 {
 		t.Fatal("could not find the boundary between the header and the flag dump")

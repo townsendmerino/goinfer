@@ -113,8 +113,8 @@ func TestOptionsValidate(t *testing.T) {
 	}
 }
 
-// A model with a decision head (head=) loads at decoder.DecisionHeadQuant unless a quant was chosen, through the same
-// options() path serve uses for every --model entry (D6b, owner decision 2026-10-01).
+// A model with a decision head (head=) loads at decoder.DecisionHeadQuant unless a quant was chosen, through the same options() path serve uses for
+// every --model entry (D6b, owner decision).
 func TestModelSpec_headDefaultsToTheDecisionQuant(t *testing.T) {
 	dir, int4, f32 := "/heads/jev", "int4", ""
 	unset := config{load: loadflags.Flags{Backend: "cpu", Quant: "int4"}}                  // -quant left at its default
