@@ -64,6 +64,17 @@ func loadQwen3VLMoeTiny(t *testing.T) (*Model, qwen3vlmoeGolden) {
 	return m, g
 }
 
+// argmaxAgreement is the fraction of positions whose argmax agrees between two [n, vocab] logit sets.
+func argmaxAgreement(a, b []float32, n int) float64 {
+	v, agree := len(a)/n, 0
+	for i := range n {
+		if argmax(a[i*v:(i+1)*v]) == argmax(b[i*v:(i+1)*v]) {
+			agree++
+		}
+	}
+	return float64(agree) / float64(n)
+}
+
 // worstPositionCosine is the lowest per-position cosine between two [n, vocab] logit sets.
 func worstPositionCosine(a, b []float32, n int) float64 {
 	v := len(a) / n
@@ -115,7 +126,7 @@ func TestQwen3VLMoe_tinyMatchesHF(t *testing.T) {
 	const bar = 0.99999
 	txt := qwen3vlmoeText(t, m, g.Text.IDs)
 	ct := worstPositionCosine(txt, g.Text.Logits, len(g.Text.IDs))
-	t.Logf("text: worst position cosine %.9f over %d positions", ct, len(g.Text.IDs))
+	t.Logf("text: worst position cosine %.9f over %d positions, argmax agreement %.1f%%", ct, len(g.Text.IDs), 100*argmaxAgreement(txt, g.Text.Logits, len(g.Text.IDs)))
 	if ct < bar {
 		t.Errorf("text: worst position cosine %.9f under %.5f", ct, bar)
 	}
@@ -129,7 +140,7 @@ func TestQwen3VLMoe_tinyMatchesHF(t *testing.T) {
 	}
 	img := qwen3vlmoeImage(t, m, g, mp, g.Image.Deepstack)
 	ci := worstPositionCosine(img, g.Image.Logits, len(g.Image.IDs))
-	t.Logf("image: worst position cosine %.9f over %d positions", ci, len(g.Image.IDs))
+	t.Logf("image: worst position cosine %.9f over %d positions, argmax agreement %.1f%%", ci, len(g.Image.IDs), 100*argmaxAgreement(img, g.Image.Logits, len(g.Image.IDs)))
 	if ci < bar {
 		t.Errorf("image: worst position cosine %.9f under %.5f", ci, bar)
 	}

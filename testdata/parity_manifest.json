@@ -891,6 +891,29 @@
         "cosine_mean": 1.00000
       }
     },
+    "qwen3_vl_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/qwen3vlmoe_test.go",
+        "scripts/pin_qwen3vlmoe_tiny.py"
+      ],
+      "deps_hash": "",
+      "status": "experimental",
+      "validated_at": "936d2f49",
+      "date": "2026-10-09",
+      "reference": "HF f32 (tiny random Qwen3VLMoeForConditionalGeneration, its experts on disk in the released 4.57 layout; G-S10q-a): a text prompt and an image prompt with three DeepStack sets, every position at cosine 1.000000000, argmax 100%; four planted defects red. The real 30B's full model against a layer-streaming HF reference is G-S10q-c (queued)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
     "smollm3": {
       "uses": [
         "core",
