@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## batchMaxSeqs
 
-Moved from `metal/batch.go` (the comment opening the file, above `batchMaxSeqs`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment opening the file, above `batchMaxSeqs`) on 2026-10-09.
 
 ```text
 MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode — one decode token for up to batchMaxSeqs sequences in
@@ -28,7 +28,7 @@ B = 4 at 1.73–1.84x one stream's aggregate; B = 1 loses, so the decoder calls 
 
 ## batchMinSeqs
 
-Moved from `metal/batch.go` (the comment above `batchMinSeqs`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `batchMinSeqs`) on 2026-10-09.
 
 ```text
 batchMinSeqs is the smallest batch the decoder should send here. At B = 1 the step costs 1.6–1.95x a production
@@ -38,7 +38,7 @@ spares the per-token KV-slot rebinding two interleaved single-token decodes woul
 
 ## mc3FARowsOn
 
-Moved from `metal/batch.go` (the comment above `mc3FARowsOn`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `mc3FARowsOn`) on 2026-10-09.
 
 ```text
 mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
@@ -49,7 +49,7 @@ every cell measured, 1.016x at 2 rows (serve's default slot count) to 1.06x at 8
 
 ## mc3AdjRowsOn
 
-Moved from `metal/batch.go` (the comment above `mc3AdjRowsOn`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `mc3AdjRowsOn`) on 2026-10-09.
 
 ```text
 mc3AdjRowsOn runs the batched step's per-row qkv and gate|up GEMVs (the sizes calibrateRows gives to per-row) as one
@@ -60,7 +60,7 @@ gate|up at B = 2-4 and 1.01-1.04x on the 1.5B's.
 
 ## calibrateRows
 
-Moved from `metal/batch.go` (the comment above `calibrateRows`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `calibrateRows`) on 2026-10-09.
 
 ```text
 calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as
@@ -73,7 +73,7 @@ changes speed only: the per-row path is production's own kernel on each row.
 
 ## stepVerifyCost
 
-Moved from `metal/batch.go` (the comment above `stepVerifyCost`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `stepVerifyCost`) on 2026-10-09.
 
 ```text
 stepVerifyCost is the step-kernel verify's measured cost in single-token steps, indexed by rows verified: the
@@ -84,7 +84,7 @@ interpolated; 9 rows are an 8-row step plus one Forward. docs/tasks/task-concurr
 
 ## promptStepMaxAboveFloor
 
-Moved from `metal/batch.go` (the comment above `promptStepMaxAboveFloor`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `promptStepMaxAboveFloor`) on 2026-10-09.
 
 ```text
 promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor).
@@ -94,7 +94,7 @@ T1.10 measured the step at 0.40× / 0.80× / 1.56× the pass at K = 16 / 32 / 64
 
 ## promptStepOK
 
-Moved from `metal/batch.go` (the comment above `promptStepOK`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `promptStepOK`) on 2026-10-09.
 
 ```text
 promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos (E-P01, audit-metal-2026-09-30):
@@ -109,7 +109,7 @@ from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's C = 
 
 ## prefillByStep
 
-Moved from `metal/batch.go` (the comment above `prefillByStep`) on 2026-10-10.
+Moved from `metal/batch.go` (the comment above `prefillByStep`) on 2026-10-09.
 
 ```text
 prefillByStep is PrefillLast on the step kernels (E-P01): the prompt's positions run as consecutive rows of the bound
@@ -123,7 +123,7 @@ Cancellation is checked between pieces.
 
 ## expertPool
 
-Moved from `metal/expertpool.go` (the comment above `expertSlot` (it described the pool and the slot view together)) on 2026-10-10.
+Moved from `metal/expertpool.go` (the comment above `expertSlot` (it described the pool and the slot view together)) on 2026-10-09.
 
 ```text
 expertPool is a bounded per-layer LRU pool of N expert slots for SYNCHRONOUS Metal MoE paging.
@@ -154,7 +154,7 @@ comment for why the pread path does its own offset arithmetic instead of relying
 
 ## copyBytesToU32Buf
 
-Moved from `metal/expertpool.go` (the comment above `copyBytesToU32Buf`) on 2026-10-10.
+Moved from `metal/expertpool.go` (the comment above `copyBytesToU32Buf`) on 2026-10-09.
 
 ```text
 copyBytesToU32Buf memcpys little-endian nibble bytes into a uint32 slot buffer's shared contents,
@@ -171,7 +171,7 @@ recover from.
 
 ## distinctExperts
 
-Moved from `metal/expertpool.go` (the comment above `distinctExperts`) on 2026-10-10.
+Moved from `metal/expertpool.go` (the comment above `distinctExperts`) on 2026-10-09.
 
 ```text
 distinctExperts is every expert id this pool has EVER staged, across its whole lifetime —
@@ -185,7 +185,7 @@ always-on telemetry, same as the counters above.
 
 ## stagePread
 
-Moved from `metal/expertpool.go` (the comment above `stagePread`) on 2026-10-10.
+Moved from `metal/expertpool.go` (the comment above `stagePread`) on 2026-10-09.
 
 ```text
 stagePread, when set (GOINFER_MOE_PREAD=1 on a .giw-mmap'd model), REPLACES the mmap byte-copy:
@@ -196,7 +196,7 @@ large sequential read, zero page faults (cold pread measured 3687 MB/s vs the mm
 
 ## ensureResidentBatch
 
-Moved from `metal/expertpool.go` (the comment above `ensureResidentBatch`) on 2026-10-10.
+Moved from `metal/expertpool.go` (the comment above `ensureResidentBatch`) on 2026-10-09.
 
 ```text
 ensureResidentBatch is ensureResident generalized over a whole layer's routed top-k at once
@@ -220,7 +220,7 @@ the I/O WITHIN one call, on the single host goroutine that already owns this poo
 
 ## mc3RowsKernels
 
-Moved from `metal/batch_rows.go` (the comment opening the file, above `mc3RowsKernels`) on 2026-10-10.
+Moved from `metal/batch_rows.go` (the comment opening the file, above `mc3RowsKernels`) on 2026-10-09.
 
 ```text
 MC3 S3 (docs/tasks/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
@@ -238,7 +238,7 @@ the resident's main library (same fast-math setting as the originals).
 
 ## buildDeltaNetLayer
 
-Moved from `metal/deltanet.go` (the comment above `buildDeltaNetLayer`) on 2026-10-10.
+Moved from `metal/deltanet.go` (the comment above `buildDeltaNetLayer`) on 2026-10-09.
 
 ```text
 Name the missing tensor — see cuda/backend.go's identical check and comment: an empty slice
@@ -249,7 +249,7 @@ failed exactly that way during the CUDA bring-up.
 
 ## deltaNetKernels
 
-Moved from `metal/deltanet_kernels.go` (the comment above `deltaNetKernels`) on 2026-10-10.
+Moved from `metal/deltanet_kernels.go` (the comment above `deltaNetKernels`) on 2026-10-09.
 
 ```text
 deltaNetKernels — the Gated-DeltaNet decode mixer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8),
@@ -289,7 +289,7 @@ arithmetic equivalence, is what fast-math contraction keys off.
 
 ## Device
 
-Moved from `metal/device.go` (the comment above `package metal`) on 2026-10-10.
+Moved from `metal/device.go` (the comment above `package metal`) on 2026-10-09.
 
 ```text
 Metal device layer — now aikit's native-GPU substrate (github.com/townsendmerino/aikit/gpu),
@@ -301,7 +301,7 @@ the device TYPES moved; nothing about the decode path changed, so it must stay b
 
 ## NewBufferFloats
 
-Moved from `metal/device.go` (the comment above `NewBufferFloats`) on 2026-10-10.
+Moved from `metal/device.go` (the comment above `NewBufferFloats`) on 2026-10-09.
 
 ```text
 Thin re-wraps of aikit gpu v0.29.0's type-suffixed-Buffer-API collapse (NewBufferFloats/
@@ -314,7 +314,7 @@ one's argument list.
 
 ## attnGeom
 
-Moved from `metal/geom.go` (the comment above `attnGeom`) on 2026-10-10.
+Moved from `metal/geom.go` (the comment above `attnGeom`) on 2026-10-09.
 
 ```text
 attnGeom is one distinct per-layer attention geometry, shared by every layer that has it.
@@ -341,7 +341,7 @@ geometry object per distinct {hd, nKV, half, kEqV}, shared across the layers tha
 
 ## chainDrainEvery
 
-Moved from `metal/greedy_chain.go` (the comment above `chainDrainEvery`) on 2026-10-10.
+Moved from `metal/greedy_chain.go` (the comment above `chainDrainEvery`) on 2026-10-09.
 
 ```text
 The greedy chain: C-B01 of docs/audit-metal-2026-09-30.md (Phase 3 item 5 of docs/tasks/task-metal-audit-2026-10.md).
@@ -370,7 +370,7 @@ past it; the K/V it wrote sits past the generation's end and is overwritten befo
 
 ## pagedFenceOn
 
-Moved from `metal/paged_fence.go` (the comment above `pagedFenceOn`) on 2026-10-10.
+Moved from `metal/paged_fence.go` (the comment above `pagedFenceOn`) on 2026-10-09.
 
 ```text
 pagedFenceOn: a paged MoE layer's phase 1 ends with paged_fence, and the host spins on its word instead of sleeping in
@@ -384,7 +384,7 @@ publishing a whole decode layer's writes, which the probe's one word never price
 
 ## pagedFenceSrc
 
-Moved from `metal/paged_fence.go` (the comment above `pagedFenceSrc`) on 2026-10-10.
+Moved from `metal/paged_fence.go` (the comment above `pagedFenceSrc`) on 2026-10-09.
 
 ```text
 pagedFenceSrc follows aikit's C-B03 probe (gpu/metal_fence_probe_test.go, after MLX's kernels/fence.metal): the system
@@ -396,7 +396,7 @@ coherent(system) stores into a mirror the host reads, fences, then stores the se
 
 ## dnetPrefillOn
 
-Moved from `metal/prefill_deltanet.go` (the comment above `dnetPrefillOn`) on 2026-10-10.
+Moved from `metal/prefill_deltanet.go` (the comment above `dnetPrefillOn`) on 2026-10-09.
 
 ```text
 dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. ON since D-B01's grade (2026-10-04,
@@ -406,7 +406,7 @@ K = 512); tests turn it off for the sequential arm.
 
 ## emodelLayerMajorOn
 
-Moved from `metal/prefill_emodel.go` (the comment above `emodelLayerMajorOn`) on 2026-10-10.
+Moved from `metal/prefill_emodel.go` (the comment above `emodelLayerMajorOn`) on 2026-10-09.
 
 ```text
 emodelLayerMajorOn routes a Gemma 4 E-model's prompt (E2B, E4B: per-layer embeddings, KV-shared layers) through
@@ -419,7 +419,7 @@ below 1.00x.
 
 ## emodelBatchedOn
 
-Moved from `metal/prefill_emodel.go` (the comment above `emodelBatchedOn`) on 2026-10-10.
+Moved from `metal/prefill_emodel.go` (the comment above `emodelBatchedOn`) on 2026-10-09.
 
 ```text
 emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 step 2,
@@ -431,7 +431,7 @@ layer-major pass (bit-identical to sequential) keeps the route.
 
 ## g4ExpertBatchOn
 
-Moved from `metal/prefill_g4batch.go` (the comment above `g4ExpertBatchOn`) on 2026-10-10.
+Moved from `metal/prefill_g4batch.go` (the comment above `g4ExpertBatchOn`) on 2026-10-09.
 
 ```text
 D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a
@@ -450,7 +450,7 @@ g4ExpertBatchOn picks it in g4LayerMajorRows. ON once its gate passes and its sp
 
 ## g4LayerMajorOn
 
-Moved from `metal/prefill_g4paged.go` (the comment above `g4LayerMajorOn`) on 2026-10-10.
+Moved from `metal/prefill_g4paged.go` (the comment above `g4LayerMajorOn`) on 2026-10-09.
 
 ```text
 g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/tasks/task-m26-mac-2026-10.md, 4b)
@@ -460,7 +460,7 @@ on M26 read 1.42x); the night grade at M = 128 and 512 turns it off if it reads 
 
 ## loraQGateGap
 
-Moved from `metal/lora.go` (the file comment opening the file) on 2026-10-10.
+Moved from `metal/lora.go` (the file comment opening the file) on 2026-10-09.
 
 ```text
 Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md).

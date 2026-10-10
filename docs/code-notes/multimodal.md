@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## DecodeWAV
 
-Moved from `multimodal/audio.go` (the comment above `DecodeWAV`) on 2026-10-10.
+Moved from `multimodal/audio.go` (the comment above `DecodeWAV`) on 2026-10-09.
 
 ```text
 DecodeWAV reads a RIFF WAV of 16-bit PCM, mono, at 16 kHz into samples in [-1, 1] (s/32768). Any other format,
@@ -16,13 +16,13 @@ channel count or rate is refused: serve does not resample yet. DecodeWAVAnyRate 
 owner decides.
 ```
 
-Note added when this moved (2026-10-10): "not wired in; the owner decides" is no longer true. G-S5e passed with option (b) after this
+Note added when this moved (2026-10-09): "not wired in; the owner decides" is no longer true. G-S5e passed with option (b) after this
 comment was written (`docs/tasks/task-multimodal-support-2026-10.md`, the S5 follow-up), and `internal/serveapp/vision_serve.go` calls
 `DecodeWAVAnyRate` for chat audio. The code comment now says what each function accepts and nothing more.
 
 ## Gemma3PromptBlock
 
-Moved from `multimodal/gemma3_block.go` (the comment above `Gemma3PromptBlock`) on 2026-10-10.
+Moved from `multimodal/gemma3_block.go` (the comment above `Gemma3PromptBlock`) on 2026-10-09.
 
 ```text
 Gemma3PromptBlock is the text a Gemma 3 image turn actually splices into the prompt: n soft
@@ -36,7 +36,7 @@ the identical shape.
 
 ## Gemma4TowerAccelerator
 
-Moved from `multimodal/gemma4_tower.go` (the comment above `Gemma4TowerAccelerator`) on 2026-10-10.
+Moved from `multimodal/gemma4_tower.go` (the comment above `Gemma4TowerAccelerator`) on 2026-10-09.
 
 ```text
 Gemma 4 vision tower accelerators (docs/multimodal.md, "Finishing this doc", F2). A backend module (goinfer/metal)
@@ -47,7 +47,7 @@ patch embed and the encoder layers; the pool and projection after them stay aiki
 
 ## glm_ocr.go.header
 
-Moved from `multimodal/glm_ocr.go` (the comment above `glm_ocr.go.header`) on 2026-10-10.
+Moved from `multimodal/glm_ocr.go` (the comment above `glm_ocr.go.header`) on 2026-10-09.
 
 ```text
 GLM-OCR (zai-org/GLM-OCR, model_type glm_ocr) image plumbing: the prompt block, the task prompts and the
@@ -58,7 +58,7 @@ O0), so only the config differs.
 
 ## GlmOcrPrompts
 
-Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrPrompts`) on 2026-10-10.
+Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrPrompts`) on 2026-10-09.
 
 ```text
 The task prompts the model card lists. The user turn is the image followed by exactly one of these (the card's three;
@@ -68,7 +68,7 @@ template, not one of these (task O5).
 
 ## GlmOcrExtractionInstruction
 
-Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrExtractionInstruction`) on 2026-10-10.
+Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrExtractionInstruction`) on 2026-10-09.
 
 ```text
 GlmOcrExtractionInstruction opens the model's information-extraction prompt (the model card's own, verbatim: "output
@@ -79,7 +79,7 @@ with constrain.TemplateFromSchema / TemplateFromStruct so the prompt and the gra
 
 ## GlmOcrExtractionText
 
-Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrExtractionText`) on 2026-10-10.
+Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrExtractionText`) on 2026-10-09.
 
 ```text
 GlmOcrExtractionText applies the O5 rule for a request that asks for schema-bound output ON AN IMAGE: the template
@@ -92,7 +92,7 @@ reply, but the user owns what the model is told. replaced reports which happened
 
 ## LoadGlmOcrPreprocessConfig
 
-Moved from `multimodal/glm_ocr.go` (the comment above `LoadGlmOcrPreprocessConfig`) on 2026-10-10.
+Moved from `multimodal/glm_ocr.go` (the comment above `LoadGlmOcrPreprocessConfig`) on 2026-10-09.
 
 ```text
 LoadGlmOcrPreprocessConfig reads a GLM-OCR checkpoint's preprocessor_config.json into the QwenPreprocessConfig that
@@ -113,7 +113,7 @@ refusals (a file missing the size keys is an error, not a default).
 
 ## HashImageBytes
 
-Moved from `multimodal/imagehash.go` (the comment above `HashImageBytes`) on 2026-10-10.
+Moved from `multimodal/imagehash.go` (the comment above `HashImageBytes`) on 2026-10-09.
 
 ```text
 HashImageBytes returns a content hash of raw image bytes, for P9(a)'s resident image-block
@@ -124,7 +124,7 @@ this the same image byte-for-byte as the one already sitting in the resident KV 
 
 ## pixtralMergerPositionMajor
 
-Moved from `multimodal/pixtral.go` (the comment above `pixtralMergerPositionMajor`) on 2026-10-10.
+Moved from `multimodal/pixtral.go` (the comment above `pixtralMergerPositionMajor`) on 2026-10-09.
 
 ```text
 pixtralMergerPositionMajor, when set, lays each merge unit out position-major (the 4 patches' vectors one after the
@@ -133,7 +133,7 @@ other) instead of HF's channel-major unfold: S10's planted defect for the merger
 
 ## LoadProjector.normW
 
-Moved from `multimodal/projector.go` (the comment above `LoadProjector.normW`) on 2026-10-10.
+Moved from `multimodal/projector.go` (the comment above `LoadProjector.normW`) on 2026-10-09.
 
 ```text
 Validate the norm tensor's length like the projection tensor below: Forward indexes normW by
@@ -144,7 +144,7 @@ handler on the first image request, killing the process (audit C-23).
 
 ## Projector.Forward
 
-Moved from `multimodal/projector.go` (the comment above `Projector.Forward`) on 2026-10-10.
+Moved from `multimodal/projector.go` (the comment above `Projector.Forward`) on 2026-10-09.
 
 ```text
 A config with mm_tokens_per_image larger than the patch grid makes kernel 0, so the pool
@@ -153,7 +153,7 @@ divides by kernel*kernel == 0 and every embedding is silently NaN. Fail loudly i
 
 ## qwen_preprocess.go.header
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `qwen_preprocess.go.header`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `qwen_preprocess.go.header`) on 2026-10-09.
 
 ```text
 Qwen2.5-VL image preprocessing: image bytes -> pre-flattened pixel_values
@@ -174,12 +174,12 @@ N-34: this said "the resize here is bilinear" and described PIL-bicubic parity a
 refinement, after the bicubic path had already landed.
 ```
 
-Note added when this moved (2026-10-10): `docs/prompts/aikit-qwen25vl-vit.md`, cited above, does not exist in the tree; the pointer was dropped
+Note added when this moved (2026-10-09): `docs/prompts/aikit-qwen25vl-vit.md`, cited above, does not exist in the tree; the pointer was dropped
 from the code comment. The "N-34" paragraph recorded a correction already made (the comment had said the resize was bilinear).
 
 ## QwenPreprocessConfig.FusedNormalize
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `QwenPreprocessConfig.FusedNormalize`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `QwenPreprocessConfig.FusedNormalize`) on 2026-10-09.
 
 ```text
 FusedNormalize selects HF's torchvision-backend arithmetic, (x - mean*255)/(std*255) on the
@@ -191,7 +191,7 @@ path's pixel_values are unchanged.
 
 ## qwen35FamilyPreprocessorJSON
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `qwen35FamilyPreprocessorJSON`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `qwen35FamilyPreprocessorJSON`) on 2026-10-09.
 
 ```text
 qwen35FamilyPreprocessorJSON is the preprocessor_config.json every Qwen3.5/3.6 checkpoint ships, byte for byte (the
@@ -201,7 +201,7 @@ same MD5 on Qwen3.5-0.8B, Qwen3.5-9B and Qwen3.6-35B-A3B, read 2026-10-06). A GG
 
 ## qwenMaxInputPixels
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `qwenMaxInputPixels`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `qwenMaxInputPixels`) on 2026-10-09.
 
 ```text
 qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for,
@@ -211,7 +211,7 @@ camera image, below the memory a decompression bomb would demand (audit M-15).
 
 ## QwenPreprocess.bomb
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `QwenPreprocess.bomb`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `QwenPreprocess.bomb`) on 2026-10-09.
 
 ```text
 Peek the declared dimensions from the header BEFORE decoding pixels.
@@ -227,7 +227,7 @@ this earlier and larger one).
 
 ## qwenSmartResize.aspect
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `qwenSmartResize.aspect`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `qwenSmartResize.aspect`) on 2026-10-09.
 
 ```text
 N-81 (docs/audit-2026-09-10.md, re-verified 2026-09-16, no action needed): HF's
@@ -243,7 +243,7 @@ Kept as documented, acknowledged behavior rather than added scope this batch.
 
 ## qwenExtractRGB
 
-Moved from `multimodal/qwen_preprocess.go` (the comment above `qwenExtractRGB`) on 2026-10-10.
+Moved from `multimodal/qwen_preprocess.go` (the comment above `qwenExtractRGB`) on 2026-10-09.
 
 ```text
 qwenExtractRGB reads img into a [h*w*3] 0..255 channel-last float buffer. The
@@ -267,7 +267,7 @@ through to the generic loop unchanged.
 
 ## resample.go.header
 
-Moved from `multimodal/resample.go` (the comment above `resample.go.header`) on 2026-10-10.
+Moved from `multimodal/resample.go` (the comment above `resample.go.header`) on 2026-10-09.
 
 ```text
 Audio towers take 16 kHz mono (S5's follow-up, docs/tasks/task-multimodal-support-2026-10.md, G-S5e). A WAV at another rate
@@ -280,7 +280,7 @@ TestResample_matchesResamplePoly holds it to scipy's output (testdata/resample_p
 
 ## splice.go.header
 
-Moved from `multimodal/splice.go` (the comment above `splice.go.header`) on 2026-10-10.
+Moved from `multimodal/splice.go` (the comment above `splice.go.header`) on 2026-10-09.
 
 ```text
 This is the one image-block splice every vision caller shares (goinfer-serve's vision routes, goinfer-chat --image, the
@@ -290,7 +290,7 @@ one-line delegate and keeps its tests.
 
 ## SpliceImageBlock
 
-Moved from `multimodal/splice.go` (the comment above `SpliceImageBlock`) on 2026-10-10.
+Moved from `multimodal/splice.go` (the comment above `SpliceImageBlock`) on 2026-10-09.
 
 ```text
 SpliceImageBlock re-tags the image block as its own Special segment, splitting the content
@@ -305,7 +305,7 @@ re-implementing its logic beside it.
 
 ## SpliceImageBlock.lastOccurrence
 
-Moved from `multimodal/splice.go` (the comment inside `SpliceImageBlock`) on 2026-10-10.
+Moved from `multimodal/splice.go` (the comment inside `SpliceImageBlock`) on 2026-10-09.
 
 ```text
 V-19 (docs/review-2026-09-04.md): search from the END and splice the LAST occurrence, not
@@ -320,7 +320,7 @@ tagged Special and parsed as sentinels it was never meant to be.
 
 ## voxtral.go.header
 
-Moved from `multimodal/voxtral.go` (the comment above `voxtral.go.header`) on 2026-10-10.
+Moved from `multimodal/voxtral.go` (the comment above `voxtral.go.header`) on 2026-10-09.
 
 ```text
 Voxtral Mini's audio constants (docs/tasks/task-multimodal-support-2026-10.md, S14.4b, desk read 2026-10-09).

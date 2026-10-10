@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## prefillCore: m-RoPE and image-block uploads
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 Qwen2.5-VL m-RoPE: build and upload this pass's per-row (t,h,w) rotation triples ONCE,
@@ -19,7 +19,7 @@ S11: every image block's [start, end), uploaded once for every layer's attn_img_
 
 ## prefillCore: K=V copy
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the V buffer here and normalize it
@@ -30,7 +30,7 @@ copy of M*kvDim floats moves every row.
 
 ## prefillCore: default attention tile
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the
@@ -41,7 +41,7 @@ first row, so a taller block is not bit-identical there). GOINFER_CUDA_ATTN_FUSE
 
 ## prefillCore: MoE FFN
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 --- FFN. Dense batches; MoE runs ROW BY ROW off the batched residual. ---
@@ -67,7 +67,7 @@ with either armed rather than quietly returning M× the rows they expect.
 
 ## prefillCore: MoE row cancellation
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 Between ROWS: this loop is the one that made cancellation coarse. A MoE
@@ -79,7 +79,7 @@ Checked per row, so the granularity is back to roughly one token.
 
 ## batchedHeadArgmax
 
-Moved from `cuda/prefill.go` (the comment above `batchedHeadArgmax`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `batchedHeadArgmax`) on 2026-10-09.
 
 ```text
 batchedHeadArgmax is tailAllArgmax's tail: ONE batched final-norm, ONE batched head GEMV over
@@ -98,7 +98,7 @@ same lifetime the rest of the resident scratch has.
 
 ## batchedHeadArgmax: release before growing
 
-Moved from `cuda/prefill.go` (the comment in the body of `batchedHeadArgmax`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `batchedHeadArgmax`) on 2026-10-09.
 
 ```text
 RELEASE BEFORE GROWING. This was grow-only: each larger prompt abandoned the previous
@@ -108,7 +108,7 @@ default, on top of the live one (audit-2026-09-02 C-12).
 
 ## batchedHeadArgmax: device argmax
 
-Moved from `cuda/prefill.go` (the comment in the body of `batchedHeadArgmax`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `batchedHeadArgmax`) on 2026-10-09.
 
 ```text
 The argmax used to be taken on the HOST after downloading all M×vocab logits ("a batched
@@ -119,7 +119,7 @@ and M ints come back.
 
 ## batchedHeadFull
 
-Moved from `cuda/prefill.go` (the comment above `batchedHeadFull`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `batchedHeadFull`) on 2026-10-09.
 
 ```text
 batchedHeadFull is prefillCore's batched head for tailAllLogits, where every row's FULL logits
@@ -149,7 +149,7 @@ Everything downstream of the GEMV stays exactly as the loop it replaces did it, 
 
 ## fastPrefillFloor
 
-Moved from `cuda/prefill.go` (the comment above `fastPrefillFloor`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `fastPrefillFloor`) on 2026-10-09.
 
 ```text
 fastPrefillFloor is the PROMPT-LENGTH floor below which neither fast lever engages.
@@ -171,7 +171,7 @@ passing gate cell at the new depth — not an argument that the curve looks smoo
 
 ## useAttnFused
 
-Moved from `cuda/prefill.go` (the comment above `useAttnFused`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `useAttnFused`) on 2026-10-09.
 
 ```text
 useAttnFused is the ONE place the L2 kernel is chosen, so the fallback cannot drift between call
@@ -195,7 +195,7 @@ throughput as the shipping kernel's.
 
 ## useGemmMMA
 
-Moved from `cuda/prefill.go` (the comment above `useGemmMMA`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `useGemmMMA`) on 2026-10-09.
 
 ```text
 useGemmMMA is the ONE place the L3 kernel is chosen. Every "no" means gemv_w4a8_rn, which is the
@@ -215,7 +215,7 @@ shape that does not is served correctly by the exact path rather than by a speci
 
 ## rnBlockRows
 
-Moved from `cuda/prefill.go` (the comment above `rnBlockRows`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `rnBlockRows`) on 2026-10-09.
 
 ```text
 rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid
@@ -225,7 +225,7 @@ load count → halves the scoreboard stall, 4.41→3.38 ms, at the 64-reg / 100%
 
 ## prefillStaticDecline: MoE guard
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillStaticDecline`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillStaticDecline`) on 2026-10-09.
 
 ```text
 MoE is no longer a categorical refusal: a MoE layer's FFN runs ROW BY ROW off the batched
@@ -250,7 +250,7 @@ that a guard written for one arch refused another.
 
 ## prefillStaticDecline: DeltaNet and per-layer geometry
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillStaticDecline`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillStaticDecline`) on 2026-10-09.
 
 ```text
 RECURRENT STATE (Gated-DeltaNet: qwen3_5 / qwen3_5_moe / qwen3_next). A DeltaNet layer's conv ring and matrix
@@ -272,7 +272,7 @@ remove the hoist and the assertion has nothing left to protect.
 
 ## checkPrefillShmem
 
-Moved from `cuda/prefill.go` (the comment above `checkPrefillShmem`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `checkPrefillShmem`) on 2026-10-09.
 
 ```text
 checkPrefillShmem is prefillStaticDecline's PROMPT-dependent twin (V-05, docs/review-2026-09-04.md):
@@ -290,7 +290,7 @@ or miss one it would have failed.
 
 ## PrefillPath
 
-Moved from `cuda/prefill.go` (the comment above `PrefillPath`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillPath`) on 2026-10-09.
 
 ```text
 PrefillPath (decoder.PrefillPathReporter) answers, at load, whether this model will get the batched
@@ -304,7 +304,7 @@ spin-waiting through 300 sequential launches instead of one pass.
 
 ## PrefillPath: rows per pass
 
-Moved from `cuda/prefill.go` (the comment in the body of `PrefillPath`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `PrefillPath`) on 2026-10-09.
 
 ```text
 Say ROWS PER PASS, not "one pass". The report is read as a promise about how a long prompt
@@ -316,7 +316,7 @@ startup line for every prompt long enough to matter.
 
 ## fastPrefillEnabled
 
-Moved from `cuda/prefill.go` (the comment above `fastPrefillEnabled`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `fastPrefillEnabled`) on 2026-10-09.
 
 ```text
 fastPrefillEnabled reports which fast prefill kernels are selected, PER LEVER.
@@ -348,7 +348,7 @@ kernel, and an all-or-nothing flag cannot answer it.
 
 ## prefillCore: forceExactKernels, DeltaNet
 
-Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression of `prefillCore`) on 2026-10-09.
 
 ```text
 Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after
@@ -358,7 +358,7 @@ bit-identical to decode without (docs/tasks/task-cuda-deltanet-prefill-2026-09.m
 
 ## prefillCore: forceExactKernels, E-model
 
-Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression of `prefillCore`) on 2026-10-09.
 
 ```text
 Gemma 4 E-model (S9 on CUDA part A): the fast levers have no fidelity evidence on this family, and the first served read showed it. On the real E2B, a
@@ -370,7 +370,7 @@ decode at every length, until the levers pass a fidelity gate of their own.
 
 ## prefillCore: forceExactKernels, DeepStack
 
-Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression of `prefillCore`) on 2026-10-09.
 
 ```text
 Qwen3-VL's DeepStack prefill (S10 on CUDA, G-S10g): the first real reading failed on table.png (986 rows, past the 512-row floor): the last-row logits read 0.9125 against the CPU prefill with the fast levers
@@ -380,7 +380,7 @@ the exact kernels, as the E-model does, until they have.
 
 ## prefillCore: scratch free list
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 --- M-sized scratch (device), freed at the end.
@@ -397,7 +397,7 @@ decline, the leak would be real, repeatable, and would push the NEXT prompt clos
 
 ## prefillDefaultChunk
 
-Moved from `cuda/prefill.go` (the comment above `prefillDefaultChunk`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `prefillDefaultChunk`) on 2026-10-09.
 
 ```text
 prefillDefaultChunk is the default number of prompt rows per batched pass.
@@ -429,7 +429,7 @@ GOINFER_PREFILL_CHUNK overrides it (0 or unset = this default).
 
 ## prefillImageDefaultChunk
 
-Moved from `cuda/prefill.go` (the comment above `prefillImageDefaultChunk`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `prefillImageDefaultChunk`) on 2026-10-09.
 
 ```text
 prefillImageDefaultChunk is PrefillImageLast's own row budget — separate from
@@ -450,7 +450,7 @@ GOINFER_PREFILL_IMAGE_CHUNK overrides it (0 or unset = this default).
 
 ## PrefillLast
 
-Moved from `cuda/prefill.go` (the comment above `PrefillLast`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillLast`) on 2026-10-09.
 
 ```text
 PrefillLast (decoder.Prefiller) ingests a whole prompt in ONE weight-stationary pass and returns the
@@ -472,7 +472,7 @@ PrefillLast ingests a whole prompt in one batched pass, returning the last token
 
 ## PrefillImageLast
 
-Moved from `cuda/prefill.go` (the comment above `PrefillImageLast`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillImageLast`) on 2026-10-09.
 
 ```text
 PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast's Gemma-3 twin for a turn
@@ -497,7 +497,7 @@ unchanged".
 
 ## PrefillImageBlocksLast: OOM budget
 
-Moved from `cuda/prefill.go` (the comment above `PrefillImageBlocksLast: OOM budget`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillImageBlocksLast: OOM budget`) on 2026-10-09.
 
 ```text
 N-41 (docs/audit-2026-09-10.md): unlike prefillChunked, this call cannot retry at a
@@ -515,7 +515,7 @@ the same real OOM.
 
 ## cudaDeepstackPrefillOn
 
-Moved from `cuda/prefill.go` (the comment above `cudaDeepstackPrefillOn`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `cudaDeepstackPrefillOn`) on 2026-10-09.
 
 ```text
 cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, ON BY THE OWNER'S DECISION of 2026-10-09 ("just turn it on"), over a registered FAIL. The record (docs/tasks/task-multimodal-support-2026-10.md):
@@ -528,7 +528,7 @@ CPU prefill and the upload; setting this false restores that path exactly. The g
 
 ## HiddenLast
 
-Moved from `cuda/prefill.go` (the comment above `HiddenLast`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `HiddenLast`) on 2026-10-09.
 
 ```text
 HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for G4
@@ -543,7 +543,7 @@ this takes it anyway so it can share prefillChunked's chunk-boundary bookkeeping
 
 ## ResidualAll
 
-Moved from `cuda/prefill.go` (the comment above `ResidualAll`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `ResidualAll`) on 2026-10-09.
 
 ```text
 ResidualAll (decoder.ResidentResidualAll) returns every row's residual stream after the last layer and before the final norm: HiddenLast's twin for a head that reads
@@ -554,7 +554,7 @@ the pass already downloads, so nothing here is quantized and the decoder's own f
 
 ## PrefillLastNArgmax
 
-Moved from `cuda/prefill.go` (the comment above `PrefillLastNArgmax`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillLastNArgmax`) on 2026-10-09.
 
 ```text
 PrefillLastNArgmax is the spec-decode VERIFY primitive: the same batched pass, returning only
@@ -574,7 +574,7 @@ all. TestPrefillLastNArgmax_matchesPerRow gates it.
 
 ## PrefillSeedArgmax
 
-Moved from `cuda/prefill.go` (the comment above `PrefillSeedArgmax`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillSeedArgmax`) on 2026-10-09.
 
 ```text
 PrefillSeedArgmax satisfies decoder.ResidentSeedArgmax: the same batched forward and the same
@@ -595,7 +595,7 @@ vocab floats (~0.6 MB) against M x vocab.
 
 ## PrefillSeedArgmax: cancellation gap
 
-Moved from `cuda/prefill.go` (the comment above `PrefillSeedArgmax: cancellation gap`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment above `PrefillSeedArgmax: cancellation gap`) on 2026-10-09.
 
 ```text
 context.Background(), and it is a KNOWN GAP of the same class PrefillLast just closed:
@@ -607,7 +607,7 @@ how a surface changes without anyone deciding to. Filed with the P20 cancellatio
 
 ## prefillCore: batched hidden-state capture
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 BATCHED HIDDEN-STATE CAPTURE (P10). The per-token seam (capVec) syncs and
@@ -619,7 +619,7 @@ block — 5 downloads per verify instead of 5*M.
 
 ## prefillCore: tailResidualAll download
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 The ONLY tail that reads the whole residual on the host (audit R-24): the argmax and all-logits heads below read xB on the device, and
@@ -629,7 +629,7 @@ the last-row tails need one row, copied device-to-device. Downloading all M rows
 
 ## prefillCore: OOM as decline
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 An OOM inside the job arrives as a recovered panic (runJob, audit C-24) carrying aikit
@@ -643,7 +643,7 @@ their own wrapping.
 
 ## prefillCore: final-logit softcap
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 Final-logit softcap (Gemma) — host-side, exactly as step(). No-op (0) for the dense families
@@ -655,7 +655,7 @@ softcapped family.
 
 ## prefillCore: qTempRows
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different
@@ -668,7 +668,7 @@ needs both today (Ministral 3 has no m-RoPE, Qwen2.5-VL no temperature).
 
 ## prefillCore: sinkArg
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
@@ -680,7 +680,7 @@ depend on.
 
 ## prefillCore: final norm and head
 
-Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in the body of `prefillCore`) on 2026-10-09.
 
 ```text
 Final norm + LM head, per row — copy xB[m] into the M=1 scratch and reuse the exact Forward
@@ -692,7 +692,7 @@ the layer launches first: they run on r.stream, and the DtoH below is not ordere
 
 ## bGemvB and gemmMMAMinRows: batched int8 and mma row floor
 
-Moved from `cuda/prefill.go` (the comment in `bGemvB` and above `gemmMMAMinRows`) on 2026-10-10.
+Moved from `cuda/prefill.go` (the comment in `bGemvB` and above `gemmMMAMinRows`) on 2026-10-09.
 
 ```text
 Batched W8A8 (§C6). One warp per output row (8 warps/block), same layout as doG's int8
@@ -705,7 +705,7 @@ gemv_w4a8_rn — the EXACT path — as the M<16 path for that reason. 16 is two 
 
 ## BuildResident: KV slots partially granted
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 S18 (docs/tasks/task-multimodal-support-2026-10.md): checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with
@@ -715,7 +715,7 @@ slots that fit instead of dropping the whole resident to the CPU; the first slot
 
 ## BuildResident: dense-FFN scratch
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 DENSE-FFN scratch, and only if the model HAS a dense FFN. A model whose every layer is
@@ -734,7 +734,7 @@ Scratch is sized to the WIDEST dense layer: an E-model's layers differ and the l
 
 ## BuildResident: moe_route warm-up
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 A9-FIX: pay the DEFERRED first-launch reservation BEFORE the free reading that sizes the
@@ -775,7 +775,7 @@ does. Concurrent streams would reopen whether the bound is max or a sum.
 
 ## BuildResident: per-32 fusion gate
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 Their per-32 twins (fused_rms_qkv_g32 / fused_rms_gu_g32) take any of the per-32 weight kinds,
@@ -789,7 +789,7 @@ unfused: +10% at H=1536 (qwen2.5-coder-1.5b), −8% at 3072 (phi3-mini), −5% a
 
 ## cudaKVSlotsRequest
 
-Moved from `cuda/backend.go` (the comment above `cudaKVSlotsRequest`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment above `cudaKVSlotsRequest`) on 2026-10-09.
 
 ```text
 cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for (MC1,
@@ -804,7 +804,7 @@ family with recurrent state), and 1 in two cases the decoder cannot see:
 
 ## BuildResident: decline reason
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 The reason is printed UNCONDITIONALLY, not behind a debug flag. Declining moves the whole
@@ -821,7 +821,7 @@ report — before, it reached stderr only, and the model's recorded reason was a
 
 ## BuildResident: DeltaNet gated softmax case
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
@@ -836,7 +836,7 @@ per head.
 
 ## BuildResident: o_proj bias
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 Captured INDEPENDENTLY of QBias: the two travel together in Qwen2 but not in general —
@@ -852,7 +852,7 @@ dangerous direction: it invited exactly the fold it warns against.
 
 ## BuildResident: MoE cache slots default
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 C′ step 2: device slots per layer — an LRU cache of nSlots experts (clamped [topK, nE]).
@@ -910,7 +910,7 @@ still caps to measured free VRAM, so this can only ever ask for less than the re
 
 ## BuildResident: MoE cache slots request
 
-Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
 The request now comes from Options (--moe-cache-slots), and MoECacheSlotsRequest still
@@ -931,7 +931,7 @@ discriminated by routing luck. Refuse what cannot be honoured; honour the rest e
 
 ## BuildResident: checkWeightsFit order
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 M-02 (docs/audit-2026-09-02.md, docs/tasks/task-fit-to-hardware.md): CUDA had no memory-fit
@@ -946,7 +946,7 @@ clearest message rather than whichever unrelated shape check happens to run firs
 
 ## BuildResident: device exhaustion
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 THESE MODULE AND PIPELINE HANDLES DO NOT SURVIVE DEVICE EXHAUSTION. Read this before
@@ -989,7 +989,7 @@ context, the failure will be silent zeros, not an error.
 
 ## BuildResident: rope binding
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 kv_store and rope are NOT bound: the fused rope_kv below subsumes both (the Incr1
@@ -1004,7 +1004,7 @@ position 1 (real R7B/Aya at int4: worst cosine -0.075/-0.041), so there is no fa
 
 ## BuildResident: PTX modules and NVRTC
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so the C-14 index tie-break
@@ -1017,7 +1017,7 @@ claimed otherwise.) See cuda/argmax.cu.
 
 ## BuildResident: batched prefill modules
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
@@ -1029,7 +1029,7 @@ dispatches int4 to bRN (gemv_w4a8_rn) unconditionally.
 
 ## BuildResident: L2 default
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2). DEFAULT ON above
@@ -1041,7 +1041,7 @@ every selection site falls back to attn_batched, which is the exact path anyway.
 
 ## BuildResident: gpt-oss router
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 gpt-oss's ROUTER. moe.cu's moe_route means something different by "bias" —
@@ -1055,7 +1055,7 @@ that is exactly what the resident path has been doing.
 
 ## BuildResident: router_f32 module
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 router_f32 module: Gemma-4's own kernels, kept off the audited moe.ptx (this box's 12.9
@@ -1071,7 +1071,7 @@ router-specific kernels stay gemma4Moe-only — a dense-only build has no router
 
 ## BuildResident: gpt-oss down bias
 
-Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-10.
+Moved from `cuda/backend.go` (the comment in the setup job of `BuildResident`) on 2026-10-09.
 
 ```text
 The per-expert DOWN bias. Uploaded here with the others because it is a weight,
@@ -1081,7 +1081,7 @@ product. Never wired until 2026-08-31, which cost min cosine 0.75 vs 0.997.
 
 ## gemvFwdPTX
 
-Moved from `cuda/kernels.go` (the comment above `gemvFwdPTX`) on 2026-10-10.
+Moved from `cuda/kernels.go` (the comment above `gemvFwdPTX`) on 2026-10-09.
 
 ```text
 gemvFwdPTX: the LLM-specific forward kernels — kv_store / rope_kv.
@@ -1094,7 +1094,7 @@ with the .cu it is built from.
 
 ## gluePTX
 
-Moved from `cuda/kernels.go` (the comment above `gluePTX`) on 2026-10-10.
+Moved from `cuda/kernels.go` (the comment above `gluePTX`) on 2026-10-09.
 
 ```text
 gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
@@ -1110,7 +1110,7 @@ and the real MoE/glue resident-parity gates measure byte-identical before and af
 
 ## layernormQuantPTX
 
-Moved from `cuda/kernels.go` (the comment above `layernormQuantPTX`) on 2026-10-10.
+Moved from `cuda/kernels.go` (the comment above `layernormQuantPTX`) on 2026-10-09.
 
 ```text
 layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched — the resident SigLIP vision
@@ -1122,7 +1122,7 @@ untouched. See cuda/layernorm_quant.cu / cuda/vision_encoder.go.
 
 ## f32tof16
 
-Moved from `cuda/kernels.go` (the comment above `f32tof16`) on 2026-10-10.
+Moved from `cuda/kernels.go` (the comment above `f32tof16`) on 2026-10-09.
 
 ```text
 f32tof16 encodes an IEEE-754 float32 into a float16 bit pattern, byte-for-byte identical to
@@ -1136,7 +1136,7 @@ scales from metal/aikit/CPU. NOT RNE/saturate: a lone RNE here would re-introduc
 
 ## ExtendContext
 
-Moved from `cuda/drafter.go` (the comment above `ExtendContext`) on 2026-10-10.
+Moved from `cuda/drafter.go` (the comment above `ExtendContext`) on 2026-10-09.
 
 ```text
 ExtendContext projects the fused context rows into every layer's K/V cache, at positions
@@ -1161,7 +1161,7 @@ context, widening with length — a full drafter-prefill of the whole context on
 
 ## ExtendContext: capacity
 
-Moved from `cuda/drafter.go` (the comment in the body of `ExtendContext`) on 2026-10-10.
+Moved from `cuda/drafter.go` (the comment in the body of `ExtendContext`) on 2026-10-09.
 
 ```text
 SIZED TO THE TARGET'S CONTEXT, not need+512. The drafter is a 5-layer trunk, so its
@@ -1174,7 +1174,7 @@ tokens, so none of them could reach it.
 
 ## DraftBlock
 
-Moved from `cuda/drafter.go` (the comment above `DraftBlock`) on 2026-10-10.
+Moved from `cuda/drafter.go` (the comment above `DraftBlock`) on 2026-10-09.
 
 ```text
 DraftBlock runs the trunk over one block and returns its output rows.
@@ -1205,7 +1205,7 @@ N-08 comment already uses for a different upload-failure case).
 
 ## DraftBlock: attention scale
 
-Moved from `cuda/drafter.go` (the comment in the attnBlock launch of `DraftBlock`) on 2026-10-10.
+Moved from `cuda/drafter.go` (the comment in the attnBlock launch of `DraftBlock`) on 2026-10-09.
 
 ```text
 N-11: the DRAFTER's scale, not the target's. d.r.attnScale is the target
@@ -1219,7 +1219,7 @@ acceptance falls, and every correctness gate stays green.
 
 ## SetBatchedCapture
 
-Moved from `cuda/drafter.go` (the comment above `SetBatchedCapture`) on 2026-10-10.
+Moved from `cuda/drafter.go` (the comment above `SetBatchedCapture`) on 2026-10-09.
 
 ```text
 SetBatchedCapture arms the batched hidden-state seam on the target: the next PrefillLastN /
@@ -1233,7 +1233,7 @@ one buffer.
 
 ## NewVisionEncoder: fused attention default
 
-Moved from `cuda/vision_encoder.go` (the comment in the body of `NewVisionEncoder`) on 2026-10-10.
+Moved from `cuda/vision_encoder.go` (the comment in the body of `NewVisionEncoder`) on 2026-10-09.
 
 ```text
 DEFAULT since 2026-09-21 (owner override of the pre-registered rule; the served downstream
@@ -1245,7 +1245,7 @@ restores the old kernel; =bm64 selects the other fused arm.
 
 ## ForwardPatches: scratch free list
 
-Moved from `cuda/vision_encoder.go` (the comment in the body of `ForwardPatches`) on 2026-10-10.
+Moved from `cuda/vision_encoder.go` (the comment in the body of `ForwardPatches`) on 2026-10-09.
 
 ```text
 --- M-sized scratch (device), freed at the end. Mirrors cuda/prefill.go's own free-list
@@ -1259,7 +1259,7 @@ released: ~265 MB per image call, held for the encoder's lifetime.
 
 ## VisionEncoder.Close
 
-Moved from `cuda/vision_encoder.go` (the comment above `Close`) on 2026-10-10.
+Moved from `cuda/vision_encoder.go` (the comment above `Close`) on 2026-10-09.
 
 ```text
 Close tears down the device and its executor goroutine. The release runs ON the executor (via
@@ -1272,7 +1272,7 @@ docs/audit-2026-09-10.md) ReleaseAll ran directly on whatever goroutine called C
 
 ## moe_expert_major.go: file header
 
-Moved from `cuda/moe_expert_major.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/moe_expert_major.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 R11/P20 — CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/tasks/red-october.md R11(b),
@@ -1311,7 +1311,7 @@ the same way, and it was never verified against this scheme), and gpt-oss's own 
 
 ## prefillExpertMajorEnabled
 
-Moved from `cuda/moe_expert_major.go` (the comment above `prefillExpertMajorEnabled`) on 2026-10-10.
+Moved from `cuda/moe_expert_major.go` (the comment above `prefillExpertMajorEnabled`) on 2026-10-09.
 
 ```text
 prefillExpertMajorEnabled reports whether the expert-major MoE prefill restructuring is on.
@@ -1328,7 +1328,7 @@ GOINFER_CUDA_MOE_EXPERT_MAJOR=0 restores the per-row path.
 
 ## PerLayerCacheStatsForTest
 
-Moved from `cuda/testhooks.go` (the comment above `PerLayerCacheStatsForTest`) on 2026-10-10.
+Moved from `cuda/testhooks.go` (the comment above `PerLayerCacheStatsForTest`) on 2026-10-09.
 
 ```text
 PerLayerCacheStatsForTest returns hits/misses for every MoE layer individually, in layer order
@@ -1339,7 +1339,7 @@ budget wasted on some layers and starved on others, or is demand actually even a
 
 ## flashDecodeDefaultMinKeys
 
-Moved from `cuda/flash_decode.go` (the comment above `flashDecodeDefaultMinKeys`) on 2026-10-10.
+Moved from `cuda/flash_decode.go` (the comment above `flashDecodeDefaultMinKeys`) on 2026-10-09.
 
 ```text
 flashDecodeDefaultMinKeys is the attended-span floor for the lane: below it the exact
@@ -1349,7 +1349,7 @@ gemma3-1b lose 3-9% up to 1024 keys and win from 2048, so 2048 is the lowest flo
 
 ## moe_expert_major_gemma4.go: file header
 
-Moved from `cuda/moe_expert_major_gemma4.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/moe_expert_major_gemma4.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Gemma-4 extension of cuda/moe_expert_major.go's expert-major restructuring (R11/P20, this is the
@@ -1362,7 +1362,7 @@ the generic moeMLPPre/Post the other file covers:
 
 ## graphs_safe.go: file header
 
-Moved from `cuda/graphs_safe.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/graphs_safe.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 CUDA graph replay (r.graphs) is ~1.4–1.7× faster but is BIT-EXACT to live launch only under
@@ -1375,7 +1375,7 @@ driver-enforced safe condition and then confirmed with a startup self-test.
 
 ## graphsSelfTest: reset first
 
-Moved from `cuda/graphs_safe.go` (the comment in the body of `graphsSelfTest`) on 2026-10-10.
+Moved from `cuda/graphs_safe.go` (the comment in the body of `graphsSelfTest`) on 2026-10-09.
 
 ```text
 RESET FIRST, or this comparison is invalid for a recurrent model. The test's premise is
@@ -1391,7 +1391,7 @@ family, so the attention path is unchanged.
 
 ## admitGraphs: DeltaNet
 
-Moved from `cuda/graphs_safe.go` (the comment in the body of `admitGraphs`) on 2026-10-10.
+Moved from `cuda/graphs_safe.go` (the comment in the body of `admitGraphs`) on 2026-10-09.
 
 ```text
 NOTE: this used to decline outright for Gated-DeltaNet models, on the reasoning that the
@@ -1405,7 +1405,7 @@ as one segment, making a DeltaNet layer the most graph-friendly kind in the runn
 
 ## softcapParallelMin
 
-Moved from `cuda/softcap.go` (the comment above `softcapParallelMin`) on 2026-10-10.
+Moved from `cuda/softcap.go` (the comment above `softcapParallelMin`) on 2026-10-09.
 
 ```text
 softcapParallelMin is the vocabulary size above which splitting the softcap across cores pays.
@@ -1422,7 +1422,7 @@ the small end is a LOSS, which is why there is a threshold rather than an uncond
 
 ## applySoftcap
 
-Moved from `cuda/softcap.go` (the comment above `applySoftcap`) on 2026-10-10.
+Moved from `cuda/softcap.go` (the comment above `applySoftcap`) on 2026-10-09.
 
 ```text
 applySoftcap applies softcap·tanh(x/softcap) elementwise and in place to a logit vector.
@@ -1447,7 +1447,7 @@ hold — which is recorded in docs/QUEUE.md B6 so the pair is not left implicit.
 
 ## package cuda
 
-Moved from `cuda/doc.go` (the comment the package comment) on 2026-10-10.
+Moved from `cuda/doc.go` (the comment the package comment) on 2026-10-09.
 
 ```text
 Package cuda is an OPT-IN, cgo-free native-CUDA backend for goinfer's resident decode path.
@@ -1483,7 +1483,7 @@ falls back to the staged/CPU path. Blank-importing this package is safe either w
 
 ## fusedQKVRowsPerWarp
 
-Moved from `cuda/fused_qkv_rows.go` (the comment above `fusedQKVRowsPerWarp`) on 2026-10-10.
+Moved from `cuda/fused_qkv_rows.go` (the comment above `fusedQKVRowsPerWarp`) on 2026-10-09.
 
 ```text
 fusedQKVRowsPerWarp chooses how many output rows each warp of fused_rms_qkv_rows walks (1 = the original one-row-per-warp kernel, which the caller keeps for
@@ -1498,7 +1498,7 @@ value (TestFusedQKVRowsBitIdentical), so a wrong pick on an unmeasured geometry 
 
 ## fusedGURowsPerWarp
 
-Moved from `cuda/fused_qkv_rows.go` (the comment above `fusedGURowsPerWarp`) on 2026-10-10.
+Moved from `cuda/fused_qkv_rows.go` (the comment above `fusedGURowsPerWarp`) on 2026-10-09.
 
 ```text
 fusedGURowsPerWarp chooses the rows-per-warp of fused_rms_gu_rows for a (hidden, intermediate) geometry; 8 is the original fused_rms_gu (which the caller keeps for 8).
@@ -1512,7 +1512,7 @@ phi3-mini (3072,8192) 79.1 -> 75.7 (16). Not in the table (no gain): 1.5B (1536,
 
 ## waveRowsPerWarpFor
 
-Moved from `cuda/fused_qkv_rows.go` (the comment above `waveRowsPerWarpFor`) on 2026-10-10.
+Moved from `cuda/fused_qkv_rows.go` (the comment above `waveRowsPerWarpFor`) on 2026-10-09.
 
 ```text
 waveRowsPerWarpFor is the rows-per-warp that sizes a fused-projection grid (blocks of 8 warps, one prologue per block) to ONE resident wave: blocks = (resident blocks per SM) x (SM count),
@@ -1527,7 +1527,7 @@ The kernels are bit-identical for any rows-per-warp, so a bad pick costs speed, 
 
 ## batchstep.go: multi-sequence step header
 
-Moved from `cuda/batchstep.go` (the comment above the ResidentBatchStepper assertion) on 2026-10-10.
+Moved from `cuda/batchstep.go` (the comment above the ResidentBatchStepper assertion) on 2026-10-09.
 
 ```text
 MC3 on CUDA (docs/tasks/task-concurrency-2026-09.md, "MC3 on CUDA"): one decode token for each of several sequences,
@@ -1545,7 +1545,7 @@ is drawn on-device ends in ForwardSample's pick.
 
 ## specdecode.go: file header
 
-Moved from `cuda/specdecode.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/specdecode.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Speculative decoding (D1) — n-gram / prompt-lookup drafting + batched verify. Greedy-lossless by
@@ -1558,7 +1558,7 @@ TestSpecVerifyCeiling). See docs/ollama-chase.md §D1.
 
 ## qwen25_vision.go: tower header
 
-Moved from `cuda/qwen25_vision.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/qwen25_vision.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Qwen2.5-VL's vision tower in float32 on the CUDA tower base (S7 on CUDA's fix, docs/tasks/task-multimodal-support-2026-10.md): the port of metal/vl_towers.go's qwen25VResident, replacing aikit's gpu/qwencuda
@@ -1567,7 +1567,7 @@ Qwen2.5-VL's vision tower in float32 on the CUDA tower base (S7 on CUDA's fix, d
 
 ## qwen25_vision.go: padded intermediate width
 
-Moved from `cuda/qwen25_vision.go` (the comment in the body of the registered factory) on 2026-10-10.
+Moved from `cuda/qwen25_vision.go` (the comment in the body of the registered factory) on 2026-10-09.
 
 ```text
 The intermediate width is padded up to a multiple of 64 with zeros: Qwen2.5-VL-3B's is 3420 (3420 % 16 = 12), which sends the down projection (K = 3420) and the biased epilogue through the tiled GEMM at 1.8 TFLOPS,
@@ -1577,7 +1577,7 @@ columns of down add nothing: the arithmetic is the unpadded tower's.
 
 ## prefillDeltaNetRows: rule kernel
 
-Moved from `cuda/prefill_deltanet.go` (the comment in the body of `prefillDeltaNetRows`) on 2026-10-10.
+Moved from `cuda/prefill_deltanet.go` (the comment in the body of `prefillDeltaNetRows`) on 2026-10-09.
 
 ```text
 Every released model's geometry: the state row stays in registers across the rows (1.23 s → see the task
@@ -1586,7 +1586,7 @@ doc for the measured cost of the generic scan on the 9B).
 
 ## device.go: file header
 
-Moved from `cuda/device.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/device.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 CUDA device layer — now aikit's native-GPU substrate (github.com/townsendmerino/aikit/gpu),
@@ -1603,7 +1603,7 @@ called as gpu.X[T](…) at the sites; everything else is unqualified here.
 
 ## vision_towers.go: imports not taken
 
-Moved from `cuda/vision_towers.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `cuda/vision_towers.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Qwen2.5-VL's vision tower on CUDA is goinfer's own (qwen25_vision.go, on the tower base with the fused attention), registered through vision.RegisterQwenResident from this package. aikit's gpu/qwencuda is NOT imported
@@ -1613,7 +1613,7 @@ allocation-failure fix (v0.1.1) stays in aikit. aikit's gpu/visioncuda (SigLIP) 
 
 ## addInPlaceHost and residual: host round trip
 
-Moved from `cuda/vision_encoder.go` (the comment above `residual` and `addInPlaceHost`) on 2026-10-10.
+Moved from `cuda/vision_encoder.go` (the comment above `residual` and `addInPlaceHost`) on 2026-10-09.
 
 ```text
 residual: x += y (elementwise), same shape as cuda/glue.cu's own `residual` kernel — but that

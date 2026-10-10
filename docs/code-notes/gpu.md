@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## ensurePrefillBatched
 
-Moved from `gpu/prefillrunner.go` (the comment above `ensurePrefillBatched`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above `ensurePrefillBatched`) on 2026-10-09.
 
 ```text
 ensurePrefillBatched lazily compiles the two batched-row kernels PrefillLastW8A8
@@ -22,7 +22,7 @@ pay for or risk these at all.
 
 ## runModelToModelW
 
-Moved from `gpu/prefillrunner.go` (the comment above `runModelToModelW`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above `runModelToModelW`) on 2026-10-09.
 
 ```text
 runModelToModelW narrows a resident runModel (the general polymorphic
@@ -110,7 +110,7 @@ only the former must decline.
 
 ## maxChunkElems
 
-Moved from `gpu/prefillrunner.go` (the comment above `maxChunkElems`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above `maxChunkElems`) on 2026-10-09.
 
 ```text
 maxChunkElems: WebGPU's per-dimension workgroup-COUNT limit is 65535
@@ -123,7 +123,7 @@ slow), not a silent wrong-output risk, but worth actually fixing.
 
 ## quantPackedM
 
-Moved from `gpu/prefillrunner.go` (the comment above `quantPackedM`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above `quantPackedM`) on 2026-10-09.
 
 ```text
 quantPackedM quantizes ALL M rows of a packed [M, K] buffer in ONE dispatch,
@@ -136,7 +136,7 @@ the GEMM's aq/aScale inputs ARE this call's direct output.
 
 ## tiledProjB
 
-Moved from `gpu/prefillrunner.go` (the comment above `tiledProjB`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above `tiledProjB`) on 2026-10-09.
 
 ```text
 tiledProjB runs a projection over all M rows: quantPackedM (one dispatch, no
@@ -157,7 +157,7 @@ reads the same bytes it did when it quantized its own copy.
 
 ## PrefillLastW8A8: profBoundary
 
-Moved from `gpu/prefillrunner.go` (the comment above `pt` and `profBoundary` inside `PrefillLastW8A8`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above `pt` and `profBoundary` inside `PrefillLastW8A8`) on 2026-10-09.
 
 ```text
 R10 prefill decomposition (gpu/prefill_prof.go): pt is a no-op (time.Time{}) whenever
@@ -177,7 +177,7 @@ extra flushes happen ONLY when profiling is on; production cadence is untouched.
 
 ## PrefillLastW8A8: attention step
 
-Moved from `gpu/prefillrunner.go` (the comment above the attention dispatch inside `PrefillLastW8A8`) on 2026-10-10.
+Moved from `gpu/prefillrunner.go` (the comment above the attention dispatch inside `PrefillLastW8A8`) on 2026-10-09.
 
 ```text
 All rows' K/V are now in the cache; each row attends to its causal prefix
@@ -196,7 +196,7 @@ allocations of it.
 
 ## matmulShaderWGSL
 
-Moved from `gpu/gpu.go` (the comment above `matmulShaderWGSL`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `matmulShaderWGSL`) on 2026-10-09.
 
 ```text
 matmulShaderWGSL computes dst[m,n] = Σ_k a[m,k]·b[n,k], i.e. dst =
@@ -213,7 +213,7 @@ stages K-strips into workgroup memory is the throughput follow-up.
 
 ## Context.releases
 
-Moved from `gpu/gpu.go` (the comment above `Context.releases`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `Context.releases`) on 2026-10-09.
 
 ```text
 releases holds one closure per lazily-created device object (shader module + compute
@@ -229,7 +229,7 @@ not exist yet.
 
 ## Context.closed
 
-Moved from `gpu/gpu.go` (the comment above `Context.closed`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `Context.closed`) on 2026-10-09.
 
 ```text
 closed makes Close IDEMPOTENT. `defer m.Close()` alongside an explicit m.Close() is the
@@ -241,7 +241,7 @@ crashed, and only on a machine with a real GPU.
 
 ## Context.hasDP4A
 
-Moved from `gpu/gpu.go` (the comment above `Context.hasDP4A`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `Context.hasDP4A`) on 2026-10-09.
 
 ```text
 hasDP4A records whether this adapter's WGSL compiler accepts dot4I8Packed
@@ -256,7 +256,7 @@ capable TU10x+) over the scalar-unpack fallback every backend accepts.
 
 ## Context.attnBatchedShader
 
-Moved from `gpu/gpu.go` (the comment above `Context.attnBatchedShader`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `Context.attnBatchedShader`) on 2026-10-09.
 
 ```text
 docs/completed/task-gpu-batched-prefill.md Increment 1: batched causal attention (PrefillLastW8A8
@@ -275,7 +275,7 @@ than a bit-exact one.
 
 ## liveContexts
 
-Moved from `gpu/gpu.go` (the comment above `liveContexts`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `liveContexts`) on 2026-10-09.
 
 ```text
 liveContexts counts Contexts that have been created and not yet Closed. A WebGPU device is
@@ -288,7 +288,7 @@ Exposed to tests through liveContexts.Load(); see TestDeviceExhaustion_repro.
 
 ## Context.mkPipeline
 
-Moved from `gpu/gpu.go` (the comment above `Context.mkPipeline`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `Context.mkPipeline`) on 2026-10-09.
 
 ```text
 mkPipeline compiles one WGSL shader into a compute pipeline, registers BOTH objects for release,
@@ -303,7 +303,7 @@ failed ensure* leaves the Context exactly as it found it.
 
 ## finalizerSerial
 
-Moved from `gpu/gpu.go` (the comment above `finalizerSerial`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment above `finalizerSerial`) on 2026-10-09.
 
 ```text
 finalizerSerial runs f on the runtime's finalizer goroutine and waits for it.
@@ -319,7 +319,7 @@ If the finalizer goroutine does not take the job within about a second (it is bl
 
 ## Stage 3 attention primitives: long-context RoPE
 
-Moved from `gpu/attention.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Stage 3 attention primitives — RoPE and single-query attention on the GPU, so a
@@ -346,7 +346,7 @@ Metal, since GPU vendors' sin/cos range reduction is independently implementatio
 
 ## attnWG
 
-Moved from `gpu/attention.go` (the comment above `attnWG`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment above `attnWG`) on 2026-10-09.
 
 ```text
 attnWG is the single-query attention kernels' NARROW workgroup width, and attnWGWide the wide
@@ -370,7 +370,7 @@ narrow single-query kernels below.
 
 ## attnShaderWGSL
 
-Moved from `gpu/attention.go` (the comment above `attnShaderWGSL`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment above `attnShaderWGSL`) on 2026-10-09.
 
 ```text
 Single-query attention (decode): one workgroup per query head, an online
@@ -386,7 +386,7 @@ lanes (every lane sees the same score x), so no extra reduction is needed.
 
 ## attnKeysShaderWGSL
 
-Moved from `gpu/attention.go` (the comment above `attnKeysShaderWGSL`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment above `attnKeysShaderWGSL`) on 2026-10-09.
 
 ```text
 attnKeys — decode attention that splits the workgroup over KEYS, not over the head
@@ -424,7 +424,7 @@ cosine/maxAbs against that f64 reference, plus argmax through TestWebGPU_forward
 
 ## attnKernel
 
-Moved from `gpu/attention.go` (the comment above `attnKernel`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment above `attnKernel`) on 2026-10-09.
 
 ```text
 attnKernel picks the non-int8-KV attention pipeline+layout for a given geometry —
@@ -446,7 +446,7 @@ handling it separately, as decoderunner.go already does.
 
 ## ensureAttn: guard
 
-Moved from `gpu/attention.go` (the comment inside `ensureAttn`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment inside `ensureAttn`) on 2026-10-09.
 
 ```text
 Guard on the LAST pipeline built, not the first: these are created in order, so a non-nil last
@@ -458,7 +458,7 @@ rebuilt (the old ones stay tracked for release at Close — bounded, not leaked)
 
 ## attnWideTemplateWGSL
 
-Moved from `gpu/attention.go` (the comment above `attnWideTemplateWGSL`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment above `attnWideTemplateWGSL`) on 2026-10-09.
 
 ```text
 The WIDE single-query attention kernel: one template, STRIDED lanes.
@@ -482,7 +482,7 @@ how a K/V element is fetched, which is the part that is obvious on sight.
 
 ## ensureAttnWide: guard
 
-Moved from `gpu/attention.go` (the comment inside `ensureAttnWide`) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment inside `ensureAttnWide`) on 2026-10-09.
 
 ```text
 N-14: guard on the LAST pipeline, not the first. This compiles THREE variants (f32, f16
@@ -497,7 +497,7 @@ being non-nil implies all three are.
 
 ## webgpuBackend
 
-Moved from `gpu/backend.go` (the comment above `webgpuBackend`) on 2026-10-10.
+Moved from `gpu/backend.go` (the comment above `webgpuBackend`) on 2026-10-09.
 
 ```text
 webgpuBackend runs MatmulBT on a WebGPU adapter (Vulkan / Metal / D3D12) via
@@ -519,7 +519,7 @@ norms/rope/softmax to WGSL) is the remaining work for a GPU-fast forward.
 
 ## webgpuBackend.MatmulW4A8
 
-Moved from `gpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8`) on 2026-10-10.
+Moved from `gpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8`) on 2026-10-09.
 
 ```text
 MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/tasks/task-gpu-paths-2026-09.md), the "staged
@@ -537,7 +537,7 @@ always w4a8GroupSize (32) for goinfer's models (matches uploadProj's own assumpt
 
 ## webgpuBackend.MatmulW4A8Batch
 
-Moved from `gpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8Batch`) on 2026-10-10.
+Moved from `gpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8Batch`) on 2026-10-09.
 
 ```text
 MatmulW4A8Batch runs several W4A8 GEMVs that share one activation (fused q/k/v or gate/up,
@@ -552,7 +552,7 @@ the same decline contract MatmulW4A8/MatmulW8A8Batch already use.
 
 ## liveBufferBytes
 
-Moved from `gpu/bufaccount.go` (the comment above `liveBufferBytes`) on 2026-10-10.
+Moved from `gpu/bufaccount.go` (the comment above `liveBufferBytes`) on 2026-10-09.
 
 ```text
 Live device-buffer accounting.
@@ -569,7 +569,7 @@ to the test that caused it. See TestNoBufferLeak.
 
 ## §2 fused decode kernels
 
-Moved from `gpu/decodefuse.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/decodefuse.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 §2 fused decode kernels. The §5 finding: decode is glue-serialization-bound —
@@ -582,7 +582,7 @@ is bit-exact with the unfused pair it replaces (same f32 math, same int8 pack).
 
 ## gegluQuant
 
-Moved from `gpu/decodefuse.go` (the comment above `gegluQuantWGSL`) on 2026-10-10.
+Moved from `gpu/decodefuse.go` (the comment above `gegluQuantWGSL`) on 2026-10-09.
 
 ```text
 gegluQuant is swigluQuant's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
@@ -595,7 +595,7 @@ regression (0.818→0.994 after the fix) the first time it shipped this exact ma
 
 ## DecodeTokenFusedBatched
 
-Moved from `gpu/decodetoken_batched.go` (the comment above `DecodeTokenFusedBatched`) on 2026-10-10.
+Moved from `gpu/decodetoken_batched.go` (the comment above `DecodeTokenFusedBatched`) on 2026-10-09.
 
 ```text
 DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it
@@ -631,7 +631,7 @@ measure: the amortization is across M rows within a layer, not across the whole 
 
 ## deltaRuleShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaRuleShaderWGSL`) on 2026-10-10.
+Moved from `gpu/deltanet.go` (the comment above `deltaRuleShaderWGSL`) on 2026-10-09.
 
 ```text
 Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8).
@@ -676,7 +676,7 @@ them inside this kernel would repeat each one hv times — the same work as the 
 
 ## deltaQSplitShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaQSplitShaderWGSL`) on 2026-10-10.
+Moved from `gpu/deltanet.go` (the comment above `deltaQSplitShaderWGSL`) on 2026-10-09.
 
 ```text
 The SOFTMAX layers of this family are not ordinary GQA either, and that is easy to miss: with
@@ -693,7 +693,7 @@ signature (TestQwen35ResidentParity mutation W1b) — plausible logits from the 
 
 ## slotsBeforeContext
 
-Moved from `gpu/kv_slots.go` (the comment above `slotsBeforeContext`) on 2026-10-10.
+Moved from `gpu/kv_slots.go` (the comment above `slotsBeforeContext`) on 2026-10-09.
 
 ```text
 slotsBeforeContext is MC1's "slots before context" on WebGPU (owner decision 2026-09-27, the rule CUDA's
@@ -710,7 +710,7 @@ nobara prompt). KV is linear in the context, so "fits" is monotone and a binary 
 
 ## Stage 2: device-resident activations
 
-Moved from `gpu/device.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/device.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Stage 2 — device-resident activations. At M=1 decode the activation is a few
@@ -734,7 +734,7 @@ ablation profile in TestDecode_dispatchProfile and G35 in docs/QUEUE.md.
 
 ## readbackRaw
 
-Moved from `gpu/device.go` (the comment above `readbackRaw`) on 2026-10-10.
+Moved from `gpu/device.go` (the comment above `readbackRaw`) on 2026-10-09.
 
 ```text
 readbackRaw reads n f32 elements from a raw *wgpu.Buffer whose REAL release stays exactly
@@ -759,7 +759,7 @@ back down, for a real GPU allocation that WAS correctly released by the caller's
 
 ## matmulTiledW8A8BiasKernelWGSL
 
-Moved from `gpu/gemm.go` (the comment above `matmulTiledW8A8BiasKernelWGSL`) on 2026-10-10.
+Moved from `gpu/gemm.go` (the comment above `matmulTiledW8A8BiasKernelWGSL`) on 2026-10-09.
 
 ```text
 matmulTiledW8A8BiasKernelWGSL is matmulTiledW8A8KernelWGSL with one addition: a
@@ -783,7 +783,7 @@ rows at once instead of M separate GEMV calls.
 
 ## Register-blocked tiled W8A8 GEMM
 
-Moved from `gpu/gemm_rb.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/gemm_rb.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Register-blocked tiled W8A8 GEMM (R10, docs/measurements/webgpu-prefill-profile-2026-09-22.md).
@@ -810,7 +810,7 @@ TestTiledRB64_bitIdentical across aligned and ragged shapes.
 
 ## f32to16
 
-Moved from `gpu/gemv_w4a8.go` (the comment above `f32to16`) on 2026-10-10.
+Moved from `gpu/gemv_w4a8.go` (the comment above `f32to16`) on 2026-10-09.
 
 ```text
 f32to16 is an alias for the ONE converter this package uses; see f32ToF16 in f16.go.
@@ -827,7 +827,7 @@ on the CPU, and for those groups it did not.
 
 ## gegluShaderWGSL
 
-Moved from `gpu/layer.go` (the comment above `gegluShaderWGSL`) on 2026-10-10.
+Moved from `gpu/layer.go` (the comment above `gegluShaderWGSL`) on 2026-10-09.
 
 ```text
 gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
@@ -841,7 +841,7 @@ an approximation — every other family (SwiGLU) never reaches this branch at al
 
 ## SetAdapter: partial-bind cleanup
 
-Moved from `gpu/lora_resident.go` (the comment inside `SetAdapter`) on 2026-10-10.
+Moved from `gpu/lora_resident.go` (the comment inside `SetAdapter`) on 2026-10-09.
 
 ```text
 N-82 (docs/audit-2026-09-10.md): an mk error partway through used to return immediately,
@@ -860,7 +860,7 @@ and keeping r.steps consistent with the nil r.loraLayers either way.
 
 ## testhooks.go
 
-Moved from `gpu/testhooks.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/testhooks.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
@@ -877,7 +877,7 @@ decoder/testhooks.go and cuda/testhooks.go.
 
 ## Resident SigLIP vision encoder
 
-Moved from `gpu/vision.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/vision.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Resident SigLIP vision encoder — the path to a GPU-fast image prefill
@@ -894,7 +894,7 @@ quantize / residual primitives.
 
 ## VisionEncoder
 
-Moved from `gpu/vision_encoder.go` (the comment above `VisionEncoder`) on 2026-10-10.
+Moved from `gpu/vision_encoder.go` (the comment above `VisionEncoder`) on 2026-10-09.
 
 ```text
 VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once
@@ -910,7 +910,7 @@ attached (-tags gpu); the default build is pure-Go CPU.
 
 ## prefillProf
 
-Moved from `gpu/prefill_prof.go` (the comment above `prefillProf`) on 2026-10-10.
+Moved from `gpu/prefill_prof.go` (the comment above `prefillProf`) on 2026-10-09.
 
 ```text
 R10's prefill-profile step (docs/tasks/red-october.md, docs/measurements/webgpu-prefill-decomp-2026-09-22.md):
@@ -924,7 +924,7 @@ because R10 asked norms/rope to be its own class rather than folded into a catch
 
 ## f32ToF16
 
-Moved from `gpu/f16.go` (the comment above `f32ToF16`) on 2026-10-10.
+Moved from `gpu/f16.go` (the comment above `f32ToF16`) on 2026-10-09.
 
 ```text
 f32ToF16 is THE float32 → IEEE-754 half converter for this package, byte-for-byte identical to
@@ -944,7 +944,7 @@ NOT RNE: a lone RNE here would re-introduce the divergence C-15 closed.
 
 ## Package gpu: status paragraph
 
-Moved from `gpu/doc.go` (the comment in the package doc) on 2026-10-10.
+Moved from `gpu/doc.go` (the comment in the package doc) on 2026-10-09.
 
 ```text
 Package gpu is the OPTIONAL WebGPU (Metal / Vulkan / DX12) compute backend
@@ -978,7 +978,7 @@ end-to-end parity coverage per family.
 
 ## Releasing a resident ModelW
 
-Moved from `gpu/modelw_release.go` (the comment at the top of the file) on 2026-10-10.
+Moved from `gpu/modelw_release.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Releasing a resident ModelW.
@@ -1003,7 +1003,7 @@ The only thing that actually ran out was VRAM.
 
 ## swigluQuant
 
-Moved from `gpu/decodefuse.go` (the comment above `swigluQuantWGSL`) on 2026-10-10.
+Moved from `gpu/decodefuse.go` (the comment above `swigluQuantWGSL`) on 2026-10-09.
 
 ```text
 swigluQuant fuses SwiGLU → activation-quantize: silu(gate)·up is computed,
@@ -1016,7 +1016,7 @@ rather than staged, so no inter-wide workgroup array is needed.
 
 ## DecodeTokenFused
 
-Moved from `gpu/decodetoken_fused.go` (the comment above `DecodeTokenFused`) on 2026-10-10.
+Moved from `gpu/decodetoken_fused.go` (the comment above `DecodeTokenFused`) on 2026-10-09.
 
 ```text
 copies between passes — then ONE Submit + ONE Poll. The per-op-submit DecodeToken
@@ -1027,7 +1027,7 @@ the §0.5 probe measured as the win. Bit-exact-identical to DecodeToken
 
 ## attnKeysEligible
 
-Moved from `gpu/attention.go` (the comment above `attnKeysEligible` (it sat above `attnKeysDisabled`)) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment above `attnKeysEligible` (it sat above `attnKeysDisabled`)) on 2026-10-09.
 
 ```text
 attnKeysEligible reports whether the key-split attention kernel can serve this geometry.
@@ -1042,7 +1042,7 @@ runner, and a mid-run flip would leave a half-converted plan.
 
 ## moeRouteWGSL
 
-Moved from `gpu/moe.go` (the comment above `moeRouteWGSL`) on 2026-10-10.
+Moved from `gpu/moe.go` (the comment above `moeRouteWGSL`) on 2026-10-09.
 
 ```text
 MoE residency (Lever C3) — sparse expert routing + dispatch on the GPU so the MoE
@@ -1062,7 +1062,7 @@ is not the cost, the expert GEMVs are.
 
 ## matmulW8A8ShaderWGSL
 
-Moved from `gpu/quant.go` (the comment above `matmulW8A8ShaderWGSL`) on 2026-10-10.
+Moved from `gpu/quant.go` (the comment above `matmulW8A8ShaderWGSL`) on 2026-10-09.
 
 ```text
 W8A8 (int8×int8) matmul on the GPU — the Stage-1 "quantized matmul" unlock.
@@ -1076,7 +1076,7 @@ is bandwidth-bound. Math matches linalg.MatmulBTW8A8 exactly:
 
 ## attnMaxHeadDim
 
-Moved from `gpu/attention.go` (the comment inside the `attnWG` constant block) on 2026-10-10.
+Moved from `gpu/attention.go` (the comment inside the `attnWG` constant block) on 2026-10-09.
 
 ```text
 attnMaxHeadDim is therefore 2048, which no model is near. That is the point: head_dim
@@ -1085,7 +1085,7 @@ stopped being a reason to decline, rather than the wall moving up one notch to 2
 
 ## New: storage-buffer binding limit
 
-Moved from `gpu/gpu.go` (the comment inside `New`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment inside `New`) on 2026-10-09.
 
 ```text
 Raise the storage-buffer binding limit: the DEFAULT device caps it at 128 MB,
@@ -1098,7 +1098,7 @@ required limits). maxBufferSize must be ≥ the binding size.
 
 ## New: MaxBufferSize
 
-Moved from `gpu/gpu.go` (the comment inside `New`) on 2026-10-10.
+Moved from `gpu/gpu.go` (the comment inside `New`) on 2026-10-09.
 
 ```text
 Raise MaxBufferSize to the binding max (2 GB on this card) so large single
@@ -1110,7 +1110,7 @@ silently keeps the 256 MB default (it must be a concrete value to take).
 
 ## W4A8 decode GEMV
 
-Moved from `gpu/gemv_w4a8.go` (the comment above `w4a8GroupSize`) on 2026-10-10.
+Moved from `gpu/gemv_w4a8.go` (the comment above `w4a8GroupSize`) on 2026-10-09.
 
 ```text
 W4A8 decode GEMV: int4 group-wise weights × int8 activation. The decode
@@ -1125,7 +1125,7 @@ is one coalesced load. Activations are int8 (per-row aScale, same as W8A8).
 
 ## UploadW4A8Packed
 
-Moved from `gpu/gemv_w4a8.go` (the comment above `UploadW4A8Packed`) on 2026-10-10.
+Moved from `gpu/gemv_w4a8.go` (the comment above `UploadW4A8Packed`) on 2026-10-09.
 
 ```text
 UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are
@@ -1140,7 +1140,7 @@ callers fall back to UploadW4A8 otherwise. Same nibble value convention (value+8
 
 ## gemmRowMaxM
 
-Moved from `gpu/gemm_rows.go` (the comment above `gemmRowMaxM`) on 2026-10-10.
+Moved from `gpu/gemm_rows.go` (the comment above `gemmRowMaxM`) on 2026-10-09.
 
 ```text
 Thin-M W8A8 GEMM for the Stage-B verify (docs/spec/07). The 16×16 tiled GEMM
@@ -1155,7 +1155,7 @@ tile dimension. Arithmetic is identical to M separate GEMVs ⇒ bit-parity.
 
 ## deltaNormShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaNormShaderWGSL`) on 2026-10-10.
+Moved from `gpu/deltanet.go` (the comment above `deltaNormShaderWGSL`) on 2026-10-09.
 
 ```text
 deltaNorm l2-normalizes the per-head q and k slices of the conv output, and applies the query
@@ -1169,7 +1169,7 @@ reference slices, so the layouts agree by construction rather than by comment.
 
 ## deltaGatesShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaGatesShaderWGSL`) on 2026-10-10.
+Moved from `gpu/deltanet.go` (the comment above `deltaGatesShaderWGSL`) on 2026-10-09.
 
 ```text
 deltaGates turns the two small per-value-head projections into the pair the delta rule consumes:
@@ -1184,7 +1184,7 @@ not optional.
 
 ## darwinKVSlots
 
-Moved from `gpu/kv_slots.go` (the comment above `darwinKVSlots`) on 2026-10-10.
+Moved from `gpu/kv_slots.go` (the comment above `darwinKVSlots`) on 2026-10-09.
 
 ```text
 darwinKVSlots prices slots where the device's buffers ARE host RAM (darwin), against the same two ceilings Metal's

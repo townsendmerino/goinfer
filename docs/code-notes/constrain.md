@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## Masker.isEOS
 
-Moved from `constrain/constrain.go` (the comment above `Masker.isEOS`) on 2026-10-10.
+Moved from `constrain/constrain.go` (the comment above `Masker.isEOS`) on 2026-10-09.
 
 ```text
 isEOS is indexed, not mapped: it is probed once per vocab id per decode step —
@@ -19,7 +19,7 @@ same answer the map gave for an absent key.
 
 ## Masker.plainOK
 
-Moved from `constrain/constrain.go` (the comment above `Masker.plainOK`) on 2026-10-10.
+Moved from `constrain/constrain.go` (the comment above `Masker.plainOK`) on 2026-10-09.
 
 ```text
 plainOK marks ids that are unconditionally legal inside a JSON string and leave the
@@ -29,7 +29,7 @@ for those whenever the grammar reports a plain-string state (plainstring.go).
 
 ## Masker.maskID
 
-Moved from `constrain/constrain.go` (the comment above `Masker.maskID`) on 2026-10-10.
+Moved from `constrain/constrain.go` (the comment above `Masker.maskID`) on 2026-10-09.
 
 ```text
 maskID reports whether token id must be masked in grammar state g. It is the ONE
@@ -39,7 +39,7 @@ of it and M-27 was a defect in the copy — the shape this audit keeps turning u
 
 ## Masker.maskID: control tokens
 
-Moved from `constrain/constrain.go` (the comment above `Masker.maskID`) on 2026-10-10.
+Moved from `constrain/constrain.go` (the comment above `Masker.maskID`) on 2026-10-09.
 
 ```text
 N-79 (docs/audit-2026-09-10.md, investigated 2026-09-16, NOT fixed — deferred, see below):
@@ -61,7 +61,7 @@ Deferred to individual review rather than bolted on here.
 
 ## Masker.maskID: StopWhenComplete whitespace rule
 
-Moved from `constrain/constrain.go` (the comment above `Masker.maskID`) on 2026-10-10.
+Moved from `constrain/constrain.go` (the comment above `Masker.maskID`) on 2026-10-09.
 
 ```text
 StopWhenComplete: stop at the first complete document rather than trailing to
@@ -80,7 +80,7 @@ property, and it is the same one for json, schema and tool grammars.
 
 ## Per-field confidence: what the number is
 
-Moved from `constrain/confidence.go` (the comment in the file-level comment of `constrain/confidence.go`) on 2026-10-10.
+Moved from `constrain/confidence.go` (the comment in the file-level comment of `constrain/confidence.go`) on 2026-10-09.
 
 ```text
 confidence unless a fitted temperature was supplied (FieldConfidence.Calibrated). C0 measured that it discriminates
@@ -90,7 +90,7 @@ docs/measurements/confidence-c0-2026-09-27.md); it did not measure calibration.
 
 ## LazyMasker
 
-Moved from `constrain/lazy.go` (the comment above `LazyMasker`) on 2026-10-10.
+Moved from `constrain/lazy.go` (the comment above `LazyMasker`) on 2026-10-09.
 
 ```text
 complete. Task T2, docs/tasks/task-tool-grammar-union-2026-09.md: under tool_choice "auto" a
@@ -102,7 +102,7 @@ independently (T5, decided: repeated wrapper, each constrained).
 
 ## The plain-string fast path
 
-Moved from `constrain/plainstring.go` (the comment at the top of `constrain/plainstring.go`) on 2026-10-10.
+Moved from `constrain/plainstring.go` (the comment at the top of `constrain/plainstring.go`) on 2026-10-09.
 
 ```text
 The plain-string fast path.
@@ -137,7 +137,7 @@ different state. Everything not provably safe takes the ordinary walk.
 
 ## maxStructuralWS
 
-Moved from `constrain/json.go` (the comment above `maxStructuralWS`) on 2026-10-10.
+Moved from `constrain/json.go` (the comment above `maxStructuralWS`) on 2026-10-09.
 
 ```text
 maxStructuralWS bounds how many whitespace bytes a grammar accepts in a row BETWEEN JSON tokens (after a
@@ -154,7 +154,7 @@ content is not structural, so a string's own spaces never count toward it.
 
 ## maxValueWS
 
-Moved from `constrain/json.go` (the comment above `maxValueWS`) on 2026-10-10.
+Moved from `constrain/json.go` (the comment above `maxValueWS`) on 2026-10-09.
 
 ```text
 maxValueWS is the tighter bound on whitespace between a ':' and the value it introduces (the schema grammar's
@@ -168,7 +168,7 @@ output has zero or one space there, so one is the whole bound.
 
 ## GrammarFromStruct
 
-Moved from `constrain/reflect.go` (the comment above `GrammarFromStruct`) on 2026-10-10.
+Moved from `constrain/reflect.go` (the comment above `GrammarFromStruct`) on 2026-10-09.
 
 ```text
 WHAT IS NOT is MAGNITUDE. JSON Schema integer has no width, so a uint8 field can be
@@ -182,7 +182,7 @@ exported fields is refused instead of compiling to "{} only".
 
 ## structSchema: embedded fields of unexported type
 
-Moved from `constrain/reflect.go` (the comment in `structSchema`) on 2026-10-10.
+Moved from `constrain/reflect.go` (the comment in `structSchema`) on 2026-10-09.
 
 ```text
 V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type
@@ -198,7 +198,7 @@ for the variant M-28's own fix didn't cover.
 
 ## hasExportedFields
 
-Moved from `constrain/reflect.go` (the comment above `hasExportedFields`) on 2026-10-10.
+Moved from `constrain/reflect.go` (the comment above `hasExportedFields`) on 2026-10-09.
 
 ```text
 hasExportedFields reports whether t has at least one exported, non-json:"-" field.
@@ -217,7 +217,7 @@ exported fields" for a type that, one level up, plainly did.
 
 ## JSONSchema: trailing data
 
-Moved from `constrain/schema.go` (the comment in `JSONSchema`) on 2026-10-10.
+Moved from `constrain/schema.go` (the comment in `JSONSchema`) on 2026-10-09.
 
 ```text
 Decoder.Decode stops after the first top-level value and leaves the rest of the
@@ -232,7 +232,7 @@ string should not get back a Grammar that quietly compiled a PREFIX of it.
 
 ## maxSchemaDepth
 
-Moved from `constrain/schema.go` (the comment above `maxSchemaDepth`) on 2026-10-10.
+Moved from `constrain/schema.go` (the comment above `maxSchemaDepth`) on 2026-10-09.
 
 ```text
 maxSchemaDepth caps object/array nesting (M-40, docs/audit-2026-09-10.md): unbounded depth let
@@ -245,7 +245,7 @@ use the same order of magnitude) and small against the attack shape.
 
 ## nonNegativeKeyword
 
-Moved from `constrain/schema.go` (the comment above `nonNegativeKeyword`) on 2026-10-10.
+Moved from `constrain/schema.go` (the comment above `nonNegativeKeyword`) on 2026-10-09.
 
 ```text
 nonNegativeKeyword reads `minimum`, which is supported for the value 0 ONLY — the
@@ -260,7 +260,7 @@ SchemaFromStruct emits minimum:0 for the unsigned Go kinds (M-28).
 
 ## schemaGrammar.CanEnd
 
-Moved from `constrain/schema_grammar.go` (the comment above `schemaGrammar.CanEnd`) on 2026-10-10.
+Moved from `constrain/schema_grammar.go` (the comment above `schemaGrammar.CanEnd`) on 2026-10-09.
 
 ```text
 MAY-end, not MUST-end. `1` satisfies this and `12` is still reachable — the old
@@ -272,7 +272,7 @@ Masker.maskID keeps any token that genuinely extends the value.
 
 ## toolGrammar.InPlainString
 
-Moved from `constrain/tool_grammar.go` (the comment above `toolGrammar.InPlainString`) on 2026-10-10.
+Moved from `constrain/tool_grammar.go` (the comment above `toolGrammar.InPlainString`) on 2026-10-09.
 
 ```text
 InPlainString (P-17, audit-2026-09-10) lets forced tool-call decoding take the same
@@ -287,7 +287,7 @@ consult once inner is actually the grammar in play.
 
 ## closeEmptyToolObject
 
-Moved from `constrain/tool_grammar.go` (the comment above `closeEmptyToolObject`) on 2026-10-10.
+Moved from `constrain/tool_grammar.go` (the comment above `closeEmptyToolObject`) on 2026-10-09.
 
 ```text
 closeEmptyToolObject rewrites a no-argument tool schema into the closed-empty form
@@ -311,7 +311,7 @@ compile() and is still refused rather than being silently narrowed.
 
 ## ToolCallsGrammar
 
-Moved from `constrain/tools_union.go` (the comment above `ToolCallsGrammar`) on 2026-10-10.
+Moved from `constrain/tools_union.go` (the comment above `ToolCallsGrammar`) on 2026-10-09.
 
 ```text
 ToolCallsGrammar constrains ONE tool call to any of several tools (task T1,

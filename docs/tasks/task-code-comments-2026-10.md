@@ -65,7 +65,7 @@ content (one may stay as the label on a pointer); measured figures and tables; r
 **The test for a sentence:** would someone changing this code next week act differently because of it? Keep it. Does it
 explain how we came to know? Move it.
 
-**Length is part of the rule** (added 2026-10-10 after the CC3 pilot, §6). Say each thing once, at the declaration it
+**Length is part of the rule** (added 2026-10-09 after the CC3 pilot, §6). Say each thing once, at the declaration it
 binds, in as many lines as the contract needs: an optional-interface or accessor comment is about six lines. Do not
 restate the signature or a sibling's comment, do not list which backends, families or callers currently take a path (the
 code is that list), and do not narrate the body. What a tightening drops that carries information (a per-backend list, a
@@ -191,14 +191,14 @@ seen red has not been shown to work.
 
 ## 6. CC3 — pilot, with the expectation written first
 
-> **Pilot done 2026-10-10: the result is below the band.** Comment lines `gpu/prefillrunner.go` 248 → 154 (−38%),
+> **Pilot done 2026-10-09: the result is below the band.** Comment lines `gpu/prefillrunner.go` 248 → 154 (−38%),
 > `decoder/residency.go` 941 → 776 (−18%), together 1,189 → 930 (−22%): under the 25% line below, so the owner decides (§10.1)
 > before any rollout. What the numbers say: only 32 of the 248 and 97 of the 941 comment lines carry a history marker at all (the §1
 > ceiling), so the two files are mostly contract, and `residency.go` is mostly interface documentation. The history that was there
 > moved verbatim (`docs/code-notes/gpu.md`, `docs/code-notes/decoder.md`); the rest of the cut is wording tightened to the rule's
 > "a sentence or two" with nothing dropped, listed as NOT FOUND by the moved-text report. Going further means cutting contract.
 >
-> **Rule adjusted, pass 2 (2026-10-10, owner: "adjust the rule").** The rule gained the "Length is part of the rule" paragraph
+> **Rule adjusted, pass 2 (2026-10-09, owner: "adjust the rule").** The rule gained the "Length is part of the rule" paragraph
 > (§2, `CLAUDE.md`), and the pilot files were tightened to it: `gpu/prefillrunner.go` 248 → 132 (−47%), `decoder/residency.go` 941 → 705
 > (−25%), together 1,189 → 837 (−30%). The band is met for `gpu`; `decoder/residency.go`, interface documentation almost
 > throughout, stays under it, and what remains there is contract. Expect a rollout to land between the 25% line and the
@@ -237,7 +237,7 @@ Wave A is what no open branch touches today. Wave B waits for `s10-pixtral` and 
 `git diff --name-only main...<branch> -- <pkg>` for each. A file an open branch touches is skipped and picked up after
 that branch merges; rewriting a comment block someone else is editing guarantees a conflict for no gain.
 
-> **Wave A done 2026-10-10 (branches merged into `comment-diet-2026-10`, not pushed).** Comment lines, whole non-test package, before →
+> **Wave A done 2026-10-09 (branches merged into `comment-diet-2026-10`, not pushed).** Comment lines, whole non-test package, before →
 > after (`scripts/comment_diet.py census`; the "skipped" column is the files left alone because an unmerged branch edits them):
 >
 > | package | before → after | cut | history-marked | skipped (open branch) |

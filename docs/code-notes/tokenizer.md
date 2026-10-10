@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## Tokenizer.PreTokenizerDecline
 
-Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.PreTokenizerDecline`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.PreTokenizerDecline`) on 2026-10-09.
 
 ```text
 PreTokenizerDecline reports why this tokenizer's pre-tokenizer is NOT the alternation the walker
@@ -27,7 +27,7 @@ walker for a pattern this repo cannot yet check against a reference would be the
 
 ## Chat-template selection
 
-Moved from `tokenizer/sentencepiece.go` (the comment above `tokenizerJSON`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment above `tokenizerJSON`) on 2026-10-09.
 
 ```text
 Chat-template selection moved to the chat package: chat.Detect fingerprints
@@ -37,7 +37,7 @@ renderer. (The old ChatStyle enum/heuristic lived here.)
 
 ## parseTokenizerJSON: the SentencePiece chat template
 
-Moved from `tokenizer/sentencepiece.go` (the comment in `parseTokenizerJSON`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment in `parseTokenizerJSON`) on 2026-10-09.
 
 ```text
 The chat template lives in tokenizer_config.json (or chat_template.jinja) beside
@@ -49,7 +49,7 @@ Gemma survived on the vocab heuristic, but Phi-3 and Mistral fell to raw complet
 
 ## initGemma: BOS/EOS spellings
 
-Moved from `tokenizer/sentencepiece.go` (the comment in `initGemma`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment in `initGemma`) on 2026-10-09.
 
 ```text
 BOS/EOS are required under either SentencePiece spelling: Gemma's "<bos>"/"<eos>", or
@@ -60,7 +60,7 @@ found 2026-09-25). Pad is optional: Llama-style vocabs have none (-1).
 
 ## Tokenizer.mergeSymbols
 
-Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.mergeSymbols`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.mergeSymbols`) on 2026-10-09.
 
 ```text
 mergeSymbols is the shared BPE core: repeatedly merge the lowest-rank
@@ -78,7 +78,7 @@ hundred KB of client text into minutes of CPU (M28).
 
 ## buildScoreRank
 
-Moved from `tokenizer/sentencepiece.go` (the comment above `buildScoreRank`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment above `buildScoreRank`) on 2026-10-09.
 
 ```text
 buildScoreRank turns per-id SentencePiece scores into a merge-priority rank: rank 0 is the
@@ -92,7 +92,7 @@ reference tokenization on a vocab with equal-score competing merges: audit R-29.
 
 ## Tokenizer.DecodeContinuation
 
-Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.DecodeContinuation`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.DecodeContinuation`) on 2026-10-09.
 
 ```text
 DecodeContinuation decodes ids that CONTINUE an existing sequence rather than
@@ -110,7 +110,7 @@ Byte-level tokenizers never strip, so this is identical to Decode for them.
 
 ## Tokenizer.TokenText
 
-Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.TokenText`) on 2026-10-10.
+Moved from `tokenizer/sentencepiece.go` (the comment above `Tokenizer.TokenText`) on 2026-10-09.
 
 ```text
 TokenText returns the raw surface bytes a single token id contributes when
@@ -133,7 +133,7 @@ An out-of-range id returns nil.
 
 ## Tokenizer.initByteLevel: pre-tokenizer shape
 
-Moved from `tokenizer/bytelevel.go` (the comment in `Tokenizer.initByteLevel`) on 2026-10-10.
+Moved from `tokenizer/bytelevel.go` (the comment in `Tokenizer.initByteLevel`) on 2026-10-09.
 
 ```text
 C-10: compare the declared regex against the shape the walker actually implements. A Digits
@@ -152,7 +152,7 @@ a `\r\n` after punctuation) where the two shapes diverge.
 
 ## Tokenizer.splitPre
 
-Moved from `tokenizer/bytelevel.go` (the comment above `Tokenizer.splitPre`) on 2026-10-10.
+Moved from `tokenizer/bytelevel.go` (the comment above `Tokenizer.splitPre`) on 2026-10-09.
 
 ```text
 splitPre applies the pre-tokenizer alternation this tokenizer actually declares.
@@ -168,7 +168,7 @@ that works today, imperfectly, would be a worse trade than reporting it.
 
 ## isBareByteLevelUseRegex
 
-Moved from `tokenizer/bytelevel.go` (the comment above `isBareByteLevelUseRegex`) on 2026-10-10.
+Moved from `tokenizer/bytelevel.go` (the comment above `isBareByteLevelUseRegex`) on 2026-10-09.
 
 ```text
 isBareByteLevelUseRegex reports whether pre_tokenizer is a TOP-LEVEL (not Sequence-wrapped)
@@ -184,7 +184,7 @@ docs/review-2026-09-04.md).
 
 ## readTokenizerConfig: chat_template.jinja
 
-Moved from `tokenizer/bytelevel.go` (the comment in `readTokenizerConfig`) on 2026-10-10.
+Moved from `tokenizer/bytelevel.go` (the comment in `readTokenizerConfig`) on 2026-10-09.
 
 ```text
 Recent transformers save the chat template as its own file beside tokenizer_config.json
@@ -197,7 +197,7 @@ finding 1). The JSON key still wins when both are present, as transformers resol
 
 ## GGUF tokenizer: file header
 
-Moved from `tokenizer/gguf.go` (the comment at the top of `tokenizer/gguf.go`) on 2026-10-10.
+Moved from `tokenizer/gguf.go` (the comment at the top of `tokenizer/gguf.go`) on 2026-10-09.
 
 ```text
 GGUF tokenizer (G7 follow-up). A .gguf checkpoint carries its tokenizer in
@@ -220,7 +220,7 @@ Metadata reference: the GGUF spec (ggml-org/ggml).
 
 ## setupGGUFByteLevel: unknown pre
 
-Moved from `tokenizer/gguf.go` (the comment in `setupGGUFByteLevel`) on 2026-10-10.
+Moved from `tokenizer/gguf.go` (the comment in `setupGGUFByteLevel`) on 2026-10-09.
 
 ```text
 C-10: an unrecognised `pre` used to fall silently to GPT-2-like defaults, and the two
@@ -232,7 +232,7 @@ name is all the evidence there is, and an unknown name means unknown knobs.
 
 ## byteLevelKnobs: gpt-4o
 
-Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-10.
+Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-09.
 
 ```text
 o200k. A GGUF carries no Split regex, so a name→shape mapping is exactly the guess that
@@ -245,7 +245,7 @@ pattern, and it ships no normalizer.
 
 ## byteLevelKnobs: qwen35
 
-Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-10.
+Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-09.
 
 ```text
 Qwen3.5's GGUFs. Same family and the same tokenizer.json pipeline as qwen2 — NFC on, one
@@ -256,7 +256,7 @@ which is why it went unnoticed. Measured: Qwen3.5-35B-A3B-Q4_K_M.gguf is pre="qw
 
 ## byteLevelKnobs: dbrx
 
-Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-10.
+Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-09.
 
 ```text
 R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): granite-4.0-h-tiny — a
@@ -277,7 +277,7 @@ that makes this its own case rather than an alias for "llama-bpe".
 
 ## byteLevelKnobs: gpt-2 and default
 
-Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-10.
+Moved from `tokenizer/gguf.go` (the comment in `byteLevelKnobs`) on 2026-10-09.
 
 ```text
 GPT-2's OWN alternation is not the cl100k one either (no contraction clause, ` ?\p{N}+`
@@ -299,7 +299,7 @@ goldens) is real new work, deferred rather than rushed into this comment fix.
 
 ## The pre-tokenizer shape problem
 
-Moved from `tokenizer/splitshape.go` (the comment at the top of `tokenizer/splitshape.go`) on 2026-10-10.
+Moved from `tokenizer/splitshape.go` (the comment at the top of `tokenizer/splitshape.go`) on 2026-10-09.
 
 ```text
 The pre-tokenizer SHAPE problem (audit-2026-09-02 C-10).
@@ -328,7 +328,7 @@ reported instead of silently mis-tokenized.
 
 ## splitO200kVariant: the optional prefix backtracks
 
-Moved from `tokenizer/split_o200k.go` (the comment in `splitO200kVariant`) on 2026-10-10.
+Moved from `tokenizer/split_o200k.go` (the comment in `splitO200kVariant`) on 2026-10-09.
 
 ```text
 Alts 1 and 2: an optional leading non-(CRLF/letter/number), then a word. Alt 1 is
@@ -346,7 +346,7 @@ on into alt 2 with the prefix already spent, emitting `◌́É` where the patter
 
 ## splitO200kVariant: alt1 backtracking
 
-Moved from `tokenizer/split_o200k.go` (the comment in `splitO200kVariant`) on 2026-10-10.
+Moved from `tokenizer/split_o200k.go` (the comment in `splitO200kVariant`) on 2026-10-09.
 
 ```text
 alt1 matches [Lu Lt Lm Lo M]* [Ll Lm Lo M]+ at j — and the two classes OVERLAP on

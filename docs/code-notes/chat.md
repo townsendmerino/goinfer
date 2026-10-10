@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## package.byteexact
 
-Moved from `chat/chat.go` (the package doc comment) on 2026-10-10.
+Moved from `chat/chat.go` (the package doc comment) on 2026-10-09.
 
 ```text
 Package chat renders a conversation into the exact prompt string a model's
@@ -46,7 +46,7 @@ template, it falls back to the special-token heuristic. An unrecognized
 template is an explicit error — the caller then does a raw completion.
 ```
 
-Note added when this moved (2026-10-10): the Harmony exception in the first bullet above is no longer true. `harmonySegments` renders
+Note added when this moved (2026-10-09): the Harmony exception in the first bullet above is no longer true. `harmonySegments` renders
 a prior assistant turn on the `final` channel, and `TestHarmony_conversationMatchesHF` pins it against
 `testdata/chat_think_goldens/harmony_history.json`. The last bullet is also narrower than the code: the Harmony, Qwen3.5 XML and
 Qwen2.5-grouped tool renderings are byte-exact against their own goldens (`harmony_tools.json`, `qwen35_tools.json`,
@@ -54,7 +54,7 @@ Qwen2.5-grouped tool renderings are byte-exact against their own goldens (`harmo
 
 ## Detect.fingerprints
 
-Moved from `chat/chat.go` (the comment above the SmolLM3 case in `Detect`) on 2026-10-10.
+Moved from `chat/chat.go` (the comment above the SmolLM3 case in `Detect`) on 2026-10-09.
 
 ```text
 M-36 (audit-2026-09-10): three fingerprints checked BEFORE their generic siblings,
@@ -78,7 +78,7 @@ not guessed:
 
 ## Detect.bareMinistral
 
-Moved from `chat/chat.go` (the comment above the bare-checkpoint Ministral case in `Detect`) on 2026-10-10.
+Moved from `chat/chat.go` (the comment above the bare-checkpoint Ministral case in `Detect`) on 2026-10-09.
 
 ```text
 Ministral 3 (and the Mistral 3 VL saves) ship no chat template; their tekken vocab carries [SYSTEM_PROMPT] as
@@ -88,7 +88,7 @@ was refused, "no chat template for vision", and text fell back to raw completion
 
 ## Harmony
 
-Moved from `chat/templates.go` (the comment above `Harmony`) on 2026-10-10.
+Moved from `chat/templates.go` (the comment above `Harmony`) on 2026-10-09.
 
 ```text
 Harmony (gpt-oss) — "<|start|>{role}<|message|>{content}<|end|>", with a REQUIRED
@@ -124,7 +124,7 @@ capture, docs/tasks/task-web-ui-2026-09.md).
 
 ## Phi3
 
-Moved from `chat/templates.go` (the comment above `Phi3`) on 2026-10-10.
+Moved from `chat/templates.go` (the comment above `Phi3`) on 2026-10-09.
 
 ```text
 Phi3 — microsoft/Phi-3-mini-4k-instruct's current template: per turn
@@ -140,7 +140,7 @@ docs/measurements/peer-claim-2026-09-25.md).
 
 ## GlmOCR
 
-Moved from `chat/templates.go` (the comment above `GlmOCR`) on 2026-10-10.
+Moved from `chat/templates.go` (the comment above `GlmOCR`) on 2026-10-09.
 
 ```text
 GlmOCR — zai-org/GLM-OCR's template (the GLM-4.1V family's `[gMASK]<sop>` shape): "[gMASK]<sop>", an optional
@@ -160,7 +160,7 @@ checkpoint's template (the image markers are in the fingerprint), so GLM-4.5's t
 
 ## Ministral
 
-Moved from `chat/templates.go` (the comment above `Ministral`) on 2026-10-10.
+Moved from `chat/templates.go` (the comment above `Ministral`) on 2026-10-09.
 
 ```text
 Ministral — Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's real
@@ -204,7 +204,7 @@ Special segment the whole prompt hid it, and every Pixtral request was refused).
 
 ## Template.ParseToolCallsFor
 
-Moved from `chat/tools.go` (the comment above `Template.ParseToolCallsFor`) on 2026-10-10.
+Moved from `chat/tools.go` (the comment above `Template.ParseToolCallsFor`) on 2026-10-09.
 
 ```text
 ParseToolCallsFor is ParseToolCalls with the request's tool list in hand, which
@@ -235,7 +235,7 @@ returns.
 
 ## tojsonEscape
 
-Moved from `chat/tools.go` (the comment above `tojsonEscape`) on 2026-10-10.
+Moved from `chat/tools.go` (the comment above `tojsonEscape`) on 2026-10-09.
 
 ```text
 tojsonEscape applies the one HTML-safety substitution encoding/json's default escaping
@@ -254,7 +254,7 @@ entity — correcting the claim rather than reproducing it.)
 
 ## renderGemma4Tools.system
 
-Moved from `chat/gemma4_tools.go` (the comment above the system text in `renderGemma4Tools`) on 2026-10-10.
+Moved from `chat/gemma4_tools.go` (the comment above the system text in `renderGemma4Tools`) on 2026-10-09.
 
 ```text
 No separator between the system text and the first declaration: upstream's template renders
@@ -264,7 +264,7 @@ the golden's only cases had none, so the "\n" that used to be written here was n
 
 ## renderGemma4Tools.turns
 
-Moved from `chat/gemma4_tools.go` (the comment above `openModelTurn` in `renderGemma4Tools`) on 2026-10-10.
+Moved from `chat/gemma4_tools.go` (the comment above `openModelTurn` in `renderGemma4Tools`) on 2026-10-09.
 
 ```text
 M-20: THE TOOL RESPONSES SIT INSIDE THE MODEL TURN THAT MADE THE CALL. goinfer used to
@@ -279,7 +279,7 @@ stays open until something that is not a tool response follows it.
 
 ## gemmaValue
 
-Moved from `chat/gemma4_tools.go` (the comment above `gemmaValue`) on 2026-10-10.
+Moved from `chat/gemma4_tools.go` (the comment above `gemmaValue`) on 2026-10-09.
 
 ```text
 gemmaValue renders one argument value in Gemma's micro-language.
@@ -293,7 +293,7 @@ object-typed or array-typed parameter hit this.
 
 ## gemmaParseValue
 
-Moved from `chat/gemma4_tools.go` (the comment above `gemmaParseValue`) on 2026-10-10.
+Moved from `chat/gemma4_tools.go` (the comment above `gemmaParseValue`) on 2026-10-09.
 
 ```text
 gemmaParseValue is gemmaValue's inverse for one rendered value: <|"|>-quoted → string,
@@ -306,7 +306,7 @@ that disagree about nesting produce arguments the tool silently mis-receives.
 
 ## splitGemmaPairs
 
-Moved from `chat/gemma4_tools.go` (the comment above `splitGemmaPairs`) on 2026-10-10.
+Moved from `chat/gemma4_tools.go` (the comment above `splitGemmaPairs`) on 2026-10-09.
 
 ```text
 splitGemmaPairs splits on commas that are neither inside a <|"|>…<|"|> string nor inside a
@@ -318,7 +318,7 @@ comma and parsed to {"opts":"{limit:5","sort":"asc}"} — two keys, both wrong, 
 
 ## renderGemma4NativeTools
 
-Moved from `chat/gemma4_tools.go` (the comment above `renderGemma4NativeTools`) on 2026-10-10.
+Moved from `chat/gemma4_tools.go` (the comment above `renderGemma4NativeTools`) on 2026-10-09.
 
 ```text
 renderGemma4NativeTools renders system + turns + tool declarations the way Gemma 4's CANONICAL chat template does — a port of its
@@ -335,13 +335,13 @@ had a preamble. Whether that is better or worse for the model than goinfer's own
 file: the format is opt-in.
 ```
 
-Note added when this moved (2026-10-10): "the format is opt-in" is no longer true. `Detect` sets `nativeByDefault` for a canonical Gemma 4
+Note added when this moved (2026-10-09): "the format is opt-in" is no longer true. `Detect` sets `nativeByDefault` for a canonical Gemma 4
 template, so `auto` selects this renderer (`docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md` is the adoption). The code
 comment was rewritten to say so.
 
 ## fenced_tool_calls.go.WithLenientToolCalls
 
-Removed from the comment above `Template.WithLenientToolCalls` in `chat/fenced_tool_calls.go` on 2026-10-10 (the rule's motivation).
+Removed from the comment above `Template.WithLenientToolCalls` in `chat/fenced_tool_calls.go` on 2026-10-09 (the rule's motivation).
 
 ```text
 the rule exists because Qwen2.5-Coder-7B, told to edit a file by opencode, answered
@@ -350,7 +350,7 @@ with the call in a ```json block twice and no edit happened.
 
 ## harmony_parse.go.header
 
-Removed from the file-level comment of `chat/harmony_parse.go` on 2026-10-10 (the measurement and the pre-parser behaviour).
+Removed from the file-level comment of `chat/harmony_parse.go` on 2026-10-09 (the measurement and the pre-parser behaviour).
 
 ```text
 Measured on
@@ -363,7 +363,7 @@ The same file's comment above `harmonyCall` said "nothing surfaces it yet"; that
 
 ## default_system.go.chatMLDefaultSystem
 
-Removed from the comment above `chatMLDefaultSystem` in `chat/default_system.go` on 2026-10-10 (the decision it records).
+Removed from the comment above `chatMLDefaultSystem` in `chat/default_system.go` on 2026-10-09 (the decision it records).
 
 ```text
 (owner, 2026-10-09: "every
@@ -372,12 +372,12 @@ template with one")
 
 ## history.go.dates
 
-Dates dropped from two comments in `chat/history.go` on 2026-10-10: the history-rule header said the three real templates were read
+Dates dropped from two comments in `chat/history.go` on 2026-10-09: the history-rule header said the three real templates were read
 on 2026-09-30, and the Mellum2.1 branch of `detectHistoryKind` said the template was read on 2026-10-07 (JetBrains/Mellum2.1-12B-A2.5B-Thinking).
 
 ## reasoning.go.dates
 
-Dates dropped from `chat/reasoning.go` on 2026-10-10: the three ChatML generation-prompt shapes in `detectChatMLReasoning` were read from
+Dates dropped from `chat/reasoning.go` on 2026-10-09: the three ChatML generation-prompt shapes in `detectChatMLReasoning` were read from
 real checkpoints on 2026-09-30, and the earlier Gemma 4 template in `detectOldGemma4Reasoning` was read from the E2B GGUF on 2026-10-01.
 The file header's "Measured on the real templates, not assumed." is the same fact; the per-checkpoint pin is `TestThinkModes_matchHF`.
 

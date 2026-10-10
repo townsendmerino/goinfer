@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## gpu gate header
 
-Moved from `cmd/gate/gpu.go` (the comment above `gpuGate`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `gpuGate`) on 2026-10-09.
 
 ```text
 The pre-tag GPU correctness gate. Run it on EACH GPU box, paste the verdict, then tag.
@@ -39,7 +39,7 @@ HONESTY RULES, all learned the hard way:
 
 ## vramNote
 
-Moved from `cmd/gate/gpu.go` (the comment above `vramNote`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `vramNote`) on 2026-10-09.
 
 ```text
 vramNote fires on a cosine of EXACTLY zero.
@@ -56,7 +56,7 @@ mechanism a gate cannot see is how the last three explanations became someone's 
 
 ## run: empty-cell note
 
-Moved from `cmd/gate/gpu.go` (the comment inside `gpuGate.run`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `gpuGate.run`) on 2026-10-09.
 
 ```text
 A FILTERED CELL THAT MATCHED NOTHING IS NOT A PASS, and the aggregate `g.ran == 0` check at
@@ -69,7 +69,7 @@ produced "DID NOT RUN" for five weeks (docs/tasks/task-verification-surface-audi
 
 ## noteIfAllSkipped
 
-Moved from `cmd/gate/gpu.go` (the comment above `noteIfAllSkipped`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `noteIfAllSkipped`) on 2026-10-09.
 
 ```text
 noteIfAllSkipped records a FILTERED cell whose tests all SKIPPED. noteIfEmpty
@@ -87,7 +87,7 @@ a green that vouches for nothing.
 
 ## noteIfEmpty
 
-Moved from `cmd/gate/gpu.go` (the comment above `noteIfEmpty`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `noteIfEmpty`) on 2026-10-09.
 
 ```text
 noteIfEmpty records a FILTERED cell that matched no test at all. Split out from run so it can be
@@ -100,7 +100,7 @@ different bug (no packages, or a build failure) that runCell's own policies alre
 
 ## failLineRe
 
-Moved from `cmd/gate/gpu.go` (the comment above `failLineRe`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `failLineRe`) on 2026-10-09.
 
 ```text
 failLineRe matches a test-level failure header. It deliberately does NOT match
@@ -114,7 +114,7 @@ failureLines).
 
 ## crashExcerpt: head and frames
 
-Moved from `cmd/gate/gpu.go` (the comment inside `crashExcerpt`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `crashExcerpt`) on 2026-10-09.
 
 ```text
 The head (signal, address, goroutine) plus — crucially — the first frames
@@ -126,7 +126,7 @@ worth printing.
 
 ## detectWebGPU
 
-Moved from `cmd/gate/gpu.go` (the comment above `detectWebGPU`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `detectWebGPU`) on 2026-10-09.
 
 ```text
 detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/adapter_probe_test.go's
@@ -152,7 +152,7 @@ looking exactly like the hardware case.
 
 ## classifyAdapterProbe
 
-Moved from `cmd/gate/gpu.go` (the comment above `classifyAdapterProbe`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `classifyAdapterProbe`) on 2026-10-09.
 
 ```text
 classifyAdapterProbe is detectWebGPU's pure classification of the probe subprocess's captured
@@ -166,7 +166,7 @@ and finding nothing.
 
 ## runGPU: group environment
 
-Moved from `cmd/gate/gpu.go` (the comment inside `runGPU`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `runGPU`) on 2026-10-09.
 
 ```text
 THE GROUPS DEFINE THEIR OWN ENVIRONMENT. Each group sets what it needs; nothing unsets them
@@ -180,7 +180,7 @@ an operator who set one deliberately must see that it did not take effect.
 
 ## cudaSuite
 
-Moved from `cmd/gate/gpu.go` (the comment above `cudaSuite`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `cudaSuite`) on 2026-10-09.
 
 ```text
 ---- 2a. CUDA kernel-level suite ----
@@ -196,7 +196,7 @@ evidence for the other (audit G-01: the artifact must not be adjacent to what it
 
 ## drainingTests
 
-Moved from `cmd/gate/gpu.go` (the comment above `drainingTests`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `drainingTests`) on 2026-10-09.
 
 ```text
 drainingTests derives the drain group FROM A MARKER rather than a list.
@@ -211,7 +211,7 @@ denominators keep making visible.
 
 ## isolatedTests
 
-Moved from `cmd/gate/gpu.go` (the comment above `isolatedTests`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `isolatedTests`) on 2026-10-09.
 
 ```text
 isolatedTests derives the fresh-process group from needsFreshProcess(t, why) in
@@ -221,7 +221,7 @@ after a few hundred others (measured 2026-09-28, see the marker's comment).
 
 ## cudaHeavy
 
-Moved from `cmd/gate/gpu.go` (the comment above `cudaHeavy`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `cudaHeavy`) on 2026-10-09.
 
 ```text
 ---- 2c. heavy tier: the real-model group NOTHING has ever run ----
@@ -234,7 +234,7 @@ by someone waiting 28 minutes for a gate they thought took one.
 
 ## cudaHeavy: main-tier timeout
 
-Moved from `cmd/gate/gpu.go` (the comment inside `cudaHeavy`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `cudaHeavy`) on 2026-10-09.
 
 ```text
 TIMEOUT 90m, RAISED FROM 60m ON 2026-09-01 BECAUSE 60m HAD NO MARGIN LEFT.
@@ -264,7 +264,7 @@ this process at the same time, so 120m is headroom, not a new expectation.
 
 ## ptxVersionRe (group 4 header)
 
-Moved from `cmd/gate/gpu.go` (the comment above `ptxVersionRe`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `ptxVersionRe`) on 2026-10-09.
 
 ```text
 ---- 4. PTX reproduces from source, each at the NVRTC it records ----
@@ -290,7 +290,7 @@ installed here, and the skip names the version so it is actionable.
 
 ## metalCgoFree: build target
 
-Moved from `cmd/gate/gpu.go` (the comment inside `metalCgoFree`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `metalCgoFree`) on 2026-10-09.
 
 ```text
 G-03: build the METAL submodule entrypoint, not the root one. Without
@@ -305,7 +305,7 @@ this half was not, so the gate has been passing on the wrong artifact.
 
 ## metalParity
 
-Moved from `cmd/gate/gpu.go` (the comment above `metalParity`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `metalParity`) on 2026-10-09.
 
 ```text
 ---- Metal resident PARITY gates — the forward is asserted here ----
@@ -325,7 +325,7 @@ crash. -timeout is declared for the same reason cudaParity declares it.
 
 ## metalParity: Run pattern
 
-Moved from `cmd/gate/gpu.go` (the comment inside `metalParity`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `metalParity`) on 2026-10-09.
 
 ```text
 metalParityRun (parity.go): named so this cell and
@@ -336,7 +336,7 @@ metalParity/residentIdxParity went unmatched despite being gate-shaped.
 
 ## metalLifecycle
 
-Moved from `cmd/gate/gpu.go` (the comment above `metalLifecycle`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `metalLifecycle`) on 2026-10-09.
 
 ```text
 Metal HAD the same hole CUDA did — Close() froze a channel and freed nothing, leaking ~267 MB per
@@ -347,7 +347,7 @@ alive — the case that made CUDA's first fix look correct when it was not.
 
 ## metalLifecycle: heavy env
 
-Moved from `cmd/gate/gpu.go` (the comment inside `metalLifecycle`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `metalLifecycle`) on 2026-10-09.
 
 ```text
 G-01: all four tests in the two Metal cells call requireHeavyModel, and
@@ -360,7 +360,7 @@ Measured 2026-09-01: skip/skip in 0.4 s before, pass/pass in 27 s after.
 
 ## metalPrefill
 
-Moved from `cmd/gate/gpu.go` (the comment above `metalPrefill`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `metalPrefill`) on 2026-10-09.
 
 ```text
 The newest bug that maps to this doctrine. PrefillLast — the f16 simdgroup_matrix TTFT path —
@@ -372,7 +372,7 @@ Nothing exercised it against a real checkpoint until a hand-run, so it was invis
 
 ## metalPrefill: vacuous check
 
-Moved from `cmd/gate/gpu.go` (the comment inside `metalPrefill`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `metalPrefill`) on 2026-10-09.
 
 ```text
 V-21 (docs/review-2026-09-04.md): the sibling cells above (metal-parity, metal-lifecycle)
@@ -384,7 +384,7 @@ RC==0 and would otherwise print PASS despite verifying nothing. This one lacked 
 
 ## webgpu
 
-Moved from `cmd/gate/gpu.go` (the comment above `webgpu`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `webgpu`) on 2026-10-09.
 
 ```text
 ---- 5. repo hygiene: run what CI runs, DERIVED rather than duplicated (B0) ----
@@ -400,7 +400,7 @@ group here sets what it needs (see runGPU's header comment on that rule).
 
 ## webgpu: resident-parity cell
 
-Moved from `cmd/gate/gpu.go` (the comment inside `webgpu`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `webgpu`) on 2026-10-09.
 
 ```text
 The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture
@@ -422,7 +422,7 @@ a vacuous Pass.
 
 ## repoHygiene
 
-Moved from `cmd/gate/gpu.go` (the comment above `repoHygiene`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `repoHygiene`) on 2026-10-09.
 
 ```text
 This block used to run `gofmt -l .` and `go vet ./decoder/ ./cmd/...` — a hand-written list that
@@ -436,7 +436,7 @@ check CI adds appears here with no edit to this file.
 
 ## repoHygiene: citation lint
 
-Moved from `cmd/gate/gpu.go` (the comment inside `repoHygiene`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `repoHygiene`) on 2026-10-09.
 
 ```text
 The queue's citations, commit AND path:line. A state document is cited without being
@@ -447,7 +447,7 @@ cuda/resident.go (a line there) kept an audit critical listed as open for weeks 
 
 ## withGoBin
 
-Moved from `cmd/gate/gpu.go` (the comment above `withGoBin`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment above `withGoBin`) on 2026-10-09.
 
 ```text
 withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck v0.8.1, built by .github/actions/staticcheck) with `go
@@ -459,7 +459,7 @@ same directory reproduces CI's environment; a missing binary still fails, now wi
 
 ## verdict: dirty tree
 
-Moved from `cmd/gate/gpu.go` (the comment inside `gpuGate.verdict`) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (the comment inside `gpuGate.verdict`) on 2026-10-09.
 
 ```text
 THREE STATES, NOT TWO. Every check is green here. A dirty tree is not a failure of the CHECKS
@@ -474,7 +474,7 @@ messages; that is what this gate is FOR.
 
 ## parityGates: int4-forward
 
-Moved from `cmd/gate/parity.go` (the comment above the `int4-forward` entry of `parityGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above the `int4-forward` entry of `parityGates`) on 2026-10-09.
 
 ```text
 The int4 FORWARD gate (23 fixtures / 16 architectures) is the broadest quant check here, and
@@ -485,7 +485,7 @@ hours. A required gate that is not named here is a gate whose failure nobody can
 
 ## parityRealckptGates: canonical gates
 
-Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-09.
 
 ```text
 ONE OR TWO CANONICAL GATES FOR SIX FAMILIES THAT HAD NONE (2026-09-02, audit G-05 follow-up).
@@ -499,7 +499,7 @@ SKIP-blocker.
 
 ## parityRealckptGates: smollm3
 
-Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-09.
 
 ```text
 smollm3's asset (testdata/assets.json GOINFER_SMOLLM3_3B) and gate
@@ -511,7 +511,7 @@ their own and still not be reachable.
 
 ## parityRealckptGates: lfm2 and mistral3
 
-Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-09.
 
 ```text
 lfm2 and mistral3 repeated the exact smollm3 gap the comment above describes — their
@@ -524,7 +524,7 @@ missing, not the check itself.
 
 ## parityRealckptGates: internlm2
 
-Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `parityRealckptGates`) on 2026-10-09.
 
 ```text
 internlm2 repeated the exact smollm3/lfm2/mistral3 registration gap: its gate and asset
@@ -536,7 +536,7 @@ note) so the missing registration was doubly invisible until the fix made the ga
 
 ## parityRealckptGates: cuda qwen25vl gate
 
-Moved from `cmd/gate/parity.go` (the comment below `parityRealckptGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment below `parityRealckptGates`) on 2026-10-09.
 
 ```text
 Not in parityRealckptGates/realckptNotRequired (and not found by realckptDirs' decoder-only
@@ -552,7 +552,7 @@ list's discipline by construction, the same way those two already are.
 
 ## emitGates
 
-Moved from `cmd/gate/parity.go` (the comment above `emitGates`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `emitGates`) on 2026-10-09.
 
 ```text
 emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -562,7 +562,7 @@ from the lists above — a detail that once produced six rows with the columns s
 
 ## assetNeverBuilt
 
-Moved from `cmd/gate/parity.go` (the comment above `assetNeverBuilt`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `assetNeverBuilt`) on 2026-10-09.
 
 ```text
 assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -579,7 +579,7 @@ build the asset.
 
 ## gateRunFilter
 
-Moved from `cmd/gate/parity.go` (the comment above `gateRunFilter`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `gateRunFilter`) on 2026-10-09.
 
 ```text
 gateRunFilter reads GATE_RUN — an optional narrowing filter for a granular re-run of the sweep
@@ -590,7 +590,7 @@ the SAME checkset classification, ledger/neverConfirmed handling and verdict log
 
 ## parityCells: realckpt Run
 
-Moved from `cmd/gate/parity.go` (the comment inside `parityCells`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `parityCells`) on 2026-10-09.
 
 ```text
 DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could
@@ -605,7 +605,7 @@ release sweep is not for; the filter selects on SHAPE now, not on a name list.
 
 ## assetPreflight
 
-Moved from `cmd/gate/parity.go` (the comment above `assetPreflight`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `assetPreflight`) on 2026-10-09.
 
 ```text
 assetPreflight resolves the asset environment from the SHARED REGISTRY (testdata/assets.json) and
@@ -624,7 +624,7 @@ without python3 every asset-gated gate skips and the count is about the failure,
 
 ## runParity: composition
 
-Moved from `cmd/gate/parity.go` (the comment inside `runParity`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `runParity`) on 2026-10-09.
 
 ```text
 THE COMPOSITION, NOT JUST THE VERDICT. This gate's axes are family × quant × loader, and a
@@ -635,7 +635,7 @@ behind an accurate count.
 
 ## classifyChecks: neverConfirmed skip
 
-Moved from `cmd/gate/parity.go` (the comment inside `classifyChecks`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `classifyChecks`) on 2026-10-09.
 
 ```text
 neverConfirmed's own doc comment already promises "never blocks a tag" —
@@ -649,7 +649,7 @@ never actually took effect. This is the fix.
 
 ## whyNoResult
 
-Moved from `cmd/gate/parity.go` (the comment above `whyNoResult`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `whyNoResult`) on 2026-10-09.
 
 ```text
 whyNoResult distinguishes the two causes of "no result" that look identical in a report and are
@@ -680,7 +680,7 @@ Run alone. Filed, not fixed, to avoid rushing a change to a pre-push-adjacent ga
 
 ## neverConfirmed
 
-Moved from `cmd/gate/parity.go` (the comment above `neverConfirmed`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `neverConfirmed`) on 2026-10-09.
 
 ```text
 neverConfirmed names a REQUIRED gate that is deliberately absent from the ledger, with the reason.
@@ -699,7 +699,7 @@ reason rather than a state the ledger can drift into by nobody doing anything.
 
 ## neverConfirmed: removals of 2026-09-18
 
-Moved from `cmd/gate/parity.go` (the comment inside `neverConfirmed`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `neverConfirmed`) on 2026-10-09.
 
 ```text
 2026-09-18: 9 of the 10 v0.18.0-deferral entries above this line were REMOVED here, per
@@ -719,7 +719,7 @@ this box, so only it stays.
 
 ## neverConfirmed: TestQwen3NextReal_oracle
 
-Moved from `cmd/gate/parity.go` (the comment inside `neverConfirmed`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment inside `neverConfirmed`) on 2026-10-09.
 
 ```text
 2026-10-01: TestQwen35Real_gate2FullModel, the other gate this block named, left the list. It fit and passed on this
@@ -736,7 +736,7 @@ so the fit-guard's 70% ceiling never authorizes more than ~43.4GB even fully idl
 
 ## awaitingFirstConfirmation
 
-Moved from `cmd/gate/parity.go` (the comment above `awaitingFirstConfirmation`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `awaitingFirstConfirmation`) on 2026-10-09.
 
 ```text
 awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with
@@ -774,7 +774,7 @@ full-attention layers only, as goinfer does. Re-pinned under 5.15 it passes at c
 
 ## realckptNotRequired
 
-Moved from `cmd/gate/parity.go` (the comment above `realckptNotRequired`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `realckptNotRequired`) on 2026-10-09.
 
 ```text
 realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
@@ -797,7 +797,7 @@ hole wearing a reason, and reviewing it is the point of making it a code change.
 
 ## metalGateTests
 
-Moved from `cmd/gate/parity.go` (the comment above `metalGateTests`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `metalGateTests`) on 2026-10-09.
 
 ```text
 metalGateTests scans metal/'s goinfer_testhooks-tagged test files for gate-shaped top-level
@@ -809,7 +809,7 @@ by any cell's -run pattern, with nothing to say the cell had nothing to say abou
 
 ## webgpuDirs
 
-Moved from `cmd/gate/parity.go` (the comment above `webgpuDirs`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `webgpuDirs`) on 2026-10-09.
 
 ```text
 webgpuDirs, webgpuGateTests, webgpuParityRun and webgpuNotRequired are the WebGPU twin of the
@@ -821,7 +821,7 @@ and no CI runner.
 
 ## realckptRun
 
-Moved from `cmd/gate/parity.go` (the comment above `realckptRun`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `realckptRun`) on 2026-10-09.
 
 ```text
 realckptRun derives the realckpt cell's -run from the tree, and returns a note saying how.
@@ -839,7 +839,7 @@ and is NOT gate-shaped, so the scan alone would drop it.
 
 ## unlistedFailures
 
-Moved from `cmd/gate/parity.go` (the comment above `unlistedFailures`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `unlistedFailures`) on 2026-10-09.
 
 ```text
 unlistedFailures returns the tests that FAILED and are not one of the named gates.
@@ -858,7 +858,7 @@ exactly, so it stays an ITEM.
 
 ## extraBlockers
 
-Moved from `cmd/gate/parity.go` (the comment above `extraBlockers`) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (the comment above `extraBlockers`) on 2026-10-09.
 
 ```text
 extraBlockers is everything blocking that the CHECKSET CANNOT SEE, and it returns the count so
@@ -872,7 +872,7 @@ REQUIRED GATES GREEN, exit 0 (audit-2026-09-02 G-05).
 
 ## gate quick selection header
 
-Moved from `cmd/gate/quick_select.go` (the comment above `quickModule`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment above `quickModule`) on 2026-10-09.
 
 ```text
 `gate quick`'s SELECTION (TE7(a), docs/tasks/task-test-efficiency-2026-09.md): changed files ->
@@ -901,7 +901,7 @@ THREE TIERS, because "imports the change" is not the only way a test here observ
 
 ## realQuickConfig: cuda cross target
 
-Moved from `cmd/gate/quick_select.go` (the comment inside `realQuickConfig`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment inside `realQuickConfig`) on 2026-10-09.
 
 ```text
 Measured 2026-09-28 on darwin/arm64: `CGO_ENABLED=0 go build -tags 'cuda
@@ -913,7 +913,7 @@ RUN off linux.
 
 ## cmdEnv
 
-Moved from `cmd/gate/quick_select.go` (the comment above `cmdEnv`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment above `cmdEnv`) on 2026-10-09.
 
 ```text
 cmdEnv is the environment for a go command about module m, built for target ("" = this host).
@@ -935,7 +935,7 @@ forTest builds a TEST cell's environment, and differs in two ways, both measured
 
 ## cmdEnv: vendor
 
-Moved from `cmd/gate/quick_select.go` (the comment inside `cmdEnv`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment inside `cmdEnv`) on 2026-10-09.
 
 ```text
 A gitignored, stale vendor/ (this Mac's root has one from 2026-09-20: aikit v1.46.0
@@ -945,7 +945,7 @@ against go.mod's v1.50.1) puts module-mode builds in vendor mode and fails them 
 
 ## scan: walker split
 
-Moved from `cmd/gate/quick_select.go` (the comment inside `testRoot.scan`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment inside `testRoot.scan`) on 2026-10-09.
 
 ```text
 Only the tree walkers split off. A fixture helper that globs ../testdata is called by
@@ -956,7 +956,7 @@ already handles.
 
 ## minCheckpointBytes
 
-Moved from `cmd/gate/quick_select.go` (the comment above `minCheckpointBytes`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment above `minCheckpointBytes`) on 2026-10-09.
 
 ```text
 A real checkpoint is a model file of at least minCheckpointBytes. The tiny fixtures (the largest
@@ -968,7 +968,7 @@ and metal were loading the same checkpoint, and failed; alone it passes.
 
 ## crossModuleReader
 
-Moved from `cmd/gate/quick_select.go` (the comment above `crossModuleReader`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment above `crossModuleReader`) on 2026-10-09.
 
 ```text
 crossModuleReader reports why the test cache cannot be trusted to see a change to rel on this
@@ -994,7 +994,7 @@ that: cuda enumerates only its own directory, metal only ../testdata (both caugh
 
 ## minSplitRest
 
-Moved from `cmd/gate/quick_select.go` (the comment above `minSplitRest`) on 2026-10-10.
+Moved from `cmd/gate/quick_select.go` (the comment above `minSplitRest`) on 2026-10-09.
 
 ```text
 minSplitRest is how many non-walking tests a package needs before its walkers get a cell of
@@ -1004,7 +1004,7 @@ read the whole tree); for a ten-test package the second process costs more than 
 
 ## package gate doc
 
-Moved from `cmd/gate/event.go` (the comment at the top of the package (`package main`)) on 2026-10-10.
+Moved from `cmd/gate/event.go` (the comment at the top of the package (`package main`)) on 2026-10-09.
 
 ```text
 Package main implements `gate` — one runner over `go test -json` for the tallying
@@ -1039,7 +1039,7 @@ a consumer's module graph must not grow because a gate changed language.
 
 ## testKey
 
-Moved from `cmd/gate/event.go` (the comment above `testKey`) on 2026-10-10.
+Moved from `cmd/gate/event.go` (the comment above `testKey`) on 2026-10-09.
 
 ```text
 testKey identifies one test result.
@@ -1055,7 +1055,7 @@ verdict, which is the failure shape this program exists to eliminate.
 
 ## results: liveRun
 
-Moved from `cmd/gate/event.go` (the comment above `results.liveRun`) on 2026-10-10.
+Moved from `cmd/gate/event.go` (the comment above `results.liveRun`) on 2026-10-09.
 
 ```text
 liveRun holds the tests that have started and not yet finished, keyed by name, valued by
@@ -1068,7 +1068,7 @@ this while consume() writes it.
 
 ## noteOutput
 
-Moved from `cmd/gate/event.go` (the comment above `noteOutput`) on 2026-10-10.
+Moved from `cmd/gate/event.go` (the comment above `noteOutput`) on 2026-10-09.
 
 ```text
 noteOutput folds one output line into the stream-wide accumulators.
@@ -1084,7 +1084,7 @@ docs/completed/task-gate-runner.md §10 as a number that should probably say whi
 
 ## lookupTop
 
-Moved from `cmd/gate/event.go` (the comment above `lookupTop`) on 2026-10-10.
+Moved from `cmd/gate/event.go` (the comment above `lookupTop`) on 2026-10-09.
 
 ```text
 lookupTop returns the LAST terminal action recorded for a TOP-LEVEL test of this exact name,
@@ -1098,7 +1098,7 @@ a required gate that never ran is the one case where the sweep learned nothing a
 
 ## isSubtest
 
-Moved from `cmd/gate/event.go` (the comment above `isSubtest`) on 2026-10-10.
+Moved from `cmd/gate/event.go` (the comment above `isSubtest`) on 2026-10-09.
 
 ```text
 isSubtest reports whether the key names a subtest (`TestFoo/case`) rather than a top-level test.
@@ -1113,7 +1113,7 @@ choice (topLevelOnly), not a house style.
 
 ## gate mutation header
 
-Moved from `cmd/gate/mutation.go` (the comment above `runMutation`) on 2026-10-10.
+Moved from `cmd/gate/mutation.go` (the comment above `runMutation`) on 2026-10-09.
 
 ```text
 A gate's own gate, committed rather than typed.
@@ -1139,7 +1139,7 @@ construction, which is the whole argument for the migration (E8 §2).
 
 ## runMutation: no sed -i
 
-Moved from `cmd/gate/mutation.go` (the comment inside `runMutation`) on 2026-10-10.
+Moved from `cmd/gate/mutation.go` (the comment inside `runMutation`) on 2026-10-09.
 
 ```text
 2. MUTATE, and assert the mutation actually CHANGED something. A sed expression that matches
@@ -1158,7 +1158,7 @@ Moved from `cmd/gate/mutation.go` (the comment inside `runMutation`) on 2026-10-
 
 ## gate mutation header: sed-expr line
 
-Moved from `cmd/gate/mutation.go` (the Usage text under the comment above `runMutation`) on 2026-10-10.
+Moved from `cmd/gate/mutation.go` (the Usage text under the comment above `runMutation`) on 2026-10-09.
 
 ```text
 <sed-expr>  is applied in place; it MUST change the file (asserted — a no-op mutation is the
@@ -1168,7 +1168,7 @@ Moved from `cmd/gate/mutation.go` (the Usage text under the comment above `runMu
 
 ## gateConfig: PkgFailIsFailure
 
-Moved from `cmd/gate/run.go` (the comment above `gateConfig.PkgFailIsFailure`) on 2026-10-10.
+Moved from `cmd/gate/run.go` (the comment above `gateConfig.PkgFailIsFailure`) on 2026-10-09.
 
 ```text
 PkgFailIsFailure counts a package-level fail (build error / native crash) toward the verdict.
@@ -1182,7 +1182,7 @@ archaeology exercise; see the warning the census report prints when it suppresse
 
 ## runCell: heartbeat
 
-Moved from `cmd/gate/run.go` (the comment inside `runCell`) on 2026-10-10.
+Moved from `cmd/gate/run.go` (the comment inside `runCell`) on 2026-10-09.
 
 ```text
 HEARTBEAT while the cell runs (~/.claude/rules/long-tests.md). `go test -json` reports a
@@ -1199,7 +1199,7 @@ removing it" — 0 or a bad value disables.
 
 ## gate identity header
 
-Moved from `cmd/gate/identity.go` (the comment above `identityDumperTmpl`) on 2026-10-10.
+Moved from `cmd/gate/identity.go` (the comment above `identityDumperTmpl`) on 2026-10-09.
 
 ```text
 `gate identity <old-rev> <new-rev>` — inherit validation by identity (TE6(b),
@@ -1232,7 +1232,7 @@ parity prompt(s), and compare bytes.
 
 ## defaultIdentityQuants
 
-Moved from `cmd/gate/identity_assets.go` (the comment above `defaultIdentityQuants`) on 2026-10-10.
+Moved from `cmd/gate/identity_assets.go` (the comment above `defaultIdentityQuants`) on 2026-10-09.
 
 ```text
 defaultIdentityQuants: on CPU the tiny fixtures run at f32 (what their goldens load) AND at the two
@@ -1245,7 +1245,7 @@ tiny families run staged — one dispatch per matmul — and both quants took 13
 
 ## selector census header
 
-Moved from `cmd/gate/selector.go` (the comment above the regexps in `selector.go`) on 2026-10-10.
+Moved from `cmd/gate/selector.go` (the comment above the regexps in `selector.go`) on 2026-10-09.
 
 ```text
 Tests that EXIST versus tests any selector actually RUNS.
@@ -1283,7 +1283,7 @@ DESIGN, from what the other censuses learned:
 
 ## composition header
 
-Moved from `cmd/gate/composition.go` (the comment above the regexps in `composition.go`) on 2026-10-10.
+Moved from `cmd/gate/composition.go` (the comment above the regexps in `composition.go`) on 2026-10-09.
 
 ```text
 The release gate's coverage COMPOSITION along its axes — family × quant × loader.
@@ -1308,7 +1308,7 @@ slice both sides read, which removes the parse rather than reimplementing it.
 
 ## runJobs: checkpoint loader alone
 
-Moved from `cmd/gate/quick_run.go` (the comment inside `runJobs`) on 2026-10-10.
+Moved from `cmd/gate/quick_run.go` (the comment inside `runJobs`) on 2026-10-09.
 
 ```text
 A checkpoint loader runs alone. Measured 2026-09-28 on the MacBook: with only the
@@ -1318,7 +1318,7 @@ available beside decoder, metal and their compiles, and was refused; alone it ha
 
 ## configs: models dirs
 
-Moved from `cmd/gate/configs.go` (the comment inside `heavyConfig`) on 2026-10-10.
+Moved from `cmd/gate/configs.go` (the comment inside `heavyConfig`) on 2026-10-09.
 
 ```text
 Both names, not just one (audit-2026-09-02.md N-41): GOINFER_MODELS_DIR is
@@ -1331,7 +1331,7 @@ reach only the first kind, silently splitting one run across two roots.
 
 ## ledger header: port
 
-Moved from `cmd/gate/ledger.go` (the comment above `ledgerDoc`) on 2026-10-10.
+Moved from `cmd/gate/ledger.go` (the comment above `ledgerDoc`) on 2026-10-09.
 
 ```text
 The gate ledger (B14): the record of gate results a PERSON has confirmed. Ported from
@@ -1342,7 +1342,7 @@ confirmations stay valid (TestLedger_matchesThePythonImplementation pins it).
 
 ## Provenance wording replaced in cmd/gate/configs.go
 
-Moved from `cmd/gate/configs.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/configs.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 The committed matrix configs. One per migrated script — this is where "six scripts are one
@@ -1357,7 +1357,7 @@ includes them; heavy_gate did not. See gateConfig.TopLevelOnly.
 
 ## Provenance wording replaced in cmd/gate/run.go
 
-Moved from `cmd/gate/run.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/run.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 TopLevelOnly counts top-level tests only, excluding subtests. heavy_gate.sh did this by
@@ -1387,7 +1387,7 @@ migration exists to make impossible.
 
 ## Provenance wording replaced in cmd/gate/skips.go
 
-Moved from `cmd/gate/skips.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/skips.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 Skip bucketing — ported verbatim in BEHAVIOUR from scripts/skip_census.py, whose rule order is
@@ -1397,7 +1397,7 @@ from docs/parity-coverage-policy.md, "A gate must be able to run, and able to fa
 
 ## Provenance wording replaced in cmd/gate/parity.go
 
-Moved from `cmd/gate/parity.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/parity.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 2026-10-08: Qwen3-ASR's decoder from the checkpoint's own layout, against transformers
@@ -1409,7 +1409,7 @@ Moved from `cmd/gate/parity.go` (comments that named retired scripts, dates or a
 
 ## Provenance wording replaced in cmd/gate/gpu.go
 
-Moved from `cmd/gate/gpu.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/gpu.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve has been a DELIBERATE compile error
@@ -1420,7 +1420,7 @@ root command for that entire period, so it could not pass — see audit G-01.
 
 ## Provenance wording replaced in cmd/gate/event.go
 
-Moved from `cmd/gate/event.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/event.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 stream, when set, is called for each terminal test result as it arrives. Liveness is
@@ -1433,7 +1433,7 @@ that "0 passed" could be told apart from "0 attempted", which are different bugs
 
 ## Provenance wording replaced in cmd/gate/identity_record.go
 
-Moved from `cmd/gate/identity_record.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-10.
+Moved from `cmd/gate/identity_record.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
 `gate identity -record FILE` (TE6(b), docs/tasks/task-test-efficiency-2026-09.md; owner decision 2026-09-28: a

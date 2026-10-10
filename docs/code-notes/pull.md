@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## Package pull
 
-Moved from `pull/pull.go` (the comment the package comment of `pull/pull.go`) on 2026-10-10.
+Moved from `pull/pull.go` (the comment the package comment of `pull/pull.go`) on 2026-10-09.
 
 ```text
 Package pull fetches a GGUF checkpoint from HuggingFace onto local disk.
@@ -32,7 +32,7 @@ the cgo-free single-static-binary property the rest of the project is built arou
 
 ## CheckAccess
 
-Moved from `pull/pull.go` (the comment above `CheckAccess`) on 2026-10-10.
+Moved from `pull/pull.go` (the comment above `CheckAccess`) on 2026-10-09.
 
 ```text
 CheckAccess reports whether the repo is reachable anonymously, naming the reason when it
@@ -49,7 +49,7 @@ point at a GGUF repo, which is what you wanted anyway.
 
 ## Download
 
-Moved from `pull/pull.go` (the comment above `Download`) on 2026-10-10.
+Moved from `pull/pull.go` (the comment above `Download`) on 2026-10-09.
 
 ```text
 Download streams f from repo into dir, verifying the sha256 HF declared for it, and
@@ -66,7 +66,7 @@ corrupted pull can never leave something at the final path that later looks load
 
 ## Download: a Range request at EOF
 
-Moved from `pull/pull.go` (the comment in `Download`) on 2026-10-10.
+Moved from `pull/pull.go` (the comment in `Download`) on 2026-10-09.
 
 ```text
 N-70 (docs/audit-2026-09-10.md): resumeFrom landed at or past EOF — the .part file
@@ -83,7 +83,7 @@ response doesn't have.
 
 ## recordVerifiedDigest
 
-Moved from `pull/pull.go` (the comment above `recordVerifiedDigest`) on 2026-10-10.
+Moved from `pull/pull.go` (the comment above `recordVerifiedDigest`) on 2026-10-09.
 
 ```text
 recordVerifiedDigest writes path's digest sidecar from a digest Download has JUST verified against the streamed bytes (audit R-18).
@@ -94,7 +94,7 @@ Best-effort like cachedFileSHA256's own write: a failure only costs the next cal
 
 ## cachedFileSHA256
 
-Moved from `pull/pull.go` (the comment above `cachedFileSHA256`) on 2026-10-10.
+Moved from `pull/pull.go` (the comment above `cachedFileSHA256`) on 2026-10-09.
 
 ```text
 cachedFileSHA256 is fileSHA256 behind a sidecar cache keyed on (size, mtime) — P-12
@@ -109,7 +109,7 @@ write failure is not fatal — it only means the NEXT call re-hashes too, same a
 
 ## resolveOffline
 
-Moved from `pull/resolve.go` (the comment above `resolveOffline`) on 2026-10-10.
+Moved from `pull/resolve.go` (the comment above `resolveOffline`) on 2026-10-09.
 
 ```text
 
@@ -120,7 +120,7 @@ to start offline — the opposite of what Resolve's own doc comment promised.
 
 ## Checkpoint pull: file header
 
-Moved from `pull/checkpoint.go` (the comment at the top of `pull/checkpoint.go`) on 2026-10-10.
+Moved from `pull/checkpoint.go` (the comment at the top of `pull/checkpoint.go`) on 2026-10-09.
 
 ```text
 A safetensors checkpoint as a pull target (docs/tasks/task-checkpoint-fetch-2026-09.md, P1-P3 and P5). GGUF is one
@@ -133,7 +133,7 @@ before any of this runs.
 
 ## The recommended-checkpoint registry
 
-Moved from `pull/registry.go` (the comment at the top of `pull/registry.go`) on 2026-10-10.
+Moved from `pull/registry.go` (the comment at the top of `pull/registry.go`) on 2026-10-09.
 
 ```text
 The recommended-checkpoint registry: a short name a person can type, mapped to a checkpoint this
@@ -162,7 +162,7 @@ so this does not extend it.
 
 ## Checkpoint.Kind
 
-Moved from `pull/registry.go` (the comment in `Checkpoint`) on 2026-10-10.
+Moved from `pull/registry.go` (the comment in `Checkpoint`) on 2026-10-09.
 
 ```text
 Kind is "" for a single-file GGUF (every entry until 2026-10-08) and KindDirectory for a safetensors checkpoint
@@ -174,7 +174,7 @@ carries the tower (docs/multimodal.md, P9(d)).
 
 ## Checkpoint.Tools
 
-Moved from `pull/registry.go` (the comment in `Checkpoint`) on 2026-10-10.
+Moved from `pull/registry.go` (the comment in `Checkpoint`) on 2026-10-09.
 
 ```text
 Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint

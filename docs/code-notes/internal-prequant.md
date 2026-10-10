@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## Transcode: the weights half
 
-Moved from `internal/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-09.
 
 ```text
 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a
@@ -19,7 +19,7 @@ build some families used to fall back to is gone.
 
 ## Transcode: the temp file and its name
 
-Moved from `internal/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-09.
 
 ```text
 TEMP + RENAME, not os.Create(out) directly (M-12). giw.WriteStream patches the body
@@ -46,7 +46,7 @@ Transcode again and so never saw it, which is how it stayed green.
 
 ## transcodeDir: the temp file
 
-Moved from `internal/prequant/prequant.go` (the comment in `transcodeDir`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment in `transcodeDir`) on 2026-10-09.
 
 ```text
 TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to
@@ -61,7 +61,7 @@ loader at all.
 
 ## residentDirBody: ResidentContext
 
-Moved from `internal/prequant/prequant.go` (the comment in `residentDirBody`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment in `residentDirBody`) on 2026-10-09.
 
 ```text
 ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same). Unpinned, the fit
@@ -70,7 +70,7 @@ guard priced the model's full context: on 2026-10-07 it refused Gemma 4 E4B for 
 
 ## EnsureCachedGIW: the free-disk check
 
-Moved from `internal/prequant/prequant.go` (the comment in `EnsureCachedGIW`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment in `EnsureCachedGIW`) on 2026-10-09.
 
 ```text
 S1 (task-never-swap-2026-09.md): a half-written sidecar on a full disk is a failure this
@@ -86,7 +86,7 @@ missing probe must never be the reason a load that would have worked gets refuse
 
 ## SidecarPathIfFresh
 
-Moved from `internal/prequant/prequant.go` (the comment above `SidecarPathIfFresh`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment above `SidecarPathIfFresh`) on 2026-10-09.
 
 ```text
 SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and
@@ -98,7 +98,7 @@ an equally expensive one-time transcode, not for "nearly free" as the brief asks
 
 ## DefaultToSidecar
 
-Moved from `internal/prequant/prequant.go` (the comment above `DefaultToSidecar`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment above `DefaultToSidecar`) on 2026-10-09.
 
 ```text
 DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default
@@ -113,7 +113,7 @@ GOINFER_GGUF_DIRECT env var; it can only turn the sidecar OFF.
 
 ## cacheFresh
 
-Moved from `internal/prequant/prequant.go` (the comment above `cacheFresh`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment above `cacheFresh`) on 2026-10-09.
 
 ```text
 cacheFresh reports whether cache exists, is newer than src, AND actually loads.
@@ -137,7 +137,7 @@ cacheLayoutCurrent — quant is the cache's own quant, which decides whether tha
 
 ## minInt4CacheGIWVersion
 
-Moved from `internal/prequant/prequant.go` (the comment above `minInt4CacheGIWVersion`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment above `minInt4CacheGIWVersion`) on 2026-10-09.
 
 ```text
 minInt4CacheGIWVersion is the oldest weights-blob version whose int4 group scales an mmap load
@@ -154,7 +154,7 @@ a kind: every bump here costs each user a one-time re-transcode.
 
 ## selfCheck
 
-Moved from `internal/prequant/prequant.go` (the comment above `selfCheck`) on 2026-10-10.
+Moved from `internal/prequant/prequant.go` (the comment above `selfCheck`) on 2026-10-09.
 
 ```text
 selfCheck verifies a freshly written bundle loads through the real mmap path — the streamed
@@ -178,7 +178,7 @@ printed a "context capped" line belonging to no real load; under tight memory it
 
 ## projectedSidecarBytes
 
-Moved from `internal/prequant/projected.go` (the comment above `projectedSidecarBytes`) on 2026-10-10.
+Moved from `internal/prequant/projected.go` (the comment above `projectedSidecarBytes`) on 2026-10-09.
 
 ```text
 projectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
