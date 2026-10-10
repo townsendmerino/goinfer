@@ -9,15 +9,13 @@ import (
 	"testing"
 )
 
-// P13: the safetensors loader used to hold the SOURCE mapping for the model's whole life. On a
-// 55.6 GB bf16 checkpoint that is 46.8 GB RSS against GGUF's 24.5 GB for an IDENTICAL 17.9 GB Go
-// heap, and 1.69x slower decode — dead bf16 pages competing with the hot quantized weights for
-// page cache. loadWeights now closes the source at end of load when nothing can alias it.
+// P13: loadWeights closes the safetensors SOURCE mapping at end of load when nothing can alias it; holding it for the
+// model's whole life let dead bf16 pages compete with the hot quantized weights for page cache. RSS, heap and
+// decode-speed figures: docs/code-notes/decoder.md#TestP13_mmapAliasRisk_classifiesDTypes
 //
-// THE GATE IS mmapAliasRisk, AND THIS TESTS THE GATE RATHER THAN THE OUTCOME. Getting it wrong in
-// the safe direction costs the old behaviour; getting it wrong in the unsafe direction is a
-// use-after-free on weights the decode is reading, which would surface as garbage output or a
-// SIGBUS far from here.
+// THE GATE IS mmapAliasRisk, AND THIS TESTS THE GATE RATHER THAN THE OUTCOME. Getting it wrong in the safe direction
+// costs the old behaviour; getting it wrong in the unsafe direction is a use-after-free on weights the decode is
+// reading, which would surface as garbage output or a SIGBUS far from here.
 func TestP13_mmapAliasRisk_classifiesDTypes(t *testing.T) {
 	// BF16 and F16 are widened into fresh slices on read, so they cannot alias. Everything else
 	// may be served as a zero-copy view. Table-driven so a new dtype has to be classified
@@ -79,10 +77,9 @@ func TestP13_realCheckpointReleases(t *testing.T) {
 	}
 }
 
-// TestP13_rssAfterLoad reports resident set size after a load, so the release can be measured
-// rather than asserted. DIAGNOSTIC — P13's own entry says "do not assume the 1.69x transfers",
-// because that figure came from a box holding 46.8 GB of 62 GB and is a page-pressure artifact as
-// much as a mapping one. This prints; it does not gate.
+// TestP13_rssAfterLoad reports resident set size after a load, so the release can be measured rather than asserted.
+// DIAGNOSTIC: P13's own entry says not to assume the speedup measured on a memory-pressured box transfers, since it is
+// a page-pressure artifact as much as a mapping one. This prints; it does not gate.
 func TestP13_rssAfterLoad(t *testing.T) {
 	if os.Getenv("GOINFER_DIAG") == "" {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1)")

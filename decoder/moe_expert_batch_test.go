@@ -10,55 +10,30 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Is batching the MoE expert matmul over rows worth anything? — the cheap check
-// before anyone funds the restructuring.
+// TestMoEExpertBatching_M1vsMN asks whether batching the MoE expert matmul over rows is worth anything: the
+// cheap check before anyone funds the restructuring. In the batched-prefill loop (forwardn.go) moeMLP is
+// called once PER ROW and swiGLUExpert issues its three matmuls at M=1, so an expert's weights are re-read
+// for every token that routes to it.
 //
-// WHY THIS IS BEING ASKED AGAIN. The 2026-09-01 full-model profile put
-// `swiGLUExpert` at 93.1% of moeMLP and moeMLP at 42.1% of prefill — so the
-// expert weight matmuls are ~39% of prefill, and the largest single bucket now
-// that A3 collapsed attention to 17.4%. At K=8192 the batched-prefill loop
-// (forwardn.go) calls moeMLP once PER ROW, and swiGLUExpert issues its three
-// matmuls at M=1, so an expert's weights are re-read for every token that
-// routes to it.
+// The parked verdict in docs/completed/task-moe-streaming.md (Lever 4: uniform vs varied routing) does not
+// cover this: both of its arms call moeMLP per row at M=1, so it captures the bandwidth/locality half of
+// batching and not the M=1 -> M=N half, where a GEMV is latency/ILP-bound in a way a GEMM over hundreds of
+// rows is not.
 //
-// AND WHY THE EXISTING VERDICT MAY NOT COVER IT. docs/completed/task-moe-streaming.md
-// Lever 4 is PARKED on "expert-major MoE prefill batching is NOT a compute
-// lever", measured 2026-08-28 as `uniform` (every row picks the same experts)
-// against `varied` (real routing), with uniform called the CEILING. But BOTH
-// arms of that experiment call moeMLP per row at M=1. What uniform changes is
-// which weights get touched, so it captures the BANDWIDTH/locality half of
-// batching — the weights stay cache-resident across rows — and not the
-// M=1 -> M=N half, which is a different axis: a GEMV is latency/ILP-bound in a
-// way a GEMM over hundreds of rows is not. The two coincide only if the
-// workload is purely bandwidth-bound.
-//
-// So that result answers "does routing diversity cost much?" (no — and today's
-// profile agrees, routeExperts is 1.7% of moeMLP) without bounding "would
-// batching rows into GEMMs help?". This measures the second question directly,
-// which is cheaper than arguing about the first.
-//
-// METHOD. Real Mellum2 expert shapes, real int4 W4A8 weights through the same
-// `matmul(be, *WeightMat, ...)` entry point production uses. Same total rows in
-// both arms:
+// Method: real Mellum2 expert shapes, real int4 W4A8 weights through the same `matmul(be, *WeightMat, ...)`
+// entry point production uses, same total rows in both arms:
 //
 //	M=1 arm    N separate calls, exactly what moeMLP does today
 //	M=N arm    one call over N rows
 //
-// The comparison is TIME PER ROW. If M=N is not materially cheaper per row, the
-// parked verdict covers this too and the lever really is closed.
+// The comparison is TIME PER ROW. If M=N is not materially cheaper per row, the parked verdict covers this too.
+// Profile figures and the prior verdict: docs/code-notes/decoder.md#TestMoEExpertBatching_M1vsMN.
 func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 	if os.Getenv("GOINFER_MOE_BATCH_PROBE") == "" {
 		t.Skip("set GOINFER_MOE_BATCH_PROBE=1")
 	}
-	// Mellum2 config.json: hidden_size 2304, **moe_intermediate_size 896**,
-	// 64 experts, top-k 8.
-	//
-	// 896 IS THE EXPERT WIDTH AND 7168 IS THE DENSE ONE. The first version of
-	// this benchmark used 7168 -- `intermediate_size`, which the DENSE FFN uses
-	// -- and so measured expert matmuls 8x wider than the ones swiGLUExpert
-	// actually issues (it is called with moe.IntermediateDim). Wider matmuls
-	// amortise per-call overhead better, so that error understated the batching
-	// win rather than inventing one, but it was still the wrong shape.
+	// Mellum2 config.json: hidden_size 2304, **moe_intermediate_size 896**, 64 experts, top-k 8. 896 is the
+	// EXPERT width (swiGLUExpert is called with moe.IntermediateDim); 7168 is the dense FFN's.
 	const (
 		hidden = 2304
 		inter  = 896
@@ -133,21 +108,16 @@ func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 	}
 }
 
-// TestMoEExpertMajor_bitIdentical is the gate that decides whether P18's
-// expert-major path is usable at all.
+// TestMoEExpertMajor_bitIdentical is the gate that decides whether P18's expert-major path is usable at all:
+// it is a REORDERING of the same arithmetic, not a different computation. Two things have to survive, and a
+// tolerance test would let both fail quietly:
 //
-// The win is worthless if it changes results: the whole point of running the
-// MoE FFN expert-major is that it is a REORDERING of the same arithmetic, not
-// a different computation. Two things have to survive, and a tolerance test
-// would let both fail quietly:
+//   - the matmuls must be M-invariant (a row computed alone equals the same row computed inside a batch),
+//     which linalg documents as a contract; and
+//   - the per-row fold must run in ROUTING RANK order, because float addition is not associative and
+//     expert-major visits experts in a different order.
 //
-//   - the matmuls must be M-invariant (a row computed alone equals the same row
-//     computed inside a batch), which linalg documents as a contract; and
-//   - the per-row fold must run in ROUTING RANK order, because float addition
-//     is not associative and expert-major visits experts in a different order.
-//
-// So this asserts `!=` on every logit, through the real forward, with the flag
-// on and off over the same tokens.
+// So this asserts `!=` on every logit, through the real forward, with the flag on and off over the same tokens.
 func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	m, err := loadMoEBitIdentModel(t)
 	if err != nil {
@@ -155,10 +125,8 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	}
 	ctx := deadlineCtx(t)
 	K := 600 // > moeExpertMajorChunk, so the chunk boundary is exercised
-	// Overridable because the e2e measurement returned ~4x at K=4096 -- far more
-	// than batching the matmuls can explain -- and a speedup that comes partly
-	// from doing LESS work would look exactly like that. The identity must be
-	// checked at the depth the claim is made at, not only at the cheap one.
+	// Overridable because the identity must be checked at the depth the speedup claim is made at, not only at
+	// the cheap one (a speedup that comes partly from doing LESS work would look like a large e2e ratio).
 	if v := os.Getenv("GOINFER_MOE_BATCH_K"); v != "" {
 		fmt.Sscanf(v, "%d", &K)
 	}
@@ -181,9 +149,8 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	off := run("0")
 	before := atomic.LoadInt64(&moeExpertMajorRuns)
 	on := run("1")
-	// NON-VACUITY: moeMLPBatch refuses for several legitimate reasons, and a
-	// refusal makes both arms take the identical per-row path -- this test would
-	// then pass while proving nothing about the batched path.
+	// NON-VACUITY: moeMLPBatch refuses for several legitimate reasons, and a refusal makes both arms take the
+	// identical per-row path, so the test would pass while proving nothing about the batched path.
 	if ran := atomic.LoadInt64(&moeExpertMajorRuns) - before; ran == 0 {
 		t.Fatal("expert-major path never ran (moeMLPBatch refused) — this comparison proves nothing")
 	} else {
@@ -216,10 +183,8 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	}
 }
 
-// loadMoEBitIdentModel resolves a real MoE checkpoint for the gate above, through the shared
-// asset registry (testdata/assets.json's GOINFER_MELLUM_CKPT entry) rather than a hand-rolled
-// os.Getenv("HOME")+"/models/mellum2-unq" fallback — the old form was invisible to `gate census`
-// and ignored GOINFER_MODELS pointing the models root elsewhere (audit-2026-09-02.md N-41).
+// loadMoEBitIdentModel resolves a real MoE checkpoint through the shared asset registry
+// (testdata/assets.json's GOINFER_MELLUM_CKPT entry), so `gate census` sees it and GOINFER_MODELS is honoured.
 // assetPath itself skips the test when the asset is absent, so a nil error here means Load ran.
 func loadMoEBitIdentModel(t *testing.T) (*Model, error) {
 	t.Helper()
@@ -227,20 +192,13 @@ func loadMoEBitIdentModel(t *testing.T) (*Model, error) {
 	return Load(path, Options{Quant: "int4"})
 }
 
-// TestMoEExpertMajor_endToEnd is P18's decision measurement.
+// TestMoEExpertMajor_endToEnd is P18's decision measurement. The microbenchmark says nothing about the
+// GATHER/SCATTER cost of collecting an expert's scattered rows, the whole open question, and multiplying it by
+// moeMLP's profile share is a projection this repo has retracted. So this times the real forward with the flag
+// on and off, paired and interleaved with alternating lead, at the depth the pre-registered rule names.
 //
-// The microbenchmark says the expert matmul is 1.55x-2.13x cheaper per row when
-// batched. It says nothing about the GATHER/SCATTER cost of collecting an
-// expert's scattered rows, which is the whole open question — and multiplying
-// the microbenchmark by moeMLP's profile share is precisely the projection this
-// repo retracted twice on 2026-09-01.
-//
-// So this times the real forward with the flag on and off, paired and
-// interleaved with alternating lead, at the depth the pre-registered rule names.
-//
-// PRE-REGISTERED DECISION RULE (docs/queue-performance.md P18, committed before
-// this ran): fund if the net is >=15% end-to-end at K>=4096; park if <8%;
-// 8-15% is AMBIGUOUS and parks pending a second mechanism.
+// Pre-registered decision rule (docs/queue-performance.md P18): fund if the net is >=15% end-to-end at
+// K>=4096; park if <8%; 8-15% is AMBIGUOUS and parks pending a second mechanism.
 func TestMoEExpertMajor_endToEnd(t *testing.T) {
 	if os.Getenv("GOINFER_MOE_BATCH_E2E") == "" {
 		t.Skip("set GOINFER_MOE_BATCH_E2E=1")
@@ -270,8 +228,7 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 
 	run := func(on string) time.Duration {
 		t.Helper()
-		// The scratch-reuse ATTRIBUTION arm (GOINFER_MOE_PREFILL_SCRATCH) was retired 2026-09-24 after
-		// P18's attribution was recorded; this now times per-row vs expert-major only.
+		// This times per-row vs expert-major only; the scratch-reuse attribution arm is retired.
 		setKnob(t, m, knobMoEExpertMajor, on)
 		before := atomic.LoadInt64(&moeExpertMajorRuns)
 		t0 := time.Now()

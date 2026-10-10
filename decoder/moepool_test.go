@@ -213,17 +213,12 @@ func TestExpertBufferPool_evictsLeastRecent(t *testing.T) {
 	}
 }
 
-// TestExpertPager_poolModeLockPreventsCrossStreamCorruption is the concurrency-hazard
-// regression this design exists to close (see expertBufferPool's doc comment and the Lever 1a
-// research this session did before building Lever 1b): with owned buffers, a slot's bytes ARE
-// mutable storage a competing miss can overwrite mid-read. Many goroutines (simulated
-// concurrent decode streams) repeatedly Lock, touch a RANDOM key, verify the resulting
-// WeightMat's matmul output matches THAT key's known-correct output, then Unlock -- over a
-// pool deliberately smaller than the key count, so eviction (and therefore slot reuse) is
-// guaranteed to happen constantly during the run. Any window where Lock/Unlock failed to
-// protect a read would surface here as a wrong-expert (not-necessarily-a-Go-race) output
-// mismatch, which -race alone cannot catch -- this asserts correctness directly, not just the
-// absence of an unsynchronized access.
+// TestExpertPager_poolModeLockPreventsCrossStreamCorruption is the concurrency-hazard regression the pool design
+// exists to close (see expertBufferPool's doc comment): with owned buffers, a slot's bytes ARE mutable storage a
+// competing miss can overwrite mid-read. Many goroutines (simulated decode streams) repeatedly Lock, touch a RANDOM
+// key, verify the resulting WeightMat's matmul output matches THAT key's known-correct output, then Unlock, over a
+// pool deliberately smaller than the key count so eviction and slot reuse happen constantly. A window where
+// Lock/Unlock failed to protect a read surfaces as a wrong-expert output, which -race alone cannot catch.
 func TestExpertPager_poolModeLockPreventsCrossStreamCorruption(t *testing.T) {
 	const nExperts = 6
 	const nSlots = 2 // deliberately << nExperts: forces constant eviction under concurrency

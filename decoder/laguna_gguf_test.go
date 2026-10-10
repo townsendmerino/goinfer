@@ -46,10 +46,10 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	// OOM-killed — which surfaces only as "signal: killed", with no hint that the
 	// option was the cause. The file is Q4_K_M on disk; int4 keeps it near that.
 	//
-	// The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate. This gate checks the LOADER's parity,
-	// not memory planning, and the guard prices the 18.9 GB mapped checkpoint as resident for the whole load and the KV
-	// cache at the model's full context (56.5 GB needed against a 35.9 GB budget on nobara-pc's 62 GB, 2026-10-01),
-	// which refused a load this box completed in the v0.19.0 sweep. requireHeavyModel keeps it to the box that holds it.
+	// The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate: this gate checks the LOADER's parity,
+	// not memory planning, and the guard prices the mapped checkpoint as resident for the whole load and the KV cache
+	// at the model's full context, which refuses a load this box completes. requireHeavyModel keeps it to the box that
+	// holds it.
 	m, err := Load(path, Options{Quant: "int4", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", path, err)
@@ -164,12 +164,9 @@ func TestLagunaGGUF_gate(t *testing.T) {
 			"been recognized as single ids", len(ids))
 	}
 
-	// 160, not 48. XS-2.1 answers this prompt as a VERBOSE numbered list with a
-	// paragraph of description per entry, so a 48-token budget stops partway through
-	// item 1 — the landmark assertion below then fails on a model that was answering
-	// correctly. Raising the budget is the honest fix; lowering the bar to one
-	// landmark would have made the check unable to distinguish a right answer from a
-	// fluent wrong one, which is the only thing it is there for.
+	// 160, not 48: XS-2.1 answers this prompt as a VERBOSE numbered list, so a 48-token budget stops partway through
+	// item 1 and the landmark assertion below would fail on a correct model. The bar stays at the landmark, since a
+	// weaker check could not tell a right answer from a fluent wrong one.
 	out, _ := m.Generate(context.Background(), ids, 160, SamplingParams{})
 	gen := make([]int, 0, 160)
 	for id := range out {

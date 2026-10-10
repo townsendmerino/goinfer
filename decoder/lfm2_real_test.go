@@ -1,11 +1,9 @@
 //go:build realckpt
 
-// Real-model gate for LFM2.5-2.6B (model_type "lfm2", Lfm2ForCausalLM) — the T3 promotion of
-// the lfm2 family from tiny-golden to a released checkpoint. LFM2.5-2.6B is the smallest
-// released LFM2.5 checkpoint and the one an ad-hoc 2026-08-31 debugging session already diffed
-// against by hand (decoder/lfm2_test.go's own comment: that pass found and fixed a wrong
-// NormEps config key and a zeroed AttnScale) — this gate is the permanent, re-runnable version
-// of that diff. Fixture: scripts/pin_lfm2_real.py.
+// Real-model gate for LFM2.5-2.6B (model_type "lfm2", Lfm2ForCausalLM): the T3 promotion of the lfm2 family from
+// tiny-golden to a released checkpoint, and the permanent, re-runnable version of the by-hand diff against HF that found
+// the NormEps and AttnScale bugs TestLFM2_arch pins. LFM2.5-2.6B is the smallest released LFM2.5 checkpoint. Fixture:
+// scripts/pin_lfm2_real.py.
 //
 //	go test -tags realckpt ./decoder/ -run TestLFM2Real -v -timeout 30m
 package decoder

@@ -1,11 +1,8 @@
 package decoder
 
-// B15 regression gates: the manifest WRITER must not produce claims the manifest READER has to
-// reject. One sweep with EMIT_MANIFEST=1 promoted four families from experimental to *validated*
-// while their method still said tiny-golden, and wrote mellum's method as "real-oracle" — a
-// string no tier rule recognises. TestParityManifest_methodTier caught both, which is that gate
-// working; these two catch them at the source, and — the part that matters — they run in plain
-// CI, where the emitter itself never does.
+// B15 regression gates: the manifest WRITER must not produce claims the manifest READER has to reject (a sub-T3 method
+// promoted to *validated*, or a method string no tier rule recognises). TestParityManifest_methodTier catches both
+// downstream; these two catch them at the source, and run in plain CI, where the emitter itself never does.
 
 import (
 	"encoding/json"

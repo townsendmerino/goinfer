@@ -10,19 +10,15 @@ import (
 	"testing"
 )
 
-// TestLFM2_arch pins the descriptor facts that the LFM2 forward depends on and that a
-// config-key mistake would silently zero. The two explicit >0 assertions are not padding:
-// both were real bugs, found 2026-08-31 by differencing against HF on the released
-// LFM2.5-2.6B, and both produced a running, fluent, WRONG model rather than an error.
+// TestLFM2_arch pins the descriptor facts the LFM2 forward depends on and that a config-key mistake would
+// silently zero. The two explicit >0 assertions are not padding: each zero produced a running, fluent, WRONG
+// model with a MATCHING argmax against HF, so neither a smoke test nor a greedy decode catches it.
 //
-//   - NormEps came back 0 because LFM2 spells the key "norm_eps" and the adapter read
-//     cfg.RMSNormEps. Uniform 1.0185x scale on the first norm; logits cosine 0.897.
-//   - AttnScale came back 0 because the Architecture literal simply omitted it. Every q·k
-//     score is then 0, so softmax returns a UNIFORM average over the context. Invisible at
-//     one token (softmax of one element is 1.0 at any scale) — it needs >= 2 tokens to show.
+//   - NormEps: LFM2 spells the key "norm_eps", not the RMSNormEps the adapter read.
+//   - AttnScale: zero makes every q·k score 0 and softmax a UNIFORM average over the context; invisible at one
+//     token (softmax of one element is 1.0 at any scale), it needs >= 2 tokens to show.
 //
-// Both had a MATCHING argmax against HF while broken, so neither a smoke test nor a greedy
-// decode would have caught them.
+// Figures: docs/code-notes/decoder.md#TestLFM2_arch.
 func TestLFM2_arch(t *testing.T) {
 	arch, schema, err := resolveArchitecture(representativeConfig("lfm2"))
 	if err != nil {
@@ -205,11 +201,9 @@ func TestLFM2_textParity(t *testing.T) {
 		}
 	}
 
-	// tiny-golden is SUB-T3, and the merge derives status from the method, so this lands as
-	// "experimental" rather than "validated" — which is the honest tier for a family whose
-	// only numeric gate is a seeded 4-layer fixture. The released LFM2.5-2.6B was differenced
-	// against HF by hand during bring-up (bit-exact after the two fixes), but that ran off a
-	// 5 GB local checkpoint with no committed gate, so it is NOT claimed here.
+	// A tiny-golden is SUB-T3 and the merge derives status from the method, so this lands as "experimental", the
+	// honest tier for a family whose only committed numeric gate is a seeded 4-layer fixture. The released
+	// LFM2.5-2.6B was differenced against HF by hand with no committed gate, so it is NOT claimed here.
 	emitParityRow(t, "lfm2", "tiny-golden", "HF f32 (lfm2-tiny seeded fixture)",
 		100.0, float64(cos), float64(cos))
 }

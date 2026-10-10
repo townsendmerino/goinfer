@@ -46,10 +46,8 @@ func TestLagunaDFlash_load(t *testing.T) {
 	if d.BlockSize() != 8 {
 		t.Errorf("block_size = %d, want 8", d.BlockSize())
 	}
-	// mask_token_id is TOP-LEVEL in this dialect. Getting it wrong is silent and
-	// expensive: the drafter still runs and still produces lossless output, just
-	// badly — P10 measured a known-good pairing fall from 1.60x to 0.66x on exactly
-	// this mistake.
+	// mask_token_id is TOP-LEVEL in this dialect. Getting it wrong is silent and expensive: the drafter still runs
+	// and stays lossless, just badly (a known-good pairing fell from 1.60x to 0.66x on this mistake).
 	if d.MaskTokenID() != 12 {
 		t.Errorf("mask_token_id = %d, want 12", d.MaskTokenID())
 	}
@@ -85,21 +83,14 @@ func TestLagunaDFlash_load(t *testing.T) {
 		g.Layers, d.TargetLayerIDs(), d.BlockSize(), d.MaskTokenID(), d.draftVocab, nonZero)
 }
 
-// TestLagunaDFlash_acceptance measures what the pairing is actually worth: how many
-// tokens per round the target ACCEPTS from the drafter.
+// TestLagunaDFlash_acceptance measures what the pairing is worth: how many tokens per round the target ACCEPTS
+// from the drafter. Block drafting is lossless by construction (every emitted token is the target's own argmax),
+// so no correctness test can tell a good drafter from a bad one and acceptance is the only signal (a wrong mask
+// token or wrong embeddings leave the output valid and the speedup gone; see
+// docs/code-notes/decoder.md#TestLagunaDFlash_acceptance).
 //
-// WHY ACCEPTANCE AND NOT SPEEDUP. Block drafting is lossless by construction — every
-// emitted token is one the target's own argmax produced — so no correctness test can
-// tell a good drafter from a bad one. Acceptance is the only signal, and P10 learned
-// that the hard way twice (a wrong mask token turned 1.60x into 0.66x while output
-// stayed perfectly valid; a drafter fed the wrong embeddings would do the same).
-//
-// This deliberately does NOT report a speedup. Laguna is CPU-only in goinfer today
-// (FeatAttnOutputGate makes every resident backend decline it), and P10's own
-// kill-gate found the DRAFT, not the verify, was the wall — a CPU draft against a
-// CPU target is a different regime from the GPU-resident numbers gate 3 reported.
-// Measuring wall-clock here would produce a number that says more about this box
-// than about the pairing.
+// It deliberately does NOT report a speedup: this runs a CPU draft against a CPU target, a different regime
+// from the GPU-resident numbers, so wall-clock here would say more about this box than about the pairing.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
 //	  GOINFER_LAGUNA_DFLASH=~/models/laguna-xs2-dflash \

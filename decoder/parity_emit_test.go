@@ -37,26 +37,18 @@ func emitParityRow(t *testing.T, family, method, reference string, argmaxPct, co
 	if os.Getenv("GOINFER_MANIFEST_EMIT") == "" || t.Failed() {
 		return
 	}
-	// THE METHOD IS VOCABULARY, NOT FREE TEXT (B15). mellum's gate emitted "real-oracle" —
-	// one word short of the T3 name "real-model-oracle" — and the merge wrote it into the
-	// manifest verbatim, where it read as a method no tier rule recognises. A string typed
-	// at ~20 call sites and never compared to a list is a defect waiting for a rename, so
-	// it is checked HERE, at the source, rather than only by the tier gate downstream.
+	// THE METHOD IS VOCABULARY, NOT FREE TEXT (B15): a method string typed at many call sites and never compared to a
+	// list is a defect waiting for a rename, and the merge writes it into the manifest verbatim, so it is checked
+	// HERE, at the source, as well as by the tier gate downstream.
 	if !knownParityMethod(method) {
 		t.Fatalf("emitParityRow(%q): method %q is not in the manifest vocabulary %v — "+
 			"a row with an unrecognised method corrupts the manifest and no tier rule can "+
 			"classify it", family, method, sortedKeys(parityMethods))
 	}
-	// A NaN metric is not a numerics failure — cosineToFull (forward_test.go) documents
-	// returning NaN when its full-logit-dump reference is simply absent on this box (a
-	// gitignored, locally-regenerated fixture), and %.5f prints that as a literal NaN
-	// token, which is not valid JSON and breaks TestParityManifest_merge for every OTHER
-	// row in the same run, not just this family's. Found on an arm64 sweep 2026-09-06:
-	// TestMixtral_forwardParity's tiny-golden checks (argmax/sample/top-k) all passed
-	// against testdata/mixtral_forward_golden.json, but testdata/mixtral_forward_full.json
-	// was missing, so cos came back NaN and this call still tried to record it as if it
-	// were a measured value. Same shape as a "SKIP (no row expected)" real-model gate —
-	// this gate has weaker evidence than usual, so it emits nothing rather than garbage.
+	// A NaN metric is not a numerics failure: cosineToFull (forward_test.go) returns NaN when its full-logit-dump
+	// reference is absent on this box (a gitignored, locally-regenerated fixture), and %.5f would print that as a
+	// literal NaN token, which is not valid JSON and breaks TestParityManifest_merge for every OTHER row in the run.
+	// The gate then has weaker evidence than usual, so it emits nothing rather than garbage.
 	if math.IsNaN(cosineMin) || math.IsNaN(cosineMean) {
 		t.Logf("emitParityRow(%q): cosine is NaN (missing full-dump reference?) — not emitting a row", family)
 		return

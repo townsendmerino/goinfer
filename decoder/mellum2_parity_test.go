@@ -75,31 +75,27 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 	if cos < cosFloor {
 		t.Errorf("sample cosine %.5f < %.2f", cos, cosFloor)
 	}
-	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if any check
-	// above failed). int8int8 (serve default) vs HF bf16 → real-model-oracle; argmax exact when green.
-	// The method string is the T3 vocabulary name, checked by emitParityRow: "real-oracle" was
-	// written here for months and reached the manifest verbatim (B15).
-	// Emit only from the forward gate (not the window gate) to avoid a double row.
+	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped if any check above failed). int8int8
+	// (serve default) vs HF bf16 is a real-model-oracle row; argmax is exact when green. The method string is the T3
+	// vocabulary name, checked by emitParityRow. Emit only from the forward gate (not the window gate) to avoid a double
+	// row.
 	if emit && os.Getenv("GOINFER_MELLUM_GOLDEN_PREFIX") == "" { // a pair pinned from another checkpoint never writes the 2.0 family's manifest row
 		emitParityRow(t, "mellum", "real-model-oracle", "HF bf16 (Mellum2-12B-A2.5B-Instruct)", 100.0, cos, cos)
 	}
 }
 
-// TestMellum2_logitParity gates the Mellum2 forward (MoE 64/top-8, 3:1
-// sliding/full interleave, YaRN-on-full RoPE, QK-norm) against the HF bf16
-// oracle on a chat-templated prompt — argmax is the first answer token (50195
-// "Paris"), so this also gates coherence. int8int8 (the serve default) vs bf16:
-// measured sample-256 cosine 0.99955 (floor 0.98, the Gemma 4 12B reference).
+// TestMellum2_logitParity gates the Mellum2 forward (MoE 64/top-8, 3:1 sliding/full interleave, YaRN-on-full RoPE,
+// QK-norm) against the HF bf16 oracle on a chat-templated prompt; argmax is the first answer token (50195
+// "Paris"), so this also gates coherence. int8int8 (the serve default) vs bf16, sample-256 cosine floor 0.98 (the
+// Gemma 4 12B reference).
 func TestMellum2_logitParity(t *testing.T) {
 	runMellum2Golden(t, mellum2GoldenPath("forward"), 0.98, true)
 }
 
-// TestMellum2_windowParity pins the sliding-window EVICTION path on the real
-// checkpoint: a 1441-token prompt (> the 1024 window), so the local layers attend
-// only within the window while the YaRN'd full layers see everything. The
-// next-token logits still match the HF bf16 oracle (measured cosine 0.99636).
-// (Inc3 real-model proof; the synthetic unit-level proof is
-// TestMellum2_slidingWindowEviction.)
+// TestMellum2_windowParity pins the sliding-window EVICTION path on the real checkpoint: a 1441-token prompt (> the
+// 1024 window), so the local layers attend only within the window while the YaRN'd full layers see everything. The
+// next-token logits must still match the HF bf16 oracle. The synthetic unit-level proof is
+// TestMellum2_slidingWindowEviction.
 func TestMellum2_windowParity(t *testing.T) {
 	runMellum2Golden(t, mellum2GoldenPath("window"), 0.98, false)
 }

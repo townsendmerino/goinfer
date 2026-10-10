@@ -396,11 +396,11 @@ func TestMC3_stepErrorFailsTheGeneration(t *testing.T) {
 	}
 }
 
-// TestMC3_concurrentGenerationsFillSteps pins the straggler window's timing. With a step that takes far longer than the
-// window (a GPU's), 4 generations decoding together must run as full 4-wide steps, token after token. The window is
-// timed from when the resident came free: timed from each token's submission, a token submitted during a run has
-// "waited" the whole run when it ends, runs at once without the others, and the generations phase-lock into split
-// runs — measured on Metal as 3 batched + 1 solo on every token, 255 of 256 runs started by the timeout.
+// TestMC3_concurrentGenerationsFillSteps pins the straggler window's timing. With a step that takes far longer
+// than the window (a GPU's), 4 generations decoding together must run as full 4-wide steps, token after token.
+// The window is timed from when the resident came free: timed from each token's submission, a token submitted
+// during a run has "waited" the whole run when it ends, runs at once without the others, and the generations
+// phase-lock into split runs (3 batched + 1 solo on every token on Metal).
 func TestMC3_concurrentGenerationsFillSteps(t *testing.T) {
 	m, rf := loadWithMC3Fake(t, 4)
 	rf.delay = 12 * time.Millisecond // 3x the straggler window
@@ -598,11 +598,12 @@ func TestMC3_prefillChunkOffByDefault(t *testing.T) {
 	}
 }
 
-// TestMC3_topPConcurrentMatchesAlone: a top-p generation keeps the device top-K path under MC3 (it was simply off there
-// until 2026-09-30, which cost CUDA top-p 26%: docs/measurements/topp-regression-2026-09-30.md), and concurrent
-// generations still each get exactly the tokens they get alone. Two filters: one the K candidates usually serve, and one
-// (top_p near 1) whose rows fall back to the full row. The fake's Full fails if any other write reached the shared
-// logits buffer after its row, which is the hazard: the fallback must be read while the generation holds the resident.
+// TestMC3_topPConcurrentMatchesAlone: a top-p generation keeps the device top-K path under MC3 (leaving it off
+// cost CUDA top-p throughput: docs/measurements/topp-regression-2026-09-30.md), and concurrent generations still
+// each get exactly the tokens they get alone. Two filters: one the K candidates usually serve, and one (top_p
+// near 1) whose rows fall back to the full row. The fake's Full fails if any other write reached the shared
+// logits buffer after its row, which is the hazard: the fallback must be read while the generation holds the
+// resident.
 func TestMC3_topPConcurrentMatchesAlone(t *testing.T) {
 	const nConv, maxTok = 4, 24
 	for _, tc := range []struct {

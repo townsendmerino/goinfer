@@ -8,14 +8,10 @@ import (
 	"testing"
 )
 
-// TestResidentMoECap_pinsKernelConstant gates M-17: the feature-matrix MoE caps in
-// residentBackendMoECap MUST equal the router kernel's actual fixed-array bounds, or the
-// hardware-matrix generator declines archs BuildResident admits (or vice versa) — the
-// one-source-of-truth invariant the map's own comment promises. This reads the kernel sources
-// and compares. The cuda groups cap was 32 while cuda/moe.cu's MOE_MAX_G is 64, so an arch with
-// n_group in 33..64 was published not-CUDA-resident while the runtime admitted it. The test
-// extracts each constant from its source and pins the cap to it; a future kernel bump that
-// forgets the map (or vice versa) fails here.
+// TestResidentMoECap_pinsKernelConstant gates M-17: the feature-matrix MoE caps in residentBackendMoECap MUST equal
+// the router kernel's actual fixed-array bounds, or the hardware-matrix generator declines archs BuildResident admits
+// (or vice versa). It extracts each constant from the kernel source (e.g. cuda/moe.cu's MOE_MAX_G) and pins the cap
+// to it; a kernel bump that forgets the map fails here.
 func TestResidentMoECap_pinsKernelConstant(t *testing.T) {
 	grep := func(path, pat string) int {
 		b, err := os.ReadFile(path)
@@ -43,15 +39,10 @@ func TestResidentMoECap_pinsKernelConstant(t *testing.T) {
 	}
 }
 
-// M-31: the pin above reads the KERNEL sources and features_test.go asserts ResidentEligible.
-// Both were green while gpu/residency.go carried its own hardcoded 256/32 — so a 384-expert
-// Kimi-K2 was published "✅ resident" in both generated matrices, admitted by ResidentEligible,
-// and then declined to CPU by a line naming a number nothing else agreed with. Neither existing
-// test reads the file that actually makes the decision.
-//
-// So this one does. It asserts the RUNTIME decline site does not restate a literal cap — the
-// numbers must come from ResidentBackendMoECap — because a literal there is precisely the drift
-// the map exists to prevent, and it is invisible to a test that only greps the kernel.
+// M-31: the pin above reads the KERNEL sources and features_test.go asserts ResidentEligible, and neither reads the
+// file that makes the runtime decision. This one asserts the RUNTIME decline site (gpu/residency.go) does not restate
+// a literal cap: the numbers must come from ResidentBackendMoECap, because a literal there is the drift the map
+// exists to prevent and is invisible to a test that only greps the kernel.
 func TestResidentMoECap_runtimeDeclineReadsTheDeclaration(t *testing.T) {
 	b, err := os.ReadFile("../gpu/residency.go")
 	if err != nil {

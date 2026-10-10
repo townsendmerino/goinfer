@@ -66,24 +66,17 @@ func TestLayerPaging_bitExact(t *testing.T) {
 		len(a), paged.layerPager.window, pf, ev)
 }
 
-// TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe is S4 item 2's WIRING gate
-// (task-never-swap-2026-09.md): TestResolveWeightCacheBudget (fitguard_test.go) proves the
-// arithmetic in isolation; this proves decoder.Load actually calls it before newLayerPager sees
-// WeightCacheBytes, through a REAL .giw load. Injecting hostRAMAvailable to two different live
-// figures must move newLayerPager's own window arithmetic in the direction each figure implies: a
-// modest available produces a budget smaller than this fixture's total resident weight bytes
-// (window pinned well under its layer count, so a REAL pager is built) while a generous available
-// makes the whole model "fit" (window >= n, so newLayerPager returns nil — no streaming needed).
-// Reverting the model.go wiring (the `opts.WeightCacheBytes = resolveWeightCacheBudget(...)` line)
-// makes BOTH cases build off aikit's own AutoBudget() instead, indistinguishable from each other
-// since the live probe would never be consulted.
+// TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe is S4 item 2's WIRING gate (task-never-swap-2026-09.md):
+// TestResolveWeightCacheBudget (fitguard_test.go) proves the arithmetic; this proves decoder.Load actually calls
+// it before newLayerPager sees WeightCacheBytes, through a REAL .giw load. Injecting hostRAMAvailable to two live
+// figures must move newLayerPager's window the way each implies: a modest figure gives a budget below the
+// fixture's resident weight bytes (a REAL pager is built), a generous one makes the model "fit" (window >= n, so
+// newLayerPager returns nil). Reverting the `opts.WeightCacheBytes = resolveWeightCacheBudget(...)` wiring in
+// model.go builds both cases off aikit's own AutoBudget(), indistinguishable from each other.
 //
-// Needs the 1.5B fixture, not the registry's default 0.5B one: at 0.5B (0.59 GB resident), every
-// available figure large enough to clear guardGIWFit's own ~1 GB KV+scratch floor (S4 item 1)
-// already halves to a budget bigger than the whole model — there is no available figure where
-// BOTH guards are exercised on that fixture. 1.5B (1.66 GB resident) leaves a real gap between the
-// two floors (empirically probed: 2.5 GB available streams at window=27 of 28 layers; 3 GB+ fits
-// outright).
+// It needs the 1.5B fixture, not the registry's default 0.5B: at 0.5B every available figure large enough to
+// clear guardGIWFit's KV+scratch floor already halves to a budget bigger than the whole model, so BOTH guards
+// are never exercised. Probed figures: docs/code-notes/decoder.md#TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe.
 func TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
