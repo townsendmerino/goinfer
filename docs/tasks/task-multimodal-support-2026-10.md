@@ -3001,12 +3001,34 @@ aikit expected 0: L, as registered for S10's MoE variants.
   - **The reported CUDA arm:** its sidecar (`.int4.cuda.giw`, 16.7 GB) built in 11 min 5 s. The resident build then
     declined by name: `CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts …`,
     "continuing on the CPU/staged path". That is the decline the registration allowed for the 8 GB card.
-  - **A defect found after the decline, not yet investigated:** serve did not continue on the CPU. It exited with
-    `--quant "int4" cannot apply to the prequantized .giw bundle …int4.cuda.giw — it is baked at "int4mix"`. So
-    `--backend cuda --quant int4` on a model too large for the card ends in an error about the sidecar that same load
-    wrote.
-  - **Owed:** the job again, with a step ahead of the arms that builds the CPU sidecar under a long wait, so both graded
-    arms read a finished sidecar.
+  - **The exit after the decline, root cause found 2026-10-10 by day (not yet fixed).** It is not about CUDA or the
+    decline. Serve exited with `--quant "int4" cannot apply to the prequantized .giw bundle …int4.cuda.giw — it is
+    baked at "int4mix"`.
+    - **Mechanism:** a `.giw` header records `Weights.quantLabel`, which reads `int4mix` whenever an int4 weight sits
+      beside any other kind among the body matmuls, and those include a MoE's routers. The routers stay float32 at
+      every quant, so every qwen3_moe-family model at `--quant int4` is labelled `int4mix`. A direct load reports the
+      quant that was asked for (`int4`); a load through a sidecar reports the header's label. `modelload.Load` then
+      runs `CheckGiwQuantMatch` on the user's explicit `--quant` against that label, and refuses the sidecar it has
+      just built.
+    - **Reproduced on tiny fixtures (the Mac, throwaway tests, not committed):**
+      - `qwen3vlmoe-tiny` and `qwen3moe-tiny` at int4: `quantLabel()` is `int4mix`, body kinds 112 int4 and 4 f32
+        (one router per layer). `llama-tiny`: `int4`, 28 int4.
+      - `modelload.Load` on a copy of `tiny-qwen2-moe`, backend CPU and Metal alike: with no explicit quant it loads
+        through `…int4.canonical.giw` / `…int4.metal.giw` and `Quant()` says `int4mix`; with `ExplicitQuant: "int4"`
+        it returns the refusal above.
+    - **Reach:** any MoE with float32 routers, named as a directory or a GGUF (both resolve to a sidecar), on any
+      backend, when `--quant int4` is typed. The default (no `--quant`) loads. The first run's CPU arms would have
+      failed the same way had the transcode finished.
+    - **The label is read elsewhere too (by reading the code, not run):** `autoMetalPrecision` keeps an `int4mix` model
+      on the CPU under `-backend auto` on a Mac, `residentQuantLabel` prints "int4mix→int4, no Metal int8 GEMV
+      kernel", and the KV-snapshot fingerprint carries it. The S6 night log shows the label on a prequant file named
+      for int4: `qwen3.6-35b-a3b-int4.giw` decodes "cuda-resident (int4mix)".
+    - **Proposed fix, for the owner:** `quantLabel` returns `int4mix` only when int4 sits beside an int8 body weight
+      (what `--quant int4mix` produces); a float32 body weight beside int4 is a by-design pin, as the int8 logit
+      tables already are. A header that says `int4mix` is re-derived on read, so existing sidecars need no rebuild.
+      It changes MoE labels (and so their KV-snapshot fingerprints) and needs a parity hash refresh.
+  - **Queued again on nobara for the night of 2026-10-10 as `gs10q-d-2`** (est. 1 h 30 min; the same serve binary). The
+    job now builds the CPU sidecar first under a 40 min wait, and leaves `--quant` at its int4 default.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
