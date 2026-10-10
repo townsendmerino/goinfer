@@ -1,14 +1,9 @@
 package decoder
 
-// Architecture is the resolved, family-agnostic description of a decoder LLM's
-// structure. ONE generic forward pass (runLayers/forward/causalAttention/
-// gatedMLP) reads it; per-family adapters (registry.go) populate it from that
-// family's config.json. Every supported family — Gemma/Llama/Mistral/Qwen/
-// GPT-2/Mixtral/Mellum — is expressed as a descriptor here, so adding one is
-// descriptor population, not new forward code.
-//
-// Every field below is consumed by the forward pass, which rejects descriptor
-// values it doesn't implement rather than silently mis-running.
+// Architecture is the resolved, family-agnostic description of a decoder LLM's structure. The generic forward pass
+// (runLayers/forward/causalAttention/gatedMLP) reads it; per-family adapters (registry.go) populate it from that family's
+// config.json, so adding a family is descriptor population, not new forward code. Every field is consumed by the forward
+// pass, which rejects descriptor values it does not implement rather than silently mis-running.
 type Architecture struct {
 	// knobs is the owning model's per-model operator-knob snapshot (knobs.go); nil = read the live environment
 	// (an Architecture built by hand in a test, never Loaded).
@@ -26,16 +21,9 @@ type Architecture struct {
 	RMSAddOne     bool // Gemma's (1+w) scaling; false for Llama/Qwen
 	NormEps       float64
 	NormPlacement NormPlacement // Pre2 (Llama) | Sandwich4 (Gemma)
-	// NormPlacementLinear overrides NormPlacement on layers where isLinearLayer(i) is
-	// true — Olmo Hybrid's real departure from every other DeltaNet hybrid in this
-	// tree (qwen3_5/qwen3_next/granitemoehybrid all use ONE scheme for both their
-	// linear and full-attention layers). Verified against the real
-	// modeling_olmo_hybrid.py: full-attention layers use NormPostOnly (olmo3's own
-	// scheme, confirmed identical), but the DeltaNet layers use plain NormPre2 — two
-	// placements in ONE model, keyed by the SAME layerIsLinear hook that already
-	// selects the mixer. nil (every family so far, including olmo3 itself, which has
-	// no linear layers at all) ⇒ NormPlacement applies uniformly, exactly as before
-	// this field existed. See normPlacementAt.
+	// NormPlacementLinear, when non-nil, overrides NormPlacement on layers where isLinearLayer(i) is true: Olmo Hybrid's
+	// DeltaNet layers use NormPre2 while its full-attention layers use NormPostOnly, two placements in one model. nil means
+	// NormPlacement applies uniformly. See normPlacementAt.
 	NormPlacementLinear *NormPlacement
 
 	// MLP.
@@ -48,47 +36,27 @@ type Architecture struct {
 	QKVBias bool // additive bias on the q/k/v projections (Qwen2, GPT-2)
 	OutBias bool // additive bias on the attention output projection (GPT-2)
 	QKNorm  bool // RMSNorm on Q and K per head before RoPE (Gemma3, Qwen3)
-	// AttnGate selects the head-wise output gate applied to the attention context BEFORE the
-	// output projection: GateNone (default), GateSoftplus (Laguna's g_proj, unchanged — Laguna
-	// itself still gates via `arch.laguna != nil`, not this field, so its behavior is byte-for-byte
-	// unaffected), GateSigmoid (Spark-X2.5's g_proj — verified against the real modeling_spark.py:
-	// `gate = torch.sigmoid(gate_score); attn_output = attn_output * gate`, applied before
-	// out_proj, exactly Laguna's STRUCTURE with a different activation). Distinct from
-	// mlaParams.GateGranularity, which is MLA-only (DeepSeek/Bailing Hybrid forward,
-	// forward_deepseek.go) and reached through a completely separate call site; this field is for
-	// the GENERIC (non-MLA) attention forward's gate hook (applyAttnGate, attention.go/forwardn.go).
+	// AttnGate selects the head-wise output gate applied to the attention context before the output projection: GateNone
+	// (default), GateSoftplus, or GateSigmoid (Spark-X2.5's g_proj). Laguna still gates via arch.laguna != nil, not this field.
+	// Distinct from mlaParams.GateGranularity, which is MLA-only; this field is the hook of the generic (non-MLA) attention
+	// forward (applyAttnGate, attention.go/forwardn.go).
 	AttnGate GateKind
 
-	// QKNormWhole (Olmo 3/Olmo Hybrid): when QKNorm is also set, normalize the WHOLE projected
-	// q/k vector as one RMSNorm (num_heads*head_dim elements, one statistic) instead of per-head
-	// — verified against the real modeling_olmo3.py, not the standard per-head convention every
-	// other QK-norm family uses. The underlying rmsNorm(x, weight, rows, dim, ...) already
-	// supports this: per-head calls it with (rows=nHeads, dim=headDim); whole-vector calls it
-	// with (rows=1, dim=nHeads*headDim) — same function, different split.
+	// QKNormWhole (Olmo 3/Olmo Hybrid): when QKNorm is also set, normalize the whole projected q/k vector as one RMSNorm
+	// (rows=1, dim=nHeads*headDim, one statistic) instead of per head (rows=nHeads, dim=headDim).
 	QKNormWhole     bool
 	LearnedPosEmbed bool // GPT-2: add a learned position embedding and SKIP RoPE
-	// NoPositionEncoding (Olmo Hybrid): true when the family genuinely has NO positional
-	// encoding at all — neither RoPE nor learned — on any layer. The released checkpoint's
-	// rope_parameters is {"rope_theta": null}; modeling_olmo_hybrid.py's own comment says so
-	// explicitly ("Released ckpt don't use any ROPE"). A fourth legitimate "no RoPEGlobalBase"
-	// reason alongside LearnedPosEmbed/nemotron/mla in validateResolved's M-06 check, named
-	// explicitly for the SAME reason those three are: so a family that simply forgot to read
-	// rope_theta cannot look like one that deliberately has none.
+	// NoPositionEncoding (Olmo Hybrid): the family has no positional encoding on any layer, neither RoPE nor learned (the
+	// released rope_parameters is {"rope_theta": null}). It is the fourth legitimate "no RoPEGlobalBase" case in
+	// validateResolved's check, alongside LearnedPosEmbed, nemotron and mla, named so a family that forgot to read rope_theta
+	// cannot look like one that deliberately has none.
 	NoPositionEncoding bool
 	AttnScale          float64 // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
-	// AttnTempBeta/AttnTempOrigMaxPos (Ministral 3): a position-dependent multiplicative scale on
-	// the query, applied AFTER RoPE, on every layer — get_llama_4_attn_scale in Ministral3's own
-	// HF source (modular_ministral3.py), literally named after Llama 4's attention-temperature
-	// tuning: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)). It is IDENTICAL in shape to the
-	// attnTemp/floorScale primitive llama4Architecture already has (decoder/forward_llama4.go),
-	// but Llama 4 applies it INSTEAD of RoPE on NoPE layers only; Ministral 3 applies it ON TOP OF
-	// RoPE on every layer, which llama4's own dedicated forward has no path for. Generalized here
-	// as generic Architecture fields (0 ⇒ off, so every existing family is unaffected) rather than
-	// copying llama4's own-forward path, since the formula is a straightforward postfix to the
-	// generic causalAttention RoPE step. scale ≡ 1 for pos < origMaxPos (floor(pos/origMaxPos)=0),
-	// so a SHORT test prompt exercises nothing — this is the "minimal repro hides the bug" trap
-	// this repo's own culture warns about; the tiny fixture's prompt is deliberately longer than
-	// origMaxPos.
+	// AttnTempBeta/AttnTempOrigMaxPos (Ministral 3): a position-dependent scale on the query, applied after RoPE on every
+	// layer: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)); 0 means off. The same formula as llama4's attnTemp/floorScale,
+	// but Llama 4 applies it instead of RoPE on NoPE layers only, so its own forward has no path for it on top of RoPE. scale
+	// is 1 for pos < origMaxPos, so a test prompt shorter than origMaxPos exercises nothing: the tiny fixture's prompt is
+	// deliberately longer.
 	AttnTempBeta       float64
 	AttnTempOrigMaxPos float64
 	SlidingWindow      int              // 0 = none
@@ -101,21 +69,16 @@ type Architecture struct {
 	// HeadDim. <HeadDim is partial rotary (Phi's partial_rotary_factor), where
 	// the trailing dims pass through unrotated.
 	RotaryDim int
-	// RotaryDimLocal is the same for the LOCAL (sliding) layers when they rotate a
-	// DIFFERENT width than the global ones; 0 ⇒ both use RotaryDim. It completes the
-	// local/global RoPE triple that RoPELocalBase and ropeScalingLocal already start:
-	// Laguna's XS generations key partial_rotary_factor by layer type (0.5 on full,
-	// 1.0 on sliding), so their two layer types differ in base, scaling, AND rotated
-	// width at once. Every other family leaves it 0 and is unaffected.
+	// RotaryDimLocal is the rotated width on the local (sliding) layers when it differs from the global layers' (Laguna XS keys
+	// partial_rotary_factor by layer type); 0 means both use RotaryDim. With RoPELocalBase and ropeScalingLocal it completes the
+	// local/global RoPE triple.
 	RotaryDimLocal int
-	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split over the (temporal,
-	// height, width) position components; nil = plain scalar RoPE. For text tokens
-	// the 3 components are equal so m-RoPE ≡ scalar RoPE; it only diverges over
-	// image tokens (the 3D grid positions). (P5)
+	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split over the (temporal, height, width) position components; nil means
+	// plain scalar RoPE. For text tokens the three components are equal, so m-RoPE equals scalar RoPE; it diverges only over
+	// image tokens (their 3D grid positions).
 	MRopeSection []int
-	// MRopeInterleaved selects Qwen3-VL's per-frequency-index component layout
-	// (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent).
-	// False for every other m-RoPE family, including Qwen2.5-VL itself. (P8)
+	// MRopeInterleaved selects Qwen3-VL's per-frequency-index component layout (mropeComponentInterleaved) over Qwen2.5-VL's
+	// contiguous-block one (mropeComponent). False for every other m-RoPE family, including Qwen2.5-VL itself.
 	MRopeInterleaved bool
 	// ropeScaling transforms the GLOBAL (full-attention) inv-freq table (Llama-3
 	// llama3 / linear / yarn); nil = none. ropeScalingLocal does the same for the
@@ -124,10 +87,8 @@ type Architecture struct {
 	// adapter, consumed when the tables are built.
 	ropeScaling      *ropeScaling
 	ropeScalingLocal *ropeScaling
-	// ropeInterleave selects GPT-J pairwise rotation (dims 2d,2d+1) over the NeoX
-	// split-half layout (dims d,d+half) in the generic scalar RoPE path. Cohere/
-	// Command-R, Falcon, GPT-J, StableLM set it; Llama/Qwen/Gemma leave it false.
-	// (DeepSeek's MLA carries its own ropeInterleave on mlaParams.)
+	// ropeInterleave selects GPT-J pairwise rotation (dims 2d,2d+1) over the NeoX split-half layout (dims d,d+half) in the
+	// generic scalar RoPE path. (DeepSeek's MLA carries its own ropeInterleave on mlaParams.)
 	ropeInterleave bool
 
 	// Precomputed inverse-frequency tables (base + scaling baked in), built by
@@ -169,12 +130,9 @@ type Architecture struct {
 	granite      *graniteParams
 	layerIsMamba func(i int) bool
 
-	// lfm2, when non-nil, marks an LFM2/LFM2.5 hybrid: every layer has a SwiGLU FFN,
-	// and its mixer is either a gated short convolution (layerIsConv true, 22 of 30 on
-	// LFM2.5-2.6B) or GQA softmax attention with per-head RMSNorm on Q and K.
-	//
-	// The conv layers carry a rolling per-channel window instead of a KV cache, which
-	// is why this is a cache-shape fact and not only a forward one.
+	// lfm2, when non-nil, marks an LFM2/LFM2.5 hybrid: every layer has a SwiGLU FFN, and its mixer is either a gated short
+	// convolution (layerIsConv true) or GQA softmax attention with per-head RMSNorm on Q and K. The conv layers carry a rolling
+	// per-channel window instead of a KV cache, so this is a cache-shape fact as well as a forward one.
 	lfm2        *lfm2Params
 	layerIsConv func(i int) bool
 	LogitScale  float64
@@ -191,13 +149,10 @@ type Architecture struct {
 	// nil for every other family.
 	mla *mlaParams
 
-	// kda, when non-nil, marks Bailing Hybrid's (Ling 3.0) Kimi Delta Attention linear-attention
-	// layers, alternating with MLA (mla, above) every LayerGroupSize-th layer — layerIsLinear
-	// picks which, the SAME hook qwen35's Gated-DeltaNet hybrid uses. Structurally a delta-rule
-	// recurrence like Gated DeltaNet, but with a PER-CHANNEL decay (one value per row of the state
-	// matrix) where Gated DeltaNet's is one scalar per head — verified against fla-org/
-	// flash-linear-attention's actual source, not the HF modeling file's opaque Triton-kernel
-	// call. Own forward (forward_bailing.go). nil for every other family.
+	// kda, when non-nil, marks Bailing Hybrid's (Ling 3.0) Kimi Delta Attention linear-attention layers, alternating with MLA
+	// (mla, above) every LayerGroupSize-th layer; layerIsLinear picks which, the same hook qwen35 uses. A delta-rule
+	// recurrence like Gated DeltaNet, but with a per-channel decay (one value per row of the state matrix) where Gated DeltaNet
+	// has one scalar per head. Own forward (forward_bailing.go). nil for every other family.
 	kda *kdaParams
 
 	// llama4, when non-nil, marks a Llama 4 text decoder (llama4_text): the iRoPE
@@ -207,12 +162,10 @@ type Architecture struct {
 	// (forward_llama4.go). nil for every other family.
 	llama4 *llama4Params
 
-	// gptoss, when non-nil, marks a gpt-oss sparse-MoE family: GQA with a learned
-	// per-head attention SINK in the softmax denominator, alternating sliding/full
-	// attention (even layers sliding, window SlidingWindow), YaRN RoPE, and a
-	// clamped interleaved-SwiGLU expert (gate·sigmoid(α·gate) · (up+1), clamped, with
-	// per-expert biases) + a router-logit bias. Own forward (forward_gptoss.go),
-	// CPU-only (CUDA/Metal decline via FeatAttnSink). nil for every other family.
+	// gptoss, when non-nil, marks a gpt-oss sparse-MoE family: GQA with a learned per-head attention SINK in the softmax
+	// denominator, alternating sliding/full attention (even layers sliding, window SlidingWindow), YaRN RoPE, and a clamped
+	// interleaved-SwiGLU expert (gate·sigmoid(α·gate) · (up+1), clamped, with per-expert biases) + a router-logit bias. Own
+	// forward (forward_gptoss.go); a resident backend admits it by declaring FeatAttnSink. nil for every other family.
 	gptoss *gptOssParams
 }
 
@@ -229,14 +182,9 @@ type gptOssParams struct {
 // dense layers use Architecture.IntermediateDim (intermediate_size_mlp); the routed +
 // shared experts use MoEConfig.IntermediateDim (intermediate_size). forward_llama4.go reads this.
 type llama4Params struct {
-	// chunkSize is attention_chunk_size (8192 on Scout/Maverick): the RoPE layers use a
-	// BLOCK-DIAGONAL chunked mask, so a query at position p attends only to keys in its own
-	// chunk, [(p/C)*C, p]. NoPE layers stay full-causal.
-	//
-	// M-05: this was read from config and then dropped, and the forward attended [0, pos] on
-	// every layer. Below C that is identical to chunked — which is why the parity gates, which
-	// use short sequences, never saw it — and from position C on, the RoPE layers saw keys HF
-	// masks out. 0 means no chunking (a checkpoint that does not set the field).
+	// chunkSize is attention_chunk_size (8192 on Scout/Maverick): the RoPE layers use a block-diagonal chunked mask, so a query
+	// at position p attends only to keys in its own chunk, [(p/C)*C, p]. NoPE layers stay full-causal. 0 means no chunking.
+	// Below C chunked equals full causal, so a short-sequence parity gate cannot see a missing chunk mask.
 	chunkSize  int
 	useRope    []bool  // per layer: RoPE (true) vs NoPE (false) — from no_rope_layers
 	isMoE      []bool  // per layer: MoE (true) vs dense (false) — from moe_layers
@@ -264,11 +212,9 @@ const (
 	nemoMoE
 )
 
-// mlaParams carries DeepSeek Multi-head Latent Attention geometry. The cached state
-// is the compressed latent [KVLoRARank + QKRopeHeadDim] per position (the KV-memory
-// payoff: ~576 floats/token vs the ~41k a reconstructed full K+V would need); per-head
-// K/V are rebuilt from it each step via kv_b_proj. QLoRARank 0 ⇒ a direct q_proj (the
-// V2-Lite path) instead of the q_a/q_b LoRA bottleneck. forward_deepseek.go consumes this.
+// mlaParams carries DeepSeek Multi-head Latent Attention geometry. The cached state is the compressed latent
+// [KVLoRARank + QKRopeHeadDim] per position; per-head K/V are rebuilt from it each step via kv_b_proj. QLoRARank 0 means a
+// direct q_proj instead of the q_a/q_b LoRA bottleneck. forward_deepseek.go consumes this.
 type mlaParams struct {
 	QLoRARank      int  // q_a_proj bottleneck width; 0 ⇒ direct q_proj (no q-LoRA)
 	KVLoRARank     int  // compressed KV latent width (the cached payload, minus the rope key)
@@ -276,27 +222,19 @@ type mlaParams struct {
 	QKRopeHeadDim  int  // per-head Q/K dims carrying decoupled RoPE (one K shared across heads)
 	VHeadDim       int  // per-head V width (≠ QKNopeHeadDim+QKRopeHeadDim)
 	ropeInterleave bool // GPT-J pairwise (true, V3 default) vs NeoX half-split RoPE on the rope dims
-	// AttnPrefix/DenseSuffix override the tensor-name prefix/output-projection suffix. ""
-	// (deepseek_v2/v3, kimi_k2) ⇒ "self_attn"/"o_proj.weight". Bailing Hybrid (Ling 3.0) uses
-	// "attention"/"dense.weight" instead — verified against the real modeling_bailing_moe_v3.py,
-	// whose BailingMoeV3DecoderLayer assigns BOTH its MLA and KDA mixers to self.attention (not
-	// self.self_attn), and whose MLA class names its output projection self.dense.
+	// AttnPrefix/DenseSuffix override the tensor-name prefix and output-projection suffix; "" means "self_attn"/"o_proj.weight".
+	// Bailing Hybrid uses "attention"/"dense.weight": its MLA and KDA mixers both sit under self.attention, and its MLA names
+	// its output projection dense.
 	AttnPrefix, DenseSuffix string
-	// GateGranularity ("" | "head_wise" | "element_wise"): Bailing Hybrid's optional per-head or
-	// per-element sigmoid output gate (self.g_proj) applied to the attention context BEFORE the
-	// output projection — the same STRUCTURE Laguna's own attention-output gate already ships, but
-	// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ""
-	// (every DeepSeek family) ⇒ no gate.
+	// GateGranularity ("" | "head_wise" | "element_wise"): Bailing Hybrid's optional per-head or per-element sigmoid output gate
+	// (g_proj) on the attention context before the output projection, Laguna's gate structure with sigmoid in place of
+	// softplus. "" (every DeepSeek family) means no gate.
 	GateGranularity string
 }
 
-// kdaParams carries Bailing Hybrid's (Ling 3.0) Kimi Delta Attention geometry for the
-// linear-attention layers; the MLA layers use mlaParams above. HeadDim/NumHeads are shared by
-// q/k/v (no GVA — verified against the real modeling_bailing_moe_v3.py, where
-// BailingMoeV3KimiDeltaAttention sets head_k_dim = head_dim and num_k_heads = num_heads
-// unconditionally). NoLora selects a single f_proj/g_proj linear per gate (Ling-3.0-tiny's own
-// value) over a LoRA'd a/b-split pair — the LoRA'd path is NOT implemented (no released
-// checkpoint needs it yet; see kdaArchitecture's own "what was deliberately not done").
+// kdaParams carries Bailing Hybrid's (Ling 3.0) Kimi Delta Attention geometry for the linear-attention layers; the MLA
+// layers use mlaParams. HeadDim/NumHeads are shared by q/k/v (no GVA). NoLora selects a single f_proj/g_proj linear per
+// gate (Ling-3.0-tiny) over a LoRA'd a/b-split pair; the LoRA'd path is not implemented (see kdaArchitecture).
 type kdaParams struct {
 	HeadDim, NumHeads, ConvKernel int
 	NoLora                        bool
@@ -321,32 +259,26 @@ func (a *Architecture) attnChunkStart(layer, pos int) int {
 // qkHeadDim is the query·key dot-product width: the no-rope dims plus the rope dims.
 func (p *mlaParams) qkHeadDim() int { return p.QKNopeHeadDim + p.QKRopeHeadDim }
 
-// graniteParams carries Granite-4.0-H's Mamba-2 mixer geometry (for the mamba
-// layers; the attention layers use the uniform Architecture fields) and the three
-// in-block scalar multipliers. The fourth Granite scalar, logits_scaling, lives on
-// Architecture.LogitScale (it's applied at the shared head, not per layer).
-// lfm2Params carries the gated short-convolution geometry for an LFM2/LFM2.5 model's
-// conv layers. The attention layers use the uniform Architecture fields; only the conv
-// layers read these.
-//
-// ConvDim channels, a KERNEL of ConvLCache taps (3), and no bias on any released
-// checkpoint. The block is in_proj -> split into three ConvDim gates (B, C, x) ->
-// Bx = B*x -> depthwise causal conv, NO activation -> y = C*conv -> out_proj. The
-// missing activation is a real difference from Mamba-2's conv, which applies SiLU:
-// upstream passes activation=None here, so adding one would be a plausible, wrong model.
+// lfm2Params carries the gated short-convolution geometry for an LFM2/LFM2.5 model's conv layers; the attention layers use
+// the uniform Architecture fields. The block is in_proj -> split into three ConvDim gates (B, C, x) -> Bx = B*x ->
+// depthwise causal conv with NO activation -> y = C*conv -> out_proj; ConvLCache taps, no bias. The missing activation
+// differs from Mamba-2's SiLU conv (upstream passes activation=None), and adding one gives a plausible, wrong model.
 type lfm2Params struct {
 	ConvDim    int // channels the conv block operates on (hidden_size on released weights)
 	ConvLCache int // kernel width / rolling-window depth (3)
 }
 
+// graniteParams carries Granite-4.0-H's Mamba-2 mixer geometry (for the mamba layers; the attention layers use the
+// uniform Architecture fields) and the three in-block scalar multipliers. The fourth Granite scalar, logits_scaling, lives
+// on Architecture.LogitScale (it is applied at the shared head, not per layer).
 type graniteParams struct {
 	NHeads, HeadDim, DState, NGroups, DConv int     // Mamba-2 dims
 	EmbMul, ResidMul                        float32 // embedding scale, residual-add scale (attention scale is Architecture.AttnScale)
 }
 
-// qwen35Params carries the Gated DeltaNet geometry for a qwen3_5_moe model's
-// linear-attention layers (see docs/qwen3_5_moe.md). The softmax layers use the
-// uniform Architecture attention fields; only the linear layers read these.
+// qwen35Params carries the Gated DeltaNet geometry for a qwen3_5_moe model's linear-attention layers
+// (docs/completed/qwen3_5_moe.md). The softmax layers use the uniform Architecture attention fields; only the linear layers
+// read these.
 type qwen35Params struct {
 	ConvKernel    int // depthwise causal conv width over [q;k;v] (linear_conv_kernel_dim)
 	KeyHeadDim    int // per-head key/query dim (linear_key_head_dim)
@@ -354,72 +286,39 @@ type qwen35Params struct {
 	NumKeyHeads   int // linear_num_key_heads
 	NumValueHeads int // linear_num_value_heads (GVA: a multiple of NumKeyHeads)
 
-	// AttnGate: this family's full-attention (non-DeltaNet) layers use qwen3.5's own
-	// double-width q_proj scheme — [query ‖ gate] per head, interleaved, with the attention
-	// context multiplied by sigmoid(gate) before o_proj. True for qwen3_5/qwen3_5_moe/
-	// qwen3_next (verified against their real modeling_qwen3_5*.py: Qwen3_5Attention Projects
-	// q_proj to 2*num_heads*head_dim). FALSE for Olmo Hybrid: its full-attention layer is
-	// olmo3's own PLAIN scheme (ordinary q_proj, no gate) — verified against the real
-	// modeling_olmo_hybrid.py, which reuses Olmo3Attention verbatim for these layers, not
-	// qwen3.5's gated one. G5 (docs/tasks/task-gpu-paths-2026-09.md): this field did not exist before
-	// Olmo Hybrid — the resident backends assumed EVERY qwen35Params-carrying family's softmax
-	// layer was qGate, which was true of every family that had reached residency until now.
+	// AttnGate: this family's full-attention (non-DeltaNet) layers use qwen3.5's double-width q_proj, [query ‖ gate] per head
+	// interleaved, with the attention context multiplied by sigmoid(gate) before o_proj. False for Olmo Hybrid, whose
+	// full-attention layers are olmo3's plain scheme (ordinary q_proj, no gate): a resident backend must not assume every
+	// qwen35Params family has a q gate.
 	AttnGate bool
-	// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/
-	// in_proj_b/in_proj_a as four separate tensors; qwen3_next's checkpoint fuses
-	// them into in_proj_qkvz/in_proj_ba instead (same math, different packing —
-	// verified against modular_qwen3_next.py's Qwen3NextGatedDeltaNet.torch_forward).
-	// loadQwen35Attn splits the fused tensors into the same four deltaNetWeights
-	// fields so the rest of the pipeline (forward, gguf, serialize) is untouched.
+	// FusedDeltaNetProj: qwen3_next's checkpoint fuses in_proj_qkv/z/b/a into in_proj_qkvz/in_proj_ba (qwen3_5_moe stores four
+	// separate tensors). loadQwen35Attn splits the fused tensors into the same four deltaNetWeights fields, so the rest of the
+	// pipeline (forward, gguf, serialize) is untouched.
 	FusedDeltaNetProj bool
-	// SeparateQKVProj (Olmo Hybrid): the checkpoint stores q_proj/k_proj/v_proj as
-	// THREE fully independent tensors — more unfused than qwen3_5_moe's own
-	// in_proj_qkv (which is already pre-concatenated on disk into one [convDim,
-	// hidden] tensor). loadQwen35Attn concatenates them at load time into the same
-	// internal inProjQKV layout, so gatedDeltaNetStep and every downstream consumer
-	// stay untouched. Verified against the real modeling_olmo_hybrid.py
-	// (OlmoHybridGatedDeltaNet.__init__: separate self.q_proj/k_proj/v_proj
-	// nn.Linear modules, vs. qwen3.5's single mixed_qkv projection).
+	// SeparateQKVProj (Olmo Hybrid): the checkpoint stores q_proj/k_proj/v_proj as three independent tensors. loadQwen35Attn
+	// concatenates them at load into the inProjQKV layout, so gatedDeltaNetStep and every downstream consumer are untouched.
 	SeparateQKVProj bool
-	// NegEigval (Olmo Hybrid): doubles the write-gate beta from sigmoid's [0,1)
-	// range to [0,2) after the sigmoid — config's linear_allow_neg_eigval, default
-	// true on the release. Same recurrence, wider gate range; not a new primitive.
+	// NegEigval (Olmo Hybrid): linear_allow_neg_eigval (default true on the release) widens the write-gate beta from sigmoid's
+	// [0,1) to [0,2) after the sigmoid. Same recurrence, wider gate range.
 	NegEigval bool
-	// SeparateConv (Olmo Hybrid): the checkpoint stores the depthwise causal conv
-	// as THREE separate tensors, q_conv1d/k_conv1d/v_conv1d, split at the SAME
-	// q/k/v channel boundaries the mixed_qkv activation uses (keyDim, keyDim,
-	// valueDim rows respectively) — verified against a real Olmo-Hybrid-7B
-	// checkpoint's safetensors header, not assumed from source (the modeling code
-	// alone shows one combined self.conv1d; only the real file's actual tensor
-	// names and shapes revealed the three-way split). loadQwen35Attn concatenates
-	// them in q,k,v order to reconstruct the same [convDim,1,K] layout
-	// gatedDeltaNetStep's conv step already expects.
+	// SeparateConv (Olmo Hybrid): the checkpoint stores the depthwise causal conv as three tensors, q_conv1d/k_conv1d/v_conv1d,
+	// split at the q/k/v channel boundaries (keyDim, keyDim, valueDim rows). loadQwen35Attn concatenates them in q,k,v order
+	// into the [convDim,1,K] layout gatedDeltaNetStep expects. The modeling code alone shows one combined conv1d; the split is
+	// visible only in a real checkpoint's tensor names and shapes, so check a real header.
 	SeparateConv bool
-	// DeltaNetNormSuffix/DeltaNetOutProjSuffix override the DeltaNet gated-RMSNorm
-	// and out_proj tensor suffixes. "" (qwen3_5/qwen3_5_moe/qwen3_next) means
-	// "linear_attn.norm.weight" / "linear_attn.out_proj.weight". Olmo Hybrid's real
-	// modeling_olmo_hybrid.py names these attributes o_norm/o_proj instead — same
-	// math, different attribute name and therefore different on-disk tensor name,
-	// checked against real source rather than assumed identical to qwen3.5's own
-	// DeltaNet.
+	// DeltaNetNormSuffix/DeltaNetOutProjSuffix override the DeltaNet gated-RMSNorm and out_proj tensor suffixes; "" means
+	// "linear_attn.norm.weight" / "linear_attn.out_proj.weight". Olmo Hybrid names them o_norm/o_proj: same math, different
+	// on-disk tensor name.
 	DeltaNetNormSuffix, DeltaNetOutProjSuffix string
-	// ONormEps overrides the DeltaNet output gated-RMSNorm's epsilon; 0 ⇒ use the
-	// family's own NormEps (qwen3_5/qwen3_5_moe/qwen3_next: their gated-RMSNorm
-	// reads rms_norm_eps like every other norm in the model). Olmo Hybrid hardcodes
-	// eps=1e-5 for this ONE norm regardless of config — "FLA's FusedRMSNormGated
-	// uses eps=1e-5 by default", per modeling_olmo_hybrid.py's own comment — which
-	// differs from the release's rms_norm_eps=1e-6 used everywhere else in the
-	// model. A silent-wrong trap if copied: reusing NormEps here would be off by an
-	// order of magnitude on exactly the one norm most sensitive to it (the
-	// recurrence's own output gate).
+	// ONormEps overrides the DeltaNet output gated-RMSNorm's epsilon; 0 means the family's NormEps. Olmo Hybrid hardcodes
+	// eps=1e-5 for this one norm regardless of config (FLA's FusedRMSNormGated default), unlike its rms_norm_eps=1e-6
+	// elsewhere: reusing NormEps here is off by an order of magnitude on the norm most sensitive to it (the recurrence's output
+	// gate).
 	ONormEps float64
-	// PlainFullAttn (Olmo Hybrid): this family's full-attention layers are a PLAIN
-	// olmo3-shaped self-attention (single-width q/k/v/o, optional whole-vector
-	// QK-norm, generic RoPE/NoPE) — NOT qwen3_5's own double-width gated softmax
-	// attention. false (every other qwen35-shaped family) routes non-linear layers
-	// through loadQwen35Attn's/runLayersQwen35's bespoke qwen3.5 attention; true
-	// routes them through the shared generic loader path and causalAttention
-	// instead, reusing olmo3's own adapter rather than inventing a second one.
+	// PlainFullAttn (Olmo Hybrid): the full-attention layers are a plain olmo3-shaped self-attention (single-width q/k/v/o,
+	// optional whole-vector QK-norm, generic RoPE/NoPE), not qwen3_5's double-width gated attention. false routes non-linear
+	// layers through loadQwen35Attn / runLayersQwen35's bespoke qwen3.5 attention; true routes them through the shared generic
+	// loader path and causalAttention, reusing olmo3's adapter.
 	PlainFullAttn bool
 }
 
@@ -439,10 +338,9 @@ type gemma4Params struct {
 	HiddenSizePerLayerInput int   // PLE per-layer dim (256); 0 ⇒ no PLE
 	VocabSizePerLayerInput  int   // PLE embedding-table vocab (== main vocab)
 
-	// PadTokenID (P7): the id runLayersGemma4FromEmbed's PLE token-identity
-	// lookup uses at a multimodal (image/video/audio) position, in place of the
-	// caller's real token id — matches the real HF multimodal forward's PAD
-	// substitution (see docs/multimodal.md's P7 entry).
+	// PadTokenID is the id runLayersGemma4FromEmbed's PLE token-identity lookup uses at a multimodal (image/video/audio)
+	// position in place of the caller's real token id, matching the HF multimodal forward's pad substitution
+	// (docs/multimodal.md).
 	PadTokenID int
 }
 
@@ -457,9 +355,8 @@ func (a *Architecture) headDimAt(i int) int {
 	return a.HeadDim
 }
 
-// lagunaParams describes how Laguna (poolside) departs from an otherwise
-// Qwen2-MoE-shaped decoder. Both fields are read straight from the released
-// configs; see docs/task-laguna.md for the Phase 0 verification.
+// lagunaParams describes how Laguna (poolside) departs from an otherwise Qwen2-MoE-shaped decoder; both fields are read
+// straight from the released configs (docs/completed/task-laguna.md).
 type lagunaParams struct {
 	// HeadsPerLayer is num_attention_heads_per_layer: layer i's QUERY head count,
 	// which varies with the layer's attention type on the XS generations (48 on
@@ -467,13 +364,9 @@ type lagunaParams struct {
 	// (M.1, whose config omits the field). KV heads stay uniform at 8 either way, so
 	// the GQA group size — not just the head count — changes per layer.
 	HeadsPerLayer []int
-	// GatePerHead selects the gate's granularity: true ⇒ g_proj emits one gate per
-	// HEAD, broadcast across head_dim (config gating "per-head"); false ⇒ one gate
-	// per (head, head_dim) CHANNEL (config gating true or "per-element").
-	//
-	// Three released spellings map onto this one bool exactly as the vendor code
-	// does — self.gate_per_head = (gating == "per-head") — so `true` and
-	// "per-element" are the same path and only "per-head" differs.
+	// GatePerHead selects the gate's granularity: true means g_proj emits one gate per head, broadcast across head_dim (config
+	// gating "per-head"); false means one gate per (head, head_dim) channel (gating true or "per-element"). It mirrors the
+	// vendor's gate_per_head = (gating == "per-head").
 	GatePerHead bool
 }
 
@@ -511,15 +404,10 @@ func (a *Architecture) kvHeadsAt(i int) int {
 	return a.NumKVHeads
 }
 
-// kvDimAt returns the number of f32-equivalent elements layer i's K (or V — the two are always
-// equal width) cache actually stores PER POSITION it holds — zero for a linear/mamba/conv mixer
-// layer (M-28, docs/audit-2026-09-10.md: these hold no position-indexed K/V array at all, a
-// small fixed-size recurrent state instead, not something that grows with context), MLA's real
-// compressed latent width (KVLoRARank+QKRopeHeadDim — what forward_deepseek.go's cache actually
-// stores) instead of the full reconstructed per-head width when a.mla != nil, else the ordinary
-// kvHeadsAt(i)*headDimAt(i) every ordinary softmax-attention family already used. This is the
-// WIDTH only; kvPositionsAt below is the COUNT (a sliding-window layer holds fewer positions
-// than ctx once ctx exceeds its window).
+// kvDimAt returns the f32-equivalent elements layer i's K (or V, always equal width) cache stores per position it holds:
+// zero for a layer with no position-indexed K/V (see hasNoAttentionKVAt), MLA's compressed latent width
+// (KVLoRARank+QKRopeHeadDim) when a.mla != nil, else kvHeadsAt(i)*headDimAt(i). This is the width only; kvPositionsAt is
+// the count.
 func (a *Architecture) kvDimAt(i int) int {
 	if a.hasNoAttentionKVAt(i) {
 		return 0
@@ -530,23 +418,10 @@ func (a *Architecture) kvDimAt(i int) int {
 	return a.kvHeadsAt(i) * a.headDimAt(i)
 }
 
-// hasNoAttentionKVAt reports whether layer i holds no ordinary softmax-attention K/V array at
-// all: the generic linear/mamba/conv mixer cases (isLinearLayer/isMambaLayer/isConvLayer) PLUS
-// Nemotron's own per-layer block-kind classification. Nemotron needs its own check because its
-// mixer identity is per-layer RUNTIME DATA (nemotronParams.blockKind, read from
-// layers_block_type), not a closure registered once at resolve time the way Granite's
-// layerIsMamba is — isMambaLayer never fires for Nemotron's mamba layers at all, and its mlp/moe
-// block kinds (single-op-block: exactly one of {mamba, attention, mlp, moe} per layer,
-// decoder/forward_nemotron.go's own switch) touch no K/V either, which neither isMambaLayer nor
-// any other generic predicate was ever positioned to catch.
-//
-// Found as a residual gap in M-28 (docs/audit-2026-09-10.md) while implementing P-02: the fix
-// there zeroed KV pricing/allocation for isLinearLayer/isMambaLayer/isConvLayer layers, but
-// Nemotron's mamba AND mlp AND moe layers all slipped through priced as full attention, since
-// none of those three generic predicates ever return true for a Nemotron layer regardless of its
-// real kind (confirmed directly: testdata/nemotron-tiny's `mamba,attention,mlp,mamba,attention`
-// layers all reported kvDimAt=32 before this fix, including the two mamba and one mlp layer that
-// hold no attention K/V at all).
+// hasNoAttentionKVAt reports whether layer i holds no softmax-attention K/V array: the linear/mamba/conv mixers
+// (isLinearLayer, isMambaLayer, isConvLayer) plus Nemotron's per-layer block kinds. Nemotron needs its own check because
+// its mixer identity is per-layer data (nemotronParams.blockKind), not a closure registered at resolve time, so
+// isMambaLayer never fires for its mamba layers; its mlp and moe blocks hold no K/V either.
 func (a *Architecture) hasNoAttentionKVAt(i int) bool {
 	if a.isLinearLayer(i) || a.isMambaLayer(i) || a.isConvLayer(i) {
 		return true
@@ -557,11 +432,9 @@ func (a *Architecture) hasNoAttentionKVAt(i int) bool {
 	return false
 }
 
-// kvPositionsAt returns how many of ctx cache positions layer i's K/V actually needs to hold
-// resident: ctx itself for an ordinary layer, or SlidingWindow once ctx exceeds it for a LOCAL
-// (non-global) layer under a sliding-window architecture — the ring buffer never grows past its
-// own window regardless of how long the context gets (M-28, docs/audit-2026-09-10.md). Meaningless
-// but harmless for a layer kvDimAt already prices at zero (the caller multiplies the two).
+// kvPositionsAt returns how many of ctx cache positions layer i's K/V must hold resident: ctx for an ordinary layer, or
+// SlidingWindow once ctx exceeds it for a local layer under a sliding-window architecture (the ring never grows past its
+// window). Meaningless but harmless for a layer kvDimAt prices at zero (the caller multiplies the two).
 func (a *Architecture) kvPositionsAt(i, ctx int) int {
 	if a.SlidingWindow > 0 && !a.isGlobalLayer(i) && ctx > a.SlidingWindow {
 		return a.SlidingWindow
@@ -569,17 +442,11 @@ func (a *Architecture) kvPositionsAt(i, ctx int) int {
 	return ctx
 }
 
-// kvBytesForCtx sums the REAL per-layer KV cost at ctx positions across the whole architecture —
-// kvDimAt (WIDTH: zero for linear/mamba/conv, MLA's compressed latent instead of the
-// reconstructed per-head width) combined with kvPositionsAt (COUNT: capped at SlidingWindow for a
-// local layer) — the fix for M-28 (docs/audit-2026-09-10.md): the flat NumLayers×NumKVHeads×
-// headDim formula this replaces overpriced hybrid (DeltaNet/conv/Mamba), sliding-window, and MLA
-// models 3-7x by charging every layer full softmax-attention KV regardless of what it actually
-// caches. Used by decoder/fitguard.go's load-time host-RAM guard and decoder/prefill_budget.go's
-// request-time guard, both Config-only (no loaded weights yet) via resolveArchitecture. NOT used
-// by decoder/fitplan.go's device-VRAM Plan(), which needs only the WIDTH half (kvDimAt) via its
-// own per-layer loop — see that file's kvBytesPerPositionAllLayers doc comment for why the
-// sliding-window COUNT cap is deliberately not applied there.
+// kvBytesForCtx sums the real per-layer KV cost at ctx positions over the whole architecture: kvDimAt (width) times
+// kvPositionsAt (count). Used by fitguard.go's load-time host-RAM guard and prefill_budget.go's request-time guard, both
+// Config-only via resolveArchitecture. Not used by fitplan.go's device-VRAM Plan(), which needs only the width and
+// deliberately skips the sliding-window count cap (see kvBytesPerPositionAllLayers there). Do not replace it with a flat
+// NumLayers*NumKVHeads*headDim formula: that overprices hybrid, sliding-window and MLA models, which cache far less.
 func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 	if arch == nil || ctx <= 0 || arch.NumLayers <= 0 {
 		return 0
@@ -598,8 +465,8 @@ func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 			continue
 		}
 		positions := arch.kvPositionsAt(l, ctx)
-		// R-12: a local layer's f32 ring keeps a mirror copy of its window once the window has wrapped (so decode reads it in place), i.e. 2*W positions, not W.
-		// The int8 ring has no mirror. Priced here so the fit guard counts what is actually resident.
+		// A local layer's f32 ring keeps a mirror copy of its window once wrapped (decode reads it in place), so it holds 2*W
+		// positions, not W; the int8 ring has no mirror. Priced here so the fit guard counts what is resident.
 		if !kvI8 && arch.SlidingWindow > 0 && !arch.isGlobalLayer(l) && ctx > arch.SlidingWindow {
 			positions += arch.SlidingWindow
 		}
@@ -623,10 +490,8 @@ type MoEConfig struct {
 	NumExperts   int  // experts per layer (E)
 	TopK         int  // experts evaluated per token (k)
 	NormTopKProb bool // renormalize the top-k router weights to sum to 1 (Mixtral)
-	// IntermediateDim is the per-expert FFN width. Mixtral's experts use the
-	// model's intermediate_size; Mellum gives them a narrower moe_intermediate_size
-	// (896 vs the vestigial 7168), so the expert width is tracked here rather than
-	// read from arch.IntermediateDim.
+	// IntermediateDim is the per-expert FFN width. Mixtral's experts use the model's intermediate_size; Mellum gives them a
+	// narrower moe_intermediate_size, so the expert width is tracked here, not read from arch.IntermediateDim.
 	IntermediateDim int
 
 	// SharedIntermediateDim is the FFN width of the always-on shared expert
@@ -650,10 +515,9 @@ type MoEConfig struct {
 	NGroup    int
 	TopkGroup int
 
-	// Gemma 4 26B-A4B router extras (Gemma4TextRouter; false for every other MoE
-	// family). Its selection is still softmax-over-all → top-k → renorm (NormTopKProb
-	// is UNCONDITIONALLY true), so the base routeExperts path applies — these two flags
-	// add the parts it doesn't have. See docs/task-gemma4-moe.md §A2 (Phase 1a refs).
+	// Gemma 4 26B-A4B router extras (Gemma4TextRouter; false for every other MoE family). Selection is still softmax over all
+	// experts, top-k, renorm (NormTopKProb is unconditionally true), so routeExperts applies; these two flags add the parts it
+	// lacks (docs/completed/task-gemma4-moe.md).
 	RouterPreNorm  bool // before the router projection, the hidden state passes a WEIGHTLESS RMSNorm, a learned [hidden] scale (LayerWeights.RouterScale), and a hidden^-0.5 constant — not a bare Linear on the raw hidden state.
 	PerExpertScale bool // the renormalized top-k weights are multiplied by a learned per-expert scale (LayerWeights.PerExpertScale), indexed by the chosen experts.
 }
@@ -693,16 +557,10 @@ const (
 	// (residual = x + attn(norm(x)) + mlp(norm(x))). Cohere/Command-R, GPT-J,
 	// Falcon. No pre-MLP norm, no post-sublayer norms.
 	NormParallel
-	// NormPostOnly: NO pre-norm at all — attention/MLP read the RAW residual
-	// stream directly — and the sublayer's OUTPUT is normalized before the
-	// residual add (residual = x + post_attn_norm(attn(x)); same for MLP).
-	// Olmo 3, verified against the real modeling_olmo3.py: no input_layernorm
-	// exists at all, only post_attention_layernorm / post_feedforward_layernorm,
-	// applied to the SUBLAYER OUTPUT before the add. Genuinely different from
-	// Sandwich4, which normalizes the input AND (separately) the output; here
-	// there is no input norm to skip past. Olmo Hybrid's full-attention layers
-	// use this SAME scheme, but its DeltaNet layers use NormPre2 instead — see
-	// NormPlacementLinear, not a second value of this enum.
+	// NormPostOnly: no pre-norm at all: attention and MLP read the raw residual stream, and the sublayer's output is
+	// normalized before the residual add (residual = x + post_attn_norm(attn(x)); same for MLP). Olmo 3 has only
+	// post_attention_layernorm / post_feedforward_layernorm. Unlike Sandwich4 there is no input norm to skip. Olmo Hybrid's
+	// full-attention layers use this scheme and its DeltaNet layers NormPre2: see NormPlacementLinear, not a second enum value.
 	NormPostOnly
 )
 
@@ -775,14 +633,10 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 	return true
 }
 
-// gemma4KVSrcAt returns the layer index whose K/V a Gemma 4 layer i actually attends over —
-// itself for layers < firstShared (which own their KV), or the last non-shared layer of the
-// SAME attention type (global vs sliding) for a cross-layer-KV-shared tail layer
-// (arch.gemma4.SharedKVLayers). Identical algorithm to forward_gemma4.go's own kvSrc closure
-// (runLayersGemma4FromEmbed) — kept as a SEPARATE function rather than refactoring that
-// already-shipped, gated closure to call this one, so this addition (for the resident CUDA
-// bridge) carries zero risk to the proven CPU path; TestGemma4KVSrcAt_matchesCPUClosure pins
-// the two against each other so they cannot silently drift apart.
+// gemma4KVSrcAt returns the layer whose K/V Gemma 4 layer i attends over: itself for layers before firstShared, else the
+// last non-shared layer of the same attention type (global vs sliding) for a cross-layer-KV-shared tail layer
+// (gemma4.SharedKVLayers). It duplicates the kvSrc closure of runLayersGemma4FromEmbed on purpose, so the resident bridge
+// does not touch the CPU path; TestGemma4KVSrcAt_matchesCPUClosure pins the two together, so change them together.
 func (a *Architecture) gemma4KVSrcAt(i int) int {
 	if a.gemma4 == nil {
 		return i
@@ -926,31 +780,18 @@ type ownForwardFamily struct {
 	// arch-side view of KVCache.hasRecurrentState(): the cache knows once it exists, this knows
 	// from the descriptor, and speculative rollback has to decide before either is built.
 	Recurrent bool
-	// KVInt8 is true when this family's loop reads K/V through the int8-aware attention path, so
-	// NewCache may store them as int8 (Options.KVQuant == "i8"). KVRings is true when it can read a
-	// ring-buffered sliding-window layer. Both default to false: a family with its own loop has its
-	// own cache handling, and a loop that sizes its scores from len(cache.Keys(layer)) indexes past
-	// an int8 cache's empty f32 store on the first decode step (LFM2 did — TestLFM2_kvQuantI8_generates).
-	// See kvInt8OK / kvRingsOK: these REPLACE two hand-written family lists in NewCache that had
-	// already drifted apart, each right only by coincidence.
+	// KVInt8 is true when this family's loop reads K/V through the int8-aware attention path, so NewCache may store them as int8
+	// (Options.KVQuant == "i8"). KVRings is true when it can read a ring-buffered sliding-window layer. Both default to false: a
+	// loop that sizes its scores from len(cache.Keys(layer)) indexes past an int8 cache's empty f32 store on the first decode
+	// step (TestLFM2_kvQuantI8_generates). See kvInt8OK / kvRingsOK.
 	KVInt8, KVRings bool
 }
 
-// ownForwards is THE list of families that do not use the generic layer loop — one table, so that
-// "runLayers dispatches here" and "the batched path must not touch this" are the same fact.
-//
-// THEY WERE TWO FACTS, AND THEY DISAGREED. runLayers dispatched LFM2 to runLayersLFM2 while
-// canBatchN's hand-written exclusion list — gemma4, qwen35, granite, nemotron, mla, llama4, gptoss
-// — simply did not mention it. So every prompt of ≥2 tokens ran the DENSE ATTENTION STACK over
-// LFM2's 22 conv layers, whose QProj/KProj/VProj/OProj/QNorm/KNorm are never loaded: rmsNorm
-// indexed a nil weight slice at layer 0 and the process died, since the panic is in the Generate
-// goroutine where net/http's handler recover cannot reach it. PrefillPath() published "batched
-// shape" for the same model at startup. Reproduced on the committed testdata/lfm2-tiny fixture
-// with a 4-token prompt (audit-2026-09-02 C-01; three reviewers found it independently).
-//
-// This is audit §0 theme 1 — "one predicate, seven consumers" — applied to the first two. A family
-// added to this table is excluded from the batched path by construction, and
-// TestOwnForward_tableNamesEveryFamilyForward fails if a runLayersXxx is written that is not here.
+// ownForwards is the one list of families that do not use the generic layer loop, so "runLayers dispatches here" and "the
+// batched path must not touch this" are the same fact. A family added here is excluded from the batched path by
+// construction, and TestOwnForward_tableNamesEveryFamilyForward fails if a runLayersXxx is written that is not listed.
+// Keep it a single table: two separate lists once disagreed and sent LFM2 prompts of two or more tokens through the dense
+// attention stack (docs/code-notes/decoder.md#ownForwards).
 var ownForwards = []ownForwardFamily{
 	// Fields: Name, is, run, Captures, Recurrent, KVInt8, KVRings.
 	// Gemma 4: per-layer head_dim, KV-sharing, PLE.
@@ -967,7 +808,7 @@ var ownForwards = []ownForwardFamily{
 	// bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse mlaAttention
 	// directly), so a.mla != nil alone would also match it and misroute to runLayersDeepseek,
 	// which has no KDA branch at all.
-	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token (audit C-03)
+	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token
 	// deepseek_v2/v3: Multi-head Latent Attention.
 	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false, false, false},
 	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
@@ -976,22 +817,15 @@ var ownForwards = []ownForwardFamily{
 	{"gpt-oss", func(a *Architecture) bool { return a.gptoss != nil }, (*Model).runLayersGptOss, true, false, false, false},
 }
 
-// hasAttnOutputGate reports whether this architecture gates the attention context before o_proj:
-// Laguna's softplus gate, or any family with AttnGate == GateSigmoid (Spark-X2.5). One predicate for
-// the forward's two dispatch sites (attention.go, forwardn.go) and the resident feature it derives
-// (features.go's FeatAttnOutputGate) — it was the same OR written three times.
+// hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or
+// any family with AttnGate == GateSigmoid. One predicate for the forward's two dispatch sites (attention.go, forwardn.go)
+// and the resident feature derived from it (FeatAttnOutputGate).
 func (a *Architecture) hasAttnOutputGate() bool { return a.laguna != nil || a.AttnGate == GateSigmoid }
 
-// kvInt8OK reports whether NewCache may store this architecture's K/V as int8. A family with its own
-// layer loop only when its ownForwards entry says KVInt8; the generic loop always reads K/V through the
-// int8-aware attention path, except for MoE, where attention runs the acc64 kernel so expert routing
-// stays bit-stable, and a quantized cache would reopen that.
-//
-// It replaces a hand-written list (gemma4, qwen35, granite, nemotron, lfm2, llama4, and MoE) that a
-// second list — the ring-buffer one, kvRingsOK — contradicted on lfm2, llama4 and gpt-oss. Neither
-// contradiction was live: lfm2 and llama4 have no sliding window, so rings were a no-op for them, and
-// gpt-oss is MoE, so int8 was already off. Two guards that are right by coincidence are how the next
-// family breaks; this is one rule, in the table.
+// kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family with its own layer loop only when
+// its ownForwards entry says KVInt8; otherwise the generic loop, which reads K/V through the int8-aware attention path,
+// except for MoE, where attention runs the acc64 kernel so expert routing stays bit-stable and a quantized cache would
+// reopen that. It is one rule in the table, replacing two hand-written lists that could disagree with kvRingsOK.
 func (a *Architecture) kvInt8OK() bool {
 	if f, own := a.ownForward(); own {
 		return f.KVInt8
@@ -999,9 +833,9 @@ func (a *Architecture) kvInt8OK() bool {
 	return a.MoE == nil
 }
 
-// kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers
-// — keep only the W most recent positions. The generic loop reads rings through attendQuery /
-// attendBatchedHeads; a family with its own loop only when its ownForwards entry says KVRings.
+// kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers, keeping only the W
+// most recent positions. The generic loop reads rings through attendQuery / attendBatchedHeads; a family with its own loop
+// only when its ownForwards entry says KVRings.
 func (a *Architecture) kvRingsOK() bool {
 	if f, own := a.ownForward(); own {
 		return f.KVRings

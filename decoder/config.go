@@ -10,10 +10,8 @@ import (
 	"strconv"
 )
 
-// gemma4BidirectionalAttention is Config.UseBidirectionalAttention's type — see
-// that field's doc comment for why a plain string is unsafe (a same-named,
-// differently-typed field already exists on Gemma 3's own config). Accepts a
-// real JSON string; resolves anything else (bool, null, absent) to "".
+// gemma4BidirectionalAttention is Config.UseBidirectionalAttention's type; see that field for why a plain string is unsafe.
+// It accepts a real JSON string and resolves anything else (bool, null, absent) to "".
 type gemma4BidirectionalAttention string
 
 func (b *gemma4BidirectionalAttention) UnmarshalJSON(data []byte) error {
@@ -26,14 +24,10 @@ func (b *gemma4BidirectionalAttention) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Config captures the Gemma 3 architecture constants the forward pass
-// depends on. Field tags follow the HF config.json schema so a checkpoint's
-// config drives the loader rather than hardcoded constants — the same
-// config-driven approach encoder.Config uses, which is what lets one code
-// path serve both 270M and 1B (and beyond) unchanged.
-//
-// Values that vary per layer (the 5:1 local:global attention pattern) are
-// derived from SlidingWindowPattern at load time, not stored per layer.
+// Config is the flat config.json schema shared by every supported family: field tags follow the HF names, so a checkpoint's
+// config drives the loader rather than hardcoded constants, and each family's adapter reads the fields it needs (the
+// per-family groups below). The per-layer local:global attention pattern is derived at load time (LayerTypes, else
+// SlidingWindowPattern), not stored per layer. The example values in the trailing comments are Gemma 3 270M.
 type Config struct {
 	ModelType       string  `json:"model_type"`              // "gemma3_text" — selects the arch adapter
 	VocabSize       int     `json:"vocab_size"`              // 262144
@@ -47,9 +41,8 @@ type Config struct {
 	RMSNormEps      float64 `json:"rms_norm_eps"`
 	RoPELocalBase   float64 `json:"rope_local_base_freq"` // 10000
 	RoPEGlobalBase  float64 `json:"rope_theta"`           // 1000000
-	// Granite-4.0-H: "rope" (HF default, and what the tiny fixture emits) or "nope" —
-	// which is what the released granite-4.0-h checkpoints ship, and means the attention
-	// layers get NO positional encoding at all.
+	// Granite-4.0-H: "rope" (HF default) or "nope" (what the released checkpoints ship), which means the attention layers get no
+	// positional encoding at all.
 	PositionEmbeddingType string  `json:"position_embedding_type"`
 	SlidingWindow         int     `json:"sliding_window"`         // 512 (270M)
 	SlidingWindowPattern  int     `json:"sliding_window_pattern"` // 6 → 5 local : 1 global
@@ -69,22 +62,17 @@ type Config struct {
 	NumExpertsPerTok    int   `json:"num_experts_per_tok"`
 	NormTopKProb        *bool `json:"norm_topk_prob"`
 	MoeIntermediateSize int   `json:"moe_intermediate_size"`
-	// Gemma 4 26B-A4B MoE (model_type gemma4, text_config.enable_moe_block=true). It
-	// spells the per-token expert count top_k_experts (not num_experts_per_tok), and
-	// gates the whole parallel dense+MoE FFN sub-block on enable_moe_block — the dense
-	// E2B/E4B/12B variants leave both zero/false. See docs/task-gemma4-moe.md §A4.
+	// Gemma 4 26B-A4B MoE (model_type gemma4, text_config.enable_moe_block=true). It spells the per-token expert count
+	// top_k_experts (not num_experts_per_tok) and gates the whole parallel dense+MoE FFN sub-block on enable_moe_block; the dense
+	// E2B/E4B/12B variants leave both zero/false (docs/completed/task-gemma4-moe.md).
 	EnableMoeBlock bool `json:"enable_moe_block"`
 	TopKExperts    int  `json:"top_k_experts"`
 	// SharedExpertIntermediateSize is the always-on shared expert's FFN width
 	// (Qwen-MoE/Qwen2-MoE). 0/absent ⇒ no shared expert.
 	SharedExpertIntermediateSize int `json:"shared_expert_intermediate_size"`
-	// MoeSharedExpertIntermediateSize (Nemotron-H MoE, e.g. Nemotron 3 Nano) is its
-	// OWN explicit shared-expert width — verified NOT derivable as
-	// NSharedExperts*MoeIntermediateSize the way DeepSeek's is (Nano ships
-	// n_shared_experts=1, moe_intermediate_size=1856, but
-	// moe_shared_expert_intermediate_size=3712 — the shared expert is 2x a routed
-	// expert's width, not 1x). A distinct field, not reused, to avoid silently
-	// mis-deriving it for this family.
+	// MoeSharedExpertIntermediateSize (Nemotron-H MoE) is its own explicit shared-expert width, not derivable as
+	// NSharedExperts*MoeIntermediateSize the way DeepSeek's is (the shared expert is twice a routed expert's width on Nemotron 3
+	// Nano). A distinct field, so it is never silently mis-derived.
 	MoeSharedExpertIntermediateSize int `json:"moe_shared_expert_intermediate_size"`
 
 	// DeepSeek-style MoE (GLM-4.5/4.6, model_type glm4_moe). NRoutedExperts is the
@@ -98,20 +86,13 @@ type Config struct {
 	FirstKDenseReplace  int     `json:"first_k_dense_replace"`
 	RoutedScalingFactor float64 `json:"routed_scaling_factor"`
 
-	// Laguna (poolside). MoeRoutedScalingFactor is its spelling of
-	// routed_scaling_factor (2.5 on the XS generations, 1.0 on M.1).
+	// Laguna (poolside). MoeRoutedScalingFactor is its spelling of routed_scaling_factor.
 	//
-	// Gating is json.RawMessage because the SAME field ships with three different
-	// JSON types across three releases of one model_type: "per-head" (XS-2.1),
-	// true (XS.2), "per-element" (M.1). Decoding it into a string or a bool would
-	// fail on the other spellings, so it is held raw and resolved by
-	// lagunaGatePerHead, which mirrors the vendor's own two-line rule.
+	// Gating is json.RawMessage because the same field ships with three JSON types across releases of one model_type ("per-head",
+	// true, "per-element"); a string or bool field would fail on the others, so it is held raw and resolved by lagunaGatePerHead.
 	//
-	// NumAttentionHeadsPerLayer is layer i's QUERY head count ([48,64,64,64,…] —
-	// 48 on full_attention, 64 on sliding_attention). Absent on M.1, which is
-	// uniform. MlpOnlyLayers lists the layers that are plain dense MLPs rather
-	// than MoE ([0] on XS, [0,1,2] on M.1) — contiguous from the top in every
-	// released config, so it maps onto FirstKDense.
+	// NumAttentionHeadsPerLayer is layer i's query head count (absent where uniform). MlpOnlyLayers lists the plain dense-MLP
+	// layers, contiguous from the top in every released config, so it maps onto FirstKDense.
 	MoeRoutedScalingFactor      float64         `json:"moe_routed_scaling_factor"`
 	MoeApplyRouterWeightOnInput bool            `json:"moe_apply_router_weight_on_input"`
 	Gating                      json.RawMessage `json:"gating,omitempty"`
@@ -144,37 +125,24 @@ type Config struct {
 	RopeInterleave *bool   `json:"rope_interleave"`
 	AttnScaleMul   float64 `json:"-"` // yarn mscale² folded into the attention scale (0 ⇒ plain qk_head_dim^-0.5)
 
-	// Bailing Hybrid (Ling 3.0, model_type "bailing_hybrid"): MLA (above) alternating with Kimi
-	// Delta Attention (KDA) every LayerGroupSize-th layer being MLA instead — verified against the
-	// real modeling_bailing_moe_v3.py's BailingMoeV3DecoderLayer.__init__, not assumed from the
-	// task brief's paraphrase: `layer_types` is NOT a config.json field at all for this family (no
-	// released checkpoint carries it); the pattern is COMPUTED from LayerGroupSize, same shape as
-	// Qwen3-Next's FullAttentionInterval. NumSharedExperts/ShortConvKernelSize etc. use this
-	// family's OWN JSON key spellings (num_shared_experts, not DeepSeek's n_shared_experts) —
-	// confirmed against the real inclusionAI/Ling-3.0-tiny config.json, which uses num_experts/
-	// num_shared_experts throughout, not deepseek_v3's n_routed_experts/n_shared_experts.
+	// Bailing Hybrid (Ling 3.0, model_type "bailing_hybrid"): MLA (above) alternating with Kimi Delta Attention (KDA), every
+	// LayerGroupSize-th layer being MLA. layer_types is not a config.json field for this family: the pattern is computed from
+	// LayerGroupSize, the same shape as Qwen3-Next's FullAttentionInterval. The key spellings are the family's own
+	// (num_experts/num_shared_experts throughout, not deepseek_v3's n_routed_experts/n_shared_experts).
 	LayerGroupSize   int `json:"layer_group_size"`
 	NumSharedExperts int `json:"num_shared_experts"`
-	// GatedAttentionProjGranularity ("head_wise" | "element_wise" | absent): MLA's optional
-	// per-head or per-element output gate (self.g_proj, sigmoid-activated, applied to the
-	// attention context BEFORE the output projection — the same STRUCTURE Laguna's own
-	// FeatAttnOutputGate already ships, but sigmoid where Laguna's is softplus, a real difference
-	// verified against source, not assumed identical).
+	// GatedAttentionProjGranularity ("head_wise" | "element_wise" | absent): MLA's optional per-head or per-element sigmoid output
+	// gate (g_proj) on the attention context before the output projection: Laguna's structure (FeatAttnOutputGate) with sigmoid
+	// in place of softplus.
 	GatedAttentionProjGranularity string `json:"gated_attention_proj_granularity_type"`
-	// HeadwiseAttnOutputGate/GateAttnActMode (Spark-X2.5): its own, differently-shaped spelling of
-	// the same "gate before out_proj" idea — a plain bool (always per-head when on; no
-	// per-element variant, unlike MLA's granularity string above) plus an explicit activation-mode
-	// string ("sigmoid" is the only released value; "silu" is a legal-but-unreleased option per
-	// the real modeling_spark.py, which goinfer does not implement — validateResolved rejects it
-	// rather than silently mis-running).
+	// HeadwiseAttnOutputGate/GateAttnActMode (Spark-X2.5): its own spelling of the same gate-before-out_proj idea: a plain bool
+	// (per-head when on; no per-element variant) plus an activation-mode string. "sigmoid" is the only released value; "silu"
+	// is legal upstream but not implemented, and validateResolved rejects it rather than silently mis-running.
 	HeadwiseAttnOutputGate bool   `json:"headwise_attn_output_gate"`
 	GateAttnActMode        string `json:"gate_attn_act_mode"`
-	// KDA's own wrapper geometry: a depthwise short causal conv (kernel ShortConvKernelSize,
-	// SiLU-activated, THREE separate q/k/v convs — modeling_bailing_moe_v3.py's
-	// BailingMoeV3KimiDeltaAttention has independent self.q_conv1d/k_conv1d/v_conv1d modules, not
-	// one combined conv like Gated DeltaNet's), NoKDALora selecting a single f_proj/g_proj linear
-	// per gate (true on the release) vs a LoRA'd a/b-split pair, and the safe (lower-bounded)
-	// decay gate Ling-3.0-tiny selects.
+	// KDA's wrapper geometry: a depthwise short causal conv (kernel ShortConvKernelSize, SiLU-activated, three separate q/k/v
+	// convs, unlike Gated DeltaNet's one combined conv), NoKDALora selecting a single f_proj/g_proj linear per gate (true on the
+	// release) over a LoRA'd a/b-split pair, and the lower-bounded safe decay gate Ling-3.0-tiny selects.
 	ShortConvKernelSize int     `json:"short_conv_kernel_size"`
 	NoKDALora           bool    `json:"no_kda_lora"`
 	KDASafeGate         bool    `json:"kda_safe_gate"`
@@ -219,17 +187,13 @@ type Config struct {
 	LogitScale   float64 `json:"logit_scale"`
 	LayerNormEps float64 `json:"layer_norm_eps"`
 
-	// Nemotron-H (NemotronH): single-op-per-block hybrid (layers_block_type entries
-	// "mamba" | "attention" | "mlp"), NoPE attention, non-gated relu² MLP. Its
-	// Mamba-2 uses its own key spellings (mamba_num_heads / mamba_head_dim /
-	// ssm_state_size / n_groups / conv_kernel) and layer_norm_epsilon for eps.
+	// Nemotron-H (NemotronH): single-op-per-block hybrid (layers_block_type entries "mamba" | "attention" | "mlp"), NoPE
+	// attention, non-gated relu^2 MLP. Its Mamba-2 uses its own key spellings (mamba_num_heads / mamba_head_dim / ssm_state_size /
+	// n_groups / conv_kernel) and layer_norm_epsilon for eps.
 	//
-	// HybridOverridePattern is the SAME layer sequence in NVIDIA's released spelling:
-	// one character per block ("M" mamba, "*" attention, "-" mlp), e.g.
-	// "M-M-M-MM-M-M-M*-…". Every released NemotronH config.json carries this and NOT
-	// layers_block_type — which is transformers' internal spelling, and therefore the
-	// only one the tiny fixtures (built by instantiating NemotronHConfig) ever emitted.
-	// Reading just the fixture spelling made the loader reject every real checkpoint.
+	// HybridOverridePattern is the same layer sequence in NVIDIA's released spelling: one character per block ("M" mamba, "*"
+	// attention, "-" mlp). Every released NemotronH config.json carries this and not layers_block_type (transformers' internal
+	// spelling, which the tiny fixtures emit), so the loader must read both.
 	LayersBlockType       []string `json:"layers_block_type"`
 	HybridOverridePattern string   `json:"hybrid_override_pattern"`
 	MambaNumHeads         int      `json:"mamba_num_heads"`
@@ -248,30 +212,18 @@ type Config struct {
 	LinearValueHeadDim  int `json:"linear_value_head_dim"`
 	LinearNumKeyHeads   int `json:"linear_num_key_heads"`
 	LinearNumValueHeads int `json:"linear_num_value_heads"`
-	// LinearAllowNegEigval (Olmo Hybrid only): doubles the write-gate beta from
-	// sigmoid's [0,1) range to [0,2), widening the delta-rule's eigenvalue range to
-	// include negative — verified against the real modeling_olmo_hybrid.py
-	// (OlmoHybridGatedDeltaNet.forward: `if self.allow_neg_eigval: beta = beta * 2.0`,
-	// gated on this exact config field, default true). Absent (false) for every
-	// other DeltaNet family.
+	// LinearAllowNegEigval (Olmo Hybrid only): widens the write-gate beta from sigmoid's [0,1) to [0,2) (beta * 2.0), extending
+	// the delta-rule's eigenvalue range to include negative. Absent (false) for every other DeltaNet family.
 	LinearAllowNegEigval bool `json:"linear_allow_neg_eigval"`
-	// FullAttentionInterval (Qwen3-Next only — qwen3_5_moe ships the per-layer
-	// pattern explicitly via LayerTypes instead). The real released config has
-	// NO layer_types field at all; the pattern is COMPUTED: layer i (0-indexed)
-	// is full_attention when (i+1)%FullAttentionInterval==0, else
-	// linear_attention — verified against transformers'
-	// configuration_qwen3_next.py __post_init__ directly, not assumed from the
-	// qwen3_5_moe precedent. normalizeQwen3NextLayerTypes turns this into the
-	// same LayerTypes list every other consumer already reads, so it's the
-	// ONLY place that needs to know this family computes rather than states.
+	// FullAttentionInterval (Qwen3-Next only; qwen3_5_moe states the per-layer pattern in LayerTypes): the released config has no
+	// layer_types, so the pattern is computed: layer i (0-indexed) is full_attention when (i+1)%FullAttentionInterval==0, else
+	// linear_attention. normalizeQwen3NextLayerTypes turns this into the LayerTypes list every other consumer reads, so it is the
+	// only place that knows this family computes rather than states.
 	FullAttentionInterval int `json:"full_attention_interval"`
 
-	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / …).
-	// Plain Llama-3.0 and Qwen3 leave it null; Llama-3.1+/3.2 set it. Kept raw
-	// and decoded by parseRopeScaling (G4: linear + llama3 + yarn supported).
-	// omitempty: a nil RawMessage marshals to the literal `null` (4 bytes), which
-	// on a .giw round-trip (json.Marshal(Cfg) → reload) makes len()>0 fire a
-	// "present" check on absent config — omitempty keeps nil truly absent.
+	// RopeScaling is HF's rope_scaling object (llama3 / linear / yarn / ...); plain Llama-3.0 and Qwen3 leave it null. Kept raw
+	// and decoded by parseRopeScaling. omitempty: a nil RawMessage marshals to the literal `null`, which on a .giw round-trip
+	// (json.Marshal(Cfg), then reload) would make a len()>0 "present" check fire on an absent config.
 	RopeScaling json.RawMessage `json:"rope_scaling,omitempty"`
 
 	// QuantizationConfig is HF's quantization_config object — for safetensors
@@ -285,12 +237,10 @@ type Config struct {
 	// RopeScaling (nil must not round-trip through .giw as `null`).
 	RopeParameters json.RawMessage `json:"rope_parameters,omitempty"`
 
-	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split across the (temporal,
-	// height, width) position components. The qwen2_5_vl and qwen3_vl adapters extract it
-	// from the nested rope_parameters or rope_scaling (clearing rope_scaling), so it is
-	// serialized under its own key: with `json:"-"` a .giw dropped it and a Qwen-VL loaded
-	// from one ran plain RoPE on image positions, silently (found 2026-10-09 by S16's real gate
-	// through a directory sidecar; text alone cannot show it). nil = plain scalar RoPE. (P5)
+	// MRopeSection is Qwen2.5-VL's m-RoPE head_dim/2 split across the (temporal, height, width) position components; nil means
+	// plain scalar RoPE. The qwen2_5_vl and qwen3_vl adapters extract it from the nested rope_parameters or rope_scaling
+	// (clearing rope_scaling), so it is serialized under its own key: with `json:"-"` a .giw dropped it and a Qwen-VL loaded from
+	// one ran plain RoPE on image positions, silently (text alone cannot show it).
 	MRopeSection []int `json:"mrope_section,omitempty"`
 
 	// PartialRotaryFactor is the fraction of head_dim RoPE rotates (Phi: 0.4);
@@ -321,41 +271,22 @@ type Config struct {
 	VocabSizePerLayerInput  int   `json:"vocab_size_per_layer_input"`
 	FFNPerLayer             []int `json:"-"`
 
-	// PadTokenID (gemma4, P7): the real multimodal forward substitutes THIS id's
-	// embedding/per-layer-embedding at every image/video/audio position before
-	// computing PLE's token-identity term — not the placeholder token's own id,
-	// and not a skipped/zeroed term (verified against modeling_gemma4.py's real
-	// multimodal forward, not assumed — see docs/multimodal.md's P7 entry).
-	// Lives under text_config in a real checkpoint; loadConfig's text_config
-	// merge picks it up via this tag with no special-casing needed.
+	// PadTokenID (gemma4): the real multimodal forward substitutes this id's embedding and per-layer embedding at every
+	// image/video/audio position before computing PLE's token-identity term: not the placeholder token's own id, and not a
+	// skipped term (docs/multimodal.md). Lives under text_config; loadConfig's text_config merge picks it up via this tag.
 	PadTokenID int `json:"pad_token_id"`
 
-	// UseBidirectionalAttention (gemma4, P7 vision serving): "vision" on
-	// 26B-A4B/31B checkpoints enables a blockwise bidirectional attention mask
-	// over image/audio blocks on SLIDING (local) layers only — global layers
-	// stay strictly causal (create_masks_for_vision_model; docs/multimodal.md's
-	// P7 entry, verified against modeling_gemma4.py, not assumed). Empty/null
-	// on E2B/E4B, where image-block attention is plain causal — exactly what
-	// GenerateGemma4VL's sequential embed-by-vector prefill
-	// (decoder/generate_gemma4_vl.go) already produces. A non-empty value ("vision",
-	// 26B-A4B/31B) is SERVED, not refused: GenerateGemma4VL dispatches it to the genuinely
-	// batched, blockwise-masked forward (prefillLogitsGemma4VLBidirectional /
-	// runLayersGemma4FromEmbedN, decoder/forward_gemma4_batched.go) rather than the
-	// sequential causal path E2B/E4B use. Lives under text_config in a real checkpoint,
-	// picked up automatically by loadConfig's existing text_config merge — same shape as
-	// PadTokenID above.
+	// UseBidirectionalAttention (gemma4): "vision" on 26B-A4B/31B checkpoints enables a blockwise bidirectional attention mask
+	// over image/audio blocks on sliding (local) layers only; global layers stay strictly causal (docs/multimodal.md). Empty/null
+	// on E2B/E4B, where image-block attention is plain causal, which GenerateGemma4VL's sequential prefill already produces. A
+	// non-empty value is served: GenerateGemma4VL dispatches it to the batched, blockwise-masked forward
+	// (prefillLogitsGemma4VLBidirectional / runLayersGemma4FromEmbedN) rather than the sequential causal path. Lives under
+	// text_config, picked up by loadConfig's text_config merge like PadTokenID.
 	//
-	// Typed as gemma4BidirectionalAttention, NOT plain string: Config is one
-	// flat struct shared by every family, and a REAL, unrelated field of the
-	// SAME NAME already exists on Gemma 3's own config (use_bidirectional_attention
-	// as a bool — confirmed on testdata/gemma-3-270m/config.json and every
-	// gemma3-vl-tiny fixture, a pre-existing field, different semantics). A
-	// plain `string` field failed to unmarshal that bool with a hard error,
-	// breaking gemma3 loading entirely — found by running the full decoder
-	// suite, not assumed safe. The tolerant type accepts a real string
-	// (gemma4's own case) and silently resolves anything else (bool, null,
-	// absent) to "" — exactly the "not gemma4's own field, or genuinely unset"
-	// case this check needs to treat as "no bidirectional attention."
+	// The type is gemma4BidirectionalAttention, not string: Config is one flat struct for every family, and Gemma 3's own config
+	// has a same-named field that is a bool (use_bidirectional_attention). A plain string field fails to unmarshal it and breaks
+	// gemma3 loading. The tolerant type accepts a real string and resolves anything else (bool, null, absent) to "", meaning no
+	// bidirectional attention.
 	UseBidirectionalAttention gemma4BidirectionalAttention `json:"use_bidirectional_attention"`
 
 	// GPT-2 uses a different config vocabulary: n_embd /
@@ -376,40 +307,25 @@ type Config struct {
 	// this is the authoritative source when present (see IsGlobalLayer).
 	LayerTypes []string `json:"layer_types"`
 
-	// NoRopeLayerInterval (SmolLM3): HF's generation formula for NoRopeLayers (above) when the
-	// checkpoint's config.json omits the explicit per-layer list: NoPE exactly when
-	// (layer_idx+1) % interval == 0. SmolLM3 reuses the SAME NoRopeLayers field and the SAME
-	// "1 = has rope, 0 = NoPE" convention Llama 4 already established above — verified against
-	// the real modeling_smollm3.py (`self.use_rope = config.no_rope_layers[layer_idx]`), not
-	// assumed to match from the shared field/JSON-key name alone.
+	// NoRopeLayerInterval (SmolLM3): HF's generation formula for NoRopeLayers (above) when config.json omits the explicit list:
+	// NoPE exactly when (layer_idx+1) % interval == 0. It reuses the same NoRopeLayers field and "1 = has rope, 0 = NoPE"
+	// convention as Llama 4.
 	NoRopeLayerInterval int `json:"no_rope_layer_interval"`
 
-	// LFM2 (model_type lfm2): the gated short-convolution block's geometry. Its
-	// per-layer pattern rides on LayerTypes above ("conv" | "full_attention").
+	// LFM2 (model_type lfm2): the gated short-convolution block's geometry. The per-layer pattern rides on LayerTypes ("conv" |
+	// "full_attention").
 	//
-	// ConvLCache is the conv KERNEL WIDTH (3), named for the rolling state it implies
-	// rather than for the filter — upstream calls it conv_L_cache. ConvDim is the
-	// channel count the block operates on, which equals hidden_size on every released
-	// checkpoint but is configured separately, so it is read rather than assumed.
-	// ConvBias is false on the released weights and there is no bias tensor to load;
-	// a true here is refused rather than silently ignored.
+	// ConvLCache is the conv kernel width (upstream conv_L_cache), named for the rolling state it implies. ConvDim is the
+	// channel count the block operates on; it is optional and often absent. Upstream Lfm2ShortConv builds its Conv1d and in_proj
+	// on config.hidden_size and never reads conv_dim, so hidden_size is the authority: absent means hidden_size, and
+	// present-and-different is refused, because the reference would ignore it and we would not, a silent divergence rather than
+	// a shape error. ConvBias is false on the released weights and there is no bias tensor to load; true is refused rather than
+	// silently ignored.
 	//
-	// ConvDim is OPTIONAL and often absent. Upstream Lfm2ShortConv builds its Conv1d and
-	// in_proj on config.HIDDEN_SIZE and never reads conv_dim at all, so hidden_size is the
-	// authority: the released LFM2.5-2.6B config.json carries conv_dim (2048, equal to
-	// hidden_size), while a checkpoint written by Lfm2Config.save_pretrained carries no
-	// conv_dim key whatsoever. Absent ⇒ default to hidden_size (what the reference uses);
-	// present-and-different ⇒ refused, because the reference would ignore it and we would
-	// not, which is a silent divergence rather than a shape error.
-	// NormEps is LFM2's RMSNorm epsilon. IT HAS ITS OWN JSON KEY: LFM2 writes
-	// "norm_eps" where every other RMSNorm family here writes "rms_norm_eps", so
-	// reading cfg.RMSNormEps for this family yields 0, not the checkpoint's 1e-5.
-	// That is not a rounding difference. Measured 2026-08-31 on LFM2.5-2.6B: eps=0
-	// scaled the first operator_norm output by a uniform 1.0185x (the embedding's
-	// variance is ~2.9e-4, so rsqrt(v)/rsqrt(v+1e-5) is a visible factor), and the
-	// error compounded through 61 norms into logits at cosine 0.897 vs HF -- with a
-	// MATCHING argmax, so a greedy-decode smoke test would have called it correct.
-	// The checkpoint also carries "block_norm_eps"; upstream Lfm2Config reads
+	// NormEps is LFM2's RMSNorm epsilon and has its own JSON key: "norm_eps", where every other RMSNorm family here writes
+	// "rms_norm_eps", so reading cfg.RMSNormEps for this family yields 0, not 1e-5. That is not a rounding difference: the error
+	// compounds through every norm into wrong logits while argmax still matches, so a greedy smoke test would call it correct
+	// (docs/code-notes/decoder.md#Config.NormEps). The checkpoint also carries "block_norm_eps"; upstream Lfm2Config reads
 	// norm_eps, so that one is deliberately not used.
 	ConvLCache int     `json:"conv_L_cache"`
 	ConvBias   bool    `json:"conv_bias"`
@@ -502,9 +418,8 @@ func (c *Config) ValidateAssumptions() error {
 	return nil
 }
 
-// validateQwen3 pins the assumptions the qwen3 forward path makes (dense,
-// SwiGLU, GQA, single-base RoPE). The Qwen3-MoE model_type isn't registered, so
-// reaching here already implies a dense checkpoint; this guards the rest.
+// validateQwen3 pins the assumptions the qwen3 forward path makes (dense, SwiGLU, GQA, single-base RoPE); validateQwen3Moe
+// layers the sparse-MoE checks over it.
 func (c *Config) validateQwen3() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
@@ -556,13 +471,9 @@ func (c *Config) validateMixtral() error {
 	return nil
 }
 
-// validateQwen3Moe pins the Qwen3-MoE assumptions (Qwen3-30B-A3B /
-// Qwen3-Coder-30B-A3B-Instruct, both model_type "qwen3_moe"): the qwen3 dense
-// constraints (QK-norm, no q/k/v bias, single-base RoPE) plus a valid sparse
-// MoE on every layer (num_experts / num_experts_per_tok / moe_intermediate_size).
-// Unlike qwen2_moe there is NO shared expert — confirmed against the real
-// released config.json, which carries no shared_expert_intermediate_size field
-// at all, and against a real GGUF's tensor list, which has no ffn_*_shexp.
+// validateQwen3Moe pins the Qwen3-MoE assumptions (model_type "qwen3_moe"): the qwen3 dense constraints (QK-norm, no q/k/v
+// bias, single-base RoPE) plus a valid sparse MoE on every layer (num_experts / num_experts_per_tok / moe_intermediate_size).
+// Unlike qwen2_moe there is no shared expert: the released config has no shared_expert_intermediate_size.
 func (c *Config) validateQwen3Moe() error {
 	if err := c.validateQwen3(); err != nil {
 		return err
@@ -600,11 +511,9 @@ func (c *Config) validateQwen2Moe() error {
 	return nil
 }
 
-// validateGemma4MoE pins the Gemma 4 26B-A4B MoE config, checked only when
-// enable_moe_block is set (the dense E2B/E4B/12B variants leave it false and never
-// reach here). A valid sparse MoE parallel to the dense mlp: num_experts > 0,
-// 1 ≤ top_k_experts ≤ num_experts, moe_intermediate_size > 0. The router.scale /
-// per_expert_scale tensors are checked at load. See docs/task-gemma4-moe.md §A4.
+// validateGemma4MoE pins the Gemma 4 26B-A4B MoE config, checked only when enable_moe_block is set (the dense E2B/E4B/12B
+// variants never reach here): num_experts > 0, 1 <= top_k_experts <= num_experts, moe_intermediate_size > 0. The
+// router.scale / per_expert_scale tensors are checked at load (docs/completed/task-gemma4-moe.md).
 func (c *Config) validateGemma4MoE() error {
 	switch {
 	case c.NumExperts <= 0:
@@ -698,10 +607,9 @@ func (c *Config) validateDeepseek() error {
 	return nil
 }
 
-// validateBailingHybrid pins Bailing Hybrid's (Ling 3.0) assumptions: a valid MLA geometry
-// (same checks as validateDeepseek), a valid KDA geometry (conv kernel, per-head dim), and a
-// routed+shared MoE using THIS family's own field spellings (num_experts/num_shared_experts, not
-// DeepSeek's n_routed_experts/n_shared_experts — verified against the real config.json).
+// validateBailingHybrid pins Bailing Hybrid's (Ling 3.0) assumptions: a valid MLA geometry (the checks of validateDeepseek), a
+// valid KDA geometry (conv kernel, per-head dim), and a routed+shared MoE using this family's own field spellings
+// (num_experts/num_shared_experts, not DeepSeek's n_routed_experts/n_shared_experts).
 func (c *Config) validateBailingHybrid() error {
 	switch {
 	case c.KVLoRARank <= 0:
@@ -732,16 +640,9 @@ func (c *Config) validateBailingHybrid() error {
 	return nil
 }
 
-// validateGranite pins the Granite-4.0-H (granitemoehybrid) assumptions: a layer_types
-// list covering every layer (mamba | attention), a valid Mamba-2 geometry, and a
-// routed+shared MoE (num_local_experts / num_experts_per_tok / intermediate_size /
-// shared_intermediate_size).
-// validateLFM2 checks the LFM2/LFM2.5 shape before anything is loaded.
-//
-// Each case is a real way a checkpoint can differ rather than a shape assertion for its
-// own sake: layer_types drives which mixer every layer runs, conv_L_cache is the kernel
-// width the rolling state is sized from, and conv_bias true would need a bias tensor that
-// no released checkpoint ships — accepting it silently would drop a term.
+// validateLFM2 checks the LFM2/LFM2.5 shape before anything is loaded. Each case is a real way a checkpoint can differ:
+// layer_types drives which mixer every layer runs, conv_L_cache is the kernel width the rolling state is sized from, and
+// conv_bias true would need a bias tensor no released checkpoint ships, so accepting it silently would drop a term.
 func (c *Config) validateLFM2() error {
 	switch {
 	case len(c.LayerTypes) != c.NumLayers:
@@ -761,10 +662,8 @@ func (c *Config) validateLFM2() error {
 	case c.IntermediateDim <= 0:
 		return fmt.Errorf("decoder(lfm2): intermediate_size=%d must be >0", c.IntermediateDim)
 	case c.NormEps <= 0:
-		// Every other RMSNorm family validates its eps >0 right here, and this family
-		// did not until an eps of 0 shipped a silently-wrong forward. LFM2 spells the
-		// key "norm_eps"; a checkpoint that omits it (or a parse that looks for
-		// rms_norm_eps) must fail loudly rather than normalise by rsqrt(variance).
+		// Every RMSNorm family validates eps > 0. LFM2 spells the key "norm_eps", so a checkpoint that omits it (or a parse that looks
+		// for rms_norm_eps) must fail loudly rather than normalise by rsqrt(variance).
 		return fmt.Errorf("decoder(lfm2): norm_eps=%v must be >0 (LFM2 spells it norm_eps, not rms_norm_eps)", c.NormEps)
 	}
 	for i, t := range c.LayerTypes {
@@ -775,6 +674,9 @@ func (c *Config) validateLFM2() error {
 	return nil
 }
 
+// validateGranite pins the Granite-4.0-H (granitemoehybrid) assumptions: a layer_types list covering every layer
+// (mamba | attention), a valid Mamba-2 geometry, and a routed+shared MoE (num_local_experts / num_experts_per_tok /
+// intermediate_size / shared_intermediate_size).
 func (c *Config) validateGranite() error {
 	switch {
 	case len(c.LayerTypes) != c.NumLayers:
@@ -791,12 +693,11 @@ func (c *Config) validateGranite() error {
 	return nil
 }
 
-// validateGraniteDense pins the dense Granite 4.2 assumptions (ibm-granite/granite-4.2-{3b,8b,30b},
-// model_type "granite"): a plain llama skeleton (GQA, SwiGLU, single-base RoPE, no bias, no
-// QK-norm) plus Granite's scalar multipliers. residual_multiplier is the one multiplier the
-// generic forward path cannot apply (granitemoehybrid's own-forward does, via graniteParams —
-// see graniteDenseArchitecture's comment); every released 4.2 size ships it at 1.0, confirmed
-// directly, so anything else is rejected loudly rather than silently dropped.
+// validateGraniteDense pins the dense Granite 4.2 assumptions (model_type "granite"): a plain llama skeleton (GQA, SwiGLU,
+// single-base RoPE, no bias, no QK-norm) plus Granite's scalar multipliers. residual_multiplier is the one multiplier the
+// generic forward path cannot apply (granitemoehybrid's own forward does, via graniteParams; see
+// graniteDenseArchitecture); every released 4.2 size ships 1.0, so anything else is rejected loudly rather than silently
+// dropped.
 func (c *Config) validateGraniteDense() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
@@ -822,25 +723,15 @@ func (c *Config) validateGraniteDense() error {
 	return nil
 }
 
-// normalizeNemotronBlocks expands NVIDIA's hybrid_override_pattern ("M" mamba, "*"
-// attention, "-" mlp) into the layers_block_type spelling the rest of the loader reads,
-// so a RELEASED NemotronH config.json (which carries only the pattern) and a
-// transformers-instantiated one (which carries only layers_block_type) load identically.
-//
-// An unrecognized character is an ERROR, not a mamba block: nemotronhArchitecture's kind
-// switch defaults unknown strings to mamba, and inheriting that here would turn one typo
-// in a 56-character string into a silently different model that still generates text.
-// normalizeQwen3NextLayerTypes synthesizes LayerTypes from FullAttentionInterval
-// for Qwen3-Next, whose real released config.json has no layer_types field at
-// all (unlike qwen3_5_moe, which states the pattern explicitly). Formula
-// verified against transformers' configuration_qwen3_next.py __post_init__:
+// normalizeQwen3NextLayerTypes synthesizes LayerTypes from FullAttentionInterval for Qwen3-Next, whose released config.json
+// has no layer_types field (unlike qwen3_5_moe, which states the pattern). The formula follows transformers'
+// configuration_qwen3_next.py:
 //
 //	"linear_attention" if (i+1)%interval else "full_attention"
 //
-// 0-indexed i, so layer 3 (not layer 4) is the first full-attention layer at
-// the default interval=4. A no-op if LayerTypes is already populated (a
-// transformers-instantiated config carries it directly, same asymmetry
-// normalizeNemotronBlocks handles for that family).
+// 0-indexed i, so layer 3 (not layer 4) is the first full-attention layer at the default interval=4. A no-op if LayerTypes
+// is already populated (a transformers-instantiated config carries it directly, the same asymmetry normalizeNemotronBlocks
+// handles).
 func (c *Config) normalizeQwen3NextLayerTypes() error {
 	if len(c.LayerTypes) > 0 || c.FullAttentionInterval == 0 {
 		return nil
@@ -863,18 +754,14 @@ func (c *Config) normalizeQwen3NextLayerTypes() error {
 	return nil
 }
 
-// normalizeBailingLayerTypes synthesizes LayerTypes from LayerGroupSize for Bailing Hybrid
-// (Ling 3.0), whose real released config.json has NO layer_types field at all. Formula verified
-// against the real modeling_bailing_moe_v3.py's BailingMoeV3DecoderLayer.__init__:
+// normalizeBailingLayerTypes synthesizes LayerTypes from LayerGroupSize for Bailing Hybrid (Ling 3.0), whose released
+// config.json has no layer_types field. The formula follows BailingMoeV3DecoderLayer.__init__:
 //
 //	"attention" if (i+1)%group==0 or i >= (numLayers//group)*group else "linear_attention"
 //
-// 0-indexed i. The second clause is a tail-cleanup for a NumLayers that isn't a clean multiple of
-// LayerGroupSize (irrelevant for Ling-3.0-tiny's exact 24/4, but replicated anyway rather than
-// dropped, since the release-verified formula is the authority, not a simplification of it).
-// Synthesizes "full_attention" (this tree's own spelling) for HF's "attention", so the existing
-// IsGlobalLayer/IsLinearLayer helpers read it with no new predicate. A no-op if LayerTypes is
-// already populated.
+// 0-indexed i. The second clause is a tail-cleanup for a NumLayers that is not a multiple of LayerGroupSize, replicated
+// rather than dropped because the vendor's formula is the authority. "full_attention" (this tree's spelling) stands for HF's
+// "attention", so IsGlobalLayer/IsLinearLayer read it with no new predicate. A no-op if LayerTypes is already populated.
 func (c *Config) normalizeBailingLayerTypes() error {
 	if len(c.LayerTypes) > 0 || c.LayerGroupSize == 0 {
 		return nil
@@ -898,6 +785,13 @@ func (c *Config) normalizeBailingLayerTypes() error {
 	return nil
 }
 
+// normalizeNemotronBlocks expands NVIDIA's hybrid_override_pattern ("M" mamba, "*" attention, "-" mlp) into the
+// layers_block_type spelling the rest of the loader reads, so a released NemotronH config.json (which carries only the
+// pattern) and a transformers-instantiated one (which carries only layers_block_type) load identically.
+//
+// An unrecognized character is an error, not a mamba block: nemotronhArchitecture's kind switch defaults unknown strings to
+// mamba, and inheriting that here would turn one typo in a 56-character string into a silently different model that still
+// generates text.
 func (c *Config) normalizeNemotronBlocks() error {
 	if len(c.LayersBlockType) > 0 || c.HybridOverridePattern == "" {
 		return nil
@@ -912,10 +806,7 @@ func (c *Config) normalizeNemotronBlocks() error {
 		case '-':
 			types = append(types, "mlp")
 		case 'E':
-			// Nemotron 3 Nano's MoE FFN layer (sparse routed + shared expert, replacing
-			// the plain "-" dense-MLP block at this position). Verified against the real
-			// checkpoint's hybrid_override_pattern, not assumed from the "M"/"*"/"-"
-			// alphabet documented for plain Nemotron-H.
+			// Nemotron 3 Nano's MoE FFN layer (sparse routed + shared expert), replacing the plain "-" dense-MLP block at this position.
 			types = append(types, "moe")
 		default:
 			return fmt.Errorf("decoder(nemotron_h): hybrid_override_pattern has unknown block %q (want M, *, - or E)", r)
@@ -984,14 +875,9 @@ func (c *Config) validateMellum() error {
 	return nil
 }
 
-// validateQwen35 pins the qwen3_5_moe assumptions: a 3:1 linear/full layer mix
-// (layer_types), the Gated DeltaNet dims (GVA value-head count a multiple of the
-// key-head count), per-attention-type RoPE in rope_parameters, QK-norm softmax
-// layers, and a routed + shared MoE on every layer.
-// validateQwen35Dense pins Qwen3.8 (model_type qwen3_5). It is validateQwen35 minus the MoE
-// checks plus one addition: intermediate_size is LOAD-BEARING here, where the MoE sibling
-// treats it as vestigial (its experts carry their own width). A zero there would silently
-// build a dense FFN of width 0 rather than fail.
+// validateQwen35Dense pins Qwen3.8 (model_type qwen3_5). It is validateQwen35 minus the MoE checks plus one addition:
+// intermediate_size is load-bearing here, where the MoE sibling treats it as vestigial (its experts carry their own width). A
+// zero there would silently build a dense FFN of width 0 rather than fail.
 func (c *Config) validateQwen35Dense() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
@@ -1019,10 +905,9 @@ func (c *Config) validateQwen35Dense() error {
 	return nil
 }
 
-// validateOlmoHybrid checks Olmo Hybrid's (model_type olmo_hybrid) core dims: the same
-// Gated-DeltaNet geometry checks as qwen3_5, no MoE (it is a dense hybrid, verified
-// against the real released config — no num_experts field at all), and MHA rather than
-// GQA on every released size fetched (num_attention_heads == num_key_value_heads).
+// validateOlmoHybrid checks Olmo Hybrid's (model_type olmo_hybrid) core dims: the same Gated-DeltaNet geometry checks as
+// qwen3_5, and no MoE (it is a dense hybrid with no num_experts field). The released sizes are MHA, but any GQA-divisible
+// head count passes.
 func (c *Config) validateOlmoHybrid() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0:
@@ -1050,6 +935,9 @@ func (c *Config) validateOlmoHybrid() error {
 	return nil
 }
 
+// validateQwen35 pins the qwen3_5_moe assumptions: a 3:1 linear/full layer mix (layer_types), the Gated DeltaNet dims (GVA:
+// value-head count a multiple of the key-head count), per-attention-type RoPE in rope_parameters, QK-norm softmax layers,
+// and a routed + shared MoE on every layer.
 func (c *Config) validateQwen35() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
@@ -1077,13 +965,10 @@ func (c *Config) validateQwen35() error {
 	return nil
 }
 
-// validateQwen3Next pins the same shape assumptions as validateQwen35 — this
-// family shares every other dimension field-for-field with qwen3_5_moe,
-// verified against the real config, not assumed — EXCEPT the RoPE check: the
-// real released config never carries a rope_parameters object at all (flat
-// rope_theta instead), so requiring it unconditionally (validateQwen35's own
-// check) would reject every real Qwen3-Next checkpoint. Accepts either shape,
-// matching qwen3NextArchitecture's own dual-path RoPE resolution.
+// validateQwen3Next pins the same shape assumptions as validateQwen35, which this family shares field for field, EXCEPT the
+// RoPE check: the released config carries a flat rope_theta and no rope_parameters object, so requiring it (as
+// validateQwen35 does) would reject every real Qwen3-Next checkpoint. Accepts either shape, matching qwen3NextArchitecture's
+// dual-path RoPE resolution.
 func (c *Config) validateQwen3Next() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
@@ -1132,18 +1017,10 @@ func (c *Config) validateGPT2() error {
 	return nil
 }
 
-// validateLlama pins the assumptions the llama forward path makes (dense,
-// SwiGLU, GQA, single-base RoPE, no QK-norm). It differs from validateQwen3 by
-// allowing head_dim to be derived (headDim()). RoPE scaling (rope_scaling) is
-// handled by the adapter via parseRopeScaling (G4: linear + llama3). Attention
-// bias (Qwen2/GPT-2 q/k/v/o bias) is rejected — a later add.
-// Plain Llama-2/3 / Mistral checkpoints pass.
-// validateCohere pins Cohere / Command-R (model_type "cohere", CohereForCausalLM):
-// bias-free LayerNorm, the parallel attn+MLP block, gated SiLU MLP, tied 256k
-// embeddings, GPT-J interleaved RoPE, and the logit_scale multiplier. Phase-1
-// scope: use_qk_norm (Command-R+ only) is DEFERRED — Cohere's QK-norm is
-// LayerNorm-style, distinct from the RMSNorm QK-norm hook, so admitting it would
-// run silently wrong. Reject it loudly here rather than mis-normalize.
+// validateCohere pins Cohere / Command-R (model_type "cohere", CohereForCausalLM): bias-free LayerNorm, the parallel
+// attn+MLP block, gated SiLU MLP, tied 256k embeddings, GPT-J interleaved RoPE, and the logit_scale multiplier. use_qk_norm
+// (Command-R+ only) is deferred: Cohere's QK-norm is LayerNorm-style, distinct from the RMSNorm QK-norm hook, so admitting
+// it would run silently wrong; it is rejected loudly here rather than mis-normalized.
 func (c *Config) validateCohere() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
@@ -1211,6 +1088,9 @@ func (c *Config) validateCohere2() error {
 	return nil
 }
 
+// validateLlama pins the assumptions the llama forward path makes (dense, SwiGLU, GQA, single-base RoPE, no QK-norm). It
+// differs from validateQwen3 by allowing head_dim to be derived (headDim()). RoPE scaling is handled by the adapter via
+// parseRopeScaling; attention bias is rejected. Plain Llama-2/3 and Mistral checkpoints pass.
 func (c *Config) validateLlama() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
@@ -1265,13 +1145,11 @@ func (c *Config) gemma4PartialRotary() float64 {
 	return rp["full_attention"].PartialRotaryFactor
 }
 
-// gemma4GlobalGeometry returns the full-attention layers' head_dim and KV-head count. The flat
-// global_head_dim / num_global_key_value_heads win when present (every released checkpoint and every
-// config written before transformers 5.16). A config saved by 5.16 or later carries per_layer_config
-// instead, so a re-saved checkpoint would otherwise read 0 and load every layer at the local geometry
-// (found 2026-10-06 pinning gemma4-emodel-tiny: a shape error on layer 2's q_proj). goinfer has exactly
-// two attention geometries, so the overrides must name only full-attention layers and agree with each
-// other; anything else is refused rather than half-applied.
+// gemma4GlobalGeometry returns the full-attention layers' head_dim and KV-head count. The flat global_head_dim /
+// num_global_key_value_heads win when present (every released checkpoint, and every config written before transformers
+// 5.16). A config saved by 5.16 or later carries per_layer_config instead, so a re-saved checkpoint would otherwise read 0 and
+// load every layer at the local geometry. goinfer has exactly two attention geometries, so the overrides must name only
+// full-attention layers and agree with each other; anything else is refused rather than half-applied.
 func (c *Config) gemma4GlobalGeometry() (headDim, kvHeads int, err error) {
 	headDim, kvHeads = c.GlobalHeadDim, c.NumGlobalKVHeads
 	if len(c.PerLayerConfig) == 0 || string(c.PerLayerConfig) == "null" {
@@ -1354,8 +1232,8 @@ func (c *Config) gemma4RopeBases() (local, global float64) {
 // scalar (eos_token_id: 1) and list (eos_token_id: [1, 106]) JSON shapes HF
 // emits. Empty when the field is absent.
 func (c *Config) EOSIDs() []int {
-	// A JSON null is "no id here" (transformers writes eos_token_id: null when generation_config.json carries it). Unmarshalled into an int it
-	// would read as 0, and id 0 would end generation: "!" in Qwen's vocabulary, so every Qwen3-ASR transcription stopped at its first "!".
+	// A JSON null means "no id here" (transformers writes eos_token_id: null when generation_config.json carries it).
+	// Unmarshalled into an int it would read as 0, and id 0 would end generation.
 	if len(c.EOSTokenID) == 0 || string(bytes.TrimSpace(c.EOSTokenID)) == "null" {
 		return nil
 	}
@@ -1370,13 +1248,10 @@ func (c *Config) EOSIDs() []int {
 	return nil
 }
 
-// resolveEOSIDs returns the ids that end generation: config.json's
-// eos_token_id, plus any extra ids from generation_config.json. The latter is
-// HF's authoritative generation source and often lists more than config.json —
-// Qwen3's config.json carries only <|im_end|> (151645) while its
-// generation_config adds <|endoftext|> (151643), and both must stop a chat
-// turn. Deduped, config.json's ids first. generation_config is best-effort
-// (absent file → ignored).
+// resolveEOSIDs returns the ids that end generation: config.json's eos_token_id, plus any extra ids from
+// generation_config.json, HF's authoritative generation source, which often lists more (Qwen3's config.json carries only
+// <|im_end|> while its generation_config adds <|endoftext|>, and both must stop a chat turn). Deduped, config.json's ids
+// first. generation_config is best-effort: an absent file is ignored.
 func resolveEOSIDs(dir string, cfg *Config) []int {
 	seen := map[int]bool{}
 	var out []int
@@ -1421,14 +1296,9 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
 	}
-	// Composite/VL checkpoints (e.g. Qwen3.6-35B's qwen3_5_moe, shipped as a
-	// *ForConditionalGeneration with a vision tower) nest the TEXT decoder's dims
-	// under "text_config" rather than at the top level. Flatten it: decode
-	// text_config into c first so its dims (hidden_size, num_hidden_layers,
-	// num_experts, rope_parameters, layer_types, …) populate the otherwise-zero
-	// fields, then re-apply the top-level keys so anything authoritative there
-	// (model_type, tied-head signals) wins. json.Unmarshal only writes keys that
-	// are present, so a flat config.json is unaffected (text_config absent).
+	// Composite/VL checkpoints nest the text decoder's dims under "text_config". Flatten it: decode text_config into c first so
+	// its dims populate the otherwise-zero fields, then re-apply the top-level keys so anything authoritative there (model_type,
+	// tied-head signals) wins. json.Unmarshal only writes keys that are present, so a flat config.json is unaffected.
 	var nest struct {
 		TextConfig json.RawMessage `json:"text_config"`
 		// Qwen3-ASR's original layout wraps everything in thinker_config (as Qwen3-Omni's does): the text decoder's dims are one level deeper.
@@ -1450,19 +1320,14 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	return &c, nil
 }
 
-// lagunaGatePerHead resolves Laguna's `gating` field to the gate granularity.
-//
-// The field ships with THREE different JSON types across three releases of one
-// model_type — "per-head" (XS-2.1), true (XS.2), "per-element" (M.1) — so this
-// mirrors the vendor's own resolution exactly (modeling_laguna.py):
+// lagunaGatePerHead resolves Laguna's `gating` field to the gate granularity. The field ships as "per-head", true or
+// "per-element" across releases of one model_type, so this mirrors the vendor's resolution (modeling_laguna.py):
 //
 //	self.gating       = bool(gating)              # false only for literal `false`
-//	self.gate_per_head = (gating == "per-head")   # STRING compare, so true ⇒ per-element
+//	self.gate_per_head = (gating == "per-head")   # STRING compare, so true => per-element
 //
-// meaning `true` and `"per-element"` are the SAME path and only `"per-head"`
-// differs. Returns (enabled, perHead, error). An absent field is HF's default of
-// `True` ⇒ gating on, per-element, which is what getattr(config, "gating", True)
-// does; a checkpoint that means "no gating" must say `false` explicitly.
+// `true` and "per-element" are the same path and only "per-head" differs. Returns (enabled, perHead, error). An absent field
+// is HF's default of true (gating on, per-element); a checkpoint that means "no gating" must say `false` explicitly.
 func (c *Config) lagunaGatePerHead() (enabled, perHead bool, err error) {
 	if len(c.Gating) == 0 || string(c.Gating) == "null" {
 		return true, false, nil // HF default: gating=True ⇒ per-element
@@ -1485,18 +1350,12 @@ func (c *Config) lagunaGatePerHead() (enabled, perHead bool, err error) {
 	return b, false, nil // true ⇒ per-element (the vendor's string compare fails on a bool)
 }
 
-// lagunaFirstKDense turns Laguna's dense-layer declaration into goinfer's
-// FirstKDense prefix count.
+// lagunaFirstKDense turns Laguna's dense-layer declaration into goinfer's FirstKDense prefix count.
 //
-// TWO SPELLINGS, and mlp_layer_types is the reliable one: all three released
-// configs carry mlp_layer_types (["dense","sparse",…]), but XS.2 DROPS
-// mlp_only_layers entirely. Reading only mlp_only_layers yields FirstKDense=0 on
-// XS.2, which would make the loader treat its dense layer 0 as MoE and demand
-// expert tensors that do not exist. So mlp_layer_types wins when present.
-//
-// Either way the dense layers must form a CONTIGUOUS PREFIX — that is what
-// FirstKDense can express, and every released config satisfies it ([0] on the XS
-// line, [0,1,2] on M.1). A non-contiguous layout is rejected rather than silently
+// There are two spellings, and mlp_layer_types is the reliable one: every released config carries it (["dense","sparse",...]),
+// but some drop mlp_only_layers, and reading only that yields FirstKDense=0, which would make the loader treat a dense layer 0
+// as MoE and demand expert tensors that do not exist. So mlp_layer_types wins when present. Either way the dense layers must
+// form a contiguous prefix, which is all FirstKDense can express; a non-contiguous layout is rejected rather than silently
 // truncated.
 func (c *Config) lagunaFirstKDense() (int, error) {
 	if len(c.MlpLayerTypes) > 0 {
@@ -1536,8 +1395,8 @@ func (c *Config) lagunaFirstKDense() (int, error) {
 	return maxL + 1, nil
 }
 
-// validateLaguna pins the assumptions the Laguna forward is built on. Read
-// against the three released configs (XS-2.1, XS.2, M.1) — see docs/task-laguna.md.
+// validateLaguna pins the assumptions the Laguna forward is built on, read against the three released configs
+// (docs/completed/task-laguna.md).
 func (c *Config) validateLaguna() error {
 	switch {
 	case c.HiddenDim <= 0 || c.NumLayers <= 0 || c.NumHeads <= 0 || c.NumKVHeads <= 0:
