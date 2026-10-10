@@ -5,8 +5,8 @@
 // rope mscale precedent), and the clamped-SwiGLU expert + custom router (promoted into
 // moe.go's moeKernels as swiglu_quant_gptoss/route_gptoss). All three tests here compile the
 // REAL shared library (allKernels[+moeKernels]), not an isolated copy, so they gate what
-// actually ships. FeatAttnSink is now declared for Metal and the resident runs all three end to end
-// (TestGptOssResidentParity); this file was written before that wiring (D-D01, audit-metal-2026-09-30.md).
+// actually ships. FeatAttnSink is declared for Metal and the resident runs all three end to end
+// (TestGptOssResidentParity).
 package metal
 
 import (
@@ -492,16 +492,15 @@ func TestGptOssMoEDownBias_metal(t *testing.T) {
 	t.Logf("gemv_w4a8_moe_wacc_bias N=%d K=%d vs CPU: cos=%.7f maxRel=%.4f — PARITY ✓", N, K, cos, maxRel)
 }
 
-// C-09: THE PAGED PATH INDEXED THE BIAS TABLE BY THE WEIGHT INDEX.
+// C-09: THE PAGED PATH MUST INDEX THE BIAS TABLE BY THE EXPERT, NOT BY THE WEIGHT INDEX.
 //
 // encodeMoEExpertsPaged substitutes a zero buffer for rIdx so the reused GEMVs read row 0 of a
-// one-expert slot — correct for the WEIGHTS, which is what the slot holds. But the same index
-// addressed ml.expDBias / ml.expGuBias, which stay the STACKED all-expert tables, so every routed
-// expert got expert 0's bias. Finite, plausible, wrong: the class CUDA fixed in d9829ce, here
-// indexed by a constant zero.
+// one-expert slot — correct for the WEIGHTS, which is what the slot holds. But ml.expDBias / ml.expGuBias stay the
+// STACKED all-expert tables, so addressing them by that index gives every routed expert expert 0's bias:
+// finite, plausible, wrong.
 //
 // This is the paged shape exactly: one expert's weights staged at slot row 0, the bias table
-// stacked, and the two indices therefore DIFFERENT. Expert 0's bias is a decoy, so the pre-fix
+// stacked, and the two indices therefore DIFFERENT. Expert 0's bias is a decoy, so the wrong
 // addressing is not merely inaccurate — it is unmistakable.
 func TestGptOssMoEDownBias_pagedIndexesBiasByExpert(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()

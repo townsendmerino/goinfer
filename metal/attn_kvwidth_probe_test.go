@@ -8,15 +8,13 @@ import (
 	"time"
 )
 
-// TestZZ_attnKVWidthProbe — the P4 deciding measurement (docs/plan-still-slow.md §P4). Re-runs the
-// 2026-08-04 collapse probe with a THIRD arm: half the DRAM bytes per key at the SAME element count
-// (int8 KV vs the f16 baseline — q8's exact byte profile), to separate BANDWIDTH from LATENCY.
+// TestZZ_attnKVWidthProbe — the P4 deciding measurement (docs/plan-still-slow.md §P4): the collapse probe re-run with a THIRD
+// arm, half the DRAM bytes per key at the SAME element count (int8 KV vs the f16 baseline — q8's exact byte profile), to
+// separate BANDWIDTH from LATENCY.
 //
-// The original probe pinned every K/V read to key 0 (zero distinct DRAM) and saw all-28-layer
-// attention 21.5→5.3 ms — 75% of attention is distinct per-key reads. But pinning collapses BOTH
-// bytes AND latency (key 0 stays cached), so it cannot say whether q8 (fewer bytes, same number of
-// serial reads) helps. This probe adds `attn_q8`: hd elements per key at 1 byte each instead of 2,
-// same loop / same ALU / same threadgroups, half the DRAM bytes.
+// The original probe pinned every K/V read to key 0 (zero distinct DRAM). But pinning collapses BOTH bytes AND latency (key 0
+// stays cached), so it cannot say whether q8 (fewer bytes, same number of serial reads) helps. This probe adds `attn_q8`: hd
+// elements per key at 1 byte each instead of 2, same loop / same ALU / same threadgroups, half the DRAM bytes.
 //
 //   - if q8 time drops ~proportionally toward the full baseline → BANDWIDTH-bound → P4 BUILDS (q8 is a
 //     Metal speed lever, CUDA a reachability one).
@@ -25,7 +23,7 @@ import (
 //
 // `attn_pin0` is the harness self-check: it must reproduce the known collapse (~4× off full), or the
 // microbench geometry is wrong and the q8 number is not to be trusted. Opt-in; a timing diagnostic,
-// not a gate.
+// not a gate. The original probe's figures are at docs/code-notes/metal.md#TestZZ_attnKVWidthProbe.
 func TestZZ_attnKVWidthProbe(t *testing.T) {
 	if os.Getenv("GOINFER_ATTN_KVWIDTH_PROBE") == "" {
 		t.Skip("P4 deciding probe (timing diagnostic, not a gate); set GOINFER_ATTN_KVWIDTH_PROBE=1")
@@ -94,7 +92,7 @@ func TestZZ_attnKVWidthProbe(t *testing.T) {
 	tQ8 := run(q8, kc8, vc8)
 	tPin0 := run(pin0, kc16, vc16)
 
-	// Harness self-check: pin0 must collapse (~4× off full), matching the 2026-08-04 21.5→5.3 ms.
+	// Harness self-check: pin0 must collapse (~4× off full), reproducing the original collapse probe.
 	pinRatio := tFull / tPin0
 	q8Frac := tQ8 / tFull // fraction of full-width time the half-byte read still costs
 

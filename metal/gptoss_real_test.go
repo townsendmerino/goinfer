@@ -15,11 +15,8 @@ import (
 // (decoder/gptoss_gguf_test.go's own CPU parity gate: cosine 0.99843 vs the real HF checkpoint,
 // scripts/gptoss_tiny_golden.py). Small enough (645 KB) not to need requireHeavyModel.
 //
-// Dormant until FeatAttnSink is declared: metal ships the sink term (kernels.go's `attention`),
-// the clamped-SwiGLU expert + custom router (moe.go's swiglu_quant_gptoss/route_gptoss) and the
-// bias-in-combine down projection (gemv_w4a8_moe_wacc_bias), and the moe.go isGptOss wiring, but
-// does not yet DECLARE the feature — skip rather than fail, and residentParity t.Fatals on a
-// decline once the declaration lands (catching a silent CPU fallback rather than an honest skip).
+// Skipped unless Metal declares FeatAttnSink (it does): residentParity t.Fatals on a decline, which catches a silent CPU
+// fallback rather than an honest skip.
 func TestGptOssResidentParity(t *testing.T) {
 	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatAttnSink] {
 		t.Skip("metal does not declare FeatAttnSink yet (kernels/wiring dormant) — see docs/queue-correctness.md G7/G10")

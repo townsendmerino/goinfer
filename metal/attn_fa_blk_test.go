@@ -15,16 +15,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// r17Kernels is R17's step-2 prototype (docs/tasks/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md)
-// — attention_fa's first pass restructured in the shape of llama.cpp's flash_attn_ext_vec, as graded on 2026-09-25
-// (fidelity decision on set B, confirmation run 3.50x). It SHIPPED as attention_fa_blk in kernels.go (allKernels);
-// this is that shipped text rebuilt into the standalone library form the R17 harnesses compile (the prototype's own
-// macro name, its own #include), so the tests grade exactly what production dispatches.
+// r17Kernels is the shipped attention_fa_blk (kernels.go, allKernels) rebuilt into the standalone library form the R17
+// harnesses compile (the prototype's own macro name, its own #include), so the tests grade exactly what production
+// dispatches. The prototype is R17's step 2 (docs/tasks/red-october.md;
+// docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first pass restructured in the shape of
+// llama.cpp's flash_attn_ext_vec.
 // TestAttnFABlkIsTheGradedKernel pins the rebuilt text to the SHA-256 of the source that was graded.
 var r17Kernels = r17GradedKernelSource()
 
-// r17GradedKernelSourceSHA256 is the SHA-256 of the prototype source graded 2026-09-25 (r17Kernels as committed in
-// 39545bd6, the commit the pre-registered decision run was built from).
+// r17GradedKernelSourceSHA256 is the SHA-256 of the prototype source that was graded: r17Kernels as built from the
+// commit the pre-registered decision run used: docs/code-notes/metal.md#r17GradedKernelSourceSHA256
 const r17GradedKernelSourceSHA256 = "ae72a2b060007abee88c940ac60308bb5650edaf8c761a273287ce873520ab4e"
 
 // r17GradedKernelSource rebuilds the graded prototype's standalone source from the shipped attention_fa_blk section
@@ -142,8 +142,8 @@ func blkRef(G, nKV, nKeys int, q []float32, kh, vh []uint16) []float64 {
 // count) against float64 attention on synthetic inputs — no checkpoint. Key counts cover a chunk tail of one key
 // (1537), several rounds per simdgroup (3900, 4100), and the depth floor; inputs cover near-uniform and peaked
 // (sink-like) weights. The bound is a correctness bound, orders of magnitude above f32 rounding: a wrong key range,
-// scale, rescale or merge gives relative errors of 1e-3 and up. The kernel's measured error on real inputs is
-// ~2e-7 median (metal-decode-attn-r17-2026-09-25.md).
+// scale, rescale or merge gives relative errors of 1e-3 and up. The kernel's error on real inputs is in
+// docs/measurements/metal-decode-attn-r17-2026-09-25.md.
 func TestAttnFABlkMatchesFloat64(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -189,8 +189,8 @@ func TestAttnFABlkMatchesFloat64(t *testing.T) {
 }
 
 // TestAttnFABlkSelection pins which kernel production dispatches as attention_fa's first pass. On the committed
-// llama-attnfa-tiny fixture (G=2) that is the block kernel exactly when attnFABlkAnyG is on, which it is since B-P02's
-// grade (2026-10-03); the G=2 instantiation sits outside the graded, hash-pinned region, and
+// llama-attnfa-tiny fixture (G=2) that is the block kernel exactly when attnFABlkAnyG is on (it is on by default); the G=2
+// instantiation sits outside the graded, hash-pinned region, and
 // TestAttnFABlk_anyGMatchesG7 is what pins it head for head against g7. With GOINFER_HEAVY_TESTS=1 and the checkpoints
 // in ~/models, attention_fa_blk for Qwen2.5-1.5B (G=6) and -7B (G=7) is checked by running the resident's own r.pAttnFA
 // on synthetic inputs and requiring output BIT-IDENTICAL to the graded kernel source (r17Kernels) compiled on its own.

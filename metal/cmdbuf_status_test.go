@@ -93,13 +93,9 @@ func TestMetalResident_C09_execErrSurfaces(t *testing.T) {
 //
 // This exercises the ceil-sized reduction on device for a %8 vocab (tmVocab=64) — a committed,
 // always-runnable fixture, so it needs no heavy model.
-//
-// N-33: this used to say "C-10's buildResident guard declines any non-%8 vocab to the CPU". It
-// does not, and model.go says so explicitly — vocab is NOT checked there, because the LM head is
-// pinned int8 and dispatches gemv_w8a8_coal (no hazard) or gemv_w8a8_amax, and ForwardArgmax
-// ROUTES a non-%8 vocab around the hazardous kernel (full logits + host argmax) rather than
-// declining the family. The code is right; this comment described a guard that was considered
-// and not built.
+// A non-%8 vocab is not declined at build: the LM head is pinned int8 and dispatches gemv_w8a8_coal (no hazard) or
+// gemv_w8a8_amax, and ForwardArgmax routes a non-%8 vocab around the hazardous kernel (full logits + host argmax)
+// rather than declining the family (model.go says so too).
 func TestMetalResident_C11_argmaxEqualsFullLogits(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

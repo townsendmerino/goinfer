@@ -11,9 +11,8 @@ import (
 )
 
 // TestAttentionPrefillSteelMatchesFloat64 (F-G01, docs/audit-metal-2026-09-30.md) runs attention_prefill_steel, the
-// prefill attention for every head-dim-128 model, against float64 attention over the same f16 Q, K and V. No test that
-// runs by default asserted anything about this kernel before; its evidence was one pooled fidelity run at startPos 0.
-// The cases cover what that run did not: startPos > 0 (every chunk after the first under chunked prefill, and every
+// prefill attention for every head-dim-128 model, against float64 attention over the same f16 Q, K and V.
+// The cases cover startPos > 0 (every chunk after the first under chunked prefill, and every
 // prefix-reuse turn), M on both sides of the 32-row tile, a sliding window, three GQA groups, and peaked scores that
 // move the running max between key blocks. The launch, the fused-QKV row stride and the 8-row padding of Q and the
 // output are PrefillLast's; the K/V cache holds only the keys the call may read, rounded to 8 rows, not a context's
@@ -36,8 +35,8 @@ func TestAttentionPrefillSteelMatchesFloat64(t *testing.T) {
 		t.Fatalf("pipeline attention_prefill_steel: %v", err)
 	}
 	cq := d.NewCommandQueue()
-	// maxAbs is the audit's 0.05 (the fused kernel's bar) tightened to what this kernel measures: 4.1e-4 at worst, about
-	// two f16 rounding steps of a unit-scale output (2026-10-01).
+	// maxAbs is the fused kernel's 0.05 bar tightened to about two f16 rounding steps of a unit-scale output
+	// The measured worst case: docs/code-notes/metal.md#TestAttentionPrefillSteelMatchesFloat64.maxAbs
 	const hd, minCos, maxAbs = 128, 0.9999, 1e-3
 	scale := float32(1 / math.Sqrt(hd))
 	worstCos, worstAbs, minMiss := 1.0, 0.0, math.Inf(1)

@@ -11,8 +11,8 @@ import (
 // TestLayerB_attentionParity — Layer B: the non-trivial kernel. GQA causal attention with
 // ONLINE (numerically-stable) softmax over the resident KV cache: for query head qh
 // (kv head kvh = qh/(nH/nKV)), score_s = scale·(q·k_s), streamed softmax over s∈[0,nKeys),
-// output = Σ softmax_s · v_s. One thread per query head (correct-first; the per-head
-// threadgroup parallelism is the tuning step). Validated vs a plain CPU softmax.
+// output = Σ softmax_s · v_s. The kernel is a self-contained one-thread-per-query-head form, not the
+// production attention kernel. Validated vs a plain CPU softmax.
 func TestLayerB_attentionParity(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

@@ -95,9 +95,9 @@ func TestGemma4EModel_realE2BText(t *testing.T) {
 		}
 	}
 	logf("E2B resident on Metal: template %s, P=%d, %d KV-shared layers, FFN %d / %d", tmpl.Name(), r.pleP, shared, r.layers[0].ffnI, r.layers[len(r.layers)-1].ffnI)
-	// G3 amendment (after run 1, docs/tasks/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
-	// both sides run the same int8-pinned embedding/LM-head/PLE tables. Run 1 loaded the CPU's own e4h sidecar (those
-	// tables at int4), which compared two quantizations rather than two engines on one set of weights.
+	// G3 amendment (docs/tasks/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
+	// both sides run the same int8-pinned embedding/LM-head/PLE tables. The CPU's own e4h sidecar has those
+	// tables at int4, which compares two quantizations rather than two engines on one set of weights.
 	mc, err := decoder.Load(metalGiw, opts)
 	if err != nil {
 		t.Fatalf("load (cpu): %v", err)
@@ -192,7 +192,7 @@ func TestGemma4EModel_realE2BTableControl(t *testing.T) {
 }
 
 // TestGemma4EModel_realE2BLocalize is exploratory, not a gate: G3's largest teacher-forced disagreement (prompt 6,
-// position 18, CPU gap 7.63% in run 2) localized per layer. Both sides replay the prompt to that position, then the
+// position 18) localized per layer. Both sides replay the prompt to that position, then the
 // residual stream after every layer is compared. Smooth decay with depth reads as accumulated quantization noise; a
 // step at one layer (the first KV-shared layer, 15, or a PLE-heavy one) reads as a defect.
 //
@@ -449,7 +449,7 @@ func g3Model(t *testing.T, giw, tokGGUF, label string, logf func(string, ...any)
 }
 
 // TestGemma4EModel_realE2BNonInferiority is G3 as re-registered (docs/tasks/task-multimodal-support-2026-10.md, owner
-// decision 2026-10-06): in one process, g3Run on Qwen2.5-Coder-1.5B (whose Metal path is validated: the reference),
+// decision): in one process, g3Run on Qwen2.5-Coder-1.5B (whose Metal path is validated: the reference),
 // then on E2B. PASS: E2B's teacher-forced agreement >= the reference's - 2.0 points and its free-run passes >= the
 // reference's - 1; 2.0-4.0 points below is ambiguous (parked); worse, or free-run passes 2+ short, fails.
 //

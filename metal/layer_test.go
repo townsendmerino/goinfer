@@ -128,7 +128,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	uNH, uNKV, uNKeys := NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, pos+1)
 	uWindow0 := NewBufferU32(d, 0) // full causal — the attention kernel's window arg (buffer 9)
 	// No learned attention sink in this synthetic layer: hasSink=0 is a true no-op (model.go's
-	// no-sink branch, metal/model.go:631), so a dummy one-element sinks buffer is never read.
+	// no-sink branch), so a dummy one-element sinks buffer is never read.
 	uSinks, uHasSink0 := NewBufferFloats(d, []float32{0}), NewBufferU32(d, 0)
 	uScale, uEps := NewBufferFloats(d, []float32{scale}), NewBufferFloats(d, []float32{eps})
 	uInvf := NewBufferFloats(d, invf)

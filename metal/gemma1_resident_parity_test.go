@@ -11,7 +11,7 @@ import (
 
 // TestGemma1ResidentParityMetal: Gemma 1 / CodeGemma (model_type gemma) is admitted to Metal by feature (embed scale,
 // GeGLU, (1+w) RMSNorm, all of which gemma3 exercises there), but its own combination — pre-norm, MQA, head_dim 256 on
-// the releases (32 here, != hidden/heads) — had not run resident. This runs testdata/gemma1-tiny through the resident
+// the releases (32 here, != hidden/heads) — is not one gemma3 covers. This runs testdata/gemma1-tiny through the resident
 // decode token by token and compares every position's logits with the CPU's. Both sides are int4: Metal has no int8 GEMV
 // (int8int8 runs int4 there), so a CPU-int8 side would compare two quantizations (see
 // prompthidden_resident_parity_test.go for the measured size of that).

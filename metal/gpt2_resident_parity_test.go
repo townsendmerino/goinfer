@@ -9,13 +9,9 @@ import (
 )
 
 // TestGPT2ResidentParityMetal is a whole-model resident-vs-CPU gate for GPT-2 -- the family that
-// dispatches layernorm_quant with hasBias=1 (metal/kernels.go; Cohere is the bias-free caller but
-// does not go resident on Metal at all, declined for unimplemented features [logit-scale,
-// parallel-block] -- confirmed directly before writing this test). layernorm_quant had NO
-// whole-model coverage before this (only the isolated TestLayerNormQuant unit-kernel test). Built
-// specifically because rmsnorm_quant (rounds 7-9) demonstrated that an isolated kernel test can
-// pass exactly while a real bug still shows up only at the whole-model level -- this closes that
-// gap for layernorm_quant before any autoresearch candidate touches it. Mirrors
+// dispatches layernorm_quant with hasBias=1 (metal/kernels.go; Cohere is the bias-free caller). The isolated
+// TestLayerNormQuant unit-kernel test does not cover the whole model: an isolated kernel test can pass exactly
+// while a real bug still shows up only at the whole-model level, as rmsnorm_quant's did. Mirrors
 // qwen35_resident_parity_test.go's structure, generic (no recurrent-state specifics): resident vs
 // CPU over many tokens (drift check), then a replay after Reset (KV cache must actually clear,
 // not merely start empty).

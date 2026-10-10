@@ -87,8 +87,8 @@ func TestExpertPool_lruAndStaging(t *testing.T) {
 	}
 
 	// (5) LRU recency honoured: after (4), touching 3 then inserting a new expert must evict the
-	// genuine LRU, not a recently-touched one. State now (MRU→LRU): 0,4,3,2 → 1 was evicted in (3)?
-	// No: (3) evicted 0; slots hold {1,2,3,4}; (4) evicted the LRU (1) to stage 0 → slots {0,2,3,4}.
+	// genuine LRU, not a recently-touched one. (3) evicted 0, so slots hold {1,2,3,4}; (4) evicted
+	// the LRU (1) to stage 0 → slots {0,2,3,4}.
 	if _, ok := p.where[1]; ok {
 		t.Fatalf("re-fault: expert 1 (LRU at that point) should have been evicted")
 	}

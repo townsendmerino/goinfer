@@ -20,13 +20,11 @@ import (
 	"github.com/townsendmerino/aikit/mmap"
 )
 
-// TestAliasForkProbe is the decisive experiment for the M26 alias collapse
-// (docs/measurements/s6-alias-2026-09-24.md, "The M26 alias arm collapses"): does a fork() of a process
-// that holds a GPU-wired no-copy buffer over a PROT_READ|MAP_PRIVATE file mapping copy the WHOLE mapping
-// eagerly? XNU says it must — IOPL wiring faults each page with write intent (COW copy into a wired shadow,
-// vm_pageout.c vm_object_iopl_request), marks the object true_share, and vm_map_fork then routes the entry
-// to slow_vm_map_fork_copy → vm_object_copy_slowly of the entire entry (vm_map.c, vm_object.c). The serving
-// swap guard forks every 2 s (exec of `sysctl`), so on a 15 GB mapping that copy is the collapse.
+// TestAliasForkProbe measures whether a fork() of a process that holds a GPU-wired no-copy buffer over a
+// PROT_READ|MAP_PRIVATE file mapping copies the WHOLE mapping eagerly: the M26 alias collapse
+// (docs/measurements/s6-alias-2026-09-24.md, "The M26 alias arm collapses"). The serving swap guard forks every
+// 2 s (exec of `sysctl`), so on a 15 GB mapping that copy is the collapse. The XNU mechanism (IOPL wiring, true_share,
+// slow_vm_map_fork_copy) is at docs/code-notes/metal.md#TestAliasForkProbe.
 //
 // No model, no server. A fresh 2 GiB file of random bytes written with F_NOCACHE (uncached, so page-ins are
 // countable), mapped exactly as decoder.Load maps a .giw (aikit mmap.MapReadOnly), ONE no-copy buffer over
@@ -126,8 +124,7 @@ func TestAliasForkProbe(t *testing.T) {
 	t.Logf("P1 fork+exec, buffer created, no GPU touch: %.2f ms (wired Δ since P0: %+d pages)", t1, vmStat(t)["wired"]-wBeforeBuf)
 
 	// P2: the GPU touches one float per page of the window only. NOTHING forks between the touch and the
-	// first timed fork (vm_stat is itself a fork+exec — the first version of this probe called it right
-	// after the touch and that untimed fork paged in the whole file; see the record).
+	// first timed fork: vm_stat is itself a fork+exec, and an untimed fork there pages in the whole file.
 	const nPages = windowBytes / page
 	out := d.NewBufferLen(nPages)
 	q := d.NewCommandQueue()

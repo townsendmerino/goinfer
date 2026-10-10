@@ -13,7 +13,7 @@ import (
 
 // TestAuditAP02_shortPromptTiming is A-P02's speed half (docs/tasks/task-metal-audit-2026-10.md, "A-P02:
 // pre-registration"): a fresh K-token prompt's wall time three ways, as T1.10 timed it, but on the build A-P01 changed
-// (its smaller tiles made the C <= 32 pass 1.8x faster, so T1.10's step / pass figures no longer describe the pass):
+// (T1.10's step / pass figures no longer describe the pass):
 // the sequential single-token loop (what a resident without the batched step runs below the floor), the batched step in
 // 8-row pieces (what E-P01 runs below the floor where the step exists), and the batched pass with its floor off. K =
 // 16, 32, 48 and 64, arms interleaved in a rotating order rep by rep, each writing positions 0..K-1 of slot 0. The

@@ -9,23 +9,16 @@ import (
 	"testing"
 )
 
-// TestAttentionFA_pipelinedEncodeRace is R2's own suggested next step
-// (r2-attn-fa-2026-09-19.md): a minimal, isolated repro chaining several
-// command buffers under the REAL production pipelining pattern (encode
-// buffer N+1 while buffer N is still executing — metal/model.go's execLoop,
-// Commit()/FinishEncoding()/WaitDone(), NOT the synchronous Begin()/End()
-// attn_fa_test.go's gate (1) uses) instead of a full 28-layer real model.
+// TestAttentionFA_pipelinedEncodeRace is a minimal, isolated repro that chains several command buffers under the REAL
+// production pipelining pattern (encode buffer N+1 while buffer N is still executing — metal/model.go's execLoop,
+// Commit()/FinishEncoding()/WaitDone(), NOT the synchronous Begin()/End() attn_fa_test.go's gate (1) uses), instead of a full
+// 28-layer real model (r2-attn-fa-2026-09-19.md).
 //
-// Production's shared uniform buffers (r.uAttnFAG/r.uAttnFANSplit) are
-// SetU32'd — a raw CPU write to shared memory, not a tracked Metal command —
-// while encoding buffer N+1, which happens WHILE buffer N is still
-// executing on the GPU. In production this is harmless because G/nSplit
-// never change between layers or decode steps (the debug print already
-// proved this). This test uses the SAME shared-buffer-SetU32-during-encode
-// pattern but varies the value every iteration specifically so a real race
-// becomes OBSERVABLE — if buffer N's dispatch reads iteration N+1's value
-// instead of its own, that is the mechanism, confirmed in isolation rather
-// than inferred from a 28-layer model's stably-wrong logits.
+// Production's shared uniform buffers (r.uAttnFAG/r.uAttnFANSplit) were SetU32'd — a raw CPU write to shared memory, not a
+// tracked Metal command — while encoding buffer N+1, which happens WHILE buffer N is still executing on the GPU. That is
+// harmless in production because G/nSplit never change between layers or decode steps. This test uses the SAME
+// shared-buffer-SetU32-during-encode pattern but varies the value every iteration, so a real race becomes OBSERVABLE: if buffer
+// N's dispatch reads iteration N+1's value instead of its own, that is the mechanism.
 func TestAttentionFA_pipelinedEncodeRace(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (deliberately provokes an unsynchronized raw CPU " +
@@ -100,10 +93,9 @@ func TestAttentionFA_pipelinedEncodeRace(t *testing.T) {
 	uWin := NewBufferU32(d, 0)
 	uHd := NewBufferU32(d, uint32(hd))
 
-	// The SHARED, reused-every-dispatch uniforms -- the production
-	// r.uAttnFAG/r.uAttnFANSplit analogue. ONE buffer each, SetU32'd fresh
-	// per iteration during that iteration's encode, exactly like
-	// metal/model.go:2362-2363.
+	// The SHARED, reused-every-dispatch uniforms -- the production r.uAttnFAG/r.uAttnFANSplit analogue. ONE buffer each, SetU32'd
+	// fresh per iteration during that iteration's encode, as production did per layer before the fix that moved the write into
+	// setPos.
 	uG := NewBufferU32(d, uint32(G))
 	uNSplit := NewBufferU32(d, uint32(nSplit))
 

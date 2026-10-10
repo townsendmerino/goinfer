@@ -74,9 +74,9 @@ func TestGridVisionMetal_deepstackTiny(t *testing.T) {
 		}
 		gvDeepstackGrade(t, fmt.Sprintf("tiny %v", grid), w)
 	}
-	// The planted defect: every tap a block late. The tiny tower has three blocks with DeepStack at 0 and 1 (re-pinned
-	// 2026-10-07; it had two, so the late tap fell past the end and any refusal counted as red), so the late taps, 1 and 2,
-	// are inside the tower and the defect is measured as a number: it must come back as sets, under the bar.
+	// The planted defect: every tap a block late. The tiny tower has three blocks with DeepStack at 0 and 1, so the late taps,
+	// 1 and 2, are inside the tower and the defect is measured as a number (with fewer blocks the late tap falls past the end
+	// and any refusal counts as red): it must come back as sets, under the bar.
 	acc.planted.tapShift = 1
 	px := gvPixels(rng, [][3]int{{1, 4, 6}}, pd)
 	w, err := gvDeepstackCompare(t, "tiny, taps one block late", enc, acc, px, [][3]int{{1, 4, 6}})

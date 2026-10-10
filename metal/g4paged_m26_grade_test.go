@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
-// TestG4LayerMajor_M26AB is 4b's grade (docs/tasks/task-m26-mac-2026-10.md, pre-registered 2026-10-04): on M26, a fresh
+// TestG4LayerMajor_M26AB is 4b's grade (docs/tasks/task-m26-mac-2026-10.md, pre-registered): on M26, a fresh
 // prose prompt's wall time through the sequential loop (ForwardNoLogits, then Forward for the last row, as the decoder
 // runs it) and through prefillG4Paged, at each M in GOINFER_G4LM_MS (default 128,512), one warm-up then 5 reps per arm,
 // the order alternating rep by rep, in one process. Each rep compares the two arms' last-row logits bit for bit and a

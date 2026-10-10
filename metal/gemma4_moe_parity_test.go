@@ -15,7 +15,7 @@ const moeTinyDir = "../testdata/gemma4-moe-tiny"
 // buildMoeTiny loads the gemma4-moe-tiny fixture int4 (both sides) and builds the Metal resident.
 // env on so the arch is bridge-eligible; BuildResident is the forward-numerics vehicle (admission is
 // covered by TestGemma4Admission_envGated). A build error here means metal DECLINED the parallel
-// dense‖MoE — which, before Step 5d, it did on purpose (the buildMoE guard).
+// dense‖MoE.
 func buildMoeTiny(t *testing.T) (*resident, *decoder.Model, *decoder.Model) {
 	t.Helper()
 	if _, err := os.Stat(moeTinyDir); err != nil {
@@ -76,7 +76,7 @@ func TestGemma4MoE_localize(t *testing.T) {
 		}
 	}
 	t.Logf("gemma4 MoE localize: worst layer %d cosine %.6f over %d layers", worstLayer, worst, nLayers)
-	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.999644 and after-fix 0.999982 readings)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes)
 	if worst < 0.9999 {
 		t.Errorf("layer %d cosine %.6f < 0.9999 — a crater, not quant noise; the dense‖MoE block at that layer diverges", worstLayer, worst)
 	}
@@ -136,7 +136,7 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 	// CPU-vs-CPU (noise-floor pre-flight), so 0.60 catches a crater without encoding the quant floor
 	// as a quality bar. Correctness rests on the argmax gate + Step-5a router idx parity + Step-5c
 	// expert chain + the localization above.
-	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.872764 and after-fix 0.998690 minCosine readings, s10-both.log and s10-after.log)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes; readings in s10-both.log and s10-after.log)
 	if minCos < 0.995 {
 		t.Errorf("minCosine %.6f < 0.995 — a crater, not quant noise; the dense‖MoE forward is broken", minCos)
 	}

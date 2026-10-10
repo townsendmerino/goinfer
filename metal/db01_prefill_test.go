@@ -139,7 +139,7 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 		}
 		// Sanity bars, wide on purpose: the two arms differ by the activation lane (decode's int8 per row against the
 		// pass's f16), about 5-10% relative L2 per layer from the first layer the model's outlier activations reach
-		// (measured 2026-10-03 on the 0.8B), and against a CPU f32 reference both sit equally far (GOINFER_DB01_CPU_REF).
+		// (on the 0.8B), and against a CPU f32 reference both sit equally far (GOINFER_DB01_CPU_REF).
 		// A defect in the pass's layout or a skipped stage reads far above them; the pooled gate grades the rest.
 		if c := cosF(seq, pass); c < 0.99 || argmaxF(seq) != argmaxF(pass) || worstSt > 0.25 || worstKV > 0.25 {
 			t.Errorf("%s: the pass is not near the sequential path", msg)
@@ -225,9 +225,9 @@ func TestDB01_chunkedPrefillMatchesWhole(t *testing.T) {
 // TestDB01_prefillFromZeroResetsState (D-B01): PrefillLast from position 0 is a fresh sequence, so a hybrid's DeltaNet
 // window and state start from zero, as Forward(pos 0) makes them. The pass continues whatever state the resident holds
 // (right for a continuation), so without the reset a new prompt prefilled after another one started from the previous
-// sequence's state: the fidelity gate's pass arm did, after its sequential arm, and read 115 hard flips to the
-// sequential arm's 15 on a K = 8 smoke. Through metalResident.PrefillLast, the entry point the decoder and the gate
-// call: prompt B after prompt A must equal prompt B on a reset resident, logits and state bit for bit.
+// sequence's state (the fidelity gate's pass arm did, after its sequential arm). Through metalResident.PrefillLast, the
+// entry point the decoder and the gate call: prompt B after prompt A must equal prompt B on a reset resident, logits and
+// state bit for bit.
 func TestDB01_prefillFromZeroResetsState(t *testing.T) {
 	path := os.Getenv("GOINFER_DB01_MODEL")
 	if path == "" {

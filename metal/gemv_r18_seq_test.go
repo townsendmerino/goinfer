@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestR18InSequence is R18's grading instrument (docs/tasks/red-october.md R18; graded 2026-09-26, then wired). On a real
+// TestR18InSequence is R18's grading instrument (docs/tasks/red-october.md R18; graded, then wired). On a real
 // checkpoint it times the production decode token against the SHIPPED kernels (resident.gemvRows zeroed, so every GEMV
 // takes its one-row-per-simdgroup kernel), plus any prototype arms, through resident.gemvRows and the four rows-kernel
 // pipelines, and measures:
@@ -270,8 +270,7 @@ func TestR18InSequence(t *testing.T) {
 		}
 		// pair: `steps` matched pairs, each a full token then the same token with category c no-op'd (4 = all four),
 		// adjacent in time, so a GPU clock change between measurements cannot land on one side of the difference —
-		// measured 2026-09-26 on the 1.5B, 20-step blocks per side let one block shift wholesale (a rep's summed work
-		// read 4.2 ms against 8-9 in the others). Returns the median full token and the median per-pair difference.
+		// 20-step blocks per side let one block shift wholesale. Returns the median full token and the median per-pair difference.
 		pair := func(a arm, c int) (full, work float64) {
 			fs, ds := make([]float64, steps), make([]float64, steps)
 			for i := range fs {

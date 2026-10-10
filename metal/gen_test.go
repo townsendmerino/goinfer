@@ -11,17 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// THE decisive test, and the one the debug report wrongly called blocked: does Gemma 3 actually
-// GENERATE on Metal? Merges are encode-only, so a decode-only vocab is enough to read the
-// model's own output back. Also reports dNLL of the forced next token — the tokenizer-free
+// THE decisive test: does Gemma 3 actually GENERATE on Metal? Merges are encode-only, so a decode-only vocab is enough
+// to read the model's own output back. Also reports dNLL of the forced next token — the tokenizer-free
 // "is it actually broken" metric that argmax (trajectory-sensitive: the same known-good path
-// scores 15/24 vs 20/24 on different id sets) cannot give.
+// scores differently on different id sets) cannot give.
 func TestGemma3_GeneratesCoherently(t *testing.T) {
 	requireHeavyModel(t)
-	// Dormant until the Gemma kernels are validated and DECLARED for metal (features.go). Until
-	// then gemma3 declines to CPU by design, so rf is nil — a skip, not a failure, exactly as the
-	// sibling TestGemma3ResidentParity guards. The moment the declaration lands this goes live
-	// (the rf==nil below then t.Fatals, catching a silent CPU fallback). See docs/task-metal-gemma.md.
+	// Skipped unless Metal declares the Gemma features (it does), exactly as the sibling TestGemma3ResidentParity guards:
+	// a decline leaves rf nil, and the rf==nil check below then t.Fatals, catching a silent CPU fallback.
 	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatSandwichNorm] {
 		t.Skip("metal does not declare the Gemma features yet (kernels dormant)")
 	}
@@ -48,10 +45,8 @@ func TestGemma3_GeneratesCoherently(t *testing.T) {
 	}
 	_, nL, _, nKV, hd, _, _ := mcpu.Dims()
 
-	// Build a REAL prompt from vocab lookups. The gate's inherited ids decode to
-	// "<bos>ath হই of carry Bত্ব忽视ardRep" — they are not valid Gemma tokens, so every parity
-	// number measured with them was measured on nonsense. Encode() is unavailable (decode-only
-	// vocab), but TokenID is enough: SPM marks a leading space with ▁.
+	// Build a REAL prompt from vocab lookups, never hardcoded ids (seedPrompt in gemma_parity_test.go says why). Encode() is
+	// unavailable (decode-only vocab), but TokenID is enough: SPM marks a leading space with ▁.
 	prompt := []int{2} // <bos>
 	for _, piece := range []string{"▁The", "▁capital", "▁of", "▁France", "▁is"} {
 		id, ok := tk.TokenID(piece)

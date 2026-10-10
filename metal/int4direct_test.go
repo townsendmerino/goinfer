@@ -10,17 +10,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemma_Int4DirectContext validates the int4-direct fix. The default resident path
-// double-quantizes weights (f32→int8→int4); Gemma's low-magnitude attention contexts amplify the
-// int8-intermediate drift so the pre-o-proj context craters (cos(Metal,int4-ref) = 0.39/0.52/0.57
-// at L31-33, L1 already 0.649 — metal/gemma_sublayer_test.go). int4-direct consumes the decoder's
-// int4 nibbles verbatim (what CUDA does), removing the int8 step. If the mechanism is right, a
-// resident built from a Quant:"int4" model should produce a context that TRACKS the int4 forward
-// (goinfer's own int4 == CUDA-int4) instead of cratering.
-//
-// Success criterion (the CUDA box's): Metal-int4-direct context vs int4-ref ≈ 1.0 (same weights,
-// faithful kernels), and vs f32-truth ≈ 0.92/0.85/0.91 (the int4-quant bar CUDA also sits at) —
-// NOT the double-quant path's 0.39.
+// TestGemma_Int4DirectContext checks the int4-direct path. The default resident path double-quantizes weights
+// (f32→int8→int4); int4-direct consumes the decoder's int4 nibbles verbatim (what CUDA does), removing the int8 step. It
+// ASSERTS only that layer 0's context matches the int4 reference (the nibbles are packed correctly). Later layers are
+// logged, not asserted: Metal's context does not track the int4 forward past L1 (the FINDING below), which is the CUDA
+// box's success criterion (≈ 1.0 against the int4 reference at every layer) not being met. The figures:
+// docs/code-notes/metal.md#TestGemma_Int4DirectContext
 func TestGemma_Int4DirectContext(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {
@@ -124,11 +119,10 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 	if l0 < 0.999 {
 		t.Errorf("int4-direct L0 context %.4f != 1.0 — nibbles are mis-packed (aikit→Metal layout wrong)", l0)
 	}
-	// The FINDING (logged, not a failure): L1 still craters (~0.64), matching the double-quant path's
-	// 0.649. int4-direct removed the int8 intermediate and made ZERO difference to the crater — so
-	// the weight double-quant was NOT the cause. With byte-identical weights Metal still diverges
-	// from the CPU int4 forward at L1, which localizes the bug to Metal's reduced-precision COMPUTE
-	// (f16 KV cache / f16 activations), amplified by Gemma's sensitive attention — not the weights.
+	// The FINDING (logged, not a failure): L1 still craters, matching the double-quant path. int4-direct removed the int8
+	// intermediate and made ZERO difference to the crater — so the weight double-quant was NOT the cause. With byte-identical
+	// weights Metal still diverges from the CPU int4 forward at L1, which localizes the bug to Metal's reduced-precision
+	// COMPUTE (f16 KV cache / f16 activations), amplified by Gemma's sensitive attention — not the weights.
 	t.Logf("FINDING: int4-direct L0=%.4f (nibbles correct) but L1=%.4f — crater UNCHANGED vs double-quant "+
 		"(0.649). Weights refuted; the bug is Metal compute precision. Needs the matched-KV confirmer.", l0, l1)
 }

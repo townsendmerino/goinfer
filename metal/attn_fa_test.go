@@ -8,13 +8,10 @@ import (
 	"testing"
 )
 
-// TestAttentionFA_vsReference is R2's (docs/tasks/red-october.md) gate (1), basic form: the new
-// attention_fa/attention_fa_combine pair against the CPU f64-shaped reference (cpuAttention,
-// shared with TestAttention_ShippedKernelShapes), at the "control qwen2.5-1.5b" shape (hd=128,
-// the only head width this kernel supports — see its own doc comment) and a handful of nKeys/nSplit
-// combinations. Not yet the amended runAttnCase-pattern cases (hot key at split boundaries, a
-// rising-score ramp) — this is the first correctness pass, proving the mechanism before the harder
-// adversarial inputs.
+// TestAttentionFA_vsReference is R2's (docs/tasks/red-october.md) gate (1): the new attention_fa/attention_fa_combine pair
+// against the CPU f64-shaped reference (cpuAttention, shared with TestAttention_ShippedKernelShapes), at the "control
+// qwen2.5-1.5b" shape (hd=128, the only head width this kernel supports — see its own doc comment), a handful of nKeys/nSplit
+// combinations, and the amended adversarial cases (hot key at split boundaries, a rising-score ramp).
 func TestAttentionFA_vsReference(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

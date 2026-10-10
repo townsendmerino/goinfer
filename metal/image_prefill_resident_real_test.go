@@ -216,9 +216,9 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 // Gemma 3 4B with table.png and formula.png in one prompt, the shape serve builds. Against the CPU's two-image prefill at int4
 // per-32 (the reference), the last row and 8 teacher-forced steps: today's CPU W4A8 bridge uploaded, and the resident
 // two-block prefill. Asserted: the resident path's worst cosine >= the bridge's worst - 0.005. Logged, not asserted: argmax
-// differences against the reference and whether each is an R10 near-tie. The first read (2026-10-09) had one that is not
-// (step 1, " are" 0.819 against "'" 0.143 in the reference), the G-IP4 pattern; whether it is accepted for several images is
-// the owner's open decision (docs/tasks/task-multimodal-support-2026-10.md, S11 step 4). GOINFER_HEAVY_TESTS=1.
+// differences against the reference and whether each is an R10 near-tie; whether one that is not (the G-IP4 pattern) is
+// accepted for several images is an open owner decision (docs/tasks/task-multimodal-support-2026-10.md, S11 step 4).
+// GOINFER_HEAVY_TESTS=1. The first read: docs/code-notes/metal.md#TestImagePrefillResident_gemma3TwoImagesReal
 func TestImagePrefillResident_gemma3TwoImagesReal(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")

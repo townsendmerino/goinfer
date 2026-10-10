@@ -168,9 +168,9 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 		stageMsTok, stages, nTimed, 3.19)
 	t.Logf("  compute + coordination  : %.1f ms/tok  (the rest; Step-0 put per-layer submit coordination at ~+43%%)", msTok-stageMsTok)
 	// INFORMATIONAL (not a hard gate): paged-Metal-26B argmax vs CPU. This is NOT held to Step-5's
-	// absolute character — that was a 2-layer tiny-fixture number, the WRONG bar (box finding f93bda1:
-	// "conditioning ≠ geometry"). The geometry-composition GATE is the calibrated int4 envelope on the
-	// scaled-dense fixture (TestGemma4DenseScaled_metalParity: pos-0 0.982, mean within envelope,
+	// absolute character — that was a 2-layer tiny-fixture number, the WRONG bar (conditioning ≠ geometry).
+	// The geometry-composition GATE is the calibrated int4 envelope on the
+	// scaled-dense fixture (TestGemma4DenseScaled_metalParity: a pos-0 floor, mean within envelope,
 	// matching CUDA). At 64-layer depth the int4-vs-f32 floor is far lower than at 12/2 layers, so a
 	// lower argmax rate here is int4 conditioning, not a bug — and it can't be envelope-gated on this
 	// Mac (no f32 26B fits). Reported for the record; geometry correctness rests on the scaled gate.

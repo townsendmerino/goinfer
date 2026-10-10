@@ -18,27 +18,22 @@ import (
 // hand-picked N the way TestGemma4_26B_pagedRuns (GOINFER_METAL_MOE_SLOTS, N=32 default) exercises.
 // metalMoESlotsRequest (metal/backend.go) only calls the real autoMoESlots formula when
 // MoECacheExperts is set and no explicit slot count is given — GOINFER_METAL_MOE_SLOTS bypasses
-// that path entirely, so the existing test does not answer this brief's question.
+// that path entirely, so the existing test does not exercise it.
 //
 // SAFETY (the reason this is its own test, run in isolation, not folded into a sweep): this exact
 // model class (M26, alongside M35/H27) produced a real kernel panic on this machine via the
 // CPU-staged fallback (benchmarks.md "M35/M26 on the Mac"). MoECacheExperts's paged path is a
-// DIFFERENT, GPU-resident mechanism (contiguous per-layer expert-slot pool, on-demand pread) that
-// measured a real, if slow, decode rate in that same record (~2 tok/s) — not the disaster path —
+// DIFFERENT, GPU-resident mechanism (contiguous per-layer expert-slot pool, on-demand pread),
 // but only when it actually engages, which is why r.g4moe.paged and the auto-sized N are asserted
 // BEFORE any decode step runs, not inferred from the outcome. Bounded to 4 timed decode steps
 // (mirrors TestGemma4_26B_pagedRuns's own 5-token bound), RSS logged before/after load and after
 // every step so a runaway is visible immediately rather than discovered after the fact.
 //
-// MEASURED, 2026-09-20 (docs/measurements/metal-moe-autopager-m26-2026-09-20.md): this test's own
-// in-process safeguards (DecodePath/g4moe.paged checks, the RSS kill switch) correctly confirmed
-// the right mechanism engages, but did NOT prevent a real near-incident — an externally-monitored
-// run showed system swap spiral to 12+ GB within ~50s of process start, entirely during
-// decoder.Load/buildResident, well before this test's own RSS check (which reads low because the
-// spike is transient host-side mmap/parse traffic that settles before buildResident returns) had
-// anything to catch. Killed manually from outside the test process. A SEPARATE, EXTERNAL memory
-// monitor is not optional context when running this test — see the record for what one looks
-// like and why the in-process guards alone were not enough here.
+// Run it under a SEPARATE, EXTERNAL memory monitor: this test's in-process guards (the
+// DecodePath/g4moe.paged checks, the RSS kill switch) do not see the swap spike during
+// decoder.Load/buildResident, which is transient host-side mmap/parse traffic that settles before
+// buildResident returns. The incident and what a monitor looks like:
+// docs/measurements/metal-moe-autopager-m26-2026-09-20.md.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestGemma4_26B_autoPagedRuns -v -timeout 10m
 func TestGemma4_26B_autoPagedRuns(t *testing.T) {

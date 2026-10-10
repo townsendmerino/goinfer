@@ -11,8 +11,8 @@ import (
 // TestZZ_attnM3ThreadWidth — plan §M3 first data point: the Metal FA go/no-go. On M=1 decode the
 // FA "don't materialize the score vector" benefit does NOT apply (the score vector is only nKeys
 // floats), so the only lever an FA-style rewrite has over the shipped one-threadgroup-per-head serial
-// pass is MORE IN-FLIGHT PARALLELISM to hide the DRAM-latency wall the half-width probe found (q8
-// moved attention only 12% → latency-bound, not byte-bound). This sweeps the per-head threadgroup
+// pass is MORE IN-FLIGHT PARALLELISM to hide the DRAM-latency wall the half-width probe found
+// (TestZZ_attnKVWidthProbe: latency-bound, not byte-bound). This sweeps the per-head threadgroup
 // WIDTH (128 = shipped → 256 → 512): more threads = fewer keys/thread = more concurrent K/V loads in
 // flight per head. If a wider tile materially beats 128, an occupancy/latency lever exists and M3 is
 // a GO; if it is flat, the latency wall holds regardless of parallelism and the honest M3 outcome is

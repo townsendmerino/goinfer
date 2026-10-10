@@ -16,14 +16,13 @@ import (
 //
 // execLoop encodes token t+1's command buffer while token t runs on the GPU. What that encode bakes in
 // includes the attention plan: whether a layer dispatches attention_fa (canUseAttnFA's depth gate at
-// attnFADepthFloor) and attention_fa's split grid (attnFASplitFor). Those decisions used to read the
-// resident's key count at encode time — the PREVIOUS job's — so (found 2026-09-25, R17:
-// docs/measurements/metal-decode-attn-r17-2026-09-25.md):
-//   - in steady decode the plan lagged one token (the first step at 1536 keys ran the shipped kernel);
-//   - the first decode step of a new request ran the plan of wherever the previous request stopped —
-//     attention_fa below its floor after a long request, with a grid sized for the old depth and a split
-//     uniform sized for the new one; the shipped kernel after a short request;
-//   - after ForwardBatch (which zeroes the depth reading) the next step declined attention_fa at any depth.
+// attnFADepthFloor) and attention_fa's split grid (attnFASplitFor). Both must come from the job's own key count, not
+// from the resident's reading at encode time (the PREVIOUS job's), which would make
+// (docs/measurements/metal-decode-attn-r17-2026-09-25.md):
+//   - the plan lag one token in steady decode;
+//   - the first decode step of a new request run the plan of wherever the previous request stopped, attention_fa below
+//     its floor after a long request with a grid sized for the old depth and a split uniform sized for the new one;
+//   - the next step after ForwardBatch (which zeroes the depth reading) decline attention_fa at any depth.
 //
 // The oracle is the synchronous path (ForwardEmb / PrefillLast), which always sets the position before it
 // encodes. Every sequence below runs through the production adapter (metalResident.Forward -> the executor)

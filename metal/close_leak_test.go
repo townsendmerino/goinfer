@@ -35,12 +35,9 @@ func rssMB(t *testing.T) int {
 // ratchet? A sawtooth means Close frees; a staircase that never descends means it leaks. The
 // shape is the diagnosis, so the trajectory is logged, not just the peak.
 //
-// Why this matters: purego has no ARC and Metal has no context-destroy to reclaim in bulk, so
-// every MTLBuffer must be released explicitly. Close() used to free NOTHING — it closed the
-// executor channel and returned, on the documented assumption of a "single-model lifetime".
-// cmd/serve is multi-model with /admin/models/unload, so that assumption leaked a whole model
-// (weights + per-layer KV + MoE experts) per load. Invisible in a one-model run — which is
-// exactly why it survived.
+// Why this matters: purego has no ARC and Metal has no context-destroy to reclaim in bulk, so every MTLBuffer must be
+// released explicitly. cmd/serve is multi-model with /admin/models/unload, so a Close that frees nothing leaks a whole
+// model (weights + per-layer KV + MoE experts) per load, invisible in a one-model run.
 func TestMetal_CloseFreesMemory(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {
@@ -96,30 +93,27 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 		base, peak, end, end-base, cycles, sizeBase, sizeEnd, resident)
 	// The device-reported gate (C-G01, docs/audit-metal-2026-09-30.md): on UMA a leaked MTLBuffer need not show in RSS
 	// (macOS compresses idle pages out), so RSS alone can pass a real leak. MTLDevice's own total counts every buffer
-	// still allocated on the GPU, whichever Device handle made it. Measured 2026-10-01: back to the same byte count after
-	// every cycle. The slack is far below one resident's buffers.
+	// still allocated on the GPU, whichever Device handle made it. The slack is far below one resident's buffers.
 	if sizeEnd > sizeBase+16<<20 {
 		t.Errorf("LEAK (device-reported): CurrentAllocatedSize %d → %d bytes over %d load/Close cycles (%+d; one resident is %d)",
 			sizeBase, sizeEnd, cycles, int64(sizeEnd)-int64(sizeBase), resident)
 	}
 
-	// Each cycle allocates ~0.4 GB of Metal buffers (int8 weights re-quantized to int4 + KV; 401 MB by
-	// CurrentAllocatedSize, 2026-10-01). If Close frees, growth across 4 cycles stays near zero; if it leaks, it is GBs.
+	// Each cycle allocates ~0.4 GB of Metal buffers (int8 weights re-quantized to int4 + KV). If Close frees, growth
+	// across 4 cycles stays near zero; if it leaks, it is GBs.
 	if grow := end - base; grow > 400 {
 		t.Errorf("LEAK: rss grew %+d MB over %d load/Close cycles — Close() is not freeing "+
 			"(a staircase, not a sawtooth)", grow, cycles)
 	}
 }
 
-// TestMetal_PrefillScratchDoesNotLeak is the C5 gate: PrefillLast used to allocate ~24 per-call
-// scratch/uniform buffers onto the device ledger and free NONE until Close, so every request
-// leaked ~100–150 MB (7B) of unified memory — a ratchet, since cmd/serve calls PrefillLast once
-// per request. The mustBuf OOM panic that eventually followed is recovered only on BuildResident's
-// path, not prefill's, so it killed serve. The existing close_leak tests pin load/Forward/Close
-// cycles, not per-REQUEST prefill growth — which is why this class was invisible.
+// TestMetal_PrefillScratchDoesNotLeak is the C5 gate: PrefillLast must release every per-call scratch/uniform buffer it
+// puts on the device ledger, or each request leaks unified memory (cmd/serve calls PrefillLast once per request), and the
+// mustBuf OOM panic that eventually follows is recovered only on BuildResident's path, not prefill's, so it would kill
+// serve. The load/Forward/Close cycle tests pin none of this; per-REQUEST growth needs its own gate.
 //
 // Signal (same as the sibling gates): run many PrefillLast calls against ONE resident model and
-// watch the trajectory. Per-call release → flat; the old leak → a staircase of ~24 buffers/call.
+// watch the trajectory. Per-call release → flat; a leak → a staircase of ~24 buffers/call.
 func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {
@@ -177,11 +171,10 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	t.Logf("prefill: device ledger %d → %d buffers, CurrentAllocatedSize %d → %d bytes over %d prefills; RSS base %d → peak %d → end %d MB (informational)",
 		ledgerBase, ledgerEnd, sizeBase, sizeEnd, iters, base, peak, end)
 
-	// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every scratch
-	// buffer it allocated, so the device ledger returns to its warm-up length after each call and is
-	// INVARIANT across the loop. The pre-fix leak appended ~24 buffers/call → +720 over 30. This is
-	// deterministic and compression-immune; on a loaded macOS box RSS is not (leaked pages get
-	// compressed straight out, so an RSS-only gate can read a real leak as flat — see
+	// The GATE is the ledger, not RSS: each PrefillLast releaseBuf's every scratch buffer it allocated, so the device
+	// ledger returns to its warm-up length after each call and is INVARIANT across the loop (a leak appends ~24
+	// buffers/call, +720 over 30). This is deterministic and compression-immune; on a loaded macOS box RSS is not
+	// (leaked pages get compressed straight out, so an RSS-only gate can read a real leak as flat — see
 	// TestMetal_CloseWithSecondModelAlive).
 	if ledgerEnd != ledgerBase {
 		t.Errorf("PREFILL LEAK: device ledger grew %d → %d buffers over %d PrefillLast calls (%+d) — per-call "+
@@ -201,9 +194,9 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	}
 }
 
-// TestMetal_CloseWithSecondModelAlive is the condition the Linux box warned about: their first
-// CUDA fix looked correct under a single load/close cycle and was NOT — the bug only showed with
-// a second context/model alive. Two hazards it covers that a sequential test cannot:
+// TestMetal_CloseWithSecondModelAlive covers what a single load/close cycle cannot: a Close that looks correct
+// there can still be wrong, because the bug only shows with a second model alive. Two hazards a sequential test
+// cannot see:
 //
 //  1. USE-AFTER-FREE: Close(A) must not free anything B is still using. Metal has no context to
 //     destroy, so we free per-Device — and BuildResident makes a fresh Device per model, which is
@@ -261,12 +254,10 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 
 	// 2. The free must actually HAPPEN with B resident — asserted on the device LEDGERS, not RSS.
 	//
-	// RSS cannot answer this on a loaded machine: an earlier version loaded a C after closing A and
-	// checked RSS stayed flat, but macOS returns freed MTLBuffer pages to the allocator (not the OS)
-	// and COMPRESSES inactive pages under memory pressure — so the reuse probe read a clean free as a
-	// leak when the box was busy (swinging +2 MB idle to +560 MB loaded on identical, correct code),
-	// and, worse, a real leak (ReleaseAll neutered) DID NOT ratchet RSS because the leaked pages were
-	// compressed straight back out. RSS is unreliable in both directions here.
+	// RSS cannot answer this on a loaded machine: macOS returns freed MTLBuffer pages to the allocator (not the OS)
+	// and COMPRESSES inactive pages under memory pressure, so a clean free can read as a leak when the box is busy, and a
+	// real leak (ReleaseAll neutered) does NOT ratchet RSS because the leaked pages are compressed straight back out.
+	// RSS is unreliable in both directions here.
 	//
 	// The ledger is the ground truth: every MTLBuffer/pipeline/library goes on the owning Device's
 	// allocs/objs list, and Close must empty A's while leaving B's exactly as they were. This is

@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMetalDecodeDecomp is S0 of the Metal decode-at-depth scoping (2026-09-25): where does one decode token's GPU
+// TestMetalDecodeDecomp is S0 of the Metal decode-at-depth scoping: where does one decode token's GPU
 // time go, by kernel category, at KV depths 128 / 2048 / 3900, on a real checkpoint — and how much of it is the
 // per-token dispatch floor rather than work?
 //
@@ -78,7 +78,7 @@ func TestMetalDecodeDecomp(t *testing.T) {
 		maxD = max(maxD, d)
 	}
 	// Pin the resident context to 4096 (metalCtxCapDefault): enough for every depth here (3900+1), and what the fit
-	// guard prices the KV at. NOT metalCtxCapMax — that is 32768 since 26f64807, and pricing a 32k KV (~1.8 GB for
+	// guard prices the KV at. NOT metalCtxCapMax (32768): pricing a 32k KV (~1.8 GB for
 	// the 1.5B) gets an otherwise-fitting load refused under ordinary memory pressure.
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: metalCtxCapDefault})
 	if err != nil {

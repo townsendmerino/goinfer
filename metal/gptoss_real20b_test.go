@@ -20,8 +20,8 @@ import (
 // WHY IT EXISTS. Metal declares FeatAttnSink/FeatOutBias/FeatRopeMscale, but the evidence under
 // that declaration is TestGptOssResidentParity on a hand-built 2-layer tiny fixture — sub-T3 by
 // this repo's own tiering. docs/queue-correctness.md G7 records that "nothing has run a whole
-// gpt-oss forward on the resident path" on EITHER backend, and 2224441 is the precedent for why
-// that matters: a declaration made on kernel-level parity was correctly reverted. This is that
+// gpt-oss forward on the resident path" on EITHER backend, and a declaration made on kernel-level parity was once
+// correctly reverted for want of exactly that. This is that
 // missing run, on the backend where it is reachable.
 //
 // WHY IT IS NOT residentParity(). That helper loads the checkpoint TWICE — once Metal, once CPU —
@@ -39,23 +39,19 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model from ~/models)")
 	}
-	// decoder.AssetPathForTest, NOT modelPath: this used to call modelPath("gpt-oss-20b-MXFP4.gguf"),
-	// which reads GOINFER_MODELS_DIR — a DIFFERENT variable from the one the comment claimed to
-	// honour. It satisfied TestAssetRegistry_noDirectReads (a source-text regex over
-	// os.Getenv(...) of that name, which this call never spelled) while actually bypassing
-	// the registry's real GOINFER_GPTOSS_GGUF override entirely (audit-2026-09-02.md N-41, found
-	// 2026-09-11). AssetPathForTest resolves the SAME registry entry decoder's own
-	// TestGptOssSafetensors_vsGGUF uses, and skips with the reason when absent.
+	// decoder.AssetPathForTest, NOT modelPath: modelPath reads GOINFER_MODELS_DIR, a DIFFERENT variable from the
+	// registry's real GOINFER_GPTOSS_GGUF override (and a call spelled that way satisfies TestAssetRegistry_noDirectReads,
+	// a source-text regex over os.Getenv of that name, while bypassing the registry). AssetPathForTest resolves the SAME
+	// registry entry decoder's own TestGptOssSafetensors_vsGGUF uses, and skips with the reason when absent.
 	path := decoder.AssetPathForTest(t, "GOINFER_GPTOSS_GGUF")
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
 	// FITS-IN-RAM GUARD — this test WILL hang a machine without it, and nothing in the engine
-	// stops it. Measured 2026-08-31 on a 16 GB MacBook: loading this 11.28 GB checkpoint on the
-	// Metal resident path drove swap to 35.98 GB of 36 GB (885 MB free), left the process in
-	// uninterruptible I/O wait at 29% CPU with RSS creeping 1.8 -> 2.0 GB over 12 minutes, and
-	// never completed or declined. The resident path has a KV CONTEXT cap (metal/backend.go:98)
-	// but NO weight-size feasibility check, so it accepts a model larger than RAM and thrashes.
+	// stops it: loading this 11.28 GB checkpoint on the Metal resident path of a 16 GB MacBook drove swap
+	// to its limit and left the process in uninterruptible I/O wait, never completing or declining. The resident path
+	// has a KV CONTEXT cap (metal/backend.go) but NO weight-size feasibility check, so it accepts a model larger than
+	// RAM and thrashes. The measurement: docs/code-notes/metal.md#TestGptOssResidentParityReal20B.memguard
 	// Keyed on bytes computed here, not on the OS's account of what is free: Darwin's UBC reclaims
 	// under pressure, so "available" reports what survived rather than what can be asked for.
 	if st, err := os.Stat(path); err == nil {
