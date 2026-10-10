@@ -8,7 +8,7 @@
 > **CC0 DONE 2026-10-09/10 on `comment-diet-2026-10` (not merged, not pushed):** lint support (symbol citations, pinned records) with tests
 > first; 284 live-doc citations now name declarations; 35 records pinned (`docs/measurements/code-comments-2026-10/pins.tsv`); the door is
 > closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC2 (`gate comments-only`) built and
-> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A and B done (§7). Wave C (test files, CC5) and CC6 not started.
+> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A, B and C (CC5, the test files) done (§7). CC6 not started; the skipped files are listed in §7.
 
 ## 1. Why
 
@@ -276,6 +276,25 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > refreshed once with `scripts/refresh_parity_hashes.sh` (35 goldens ran, 0 failed). `scripts/comment_diet.py pointers` checks
 > every `docs/code-notes` pointer in the Go comments against the notes headings: 141 checked, 0 unresolved.
 
+> **Wave C done 2026-10-09 (CC5, fourteen agent branches merged, not pushed).** All `_test.go` files except 17 that unmerged branches edit
+> (nine in `metal`, three in `gpu`, `cuda/actgroup_kernel_test.go`, three more `metal` ones, `internal/hwcensus/census_test.go`). Comment lines before → after:
+>
+> | package | before → after | cut | history-marked |
+> |---|---|---|---|
+> | `decoder` | 12,846 → 10,768 | −17% | 1,507 → 973 |
+> | `cuda` | 7,086 → 6,028 | −15% | 757 → 525 |
+> | `metal` | 6,150 → 5,694 | −8% | 951 → 790 |
+> | `gpu` | 2,392 → 2,179 | −9% | 269 → 143 |
+> | `internal/serveapp` | 2,360 → 2,127 | −10% | 240 → 169 |
+> | the other 34 packages | 3,455 → 3,260 | −6% | 107 → 98 |
+> | **total** | **34,289 → 30,056** | **−13%** | **4,081 → 2,899** |
+>
+> Test comments are mostly "what it pins" plus fixture provenance, which is contract, so the cut is smaller than for the code (about 40% of the
+> listed files needed no edit). Across the three waves: 68,946 → 57,893 comment lines (−16%) over the 12 packages worked plus every test file.
+> `gate comments-only 22bb88a0` is GREEN over the wave C diff (810 `.go` files, `gofmt`, `go vet` for every package with its tags, the
+> citation lint); `staticcheck` is clean on the root, `cuda`, `gpu` and `metal` (darwin) modules with their tags. `deps_hash` refreshed
+> again (35 goldens, 0 failed). `scripts/comment_diet.py pointers`: 284 checked, 0 unresolved. The notes files now carry a "Test files" section each.
+
 One commit per package, or per file group in `decoder`. Subject:
 `comments(<pkg>): history to docs/code-notes, guardrails kept (<before> → <after> comment lines)`. Body: the CC2
 moved-text report, and any open work found (CC1.3).
@@ -343,6 +362,21 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      describes it, not fixed).
    - **`decoder/fitguard.go:guardGIWFit`** does not price Metal's per-projection host buffer copies (needs a hook; decoder cannot
      import metal): owned by `docs/tasks/task-never-swap-2026-09.md` ("Not priced").
+   - **Test-side open work, no owner found** (text in the notes files' "Test files" sections): `decoder` `TestNemotronReal_gate`, `TestGlm4MoeAir`, `TestGraniteReal`
+     gate a raw completion prompt on an instruction-tuned checkpoint with only a `distinct<3` floor (adopt `TestGemma4_26B_gate`'s chat-template and
+     trigram-ratio pattern at the next revalidation); `parityWantInt4ByArch["amd64-vnni"]` was captured under SDE and the first real VNNI host owes it a look;
+     `parthreshold_sweep_bench_test.go`: the decode-matmul fan-out thresholds were tuned on one 8-core desktop CPU, the M1 Pro never swept;
+     `archFeatureProfile` spark2_5: CUDA `glu_quant` for a gated exact-GELU MLP is unverified (masked by `FeatAttnOutputGate`); `recommendedCheckpoints` tools rows
+     read "not yet measured" for gpt-oss-20b, gemma4, nemotron_h; `cuda` `lintedKernels`: moe.cu's bare MACs were never converted to intrinsics (M-35 option (b));
+     `batched_decode_gap_test.go`: the batched-vs-decode gap at startPos>0 has an unpinned cause; `TestGenerateBlockSpec_production`: the chat-prompt guard is
+     unmeasured on that workload; `metal` Theta has not been re-read since `ForwardN` became one layer-major command buffer; `TestLoRAResidentParityMetal`'s 0.95
+     floor is far looser than a correct bind measures (N-52, parked); `sa_qv_fusion_test.go`: hundreds of `Encoder.Dispatch` calls on the same buffers in one
+     encoder hit a probabilistic crash; `chat` `TestMistral_toolCallIDIsNotYetRendered`: goinfer emits neither the call id nor `call_id` Mistral's template carries;
+     `cmd/gate/parity_test.go:TestParity_missingGateSaysWhichCause`: `whyNoResult` cannot tell a never-compiled tagged test (same gap as `cmd/gate/parity.go:whyNoResult`).
+   - **Stale comments the agents could not fix because they are code** (strings): `cmd/gate` `vramNote` says `docs/QUEUE.md A12` (it is in `docs/queue-engineering.md`) and
+     a `neverConfirmed` value says "STILL TRUE 2026-09-18"; `metal/alias_fixtures_test.go` has a `t.Errorf` that says weights format v14 (the writer emits v15);
+     `gpu/decoderunner.go:attnHeadDimSupported` and `metal/depth_bench_test.go` (`metalCtxCapMax=4096`, now 32768) still say the old limits; `cuda/prefill_deltanet.go` has no
+     build line but uses types the tagged files define, so an untagged `go vet ./cuda/` cannot build.
    - Already owned, listed so they are not re-found: `cuda` `PrefillSeedArgmax` cannot be cancelled (`docs/queue-performance.md`);
      `constrain` N-79 control tokens in constrained JSON strings (`docs/audit-2026-09-10.md`, deferred); `metal` qGate LoRA gap
      (`docs/tasks/task-gpu-paths-2026-09.md`).
@@ -352,6 +386,30 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      tests before wiring, and a check of whether the §3.2 pooled fidelity gate (`docs/completed/task-prefill-gap.md`)
      already clears Metal. `BuildResident` declines bias prefill off Vulkan meanwhile. No doc or queue entry owns it; the
      text is at `docs/code-notes/gpu.md#runModelToModelW`.
+
+4. **Test comments that claim coverage the body does not assert** (CC5 list; each comment now says what the body asserts, no test was changed).
+   The ones where the gap matters, for the owner to decide whether the TEST should grow the assertion:
+   - `decoder/fitguard_test.go:TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing`: loads `gptoss_tiny.gguf` (`MaxPositions` 0), so
+     the auto-pin branch it names never runs; it asserts only "not capped, not pinned".
+   - `decoder/serialize_test.go:TestCanSerialize_refusesUnrepresentable`: the `refused` table is empty, so it asserts only that `canSerialize`
+     refuses no registered family. `decoder/serialize_census_test.go:TestSerializeCensus_noSilentFieldDrop`: `populated()` reads only slice,
+     pointer and `WeightMat` fields, so scalar, bool and map fields of `LayerWeights` are never compared.
+   - `decoder/prefill_coverage_test.go:TestPrefillCoverageAudit`: claimed an audit against seven `PrefillLast` guards; the body models two.
+   - `decoder/a3_divergence_test.go:TestA3FastAttentionDivergence`: the "default OFF, unset identical to acc64" claim holds only below
+     `fastAttnMinPrompt`; the body loads the dense checkpoint only.
+   - `internal/prequant/stream_families_test.go:TestStreamTranscode_perFamilyBodiesCarryTheirLayers`: named five GGUF families; the table drives gpt-oss and
+     the glm-tiny control.
+   - `cuda/prefill_moe_test.go:TestPrefillMoE_bitIdentical`: "both fixtures are exercised"; one subtest declines and skips, the other's weights are
+     absent in a fresh worktree. `cuda/siglip_vision_test.go`: of three planted defects, two are asserted and one is only logged.
+   - `internal/serveapp/admin_test.go:TestServe_admin` claimed an unload-while-busy 409 it never exercises; `bodycaps_routes_test.go` claimed
+     `visionCap = textCap + 32 MiB` and asserts only `visionCap > textCap`.
+   - `metal/snapshot_golden_test.go:TestMetalSnapshotGolden`: which fixture covers which kernel is by construction, not asserted.
+   - `gpu/granite_resident_speedup_test.go`, `kv_f16_fit_test.go`, `backend_w4a8_batch_test.go`: speed and one-submit claims the bodies only log or do not count.
+   - Also corrected, smaller: `TestGemma3Real` (bar 0.9999 vs asserted 0.999), `TestFitGuard`-adjacent Gemma 4 admission and E-model
+     comments, `TestMinistral3ResidentParityCUDA` ("32/32 exact argmax" is logged, not asserted), `TestPrefillGateVsReferenceCUDA` (cells 256/1024 vs
+     `decisionKs` 512/1024), `TestA10ReportingGap`, `TestGemma4MoE_localize`, `TestQKNorm_wholeVector`, `TestIsVersionArg_recognizesAllForms`.
+   - Not changed and worth a look: `internal/decide/model_test.go:TestDecide_realModel` claims every bare verbalizer is one token; the body checks only that
+     `LabelID` resolves.
 
 ## 11. Not in scope
 
