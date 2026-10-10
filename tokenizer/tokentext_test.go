@@ -72,16 +72,15 @@ func TestTokenText_reconstructs(t *testing.T) {
 	t.Logf("TokenText reconstruction verified on %d tokenizer(s)", exercised)
 }
 
-// TestTokenText_addedTokenIsVerbatimInByteLevelMode pins V-13 (docs/review-2026-09-04.md):
-// TokenText's byte-level branch pushed EVERY id through byteDecoder, including added/special
-// tokens, whose surface is stored VERBATIM rather than byte-level-encoded — the exact category
-// error N-24 fixed in decodeByteLevel (tokenizer/bytelevel.go), left unfixed here. A rune in
-// U+0080–U+0143 in an added token's text (é, ü, ñ — any chat template spelling a role in a
-// non-ASCII language) is itself one of the byte-level table's "printable" targets, so pushing it
-// through byteDecoder maps it back to a SINGLE raw byte instead of its real multi-byte UTF-8
-// encoding: invalid UTF-8, and a wrong surface for the constrained-decoding mask table this
-// function feeds. No tokenizer fixture needed — the Tokenizer is built directly, byteDecoder from
-// the same buildByteLevelTables the real byte-level tokenizers use.
+// TestTokenText_addedTokenIsVerbatimInByteLevelMode pins V-13 (docs/completed/review-2026-09-04.md):
+// TokenText's byte-level branch must not push added/special tokens through byteDecoder: their surface is
+// stored VERBATIM rather than byte-level-encoded (the category error N-24 fixed in decodeByteLevel,
+// tokenizer/bytelevel.go). A rune in U+0080–U+0143 in an added token's text (é, ü, ñ — any chat template
+// spelling a role in a non-ASCII language) is itself one of the byte-level table's "printable" targets, so
+// pushing it through byteDecoder maps it back to a SINGLE raw byte instead of its real multi-byte UTF-8
+// encoding: invalid UTF-8, and a wrong surface for the constrained-decoding mask table this function
+// feeds. No tokenizer fixture needed — the Tokenizer is built directly, byteDecoder from the same
+// buildByteLevelTables the real byte-level tokenizers use.
 func TestTokenText_addedTokenIsVerbatimInByteLevelMode(t *testing.T) {
 	_, dec := buildByteLevelTables()
 	const added = "café" // added token surface, stored verbatim — 'é' is U+00E9, in the printable byte-table range

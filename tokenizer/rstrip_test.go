@@ -39,11 +39,10 @@ func llamaStyleJSON(t *testing.T) string {
 }
 
 // TestAddedToken_rstrip: an rstrip added token swallows the whitespace after it, so
-// "<|user|>\nHi" encodes as <|user|> ▁Hi — HF and llama.cpp both produce that for Phi-3, where
-// goinfer used to emit <|user|> ▁ \n Hi (measured 2026-09-25 on the real Phi-3-mini GGUF: three
-// extra tokens per turn marker). Both halves are checked: the whole-string encoder, and
-// EncodeSegments, where the marker and the newline sit in DIFFERENT segments and the strip has
-// to cross the boundary. The rstrip=false case proves the premise in the same test.
+// "<|user|>\nHi" encodes as <|user|> ▁Hi — HF and llama.cpp both produce that for Phi-3 (without the strip
+// goinfer emits <|user|> ▁ \n Hi: three extra tokens per turn marker). Both halves are checked: the
+// whole-string encoder, and EncodeSegments, where the marker and the newline sit in DIFFERENT segments
+// and the strip has to cross the boundary. The rstrip=false case proves the premise in the same test.
 func TestAddedToken_rstrip(t *testing.T) {
 	const text = "<|user|>\nHi<|end|>\n"
 	segs := []Segment{{Text: "<|user|>", Special: true}, {Text: "\nHi"}, {Text: "<|end|>", Special: true}, {Text: "\n"}}
@@ -73,9 +72,9 @@ func TestAddedToken_rstrip(t *testing.T) {
 }
 
 // TestLoadJSON_llamaStyleSpecials: a SentencePiece tokenizer.json spelling its specials "<s>"/"</s>"
-// with no pad (Llama-2, Mistral, Phi-3) must load. The loader used to require Gemma's
-// "<bos>"/"<eos>"/"<pad>", so Phi-3 from safetensors could not tokenize at all (2026-09-25). A
-// vocab with neither BOS spelling still fails, as Gemma's contract requires.
+// with no pad (Llama-2, Mistral, Phi-3) must load; requiring Gemma's "<bos>"/"<eos>"/"<pad>" would leave
+// Phi-3 from safetensors unable to tokenize at all. A vocab with neither BOS spelling still fails, as
+// Gemma's contract requires.
 func TestLoadJSON_llamaStyleSpecials(t *testing.T) {
 	tk := rstripTokenizer(t, "true")
 	if tk.special.BOS != 1 || tk.special.EOS != 267 || tk.special.Pad != -1 {
@@ -88,9 +87,8 @@ func TestLoadJSON_llamaStyleSpecials(t *testing.T) {
 }
 
 // TestLoad_spmReadsSiblingChatTemplate: a SentencePiece checkpoint's chat template lives in
-// tokenizer_config.json beside tokenizer.json. Only the byte-level path read it, so Phi-3 and
-// Mistral safetensors reached chat.Detect with none and ran as raw completions. A directory load
-// reads it; a blob load (no siblings, M-14) does not.
+// tokenizer_config.json beside tokenizer.json, and the directory load must read it, or Phi-3 and Mistral
+// safetensors reach chat.Detect with none and run as raw completions. A blob load (no siblings, M-14) does not.
 func TestLoad_spmReadsSiblingChatTemplate(t *testing.T) {
 	dir := t.TempDir()
 	blob := strings.ReplaceAll(llamaStyleJSON(t), "RS", "true")

@@ -359,3 +359,182 @@ exactly the overlap: a combining mark before uppercase, `◌́ΩÉéé`, matched
 where the pattern matches the whole word. Found by the differential oracle, twice — this
 is the second time the shortcut looked obviously right.
 ```
+
+## TestAddedToken_rstrip
+
+Moved from `tokenizer/rstrip_test.go` (the comment above `TestAddedToken_rstrip`) on 2026-10-09.
+
+```text
+TestAddedToken_rstrip: an rstrip added token swallows the whitespace after it, so
+"<|user|>\nHi" encodes as <|user|> ▁Hi — HF and llama.cpp both produce that for Phi-3, where
+goinfer used to emit <|user|> ▁ \n Hi (measured 2026-09-25 on the real Phi-3-mini GGUF: three
+extra tokens per turn marker). Both halves are checked: the whole-string encoder, and
+EncodeSegments, where the marker and the newline sit in DIFFERENT segments and the strip has
+to cross the boundary. The rstrip=false case proves the premise in the same test.
+```
+
+## TestLoadJSON_llamaStyleSpecials
+
+Moved from `tokenizer/rstrip_test.go` (the comment above `TestLoadJSON_llamaStyleSpecials`) on 2026-10-09.
+
+```text
+TestLoadJSON_llamaStyleSpecials: a SentencePiece tokenizer.json spelling its specials "<s>"/"</s>"
+with no pad (Llama-2, Mistral, Phi-3) must load. The loader used to require Gemma's
+"<bos>"/"<eos>"/"<pad>", so Phi-3 from safetensors could not tokenize at all (2026-09-25). A
+vocab with neither BOS spelling still fails, as Gemma's contract requires.
+```
+
+## TestLoad_spmReadsSiblingChatTemplate
+
+Moved from `tokenizer/rstrip_test.go` (the comment above `TestLoad_spmReadsSiblingChatTemplate`) on 2026-10-09.
+
+```text
+TestLoad_spmReadsSiblingChatTemplate: a SentencePiece checkpoint's chat template lives in
+tokenizer_config.json beside tokenizer.json. Only the byte-level path read it, so Phi-3 and
+Mistral safetensors reached chat.Detect with none and ran as raw completions. A directory load
+reads it; a blob load (no siblings, M-14) does not.
+```
+
+## TestBuildScoreRank_equalScoresShareRank
+
+Moved from `tokenizer/sentencepiece_test.go` (the comment above `TestBuildScoreRank_equalScoresShareRank`) on 2026-10-09.
+
+```text
+TestBuildScoreRank_equalScoresShareRank is the R-29 gate: SentencePiece tokens with the SAME score
+must get the SAME merge rank, so a score tie is broken by leftmost position (the heap key's
+leftIndex) as llama.cpp does — not by token id. Before the fix each id got a distinct rank via a
+lower-id tiebreak, so a same-score merge on a lower id fired ahead of a leftward one.
+```
+
+## refSplitO200k.whitespace
+
+Moved from `tokenizer/split_o200k_test.go` (the comment inside `refSplitO200k`) on 2026-10-09.
+
+```text
+\s+(?!\S), WITH BACKTRACKING — which is the whole subtlety and the reason this
+alternative cannot be a plain prefix match. The engine takes the longest
+whitespace run L >= 1 whose following position is end-of-input or another space.
+Every interior position of a run IS a space, so when the run is followed by a
+non-space the answer is run-1, not "no match": "  trailing" matches ONE space and
+leaves the second to attach to the word. A first cut of this oracle only matched
+a run at end-of-input, disagreed with the walker, and was itself the thing that
+was wrong — the walker had it right, and so does splitGPT2, which shares the rule.
+
+N-73 (docs/audit-2026-09-10.md), investigated 2026-09-16, NOT fixed: ws-1 below
+assumes the run's last rune is one byte (an ASCII space) — a multi-byte trailing
+whitespace rune would be sliced mid-character. Dormant today (the random alphabet
+below is ASCII-whitespace-only), and NOT a safe drive-by fix: a first attempt at
+fixing the byte/rune slicing directly exposed a SECOND, deeper mismatch this
+oracle already has for multi-byte whitespace — Go's RE2 `\s` (used unqualified in
+o200kAlts[3]/[4]'s patterns, e.g. `^ ?[^\s\p{L}\p{N}]+...`) is ASCII-only
+([\t\n\f\r ]), while unicode.IsSpace here is Unicode-aware, so a rune like U+2003
+EM SPACE is "not whitespace" to the regex alternatives but "whitespace" to this
+branch — the two halves of the SAME oracle disagree with each other before either
+is compared to the walker. Fixing the byte-slice alone reproduces a wrong answer
+with more confidence, not a right one; a real fix needs deciding (and verifying
+against the real tiktoken/HF reference) what "whitespace" means here for every
+alternative consistently, not just this one branch.
+```
+
+## TestClassifySplit_namesTheRealAlternations
+
+Moved from `tokenizer/splitshape_test.go` (the comment above `TestClassifySplit_namesTheRealAlternations`) on 2026-10-09.
+
+```text
+C-10: splitGPT2 implements ONE alternation and was applied to every family. Nothing compared a
+tokenizer's actual Split regex against it, so a family whose pre-tokenizer differs was walked by
+the wrong one — no error, no log, and count_tokens and usage drift with it.
+
+Naming the shape is what makes a mismatch reportable. This pins the classifier against the real
+regexes rather than against a paraphrase of them.
+```
+
+## TestClassifySplit_realGPT2PatternIsNotUnknown
+
+Moved from `tokenizer/splitshape_test.go` (the comment above `TestClassifySplit_realGPT2PatternIsNotUnknown`) on 2026-10-09.
+
+```text
+TestClassifySplit_realGPT2PatternIsNotUnknown pins V-15 (docs/review-2026-09-04.md): the real
+GPT-2 regex (split_gpt2orig.go's own docstring, transcribed from OpenAI's source) DOES carry a
+contraction clause — just case-sensitive and unwrapped, unlike cl100k's `(?i:...)` one.
+classifySplit's shapeGPT2Original case used to require the clause's ABSENCE
+(`!strings.Contains(c, "'s|'t|'re")`), so a Split spelling the actual pattern classified as
+shapeUnknown and silently fell back to the cl100k walker instead — never reaching the walker
+(splitGPT2Original) written specifically for it.
+```
+
+## TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original
+
+Moved from `tokenizer/splitshape_test.go` (the comment above `TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original`) on 2026-10-09.
+
+```text
+TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original pins V-15's second half: a real HF `gpt2`
+export's pre_tokenizer is a bare (non-Sequence) `{"type":"ByteLevel","use_regex":true}` with no
+separate Split node at all (testdata/gpt2/onnx/tokenizer.json — verified by reading the file,
+not assumed). splitRegex returns "" for it, the same empty result Mellum2's genuinely
+regex-agnostic Digits+ByteLevel Sequence produces — but here "empty" means "use my built-in
+GPT-2 regex" (HF's own semantics for use_regex:true), not "no opinion". The old code treated
+both the same way and silently kept the cl100k walker with no PreTokenizerDecline at all.
+```
+
+## TestTokenText_addedTokenIsVerbatimInByteLevelMode
+
+Moved from `tokenizer/tokentext_test.go` (the comment above `TestTokenText_addedTokenIsVerbatimInByteLevelMode`) on 2026-10-09.
+
+```text
+TestTokenText_addedTokenIsVerbatimInByteLevelMode pins V-13 (docs/review-2026-09-04.md):
+TokenText's byte-level branch pushed EVERY id through byteDecoder, including added/special
+tokens, whose surface is stored VERBATIM rather than byte-level-encoded — the exact category
+error N-24 fixed in decodeByteLevel (tokenizer/bytelevel.go), left unfixed here. A rune in
+U+0080–U+0143 in an added token's text (é, ü, ñ — any chat template spelling a role in a
+non-ASCII language) is itself one of the byte-level table's "printable" targets, so pushing it
+through byteDecoder maps it back to a SINGLE raw byte instead of its real multi-byte UTF-8
+encoding: invalid UTF-8, and a wrong surface for the constrained-decoding mask table this
+function feeds. No tokenizer fixture needed — the Tokenizer is built directly, byteDecoder from
+the same buildByteLevelTables the real byte-level tokenizers use.
+```
+
+## TestDecodeContinuation_keepsTheLeadingSpace
+
+Moved from `tokenizer/decode_sibling_test.go` (the comment above `TestDecodeContinuation_keepsTheLeadingSpace`) on 2026-10-09.
+
+```text
+M-25: the serving loop decoded GENERATED ids with Decode, which applies SentencePiece's
+dummy-prefix strip — a SEQUENCE-level rule. The generated ids are a CONTINUATION of the
+prompt, never a sequence, so a response opening with `▁Paris` reached the client as
+"Paris" where OpenAI and llama.cpp both return " Paris".
+```
+
+## TestDecodeContinuation_isIncrementallyAssociative
+
+Moved from `tokenizer/decode_sibling_test.go` (the comment above `TestDecodeContinuation_isIncrementallyAssociative`) on 2026-10-09.
+
+```text
+TestDecodeContinuation_isIncrementallyAssociative is audit R-08's gate: streamTokens re-decoded
+the WHOLE generated id sequence on every token (O(n^2) in output length) instead of decoding
+just the new suffix and appending, out of caution that byte-fallback fusion — a run of raw
+bytes accumulated across CONSECUTIVE byte-fallback tokens, only written out as one unit — might
+make an arbitrary split point unsafe.
+```
+
+## TestDecodeByteLevel_addedTokensAreVerbatim
+
+Moved from `tokenizer/decode_sibling_test.go` (the comment above `TestDecodeByteLevel_addedTokensAreVerbatim`) on 2026-10-09.
+
+```text
+N-24: byte-level decode pushed ADDED-token content through the byte table. An added token's
+surface is stored VERBATIM (it is not byte-level-encoded), so a rune in U+0080–U+0143 — é, ü,
+ñ, and every chat template that spells a role in a non-ASCII language — mapped back to ONE raw
+byte. The result is invalid UTF-8 and, worse, a wrong surface for the constrained-decoding
+mask, which builds its token table from these strings.
+```
+
+## fuzz_test.header
+
+Moved from `tokenizer/fuzz_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Track 2.5 (testing campaign): tokenizer.json is untrusted input (it ships in a
+model directory). parseTokenizerJSON is the parse surface; it must turn a
+malformed/hostile file into a typed error, never a panic or OOM.
+```
