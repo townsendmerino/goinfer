@@ -114,13 +114,11 @@ func TestPlainString_exact(t *testing.T) {
 	}
 }
 
-// TestToolGrammar_plainStringExact is P-17 (audit-2026-09-10): toolGrammar had no InPlainString
-// at all, so inPlainString's type assertion never matched it and every forced tool call paid
-// the full walk on its own JSON body — the exact regression TestPlainString_exact above already
-// gates for schemaGrammar/jsonGrammar directly. Same harness, applied to *toolGrammar's own
-// wrapped shape (a literal prefix, then {"name":const,"arguments":<paramSchema>}, then a literal
-// suffix) so a wrong phase boundary (e.g. treating the literal prefix/suffix as plain-string-able)
-// would be caught here, not just proven absent by construction.
+// TestToolGrammar_plainStringExact is P-17 (audit-2026-09-10): TestPlainString_exact's harness applied to
+// *toolGrammar's own wrapped shape (a literal prefix, then {"name":const,"arguments":<paramSchema>}, then a
+// literal suffix). A toolGrammar without InPlainString (inPlainString's type assertion never matching, so
+// every forced tool call pays the full walk on its own JSON body) or with a wrong phase boundary (treating
+// the literal prefix/suffix as plain-string-able) is caught here, not just proven absent by construction.
 func TestToolGrammar_plainStringExact(t *testing.T) {
 	vocab := buildAdversarialVocab()
 	eos := []int{0}

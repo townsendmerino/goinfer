@@ -333,3 +333,193 @@ cannot be compiled, is an error: the caller then decodes unconstrained, as today
 than silently dropping a tool the model was offered (ground rule 1 — the model keeps its
 choice).
 ```
+
+## TestConfidenceCost_C1
+
+Moved from `constrain/confidence_cost_test.go` (the comment above `TestConfidenceCost_C1`) on 2026-10-09.
+
+```text
+TestConfidenceCost_C1 prices CaptureConfidence against plain masking, per decode step, at three grammar states on
+a real vocabulary (V = 151,936, Qwen): an object key, an enum value, and inside a free string. C0 measured an
+every-position readout at 1.44–4.20% of a decode token (docs/measurements/confidence-c0-2026-09-27.md); C1 reads
+only outside free strings, where it keeps the legal tokens' entries too. Min of N, interleaved on/off.
+```
+
+## TestMaskCost_P20
+
+Moved from `constrain/maskcost_test.go` (the comment above `TestMaskCost_P20`) on 2026-10-09.
+
+```text
+TestMaskCost_P20 measures what audit item P-20 only ESTIMATED.
+
+P-20 says `Masker.Process` is O(V) grammar walks per decode step and reasons: "Estimate
+40–120 ns/token → 6–30 ms per step against ~2–5 ms per resident-GPU decode step —
+constrained decoding plausibly 3–10× slower per token on GPU", closing with the instruction
+this test carries out: "Measure one Process call at fsStr and at fsObjKeyOrClose for
+V=151,936 against the unconstrained step."
+
+It matters more than an optimisation note, which is why it is measured before anything is
+designed on top of it: constrained generation is the README's headline promise ("a Go struct
+the model cannot violate"), and whether it costs 1.2× or 10× decides whether that promise is
+usable on the fast backends or has to be documented as slow.
+
+Method: MaskAt is Process's hot loop without the commit, so driving a grammar to a chosen
+state by committing BYTES and then timing MaskAt isolates exactly the per-step masking cost
+at that state — no tokenizer round-trip, no decode, nothing else in the sample. Real vocab
+(V=151,936 Qwen tokens), min-of-N to trim scheduler noise.
+```
+
+## TestMaskCost_P20.comparison
+
+Moved from `constrain/maskcost_test.go` (the comment above `TestMaskCost_P20.comparison`) on 2026-10-09.
+
+```text
+The comparison P-20 asks for. Decode-step times are this box's measured resident-GPU
+numbers for the 1.5B AFTER the G35/G36 kernel work (docs/QUEUE.md): the whole token is
+~6.2 ms at pos 64 and ~7.4 ms at pos 512, so the mask is compared against the cheaper
+(harder) end. Quoting the pre-G36 figure would flatter the mask by ~3x.
+```
+
+## fuzz_test.header
+
+Moved from `constrain/fuzz_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+Track 2.1 (testing campaign): constrain is the only ATTACKER-SUPPLIED grammar
+surface — cmd/serve compiles a caller's response_format JSON Schema on every
+request via JSONSchema. The contract is the repo promise: a typed error or a
+clean compile, never a panic/hang, and — the structural property — if a schema
+compiles, the masker it produces must always be able to drive SOME complete,
+conforming document (it can never paint itself into a corner where no token,
+not even EOS, is legal). These fuzz targets enforce both.
+```
+
+## FuzzJSONSchema.usenumber
+
+Moved from `constrain/fuzz_test.go` (the comment inside `FuzzJSONSchema`) on 2026-10-09.
+
+```text
+Re-parse for the independent conformance oracle (schema compiled, so it
+is within the supported subset `conforms` understands). UseNumber, matching
+JSONSchema's own parse and the generated-output decode in driveAndValidate
+below: a plain json.Unmarshal here decoded an enum/const like 0.0 as
+float64(0), which re-marshals as "0" — while the SAME literal surviving
+through the grammar (encodeLiteral keeps the source json.Number text
+verbatim, M-29) and back through driveAndValidate's UseNumber decode stays
+"0.0". eqJSON then compared "0" against "0.0" and flagged a correct,
+conforming document as non-conformant — found by fuzzing past what CI's
+time-boxed run reached (schema {"enum":[0.0]}, corpus
+testdata/fuzz/FuzzJSONSchema/enum_float_literal_precision).
+```
+
+## TestForcedBytesRun
+
+Moved from `constrain/forced_run_test.go` (the comment above `TestForcedBytesRun`) on 2026-10-09.
+
+```text
+TestForcedBytesRun gates the BYTE-level forced-run primitive (the BPE-appropriate
+one). After `{"` the only property "k" forces the key char + its closing quote at
+the byte level — the same bytes ForcedRun finds, but byte-level forcing keeps
+firing where token-level forcing wouldn't on a real vocab (inc-2 finding).
+```
+
+## TestMasker_stopWhenComplete_scalarsMayStillExtend
+
+Moved from `constrain/constrain_test.go` (the comment above `TestMasker_stopWhenComplete_scalarsMayStillExtend`) on 2026-10-09.
+
+```text
+M-27: StopWhenComplete truncated a top-level scalar at its first completion point.
+
+CanEnd is a MAY-end predicate — `1` is a complete integer document and `12` is a longer
+one — but StopWhenComplete read it as MUST-end and masked every non-EOS token there. So
+`response_format: {"type":"integer"}` could only ever return a SINGLE DIGIT, and
+`{"enum":[1,10,100]}` could only ever produce `1`. No test caught it because none drove a
+TOP-LEVEL scalar: every existing case is an object or array, whose completion point really
+does admit nothing but whitespace, so the bug is invisible there.
+
+This drives the real Masker and asks what it permits, rather than asserting a generated
+string — the defect is in the mask, and a sampler that happened to pick EOS would hide it.
+```
+
+## TestToolGrammar_plainStringExact
+
+Moved from `constrain/plainstring_test.go` (the comment above `TestToolGrammar_plainStringExact`) on 2026-10-09.
+
+```text
+TestToolGrammar_plainStringExact is P-17 (audit-2026-09-10): toolGrammar had no InPlainString
+at all, so inPlainString's type assertion never matched it and every forced tool call paid
+the full walk on its own JSON body — the exact regression TestPlainString_exact above already
+gates for schemaGrammar/jsonGrammar directly. Same harness, applied to *toolGrammar's own
+wrapped shape (a literal prefix, then {"name":const,"arguments":<paramSchema>}, then a literal
+suffix) so a wrong phase boundary (e.g. treating the literal prefix/suffix as plain-string-able)
+would be caught here, not just proven absent by construction.
+```
+
+## TestGrammarFromStruct_byteSliceAndFixedArray
+
+Moved from `constrain/schema_test.go` (the comment above `TestGrammarFromStruct_byteSliceAndFixedArray`) on 2026-10-09.
+
+```text
+TestGrammarFromStruct_byteSliceAndFixedArray is N-74 (docs/audit-2026-09-10.md):
+  - []byte used to map to {"type":"array","items":{"type":"integer"}}, but encoding/json's
+    Marshal/Unmarshal treat []byte as a SPECIAL CASE — a base64-encoded STRING, never an
+    element-wise array of integers — so every grammar-legal output was guaranteed to fail
+    json.Unmarshal. It must map to {"type":"string"} instead.
+  - A fixed-size Go array ([N]T) got no minItems/maxItems, so the grammar could legally
+    produce the wrong element count; json.Unmarshal into [N]T does not error on that (it
+    silently truncates or zero-pads), so the schema's "shape is guaranteed" promise (M-28,
+    09-02) held even less than the slice case — no error ANYWHERE, just silently wrong data.
+
+Not covered here: base64 CONTENT validity. A random grammar-legal string is not guaranteed to
+be valid base64 (this package has no "pattern" JSON Schema keyword to constrain that), so this
+checks the SCHEMA shape directly rather than fuzzing a full struct round-trip — the fix's own
+scope is the "array vs string" and "no length limit" shape guarantees M-28 is about, matching
+what json.Unmarshal actually rejects on SHAPE (before ever getting to whether the bytes decode).
+```
+
+## TestSchema_rejectsUnsatisfiable.maxItems
+
+Moved from `constrain/schema_test.go` (the comment inside `TestSchema_rejectsUnsatisfiable`) on 2026-10-09.
+
+```text
+N-76 (docs/audit-2026-09-10.md): a maxItems too large to fit an int used to convert
+via implementation-defined float64->int behavior, which can come back NEGATIVE — and
+maxItems<0 means "unbounded" (the opposite of what a huge bound should mean).
+```
+
+## TestSchemaFromStruct_unexportedEmbedIsStillPromoted
+
+Moved from `constrain/schema_test.go` (the comment above `TestSchemaFromStruct_unexportedEmbedIsStillPromoted`) on 2026-10-09.
+
+```text
+TestSchemaFromStruct_unexportedEmbedIsStillPromoted pins V-14 (docs/review-2026-09-04.md):
+an anonymous field's reflect name IS its type name, so an embedded struct of UNEXPORTED type
+reads f.IsExported()==false — structSchema used to skip it on that check alone, before ever
+reaching the promotion logic M-28 added. encoding/json does not skip it: its own typeFields
+has the identical special case ("do not ignore embedded fields of unexported struct types
+since they may have exported fields"), so json.Unmarshal still promotes `id`. Same silent
+zero-field outcome M-28 fixed for the exported-embed case, left open for this one.
+```
+
+## TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo
+
+Moved from `constrain/schema_test.go` (the comment above `TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo`) on 2026-10-09.
+
+```text
+TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo is N-75 (docs/audit-2026-09-10.md):
+the SAME shape as TestSchemaFromStruct_unexportedEmbedIsStillPromoted above — accepted there
+because SchemaFromStruct calls structSchema directly for the TOP-level struct — used to be
+LOUDLY refused the moment it appeared as a NESTED field type instead, because typeSchema's own
+hasExportedFields gate (checked before structSchema ever runs for a nested struct) did not
+share structSchema's own V-14 fix for an unexported-type anonymous embed.
+```
+
+## TestSchemaFromStruct_unsignedRejectsNegative
+
+Moved from `constrain/schema_test.go` (the comment above `TestSchemaFromStruct_unsignedRejectsNegative`) on 2026-10-09.
+
+```text
+The unsigned half. This is also where the audit found the "test supplies its own calling
+convention" trap: the property test at schema_test.go worked around unbounded integers with
+its OWN 15-digit cap, which made the schema look adequate.
+```

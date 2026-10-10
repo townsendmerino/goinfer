@@ -201,14 +201,13 @@ func TestConstrainedDecode_alwaysValidJSON(t *testing.T) {
 	t.Logf("%d/%d trials produced a complete, valid JSON document under random logits", completed, trials)
 }
 
-// M-27: StopWhenComplete truncated a top-level scalar at its first completion point.
+// M-27: StopWhenComplete must not truncate a top-level scalar at its first completion point.
 //
-// CanEnd is a MAY-end predicate — `1` is a complete integer document and `12` is a longer
-// one — but StopWhenComplete read it as MUST-end and masked every non-EOS token there. So
-// `response_format: {"type":"integer"}` could only ever return a SINGLE DIGIT, and
-// `{"enum":[1,10,100]}` could only ever produce `1`. No test caught it because none drove a
-// TOP-LEVEL scalar: every existing case is an object or array, whose completion point really
-// does admit nothing but whitespace, so the bug is invisible there.
+// CanEnd is a MAY-end predicate — `1` is a complete integer document and `12` is a longer one — so
+// StopWhenComplete must not read it as MUST-end and mask every non-EOS token there:
+// `response_format: {"type":"integer"}` would return a SINGLE DIGIT and `{"enum":[1,10,100]}` only `1`.
+// A completed object or array really does admit nothing but whitespace, so the defect is invisible
+// unless the test drives a TOP-LEVEL scalar.
 //
 // This drives the real Masker and asks what it permits, rather than asserting a generated
 // string — the defect is in the mask, and a sampler that happened to pick EOS would hide it.

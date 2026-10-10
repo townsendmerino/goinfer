@@ -61,7 +61,7 @@ func TestForcedRun(t *testing.T) {
 // TestForcedBytesRun gates the BYTE-level forced-run primitive (the BPE-appropriate
 // one). After `{"` the only property "k" forces the key char + its closing quote at
 // the byte level — the same bytes ForcedRun finds, but byte-level forcing keeps
-// firing where token-level forcing wouldn't on a real vocab (inc-2 finding).
+// firing where token-level forcing wouldn't on a real vocab.
 func TestForcedBytesRun(t *testing.T) {
 	type One struct {
 		K string `json:"k"`
