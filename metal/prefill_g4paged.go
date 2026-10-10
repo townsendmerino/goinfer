@@ -10,8 +10,7 @@ import (
 )
 
 // g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/tasks/task-m26-mac-2026-10.md, 4b)
-// instead of the sequential loop. ON since 2026-10-04 (owner's bar, ship at >= 1.02x for a bit-identical change; a smoke
-// on M26 read 1.42x); the night grade at M = 128 and 512 turns it off if it reads below 1.00x.
+// instead of the sequential loop. On by default (docs/code-notes/metal.md#g4LayerMajorOn).
 var g4LayerMajorOn = true
 
 // g4LayerMajorChunk is the most prompt rows one pass holds: each row keeps its own residual, seam state and uniforms

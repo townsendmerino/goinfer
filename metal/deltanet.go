@@ -74,10 +74,9 @@ func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dn
 // dedicated f32 GEMV kernel for two small projections.
 func buildDeltaNetLayer(d *Device, m *decoder.Model, l int, dnet *dnetParams, mk func(*linalg.WeightMat) (Buffer, Buffer)) (*deltaNetLayer, error) {
 	inQKV, inZ, outProj, inB, inA, convW, dtBias, negExpA, normW := m.Qwen35DeltaWeights(l)
-	// Name the missing tensor — see cuda/backend.go's identical check and comment: an empty slice
-	// here becomes a 0-byte device upload, which fails as "invalid length" with no indication of
-	// which of the four small tensors was the culprit. Two different checkpoints have already
-	// failed exactly that way during the CUDA bring-up.
+	// Name the missing tensor (as cuda/backend.go's identical check does): an empty slice becomes a 0-byte device upload that
+	// fails as "invalid length" with no hint which of the four small tensors was missing.
+	// History: docs/code-notes/metal.md#buildDeltaNetLayer.
 	for _, chk := range []struct {
 		name string
 		n    int
@@ -149,17 +148,14 @@ func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
 	e.DispatchTG(r.pSAResid, r.H*32, 256, dp.valueDim*2, D.outW, D.outS, r.dnGq, r.dnGSc, r.x, r.uDnValueDim)
 }
 
-// resetDeltaNet zeroes every DeltaNet layer's causal-conv ring and recurrent matrix state — the
-// compounding halves a KV cache does not have (KV positions are simply overwritten by the next
-// sequence; this state accumulates and must be re-zeroed, or a fresh Generate on the same
-// resident continues decaying stale state from the PRIOR sequence — audit C-01's CUDA analogue).
-// No-op when r.dnet is nil (every other family).
+// resetDeltaNet zeroes every DeltaNet layer's causal-conv ring and recurrent matrix state. Unlike KV positions, which the
+// next sequence overwrites, this state accumulates, so a fresh Generate on the same resident must re-zero it or it keeps
+// decaying stale state from the prior sequence. No-op when r.dnet is nil (every other family).
 func (r *resident) resetDeltaNet() {
 	if r.dnet == nil {
 		return
 	}
-	// R-20 (docs/tasks/task-recompute-audit.md): the same prefix the copy from two zeroed slices covered, cleared in
-	// place, without building the slices.
+	// Cleared in place, the same prefix the copy from two zeroed slices covered, without building the slices.
 	nWin, nSt := (r.dnet.convK-1)*r.dnet.convDim, r.dnet.stateElems
 	for i := range r.layers {
 		L := &r.layers[i]

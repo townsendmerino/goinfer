@@ -8,16 +8,16 @@ import (
 )
 
 // MC3 S3 (docs/tasks/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
-// sequence — rmsnorm_quant, quant_vec, swiglu_quant, rope2. Measured (TestMC3StepBreakdown, 2026-09-27): those small
-// dispatches cost ~1 ms per sequence per step (4.2 of a B = 4 step's 22.6 ms at depth 128, 8.1 of B = 8's 30.1), each
-// running a single threadgroup, one sequence after another. One dispatch over all rows runs them side by side.
+// sequence (rmsnorm_quant, quant_vec, swiglu_quant, rope2). Each of those small dispatches ran a single threadgroup, one
+// sequence after another; one dispatch over all rows runs them side by side (cost figures:
+// docs/code-notes/metal.md#mc3RowsKernels).
 //
-// Their BODIES are production's, byte for byte: each variant is derived from allKernels' own source at init, by
-// renaming the pointer / per-row parameters in the signature and adding a prologue that points them at the row this
-// threadgroup (or thread) serves. Nothing in a body is retyped, so a variant cannot drift from its kernel — these
-// kernels round differently when their code shape changes (see rmsnorm_quant's own notes), which is why they are not
-// hand-copied — and a production signature edit panics here at init instead of silently diverging. They compile into
-// the resident's main library (same fast-math setting as the originals).
+// Their BODIES are production's, byte for byte: each variant is derived from allKernels' own source at init, by renaming the
+// pointer / per-row parameters in the signature and adding a prologue that points them at the row this threadgroup (or
+// thread) serves. Nothing in a body is retyped, so a variant cannot drift from its kernel (these kernels round differently
+// when their code shape changes, see rmsnorm_quant's own notes, which is why they are not hand-copied), and a production
+// signature edit panics here at init instead of silently diverging. They compile into the resident's main library with the
+// originals' fast-math setting.
 
 // mc3RowsKernels is the derived source, appended to allKernels when the resident's library is compiled.
 var mc3RowsKernels = deriveRowsKernels()

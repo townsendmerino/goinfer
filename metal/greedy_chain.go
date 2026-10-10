@@ -11,28 +11,28 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The greedy chain: C-B01 of docs/audit-metal-2026-09-30.md (Phase 3 item 5 of docs/tasks/task-metal-audit-2026-10.md).
+// The greedy chain (docs/audit-metal-2026-09-30.md, C-B01; docs/tasks/task-metal-audit-2026-10.md, Phase 3 item 5).
 //
-// The pipelined executor (execLoop) pre-encodes token t+1 while t runs, but cannot commit it until t finishes: t+1's
-// input is the embedding of the token t's logits pick, and the host picks it. So between t's last kernel and t+1's
-// first the GPU waits for the host: completion, 608 KB of logits, the decoder's argmax, the embedding, the commit
-// (T1.3 measured that idle gap at 0.58-0.66 ms per token on the 0.5B and 1.5B). For greedy decoding the pick needs no
-// host: each chained command buffer ends with the fused argmax head ForwardArgmax uses (gemv_w8a8_amax then
-// argmax_finish, writing a 4-byte id) and starts with embed_gather_i8, which writes that id's embedding into r.x from
-// the int8 embedding table on the device (chainEmbedTable: the LM-head buffers for a tied head, else a copy made on
-// first use). So t+1 can be committed before t finishes, and the queue runs it right after.
+// The pipelined executor (execLoop) pre-encodes token t+1 while t runs, but cannot commit it until t finishes: t+1's input is
+// the embedding of the token t's logits pick, and the host picks it, so between t's last kernel and t+1's first the GPU waits
+// for the host (completion, the logits, the decoder's argmax, the embedding, the commit). For greedy decoding the pick needs
+// no host: each chained command buffer ends with the fused argmax head ForwardArgmax uses (gemv_w8a8_amax then
+// argmax_finish, writing a 4-byte id) and starts with embed_gather_i8, which writes that id's embedding into r.x from the
+// int8 embedding table on the device (chainEmbedTable: the LM-head buffers for a tied head, else a copy made on first use).
+// So t+1 can be committed before t finishes, and the queue runs it right after.
 //
 // In flight: chainNext commits the buffer after the newest before it waits for the oldest, so the next token is always
-// queued when the host waits, and one buffer is outstanding between calls. Token t binds uniform set t%2 and writes its
-// id to chainTok[t%2]; t+1 reads chainTok[t%2] and writes chainTok[(t+1)%2]. Buffers are hazard-tracked (aikit's
-// default) and the encoder is serial, so Metal orders a buffer's reads behind the previous buffer's writes; the host
-// rewrites set k only for token t+2, after it has waited for token t, the set's last user. Every chainDrainEvery
-// buffers the chain waits with nothing queued and drains its autorelease pool (one gap), as execLoop does.
+// queued when the host waits, and one buffer is outstanding between calls. Token t binds uniform set t%2 and writes its id
+// to chainTok[t%2]; t+1 reads chainTok[t%2] and writes chainTok[(t+1)%2]. Buffers are hazard-tracked (aikit's default) and
+// the encoder is serial, so Metal orders a buffer's reads behind the previous buffer's writes; the host rewrites set k only
+// for token t+2, after it has waited for token t, the set's last user. Every chainDrainEvery buffers the chain waits with
+// nothing queued and drains its autorelease pool (one gap), as execLoop does.
 //
 // Bit-identical to the full-logits path by construction: the same trunk dispatches with the same values per token, the
 // argmax ForwardArgmax uses (first maximum wins, as the decoder's), and the host embedding's arithmetic (Embed.Row's
-// float32(q)*scale). TestGreedyChain_bitIdentical checks it. A chain stopped after an EOS has already run one forward
-// past it; the K/V it wrote sits past the generation's end and is overwritten before anything reads it.
+// float32(q)*scale). TestGreedyChain_bitIdentical checks it. A chain stopped after an EOS has already run one forward past
+// it; the K/V it wrote sits past the generation's end and is overwritten before anything reads it.
+// History: docs/code-notes/metal.md#chainDrainEvery.
 const chainDrainEvery = 64
 
 const (

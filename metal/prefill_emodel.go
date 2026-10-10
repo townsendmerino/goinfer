@@ -9,10 +9,9 @@ import (
 
 // emodelLayerMajorOn routes a Gemma 4 E-model's prompt (E2B, E4B: per-layer embeddings, KV-shared layers) through
 // prefillEModel instead of declining PrefillLast (S9 of docs/tasks/task-multimodal-support-2026-10.md). The f16-MMA pass
-// declines every dense Gemma 4 (head size varies by layer), so without this a text prompt prefilled one token at a
-// time on the GPU and an image turn prefilled on the CPU. The pass is bit-identical to the sequential loop by
-// construction (G-S9a); on by default, as the paged 26B's layer-major pass is, with a night speed grade to turn it off
-// below 1.00x.
+// declines every dense Gemma 4 (head size varies by layer), so without this a text prompt prefilled one token at a time on
+// the GPU and an image turn prefilled on the CPU. The pass is bit-identical to the sequential loop by construction. On by
+// default; docs/code-notes/metal.md#emodelLayerMajorOn.
 var emodelLayerMajorOn = true
 
 // emodelChunk is the most prompt rows one layer's command buffer holds: each row keeps its residual (H floats), its
@@ -28,10 +27,9 @@ type emRow struct {
 	u      posUniforms
 }
 
-// emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 step 2,
-// docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. ON
-// since 2026-10-09: G-S9c and G-S9d passed by day, and the night speed rule read 7.04x on a ~512-token text prompt
-// (10.99 -> 1.57 s TTFT, five passes 6.84-7.42x). Below the floor, on any decline, or with --exact-prefill, the
+// emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 of
+// docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. On by
+// default (speed: docs/code-notes/metal.md#emodelBatchedOn). Below the floor, on any decline, or with --exact-prefill, the
 // layer-major pass (bit-identical to sequential) keeps the route.
 var emodelBatchedOn = true
 
