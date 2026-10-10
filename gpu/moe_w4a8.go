@@ -85,10 +85,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 
 // moeExpertGptOssDownGEMVW4WGSL is the int4 (W4A8) twin of moeExpertGptOssDownGEMVWGSL. It is
 // moeExpertGEMVW4WGSL's stacked-int4 body with gpt-oss's down combine: dst += wgt·(r + dbias[row]),
-// with the bias indexed by the routed EXPERT's row. Without it (audit-2026-09-10 C-06) an int4
-// stack ran through the int8 kernel. That kernel strides rows at 2x the true width, unpacks nibble
+// with the bias indexed by the routed EXPERT's row. Without it an int4 stack would run
+// through the int8 kernel. That kernel strides rows at 2x the true width, unpacks nibble
 // pairs as int8, and reads packed f16 scale pairs as f32, so every routed expert's down matmul
-// collapsed to its bias.
+// would collapse to its bias.
 const moeExpertGptOssDownGEMVW4WGSL = `
 struct Dims { kp: u32, n: u32, slot: u32, _a: u32 };
 @group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] int8 act, 16/vec4
@@ -159,7 +159,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// ensureMoEExpertGptOssDownW4 compiles moeExpertGptOssDownGEMVW4WGSL (audit C-06).
+// ensureMoEExpertGptOssDownW4 compiles moeExpertGptOssDownGEMVW4WGSL.
 func (c *Context) ensureMoEExpertGptOssDownW4() error {
 	if c.moeExpertGptOssDownW4Pipeline != nil {
 		return nil

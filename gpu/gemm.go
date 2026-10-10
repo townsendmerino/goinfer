@@ -98,23 +98,13 @@ var (
 	matmulTiledW8A8DP4AShaderWGSL = fmt.Sprintf(matmulTiledW8A8KernelWGSL, dot4PackedWGSL)
 )
 
-// matmulTiledW8A8BiasKernelWGSL is matmulTiledW8A8KernelWGSL with one addition: a
-// per-output-column bias, added in the SAME expression as the dequant multiply
-// (`f32(acc) * aScales[row] * bScales[col] + bias[col]`) — textually identical
-// operand order to gemvW8A8BiasShaderWGSL's epilogue (gemv.go), which is the
-// point. PrefillLastW8A8 used to do this as TWO dispatches (this kernel without
-// bias, then a separate residualShaderWGSL add) — mathematically the same
-// formula, but forced through an f32 round-trip through memory between the
-// multiply and the add, which a single WGSL expression may evaluate with an FMA
-// contraction the compiler cannot apply across two separate dispatches. Measured
-// real effect (TestLocalize_BiasEpilogue, qwen2.5-coder-0.5b layer 0, real
-// weights): 98 of 896 elements differed between the two forms, all within 2.4e-7
-// absolute — tiny in f32 terms, but large enough that a subsequent int8 quantize
-// of an element sitting near a rounding boundary can flip which bucket it lands
-// in, and 24 layers of that compounds into the observed cosine ~0.99x /
-// maxAbs ~1 divergence in final logits. This kernel exists so PrefillLastW8A8
-// can dispatch the identical single-expression epilogue gemvBias does, for M
-// rows at once instead of M separate GEMV calls.
+// matmulTiledW8A8BiasKernelWGSL is matmulTiledW8A8KernelWGSL with one addition: a per-output-column bias added in the SAME
+// expression as the dequant multiply (`f32(acc) * aScales[row] * bScales[col] + bias[col]`), with textually identical operand
+// order to gemvW8A8BiasShaderWGSL's epilogue (gemv.go). That is the point: a multiply and an add in two dispatches go
+// through an f32 round-trip through memory, while one WGSL expression may be FMA-contracted, and the last-bit differences flip
+// int8 requantization buckets and compound across layers into a real logit divergence. PrefillLastW8A8 uses this kernel to
+// dispatch the identical epilogue gemvBias does, for M rows at once; do not split the epilogue back into a separate add.
+// History and figures: docs/code-notes/gpu.md#matmulTiledW8A8BiasKernelWGSL.
 const matmulTiledW8A8BiasKernelWGSL = `
 struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
 

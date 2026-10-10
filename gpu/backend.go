@@ -38,21 +38,14 @@ func init() {
 	})
 }
 
-// webgpuBackend runs MatmulBT on a WebGPU adapter (Vulkan / Metal / D3D12) via
-// the Context foundation in this package. Built only under -tags gpu.
+// webgpuBackend runs the decoder's matmuls on a WebGPU adapter (Vulkan / Metal / D3D12) via the Context foundation in this
+// package. Built only under -tags gpu.
 //
-// Resident weights: a model weight matrix is constant across every token, so
-// the first MatmulBT for a given weight uploads it to a GPU storage buffer and
-// caches the handle (keyed by the slice's backing pointer); every later call
-// only uploads the (small) activation and reads the result back. This removes
-// the catastrophic per-token re-upload of the weights (the LM head alone is
-// the ~671 MB embedding). On any per-call GPU error it falls back to the CPU
-// matmul, so results are always correct.
-//
-// Still naive beyond that: each matmul is its own synchronous dispatch +
-// readback, so decode is latency-bound on per-matmul round-trips. Keeping the
-// activations resident on-device across a layer's matmuls (and porting
-// norms/rope/softmax to WGSL) is the remaining work for a GPU-fast forward.
+// Resident weights: a model weight matrix is constant across every token, so the first matmul for a given weight uploads it to
+// a GPU storage buffer and caches the handle, keyed by the slice's backing pointer; later calls upload only the (small)
+// activation. On any per-call GPU error MatmulBT falls back to the CPU matmul and the W8A8/W4A8 methods return false so the
+// caller uses its CPU kernel, so results are always correct. Each matmul here is its own synchronous dispatch and readback;
+// the device-resident forward is BuildResident (residency.go). History: docs/code-notes/gpu.md#webgpuBackend.
 type webgpuBackend struct {
 	ctx  *Context
 	name string
@@ -146,17 +139,10 @@ func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, ds
 	return true
 }
 
-// MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/tasks/task-gpu-paths-2026-09.md), the "staged
-// int4" item: decoder/weightmat.go's matmulInto never consulted a backend for int4 before this
-// (its int8 branch already did, via MatmulW8A8/QuantBackend), so an int4-quantized model on the
-// STAGED (non-resident) path ran every projection on the CPU regardless of which backend was
-// active — gpu/gemv_w4a8.go's kernel, upload paths and decodeWeight interface already existed,
-// but only gpu/residency.go's RESIDENT uploadProj used them.
-//
-// M=1 only (decode): the M>1 (prefill/tiled) case has no int4 GEMM kernel on this backend yet —
-// declines, so matmulInto's caller falls back to the CPU W4A8 kernel exactly as it did before
-// this method existed. bQ4 is decoder's native on-disk packed layout (2 nibbles/byte); group is
-// always w4a8GroupSize (32) for goinfer's models (matches uploadProj's own assumption).
+// MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin for the STAGED (non-resident) path: without it an int4 model's staged
+// projections ran on the CPU whichever backend was active. M=1 only (decode); M>1 has no int4 GEMM kernel on this backend and
+// declines, so the caller falls back to the CPU W4A8 kernel. bQ4 is decoder's packed layout (2 nibbles/byte); group must be
+// w4a8GroupSize (32). History: docs/code-notes/gpu.md#webgpuBackend.MatmulW4A8.
 func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales16 []uint16, group int, dst []float32, M, K, N int) bool {
 	if len(bQ4) == 0 || M != 1 || group != w4a8GroupSize {
 		return false
@@ -185,10 +171,9 @@ func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales16 []uint16, 
 	return true
 }
 
-// residentW4A8For resolves (or uploads and caches) the resident W4A8 weight for one packed
-// int4 buffer, keyed by its backing pointer — shared by MatmulW4A8 and MatmulW4A8Batch (P-16,
-// audit-2026-09-10) so the upload/unpack logic exists exactly once. Caller holds b.mu. ok=false
-// means upload failed; the caller counts the fallback.
+// residentW4A8For resolves (or uploads and caches) the resident W4A8 weight for one packed int4 buffer, keyed by its backing
+// pointer, shared by MatmulW4A8 and MatmulW4A8Batch so the upload/unpack logic exists exactly once. Caller holds b.mu.
+// ok=false means upload failed; the caller counts the fallback.
 //
 // The scales arrive as binary16 (scales16, a WeightMat's storage) or, from an op built against f32,
 // as scales32. They are read only on a cache miss: widened (exactly) for the f32 upload path, which
@@ -238,14 +223,10 @@ func (b *webgpuBackend) residentW4A8For(bQ4 []byte, scales16 []uint16, scales32 
 	return qr, true
 }
 
-// MatmulW4A8Batch runs several W4A8 GEMVs that share one activation (fused q/k/v or gate/up,
-// M=1 decode) as ONE GPU submit — quantize once, dispatch all, sync once. P-16's int4 twin of
-// MatmulW8A8Batch: staged int4 previously had no batch dispatch on ANY GPU backend, so a fused
-// call on an int4 model paid one sync PER PROJECTION (three for q/k/v, two for gate/up) instead
-// of one for the whole group — exactly the per-dispatch overhead MatmulW8A8Batch exists to
-// remove for int8, never extended to int4. Falls back (returns false) for M>1, a group other
-// than w4a8GroupSize, or any GPU error — matmulW4A8Batch's caller then uses the CPU batch kernel,
-// the same decline contract MatmulW4A8/MatmulW8A8Batch already use.
+// MatmulW4A8Batch runs several W4A8 GEMVs that share one activation (fused q/k/v or gate/up, M=1 decode) as ONE GPU submit:
+// quantize once, dispatch all, sync once. The int4 twin of MatmulW8A8Batch. Returns false for M>1, a group other than
+// w4a8GroupSize, or any GPU error, and the caller then uses the CPU batch kernel.
+// History: docs/code-notes/gpu.md#webgpuBackend.MatmulW4A8Batch.
 func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool {
 	if M != 1 || len(ops) == 0 || group != w4a8GroupSize {
 		return false

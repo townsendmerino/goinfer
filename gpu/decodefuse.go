@@ -4,12 +4,11 @@ package gpu
 
 import ()
 
-// §2 fused decode kernels. The §5 finding: decode is glue-serialization-bound —
-// the per-token cost is a deep RAW dependency chain of ~535 small dispatches,
-// each forcing a barrier the GPU can't hide. The lever is critical-PATH length,
-// so every standalone glue op that can be folded into the kernel it borders
-// removes a link from the serialized spine. These kernels do that folding; each
+// §2 fused decode kernels. Decode is glue-serialization-bound: the per-token cost is a deep RAW dependency chain of small
+// dispatches, each forcing a barrier the GPU can't hide, so the lever is critical-PATH length. Every standalone glue op that
+// can be folded into the kernel it borders removes a link from the serialized spine; these kernels do that folding, and each
 // is bit-exact with the unfused pair it replaces (same f32 math, same int8 pack).
+// History: docs/code-notes/gpu.md#§2 fused decode kernels.
 
 // rmsnormQuant fuses RMSNorm → activation-quantize: it reads the hidden vector
 // once, computes xn = src·inv·weight(+1) in registers, finds its max-abs by tree
@@ -82,12 +81,9 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 }
 `
 
-// swigluQuant fuses SwiGLU → activation-quantize: silu(gate)·up is computed,
-// max-abs'd, and packed to int8 in ONE dispatch, so the inter-wide (8960, ~36 KB)
-// SwiGLU output never materializes in global memory or crosses a barrier — a
-// double win under the §5 "per-link drain scales with the bordering kernel's
-// data" model. The product is recomputed in the pack pass (cheap arithmetic)
-// rather than staged, so no inter-wide workgroup array is needed.
+// swigluQuant fuses SwiGLU → activation-quantize: silu(gate)·up is computed, max-abs'd, and packed to int8 in ONE dispatch,
+// so the inter-wide SwiGLU output never materializes in global memory or crosses a barrier. The product is recomputed in
+// the pack pass (cheap arithmetic) rather than staged, so no inter-wide workgroup array is needed.
 const swigluQuantWGSL = `
 struct P { n: u32, np: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       gate:   array<f32>;  // [n]
@@ -134,12 +130,10 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 }
 `
 
-// gegluQuant is swigluQuant's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
-// docs/tasks/task-gpu-paths-2026-09.md). Same fused shape (product recomputed in the pack pass, no
-// inter-wide global-memory round-trip); only the activation differs. gelu_tanh's argument is
-// CLAMPED to ±15 before calling tanh — see gegluShaderWGSL's own comment (layer.go) for why:
-// unclamped, it overflows f32 before saturating, which cost Metal's own port a real cosine
-// regression (0.818→0.994 after the fix) the first time it shipped this exact math.
+// gegluQuant is swigluQuant's GELU-tanh-gated twin, Gemma's FeatGatedGELU (docs/tasks/task-gpu-paths-2026-09.md). Same
+// fused shape (product recomputed in the pack pass, no inter-wide global-memory round-trip); only the activation differs.
+// gelu_tanh's argument is CLAMPED to ±15 before tanh: unclamped, it overflows f32 before saturating. See
+// gegluShaderWGSL's own comment (layer.go). History: docs/code-notes/gpu.md#gegluQuant.
 const gegluQuantWGSL = `
 struct P { n: u32, np: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       gate:   array<f32>;  // [n]
@@ -191,8 +185,8 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 `
 
 func (c *Context) ensureFuse() error {
-	// Per-pipeline guards: a mid-build failure must not leave the first-field guard satisfied with a
-	// later pipeline nil (audit R-30). Shared tracked constructor (gpu.go) registers for release (C-26).
+	// Per-pipeline guards: a mid-build failure must not leave the first-field guard satisfied with a later pipeline nil.
+	// Shared tracked constructor (gpu.go) registers for release.
 	mk := c.mkPipeline
 	var err error
 	if c.rmsQuantPipeline == nil {

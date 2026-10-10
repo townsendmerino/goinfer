@@ -9,26 +9,22 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Register-blocked tiled W8A8 GEMM (R10, docs/measurements/webgpu-prefill-profile-2026-09-22.md).
+// Register-blocked tiled W8A8 GEMM (docs/measurements/webgpu-prefill-profile-2026-09-22.md).
 //
-// The 16×16 kernel (matmulTiledW8A8KernelWGSL) gives each thread ONE output: per packed
-// word of K it does two shared-memory loads for one dot4, and profiled at a flat ~1 TFLOPS
-// — 81–94% of batched prefill at ~11% of this card's f32 peak. This kernel keeps the same
-// staging idea but gives each thread a 4×4 block of outputs in a 64×64 workgroup tile: per
-// word of K, eight shared loads feed sixteen dot4s, four times the arithmetic per byte
-// moved through shared memory, with the accumulators in registers (four vec4<i32>).
+// The 16×16 kernel (matmulTiledW8A8KernelWGSL) gives each thread ONE output: per packed word of K it does two
+// shared-memory loads for one dot4. This kernel keeps the same staging idea but gives each thread a 4×4 block of outputs in
+// a 64×64 workgroup tile: per word of K, eight shared loads feed sixteen dot4s, four times the arithmetic per byte moved
+// through shared memory, with the accumulators in registers (four vec4<i32>).
 //
-// The output assignment is STRIDED, not contiguous — thread (lid.x, lid.y) owns rows
-// lid.y + {0,16,32,48} and columns lid.x + {0,16,32,48} — so that a warp's shared reads
-// (Bs[w][lid.x + 16j]) and its dst writes are consecutive across lanes, and the shared
-// tiles are stored word-major with a padded row stride (LD = 65) so the staging stores
-// (consecutive lanes write consecutive w for one r) do not bank-conflict.
+// The output assignment is STRIDED, not contiguous: thread (lid.x, lid.y) owns rows lid.y + {0,16,32,48} and columns
+// lid.x + {0,16,32,48}, so that a warp's shared reads (Bs[w][lid.x + 16j]) and its dst writes are consecutive across lanes,
+// and the shared tiles are stored word-major with a padded row stride (LD = 65) so the staging stores (consecutive lanes
+// write consecutive w for one r) do not bank-conflict.
 //
-// BIT-IDENTICAL TO THE 16×16 KERNEL BY CONSTRUCTION. The K reduction is an exact i32 sum
-// (|acc| ≤ K·127² ≈ 1.4e8 at K = 8960, far under 2³¹), summed in the same ascending-K
-// order, and the dequant epilogue is the identical single expression
-// (`f32(acc) * aScales[row] * bScales[col]`, `+ bias[col]` in the bias form). Pinned by
-// TestTiledRB64_bitIdentical across aligned and ragged shapes.
+// BIT-IDENTICAL TO THE 16×16 KERNEL BY CONSTRUCTION. The K reduction is an exact i32 sum (|acc| ≤ K·127², far under 2³¹),
+// summed in the same ascending-K order, and the dequant epilogue is the identical single expression
+// (`f32(acc) * aScales[row] * bScales[col]`, `+ bias[col]` in the bias form). Pinned by TestTiledRB64_bitIdentical across
+// aligned and ragged shapes. Profile figures: docs/code-notes/gpu.md#Register-blocked tiled W8A8 GEMM.
 const matmulRB64W8A8KernelWGSL = `
 struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
 

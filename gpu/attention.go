@@ -12,26 +12,15 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Stage 3 attention primitives — RoPE and single-query attention on the GPU, so a
-// decode token's full forward records into one command buffer (no CPU interleave).
-// Both match the CPU (decoder.applyRoPE / attendQuery) to f32 tolerance (the CPU
-// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).
+// Stage 3 attention primitives: RoPE and single-query attention on the GPU, so a decode token's full forward records into
+// one command buffer (no CPU interleave). Both match the CPU (decoder.applyRoPE / attendQuery) to f32 tolerance (the CPU
+// accumulates in f64, the GPU in f32): cosine ~1.0, not bit-exact.
 //
-// N-85 (docs/audit-2026-09-10.md, measured 2026-09-16): every `theta := f32(pos) * invFreq[d]`
-// below (this kernel and its siblings further down this file) feeds WGSL's `sin`/`cos` with an
-// angle that grows with position — at a long context's far end that argument is tens of
-// thousands of radians, and how a GPU's `sin`/`cos` range-reduces an argument that large before
-// evaluating it is implementation-defined (vendor/driver-specific), unlike the CPU reference's
-// f64 accumulation. Was flagged UNMEASURED; TestRoPE_parityAtLongContextCeiling (this package's
-// own test file) now measures it directly at pos=65535 (decoder/fitplan.go's int8-KV
-// fit-by-default context ceiling, a position a real served request can actually reach) on real
-// hardware: cosine 0.99999978, maxAbs 2.9e-3 — about 1000x worse than TestRoPE_parity's pos=37
-// baseline (maxAbs 3.1e-06), a real and measured effect, not just a theoretical one. Whether that
-// magnitude matters for real model quality is a product decision this file does not make; the
-// test records the number rather than asserting a pass/fail bar this session has no basis to
-// pick. `metal/kernels.go`'s identical `float(pos)*invf[dd]` pattern (the "09-02" Metal note
-// this cross-references) remains unmeasured — this file's measurement does not carry over to
-// Metal, since GPU vendors' sin/cos range reduction is independently implementation-defined.
+// Every `theta = f32(pos) * invFreq[d]` below feeds WGSL's sin/cos an angle that grows with position, and how a GPU
+// range-reduces a large argument is implementation-defined (vendor/driver-specific), unlike the CPU's f64. At a long
+// context's far end this is a real, measured error: TestRoPE_parityAtLongContextCeiling records it at pos=65535 rather than
+// asserting a bar. Whether it matters for model quality is a product decision this file does not make, and the measurement
+// does not carry over to Metal. Figures: docs/code-notes/gpu.md#Stage 3 attention primitives: long-context RoPE.
 
 // RoPE: rotate the (d, half+d) pair of each head by pos·invFreq[d], scaled. One
 // thread per (head, d) pair. vec is q or k in place; invFreq is the layer's
@@ -58,41 +47,29 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// attnWG is the single-query attention kernels' NARROW workgroup width, and attnWGWide the wide
-// one. The kernels put one lane on each head dim, so the workgroup width IS the largest head_dim
-// they can dot: above it the tail dims go un-dotted and the o-projection consumes half-zero
-// context — plausible-looking WRONG output, no error (audit M-12).
+// attnWG is the single-query attention kernels' NARROW workgroup width, attnWGWide the wide one. The kernels put one lane on
+// each head dim, so the workgroup width IS the largest head_dim they can dot: above it the tail dims go un-dotted and the
+// o-projection consumes half-zero context, which is plausible-looking WRONG output with no error.
 //
-// 128 covered every family until the Gated-DeltaNet hybrids, whose RELEASED checkpoints all use
-// head_dim 256 (Qwen3.8-27B, Qwen3.6-35B-A3B, Qwen3-Next-80B — verified from their configs, not
-// assumed). Their tiny fixtures use 32, so the limit was invisible until a real-width fixture met
-// it, and Gemma 4's global layers at head_dim 512 would have met it again.
+// The wide kernel (attnWideTemplateWGSL) gives each lane a STRIDE of dims, so head_dim is no longer a reason to decline. The
+// narrow kernels still serve head_dim <= attnWG: striding costs a per-lane array and two extra loops that ordinary models
+// should not pay.
 //
-// The wide kernel (attnWideTemplateWGSL, below) gives each lane a STRIDE of dims rather than one
-// dim, so head_dim stopped being a reason to decline at all. The narrow kernels are untouched and
-// still serve head_dim <= attnWG: striding costs a per-lane array and two extra loops, and every
-// ordinary model would pay that for nothing.
-//
-// attnWG MUST stay equal to the @workgroup_size(128) and `red: array<f32, 128>` in the three
-// narrow single-query kernels below.
+// attnWG MUST stay equal to the @workgroup_size(128) and `red: array<f32, 128>` in the three narrow single-query kernels
+// below. History: docs/code-notes/gpu.md#attnWG.
 const (
 	attnWG         = 128 // shipped narrow kernels: one lane per dim
 	attnWGWide     = 256 // wide kernel workgroup — WebGPU's guaranteed max invocations
 	attnMaxPerLane = 8   // dims each wide lane strides over
-	// attnMaxHeadDim is therefore 2048, which no model is near. That is the point: head_dim
-	// stopped being a reason to decline, rather than the wall moving up one notch to 256.
+	// attnMaxHeadDim is the widest head_dim the wide kernel serves.
 	attnMaxHeadDim = attnWGWide * attnMaxPerLane
 )
 
-// Single-query attention (decode): one workgroup per query head, an online
-// (FlashAttention-style) softmax over keys [start, nKeys) so it is numerically
-// stable and needs no scratch for the full score row. GQA maps kvh = qh/group.
-// Parallel over the head dimension: workgroup_size = WG (one lane per dim, hd ≤
-// WG), so each key's score is a workgroup tree-reduce and the value accumulate is
-// one lane per dim — replacing the original single-thread-per-head kernel (the §5
-// finding's largest remaining glue kernel, ~5.8 ms). acc/m/l for the online
-// softmax: acc is per-dim (per lane); m and l are replicated identically across
-// lanes (every lane sees the same score x), so no extra reduction is needed.
+// Single-query attention (decode): one workgroup per query head, an online (FlashAttention-style) softmax over keys
+// [start, nKeys), so it is numerically stable and needs no scratch for the full score row. GQA maps kvh = qh/group.
+// workgroup_size = WG (one lane per dim, hd ≤ WG): each key's score is a workgroup tree-reduce and the value accumulate is
+// one lane per dim. acc is per-dim (per lane); m and l are replicated identically across lanes (every lane sees the same
+// score), so no extra reduction is needed. History: docs/code-notes/gpu.md#attnShaderWGSL.
 const attnShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
 // HS is a genuinely PER-LAYER uniform, separate from P: P's uniform buffer is shared across every
@@ -156,37 +133,26 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// attnKeys — decode attention that splits the workgroup over KEYS, not over the head
-// dimension. Same math as attnShaderWGSL, different decomposition, and the decomposition
-// is the whole point.
+// attnKeysShaderWGSL is decode attention that splits the workgroup over KEYS, not over the head dimension. Same math as
+// attnShaderWGSL, different decomposition, and the decomposition is the point.
 //
-// attnShaderWGSL puts one lane on each of the hd dimensions, so the q·k dot for EVERY key
-// is a cross-lane reduction: red[d]=prod, barrier, 7 barrier'd tree levels, trailing
-// barrier = 9 workgroupBarrier() PER KEY. At nKeys=513 that is 4,617 barriers per layer,
-// and measured 13.69 ms/token at pos 512 on the 1.5B — 28 layers reading 29.4 MB of KV,
-// which at 448 GB/s is a 0.066 ms job. ~0.5% of streaming roofline, against the GEMV path's
-// ~83%: a latency wall, not a bandwidth one. (TestDecode_dispatchProfile, G35.)
+// attnShaderWGSL puts one lane on each of the hd dimensions, so the q·k dot for every key is a cross-lane reduction with nine
+// workgroupBarrier()s per key: a latency wall, not a bandwidth one. Here each lane owns a disjoint set of keys and computes
+// its own dots with no cross-lane traffic; only the softmax max and denominator reduce, once per tile rather than once per
+// key. cuda/attn_block.cu uses the same shape.
 //
-// Here each lane owns a disjoint set of KEYS and computes its own dots with no cross-lane
-// traffic; only the softmax max and denominator reduce, ONCE per tile rather than once per
-// key. Barriers per layer fall ~250×. This is the shape cuda/attn_block.cu already uses —
-// WebGPU's kernel was a generation behind it, not blocked by WGSL.
+// TILED, because WGSL has no dynamic workgroup storage: a var<workgroup> is fixed at compile time, so scores are processed in
+// attnKeysTile-key tiles with the online-softmax state (m, l, acc) carried across them. Any context length works and storage
+// stays inside WebGPU's guaranteed 16 KB.
 //
-// TILED, because WGSL has no dynamic workgroup storage. CUDA sizes sc[nWin] per launch via
-// extern __shared__; a WGSL var<workgroup> is fixed at compile time, so scores are processed
-// in TILE-key tiles with the online-softmax state (m, l, acc) carried across them. Storage is
-// 2048*4 + 128*4 = 8.5 KB, inside WebGPU's guaranteed 16 KB — no limit raise, no portability
-// cost, and any context length works.
+// The vec4 K/q loads are load-bearing, not a micro-optimization: splitting over keys makes the K read stride kvDim across the
+// warp, and without vec4 loads that pattern wastes most of each L1TEX sector (cuda/attn_block.cu reads float4 for the same
+// reason). That is why attnKeysEligible requires hd%4==0 and kvDim%4==0.
 //
-// vec4 K/q loads are load-bearing, not a micro-optimization. Splitting over keys makes the K
-// read stride kvDim across the warp; ncu measured that pattern using only ~22% of each 32-byte
-// L1TEX sector on the CUDA twin, which is why attn_block.cu reads float4. Same fix here, and
-// it is why the eligibility guard requires hd%4==0 and kvDim%4==0.
-//
-// NOT bit-identical to attnShaderWGSL: the denominator sums in a different order and the tiled
-// rescale reassociates. Attention was never bit-exact anyway — it runs f32 against the CPU
-// oracle's f64 (see the note at the top of this file), so the standing gate is TestAttention_parity's
-// cosine/maxAbs against that f64 reference, plus argmax through TestWebGPU_forwardParity.
+// NOT bit-identical to attnShaderWGSL: the denominator sums in a different order and the tiled rescale reassociates.
+// Attention was never bit-exact (f32 against the CPU oracle's f64), so the standing gate is TestAttention_parity's
+// cosine/maxAbs against that reference, plus argmax through TestWebGPU_forwardParity. Figures and history:
+// docs/code-notes/gpu.md#attnKeysShaderWGSL.
 const attnKeysShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
 struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
@@ -301,16 +267,13 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // sc[] writes out of bounds.
 const attnKeysTile = 2048
 
-// attnKeysEligible reports whether the key-split attention kernel can serve this geometry.
-// f32 KV only (the f16/int8 caches have their own packed kernels), hd within the narrow
-// 128-lane kernel, and hd/kvDim both multiples of 4 so the vec4 K/q loads are in bounds and
-// aligned — without those loads the key-split read pattern wastes ~78% of each L1TEX sector,
-// which is the whole reason cuda/attn_block.cu reads float4.
-// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the old
-// dim-split kernel can be A/B'd in the same binary. Read once: the plan is recorded per
-// runner, and a mid-run flip would leave a half-converted plan.
+// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the old dim-split kernel can be A/B'd in
+// the same binary. Read once: the plan is recorded per runner, and a mid-run flip would leave a half-converted plan.
 var attnKeysDisabled = os.Getenv("GOINFER_ATTN_KEYS") == "0"
 
+// attnKeysEligible reports whether the key-split attention kernel can serve this geometry: f32 KV only (the f16/int8 caches
+// have their own packed kernels), hd within the narrow kernel, and hd and kvDim multiples of 4 so the vec4 K/q loads are in
+// bounds and aligned.
 func attnKeysEligible(hd, kvDim int, kvF16, kvI8 bool) bool {
 	if kvF16 || kvI8 || hd > attnWG || hd <= 0 {
 		return false
@@ -318,21 +281,11 @@ func attnKeysEligible(hd, kvDim int, kvF16, kvI8 bool) bool {
 	return hd%4 == 0 && kvDim%4 == 0
 }
 
-// attnKernel picks the non-int8-KV attention pipeline+layout for a given geometry —
-// factored out of decoderunner.go's per-token dispatch (the newDecodeRunner build
-// loop) so every caller that dispatches attention against a plain-f32 or f16 KV
-// cache picks the SAME kernel for the SAME geometry. This one call site existing
-// twice (once inline in decoderunner.go, once copy-pasted into prefillrunner.go)
-// is exactly how PrefillLastW8A8 and the sequential resident DecodeRunner ended up
-// dispatching DIFFERENT kernels for the identical hd=64/kvDim=128/f32-KV geometry
-// (qwen2.5-coder-0.5b is attnKeysEligible, so decode used the key-split kernel
-// while the batched path always used the plain one) — found 2026-09-12 via a
-// real-checkpoint parity test that diverged (cosine ~0.99 at nKeys=3, ~0.62 at
-// nKeys=6-7) despite the M=20 synthetic-weight gate (which never varies the
-// kernel choice, since ITS reference also goes through the plain kernel) staying
-// bit-exact throughout. Does not cover kvI8 — that path binds a different
-// (9-argument) bind group shape entirely; callers that might see kvI8 must keep
-// handling it separately, as decoderunner.go already does.
+// attnKernel picks the non-int8-KV attention pipeline+layout for a geometry. Every caller that dispatches attention against an
+// f32 or f16 KV cache must go through it: two copies of this choice once made PrefillLastW8A8 and the sequential
+// DecodeRunner dispatch DIFFERENT kernels for one geometry, and the two kernels are not bit-identical. It does not cover
+// kvI8, which binds a different (9-argument) bind group shape; callers that can see kvI8 handle it separately, as
+// decoderunner.go does. History: docs/code-notes/gpu.md#attnKernel.
 func (c *Context) attnKernel(hd, kvDim int, kvF16 bool) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
 	wide := hd > attnWG
 	switch {
@@ -343,10 +296,8 @@ func (c *Context) attnKernel(hd, kvDim int, kvF16 bool) (*wgpu.ComputePipeline, 
 	case wide:
 		return c.attnWidePipeline, c.attnWideLayout
 	case !attnKeysDisabled && attnKeysEligible(hd, kvDim, kvF16, false):
-		// Key-split attention: one reduction per TILE instead of one per key. Last
-		// case on purpose — the f16/wide paths above have their own kernels and
-		// attnKeysEligible declines them anyway, so this only ever claims the
-		// plain f32 narrow geometry the old kernel used to serve.
+		// Key-split attention (one reduction per tile, not per key). Last case on purpose: the f16/wide paths above have their own
+		// kernels, so this only claims the plain f32 narrow geometry.
 		return c.attnKeysPipeline, c.attnKeysLayout
 	default:
 		return c.attnPipeline, c.attnLayout
@@ -597,9 +548,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // query + ctx stay f32; only the resident cache is int8. base (pos*kvDim) and
 // headDim are multiples of 4, so a head's elements pack into whole words.
 
-// attnI8: attnShaderWGSL reading int8 K/V — unpack each element (sign-extend the
-// byte) and scale by the per-(position,head) f32 scale. q stays f32; the dot is
-// f32 (no integer dot / DP4A — a free future upgrade).
+// attnI8: attnShaderWGSL reading int8 K/V: unpack each element (sign-extend the byte) and scale by the per-(position,head)
+// f32 scale. q stays f32 and the dot is f32; attnI8DP4AShaderWGSL is the dot4I8Packed variant.
 const attnI8ShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
 struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
@@ -833,15 +783,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `
 
 func (c *Context) ensureAttn() error {
-	// Guard on the LAST pipeline built, not the first: these are created in order, so a non-nil last
-	// field means every earlier one succeeded too. Guarding on ropePipeline (the first) let a
-	// mid-build failure leave the guard satisfied with later pipelines nil, and the next call
-	// dispatched a nil pipeline (audit R-30). On a retry after a partial build the earlier fields are
-	// rebuilt (the old ones stay tracked for release at Close — bounded, not leaked).
+	// Guard on the LAST pipeline built, not the first: these are created in order, so a non-nil last field means every earlier
+	// one succeeded too. Guarding on ropePipeline (the first) let a mid-build failure leave the guard satisfied with later
+	// pipelines nil, and the next call dispatched a nil pipeline. On a retry after a partial build the earlier fields are
+	// rebuilt (the old ones stay tracked for release at Close).
 	if c.kvStoreI8Pipeline != nil {
 		return nil
 	}
-	// Shared tracked constructor (gpu.go): registers shader+pipeline for release (audit C-26).
+	// Shared tracked constructor (gpu.go): registers shader+pipeline for release.
 	mk := c.mkPipeline
 	var err error
 	if c.ropeShader, c.ropePipeline, c.ropeLayout, err = mk("rope", ropeShaderWGSL); err != nil {
@@ -955,9 +904,8 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 	defer cBuf.Release()
 	pBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
 	defer pBuf.Release()
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
-	// bind a null storage buffer); this test helper never carries a real sink, so a harmless
-	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
+	// FeatAttnSink (docs/tasks/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
+	// test helper never carries a real sink, so a one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
 	sinksBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
 	defer sinksBuf.Release()
 	hsBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
@@ -996,21 +944,14 @@ func f32bits(f float32) uint32 { return math.Float32bits(f) }
 
 // The WIDE single-query attention kernel: one template, STRIDED lanes.
 //
-// The shipped narrow kernels put one lane on each head dim, which makes the workgroup width a
-// hard ceiling on head_dim — 128, and 256 is as far as that idea can go because 256 is WebGPU's
-// guaranteed maxComputeInvocationsPerWorkgroup. That is a higher wall, not the absence of one,
-// and the wall is real: this family's released checkpoints are head_dim 256 and Gemma 4's global
-// layers are 512.
+// The narrow kernels put one lane on each head dim, which makes the workgroup width a hard ceiling on head_dim; 256, the
+// guaranteed maxComputeInvocationsPerWorkgroup, is as far as that idea goes. The wide variant gives each lane a STRIDE of
+// dims (d0, d0+WG, d0+2·WG, …), so any head_dim up to attnWGWide·attnMaxPerLane works with a fixed workgroup. The narrow
+// kernels still serve head_dim ≤ attnWG, because striding costs a per-lane array and two extra loops.
 //
-// So the wide variant gives each lane a STRIDE of dims — d0, d0+WG, d0+2·WG, … — and any
-// head_dim up to attnWGWide·attnMaxPerLane works with a fixed workgroup. The narrow kernels are
-// left untouched and still serve head_dim ≤ attnWG, because striding costs a per-lane array and
-// two extra loops that every ordinary model would pay for nothing.
-//
-// One template rather than three near-identical copies: the algorithm (online softmax, the
-// tree-reduce, the rescale) is the part that is easy to get subtly wrong and hard to notice, and
-// three copies of it is three places for a fix to land in two. The three variants differ ONLY in
-// how a K/V element is fetched, which is the part that is obvious on sight.
+// One template rather than three near-identical copies: the algorithm (online softmax, tree-reduce, rescale) is the part that
+// is easy to get subtly wrong, and three copies are three places for a fix to land in two. The three variants differ ONLY in
+// how a K/V element is fetched. History: docs/code-notes/gpu.md#attnWideTemplateWGSL.
 const attnWideTemplateWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
 struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
@@ -1159,18 +1100,12 @@ func buildWideAttnWGSL(v attnWideVariant) (string, error) {
 	return src, nil
 }
 
-// ensureAttnWide compiles the 256-lane variants. Separate from ensureAttn and called only when a
-// plan actually has head_dim > attnWG, so every existing family pays nothing — no extra shader
-// compiles, no behaviour change, and no dependence on a device limit it does not need.
+// ensureAttnWide compiles the 256-lane variants. Separate from ensureAttn and called only when a plan has head_dim > attnWG,
+// so every other family pays no extra compiles and does not depend on a device limit it does not need.
 func (c *Context) ensureAttnWide() error {
-	// N-14: guard on the LAST pipeline, not the first. This compiles THREE variants (f32, f16
-	// KV, int8 KV) and returned early when the FIRST existed — so a failure on the second or
-	// third left those nil, and the next call reported success while a kvF16/kvI8 plan went on
-	// to bind a nil pipeline. That is the R-30 class, in the file R-30 fixed: a
-	// partially-completed lazy init that looks complete.
-	//
-	// The three are all-or-nothing (any error returns before assigning the rest), so the last
-	// being non-nil implies all three are.
+	// Guard on the LAST pipeline, not the first: this compiles THREE variants (f32, f16 KV, int8 KV), and returning early when
+	// the first existed would let a failure on the second or third leave those nil while the next call reported success. The
+	// three are all-or-nothing (any error returns before assigning the rest), so the last being non-nil implies all three are.
 	if c.attnI8WidePipeline != nil {
 		return nil
 	}

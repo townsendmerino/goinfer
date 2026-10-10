@@ -185,12 +185,10 @@ func (c *Context) ensureGEMV() error {
 // (all the same K). Returns each op's [rms[i].nRows()] output. Buffers are per-call
 // (the win here is collapsing N syncs to one, not buffer reuse).
 //
-// rms is decodeWeight (P-16, audit-2026-09-10: the "staged int4 batch" item) — W8A8 and W4A8
-// share the same 6-binding layout (decodeWeight's own comment, gpu/gemv_w4a8.go), so one
-// generic dispatch loop serves both; MatmulW8A8Batch and MatmulW4A8Batch each wrap their
-// concrete resident type before calling in. A mixed-precision batch works too (each op's own
-// pipeline is bound just before its dispatch) though callers only ever build homogeneous ones —
-// a fused q/k/v or gate/up group is always one model's own uniform quantization.
+// rms is decodeWeight: W8A8 and W4A8 share the same 6-binding layout (decodeWeight's own comment, gemv_w4a8.go), so one
+// generic dispatch loop serves both; MatmulW8A8Batch and MatmulW4A8Batch each wrap their concrete resident type before
+// calling in. A mixed-precision batch works too (each op's own pipeline is bound just before its dispatch), though callers
+// only build homogeneous ones.
 func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []decodeWeight) ([][]float32, error) {
 	if len(rms) == 0 {
 		return nil, fmt.Errorf("gpu: BatchGEMV: no ops")
@@ -340,10 +338,8 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []decodeWeight) ([][]
 // (GPU sync is cheap; wgpu buffer creation is not). This is what the decoder
 // caches per weight matrix.
 //
-// rm is decodeWeight (G6, docs/tasks/task-gpu-paths-2026-09.md: the "staged int4" item) — either
-// W8A8 or W4A8; both kernels share the same 6-binding layout (see decodeWeight's own comment
-// in gpu/gemv_w4a8.go), so this runner is precision-agnostic exactly the way DecodeRunner's own
-// gemv/gemvAdd builders already are.
+// rm is decodeWeight, either W8A8 or W4A8: both kernels share the same 6-binding layout (decodeWeight's own comment in
+// gemv_w4a8.go), so this runner is precision-agnostic the way DecodeRunner's own gemv/gemvAdd builders are.
 type GEMVRunner struct {
 	c                                  *Context
 	rm                                 decodeWeight
@@ -375,9 +371,8 @@ func (c *Context) NewGEMVRunner(rm decodeWeight) (*GEMVRunner, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Check each alloc: a failed CreateBuffer returns nil, which would flow into CreateBindGroup and
-	// then nil-panic in the error-cleanup Release() below — the C-27 class, in the production staged
-	// path (audit R-06). Release the already-allocated buffers on the way out.
+	// Check each alloc: a failed CreateBuffer returns nil, which would flow into CreateBindGroup and then nil-panic in the
+	// error-cleanup Release() below. Release the already-allocated buffers on the way out.
 	asBuf, err := mk("gemvr-ascale", 4, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 	if err != nil {
 		aBuf.Release()

@@ -8,19 +8,16 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// MoE residency (Lever C3) — sparse expert routing + dispatch on the GPU so the MoE
-// families (Mixtral / Qwen2-MoE / GLM / DeepSeek) run on the resident DecodeRunner
-// instead of the staged path. This file is C3a: the router top-k SELECTION kernel.
-// C3b adds the indexed sparse-expert GEMV; C3c wires both into the runner.
+// MoE residency: sparse expert routing + dispatch on the GPU so the MoE families (Mixtral / Qwen2-MoE / GLM / DeepSeek) run
+// on the resident DecodeRunner instead of the staged path. This file holds the router top-k SELECTION kernel (moeRoute), the
+// indexed sparse-expert GEMV, the gated shared-expert combine and the gpt-oss variants.
 //
-// The selection mirrors the CPU routeExperts (decoder/mlp.go): score the router logits
-// (softmax for Mixtral/Qwen2-MoE, or per-expert sigmoid for DeepSeek/GLM), optionally add
-// a per-expert selection bias, take the top-k by selection score, set each chosen
-// expert's WEIGHT to its un-biased score, optionally renormalize the k weights to sum 1
-// (Mixtral norm_topk_prob) and scale them (DeepSeek routed_scaling_factor). The
-// group-limited variant (DeepSeek nGroup>1) is deferred to C3d; this kernel is the
-// nGroup==1 path. nE is tiny (8–512) so one single-lane workgroup is plenty — selection
-// is not the cost, the expert GEMVs are.
+// The selection mirrors the CPU routeExperts (decoder/mlp.go): score the router logits (softmax for Mixtral/Qwen2-MoE, or
+// per-expert sigmoid for DeepSeek/GLM), optionally add a per-expert selection bias, take the top-k by selection score, set
+// each chosen expert's WEIGHT to its un-biased score, optionally renormalize the k weights to sum 1 (Mixtral
+// norm_topk_prob) and scale them (DeepSeek routed_scaling_factor). The group-limited variant (DeepSeek nGroup>1) mirrors
+// decoder.groupLimit. nE is tiny (8–512) so one single-lane workgroup is plenty: selection is not the cost, the expert GEMVs
+// are.
 const moeRouteWGSL = `
 const MAXE: u32 = 512u;
 struct P { nE: u32, k: u32, sigmoid: u32, norm: u32, scale: f32, hasBias: u32, nGroup: u32, topkGroup: u32 };
@@ -557,9 +554,8 @@ func (c *Context) ensureMoEExpertGptOssDown() error {
 	return nil
 }
 
-// gptOssDownPipelineFor picks gpt-oss's down-projection combine kernel for a stacked expert set.
-// It is the one place that choice is made, shared by the resident builder and GptOssDownForTest,
-// so the test exercises the builder's own selection (audit-2026-09-10 C-06).
+// gptOssDownPipelineFor picks gpt-oss's down-projection combine kernel for a stacked expert set. It is the one place that
+// choice is made, shared by the resident builder and GptOssDownForTest, so the test exercises the builder's own selection.
 func (c *Context) gptOssDownPipelineFor(s *ResidentStackedW8A8) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
 	if s.w4 { // int4 stack: nibbles + f16 group scales, which the int8 kernel misreads
 		return c.moeExpertGptOssDownW4Pipeline, c.moeExpertGptOssDownW4Layout

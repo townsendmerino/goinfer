@@ -9,14 +9,11 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// W4A8 decode GEMV: int4 group-wise weights × int8 activation. The decode
-// roofline is weight bytes/token; int8 streams ~1.55 GB, int4 ~0.97 GB (½ the
-// nibbles + ⅛ the f32 group scales), so this is the lever on the 4.3 ms gemv
-// floor (docs/gpu-assessment.md §0.0, W4A8). Format matches aikit's int4-resident
-// (`internal/linalg`, group=32, GGUF Q4_K granularity): per row, K/32 groups each
-// of 32 nibbles + one f32 scale; element i's nibble = (word>>4i)&0xF, value
-// (nibble−8). group=32 nibbles = 16 bytes = exactly one vec4<u32>, so one group
-// is one coalesced load. Activations are int8 (per-row aScale, same as W8A8).
+// W4A8 decode GEMV: int4 group-wise weights × int8 activation. The decode roofline is weight bytes/token, and int4 streams
+// about 0.6× the bytes of int8 (½ the nibbles + ⅛ the f32 group scales). Format matches aikit's int4-resident
+// (`internal/linalg`, group=32, GGUF Q4_K granularity): per row, K/32 groups each of 32 nibbles + one f32 scale; element i's
+// nibble = (word>>4i)&0xF, value (nibble−8). group=32 nibbles = 16 bytes = exactly one vec4<u32>, so one group is one
+// coalesced load. Activations are int8 (per-row aScale, same as W8A8).
 const w4a8GroupSize = 32
 
 const gemvW4A8ShaderWGSL = `
@@ -120,16 +117,10 @@ func (rm *ResidentW4A8) Close() error {
 
 func padK32(k int) int { return (k + 31) &^ 31 }
 
-// f32to16 is an alias for the ONE converter this package uses; see f32ToF16 in f16.go.
-//
-// N-04: there used to be two different float32→half converters in this package, and this was the
-// load-bearing one — every W4A8 group-scale upload and NewKVCacheF16 go through it. It FLUSHED
-// THE ENTIRE SUBNORMAL RANGE (`exp <= 0 → sign`), so an int4 group whose scale is below 2^-14
-// read as all-zero on WebGPU and nowhere else. The 2026-08-05 audit's C-15 fixed exactly this in
-// cuda/ and gpu/ was not in the disposition.
-//
-// It also made GOINFER_INT4_F16_SCALES lie: that diagnostic claims to reproduce WebGPU's unpack
-// on the CPU, and for those groups it did not.
+// f32to16 is an alias for the ONE float32→half converter this package uses; see f32ToF16 in f16.go. Keep it one: a second
+// converter here once flushed the entire subnormal range, so an int4 group scale below 2^-14 read as all-zero on WebGPU and
+// nowhere else, and made the GOINFER_INT4_F16_SCALES diagnostic (which claims to reproduce WebGPU's unpack on the CPU) lie.
+// History: docs/code-notes/gpu.md#f32to16.
 func f32to16(f float32) uint16 { return f32ToF16(f) }
 
 // f16to32 expands an IEEE-754 half to float32 (so the parity reference can
@@ -227,14 +218,12 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 	return traced(&ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, int64(bq.GetSize())+int64(bs.GetSize())), nil
 }
 
-// UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are
-// ALREADY in the GPU packed layout. The decoder's int4 storage (2 nibbles/byte) is
-// byte-identical to packNibbles' output when K is a multiple of the 32-wide group (no row
-// padding — proven by TestInt4LayoutMatch), so the resident upload is a straight
-// CreateBufferInit of the decoder bytes — skipping the per-element unpack + packNibbles
-// re-pack that costs ~30 s on a 12 B model (docs/task-mellum2-fast-load.md). q4 is the
-// decoder int4 bytes (≥ N*K/2); scales the per-group f32 (≥ N*K/32). Requires K%32==0;
-// callers fall back to UploadW4A8 otherwise. Same nibble value convention (value+8).
+// UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are ALREADY in the GPU packed layout.
+// The decoder's int4 storage (2 nibbles/byte) is byte-identical to packNibbles' output when K is a multiple of the 32-wide
+// group (no row padding; TestInt4LayoutMatch), so the resident upload is a straight CreateBufferInit of the decoder bytes,
+// skipping the per-element unpack + packNibbles re-pack that is slow on a large model. q4 is the decoder int4 bytes
+// (≥ N*K/2); scales the per-group f32 (≥ N*K/32). Requires K%32==0; callers fall back to UploadW4A8 otherwise. Same nibble
+// value convention (value+8).
 func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*ResidentW4A8, error) {
 	if N <= 0 || K <= 0 {
 		return nil, fmt.Errorf("gpu: UploadW4A8Packed non-positive dim N=%d K=%d", N, K)

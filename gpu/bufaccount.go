@@ -10,14 +10,10 @@ import (
 
 // Live device-buffer accounting.
 //
-// A full ./gpu/ run used to climb to 7,782 MiB of 8,192 and then fail every later test with
-// "failed to request device" — an out-of-memory wearing an unrelated message. Context.Close
-// releases the DEVICE, but buffers uploaded through UploadF32/UploadW8A8/UploadW4A8Packed are
-// caller-owned, and each live one pins that memory.
-//
-// nvidia-smi can show the total but cannot say WHICH test left it behind. This counter can:
-// it is exact, in-process, and read at each test's start, so a full run attributes the growth
-// to the test that caused it. See TestNoBufferLeak.
+// Context.Close releases the DEVICE, but buffers uploaded through UploadF32/UploadW8A8/UploadW4A8Packed are caller-owned and
+// each live one pins that memory; a leaking test run ends in "failed to request device", an out-of-memory wearing an
+// unrelated message. This counter is exact, in-process and read at each test's start, so a full run attributes the growth to
+// the test that caused it (nvidia-smi cannot). See TestNoBufferLeak. History: docs/code-notes/gpu.md#liveBufferBytes.
 var liveBufferBytes atomic.Int64
 
 // LiveBufferBytes reports device-buffer bytes allocated through goinfer's wrappers and not

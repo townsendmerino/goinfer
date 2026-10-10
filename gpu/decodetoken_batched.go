@@ -8,35 +8,22 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it
-// runs M token rows (a speculative block at consecutive positions) through the dense
-// W8A8 layers, with the weight-heavy PROJECTIONS done as M=K tiled GEMMs — each
-// weight streamed once across all M rows — and the cheap per-row ops (rmsnorm, RoPE,
-// attention, SwiGLU, residual, KV-store) looped over the rows. This is the
-// projection-side weight-stream collapse that the per-row resident verify (runBatch:
-// M separate M=1 GEMVs) cannot do.
+// DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it runs M token rows (a speculative block at
+// consecutive positions) through the dense W8A8 layers, with the weight-heavy PROJECTIONS done as M=K tiled GEMMs (each
+// weight streamed once across all M rows) and the cheap per-row ops (rmsnorm, RoPE, attention, SwiGLU, residual, KV-store)
+// looped over the rows.
 //
-// It is bit-equivalent to M sequential DecodeTokenFused calls at positions[0..M-1]
-// (same int8 inputs, same int32 accumulation; the tiled GEMM equals the GEMV): all
-// rows' K/V are written to the shared cache before any row's attention reads it, so
-// row i attends to rows 0..i-1 exactly as sequential decode would. Gated by
-// TestDecodeTokenFusedBatched_parity. Dense W8A8 only (no MoE/MLA/SSM/bias/QK-norm)
-// — the first arch of the Stage-B rollout.
+// It is bit-equivalent to M sequential DecodeTokenFused calls at positions[0..M-1] (same int8 inputs, same int32
+// accumulation; the tiled GEMM equals the GEMV): all rows' K/V are written to the shared cache before any row's attention
+// reads it, so row i attends to rows 0..i-1 as sequential decode would. Gated by TestDecodeTokenFusedBatched_parity. Dense
+// W8A8 only (no MoE/MLA/SSM/bias/QK-norm).
 //
-// NOT one command buffer end to end, despite the name's original intent: cogentcore/webgpu's
-// Metal backend allocates a fresh native MTLCommandBuffer inside every ComputePassEncoder.TryEnd()
-// (wgpuComputePassEncoderEnd -> wgpu_hal Metal begin_encoding -> -[MTLCommandQueue
-// commandBufferWithUnretainedReferences]), and MTLCommandQueue caps how many can exist
-// uncommitted at once — block on that cap and Submit() is unreachable because nothing already
-// queued will ever be committed to free a slot. A single encoder spanning all M rows x all
-// layers hit that cap even at the smallest tested dims (qwen0.5b, M=8/L=8, ~1000+ passes) and
-// deadlocked forever (confirmed by sampling the live process: near-zero CPU, parked on
-// semaphore_wait_trap under Metal's command-buffer allocator — TestDecodeTokenFusedBatched_microbench
-// and _largedim both hung this way, unrelated to any dependency version). flushPasses below
-// commits periodically (Submit with no intervening Poll — same-queue submissions are ordered by
-// WebGPU/Metal automatically, so KV-cache writes still happen-before later attention reads) to
-// stay under the cap while keeping the weight-stream-once-per-layer win this function exists to
-// measure: the amortization is across M rows within a layer, not across the whole block.
+// NOT one command buffer end to end: Metal allocates a native MTLCommandBuffer inside every ComputePassEncoder.TryEnd() and
+// MTLCommandQueue caps how many can be uncommitted at once, so a single encoder spanning all M rows x all layers blocks on
+// that cap and deadlocks (Submit is unreachable). flushPasses commits periodically without a Poll (same-queue submissions
+// are ordered, so KV writes still happen-before later attention reads); it exists only to stay under the cap, so keep it.
+// The weight-stream-once win is across M rows within a layer, not across the whole block.
+// History: docs/code-notes/gpu.md#DecodeTokenFusedBatched.
 func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([][]float32, error) {
 	M := len(xs)
 	if M == 0 {
@@ -44,8 +31,8 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	}
 	// The thin-M gemmRow kernel accumulates into a private array<i32, gemmRowMaxM> (gemm_rows.go),
 	// so M rows past that silently alias the last accumulator under WGSL's robustness clamp —
-	// wrong logits, no error (audit C-13). The one-shot MatmulW8A8GemmRow guards this; the fused
-	// batched path did not. Reject rather than corrupt; the caller (spec verify) chunks its block.
+	// wrong logits, no error. The one-shot MatmulW8A8GemmRow guards this and so does this path: reject rather than
+	// corrupt; the caller (spec verify) chunks its block.
 	if M > gemmRowMaxM {
 		return nil, fmt.Errorf("gpu: DecodeTokenFusedBatched M=%d exceeds gemmRowMaxM=%d (chunk the block)", M, gemmRowMaxM)
 	}
@@ -74,7 +61,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	}
 	defer func() { enc.Release() }()
 
-	// buildErr accumulates the FIRST device-allocation/bind failure (audit C-27): the helpers
+	// buildErr accumulates the FIRST device-allocation/bind failure: the helpers
 	// short-circuit once set and the function returns it before Submit, so VRAM exhaustion is an
 	// error the caller falls back on rather than a panic (bind) or a downstream nil-buffer deref.
 	var buildErr error
@@ -167,7 +154,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		}
 	}
 	// cpy is a buildErr/nil-guarded CopyBufferToBuffer — a nil src/dst here means an upstream
-	// storF/tiledProj already failed, so skip rather than deref (audit C-27).
+	// storF/tiledProj already failed, so skip rather than deref.
 	cpy := func(src *wgpu.Buffer, so uint64, dst *wgpu.Buffer, do, sz uint64) {
 		if buildErr != nil || src == nil || dst == nil {
 			return
@@ -180,7 +167,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		out := storF(hidden)
 		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
 		// The rmsnorm kernel is single-workgroup (reduces one row); one workgroup, not 64. 64 was 64×
-		// redundant work + 64 unsynchronised writes to the same addresses (audit R-19; N-07 sibling).
+		// redundant work + 64 unsynchronised writes to the same addresses.
 		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
 		return out
 	}
@@ -303,7 +290,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	logits := tiledProj(xnf, m.LMHead)
 
 	// Surface any device-allocation/bind failure as an error before the readback, instead of
-	// copying from uninitialised `logits` rows (audit C-27).
+	// copying from uninitialised `logits` rows.
 	if buildErr != nil {
 		return nil, buildErr
 	}

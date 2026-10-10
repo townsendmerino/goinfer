@@ -200,9 +200,8 @@ type AttnWeights struct {
 	InvFreq             *DeviceBuffer // [headDim/2]
 	KCache, VCache      *DeviceBuffer // [maxLen*kvDim] resident
 
-	// QBias, KBias, VBias: optional per-output bias (Qwen2); nil ⇒ no bias. Only
-	// PrefillLastW8A8 (gpu/prefillrunner.go) reads these today — DecodeToken/
-	// DecodeTokenFused/DecodeTokenFusedBatched predate bias support and ignore them.
+	// QBias, KBias, VBias: optional per-output bias (Qwen2); nil ⇒ no bias. Only PrefillLastW8A8 reads these:
+	// DecodeToken/DecodeTokenFused/DecodeTokenFusedBatched ignore them.
 	QBias, KBias, VBias *DeviceBuffer
 
 	// QNorm, KNorm: optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ no QK-norm.

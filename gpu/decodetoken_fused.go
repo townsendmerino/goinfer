@@ -11,10 +11,8 @@ import (
 // DecodeTokenFused is the fast one-command-BUFFER decode forward: it records every
 // dispatch of every layer into a SINGLE command encoder (one dispatch per pass, so
 // pass-boundary barriers keep the data dependencies correct), with the KV-append
-// copies between passes — then ONE Submit + ONE Poll. The per-op-submit DecodeToken
-// was correct but issued ~500 submits; this collapses them to one, which is what
-// the §0.5 probe measured as the win. Bit-exact-identical to DecodeToken
-// (TestDecodeTokenFused_parity).
+// copies between passes — then ONE Submit + ONE Poll, where the per-op-submit DecodeToken
+// issues hundreds. Bit-exact-identical to DecodeToken (TestDecodeTokenFused_parity).
 func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, inter, pos, start int, eps, scale float32, addOne bool) ([]float32, error) {
 	if err := c.ensureGEMV(); err != nil {
 		return nil, err
@@ -45,11 +43,10 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	}
 	defer enc.Release()
 
-	// buildErr accumulates the FIRST device-allocation/bind failure (audit C-27), mirroring
+	// buildErr accumulates the FIRST device-allocation/bind failure, mirroring
 	// newDecodeRunner: the storF/uni/bind/disp helpers short-circuit once it is set, and the
-	// function returns it before Submit — so VRAM exhaustion is an error the caller can fall back
-	// on, never a panic (the old code did `b, _ :=` then passed nil buffers downstream, and bind
-	// panicked on a nil-buffer bind-group failure).
+	// function returns it before Submit, so VRAM exhaustion is an error the caller can fall back
+	// on, never a panic from binding a nil buffer.
 	var buildErr error
 	storF := func(n int) *wgpu.Buffer {
 		if buildErr != nil {
@@ -111,7 +108,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		out := storF(hidden)
 		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
 		// One workgroup covers the whole row (the resident runner dispatches this same pipeline
-		// 1×1). 64 was 64× redundant work + 64 unsynchronised writes to the same addresses (N-07).
+		// 1×1). 64 was 64× redundant work + 64 unsynchronised writes to the same addresses.
 		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
 		return out
 	}
@@ -195,7 +192,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	logits := gemv(fq, fs, m.LMHead)
 
 	// A device-allocation/bind failure anywhere above surfaces here as an error, not a panic or a
-	// read of an uninitialised `logits` buffer (audit C-27).
+	// read of an uninitialised `logits` buffer.
 	if buildErr != nil {
 		return nil, buildErr
 	}

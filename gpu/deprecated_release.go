@@ -4,16 +4,13 @@ package gpu
 
 import "io"
 
-// Deprecated Release() aliases (audit B-12). The GPU resource types now standardize on
-// Close() error so they satisfy io.Closer and callers can write generic cleanup — the fix
-// the audit asked for ("None implement io.Closer"). Release() is retained ONLY as a thin
-// deprecated alias: some teardown paths keep a MIXED cleanup list of our types and raw
-// wgpu objects (which expose Release(), not Close()), so a hard removal would force those
-// lists to be rewritten. New code should call Close(); Release is removed in a future major.
+// Deprecated Release() aliases. The GPU resource types standardize on Close() error so they satisfy io.Closer and callers
+// can write generic cleanup. Release() is retained ONLY as a thin deprecated alias: some teardown paths keep a MIXED cleanup
+// list of our types and raw wgpu objects (which expose Release(), not Close()), so a hard removal would force those lists to
+// be rewritten. New code should call Close(); Release is removed in a future major.
 
-// Compile-time proof that every GPU resource type implements io.Closer (audit B-12: "None implement
-// io.Closer"). A signature drift back to a no-error/absent Close breaks the build here, not a caller
-// months later. VisionEncoder was the residual the second audit pass named — now covered.
+// Compile-time proof that every GPU resource type implements io.Closer. A signature drift back to a no-error/absent Close
+// breaks the build here, not a caller months later.
 var (
 	_ io.Closer = (*webgpuBackend)(nil)
 	_ io.Closer = (*Context)(nil)

@@ -1,15 +1,9 @@
 //go:build gpu && goinfer_testhooks
 
-// Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
-// only under -tags goinfer_testhooks so they are NOT part of the public API
-// (audit B-08). See RELEASING.md. Imports are added to satisfy the moved bodies.
+// Test-only hooks, compiled only under -tags goinfer_testhooks so they are NOT part of the public API (see RELEASING.md).
 //
-// HAND-MAINTAINED, NOT MACHINE-GENERATED — despite this file's former name
-// (testhooks_gen.go, renamed 2026-09-11, audit-2026-09-02.md N-41; a separate
-// same-day fix gave it back the missing `gpu` tag this build line requires —
-// see git history). There is no //go:generate directive and nothing
-// regenerates it; edit it directly like any other file. Mirrors
-// decoder/testhooks.go and cuda/testhooks.go.
+// HAND-MAINTAINED, NOT MACHINE-GENERATED: there is no //go:generate directive and nothing regenerates this file; edit it
+// directly like any other file. Mirrors decoder/testhooks.go and cuda/testhooks.go.
 
 package gpu
 
@@ -243,8 +237,8 @@ func (c *Context) IndexedGEMVForTestInt4(s *ResidentStackedW8A8, aq []int8, aSca
 
 // GptOssDownForTest runs gpt-oss's down-projection combine standalone for one router slot:
 // dst[n] = dstInit[n] + wgt[slot]·(aScale·(aq·dequant(expert[idx[slot]])ᵀ)[n] + dbias[idx[slot]·N+n]).
-// It dispatches whatever gptOssDownPipelineFor selects for s, which is the resident builder's own
-// choice. So a stack routed to the wrong kernel fails here exactly as it does in decode (audit C-06).
+// It dispatches whatever gptOssDownPipelineFor selects for s, which is the resident builder's own choice, so a stack routed to
+// the wrong kernel fails here exactly as it does in decode.
 func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale float32, idx []int, wgt, dbias, dstInit []float32, slot int) ([]float32, error) {
 	if err := c.ensureMoEExpertGptOssDown(); err != nil {
 		return nil, err
@@ -315,10 +309,8 @@ func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale fl
 	return out, nil
 }
 
-// LMHeadForTest returns the runner's LM-head weight (decodeWeight), for tests that need to call the
-// same GEMV kernel directly against the model's own resident buffer — see gpu/gemv_lmhead_isolation_test.go
-// (R10/G38's root-cause isolation: does the same real buffer cost the same standalone as it does
-// inside a full decode token, or is the cost specific to co-residency/pass position).
+// LMHeadForTest returns the runner's LM-head weight (decodeWeight), for tests that need to call the same GEMV kernel
+// directly against the model's own resident buffer; see gemv_lmhead_isolation_test.go.
 func (r *DecodeRunner) LMHeadForTest() decodeWeight { return r.lmHead }
 
 // SetPrefillProfForTest enables (on=true) or disables the R10 prefill decomposition profiler

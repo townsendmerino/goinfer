@@ -10,7 +10,7 @@ import (
 
 // Thin-M W8A8 GEMM for the Stage-B verify (docs/spec/07). The 16×16 tiled GEMM
 // (gemm.go) is the PREFILL kernel; at the small M of a speculative block (M≈K+1≈8)
-// it wastes half its 16-row tile and loses to per-row GEMV (measured 0.88×). This
+// it wastes half its 16-row tile and loses to per-row GEMV. This
 // kernel keeps the GEMV's structure — one WORKGROUP per output column n, 64 lanes
 // coalesce-stride the contiguous weight row — but loads each weight vec4 ONCE and
 // accumulates it against ALL M activation rows (M register accumulators). So the

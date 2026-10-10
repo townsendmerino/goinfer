@@ -8,13 +8,11 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// W8A8 (int8×int8) matmul on the GPU — the Stage-1 "quantized matmul" unlock.
-// Decode is memory-bandwidth-bound (every token reads all resident weights), so
-// the win is storing weights as 1-byte int8 PACKED 4-per-u32 (≈4× less traffic
-// than f32), not the multiply itself. WebGPU has no i8 type and (in this binding)
-// no dot4I8Packed builtin, so the kernel unpacks four sign-extended int8 per u32
-// and accumulates in i32 — a few extra ALU ops that don't matter when the kernel
-// is bandwidth-bound. Math matches linalg.MatmulBTW8A8 exactly:
+// W8A8 (int8×int8) matmul on the GPU. Decode is memory-bandwidth-bound (every token reads all resident weights), so the
+// win is storing weights as 1-byte int8 PACKED 4-per-u32 (≈4× less traffic than f32), not the multiply itself. WebGPU has
+// no i8 type and dot4I8Packed is not available on every adapter (Context.hasDP4A), so this kernel unpacks four
+// sign-extended int8 per u32 and accumulates in i32: a few extra ALU ops that do not matter when the kernel is
+// bandwidth-bound. Math matches linalg.MatmulBTW8A8 exactly:
 //
 //	dst[m,n] = (Σ_k aq[m,k]·bq[n,k]) · aScale[m] · bScale[n]
 //

@@ -4,10 +4,9 @@ package gpu
 
 import "fmt"
 
-// KScalesForTest reads back layer l's int8-KV K-scale buffer from a WebGPU resident decoder: one
-// f32 per (position, KV head), laid out [pos*nKV + head]. It errors when the resident's KV is not
-// int8, so a caller can never mistake an f32 cache for an unwritten scale buffer. It is the seam
-// for audit-2026-09-10 C-09, where the scale was written at the rope position, not the true one.
+// KScalesForTest reads back layer l's int8-KV K-scale buffer from a WebGPU resident decoder: one f32 per (position, KV head),
+// laid out [pos*nKV + head]. It errors when the resident's KV is not int8, so a caller can never mistake an f32 cache for an
+// unwritten scale buffer. It is the seam that pins the scale being written at the true position, not the rope position.
 func KScalesForTest(rf any, l int) (scales []float32, nKV int, err error) {
 	r, ok := rf.(*residentDecoder)
 	if !ok {

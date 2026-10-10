@@ -60,14 +60,14 @@ func kvSlotsWithin(want int, budget, base, perSlot int64) int {
 	return n
 }
 
-// darwinKVSlots prices slots where the device's buffers ARE host RAM (darwin), against the same two ceilings Metal's
-// guard takes the smaller of (metalMemoryCeiling):
+// darwinKVSlots prices slots where the device's buffers ARE host RAM (darwin), against the same two ceilings Metal's guard
+// takes the smaller of (metalMemoryCeiling):
 //   - the fit guard's share of physical RAM, against everything the build holds: the device weights, the host copy a
 //     unified-memory backend keeps beside them (decoder.Model.ResidentHostCopyBytes), and one slot of KV each;
-//   - the memory available when the build STARTED (avail0, read before its first upload, 0 when unknown), against
-//     only what the build then allocated: the device weights and the slots. The host copy was already resident when
-//     avail0 was read, so it is not counted again — and a live figure read after the upload would count the weights
-//     twice, the bug MC1's Metal clamp had (docs/tasks/task-concurrency-2026-09.md, "priced after the build").
+//   - the memory available when the build STARTED (avail0, read before its first upload, 0 when unknown), against only what
+//     the build then allocated: the device weights and the slots. The host copy was already resident when avail0 was read, so
+//     it is not counted again, and a live figure read after the upload would count the weights twice
+//     (docs/tasks/task-concurrency-2026-09.md, "priced after the build").
 //
 // An unreadable RAM size grants one, as metalKVSlots does.
 func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int {
@@ -200,16 +200,15 @@ func kvBytesPerPosition(m *decoder.Model, kvF16, kvI8 bool) int64 {
 	return 2 * int64(nLayers) * per
 }
 
-// slotsBeforeContext is MC1's "slots before context" on WebGPU (owner decision 2026-09-27, the rule CUDA's
-// ctxForSlots applies): when more than one KV slot is requested and the caller did not choose the context
-// (decoder.Model.ResidentContextPinned — a fit-guard auto-pin is a one-slot ceiling, not a choice), give up context,
-// down to webgpuSlotCtxFloor, until every requested slot fits; below the floor the slot count is clamped instead, by
-// buildKVSlots as always. An explicit -ctx is never shrunk.
+// slotsBeforeContext is MC1's "slots before context" on WebGPU (the rule CUDA's ctxForSlots applies): when more than one KV
+// slot is requested and the caller did not choose the context (decoder.Model.ResidentContextPinned: a fit-guard auto-pin is a
+// one-slot ceiling, not a choice), give up context, down to webgpuSlotCtxFloor, until every requested slot fits; below the
+// floor the slot count is clamped instead, by buildKVSlots as always. An explicit -ctx is never shrunk.
 //
-// darwin only, for now: there the device's memory is host RAM and darwinKVSlots can price a context before anything
-// is allocated. A discrete GPU has no free-memory query on this backend, so what fits is learned only by allocating;
-// shrinking there waits on a measurement of how a failed allocation behaves on real Vulkan hardware (the MC1-WebGPU
-// nobara prompt). KV is linear in the context, so "fits" is monotone and a binary search finds the edge.
+// darwin only: there the device's memory is host RAM and darwinKVSlots can price a context before anything is allocated. A
+// discrete GPU has no free-memory query on this backend, so what fits is learned only by allocating, and no context
+// shrinking is done there. KV is linear in the context, so "fits" is monotone and a binary search finds the edge.
+// History and the open Vulkan question: docs/code-notes/gpu.md#slotsBeforeContext.
 func slotsBeforeContext(m *decoder.Model, ctxCap int, kvF16, kvI8 bool, avail0 int64) int {
 	want := m.ResidentKVSlotsRequest()
 	if runtime.GOOS != "darwin" || want <= 1 || m.ResidentContextPinned() || ctxCap <= webgpuSlotCtxFloor {

@@ -8,23 +8,15 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Stage 2 — device-resident activations. At M=1 decode the activation is a few
-// KB, so the per-token cost isn't data movement, it's LATENCY: the Stage-1
-// MatmulW8A8 calls Poll(true) to map its readback, and ~7 matmuls × N layers =
-// hundreds of synchronous round-trips per token. Keeping activations in device
-// buffers lets a chain of matmuls submit back-to-back and sync ONCE.
+// Stage 2: device-resident activations. At M=1 decode the activation is a few KB, so the per-token cost is not data movement
+// but LATENCY: the Stage-1 MatmulW8A8 calls Poll(true) to map its readback, so a token is hundreds of synchronous
+// round-trips. Keeping activations in device buffers lets a chain of matmuls submit back-to-back and sync ONCE.
 //
-// Chaining W8A8→W8A8 needs the one glue op that was on the CPU — int8
-// re-quantization of a matmul's f32 output — moved onto the GPU. quantizeShader
-// does it: one workgroup per row computes the row max-abs (a 64-lane tree reduce),
-// then all lanes quantize+pack to the same 4×int8/u32 layout MatmulW8A8 consumes.
-//
-// The reduce was a serial scan on lane 0 until 2026-09-02, justified as "trivial at
-// decode; the rows run in parallel". That is exactly backwards: decode is M=1, so
-// there is only ever ONE row and nothing to run in parallel — one lane scanned the
-// whole row while 63 idled at the barrier, in a single-workgroup dispatch. Measured
-// 37 µs/dispatch against rmsnormQuantWGSL's 7.9 µs for strictly more work; see the
-// ablation profile in TestDecode_dispatchProfile and G35 in docs/QUEUE.md.
+// Chaining W8A8→W8A8 needs the one glue op that was on the CPU, int8 re-quantization of a matmul's f32 output, on the GPU.
+// quantizeShader does it: one workgroup per row computes the row max-abs (a 64-lane tree reduce), then all lanes
+// quantize+pack to the same 4×int8/u32 layout MatmulW8A8 consumes. The reduce must stay a parallel tree: decode is M=1, so
+// there is one row and nothing else to run in parallel, and a serial scan on lane 0 idles 63 lanes in a single-workgroup
+// dispatch (TestDecode_dispatchProfile). History: docs/code-notes/gpu.md#Stage 2: device-resident activations.
 
 const quantizeShaderWGSL = `
 struct QDims { m: u32, n: u32, np: u32, _p: u32 };  // np = N padded to mult of 4
@@ -262,24 +254,11 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 	return newDeviceBuffer(dstBuf, M*N), nil
 }
 
-// readbackRaw reads n f32 elements from a raw *wgpu.Buffer whose REAL release stays exactly
-// where it already was — a `defer buf.Release()` in the caller. This function only fixes the
-// ACCOUNTING: newDeviceBuffer's accountAlloc is paired with accountFree before returning,
-// WITHOUT calling Close/Release on buf itself.
-//
-// V-22 (docs/review-2026-09-04.md), and a mutation-testing catch on the fix: the first version
-// of this helper called db.Close() to balance the accounting — which also runs buf.Release(),
-// double-releasing a buffer the caller's OWN defer buf.Release() already owns. That corrupted
-// the allocator: the accounting-only symptom of the ORIGINAL bug (LiveBufferBytes growing
-// unbounded, easy to see) was replaced by a SIGTRAP inside wgpu-native on a LATER, unrelated
-// CreateBuffer call — reproduced on TestZZRepeatLayerNorm's 3rd iteration, harder to see and
-// worse than the bug being fixed. Confirmed against the ORIGINAL (pre-V-22) code with the same
-// repeated-call test: no crash, LiveBufferBytes growing every call — the leak, not a corruption.
-//
-// The original bug this whole helper exists for: every Readback(newDeviceBuffer(buf, n)) call
-// site built a throwaway wrapper, read it, and threw it away — accountAlloc ran, nothing ever
-// ran accountFree, so LiveBufferBytes grew by that buffer's size on every call and never came
-// back down, for a real GPU allocation that WAS correctly released by the caller's own defer.
+// readbackRaw reads n f32 elements from a raw *wgpu.Buffer whose REAL release stays exactly where it already was: a
+// `defer buf.Release()` in the caller. This function only fixes the ACCOUNTING: newDeviceBuffer's accountAlloc is paired with
+// accountFree before returning, WITHOUT calling Close/Release on buf itself. Calling db.Close() here would double-release a
+// buffer the caller's own defer owns and corrupt the allocator (a SIGTRAP inside wgpu-native on a later, unrelated
+// CreateBuffer), which is worse than the accounting leak it would fix. History: docs/code-notes/gpu.md#readbackRaw.
 func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {
 	db := newDeviceBuffer(buf, n)
 	out, err := c.Readback(db)

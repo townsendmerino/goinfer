@@ -8,16 +8,13 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Resident SigLIP vision encoder — the path to a GPU-fast image prefill
-// (docs/completed/task-gpu-vision-tower.md). Per-call matmul offload was a measured dead
-// end (WebGPU's ~1s submit+readback overhead × ~162 matmuls/forward ≈ the whole
-// runtime). The fix is residency: keep the [np, hidden] activation in device
-// buffers through all layers, chaining each op as a Submit with NO Poll (queue
-// order guarantees the dependency), so the forward syncs once. This file builds
-// the batched (M = np patches) kernels the encoder needs that the decode path
-// lacks: standard LayerNorm (mean/var, vs RMSNorm), gelu-tanh (vs silu-gated),
-// and a bidirectional softmax — composed with the existing device matmul /
-// quantize / residual primitives.
+// Resident SigLIP vision encoder, the path to a GPU-fast image prefill (docs/completed/task-gpu-vision-tower.md). Per-call
+// matmul offload is a dead end: the submit+readback overhead per matmul is about the whole runtime. The fix is residency:
+// keep the [np, hidden] activation in device buffers through all layers, chaining each op as a Submit with NO Poll (queue
+// order guarantees the dependency), so the forward syncs once. This file builds the batched (M = np patches) kernels the
+// encoder needs that the decode path lacks: standard LayerNorm (mean/var, vs RMSNorm), gelu-tanh (vs silu-gated), and a
+// bidirectional softmax, composed with the existing device matmul / quantize / residual primitives.
+// History: docs/code-notes/gpu.md#Resident SigLIP vision encoder.
 
 // layerNormRowsWGSL: standard LayerNorm over each of `rows` independent rows of
 // width `h`: y = (x-mean)/sqrt(var+eps) * weight + bias, population variance
@@ -112,17 +109,14 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 
 // ensureVision compiles the vision-only kernels (lazily, once per Context).
 func (c *Context) ensureVision() error {
-	// Guard on the LAST pipeline built (copyHead), not the first (lnRows): a mid-build failure left
-	// the first-field guard satisfied with later pipelines nil, so the next call dispatched a nil
-	// pipeline (audit R-30). On a partial-build retry the earlier fields are rebuilt (old ones stay
-	// tracked for release at Close).
+	// Guard on the LAST pipeline built (copyHead), not the first (lnRows): a mid-build failure would leave the first-field guard
+	// satisfied with later pipelines nil, and the next call would dispatch a nil pipeline. On a partial-build retry the earlier
+	// fields are rebuilt (old ones stay tracked for release at Close).
 	if c.copyHeadPipeline != nil {
 		return nil
 	}
-	// This closure used to DISCARD its *wgpu.ShaderModule (returning only pipeline+layout), so the
-	// five vision shader modules were unreachable for the rest of the process — not merely missing
-	// from Close, but impossible to release from anywhere (audit C-26a). Delegating to the tracked
-	// constructor registers both objects at creation; the shader is dropped here only after that.
+	// Delegates to the tracked constructor so both the shader module and the pipeline are registered for release at creation; a
+	// closure that discarded the shader module would make it impossible to release from anywhere.
 	mk := func(label, code string) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
 		_, pl, lay, err := c.mkPipeline(label, code)
 		if err != nil {
@@ -312,8 +306,8 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	if err != nil {
 		return nil, err
 	}
-	// dst is handed to the caller only on success; release it on EVERY early error return below
-	// (dims-create, bind-group-create, pass.End) — before this it leaked on those paths (audit M-16).
+	// dst is handed to the caller only on success; release it on EVERY early error return below (dims-create, bind-group-create,
+	// pass.End).
 	ok := false
 	defer func() {
 		if !ok {

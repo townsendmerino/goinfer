@@ -16,13 +16,9 @@
 // encoder NewBackend("webgpu")). Without the tag this module's
 // implementation is absent and "webgpu" falls back to CPU with a note.
 //
-// Status (corrected N-34 (09-02) — this said "FOUNDATION cut: a single dst = a·bᵀ GEMM
-// offloaded" long after that stopped being true; restating a snapshot here just invites the
-// same drift again, so this points at what stays current instead). This is a full resident
-// decode runner, not a single offloaded matmul: MoE (routed + gated-shared expert), MLA,
-// Mamba-2, Gated-DeltaNet (dense and MoE siblings), LoRA, and vision encoding are all
-// implemented — see decoder/features.go's "webgpu" ResidentBackendFeatures entry for the exact,
-// enforced capability set (the map a model is admitted against, so it cannot drift from what
-// actually runs the way a status paragraph can) and the gpu/ test suite (-tags gpu) for
-// end-to-end parity coverage per family.
+// This is a full resident decode runner, not a single offloaded matmul.
+// decoder/features.go's "webgpu" ResidentBackendFeatures entry is the enforced list of
+// what it runs (the map a model is admitted against), and the gpu/ test suite
+// (-tags gpu) holds the end-to-end parity coverage per family; do not restate a
+// snapshot of either here. History: docs/code-notes/gpu.md#Package gpu: status paragraph.
 package gpu

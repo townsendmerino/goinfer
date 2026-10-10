@@ -10,15 +10,11 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once
-// (int8 matmul weights as ResidentW8A8, f32 norms/biases as device buffers) and
-// runs ForwardPatches entirely on the device: the [np, hidden] activation stays
-// resident, every op chains as a Submit, and there is ONE Poll per layer (which
-// just waits for that layer's compute and bounds memory before the next layer's
-// scratch is allocated — 8 GB can't hold 27 layers of intermediates at once).
-// This pays WebGPU's submit/sync cost ~27× instead of the per-op-offload's ~162×
-// (a measured dead end). vision.Encoder delegates here when a resident backend is
-// attached (-tags gpu); the default build is pure-Go CPU.
+// VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once (int8 matmul weights as ResidentW8A8, f32
+// norms/biases as device buffers) and runs ForwardPatches entirely on the device: the [np, hidden] activation stays
+// resident, every op chains as a Submit, and there is ONE Poll per layer (which just waits for that layer's compute and
+// bounds memory before the next layer's scratch is allocated). vision.Encoder delegates here when a resident backend is
+// attached (-tags gpu); the default build is pure-Go CPU. History: docs/code-notes/gpu.md#VisionEncoder.
 type VisionEncoder struct {
 	c                                        *Context
 	w                                        vision.GPUWeights
@@ -201,10 +197,9 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		}
 		for head := range nH {
 			off := head * hd
-			// Per-iteration buffers are released at the end of a SUCCESSFUL iteration; on any
-			// error mid-iteration they were leaked (up to five) because `fail`/`keep` only track
-			// the layer-scoped buffers, not these (audit M-16). hrel releases whatever this
-			// iteration has allocated so far, on the success path AND every error return.
+			// Per-iteration buffers are released at the end of a SUCCESSFUL iteration; `fail`/`keep` only track the layer-scoped
+			// buffers, not these, so hrel releases whatever this iteration has allocated so far, on the success path AND every error
+			// return.
 			var hbufs []*DeviceBuffer
 			hrel := func() {
 				for _, b := range hbufs {
@@ -287,12 +282,9 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	return c.Readback(out)
 }
 
-// Close releases all device buffers.
-// Close releases every device buffer and resident matrix this encoder allocated. Returns error to
-// satisfy io.Closer and match the rest of the gpu resource types (audit B-12; VisionEncoder was the
-// one type the finding named that still returned nothing). Teardown is best-effort — the underlying
-// releases can't meaningfully fail — so it always returns nil. Calls the standard Close() (not the
-// deprecated Release alias) on each sub-resource.
+// Close releases every device buffer and resident matrix this encoder allocated. It returns an error to satisfy io.Closer and
+// match the rest of the gpu resource types; teardown is best-effort (the underlying releases cannot meaningfully fail), so it
+// always returns nil. Calls the standard Close() (not the deprecated Release alias) on each sub-resource.
 func (ve *VisionEncoder) Close() error {
 	ve.c.releaseOwned(ve.release)
 	return nil

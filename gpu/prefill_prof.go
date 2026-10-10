@@ -4,13 +4,11 @@ package gpu
 
 import "time"
 
-// R10's prefill-profile step (docs/tasks/red-october.md, docs/measurements/webgpu-prefill-decomp-2026-09-22.md):
-// per-category wall time for the batched prefill path, mirroring cuda/prefill.go's own profTic/profToc
-// exactly (same shape, same accepted trade-off — "category boundaries are syncs, so the category sum
-// runs a bit over the pipelined wall time... the price of per-kernel attribution", cuda/prefill_decomp_test.go's
-// own doc comment). Four categories, matching R10's own ask ("the GEMM, the attention, the batched
-// norms/rope and the KV write each carry a number") — one more than CUDA's three (gemv/attn/glue),
-// because R10 asked norms/rope to be its own class rather than folded into a catch-all.
+// Per-category wall time for the batched prefill path (docs/measurements/webgpu-prefill-decomp-2026-09-22.md), mirroring
+// cuda/prefill.go's profTic/profToc: same shape, same accepted trade-off (category boundaries are syncs, so the category sum
+// runs a bit over the pipelined wall time, the price of per-kernel attribution). Four categories (the GEMM, the attention,
+// the batched norms/rope and the KV write), one more than CUDA's three (gemv/attn/glue).
+// History: docs/code-notes/gpu.md#prefillProf.
 type prefillProf struct {
 	gemm, attn, normsRope, kvWrite time.Duration
 }

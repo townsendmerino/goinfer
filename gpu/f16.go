@@ -4,19 +4,13 @@ package gpu
 
 import "math"
 
-// f32ToF16 is THE float32 → IEEE-754 half converter for this package, byte-for-byte identical to
-// decoder.f32ToF16bits — the canonical resident-backend representation that cuda/kernels.go's
-// f32tof16, metal/pack.go and the GOINFER_INT4_F16_SCALES CPU diagnostic all replicate.
-// Round-half-up plus gradual underflow to subnormals.
+// f32ToF16 is THE float32 → IEEE-754 half converter for this package, byte-for-byte identical to decoder.f32ToF16bits, the
+// canonical resident-backend representation that cuda/kernels.go's f32tof16, metal/pack.go and the
+// GOINFER_INT4_F16_SCALES CPU diagnostic all replicate. Round-half-up plus gradual underflow to subnormals.
 //
-// N-04: this package had TWO converters and neither matched. gemv_w4a8.go's flushed the whole
-// subnormal range (so an int4 group scale below 2^-14 read as all-zero on WebGPU only), and this
-// one used round-to-nearest-EVEN in the normal range where every other backend rounds half up —
-// so identical inputs could produce different halves on exact ties. One converter now, and
-// TestF32ToF16_N04 pins it against a local copy of the canonical algorithm, the same way
-// cuda/f16_convert_test.go does for C-15.
-//
-// NOT RNE: a lone RNE here would re-introduce the divergence C-15 closed.
+// NOT RNE: round-to-nearest-even here would diverge from every other backend on exact ties. Keep it the only converter in
+// this package; TestF32ToF16_N04 pins it against a local copy of the canonical algorithm. History:
+// docs/code-notes/gpu.md#f32ToF16.
 func f32ToF16(f float32) uint16 {
 	b := math.Float32bits(f)
 	sign := uint16((b >> 16) & 0x8000)

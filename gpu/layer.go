@@ -62,13 +62,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
-// docs/tasks/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
-// unclamped, tanh's argument overflows f32 before saturating at Gemma's activation magnitudes,
-// producing NaN — the exact defect Metal's own port hit (metal/kernels.go's glu_act, logit
-// cosine 0.818→0.994 after the clamp fix, decoder/features.go's FeatGatedGELU-adjacent note).
-// tanh itself saturates to ±1 by |arg|~9, so the clamp is a correctness fix at f32 overflow, not
-// an approximation — every other family (SwiGLU) never reaches this branch at all.
+// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin, Gemma's FeatGatedGELU (docs/tasks/task-gpu-paths-2026-09.md).
+// The tanh argument is CLAMPED to ±15 before calling tanh: unclamped, it overflows f32 before saturating at Gemma's
+// activation magnitudes and produces NaN. tanh itself saturates to ±1 by |arg|~9, so the clamp is a correctness fix at f32
+// overflow, not an approximation; SwiGLU families never reach this branch. History: docs/code-notes/gpu.md#gegluShaderWGSL.
 const gegluShaderWGSL = `
 struct P { n: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       gate: array<f32>;
@@ -101,10 +98,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `
 
 func (c *Context) ensureLayer() error {
-	// Guard EACH pipeline independently, not just the first: a mid-build failure (transient OOM)
-	// used to leave rmsnormPipeline set but swiglu/residual nil, and the next call saw the first-field
-	// guard satisfied and dispatched a nil pipeline (audit R-30). Per-field guards retry only what's
-	// missing. Shared tracked constructor (gpu.go) registers for release (C-26).
+	// Guard EACH pipeline independently, not just the first: a mid-build failure (transient OOM) would leave rmsnormPipeline set
+	// but swiglu/residual nil, and the next call would see the first-field guard satisfied and dispatch a nil pipeline.
+	// Per-field guards retry only what is missing. Shared tracked constructor (gpu.go) registers for release.
 	mk := c.mkPipeline
 	var err error
 	if c.rmsnormPipeline == nil {
@@ -187,9 +183,8 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	// V-22 (docs/review-2026-09-04.md): wrapped ONCE, into xnDB, and reused at the quantize step
-	// below — a second newDeviceBuffer(xn, H) there double-accounted the same buffer's bytes in
-	// liveBufferBytes, since only the wrapper kept here ever gets Close()d by rel().
+	// Wrapped ONCE, into xnDB, and reused at the quantize step below: a second newDeviceBuffer(xn, H) there would double-account
+	// the same buffer's bytes in liveBufferBytes, since only the wrapper kept here ever gets Close()d by rel().
 	xnDB := newDeviceBuffer(xn, H)
 	keep = append(keep, xnDB)
 	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
@@ -233,7 +228,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	// V-22 (docs/review-2026-09-04.md): same reuse-not-rewrap fix as xnDB above.
+	// Same reuse-not-rewrap rule as xnDB above.
 	midDB := newDeviceBuffer(mid, I)
 	keep = append(keep, midDB)
 	sp, err := c.dims4("swiglu-p", uint32(I), 0)

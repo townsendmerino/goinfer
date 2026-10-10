@@ -8,15 +8,8 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8).
-//
-// N-34 (09-02): this comment used to say the mixer below "makes every DeltaNet hybrid CPU-only
-// on every backend today" — true when it was written, false once this file shipped. Status per
-// decoder/features.go's FeatDeltaNet declarations: webgpu (here) and metal (metal/deltanet.go,
-// metal/deltanet_kernels.go) both implement the full family, dense and MoE siblings alike; cuda
-// (cuda/deltanet.ptx) implements it too, gated end-to-end by TestQwen35ResidentParityCUDA. See
-// docs/deltanet-residency-plan.md (DONE AND MEASURED 2026-08-19 for this backend, 11.4-12.2x CPU
-// decode) for the webgpu measurement this file is the result of.
+// Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8). Design: docs/deltanet-residency-plan.md;
+// history: docs/code-notes/gpu.md#deltaRuleShaderWGSL.
 //
 // It slots onto the resident DecodeRunner the same way the Mamba-2 engine does — the conv window
 // and the gated norm are that engine's (mambaConv / mambaGNorm, same shapes) and the persistent
@@ -89,13 +82,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// deltaNorm l2-normalizes the per-head q and k slices of the conv output, and applies the query
-// scale. One thread per KEY head: the work is nk·hk (2048 elements on the real 27.8B geometry),
-// far too small to be worth splitting further, and doing it here instead of inside deltaRule keeps
+// deltaNorm l2-normalizes the per-head q and k slices of the conv output, and applies the query scale. One thread per KEY
+// head: the work is nk·hk, far too small to be worth splitting further, and doing it here instead of inside deltaRule keeps
 // the recurrence from recomputing each norm hv times.
 //
-// The conv output is [q(keyDim) ‖ k(keyDim) ‖ v(valueDim)] contiguous — the same packing the CPU
-// reference slices, so the layouts agree by construction rather than by comment.
+// The conv output is [q(keyDim) ‖ k(keyDim) ‖ v(valueDim)] contiguous, the same packing the CPU reference slices, so the
+// layouts agree by construction rather than by comment.
 const deltaNormShaderWGSL = `
 struct P { nk: u32, hk: u32, keyDim: u32, _a: u32, qScale: f32, _b: f32, _c: f32, _d: f32 };
 @group(0) @binding(0) var<storage, read>       conv: array<f32>;  // [q|k|v]
@@ -156,14 +148,12 @@ func (c *Context) ensureDeltaNorm() error {
 	return nil
 }
 
-// deltaGates turns the two small per-value-head projections into the pair the delta rule consumes:
-// beta = sigmoid(b) and the decay gt = exp(negExpA·softplus(a + dt_bias)). nv threads (48 on the
-// real 27.8B) — trivial work, but it has to happen ON DEVICE, because the alternative is a
+// deltaGates turns the two small per-value-head projections into the pair the delta rule consumes: beta = sigmoid(b) and the
+// decay gt = exp(negExpA·softplus(a + dt_bias)). Trivial work, but it has to happen ON DEVICE: the alternative is a
 // round-trip per layer per token.
 //
-// softplus carries torch's threshold=20 linear branch. Without it exp(a) overflows to +inf for
-// large a and the decay becomes NaN; with the CPU reference doing the same thing, matching it is
-// not optional.
+// softplus carries torch's threshold=20 linear branch. Without it exp(a) overflows to +inf for large a and the decay becomes
+// NaN; the CPU reference does the same thing, so matching it is not optional.
 const deltaGatesShaderWGSL = `
 struct P { nv: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       bt:      array<f32>;  // [nv] write-gate logits
@@ -247,16 +237,14 @@ func (c *Context) ensureDeltaGNorm() error {
 	return nil
 }
 
-// The SOFTMAX layers of this family are not ordinary GQA either, and that is easy to miss: with
-// attn_output_gate, q_proj emits [query ‖ gate] PER HEAD at double width, and the attention
-// context is scaled by sigmoid(gate) before o_proj. Two small kernels rather than a load-time
-// weight split, because the weight is quantized — slicing rows out of an int4 WeightMat with its
-// per-group scales is real surgery, while splitting the [nH*2*hd] activation is 6144 threads of
-// copy.
+// The SOFTMAX layers of this family are not ordinary GQA either: with attn_output_gate, q_proj emits [query ‖ gate] PER HEAD
+// at double width, and the attention context is scaled by sigmoid(gate) before o_proj. Two small kernels rather than a
+// load-time weight split, because the weight is quantized: slicing rows out of an int4 WeightMat with its per-group scales is
+// real surgery, while splitting the [nH*2*hd] activation is a copy.
 //
-// deltaQSplit: qg[head*2*hd .. ] → q[head*hd ..] and gate[head*hd ..]. Interleaved PER HEAD, not
-// two concatenated blocks; reading it as two blocks measures cosine 0.90 with a DRIFTING
-// signature (TestQwen35ResidentParity mutation W1b) — plausible logits from the wrong tensor.
+// deltaQSplit: qg[head*2*hd .. ] → q[head*hd ..] and gate[head*hd ..]. Interleaved PER HEAD, not two concatenated blocks;
+// reading it as two blocks gives plausible logits from the wrong tensor (TestQwen35ResidentParity). History:
+// docs/code-notes/gpu.md#deltaQSplitShaderWGSL.
 const deltaQSplitShaderWGSL = `
 struct P { n: u32, hd: u32, _a: u32, _b: u32 };
 @group(0) @binding(0) var<storage, read>       qg:   array<f32>;  // [nH*2*hd]
@@ -315,8 +303,8 @@ func (c *Context) ensureDeltaAttnGate() error {
 	return nil
 }
 
-// compute is the ensure* boilerplate these four kernels share: compile, pipeline, register the
-// releases at creation (audit C-26), and wrap both errors with the kernel's name.
+// compute is the ensure* boilerplate these four kernels share: compile, pipeline, register the releases at creation, and wrap
+// both errors with the kernel's name.
 func (c *Context) compute(name, wgsl string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, error) {
 	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label: name, WGSLSource: &wgpu.ShaderSourceWGSL{Code: wgsl},
