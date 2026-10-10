@@ -2,7 +2,7 @@ package tokenizer
 
 import "testing"
 
-// Track 2.5 (testing campaign): tokenizer.json is untrusted input (it ships in a
+// tokenizer.json is untrusted input (it ships in a
 // model directory). parseTokenizerJSON is the parse surface; it must turn a
 // malformed/hostile file into a typed error, never a panic or OOM.
 

@@ -20,12 +20,11 @@ type goldenFile struct {
 		} `json:"messages"`
 		Rendered string `json:"rendered"`
 		// UpstreamOnly marks a case that records what the MODEL'S template produces where this
-		// renderer deliberately differs, rather than what this renderer must produce. Only
-		// chatml/no_system uses it today (N-37: Qwen 2.5 inserts a default system prompt; the
-		// generic ChatML renderer, shared with non-Qwen families, does not). The divergence is
-		// asserted in full by TestChatML_noSystem_documentedDivergence — this flag keeps the
-		// equality sweep below from failing on it, and is opt-in per case so it cannot quietly
-		// excuse a real regression.
+		// renderer deliberately differs, rather than what this renderer must produce (N-37: Qwen 2.5
+		// inserts a default system prompt; the generic ChatML renderer, shared with non-Qwen families,
+		// does not). The divergence is asserted in full by TestChatML_noSystem_documentedDivergence — this
+		// flag keeps the equality sweep below from failing on it, and is opt-in per case so it cannot
+		// quietly excuse a real regression.
 		UpstreamOnly bool `json:"upstream_only"`
 	} `json:"cases"`
 }
@@ -114,11 +113,10 @@ func TestDetect_fromTemplate(t *testing.T) {
 // way would be wrong, not just imprecise: SmolLM3 (HuggingFaceTB/SmolLM3-3B) always emits its own
 // "## Metadata" system preamble the caller never asked for; Olmo 3 (allenai/Olmo-3-7B-Instruct)
 // uses <functions>/<function_calls> XML for tool declarations/calls, not ChatML/Qwen's Hermes
-// <tool_call> JSON dialect. Per the user's own design decision (this session, 2026-09-16):
-// decline rather than guess at an unverified template, since only Ministral 3 was independently
-// confirmed enough to be worth a real renderer. Both fingerprints below are the exact real
-// substrings fetched live from each checkpoint's own chat_template.jinja on 2026-09-16, not
-// synthesized guesses — see the docs/audit-2026-09-10.md closure note for the full excerpts.
+// <tool_call> JSON dialect. They are declined rather than guessed at, since only Ministral 3 was
+// independently confirmed enough to be worth a real renderer. Both fingerprints below are the exact
+// real substrings from each checkpoint's own chat_template.jinja, not synthesized guesses (the
+// docs/audit-2026-09-10.md closure note has the excerpts).
 func TestDetect_declinesSmolLM3AndOlmo3(t *testing.T) {
 	cases := map[string]string{
 		"smollm3": `{{- "<|im_start|>system\n" -}}{%- if "/system_override" in system_message -%}{{- custom_instructions -}}{%- else -%}{{- "## Metadata\n\n" -}}{%- endif -%}`,

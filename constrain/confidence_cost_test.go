@@ -13,9 +13,9 @@ import (
 )
 
 // TestConfidenceCost_C1 prices CaptureConfidence against plain masking, per decode step, at three grammar states on
-// a real vocabulary (V = 151,936, Qwen): an object key, an enum value, and inside a free string. C0 measured an
-// every-position readout at 1.44–4.20% of a decode token (docs/measurements/confidence-c0-2026-09-27.md); C1 reads
-// only outside free strings, where it keeps the legal tokens' entries too. Min of N, interleaved on/off.
+// a real vocabulary (V = 151,936, Qwen): an object key, an enum value, and inside a free string. C1 reads only
+// outside free strings, where it keeps the legal tokens' entries too; the every-position C0 readout is in
+// docs/measurements/confidence-c0-2026-09-27.md. Min of N, interleaved on/off.
 //
 //	GOINFER_HEAVY_TESTS=1 go test ./constrain/ -run TestConfidenceCost_C1 -v
 func TestConfidenceCost_C1(t *testing.T) {

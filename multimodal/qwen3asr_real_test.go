@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// G-S14b3 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): Qwen3-ASR-0.6B's audio encoder and projector, goinfer float32 on the CPU, against transformers
+// G-S14b3 of docs/tasks/task-multimodal-support-2026-10.md: Qwen3-ASR-0.6B's audio encoder and projector, goinfer float32 on the CPU, against transformers
 // float32 on three clips (the LibriSpeech clip, 12 s of synthetic signal, 46.8 s of the LibriSpeech clip tiled so that several attention windows span the clip). The reference is
 // scripts/pin_qwen3asr_real.py's, which converts the checkpoint by a pure rename (transformers 5.15.0 cannot read it as shipped) and proves the conversion by transcribing the clip.
 // Bar: every output token's cosine >= 0.9999 and the token count exact. (a) feeds the encoder the reference's own features, isolating the encoder; (b) feeds it the Go front end's, recorded.

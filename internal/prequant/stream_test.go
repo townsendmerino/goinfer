@@ -24,9 +24,8 @@ import (
 // silently dropping per-layer fields. The byte-identity test above can't catch a
 // field BOTH the streamed and resident paths skip (they share the serializer); only
 // a transcode → load → inspect round-trip does. RouterBias (GLM/DeepSeek
-// e_score_correction_bias) was added to LayerWeights but initially not to the giw
-// format, so a stream-weights GLM lost its routing bias — caught only by the real
-// 106B gate. This pins it on the tiny GLM model.
+// e_score_correction_bias) must be in the giw format, or a stream-weights GLM loses its routing
+// bias. This pins it on the tiny GLM model.
 func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
 	gguf := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
 	if _, err := os.Stat(gguf); err != nil {
@@ -186,19 +185,14 @@ func transcodeBothWaysFor(t *testing.T, gguf, quant string, target decoder.GIWTa
 // assume it is. liveQuant is m.Quant()'s own answer, the correct value for every case except the
 // one M-27 changed.
 //
-// M-27 (docs/audit-2026-09-10.md): before that fix, glm-tiny's router was (incorrectly)
-// quantized right alongside the rest of the body, so an "int4" load was uniformly int4 and
-// quantLabel() collapsed to "int4". Now the router correctly stays f32 regardless of the
-// ambient quant — a real, intentional precision difference from the int4 body — and
-// quantLabel()'s own documented contract (decoder/serialize.go: "int4mix... when int4 coexists
-// with a higher-precision BODY weight," which explicitly classifies the router as a body
-// weight) correctly reports that as "int4mix", not "int4". This was the bug being fixed, not a
-// fact worth re-pinning: decoder.Model.Quant() (used for a LIVE, non-.giw model) is unaffected
-// and still reports back exactly what was requested for "int4" (Model.quant short-circuits
-// before ever calling quantLabel()) — only the .giw bundle's own baked, inferred label changes,
-// honestly, because the bundle genuinely is no longer uniform-precision. Every other quant
-// mode (including "", where Model.Quant() already falls through to the real quantLabel()
-// inference rather than echoing the request) is unaffected and liveQuant is already correct.
+// M-27 (docs/audit-2026-09-10.md): glm-tiny's router stays f32 regardless of the ambient quant,
+// so an "int4" load is not uniformly int4 and quantLabel() reports "int4mix" (its documented
+// contract, decoder/serialize.go: "int4mix... when int4 coexists with a higher-precision BODY
+// weight", which classifies the router as a body weight). decoder.Model.Quant() (a LIVE, non-.giw
+// model) is unaffected and still reports what was requested for "int4" (Model.quant
+// short-circuits before calling quantLabel()); only the .giw bundle's own baked, inferred label
+// changes. Every other quant mode (including "", where Model.Quant() already falls through to
+// the real quantLabel() inference) is unaffected and liveQuant is already correct.
 func residentLabelFor(quant, liveQuant string) string {
 	if quant == "int4" {
 		return "int4mix"
@@ -215,15 +209,14 @@ func giwFixture(t *testing.T) string {
 	return gguf
 }
 
-// TestGiwQuantLabel_headerAsymmetry pins a v5 behaviour that until now lived only as a comment in
+// TestGiwQuantLabel_headerAsymmetry pins a v5 behaviour that otherwise lives only as a comment in
 // decoder/serialize.go: the BUFFER path (full weights in hand) records the resolved quant label,
 // while the STREAMING transcode records "" — it writes the header BEFORE its layers load and cannot
 // yet know the resolved quant, so a reader of a streamed bundle falls back to inference (the pre-v5
 // behaviour).
 //
-// This is a gate, not a nicety. That asymmetry is exactly what made the old byte-identity assertion
-// wrong the day ac6977f landed, and nothing caught it: testdata/glm-tiny.gguf was untracked, so the
-// test self-skipped in CI and had never once run there.
+// This is a gate, not a nicety: that asymmetry is what makes a byte-identity assertion over the whole
+// bundle wrong, and the test has to run in CI (testdata/glm-tiny.gguf must be tracked, or it self-skips).
 func TestGiwQuantLabel_headerAsymmetry(t *testing.T) {
 	gguf := giwFixture(t)
 	for _, quant := range []string{"int4", "int8int8", ""} {
@@ -246,9 +239,8 @@ func TestGiwQuantLabel_headerAsymmetry(t *testing.T) {
 // Byte-identity is asserted over everything outside the two fields that MUST differ, and each of
 // those is pinned exactly rather than skipped: the v5 quant label (see the asymmetry test above;
 // giwSplit re-asserts it here) and the trailing CRC32 covering it (giwSplit verifies each bundle's
-// CRC independently, so a wrong CRC fails). Measured on this fixture, every remaining byte is equal
-// across all three quant modes — a size delta alone would not have shown that, and did not: the
-// original diagnosis missed the CRC entirely.
+// CRC independently, so a wrong CRC fails). Every remaining byte is equal across all three quant
+// modes; a size delta alone would not show that.
 func TestStreamTranscodeMatchesResident(t *testing.T) {
 	gguf := giwFixture(t)
 	for _, quant := range []string{"int4", "int8int8", ""} {
@@ -311,11 +303,10 @@ func TestStreamTranscodeMatchesResident_metalTarget(t *testing.T) {
 	}
 }
 
-// TestTranscode_embedInt4Threaded gates M-31: Transcode's GGUF branch hardcoded `false` for
-// StreamTranscodeGGUF's embedInt4 parameter instead of threading the one it was given, so
-// `cmd/prequant -embed-int4` silently produced an int8-pinned embed/head table for every GGUF
-// input — identical to omitting the flag, with no error. The safetensors-directory branch
-// (transcodeDir) already threaded it correctly; only the GGUF branch was broken.
+// TestTranscode_embedInt4Threaded gates M-31: Transcode's GGUF branch must thread the embedInt4 it is
+// given into StreamTranscodeGGUF (it once hardcoded `false`), or `cmd/prequant -embed-int4` silently
+// produces an int8-pinned embed/head table for every GGUF input — identical to omitting the flag, with
+// no error. The safetensors-directory branch (transcodeDir) threads it; only the GGUF branch was at risk.
 func TestTranscode_embedInt4Threaded(t *testing.T) {
 	gguf := giwFixture(t)
 	var pinnedBuf, relaxedBuf bytes.Buffer
@@ -456,15 +447,14 @@ func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
 	}
 }
 
-// V-01 (docs/review-2026-09-04.md): no existing test ever drove a SUCCESSFUL GGUF Transcode —
+// V-01 (docs/completed/review-2026-09-04.md): a SUCCESSFUL GGUF Transcode must be driven end to end —
 // the M-12 tests above assert failure on a non-GGUF source and an AST shape, neither of which
-// exercises selfCheck on a real bundle. That is exactly why the temp name `out + ".tmp"` (not
-// ending in ".giw", so decoder.Load's suffix dispatch in selfCheck could never route to the
-// bundle loader) went unnoticed: every real Transcode failed its own self-check unconditionally.
-// This drives the whole function end to end on a real tokenizer-bearing GGUF (glm-tiny.gguf has
-// no tokenizer -- see giwFixture's own comment elsewhere -- so this needs a different, real small
-// checkpoint) and loads the PUBLISHED bundle afterward, proving both that Transcode succeeds and
-// that the file it left behind is loadable.
+// exercises selfCheck on a real bundle (a temp name `out + ".tmp"`, not ending in ".giw", could never
+// route decoder.Load's suffix dispatch in selfCheck to the bundle loader, so every real Transcode
+// failed its own self-check). This drives the whole function end to end on a real tokenizer-bearing
+// GGUF (glm-tiny.gguf has no tokenizer -- see giwFixture's own comment -- so this needs a different,
+// real small checkpoint) and loads the PUBLISHED bundle afterward, proving both that Transcode
+// succeeds and that the file it left behind is loadable.
 //
 // GOINFER_HEAVY_TESTS-gated like every other real-checkpoint test in this repo (decoder's
 // requireHeavyModel), but deliberately NOT through testdata/assets.json's GOINFER_PREQUANT_GGUF:
@@ -572,13 +562,12 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 }
 
 // M-33 (audit-2026-09-10): transcodeDir — the safetensors-directory sibling of Transcode's GGUF
-// branch, used for safetensors-only families like Mellum2 — wrote straight to `out` via
-// os.Create(out) and removed `out` (not a temp file) on failure, reintroducing exactly the M-12
-// class of bug the GGUF branch above was already fixed for: an OOM-kill during the write (this
-// path holds the WHOLE resident model in RAM, exactly where a killer fires) leaves a
-// placeholder-length bundle at the final path, newer than its source, "fresh" forever, and
-// `serve` then fails at boot with "truncated bundle" until a human deletes it. Same structural
-// guard as TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
+// branch, used for safetensors-only families like Mellum2 — must write via a temp file and remove only
+// the temp on failure, as the GGUF branch does (the M-12 class): an OOM-kill during the write (this
+// path holds the WHOLE resident model in RAM, exactly where a killer fires) would otherwise leave a
+// placeholder-length bundle at the final path, newer than its source, "fresh" forever, and `serve`
+// then fails at boot with "truncated bundle" until a human deletes it. Same structural guard as
+// TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
 func TestTranscodeDir_writesViaTempThenRenames(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "prequant.go", nil, 0)

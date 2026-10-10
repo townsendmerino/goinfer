@@ -229,11 +229,9 @@ func TestGPU_ptxVersionComesFromTheArtifact(t *testing.T) {
 	}
 }
 
-// The Metal gate reported a FAIL and then printed a dozen PASSING parity lines as
-// its "detail", because failLineRe matched every `file.go:N:` line a t.Log emits.
-// The real cause — a SIGSEGV in objc_msgSend — appeared nowhere, and detail()'s
-// own crash fallback never fired because the filter had already matched. This
-// pins both halves against the shape of the run that exposed it.
+// The detail of a failed Metal cell must name the crash, not the passing t.Log lines: failLineRe
+// matches every `file.go:N:` line a t.Log emits, and detail()'s own crash fallback must still fire
+// when that filter matches. This pins both halves against the shape of the run that exposed it.
 func TestGPU_detailNamesTheCrashingTest(t *testing.T) {
 	// Abbreviated from a real captured run: passing t.Log lines, then the crash.
 	out := `=== RUN   TestAttention_GQA
@@ -300,9 +298,8 @@ FAIL	github.com/x/metal	1.000s
 }
 
 // A filtered cell whose -run matches nothing is not a pass: zero tests ran, so it proves nothing,
-// and the aggregate ran==0 check cannot see it once any other cell has run. This is the same shape
-// as the qwen3next oracle, whose -run pattern could not match a required gate and reported
-// "DID NOT RUN" for five weeks while the investigation went after a 163GB asset.
+// and the aggregate ran==0 check cannot see it once any other cell has run. Same shape as the
+// unreachable gate in TestRealckptCellCanReachEveryGate.
 func TestGPUGate_emptyFilteredCellIsNotAPass(t *testing.T) {
 	var buf bytes.Buffer
 	g := &gpuGate{w: &buf, logDir: t.TempDir()}
@@ -321,8 +318,7 @@ func TestGPUGate_emptyFilteredCellIsNotAPass(t *testing.T) {
 // UNFILTERED cell either (an empty -run means "everything", so emptiness there is a different bug).
 //
 // Driven through the results directly rather than by running a real cell: pointing a cell at "./"
-// from inside cmd/gate makes `go test` re-run this very suite, which re-runs the cell, which... The
-// first draft of this test did exactly that and sat there for ten minutes.
+// from inside cmd/gate makes `go test` re-run this very suite, which re-runs the cell, recursively.
 func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
 	var buf bytes.Buffer
 	g := &gpuGate{w: &buf, logDir: t.TempDir()}
@@ -348,14 +344,12 @@ func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
 	}
 }
 
-// TestGPU_metalPrefillCellChecksVacuous pins V-21 (docs/review-2026-09-04.md): the sibling
-// cells (metal-parity, metal-lifecycle) already gate on `cr.RC != 0 || cr.vacuous()`, but
-// metal-prefill checked only cr.RC != 0 — a cell whose named tests (TestPrefillParity,
-// TestPrefillNoNaN) all skipped for a reason unrelated to the os.Stat guard above it would have
-// RC==0 and print PASS despite verifying nothing. Source-text guard rather than driving the real
-// cell (which shells out to `go test` against a Metal checkpoint): the fix is a one-line addition
-// to an existing condition, and what needs pinning is that the addition stays, not the mechanics
-// of vacuous() itself (already exercised by the sibling cells' identical shape).
+// TestGPU_metalPrefillCellChecksVacuous pins V-21 (docs/completed/review-2026-09-04.md): the sibling
+// cells (metal-parity, metal-lifecycle) gate on `cr.RC != 0 || cr.vacuous()`, and metal-prefill must
+// too, or a cell whose named tests (TestPrefillParity, TestPrefillNoNaN) all skipped would have RC==0
+// and print PASS despite verifying nothing. A source-text guard rather than a real cell run (which
+// shells out to `go test` against a Metal checkpoint): what needs pinning is that the condition
+// stays, not the mechanics of vacuous() itself.
 func TestGPU_metalPrefillCellChecksVacuous(t *testing.T) {
 	src, err := os.ReadFile("gpu.go")
 	if err != nil {
@@ -371,9 +365,8 @@ func TestGPU_metalPrefillCellChecksVacuous(t *testing.T) {
 		j = len(body) - i
 	}
 	block := body[i : i+j]
-	// Comment lines are not the check — only look at actual code, or a stray comment mentioning
-	// cr.vacuous() near removed code would fool this the same way a doc comment fooled the audit's
-	// own G-07 finding.
+	// Comment lines are not the check: only look at actual code, or a stray comment mentioning
+	// cr.vacuous() near removed code would fool this guard.
 	found := false
 	for line := range strings.SplitSeq(block, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "//") {

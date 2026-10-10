@@ -12,11 +12,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// task-never-swap-2026-09.md S1: sidecar .giw by default on darwin. These gates cover the three
-// pieces this session added — SidecarPathIfFresh (fit's reuse-only-if-fresh path),
-// DefaultToSidecar (the platform policy), and the disk-space guard in EnsureCachedGIW — separate
-// from stream_test.go's existing Transcode/cacheFresh coverage, which these build on rather than
-// duplicate.
+// task-never-swap-2026-09.md S1: sidecar .giw by default on darwin. These gates cover
+// SidecarPathIfFresh (fit's reuse-only-if-fresh path), DefaultToSidecar (the platform policy), and the
+// disk-space guard in EnsureCachedGIW, separate from stream_test.go's existing Transcode/cacheFresh
+// coverage, which these build on rather than duplicate.
 
 func copyFixture(t *testing.T, src, dst string) {
 	t.Helper()

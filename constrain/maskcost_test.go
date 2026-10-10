@@ -11,23 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestMaskCost_P20 measures what audit item P-20 only ESTIMATED.
+// TestMaskCost_P20 measures the per-step cost of Masker.Process that audit item P-20 only estimated:
+// O(V) grammar walks per decode step, against a resident-GPU decode step. Whether that is 1.2x or 10x
+// decides whether constrained generation (the README's headline promise) is usable on the fast backends
+// or has to be documented as slow.
 //
-// P-20 says `Masker.Process` is O(V) grammar walks per decode step and reasons: "Estimate
-// 40–120 ns/token → 6–30 ms per step against ~2–5 ms per resident-GPU decode step —
-// constrained decoding plausibly 3–10× slower per token on GPU", closing with the instruction
-// this test carries out: "Measure one Process call at fsStr and at fsObjKeyOrClose for
-// V=151,936 against the unconstrained step."
-//
-// It matters more than an optimisation note, which is why it is measured before anything is
-// designed on top of it: constrained generation is the README's headline promise ("a Go struct
-// the model cannot violate"), and whether it costs 1.2× or 10× decides whether that promise is
-// usable on the fast backends or has to be documented as slow.
-//
-// Method: MaskAt is Process's hot loop without the commit, so driving a grammar to a chosen
-// state by committing BYTES and then timing MaskAt isolates exactly the per-step masking cost
-// at that state — no tokenizer round-trip, no decode, nothing else in the sample. Real vocab
-// (V=151,936 Qwen tokens), min-of-N to trim scheduler noise.
+// Method: MaskAt is Process's hot loop without the commit, so driving a grammar to a chosen state by
+// committing BYTES and then timing MaskAt isolates the per-step masking cost at that state: no tokenizer
+// round-trip, no decode. Real vocab (V=151,936 Qwen tokens), min-of-N to trim scheduler noise.
 //
 //	GOINFER_HEAVY_TESTS=1 go test ./constrain/ -run TestMaskCost_P20 -v
 func TestMaskCost_P20(t *testing.T) {
@@ -144,10 +135,8 @@ func TestMaskCost_P20(t *testing.T) {
 		}
 	}
 
-	// The comparison P-20 asks for. Decode-step times are this box's measured resident-GPU
-	// numbers for the 1.5B AFTER the G35/G36 kernel work (docs/QUEUE.md): the whole token is
-	// ~6.2 ms at pos 64 and ~7.4 ms at pos 512, so the mask is compared against the cheaper
-	// (harder) end. Quoting the pre-G36 figure would flatter the mask by ~3x.
+	// The comparison P-20 asks for, against the cheaper (harder) end of this box's resident-GPU decode
+	// step for the 1.5B after the G35/G36 kernel work (docs/QUEUE.md): a pre-G36 figure would flatter the mask.
 	t.Logf("")
 	t.Logf("WORST STATE (an upper bound, not a typical step):")
 	for _, step := range []struct {

@@ -8,9 +8,8 @@ import (
 
 // EVERY GATE-SHAPED, goinfer_testhooks-TAGGED WEBGPU TEST IS LISTED, ONE WAY OR THE OTHER.
 //
-// audit-2026-09-10 G-10: webgpu-parity's -run was "ResidentParity", so nine gate-shaped gpu/
-// tests, among them the G6 staged-int4 matmul gate and ForwardN parity, matched no cell and ran
-// in no CI runner, with nothing to say so. This is TestMetalGateIsListedOrExplicitlyNotRequired's
+// A gate-shaped gpu/ test that matches no webgpu-parity -run alternative runs in no CI runner, with
+// nothing to say so (audit-2026-09-10 G-10). This is TestMetalGateIsListedOrExplicitlyNotRequired's
 // WebGPU twin.
 func TestWebGPUGateIsListedOrExplicitlyNotRequired(t *testing.T) {
 	root, err := repoRoot()

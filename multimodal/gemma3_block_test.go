@@ -16,9 +16,9 @@ func TestGemma3ImageBlock(t *testing.T) {
 }
 
 // TestGemma3PromptBlock is M-38's gate (docs/audit-2026-09-10.md): Gemma 3's own processor
-// (processing_gemma3.py, verified against the real transformers source 2026-09-16) wraps the
-// image sequence in "\n\n" on BOTH sides — f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n" — a
-// shape internal/serveapp and demo/agent used to get wrong (a bare trailing "\n", or nothing).
+// (processing_gemma3.py) wraps the image sequence in "\n\n" on BOTH sides —
+// f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n" — and internal/serveapp and demo/agent must match it
+// (a bare trailing "\n", or nothing, is wrong).
 func TestGemma3PromptBlock(t *testing.T) {
 	inner := Gemma3ImageBlock(4)
 	got := Gemma3PromptBlock(4)

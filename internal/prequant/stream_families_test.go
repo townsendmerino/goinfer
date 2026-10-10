@@ -11,30 +11,26 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// M-09: StreamTranscodeGGUF wrote a HEADER-ONLY bundle for five GGUF families, and the comment
-// above canSerialize claimed they were refused before the load.
+// M-09: StreamTranscodeGGUF must not write a HEADER-ONLY bundle for a family whose branch builds every
+// layer and `return w, nil` WITHOUT calling sink.layer (gpt-oss, laguna, granitehybrid, nemotron_h/_moe and
+// llama4 did): the writer emits a header declaring N layers followed by zero layers, cmd/prequant and
+// `serve --stream-weights` load the whole model resident (defeating the one-layer-peak-RAM contract this
+// path exists for) and fail minutes later with "truncated body: unexpected end of data" — an error
+// that names the symptom and not the cause. canSerialize returns nil for every registered family, so
+// nothing is refused before the load; this test is the check. The table below drives gpt-oss and the glm
+// control only, not the other families named.
 //
-// canSerialize has returned nil unconditionally since v6, so nothing was refused. The gpt-oss,
-// laguna, granitehybrid, nemotron_h/_moe and llama4 branches each build every layer and
-// `return w, nil` WITHOUT calling sink.layer — so the writer emitted a header declaring N
-// layers followed by zero layers. cmd/prequant and `serve --stream-weights` then load the whole
-// model resident (defeating the one-layer-peak-RAM contract this path exists for) and fail
-// minutes later with "truncated body: unexpected end of data": a broken supported path whose
-// error names the symptom and not the cause.
-//
-// decoder/testdata/gptoss_tiny.gguf is COMMITTED and nothing drove the stream path on it —
-// stream_test.go uses glm-tiny, whose generic loader does stream. That gap is why this shipped,
-// so closing it is the test. Through StreamTranscodeGGUF directly, as the neighbouring tests
-// do: the tiny fixtures carry no tokenizer, so the full Transcode refuses before the weights.
+// decoder/testdata/gptoss_tiny.gguf is committed; stream_test.go uses glm-tiny, whose generic loader
+// does stream. Through StreamTranscodeGGUF directly, as the neighbouring tests do: the tiny fixtures
+// carry no tokenizer, so the full Transcode refuses before the weights.
 func TestStreamTranscode_perFamilyBodiesCarryTheirLayers(t *testing.T) {
 	for name, tc := range map[string]struct {
 		path    string
 		streams bool // does its GGUF branch drive the sink itself?
 	}{
-		// The regression, historically: a family routed through the resident-build
-		// fallback. S2 (task-never-swap-2026-09.md, 2026-09-23) moved gpt-oss OFF that
-		// fallback — its own loadGptOss closure already builds one layer independently of
-		// every other, so it now streams natively too, same as glm below. `streams` is
+		// The family that was routed through the resident-build fallback: S2
+		// (task-never-swap-2026-09.md) moved gpt-oss off it — its own loadGptOss closure already builds
+		// one layer independently of every other, so it streams natively too, same as glm below. `streams` is
 		// this test's own record of that; TestGptOss_streamedMatchesResident is the byte-
 		// identity gate that actually proves it (this test only proves the bundle isn't
 		// header-only, not which path produced it).
@@ -78,8 +74,7 @@ func TestStreamTranscode_perFamilyBodiesCarryTheirLayers(t *testing.T) {
 }
 
 // TestGptOss_streamedMatchesResident is S2's own registered gate for the first family moved off
-// the resident-serialize fallback (needsResidentSerialize, deleted 2026-09-24 when gemma4 — the last
-// family on it — began streaming too): the streamed bundle must be byte-identical to the resident-build-then-
+// the resident-serialize fallback: the streamed bundle must be byte-identical to the resident-build-then-
 // serialize path's output, same shape as stream_test.go's TestStreamTranscodeMatchesResident (glm)
 // — extended here per family rather than widening that one, since a failure on one fixture should
 // name which family broke, not force a reader to guess from a shared table's row count.

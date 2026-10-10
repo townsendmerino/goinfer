@@ -6,12 +6,11 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): granite-4.0-h-tiny — a
-// registry-recommended checkpoint — loaded with "tokenizer.ggml.pre=\"dbrx\" is not a known
-// pre-tokenizer; falling back to cl100k" on every pull. A registry entry backed by parity gates
-// cannot ship with a tokenizer this build declines to walk: recommending it to a first-time user
-// means recommending a checkpoint whose token ids may differ from HF and llama.cpp, silently,
-// unless they happen to read a startup warning.
+// R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): a registry entry backed by parity gates
+// cannot ship with a tokenizer this build declines to walk (`tokenizer.ggml.pre="dbrx" is not a known
+// pre-tokenizer; falling back to cl100k`): recommending it to a first-time user means recommending a
+// checkpoint whose token ids may differ from HF and llama.cpp, silently, unless they happen to read a
+// startup warning.
 //
 // registryTokenizerFixtures maps a registry short name to a COMMITTED GGUF (or GGUF-header-only)
 // fixture carrying that checkpoint's real tokenizer metadata, so this test reads the checkpoint's

@@ -7,14 +7,10 @@ import (
 	"testing"
 )
 
-// R14 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the README named opencode
-// alongside Claude Code as "a real agent" target for three releases before a recipe for it
-// existed anywhere in the tree — a cold user had to reconstruct opencode's provider config from
-// outside knowledge, and that reconstruction cost the whole run's only safety incident. The
-// README's own claim ("Pointing a real agent (Claude Code, opencode) at it: docs/integrations/")
-// is the thing that silently went stale; this reads it back and checks the promise against the
-// directory it names, so a THIRD harness added to that sentence without a matching page fails
-// here instead of waiting for the next cold-user run to find it.
+// R14 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the README's own claim ("Pointing a real
+// agent (Claude Code, opencode) at it: docs/integrations/") must hold against the directory it names;
+// this reads it back and checks the promise, so a THIRD harness added to that sentence without a
+// matching page fails here instead of waiting for the next cold-user run to find it.
 //
 // Mutation: name a harness in README.md's integrations sentence without adding its page under
 // docs/integrations/ (e.g. add ", cursor" to the parenthetical) — this test goes red naming the

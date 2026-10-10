@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// PRE-REGISTERED (written and committed before the code that satisfies it), docs/queue-correctness.md G39.
+// Pre-registered in docs/queue-correctness.md G39.
 //
 // The opt-in fenced-call rule. A chatml-family model that writes its tool call as a fenced JSON block in prose
-// (Qwen2.5-Coder-7B under opencode, the cold-user run of 2026-10-05) makes no call today. With
+// (Qwen2.5-Coder-7B under opencode) makes no call without the option. With
 // Template.WithLenientToolCalls(true) a reply is read as ONE call when ALL of these hold, and as prose otherwise:
 //
 //  1. the reply has exactly one fenced block, and that block is the LAST thing in it (only whitespace after the
@@ -121,8 +121,8 @@ func TestFencedToolCall_leavesShownExamplesAndNearMissesAsProse(t *testing.T) {
 // 5. Off by default, and nothing outside the chatml family moves.
 func TestFencedToolCall_offByDefaultAndOtherFamiliesUntouched(t *testing.T) {
 	out := "I'll update the function.\n" + fenceCall("edit", fenceEditArgs)
-	// (The pre-registered version of this loop covered every family and was wrong about llama3: its parser has always
-	// found a bare JSON call anywhere in a reply, fence or not. The rule under test is for chatml and mellum2.)
+	// (llama3 is not in this loop: its parser has always found a bare JSON call anywhere in a reply, fence or not. The rule under test
+	// is for chatml and mellum2.)
 	for _, fam := range []string{"chatml", "mellum2"} {
 		if calls, _ := allTemplates()[fam].ParseToolCallsFor(out, fencedTestTools); len(calls) != 0 {
 			t.Errorf("%s without the option parsed a fenced call: %+v", fam, calls)

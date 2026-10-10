@@ -56,10 +56,10 @@ func TestLoadJSONBytes_noCWDSibling_M14(t *testing.T) {
 	}
 }
 
-// M-25: the serving loop decoded GENERATED ids with Decode, which applies SentencePiece's
+// M-25: GENERATED ids must not be decoded with Decode, which applies SentencePiece's
 // dummy-prefix strip — a SEQUENCE-level rule. The generated ids are a CONTINUATION of the
-// prompt, never a sequence, so a response opening with `▁Paris` reached the client as
-// "Paris" where OpenAI and llama.cpp both return " Paris".
+// prompt, never a sequence, so a response opening with `▁Paris` must reach the client as
+// " Paris", as OpenAI and llama.cpp both return it, not "Paris".
 //
 // Built from a hand-made dummy-prefix tokenizer rather than asserting the claim, so the
 // premise (that Decode really does strip) is proven in the same test that proves the fix.
@@ -108,11 +108,10 @@ func TestDecodeContinuation_identicalWhenNothingIsStripped(t *testing.T) {
 	}
 }
 
-// TestDecodeContinuation_isIncrementallyAssociative is audit R-08's gate: streamTokens re-decoded
-// the WHOLE generated id sequence on every token (O(n^2) in output length) instead of decoding
-// just the new suffix and appending, out of caution that byte-fallback fusion — a run of raw
-// bytes accumulated across CONSECUTIVE byte-fallback tokens, only written out as one unit — might
-// make an arbitrary split point unsafe.
+// TestDecodeContinuation_isIncrementallyAssociative is audit R-08's gate: streamTokens decodes just the new
+// suffix and appends, instead of re-decoding the WHOLE generated id sequence on every token (O(n^2) in output
+// length). That is safe only if byte-fallback fusion — a run of raw bytes accumulated across CONSECUTIVE
+// byte-fallback tokens, only written out as one unit — cannot make an arbitrary split point unsafe.
 //
 // It does not: decode()'s per-token loop has NO state that depends on chunk boundaries. A
 // byte-fallback token appends its raw byte to `pending`; flush() writes pending as-is
@@ -168,11 +167,11 @@ func TestDecodeContinuation_isIncrementallyAssociative(t *testing.T) {
 	}
 }
 
-// N-24: byte-level decode pushed ADDED-token content through the byte table. An added token's
+// N-24: byte-level decode must not push ADDED-token content through the byte table. An added token's
 // surface is stored VERBATIM (it is not byte-level-encoded), so a rune in U+0080–U+0143 — é, ü,
-// ñ, and every chat template that spells a role in a non-ASCII language — mapped back to ONE raw
-// byte. The result is invalid UTF-8 and, worse, a wrong surface for the constrained-decoding
-// mask, which builds its token table from these strings.
+// ñ, and every chat template that spells a role in a non-ASCII language — would map back to ONE raw
+// byte: invalid UTF-8 and a wrong surface for the constrained-decoding mask, which builds its token
+// table from these strings.
 func TestDecodeByteLevel_addedTokensAreVerbatim(t *testing.T) {
 	tk := &Tokenizer{
 		mode:        modeByteLevel,

@@ -69,11 +69,10 @@ func TestCellHeartbeatCanBeSilenced(t *testing.T) {
 	}
 }
 
-// The count of finished tests answers "is it moving?" but not "what is holding it up?" — and
-// during the v0.15.0 sweep those diverged: the count sat at 430 for four minutes while the line
-// kept naming a test that had already completed. So the heartbeat must name what is IN FLIGHT,
-// and must prefer the longest-running one, because a slow parent's subtests churn beneath it and
-// the parent is the name worth printing.
+// The count of finished tests answers "is it moving?" but not "what is holding it up?": the count
+// can sit still while the line keeps naming a test that already completed. So the heartbeat must
+// name what is IN FLIGHT, and prefer the longest-running one, because a slow parent's subtests
+// churn beneath it and the parent is the name worth printing.
 func TestCellHeartbeatNamesLongestRunningTest(t *testing.T) {
 	old := cellHeartbeatInterval
 	cellHeartbeatInterval = 20 * time.Millisecond

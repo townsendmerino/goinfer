@@ -122,10 +122,9 @@ func TestDownload_serverIgnoresRange(t *testing.T) {
 // f.Size <= 0 (a non-LFS file with no declared size) admits ANY existing .part into the resume
 // path regardless of whether it is actually complete — there is no size to compare against. If
 // a prior run fetched every byte but was interrupted before the digest-check-and-rename, the
-// next run's Range request starts exactly at EOF and HuggingFace answers 416, not 206/200.
-// Before this fix that fell into the catch-all default case: a confusing "HuggingFace returned
-// 416" error, AND the .part was never cleared — so every subsequent retry hit the identical 416
-// forever. This drives that exact shape and asserts it now succeeds instead.
+// next run's Range request starts exactly at EOF and HuggingFace answers 416, not 206/200. That must
+// succeed: treated as the catch-all default it is a confusing "HuggingFace returned 416" error AND the
+// .part is never cleared, so every subsequent retry hits the identical 416 forever.
 func TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart(t *testing.T) {
 	body := []byte(strings.Repeat("goinfer-n70-", 500))
 	sum := sha256.Sum256(body)

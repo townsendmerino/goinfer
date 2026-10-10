@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// G-S14a (docs/tasks/task-multimodal-support-2026-10.md, registered before this code): aikit's Whisper front end against transformers 5.15.0's WhisperFeatureExtractor, both of its
+// G-S14a (docs/tasks/task-multimodal-support-2026-10.md): aikit's Whisper front end against transformers 5.15.0's WhisperFeatureExtractor, both of its
 // paths. Bars per case: the shape, the largest absolute difference <= 5e-05 against each reference path, the mean <= 1e-06, and the valid-frame count equal to the extractor's mask. The
 // reference paths differ from each other by up to 3.1e-05 on these inputs (the golden's meta.json), so 5e-05 is about 1.6 times their own spread. Six planted defects must each put some
 // case over the bar. The golden is scripts/pin_whisper_features.py's.

@@ -145,12 +145,12 @@ func greedyOrSkip(m *decoder.Model, prompts [][]int) (out [][]int, why string) {
 }
 
 // TestDirSidecar_keepsMRopeSection: a Qwen-VL's m-RoPE section survives the sidecar. Real checkpoints carry it in
-// rope_scaling, which the adapters read and clear, and Config.MRopeSection was `json:"-"`, so a .giw dropped it and the
-// model loaded from one ran plain RoPE on image positions (found 2026-10-09 by S16's real gate). The tiny fixtures carry
-// it in rope_parameters, a raw field that survives, which is why TestDirSidecar_matchesDirectLoad (text-only, where the
-// three axes coincide anyway) passed: each fixture here is copied with the section moved into rope_scaling, as the
-// released checkpoints have it. A config with no section at all is refused, which is what makes a stale sidecar fail its
-// self-check and rebuild.
+// rope_scaling, which the adapters read and clear, so the sidecar has to carry it itself: a .giw that drops it
+// loads a model that runs plain RoPE on image positions. The tiny fixtures carry it in rope_parameters, a raw
+// field that survives, which is why TestDirSidecar_matchesDirectLoad (text-only, where the three axes coincide
+// anyway) cannot see the loss: each fixture here is copied with the section moved into rope_scaling, as the
+// released checkpoints have it. A config with no section at all is refused, which is what makes a stale sidecar
+// fail its self-check and rebuild.
 func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 	for _, fx := range []string{"qwen25vl-tiny", "qwen3vl-tiny"} {
 		t.Run(fx, func(t *testing.T) {

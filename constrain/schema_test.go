@@ -191,19 +191,18 @@ func TestGrammarFromStruct_roundTrip(t *testing.T) {
 }
 
 // TestGrammarFromStruct_byteSliceAndFixedArray is N-74 (docs/audit-2026-09-10.md):
-//   - []byte used to map to {"type":"array","items":{"type":"integer"}}, but encoding/json's
-//     Marshal/Unmarshal treat []byte as a SPECIAL CASE — a base64-encoded STRING, never an
-//     element-wise array of integers — so every grammar-legal output was guaranteed to fail
-//     json.Unmarshal. It must map to {"type":"string"} instead.
-//   - A fixed-size Go array ([N]T) got no minItems/maxItems, so the grammar could legally
-//     produce the wrong element count; json.Unmarshal into [N]T does not error on that (it
-//     silently truncates or zero-pads), so the schema's "shape is guaranteed" promise (M-28,
-//     09-02) held even less than the slice case — no error ANYWHERE, just silently wrong data.
+//   - []byte must map to {"type":"string"}: encoding/json treats []byte as a SPECIAL CASE — a
+//     base64-encoded STRING, never an element-wise array of integers — so an array schema makes every
+//     grammar-legal output fail json.Unmarshal.
+//   - A fixed-size Go array ([N]T) must carry minItems/maxItems == N: json.Unmarshal into [N]T does not
+//     error on a wrong count (it silently truncates or zero-pads), so without them the grammar could
+//     legally produce the wrong element count with no error ANYWHERE (the "shape is guaranteed" promise
+//     of M-28).
 //
 // Not covered here: base64 CONTENT validity. A random grammar-legal string is not guaranteed to
 // be valid base64 (this package has no "pattern" JSON Schema keyword to constrain that), so this
-// checks the SCHEMA shape directly rather than fuzzing a full struct round-trip — the fix's own
-// scope is the "array vs string" and "no length limit" shape guarantees M-28 is about, matching
+// checks the SCHEMA shape directly rather than fuzzing a full struct round-trip — the scope is the
+// "array vs string" and "no length limit" shape guarantees M-28 is about, matching
 // what json.Unmarshal actually rejects on SHAPE (before ever getting to whether the bytes decode).
 func TestGrammarFromStruct_byteSliceAndFixedArray(t *testing.T) {
 	type Blob struct {
@@ -274,9 +273,9 @@ func TestSchema_rejectsUnsatisfiable(t *testing.T) {
 		// negative bounds are not valid non-negative integers.
 		`{"type":"array","items":{"type":"integer"},"maxItems":-1}`,
 		`{"type":"array","items":{"type":"integer"},"minItems":-3}`,
-		// N-76 (docs/audit-2026-09-10.md): a maxItems too large to fit an int used to convert
-		// via implementation-defined float64->int behavior, which can come back NEGATIVE — and
-		// maxItems<0 means "unbounded" (the opposite of what a huge bound should mean).
+		// N-76 (docs/audit-2026-09-10.md): a maxItems too large to fit an int must be rejected: converting it
+		// via implementation-defined float64->int behavior can come back NEGATIVE, and maxItems<0 means
+		// "unbounded" (the opposite of what a huge bound should mean).
 		`{"type":"array","items":{"type":"integer"},"maxItems":1e30}`,
 		`{"type":"array","items":{"type":"integer"},"minItems":1e30}`,
 	}
@@ -582,13 +581,12 @@ func TestSchemaFromStruct_namedEmbeddedIsNotPromoted(t *testing.T) {
 	}
 }
 
-// TestSchemaFromStruct_unexportedEmbedIsStillPromoted pins V-14 (docs/review-2026-09-04.md):
-// an anonymous field's reflect name IS its type name, so an embedded struct of UNEXPORTED type
-// reads f.IsExported()==false — structSchema used to skip it on that check alone, before ever
-// reaching the promotion logic M-28 added. encoding/json does not skip it: its own typeFields
-// has the identical special case ("do not ignore embedded fields of unexported struct types
-// since they may have exported fields"), so json.Unmarshal still promotes `id`. Same silent
-// zero-field outcome M-28 fixed for the exported-embed case, left open for this one.
+// TestSchemaFromStruct_unexportedEmbedIsStillPromoted pins V-14 (docs/completed/review-2026-09-04.md):
+// an anonymous field's reflect name IS its type name, so an embedded struct of UNEXPORTED type reads
+// f.IsExported()==false, and structSchema must not skip it on that check alone. encoding/json does not:
+// its own typeFields has the identical special case ("do not ignore embedded fields of unexported struct
+// types since they may have exported fields"), so json.Unmarshal still promotes `id`. Skipping it brings
+// back the silent zero-field outcome M-28 fixed for the exported-embed case.
 func TestSchemaFromStruct_unexportedEmbedIsStillPromoted(t *testing.T) {
 	type base struct { // unexported embedded TYPE — the field this reads as is "base", not "ID"
 		ID int `json:"id"`
@@ -627,12 +625,10 @@ func TestSchemaFromStruct_unexportedEmbedIsStillPromoted(t *testing.T) {
 	}
 }
 
-// TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo is N-75 (docs/audit-2026-09-10.md):
-// the SAME shape as TestSchemaFromStruct_unexportedEmbedIsStillPromoted above — accepted there
-// because SchemaFromStruct calls structSchema directly for the TOP-level struct — used to be
-// LOUDLY refused the moment it appeared as a NESTED field type instead, because typeSchema's own
-// hasExportedFields gate (checked before structSchema ever runs for a nested struct) did not
-// share structSchema's own V-14 fix for an unexported-type anonymous embed.
+// TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo is N-75 (docs/audit-2026-09-10.md): the SAME
+// shape as TestSchemaFromStruct_unexportedEmbedIsStillPromoted above, as a NESTED field type, must be promoted
+// too, not refused: typeSchema's own hasExportedFields gate (checked before structSchema runs for a nested
+// struct) must share structSchema's V-14 handling of an unexported-type anonymous embed.
 func TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo(t *testing.T) {
 	type base struct {
 		ID int `json:"id"`
@@ -705,9 +701,8 @@ func TestSchemaFromStruct_selfUnmarshalingTypes(t *testing.T) {
 	})
 }
 
-// The unsigned half. This is also where the audit found the "test supplies its own calling
-// convention" trap: the property test at schema_test.go worked around unbounded integers with
-// its OWN 15-digit cap, which made the schema look adequate.
+// The unsigned half. The property test's genConstrained caps digit runs with its OWN maxDigitRun, so it
+// cannot see unbounded integers; this test drives the schema without that cap.
 func TestSchemaFromStruct_unsignedRejectsNegative(t *testing.T) {
 	type Q struct {
 		N uint32 `json:"n"`

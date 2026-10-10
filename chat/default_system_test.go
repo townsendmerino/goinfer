@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// The checkpoint's own default system message (owner, 2026-10-09: "every template with one"): Detect reads it from the
-// template, and the no-system rendering is then Qwen 2.5's own, byte for byte (the chatml golden's no_system case was
-// rendered by that template). The generic ChatML() still has no default: TestChatML_noSystem_documentedDivergence.
+// The checkpoint's own default system message: Detect reads it from the template, and the no-system rendering is then Qwen 2.5's
+// own, byte for byte (the chatml golden's no_system case was rendered by that template). The generic ChatML() still has no default:
+// TestChatML_noSystem_documentedDivergence.
 func TestDetect_chatMLDefaultSystemIsTheTemplates(t *testing.T) {
 	g := loadToolGoldenPlain(t, "chatml")
 	if g == nil {

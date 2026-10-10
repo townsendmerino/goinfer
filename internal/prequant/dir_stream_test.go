@@ -43,7 +43,7 @@ func dirStreamCompare(t *testing.T, dir, quant string, embedInt4 bool, target de
 	return rb.Bytes(), sb.Bytes(), "", false
 }
 
-// dirStreamDiff compares a resident and a streamed bundle as G-DS1 is amended (2026-10-09, the task doc): byte-identical
+// dirStreamDiff compares a resident and a streamed bundle as G-DS1 is amended in the task doc: byte-identical
 // before the v5 quant label and after its alignment pad, both CRCs valid. The streamed bundle records the label as ""
 // because the header is written before any layer exists (B11, exactly as StreamTranscodeGGUF's bundles); a reader infers
 // it from the identical tensors. giwSplit checks the pad is zeros and the stored CRC matches each body.

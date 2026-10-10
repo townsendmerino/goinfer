@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// Track 2.1 (testing campaign): constrain is the only ATTACKER-SUPPLIED grammar
-// surface — cmd/serve compiles a caller's response_format JSON Schema on every
+// constrain is the only ATTACKER-SUPPLIED grammar
+// surface: cmd/serve compiles a caller's response_format JSON Schema on every
 // request via JSONSchema. The contract is the repo promise: a typed error or a
 // clean compile, never a panic/hang, and — the structural property — if a schema
 // compiles, the masker it produces must always be able to drive SOME complete,
@@ -47,14 +47,11 @@ func FuzzJSONSchema(f *testing.F) {
 		}
 		// Re-parse for the independent conformance oracle (schema compiled, so it
 		// is within the supported subset `conforms` understands). UseNumber, matching
-		// JSONSchema's own parse and the generated-output decode in driveAndValidate
-		// below: a plain json.Unmarshal here decoded an enum/const like 0.0 as
-		// float64(0), which re-marshals as "0" — while the SAME literal surviving
-		// through the grammar (encodeLiteral keeps the source json.Number text
-		// verbatim, M-29) and back through driveAndValidate's UseNumber decode stays
-		// "0.0". eqJSON then compared "0" against "0.0" and flagged a correct,
-		// conforming document as non-conformant — found by fuzzing past what CI's
-		// time-boxed run reached (schema {"enum":[0.0]}, corpus
+		// JSONSchema's own parse and the generated-output decode in driveAndValidate:
+		// a plain json.Unmarshal decodes an enum/const like 0.0 as float64(0), which
+		// re-marshals as "0", while the same literal surviving through the grammar
+		// (encodeLiteral keeps the source json.Number text verbatim, M-29) stays "0.0",
+		// and eqJSON would flag a correct document as non-conformant (corpus
 		// testdata/fuzz/FuzzJSONSchema/enum_float_literal_precision).
 		dec := json.NewDecoder(bytes.NewReader(schema))
 		dec.UseNumber()

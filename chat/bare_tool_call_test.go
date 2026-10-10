@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// Gates G1–G3 of the lenient bare-call parser, pre-registered in
-// docs/measurements/tool-call-failure-t0-2026-09-23.md ("Follow-up A") before the code existed.
+// Gates G1–G3 of the lenient bare-call parser (docs/measurements/tool-call-failure-t0-2026-09-23.md, "Follow-up A").
 
 var bareTestTools = []Tool{
 	{Name: "read_file", Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)},

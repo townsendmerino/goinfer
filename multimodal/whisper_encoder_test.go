@@ -9,14 +9,15 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
+// G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md: aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
 // (scripts/pin_whisper_tiny.py): per-frame cosine >= 0.99999 AND max |diff| <= 2e-05, and every planted defect red against both.
 
 const (
 	whisperEncCosBar = 0.99999
-	// whisperEncAbsBar: registered as 2e-05 (the bar G-S14b2 used, on 104-position attention windows) and amended to 5e-04 before any real-checkpoint reading, with the measurement: on this
-	// 1500-position input transformers' OWN float32 differs from a float64 evaluation of the same weights by 1.9e-05 (6.5 s clip) and 1.16e-04 (25 s clip), and the port differs from the
-	// pinned reference by 2.2e-05 and 1.29e-04: the same size, because float32 accumulation over 1500 keys is where the error is. 5e-04 is about 4x that noise and 60x below the weakest planted defect.
+	// whisperEncAbsBar is 5e-04: float32 accumulation over 1500 keys is where the error is (transformers' OWN float32 differs
+	// from a float64 evaluation of the same weights, and the port from the pinned reference, by the same ~1e-05 to ~1.3e-04),
+	// so the 2e-05 bar G-S14b2 used on 104-position attention windows does not carry over. 5e-04 is about 4x that noise and 60x
+	// below the weakest planted defect.
 	whisperEncAbsBar = 5e-4
 )
 

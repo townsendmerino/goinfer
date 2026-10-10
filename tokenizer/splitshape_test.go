@@ -16,9 +16,9 @@ const (
 	reGPT2        = `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
 )
 
-// C-10: splitGPT2 implements ONE alternation and was applied to every family. Nothing compared a
-// tokenizer's actual Split regex against it, so a family whose pre-tokenizer differs was walked by
-// the wrong one — no error, no log, and count_tokens and usage drift with it.
+// C-10: splitGPT2 implements ONE alternation, so a tokenizer's actual Split regex has to be
+// classified against it, or a family whose pre-tokenizer differs is walked by the wrong one — no error,
+// no log, and count_tokens and usage drift with it.
 //
 // Naming the shape is what makes a mismatch reportable. This pins the classifier against the real
 // regexes rather than against a paraphrase of them.
@@ -155,12 +155,12 @@ func TestByteLevelKnobs_gptOssSelectsTheO200kWalker(t *testing.T) {
 	}
 }
 
-// TestClassifySplit_realGPT2PatternIsNotUnknown pins V-15 (docs/review-2026-09-04.md): the real
+// TestClassifySplit_realGPT2PatternIsNotUnknown pins V-15 (docs/completed/review-2026-09-04.md): the real
 // GPT-2 regex (split_gpt2orig.go's own docstring, transcribed from OpenAI's source) DOES carry a
 // contraction clause — just case-sensitive and unwrapped, unlike cl100k's `(?i:...)` one.
-// classifySplit's shapeGPT2Original case used to require the clause's ABSENCE
-// (`!strings.Contains(c, "'s|'t|'re")`), so a Split spelling the actual pattern classified as
-// shapeUnknown and silently fell back to the cl100k walker instead — never reaching the walker
+// classifySplit's shapeGPT2Original case must not require the clause's ABSENCE
+// (`!strings.Contains(c, "'s|'t|'re")`), or a Split spelling the actual pattern classifies as
+// shapeUnknown and silently falls back to the cl100k walker, never reaching the walker
 // (splitGPT2Original) written specifically for it.
 func TestClassifySplit_realGPT2PatternIsNotUnknown(t *testing.T) {
 	const real = `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
@@ -180,11 +180,10 @@ func TestClassifySplit_realGPT2PatternIsNotUnknown(t *testing.T) {
 
 // TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original pins V-15's second half: a real HF `gpt2`
 // export's pre_tokenizer is a bare (non-Sequence) `{"type":"ByteLevel","use_regex":true}` with no
-// separate Split node at all (testdata/gpt2/onnx/tokenizer.json — verified by reading the file,
-// not assumed). splitRegex returns "" for it, the same empty result Mellum2's genuinely
-// regex-agnostic Digits+ByteLevel Sequence produces — but here "empty" means "use my built-in
-// GPT-2 regex" (HF's own semantics for use_regex:true), not "no opinion". The old code treated
-// both the same way and silently kept the cl100k walker with no PreTokenizerDecline at all.
+// separate Split node at all (testdata/gpt2/onnx/tokenizer.json). splitRegex returns "" for it, the same
+// empty result Mellum2's genuinely regex-agnostic Digits+ByteLevel Sequence produces — but here "empty"
+// means "use my built-in GPT-2 regex" (HF's own semantics for use_regex:true), not "no opinion". The two
+// must not be treated alike (silently keeping the cl100k walker with no PreTokenizerDecline at all).
 func TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original(t *testing.T) {
 	const dir = "../testdata/gpt2/onnx"
 	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {

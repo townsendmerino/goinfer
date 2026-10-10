@@ -10,7 +10,7 @@ import (
 // Mellum2.1's chat template (JetBrains/Mellum2.1-12B-A2.5B-Thinking @ 92ddae9f, 2026-10-09) adds Qwen3's thinking control and
 // history rule to 2.0's ChatML body. The golden is Hugging Face's own rendering of that template over the same conversations as
 // think_history.json, in every enable_thinking mode (scripts/pin_chat_think_history.py, PIN_CKPTS=mellum2.1; 20 cases x 3 modes).
-// Before the Detect and histMellum21 edits goinfer matched 10 of those 60 prompts; every one must now be byte-identical.
+// Every one of the 60 prompts must be byte-identical.
 func TestMellum21_templateMatchesHuggingFace(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "testdata", "chat_think_goldens", "mellum21_think_history.json"))
 	if err != nil {

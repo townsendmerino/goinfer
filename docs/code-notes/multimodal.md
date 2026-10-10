@@ -325,3 +325,139 @@ Moved from `multimodal/voxtral.go` (the comment above `voxtral.go.header`) on 20
 ```text
 Voxtral Mini's audio constants (docs/tasks/task-multimodal-support-2026-10.md, S14.4b, desk read 2026-10-09).
 ```
+
+## whisperEncAbsBar
+
+Moved from `multimodal/whisper_encoder_test.go` (the comment above `whisperEncAbsBar`) on 2026-10-09.
+
+```text
+whisperEncAbsBar: registered as 2e-05 (the bar G-S14b2 used, on 104-position attention windows) and amended to 5e-04 before any real-checkpoint reading, with the measurement: on this
+1500-position input transformers' OWN float32 differs from a float64 evaluation of the same weights by 1.9e-05 (6.5 s clip) and 1.16e-04 (25 s clip), and the port differs from the
+pinned reference by 2.2e-05 and 1.29e-04: the same size, because float32 accumulation over 1500 keys is where the error is. 5e-04 is about 4x that noise and 60x below the weakest planted defect.
+```
+
+## whisper_encoder_test.header
+
+Moved from `multimodal/whisper_encoder_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
+(scripts/pin_whisper_tiny.py): per-frame cosine >= 0.99999 AND max |diff| <= 2e-05, and every planted defect red against both.
+```
+
+## TestGemma4E2BAudioTower
+
+Moved from `multimodal/gemma4_audio_e2b_real_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+TestGemma4E2BAudioTower is G-S5a of docs/tasks/task-multimodal-support-2026-10.md (S5, registered before this ran):
+Gemma 4 E2B's audio tower and embed_audio, from E2B's own checkpoint (GOINFER_GEMMA4_E2B, default
+~/models/gemma-4-E2B-unq), through aikit's audio package, against transformers' reference
+(scripts/pin_gemma4_e2b_audio.py; its artifacts in GOINFER_E2B_AUDIO_ARTIFACTS, default
+~/goinfer-logs/gemma4-e2b-audio) on the three committed clips. Fed HF's log-mel, every stage (the subsampler, each
+block, the tower, the embedder) must be at soft-token cosine >= 0.9999; the first stage under it is named, and a worst
+stage in 0.999-0.9999 is ambiguous (parked). Also recorded, not graded by G-S5a: aikit's own log-mel against HF's, the
+soft-token count, and the end-to-end soft tokens from aikit's log-mel. CPU, float32.
+```
+
+## TestQwenASREncoder_real
+
+Moved from `multimodal/qwen3asr_real_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+G-S14b3 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): Qwen3-ASR-0.6B's audio encoder and projector, goinfer float32 on the CPU, against transformers
+float32 on three clips (the LibriSpeech clip, 12 s of synthetic signal, 46.8 s of the LibriSpeech clip tiled so that several attention windows span the clip). The reference is
+scripts/pin_qwen3asr_real.py's, which converts the checkpoint by a pure rename (transformers 5.15.0 cannot read it as shipped) and proves the conversion by transcribing the clip.
+Bar: every output token's cosine >= 0.9999 and the token count exact. (a) feeds the encoder the reference's own features, isolating the encoder; (b) feeds it the Go front end's, recorded.
+```
+
+## qwenEncAbsBar
+
+Moved from `multimodal/qwen3asr_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+qwenEncAbsBar is a second criterion added to the registered cosine one (amendment A1 of G-S14b, 2026-10-08): two GELUs that differ by 1e-3 leave the projected cosine at 0.9999998, above
+the cosine bar, so cosine alone cannot see the tanh-for-erf defect. The projected outputs have rms 1.3-1.9 and the port matches the reference to ~6e-06.
+```
+
+## qwen3asr_test.header
+
+Moved from `multimodal/qwen3asr_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+G-S14b1 and G-S14b2 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): aikit's Qwen3-ASR front end against transformers 5.15.0's
+Qwen3ASRFeatureExtractor, and its audio encoder and projector against the transformers modules on a tiny random-weight checkpoint in the real layout. Goldens: scripts/pin_qwen3asr_features.py,
+scripts/pin_qwen3asr_tiny.py.
+```
+
+## TestWhisperEncoder_real
+
+Moved from `multimodal/whisper_encoder_real_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+G-S14d2 (small) and G-S14d3 (large-v3) of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): a real Whisper checkpoint's encoder, goinfer float32 on the CPU, against
+transformers float32 (scripts/pin_whisper_real.py: the reference is proved real by transcribing the LibriSpeech clip) on the LibriSpeech clip and 25 s of synthetic signal. Bar: every one of
+the 1500 frames' cosine >= 0.9999; the largest absolute difference is recorded. The Go front end's features are run through the encoder as well and recorded beside.
+```
+
+## whisper_features_golden_test.header
+
+Moved from `multimodal/whisper_features_golden_test.go` (the comment at the pre-registration line) on 2026-10-09.
+
+```text
+G-S14a (docs/tasks/task-multimodal-support-2026-10.md, registered before this code): aikit's Whisper front end against transformers 5.15.0's WhisperFeatureExtractor, both of its
+paths. Bars per case: the shape, the largest absolute difference <= 5e-05 against each reference path, the mean <= 1e-06, and the valid-frame count equal to the extractor's mask. The
+reference paths differ from each other by up to 3.1e-05 on these inputs (the golden's meta.json), so 5e-05 is about 1.6 times their own spread. Six planted defects must each put some
+case over the bar. The golden is scripts/pin_whisper_features.py's.
+```
+
+## TestGemma4AudioResample
+
+Moved from `multimodal/gemma4_audio_resample_real_test.go` (the comment above `TestGemma4AudioResample`) on 2026-10-09.
+
+```text
+TestGemma4AudioResample is G-S5e of docs/tasks/task-multimodal-support-2026-10.md (S5's follow-up, registered before
+the resampler's code): the LibriSpeech clip at 44.1 kHz mono and at 48 kHz stereo (made offline by
+```
+
+## pixtral_real_test.header
+
+Moved from `multimodal/pixtral_real_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+S10, Ministral 3 (Pixtral), G-S10m-a and G-S10m-b (docs/tasks/task-multimodal-support-2026-10.md, registered
+2026-10-09 before any code), against transformers' references from scripts/pin_pixtral_real.py (nobara;
+```
+
+## TestGemma3PromptBlock
+
+Moved from `multimodal/gemma3_block_test.go` (the comment above `TestGemma3PromptBlock`) on 2026-10-09.
+
+```text
+TestGemma3PromptBlock is M-38's gate (docs/audit-2026-09-10.md): Gemma 3's own processor
+(processing_gemma3.py, verified against the real transformers source 2026-09-16) wraps the
+image sequence in "\n\n" on BOTH sides — f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n" — a
+shape internal/serveapp and demo/agent used to get wrong (a bare trailing "\n", or nothing).
+```
+
+## readGolden
+
+Moved from `multimodal/goldenread_test.go` (the comment above `readGolden`) on 2026-10-09.
+
+```text
+readGolden reads a test golden, gunzipping it when the name ends in .gz. Goldens over ~1 MB are
+committed compressed (CLAUDE.md — the convention for new goldens, and the backlog of 24 large ones
+was converted 2026-09-25), so a reader goes through this instead of os.ReadFile: the same call
+reads a small .json and a large .json.gz. A missing file is still an os.IsNotExist error, which is
+what the callers' "no golden — run the pin script" skips test for.
+```
+
+## cosine
+
+Moved from `multimodal/helpers_test.go` (the comment above `cosine`) on 2026-10-09.
+
+```text
+cosine returns the cosine similarity and max abs elementwise difference of two
+equal-length vectors — the parity metric for TestProjector_parity. (Moved here
+with the projector; the encoder half's copy now lives in aikit/vision.)
+```
