@@ -69,21 +69,45 @@ profile put the removed repack at about 2% of a 1.5B transcode's CPU.
 
 ### A side observation on the self-check (F9), not part of the gate
 
-The new build's six transcodes of the 1.5B, from their phase lines:
+The new build's transcodes of the 1.5B, from their phase lines, two runs per configuration in each of the two G-T1
+runs on this page (T6's, then T1's):
 
-| configuration | self-check, two runs |
-|---|---|
-| `int4:cpu-arm64` (int8 logit tables) | 4.4 s, 4.1 s |
-| `int4:metal` (int8 logit tables) | 4.7 s, 5.0 s |
-| `int4:cpu-arm64:e4h` (int4 logit tables) | 0.2 s, 0.2 s |
+| configuration | self-check in T6's run | self-check in T1's run |
+|---|---|---|
+| `int4:cpu-arm64` | 4.4 s, 4.1 s | 5.1 s, 3.6 s |
+| `int4:metal` | 4.7 s, 5.0 s | 5.8 s, 0.3 s |
+| `int4:cpu-arm64:e4h` | 0.2 s, 0.2 s | 0.2 s, 2.4 s |
 
-Loading a kept `int4:cpu-arm64` file in a fresh process, the same call the self-check makes, took 0.23 s and 0.21 s.
-So the 4-5 s is not the cost of checking a file of this size. It appears only inside the transcode process, straight
-after the write, and only when the logit tables are int8. The mechanism is not established. The box had 16 GB, the
-owner's session open and about 4 GB of disk free.
+- Loading a kept `int4:cpu-arm64` file in a fresh process, the same call the self-check makes, took 0.23 s and 0.21 s.
+  So seconds of self-check are not the cost of checking a file of this size.
+- **A pattern that did not hold.** T6's six runs read as "slow with int8 logit tables, fast with int4 ones". T1's six
+  runs break it both ways (0.3 s on a plain file, 2.4 s on the `e4h` one). Over the twelve runs the time ranges from 0.2
+  to 5.8 s with no stable relation to the configuration.
+- The mechanism is not established. The self-check's CPU is about half a second (the arm64 profile), so the rest is a
+  wait. The box had 16 GB, the owner's session open and about 4 GB of disk free.
+
+## G-T1 for T1, 2026-10-10: PASS, every cell that ran is IDENTICAL
+
+T1 is the windowed layer parallelism in every streaming loop. Same instrument, box and matrix as T6's run above; base
+`eee75d83`, new `d8e91fe3`.
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 384 | 330 | 0 | 54 | 58 s |
+| the real Qwen2.5-Coder 1.5B Q4_K_M GGUF, three configurations | 3 | 3 | 0 | 0 | 1 min 52 s |
+
+- The NOT RUN set is T6's, source for source.
+- The three real files are the files T6's run wrote: the same sha256 and byte counts as the table above.
+- **Also checked before the run:** `go test -race` over the streaming tests and the prequant byte-identity tests (135
+  streamed configurations against their resident twins) reports no race, and `TestStreamLayers_everyWindowWritesTheSameBytes`
+  streams with windows of 1, 2, 3 and 64 layers.
+- **Phase lines, exploratory** (one run each, by day, the box in use; `g-t1-t1-real-lines.txt`): the new build's stream
+  phase read 3.8-7.4 s over the six runs, where T6's build read 10.7-16.1 s for the two plain configurations and
+  13.5-13.6 s for `e4h`. Not a result: G-T2 measures it at night, in ABAB pairs.
 
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
+- `g-t1-t1-*`: the same five files for T1's run.

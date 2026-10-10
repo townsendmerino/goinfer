@@ -1,7 +1,8 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0 and T6 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 for T6 is PASS on
-the Mac** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). T1–T5, T7 and V are not started. The gates
+**Status:** scoped 2026-10-10. **T0, T6 and T1 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
+the Mac for T6 and for T1** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). T2–T5, T7 and V are not
+started. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -153,8 +154,9 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
 - **F9. The self-check re-reads the whole file.** That matters only when the file is larger than free RAM. For a file
   that fits, the read comes from page cache and compares the bytes Go wrote with the CRC Go computed over those same
   bytes. That checks the writer against itself, not the disk.
-  - **T0, 2026-10-10 (the Mac, by day):** the phase line reads 3.0–5.0 s of self-check on a 1.2–1.3 GB int4 sidecar
-    with int8 logit tables, and 0.2 s on the `e4h` one, where the cloud box read 0.13 s.
+  - **T0, 2026-10-10 (the Mac, by day):** the phase line reads anywhere from 0.2 to 5.8 s of self-check on a 1.0–1.3 GB
+    int4 sidecar, over seventeen transcodes, where the cloud box read 0.13 s. It has no stable relation to the target or
+    to the logit tables' precision (a first reading, "slow with int8 tables", did not survive the next six runs).
   - The same load in a fresh process takes 0.2 s, and the self-check's CPU is 0.5–0.6 s. So the time is not the
     check's own work. What it waits on is not established
     ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
@@ -163,8 +165,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
 
 - **A buffered sink.** The transcode makes 3,218 `Write` calls for the whole 1.5B. The small header writes are real
   but negligible. A large MoE makes more (about ten per matrix), still under a second.
-- **The self-check for a file that fits in RAM:** 0.13 s of 19.3 s. **Not so on the Mac (T0, 2026-10-10): 3–5 s of a
-  15–20 s transcode for a plain int4 sidecar. See F9; it is an open question, not a closed one.** A sidecar larger than RAM (the 16.7 GB 30B on the
+- **The self-check for a file that fits in RAM:** 0.13 s of 19.3 s. **Not so on the Mac (T0, 2026-10-10): up to 5.8 s
+  of a transcode that takes 5–20 s, and as little as 0.2 s. See F9; it is an open question, not a closed one.** A sidecar larger than RAM (the 16.7 GB 30B on the
   16 GB Mac) re-reads from disk. T0's phase line measures that before anything changes (F9).
 - **The disk write:** about 0.5 s per GB on the cloud box. Not representative of the Mac's SSD, but not where the time
   is either.
@@ -206,6 +208,15 @@ change what runs when and how fast, never what is written.
   - **A MoE family keeps K = 1** and parallelizes its experts inside the layer (T3). Nesting both would multiply
     in-flight transients, and a MoE layer is the large one.
   - Exploratory, 2 cores: 16.2 s to 9.7 s with T4a in both arms, identical sha256.
+  - **Built 2026-10-10 (`d8e91fe3`): `decoder/stream_layers.go:streamLayers`.** What the tree made different from the
+    text above:
+    - The window divides the budget by the largest layer written so far, not by layer 0's bytes: a hybrid's layers
+      differ in size, and layer 0 need not be the large one.
+    - On a host with no available-memory probe (`HostRAMAvailableBytes` reads 0) the budget is 1 GB, not a quarter of
+      nothing.
+    - A writer with no budget set builds one layer at a time, so only the two transcode entry points window.
+  - **G-T1 for T1: PASS on the Mac, 2026-10-10** (330 tiny cells and 3 real cells IDENTICAL, 0 DIFFERENT; no data race
+    under `go test -race`).
 - **T2. Row-parallel logit tables.** The embedding and an untied LM head are single tensors, so T1 cannot reach them.
   - Give `streamQuantizedRepackable` a parallel form over contiguous row ranges that takes a row-reader *factory*, so
     each worker owns its reader's state.

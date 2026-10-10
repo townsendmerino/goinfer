@@ -1,0 +1,24 @@
+== identity provenance ==
+  repo        d8e91fe3
+  date (UTC)  2026-10-10T16:35:42Z
+  host        Darwin arm64
+  old         eee75d83 metal-q4k: G-Q2 and G-Q3 queued again with the load-time fit guard byp
+  new         d8e91fe3 decoder: T1, windowed layer parallelism in every streaming loop (task-
+  mode        giw bytes: each revision's own cmd/prequant transcodes the source; the files' sha256 are compared
+  assets      real — the -assets real table's GGUFs and directories under /Users/francistownsend-merino/models
+  configs     int4:cpu-arm64, int4:metal, int4:cpu-arm64:e4h (quant:target[:e4h]; cpu is this box's arch)
+  env         GOINFER_* removed from both sides' transcodes (none were set) — the code is the only difference
+  build       go build -trimpath ./cmd/prequant in each worktree's root module, GOWORK=off -mod=readonly
+  run dir     <run dir>/gate-identity-20261010-093542-1280410131
+  started     09:35:42 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+
+== giw bytes: old eee75d83 vs new d8e91fe3, per source ==
+  IDENTICAL  coder-1.5b-q4km                    3 cell(s): int4:cpu-arm64 int4:metal int4:cpu-arm64:e4h
+
+== verdict ==
+  cells    3: 3 IDENTICAL, 0 DIFFERENT, 0 NOT RUN (a skip is not a pass)
+  wall     1m52s (09:35:42 → 09:37:34): builds 3s, transcodes 1m48s (each cell: new, old, new again)
+  logs     <run dir>/gate-identity-20261010-093542-1280410131/logs (bundles removed after hashing (pass -keep to retain them); worktrees removed)
+  record   <run dir>/gt1-t1-real.jsonl (one JSON line per cell: verdict, sha256, bytes, prequant's phase line)
+  GREEN — every cell that ran is IDENTICAL

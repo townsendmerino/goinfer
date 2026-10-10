@@ -1,0 +1,9 @@
+new1-coder-1_5b-q4km__int4_cpu-arm64             1155 MB (int4) in 12.8s: stream 7.4s, self-check 5.1s
+new1-coder-1_5b-q4km__int4_cpu-arm64_e4h         959 MB (int4) in 6.7s: stream 6.4s, self-check 0.2s
+new1-coder-1_5b-q4km__int4_metal                 1312 MB (int4) in 9.7s: stream 3.9s, self-check 5.8s
+new2-coder-1_5b-q4km__int4_cpu-arm64             1155 MB (int4) in 7.5s: stream 3.8s, self-check 3.6s
+new2-coder-1_5b-q4km__int4_cpu-arm64_e4h         959 MB (int4) in 9.3s: stream 6.8s, self-check 2.4s
+new2-coder-1_5b-q4km__int4_metal                 1312 MB (int4) in 5.4s: stream 5.0s, self-check 0.3s
+old-coder-1_5b-q4km__int4_cpu-arm64              1155 MB (int4)
+old-coder-1_5b-q4km__int4_cpu-arm64_e4h          959 MB (int4)
+old-coder-1_5b-q4km__int4_metal                  1312 MB (int4)
