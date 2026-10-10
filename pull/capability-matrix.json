@@ -969,7 +969,7 @@
     "loaders": "safetensors",
     "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
     "name": "smollm3",

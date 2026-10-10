@@ -86,7 +86,9 @@ def main():
     save_file(sd, os.path.join(ck, "model.safetensors"))
     cfg.save_pretrained(ck)
     json.dump(dict(note="tiny Qwen3VLMoeForConditionalGeneration, transformers " + __import__("transformers").__version__
-                   + ", float32, eager; experts saved in the 4.57 layout", vocab=512, hidden=64, image_token=IMG, merge=2, **gold),
+                   + ", float32, eager; experts saved in the 4.57 layout", vocab=512, hidden=64, image_token=IMG, merge=2,
+                   prompt_ids=gold["text"]["ids"],  # cmd/gate identity's prompt
+                   **gold),
               open(os.path.join(OUT, "qwen3vlmoe_tiny_golden.json"), "w"))
     print("wrote", ck, "keys", [k for k in sd if "layers.0.mlp" in k], "gate_up", list(gu))
 
