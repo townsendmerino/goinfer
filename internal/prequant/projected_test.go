@@ -9,10 +9,9 @@ import (
 )
 
 // TestProjectedSidecarBytes_neverUnderCounts: the pre-transcode disk check must not pass a sidecar that
-// will not fit, so the projection has to be at least what the writer actually produces, at every quant.
-// (It used to be the source's size, which a real int4 sidecar exceeds by up to 16% and an int8int8 one by
-// ~60%.) Measured against the writer on the tiny fixture here; against real sidecars when written:
-// 0.5B/1.5B/7B/Llama-1B/Gemma-4-26B int4 and 0.5B int8int8 projected 1.03–1.14× their actual size.
+// will not fit, so the projection has to be at least what the writer actually produces, at every quant (the
+// source's size is not enough: a real int4 or int8int8 sidecar exceeds it). Measured against the writer
+// on the tiny fixture here.
 func TestProjectedSidecarBytes_neverUnderCounts(t *testing.T) {
 	src := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
 	if _, err := os.Stat(src); err != nil {

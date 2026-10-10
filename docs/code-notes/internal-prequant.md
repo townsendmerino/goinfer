@@ -187,3 +187,213 @@ the SOURCE's size as its proxy, on the argument that a sidecar is never bigger t
 but the sources are already quantized, and real int4 sidecars measured 1.02–1.16× their q4_k_m
 source, int8int8 about 1.6× — so the check passed and the transcode could still run out of disk.
 ```
+
+## TestGIWRoundTripPreservesRouterBias
+
+Moved from `internal/prequant/stream_test.go` (the comment above `TestGIWRoundTripPreservesRouterBias`) on 2026-10-09.
+
+```text
+TestGIWRoundTripPreservesRouterBias guards the .giw serialize format against
+silently dropping per-layer fields. The byte-identity test above can't catch a
+field BOTH the streamed and resident paths skip (they share the serializer); only
+a transcode → load → inspect round-trip does. RouterBias (GLM/DeepSeek
+e_score_correction_bias) was added to LayerWeights but initially not to the giw
+format, so a stream-weights GLM lost its routing bias — caught only by the real
+106B gate. This pins it on the tiny GLM model.
+```
+
+## residentLabelFor
+
+Moved from `internal/prequant/stream_test.go` (the comment above `residentLabelFor`) on 2026-10-09.
+
+```text
+residentLabelFor is what decoder.(*Weights).quantLabel() actually resolves to for
+testdata/glm-tiny.gguf's RESIDENT (buffer-path) bundle at a given requested quant — which is
+NOT always what decoder.Model.Quant() reports for a live load, and callers here must not
+assume it is. liveQuant is m.Quant()'s own answer, the correct value for every case except the
+one M-27 changed.
+
+M-27 (docs/audit-2026-09-10.md): before that fix, glm-tiny's router was (incorrectly)
+quantized right alongside the rest of the body, so an "int4" load was uniformly int4 and
+quantLabel() collapsed to "int4". Now the router correctly stays f32 regardless of the
+ambient quant — a real, intentional precision difference from the int4 body — and
+quantLabel()'s own documented contract (decoder/serialize.go: "int4mix... when int4 coexists
+with a higher-precision BODY weight," which explicitly classifies the router as a body
+weight) correctly reports that as "int4mix", not "int4". This was the bug being fixed, not a
+fact worth re-pinning: decoder.Model.Quant() (used for a LIVE, non-.giw model) is unaffected
+and still reports back exactly what was requested for "int4" (Model.quant short-circuits
+before ever calling quantLabel()) — only the .giw bundle's own baked, inferred label changes,
+honestly, because the bundle genuinely is no longer uniform-precision. Every other quant
+mode (including "", where Model.Quant() already falls through to the real quantLabel()
+inference rather than echoing the request) is unaffected and liveQuant is already correct.
+```
+
+## TestGiwQuantLabel_headerAsymmetry
+
+Moved from `internal/prequant/stream_test.go` (the comment above `TestGiwQuantLabel_headerAsymmetry`) on 2026-10-09.
+
+```text
+TestGiwQuantLabel_headerAsymmetry pins a v5 behaviour that until now lived only as a comment in
+decoder/serialize.go: the BUFFER path (full weights in hand) records the resolved quant label,
+while the STREAMING transcode records "" — it writes the header BEFORE its layers load and cannot
+yet know the resolved quant, so a reader of a streamed bundle falls back to inference (the pre-v5
+behaviour).
+
+This is a gate, not a nicety. That asymmetry is exactly what made the old byte-identity assertion
+wrong the day ac6977f landed, and nothing caught it: testdata/glm-tiny.gguf was untracked, so the
+test self-skipped in CI and had never once run there.
+```
+
+## TestStreamTranscodeMatchesResident.fields
+
+Moved from `internal/prequant/stream_test.go` (the comment inside the byte-identity test comment) on 2026-10-09.
+
+```text
+Byte-identity is asserted over everything outside the two fields that MUST differ, and each of
+those is pinned exactly rather than skipped: the v5 quant label (see the asymmetry test above;
+giwSplit re-asserts it here) and the trailing CRC32 covering it (giwSplit verifies each bundle's
+CRC independently, so a wrong CRC fails). Measured on this fixture, every remaining byte is equal
+across all three quant modes — a size delta alone would not have shown that, and did not: the
+original diagnosis missed the CRC entirely.
+```
+
+## TestTranscode_embedInt4Threaded
+
+Moved from `internal/prequant/stream_test.go` (the comment above `TestTranscode_embedInt4Threaded`) on 2026-10-09.
+
+```text
+TestTranscode_embedInt4Threaded gates M-31: Transcode's GGUF branch hardcoded `false` for
+StreamTranscodeGGUF's embedInt4 parameter instead of threading the one it was given, so
+`cmd/prequant -embed-int4` silently produced an int8-pinned embed/head table for every GGUF
+input — identical to omitting the flag, with no error. The safetensors-directory branch
+(transcodeDir) already threaded it correctly; only the GGUF branch was broken.
+```
+
+## TestTranscode_realGGUFSucceedsAndPublishedBundleLoads
+
+Moved from `internal/prequant/stream_test.go` (the comment above `TestTranscode_realGGUFSucceedsAndPublishedBundleLoads`) on 2026-10-09.
+
+```text
+V-01 (docs/review-2026-09-04.md): no existing test ever drove a SUCCESSFUL GGUF Transcode —
+the M-12 tests above assert failure on a non-GGUF source and an AST shape, neither of which
+exercises selfCheck on a real bundle. That is exactly why the temp name `out + ".tmp"` (not
+ending in ".giw", so decoder.Load's suffix dispatch in selfCheck could never route to the
+bundle loader) went unnoticed: every real Transcode failed its own self-check unconditionally.
+This drives the whole function end to end on a real tokenizer-bearing GGUF (glm-tiny.gguf has
+no tokenizer -- see giwFixture's own comment elsewhere -- so this needs a different, real small
+checkpoint) and loads the PUBLISHED bundle afterward, proving both that Transcode succeeds and
+that the file it left behind is loadable.
+```
+
+## TestTranscodeDir_writesViaTempThenRenames
+
+Moved from `internal/prequant/stream_test.go` (the comment above `TestTranscodeDir_writesViaTempThenRenames`) on 2026-10-09.
+
+```text
+M-33 (audit-2026-09-10): transcodeDir — the safetensors-directory sibling of Transcode's GGUF
+branch, used for safetensors-only families like Mellum2 — wrote straight to `out` via
+os.Create(out) and removed `out` (not a temp file) on failure, reintroducing exactly the M-12
+class of bug the GGUF branch above was already fixed for: an OOM-kill during the write (this
+path holds the WHOLE resident model in RAM, exactly where a killer fires) leaves a
+placeholder-length bundle at the final path, newer than its source, "fresh" forever, and
+`serve` then fails at boot with "truncated bundle" until a human deletes it. Same structural
+guard as TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
+```
+
+## TestStreamTranscode_perFamilyBodiesCarryTheirLayers
+
+Moved from `internal/prequant/stream_families_test.go` (the comment above `TestStreamTranscode_perFamilyBodiesCarryTheirLayers`) on 2026-10-09.
+
+```text
+M-09: StreamTranscodeGGUF wrote a HEADER-ONLY bundle for five GGUF families, and the comment
+above canSerialize claimed they were refused before the load.
+
+canSerialize has returned nil unconditionally since v6, so nothing was refused. The gpt-oss,
+laguna, granitehybrid, nemotron_h/_moe and llama4 branches each build every layer and
+`return w, nil` WITHOUT calling sink.layer — so the writer emitted a header declaring N
+layers followed by zero layers. cmd/prequant and `serve --stream-weights` then load the whole
+model resident (defeating the one-layer-peak-RAM contract this path exists for) and fail
+minutes later with "truncated body: unexpected end of data": a broken supported path whose
+error names the symptom and not the cause.
+
+decoder/testdata/gptoss_tiny.gguf is COMMITTED and nothing drove the stream path on it —
+stream_test.go uses glm-tiny, whose generic loader does stream. That gap is why this shipped,
+so closing it is the test. Through StreamTranscodeGGUF directly, as the neighbouring tests
+do: the tiny fixtures carry no tokenizer, so the full Transcode refuses before the weights.
+```
+
+## TestStreamTranscode_perFamilyBodiesCarryTheirLayers.gptoss
+
+Moved from `internal/prequant/stream_families_test.go` (the comment inside the per-family table) on 2026-10-09.
+
+```text
+The regression, historically: a family routed through the resident-build
+fallback. S2 (task-never-swap-2026-09.md, 2026-09-23) moved gpt-oss OFF that
+fallback — its own loadGptOss closure already builds one layer independently of
+every other, so it now streams natively too, same as glm below. `streams` is
+this test's own record of that; TestGptOss_streamedMatchesResident is the byte-
+identity gate that actually proves it (this test only proves the bundle isn't
+header-only, not which path produced it).
+```
+
+## TestGptOss_streamedMatchesResident
+
+Moved from `internal/prequant/stream_families_test.go` (the comment above `TestGptOss_streamedMatchesResident`) on 2026-10-09.
+
+```text
+TestGptOss_streamedMatchesResident is S2's own registered gate for the first family moved off
+the resident-serialize fallback (needsResidentSerialize, deleted 2026-09-24 when gemma4 — the last
+family on it — began streaming too): the streamed bundle must be byte-identical to the resident-build-then-
+serialize path's output, same shape as stream_test.go's TestStreamTranscodeMatchesResident (glm)
+— extended here per family rather than widening that one, since a failure on one fixture should
+name which family broke, not force a reader to guess from a shared table's row count.
+```
+
+## TestProjectedSidecarBytes_neverUnderCounts
+
+Moved from `internal/prequant/projected_test.go` (the comment above `TestProjectedSidecarBytes_neverUnderCounts`) on 2026-10-09.
+
+```text
+TestProjectedSidecarBytes_neverUnderCounts: the pre-transcode disk check must not pass a sidecar that
+will not fit, so the projection has to be at least what the writer actually produces, at every quant.
+(It used to be the source's size, which a real int4 sidecar exceeds by up to 16% and an int8int8 one by
+~60%.) Measured against the writer on the tiny fixture here; against real sidecars when written:
+0.5B/1.5B/7B/Llama-1B/Gemma-4-26B int4 and 0.5B int8int8 projected 1.03–1.14× their actual size.
+```
+
+## TestDirSidecar_keepsMRopeSection
+
+Moved from `internal/prequant/dir_sidecar_test.go` (the comment above `TestDirSidecar_keepsMRopeSection`) on 2026-10-09.
+
+```text
+TestDirSidecar_keepsMRopeSection: a Qwen-VL's m-RoPE section survives the sidecar. Real checkpoints carry it in
+rope_scaling, which the adapters read and clear, and Config.MRopeSection was `json:"-"`, so a .giw dropped it and the
+model loaded from one ran plain RoPE on image positions (found 2026-10-09 by S16's real gate). The tiny fixtures carry
+it in rope_parameters, a raw field that survives, which is why TestDirSidecar_matchesDirectLoad (text-only, where the
+three axes coincide anyway) passed: each fixture here is copied with the section moved into rope_scaling, as the
+released checkpoints have it. A config with no section at all is refused, which is what makes a stale sidecar fail its
+self-check and rebuild.
+```
+
+## dirStreamDiff
+
+Moved from `internal/prequant/dir_stream_test.go` (the comment above `dirStreamDiff`) on 2026-10-09.
+
+```text
+dirStreamDiff compares a resident and a streamed bundle as G-DS1 is amended (2026-10-09, the task doc): byte-identical
+before the v5 quant label and after its alignment pad, both CRCs valid. The streamed bundle records the label as ""
+because the header is written before any layer exists (B11, exactly as StreamTranscodeGGUF's bundles); a reader infers
+it from the identical tensors. giwSplit checks the pad is zeros and the stored CRC matches each body.
+```
+
+## sidecar_default_test.header
+
+Moved from `internal/prequant/sidecar_default_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+task-never-swap-2026-09.md S1: sidecar .giw by default on darwin. These gates cover the three
+pieces this session added — SidecarPathIfFresh (fit's reuse-only-if-fresh path),
+DefaultToSidecar (the platform policy), and the disk-space guard in EnsureCachedGIW — separate
+from stream_test.go's existing Transcode/cacheFresh coverage, which these build on rather than
+duplicate.
+```
