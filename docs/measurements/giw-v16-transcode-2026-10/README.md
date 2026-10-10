@@ -65,7 +65,8 @@ before the run.
 
 Not a speed gate: T6 ships on identity, and its ratio is for the night's G-T2. The new build's own phase lines, one
 run each, by day, are in `g-t1-t6-real-lines.txt`; the old build prints none (it predates T0). The exploratory arm64
-profile put the removed repack at about 2% of a 1.5B transcode's CPU.
+profile put the removed repack at about 2% of a 1.5B transcode's CPU. (That share is from Go's profiler on the Mac,
+withdrawn 2026-10-10: see "T4b's day gate" below. It was not re-measured.)
 
 ### A side observation on the self-check (F9), not part of the gate
 
@@ -83,6 +84,8 @@ runs on this page (T6's, then T1's):
 - **A pattern that did not hold.** T6's six runs read as "slow with int8 logit tables, fast with int4 ones". T1's six
   runs break it both ways (0.3 s on a plain file, 2.4 s on the `e4h` one). Over the twelve runs the time ranges from 0.2
   to 5.8 s with no stable relation to the configuration.
+- (The next figure is from Go's profiler on the Mac, withdrawn 2026-10-10. The fresh-process load above, 0.2 s of
+  wall, is what the reading rests on.)
 - The self-check's CPU is about half a second (the arm64 profile), so the rest is a wait. The box had 16 GB, the
   owner's session open and about 4 GB of disk free.
 - **It grows with the file.** Adding T2's run (below): the 0.5B's files (344-609 MB) read 0.1 s in fifteen of sixteen
@@ -202,6 +205,8 @@ From the 48 phase lines in `g-t1-t3-real-lines.txt` (24 cells, the new build twi
 
 - **What changed:** the transcode writes the verified-marker for the bundle it has just written, so the self-check's
   load skips the whole-file CRC. The load itself still runs: the bundle deserializes and its shapes validate.
+- (The attribution in the next bullet is from Go's profiler on the Mac, withdrawn 2026-10-10: where LFM2.5's
+  self-check spends its time is not established. That no CRC pass runs is established by the marker and its tests.)
 - **Why LFM2.5 still waits:** its load copies large f32 tensors out of the mapping (`giwReader.f32`, about 0.7 s of
   CPU), so the load itself reads much of the file it has just written. A CPU profile of one such transcode shows no
   CRC under the self-check. It is the load's own read, and the format change (V) is where it goes away.
@@ -435,6 +440,52 @@ are no larger than installed memory. The change is in which bundles get a marker
   other six. **Not re-measured:** the 30B's self-check time with the CRC back. `gt_night.py` now records the
   available memory before each transcode, for the next run's G-T3.
 
+## T4b's day gate, 2026-10-10: SHIP on both graded cells; and Go's profiler on the Mac was wrong about the shares
+
+T4b vectorizes aikit's int4 quantizer (NEON and AVX2). Its row in G-T2 is the single-thread CPU time of a transcode,
+new over old, registered before the reading with its cells and instrument (the task doc's amendment).
+
+- **Instrument:** `t4b_cpu_ab.py`. Two `cmd/prequant` builds of one goinfer revision (`23a2c8c0`): old on aikit
+  v1.65.0, new on aikit `244a10e`. `GOMAXPROCS=1`, user plus system seconds from `time`, one discarded warm-up per
+  arm, five pairs in alternating order. Records `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`.
+- **Boxes:** the Mac at 16:10 (load average 3.3, by day, in use); nobara at 16:17 under the timing lock (load 0.13).
+
+| cell | old CPU | new CPU | new/old, five pairs | median | band | verdict |
+|---|---|---|---|---|---|---|
+| nobara, 1.5B Q4_K_M GGUF to `cpu-amd64` | 12.1 s | 3.7 s | 0.303-0.308 | **0.303** | ship at most 0.70 (expected 0.4-0.6) | **SHIP** |
+| Mac, Qwen3 0.6B bf16 directory to `cpu-arm64` | 4.2 s | 1.7 s | 0.398-0.414 | **0.407** | the same | **SHIP** |
+| Mac, 1.5B GGUF to `cpu-arm64` (recorded) | 10.5 s | 3.2 s | 0.303-0.306 | 0.304 | | |
+| nobara, 0.6B bf16 directory (recorded) | 5.0 s | 2.0 s | 0.399-0.410 | 0.402 | | |
+
+- Every cell's old and new arms wrote the same sha256. This is G-T1 by hand for T4b on four cells; `gate identity`
+  runs it once goinfer pins the release.
+- The kernel alone, in one process, interleaved, 31 rounds of 9.2M normal weights (direction): 0.094 of the scalar's
+  time on the Mac (6.23 to 0.59 ns a weight), 0.097 on nobara (7.2 to 0.70 ns), faster in 31 of 31 each.
+
+### The retraction this gate forced
+
+The amendment that named the cells said the Mac's GGUF cell "cannot go under about 0.86", from the arm64 profile's 14%
+for the quantizer. It read 0.304. So the profile was checked against macOS's `sample`, which suspends the process and
+reads its stacks, on the old build with one thread (1.5B GGUF to int4 `cpu-arm64`):
+
+| | Go CPU profile | `sample`, on-CPU |
+|---|---|---|
+| `QuantizeGroupInt4Row` | 12% | **83%** |
+| `dequantQ4KBlock` (with `LittleEndian.Uint16`) | 73% | 5.8% |
+| `dequantQ6KBlock` | not in the top nine | 1.5% |
+
+- The sampler agrees with the timing (the quantizer's 6.2 ns a weight over 1.5 billion weights is the 9.6 s the old
+  build spends), and with amd64, where a Linux profile had said 81%. Go's profile on the Mac does not.
+- **After T4b, by the sampler:** `dequantQ4KBlock` about 24% of the on-CPU samples, the new kernel about 21%, CRC 8%,
+  the file's row4 repack 7%, `dequantQ6KBlock` and `F32ToF16` about 5% each. For the bf16 directory before T4b: the
+  quantizer about 44%, the bf16 widening about 43%; after: the widening about 40%, the quantizer (kernel, wrapper and
+  max) about 24%.
+- **What is withdrawn:** the audit's arm64 section and the task doc's F3 (the quantizer "about 14%", the dequantizer
+  "about two thirds", "T4 can remove at most about 14%"), and with them every other share on this page that came from
+  a Go profile on the Mac, each marked where it stands. Why that profiler is wrong here is not established.
+- **For the next profile on the Mac:** `sample <pid> <seconds>`, read under "Sort by top of stack", leaving out the
+  threads parked in the kernel.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -442,6 +493,7 @@ are no larger than installed memory. The change is in which bundles get a marker
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
 - `gt_night.py`, `run-gt-night-mac.sh`, `run-gt-night-nobara.sh`: the T runs' driver and the two boxes' cells.
   `gt-mac.jsonl`, `gt-mac.log`, `gt-nobara.jsonl`, `gt-nobara.log`: their records.
+- `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
   run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

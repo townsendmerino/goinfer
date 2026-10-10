@@ -1,10 +1,11 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0, T6, T1, T2, T3, T4a and T5 are built (branch `giw-v16-2026-10`, on aikit
-v1.65.0) and graded 2026-10-10** ([record](../measurements/giw-v16-transcode-2026-10/README.md)): G-T1 PASS on tiny and
-real cells on both boxes; G-T2 SHIP on every graded cell (new/old wall 0.28 on the Mac's 1.5B, 0.13 and 0.12 on
-nobara's 1.5B and 7B, 0.18 on the 30B directory); G-T3 within its bounds; G-T2c recorded. The size rule of Decision 5
-marked the 30B although it was not in memory; it now counts the source (F9). Next: T4b, then T7 and V. The gates
+**Status:** scoped 2026-10-10. **T0-T6 are built** ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
+T0, T6, T1, T2, T3, T4a and T5 are on `main` on aikit v1.65.0 and graded: G-T1 PASS on tiny and real cells on both
+boxes; G-T2 SHIP on every graded cell (new/old wall 0.28 on the Mac's 1.5B, 0.13 and 0.12 on nobara's 1.5B and 7B, 0.18
+on the 30B directory). **T4b is built in aikit (`244a10e`) and its day gate ships** (single-thread CPU 0.30 on nobara's
+1.5B GGUF, 0.41 on the Mac's bf16 directory); its release, goinfer's pin and the night's cells are owed. **F3's arm64
+profile is retracted:** the quantizer leads on the Mac too. Next: v1.66.0, then T7 and V. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -27,6 +28,8 @@ direction and the projection bands, and is never quoted as a result. The results
   and the default sidecar (`e4h`) sends the embedding and head through the int4 quantizer too.
   - **Not on the Mac (T0, 2026-10-10, exploratory):** there it is about 14% of the CPU, and the GGUF dequantizer is
     about two thirds. See F3.
+  - **WITHDRAWN 2026-10-10 (F3's retraction):** the Mac is like amd64. The system sampler puts the quantizer at 83%
+    of a 1.5B GGUF transcode's CPU there; the 14% was Go's profiler misattributing it.
 - **Three smaller costs:** on arm64 every int4 tensor built during a transcode also gets an in-RAM row4 copy that
   nothing reads; the safetensors fused-expert path transposes with a loop that hits power-of-two cache aliasing
   (a tiled version is 5.2× faster, bit-identical); and it copies each expert's f32 three more times than needed.
@@ -127,10 +130,28 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
     The GGUF dequantizer is about two thirds: `dequantQ4KBlock` 55%, of which `encoding/binary.LittleEndian.Uint16`
     17%, and `dequantQ6KBlock` 12%.
   - So on arm64 T4 can remove at most about 14%, and the dequantizer is the first cost there before T4, not after it.
+  - **RETRACTED 2026-10-10: the three bullets above and the one below are wrong. The quantizer leads on the Mac too.**
+    - **How it showed:** T4b's gate read 0.304 on the Mac's 1.5B GGUF, single-thread CPU 10.5 s to 3.2 s, where "14%"
+      allows no better than 0.86. The only code that differs between the two builds is the quantizer.
+    - **What is true (macOS `sample`, which suspends the process to read its stacks; one thread, 1.5B GGUF to int4
+      `cpu-arm64`):** before T4b `QuantizeGroupInt4Row` is 83% of the on-CPU samples, `dequantQ4KBlock` 5.8% and
+      `dequantQ6KBlock` 1.5%. After T4b: `dequantQ4KBlock` about 24%, the new kernel about 21%, CRC 8%, the row4 repack
+      for the file 7%. For the Qwen3 0.6B bf16 directory before T4b: the quantizer about 44%, the bf16 widening
+      (`BFloat16sToF32` and `SubF32`) about 43%.
+    - **What was wrong:** Go's CPU profile of the same old build, on one thread, gives `dequantQ4KBlock` 54%,
+      `LittleEndian.Uint16` 19% and the quantizer 12%: the reverse of the sampler. Why is not established here. The
+      audit's own run had signs of it: 11.2 s of samples in 15.8 s of wall.
+    - **Reach:** every share in this doc and in the two records that was read from a Go profile on the Mac is
+      suspect, and each is marked where it stands: this finding, F6's "about 2%", F9's "the self-check's CPU is
+      0.5-0.6 s" and its note on LFM2.5's load, and the dequantizer's rank under "Checked and not worth doing". Go
+      profiles taken on Linux (the audit's amd64 one, nobara's) are not in question: T4b's amd64 reading (0.303) agrees
+      with the audit's 81%.
   - **That is the GGUF split. A bf16 directory is different (2026-10-10, the Mac, exploratory, two profiles of
     LFM2.5 2.6B to int4):** `QuantizeGroupInt4Row` is about 50–60% of the CPU and the bf16 widening
     (`Tensor.BFloat16sToF32`) 18–30%, with no dequantizer in the way. So T4b is worth more on arm64 for a directory
     source than the GGUF profile says.
+    **(Go's profiler on the Mac: see the retraction above. The sampler's split for a bf16 directory is about 44% and
+    43%, and T4b is worth more on a GGUF, where the quantizer is 83%.)**
 - **F4. Safetensors experts are built one at a time.** `decoder/weights.go:loadFusedExperts`, `streamExperts`
   (gemma4), and the per-expert `loadMatQ` loop in the generic builder's layer loader all loop over experts
   sequentially. `buildGptOssWeights` does too, but gpt-oss directories still take the resident (layer-parallel) path.
@@ -152,6 +173,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
   every Mac transcode does one wasted repack per tensor, and a cpu-arm64 one does it twice.
   - **T0, 2026-10-10 (the Mac, exploratory):** confirmed, and small. The in-RAM repack is 0.21–0.25 s, about 2% of the
     CPU, on both targets. The writer's own repack for kind 5 is another 0.22 s on cpu-arm64, and that one is needed.
+    **(These seconds are from Go's profiler on the Mac, withdrawn under F3, and were not re-measured. T6 shipped on
+    identity, so nothing rests on them.)**
 - **F7. The writer round-trips scales through f32.** `giwWriter.weightMatKind` widens the stored binary16 scales to
   f32 (`Int4F32`, an allocation), `giwWriter.int4Scales` narrows them back (`F32ToF16Scales`, another), and
   `giwWriter.scales16` copies them to bytes (a third). About 2% of the profile; fold it into V1's writer change.
@@ -164,6 +187,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
   - **T0, 2026-10-10 (the Mac, by day):** the phase line reads anywhere from 0.2 to 5.8 s of self-check on a 1.0–1.3 GB
     int4 sidecar, over seventeen transcodes, where the cloud box read 0.13 s. It has no stable relation to the target or
     to the logit tables' precision (a first reading, "slow with int8 tables", did not survive the next six runs).
+  - (The "0.5–0.6 s of CPU" below is from Go's profiler on the Mac, withdrawn under F3. The reading it supports
+    rests on the next line's measurement instead: the same load in a fresh process takes 0.2 s of wall.)
   - The same load in a fresh process takes 0.2 s, and the self-check's CPU is 0.5–0.6 s. So the time is not the
     check's own work. It grows with the file (0.1 s under 610 MB, 9 s at 1.7 GB), and it reproduces with no goinfer
     code: 1.7 GB written over 5 s and then read through a mapping took 8.2 s the first time and 0.3 s the second. It is
@@ -183,6 +208,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
     - Exploratory, the Mac, by day (G-T1's phase lines, 48 transcodes): 0.0–0.3 s of self-check on every file up to
       1.8 GB. LFM2.5 2.6B still reads 2.7–3.9 s: its load copies large f32 tensors out of the mapping
       (`giwReader.f32`), which is the load's own read and not a CRC pass (a profile shows no CRC under the self-check).
+      **(That attribution is Go's profiler on the Mac, withdrawn under F3: where LFM2.5's self-check spends its time
+      is not established. That it runs no CRC pass is established by the marker and its tests, not by the profile.)**
       That copy is V's to remove.
   - **Amended 2026-10-10, the same day (Decision 5, second part; `06f82beb`).** The owner asked whether another thread
     could compare the file with its CRC as the bytes are written, and chose both of the following.
@@ -230,7 +257,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
 - **The disk write:** about 0.5 s per GB on the cloud box. Not representative of the Mac's SSD, but not where the time
   is either.
 - **GGUF dequant (Q4_K/Q6_K, scalar):** 12.7% today. It becomes a larger share once T4 lands. Re-rank it from T0's
-  profile after T4, not before. **On arm64 it is already about 67% (T0, 2026-10-10; F3): on the Mac it ranks first
+  profile after T4, not before. **(WITHDRAWN 2026-10-10 under F3: on the Mac it is about 7% before T4b and about 30%
+  after it, by the system sampler.)** **On arm64 it is already about 67% (T0, 2026-10-10; F3): on the Mac it ranks first
   now.**
 
 ## Part T — transcode speed
@@ -354,6 +382,24 @@ change what runs when and how fast, never what is written.
       exact remainder, and step away from zero where |remainder| ≥ 0.5.
     - The ceiling to aim at: int8int8's whole transcode is 3.9 s against int4's 19.5 s on the same model.
     - `QuantizeGroupsInt4` and `QuantizeInt4` (the resident and safetensors paths) inherit it.
+    - **Built 2026-10-10 (aikit `244a10e`, for v1.66.0).** As designed, with these differences:
+      - The dispatch is per group, not per row: a group that starts on a byte boundary and is a whole number of
+        kernel blocks (16 weights on arm64, 8 on amd64) takes the kernel, and the max is the activation quantizer's
+        existing `maxAbsF32`. The oracle is `quantizeGroupInt4RowScalar`.
+      - AVX2 rounds as the activation quantizer already does, `trunc(y + copysign(h, y))` with
+        `h = nextafter32(0.5, 0)`, not by truncating and stepping on the remainder. It also sets a finite positive
+        product in [2^31, 2^63) to 7, where the int32 conversion and the scalar's int64 one disagree, so the kernel
+        equals the scalar on every float32 and not only on products a real group can have.
+      - G-T4: the kernel sweep over every float32 in every lane, and the row test against both scalar references,
+        pass natively on arm64 and on amd64. F8's NaN cases are in both.
+      - **A trap on amd64.** The first AVX2 kernel built its constants through a general register, which Go assembles
+        as legacy-SSE moves; with the YMM upper halves in use each costs a state transition, and at one call per
+        group the kernel was correct and 1.77x slower than the scalar on nobara's Ryzen (Rosetta showed it faster).
+        The constants are read from memory now.
+      - Kernel microbenchmark, in one process, interleaved (direction): 0.094 of the scalar's time on the Mac, 0.097
+        on nobara.
+    - **Owed:** aikit v1.66.0's tag (its perfgate and vulnerability scan are on nobara's night queue as
+      `aikit-v1660-gates`), then goinfer's pin and G-T1 through `gate identity`, and the next night's cells.
 - **T5. `loadFusedExperts` without the waste.**
   - A tiled transpose that converts from bf16 on the way. It needs a small aikit API, because the raw bytes are
     unexported, for example `Tensor.SubF32Transposed(start, rows, cols)`. 16×16 tiles through a local buffer, written
@@ -492,13 +538,19 @@ exactly that.
     **nobara, the 1.5B Q4_K_M GGUF to int4 `cpu-amd64`** (the audit's shape), and **the Mac, the Qwen3 0.6B bf16
     directory to int4 `cpu-arm64`** (F3: on arm64 the quantizer leads for a bf16 directory, not for a GGUF). Recorded
     beside them, ungraded: the Mac's 1.5B GGUF, where the quantizer is about 14% of the CPU and the ratio cannot go
-    under about 0.86 whatever the kernel does, and nobara's 0.6B directory.
+    under about 0.86 whatever the kernel does, and nobara's 0.6B directory. **(That ceiling was wrong, and its reading
+    is what exposed it: F3's retraction.)**
   - **Instrument.** Not in one process: the kernel lives in aikit, so the two arms are two builds of `cmd/prequant`
     from one goinfer revision, old on aikit v1.65.0 (T4a) and new on the T4b commit. Each transcode runs with
     `GOMAXPROCS=1`; the quantity is its user plus system CPU time from `time`. One discarded warm-up per arm, then five
     pairs in alternating order; the ratio is paired, new over old. Both arms must write the same sha256
     (`docs/measurements/giw-v16-transcode-2026-10/t4b_cpu_ab.py`).
   - **Tier.** Day, as registered: CPU time on one thread, a few minutes a cell. The full-wall effect is the night's.
+
+  **T4b's row read 2026-10-10: SHIP on both graded cells.** Paired new/old single-thread CPU time, five pairs each:
+  nobara's 1.5B GGUF 0.303 (0.303-0.308; 12.1 s to 3.7 s); the Mac's Qwen3 0.6B bf16 directory 0.407 (0.398-0.414;
+  4.2 s to 1.7 s). Recorded: the Mac's 1.5B GGUF 0.304 (10.5 s to 3.2 s), nobara's 0.6B directory 0.402. Every cell's
+  two arms wrote the same sha256. The new arm was built on aikit `244a10e`, ahead of its tag.
 
   **Read 2026-10-10: SHIP on all three graded cells.** Paired new/old wall, medians: Mac 1.5B `cpu-arm64` 0.278
   (three pairs, 0.278-0.279); nobara 1.5B `cpu-amd64` 0.131 and 7B `cpu-amd64` 0.117 (three pairs each); the 30B

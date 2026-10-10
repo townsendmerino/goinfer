@@ -150,6 +150,11 @@ Duration: 15.84s, Total samples = 11.24s (70.96%)
 | the writer's own row4 repack for kind 5 (`repackRow4ForEmit`) | none | 1.8% (0.22 s) | none |
 | self-check (`selfCheck`, nearly all CRC32) | not in that profile | 4.4% (0.54 s) | 5.7% (0.64 s) |
 
+- **RETRACTED 2026-10-10: F3 below is wrong, and so is every share in this section's table and profiles.** They are
+  Go CPU profiles taken on the Mac, and that profiler misattributed the time. macOS's `sample` on the same build, one
+  thread, puts `QuantizeGroupInt4Row` at 83% of the on-CPU samples and the two GGUF dequantizers at about 7%; a Go
+  profile of that same run says 12% and 73%. T4b then cut the Mac's single-thread CPU from 10.5 s to 3.2 s, which a
+  14% share cannot do. The task doc's F3 has the record. The amd64 profiles above are from Linux and stand.
 - **F3: arm64's split is not amd64's.** The int4 quantizer is about 14% of the CPU here, not 81%, and `math.Round` is not
   a node in the profile at all (it compiles to one instruction). The cost that dominates is the GGUF dequantizer, about
   two thirds, most of it `dequantQ4KBlock`, with `encoding/binary.LittleEndian.Uint16` alone at 17%.
