@@ -2,7 +2,8 @@
 
 **Status:** scoped 2026-10-10. **T0, T6, T1, T2 and T3 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
 the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). The self-check no longer reads the
-file back (Decision 5). T4a is measured on arm64 and not adopted there; its amd64 measurement is queued on nobara. T5 is
+file back; the weights are read back behind the write instead, and a bundle larger than available RAM keeps the CRC
+pass (Decision 5, as amended). T4a is measured on arm64 and not adopted there; its amd64 measurement is queued on nobara. T5 is
 built on a held branch (`giw-v16-t5`) and waits for aikit v1.65.0, whose release waits for its vulnerability scan on
 nobara. T7 and V are not started. The gates
 below were registered before any code. Two parts, in this
@@ -183,6 +184,25 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
       1.8 GB. LFM2.5 2.6B still reads 2.7–3.9 s: its load copies large f32 tensors out of the mapping
       (`giwReader.f32`), which is the load's own read and not a CRC pass (a profile shows no CRC under the self-check).
       That copy is V's to remove.
+  - **Amended 2026-10-10, the same day (Decision 5, second part; `06f82beb`).** The owner asked whether another thread
+    could compare the file with its CRC as the bytes are written, and chose both of the following.
+    - **A read-back behind the write** (`internal/prequant/readback.go:readBack`): a goroutine reads the temp file
+      behind the writer, keeps a CRC-32 of what it reads, and compares it with the weights' trailing CRC word when
+      the blob ends. A mismatch fails the transcode before the self-check.
+    - **A size rule** (`markWritten`): the transcode writes the marker itself only when the read-back passed and the
+      bundle is no larger than the memory available before the write. A larger bundle, or an unknown reading, gets no
+      marker, so the self-check's load runs the whole-file CRC as it did before, and for such a file part of that
+      read comes from the disk. That restores what "Given up" above names.
+    - **What the read-back checks, measured before building it** (a 1.7 GB scratch file written over 6 s, two rounds,
+      exploratory): it adds no wall time (5.8–6.0 s with it, 6.3–6.4 s without) and stays level with the writer. It
+      reads the system's copy of bytes just written, so it catches a byte that reached the file different from the
+      one the writer summed, or a file changed during the write; it does not show what the disk stored. An attempt
+      at a true disk read (full fsync, then a read with the cache-bypass flag) returned 1.7 GB in 0.2–0.3 s, 6–8 GB/s,
+      which is not established as a disk read: pages already cached may still have served it. For a bundle that fits
+      in memory the old read-back did not reach the disk either.
+    - Exploratory, the Mac, by day (G-T1's phase lines, 16 transcodes, beside `gate quick`): the stream phase reads
+      0.4–1.6 s for the 0.5B and 1.2–5.7 s for the 1.5B with the read-back on, where the run before it read 0.4–1.6 s
+      and 1.0–5.3 s. The self-check stays at 0.0–0.1 s.
 
 ### Checked and not worth doing
 
@@ -492,6 +512,10 @@ available RAM at transcode start ("a quarter of ram is fine"). Decisions 2 and 4
 **Decided 2026-10-10, after T2:** Decision 5, the transcode does not read its file back ("no self check makes sense to
 me"). Built as: the load check stays, the CRC read-back goes (F9 has what is kept and what is given up).
 
+**Amended 2026-10-10, after T3:** Decision 5, second part. Asked "can we have another thread do this as bytes are
+written", and offered the size rule alone, the size rule with a trailing reader, or the trailing reader alone, the
+owner chose the second ("2"). F9 has what each part checks.
+
 1. **Order:** T first, then V (recommended, so the rebuild wave after v16 runs at the new speed), or V first.
 2. **Policy: read exactly one version** (recommended).
    - It is safe today because every `.giw` is a sidecar next to its source, or is built into a release binary at tag
@@ -508,7 +532,8 @@ me"). Built as: the load check stays, the CRC read-back goes (F9 has what is kep
 4. **Hand-built `.giw` files** in `/srv/models` (the archive) stop loading at v16 and are rebuilt from their sources
    with `cmd/prequant`. Say if any of them has no source left.
 5. **The self-check after a transcode** (added 2026-10-10 from F9): keep reading the whole file back for its CRC, or
-   stop. Decided: stop.
+   stop. Decided: stop; then, the same day, read the weights back behind the write and keep the CRC pass for a bundle
+   larger than available RAM.
 
 ## Prior art read
 

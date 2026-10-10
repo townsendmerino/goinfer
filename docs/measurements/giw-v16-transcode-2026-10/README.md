@@ -209,6 +209,40 @@ From the 48 phase lines in `g-t1-t3-real-lines.txt` (24 cells, the new build twi
   with the CRC unless `GOINFER_GIW_VERIFY=always` is set.
 - Not a result: G-T2 measures the transcode at night.
 
+## G-T1 for the read-back and the size rule, 2026-10-10: PASS, every cell that ran is IDENTICAL
+
+`06f82beb` reads the weights back behind the write and leaves a bundle larger than available RAM without a marker (the
+task doc's F9 and Decision 5, as amended). Neither changes a byte of the bundle. Same instrument and box; base
+`eee75d83`, new `06f82beb`.
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 384 | 330 | 0 | 54 | 1 min 10 s |
+| the 0.5B and 1.5B Q4_K_M GGUFs, four configurations each | 8 | 8 | 0 | 0 | 1 min 53 s |
+
+- The NOT RUN set is T6's, source for source. The eight real files have the sha256 of the run above.
+- **What the gate does not exercise:** the size rule's other branch. Every file here fits in memory, so every one was
+  marked by the transcode. The unmarked branch is pinned by `TestTranscode_largerThanRAMGetsTheCRCPass` (available
+  memory forced to one byte, and to unknown) and has not run on a real larger-than-RAM bundle.
+- **The read-back's cost, exploratory** (`g-t1-rb-real-lines.txt`; one run each, by day, beside `gate quick`): the
+  stream phase reads 0.4–1.6 s for the 0.5B and 1.2–5.7 s for the 1.5B, where the run above read 0.4–1.6 s and
+  1.0–5.3 s without it. The self-check reads 0.0–0.1 s. Not a result: G-T2 measures the transcode at night.
+
+### What a trailing read can and cannot check (a scratch file, no goinfer code, exploratory)
+
+Measured before building it: 1.7 GB written in 4 MB pieces over about 6 s, two rounds, the box in use.
+
+| check | cost | what it compares with the writer's CRC |
+|---|---|---|
+| read the file back through a mapping after the write (the old self-check) | 2.4 s in round 1, 0.3 s in round 2 | the system's cached copy |
+| a second thread reading behind the writer | none: the write took 5.8–6.0 s with it and 6.3–6.4 s without, and the reader was level with the writer when the write ended | the same cached copy |
+| full fsync, then a read with the cache-bypass flag | 0.0 s and 0.2–0.3 s | not established: 6–8 GB/s, and pages already cached may still have served it |
+
+- So a trailing read costs nothing here and checks what the old read-back checked for a file that fits in memory. It
+  does not show what the disk stored, and the third row is not evidence of a disk read either.
+- The old read-back reached the disk only for a bundle larger than free memory, whose early pages had been evicted.
+  The size rule keeps the CRC pass for exactly those.
+
 ## T4a on arm64, 2026-10-10: not adopted there (an in-process A/B, direction only)
 
 T4a replaces the int4 quantizer's `int(math.Round(float64(x)))`. Before changing aikit, three forms were timed in one
@@ -254,5 +288,5 @@ G-T1 for T5 is owed once the pin is bumped.
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
-- `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`: the same five files for T1's run, for T2's, and for the run that carries the
-  self-check change and T3.
+- `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`: the same five files for T1's run, for T2's, for the run that
+  carries the self-check change and T3, and for the read-back's.
