@@ -688,6 +688,12 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
 	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
 	mux.HandleFunc("POST /v1/messages", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages))))))
+	// Speech to text for a Whisper --model (speech.go). The body is audio, so it has its own cap: -max-body-bytes, else 256 MiB (over two hours of 16 kHz mono 16-bit).
+	audioCap := cfg.maxBodyBytes
+	if audioCap <= 0 {
+		audioCap = 256 << 20
+	}
+	mux.HandleFunc("POST /v1/audio/transcriptions", rl(auth(srv.haltGate(inf(maxBytes(audioCap, srv.handleTranscriptions))))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
 	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
 	// work against goinfer through their base-URL override (docs/tasks/task-constrained-confidence.md).
@@ -937,6 +943,7 @@ func newServer(cfg config) (*server, error) {
 	}
 	s := &server{
 		models:    map[string]*loadedModel{},
+		speech:    map[string]*speechModel{},
 		liveness:  map[*decoder.Model]*modelLiveness{},
 		draining:  map[string]struct{}{},
 		cfg:       cfg,
@@ -949,6 +956,17 @@ func newServer(cfg config) (*server, error) {
 		batches: newBatchStore(256),
 	}
 	for _, spec := range cfg.models {
+		if isWhisperDir(spec.path) { // an encoder-decoder speech model: its own registry and route (speech.go)
+			sm, err := loadSpeech(spec, cfg)
+			if err != nil {
+				return nil, err
+			}
+			if _, dup := s.models[sm.name]; dup || s.speech[sm.name] != nil {
+				return nil, fmt.Errorf("duplicate served model name %q (use --model name=path to disambiguate)", sm.name)
+			}
+			s.speech[sm.name] = sm
+			continue
+		}
 		// An `hf:`/`demo:` spec is fetched (or found in the cache) inside loadDecoder (modelload.Resolve), before anything else,
 		// so the served name derives from the real filename. A plain path is returned untouched, so no existing --model changes
 		// meaning: that is what lets a reference form be added to a Hard-tier flag.

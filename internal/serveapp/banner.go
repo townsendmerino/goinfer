@@ -268,6 +268,9 @@ func serverBanner(s *server, cfg config) []string {
 		gen += " (after a model is loaded)"
 	}
 	routes := []string{gen, "/v1/embeddings"}
+	if len(s.speech) > 0 {
+		routes = append(routes, "/v1/audio/transcriptions")
+	}
 	if cfg.web {
 		routes = append(routes, "/ (web UI)")
 	}

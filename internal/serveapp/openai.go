@@ -372,7 +372,8 @@ type server struct {
 	// drains in-flight requests through liveness before freeing the model.
 	regMu  sync.RWMutex
 	models map[string]*loadedModel
-	cfg    config // backend/quant/lora/kv/session-dir/allow-admin for admin loads
+	speech map[string]*speechModel // Whisper models (speech.go), by served name; guarded by regMu
+	cfg    config                  // backend/quant/lora/kv/session-dir/allow-admin for admin loads
 
 	// pulls serialises -web model downloads to one at a time (webui.go).
 	pulls pullState
@@ -538,8 +539,11 @@ func (s *server) pathFields(name string) map[string]any {
 // servedNames lists the loaded generative and embedding model ids, sorted.
 func (s *server) servedNames() []string {
 	s.regMu.RLock()
-	names := make([]string, 0, len(s.models)+1)
+	names := make([]string, 0, len(s.models)+len(s.speech)+1)
 	for n := range s.models {
+		names = append(names, n)
+	}
+	for n := range s.speech {
 		names = append(names, n)
 	}
 	s.regMu.RUnlock()
@@ -714,6 +718,9 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 		// another language may reject them: GET /health carries the same fields on a payload with no compatibility
 		// contract, for operators who need a surface that cannot break a client.
 		maps.Copy(e, s.pathFields(name))
+		if s.speechByName(name) != nil {
+			e["capabilities"] = []string{"audio.transcriptions"} // a speech model: no decoder paths, one route
+		}
 		if d := s.decisionsField(name); d != nil {
 			e["decisions"] = d // vendor extension, same convention: POST /v1/systemone's support for this entry
 		}

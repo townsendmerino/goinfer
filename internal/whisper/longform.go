@@ -14,6 +14,13 @@ import (
 type Segment struct {
 	Start, End float64
 	Tokens     []int
+	// The window this segment came from and the attempt that was kept for it (what verbose_json reports): the window's first feature frame, the temperature, the average log-probability,
+	// the compression ratio (0 unless the threshold was set) and the no-speech probability. Not part of what transformers returns, so not compared against it.
+	Seek             int
+	Temperature      float64
+	AvgLogprob       float64
+	CompressionRatio float64
+	NoSpeechProb     float64
 }
 
 const (
@@ -246,6 +253,9 @@ func (t *Transcriber) TranscribeWith(samples []float32, o TranscribeOptions) (*L
 			return nil, fmt.Errorf("whisper: window at frame %d did not advance", seek)
 		}
 		res.Windows = append(res.Windows, info)
+		for i := range segs {
+			segs[i].Seek, segs[i].Temperature, segs[i].AvgLogprob, segs[i].CompressionRatio, segs[i].NoSpeechProb = seek, lastTemp, info.AvgLogprob, info.CompressionRatio, info.NoSpeechProb
+		}
 		seek += adv
 		res.Segments = append(res.Segments, segs...)
 		for _, s := range segs {

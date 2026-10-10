@@ -78,3 +78,9 @@ func (t *Transcriber) Text(ids []int) string {
 	s, _ := t.Tok.Decode(keep)
 	return s
 }
+
+// HasLanguage reports whether the checkpoint can be told this language (a code such as "en"): its generation_config.json carries the token.
+func (t *Transcriber) HasLanguage(code string) bool {
+	_, ok := t.Gen.LangToID[LanguageToken(code)]
+	return ok
+}
