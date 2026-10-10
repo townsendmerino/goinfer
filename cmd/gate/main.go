@@ -71,6 +71,10 @@ usage:
                [-quant q,…] [-steps N] [-only asset,…] [-keep]
                                                    inherit validation by identity (TE6(b)): dump full logits of
                                                    each family's parity prompt at both revs, compare bytes
+  gate comments-only <base> [--worktree] [-no-checks] [-v]
+                                                   a diff changed Go comments and docs and nothing else (code-comments
+                                                   CC2): token streams equal, directives and Example comments byte-identical,
+                                                   the moved-text report, then gofmt, go vet and the citation lint
   gate ledger promote --gate G --value V --by YOU  record a person's confirmation of a gate's value (B14)
   gate ledger classify --gate G                    CONFIRMED | FIRST-RUN | SOURCE-CHANGED | UNKNOWN-GATE
   gate ledger reconcile [--gates a,b]              the ledger's three checks, as the parity sweep prints them
@@ -122,6 +126,10 @@ func run(argv []string, w io.Writer) int {
 	// `quick` has its own flags (quick.go).
 	if name == "quick" {
 		return runQuick(rest, w)
+	}
+	// `comments-only` takes a rev and its own flags (comments_only.go).
+	if name == "comments-only" {
+		return runCommentsOnly(rest, w)
 	}
 	// `identity` takes two revs as positionals, interleaved with its flags (identity.go).
 	if name == "identity" {
