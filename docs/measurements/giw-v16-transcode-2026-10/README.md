@@ -320,11 +320,116 @@ has all of it.
   and on this gate's amd64 cells, which are nobara's at night.
 - Phase lines, exploratory: `g-t1-t5-real-lines.txt`.
 
+## The T runs, 2026-10-10: G-T1's real cells PASS, G-T2 SHIP on every graded cell, G-T3 within its bounds, G-T2c recorded
+
+Both jobs ran from the night queues, which the owner started by day: the Mac's `giw-gt-mac` at 13:31-13:38 (load
+average 2.48 at its start, behind four other jobs) and nobara's `giw-gt-nobara` at 13:09-14:05 (load 0.91). Driver
+`gt_night.py`; old arm `cf66f5b3`, new arm `6398b0f8`; one discarded warm-up per arm, then pairs. Records:
+`gt-mac.jsonl`, `gt-nobara.jsonl` (one line per event) and the two logs.
+
+### G-T1, real cells: PASS
+
+Every transcode of a cell, warm-ups included, wrote the same sha256 from both arms: 7 cells, 50 transcodes.
+
+| box | cell | bytes | sha256 (first 12) |
+|---|---|---|---|
+| Mac | 1.5B int4 `cpu-arm64` | 1,211,492,739 | `655aa5855392` |
+| Mac | 1.5B int4 `metal` | 1,375,265,859 | `5b6c6956e9cb` |
+| Mac | 7B int4 `metal` | 5,584,647,875 | `8f38cbe90e6f` |
+| nobara | 1.5B int4 `cpu-amd64` | 1,211,492,739 | `41f376a9bbb4` |
+| nobara | 7B int4 `cpu-amd64` | 4,768,988,163 | `1981fdecb906` |
+| nobara | 7B int4 `cuda` | 4,768,988,163 | `1981fdecb906` |
+| nobara | Qwen3-VL-30B-A3B int4 `cpu-amd64`, from its directory | 17,499,790,393 | `f2347ac62c93` |
+
+- **This is the first run of three things:** T4a's rounding through goinfer on amd64 (all four nobara cells), a bf16
+  fused expert stack through T5's transposing read, and T3's expert fan-out on a real MoE (the 30B).
+- The 7B's `cuda` file is byte for byte its `cpu-amd64` file, in both arms: on amd64 the two targets write one
+  layout, so that cell repeats the one above it.
+
+### G-T2, speed: SHIP on the three graded cells
+
+Graded on the paired new/old ratio of the full wall. The stream phase's ratio is beside it, ungraded, as amended.
+
+| cell | old wall | new wall | new/old, each pair | median | stream new/old | band | verdict |
+|---|---|---|---|---|---|---|---|
+| Mac 1.5B `cpu-arm64` | 10.6-10.7 s | 3.0 s | 0.278, 0.278, 0.279 | **0.278** | 0.279 | ship at most 0.45 (expected 0.18-0.33) | **SHIP** |
+| nobara 1.5B `cpu-amd64` | 17.2-17.3 s | 2.3 s | 0.131, 0.132, 0.130 | **0.131** | 0.123-0.129 | the same | **SHIP** |
+| nobara 7B `cpu-amd64` | 82.8-83.0 s | 9.6-9.8 s | 0.117, 0.117, 0.118 | **0.117** | 0.116-0.118 | the same | **SHIP** |
+| nobara 30B directory | 657-665 s | 110-125 s | 0.189, 0.168 | **0.178** | 0.153, 0.134 | ship at most 0.40 (expected 0.18-0.25) | **SHIP** |
+| Mac 1.5B `metal` (recorded) | 10.4-10.5 s | 2.7 s | 0.259, 0.259, 0.257 | 0.259 | 0.248-0.257 | not in the table | |
+| Mac 7B `metal` (recorded) | 60.3-60.4 s | 13.7-14.8 s | 0.246, 0.226 | 0.236 | 0.286, 0.263 | not in the table | |
+| nobara 7B `cuda` (recorded) | 82.7 s | 9.8 s | 0.118, 0.119 | 0.118 | 0.117-0.118 | not in the table | |
+
+- **Against the expectation:** the Mac's cell lands inside the expected range. nobara's two dense cells land below it
+  (0.12-0.13 against 0.18-0.33); the stream phase reads the same, and this record does not break the gain down by
+  item. The 30B lands at the range's lower edge.
+- No stream-phase ratio is in a kill band, so no full-wall ship rests on the self-check's removal alone. On the Mac's
+  7B the self-check does account for part of it: 10.9-11.0 s in the old arm (the CRC read-back of 5.6 GB), 0.5 s in
+  the new one, and the stream phase alone is 0.26-0.29.
+
+### G-T3, memory: within the bounds, with two things the record cannot show
+
+| cell | old peak | new peak | increase | bound |
+|---|---|---|---|---|
+| Mac 1.5B `cpu-arm64` (peak footprint) | 1.24 GB | 1.32 GB | 0.08 GB | 1.5 x K layers' bytes: about 0.5 GB at K = 8 |
+| Mac 1.5B `metal` | 1.23 GB | 1.28 GB | 0.05 GB | the same |
+| Mac 7B `metal` | 2.93 GB | 4.49 GB | 1.56 GB | about 2.2 GB at K = 8 |
+| nobara 1.5B `cpu-amd64` (max RSS) | 2.25 GB | 2.34 GB | 0.09 GB | about 1.0 GB at K = 16 |
+| nobara 7B `cpu-amd64` | 7.37 GB | 9.44 GB | 2.07 GB | about 4 GB at K = 16 |
+| nobara 7B `cuda` | 7.37 GB | 9.55 GB | 2.18 GB | the same |
+| nobara 30B directory | 55.11 GB | 52.86 GB | none | old peak plus workers x 3 x one expert's f32 |
+
+- **Mac swap: flat.** 1,021.5 MB used before and after every one of the 22 transcodes.
+- **Not shown: Decision 3's budget.** The driver did not record the available memory each transcode started with, so
+  "never above a quarter of it" is checked only loosely: nobara's quarter is about 14 GB against a 2.1 GB increase; the
+  Mac's 1.56 GB increase needs 6.2 GB available, and a `vm_stat` taken six minutes earlier by another job shows about
+  7.4 GB inactive. The driver should record it.
+- **A weak instrument on nobara:** `time -v`'s maximum RSS counts the mapped source, so the 30B's 53-55 GB is mostly
+  its 58 GB of safetensors and says little about the build's own memory. The Mac's figure is the footprint.
+
+### G-T2c, the copy floor: recorded
+
+Transcode wall over C-io (read the source, write the output, no compute) and over C-src (a `dd` of the source).
+
+| cell | C-io | old/C-io | new/C-io | C-src | new/C-src | the text's projection for new/C-io |
+|---|---|---|---|---|---|---|
+| Mac 1.5B `cpu-arm64` | 0.37 s | 28.8 | **8.0** | 0.31 s | 9.6 | 4-12 |
+| Mac 1.5B `metal` | 0.44 s | 23.9 | 6.2 | 0.32 s | 8.5 | |
+| Mac 7B `metal` | 2.26 s | 26.7 | 6.3 | 2.54 s | 5.6 | |
+| nobara 1.5B `cpu-amd64` | 0.41 s | 42.0 | 5.5 | 0.30 s | 7.6 | |
+| nobara 7B `cpu-amd64` | 1.56 s | 53.1 | **6.2** | 1.20 s | 8.1 | 3-10 |
+| nobara 7B `cuda` | 1.57 s | 52.7 | 6.2 | 1.21 s | 8.1 | |
+| nobara 30B directory | 58.9 s | 11.2 | **2.0** | 50.1 s | 2.4 | 3-8 |
+
+- The three projected cells: the two dense ones land inside their "after T" ranges; the 30B lands better (2.0 against
+  3-8), because its copy is slower than projected (49-69 s against 20-40 s; reading 58 GB took 39-51 s of it).
+- "Today" was projected at 15-30x for nobara's 7B and reads 53x: the copy there is faster than the 3-6 s assumed.
+- The registered consequence is read after T4b, not here. For reference, both dense cells are above its 3x line now.
+- The 30B's new arm (110-125 s) does not finish faster than its source's copy (45-55 s); the text asks that question
+  after T4b.
+
+### Two findings from the 30B
+
+- **Its self-check got slower, and it is not a CRC pass.** Old arm 9.6-11.6 s, new arm 19.2-24.9 s (warm-ups
+  included). A profiled
+  repeat by day (20.6 s; the profile is not kept) shows no CRC under the self-check and 11.3 s of CPU in the bundle
+  reader's walk over each matrix's header. The reading that fits: with 58 GB of source mapped on a 62 GB box, the
+  17.5 GB output is no longer in the page cache when the self-check loads it. The old arm's CRC then read it back in
+  one sequential pass (1.6 GB/s, where the 7B's cached CRC ran at about 12 GB/s), and the new arm's load faults it
+  back in piecemeal, which is slower. What the faults wait on was not measured.
+- **So the size rule marked a bundle that was not in memory.** `markWritten` compares the bundle with the memory
+  available before the write, and Linux counts reclaimable cache as available (57-62 GB here), so the 30B "fit" and
+  its whole-file CRC was skipped, on exactly the kind of file the rule was meant to keep it for. The rule needs the
+  source in the sum (bundle plus source against total memory), or a direct check of what is cached. Not changed
+  here; it is an open item for Decision 5. The larger-than-RAM branch has still not run on a real bundle.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
+- `gt_night.py`, `run-gt-night-mac.sh`, `run-gt-night-nobara.sh`: the T runs' driver and the two boxes' cells.
+  `gt-mac.jsonl`, `gt-mac.log`, `gt-nobara.jsonl`, `gt-nobara.log`: their records.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
   run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

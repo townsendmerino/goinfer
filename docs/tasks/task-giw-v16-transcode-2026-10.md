@@ -1,11 +1,10 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0, T6, T1, T2, T3, T4a and T5 are built (2026-10-10, branch `giw-v16-2026-10`, on
-aikit v1.65.0), and G-T1 is PASS on the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
-T4a changes code on amd64 only, so its bytes rest on aikit's oracle tests there and on G-T1's amd64 cells at night. The
-self-check no longer reads the file back; the weights are read back behind the write instead, and a bundle larger than
-available RAM keeps the CRC pass (Decision 5, as amended). Next: the night runs (G-T1's real cells on both boxes, G-T2,
-G-T3, G-T2c). T4b, T7 and V are not started. The gates
+**Status:** scoped 2026-10-10. **T0, T6, T1, T2, T3, T4a and T5 are built (branch `giw-v16-2026-10`, on aikit
+v1.65.0) and graded 2026-10-10** ([record](../measurements/giw-v16-transcode-2026-10/README.md)): G-T1 PASS on tiny and
+real cells on both boxes; G-T2 SHIP on every graded cell (new/old wall 0.28 on the Mac's 1.5B, 0.13 and 0.12 on
+nobara's 1.5B and 7B, 0.18 on the 30B directory); G-T3 within its bounds; G-T2c recorded. Open: the size rule of
+Decision 5 marked the 30B although it was not in memory (F9). Next: T4b, then T7 and V. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -204,6 +203,12 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
     - Exploratory, the Mac, by day (G-T1's phase lines, 16 transcodes, beside `gate quick`): the stream phase reads
       0.4–1.6 s for the 0.5B and 1.2–5.7 s for the 1.5B with the read-back on, where the run before it read 0.4–1.6 s
       and 1.0–5.3 s. The self-check stays at 0.0–0.1 s.
+  - **Open, from the T runs of 2026-10-10: the size rule does not catch the case it was written for.** nobara's 30B
+    (17.5 GB out of a 58 GB directory, on 62 GB of RAM) was marked, because Linux counts reclaimable cache as available
+    and the bundle "fit". It was not in memory: the old arm's CRC read it back at 1.6 GB/s, a disk read. So its
+    whole-file CRC was skipped where the old read-back did reach the disk. Its self-check also got slower (19-25 s
+    against 10-12 s): no CRC runs, and the load faults the file back in piecemeal. Candidates: put the source in the
+    sum (bundle plus source against total memory), or ask the system what is cached. Not built; the owner's to choose.
 
 ### Checked and not worth doing
 
@@ -471,6 +476,12 @@ exactly that.
 
   A kill means the parallelism is not happening, or the kernel is no faster. It goes back to T0's profile, not to a
   wider band. T6 ships on G-T1 alone, because it only removes work; its ratio is recorded.
+
+  **Read 2026-10-10: SHIP on all three graded cells.** Paired new/old wall, medians: Mac 1.5B `cpu-arm64` 0.278
+  (three pairs, 0.278-0.279); nobara 1.5B `cpu-amd64` 0.131 and 7B `cpu-amd64` 0.117 (three pairs each); the 30B
+  directory 0.178 (two pairs, 0.189 and 0.168). The stream phase's ratios are beside them in the record and none is in
+  a kill band. G-T1's real cells: every transcode of all seven cells identical across the arms. The T4b row is not
+  read yet.
 - **G-T2c, the copy floor (the same night runs; recorded, not gated).** Added 2026-10-10 at the owner's request, before
   any G-T2 run and before any T1–T5 code. It answers "how close to a file copy is the transcode", which new/old cannot.
   - **Two copies per cell, timed inside the same ABAB sequence** (old, new, copy; then new, old, copy), in the directory
@@ -503,10 +514,17 @@ exactly that.
     - writing one window of layers while the next is built.
 
     At 3× or below, the transcode is near its disk floor and no follow-up opens.
+  - **Recorded 2026-10-10 (after T, before T4b).** new/C-io: 8.0 on the Mac's 1.5B, 6.2 on nobara's 7B, 2.0 on the 30B
+    directory; old/C-io 28.8, 53.1 and 11.2. The two dense cells are inside their "after T" ranges; the 30B is better
+    than its range because its copy is slower than projected (49-69 s). The consequence above is read after T4b.
 - **G-T3, memory (the same night runs).** Peak footprint (`/usr/bin/time -l` on the Mac, `-v` on Linux).
   - Dense: at most the old peak plus 1.5× K layers' bytes, and never above Decision 3's budget.
   - MoE: at most the old peak plus workers × 3 × one expert's f32.
   - Mac: swap flat across every run (`vm.swapusage` before and after). The never-swap rule is not traded for speed.
+  - **Read 2026-10-10: within the bounds.** Dense increases: 0.05-0.08 GB (1.5B), 1.56 GB (the Mac's 7B, footprint),
+    2.07-2.18 GB (nobara's 7B, maximum RSS). The 30B's new peak is under its old one (maximum RSS, which is mostly the
+    mapped source). Mac swap flat at 1,021.5 MB over 22 transcodes. Not shown by the record: the available memory each
+    transcode started with, so the budget clause is checked only loosely; the driver should record it.
 - **G-T4, kernel oracle (aikit, day).** The fast `QuantizeGroupInt4Row` equals `quantizeGroupInt4RowScalar` byte for
   byte on both arches.
   - Inputs: every float32 in [−8, 8] as a single-element group; random rows at scales 10⁻⁶–10⁶; groups that are all
