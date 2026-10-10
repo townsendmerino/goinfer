@@ -14,33 +14,24 @@ import (
 	"slices"
 )
 
-// Qwen2.5-VL image preprocessing: image bytes -> pre-flattened pixel_values
-// [n_patches, channels*temporal*patch*patch] + grid_thw (t,h,w in patch units),
-// matching HF Qwen2VLImageProcessor. The aikit Qwen vision encoder consumes this
-// directly (it does no preprocessing — see docs/prompts/aikit-qwen25vl-vit.md).
+// Qwen2.5-VL image preprocessing: image bytes -> pre-flattened pixel_values [n_patches, channels*temporal*patch*patch] + grid_thw
+// (t,h,w in patch units), matching HF Qwen2VLImageProcessor. The aikit Qwen vision encoder consumes this directly (it does no
+// preprocessing).
 //
-// Three stages: smart_resize (round H,W to a multiple of patch*merge within the
-// pixel budget), resize+rescale+CLIP-normalize, and the spatial-merge patchify
-// rearrange. The patchify order is HF-exact: patches sequence (block-row,
-// block-col, merge-row, merge-col), each patch's values (channel, temporal,
-// patch-row, patch-col). The resize is BICUBIC (qwenBicubicU8, called at the resize site) and is
-// a no-op when the image is already grid-aligned, so a pre-sized image preprocesses bit-exactly
-// (TestQwenPreprocess_exact). It is tolerance-matched to PIL rather than bit-exact, because the
-// coefficients here are float where PIL's are fixed-point.
-//
-// N-34: this said "the resize here is bilinear" and described PIL-bicubic parity as a future
-// refinement, after the bicubic path had already landed.
+// Three stages: smart_resize (round H,W to a multiple of patch*merge within the pixel budget), resize+rescale+CLIP-normalize, and the
+// spatial-merge patchify rearrange. The patchify order is HF-exact: patches sequence (block-row, block-col, merge-row, merge-col),
+// each patch's values (channel, temporal, patch-row, patch-col). The resize is BICUBIC (qwenBicubicU8, called at the resize site) and
+// is a no-op when the image is already grid-aligned, so a pre-sized image preprocesses bit-exactly (TestQwenPreprocess_exact). It is
+// tolerance-matched to PIL rather than bit-exact, because the coefficients here are float where PIL's are fixed-point.
 
 // QwenPreprocessConfig holds the Qwen2.5-VL image-processor parameters.
 type QwenPreprocessConfig struct {
 	PatchSize, MergeSize, TemporalPatchSize int
 	MinPixels, MaxPixels                    int
 	Mean, Std                               [3]float32
-	// FusedNormalize selects HF's torchvision-backend arithmetic, (x - mean*255)/(std*255) on the
-	// 0..255 value, instead of (x/255 - mean)/std. The two differ in the last bit for 111 of the
-	// 256 byte values at mean = std = 0.5 (measured), so a "bit-exact vs HF" claim needs the
-	// fused form. Set by LoadQwen3PreprocessConfig; the Qwen2.5-VL loader leaves it false, so that
-	// path's pixel_values are unchanged.
+	// FusedNormalize selects HF's torchvision-backend arithmetic, (x - mean*255)/(std*255) on the 0..255 value, instead of
+	// (x/255 - mean)/std. The two differ in the last bit for many byte values at mean = std = 0.5, so a "bit-exact vs HF" claim needs
+	// the fused form. Set by LoadQwen3PreprocessConfig; the Qwen2.5-VL loader leaves it false, so that path's pixel_values are unchanged.
 	FusedNormalize bool
 }
 
@@ -115,9 +106,9 @@ func LoadQwen3PreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	return ParseQwen3PreprocessConfig(raw)
 }
 
-// qwen35FamilyPreprocessorJSON is the preprocessor_config.json every Qwen3.5/3.6 checkpoint ships, byte for byte (the
-// same MD5 on Qwen3.5-0.8B, Qwen3.5-9B and Qwen3.6-35B-A3B, read 2026-10-06). A GGUF mmproj carries no pixel budget
-// (docs/multimodal.md P8b, F5 Phase 0), so a tower loaded from one takes the family's own processor config from here.
+// qwen35FamilyPreprocessorJSON is the preprocessor_config.json every Qwen3.5/3.6 checkpoint ships, byte for byte (the same MD5 on
+// Qwen3.5-0.8B, Qwen3.5-9B and Qwen3.6-35B-A3B). A GGUF mmproj carries no pixel budget (docs/multimodal.md P8b), so a tower loaded
+// from one takes the family's own processor config from here.
 const qwen35FamilyPreprocessorJSON = `{
     "size": {
         "longest_edge": 16777216,
@@ -186,23 +177,16 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 	}, nil
 }
 
-// qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for,
-// independent of cfg.MaxPixels (which caps only the resized output). ~33.5 MP: above any real
-// camera image, below the memory a decompression bomb would demand (audit M-15).
+// qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for, independent of cfg.MaxPixels (which
+// caps only the resized output). ~33.5 MP: above any real camera image, below the memory a decompression bomb would demand.
 const qwenMaxInputPixels = 32 * 1024 * 1024
 
 // QwenPreprocess turns image bytes into the Qwen2.5-VL vision input. Returns the
 // flattened pixel_values and grid_thw = (1, grid_h, grid_w) for a single image.
 func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, error) {
-	// Peek the declared dimensions from the header BEFORE decoding pixels.
-	// image.DecodeConfig only parses the header (PNG's IHDR chunk / JPEG's SOF
-	// marker) — unlike image.Decode, it never allocates or fills a pixel buffer.
-	// A decompression bomb (a few KB of highly-compressible data declaring a huge
-	// canvas) must be rejected here: image.Decode itself allocates the full
-	// decoded pixel buffer (e.g. ~1.2 GB for a 10000×10000 PNG) as part of
-	// decoding, before any check on img.Bounds() could run (audit M-15 originally
-	// only guarded the later qwenExtractRGB/qwenBicubicU8 allocations, missing
-	// this earlier and larger one).
+	// Peek the declared dimensions from the header BEFORE decoding pixels. image.DecodeConfig only parses the header (PNG's IHDR chunk /
+	// JPEG's SOF marker); image.Decode allocates the full pixel buffer (~1.2 GB for a 10000×10000 PNG) before any check on
+	// img.Bounds() could run. A decompression bomb (a few KB of highly-compressible data declaring a huge canvas) must be rejected here.
 	ic, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): decode image header: %w", err)
@@ -276,15 +260,10 @@ func qwenSmartResize(h, w, factor, minPixels, maxPixels int) (int, int) {
 	wb := max(factor, roundF(w))
 	if hb*wb > maxPixels {
 		beta := math.Sqrt(float64(h*w) / float64(maxPixels))
-		// N-81 (docs/audit-2026-09-10.md, re-verified 2026-09-16, no action needed): HF's
-		// smart_resize raises ValueError past aspect ratio 200 instead of returning a
-		// resized shape at all; this function has no error return (int, int) only, and
-		// changing that ripples through every caller for what upstream itself treats as a
-		// malformed-input rejection, not a resizing decision. max(factor, …) below is the
-		// deliberate choice already made here: an extreme ratio floors a dimension to 0 →
-		// empty pixel_values with no error, so flooring to one cell trades an HF-parity
-		// crash for a degraded-but-non-crashing grid on an input real models don't produce.
-		// Kept as documented, acknowledged behavior rather than added scope this batch.
+		// HF's smart_resize raises ValueError past aspect ratio 200 instead of returning a shape; this function returns (int, int) with no
+		// error, and changing that ripples through every caller for what upstream treats as a malformed-input rejection. max(factor, …) below
+		// is the deliberate choice: an extreme ratio would floor a dimension to 0 and give empty pixel_values with no error, so it floors to one
+		// cell, a degraded but non-crashing grid on an input real models do not produce.
 		hb = max(factor, int(math.Floor(float64(h)/beta/float64(factor)))*factor)
 		wb = max(factor, int(math.Floor(float64(w)/beta/float64(factor)))*factor)
 	} else if hb*wb < minPixels {
@@ -324,23 +303,15 @@ func qwenResizeNormalize(img image.Image, h, w, hb, wb int, cfg QwenPreprocessCo
 	return out
 }
 
-// qwenExtractRGB reads img into a [h*w*3] 0..255 channel-last float buffer. The
-// >>8 recovers the 8-bit channel value exactly for an 8-bit (PNG/JPEG) source.
+// qwenExtractRGB reads img into a [h*w*3] 0..255 channel-last float buffer. The >>8 recovers the 8-bit channel value exactly for an
+// 8-bit (PNG/JPEG) source.
 //
-// P-19: the generic img.At(x,y).RGBA() path dispatches through the image.Image
-// and color.Color interfaces per pixel — measured ~1-2s per image at the vision
-// preprocessing cap. *image.YCbCr (Go's decoded-JPEG format — the common case
-// for real photos) and *image.RGBA get a direct fast path reading the backing
-// buffer instead. Both are PROVABLY bit-identical to the generic path, not just
-// close: image.RGBA.At() computes uint32(pix)*0x101, and (pix*0x101)>>8 == pix
-// exactly for any pix in [0,255] (pix*257 = pix*256+pix, and the >>8 term
-// vanishes since pix<256) — so reading Pix directly and skipping the >>8
-// round-trip gives the same result. image.YCbCr.At() calls color.YCbCrToRGB
-// then wraps it in color.RGBA, so calling color.YCbCrToRGB directly and
-// skipping the same round-trip is exactly the same identity. Every other
-// concrete type (NRGBA's alpha premultiplication makes a naive buffer read
-// WRONG for a transparent pixel, so it is deliberately not fast-pathed) falls
-// through to the generic loop unchanged.
+// *image.YCbCr (a decoded JPEG, the common case) and *image.RGBA read the backing buffer directly instead of dispatching through the
+// image.Image and color.Color interfaces per pixel. Both are PROVABLY bit-identical to the generic path, not just close:
+// image.RGBA.At() computes uint32(pix)*0x101, and (pix*0x101)>>8 == pix exactly for any pix in [0,255], so reading Pix directly and
+// skipping the >>8 round-trip gives the same result; image.YCbCr.At() calls color.YCbCrToRGB then wraps it in color.RGBA, so calling
+// color.YCbCrToRGB directly is the same identity. NRGBA is deliberately NOT fast-pathed (its alpha premultiplication makes a naive
+// buffer read WRONG for a transparent pixel); every other concrete type falls through to the generic loop unchanged.
 func qwenExtractRGB(img image.Image, h, w int) []float32 {
 	b := img.Bounds()
 	out := make([]float32, h*w*3)

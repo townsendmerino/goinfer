@@ -229,8 +229,8 @@ func LoadPixtralProjector(dir string) (*PixtralProjector, error) {
 	return p, nil
 }
 
-// pixtralMergerPositionMajor, when set, lays each merge unit out position-major (the 4 patches' vectors one after the
-// other) instead of HF's channel-major unfold: S10's planted defect for the merger.
+// pixtralMergerPositionMajor, when set, lays each merge unit out position-major (the 4 patches' vectors one after the other) instead
+// of HF's channel-major unfold: a planted defect for the merger, set only by tests.
 var pixtralMergerPositionMajor bool
 
 // Forward projects the tower's output ([Σ rows·cols, visionHidden], each image's patches row-major over grids[i] =

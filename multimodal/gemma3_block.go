@@ -27,13 +27,11 @@ func Gemma3ImageBlock(n int) string {
 	return ImageBlockStart + strings.Repeat(ImageSoftToken, n) + ImageBlockEnd
 }
 
-// Gemma3PromptBlock is the text a Gemma 3 image turn actually splices into the prompt: n soft
-// tokens wrapped in Gemma3ImageBlock, itself wrapped in "\n\n" on both sides (M-38,
-// audit-2026-09-10) — Gemma 3's own processor (processing_gemma3.py, verified against the real
-// transformers source) does exactly this: f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n". Gemma's
-// SPM vocab has distinct \n\n/\n\n\n pieces, so the id stream around the sentinel differs from
-// HF/llama.cpp's without the wrapping. Shared by internal/serveapp and demo/agent so both build
-// the identical shape.
+// Gemma3PromptBlock is the text a Gemma 3 image turn actually splices into the prompt: n soft tokens wrapped in Gemma3ImageBlock,
+// itself wrapped in "\n\n" on both sides, as Gemma 3's own processor does (processing_gemma3.py:
+// f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n"). Gemma's SPM vocab has distinct \n\n and \n\n\n pieces, so without the wrapping
+// the id stream around the sentinel differs from HF's and llama.cpp's. Shared by internal/serveapp and demo/agent so both build the
+// identical shape.
 func Gemma3PromptBlock(n int) string {
 	return "\n\n" + Gemma3ImageBlock(n) + "\n\n"
 }
@@ -55,9 +53,9 @@ func FindImageRun(ids []int, tok int) (pos, n int) {
 	return 0, 0
 }
 
-// FindImageRuns returns every run of tok in ids, in order, as [start, length] pairs: one per image block (S11, several
-// images per message). Every family wraps its block in non-placeholder tokens (Gemma's <start_of_image>/<end_of_image>,
-// Qwen's <|vision_start|>/<|vision_end|>), so two images never form one run.
+// FindImageRuns returns every run of tok in ids, in order, as [start, length] pairs: one per image block of a message with several
+// images. Every family wraps its block in non-placeholder tokens (Gemma's <start_of_image>/<end_of_image>, Qwen's
+// <|vision_start|>/<|vision_end|>), so two images never form one run.
 func FindImageRuns(ids []int, tok int) [][2]int {
 	var runs [][2]int
 	for i := 0; i < len(ids); i++ {

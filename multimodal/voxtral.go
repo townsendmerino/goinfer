@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Voxtral Mini's audio constants (docs/tasks/task-multimodal-support-2026-10.md, S14.4b, desk read 2026-10-09).
+// Voxtral Mini's audio constants (docs/tasks/task-multimodal-support-2026-10.md, S14.4b).
 const (
 	// VoxtralChunkSamples is one encoder window: 30 s at 16 kHz. The processor pads every clip UP to a multiple of it.
 	VoxtralChunkSamples = 480000

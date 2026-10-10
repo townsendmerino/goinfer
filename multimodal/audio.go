@@ -15,10 +15,8 @@ const (
 	wavMaxCh   = 8
 )
 
-// DecodeWAV reads a RIFF WAV of 16-bit PCM, mono, at 16 kHz into samples in [-1, 1] (s/32768). Any other format,
-// channel count or rate is refused: serve does not resample yet. DecodeWAVAnyRate does, but G-S5e
-// (docs/tasks/task-multimodal-support-2026-10.md) read FAIL against scipy's resampler, so it is not wired in; the
-// owner decides.
+// DecodeWAV reads a RIFF WAV of 16-bit PCM, mono, at 16 kHz into samples in [-1, 1] (s/32768). Any other format, channel count or
+// rate is refused; DecodeWAVAnyRate takes other rates and channel counts.
 func DecodeWAV(data []byte) ([]float32, error) { return decodeWAV(data, false) }
 
 // DecodeWAVAnyRate reads a RIFF WAV of 16-bit PCM (plain, or WAVE_FORMAT_EXTENSIBLE with a PCM subformat), 1 to 8

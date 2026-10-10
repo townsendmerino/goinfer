@@ -8,10 +8,10 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// Gemma 4 vision tower accelerators (docs/multimodal.md, "Finishing this doc", F2). A backend module (goinfer/metal)
-// registers a device tower built from aikit's export (vision.Gemma4Encoder.Weights) here, and every Gemma 4 tower
-// consumer can use it: Gemma 4's own image input in serve and EmbeddingGemma 2's image embeddings. The tower runs the
-// patch embed and the encoder layers; the pool and projection after them stay aikit's (Gemma4Encoder.FinishHidden).
+// Gemma 4 vision tower accelerators (docs/multimodal.md, "Finishing this doc"). A backend module (goinfer/metal) registers a device
+// tower built from aikit's export (vision.Gemma4Encoder.Weights) here, and every Gemma 4 tower consumer can use it: Gemma 4's own image
+// input in serve and EmbeddingGemma 2's image embeddings. The tower runs the patch embed and the encoder layers; the pool and
+// projection after them stay aikit's (Gemma4Encoder.FinishHidden).
 
 // Gemma4TowerAccelerator runs the Gemma 4 vision tower up to its pool on another device.
 type Gemma4TowerAccelerator interface {
