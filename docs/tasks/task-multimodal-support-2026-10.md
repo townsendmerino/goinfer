@@ -4234,6 +4234,18 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - The passes are on different nights and interleave nothing; a small difference (Qwen3.5-0.8B's 3.94 to 4.21 s)
       is not a resolved effect.
 
+- **S7 and S13-lite on the Mac, a fourth pass on 2026-10-10's tree, registered 2026-10-10 before it runs** (owner: "do
+  we need to queue or run something to get the 4.14 speed on the serve path?").
+  - **Nothing has to change in serve:** Gemma 3's resident image prefill is on by default since `f6b113ba`, which is
+    in `main`. What is missing is a night reading of it: the third pass's binary predates it, and 4.14 s is one
+    exploratory reading by day.
+  - **What:** the same scripts, cells, procedure and 5 s bar as the three passes above.
+  - **Binary:** `serve-metal` at `eb882131`, in `~/goinfer-bench/s7-2026-10-10/` (`BIN=`).
+  - **The reading it is for:** Gemma 3 4B's median TTFT in S7's cell and in S13-lite (nine requests, beside Ollama and
+    llama.cpp the same night), against the 5 s bar. The other cells repeat as a record.
+  - **Queue:** `s7-mac-1010` and `s13lite-mac-1010`, 20 minutes each (the third pass took 3 and 4), for the night of
+    2026-10-10.
+
 - **S17's next Metal lever: Gemma 3's image turn prefills on the CPU. A resident image prefill on Metal, registered
   2026-10-09 before any code** (owner: "continue with image/audio track").
   - **Measured by day (exploratory, one run each; `metal/zz_g3_prefill_probe_test.go`, not committed):**
