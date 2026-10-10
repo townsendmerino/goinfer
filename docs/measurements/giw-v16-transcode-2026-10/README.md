@@ -162,7 +162,9 @@ which has both.
 - **No real MoE is among them.** T3 changes only how a MoE layer's experts are scheduled, so by day it rests on the
   tiny fixtures (the matrix's MoE directories) and on `TestStreamTranscode_expertFanOutWritesTheSameBytes`, which
   streams one source per expert loop with the fan-out on and held off and compares the bytes: per-expert tensors, the
-  fused stack in both layouts, Gemma 4's two stacks, Granite's, Nemotron's, Llama 4's, and the GGUF stacked experts.
+  fused stack in its transposed layout (Qwen3-VL-MoE's) and in its row layout (Granite's), Gemma 4's two stacks,
+  Nemotron's, Llama 4's, and the GGUF stacked experts. Granite's and Gemma 4's tiny fixtures are gitignored: both were
+  on this box and ran here, and the test reports them as not checked where they are absent (CI).
   The real MoE cell is nobara's Qwen3-VL-30B directory, at night, as registered.
 - **Also checked before the run:** `go test -race` over the streaming tests reports no race, and both planted defects
   (never fan out; fan out in a resident build) turn the tests red.

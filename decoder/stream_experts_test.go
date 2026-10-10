@@ -73,9 +73,10 @@ func TestForExperts(t *testing.T) {
 }
 
 // TestStreamTranscode_expertFanOutWritesTheSameBytes: every expert loop writes, with its experts built across cores,
-// the bytes it writes with them built in order; a stream fans out and a resident load does not. One source per loop:
-// the per-expert tensors, the fused stack in both layouts, Gemma 4's two stacks, Granite's, Nemotron's, Llama 4's
-// whole-tensor read, and the GGUF stacked experts.
+// the bytes it writes with them built in order; a stream fans out and a resident load does not. The sources reach the
+// per-expert tensors (two families' naming), the fused stack in its transposed layout, Nemotron's loop, Llama 4's
+// whole-tensor read and the GGUF stacked experts. Gemma 4's two stacks and the fused stack in its row layout (Granite)
+// have gitignored fixtures: they are checked where the fixture is on the box and reported as not checked elsewhere.
 func TestStreamTranscode_expertFanOutWritesTheSameBytes(t *testing.T) {
 	defer func() { expertsInOrderForTest = false }()
 	for _, c := range []struct {
