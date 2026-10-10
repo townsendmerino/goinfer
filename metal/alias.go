@@ -12,34 +12,25 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// S6 (docs/tasks/task-never-swap-2026-09.md): a dense int4 weight is copied twice at build — the
-// .giw's mapping → a heap []uint32 → a StorageModeShared MTLBuffer — and the MTLBuffer copy is the
-// ~2.5 GB IOAccelerator dirty term of a Metal M26 load. weightAlias replaces the second copy for a
-// canonical int4 array that lives in the mapping: it wraps the array's pages in a no-copy MTLBuffer
-// (newBufferWithBytesNoCopy) and binds the array at its offset inside that window, so the GPU reads the
-// nibbles straight out of the page cache. Nothing else changes: same bytes, same kernels, same bind
-// order — only who owns the memory.
+// weightAlias binds a dense int4 weight in place instead of copying it a second time. Without it a weight is copied twice at
+// build (the .giw's mapping, a heap []uint32, then a StorageModeShared MTLBuffer), and the MTLBuffer copy is a large part of a
+// Metal load's dirty IOAccelerator memory (docs/tasks/task-never-swap-2026-09.md). For a canonical int4 array that lives in the
+// mapping it wraps the array's pages in a no-copy MTLBuffer (newBufferWithBytesNoCopy) and binds the array at its offset inside
+// that window, so the GPU reads the nibbles straight from the page cache. Same bytes, same kernels, same bind order; only who
+// owns the memory changes.
 //
-// One buffer per tensor, over the page-aligned window that encloses it (Model.MmapAliasWindow), rather
-// than one over the whole mapping: a 16 GB .giw exceeds a 16 GB Mac's MTLBuffer size limit, and a
-// window per tensor needs no page padding in the file (v12 already 16-byte-aligns every array, which is
-// all the kernels' vector loads need). Scales alias too when the file carries them as f16 (weights format
-// v14, -target metal); an older file stores only f32, so its scales are converted into a small buffer
-// (~1/8 of the nibble bytes) and the banner says so.
+// One buffer per tensor, over the page-aligned window that encloses it (Model.MmapAliasWindow), not one over the whole mapping: a
+// large .giw exceeds a 16 GB Mac's MTLBuffer size limit, and a window per tensor needs no page padding in the file (v12 already
+// 16-byte-aligns every array, which is all the kernels' vector loads need). Scales alias too when the file carries them as f16
+// (weights format v14, -target metal); an older file stores only f32, so its scales are converted into a small buffer and the
+// banner says so.
 //
-// WHAT THE ALIASED PAGES ARE (measured, docs/measurements/s6-alias-2026-09-24.md, "MAP_SHARED"): IOKit wires a
-// no-copy buffer's pages with write intent. Over a MAP_PRIVATE mapping that makes every GPU-read page a wired
-// ANONYMOUS copy-on-write copy — the 1.5B served one request with +40,430 COW faults for 625 MB aliased — so
-// aliasing saved nothing, and fork() then copied the whole mapping (the M26 collapse). decoder.Load therefore
-// maps a .giw MAP_SHARED on darwin (decoder/giwmap_darwin.go): the GPU reads the file's own page-cache pages
-// (+132 COW faults, background), wired only while a command buffer uses them, and a fork is cheap.
+// The mapping must be MAP_SHARED (decoder.Load does this on darwin, decoder/giwmap_darwin.go). IOKit wires a no-copy buffer's
+// pages with write intent, so over a MAP_PRIVATE mapping every GPU-read page becomes a wired anonymous copy-on-write copy:
+// aliasing then saves nothing, and fork() copies the whole mapping (docs/measurements/s6-alias-2026-09-24.md, "MAP_SHARED").
 //
-// ON BY DEFAULT since 2026-09-24, on the owner's decision after S6's gates (docs/measurements/s6-alias-2026-09-24.md):
-// logits byte-identical on the 1.5B/7B and all 23 resident fixtures, decode within 3% at depth 128 and 2048, and
-// Close ordering. Not every gate read as passed: the footprint gate read NOT MET, and when its dense-term condition
-// was later met the process was still about 60 MB over the bar read literally; the memory-hog arm ran on the 7B
-// only, not the M26; and M26 decode was not resolvable at the record's n (F-D02, audit-metal-2026-09-30.md). GOINFER_METAL_ALIAS=0 turns it off: this type is
-// then nil and int4Buf is byte-for-byte the copy path.
+// On by default, by owner decision after the S6 gates; not every gate read as passed (docs/code-notes/metal.md#weightAlias).
+// GOINFER_METAL_ALIAS=0 turns it off: this type is then nil and int4Buf is byte-for-byte the copy path.
 type weightAlias struct {
 	m    *decoder.Model
 	page int
@@ -79,16 +70,12 @@ func int4ConcatBytes(wms []*linalg.WeightMat) int64 {
 	return b
 }
 
-// newWeightAlias returns an aliaser for any model backed by a .giw mapping unless GOINFER_METAL_ALIAS=0.
-// Any other value — unset, "1", or "force" (from scripts written while it was opt-in, and while a size
-// guard existed) — leaves it on. A .gguf or safetensors load has no .giw mapping and never aliases.
+// newWeightAlias returns an aliaser for any model backed by a .giw mapping unless GOINFER_METAL_ALIAS=0; any other value (unset,
+// "1", "force") leaves it on. A .gguf or safetensors load has no .giw mapping and never aliases.
 //
-// There is deliberately no size limit. One existed from 2026-09-24 until the same day: on gemma4-26b the
-// aliased arm paged the whole server out at its first request, 3 of 3 times. The cause was not aliasing's
-// memory but fork(): a fork while Metal had any page of the MAP_PRIVATE mapping wired copied the entire
-// 15 GB mapping, and the swap guard forked every 2 s. decoder.Load now marks the mapping VM_INHERIT_NONE and
-// the guard reads swap with a bare sysctl; with both, four interleaved M26 arms (two aliased) ran clean with
-// swap flat (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
+// There is deliberately no size limit. A size guard once existed because an aliased 26B run paged the whole server out, but the
+// cause was fork() copying a MAP_PRIVATE mapping, not aliasing's memory. decoder.Load now marks the mapping VM_INHERIT_NONE and
+// the swap guard reads swap with a bare sysctl (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 func newWeightAlias(m *decoder.Model) *weightAlias {
 	if m == nil || m.GiwPath() == "" || modelKnob(m, "GOINFER_METAL_ALIAS") == "0" {
 		return nil
@@ -110,10 +97,8 @@ func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	return a.window(d, q4)
 }
 
-// int8Codes is nibbles for an int8 (W8A8) matrix: its codes are one contiguous array in the .giw, 16-byte
-// aligned since weights format v12, and the kernels read them as the same signed bytes, so they can be bound
-// in place exactly like int4 nibbles. On the 7B this is the LM head: 519.8 MB of the 911 MB the Metal build
-// still copied after int4 aliasing (measured with a per-caller buffer ledger, 2026-09-24).
+// int8Codes is nibbles for an int8 (W8A8) matrix, the LM head: its codes are one contiguous array in the .giw, 16-byte aligned
+// since weights format v12, and the kernels read them as the same signed bytes, so they bind in place like int4 nibbles.
 func (a *weightAlias) int8Codes(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if a == nil {
 		return Buffer{}, false
@@ -255,7 +240,7 @@ func (a *weightAlias) scales16(d *Device, wms []*linalg.WeightMat) (Buffer, bool
 // exactly as int4Concat converts them) are built; otherwise it is int4Concat unchanged.
 func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	for _, w := range wms {
-		if w.Cols()%32 != 0 { // int4Concat owns the K%32 panic (audit M-10)
+		if w.Cols()%32 != 0 { // int4Concat owns the K%32 panic
 			return int4Concat(d, wms...)
 		}
 	}
@@ -284,11 +269,10 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 	return nib, NewBufferU16s(d, scales)
 }
 
-// summary is the banner line S6 asks for: the number a user would otherwise never see — how much of the
-// weights is served from the file and how much the build still copied into anonymous memory — plus, for a
-// file whose int4 scales are not in the layout Metal binds, what to do about it. Since weights format v15 every
-// bundle stores binary16 scales, but only a -target metal bundle (kind 7, and fused groups) lays them out to be bound,
-// so a v15 file for another target is converted too (F-D02, audit-metal-2026-09-30.md).
+// summary is the banner line: how much of the weights is served from the file and how much the build still copied into anonymous
+// memory, plus, for a file whose int4 scales are not in the layout Metal binds, what to do about it. Since weights format v15
+// every bundle stores binary16 scales, but only a -target metal bundle lays them out to be bound, so a v15 file for another
+// target is converted too.
 func (a *weightAlias) summary() string {
 	if a == nil {
 		return ""
