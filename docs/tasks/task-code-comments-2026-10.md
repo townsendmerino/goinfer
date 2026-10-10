@@ -8,7 +8,7 @@
 > **CC0 DONE 2026-10-09/10 on `comment-diet-2026-10` (not merged, not pushed):** lint support (symbol citations, pinned records) with tests
 > first; 284 live-doc citations now name declarations; 35 records pinned (`docs/measurements/code-comments-2026-10/pins.tsv`); the door is
 > closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC2 (`gate comments-only`) built and
-> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A, B and C (CC5, the test files) and CC6 (the census and the pre-push warning, §9) done. What is left is the skipped files (§7), the §10 owner decisions, and merging.
+> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A, B and C (CC5, the test files) and CC6 (the census and the pre-push warning, §9) done. What is left is the §10 owner decisions and merging.
 
 ## 1. Why
 
@@ -295,6 +295,25 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > citation lint); `staticcheck` is clean on the root, `cuda`, `gpu` and `metal` (darwin) modules with their tags. `deps_hash` refreshed
 > again (35 goldens, 0 failed). `scripts/comment_diet.py pointers`: 284 checked, 0 unresolved. The notes files now carry a "Test files" section each.
 
+> **Wave D done 2026-10-09 (the files waves A-C skipped; five agent branches merged, not pushed).** The four old unmerged branches that held them back
+> are closed: `config-phase4-metal` landed on main as `1cfb99db` (rebased, so a different hash), `r7b-metal-verify-mac` and `webgpu-nogqa-second-pass` are
+> patch-equal to main (`git cherry`), and `q4k-narrow` is the recorded FAIL of lever 1 (`docs/tasks/task-int4-weight-quality-2026-09.md`, "pushed and not
+> merged"; keep it, or tag `de885035`, since the record cites the hash). Comment lines before → after:
+>
+> | files | before → after | cut |
+> |---|---|---|
+> | `metal/model.go`, `prefill.go`, `moe.go` | 1,677 → 1,399 | −17% (most of `prefill.go` is protected kernel text) |
+> | `metal` backend, kernels, `gemma4_moe`, alias, gumbel files and 11 test files | 1,136 → 746 | −34% |
+> | `cuda/resident.go` (and `actgroup_kernel_test.go`, left as is) | 1,558 → 1,176 | −25% |
+> | `gpu/decoderunner.go`, `residency.go` and 3 test files | 923 → 611 | −34% |
+> | `decoder/normnoise.go`, `testhooks.go`, `knobs.go` | 226 → 193 | −14% |
+> | **total** | **5,520 → 4,125** | **−25%** |
+>
+> Still skipped: `internal/hwcensus/census_test.go` (branch `hw-h1-ci-runners`, 2026-10-03, live) and the one `decoder/residency.go` pass that was the pilot's (the file
+> is worked). `gate comments-only 9c3833aa` is GREEN over the 27 files; `staticcheck` clean on the root, `cuda`, `gpu` and `metal` (darwin) modules; `deps_hash`
+> refreshed once more (35 goldens, 0 failed); `comment_diet.py pointers`: 323 checked, 0 unresolved. Merging `origin/main` (S10 LFM2.5-VL, aikit v1.64.0) first
+> conflicted in 22 files, all comment-versus-code overlaps: main's code kept byte for byte, the diet's wording kept.
+
 One commit per package, or per file group in `decoder`. Subject:
 `comments(<pkg>): history to docs/code-notes, guardrails kept (<before> → <after> comment lines)`. Body: the CC2
 moved-text report, and any open work found (CC1.3).
@@ -327,7 +346,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
 > 0 always; `--strict` exits 1 for the day it becomes a refusal). The narrow marker is five kinds: a date, a commit id, a tracker id (`M-35`), a figure with a
 > unit, a `file.go:NNN` reference. It blanks file names and doc pointers first (`docs/measurements/x-2026-09-23.md` is a name, not a date) and ignores a tracker
 > id on a line that carries a doc pointer (a label on it), a marker the file's comments already carried at the base (a kept label, a rewrapped line), directives,
-> raw strings and code. Measured on this branch's whole diff against the pre-work base, it reports 35 comment lines (of the roughly 104 commits' worth of
+> raw strings and code. Measured on this branch's whole diff against the pre-work base, it reports 39 comment lines (of the roughly 104 commits' worth of
 > rewrites): mostly figures and ids inside kept contract ("a 4x smaller int8 KV", "1.3x ... would justify the runner surgery") and re-spelled labels; the
 > rest are worth a read. Installing it is per clone (`bash scripts/install-git-hooks.sh`); nothing here installs it for anyone.
 >
@@ -335,14 +354,14 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
 >
 > | | before | after |
 > |---|---|---|
-> | non-test: comment lines (share of non-blank lines) | 37,121 (25%) | 29,990 (21%) |
-> | non-test: blocks of 10+ lines (their lines; those carrying a marker) | 837 (13,636; 641) | 464 (6,832; 274) |
-> | non-test: exported top-level doc comments in public packages carrying a marker | 261 of 1,128 | 150 of 1,133 |
-> | all `.go` files: comment lines (share) | 71,395 (18%) | 60,046 (15%) |
-> | all `.go` files: blocks of 10+ lines (their lines; marked) | 1,645 (26,504; 1,299) | 1,038 (14,986; 698) |
+> | non-test: comment lines (share of non-blank lines) | 37,121 (25%) | 28,759 (20%) |
+> | non-test: blocks of 10+ lines (their lines; those carrying a marker) | 837 (13,636; 641) | 390 (5,606; 203) |
+> | non-test: exported top-level doc comments in public packages carrying a marker | 261 of 1,128 | 132 of 1,154 |
+> | all `.go` files: comment lines (share) | 71,395 (18%) | 58,788 (15%) |
+> | all `.go` files: blocks of 10+ lines (their lines; marked) | 1,645 (26,504; 1,299) | 960 (13,667; 621) |
 >
-> What the numbers say: the long history-heavy blocks halved (10+-line blocks carrying a marker 641 → 274 outside the tests, 1,299 → 698 over everything) while the
-> comment share fell four points; the files not yet worked (the skipped ones) are most of what is left.
+> What the numbers say: the long history-heavy blocks halved (10+-line blocks carrying a marker 641 → 203 outside the tests, 1,299 → 621 over everything) while the
+> non-test comment share fell five points; what is left is mostly contract and `docs/` pointers.
 
 ## 10. Owner decisions, and open work found
 
