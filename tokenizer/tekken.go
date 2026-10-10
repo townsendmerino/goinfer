@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-// Mistral's Tekken tokenizer (Voxtral Mini, Mistral Small 3.x), shipped as ONE file, tekken.json, and no tokenizer.json (S14.4b of docs/tasks/task-multimodal-support-2026-10.md).
+// Mistral's Tekken tokenizer (Voxtral Mini, Mistral Small 3.x), shipped as ONE file, tekken.json, and no tokenizer.json (docs/tasks/task-multimodal-support-2026-10.md).
 //
 // The file is tiktoken's format: a list of byte strings whose position is their RANK, plus 1,000 special tokens at ids 0-999. The model's token id is rank+1000, and only the first
 // default_vocab_size-1000 ranks are in the model's vocabulary (130,072 of the 150,000 shipped). tiktoken encodes by repeatedly merging the adjacent pair whose concatenation has the

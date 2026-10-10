@@ -34,25 +34,21 @@ const metaPrefixCap = 64 << 20
 var freeDiskBytes = statfsFreeBytes
 
 // Transcode writes a .giw bundle at out from the model at in, quantized to quant
-// ("int8int8" | "int8" | "int4" | "" for f32). `in` may be a GGUF file (streamed one
-// layer at a time, peak RAM ≈ one layer — fits a 35B on a modest box) OR a safetensors
-// model DIRECTORY (loaded whole then serialized, peak RAM ≈ the resident weight size —
-// the path for safetensors-only models like Mellum2). A failed write removes the partial
-// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary
-// (audit M-21) and removes the partial output.
+// ("int8int8" | "int8" | "int4" | "" for f32). `in` may be a GGUF file (streamed one layer at a
+// time, peak RAM about one layer: fits a 35B on a modest box) OR a safetensors model DIRECTORY (the
+// path for safetensors-only models like Mellum2; see transcodeDir). A failed write removes the
+// partial output. A cancelled ctx aborts a long streaming transcode at the next layer boundary and
+// removes the partial output.
 //
-// target names the ONE consumer this bundle is promised to (docs/task-int4-layout-
-// 2026-09.md's L2): on a cpu-arm64 target, every eligible int4 tensor writes kind
-// 5 (row4-only — the on-disk arm64 split-half + 4-row-interleaved layout,
-// docs/completed/task-w4a8-neon-bandwidth.md's "Format follow-on") instead of kind 3
-// (decoder/serialize.go's weightMat vs weightMatKind3Only decides which tensors
-// are eligible, and why); every other target, including decoder.GIWTargetNone,
-// writes kind 3 for every int4 tensor. decoder.GIWTargetForBackend derives a
-// target from a backend name (EnsureCachedGIW, below); decoder.ParseGIWTarget
-// parses cmd/prequant's own -target flag. Requires running on an arm64 box for a
-// cpu-arm64 target (the repack functions are NEON-only in aikit); a shape the
-// repack rejects, or a non-arm64 build, falls back to kind 3 automatically for
-// that tensor — always safe to pass any target.
+// target names the ONE consumer this bundle is promised to (docs/tasks/task-int4-layout-2026-09.md):
+// on a cpu-arm64 target, every eligible int4 tensor writes kind 5 (row4-only: the on-disk arm64
+// split-half, 4-row-interleaved layout, docs/completed/task-w4a8-neon-bandwidth.md) instead of kind 3
+// (decoder/serialize.go's weightMat vs weightMatKind3Only decides which tensors are eligible); every
+// other target, including decoder.GIWTargetNone, writes kind 3 for every int4 tensor.
+// decoder.GIWTargetForBackend derives a target from a backend name (EnsureCachedGIW);
+// decoder.ParseGIWTarget parses cmd/prequant's own -target flag. A cpu-arm64 target needs an arm64
+// box (the repack functions are NEON-only in aikit); a shape the repack rejects, or a non-arm64
+// build, falls back to kind 3 for that tensor, so any target is always safe to pass.
 func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
 		return transcodeDir(ctx, in, "", out, quant, embedInt4, target)
@@ -72,31 +68,21 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 		return fmt.Errorf("metadata GGUF does not load a tokenizer: %w", err)
 	}
 
-	// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a
-	// time (decoder.StreamTranscodeGGUF), so peak RAM is ~one layer rather than the
-	// whole resident model — this is what lets a model larger than RAM be prequant'd
-	// (e.g. a 106B-A12B int4 on a 62 GB box). Every family streams now (S2): the resident
-	// build some families used to fall back to is gone.
-	// TEMP + RENAME, not os.Create(out) directly (M-12). giw.WriteStream patches the body
-	// length placeholder at the END, so a bundle whose write was interrupted has a ZERO length
-	// in its header — and the error paths below cannot help, because the interruptions that
-	// matter are the ones that run no cleanup: SIGKILL, the OOM killer, power loss. Written in
-	// place, such a file exists, has an mtime NEWER than the source, and is therefore judged
-	// "fresh" forever — so every subsequent `serve --stream-weights` fails at boot with
-	// "truncated bundle", naming the .giw rather than the cause, until a human deletes it.
+	// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a time
+	// (decoder.StreamTranscodeGGUF), so peak RAM is about one layer rather than the whole resident
+	// model: this is what lets a model larger than RAM be prequant'd.
+	// TEMP + RENAME, not os.Create(out) directly. giw.WriteStream patches the body length placeholder at
+	// the END, so a bundle whose write was interrupted has a ZERO length in its header, and the
+	// interruptions that matter (SIGKILL, the OOM killer, power loss) run no cleanup. Written in place,
+	// such a file has an mtime NEWER than the source and is judged "fresh" forever, so every later
+	// `serve --stream-weights` fails at boot with "truncated bundle", naming the .giw rather than the
+	// cause, until a human deletes it. With a temp file an interrupted run leaves out.tmp.giw and no
+	// `out`, so the next run rebuilds; the rename is atomic within a directory, so `out` appears only once
+	// the bytes are complete AND selfCheck has passed.
 	//
-	// With a temp file, an interrupted run leaves out.tmp and no `out` at all, so the next run
-	// simply rebuilds. The rename is atomic within a directory, so `out` only ever appears
-	// once the bytes are complete AND selfCheck has passed.
-	//
-	// The temp name MUST still end in ".giw" (V-01, docs/review-2026-09-04.md): selfCheck below
-	// calls decoder.Load(tmp, ...), and Load's only entry to the bundle loader is
-	// strings.HasSuffix(dir, ".giw") -- anything else falls to loadWeights, which wants a .gguf
-	// file or a safetensors directory and finds neither. A plain `out + ".tmp"` (e.g.
-	// "model.int4.giw.tmp") does not end in ".giw", so selfCheck failed for every GGUF Transcode
-	// unconditionally, deleted the temp file, and returned "self-check: ..." -- the rename was
-	// never reached. Boxes that already had a sidecar from before this bug never called
-	// Transcode again and so never saw it, which is how it stayed green.
+	// The temp name MUST still end in ".giw": selfCheck calls decoder.Load(tmp, ...), whose only entry to
+	// the bundle loader is strings.HasSuffix(dir, ".giw"). A plain `out + ".tmp"` fails selfCheck for every
+	// GGUF Transcode.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -163,14 +149,9 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		}
 		id += " + LoRA " + filepath.Base(filepath.Dir(lora)) + "/" + filepath.Base(lora)
 	}
-	// TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to
-	// `out` directly leaves a placeholder-length bundle behind on SIGKILL/OOM-kill/power
-	// loss — exactly the interruption class this whole-model-resident path is most exposed
-	// to, since it holds the entire quantized model in RAM while writing. Written in place,
-	// that half-written file is newer than the source and "fresh" forever, so every later
-	// `serve` fails at boot with "truncated bundle" until a human deletes it. The temp name
-	// must still end in ".giw" (V-01) for selfCheck's decoder.Load to route to the bundle
-	// loader at all.
+	// TEMP + RENAME, for the reason given in Transcode (the temp name must end in ".giw" too). This
+	// path is the most exposed to an interrupted write, since the resident fallback holds the whole
+	// quantized model in RAM while writing.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -222,8 +203,8 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 // needs it (the merge works on the f32 projections), and so does a family whose safetensors loader does not stream; it is
 // also G-DS1's reference for the streamed bytes.
 func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, target decoder.GIWTarget, id string) (int64, error) {
-	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same). Unpinned, the fit
-	// guard priced the model's full context: on 2026-10-07 it refused Gemma 4 E4B for 8.8 GB of weights "+ 7.1 GB KV".
+	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same).
+	// Unpinned, the fit guard prices the model's full context and can refuse a model whose weights fit.
 	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora, ResidentContext: 1})
 	if err != nil {
 		return 0, fmt.Errorf("load %s (%s): %w", dir, quant, err)
@@ -232,35 +213,27 @@ func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, targe
 	return decoder.SerializeWeightsToForTarget(w, m.Weights(), id, target)
 }
 
-// EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant,
-// promised to backend — transcoding once into a sidecar cache (alongside the
-// GGUF, "<base>.<quant>.<target>.giw", or "<base>.<quant>.e4h.<target>.giw" when
-// embedInt4 is set) when no fresh cache exists. The cache is fresh when it's
-// newer than the source AND was built for the same target (L2: the cache key
-// carries the target, so a CPU-built cache is never reused by a Metal load —
-// the same "wrong file → rebuild" path the version guard already takes for a
-// stale writer) AND the same embedInt4 setting (a plain-head sidecar and an
-// embed-int4 one are different bundles, never interchangeable — folding
-// embedInt4 into the filename, not just the Transcode call, is what stops a
-// stale plain-head cache from being silently served under the new default).
-// The one-time transcode is logged to stderr (it can take minutes and write
-// tens of GB) so a slow first start isn't mistaken for a hang. Returns the
-// .giw path to load.
+// EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant, promised to backend,
+// transcoding once into a sidecar cache (alongside the GGUF, "<base>.<quant>.<target>.giw", or
+// "<base>.<quant>.e4h.<target>.giw" when embedInt4 is set) when no fresh cache exists. The cache is
+// fresh when it is newer than the source AND was built for the same target (the cache key carries the
+// target, so a CPU-built cache is never reused by a Metal load) AND the same embedInt4 setting (a
+// plain-head sidecar and an embed-int4 one are different bundles, never interchangeable; folding
+// embedInt4 into the filename, not just the Transcode call, is what stops a stale plain-head cache
+// being silently served). The one-time transcode is logged to stderr (it can take minutes and write
+// tens of GB) so a slow first start isn't mistaken for a hang. Returns the .giw path to load.
 func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 bool) (string, error) {
 	target := decoder.GIWTargetForBackend(backend)
 	cache := streamCachePath(ggufPath, quant, embedInt4, target)
 	if cacheFresh(cache, ggufPath, quant) {
 		return cache, nil
 	}
-	// S1 (task-never-swap-2026-09.md): a half-written sidecar on a full disk is a failure this
-	// repo has already had once (M-12's own history), so refuse up front when the sidecar will not
-	// fit. The size is projected from the source's tensor shapes at this quant
-	// (projectedSidecarBytes); it used to be the source's own size, on the argument that a sidecar is
-	// never bigger than an f32 source — but sources are quantized, and real int4 sidecars measured
-	// 1.02–1.16× their q4_k_m source, int8int8 ~1.6×, so the check passed and the disk could still
-	// fill. freeDiskBytes returning !ok (no portable probe, or the statfs itself failed) proceeds
-	// unguarded, same as every other unknown quantity in this codebase (fitguard.go's own rule) — a
-	// missing probe must never be the reason a load that would have worked gets refused.
+	// Refuse up front when the sidecar will not fit: a half-written sidecar on a full disk is worse than
+	// refusing. The size is projected from the source's tensor shapes at this quant
+	// (projectedSidecarBytes), not taken from the source's own size, because sources are already quantized
+	// and a sidecar can be larger than its source. freeDiskBytes returning !ok (no portable probe, or the
+	// statfs itself failed) proceeds unguarded, as fitguard.go's rule says: a missing probe must never be
+	// the reason a load that would have worked gets refused.
 	if fi, serr := os.Stat(ggufPath); serr == nil {
 		need, ok := projectedSidecarBytes(ggufPath, quant)
 		if fi.IsDir() {
@@ -290,11 +263,10 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 	return cache, nil
 }
 
-// SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and
-// embedInt4 setting, and true, ONLY when a fresh one already exists — it never transcodes. For a
-// caller like `fit` (task-never-swap-2026-09.md S1 item 5) where measuring is supposed to stay
-// cheap; forcing a transcode just to check fit would trade a 32 s / 256 CPU-s resident build for
-// an equally expensive one-time transcode, not for "nearly free" as the brief asks.
+// SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and embedInt4
+// setting, and true, ONLY when a fresh one already exists: it never transcodes. For a caller like `fit`
+// (docs/tasks/task-never-swap-2026-09.md) where measuring is supposed to stay cheap: forcing a
+// transcode just to check fit would cost as much as the resident build it avoids.
 func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string, bool) {
 	cache := streamCachePath(ggufPath, quant, embedInt4, decoder.GIWTargetForBackend(backend))
 	if cacheFresh(cache, ggufPath, quant) {
@@ -303,14 +275,12 @@ func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string
 	return "", false
 }
 
-// DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default
-// — S1's own registered rule: "the .gguf direct heap load becomes the opt-out, not the default".
-// darwin since S1 (2026-09-22), where the historical swap incidents (gpt-oss-20b, M35/M26)
-// happened; linux since 2026-09-24, owner decision, after docs/measurements/cpu-giw-vs-direct-2026-09-24.md
-// found no CPU decode cost (1.0007x / 1.0016x on 1.5B / 7B, inside the A/A arm) and a load that
-// maps instead of re-quantizing (0.01 s and ~0 heap vs 5.6-16.5 s and 1.3-5 GB). Other platforms
-// keep the direct load. directLoad is the caller's already-resolved -direct-load flag /
-// GOINFER_GGUF_DIRECT env var; it can only turn the sidecar OFF.
+// DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default: the
+// .gguf direct heap load is the opt-out, not the default. True on darwin (where the swap incidents
+// happened) and on linux (the sidecar showed no CPU decode cost and a load that maps instead of
+// re-quantizing; docs/measurements/cpu-giw-vs-direct-2026-09-24.md); other platforms keep the direct
+// load. directLoad is the caller's already-resolved -direct-load flag / GOINFER_GGUF_DIRECT env var;
+// it can only turn the sidecar OFF.
 func DefaultToSidecar(directLoad bool) bool {
 	if directLoad {
 		return false
@@ -327,7 +297,7 @@ func DefaultToSidecar(directLoad bool) bool {
 func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWTarget) string {
 	base := ggufPath[:len(ggufPath)-len(filepath.Ext(ggufPath))]
 	if isDir(ggufPath) {
-		// A safetensors directory (S18): the sidecar sits beside it, named after the whole directory. Its name is not a
+		// A safetensors directory: the sidecar sits beside it, named after the whole directory. Its name is not a
 		// file name with an extension, and "qwen2.5-0.5b-instruct" would otherwise lose ".5-0.5b-instruct".
 		base = filepath.Clean(ggufPath)
 	}
@@ -344,21 +314,17 @@ func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWT
 
 // cacheFresh reports whether cache exists, is newer than src, AND actually loads.
 //
-// mtime alone is not freshness (M-12). It cannot see a bundle that is truncated, written by an
-// older writer, or missing a tensor a newer reader requires — all of which are newer than the
-// source and all of which fail at load. That is also M-11's trigger: a pre-v6 gpt-oss sidecar
-// is "fresh" by mtime, passes validateShapes, and panics at the first forward.
+// mtime alone is not freshness: it cannot see a bundle that is truncated, written by an older writer,
+// or missing a tensor a newer reader requires, all of which are newer than the source and all of which
+// fail at load. So freshness ends with the question that matters, does it load?, using the same mmap
+// load selfCheck uses. That load runs the bundle's whole-payload CRC, which reads every byte of the
+// file; it is done once per (size, mtime) (decoder/giwverify.go), so a full pass is paid only the first
+// time a sidecar is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
+// of failing at boot with an error that names the .giw rather than the cause.
 //
-// So freshness ends with the question that actually matters — does it load? — using the same
-// mmap load selfCheck uses. That load runs the bundle's whole-payload CRC, which reads every byte
-// of the file; it used to be described here as lazy and cheap, and was not. It is now done once
-// per (size, mtime) (decoder/giwverify.go), so this check costs a full pass only the first time a
-// sidecar is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead of
-// failing at boot with an error that names the .giw rather than the cause.
-//
-// Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion
-// DOES load, by converting, and would be kept forever (cacheNewer + selfCheck both pass). See
-// cacheLayoutCurrent — quant is the cache's own quant, which decides whether that applies.
+// Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion DOES
+// load, by converting, and would be kept forever (cacheNewer and selfCheck both pass). See
+// cacheLayoutCurrent; quant is the cache's own quant, which decides whether that applies.
 func cacheFresh(cache, src, quant string) bool {
 	if !cacheNewer(cache, src) {
 		return false
@@ -377,16 +343,14 @@ func cacheFresh(cache, src, quant string) bool {
 	return true
 }
 
-// minInt4CacheGIWVersion is the oldest weights-blob version whose int4 group scales an mmap load
-// can ALIAS: v15 stores them as binary16, aikit v1.50.0's in-RAM form (decoder/serialize.go's
-// giwVF16Scales). An older int4 bundle still loads — the reader converts its f32 scales to a heap
-// f16 copy — but that copy sits beside the file's f32 pages on every load, and a sidecar that loads
-// was judged fresh, so an upgraded box kept paying it forever. Measured 2026-09-28 (1.5B CPU, peak
-// RSS): old build on v12 1,123-1,127 MB, new build on the same v12 1,179-1,184 MB, new build on
-// its own v15 1,045-1,053 MB; the Mac's +478-589 MB on the 7B was the middle row.
+// minInt4CacheGIWVersion is the oldest weights-blob version whose int4 group scales an mmap load can
+// ALIAS: v15 stores them as binary16, aikit's in-RAM form (decoder/serialize.go's giwVF16Scales). An
+// older int4 bundle still loads, but the reader converts its f32 scales to a heap f16 copy that sits
+// beside the file's pages on every load, and a sidecar that loads is judged fresh, so an upgraded box
+// would pay it forever.
 //
-// Raise this only when an older file loads at a real cost, never merely because the format gained
-// a kind: every bump here costs each user a one-time re-transcode.
+// Raise this only when an older file loads at a real cost, never merely because the format gained a
+// kind: every bump here costs each user a one-time re-transcode.
 const minInt4CacheGIWVersion = 15
 
 // cacheLayoutCurrent reports whether cache's weights layout is one this build loads without
@@ -429,7 +393,7 @@ func cacheNewer(cache, src string) bool {
 }
 
 // sourceFiles is what a sidecar's freshness is judged against: every shard of a split GGUF, a single file itself, or
-// every regular file at the top of a safetensors directory (S18). A directory's own mtime moves only when an entry is
+// every regular file at the top of a safetensors directory. A directory's own mtime moves only when an entry is
 // added, removed or renamed, so a safetensors file rewritten in place would leave a stale sidecar judged fresh.
 func sourceFiles(src string) ([]string, error) {
 	if !isDir(src) {
@@ -463,23 +427,19 @@ func quantLabel(q string) string {
 	return q
 }
 
-// selfCheck verifies a freshly written bundle loads through the real mmap path — the streamed
-// weights deserialize, and the whole-payload CRC passes (a full read of the file; the pass is
-// recorded so it is not repeated for an unchanged file — decoder/giwverify.go).
+// selfCheck verifies a freshly written bundle loads through the real mmap path: the streamed weights
+// deserialize, and the whole-payload CRC passes (a full read of the file; the pass is recorded so it is
+// not repeated for an unchanged file, decoder/giwverify.go).
 //
-// Backend:"cpu", not Options{} (found writing L2, docs/tasks/task-int4-layout-2026-09.md):
-// an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's own literal-"cpu"-
-// is-a-promise rule, L1), so Options{} declined every kind-5 (row4-only) bundle
-// this function itself just wrote for a cpu-arm64 target — self-check would have
-// failed every -target cpu-arm64 transcode. "cpu" accepts both kind 3 and kind 5
-// (the plain CPU backend implements none of wantsCanonicalInt4's interfaces, so it
-// never needs canonical either way) and matches what a real cpu-arm64-target
-// bundle is actually loaded with in production.
+// Backend:"cpu", not Options{}: an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's
+// literal-"cpu"-is-a-promise rule), so Options{} would decline every kind-5 (row4-only) bundle this
+// function itself wrote for a cpu-arm64 target. "cpu" accepts both kind 3 and kind 5 and matches how a
+// cpu-arm64-target bundle is loaded in production
+// (docs/tasks/task-int4-layout-2026-09.md).
 //
-// ResidentContext 1: the check runs no request, so it allocates no KV. Unpinned, the host fit guard priced it at the
-// CPU's per-request ceiling (f32 over the model's whole window) and, on every sidecar check of a big-window model,
-// printed a "context capped" line belonging to no real load; under tight memory it could refuse the check outright
-// (A3, docs/completed/task-audit-followups-2026-10-06.md).
+// ResidentContext 1: the check runs no request, so it allocates no KV. Unpinned, the host fit guard
+// prices the CPU's per-request ceiling over the model's whole window, prints a "context capped" line
+// belonging to no real load, and under tight memory can refuse the check outright.
 func selfCheck(path string) error {
 	m, err := decoder.Load(path, decoder.Options{Backend: "cpu", ResidentContext: 1})
 	if err != nil {

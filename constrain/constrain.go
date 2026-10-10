@@ -31,7 +31,7 @@ type Grammar interface {
 	// Reset returns the grammar to its initial state.
 	Reset()
 	// Clone returns an independent copy of the grammar at its current state, for
-	// non-mutating multi-step lookahead (speculative forced-run extraction, 01).
+	// non-mutating multi-step lookahead (speculative forced-run extraction).
 	Clone() Grammar
 }
 
@@ -42,16 +42,13 @@ type Grammar interface {
 type Masker struct {
 	g      Grammar
 	tokens [][]byte // per-id surface bytes
-	// isEOS is indexed, not mapped: it is probed once per vocab id per decode step —
-	// 151,936 probes/step on Qwen2.5 — and a map lookup there was pure overhead on the
-	// hottest loop in constrained decoding (audit P-20's cheapest lever, measured).
-	// Sized to cover the largest EOS id; ids past the end are simply not EOS, which is the
-	// same answer the map gave for an absent key.
+	// isEOS is indexed, not a map: it is probed once per vocab id per decode step. Sized to cover
+	// the largest EOS id; ids past the end are not EOS.
 	isEOS  []bool
 	eosIDs []int // the EOS ids, in order (for StopWhenComplete)
-	// plainOK marks ids that are unconditionally legal inside a JSON string and leave the
-	// string state unchanged — 96.88% of a real vocab. One bit test replaces a grammar walk
-	// for those whenever the grammar reports a plain-string state (plainstring.go).
+	// plainOK marks ids that are unconditionally legal inside a JSON string and leave the string
+	// state unchanged (most of a real vocabulary). One bit test replaces a grammar walk for those
+	// whenever the grammar reports a plain-string state (plainstring.go).
 	plainOK   bitset
 	stopAtEnd bool         // once CanEnd, mask everything but EOS to force a stop
 	committed int          // how many generated tokens have been folded into g
@@ -59,8 +56,7 @@ type Masker struct {
 }
 
 // eosAt reports whether id is an end/stop token. Bounds-checked because logits can be the
-// MODEL's padded vocab length, which runs past both the tokenizer table and this slice — the
-// same over-long-logits case M26 guarded in tokenBytes.
+// model's padded vocab length, which runs past both the tokenizer table and isEOS.
 func (m *Masker) eosAt(id int) bool { return id >= 0 && id < len(m.isEOS) && m.isEOS[id] }
 
 // NewMasker builds a Masker for a vocabulary. tokens[id] is the surface bytes
@@ -83,18 +79,17 @@ func NewMasker(g Grammar, tokens [][]byte, eosIDs []int) *Masker {
 	return &Masker{g: g, tokens: tokens, isEOS: eos, eosIDs: eosIDs, plainOK: buildPlainString(tokens)}
 }
 
-// ForcedRun returns up to max tokens the grammar FORCES from its current committed
-// state: successive positions where exactly one surface token is grammar-legal and
-// the document cannot yet end (so EOS is not an alternative). Under the grammar mask
-// such a position has a point-mass target distribution, so a drafter that proposes
-// the forced token is accepted with probability 1 at zero model cost (01
-// grammar-fused). Non-mutating — it probes on a Clone of the grammar; the caller
-// commits the run through the normal Process path once the verifier confirms it.
+// ForcedRun returns up to max tokens the grammar forces from its current committed state:
+// successive positions where exactly one surface token is grammar-legal and the document
+// cannot yet end (so EOS is not an alternative). Under the mask such a position has a
+// point-mass distribution, so a drafter that proposes the forced token is accepted with
+// probability 1 at zero model cost. Non-mutating: it probes a Clone; the caller commits the
+// run through Process once the verifier confirms it.
 //
-// CAVEAT: goinfer's grammars permit optional whitespace at every structural
-// boundary, so a whitespace token is also legal there — strict single-token forcing
-// fires mainly INSIDE fixed literals (object keys, enum/const values), not at the
-// scaffolding between them. Measure the forced fraction before relying on it.
+// These grammars permit optional whitespace at every structural boundary, so a whitespace
+// token is also legal there: strict single-token forcing fires mainly inside fixed literals
+// (object keys, enum/const values), not between them. Measure the forced fraction before
+// relying on it.
 func (m *Masker) ForcedRun(max int) []int {
 	if max <= 0 {
 		return nil
@@ -223,9 +218,8 @@ func (m *Masker) Process(generated []int, logits []float32) {
 	}
 }
 
-// maskID reports whether token id must be masked in grammar state g. It is the ONE
-// masking rule; Process and MaskAt both call it, because they had two verbatim copies
-// of it and M-27 was a defect in the copy — the shape this audit keeps turning up.
+// maskID reports whether token id must be masked in grammar state g. It is the one masking
+// rule: Process and MaskAt both call it, so the two cannot drift.
 //
 // canEnd is passed in rather than recomputed: both callers need it for the EOS branch
 // and CanEnd is not free on every grammar.
@@ -233,51 +227,32 @@ func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool) bool {
 	if m.eosAt(id) {
 		return !canEnd // EOS only once the document is complete
 	}
-	// N-79 (docs/audit-2026-09-10.md, investigated 2026-09-16, NOT fixed — deferred, see below):
-	// only ids in eosIDs are masked-until-canEnd; every other id, including a special/control
-	// token that is neither EOS nor a template stop id, is judged purely by TryBytes(b) below. A
-	// control token's literal surface (tokenizer.TokenText's documented behavior, see
-	// sentencepiece.go's TokenText) is ordinary printable text with no '"' or backslash, which is
-	// plain-string-legal JSON content — so inside a string value TryBytes accepts it like any
-	// other run of bytes, and a real control-token id can leak into constrained output as if it
-	// were content. Fixing this needs a DIFFERENT semantics than eosIDs: eosIDs are masked only
-	// UNTIL canEnd, but a control token must be forbidden ALWAYS, everywhere, including mid-
-	// string — that is new plumbing (an always-forbidden id set threaded through NewMasker and
-	// every call site: internal/serveapp/openai.go, internal/chatapp/main.go,
-	// demo/agent/agent/agent.go, plus a tokenizer-side way to enumerate "special/control ids"
-	// uniformly across byte-level/SentencePiece/WordPiece modes — isAdded exists but is
-	// unexported and not obviously complete for this purpose), not a local fix to this function.
-	// Deferred to individual review rather than bolted on here.
-	// Plain-string fast path: one bit test instead of a grammar walk, for the 96.88% of ids
-	// that cannot leave a string state or make it invalid (plainstring.go). `!canEnd` is
-	// belt-and-braces — a document cannot be complete mid-string, so the whitespace rule
-	// below cannot apply here — and costs a register compare to not depend on that.
+	// Known limitation: only ids in eosIDs are held back (until CanEnd). A special/control token
+	// that is not EOS is judged by TryBytes like any other id, and its literal surface is
+	// plain-string-legal, so inside a JSON string value it can be emitted as if it were content.
+	// Fixing it needs an always-forbidden id set threaded through NewMasker, not a local change
+	// here. Open: docs/audit-2026-09-10.md (N-79); full text in docs/code-notes/constrain.md#Masker.maskID: control tokens.
+	// Plain-string fast path: one bit test instead of a grammar walk for ids that cannot leave a
+	// string state or make it invalid (plainstring.go). `!canEnd` is belt-and-braces: a document
+	// cannot be complete mid-string, so the whitespace rule below cannot apply here.
 	if plain && !canEnd && m.plainOK.has(id) {
 		return false
 	}
 	b := m.tokenBytes(id)
-	// An id with no surface bytes (a control token, or a padded-vocab id past the
-	// tokenizer table — tokenBytes returns nil for both) can never advance the
-	// grammar: TryBytes(nil) is vacuously true, so leaving it legal lets the sampler
-	// pick an id that never progresses, livelocking to maxTokens and then failing to
-	// Decode. Mask it (EOS was already handled above) — M26. tokenBytes also
-	// bounds-checks id, so a model-vocab-length logits slice (padded past the
-	// tokenizer) can't index m.tokens out of range.
+	// An id with no surface bytes (a control token, or a padded-vocab id past the tokenizer
+	// table; tokenBytes returns nil for both) can never advance the grammar. TryBytes(nil) is
+	// vacuously true, so leaving it legal would let the sampler pick an id that never progresses
+	// and livelock to maxTokens. Mask it (EOS was handled above). tokenBytes bounds-checks id,
+	// so a model-vocab-length logits slice cannot index m.tokens out of range.
 	if len(b) == 0 || !g.TryBytes(b) {
 		return true
 	}
-	// StopWhenComplete: stop at the first complete document rather than trailing to
-	// maxTokens. M-27: this used to mask EVERY non-EOS token at a completion point,
-	// which conflates MAY-end with MUST-end. CanEnd is true after `1` for a top-level
-	// number — but `12` is a longer legal document, not trailing filler, so blanket
-	// masking made `{"type":"integer"}` return exactly one digit and
-	// `{"enum":[1,10,100]}` able to produce only `1`.
-	//
-	// What StopWhenComplete is actually for is suppressing the WHITESPACE the grammars
-	// permit at every structural boundary, so that is what it suppresses. A token that
-	// genuinely extends the VALUE has already passed TryBytes above and is kept. This
-	// needs no per-grammar may-end/must-end split: whitespace-only is the exact
-	// property, and it is the same one for json, schema and tool grammars.
+	// StopWhenComplete suppresses the WHITESPACE the grammars permit at structural boundaries
+	// once the document can end. It must not mask a token that extends the value: CanEnd means
+	// MAY end, not MUST end (`1` satisfies it for a top-level number while `12` is a longer legal
+	// document), and a blanket mask would truncate `{"type":"integer"}` to one digit. Tokens
+	// that extend the value have already passed TryBytes above and are kept; whitespace-only is
+	// the exact property, the same for json, schema and tool grammars.
 	if canEnd && m.stopAtEnd && allJSONSpace(b) {
 		return true
 	}

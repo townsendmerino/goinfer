@@ -29,12 +29,11 @@ import (
 // an unsigned field cannot be handed a negative number.
 //
 // WHAT IS NOT is MAGNITUDE. JSON Schema integer has no width, so a uint8 field can be
-// given 99999 and json.Unmarshal will return an error for it. This used to read "always
-// succeeds", which was false for three separate reasons (M-28) — the other two are now
-// compile errors rather than silently wrong schemas: a type with its own UnmarshalJSON
-// is refused (its fields do not describe the JSON it accepts) unless it decodes from a
-// string via UnmarshalText, in which case it maps to "string"; and a struct with no
-// exported fields is refused instead of compiling to "{} only".
+// given 99999 and json.Unmarshal will return an error for it. Two other cases that would make
+// the schema silently wrong are compile errors instead: a type with its own UnmarshalJSON is
+// refused (its fields do not describe the JSON it accepts) unless it decodes from a string via
+// UnmarshalText, in which case it maps to "string"; and a struct with no exported fields is
+// refused instead of compiling to "{} only".
 func GrammarFromStruct(v any) (Grammar, error) {
 	schema, err := SchemaFromStruct(v)
 	if err != nil {
@@ -61,11 +60,11 @@ func SchemaFromStruct(v any) ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// structSchema builds the object schema for a struct type. visited holds the struct
-// types on the current recursion path so a self-referential type (e.g.
-// `type Node struct{ Children []Node }`) is a clean error, not a stack overflow — it
-// can never be expressed as a finite closed-object grammar (M27). It's removed on the
-// way back up, so the same type reused across sibling fields is still fine.
+// structSchema builds the object schema for a struct type. visited holds the struct types on
+// the current recursion path so a self-referential type (e.g. `type Node struct{ Children
+// []Node }`) is a clean error, not a stack overflow: it can never be a finite closed-object
+// grammar. It is removed on the way back up, so the same type reused across sibling fields is
+// still fine.
 func structSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, error) {
 	if visited[t] {
 		return nil, fmt.Errorf("constrain: recursive type %v is unsupported", t)
@@ -75,15 +74,10 @@ func structSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any
 	props := map[string]any{}
 	var required []string
 	for f := range t.Fields() {
-		// V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type
-		// name, so an embedded struct of UNEXPORTED type (type base struct{...}; embedded as
-		// `base`) reads IsExported()==false and used to be skipped here entirely — before ever
-		// reaching the promotion branch below. encoding/json does NOT skip it: its own
-		// typeFields has the identical special case ("do not ignore embedded fields of
-		// unexported struct types since they may have exported fields"), so an exported
-		// promoted field from an unexported-typed embed silently vanished from the schema
-		// while json.Unmarshal still populated it — M-28's exact silent-zero-field outcome,
-		// for the variant M-28's own fix didn't cover.
+		// An anonymous field's reflect name IS its type name, so an embedded struct of UNEXPORTED
+		// type reads IsExported()==false. encoding/json does not skip it (its typeFields has the same
+		// special case), so its exported promoted fields must reach the schema, or json.Unmarshal
+		// would populate fields the schema never mentions.
 		if f.Anonymous {
 			et := f.Type
 			if et.Kind() == reflect.Pointer {
@@ -104,11 +98,9 @@ func structSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any
 			optional = true
 			ft = ft.Elem()
 		}
-		// EMBEDDED STRUCTS ARE PROMOTED, as encoding/json promotes them (M-28). An
-		// anonymous field with no json tag name contributes its fields to the PARENT
-		// object; emitting it as a property called "Base" produced a schema the model
-		// satisfied and json.Unmarshal then accepted WITHOUT ERROR, leaving every
-		// promoted field zero — the quietest possible way for the contract to be false.
+		// EMBEDDED STRUCTS ARE PROMOTED, as encoding/json promotes them. An anonymous field with no
+		// json tag name contributes its fields to the PARENT object; emitting it as a property called
+		// "Base" would give a schema json.Unmarshal accepts while leaving every promoted field zero.
 		// An anonymous field WITH a json tag is a normal named field, per json's rules.
 		if f.Anonymous && !hasJSONName(f) && ft.Kind() == reflect.Struct && !unmarshalsItself(f.Type) {
 			sub, err := structSchema(ft, visited)
@@ -179,8 +171,8 @@ var (
 	textUnmarshaler = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
-// typeSchema maps a Go type to its JSON Schema node. visited threads through to
-// structSchema to break recursive-type cycles (M27).
+// typeSchema maps a Go type to its JSON Schema node. visited threads through to structSchema
+// to break recursive-type cycles.
 func typeSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, error) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -193,18 +185,15 @@ func typeSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return map[string]any{"type": "integer"}, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		// minimum:0 so an unsigned field cannot be handed a negative number (M-28).
-		// This does NOT bound magnitude — see SchemaFromStruct's docstring, which no
-		// longer claims json.Unmarshal always succeeds.
+		// minimum:0 so an unsigned field cannot be handed a negative number. This does NOT bound
+		// magnitude; see GrammarFromStruct.
 		return map[string]any{"type": "integer", "minimum": 0}, nil
 	case reflect.Float32, reflect.Float64:
 		return map[string]any{"type": "number"}, nil
 	case reflect.Struct:
-		// A type that decodes from a JSON string via UnmarshalText is a STRING, not an
-		// object — time.Time is the common one. Deriving an object schema from its
-		// (zero) exported fields produced {"properties":{},"additionalProperties":false},
-		// so the grammar forced `{}` and the model's only legal output was the one thing
-		// UnmarshalJSON then rejected (M-28).
+		// A type that decodes from a JSON string via UnmarshalText is a STRING, not an object
+		// (time.Time is the common one): an object schema from its zero exported fields would force
+		// `{}`, the one output UnmarshalJSON then rejects.
 		if decodesFromText(t) {
 			return map[string]any{"type": "string"}, nil
 		}
@@ -218,12 +207,9 @@ func typeSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, 
 		}
 		return structSchema(t, visited)
 	case reflect.Slice, reflect.Array:
-		// N-74 (docs/audit-2026-09-10.md): []byte is encoding/json's own special case — it
-		// marshals/unmarshals as a base64 STRING, never as a JSON array of integers, regardless
-		// of what a naive element-type schema would say. Emitting {"type":"array","items":
-		// {"type":"integer"}} for it guaranteed json.Unmarshal would fail on every grammar-legal
-		// output — exactly the "shape is guaranteed" violation M-28 (09-02) this function exists
-		// to prevent for other cases.
+		// []byte is encoding/json's own special case: it marshals as a base64 STRING, never as an
+		// array of integers, so an element-type schema would make json.Unmarshal fail on every
+		// grammar-legal output.
 		if t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8 {
 			return map[string]any{"type": "string"}, nil
 		}
@@ -232,10 +218,9 @@ func typeSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, 
 			return nil, err
 		}
 		schema := map[string]any{"type": "array", "items": items}
-		// A fixed-size Go array must constrain the model to exactly that many elements: Go's
-		// json.Unmarshal into [N]T does not error on the wrong count — it silently truncates
-		// (extra JSON elements dropped) or zero-pads (too few) — so an unconstrained length here
-		// is a second guaranteed-shape violation, just a silent-wrong one instead of an error.
+		// A fixed-size Go array must constrain the model to exactly that many elements: json.Unmarshal
+		// into [N]T silently truncates or zero-pads on a wrong count rather than failing, so an
+		// unconstrained length would be a silent shape violation.
 		if t.Kind() == reflect.Array {
 			schema["minItems"] = t.Len()
 			schema["maxItems"] = t.Len()
@@ -270,16 +255,10 @@ func jsonField(f reflect.StructField) (name string, optional, skip bool) {
 
 // hasExportedFields reports whether t has at least one exported, non-json:"-" field.
 //
-// N-75 (docs/audit-2026-09-10.md): this used to skip EVERY unexported field uniformly,
-// including an anonymous embed of an unexported-TYPE struct — but encoding/json (and this
-// package's own structSchema, fixed for the same reason at V-14, docs/review-2026-09-04.md)
-// still promotes THAT struct's own exported fields; only the embed's field NAME being
-// unexported (it equals the type name) doesn't mean it carries no exported content. The gap
-// was inconsistent rather than silent: SchemaFromStruct calls structSchema directly for the
-// TOP-level struct (never through this gate), so a struct shaped this way was accepted there
-// but refused the moment the identical shape appeared as a NESTED field type (typeSchema's
-// own hasExportedFields gate, which every non-top-level struct goes through) — "has no
-// exported fields" for a type that, one level up, plainly did.
+// An anonymous embed of an unexported-TYPE struct counts when that struct has exported fields
+// of its own: encoding/json and structSchema both promote them. typeSchema calls this gate for
+// every non-top-level struct (SchemaFromStruct does not, for the top-level one), so ignoring
+// such an embed would accept a type at the top level and refuse the same type when nested.
 func hasExportedFields(t reflect.Type) bool {
 	for f := range t.Fields() {
 		if f.Anonymous {

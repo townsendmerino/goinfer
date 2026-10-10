@@ -1,21 +1,21 @@
-// Package pull fetches a GGUF checkpoint from HuggingFace onto local disk.
+// Package pull fetches a GGUF or safetensors checkpoint from HuggingFace onto local disk, resumably
+// and digest-verified.
 //
-// EXPERIMENTAL (docs/api-tiers.md): supported and used by every goinfer front end, but it may
-// change in any release. It was `internal/modelpull` until 2026-09-02; it is exported because a
-// library caller embedding goinfer needs the same first step the CLIs and the web UI take, and
-// re-deriving it is the one part of "get a model" that has no other owner.
+// Most callers want Resolve, which turns a model spec into a local path and downloads it if needed:
 //
-// It is deliberately the ONLY new capability in the model-pull work: goinfer already
-// loads a .gguf or .giw (--model), already transcodes a bare .gguf to a sidecar .giw
-// cache on first use, and already converts one offline (cmd/prequant). The single step
-// that existed nowhere in the repo was getting the bytes onto disk — before this, a
-// `grep` for outbound HTTP in Go code returned nothing, and the only fetch anywhere was
-// a curl in the release workflow. So this package gets bytes onto disk and stops; it
-// deliberately does NOT load, convert, quantize, or embed, because each of those already
-// has a tested owner and a second copy would drift from it.
+//	path, err := pull.Resolve(ctx, "hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m", nil)
 //
-// No new module dependency: net/http, crypto/sha256 and encoding/json only, which keeps
-// the cgo-free single-static-binary property the rest of the project is built around.
+// EXPERIMENTAL (docs/api-tiers.md): supported and used by every goinfer front end, but it may change
+// in any release. It is exported because a library caller embedding goinfer needs the same first step
+// the CLIs and the web UI take.
+//
+// The package gets bytes onto disk and stops. It deliberately does NOT load, convert, quantize, or
+// embed: goinfer already loads a .gguf or .giw (--model), transcodes a bare .gguf to a sidecar .giw
+// cache on first use, and converts one offline (cmd/prequant), each with a tested owner that a second
+// copy here would drift from.
+//
+// No new module dependency: net/http, crypto/sha256 and encoding/json only, which keeps the cgo-free
+// single-static-binary property the rest of the project is built around.
 package pull
 
 import (
@@ -69,10 +69,9 @@ type Ref struct {
 	// the bytes under a name goinfer vouches for, and the API-declared digest would happily
 	// verify the NEW file. Empty for user-supplied refs, which pin nothing by construction.
 	Pin string
-	// Bytes is the file size this build pins for a curated demo: ref, alongside Pin — the two
-	// together are what let Resolve verify a cache hit OFFLINE (V-16, docs/review-2026-09-04.md)
-	// without a List call to ask HuggingFace how big the file is. 0 for a user-supplied ref,
-	// which pins nothing by construction (same reasoning as Pin).
+	// Bytes is the file size this build pins for a curated demo: ref, alongside Pin. Together they let
+	// Resolve verify a cache hit OFFLINE, without a List call to ask HuggingFace how big the file is. 0 for
+	// a user-supplied ref, which pins nothing by construction (same reasoning as Pin).
 	Bytes int64
 	// Checkpoint is set by the selector ":safetensors": the repo's safetensors checkpoint, fetched as a set
 	// (PlanCheckpoint, DownloadCheckpoint) into a directory decoder.Load opens.
@@ -158,12 +157,12 @@ func ParseRef(s string) (Ref, error) {
 	return r, nil
 }
 
-// repoSegment is HuggingFace's owner/name charset. Validating against an ALLOW-list rather
-// than blocking bad characters is deliberate: the repo string is interpolated into a URL
-// path AND joined into a filesystem path, so anything that slips through is wrong in two
-// places at once. "../.." satisfies a naive "exactly one slash, no leading or trailing
-// slash" check — which is what this replaced — and would then escape the cache directory
-// under filepath.Join. Reachable remotely once the repo name can come from an HTTP request.
+// repoSegment is HuggingFace's owner/name charset. Validating against an ALLOW-list rather than
+// blocking bad characters is deliberate: the repo string is interpolated into a URL path AND joined
+// into a filesystem path, so anything that slips through is wrong in two places at once. "../.."
+// satisfies a naive "exactly one slash, no leading or trailing slash" check and would then escape the
+// cache directory under filepath.Join. Reachable remotely once the repo name can come from an HTTP
+// request.
 var repoSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // validRepo reports whether repo is exactly "owner/name" with both segments in the safe
@@ -224,16 +223,13 @@ func getRange(ctx context.Context, url string, from int64) (*http.Response, erro
 	return http.DefaultClient.Do(req)
 }
 
-// CheckAccess reports whether the repo is reachable anonymously, naming the reason when it
-// is not. Called BEFORE any download so a gated repo fails in a second with an actionable
-// message instead of after a multi-GB 401.
+// CheckAccess reports whether the repo is reachable anonymously, naming the reason when it is not.
+// Call it BEFORE any download so a gated repo fails in a second with an actionable message instead of
+// after a multi-GB 401.
 //
-// Worth knowing when reading a failure here: gating is far less of a wall for GGUF than it
-// looks. Upstream originals are frequently gated (google/gemma-3-4b-it and
-// meta-llama/Llama-3.2-3B-Instruct both report gated="manual"), but the community GGUF
-// re-uploads that this command actually targets are not — bartowski/google_gemma-3-4b-it-GGUF
-// and unsloth/Llama-3.2-3B-Instruct-GGUF both report gated=false. So the usual fix is to
-// point at a GGUF repo, which is what you wanted anyway.
+// Gating is far less of a wall for GGUF than it looks: upstream originals are frequently gated, but
+// the community GGUF re-uploads this package targets usually are not, so the usual fix is to point at a
+// GGUF repo.
 func CheckAccess(ctx context.Context, repo string) error {
 	resp, err := get(ctx, hfAPI+"/"+repo)
 	if err != nil {
@@ -304,7 +300,7 @@ func List(ctx context.Context, repo string) ([]File, error) {
 // really honour.
 var searchKinds = map[string]string{
 	"gguf":        "gguf",
-	"safetensors": "safetensors", // P1 (docs/tasks/task-checkpoint-fetch-2026-09.md): a transformers checkpoint, fetched as a set (checkpoint.go)
+	"safetensors": "safetensors", // a transformers checkpoint, fetched as a set (checkpoint.go)
 }
 
 // SearchResult is one repo suggestion — enough for a caller to show a name and let a person pick
@@ -328,10 +324,9 @@ type searchHit struct {
 // limit results (HF's own default applies if limit is not positive), in HuggingFace's own
 // relevance/trending order — it does not re-sort by name or downloads.
 //
-// NOT FUZZY, and that is a real gap worth a caller knowing rather than discovering: this is a
-// substring match against the repo id and its tags. "quen" does not find "Qwen" — a typo is not
-// corrected, only completed. Good for "I know roughly the name and want to see what exists," not
-// for spelling correction.
+// Matching is not fuzzy: it is a substring match against the repo id and its tags, so "quen" does not
+// find "Qwen" (a typo is completed, not corrected). Good for "I know roughly the name", not for spelling
+// correction.
 func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {
 	filter, ok := searchKinds[kind]
 	if !ok {
@@ -432,9 +427,9 @@ func Select(files []File, ref Ref) (File, error) {
 	return f, nil
 }
 
-// SelectSet picks what a ref names as the files to fetch: one file, or for a split quant (task-checkpoint-fetch P4) every
-// shard of its set in shard order, whichever shard or quant named it. The set must be complete in the listing: a split
-// whose shards do not run 1..N is refused rather than fetched short.
+// SelectSet picks what a ref names as the files to fetch: one file, or for a split quant every shard
+// of its set in shard order, whichever shard or quant named it. The set must be complete in the
+// listing: a split whose shards do not run 1..N is refused rather than fetched short.
 func SelectSet(files []File, ref Ref) ([]File, error) {
 	f, shard, err := selectFile(files, ref)
 	if err != nil {
@@ -521,13 +516,12 @@ func Collapse(files []File) []Listed {
 	return out
 }
 
-// quantMatchKey is the part of a filename a quant selector is matched against: the extension
-// gone, and — for a split file — the "-NNNNN-of-NNNNN" shard suffix gone too, so
-// "model-Q4_K_M-00001-of-00003.gguf" matches ":q4_k_m" the same as a single-file
-// "model-Q4_K_M.gguf" would. Without this, the suffix check never saw a shard's quant at all
-// (it ends in a shard number, not a quant name), so a split checkpoint's OWN quant selector
-// matched zero candidates and the multiPart guard below — which exists specifically to name a
-// split file instead of trying to fetch one shard — was unreachable.
+// quantMatchKey is the part of a filename a quant selector is matched against: the extension gone,
+// and, for a split file, the "-NNNNN-of-NNNNN" shard suffix gone too, so
+// "model-Q4_K_M-00001-of-00003.gguf" matches ":q4_k_m" the same as a single-file "model-Q4_K_M.gguf".
+// Without this a split checkpoint's own quant selector matches zero candidates (the name ends in a
+// shard number, not a quant), and the multiPart guard in selectFile, which exists to name a split file
+// instead of fetching one shard, is unreachable.
 func quantMatchKey(path string) string {
 	key := strings.ToLower(path)
 	if multiPart.MatchString(key) {
@@ -668,9 +662,10 @@ func CacheRoot() (string, error) {
 	return filepath.Join(base, "goinfer", "models"), nil
 }
 
-// CacheHelp is the sentence --help prints about where `pull` puts models and what moves it (R28, docs/tasks/task-first-hour.md).
-// It names the directory this process would actually use, because "the user cache dir" is a different place on each OS and the tester
-// had to find it by hand; the variable is named for Linux, where XDG_CACHE_HOME is what os.UserCacheDir reads.
+// CacheHelp is the sentence --help prints about where `pull` puts models and what moves it
+// (docs/tasks/task-first-hour.md). It names the directory this process would actually use, because
+// "the user cache dir" is a different place on each OS; the variable is named for Linux, where
+// XDG_CACHE_HOME is what os.UserCacheDir reads.
 func CacheHelp() string {
 	root, err := CacheRoot()
 	if err != nil {
@@ -688,16 +683,14 @@ func CacheDir(repo string) (string, error) {
 	return filepath.Join(root, filepath.FromSlash(repo)), nil
 }
 
-// Download streams f from repo into dir, verifying the sha256 HF declared for it, and
-// returns the final path.
+// Download streams f from repo into dir, verifying the sha256 HF declared for it, and returns the
+// final path.
 //
-// The digest is VERIFIED, not merely printed, because HF hands it over before the transfer:
-// the tree API's LFS oid is the file's sha256 (confirmed against the digest
-// .github/workflows/release-assets.yml already pins for the same file). A hash nobody
-// compares is self-documentation, not a check.
+// The digest is VERIFIED, not merely printed: HF hands it over before the transfer (the tree API's LFS
+// oid is the file's sha256).
 //
-// Writes to a .part file and renames only after the digest matches, so an interrupted or
-// corrupted pull can never leave something at the final path that later looks loadable.
+// Writes to a .part file and renames only after the digest matches, so an interrupted or corrupted
+// pull can never leave something at the final path that later looks loadable.
 func Download(ctx context.Context, repo string, f File, dir string, progress func(done, total int64)) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -709,16 +702,16 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		return path, nil
 	}
 
-	// Resume from a previous interrupted attempt when one is on disk. Worth doing precisely
-	// because these files are multi-gigabyte: losing 4 GB to a dropped connection and starting
-	// again is the difference between an annoyance and an unusable command on a flaky link.
+	// Resume from a previous interrupted attempt when one is on disk: these files are multi-gigabyte,
+	// and losing 4 GB to a dropped connection is the difference between an annoyance and an unusable
+	// command on a flaky link.
 	part := final + ".part"
 	var resumeFrom int64
 	h := sha256.New()
 	if st, err := os.Stat(part); err == nil && st.Size() > 0 && (f.Size <= 0 || st.Size() < f.Size) {
-		// The running digest has to cover the bytes already on disk, so re-read them through
-		// the hash. That costs a local read of the partial — trivial beside re-fetching it,
-		// and it keeps the end-to-end sha256 check honest rather than verifying only the tail.
+		// The running digest has to cover the bytes already on disk, so re-read them through the hash. That
+		// is a local read, trivial beside re-fetching, and it keeps the end-to-end sha256 check covering the
+		// whole file rather than only the tail.
 		if n, err := hashPrefix(h, part); err == nil {
 			resumeFrom = n
 		} else {
@@ -741,16 +734,11 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		resumeFrom = 0
 		h.Reset()
 	case http.StatusRequestedRangeNotSatisfiable:
-		// N-70 (docs/audit-2026-09-10.md): resumeFrom landed at or past EOF — the .part file
-		// already covers everything the server has. The common cause is f.Size <= 0 (a non-LFS
-		// file with no declared size): the resume guard above admits ANY existing .part
-		// regardless of completeness when there's no size to compare against, so a prior run
-		// that fetched every byte but was interrupted before this digest-check-and-rename
-		// re-requests a Range starting exactly at EOF next time — 416, not 206/200. Falling into
-		// the default case below used to report a confusing "HuggingFace returned 416" AND leave
-		// the .part in place, so every retry hit the identical 416 forever. h already covers the
-		// whole .part (hashPrefix, above); verify it directly instead of copying a body a 416
-		// response doesn't have.
+		// resumeFrom is at or past EOF: the .part file already covers everything the server has. The common
+		// cause is f.Size <= 0 (a non-LFS file with no declared size), where the resume guard above admits ANY
+		// existing .part, so a prior run that fetched every byte but was interrupted before the digest check
+		// re-requests a Range starting exactly at EOF and gets 416, not 206/200. h already covers the whole
+		// .part (hashPrefix, above); verify it directly instead of copying a body a 416 response does not have.
 		if f.SHA256 != "" {
 			if got := hex.EncodeToString(h.Sum(nil)); got != f.SHA256 {
 				os.Remove(part)
@@ -804,10 +792,10 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 	return final, nil
 }
 
-// recordVerifiedDigest writes path's digest sidecar from a digest Download has JUST verified against the streamed bytes (audit R-18).
-// Without it the first Resolve after a pull, via cachedIntact, read the whole file again to arrive at the digest the download had already
-// computed: several seconds for a 5-20 GB model. A no-op when no digest was declared (sum == ""), so nothing unverified is ever recorded.
-// Best-effort like cachedFileSHA256's own write: a failure only costs the next call a re-hash.
+// recordVerifiedDigest writes path's digest sidecar from a digest Download has JUST verified against
+// the streamed bytes, so the first Resolve after a pull (cachedIntact) does not read the whole file
+// again to arrive at it. A no-op when no digest was declared (sum == ""), so nothing unverified is ever
+// recorded. Best-effort like cachedFileSHA256's own write: a failure only costs the next call a re-hash.
 func recordVerifiedDigest(path, sum string) {
 	if sum == "" {
 		return
@@ -835,10 +823,10 @@ func hashPrefix(h io.Writer, path string) (int64, error) {
 	return io.Copy(h, fh)
 }
 
-// cachedIntact reports whether dir already holds f, verified — re-checks the digest rather
-// than trusting the filename, so a truncated earlier attempt is re-fetched instead of silently
-// served. Shared by Download's own cache check and Resolve's offline-capable early return
-// (V-16, docs/review-2026-09-04.md) so the two never verify a "cache hit" differently.
+// cachedIntact reports whether dir already holds f, verified: it re-checks the digest rather than
+// trusting the filename, so a truncated earlier attempt is re-fetched instead of silently served.
+// Shared by Download's own cache check and Resolve's offline-capable early return, so the two never
+// verify a "cache hit" differently.
 func cachedIntact(dir string, f File) (string, bool) {
 	final := filepath.Join(dir, filepath.Base(f.Path))
 	st, err := os.Stat(final)
@@ -867,9 +855,8 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// digestSidecar records path's SHA-256 alongside the (size, mtime) it was computed against — the
-// same "sidecar cache" vocabulary this package's own doc comment already uses for the .gguf→.giw
-// transcode cache, applied here to the hash instead of the bytes.
+// digestSidecar records path's SHA-256 alongside the (size, mtime) it was computed against: a
+// sidecar cache for the hash, as the .giw is for the transcode.
 type digestSidecar struct {
 	Size    int64  `json:"size"`
 	ModTime int64  `json:"mod_time_unix_nano"`
@@ -882,14 +869,12 @@ func sidecarPath(path string) string {
 	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".sha256")
 }
 
-// cachedFileSHA256 is fileSHA256 behind a sidecar cache keyed on (size, mtime) — P-12
-// (audit-2026-09-10): cachedIntact re-hashes the WHOLE checkpoint on every serve start (Resolve's
-// offline check, Download's own cache check), even when the file has not changed since the last
-// run verified it. A cache hit here means "the file's size and mtime are exactly what they were
-// when this SHA-256 was computed" — the same staleness signal `make`/rsync use, cheap to check
-// (one stat) against the cost it avoids (a full read of a multi-GB checkpoint). A mismatch (or a
-// missing/corrupt sidecar) falls through to the real hash and rewrites the sidecar; a sidecar
-// write failure is not fatal — it only means the NEXT call re-hashes too, same as today.
+// cachedFileSHA256 is fileSHA256 behind a sidecar cache keyed on (size, mtime), so cachedIntact does
+// not re-hash the WHOLE checkpoint on every serve start (Resolve's offline check, Download's own cache
+// check). A hit means the file's size and mtime are exactly what they were when the SHA-256 was
+// computed: the staleness signal make and rsync use, one stat against a full read of a multi-GB file.
+// A mismatch, or a missing or corrupt sidecar, falls through to the real hash and rewrites the sidecar;
+// a sidecar write failure is not fatal and only means the NEXT call re-hashes too.
 func cachedFileSHA256(path string) (string, error) {
 	st, err := os.Stat(path)
 	if err != nil {
@@ -913,10 +898,9 @@ func cachedFileSHA256(path string) (string, error) {
 // hashFile is fileSHA256 behind a variable so a test can count full-file reads.
 var hashFile = fileSHA256
 
-// progressWriter reports throughput on a TIME ticker rather than every N bytes, so the line
-// updates about once a second whatever the transfer rate — the same reasoning behind this
-// repo's long-running-test heartbeat rule: a multi-GB pull runs for minutes, and output that
-// stalls must be distinguishable from a process that has.
+// progressWriter reports throughput on a TIME ticker rather than every N bytes, so the line updates
+// about once a second whatever the transfer rate: a multi-GB pull runs for minutes, and a stalled
+// transfer must be distinguishable from a quiet one.
 type progressWriter struct {
 	w      io.Writer
 	done   int64

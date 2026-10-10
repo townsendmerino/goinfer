@@ -86,11 +86,9 @@ func (g *schemaGrammar) Clone() Grammar {
 // literal has no closing delimiter, so it is complete as soon as what has been
 // committed is ITSELF a legal value).
 //
-// MAY-end, not MUST-end. `1` satisfies this and `12` is still reachable — the old
-// comment here said "done as soon as it can't extend", which describes neither this
-// function nor any caller, and StopWhenComplete acted on that reading and truncated
-// every top-level number to one digit (M-27). Extension is the caller's business:
-// Masker.maskID keeps any token that genuinely extends the value.
+// MAY-end, not MUST-end: `1` satisfies this and `12` is still reachable. Extension is the
+// caller's business; Masker.maskID keeps any token that genuinely extends the value, so
+// StopWhenComplete does not truncate a top-level number.
 func (g *schemaGrammar) CanEnd() bool {
 	if g.done {
 		return true

@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// A Qwen2-style tokenizer shipped as vocab.json + merges.txt + tokenizer_config.json, with no tokenizer.json (Qwen3-ASR's repo is one: S14.3 of
+// A Qwen2-style tokenizer shipped as vocab.json + merges.txt + tokenizer_config.json, with no tokenizer.json (Qwen3-ASR's repo is one;
 // docs/tasks/task-multimodal-support-2026-10.md). transformers builds the fast tokenizer from those three files with a fixed pipeline for tokenizer_class Qwen2Tokenizer: NFC
 // normalisation, the Qwen2 split regex, byte-level BPE, a byte-level decoder, the config's added tokens. This composes the same tokenizer.json in memory and hands it to the
 // ordinary parser, so one code path reads both. It is deliberately limited to that class: the split regex is part of the tokenizer's identity (GPT-2, Llama 3 and Qwen2 differ),

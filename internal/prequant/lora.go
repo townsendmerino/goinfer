@@ -14,8 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// A .giw built with a PEFT adapter merged in (TranscodeLoRA, D3's "transcode --lora" in
-// docs/tasks/task-constrained-confidence.md) carries a sidecar, <bundle>.lora.json, naming the adapter and the sha256
+// A .giw built with a PEFT adapter merged in (TranscodeLoRA, `transcode --lora`, docs/tasks/task-constrained-confidence.md)
+// carries a sidecar, <bundle>.lora.json, naming the adapter and the sha256
 // of its weights. The whole-model f32 merge is then paid once, at transcode, instead of on every load, which on a 16 GB
 // Mac is the anonymous-memory spike a 27B merge-at-load would be.
 
@@ -48,7 +48,7 @@ func loraSidecarBytes(adapterDir string) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// TranscodeLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load (D3), and
+// TranscodeLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load, and
 // records the adapter beside the bundle. A GGUF base is refused: an adapter names HF tensors, which a GGUF does not use.
 func TranscodeLoRA(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {

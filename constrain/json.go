@@ -94,12 +94,12 @@ func (g *jsonGrammar) CanEnd() bool {
 	return g.state == jsNumber && numTerminal(g.num)
 }
 
-// TryBytes reports whether appending bs keeps the document a valid prefix,
-// leaving the grammar state unchanged (snapshot/restore around the trial).
 // InPlainString reports that the grammar is inside a JSON string with no pending escape.
-// Same byte rule as the schema grammar's fsStr — see constrain/plainstring.go.
+// Same byte rule as the schema grammar's fsStr; see plainstring.go.
 func (g *jsonGrammar) InPlainString() bool { return g.state == jsString }
 
+// TryBytes reports whether appending bs keeps the document a valid prefix,
+// leaving the grammar state unchanged (snapshot/restore around the trial).
 func (g *jsonGrammar) TryBytes(bs []byte) bool {
 	g.snapshot()
 	ok := true
@@ -406,22 +406,20 @@ func (g *jsonGrammar) pop() {
 // maxStructuralWS bounds how many whitespace bytes a grammar accepts in a row BETWEEN JSON tokens (after a
 // '{', ',' or '[', before a ':' or '}', or after the document is complete). Without a bound, whitespace is legal
 // at every structural boundary, so when the model's preferred token is illegal there (it wants a bare number where
-// the schema says "string"; a string needs '"' first) the mask leaves whitespace as the top legal token and
-// generation pads whitespace until max_tokens, silently, with no error (found 2026-10-02 on a GLM-OCR extraction
-// with string-typed amounts; docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt).
+// the schema says "string") the mask leaves whitespace as the top legal token and generation pads whitespace
+// until max_tokens, silently, with no error
+// (docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt).
 //
-// 64 is generous for formatting (llama.cpp's JSON grammar allows one newline plus 20 spaces) and still ends a
-// runaway in a few tokens. It limits only FORMATTING: no value the schema allows becomes unreachable. String
-// content is not structural, so a string's own spaces never count toward it.
+// 64 is generous for formatting and still ends a runaway in a few tokens. It limits only FORMATTING: no value
+// the schema allows becomes unreachable. String content is not structural, so a string's own spaces never count
+// toward it.
 const maxStructuralWS = 64
 
 // maxValueWS is the tighter bound on whitespace between a ':' and the value it introduces (the schema grammar's
 // fsValue state, which is only ever the document root or an object member's value). That is the position where the
-// runaway happens, and a long pad there is also what makes the forced token's CONTEXT unnatural: measured on the
-// same GLM-OCR invoice with every numeric field typed string (CUDA int4, 2026-10-02), a 64-byte pad after
-// "quantity": finished but filled the numbers with junk ("", "The"; 1,546 tokens), 4 gave junk and an extra line
-// item (964 tokens), and 1, the canonical `": "`, gave six line items and correct amounts (445 tokens). Real
-// output has zero or one space there, so one is the whole bound.
+// runaway happens, and a long pad there also makes the forced token's CONTEXT unnatural, which degraded the values
+// the model wrote (measurements: docs/code-notes/constrain.md#maxValueWS). Real output has zero or one space
+// there, so one is the whole bound.
 const maxValueWS = 1
 
 func isWS(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }

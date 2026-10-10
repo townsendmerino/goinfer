@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// CacheEntry is one model the pull cache holds (task-checkpoint-fetch-2026-09.md P8): what is ON DISK, which is a
+// CacheEntry is one model the pull cache holds (docs/tasks/task-checkpoint-fetch-2026-09.md): what is ON DISK, which is a
 // different question from what a server has loaded.
 type CacheEntry struct {
 	Repo string // owner/repo, from the cache layout (<root>/<owner>/<repo>)

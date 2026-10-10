@@ -2,10 +2,9 @@ package constrain
 
 // The plain-string fast path.
 //
-// Masking is O(V) grammar walks per decode step — 151,936 of them on Qwen2.5 — and the
-// measured cost is dominated by TryBytes's snapshot/restore of the frame stack rather than by
-// the byte walk itself (audit P-20, measured in G37: 6.03 ms/step at `fsStr`, and the cost
-// tracks stack DEPTH, not token length).
+// Masking is O(V) grammar walks per decode step, and the cost is dominated by TryBytes's snapshot/restore of the
+// frame stack rather than by the byte walk itself: it tracks stack DEPTH, not token length. Measured figures:
+// docs/code-notes/constrain.md#The plain-string fast path.
 //
 // But inside a JSON string, both grammars answer with the same three-line rule:
 //
@@ -14,20 +13,18 @@ package constrain
 //	b < 0x20 → illegal
 //	otherwise → legal, AND THE STATE DOES NOT MOVE
 //
-// So for any token containing none of those three byte classes, legality inside a string is a
-// property of the TOKEN ALONE, not of the grammar — precomputable once per vocabulary and
-// answerable with one bit test. Measured on Qwen2.5's vocab: 96.88% of ids qualify (1,226 ids,
-// 0.81%, contain '"' or '\\'; 3,518, 2.32%, contain a control byte).
+// So for any token containing none of those three byte classes, legality inside a string is a property of the
+// TOKEN ALONE, not of the grammar: precomputable once per vocabulary and answerable with one bit test. Nearly
+// the whole vocabulary qualifies.
 //
-// EXACT, not probabilistic. A Bloom filter was considered and is dominated here: its false
-// positives would force the very walk being avoided, and at 19 KB for the whole vocabulary
-// there is no space pressure to trade accuracy for. TestPlainString_exact proves the fast path
+// EXACT, not probabilistic. A Bloom filter would be dominated here: its false positives force the very walk being
+// avoided, and the bitset is small (about 19 KB for a 152k vocabulary). TestPlainString_exact proves the fast path
 // agrees with the full walk for EVERY id, rather than sampling.
 //
-// Conservative by construction: only "definitely legal and state-invariant" is fast-pathed.
-// Control-byte tokens are NOT classified illegal here even though most are, because a token
-// like `"` + 0x0A closes the string before the control byte is read and is then judged in a
-// different state. Everything not provably safe takes the ordinary walk.
+// Conservative by construction: only "definitely legal and state-invariant" is fast-pathed. Control-byte tokens are
+// NOT classified illegal here even though most are, because a token like `"` + 0x0A closes the string before the
+// control byte is read and is then judged in a different state. Everything not provably safe takes the ordinary
+// walk.
 
 // plainStringGrammar is implemented by grammars that can report being inside a JSON string
 // with no pending escape. Optional: a grammar that does not implement it simply never takes

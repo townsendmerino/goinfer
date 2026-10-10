@@ -46,21 +46,19 @@ type bigram struct{ left, right string }
 type tokMode int
 
 const (
-	// modeGemma is Gemma 3's SentencePiece-style byte-fallback BPE: normalize
-	// ASCII space → ▁, no pretokenizer, per-rune symbols with <0xNN> fallback
-	// for out-of-vocab runes. (M2.)
+	// modeGemma is Gemma 3's SentencePiece-style byte-fallback BPE: normalize ASCII space → ▁, no
+	// pretokenizer, per-rune symbols with <0xNN> fallback for out-of-vocab runes.
 	modeGemma tokMode = iota
-	// modeByteLevel is the GPT-2 / Llama-3 / Qwen byte-level BPE: NFC
-	// normalize, a GPT-2 split-regex pretokenizer, then map each UTF-8 *byte*
-	// to a printable rune (space → Ġ) so every symbol is in-vocab — no
-	// byte-fallback. (G3.)
+	// modeByteLevel is the GPT-2 / Llama-3 / Qwen byte-level BPE: NFC normalize, a GPT-2 split-regex
+	// pretokenizer, then map each UTF-8 *byte* to a printable rune (space → Ġ) so every symbol is
+	// in-vocab, with no byte-fallback.
 	modeByteLevel
 )
 
-// Tokenizer is a loaded BPE tokenizer. It serves two families behind one
-// merge core (see tokMode): Gemma 3's byte-fallback SentencePiece-style model
-// (M2) and the byte-level GPT-2/Llama-3/Qwen model (G3). Load reads the HF
-// tokenizer.json and resolves the mode + special tokens from it.
+// Tokenizer is a loaded BPE tokenizer. It serves two families behind one merge core (see
+// tokMode): Gemma 3's byte-fallback SentencePiece-style model and the byte-level
+// GPT-2/Llama-3/Qwen model. Load reads the HF tokenizer.json and resolves the mode and special
+// tokens from it.
 //
 // The pipeline mirrors HF `tokenizers` exactly so ids match the per-family
 // golden: split out added/special tokens (longest match on the raw text),
@@ -118,10 +116,10 @@ type Tokenizer struct {
 	rstrip map[int32]bool
 
 	// isAdded[id] marks an ADDED/special token, whose surface is stored VERBATIM rather than
-	// byte-level-encoded (N-24). decodeByteLevel must emit those runes as-is: pushing them
-	// through the byte table turns a rune in U+0080–U+0143 (é ü ñ — ordinary in a chat
-	// template's added tokens) into a single raw byte, producing invalid UTF-8 and a wrong
-	// surface for the constrained-decoding mask.
+	// byte-level-encoded. decodeByteLevel and TokenText must emit those runes as-is: pushing them
+	// through the byte table turns a rune in U+0080–U+0143 (é ü ñ, ordinary in a chat template's
+	// added tokens) into a single raw byte, producing invalid UTF-8 and a wrong surface for the
+	// constrained-decoding mask.
 	isAdded []bool
 
 	chatTemplate string // raw GGUF/HF tokenizer.chat_template (Jinja); "" if absent. For chat.Detect.
@@ -144,24 +142,17 @@ func (t *Tokenizer) TokenID(piece string) (int, bool) { id, ok := t.vocab[piece]
 // PreTokenizerDecline reports why this tokenizer's pre-tokenizer is NOT the alternation the walker
 // implements, or "" when it is (or when the family is not byte-level at all).
 //
-// It exists because the answer used to be nothing. splitGPT2 is exactly the cl100k/Llama-3
-// alternation, and every byte-level family was walked with it: a `Split` regex of a different shape,
-// or a GGUF `tokenizer.ggml.pre` outside a four-name switch, produced a DIFFERENT id stream from
-// HF and from llama.cpp with no error and no log — `count_tokens` and usage drifting by the same
-// amount (audit-2026-09-02 C-10). Measured on this machine's own assets: gpt-oss's GGUF is
-// pre="gpt-4o" and Qwen3.5's is pre="qwen35", and neither was in the switch.
-//
-// A caller that cares — serve's startup line, a gate — can now say so out loud. Nothing here
-// changes what the walker does: naming the divergence is separable from fixing it, and shipping a
-// walker for a pattern this repo cannot yet check against a reference would be the worse half.
+// A `Split` regex of a different shape, or a GGUF `tokenizer.ggml.pre` outside the known names, is
+// walked with the cl100k alternation and so yields a DIFFERENT id stream from HF and llama.cpp with no
+// other signal. A caller that cares (serve's startup line, a gate) can say so out loud. Nothing here
+// changes what the walker does.
 func (t *Tokenizer) PreTokenizerDecline() string { return t.preDecline }
 
 // Special returns the resolved special-token ids.
 func (t *Tokenizer) Special() SpecialTokens { return t.special }
 
-// Chat-template selection moved to the chat package: chat.Detect fingerprints
-// ChatTemplate() (or falls back to Has() vocab markers) and returns a native
-// renderer. (The old ChatStyle enum/heuristic lived here.)
+// Chat-template selection lives in the chat package: chat.Detect fingerprints ChatTemplate() (or
+// falls back to Has() vocab markers) and returns a native renderer.
 
 // --- tokenizer.json schema (only the fields we need) ---
 
@@ -255,24 +246,22 @@ func Load(path string) (*Tokenizer, error) {
 	return parseTokenizerJSON(raw, jsonPath, filepath.Dir(jsonPath))
 }
 
-// LoadJSONBytes parses a tokenizer from raw tokenizer.json bytes — the dir-less twin of
-// Load. Used to load the tokenizer carried in a prequant .giw built from a SAFETENSORS
-// model, whose tok half is the tokenizer.json itself (not a GGUF metadata blob, which is
-// what LoadGGUFBytes expects). Self-contained tokenizer.json only: it passes an EMPTY
-// sibling dir so a byte-level pipeline never reads tokenizer_config.json — before this a
-// bare "tokenizer.json" resolved siblings relative to the process CWD, silently adopting an
-// unrelated tokenizer_config.json (wrong BOS at prefill, wrong template fingerprint) if one
-// sat in the server's working directory (audit M-14).
+// LoadJSONBytes parses a tokenizer from raw tokenizer.json bytes: the dir-less twin of Load. Used
+// for the tokenizer carried in a prequant .giw built from a SAFETENSORS model, whose tok half is the
+// tokenizer.json itself (LoadGGUFBytes expects GGUF metadata instead). Self-contained
+// tokenizer.json only: it passes an EMPTY sibling dir, so a byte-level pipeline never reads a
+// tokenizer_config.json from the process working directory (an unrelated one would give the wrong
+// BOS and template fingerprint).
 func LoadJSONBytes(raw []byte) (*Tokenizer, error) {
 	return parseTokenizerJSON(raw, "tokenizer.json", "")
 }
 
-// parseTokenizerJSON builds a Tokenizer from raw tokenizer.json bytes. jsonPath is the
-// display path (for error messages only). siblingDir is where a byte-level pipeline looks
-// for sibling files (tokenizer_config.json) — pass "" for no-sibling mode (a self-contained
-// blob load), NOT filepath.Dir of a bare filename, which would resolve to "." (the CWD) and
-// read an unrelated config (audit M-14). Split out from Load so the parse — the untrusted-input
-// surface — is testable and fuzzable without a file on disk.
+// parseTokenizerJSON builds a Tokenizer from raw tokenizer.json bytes. jsonPath is the display path
+// (for error messages only). siblingDir is where a byte-level pipeline looks for sibling files
+// (tokenizer_config.json): pass "" for no-sibling mode (a self-contained blob load), NOT
+// filepath.Dir of a bare filename, which resolves to "." (the CWD) and would read an unrelated
+// config. Split out from Load so the parse, the untrusted-input surface, is testable and fuzzable
+// without a file on disk.
 func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, error) {
 	var tj tokenizerJSON
 	if err := json.Unmarshal(raw, &tj); err != nil {
@@ -352,11 +341,9 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 		if err := t.initGemma(&tj); err != nil {
 			return nil, err
 		}
-		// The chat template lives in tokenizer_config.json (or chat_template.jinja) beside
-		// tokenizer.json, as for the byte-level families. This path never read it, so every
-		// SentencePiece checkpoint loaded from a directory reached chat.Detect with no template:
-		// Gemma survived on the vocab heuristic, but Phi-3 and Mistral fell to raw completion
-		// (found 2026-09-25). siblingDir == "" is the blob load, which reads no siblings (M-14).
+		// The chat template lives in tokenizer_config.json (or chat_template.jinja) beside tokenizer.json,
+		// as for the byte-level families; without it chat.Detect gets no template and Phi-3 and Mistral
+		// fall to raw completion. siblingDir == "" is the blob load, which reads no siblings.
 		if siblingDir != "" {
 			t.chatTemplate = readTokenizerConfig(siblingDir).ChatTemplate
 		}
@@ -380,9 +367,8 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 	return t, nil
 }
 
-// initGemma sets up the Gemma 3 byte-fallback path: the "<0xNN>" byte tokens
-// and the (required) Gemma special tokens. These are mandatory for this
-// family, so a missing one is a load error — the M2 golden depends on them.
+// initGemma sets up the SentencePiece byte-fallback path: the "<0xNN>" byte tokens and the
+// (required) BOS/EOS tokens. These are mandatory for this family, so a missing one is a load error.
 func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 	// SentencePiece dummy prefix: Llama-2/Mistral prepend a ▁ (and strip one
 	// leading space on decode); Gemma 3 has no Prepend normalizer.
@@ -417,10 +403,8 @@ func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 	if t.unkID, err = mustID(t.unkPiece); err != nil {
 		return err
 	}
-	// BOS/EOS are required under either SentencePiece spelling: Gemma's "<bos>"/"<eos>", or
-	// Llama-2's "<s>"/"</s>", which Phi-3 and Mistral use. Requiring the Gemma names alone made
-	// every Llama-style tokenizer.json unloadable (Phi-3 safetensors could not tokenize at all,
-	// found 2026-09-25). Pad is optional: Llama-style vocabs have none (-1).
+	// BOS/EOS are required under either SentencePiece spelling: Gemma's "<bos>"/"<eos>", or Llama-2's
+	// "<s>"/"</s>", which Phi-3 and Mistral use. Pad is optional: Llama-style vocabs have none (-1).
 	for _, r := range []struct {
 		pieces   []string
 		dst      *int
@@ -465,23 +449,21 @@ func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 	return nil
 }
 
-// Segment is a span of a rendered chat prompt tagged with whether the tokenizer
-// may recognize special/added-token surface forms inside it. Chat templates emit
-// their structural markers as Special segments and untrusted message/tool content
-// as non-special ones, so EncodeSegments can refuse to promote a "<|im_end|>" typed
-// by a user into a real turn-boundary control token (M25 — the parse_special
-// distinction). See EncodeSegments.
+// Segment is a span of a rendered chat prompt tagged with whether the tokenizer may recognize
+// special/added-token surface forms inside it. Chat templates emit their structural markers as
+// Special segments and untrusted message/tool content as non-special ones, so EncodeSegments can
+// refuse to promote a "<|im_end|>" typed by a user into a real turn-boundary control token (the
+// parse_special distinction). See EncodeSegments.
 type Segment struct {
 	Text    string
 	Special bool
 }
 
-// Encode turns text into token ids. If addBOS, prepend the BOS token (the
-// generation prefill expects it for Gemma; byte-level families with no BOS
-// ignore the flag). Added/special tokens written literally in the text are
-// recognized and emitted as their own ids — do NOT use this on untrusted content
-// (a user message, a tool result); use EncodeSegments so injected marker strings
-// stay literal (M25).
+// Encode turns text into token ids. If addBOS, prepend the BOS token (the generation prefill
+// expects it for Gemma; byte-level families with no BOS ignore the flag). Added/special tokens
+// written literally in the text are recognized and emitted as their own ids: do NOT use this on
+// untrusted content (a user message, a tool result); use EncodeSegments so injected marker strings
+// stay literal.
 func (t *Tokenizer) Encode(text string, addBOS bool) ([]int, error) {
 	return t.encode(text, addBOS, true)
 }
@@ -505,7 +487,7 @@ func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error
 		return t.encodeByteLevel(text, addBOS, parseSpecial)
 	}
 	var out []int32
-	if addBOS && t.special.BOS >= 0 { // a GGUF llama-family model may carry no BOS key ⇒ BOS == -1; don't emit a garbage id (M28)
+	if addBOS && t.special.BOS >= 0 { // a GGUF llama-family model may carry no BOS key ⇒ BOS == -1; don't emit a garbage id
 		out = append(out, int32(t.special.BOS))
 	}
 
@@ -539,15 +521,13 @@ func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error
 	return res, nil
 }
 
-// EncodeSegments tokenizes a rendered chat prompt from its Render segments: a
-// Special segment is parsed WITH the added-token trie (its structural markers
-// become control ids), a content segment WITHOUT it (a user/tool "<|im_end|>" stays
-// literal text) — the standard parse_special split that stops prompt injection
-// from forging turn boundaries (M25). addBOS prepends BOS once up front; templates
-// that emit their own BOS marker pass addBOS=false. On legitimate input the id
-// stream is identical to Encode(Render(...)): every content segment is exactly one
-// gap between the template's genuine special tokens, so no cross-boundary merge is
-// lost.
+// EncodeSegments tokenizes a rendered chat prompt from its Render segments: a Special segment is
+// parsed WITH the added-token trie (its structural markers become control ids), a content segment
+// WITHOUT it (a user/tool "<|im_end|>" stays literal text), the standard parse_special split that
+// stops prompt injection from forging turn boundaries. addBOS prepends BOS once up front; templates
+// that emit their own BOS marker pass addBOS=false. On legitimate input the id stream is identical
+// to Encode(Render(...)): every content segment is exactly one gap between the template's genuine
+// special tokens, so no cross-boundary merge is lost.
 func (t *Tokenizer) EncodeSegments(segs []Segment, addBOS bool) ([]int, error) {
 	var out []int
 	if addBOS && t.special.BOS >= 0 {
@@ -692,17 +672,13 @@ func (t *Tokenizer) bpe(gap string) []int32 {
 	return ids
 }
 
-// mergeSymbols is the shared BPE core: repeatedly merge the lowest-rank
-// adjacent pair (leftmost on ties) until no adjacent pair has a known rank.
-// Both families call it; only the initial symbol construction (per-rune +
-// byte-fallback vs byte-level) and the id mapping around it differ. The merge
-// table itself is identical HF data, so the merge loop is too.
-// mergeSymbols applies BPE merges to syms in ascending rank order, leftmost first
-// on a tie. Behaviorally identical to the naive "rescan for the globally best pair
-// each step" (the golden-parity tests gate this), but O(n log n) via a min-heap over
-// a doubly-linked list instead of O(n²): Gemma has no pretokenizer, so a whole
-// inter-added-token gap arrives here as ONE unit, and the old rescan turned a few
-// hundred KB of client text into minutes of CPU (M28).
+// mergeSymbols is the shared BPE core, called by both families (only the initial symbol
+// construction and the id mapping around it differ): it applies BPE merges to syms in ascending
+// rank order, leftmost first on a tie, until no adjacent pair has a known rank. Behaviorally
+// identical to the naive "rescan for the globally best pair each step" (the golden-parity tests gate
+// this), but O(n log n) via a min-heap over a doubly-linked list instead of O(n²): Gemma has no
+// pretokenizer, so a whole inter-added-token gap arrives here as ONE unit, and a rescan turns a few
+// hundred KB of client text into minutes of CPU.
 func (t *Tokenizer) mergeSymbols(syms []string) []string {
 	n := len(syms)
 	if n < 2 {
@@ -784,11 +760,10 @@ func (t *Tokenizer) mergeRank(left, right string) (int32, bool) {
 
 // buildScoreRank turns per-id SentencePiece scores into a merge-priority rank: rank 0 is the
 // highest-scoring token, so a lower rank merges first (matching mergeSymbols' min-heap). Tokens with
-// the SAME score share a rank, so on a score tie the heap key's leftIndex — not the token id —
-// decides, and two equal-score merges at different positions fire left-to-right, matching llama.cpp's
-// leftmost-position SPM order. (Previously every id got a distinct rank via a lower-id tiebreak, so a
-// same-score merge on a lower id fired ahead of a leftward one — a silent divergence from the
-// reference tokenization on a vocab with equal-score competing merges: audit R-29.)
+// the SAME score share a rank, so on a score tie the heap key's leftIndex, not the token id, decides
+// and two equal-score merges at different positions fire left-to-right, matching llama.cpp's
+// leftmost-position SPM order. Giving every id a distinct rank would let a same-score merge on a
+// lower id fire ahead of a leftward one, silently diverging from the reference tokenization.
 func buildScoreRank(scores []float32) []int32 {
 	order := make([]int32, len(scores))
 	for i := range order {
@@ -876,61 +851,48 @@ func (t *Tokenizer) decode(ids []int, stripLeading bool) (string, error) {
 	return out, nil
 }
 
-// DecodeContinuation decodes ids that CONTINUE an existing sequence rather than
-// forming one, so the SentencePiece dummy-prefix strip does NOT apply: that space
-// belongs to the first token of the whole sequence, and these ids are not it.
-//
-// M-25: the serving loop decoded generated ids with Decode, which strips. On a
-// dummy-prefix family (Llama-2/Mistral) a generation whose first token is `▁Paris`
-// reached the client as "Paris" where OpenAI and llama.cpp both return " Paris".
-// Decoding prompt+generation together gives the right answer too, by re-decoding the
-// prompt every token; this is the same correction without that cost.
+// DecodeContinuation decodes ids that CONTINUE an existing sequence rather than forming one, so the
+// SentencePiece dummy-prefix strip does NOT apply: that space belongs to the first token of the
+// whole sequence, and these ids are not it. Decode on a generation whose first token is `▁Paris`
+// would return "Paris" on a dummy-prefix family (Llama-2/Mistral) where OpenAI and llama.cpp return
+// " Paris".
 //
 // Byte-level tokenizers never strip, so this is identical to Decode for them.
 func (t *Tokenizer) DecodeContinuation(ids []int) (string, error) {
 	return t.decode(ids, false)
 }
 
-// DecodePiece decodes a single id to its display string — used for token
-// streaming so the demo can print as it goes. A lone byte-fallback piece may
-// be an incomplete UTF-8 sequence; callers that stream should buffer across
+// DecodePiece decodes a single id to its display string, used for token streaming. A lone
+// byte-fallback piece may be an incomplete UTF-8 sequence; callers that stream should buffer across
 // calls (a demo concern, not the tokenizer's).
 //
-// It does NOT apply the whole-sequence dummy-prefix strip (audit M-13): that
-// space belongs to the first token of the SEQUENCE, so stripping it per piece
-// would drop the leading space of EVERY "▁word" token — a caller printing
-// piece-by-piece would emit "Theanswerisfour". A streaming caller that wants the
+// It does NOT apply the whole-sequence dummy-prefix strip: that space belongs to the first token of
+// the SEQUENCE, so stripping it per piece would drop the leading space of EVERY "▁word" token (a
+// caller printing piece-by-piece would emit "Theanswerisfour"). A streaming caller that wants the
 // sequence's own leading space trimmed does it once on the assembled output.
 func (t *Tokenizer) DecodePiece(id int) (string, error) {
 	return t.decode([]int{id}, false)
 }
 
-// TokenText returns the raw surface bytes a single token id contributes when
-// decoded — the per-token building block for byte-level constrained decoding
-// (mapping the vocab onto a grammar). Unlike Decode it does NO whole-sequence
-// post-processing: no SentencePiece leading-space strip, and no fusing of
-// adjacent byte-fallback pieces. A byte-level piece is mapped through the byte
-// decoder; a SentencePiece byte-fallback token yields its single raw byte; a
-// normal SentencePiece piece has ▁ mapped to a space. Special tokens render as
-// their literal surface form (so a grammar that forbids them masks them out).
+// TokenText returns the raw surface bytes a single token id contributes when decoded: the per-token
+// building block for byte-level constrained decoding (mapping the vocab onto a grammar). Unlike
+// Decode it does NO whole-sequence post-processing: no SentencePiece leading-space strip, and no
+// fusing of adjacent byte-fallback pieces. A byte-level piece is mapped through the byte decoder; a
+// SentencePiece byte-fallback token yields its single raw byte; a normal SentencePiece piece has ▁
+// mapped to a space. An out-of-range id returns nil.
 //
-// That parenthetical is only true where the surface is grammar-illegal in context — e.g.
-// outside a string, where a literal '<' breaks JSON syntax. INSIDE a JSON string value, a
-// special token's surface is typically ordinary printable text (no '"' or backslash), which is
-// plain-string-legal content, so it is NOT masked out there. See N-79
-// (docs/audit-2026-09-10.md, investigated 2026-09-16, deferred) and constrain/constrain.go's
-// maskID for the fuller explanation and why fixing it needs new plumbing, not a local patch.
-// An out-of-range id returns nil.
+// Special tokens render as their literal surface form. A grammar masks that surface out only where it
+// is illegal in context (a literal '<' outside a JSON string): INSIDE a JSON string value it is
+// ordinary printable text and is NOT masked. Known limitation, deferred: see constrain.Masker's
+// maskID and docs/audit-2026-09-10.md (N-79).
 func (t *Tokenizer) TokenText(id int) []byte {
 	if id < 0 || id >= len(t.idToPiece) {
 		return nil
 	}
 	if t.mode == modeByteLevel {
-		// V-13 (docs/review-2026-09-04.md): an ADDED token's surface is stored verbatim, NOT
-		// byte-level-encoded (same category error N-24 fixed in decodeByteLevel) — pushing it
-		// through byteDecoder maps a rune in U+0080–U+0143 (é ü ñ) back to a single raw byte.
-		// This function feeds the constrained-decoding mask table and logprobs, so the wrong
-		// surface here is a wrong grammar mask, not just a display glitch.
+		// An ADDED token's surface is stored verbatim, not byte-level-encoded (see Tokenizer.isAdded). This
+		// function feeds the constrained-decoding mask table and logprobs, so a wrong surface here is a
+		// wrong grammar mask, not just a display glitch.
 		if id < len(t.isAdded) && t.isAdded[id] {
 			return []byte(t.idToPiece[id])
 		}
@@ -951,7 +913,7 @@ func (t *Tokenizer) TokenText(id int) []byte {
 	return []byte(strings.ReplaceAll(t.idToPiece[id], spaceMarker, " "))
 }
 
-// markAdded records id as an added/special token; see the isAdded field (N-24).
+// markAdded records id as an added/special token; see the isAdded field.
 func (t *Tokenizer) markAdded(id int) {
 	if id < 0 {
 		return
