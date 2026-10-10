@@ -8,9 +8,9 @@ import (
 
 // The real data holds: every row transcribes the snapshot, every derived status equals the snapshot's, the shares
 // recompute to its Result table, and the headline is a cited Fact. The three vision families the rule depends on come
-// out supported, which is why the rule reads modality and not only tasks (gemma3's tasks do not say vision).
-// No real row is T since the 2026-10-09 snapshot (mistral-small3.2 gained its images); the T derivation is pinned by
-// TestCheckOllama_refuses' "the matrix moved (qwen3_5 loses its images)" case.
+// out supported, which is why the rule reads modality and not only tasks (gemma3's tasks do not say vision). The T
+// derivation is pinned by TestCheckOllama_refuses' "the matrix moved (qwen3_5 loses its images)" case, since no real row
+// is T now.
 func TestCheckOllama_theRealDataHolds(t *testing.T) {
 	in := realInputs(t)
 	if err := CheckOllama(repoRoot, in); err != nil {
@@ -54,8 +54,8 @@ func TestCheckOllama_refuses(t *testing.T) {
 			in.Claims.Facts = nil
 		}},
 		{"a headline with another share", "does not carry the S share", func(in *Inputs) {
-			// the first percentage in the headline is the supported share, whatever the current snapshot says: a refresh
-			// must not break this case by changing the number (it hard-coded 92.4% until the 2026-10-02 snapshot)
+			// the first percentage in the headline is the supported share, whatever the current snapshot says: a refresh must not
+			// break this case by changing the number
 			in.Ollama.Headline = regexp.MustCompile(`\d+\.\d%`).ReplaceAllString(in.Ollama.Headline, "99.9%")
 		}},
 		{"a row dropped", "rows, ollama.json", func(in *Inputs) { in.Ollama.Rows = in.Ollama.Rows[:59] }},

@@ -138,8 +138,8 @@ func TestLoadBook_titlesTheChaptersNotTheGlossary(t *testing.T) {
 	}
 }
 
-// The live page's example used darwin-amd64 because that asset came first in the release. The sample is the Apple
-// silicon file whenever the release has one, wherever it is listed.
+// The download page's example is the Apple silicon (darwin-arm64) file whenever the release has one, wherever it is
+// listed, not whichever asset comes first.
 func TestBuildDownload_sampleIsDarwinArm64(t *testing.T) {
 	r := fullRelease()
 	r.Assets = append([]ReleaseAsset{{Name: "goinfer-chat-0.5b-darwin-amd64", Size: 5 << 20, URL: "https://x/a"}}, r.Assets...)
