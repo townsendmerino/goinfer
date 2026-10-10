@@ -1,0 +1,18 @@
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a gradient blend of dark purple, green, and light purple.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] Metal f16 tower            KL mean 0.05756, max 0.96969 nats; argmax agrees at every step
+[g3]   (its mean relative L2 from the CPU tower: 8.29e-06)
+[g3]   noise at that size, seed 1 KL mean 0.08582, max 1.23971 nats; first argmax change at step 17: reference "<end_of_turn>" p 0.960, this "\n\n" (reference p 0.001)
+[g3]   noise at that size, seed 2 KL mean 0.13766, max 2.20498 nats; first argmax change at step 10: reference " green" p 0.882, this " gray" (reference p 0.092)
+[g3]   noise at that size, seed 3 KL mean 0.10954, max 1.62279 nats; argmax agrees at every step
+[g3] Metal int8 tower           KL mean 0.41956, max 7.11380 nats; first argmax change at step 5: reference " blend" p 0.656, this " background" (reference p 0.233)
+[g3]   (its mean relative L2 from the CPU tower: 0.016)
+[g3]   noise at that size, seed 1 KL mean 0.09546, max 1.18298 nats; first argmax change at step 16: reference "<end_of_turn>" p 0.904, this " It" (reference p 0.059)
+[g3]   noise at that size, seed 2 KL mean 0.13601, max 3.12104 nats; first argmax change at step 8: reference " purple" p 0.682, this " green" (reference p 0.296)
+[g3]   noise at that size, seed 3 KL mean 0.11620, max 2.05647 nats; argmax agrees at every step
+--- PASS: TestGemma3TowerSensitivity (57.05s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	57.504s

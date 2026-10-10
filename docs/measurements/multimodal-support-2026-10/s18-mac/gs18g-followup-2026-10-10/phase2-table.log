@@ -1,0 +1,18 @@
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total for all regions."
+[g3] Metal f16 tower            KL mean 0.02974, max 0.40836 nats; first argmax change at step 9: reference "," p 0.841, this " for" (reference p 0.121)
+[g3]   (its mean relative L2 from the CPU tower: 4.24e-06)
+[g3]   noise at that size, seed 1 KL mean 0.05817, max 0.61664 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3]   noise at that size, seed 2 KL mean 0.04361, max 0.46586 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3]   noise at that size, seed 3 KL mean 0.05725, max 1.18638 nats; first argmax change at step 24: reference " along" p 0.383, this " and" (reference p 0.210)
+[g3] Metal int8 tower           KL mean 0.03190, max 0.26592 nats; first argmax change at step 10: reference " broken" p 0.485, this " presented" (reference p 0.404)
+[g3]   (its mean relative L2 from the CPU tower: 0.0157)
+[g3]   noise at that size, seed 1 KL mean 0.03438, max 0.26748 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3]   noise at that size, seed 2 KL mean 0.04978, max 0.34295 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3]   noise at that size, seed 3 KL mean 0.06219, max 0.94332 nats; first argmax change at step 9: reference "," p 0.841, this " for" (reference p 0.121)
+--- PASS: TestGemma3TowerSensitivity (58.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	59.021s

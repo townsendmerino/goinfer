@@ -12,8 +12,8 @@
   - S16 for Qwen2.5-VL and Qwen3-VL.
   - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
     fix it needed (2026-10-09).
-  - S18's gates on both boxes. G-S18g read 2026-10-10: FAIL, so the int8 Metal tower is not a default (the code change
-    is owed).
+  - S18's gates on both boxes. G-S18g read 2026-10-10: FAIL as registered. The same day's follow-up shows its rule
+    cannot grade a tower on Gemma 3 (the f16 reference fails it too), so the registered consequence waits on the owner.
 - **In flight:**
   - S6: Qwen3.6-35B images served on CUDA, the 31B's step (b'), E4B on Metal.
   - S14 (speech).
@@ -4638,6 +4638,57 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **The registered consequence, owed in code:** the int8 tower is not a default. `resolveGemma3VisionQuantMetal`
       takes it today when the budget does not hold the f16 tower; that choice has to go, leaving `-vision-quant int8`
       as the explicit option and the f16 tower where it fits, or the CPU tower.
+  - **G-S18g follow-up, 2026-10-10 by day (owner: "can we investigate before we just turn off int8"). Exploratory: not
+    registered, one run each, the Mac in use.** Raw:
+    `docs/measurements/multimodal-support-2026-10/s18-mac/gs18g-followup-2026-10-10/`.
+    - **The gate's reference is not ground truth.** A third served arm, the exact float32 tower on the CPU
+      (`-vision-device cpu`), same binary (`c2891555`), images and request. All three arms decode
+      `metal-resident (int4)` and prefill the image the same way (this build predates the resident image prefill), so
+      only the tower differs. Today's f16 and int8 arms repeat last night's byte for byte. First differences against
+      the CPU tower:
+
+      | image | f16 Metal tower | int8 Metal tower |
+      |---|---|---|
+      | `glm_ocr/table.png` | token 3, 0.844 against 0.156: not a near-tie | token 24, 0.400 against 0.295: near-tie |
+      | `gemma3_preprocess_image.png` | token 12, 0.840 against 0.078: not | token 10, 0.731 against 0.206: not |
+      | `qwen25vl_preprocess_image.png` | token 8, 0.771 against 0.213: not | token 8, 0.771 against 0.213: not |
+      | `glm_ocr/formula.png` | token 2, 0.241 against 0.000: not | token 2, 0.241 against 0.000: not |
+
+      **The f16 tower, serve's default, fails G-S18g's rule on four of four images when the exact tower is the
+      reference; the int8 tower fails on three.** The rule separates neither tower from the other. This is S3's
+      finding again (the decoder's sensitivity, read 2026-10-09 after G-S18g was registered): on Gemma 3 4B a tower
+      change at cosine 0.9999999 already moves a greedy reply at a token the reference holds with p 0.84.
+    - **Size, on S3's instrument** (`TestGemma3TowerDump` then `TestGemma3TowerSensitivity`, both extended with the
+      int8 tower and a noise control per tower): the int4 decoder on the CPU, teacher-forced 32 steps along the CPU
+      tower's own greedy path. Mean KL(CPU tower || arm), nats; the noise arms are the CPU tower's features plus
+      Gaussian noise at that tower's per-soft-token relative L2, three seeds:
+
+      | image | f16 tower | noise at its size | int8 tower | noise at its size |
+      |---|---|---|---|---|
+      | `glm_ocr/table.png` | 0.030 | 0.044-0.058 | 0.032 | 0.034-0.062 |
+      | `glm_ocr/formula.png` | 0.084 | 0.070-0.080 | 0.149 | 0.079-0.102 |
+      | `gemma3_preprocess_image.png` | 0.161 | 0.141-0.249 | 0.197 | 0.078-0.283 |
+      | `qwen25vl_preprocess_image.png` | 0.058 | 0.086-0.138 | 0.420 | 0.095-0.136 |
+
+      - **Feature space:** the f16 tower's mean relative L2 from the CPU tower is 4e-6 to 8e-6 per soft token; the
+        int8 tower's is 0.016-0.018, with single soft tokens at 0.04-0.51 (`tower-dump.txt`).
+      - **The decoder has a floor.** Noise 2,000-4,000 times larger moves it no more (0.03-0.28 at either size). The
+        f16 tower sits at that floor on every image.
+      - **The int8 tower sits at the floor on two images and above it on two:** `formula.png` (0.149 against 0.102 at
+        most) and `qwen25vl_preprocess_image.png` (0.420 against 0.136 at most, worst step 7.1 nats). Its error is not
+        noise-like there. Over the four images its mean KL is 0.199 against the f16 tower's 0.083.
+      - **Limits:** four images, one prompt, three seeds, one run. The decoder ran on the CPU (the served arms decode
+        on Metal). On the two gradient images the reply ends well before 32 tokens, so the later steps are forced past
+        the end of the turn, for every arm alike.
+    - **What turning the fallback off costs:** the CPU tower encodes these images in 25-34 s against 2.7-2.8 s on
+      Metal; today's served requests took 30-40 s with it and 7.0-7.6 s with the int8 tower. The fallback is taken
+      only when the budget does not hold the f16 tower.
+    - **Reading:** G-S18g's FAIL is not evidence against the int8 tower, because the tower it would be replaced by
+      fails the same rule. The int8 tower does cost more than the f16 one on some images (about 2.4x its mean KL on
+      these four), by an amount this exploratory run sizes but does not grade.
+    - **For the owner:** the registered consequence (int8 explicit-only) rests on a rule that cannot grade it. The
+      alternative is to keep the fallback and register a graded replacement for G-S18g on this instrument: more
+      images and prompts, the noise control, a margin written first, at night. Nothing in the code has changed.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

@@ -1,0 +1,18 @@
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a note about the Gaussian integral and its connection to the normal distribution (bell curve) in probability and statistics. It presents the integral of e^(-"
+[g3] Metal f16 tower            KL mean 0.08417, max 0.67731 nats; first argmax change at step 19: reference ")" p 0.826, this ")." (reference p 0.174)
+[g3]   (its mean relative L2 from the CPU tower: 6.7e-06)
+[g3]   noise at that size, seed 1 KL mean 0.07704, max 0.73623 nats; first argmax change at step 2: reference " shows" p 0.378, this " presents" (reference p 0.193)
+[g3]   noise at that size, seed 2 KL mean 0.07011, max 0.41769 nats; first argmax change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3]   noise at that size, seed 3 KL mean 0.07989, max 0.42582 nats; first argmax change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3] Metal int8 tower           KL mean 0.14922, max 1.23290 nats; first argmax change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3]   (its mean relative L2 from the CPU tower: 0.0184)
+[g3]   noise at that size, seed 1 KL mean 0.07923, max 0.73915 nats; first argmax change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3]   noise at that size, seed 2 KL mean 0.10064, max 0.39315 nats; first argmax change at step 2: reference " shows" p 0.378, this " demonstrates" (reference p 0.220)
+[g3]   noise at that size, seed 3 KL mean 0.10182, max 1.07414 nats; first argmax change at step 0: reference "The" p 0.576, this "This" (reference p 0.423)
+--- PASS: TestGemma3TowerSensitivity (56.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	56.946s

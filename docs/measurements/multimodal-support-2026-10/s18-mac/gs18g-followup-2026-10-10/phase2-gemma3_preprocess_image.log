@@ -1,0 +1,18 @@
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows a gradient blend of dark green and pink colors.<end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn><end_of_turn>"
+[g3] Metal f16 tower            KL mean 0.16136, max 2.84106 nats; first argmax change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   (its mean relative L2 from the CPU tower: 8.29e-06)
+[g3]   noise at that size, seed 1 KL mean 0.22223, max 3.71548 nats; first argmax change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   noise at that size, seed 2 KL mean 0.24888, max 5.02746 nats; first argmax change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   noise at that size, seed 3 KL mean 0.14107, max 2.04331 nats; first argmax change at step 5: reference " blend" p 0.742, this " blending" (reference p 0.098)
+[g3] Metal int8 tower           KL mean 0.19680, max 2.82883 nats; first argmax change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   (its mean relative L2 from the CPU tower: 0.0156)
+[g3]   noise at that size, seed 1 KL mean 0.07805, max 1.12029 nats; first argmax change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+[g3]   noise at that size, seed 2 KL mean 0.12275, max 2.45565 nats; first argmax change at step 11: reference " colors" p 0.362, this "." (reference p 0.290)
+[g3]   noise at that size, seed 3 KL mean 0.28330, max 4.78186 nats; first argmax change at step 8: reference " green" p 0.664, this " purple" (reference p 0.323)
+--- PASS: TestGemma3TowerSensitivity (57.77s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	58.232s

@@ -1,0 +1,9 @@
+TestGemma3TowerDump (metal, GOINFER_G3_IMAGE=<image>), 2026-10-10 06:55-07:02 PDT, by day, the Mac.
+[g3 dump] glm_ocr/table.png, 256 soft tokens x 2560: worst cosine 0.999999999, relative L2 mean 4.24e-06 worst 4.57e-05 (Metal f16 tower against CPU)
+[g3 dump] glm_ocr/table.png, 256 soft tokens x 2560: worst cosine 0.985684392, relative L2 mean 0.0157 worst 0.193 (Metal int8 tower against CPU)
+[g3 dump] glm_ocr/formula.png, 256 soft tokens x 2560: worst cosine 0.999999997, relative L2 mean 6.7e-06 worst 8.72e-05 (Metal f16 tower against CPU)
+[g3 dump] glm_ocr/formula.png, 256 soft tokens x 2560: worst cosine 0.874947953, relative L2 mean 0.0184 worst 0.505 (Metal int8 tower against CPU)
+[g3 dump] gemma3_preprocess_image.png, 256 soft tokens x 2560: worst cosine 0.999999999, relative L2 mean 8.29e-06 worst 4.96e-05 (Metal f16 tower against CPU)
+[g3 dump] gemma3_preprocess_image.png, 256 soft tokens x 2560: worst cosine 0.999460678, relative L2 mean 0.0156 worst 0.0377 (Metal int8 tower against CPU)
+[g3 dump] qwen25vl_preprocess_image.png, 256 soft tokens x 2560: worst cosine 0.999999989, relative L2 mean 8.29e-06 worst 0.000149 (Metal f16 tower against CPU)
+[g3 dump] qwen25vl_preprocess_image.png, 256 soft tokens x 2560: worst cosine 0.993546004, relative L2 mean 0.016 worst 0.113 (Metal int8 tower against CPU)

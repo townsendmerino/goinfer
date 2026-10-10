@@ -4,13 +4,14 @@
 // differing, Gemma 3 4B's reply split at token 10 (the reference at p 0.795 against 0.195) although the Metal tower's
 // features matched the CPU tower's to a worst token cosine of 0.9999999. Is that the tower, or the decoder's sensitivity?
 //
-// Phase 1 (metal/gemma3_tower_dump_test.go, on a Mac) writes both towers' projected features for table.png. This test
-// runs the int4 decoder on the CPU with serve's prompt and teacher-forces every arm along the CPU-tower arm's own greedy
-// path: the CPU tower's features (the reference), the Metal tower's, and the CPU tower's plus random noise matched per
-// soft token to the Metal tower's relative L2 deviation (three seeds; shipped-path-is-not-ground-truth's perturbation
-// control). Each arm reports its first step whose argmax differs, the reference's probabilities there, and the mean
-// and worst KL(reference || arm) over the steps. If the Metal arm sits inside the noise arms, the flip is the decoder's
-// sensitivity to a perturbation of that size, not a tower defect. A measurement, not a gate.
+// Phase 1 (metal/gemma3_tower_dump_test.go, on a Mac) writes the towers' projected features for one image: the CPU
+// float32 tower, the Metal f16 tower and the Metal int8 tower. This test runs the int4 decoder on the CPU with serve's
+// prompt and teacher-forces every arm along the CPU-tower arm's own greedy path: the CPU tower's features (the
+// reference), each Metal tower's, and for each of those the CPU tower's plus random noise matched per soft token to
+// that tower's relative L2 deviation (three seeds; shipped-path-is-not-ground-truth's perturbation control). Each arm
+// reports its first step whose argmax differs, the reference's probabilities there, and the mean and worst
+// KL(reference || arm) over the steps. A tower arm inside its own noise arms is the decoder's sensitivity to a
+// perturbation of that size; one above them costs more than its size alone explains. A measurement, not a gate.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_G3_FEATS=<phase 1 file> [GOINFER_GEMMA3_4B=<dir>] [GOINFER_G3_BACKEND=metal] \
 //	  go test -tags realckpt ./decoder/ -run TestGemma3TowerSensitivity -v -timeout 30m
@@ -173,36 +174,51 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		}
 		fmt.Fprintln(os.Stderr, line)
 	}
-	report("Metal tower", metalF)
-
-	// The control: per soft token, Gaussian noise scaled to the Metal tower's own relative L2 deviation there.
-	rel := make([]float64, n)
-	for i := range n {
-		var dd, nn float64
-		for j := range hidden {
-			a, b := float64(cpuF[i*hidden+j]), float64(metalF[i*hidden+j])
-			dd, nn = dd+(a-b)*(a-b), nn+a*a
-		}
-		rel[i] = math.Sqrt(dd / nn)
+	// Every tower arm in the file, each followed by its own control: per soft token, Gaussian noise scaled to that
+	// tower's relative L2 deviation from the CPU tower there (three seeds).
+	arms := []struct {
+		name string
+		f    []float32
+	}{{"Metal f16 tower", metalF}}
+	if f8 := feats["metal_int8"]; len(f8) == len(cpuF) {
+		arms = append(arms, struct {
+			name string
+			f    []float32
+		}{"Metal int8 tower", f8})
 	}
-	for seed := int64(1); seed <= 3; seed++ {
-		rng := rand.New(rand.NewSource(seed))
-		f := append([]float32(nil), cpuF...)
+	for _, arm := range arms {
+		report(arm.name, arm.f)
+		rel := make([]float64, n)
+		var sumRel float64
 		for i := range n {
-			row := f[i*hidden : (i+1)*hidden]
-			noise := make([]float64, hidden)
-			var nn, cn float64
-			for j := range noise {
-				noise[j] = rng.NormFloat64()
-				nn += noise[j] * noise[j]
-				cn += float64(row[j]) * float64(row[j])
+			var dd, nn float64
+			for j := range hidden {
+				a, b := float64(cpuF[i*hidden+j]), float64(arm.f[i*hidden+j])
+				dd, nn = dd+(a-b)*(a-b), nn+a*a
 			}
-			s := rel[i] * math.Sqrt(cn/nn)
-			for j := range row {
-				row[j] += float32(s * noise[j])
-			}
+			rel[i] = math.Sqrt(dd / nn)
+			sumRel += rel[i]
 		}
-		report(fmt.Sprintf("CPU tower + noise, seed %d", seed), f)
+		fmt.Fprintf(os.Stderr, "[g3]   (its mean relative L2 from the CPU tower: %.3g)\n", sumRel/float64(n))
+		for seed := int64(1); seed <= 3; seed++ {
+			rng := rand.New(rand.NewSource(seed))
+			f := append([]float32(nil), cpuF...)
+			for i := range n {
+				row := f[i*hidden : (i+1)*hidden]
+				noise := make([]float64, hidden)
+				var nn, cn float64
+				for j := range noise {
+					noise[j] = rng.NormFloat64()
+					nn += noise[j] * noise[j]
+					cn += float64(row[j]) * float64(row[j])
+				}
+				s := rel[i] * math.Sqrt(cn/nn)
+				for j := range row {
+					row[j] += float32(s * noise[j])
+				}
+			}
+			report(fmt.Sprintf("  noise at that size, seed %d", seed), f)
+		}
 	}
 }
 
