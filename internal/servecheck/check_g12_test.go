@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// audit-2026-09-10 G-12: the tools row passed turn two on any 200, and the stop row passed when the
-// stop sequence never fired. These fakes drive the FAILING direction the existing ones never did.
+// These fakes drive the FAILING direction of two rows: the tools row must not pass turn two on any 200, and the stop row
+// must not pass when the stop sequence never fired.
 
 // turnTwoServer answers turn one with goodCall(), and the tool-result turn with turnTwo.
 func turnTwoServer(t *testing.T, turnTwo map[string]any) *Client {

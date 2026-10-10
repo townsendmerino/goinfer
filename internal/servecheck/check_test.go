@@ -10,11 +10,9 @@ import (
 	"testing"
 )
 
-// A checker that cannot go red is not a checker. These drive the client against servers that
-// are deliberately wrong in one specific way each, and assert it NOTICES — the same
-// break-it-first discipline this project applies to its own lints and gates. They need no
-// model, so they run in CI, which is where the routes a harness uses currently have no cover
-// at all (ten of the serveapp test files skip without one).
+// A checker that cannot go red is not a checker. These drive the client against servers that are deliberately wrong in
+// one specific way each, and assert it NOTICES, the same break-it-first discipline this project applies to its own lints
+// and gates. They need no model, so they run in CI, where the routes a harness uses otherwise have little cover.
 
 func newFake(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
@@ -143,11 +141,9 @@ func TestStructured_conformingPasses(t *testing.T) {
 	}
 }
 
-// TestStructured_truncatedDigitFails pins V-17 (docs/review-2026-09-04.md): the prompt asks for
-// "366" specifically because that is M-27's shape (StopWhenComplete used to stop at the first
-// complete document and return a single truncated digit). The old check only confirmed the
-// output parsed as SOME json.Number — a truncated "3" parses exactly as cleanly as "366" and
-// would report OK against the very regression this row exists to catch.
+// TestStructured_truncatedDigitFails pins V-17: the prompt asks for "366" specifically because that is M-27's shape
+// (StopWhenComplete stopping at the first complete document and returning a single truncated digit). A check that only
+// confirmed the output parsed as SOME json.Number would report OK on a truncated "3", which parses as cleanly as "366".
 func TestStructured_truncatedDigitFails(t *testing.T) {
 	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
