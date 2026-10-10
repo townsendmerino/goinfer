@@ -202,10 +202,9 @@ func TestBundle_v3_blobStartsAligned(t *testing.T) {
 	}
 }
 
-// TestBundle_hostileLength_noPanic is the regression for the cur.take overflow
-// FuzzGIWRead found: a v2 weights length near maxint64 made c.off+n wrap negative,
-// slipping past the bound check and panicking the slice. Read must return a typed
-// error instead.
+// TestBundle_hostileLength_noPanic pins that a v2 weights length near maxint64, which made c.off+n wrap negative in
+// cur.take and slip past the bound check into a panicking slice, makes Read return a typed error instead. Origin
+// (FuzzGIWRead): docs/code-notes/internal-giw.md#TestBundle_hostileLength_noPanic.
 func TestBundle_hostileLength_noPanic(t *testing.T) {
 	var b []byte
 	b = append(b, bundleMagic...)
