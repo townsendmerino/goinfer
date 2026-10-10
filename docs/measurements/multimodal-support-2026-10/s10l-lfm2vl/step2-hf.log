@@ -1,0 +1,15 @@
+Loading weights:   0%|          | 0/589 [00:00<?, ?it/s]Loading weights:   7%|▋         | 43/589 [00:00<00:01, 421.88it/s]Loading weights:  15%|█▍        | 86/589 [00:00<00:01, 294.65it/s]Loading weights:  20%|██        | 118/589 [00:00<00:01, 281.35it/s]Loading weights:  25%|██▌       | 148/589 [00:00<00:01, 261.62it/s]Loading weights:  47%|████▋     | 275/589 [00:00<00:00, 557.92it/s]Loading weights:  69%|██████▊   | 404/589 [00:00<00:00, 775.09it/s]Loading weights:  92%|█████████▏| 539/589 [00:00<00:00, 944.38it/s]Loading weights: 100%|██████████| 589/589 [00:00<00:00, 675.75it/s]
+[   1.6s] loaded (Lfm2VlImageProcessor, transformers 5.12.0, image token 396)
+[   3.2s] a: gemma3_preprocess_image.png 896x896 -> 5 tile(s) [32, 32], runs [256, 256, 256]...
+[   3.2s] a: qwen25vl_preprocess_image.png 84x56 -> 1 tile(s) [14, 20], runs [70]...
+[   3.3s] a: glm_ocr/formula.png 1000x1200 -> 10 tile(s) [34, 28], runs [256, 256, 256]...
+[   3.3s] a: glm_ocr/table.png 1200x900 -> 7 tile(s) [26, 36], runs [256, 256, 256]...
+[   3.3s] a: strip_1000x20.png 1000x20 -> 1 tile(s) [4, 114], runs [114]...
+[   3.5s] a: big_3000x2000.png 3000x2000 -> 7 tile(s) [26, 38], runs [256, 256, 256]...
+[   3.5s] a: small_84x56.png 84x56 -> 1 tile(s) [14, 20], runs [70]...
+[  25.3s] b: gemma3_preprocess_image.png 5 tile(s), 32 stages each
+[  26.5s] b: qwen25vl_preprocess_image.png 1 tile(s), 32 stages each
+[  69.4s] b: glm_ocr/formula.png 10 tile(s), 32 stages each
+[  99.6s] b: glm_ocr/table.png 7 tile(s), 32 stages each
+[ 126.2s] c: 1810 ids (HF's own template: 1810, equal True), last argmax 7491
+[ 126.2s] wrote /home/francis/goinfer-logs/lfm2vl-real/golden.json

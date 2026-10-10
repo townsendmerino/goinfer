@@ -1,0 +1,51 @@
+[20:59:05] arm cpu (--backend cpu --embed-int4=false)
+stream-weights: transcoding lfm25-vl-1.6b → lfm25-vl-1.6b.int4.cpu-arm64.giw (int4, one-time — minutes + ~model-size on disk)…
+note: loading /Users/francistownsend-merino/models/lfm25-vl-1.6b directly: its sidecar .giw could not be built (self-check: decoder: serialized weights: layer 0 GateProj: 8192 rows, arch expects 5632)
+swap guard (load): not armed for /Users/francistownsend-merino/models/lfm25-vl-1.6b — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the 
+loaded "lfm25-vl-1.6b": 16-layer model (vocab 65536) in 1.513s [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: 128000 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+loaded LFM2-VL vision tower for "lfm25-vl-1.6b" (SigLIP2 NaFlex, 27 layers, image token id 396, tower on CPU, float32) from /Users/francistownsend-merino/models/lfm25-vl-1.6b
+"lfm25-vl-1.6b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+goinfer serving on http://127.0.0.1:18459 [chat:[lfm25-vl-1.6b]]
+  cpu one-image (121.0s, 1810 prompt tokens): 'Quarterly unit sales by region.'
+  cpu two-image (217.4s, 3094 prompt tokens): 'The first image is a table of quarterly unit sales by region in thousands, while the second image is a gradient of colors ranging from black to pink.'
+  "lfm25-vl-1.6b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+[21:05:05] arm cpu2 (--backend cpu --embed-int4=false)
+stream-weights: transcoding lfm25-vl-1.6b → lfm25-vl-1.6b.int4.cpu-arm64.giw (int4, one-time — minutes + ~model-size on disk)…
+note: loading /Users/francistownsend-merino/models/lfm25-vl-1.6b directly: its sidecar .giw could not be built (self-check: decoder: serialized weights: layer 0 GateProj: 8192 rows, arch expects 5632)
+swap guard (load): not armed for /Users/francistownsend-merino/models/lfm25-vl-1.6b — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the 
+loaded "lfm25-vl-1.6b": 16-layer model (vocab 65536) in 1.36s [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: 128000 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+loaded LFM2-VL vision tower for "lfm25-vl-1.6b" (SigLIP2 NaFlex, 27 layers, image token id 396, tower on CPU, float32) from /Users/francistownsend-merino/models/lfm25-vl-1.6b
+"lfm25-vl-1.6b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+goinfer serving on http://127.0.0.1:18459 [chat:[lfm25-vl-1.6b]]
+  cpu2 one-image (121.3s, 1810 prompt tokens): 'Quarterly unit sales by region.'
+  cpu2 two-image (218.4s, 3094 prompt tokens): 'The first image is a table of quarterly unit sales by region in thousands, while the second image is a gradient of colors ranging from black to pink.'
+  "lfm25-vl-1.6b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+[21:11:04] arm metal (--backend metal --embed-int4=false)
+stream-weights: transcoding lfm25-vl-1.6b → lfm25-vl-1.6b.int4.metal.giw (int4, one-time — minutes + ~model-size on disk)…
+note: loading /Users/francistownsend-merino/models/lfm25-vl-1.6b directly: its sidecar .giw could not be built (self-check: decoder: serialized weights: layer 0 GateProj: 8192 rows, arch expects 5632)
+swap guard (load): not armed for /Users/francistownsend-merino/models/lfm25-vl-1.6b — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the 
+loaded "lfm25-vl-1.6b": 16-layer model (vocab 65536) in 1.383s [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner, and metal has no staged decode path
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: 128000 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this 
+loaded LFM2-VL vision tower for "lfm25-vl-1.6b" (SigLIP2 NaFlex, 27 layers, image token id 396, tower on CPU, float32) from /Users/francistownsend-merino/models/lfm25-vl-1.6b
+"lfm25-vl-1.6b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+goinfer serving on http://127.0.0.1:18459 [chat:[lfm25-vl-1.6b]]
+  metal one-image (132.8s, 1810 prompt tokens): 'Quarterly unit sales by region.'
+  metal two-image (236.8s, 3094 prompt tokens): 'The first image is a table of quarterly unit sales by region in thousands, while the second image is a gradient of colors ranging from black to pink.'
+    decode path: cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner, and metal has no staged decode path
+    context: 128000 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)
+  "lfm25-vl-1.6b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+reference arm cpu
+one-image: cpu2 against cpu: IDENTICAL replies
+one-image: metal against cpu: IDENTICAL replies
+two-image: cpu2 against cpu: IDENTICAL replies
+two-image: metal against cpu: IDENTICAL replies
+rc=0
+21:17:32 PDT

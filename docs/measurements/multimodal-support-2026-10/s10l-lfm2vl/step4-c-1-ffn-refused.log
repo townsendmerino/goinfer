@@ -1,0 +1,8 @@
+=== RUN   TestLfm2VLFull
+[G-S10l-c   0.2s] goinfer's ids against HF's own chat template and processor: equal true (HF 1810 ids, goinfer 1810)
+[G-S10l-c  22.8s] tower and projector: 7 tiles
+    lfm2vl_real_test.go:190: safetensors: tensor "model.language_model.layers.14.feed_forward.w1.weight" shape [8192 2048] != want [12288 2048]
+--- FAIL: TestLfm2VLFull (23.17s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	23.198s
+FAIL

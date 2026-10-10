@@ -33,7 +33,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 >
 > Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; the newest message's images, up to 8 and each its own block in place (S11), while earlier images are replaced by a note, `internal/serveapp/image_history.go`; GLM-OCR takes one) for **Gemma 3** (SigLIP),
 > **Gemma 4** (E2B/E4B/26B-A4B/31B), **Qwen2.5-VL**, **Qwen3.5+ dense** (0.8B and 9B gated; the MoE sizes are accepted by serve's auto-discovery and have never been
-> run), **GLM-OCR**, **Qwen3-VL** (S10) and **Ministral 3** (the Pixtral tower, CPU float32; S10, G-S10m-a to d, 2026-10-09).
+> run), **GLM-OCR**, **Qwen3-VL** (S10), **Ministral 3** (the Pixtral tower, CPU float32; S10, G-S10m-a to d, 2026-10-09) and **LFM2.5-VL** (the SigLIP2 NaFlex tower and the lfm2 decoder, both CPU only; S10, G-S10l, 2026-10-09).
 > In each cell, the first half is where the vision **tower** runs, the second where the **decoder** runs after the image.
 >
 > | | CPU | CUDA | Metal | WebGPU |
