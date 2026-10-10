@@ -112,8 +112,7 @@ func TestQwen3Moe_forwardParity(t *testing.T) {
 	cos := fullCosine(t, logits, qwen3MoeForwardFullPath)
 	t.Logf("qwen3_moe: %dx top-%d | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
 		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, argmax(logits), g.Argmax, maxSampleΔ, cos)
-	// tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED qwen3moe-tiny —
-	// an exact numeric oracle for the loader + QK-norm + no-shared-expert MoE routing.
-	// The real Qwen3-30B-A3B (bf16 ~61GB) is a Linux-box T3, not yet run here.
+	// tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED qwen3moe-tiny, an exact numeric oracle for the loader +
+	// QK-norm + no-shared-expert MoE routing. The real-checkpoint T3 is TestQwen3MoeReal_oracle.
 	emitParityRow(t, "qwen3_moe", "tiny-golden", "HF f32 (qwen3moe-tiny seeded fixture, 8x top-2, no shared expert)", 100.0, cos, cos)
 }

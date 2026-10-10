@@ -1,14 +1,12 @@
 //go:build realckpt
 
-// WHERE does the GGUF path diverge from the safetensors path? — the localizer for B13's last
-// standing red (docs/queue-release.md; the v1.0 gate §1).
+// WHERE does the GGUF path diverge from the safetensors path? The localizer for B13's last standing red
+// (docs/queue-release.md; the v1.0 gate §1).
 //
-// THE QUESTION THIS ANSWERS, and why neither existing gate answers it.
-// TestQwen35GGUF_vsSafetensors reports one number at the TOP of the stack (min cosine 0.987835
-// over 80 teacher-forced steps, mean 0.998114) and calls it a loader bug. TestQwen35GGUF_weightDiff
-// reports that every transform-bearing tensor in layers 0-3 agrees to cos >= 0.99998, with a
-// UNIFORM relL2 ~0.0057 — the Q8_0-vs-bf16 dequant floor — and no tensor standing out. Those two
-// results are consistent with two very different stories:
+// THE QUESTION THIS ANSWERS, and why neither existing gate answers it. TestQwen35GGUF_vsSafetensors reports one number at
+// the TOP of the stack (min cosine over the teacher-forced steps) and calls it a loader bug. TestQwen35GGUF_weightDiff
+// reports that every transform-bearing tensor in layers 0-3 agrees closely, with a UNIFORM relL2 (the Q8_0-vs-bf16 dequant
+// floor) and no tensor standing out. Those two results are consistent with two very different stories:
 //
 //	(a) NOISE ACCUMULATION. A ~0.6% relative weight delta on every projection, compounded through
 //	    48 layers, lands the logits ~0.998 apart. Nothing is wrong; the floor is mis-set.
@@ -41,17 +39,13 @@ import (
 
 func TestQwen35GGUF_locateDivergence(t *testing.T) {
 	requireHeavyModel(t)
-	// DIAGNOSTIC, NOT A GATE — and it must not sit in the release sweep's path (2026-08-19).
-	// the parity sweep's realckpt cell runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
-	// test's name matches. On the v0.14.0 prep sweep the two B13 diagnostics together burned ~41
-	// minutes of that budget and the run TIMED OUT inside this one — which pushed
-	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run entirely. A gate
-	// that DID NOT RUN is a blocker by the sweep's own rule, so an instrument that asserts almost
-	// nothing took a real gate down with it.
+	// DIAGNOSTIC, NOT A GATE, and it must not sit in the release sweep's path: the parity sweep's realckpt cell runs `-run
+	// 'Qwen35|Real_gate'` under a 120m timeout and this test's name matches. A timeout inside this one pushes
+	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run, and a gate that DID NOT RUN is a blocker by
+	// the sweep's own rule.
 	//
-	// Gated by env rather than renamed on purpose: Go's -run matches substrings, so excluding it by
-	// name would mean stripping "Qwen35" from a qwen3.5 test — worse discoverability to work around
-	// a scheduling problem. This way the name stays, and the sweep reports an honest SKIP.
+	// Gated by env rather than renamed on purpose: -run matches substrings, so excluding it by name would mean stripping "Qwen35"
+	// from a qwen3.5 test. This way the name stays, and the sweep reports an honest SKIP.
 	if os.Getenv("GOINFER_DIAG") == "" {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only what " +
 			"holds under either story. Not a gate — see B13 in docs/queue-release.md")

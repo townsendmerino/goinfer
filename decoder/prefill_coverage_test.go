@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// TestPrefillCoverageAudit enumerates every validated family against the cuda PrefillLast guards
-// (decline on: not-resident, MoE, gemma4-moe, sandwich norms, qk-norm, K=V, non-uniform geometry).
-// It reports, per family, whether it GETS batched prefill or FALLS BACK, and which guard fires — so
-// "extend the guard" work can be scoped by which guard blocks the most families. Guards are read from
-// the resolved Architecture (the same flags cuda/backend.go sets the resident from); int4-weight and
-// over-cap are checkpoint/prompt-specific, not family-inherent, so they are noted, not tabulated.
+// TestPrefillCoverageAudit enumerates every validated family against the cuda PrefillLast guards it models: not-resident
+// (ResidentEligible for cuda) and MoE; the body asserts nothing about the other PrefillLast guards (gemma4-moe, sandwich
+// norms, qk-norm, K=V, non-uniform geometry). It reports, per family, whether it GETS batched prefill or FALLS BACK, and
+// which guard fires, so "extend the guard" work can be scoped by which guard blocks the most families. Guards are read from
+// the resolved Architecture; int4-weight and over-cap declines are checkpoint/prompt-specific, not family-inherent, so they
+// are not tabulated.
 func TestPrefillCoverageAudit(t *testing.T) {
 	// parity-manifest family → representativeConfig key (aliases where they differ).
 	families := map[string]string{
@@ -58,13 +58,10 @@ func TestPrefillCoverageAudit(t *testing.T) {
 		case arch.MoE != nil:
 			reason = "MoE"
 		}
-		// qk-norm and sandwich norms are NO LONGER guards: batched prefill applies them via
-		// qk_norm_batched / rmsnorm_f32_batched (bit-identical per token; validated on real Qwen3-1.7B
-		// and Gemma-3-4B by cuda.TestPrefillLast_qwen3 / _gemma3). So qwen3 and gemma3 now BATCH; MoE
-		// (glm4_moe/qwen2_moe/mixtral) and the not-resident classes still decline. (gemma3 batches only
-		// when the gemma resident path is enabled — GOINFER_GEMMA4_RESIDENT; else it stays staged.)
-		// (K=V is a Gemma-4-only property, nested in gemma4Params; Gemma-4 trips sandwich/gemma4-moe
-		// first, so K=V never surfaces as the binding guard — omitted.)
+		// qk-norm and sandwich norms are not guards: batched prefill applies them via qk_norm_batched / rmsnorm_f32_batched
+		// (bit-identical per token; cuda.TestPrefillLast_qwen3 / _gemma3). gemma3 batches only when the gemma resident path is
+		// enabled (GOINFER_GEMMA4_RESIDENT). K=V is a Gemma-4-only property (nested in gemma4Params) that Gemma-4's other guards
+		// trip first, so it never surfaces as the binding guard and is not modelled.
 		if reason == "" {
 			batched++
 			t.Logf("%-18s %-10s  —", fam, "BATCHED")

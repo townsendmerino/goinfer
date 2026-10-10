@@ -1,25 +1,18 @@
 //go:build realckpt
 
-// Real-model gate for Qwen2.5-VL (Qwen/Qwen2.5-VL-3B-Instruct, model_type "qwen2_5_vl") — the
-// T3 promotion of the qwen2_5_vl family from tiny-golden to a released checkpoint.
+// Real-model gate for Qwen2.5-VL (Qwen/Qwen2.5-VL-3B-Instruct, model_type "qwen2_5_vl"): the T3 promotion of the qwen2_5_vl
+// family from tiny-golden to a released checkpoint.
 //
-// THE ORACLE SHAPE DIFFERS FROM EVERY OTHER FAMILY IN THIS BATCH. The existing tiny golden
-// (TestQwen25VL_e2eChain) is already e2e encoder→decoder, but on SYNTHETIC pixel_values with
-// no real processor in the loop. This gate instead runs the real AutoImageProcessor on a real
-// image (testdata/qwen25vl_preprocess_image.png — pre-sized so smart_resize is a no-op,
-// isolating decoder-on-real-weights from resize/bicubic parity, which
-// pin_qwen25vl_preprocess.py already pins separately) through the real vision encoder and the
-// real text decoder. Fixture: scripts/pin_qwen25vl_real.py.
+// The oracle runs a REAL image: TestQwen25VL_e2eChain is already encoder→decoder, but on SYNTHETIC pixel_values with no real
+// processor in the loop. This gate runs the real AutoImageProcessor on a real image (testdata/qwen25vl_preprocess_image.png,
+// pre-sized so smart_resize is a no-op, isolating decoder-on-real-weights from resize/bicubic parity, which
+// pin_qwen25vl_preprocess.py pins separately) through the real vision encoder and the real text decoder. Fixture:
+// scripts/pin_qwen25vl_real.py.
 //
-// SCOPED TO THE PREFILL FORWARD ONLY — NOT GREEDY CONTINUATION. Every other real-checkpoint
-// gate in this session's finishing pass checks a multi-step greedy continuation using
-// m.forward(id, cache) for plain text tokens; decoding PAST an image block (m-RoPE position
-// continuation from the image grid's max position) is a genuinely different code path that no
-// existing Go test exercises yet. Building that here would risk conflating a new test
-// harness's own correctness with the checkpoint's — this gate proves the real vision
-// encoder + real decoder produce correct logits on the real weights, which is the claim that
-// matters for T3; continuation-after-image is a separate, unbuilt capability, not silently
-// assumed.
+// SCOPED TO THE PREFILL FORWARD ONLY, NOT GREEDY CONTINUATION. Decoding PAST an image block (m-RoPE position continuation
+// from the image grid's max position) is a different code path from plain-text m.forward(id, cache); building it here would
+// risk conflating a new harness's correctness with the checkpoint's. It is gated on the tiny fixture by
+// TestQwen25VL_imageParity and TestQwen25VL_generate, not on real weights.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen25VLReal -v -timeout 30m
 package decoder

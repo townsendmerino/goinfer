@@ -6,15 +6,11 @@ import (
 	"testing"
 )
 
-// The prefill half of the seam gate (resident_seam_test.go).
-//
-// WHY THIS EXISTS. The resident DECODE path being silently CPU-only was one bug class; the batched
-// PREFILL declining silently is the same class one layer down, and it shipped. `--backend cuda
-// --quant int8int8` builds a full resident decode path (ResidentActive is true, decode runs at 0.7×
-// int4 — everything looks healthy), but the batched prefill GEMV is int4-only, so every prompt takes
-// the sequential per-token loop instead of one weight-stationary pass: measured 1.73 s vs 0.19 s on a
-// 300-token prompt (9×), 4.56 vs 0.22 CPU-seconds (20×). generateInto's fallback discards the decline
-// error by design, so nothing — no log, no field, no error — said so.
+// The prefill half of the seam gate (resident_seam_test.go). A resident backend whose batched prefill declines silently is
+// the same bug class as a silently CPU-only resident decode, one layer down: everything looks healthy (ResidentActive is
+// true, decode runs fast) while every prompt takes the sequential per-token loop, and generateInto's fallback discards the
+// decline error by design, so nothing (no log, no field, no error) says so. `--backend cuda --quant int8int8` is the case:
+// its batched prefill GEMV is int4-only.
 //
 // These tests need no GPU: they fake residents that decline the way the CUDA backend declines.
 

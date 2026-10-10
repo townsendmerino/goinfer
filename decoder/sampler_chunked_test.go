@@ -9,17 +9,11 @@ import (
 
 // SAMPLER MICROBENCHMARKS IN THIS PACKAGE MAY NOT PRODUCE QUOTABLE FIGURES.
 //
-// They are a tool for deciding WHERE TO LOOK. No number they emit belongs in a doc, a queue item, a
-// commit message, or a comparison between two commits. This is a standing prohibition, not advice,
-// and it was earned twice in a single investigation (G26, 2026-08-27):
-//
-//   1. BenchmarkExpChunked's ~96 us was used to argue that "sampling is a low-single-digit
-//      percentage of per-token time, so no sampler change can move end-to-end by 5.9%." The real
-//      in-situ sampled tail is 703-950 us — 7-10x larger. The bound retired the correct hypothesis
-//      for two rounds.
-//   2. A whole-path Sampler.Sample benchmark reported HEAD 23% SLOWER at 152k vocab. Measured
-//      end-to-end on a 151936-vocab model, HEAD is 31% FASTER. Not a mis-scaled magnitude — an
-//      INVERTED SIGN, and it had already been filed as a finding before the end-to-end run.
+// They are a tool for deciding WHERE TO LOOK. No number they emit belongs in a doc, a queue item, a commit message, or a
+// comparison between two commits. This is a standing prohibition, not advice: twice in one investigation (G26) a
+// microbenchmark here contradicted the end-to-end measurement, once by 7-10x in magnitude (it retired the correct hypothesis
+// for two rounds) and once by an INVERTED SIGN (it reported HEAD slower where end-to-end HEAD is faster). Details:
+// docs/code-notes/decoder.md#sampler_chunked_test.header.
 //
 // WHY the loop lies here specifically: it keeps the vocab-sized scratch hot in cache and the
 // allocator warm in its free-list, whereas decode runs one draw per token behind an ~8 ms forward
@@ -220,10 +214,8 @@ func TestChunkedSoftmax_NaNFallsBack(t *testing.T) {
 	_ = s.sampleChunked(logits, 1.0, 0.5) // must not panic
 }
 
-// G26. The temp-only draw (no truncation) goes through sampleChunked, NOT topFilterLogits — so the
-// P10 benchmarks in sampler_selection_test.go measure the top_p path and say nothing about this one.
-// phi3-mini regressed 5.9% at temperature 1.0 while gaining 2.7% at temp+top_p, which is the split
-// those two paths would produce. P10 is the only functional change to this file since the anchor.
+// G26. The temp-only draw (no truncation) goes through sampleChunked, NOT topFilterLogits, so the P10 benchmarks in
+// sampler_selection_test.go measure the top_p path and say nothing about this one.
 //
 // Isolates the buffer: `out` fresh per call (pre-P10) against reused (post-P10).
 func benchExpChunked(b *testing.B, V int, reuse bool) {

@@ -13,18 +13,15 @@ import (
 //
 //	"rope_parameters": {"rope_theta": 10000.0, "rope_type": "default"}
 //
-// phi3 handled that (parseRopeFlat) and gemma3/mellum handle the per-attention-type nesting
-// (full_attention / sliding_attention). llama, mistral, qwen2 and qwen3 read ONLY the flat
-// field, so every one of them REJECTED such a checkpoint outright:
+// phi3 handled that (parseRopeFlat) and gemma3/mellum handle the per-attention-type nesting (full_attention /
+// sliding_attention), but llama, mistral, qwen2 and qwen3 read ONLY the flat field, so each REJECTED such a checkpoint
+// outright:
 //
 //	decoder(llama): rope_theta must be >0, got 0
 //
-// That is not a niche path — it is any Llama/Mistral/Qwen safetensors saved by a current
-// transformers. It was found by generating a tiny Mistral fixture with transformers 5.12 and
-// watching it fail to load, while the committed phi3-tiny (same transformers, same config
-// shape) loaded fine. Each arch has its own architecture func, which is exactly how one got
-// the fix and the others did not; the shared backfillFlatRope helper is the answer to that,
-// and this table is what stops the next single-base arch from re-opening it.
+// That is any Llama/Mistral/Qwen safetensors saved by a current transformers, not a niche path. Each arch has its own
+// architecture func, which is how one got the fix and the others did not; the shared backfillFlatRope helper is the answer
+// to that, and this table is what stops the next single-base arch from re-opening it.
 func TestRopeParameters_singleBaseArchs(t *testing.T) {
 	const theta = 12345.0
 	ropeParams, err := json.Marshal(map[string]any{"rope_theta": theta, "rope_type": "default"})

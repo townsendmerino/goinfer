@@ -11,24 +11,17 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// BenchmarkDecodeSerialVsParallel — S-09.1, the corrected A/B.
+// BenchmarkDecodeSerialVsParallel is S-09.1, the corrected A/B. The serial arm must be genuinely serial. BenchmarkDecode sets
+// only the PROCESS GLOBAL (linalg.SetParallelThreshold), but decode runs on a PER-WORKSPACE threshold that newDecodeScratch
+// installs on every scratch it builds (scratch.go: `ws := &linalg.Workspace{}; ws.SetThreshold(DefaultDecodeParallelThreshold)`),
+// so the global is overridden before the first token and GOINFER_PAR_THRESHOLD=<huge> does not make an arm serial. S-02's
+// premise ("serial ties parallel, so fork/join is net-neutral") rests on this comparison, so the serial arm sets the
+// per-workspace threshold.
 //
-// THE 2026-08-11 MEASUREMENT COMPARED TWO PARALLEL ARMS. BenchmarkDecode sets only the PROCESS
-// GLOBAL (linalg.SetParallelThreshold), but since 2026-08-01 decode runs on a PER-WORKSPACE
-// threshold that newDecodeScratch installs on every scratch it builds (scratch.go: `ws :=
-// &linalg.Workspace{}; ws.SetThreshold(DefaultDecodeParallelThreshold)`). The global is
-// therefore overridden before the first token, so GOINFER_PAR_THRESHOLD=<huge> did not make the
-// "serial" arm serial — and "serial 54.77 vs parallel 54.34 tok/s" was two parallel runs
-// differing by 0.8%, which is inside this box's noise.
-//
-// S-02's whole premise ("serial ties parallel, so fork/join is net-neutral") rests on that
-// number, so it has to be re-taken against a genuinely serial arm.
-//
-// SERIAL IS PROVEN, NOT ASSUMED. Setting the threshold is the same kind of act that failed last
-// time, so the arm also counts goroutine spawns: parallelSpawnCols starts one goroutine per
-// shard per matmul, so a real serial arm shows a flat goroutine count while a parallel one
-// spikes. The counter is sampled rather than instrumented because parallelSpawnCols is
-// unexported in aikit — but a flat maximum across thousands of matmuls is unambiguous.
+// SERIAL IS PROVEN, NOT ASSUMED. Setting the threshold is the same kind of act that failed before, so the arm also counts
+// goroutine spawns: parallelSpawnCols starts one goroutine per shard per matmul, so a real serial arm shows a flat goroutine
+// count while a parallel one spikes. The counter is sampled rather than instrumented because parallelSpawnCols is unexported in
+// aikit, but a flat maximum across thousands of matmuls is unambiguous.
 //
 //	go test -tags realckpt -run '^$' -bench BenchmarkDecodeSerialVsParallel -benchtime 300x ./decoder/
 func BenchmarkDecodeSerialVsParallel(b *testing.B) {

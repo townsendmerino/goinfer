@@ -120,17 +120,13 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 		t.Fatalf("new path decode: %v", err)
 	}
 
-	// The two bundles are NOT expected to be raw byte-identical: writeHeadGlobals
-	// gates the baked quantLabel field on data availability (B11, serialize.go:170-
-	// 185), not on which writer is in use. The old path fully materializes every
-	// layer before ever calling writeHeadGlobals (via SerializeWeights on an
-	// already-complete *Weights), so quantLabel() sees real tensor kinds and bakes
-	// "int4mix". The new path calls writeHeadGlobals on a freshly allocated,
-	// all-zero Layers slice BEFORE the first layer streams in — genuinely true
-	// streaming, exactly like every other already-streaming family — so
-	// hasPopulatedLayers() is false and the baked label is correctly left "" to be
-	// re-inferred at load time. That's the one designed difference; the gate below
-	// confirms it is the ONLY one and that both resolve to the same label once loaded.
+	// The two bundles are NOT expected to be raw byte-identical: writeHeadGlobals gates the baked quantLabel field on data
+	// availability (B11, writeHeadGlobals in serialize.go), not on which writer is in use. The old path fully materializes every
+	// layer before calling writeHeadGlobals (via SerializeWeights on an already-complete *Weights), so quantLabel() sees real
+	// tensor kinds and bakes "int4mix". The new path calls writeHeadGlobals on a freshly allocated, all-zero Layers slice BEFORE
+	// the first layer streams in (genuinely true streaming, like every other streaming family), so hasPopulatedLayers() is false
+	// and the baked label is correctly left "" to be re-inferred at load time. That is the one designed difference; the gate
+	// below confirms it is the ONLY one and that both resolve to the same label once loaded.
 	splitAtLabel := func(data []byte) (before []byte, label string, after []byte) {
 		r := &giwReader{data: data}
 		r.rawN(len(giwMagic))

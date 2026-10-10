@@ -15,23 +15,12 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestR9_decodeAttribution is docs/tasks/red-october.md R9, step 1, Mac half: the per-component
-// ms/token table step 1 asks for, using the already-shipped GOINFER_DECODE_TIMING diagnostic
-// (decoder/model.go's decodeTiming var — forward/sample/logitProc/embed, already split; this test
-// adds nothing new there) at the brief's own decision-cell depth (128), greedy, on 0.5B/1.5B/7B.
-//
-//	GOINFER_HEAVY_TESTS=1 GOINFER_DECODE_TIMING=1 go test -tags goinfer_testhooks ./decoder/ -run TestR9_decodeAttribution -v -timeout 20m
-//
-// TestR9_w4a8BatchAt7B is a follow-up to R-06 (docs/tasks/task-recompute-audit.md), which measured
-// GOINFER_W4A8_BATCH's fused q/k/v and gate/up matmuls on the 1.5B only (1.071x arm64/Metal,
-// 1.066x amd64/CPU -- both ambiguous, parked). R9 step 1's own finding (MLP's share of the token
-// grows with model size, largest at 7B) raises the natural follow-up: does R-06 behave differently
-// at 7B? w4a8BatchEnabled (decoder/weightmat.go) is a package-level var read once from
-// GOINFER_W4A8_BATCH at process start, so this test cannot toggle it mid-process -- it reports
-// this run's own mean/stdev over repeated decode windows (fresh KV cache each, same loaded model,
-// no reload between repeats) and is meant to be run TWICE, once per env setting, the results
-// compared by hand (or by a small script) rather than paired within one process. That is a real
-// limitation next to R-06's own interleaved design -- disclosed, not hidden -- see the record.
+// TestR9_w4a8BatchAt7B asks whether R-06 (docs/tasks/task-recompute-audit.md: GOINFER_W4A8_BATCH's fused q/k/v and
+// gate/up matmuls, measured on the 1.5B only, ambiguous and parked) behaves differently at 7B, where the MLP's share of the
+// token is largest. w4a8BatchEnabled (decoder/weightmat.go) is a package-level var read once from GOINFER_W4A8_BATCH at
+// process start, so this test cannot toggle it mid-process: it reports this run's own mean/stdev over repeated decode windows
+// (fresh KV cache each, same loaded model, no reload between repeats) and is run TWICE, once per env setting, the results
+// compared by hand. That is a real limitation next to R-06's own interleaved design; see the record.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_DECODE_TIMING=1 GOINFER_NO_FIT_GUARD=1 GOINFER_W4A8_BATCH=0 go test -tags goinfer_testhooks ./decoder/ -run TestR9_w4a8BatchAt7B -v -timeout 20m
 //	GOINFER_HEAVY_TESTS=1 GOINFER_DECODE_TIMING=1 GOINFER_NO_FIT_GUARD=1 GOINFER_W4A8_BATCH=1 go test -tags goinfer_testhooks ./decoder/ -run TestR9_w4a8BatchAt7B -v -timeout 20m
@@ -81,6 +70,12 @@ func TestR9_w4a8BatchAt7B(t *testing.T) {
 	}
 }
 
+// TestR9_decodeAttribution is docs/tasks/red-october.md R9, step 1, Mac half: the per-component
+// ms/token table step 1 asks for, using the already-shipped GOINFER_DECODE_TIMING diagnostic
+// (decoder/model.go's decodeTiming var — forward/sample/logitProc/embed, already split; this test
+// adds nothing new there) at the brief's own decision-cell depth (128), greedy, on 0.5B/1.5B/7B.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_DECODE_TIMING=1 go test -tags goinfer_testhooks ./decoder/ -run TestR9_decodeAttribution -v -timeout 20m
 func TestR9_decodeAttribution(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU)")
@@ -144,15 +139,12 @@ func TestR9_decodeAttribution(t *testing.T) {
 	}
 }
 
-// TestR9_parWidthSweep is R9 step 1's fan-out-shape reading on the Linux box: the same decode
-// window at matmul fan-out widths 1 / 2 / 4 / 8 / 16 (linalg.SetParallelWidth, numerically inert
-// by contract — every output column is still computed whole by one worker), on one loaded model,
-// widths interleaved so drift cannot pose as a curve. The serial (width 1) time is the compute
-// floor; the gap between width 8 and 16 on an 8-core/16-thread part is the SMT contribution; the
-// shortfall of width-8 against serial/8 is what the fork/join and imbalance cost. The attention
-// head fan-out is NOT swept (decoder/scratch.go's maxAttnWorkers is a compile-time 6).
-//
-//	GOINFER_HEAVY_TESTS=1 GOINFER_DECODE_TIMING=1 go test ./decoder/ -run TestR9_parWidthSweep -v
+// TestR9_parWidthSweep is R9 step 1's fan-out-shape reading on the Linux box: the same decode window at matmul fan-out
+// widths 1 / 2 / 4 / 8 / 16 (linalg.SetParallelWidth, numerically inert by contract: every output column is still computed
+// whole by one worker), on one loaded model, widths interleaved so drift cannot pose as a curve. The serial (width 1) time is
+// the compute floor; the gap between width 8 and 16 on an 8-core/16-thread part is the SMT contribution; the shortfall of
+// width 8 against serial/8 is the fork/join and imbalance cost. The attention head fan-out is NOT swept (maxAttnWorkers in
+// scratch.go is a compile-time constant).
 func TestR9_parWidthSweep(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU)")

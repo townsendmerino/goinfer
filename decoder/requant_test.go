@@ -10,28 +10,23 @@ import (
 
 // TestRequantBar_DoubleQuantCost measures what Metal's DOUBLE quantization costs, per model.
 //
-// Metal's BuildResident cannot consume the decoder's int4 — it requires an int8 load and
-// re-quantizes to its own W4A8, so a weight travels f32 → int8 (per-row, scale=max|row|/127)
-// → int4 (group-32, scale=maxabs/7). CUDA and WebGPU upload the decoder's int4 byte-identically
-// and pay the int4 step ONCE. That asymmetry has always been known; what was never measured is
-// whether it MATTERS, and the assumption was that it is a rounding detail.
+// Metal's BuildResident cannot consume the decoder's int4: it requires an int8 load and re-quantizes to its own W4A8, so a
+// weight travels f32 → int8 (per-row, scale=max|row|/127) → int4 (group-32, scale=maxabs/7). CUDA and WebGPU upload the
+// decoder's int4 byte-identically and pay the int4 step ONCE.
 //
-// It should not be a detail for a model with high per-row dynamic range, and the mechanism is
-// specific: the int8 step's scale is set by the row's LARGEST element. A group whose own maxabs
-// is far below the row max therefore lands on only a handful of int8 levels BEFORE int4 ever
-// sees it — the group scale then spreads 15 int4 levels over a signal already crushed to 3 or 4.
-// Where a row is flat (row max ≈ group max) the int8 grid is finer than the int4 one everywhere
-// and the first step is nearly free. So the cost is a property of the WEIGHTS, not the kernel,
-// and it predicts exactly the split measured on Metal: gemma3 loses 0.104 of logit cosine
-// against its own CPU-int4 twin while the qwen control loses nothing.
+// The cost is a property of the WEIGHTS, not the kernel: the int8 step's scale is set by the row's LARGEST element, so a group
+// whose own maxabs is far below the row max lands on only a handful of int8 levels BEFORE int4 ever sees it, and the group
+// scale then spreads 15 int4 levels over a signal already crushed to 3 or 4. Where a row is flat (row max ≈ group max) the int8
+// grid is finer than the int4 one everywhere and the first step is nearly free. It predicts the gemma3-vs-qwen split seen in
+// Metal parity.
 //
 // Two errors are compared against the same reference (the int8 row — what Metal actually gets):
 //
 //	direct: dequant4(decoder's own int4)      -- one quantization, what CUDA/WebGPU ship
 //	metal:  dequant4(quant4(dequant8(int8)))  -- two, what Metal ships
 //
-// If the double step is benign, they match. If metal >> direct on gemma and not on the control,
-// the parity gap has a mechanism and a fix, and it is not a kernel bug.
+// If the double step is benign, they match. If metal >> direct on a high-range model and not on a flat control, the parity
+// gap has a mechanism and a fix, and it is not a kernel bug.
 func TestRequantBar_DoubleQuantCost(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {

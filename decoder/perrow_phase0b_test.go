@@ -9,15 +9,13 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPerRowScalePhase0b is §7's OUTPUT-quality gate — the follow-up Phase 0 (weight-space, 1.24×
-// rel-error for per-row symmse) opened: does that 1.24× translate to real forward degradation, or is
-// it benign like nemotron int4? It teacher-forces a real prose+code sample through three builds of the
-// SAME model and compares each to the f32 oracle: (1) f32 (oracle), (2) per-group sym int4 (≈ shipped),
-// (3) per-row symmse int4 (the §7 fork, no rotation). Metrics per build vs oracle: top-1 agreement,
-// mean KL(oracle‖build), and perplexity. The decision: if per-row's degradation over the oracle is
-// close to per-group's, the fork is output-benign and the tensor-core/decode-stream payoff (§7) is
-// reachable with a scale search + parity refresh — no rotation. If per-row is markedly worse, rotation
-// (last-resort) is back on the table. No kernel; CPU forwards via forwardN.
+// TestPerRowScalePhase0b is §7's OUTPUT-quality gate, the follow-up to the weight-space Phase 0: does the weight-space
+// error of per-row symmse int4 translate to real forward degradation, or is it benign like nemotron int4? It
+// teacher-forces a real prose+code sample through three builds of the SAME model and compares each to the f32 oracle:
+// (1) f32 (oracle), (2) per-group sym int4 (about the shipped scheme), (3) per-row symmse int4 (the §7 fork, no
+// rotation). Metrics per build vs oracle: top-1 agreement, mean KL(oracle‖build), and perplexity. The decision: if
+// per-row's degradation over the oracle is close to per-group's, the fork is output-benign; if markedly worse, rotation
+// is back on the table. No kernel; CPU forwards via forwardN. Result: docs/ollama-chase.md (Phase 0b).
 //
 //	GOINFER_PERROW_PHASE0B=1 go test -run TestPerRowScalePhase0b -v -timeout 30m ./decoder/
 func TestPerRowScalePhase0b(t *testing.T) {

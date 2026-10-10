@@ -1,18 +1,12 @@
 //go:build realckpt
 
-// Cheap loader-vs-quant disambiguator (no full-model forward, no 60-min oracle).
-// The bf16-golden gate (qwen35_gguf_gate_test.go) failed by a hair (argmax 68/80,
-// cosine 0.99445 vs the 74 / 0.99466 bars), with the divergences being rank-2
-// near-ties. That's the signature of quant noise at the threshold, NOT a cratered
-// loader — but the bf16 gate can't prove it. This does: it loads only the first 4
-// layers of BOTH containers at f32 (the existing loadQwen35Slice for safetensors,
-// a sibling for the GGUF) and diffs every TRANSFORM-bearing tensor directly —
-// the V-head un-tile, the q‖gate fused q_proj, the −exp(A_log) bake, the norm(+1)
-// un-bake. The safetensors loader is Gate-1 bit-exact vs HF, so it is the
-// reference. A correct GGUF loader ⇒ each tensor matches to the Q8_0-vs-bf16
-// dequant delta (cosine ≳ 0.9995); a transform bug ⇒ that one tensor's cosine
-// craters, pinpointing it. Slice 0–3 spans both layer kinds (DeltaNet 0,1,2 +
-// softmax 3).
+// Cheap loader-vs-quant disambiguator (no full-model forward, no 60-min oracle). The bf16-golden gate
+// (qwen35_gguf_gate_test.go) cannot prove that its small misses are quant noise rather than a cratered loader; this does: it
+// loads only the first 4 layers of BOTH containers at f32 (the existing loadQwen35Slice for safetensors, a sibling for the
+// GGUF) and diffs every TRANSFORM-bearing tensor directly: the V-head un-tile, the q‖gate fused q_proj, the −exp(A_log) bake,
+// the norm(+1) un-bake. The safetensors loader is Gate-1 bit-exact vs HF, so it is the reference. A correct GGUF loader ⇒
+// each tensor matches to the Q8_0-vs-bf16 dequant delta (cosine ≳ 0.9995); a transform bug ⇒ that one tensor's cosine
+// craters, pinpointing it. Slice 0–3 spans both layer kinds (DeltaNet 0,1,2 + softmax 3).
 //
 //	GOINFER_QWEN35_REAL=~/models/qwen3.6-35b-a3b \
 //	GOINFER_QWEN35_GGUF=~/models/qwen3.6-35b-a3b-Q8_0.gguf \
@@ -130,18 +124,12 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 		lr, lg := &wRef.Layers[i], &gW.Layers[i]
 		check("attn_norm", lg.PreAttnNorm, lr.PreAttnNorm)
 		check("post_attention_norm", lg.PreMLPNorm, lr.PreMLPNorm)
-		// THE ROUTER, added 2026-08-18 and the reason is worth keeping. This probe was written to
-		// disambiguate loader-vs-quant for the oracle's cosine gap and it checked every
-		// transform-bearing tensor EXCEPT the one that decides which experts run. Then the
-		// mechanism experiment (qwen35_gguf_routeflip_test.go) measured routing directly and found
-		// the two containers choosing DIFFERENT top-8 sets in 779 of 3200 (step,layer) pairs — 79
-		// of 80 steps affected. Pervasive routing divergence with an undiffed router is exactly
-		// where a real loader defect could still hide, so the blind spot gets closed here.
-		//
-		// Both loaders keep the router at f32 on purpose ("the router is logit-critical", no
-		// quant), so this is a straight comparison: agreement at the same ~0.0057 Q8_0 floor as
-		// every other tensor means the flips are quant noise on near-tied experts; anything worse
-		// means the router itself is mis-read and the flips are a defect.
+		// THE ROUTER is compared because it decides which experts run, and pervasive routing divergence with an undiffed router is
+		// where a real loader defect could hide (the routing-flip experiment, qwen35_gguf_routeflip_test.go, found the two
+		// containers choosing different top-8 sets in many (step,layer) pairs). Both loaders keep the router at f32 on purpose ("the
+		// router is logit-critical", no quant), so this is a straight comparison: agreement at the same Q8_0 floor as every other
+		// tensor means the flips are quant noise on near-tied experts; anything worse means the router itself is mis-read and the
+		// flips are a defect.
 		if lr.Router.Rows() > 0 || lg.Router.Rows() > 0 {
 			check("router(mlp.gate)", wmDense(t, "router", &lg.Router), wmDense(t, "router", &lr.Router))
 		}
@@ -182,21 +170,12 @@ func layerKind(arch *Architecture, i int) string {
 	return "softmax"
 }
 
-// wmF32 exposes a WeightMat's values as f32 for comparison. The router is loaded unquantized by
-// both paths, so this is a read rather than a dequant; it fails loudly if that ever changes,
-// because comparing a quantized router against an f32 one would manufacture a difference this
-// probe would report as a loader bug.
-// wmDense reconstructs w as dense f32 whatever precision it is stored in.
+// wmDense reconstructs w as dense f32 whatever precision it is stored in. name labels the tensor in the failure message
+// (t.Helper() reports the caller's line, so the helper cannot know which tensor it was given).
 //
-// It used to be an f32-ONLY accessor whose failure message hardcoded "router". That held
-// until `6d4fc79` made the qwen35 projections honour Options.Quant, after which this gate
-// died on a PRECONDITION instead of a measurement — and blamed the wrong tensor while doing
-// it, because t.Helper() reports the caller's line but the message named a tensor the helper
-// knew nothing about. The tensor name is now a parameter for that reason.
-//
-// Dequantizing is sound for this probe: both sides run through the SAME quantizer from the
-// same source values, so a real transform bug (wrong un-tile, q‖gate, un-bake) still craters
-// cosine. Only the noise floor moves, and it moves for both columns equally.
+// Dequantizing is sound for this probe: both sides run through the SAME quantizer from the same source values, so a real
+// transform bug (wrong un-tile, q‖gate, un-bake) still craters cosine. Only the noise floor moves, and it moves for both
+// columns equally.
 func wmDense(t *testing.T, name string, w *linalg.WeightMat) []float32 {
 	t.Helper()
 	if f, ok := w.F32(); ok {

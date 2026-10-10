@@ -1,27 +1,22 @@
 //go:build realckpt
 
-// DOES A ROUTER FLIP EXPLAIN THE DIP? — the mechanism experiment for B13's last standing red.
+// DOES A ROUTER FLIP EXPLAIN THE DIP? The mechanism experiment for B13's last standing red. TestQwen35GGUF_vsSafetensors
+// reports a min cosine far below its mean at one step and once called it a loader bug. Two probes contradict that:
+// weightDiff finds every transform-bearing tensor bit-exact or at a uniform Q8_0 floor, and locateDivergence finds a smooth,
+// NON-MONOTONIC decay across all layers with no step (a localized defect cannot recover). That leaves "a ~0.5% weight delta
+// flips borderline top-k router choices at a few positions" as an INFERENCE about the outlier steps. This test measures it.
 //
-// The state of the argument before this test. TestQwen35GGUF_vsSafetensors reports min cosine
-// 0.987835 at step 63 against a mean of 0.998114 and calls it a loader bug. Two probes contradict
-// that label: weightDiff finds every transform-bearing tensor bit-exact or at a uniform
-// relL2 ~0.0057 Q8_0 floor, and locateDivergence finds a smooth, NON-MONOTONIC decay across all 40
-// layers with no step (a localized defect cannot recover, and that curve recovers repeatedly).
-// From those two, "a ~0.5% weight delta flips borderline top-k router choices at a few positions"
-// is an INFERENCE about the outlier steps. This test measures it instead.
-//
-// THE PREDICTION, stated before the run so it can fail. Both containers are teacher-forced through
-// the same 80 steps; every moeMLP call's top-k selection is recorded on each side (moeSelTrace, the
-// existing seam). If routing flips are the mechanism:
+// THE PREDICTION, stated before the run so it can fail. Both containers are teacher-forced through the same 80 steps; every
+// moeMLP call's top-k selection is recorded on each side (moeSelTrace, the existing seam). If routing flips are the
+// mechanism:
 //
 //  1. the steps with the LOWEST logit cosine carry the MOST flipped layers, and
-//  2. step 63 — the 0.987835 outlier — is at or near the top of the flip ranking, and
-//  3. the great majority of steps have ZERO flips (which is why the mean sits at 0.998).
+//  2. the outlier step (63) is at or near the top of the flip ranking, and
+//  3. the great majority of steps have ZERO flips (which is why the mean sits near 0.998).
 //
-// If instead flips are spread evenly across steps, or step 63 has none, the near-tie story is
-// WRONG and the dip needs another explanation — which is a real finding, not a failed test. So
-// this asserts only what any story must satisfy (the two runs are comparable) and prints the
-// correlation for the recorded decision.
+// If instead flips are spread evenly across steps, or step 63 has none, the near-tie story is WRONG and the dip needs another
+// explanation, which is a real finding, not a failed test. So this asserts only what any story must satisfy (the two runs are
+// comparable) and prints the correlation for the recorded decision.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen35GGUF_routeFlip -v -timeout 120m
 package decoder
@@ -39,17 +34,13 @@ import (
 
 func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 	requireHeavyModel(t)
-	// DIAGNOSTIC, NOT A GATE — and it must not sit in the release sweep's path (2026-08-19).
-	// the parity sweep's realckpt cell runs `-run 'Qwen35|Real_gate'` under a 120m timeout, and this
-	// test's name matches. On the v0.14.0 prep sweep the two B13 diagnostics together burned ~41
-	// minutes of that budget and the run TIMED OUT inside this one — which pushed
-	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run entirely. A gate
-	// that DID NOT RUN is a blocker by the sweep's own rule, so an instrument that asserts almost
-	// nothing took a real gate down with it.
+	// DIAGNOSTIC, NOT A GATE, and it must not sit in the release sweep's path: the parity sweep's realckpt cell runs `-run
+	// 'Qwen35|Real_gate'` under a 120m timeout and this test's name matches. A timeout inside this one pushes
+	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run, and a gate that DID NOT RUN is a blocker by
+	// the sweep's own rule.
 	//
-	// Gated by env rather than renamed on purpose: Go's -run matches substrings, so excluding it by
-	// name would mean stripping "Qwen35" from a qwen3.5 test — worse discoverability to work around
-	// a scheduling problem. This way the name stays, and the sweep reports an honest SKIP.
+	// Gated by env rather than renamed on purpose: -run matches substrings, so excluding it by name would mean stripping "Qwen35"
+	// from a qwen3.5 test. This way the name stays, and the sweep reports an honest SKIP.
 	if os.Getenv("GOINFER_DIAG") == "" {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only what " +
 			"holds under either story. Not a gate — see B13 in docs/queue-release.md")

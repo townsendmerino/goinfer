@@ -37,10 +37,9 @@ func TestQwen35GGUF_gate(t *testing.T) {
 	// Bound the load fan-out as in Gate 2 (each in-flight layer briefly holds the
 	// fused experts) — but here from a 37 GB Q8_0, streaming-quant to int8 resident.
 	prev := runtime.GOMAXPROCS(2)
-	// The fit guard is bypassed for this model only. This gate checks the LOADER's parity, not memory planning, and
-	// the guard now prices the 37 GB mapped checkpoint as resident for the whole load (79.5 GB needed against a 35.9 GB
-	// budget on nobara-pc's 62 GB, 2026-09-30), which refused a load this box completed in the v0.19.0 sweep: the
-	// mapping is page cache, not anonymous memory. requireHeavyModel keeps it to the box that holds it.
+	// The fit guard is bypassed for this model only. This gate checks the LOADER's parity, not memory planning, and the guard
+	// prices the 37 GB mapped checkpoint as resident for the whole load, which refuses a load this box completes: the mapping is
+	// page cache, not anonymous memory. requireHeavyModel keeps it to the box that holds it.
 	m, err := Load(gguf, Options{Quant: "int8int8", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
 	runtime.GOMAXPROCS(prev)
 	if err != nil {
@@ -151,40 +150,21 @@ func TestQwen35GGUF_gate(t *testing.T) {
 	if maxDivFrac > 0.03 {
 		t.Errorf("an argmax divergence has gap %.4f of logit range (>3%%) — not a near-tie; loader bug", maxDivFrac)
 	}
-	// Coherence-vs-bf16 bar. The GGUF path legitimately carries MORE quant error
-	// than Gate 2 (Q8_0→int8 double-quant vs a single bf16→int8 step), so it sits
-	// just under Gate-2's 74/80 + 0.99466: one box measured argmax 68/80, cosine min
-	// 0.99445, the two misses being rank-2 near-ties (gap ~0.003 of logit range).
+	// Coherence-vs-bf16 bar. The GGUF path legitimately carries MORE quant error than Gate 2 (Q8_0→int8 double-quant vs a single
+	// bf16→int8 step), so it sits just under Gate 2's bar.
 	//
-	// The min-cosine value is BOX-SENSITIVE: the Q8_0 dequant→forward runs through
-	// SIMD/FMA whose reduction order differs across CPUs, so the worst-position cosine
-	// varies by ~0.0015 between machines with no code change. The v0.10.0 release box
-	// (Linux RTX-2070) measures argmax 69/80, cosine min 0.99298 — and a bisect confirmed
-	// v0.9.2 produces the IDENTICAL 0.99298 there (i.e. NOT a regression; the 0.99445
-	// above was a different machine). So the min-cosine floor is set below the lower
-	// observed machine with margin; the REAL loader-defect detectors are the guards
-	// ABOVE — minCos<0.98 (a bug craters well past this), the near-tie requirement
-	// (maxDivFrac>0.03), and argmax<66 — none of which are box-sensitive.
+	// The min-cosine value is BOX-SENSITIVE: the Q8_0 dequant→forward runs through SIMD/FMA whose reduction order differs across
+	// CPUs, so the worst-position cosine varies by ~0.0015 between machines with no code change. The min-cosine floor is
+	// therefore set below the lowest observed machine with margin; the REAL loader-defect detectors are the guards ABOVE
+	// (minCos<0.98, the near-tie requirement maxDivFrac>0.03, argmax<66), none of which is box-sensitive.
 	if argmaxHits < 66 {
 		t.Errorf("argmax %d/80 < 66 — below the GGUF Q8_0 coherence floor", argmaxHits)
 	}
-	// RE-BASELINED 2026-08-22 for v0.15.0. The 0.992 min floor was set at 2583a2b and
-	// never revisited; `6d4fc79` ("qwen35 family: quantize the projections that were f32
-	// at every quant") crossed it. That commit is a DELIBERATE bandwidth trade — 1.60x
-	// decode, 7.4x TTFT — and it re-baked its SIBLING gate (TestQwen35Real_gate2FullModel,
-	// int8-vs-bf16, floor ≥0.98: 0.99333 -> 0.99069) while this one was missed. Bisected
-	// on this box at `5bcaf53`, adjacent pair, same toolchain both sides; the Go 1.27 bump
-	// was the obvious suspect and is REFUTED (bit-identical 0.98740 at go 1.26.6 and 1.27.0):
-	//
-	//	33879dd (parent)  argmax 69/80  min 0.99298  mean 0.99846   PASS
-	//	6d4fc79           argmax 68/80  min 0.98740  mean 0.99608   FAIL vs 0.992
-	//
-	// The MEAN now carries the systematic-drift duty and the min only catches catastrophic
-	// single steps — the same split TestQwen35GGUF_vsSafetensors was resolved to, and for
-	// the same reason: min is box-sensitive here (~0.0015 across CPUs, per the note above)
-	// so it cannot also police drift. Both bars sit below the measured value with margin
-	// rather than at it; nudging a floor to just-clear the observation is how a real
-	// regression gets blessed, which is the standard 6d4fc79's own message set.
+	// The MEAN carries the systematic-drift duty and the min only catches catastrophic single steps: the same split
+	// TestQwen35GGUF_vsSafetensors was resolved to, and for the same reason: min is box-sensitive here (~0.0015 across CPUs) so
+	// it cannot also police drift. Both bars sit below the measured value with margin rather than at it: nudging a floor to
+	// just-clear the observation is how a real regression gets blessed. A deliberate quantisation change that moves one of these
+	// two gates must re-bake its sibling, TestQwen35Real_gate2FullModel, in the same change.
 	if minCos < 0.985 {
 		t.Errorf("min cosine %.5f < 0.985 — below the GGUF Q8_0 coherence floor", minCos)
 	}

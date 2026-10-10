@@ -9,26 +9,12 @@ import (
 	"time"
 )
 
-// Re-measure benchmarks.md §A's ABSOLUTE CPU prefill table.
+// Re-measure the ABSOLUTE CPU prefill table of docs/benchmarks.md §A: dense 1.5B `int8int8`, prefill + 1 token, at prompt
+// lengths 170, 620, 1520 and 3020.
 //
-// The recorded cells are dense 1.5B `int8int8`, prefill + 1 token, on an M1 Pro:
-//
-//	170 tok    3.3 s   (51.5 tok/s)
-//	620 tok   19.7 s
-//	1520 tok  93.2 s
-//	3020 tok 334.9 s   (9.0 tok/s)
-//
-// They predate FOUR changes that landed 2026-09-01 — the f32 prefill default,
-// A3's head fan-out (1.92× @K=4096), P18's expert-major MoE prefill (4.36×, MoE
-// only, so inert for this dense model), and P19's fused schedule (+8%). The page
-// was marked stale rather than guessed at; this produces the replacement.
-//
-// CONFIGURATION IS MATCHED TO THE ORIGINAL ON PURPOSE: same model class, same
-// quant, same prompt lengths, same "prefill + 1 token" quantity. A re-measurement
-// that quietly changes the cell definition is not a re-measurement.
-//
-// Best-of-3 rather than the original's single shot — an improvement to the
-// method, stated so the two are not read as identically obtained.
+// CONFIGURATION IS MATCHED TO THE ORIGINAL ON PURPOSE: same model class, same quant, same prompt lengths, same "prefill + 1
+// token" quantity. A re-measurement that quietly changes the cell definition is not a re-measurement. Best-of-3 rather than
+// the original's single shot is a method improvement, stated so the two are not read as identically obtained.
 func TestPrefillAbsoluteTable(t *testing.T) {
 	if os.Getenv("GOINFER_PREFILL_ABS") == "" {
 		t.Skip("set GOINFER_PREFILL_ABS=1 (loads a 1.5B model, ~15 min)")

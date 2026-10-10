@@ -1,12 +1,10 @@
 //go:build realckpt
 
-// REAL-WEIGHT layer-slice oracle for Qwen3-Next — the T3 the macbook's Phase 0/1 left
-// open and tagged `linux`.
+// REAL-WEIGHT layer-slice oracle for Qwen3-Next (the full-model oracle is qwen3next_oracle_test.go).
 //
-// WHY A SLICE. Qwen3-Next-80B-A3B is 163GB in bf16; a full reference forward does not fit
-// in 62GB, so full-model T3 is not available on this box. A slice keeps the part that
-// matters — REAL trained weights with their real routing distributions and real DeltaNet
-// state dynamics — and drops only depth.
+// WHY A SLICE. Qwen3-Next-80B-A3B is 163GB in bf16 and a full co-resident reference forward does not fit in 62GB. A slice
+// keeps the part that matters, REAL trained weights with their real routing distributions and real DeltaNet state dynamics,
+// and drops only depth.
 //
 // WHY FOUR LAYERS, EXACTLY. `full_attention_interval: 4` makes layer i full-attention when
 // (i+1)%4 == 0, so layers 0-2 are Gated DeltaNet and layer 3 is full attention. Four is the
@@ -18,9 +16,8 @@
 //
 // WHAT THIS COVERS THAT THE TINY GOLDEN CANNOT. The tiny fixture is random-init, where the
 // 512-expert top-10 router is near-uniform and the DeltaNet recurrent state stays small.
-// Real weights give peaked routing and real state magnitudes. It also exercises the
-// checkpoint-layout delta the macbook flagged — the FUSED DeltaNet input projections
-// (in_proj_qkvz / in_proj_ba) split at load — against tensors that actually ship fused.
+// Real weights give peaked routing and real state magnitudes. It also exercises the checkpoint-layout delta, the FUSED
+// DeltaNet input projections (in_proj_qkvz / in_proj_ba) split at load, against tensors that actually ship fused.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen3NextSlice -v
 package decoder

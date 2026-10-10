@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G-31a2 of docs/tasks/task-multimodal-support-2026-10.md ("Gemma 4 31B on nobara ... G-31a", registered before this code): how well a checkpoint's int4 CPU decode agrees with its OWN
+// G-31a2 of docs/tasks/task-multimodal-support-2026-10.md ("Gemma 4 31B on nobara ... G-31a"): how well a checkpoint's int4 CPU decode agrees with its OWN
 // int8int8 CPU decode. 12 fixed chat prompts go through the checkpoint's real chat template (quantisation is judged only through the template); the int8int8 arm decodes up to 32 greedy tokens
 // per prompt (stopping at a stop token), recording its path and, at every step, the margin between its top-1 and top-2 probabilities; the int4 arm is then teacher-forced along that path. The statistic is
 // the fraction of positions where the int4 argmax equals the int8int8 argmax; every logit must be finite. The arms are loaded one after the other, never together (the 31B's int8int8 arm is 31 GB).

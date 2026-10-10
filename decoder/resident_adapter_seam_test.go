@@ -30,14 +30,11 @@ import (
 // lastBind is NOT cleared by SetAdapter(nil) — a clear call is recorded via clears/boundNow so
 // tests can inspect what was bound even after generation has cleared it.
 //
-// It also implements Prefiller (PrefillLast) — audit C-01/G-06 (09-10): the real CUDA/Metal
-// batched-prefill launch reads no adapter state at all, so it is not "the adapter's math done a
-// different way" but a SEPARATE, adapter-blind path. Giving the fake the same shape (increments
-// prefillCalls, otherwise identical to a per-token Forward loop) makes TestSeam_AdapterSession
-// BindsAndClearsResidentAdapter's ≥8-token prompt able to actually reach it if
-// residentPrefillSeed's hasAdapter guard were ever dropped — before this, the fake had no
-// Prefiller method at all, so the 3-token prompt below the batching floor and the missing
-// interface made the gate blind to C-01 by construction (G-06's own finding).
+// It also implements Prefiller (PrefillLast): the real CUDA/Metal batched-prefill launch reads no adapter state at all, so it
+// is a SEPARATE, adapter-blind path. Giving the fake the same shape (increments prefillCalls, otherwise identical to a
+// per-token Forward loop) lets TestSeam_AdapterSessionBindsAndClearsResidentAdapter's >=8-token prompt actually reach it if
+// residentPrefillSeed's hasAdapter guard were ever dropped; a fake with no Prefiller method leaves the gate blind to that by
+// construction.
 type fakeResidentAdapter struct {
 	*fakeResident
 	fail bool
