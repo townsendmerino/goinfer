@@ -229,9 +229,10 @@ func TestSiglipCUDA_real(t *testing.T) {
 	}
 }
 
-// TestSiglipCUDA_int8VsFloat32 is G-S3d's feature half (the S4 addendum): the shipped default's tower, the W8A8 *cuda.VisionEncoder on an int8-loaded encoder, against the
-// float32 CPU tower on the four F2a images: relative L2 and worst / mean per-token cosine, to set beside docs/measurements/siglip-int8-fidelity-2026-10-07.md (relative L2 0.16-0.52,
-// worst token 0.01-0.17). A record, not a gate: it asserts only that the int8 tower is what attached. Heavy.
+// TestSiglipCUDA_int8VsFloat32 is G-S3d's feature half (the S4 addendum): the shipped default's tower, the W8A8
+// *cuda.VisionEncoder on an int8-loaded encoder, against the float32 CPU tower on the four F2a images: relative L2 and worst
+// / mean per-token cosine, to set beside docs/measurements/siglip-int8-fidelity-2026-10-07.md. A record, not a gate: it
+// asserts only that the int8 tower is what attached. Heavy.
 func TestSiglipCUDA_int8VsFloat32(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower twice)")
@@ -408,7 +409,7 @@ func TestSiglipCUDA_int8VRAM(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[S18 int8 tower VRAM] free before %.0f MiB, after attach %.0f MiB (tower holds %.0f MiB), after one forward %.0f MiB (%.0f MiB held in all)\n", f0, f1, f0-f1, f2, f0-f2)
 }
 
-// TestSiglipCUDA_fusedAttentionKernelDefectsReal: S17 lever A's kernel defects at real size, on the SigLIP tower (head dim 72, 4096 patches, 27 layers): each alone drops the worst token cosine under the bar.
+// TestSiglipCUDA_fusedAttentionKernelDefectsReal: S17 lever A's kernel defects at real size, on the SigLIP tower (head dim 72, 4096 patches, 27 layers): defects 1 and 3 each alone drop the worst token cosine under the bar; defect 2 (one zero-score zero-value key, 1/4097 of the weight over 4096 keys) is invisible at real size, so it is logged, not asserted.
 func TestSiglipCUDA_fusedAttentionKernelDefectsReal(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")

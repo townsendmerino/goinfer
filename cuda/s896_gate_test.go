@@ -22,7 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestS896_gateDump is G-S10k's Go half (docs/tasks/task-multimodal-support-2026-10.md, "G-S10k", registered before this code): 4 images x the 16 pinned prompts (scripts/s896_prompts.json), each
+// TestS896_gateDump is G-S10k's Go half (docs/tasks/task-multimodal-support-2026-10.md, "G-S10k"): 4 images x the 16 pinned prompts (scripts/s896_prompts.json), each
 // unit run through serve's configuration (loadflags Options, the CUDA tower's features and sets, context 2048; G-S10j round 3's instrument) and dumped as float32 logits at 4 positions (the prefill's
 // last row and 3 teacher-forced steps):
 //   - "off": the CPU prefill with the sets, then the upload (the production path), at whatever CPU attention the run's knobs say (run 1: serve's fast kernel = OFF; run 2: GOINFER_CPU_FAST_ATTENTION=0 = OFFX);

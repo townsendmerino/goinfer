@@ -12,23 +12,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestThetaProbe_CUDA measures Theta — the marginal cost of one extra verify node,
-// in units of one single-token target step — on the cgo-free CUDA resident path.
+// TestThetaProbe_CUDA measures Theta, the marginal cost of one extra verify node in units of one single-token target step,
+// on the cgo-free CUDA resident path.
 //
-// WHY THIS EXISTS. decoder/spec_adaptive.go says Theta "is the relative cost of one
-// extra verify node on *this backend* — measure it", ships 0.5 as the batched-CPU
-// value, and nothing has ever measured it on a GPU backend. The resident path
-// therefore runs the adaptive depth controller on a CPU constant. The error is in
-// the conservative direction (it under-drafts), so it costs throughput rather than
-// correctness — but on a verify that streams the weights ONCE for the whole block,
-// the marginal node should be far cheaper than half a step, and the controller is
-// plausibly drafting several times shallower than it should.
+// WHY THIS EXISTS. decoder/spec_adaptive.go says Theta "is the relative cost of one extra verify node on *this backend* —
+// measure it" and ships 0.5 as the batched-CPU value. A Theta too high under-drafts (it costs throughput, not
+// correctness), and on a verify that streams the weights ONCE for the whole block the marginal node should be far cheaper
+// than half a step, so the value is measured per backend rather than inherited from the CPU.
 //
-// METHOD, identical to the CPU control in decoder/theta_probe_test.go so the two
-// numbers are comparable: seed a context of `depth` positions, then time ForwardN
-// over n tokens for a ladder of n, truncating back to `depth` between every call.
-// Theta = (least-squares slope of T(n)) / T(1). The CPU control reproduced 0.456 at
-// depth 128 against the documented ~0.5, which is what licenses trusting this one.
+// METHOD, identical to the CPU control in decoder/theta_probe_test.go so the two numbers are comparable: seed a context of
+// `depth` positions, then time ForwardN over n tokens for a ladder of n, truncating back to `depth` between every call.
+// Theta = (least-squares slope of T(n)) / T(1). The CPU control reproduces the documented ~0.5 at depth 128, which is
+// what licenses trusting this one.
 //
 // Timing note: ForwardN is one Submit/Poll, so the call is synchronous at the
 // driver boundary and wall clock around it is the kernel time plus the launch glue

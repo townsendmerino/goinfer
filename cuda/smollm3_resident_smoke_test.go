@@ -19,10 +19,6 @@ import (
 // unit test of the actual fix, no GPU, no quantization noise) plus the shipped rope kernel math
 // being exact identity at invFreq==0 by construction. This test's only job: does declaring
 // FeatNoPE let the model go resident on CUDA and run without error/NaN.
-//
-// WRITTEN, NOT RUN: no CUDA device was available while writing this (see
-// docs/tasks/task-gpu-paths-2026-09.md's G5 status log) — needs a real run on a CUDA box before it can
-// be trusted, same posture as G4's cudaResident.HiddenLast.
 func TestSmolLM3ResidentSmokeCUDA(t *testing.T) {
 	const ckpt = "../testdata/smollm3-tiny"
 	requireDeviceAndFixture(t, ckpt)

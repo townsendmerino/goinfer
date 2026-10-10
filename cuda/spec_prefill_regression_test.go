@@ -15,25 +15,19 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSpecResidentPrefillRegression attributes the resident speculative slowdown to
-// PROMPT LENGTH, which is the signature of per-token prefill.
+// TestSpecResidentPrefillRegression attributes any resident speculative slowdown to PROMPT LENGTH, the signature of
+// per-token prefill.
 //
-// THE DEFECT. decoder/model.go's generateInto uses the optional Prefiller seam on a
-// resident model — `pf.PrefillLast(context.Background(), embs, 0)`, one batched on-device pass — whenever
-// len(prompt) >= 8. decoder/spec_ngram.go's genNgramInto does NOT: its resident
-// branch loops `target.resident.Forward(embedResident(id), i)` once per prompt
-// token. cudaResident implements PrefillLast (cuda/prefill.go), so the batched path
-// exists and is simply not taken on the speculative path.
+// THE DEFECT IT GUARDS. decoder/model.go's generateInto uses the optional Prefiller seam on a resident model
+// (`pf.PrefillLast(context.Background(), embs, 0)`, one batched on-device pass) whenever len(prompt) >= 8, and
+// decoder/spec_ngram.go's genNgramInto must do the same (via residentPrefillSeed) rather than loop
+// `target.resident.Forward(embedResident(id), i)` once per prompt token. That penalty scales with prompt length, so it
+// hides on short prompts: gpu/spec_ngram_resident_test.go's corpus prompts are 36-74 tokens, and only a realistic corpus
+// (656-1039 tokens, docs/spec/02) shows it.
 //
-// WHY IT WAS NEVER SEEN. gpu/spec_ngram_resident_test.go's corpus prompts are 36-74
-// tokens, where the penalty is a fraction of a second and hides inside generation.
-// It scales with prompt length, and no harness had a long prompt until the realistic
-// corpus (656-1039 tokens) in docs/spec/02.
-//
-// THE CONTROL. If the slowdown is prefill-driven it must be roughly CONSTANT in
-// absolute terms and vanish as a ratio on a short prompt. If instead speculation
-// were inherently slow here, the ratio would persist at both lengths. Same model,
-// same session, interleaved.
+// THE CONTROL. If the slowdown is prefill-driven it must be roughly CONSTANT in absolute terms and vanish as a ratio on a
+// short prompt; if speculation were inherently slow here, the ratio would persist at both lengths. Same model, same
+// session, interleaved.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_SPEC_PREFILL_REGRESSION=1 \
 //	  go test -tags "cuda goinfer_testhooks" ./ -run TestSpecResidentPrefillRegression -v
@@ -113,26 +107,17 @@ func TestSpecResidentPrefillRegression(t *testing.T) {
 		deltas = append(deltas, s-o)
 	}
 
-	// THE GATE. This is the assertion the original GPU speculative harness lacked: it
-	// measured the right quantity and only LOGGED it ("Parity is hard-gated; speedup is
-	// logged per workload"), so a 3-4.5x slowdown printed and failed nothing.
-	//
-	// It gates the DEFECT SIGNATURE, not "does speculation pay". Per-token prefill makes
-	// the off-vs-spec gap grow LINEARLY in prompt length; whether speculation is a net win
-	// at a given acceptance rate is a separate, noisy question that would make this flap.
-	// Measured on this box: 2.66 ms/prompt-token with the bug, 0.12 ms/prompt-token after
-	// wiring genNgramInto to residentPrefillSeed. The bar sits between them, nearer the
+	// THE GATE. The original GPU speculative harness measured the right quantity and only LOGGED it, so a 3-4.5x slowdown
+	// printed and failed nothing. This gates the DEFECT SIGNATURE, not "does speculation pay": per-token prefill makes the
+	// off-vs-spec gap grow LINEARLY in prompt length, while whether speculation is a net win at a given acceptance rate is a
+	// separate, noisy question that would make this flap. The bar sits between the defective and the fixed slope, nearer the
 	// fixed value, so a regression has to be a real return of per-token prefill to trip it.
 	//
-	// THIS BAR IS CUDA-CALIBRATED AND IS NOT PORTABLE. CUDA's exposure was DOUBLE and every
-	// other backend's is at most single: it is the only backend implementing ForwardNoLogits,
-	// so even when batched prefill declined its fallback was KV-only while the speculative
-	// path did full-logits — a second asymmetry no one else has. Metal, measured on the
-	// MacBook the same day, showed the same defect roughly 2x HARDER (5.313 ms/prompt-token,
-	// R^2 0.9999) but ONLY under --metal-fast-prefill; at its default it declines batched
-	// prefill, both paths take the per-token loop, and the slope is 0.110 (R^2 0.42) with no
-	// asymmetry to find. A port of this gate must re-derive its own bar from its own
-	// defect/fixed pair rather than inheriting 0.50.
+	// THIS BAR IS CUDA-CALIBRATED AND IS NOT PORTABLE. CUDA is the only backend implementing ForwardNoLogits, so when batched
+	// prefill declined its fallback was KV-only while the speculative path did full-logits, a second asymmetry no other
+	// backend has; Metal declines batched prefill by default, so both paths take the per-token loop and there is no
+	// asymmetry to find. A port of this gate must re-derive its own bar from its own defect/fixed pair rather than inheriting
+	// 0.50.
 	slope := leastSquaresSlope(toks, deltas)
 	t.Logf("gap-vs-prompt-length slope = %.3f ms/prompt-token (bar 0.50; 2.66 was the defect, 0.12 is fixed)", slope)
 	if slope > 0.50 {

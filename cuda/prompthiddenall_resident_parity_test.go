@@ -10,8 +10,9 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// D11's follow-up (docs/tasks/task-constrained-confidence.md, Route C): decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the
-// ResidentResidualAll seam, and every row stays within promptHiddenAllResidentBarCUDA of the CPU's PromptHiddenAll on the same weights. Three checks:
+// decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the ResidentResidualAll seam
+// (docs/tasks/task-constrained-confidence.md, Route C), and every row stays within promptHiddenAllResidentBarCUDA of the
+// CPU's PromptHiddenAll on the same weights. Three checks:
 //
 //   - the answer is the runner's own pre-norm residual rows with the decoder's f32 final norm applied (so the dispatch took the resident, and the norm is the host's, not the
 //     int8-requantized vector ResidentHiddenLast returns);
@@ -99,11 +100,11 @@ func TestPromptHiddenAllResidentCUDA(t *testing.T) {
 					t.Logf("%d tokens: the existing last-row path (ResidentHiddenLast, int8-requantized) vs CPU: cosine %.8f; the new path's last row: %.8f", n, c, func() float64 { c2, _ := cosF32(cpu[n-1], got[n-1]); return c2 }())
 				}
 				t.Logf("%d tokens: resident vs CPU, per-row cosine: worst %.8f, mean %.8f, last %.8f; worst |diff| %.3g", n, worstCos, meanCos, lastCos, worstAbs)
-				// DENSE: every row within the bar. MoE: a random-init router has near-tied top-k scores, so a few positions choose a different expert on the device
-				// than on the CPU and ONLY those rows move (measured here: the LAST row stays at 0.9999 while a few interior rows dip to 0.993). The right statistic for
-				// that is the mean, with the last row held to the bar and the worst reported, not asserted (the lesson of the MoE router-flip noise floor: floor the mean,
-				// not the min over rows). A defect that moved EVERY row, or the last, still fails; one confined to a single MoE position would not, and the dense
-				// case (same DeltaNet and attention kernels) is what pins per-position correctness.
+				// DENSE: every row within the bar. MoE: a random-init router has near-tied top-k scores, so a few positions choose a
+				// different expert on the device than on the CPU and ONLY those rows move. The right statistic for that is the mean, with
+				// the last row held to the bar and the worst reported, not asserted (floor the mean, not the min over rows: the MoE
+				// router-flip noise floor). A defect that moved EVERY row, or the last, still fails; one confined to a single MoE
+				// position would not, and the dense case (same DeltaNet and attention kernels) is what pins per-position correctness.
 				moe := strings.Contains(ckpt, "moe")
 				if moe {
 					if meanCos < promptHiddenAllResidentBarCUDA || lastCos < promptHiddenAllResidentBarCUDA {

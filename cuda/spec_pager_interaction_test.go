@@ -2,34 +2,31 @@
 
 // Does a speculative verify break the expert pager?
 //
-// The question comes from a field report of a 176B MoE in a hybrid split (experts on CPU,
-// attention on GPU) where enabling drafting collapsed throughput, with a stated mechanism of a
-// verify forcing expert re-fetches. That report is the ORIGIN of the hypothesis and nothing else —
-// n=1, LLM-narrated, several confabulated claims — so no number from it appears here or is
-// compared against. Only the mechanism is under test, generalized off its CPU/GPU framing (which
-// this tree cannot run: Lead 5 is proposed, not built) onto the path that does exist — a width-K
-// verify against a model whose routed experts are paged host→VRAM by C′.
+// The hypothesis is that a width-K verify forces expert re-fetches on a paged MoE. It is generalized off a field report's
+// CPU/GPU hybrid framing (which this tree cannot run) onto the path that does exist: a width-K verify against a model whose
+// routed experts are paged host->VRAM by C′. Only the mechanism is under test; no number from that report appears here.
 //
-// TWO HYPOTHESES, AND WALL-CLOCK CANNOT SEPARATE THEM, which is the whole reason this test exists
-// in the shape it does:
+// TWO HYPOTHESES, AND WALL-CLOCK CANNOT SEPARATE THEM, which is why this test has the shape it has:
 //
 //	H-paging    a width-K verify presents K positions' routing at once, so it asks for several
 //	            times the distinct experts a decode step does, overflowing a slot budget that was
 //	            tuned on decode traffic.
-//	H-noamort   prefill.go:162 declines the batched weight-stationary path for MoE, so a verify
-//	            walks position by position: the pager sees ordinary decode traffic and is never
-//	            stressed, but the verify pays K full decode steps to commit at most K tokens and
-//	            the amortization speculation depends on is simply absent.
+//	H-noamort   the batched weight-stationary path declines MoE, so a verify walks position by
+//	            position: the pager sees ordinary decode traffic and is never stressed, but the
+//	            verify pays K full decode steps to commit at most K tokens and the amortization
+//	            speculation depends on is simply absent.
 //
-// Both predict a regression, with the same sign and a similar size. They are told apart by
-// PagerStageStatsForTest's distinct-experts-per-staging-event, which rises with K under H-paging
-// and stays pinned at topK under H-noamort. Pre-registration, with the thresholds and the
-// ambiguous→parked bands fixed before any arm ran: docs/measurements/spec-x-pager-prereg-2026-09-02.md
+// Both predict a regression, with the same sign and a similar size. They are told apart by PagerStageStatsForTest's
+// distinct-experts-per-staging-event, which rises with K under H-paging and stays pinned at topK under H-noamort.
+// Pre-registration, with the thresholds and the ambiguous→parked bands fixed before any arm ran:
+// docs/measurements/spec-x-pager-prereg-2026-09-02.md
 //
-// ONE SLOT RUNG PER PROCESS. The slot depth is read at Load, so a ladder inside one process would
-// mean reloading a 20 GB pinned allocation per rung; the runner drives the rungs by re-invoking
-// with GOINFER_MOE_CACHE_SLOTS set, and each process reports the depth actually BUILT (capSlots
-// caps a request to free VRAM, so the request is not the depth).
+// H-noamort's premise is as of the experiment: prefillStaticDecline admits MoE now (the per-row MoE FFN,
+// TestPrefillMoE_bitIdentical).
+//
+// ONE SLOT RUNG PER PROCESS. The slot depth is read at Load, so a ladder inside one process would mean reloading a 20 GB
+// pinned allocation per rung; the runner drives the rungs by re-invoking with GOINFER_MOE_CACHE_SLOTS set, and each
+// process reports the depth actually BUILT (capSlots caps a request to free VRAM, so the request is not the depth).
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_MOE_CACHE_SLOTS=16 \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestSpecPagerInteraction -v -timeout 3h
@@ -55,21 +52,18 @@ import (
 
 // specPagerPrompts is realistic traffic, spanning prose / code / math.
 //
-// scripts/prompts.json is deliberately NOT used. It is four-unique-word filler ("the the the …"),
-// and on a MoE every such position routes to the same experts — the pager never has to stage
-// anything, so the effect under test cannot appear and the run would manufacture a null. That
-// confound has already produced one wrong profile in this tree (the mellum2 prefill split, which
-// contained no MoE frames at all).
+// scripts/prompts.json is deliberately NOT used. It is four-unique-word filler ("the the the …"), and on a MoE every such
+// position routes to the same experts: the pager never has to stage anything, so the effect under test cannot appear and
+// the run would manufacture a null.
 var specPagerPrompts = []string{
 	"Explain what a hash table is and why its lookups are fast, in three sentences.",
 	"Write a Go function that merges two sorted int slices into one sorted slice.",
 	"A train travels 120 km in 1.5 hours, then 90 km in 45 minutes. What is its average speed over the whole journey? Show your working.",
 }
 
-// specPagerArm is one measured configuration. Times are per (prompt, repeat) and kept RAW rather
-// than pre-averaged, so the paired ratios R1 asks for can be formed per round — a ratio of medians
-// disagreed with the paired form by 7.6 pp in one run in this tree and under 1 pp in others, which
-// is exactly what makes it uncorrectable after the fact.
+// specPagerArm is one measured configuration. Times are per (prompt, repeat) and kept RAW rather than pre-averaged, so
+// the paired ratios R1 asks for can be formed per round: a ratio of medians can disagree with the paired form, and that
+// is uncorrectable after the fact.
 type specPagerArm struct {
 	label string
 	kind  string // "off" | "block" | "ngram"
@@ -79,12 +73,9 @@ type specPagerArm struct {
 	rounds, drafted, accepted int
 	short                     int // generations that stopped before nNew, excluded from timings
 
-	// secs is wall-clock NORMALIZED to a fixed token count: a round commits a whole block, so a
-	// speculative arm overshoots or undershoots MaxTokens by a few tokens while the off arm lands
-	// exactly on it. Comparing raw durations would then charge an arm for tokens it produced as a
-	// bonus. Normalizing is what makes this the denominator-free metric it claims to be — the
-	// divisor is the arm's OWN emitted count, never another arm's decode step, which is the
-	// contamination that flattered a ratio in this tree this week.
+	// secs is wall-clock NORMALIZED to a fixed token count: a round commits a whole block, so a speculative arm overshoots or
+	// undershoots MaxTokens by a few tokens while the off arm lands exactly on it, and raw durations would charge an arm for
+	// tokens it produced as a bonus. The divisor is the arm's OWN emitted count, never another arm's decode step.
 	secs   [][]float64 // [prompt][repeat] seconds to emit nNew tokens, normalized
 	tokens [][]int     // [prompt][repeat] tokens actually produced (the normalization divisor)
 
@@ -123,16 +114,12 @@ func specPagerMedian(xs []float64) float64 {
 	return (c[len(c)/2-1] + c[len(c)/2]) / 2
 }
 
-// specPagerSpread is (max-min)/mean, the same form the Metal slot sweep reported its 20.8%
-// thrashing signature in. Reported because a pager under pressure announces itself in VARIANCE
-// before it does in the mean.
+// specPagerSpread is (max-min)/mean, the form the Metal slot sweep reported its thrashing signature in. Reported because a
+// pager under pressure announces itself in VARIANCE before it does in the mean.
 //
-// IT IS APPLIED WITHIN A PROMPT, NEVER POOLED ACROSS THEM. Pooling would fold between-prompt
-// variance (different lengths, different routing) into a number read as run-to-run noise, and the
-// prompts here differ by design — the pooled figure would be dominated by the thing the arms hold
-// constant rather than the thing that varies between repeats. Same rule as differencing matched
-// observations instead of pooling them: measured elsewhere in this repo, pooled sd of 10-35 tok/s
-// against an ~8% effect became 5.5-8.7 paired, and the two disagreed about whether an effect existed.
+// IT IS APPLIED WITHIN A PROMPT, NEVER POOLED ACROSS THEM. Pooling would fold between-prompt variance (different lengths,
+// different routing) into a number read as run-to-run noise, and the prompts here differ by design. Same rule as
+// differencing matched observations instead of pooling them (CLAUDE.md, Measurement discipline).
 func specPagerSpread(xs []float64) float64 {
 	if len(xs) < 2 {
 		return 0
@@ -170,12 +157,11 @@ func TestSpecPagerInteraction(t *testing.T) {
 	needsFreshProcess(t, "NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone")
 	requireHeavyModel(t)
 
-	// PARAMETERIZED OVER THE VENUE, because one paged MoE cannot answer the whole question.
-	// qwen3.6-35B-A3B is a Gated-DeltaNet MoE: the block path declines on the MoE batched-verify
-	// check AND the n-gram path declines on the recurrent-rollback check, so on that model both
-	// speculative arms refuse for two unrelated reasons and no throughput number exists to be had.
-	// gemma-4-26B-A4B is a paged MoE with NO recurrent state, so its n-gram arm actually runs — it
-	// is the venue where the field report's throughput claim can be tested rather than sidestepped.
+	// PARAMETERIZED OVER THE VENUE, because one paged MoE cannot answer the whole question. A Gated-DeltaNet MoE
+	// (qwen3.6-35B-A3B) refuses both speculative arms for two unrelated reasons (the block path on the MoE batched-verify check
+	// as of the experiment, the n-gram path on the recurrent-rollback check), so no throughput number exists to be had there.
+	// gemma-4-26B-A4B is a paged MoE with NO recurrent state, so its n-gram arm actually runs: the venue where the throughput
+	// claim can be tested rather than sidestepped.
 	path := os.Getenv("GOINFER_SPECPAGER_MODEL")
 	if path == "" {
 		path = os.Getenv("GOINFER_QWEN36_35B")
@@ -229,14 +215,10 @@ func TestSpecPagerInteraction(t *testing.T) {
 	slots := r.CacheSlotsForTest()
 	req := os.Getenv("GOINFER_MOE_CACHE_SLOTS")
 	hb("pager: %d slots/layer BUILT (requested %q), topK=%d", slots, req, r.topK)
-	// V-24 (docs/review-2026-09-04.md): this used to say a request AT OR BELOW topK was
-	// SILENTLY IGNORED. That was true before G-07 (cuda/backend.go) and is false now: a request
-	// BELOW topK is a HARD ERROR at Load time — the `t.Fatalf("Load(35B, cuda int4): %v", err)`
-	// above already ends the test for one, so this line is never reached with n < r.topK. A
-	// request AT OR ABOVE topK is honoured UNIFORMLY (backend.go no longer distinguishes `==`
-	// from `>`), then possibly capped — first to the model's own expert count, then to measured
-	// free VRAM by capSlots (cuda/resident.go). Either cap is a real rung, just not the
-	// requested one; say so rather than assert a mechanism that no longer exists.
+	// A request BELOW topK is a HARD ERROR at Load time (the `t.Fatalf("Load(35B, cuda int4): %v", err)` above already ends
+	// the test for one), so this line is never reached with n < r.topK. A request AT OR ABOVE topK is honoured UNIFORMLY, then
+	// possibly capped: first to the model's own expert count, then to measured free VRAM by capSlots (cuda/resident.go). Either
+	// cap is a real rung, just not the requested one; report the depth built (V-24, docs/review-2026-09-04.md).
 	if n, e := strconv.Atoi(req); e == nil && n != slots {
 		hb("NOTE: requested %d but BUILT %d — honoured (n=%d is at or above topK=%d) and then "+
 			"capped, either to the model's expert count or to free VRAM by capSlots; this rung "+
@@ -307,11 +289,9 @@ func TestSpecPagerInteraction(t *testing.T) {
 		{label: "ng7", kind: "ngram", width: 7},
 	}
 
-	// WARM UP EVERY PROMPT, not just the first. A single global warm-up left the first repeat of
-	// each prompt paying a cold pager: measured at 64 slots the per-prompt first repeat was slowest
-	// every time (4.48 vs 2.87 s, 5.33 vs 4.21, 5.67 vs 3.64), and the resulting WITHIN-prompt
-	// spread was 49.8% — far too noisy to resolve R1's 10% threshold against. The cold cost is real
-	// but it belongs to neither arm, and whichever arm runs first would otherwise absorb it.
+	// WARM UP EVERY PROMPT, not just the first. A single global warm-up leaves the first repeat of each prompt paying a cold
+	// pager (slowest every time, and a within-prompt spread far too noisy to resolve R1's 10% threshold against). The cold cost
+	// is real but belongs to neither arm, and whichever arm runs first would otherwise absorb it.
 	for pi := range prompts {
 		hb("warm-up prompt %d (untimed)", pi)
 		wch, _ := m.Generate(context.Background(), prompts[pi], 24, decoder.SamplingParams{Temperature: 0})
@@ -355,10 +335,8 @@ func TestSpecPagerInteraction(t *testing.T) {
 
 				switch a.kind {
 				case "off":
-					// CHECK gen.Err(). Discarding it made a real failure present as "produced no
-					// tokens", which is indistinguishable from an empty generation and sent the
-					// diagnosis chasing recurrent-state resets that were in fact all present. An
-					// error swallowed here is an error attributed to the wrong mechanism.
+					// CHECK gen.Err(). Discarding it presents a real failure as "produced no tokens", indistinguishable from an empty
+					// generation; an error swallowed here is an error attributed to the wrong mechanism.
 					s := time.Now()
 					ch, gen := m.Generate(context.Background(), prompts[pi], nNew, decoder.SamplingParams{Temperature: 0})
 					for tok := range ch {

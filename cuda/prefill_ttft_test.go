@@ -15,27 +15,19 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillTTFT measures the batched PrefillLast vs the sequential ForwardNoLogits loop on a real
-// dense model, at the prompt lengths that bracket the Ollama crossover (128/512/2048). It is the
-// milestone-2 speedup number: goinfer's sequential prefill reads every weight once per prompt token
-// (weight-bandwidth-bound), so its TTFT grows ~linearly; the batched path reads each weight once for
-// all M tokens. Heavy (loads a 1.5B model); gated on GOINFER_HEAVY_TESTS + a GPU.
+// TestPrefillTTFT measures the batched PrefillLast vs the sequential ForwardNoLogits loop on a real dense model, at the
+// prompt lengths that bracket the Ollama crossover (128/512/2048). Sequential prefill reads every weight once per prompt
+// token (weight-bandwidth-bound), so its TTFT grows ~linearly; the batched path reads each weight once for all M tokens.
+// Heavy (loads a 1.5B model); gated on GOINFER_HEAVY_TESTS + a GPU.
 //
-// WHAT THE "batched" COLUMN MEANS CHANGED ON 2026-09-05, without this file changing. CUDA fast
-// prefill (attn_fused + gemm_w4a8_mma) became the DEFAULT above a 512-token floor, so at K >= 512
-// the batched column now times the FAST path, not the exact one. That is the right thing for a
-// standing test — it measures what ships — but it means a number from this test taken before that
-// date and one taken after are not the same quantity. Set GOINFER_CUDA_FAST_PREFILL=0 to time the
-// exact batched path, which is what every pre-2026-09-05 row in benchmarks.md holds.
+// At K >= 512 the "batched" column times the FAST path (attn_fused + gemm_w4a8_mma, the default above a 512-token
+// floor), not the exact one, so a number taken before fast prefill became the default is a different quantity. Set
+// GOINFER_CUDA_FAST_PREFILL=0 to time the exact batched path.
 //
-// THE DEFAULTS ARE THE REGRESSION TEST AND DO NOT MOVE. The four env knobs below only widen what a
-// deliberate measurement run can ask for; with none of them set this test runs exactly the model,
-// quants and depths it always has, so its role as a standing check is unchanged. They exist because
-// docs/completed/task-prefill-gap.md §4 L2 sets its band on an END-TO-END cell this test could not reach —
-// S at K=3900 — and prices L2/L3 on D7 as a second model, while the fixed list stops at K=2048 on a
-// 1.5B (which is exactly the blind spot prefill-chunking-d7-2026-09-04.md records: "TestPrefillTTFT,
-// the harness built for exactly this question, stops at M=2048 on a 1.5B model — a shape that fits,
-// on a model that fits").
+// THE DEFAULTS ARE THE REGRESSION TEST AND DO NOT MOVE. The env knobs below only widen what a deliberate measurement
+// run can ask for; with none set, the test runs exactly the model, quants and depths it always has. They exist for
+// end-to-end cells the fixed list (K up to 2048 on a 1.5B) cannot reach, such as S at K=3900 and D7 as a second model
+// (docs/completed/task-prefill-gap.md §4 L2).
 //
 //	GOINFER_TTFT_MODEL   checkpoint name under the models dir, or an absolute path (default: S)
 //	GOINFER_TTFT_QUANTS  comma-separated quants          (default: "int4,int8int8")
@@ -66,8 +58,8 @@ func TestPrefillTTFT(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	// int8's "before" is the sequential column (what int8int8 fell back to pre-§C6); "after" is the
-	// batched column. int4 is measured at the same lengths so the remaining int8-vs-int4 gap is visible.
+	// The sequential column is int8's pre-batching fallback; int4 is measured at the same lengths so the int8-vs-int4 gap
+	// is visible.
 	for _, quant := range ttftCSV("GOINFER_TTFT_QUANTS", []string{"int4", "int8int8"}) {
 		t.Run(quant, func(t *testing.T) { ttftMeasure(t, path, quant) })
 	}

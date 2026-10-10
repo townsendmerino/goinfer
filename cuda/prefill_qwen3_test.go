@@ -11,12 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillLast_qwen3 extends milestone 2's bit-identity gate to a QK-NORM family. Qwen3 is the
-// dense batched lane plus one thing the old guard declined: a per-head Q/K RMSNorm before RoPE.
-// batched prefill now applies it via qk_norm_batched (M=1 qk_norm + an M dimension), so this asserts
-// the same three gates as TestPrefillLast_e2e — KV bit-identical (all layers × rows), last-token
-// logits bit-identical, and 64-token greedy decode byte-identical — on the real Qwen3-1.7B at int4.
-// Heavy (loads a 1.7B); gated. If it stays green, qwen3 is a validated batched-prefill family.
+// TestPrefillLast_qwen3 extends the bit-identity gate to a QK-NORM family: Qwen3 is the dense batched lane
+// plus a per-head Q/K RMSNorm before RoPE, which batched prefill applies via qk_norm_batched (M=1 qk_norm
+// + an M dimension). It asserts the same three gates as TestPrefillLast_e2e (KV bit-identical, all layers
+// x rows; last-token logits bit-identical; 64-token greedy decode byte-identical) on the real Qwen3-1.7B at
+// int4. Heavy (loads a 1.7B); gated.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestPrefillLast_qwen3 -v
 func TestPrefillLast_qwen3(t *testing.T) {

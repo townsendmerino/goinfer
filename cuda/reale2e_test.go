@@ -15,48 +15,28 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// BenchmarkRealE2EDecode is B step 4: the REAL end-to-end decode tok/s of the parity-green
-// forward path (TestRealForwardParity), on the real q4_k_m checkpoint. Full per-token
-// work — mixed int4/int8 GEMVs + RoPE + GQA attention + requant glue + on-device argmax +
-// per-token sync — driven autoregressively at real advancing positions, through a
-// LockOSThread-pinned CUDA executor fed by a channel (one round-trip per token), so the
-// thread-safety executor cost is IN the number (guardrail #3). Wall-clock steady-state
-// (the number a user feels), vs same-box pinned Ollama 149 / WebGPU 111.6. cgo-free.
-// NOT A CORRECTNESS GATE, despite the name it used to carry. This drives a HAND-ROLLED sequence of
-// kernel launches written inside the test — not the production resident path — so its tokens are not
-// evidence about what ships. MEASURED, not assumed: driving the CPU reference identically (same
-// prompt, same re-feed of the last prompt token, same argmax rule) yields a DIFFERENT sequence, so
-// this bespoke pipeline does not reproduce decoder.forward. Making it faithful would just duplicate
-// the production resident path, which is already gated — so it is labelled instead.
+// BenchmarkRealE2EDecode is the REAL end-to-end decode tok/s of the parity-green forward path (TestRealForwardParity) on
+// the real q4_k_m checkpoint: full per-token work (mixed int4/int8 GEMVs + RoPE + GQA attention + requant glue +
+// on-device argmax + per-token sync) driven autoregressively at real advancing positions, through a LockOSThread-pinned
+// CUDA executor fed by a channel (one round-trip per token), so the thread-safety executor cost is IN the number.
+// Wall-clock steady-state (the number a user feels). cgo-free.
 //
-// CORRECTNESS FOR THIS PATH LIVES IN TestBackendResidentWired: it loads --backend cuda, takes the
-// real *cudaResident, and compares argmax against mcpu.ForwardForTest position by position
-// (measured 7/8 exact, worst near-tie 0.087%, hard fails 0). That is the token-identity evidence;
-// this file is the throughput number.
+// NOT A CORRECTNESS GATE. This drives a HAND-ROLLED sequence of kernel launches written inside the test, not the
+// production resident path, so its tokens are not evidence about what ships (driving the CPU reference identically
+// yields a DIFFERENT sequence). CORRECTNESS FOR THE PRODUCTION PATH LIVES IN TestBackendResidentWired: it loads
+// --backend cuda, takes the real *cudaResident, and compares argmax against mcpu.ForwardForTest position by position.
+// This file is the throughput number.
 //
-// WHY IT IS A BENCHMARK AND NO LONGER A TEST (2026-08-19). It was `TestRealE2EDecodeThroughput`,
-// and as a test it sat in the pre-tag gate — where it failed the teacher-forced argmax guard ONCE
-// in ~200 tests, at a 28.835% margin, and then passed alone, passed after its immediate
-// predecessors, and passed on a full re-run of the identical heavy tier. Intermittent.
-//
-// The decisive evidence for what that flake WAS: in the very run where this hand-rolled sequence
-// diverged, TestBackendResidentWired — the same comparison against the same CPU reference, on the
-// PRODUCTION resident path — passed at 7/8 exact, worst near-tie 0.087%, zero hard fails. So the
-// anomaly was in this file's duplicate forward, not in shipped code.
-//
-// A test whose failure cannot indict the product does not belong in a correctness gate: it spends
-// the gate's credibility, and a red that means "the harness wobbled" trains people to re-run reds.
-// As a benchmark it runs only under `-bench`, so it is out of `go test ./...` and out of
-// the GPU gate, while the instrument it exists for — tok/s, the launch decomposition, GEMV vs glue
-// bandwidth — stays available on demand:
+// It is a benchmark and not a test on purpose: a test whose failure cannot indict the product does not belong in a
+// correctness gate (a red that means "the harness wobbled" trains people to re-run reds). It runs only under `-bench`,
+// out of `go test ./...` and the GPU gate, while the instrument it exists for (tok/s, the launch decomposition, GEMV vs
+// glue bandwidth) stays available on demand:
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 //	  -run '^$' -bench BenchmarkRealE2EDecode -benchtime 1x -v
 //
-// The teacher-forced check is KEPT and still fails the run, deliberately: a throughput number for a
-// forward that does not reproduce production is worse than no number, and that check is what caught
-// this file's last real drift (rope_kv missing its `rhalf` argument). Its failures now cost a
-// benchmark run, not a release gate.
+// The teacher-forced check is KEPT and still fails the run, deliberately: a throughput number for a forward that does not
+// reproduce production is worse than no number. Its failures cost a benchmark run, not a release gate.
 func BenchmarkRealE2EDecode(b *testing.B) {
 	requireHeavyModel(b)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
@@ -184,12 +164,10 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 	var stream *gc.Stream
 	var gemvW4, gemvW8, ropeKV, fRms, fQ, fAttn, fSw, fArg *gc.Function
 
-	// Release the primary context when the test ends. dev.Primary() RETAINS a refcounted,
-	// per-device singleton: leaving it retained pins the shared context alive for the whole
-	// test binary, so no OTHER test's Close can ever drop the count to zero — and nothing
-	// anyone allocated is reclaimed until the process exits. That leak saturated the 8 GB card
-	// mid-suite, after which every Alloc/NewStream returned nil and the resulting zero-filled
-	// buffers surfaced as bogus "cosine 0.000000 — layout/unpack mismatch" parity failures.
+	// Release the primary context when the test ends. dev.Primary() RETAINS a refcounted, per-device singleton: leaving it
+	// retained pins the shared context alive for the whole test binary, so no OTHER test's Close can drop the count to zero
+	// and nothing allocated is reclaimed until the process exits (on an 8 GB card every later Alloc/NewStream returns nil and
+	// the zero-filled buffers surface as bogus "cosine 0.000000" parity failures).
 	//
 	// Registered AFTER `defer close(reqCh)` so LIFO runs it FIRST: the close has to execute on
 	// the pinned executor thread that made the context current, while the channel is still live.
@@ -378,20 +356,15 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 	pos := 0
 	// ---- CORRECTNESS FIRST: TEACHER-FORCED argmax parity against the CPU reference.
 	//
-	// Teacher-forced, not free-running, and that is not a convenience. This path is argmax-equal to
-	// the CPU reference but NOT bit-identical — TestBackendResidentWired measures 7/8 exact with a
-	// worst near-tie of 0.087% on this very model. Free-running amplifies a single near-tie flip
-	// into total divergence: an earlier version of this check drove both sides from the prompt-phase
-	// argmax and got GPU [271 785 3840 ...] vs CPU [448 279 27130 ...], which looks like a
-	// catastrophic bug and is actually one flipped tie plus chaos. Feeding both sides the SAME
-	// tokens isolates the per-position computation, which is the thing under test.
+	// Teacher-forced, not free-running, and that is not a convenience. This path is argmax-equal to the CPU reference but NOT
+	// bit-identical (TestBackendResidentWired). Free-running amplifies a single near-tie flip into total divergence that looks
+	// like a catastrophic bug; feeding both sides the SAME tokens isolates the per-position computation, which is the thing
+	// under test.
 	//
-	// This assertion is also what keeps this file from being a second UNVALIDATED forward. It is a
-	// hand-rolled launch sequence, so it can drift from production silently — and it did: the
-	// rope_kv call was missing its `rhalf` argument (added when partial rotary landed), which the
-	// CUDA launch API does not arity-check, so the kernel read garbage for the rotary half-width and
-	// this test happily reported a throughput number for a broken forward. The check below is what
-	// makes the next drift fail instead of pass.
+	// This assertion is also what keeps this file from being a second UNVALIDATED forward. It is a hand-rolled launch
+	// sequence, so it can drift from production silently: the rope_kv call once lost its `rhalf` argument, which the CUDA
+	// launch API does not arity-check, so the kernel read garbage and the test reported a throughput number for a broken
+	// forward. This check makes the next drift fail instead of pass.
 	cpuCache := m.NewCache(len(prompt) + 2)
 	cpuLogits := make([][]float32, 0, len(prompt))
 	gpuArg := make([]int, 0, len(prompt))
@@ -409,10 +382,9 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 		gpuArg = append(gpuArg, got)
 	}
 	pos = len(prompt)
-	// CLASSIFY a mismatch rather than failing on it blindly. This path is argmax-equal but not
-	// bit-identical, so a position whose top-2 CPU logits are a near-tie can legitimately flip —
-	// TestBackendResidentWired applies the same rule and measures a worst near-tie of 0.087% here.
-	// A mismatch with a WIDE margin is a real defect; a hair-thin one is float ordering.
+	// CLASSIFY a mismatch rather than failing on it blindly. This path is argmax-equal but not bit-identical, so a position
+	// whose top-2 CPU logits are a near-tie can legitimately flip (TestBackendResidentWired applies the same rule). A
+	// mismatch with a WIDE margin is a real defect; a hair-thin one is float ordering.
 	exact, hardFail, worst := 0, 0, 0.0
 	for i := range cpuArg {
 		if gpuArg[i] == cpuArg[i] {

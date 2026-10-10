@@ -13,15 +13,13 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// M-16: the single-block attention kernels size their scratch (nWin+128)*4 with NO ceiling, so
-// past 12,160 attended keys the launch exceeds the 48 KB default and is refused by the driver.
-// Decode fails at that position; batched prefill errors at layer 0 and falls back to the ~9x
-// slower sequential path with nothing logged. The trigger is -ctx 16384+ on any geometry whose
-// perf table says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) — the -ctx 32768
-// rows in benchmarks.md were on 0.5B/1.5B, whose split-KV engages at 3072/1024.
+// M-16: the single-block attention kernels size their scratch (nWin+128)*4 with NO ceiling, so past 12,160 attended keys
+// the launch exceeds the 48 KB default and is refused by the driver. Decode fails at that position; batched prefill errors
+// at layer 0 and falls back to the sequential path with nothing logged. It bites at -ctx 16384+ on any geometry whose perf
+// table says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini).
 //
-// The audit rated this medium confidence because it hinged on whether anything raises the
-// kernel into the opt-in range. Nothing does, and this pins BOTH halves against the device.
+// Nothing raises the kernel into the opt-in range, and this pins BOTH halves (the arithmetic and the device's limit) against
+// the device.
 func TestAttnShmemLimit_matchesDevice(t *testing.T) {
 	// The arithmetic half runs anywhere.
 	if got := attnShmemBytes(12160); got > singleBlockAttnShmemLimit {
@@ -61,14 +59,11 @@ func TestAttnShmemLimit_matchesDevice(t *testing.T) {
 	}
 }
 
-// V-05 (docs/review-2026-09-04.md): M-16 fixed decode (above) but left batched prefill (also the
-// spec-decode verify path, since prefillCore serves both) and the drafter block attention with the
-// SAME unguarded (nWin+128)*4 launch and no split-KV fallback. -ctx 16384+ on a splitkvNever
-// geometry (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) hit the driver refusal at prefill/verify
-// time instead of decode time, and the caller (decoder/model.go's PrefillLast handling) silently
-// fell through to the ~9x-slower sequential path with nothing distinguishing "declined" from
-// "crashed". These need no device: they drive checkPrefillShmem/the drafter's inline check
-// directly on a struct-only fixture, the same way TestPrefillPath_matchesPrefillCore does.
+// V-05 (docs/review-2026-09-04.md): batched prefill (also the spec-decode verify path, since prefillCore serves both) and
+// the drafter block attention launch with the same (nWin+128)*4 scratch as decode, so each needs its own guard: a driver
+// refusal at prefill/verify time otherwise falls through to the sequential path with nothing distinguishing "declined"
+// from "crashed". These tests need no device: they drive checkPrefillShmem and the drafter's inline check directly on a
+// struct-only fixture, the same way TestPrefillPath_matchesPrefillCore does.
 
 // TestCheckPrefillShmem_declinesPastTheLimit pins the boundary exactly at declineFixture's default
 // geometry (hd=4, so attnShmemBytes(startPos+M) is what's under test, no window clamp).
@@ -131,14 +126,12 @@ func TestCheckDrafterShmem_declinesPastTheLimit(t *testing.T) {
 	}
 }
 
-// TestPrefillCoreAndDraftBlockCallTheShmemGuards is the wiring half the tests above cannot cover:
-// they drive checkPrefillShmem/checkDrafterShmem directly, which proves the guards are correct but
-// says nothing about whether the real call sites still invoke them. Caught in practice while
-// mutation-testing this fix: removing prefillCore's call to checkPrefillShmem still builds clean
-// (an unused METHOD is not a Go compile error the way an unused import or local var is) and every
-// unit test above still passes, because none of them go through prefillCore/DraftBlock at all.
-// Asserted structurally, the same way TestStreamTokens_decodesAsAContinuation and
-// TestWebUI_rootRouteIsUnauthenticated pin their own wiring.
+// TestPrefillCoreAndDraftBlockCallTheShmemGuards is the wiring half the tests above cannot cover: they drive
+// checkPrefillShmem/checkDrafterShmem directly, which proves the guards are correct but says nothing about whether the real
+// call sites still invoke them. Removing prefillCore's call to checkPrefillShmem still builds clean (an unused METHOD is not
+// a Go compile error) and every unit test above still passes, because none of them go through prefillCore/DraftBlock.
+// Asserted structurally, the same way TestStreamTokens_decodesAsAContinuation and TestWebUI_rootRouteIsUnauthenticated pin
+// their own wiring.
 func TestPrefillCoreAndDraftBlockCallTheShmemGuards(t *testing.T) {
 	check := func(t *testing.T, file, fnName, wantCall string) {
 		t.Helper()

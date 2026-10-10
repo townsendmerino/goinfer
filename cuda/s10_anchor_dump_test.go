@@ -31,7 +31,7 @@ func writeF32(path string, v []float32) error {
 	return binary.Write(f, binary.LittleEndian, v)
 }
 
-// TestS10DeepstackPrefillCUDA_anchorDump is G-S10h's Go half (docs/tasks/task-multimodal-support-2026-10.md, "G-S10h", registered before this code): for each of the four F2a images on Qwen3-VL-2B it
+// TestS10DeepstackPrefillCUDA_anchorDump is G-S10h's Go half (docs/tasks/task-multimodal-support-2026-10.md, "G-S10h"): for each of the four F2a images on Qwen3-VL-2B it
 // writes the token ids, the CPU encoder's pixels and grid, the teacher tokens (the off path's greedy, as the real gate teacher-forces) and the 9 logit vectors (the prefill's last row, then 8 teacher-forced
 // decode steps) of BOTH arms: "off" (the CPU prefill with the sets, then the upload) and "on" (the resident DeepStack prefill), to $GOINFER_S10H_DIR (default ~/goinfer-logs/s10h). scripts/anchor_s10h_hf.py
 // reads them and computes the Hugging Face float32 side. Nothing is graded here; the line it prints per image is instrument check (i): the off-against-on worst cosine, which must equal the real gate's.

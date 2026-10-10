@@ -16,27 +16,20 @@ import (
 // (5 MiB → 6, 6 → 6, 9 → 10). Sub-quantum requests are pool-served but not free.
 const slotQuantum = 2 << 20
 
-// TestSlotAllocation_matchesGranularityForm asserts that the expert cache's VRAM consumption is
-// predicted by rounding EACH slot buffer up to the driver's allocation quantum independently.
+// TestSlotAllocation_matchesGranularityForm asserts that the expert cache's VRAM consumption is predicted by rounding EACH
+// slot buffer up to the driver's allocation quantum independently. allocSlots' cap arithmetic must not size the cache from
+// a raw byte sum (slots x bytes-per-slot x layers): the driver charges whole quanta, four times per layer, so a raw sum
+// grants a cap one step past what fits (on the real 26B the forward dies in a one-block routing kernel at 34 slots with VRAM
+// still free). Every other MoE test runs allocSlots without comparing its arithmetic with what the driver took.
 //
-// This is the gate that would have caught A1. The cap arithmetic in allocSlots sizes the cache from
-// a raw byte sum — slots × bytes-per-slot × layers — and the driver charges for whole quanta, four
-// times per layer. On the real 26B the shortfall put the granted cap one step past what fits: at 34
-// slots all four buffers tip a quantum at once, a 4-quanta step per layer, and the forward died in
-// a one-block routing kernel with 189.6 MiB still free. Every test in the suite passed throughout,
-// because allocSlots runs in every MoE test and its arithmetic is never compared against what the
-// driver actually took.
-//
-// Structure is asserted BEFORE totals, deliberately. A total that matches under a wrong structure
-// is worse than a mismatch: it looks like confirmation. So the shape is pinned first — one buffer
-// group per MoE layer, four buffers each, four distinct sizes in the ratio the int4/group-32 layout
-// implies — and only then is the arithmetic believed.
+// Structure is asserted BEFORE totals, deliberately. A total that matches under a wrong structure is worse than a mismatch:
+// it looks like confirmation. So the shape is pinned first (one buffer group per MoE layer, four buffers each, four
+// distinct sizes in the ratio the int4/group-32 layout implies) and only then is the arithmetic believed.
 //
 // Landing requirement for A5, which replaces the division with a search over the same form.
 //
-// MUTATION CHECK (run before trusting this green): change roundUp's body to `return n`, i.e. sum the
-// requested sizes without rounding. That is exactly the defect A1 was. At 16 slots on the scaled
-// fixture the prediction drops from 226,492,416 to 214,106,112 and the test fails by 12,386,304 B.
+// MUTATION CHECK (run before trusting this green): change roundUp's body to `return n`, i.e. sum the requested sizes
+// without rounding; the test must fail.
 func TestSlotAllocation_matchesGranularityForm(t *testing.T) {
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {

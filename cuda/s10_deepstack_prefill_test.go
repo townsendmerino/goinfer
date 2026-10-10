@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S10g of docs/tasks/task-multimodal-support-2026-10.md ("S10 on CUDA", registered before this code), tiny half; CUDA twin of metal/s16_mrope_prefill_test.go's TestS16DeepstackPrefill_tiny. The Qwen3-VL tiny decoder
+// G-S10g of docs/tasks/task-multimodal-support-2026-10.md ("S10 on CUDA"), tiny half; CUDA twin of metal/s16_mrope_prefill_test.go's TestS16DeepstackPrefill_tiny. The Qwen3-VL tiny decoder
 // takes a synthetic 16x24 image with random features and DeepStack sets: the resident DeepStack prefill (PrefillMRoPEDeepstackLast) against today's path (the CPU prefill with the sets, the KV uploaded, CUDA decode), on
 // the last-row logits and 8 teacher-forced decode steps, at cosine >= 0.9999 per row with an equal argmax (an argmax difference counts only when it is not an R10 near-tie: this fixture's next-token distribution is
 // nearly uniform). Three planted defects, each alone red: the sets not added, added one layer late, added to the text rows too. Then the decoder's own entry point, which must take the resident prefill.
@@ -208,11 +208,15 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 	}
 }
 
-// TestS10DeepstackPrefillCUDA_real is G-S10g's real half, on Qwen3-VL-2B and the four F2a images at serve's 1,024-row cap, graded by S16's RE-REGISTERED bar (the Mac's, 2026-10-08, owner option a): the strict
-// per-step 0.9999 is tighter than a shipped batched prefill's own distance from the CPU's int4 prefill, so the resident DeepStack prefill is held to non-inferiority against a text control. For each image prompt, ctlPrompts (12; four until the owner's decision (c) of 2026-10-08)
-// text-only prompts of the same length run the same isolated comparison (the CPU's prefill and upload against CUDA's batched PrefillLast, both decoding the same 8 teacher-forced steps on CUDA). PASS when the image
-// turn's worst per-step cosine (the last row and the 8 steps) is at least the control's minimum minus 0.005 and every argmax difference is an R10 near-tie; 0.005-0.015 below the control's minimum is parked; worse fails.
-// Both image arms see the same features and sets (the CPU encoder's). Heavy: about 6-8 minutes, a line per stage.
+// TestS10DeepstackPrefillCUDA_real is G-S10g's real half, on Qwen3-VL-2B and the four F2a images at serve's 1,024-row cap,
+// graded by S16's RE-REGISTERED bar (the Mac's; owner option a): the strict per-step 0.9999 is tighter than a shipped
+// batched prefill's own distance from the CPU's int4 prefill, so the resident DeepStack prefill is held to non-inferiority
+// against a text control. For each image prompt, ctlPrompts (12) text-only prompts of the same length run the same isolated
+// comparison (the CPU's prefill and upload against CUDA's batched PrefillLast, both decoding the same 8 teacher-forced
+// steps on CUDA). PASS when the image turn's worst per-step cosine (the last row and the 8 steps) is at least the
+// control's minimum minus 0.005 and every argmax difference is an R10 near-tie; 0.005-0.015 below the control's minimum is
+// parked; worse fails. Both image arms see the same features and sets (the CPU encoder's). Heavy: about 6-8 minutes, a
+// line per stage.
 func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
 	cudaDeepstackPrefillOn = true
@@ -226,7 +230,8 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Skipf("no %s", dir)
 	}
-	// ctlPrompts is the text control's size per image length: 4 until the owner's decision (c) of 2026-10-08 made it 12. Seeds 1-4 are the original four, so the minimum can only be lower.
+	// ctlPrompts is the text control's size per image length. Seeds 1-4 are the original four, so growing it can only lower the
+	// control's minimum.
 	const merge, steps, ctlPrompts = 2, 8, 12
 	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
 	if err != nil {
@@ -409,9 +414,11 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 	}
 }
 
-// TestS10DeepstackPrefillCUDA_diag is an EXPLORATORY diagnostic, not a gate: G-S10g's real reading failed on table.png (0.9125 against a control minimum of 0.9539) and was parked on the 4x6 image. It re-runs the
-// comparison on those two images in cuts that separate the candidate mechanisms, printing the per-step cosines: (a) as the gate; (b) with NO DeepStack sets in either arm (is the gap the batched prefill on image rows,
-// not the injection?); (c) as the gate with the fast prefill levers forced off (is it the L2/L3 levers?). Same features, same prompt, same teacher-forced steps in every cut.
+// TestS10DeepstackPrefillCUDA_diag is an EXPLORATORY diagnostic, not a gate. It re-runs the comparison on the two images
+// G-S10g's real reading failed and parked (table.png and the 4x6 image) in cuts that separate the candidate mechanisms,
+// printing the per-step cosines: (a) as the gate; (b) with NO DeepStack sets in either arm (is the gap the batched prefill
+// on image rows, not the injection?); (c) as the gate with the fast prefill levers forced off (is it the L2/L3 levers?).
+// Same features, same prompt, same teacher-forced steps in every cut.
 func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
 	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
 	cudaDeepstackPrefillOn = true
@@ -529,8 +536,9 @@ func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
 	}
 }
 
-// TestS10DeepstackPrefillCUDA_speed is an EXPLORATORY split of one image turn's prefill on Qwen3-VL-2B and table.png (986 rows), single samples, nothing graded: today's path (the CPU prefill with the sets, then the
-// KV upload) against the resident DeepStack prefill. It exists so the decision on the parked image is made with the stake in view; the night record is the S7 cell.
+// TestS10DeepstackPrefillCUDA_speed is an EXPLORATORY split of one image turn's prefill on Qwen3-VL-2B and table.png,
+// single samples, nothing graded: today's path (the CPU prefill with the sets, then the KV upload) against the resident
+// DeepStack prefill. The recorded numbers are the S7 cell's night record.
 func TestS10DeepstackPrefillCUDA_speed(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")

@@ -15,14 +15,11 @@ import (
 // YaRN attention_factor IN ISOLATION, before any family is declared resident on the strength
 // of it.
 //
-// WHY IN ISOLATION, AND WHY BEFORE THE DECLARATION. `FeatRopeMscale` is a claim that this
-// backend can express YaRN's cos/sin scaling. Until 2026-08-31 CUDA's three rope kernels took
-// no scale parameter at all — so declaring the feature would have admitted gpt-oss AND (as a
-// documented side effect, since CUDA already declares Mellum's other four required features)
-// Mellum onto a path that silently ignores the factor. Silently: the kernel is correct
-// arithmetic, just the wrong arithmetic, and nothing errors. A gate that runs a whole model
-// and checks a cosine can miss a scalar this small; this one cannot, because it compares
-// against a scalar reference computed in Go.
+// WHY IN ISOLATION, AND WHY BEFORE THE DECLARATION. `FeatRopeMscale` is a claim that this backend can express YaRN's
+// cos/sin scaling, and declaring it admits gpt-oss and Mellum onto a path that silently ignores the factor if the kernels
+// drop it. Silently: the kernel is correct arithmetic, just the wrong arithmetic, and nothing errors. A gate that runs a
+// whole model and checks a cosine can miss a scalar this small; this one cannot, because it compares against a scalar
+// reference computed in Go.
 //
 // The two assertions are deliberately different questions:
 //

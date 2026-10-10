@@ -10,12 +10,10 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestRmsnormBatched_bitIdentical compares the batched rmsnorm_quant_batched (M=1) against the decode
-// rmsnorm_quant HEAD-TO-HEAD at the REAL hidden width (1536) — the comparison no existing gate makes.
-// The batched-vs-decode forward gap (TestBatchedVsDecodeGap; 84% stream divergence) was localized past
-// the GEMV (bit-identical at real dims) to the RMS by elimination; this pins whether the two RMS
-// kernels actually diverge, and at what magnitude. Same input, weight, eps, addOne, blockDim (256) as
-// the two production launches (r.rms / bRmsB).
+// TestRmsnormBatched_bitIdentical compares the batched rmsnorm_quant_batched (M=1) against the decode rmsnorm_quant
+// HEAD-TO-HEAD at the REAL hidden width (1536), the comparison no other gate makes: it pins whether the two RMS kernels
+// diverge, and at what magnitude (context: TestBatchedVsDecodeGap). Same input, weight, eps, addOne, blockDim (256) as the
+// two production launches (r.rms / bRmsB).
 func TestRmsnormBatched_bitIdentical(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)

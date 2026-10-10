@@ -10,14 +10,10 @@ import (
 
 // The load-time prefill report (decoder.PrefillPathReporter).
 //
-// WHY THIS EXISTS. `--backend cuda --quant int8int8` on a dense model builds a full resident decode
-// path — ResidentActive is true and decode runs at ~0.7× int4 — but the batched prefill GEMV is
-// int4-only (gemv_w4a8_batched / _rn read group-scaled int4 words), so prefillCore declines and every
-// prompt falls back to one forward per token. Measured on a 300-token prompt, real 0.5B, RTX 2070
-// SUPER: 1.73 s vs 0.19 s (9×), 4.56 vs 0.22 CPU-seconds (20×), with no compute hotspot — the CPU is
-// the executor spin-waiting through 300 sequential launches. The fallback is silent by design, so the
-// only defence is reporting it at load, and the only way that report stays true is sharing the guard
-// with prefillCore (prefillStaticDecline).
+// WHY THIS EXISTS. `--backend cuda --quant int8int8` on a dense model once built a full resident decode path while
+// prefill declined and every prompt fell back to one forward per token (a 9x TTFT trap, with no compute hotspot: the CPU
+// spin-waits through the sequential launches). The fallback is silent by design, so the only defence is reporting it at
+// load, and the report stays true only while it shares the guard with prefillCore (prefillStaticDecline).
 //
 // These tests need NO DEVICE: the guard reads struct state only.
 
@@ -35,11 +31,9 @@ func declineFixture(n int, kind string) *cudaResident {
 	return r
 }
 
-// TestPrefillPath_int8Declines is the gate for the shipped defect: int8 weights must report the
-// sequential path, name int4 as the requirement, and state the cost.
-// TestPrefillPath_int8Batched: int8 bundles now get batched prefill (§C6 — the batched W8A8 GEMV is
-// exact-int32, bit-identical to gemv_w8a8_fwd by construction). This was TestPrefillPath_int8Declines
-// before int8 batched prefill landed; it now asserts the OPPOSITE, so the 9× TTFT trap is gone.
+// TestPrefillPath_int8Batched: int8 bundles get batched prefill (§C6): the batched W8A8 GEMV is exact-int32,
+// bit-identical to gemv_w8a8_fwd by construction, so the old 9x TTFT trap (int8 reporting the sequential path) must
+// stay gone.
 func TestPrefillPath_int8Batched(t *testing.T) {
 	batched, why := declineFixture(4, "int8").PrefillPath()
 	if !batched {
@@ -75,10 +69,8 @@ func TestPrefillPath_int4Batched(t *testing.T) {
 	}
 }
 
-// TestPrefillPath_matchesPrefillCore is the anti-drift gate, and the reason the guard was extracted
-// rather than duplicated: whatever prefillCore refuses, the startup line must call sequential. A
-// future guard added to one and not the other would make the report a lie — silently, which is
-// exactly the failure mode this whole change exists to end.
+// TestPrefillPath_matchesPrefillCore is the anti-drift gate, and the reason the guard was extracted rather than
+// duplicated: whatever prefillCore refuses, the startup line must call sequential, or the report becomes a silent lie.
 func TestPrefillPath_matchesPrefillCore(t *testing.T) {
 	cases := []struct {
 		name string
@@ -87,22 +79,17 @@ func TestPrefillPath_matchesPrefillCore(t *testing.T) {
 		{"int4", declineFixture(2, "int4")},
 		{"int8", declineFixture(2, "int8")},
 		{"kernels-unavailable", func() *cudaResident { r := declineFixture(2, "int4"); r.prefillReady = false; return r }()},
-		// moe / gemma4moe / non-uniform NO LONGER DECLINE — the MoE FFN runs per row off the batched
-		// residual and geometry is bound per layer. They stay in this list because the property under
-		// test is that the GUARD and the REPORT agree, whichever way they answer; a case that flipped
-		// from declining to batching still exercises that. The names say what the model is, not what
-		// the verdict is, so they do not go stale a second time.
+		// moe / gemma4moe / non-uniform are admitted to batched prefill (the MoE FFN runs per row off the batched residual and
+		// geometry is bound per layer). They stay in this list because the property under test is that the GUARD and the REPORT
+		// agree, whichever way they answer. The names say what the model is, not what the verdict is.
 		{"moe", func() *cudaResident { r := declineFixture(2, "int4"); r.moe = true; return r }()},
 		{"gemma4moe", func() *cudaResident { r := declineFixture(2, "int4"); r.gemma4Moe = true; return r }()},
 		{"non-uniform", func() *cudaResident { r := declineFixture(2, "int4"); r.layers[1].nKV = 1; return r }()},
-		// k-eq-v still declines, but for a NARROWER reason than before: K=V itself is handled now, and
-		// what is refused is a K=V layer with no v_norm unit weight to normalise with.
+		// k-eq-v-no-vnorm declines because a K=V layer has no v_norm unit weight to normalise with (K=V itself is handled).
 		{"k-eq-v-no-vnorm", func() *cudaResident { r := declineFixture(2, "int4"); r.layers[1].kEqV = true; return r }()},
-		// A recurrent (Gated-DeltaNet) model whose layers ALSO carry valid int4 q/k/o. This is the
-		// case the weight-kind check cannot catch: qwen3_5_moe declines today only because its
-		// DeltaNet layers load no q/k/o, so the real guard was never exercised by any fixture. Here
-		// the projections are present and valid, so the ONLY thing that can refuse it is the
-		// recurrent-state check itself — remove that check and this case goes batched and wrong.
+		// A fixture with r.dnet set whose layers ALSO carry valid int4 q/k/o: a real DeltaNet layer loads none, so no weight-kind
+		// check can see this shape. Guard and report must agree on it however the guard answers (a DeltaNet model is admitted to
+		// batched prefill: see TestPrefillPath_deltaNetBindsItsOwnProjections).
 		{"deltanet-with-projections", func() *cudaResident {
 			r := declineFixture(2, "int4")
 			r.dnet = &dnetParams{}
@@ -148,13 +135,9 @@ func TestPrefillPath_matchesPrefillCore(t *testing.T) {
 	}
 }
 
-// TestPrefillPath_mixedQuantNamesTheKind: a bundle that is int4 at layer 0 but int8 deeper (int4mix)
-// still declines. The message falls back to the generic form naming the layer — worse than the
-// int8int8 message, but it must not claim the batched path.
-// TestPrefillPath_mixedInt4Int8Batches: an int4mix-style bundle (int4 in most projections, int8 in
-// one) now gets batched prefill — dispatch is per projection, so a mix of the two batchable kinds
-// "falls out for free" (§C6). A genuinely non-batchable kind (native/f32) at a specific layer still
-// declines with the layer located.
+// TestPrefillPath_mixedInt4Int8Batches: an int4mix-style bundle (int4 in most projections, int8 in one) gets batched
+// prefill: dispatch is per projection, so a mix of the two batchable kinds falls out for free (§C6). A genuinely
+// non-batchable kind (native/f32) at a specific layer still declines with the layer located.
 func TestPrefillPath_mixedInt4Int8Batches(t *testing.T) {
 	r := declineFixture(3, "int4")
 	r.layers[2].g.kind = "int8"
@@ -172,13 +155,13 @@ func TestPrefillPath_mixedInt4Int8Batches(t *testing.T) {
 	}
 }
 
-// TestPrefillPath_deltaNetBindsItsOwnProjections pins what replaced the blanket recurrent decline
-// (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): a Gated-DeltaNet model IS admitted to batched prefill, and the
-// admission is decided by the projections prefillDeltaNetRows actually binds — dnQKV/dnB/dnA/dnZ/dnOut — not by q/k/o.
+// TestPrefillPath_deltaNetBindsItsOwnProjections pins the admission of a Gated-DeltaNet model to batched prefill
+// (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): it is decided by the projections prefillDeltaNetRows binds,
+// dnQKV/dnB/dnA/dnZ/dnOut, not by q/k/o.
 //
 // The fixture's layers carry valid int4 q/k/o, which a DeltaNet layer never binds. If nonBatchableKind checked those
-// instead of the DeltaNet five, the first half below would be admitted with absent DeltaNet weights and run the
-// batched GEMVs over nil buffers; that is the LFM2 bug class (audit-2026-09-02 C-01) the kind dispatch exists to stop.
+// instead of the DeltaNet five, the first half below would be admitted with absent DeltaNet weights and run the batched
+// GEMVs over nil buffers: the LFM2 bug class (audit-2026-09-02 C-01) the kind dispatch exists to stop.
 func TestPrefillPath_deltaNetBindsItsOwnProjections(t *testing.T) {
 	r := declineFixture(2, "int4")
 	r.dnet = &dnetParams{}
@@ -207,19 +190,13 @@ func TestPrefillPath_deltaNetBindsItsOwnProjections(t *testing.T) {
 	}
 }
 
-// TestPrefillPath_seamGuardsAreMoEOnly pins the SCOPE of the per-token debug-seam declines, which
-// is a different property from whether they exist.
-//
-// They exist because prefill calls layerTail from exactly one site — inside the per-row MoE FFN
-// loop — where a per-token seam would fire M times per layer and hand its consumer M rows where it
-// expects one. On a DENSE model that site is never reached, so refusing there gains nothing and
-// costs a real feature: DFlash's block drafter arms hidCapTaps and verifies through the batched
-// path on a dense model.
-//
-// The first version of the guard was not scoped, and it broke exactly that —
-// TestDFlashRoundComposition and TestDFlashCompositionResidual both failed with "per-token
-// hidden-state taps are armed". They are heavy, GPU-only and 40+ minutes into the suite; this
-// costs microseconds and fails for the same reason, which is the point of writing it down here.
+// TestPrefillPath_seamGuardsAreMoEOnly pins the SCOPE of the per-token debug-seam declines, a different property from
+// whether they exist. They exist because prefill calls layerTail from exactly one site, inside the per-row MoE FFN loop,
+// where a per-token seam would fire M times per layer and hand its consumer M rows where it expects one. On a DENSE model
+// that site is never reached, so refusing there gains nothing and costs a real feature: DFlash's block drafter arms
+// hidCapTaps and verifies through the batched path on a dense model. If the guard loses this scope,
+// TestDFlashRoundComposition and TestDFlashCompositionResidual fail with "per-token hidden-state taps are armed"; they
+// are heavy and GPU-only, and this test fails for the same reason in microseconds.
 func TestPrefillPath_seamGuardsAreMoEOnly(t *testing.T) {
 	armed := func(moe bool) *cudaResident {
 		r := declineFixture(2, "int4")

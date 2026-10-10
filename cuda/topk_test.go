@@ -124,11 +124,9 @@ func TestTopKSelect_matchesReference(t *testing.T) {
 	}
 	t.Logf("%d (vocab × shape × K) rows identical to the reference order; Z within 1e-6", checked)
 
-	// Informational: the per-token cost the decode loop pays after a forward — launch + sync + readback,
-	// no upload — at the real vocab, on a NORMAL logits row. The row is uploaded first: the launch-only
-	// hook reads whatever r.logits holds, and after the correctness loop above that is leftover tie-heavy
-	// data that sends the kernel down its slow ordered-gather path (an earlier version of this test timed
-	// exactly that and reported ~320 us).
+	// Informational: the per-token cost the decode loop pays after a forward (launch + sync + readback, no upload) at the real
+	// vocab, on a NORMAL logits row. The row is uploaded first: the launch-only hook reads whatever r.logits holds, and after
+	// the correctness loop above that is leftover tie-heavy data that sends the kernel down its slow ordered-gather path.
 	timingRow := mk("normal", rf.vocab, rng)
 	if _, err := rf.TopKForTest(timingRow, 256, 0.8, true); err != nil {
 		t.Fatal(err)

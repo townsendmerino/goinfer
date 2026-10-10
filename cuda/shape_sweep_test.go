@@ -19,12 +19,10 @@ import (
 //
 //	const N, K = 8960, 1536 // FFN shape; K mult of 32
 //
-// and that shape SATISFIES the precondition the shipped kernel assumed. packWeight guarded
-// K%32, but the kernel's lanes step in 32-word strides, so the real requirement is on
-// Kwords = K/8. Qwen2.5-0.5B (hidden 896) gives Kwords = 112, and 112%32 = 16 — the tail lanes
-// read past the row. K=1536 gives Kwords=192, 192%32 == 0, so the bug was invisible BY
-// CONSTRUCTION: the one tested shape was the one that could not fail. That cost a real
-// out-of-bounds read on the 0.5B, which is the model the README's headline number is measured on.
+// and that shape SATISFIES the precondition the kernel assumes. packWeight guards K%32, but the kernel's lanes step in
+// 32-word strides, so the real requirement is on Kwords = K/8. Qwen2.5-0.5B (hidden 896) gives Kwords = 112, and
+// 112%32 = 16: the tail lanes read past the row. K=1536 gives Kwords=192, 192%32 == 0, so a sweep over only that shape
+// cannot fail BY CONSTRUCTION.
 //
 // The bar here is EXACT, not cosine. An out-of-bounds read or a bad tail is a wrong ANSWER, not
 // a numerical drift, so it needs no near-tie threshold — and a threshold would be wrong anyway:
@@ -34,9 +32,7 @@ import (
 // accumulation order, so this compares against the exact CPU reference with a tolerance that
 // only absorbs float-summation order.
 //
-// Cheap on purpose: no model loads, ~0.05 s per shape, so the whole sweep is ~1 s. It is the
-// regression net under the NEXT kernel (CUDA MoE), where shape assumptions bite hardest —
-// expert count, top-k, intermediate dim, stacked-expert layouts.
+// Cheap on purpose: no model loads, ~0.05 s per shape, so the whole sweep is ~1 s.
 func TestGemvShapeSweep(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
@@ -133,11 +129,9 @@ func TestGemvShapeSweep(t *testing.T) {
 			for i, s := range scales {
 				gsH[i] = f32tof16(s)
 			}
-			// The kernel reads __half group scales, so the reference must read the SAME rounded
-			// values — not the f32 originals. f16 carries ~5e-4 relative precision, so comparing
-			// against unrounded scales manufactures a ~0.05% "error" that is the TEST's rounding,
-			// not the kernel's. (This first showed up as failures on well-aligned shapes, which is
-			// what proved it was the reference and not the Kwords%32 tail.)
+			// The kernel reads __half group scales, so the reference must read the SAME rounded values, not the f32 originals: f16
+			// carries ~5e-4 relative precision, so comparing against unrounded scales manufactures a ~0.05% "error" that is the TEST's
+			// rounding, not the kernel's.
 			effScale := make([]float32, len(scales))
 			for i := range scales {
 				effScale[i] = f16tof32(gsH[i])

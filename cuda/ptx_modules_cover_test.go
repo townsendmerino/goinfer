@@ -10,11 +10,10 @@ import (
 	"testing"
 )
 
-// TestPTXModules_coverEveryEmbed holds TestKernelLocalMemoryCensus's module list to what kernels.go
-// actually embeds (audit-2026-09-10 G-13(b)). The list was written by hand and covered 15 of 22
-// modules, so the census's "moe_route declares the maximum local memory" precondition was never
-// checked against the gpt-oss expert-cache path it exists for (gptoss_act.ptx was missing).
-// TestKernelFMALint_coversEmbeddedPTX closes the same gap for the FMA lint.
+// TestPTXModules_coverEveryEmbed holds TestKernelLocalMemoryCensus's module list to what kernels.go actually embeds, so
+// the census's "moe_route declares the maximum local memory" precondition is checked against every module (a
+// hand-written list had left gptoss_act.ptx, the gpt-oss expert-cache path, out). TestKernelFMALint_coversEmbeddedPTX
+// closes the same gap for the FMA lint.
 func TestPTXModules_coverEveryEmbed(t *testing.T) {
 	kb, err := os.ReadFile("kernels.go")
 	if err != nil {

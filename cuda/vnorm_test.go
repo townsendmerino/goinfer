@@ -11,14 +11,11 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestQKNorm_widths sweeps the per-head qk_norm kernel across head widths — 128 (Qwen3), 256
-// (Gemma 3's max), and 512 (Gemma 4's global head, which NO prior model reached, so this width
-// has never been exercised for qk_norm). qk_norm and v_norm are the SAME kernel (v_norm reuses
-// it with nH=0 / unit weight), and both do a per-head RMS reduction over hd on a fixed 128-thread
-// block: 1 element/thread at 128, 4 at 512. That multi-element reduction path is the suspect for
-// the two-geometry K=V parity drift (wrong K/V from position 0, compounding through the cache).
-// Compares BOTH the weighted path (Q/K with a learned norm) and the scale-less path (V) to the
-// CPU RMSNorm oracle, per element (relative error — a reduction bug or a 2x is visible; cosine
+// TestQKNorm_widths sweeps the per-head qk_norm kernel across head widths: 128 (Qwen3), 256 (Gemma 3's max), and 512
+// (Gemma 4's global head). qk_norm and v_norm are the SAME kernel (v_norm reuses it with nH=0 / unit weight), and both do
+// a per-head RMS reduction over hd on a fixed 128-thread block: 1 element/thread at 128, 4 at 512. That multi-element
+// reduction path is what the sweep exercises. Compares BOTH the weighted path (Q/K with a learned norm) and the
+// scale-less path (V) to the CPU RMSNorm oracle, per element (relative error: a reduction bug or a 2x is visible; cosine
 // would hide a uniform scale).
 func TestQKNorm_widths(t *testing.T) {
 	if err := gc.Init(); err != nil {
@@ -132,9 +129,8 @@ func TestQKNorm_widths(t *testing.T) {
 	}
 }
 
-// TestVNorm_scaleless isolates Gemma 4's V-norm (attention_k_eq_v) BEFORE it is wired into
-// the K=V forward, so a red here is the norm alone — not the skipped projection or the copy
-// ordering that land with it (the hd=512 lesson: isolate the new primitive first).
+// TestVNorm_scaleless isolates Gemma 4's V-norm (attention_k_eq_v) from the K=V forward, so a red here is the norm alone,
+// not the skipped projection or the copy ordering.
 //
 // V = v_norm(k) is a SCALE-LESS per-head RMSNorm (rmsNormNoWeight: no learned weight). The
 // resident path reuses the qk_norm kernel, which computes x*inv*(addOne ? 1+w : w). Scale-less

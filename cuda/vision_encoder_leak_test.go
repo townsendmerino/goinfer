@@ -11,14 +11,12 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// TestVisionEncoder_forwardPatchesReleasesDeviceScratch is M-18's own gate
-// (docs/audit-2026-09-10.md): ForwardPatches allocated 19 per-call scratch device buffers plus a
-// fresh command queue, and released none of them — every call leaked. Mirrors
-// TestGemma3VisionResidentReal_gate's real-checkpoint setup, but goes straight to
-// cuda.NewVisionEncoder (bypassing the vision.Encoder wrapper) so this can read r.dev.Context()'s
-// own MemInfo directly, and calls ForwardPatches repeatedly rather than once — a single call
-// can't distinguish "leaks every time" from "never releases the very first allocation", both of
-// which would pass a correctness-only (cosine) gate but not this one.
+// TestVisionEncoder_forwardPatchesReleasesDeviceScratch is M-18's gate (docs/audit-2026-09-10.md): ForwardPatches must
+// release its per-call scratch device buffers and its command queue. Mirrors TestGemma3VisionResidentReal_gate's
+// real-checkpoint setup, but goes straight to cuda.NewVisionEncoder (bypassing the vision.Encoder wrapper) so this can
+// read r.dev.Context()'s own MemInfo directly, and calls ForwardPatches repeatedly rather than once: a single call can't
+// distinguish "leaks every time" from "never releases the very first allocation", both of which would pass a
+// correctness-only (cosine) gate but not this one.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestVisionEncoder_forwardPatchesReleasesDeviceScratch -v -timeout 10m
 func TestVisionEncoder_forwardPatchesReleasesDeviceScratch(t *testing.T) {

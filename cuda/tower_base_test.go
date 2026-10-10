@@ -393,8 +393,9 @@ func TestTowerBase_attention(t *testing.T) {
 	}
 }
 
-// TestTowerOps_contextVRAM measures what a tower base's own CUDA context and kernel modules cost before any weights (S7 on CUDA's fix: the Qwen2.5-VL tower's reserve covered its weights and scratch but the card was
-// still ~400 MiB short at the first image, a gap that fits a second context). Free VRAM through the driver before and after newTowerOps, and after one tiny launch. A record; asserts only that it can read the figure.
+// TestTowerOps_contextVRAM measures what a tower base's own CUDA context and kernel modules cost before any weights (a
+// tower's VRAM reserve must cover them too: a second context's worth was the gap at the first image). Free VRAM through
+// the driver before and after newTowerOps, and after one tiny launch. A record; asserts only that it can read the figure.
 func TestTowerOps_contextVRAM(t *testing.T) {
 	free := func() float64 {
 		b, ok := decoder.FreeBytesFor("cuda")

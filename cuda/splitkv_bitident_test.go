@@ -39,11 +39,9 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	// A DECLINE IS DESIGNED BEHAVIOUR, NOT A FAILURE. BuildResident declines when the resident
-	// context does not fit — it logs the reason and falls back to the staged path — and the
-	// unchecked type assertion below turned that into `panic: decoder.ResidentForward is nil`.
-	// Observed in the tier at 1.14 GB of KV against 0.74 GB free. A test that cannot evaluate says
-	// so; it does not panic, and it does not pass either.
+	// A DECLINE IS DESIGNED BEHAVIOUR, NOT A FAILURE. BuildResident declines when the resident context does not fit (it logs
+	// the reason and falls back to the staged path), and an unchecked type assertion here would turn that into `panic:
+	// decoder.ResidentForward is nil`. A test that cannot evaluate says so; it does not panic, and it does not pass either.
 	rfAny := mc.ResidentForwardForTest()
 	if rfAny == nil {
 		t.Skipf("could not evaluate: the resident path DECLINED (%s) — the split-KV kernels were never "+
@@ -142,11 +140,9 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	// A DECLINE IS DESIGNED BEHAVIOUR, NOT A FAILURE. BuildResident declines when the resident
-	// context does not fit — it logs the reason and falls back to the staged path — and the
-	// unchecked type assertion below turned that into `panic: decoder.ResidentForward is nil`.
-	// Observed in the tier at 1.14 GB of KV against 0.74 GB free. A test that cannot evaluate says
-	// so; it does not panic, and it does not pass either.
+	// A DECLINE IS DESIGNED BEHAVIOUR, NOT A FAILURE. BuildResident declines when the resident context does not fit (it logs
+	// the reason and falls back to the staged path), and an unchecked type assertion here would turn that into `panic:
+	// decoder.ResidentForward is nil`. A test that cannot evaluate says so; it does not panic, and it does not pass either.
 	rfAny := mc.ResidentForwardForTest()
 	if rfAny == nil {
 		t.Skipf("could not evaluate: the resident path DECLINED (%s) — the split-KV kernels were never "+

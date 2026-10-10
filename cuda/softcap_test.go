@@ -9,10 +9,8 @@ import (
 	"testing"
 )
 
-// softcapSerial is the reference: the exact loop that shipped at cuda/resident.go and
-// cuda/prefill.go before applySoftcap, and that still ships at decoder/forwardn.go,
-// decoder/model.go and metal/model.go. Kept verbatim so the gate compares against the thing the
-// other three siblings still do, not against a re-derivation of it.
+// softcapSerial is the reference: the exact loop applySoftcap replaced, kept verbatim (decoder's and metal's forward paths
+// still run it) so the gate compares against the thing the siblings do, not against a re-derivation of it.
 func softcapSerial(dst []float32, sc float32) {
 	for j, v := range dst {
 		dst[j] = sc * float32(math.Tanh(float64(v/sc)))
@@ -88,10 +86,8 @@ func TestApplySoftcap_disabled(t *testing.T) {
 //	                                    reader would make, and it silently changes the result.
 //	a dropped tail element           -> differs, the off-by-one a chunking bug produces
 //
-// A first attempt used float32(v/sc) as the mutation. That is a NO-OP — v and sc are both float32,
-// so v/sc is already float32 arithmetic — and the gate said so rather than passing on a mutation
-// that changed nothing. Recorded because a mutation check that mutates nothing is the same defect
-// as a gate that cannot fail.
+// float32(v/sc) is NOT a valid mutation: v and sc are both float32, so v/sc is already float32 arithmetic and the mutation
+// changes nothing; a mutation check that mutates nothing is the same defect as a gate that cannot fail.
 func TestApplySoftcap_mutation(t *testing.T) {
 	n := 262145
 	src := make([]float32, n)

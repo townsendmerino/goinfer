@@ -84,13 +84,11 @@ func TestSpecDecodeCurve(t *testing.T) {
 
 		// --- speculative (re-prime; verify via PrefillLastN which now == the decode path) ---
 		//
-		// The loop has decoder/spec_ngram.go's shape: the prompt is prefilled ONCE, the first token is
-		// the prime's own argmax (`cur`), and each round verifies [cur, draft…] starting at cur's
-		// position — the last prompt token is never fed again. An earlier version re-fed it (verify
-		// from position depth-1), which rewrites that KV row through the decode kernels. At depth ≥
-		// fastPrefillFloor the prime's row came from the fast (tensor-core) prefill, so the two arms
-		// then attended over different KV and a near-tie flipped at depth 512 token 10 — a harness
-		// artefact, never production (GOINFER_CUDA_FAST_PREFILL=0 made every depth pass).
+		// The loop has decoder/spec_ngram.go's shape: the prompt is prefilled ONCE, the first token is the prime's own argmax
+		// (`cur`), and each round verifies [cur, draft…] starting at cur's position; the last prompt token is never fed again.
+		// Re-feeding it (verify from position depth-1) rewrites that KV row through the decode kernels, and at depth ≥
+		// fastPrefillFloor the prime's row came from the fast (tensor-core) prefill, so the two arms would attend over different
+		// KV and a near-tie can flip: a harness artefact, never production.
 		//
 		// The plain arm just wrote rows [depth, depth+N) for the SAME tokens the speculative arm will
 		// verify, so a verify that skipped writing a row would read correct stale K/V and pass. Overwrite

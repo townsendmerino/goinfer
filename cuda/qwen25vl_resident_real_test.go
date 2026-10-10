@@ -12,32 +12,19 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestQwen25VLResidentReal_gate is gap 0's real-checkpoint continuation of
-// decoder/qwen25vl_real_test.go's TestQwen25VLReal_gate, which is prefill-only by its own doc
-// comment ("decoding PAST an image block... is a genuinely different code path that no existing
-// Go test exercises yet"). This is that continuation: it drives the SAME real image through the
-// real vision encoder and the real CPU prefill (prefillLogitsQwenVL, via
-// PrefillLogitsQwenVLForTest), then compares ONE decode step computed two ways — plain CPU
-// (ForwardForTest) and the gap-0 hybrid (UploadKV then resident ForwardMRoPE) — by COSINE on the
-// raw logits, both arms fed the identical next token so neither can wander off the other's
-// trajectory.
+// TestQwen25VLResidentReal_gate is the real-checkpoint continuation of decoder/qwen25vl_real_test.go's
+// TestQwen25VLReal_gate, which is prefill-only ("decoding PAST an image block ... no existing Go test exercises yet").
+// It drives the SAME real image through the real vision encoder and the real CPU prefill (prefillLogitsQwenVL, via
+// PrefillLogitsQwenVLForTest), then compares ONE decode step computed two ways, plain CPU (ForwardForTest) and the hybrid
+// (UploadKV then resident ForwardMRoPE), by COSINE on the raw logits, both arms fed the identical next token.
 //
-// WHY COSINE ON A FORCED TRAJECTORY, NOT TOKEN-STREAM IDENTITY THROUGH GenerateQwenVL. An
-// earlier version of this gate compared GenerateQwenVL's greedy (Temperature=0) SAMPLED token
-// streams, f32 CPU vs int4 CUDA resident, over 12 tokens — and found a real divergence at step 7.
-// Investigated before concluding anything: a throwaway probe ran plain decoder.Model.Generate
-// (NO vision, NO gap-0 code at all, just this repo's existing, already-shipped int4 CUDA resident
-// decode) on the SAME checkpoint and found divergence starting EVEN EARLIER (step 5) — proving the
-// effect is pre-existing f32-vs-int4 quantization noise on Qwen2.5-VL-3B's resident decode,
-// unrelated to anything built for gap 0. Once one token's argmax flips under quantization, every
-// later token in a GREEDY rollout is computed from a different context than the reference, so the
-// two streams necessarily diverge completely — an expected property of comparing different
-// precisions through autoregressive sampling, not a defect. This gate instead does what
-// gpu/nemotron_resident_parity_test.go's own doc comment calls "matched precision... isolates
-// WIRING from quant quality": one controlled step, same precision, same forced trajectory, cosine
-// not exact-match — the comparison that actually answers "is the hybrid decode's OWN math
-// correct," independent of the orthogonal question of how quantization noise compounds through
-// free-running greedy sampling.
+// WHY COSINE ON A FORCED TRAJECTORY, NOT TOKEN-STREAM IDENTITY THROUGH GenerateQwenVL: a greedy token stream of f32 CPU
+// against int4 CUDA resident diverges within a few steps even through plain decoder.Model.Generate with no vision code at
+// all (f32-vs-int4 quantization noise on Qwen2.5-VL-3B's resident decode), and once one argmax flips every later token is
+// computed from a different context. Do not turn this gate into a stream comparison. It does what
+// gpu/nemotron_resident_parity_test.go calls "matched precision... isolates WIRING from quant quality": one controlled
+// step, same precision, same forced trajectory, cosine. Evidence:
+// docs/code-notes/cuda.md#TestQwen25VLResidentReal_gate.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestQwen25VLResidentReal_gate -v -timeout 30m
 func TestQwen25VLResidentReal_gate(t *testing.T) {

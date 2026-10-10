@@ -16,29 +16,20 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestQwen36_35B_cache is the payoff run for the whole CUDA DeltaNet track: Qwen3.6-35B-A3B,
-// whose ~20 GB of int4 experts do NOT fit the 8 GB 2070, decoded RESIDENT via C′ expert staging
-// (experts in pinned host memory, the routed ones DMA'd into device slots per token).
+// TestQwen36_35B_cache decodes Qwen3.6-35B-A3B, whose ~20 GB of int4 experts do NOT fit the 8 GB 2070, RESIDENT via C′
+// expert staging (experts in pinned host memory, the routed ones DMA'd into device slots per token).
 //
-// WHY THIS MODEL AND NOT THE DENSE ONE. Qwen3.8-27B is dense: C′ streams EXPERTS, so it does
-// nothing for a model with none, and 15.3 GB of int4 dense weights simply do not fit. The MoE
-// siblings are the only members of this family an 8 GB card can host at all, so this is the one
-// combination where residency for this family is not merely faster but POSSIBLE.
+// WHY THIS MODEL AND NOT THE DENSE ONE. Qwen3.8-27B is dense: C′ streams EXPERTS, so it does nothing for a model with
+// none, and 15.3 GB of int4 dense weights do not fit. The MoE siblings are the only members of this family an 8 GB card
+// can host at all, so this is the one combination where residency is not merely faster but POSSIBLE.
 //
-// CORRECTION (2026-08-20): an earlier version of this comment said CUDA is "the only backend with
-// the streaming path". That is wrong about Metal, which has its own shipped per-layer LRU expert
-// pager (metal/expertpool.go, built for the same gemma4-26B problem) — today wired to the g4moe
-// path rather than generic MoE, so it would need generalizing, but the mechanism is there. WebGPU
-// is the one with no equivalent.
+// Residency needs the DeltaNet mixer kernels, their wiring, and FeatMoEGatedShared (the sigmoid-gated shared expert
+// this family carries); any one missing and the model declines to the CPU path.
 //
-// It needed three things that did not exist a day ago: the DeltaNet mixer kernels, their wiring,
-// and FeatMoEGatedShared (the sigmoid-gated shared expert this family carries). Any one missing
-// and the model declines to the CPU path.
-//
-// CORRECTNESS + INFORMATIVE LATENCY, NOT A BENCHMARK. Per token the router picks 8 of 256 experts
-// in each of 40 layers; at ~3.15 M int4 params per expert that is roughly 630 MB of PCIe traffic
-// per token before any reuse, plus a D2H routing readback per layer. The tok/s here is a floor set
-// by staging, and improving it is C′ step 2's LRU cache, not this test's business.
+// CORRECTNESS + INFORMATIVE LATENCY, NOT A BENCHMARK. Per token the router picks 8 of 256 experts in each of 40 layers;
+// at ~3.15 M int4 params per expert that is roughly 630 MB of PCIe traffic per token before any reuse, plus a D2H
+// routing readback per layer. The tok/s here is a floor set by staging; improving it is the expert cache's job, not this
+// test's.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags "cuda goinfer_testhooks" ./cuda/ -run TestQwen36_35B_cache -v -timeout 90m
 func TestQwen36_35B_cache(t *testing.T) {
@@ -88,11 +79,8 @@ func TestQwen36_35B_cache(t *testing.T) {
 	}
 	t.Logf("loaded 35B resident + C′ staging in %s (decode path %s)", loadDur.Round(time.Second), m.DecodePath())
 
-	// THREE CONTAINERS, THREE LOADERS — and the .giw arm was missing while .giw is this test's
-	// DEFAULT path, so the default invocation could not reach the decode it exists to measure. It
-	// failed as `parse …int4.giw: invalid character 'G'`, i.e. tokenizer.Load reading the bundle
-	// magic as JSON, which reads like a corrupt checkpoint rather than a missing case. The runs that
-	// passed all set GOINFER_QWEN36_35B to the .gguf, which took the arm that existed.
+	// THREE CONTAINERS, THREE LOADERS. .giw is this test's DEFAULT path, and tokenizer.Load reads a bundle's magic as JSON
+	// (`parse …int4.giw: invalid character 'G'`), which reads like a corrupt checkpoint rather than a missing case:
 	//
 	//   directory  HF tokenizer.json on disk
 	//   .gguf      tokenizer lives in the container's metadata

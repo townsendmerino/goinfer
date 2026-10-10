@@ -18,17 +18,12 @@ import (
 //   - but both run short prompts, where winStart = max(0, nKeys-W) = 0 — the window is INERT,
 //     so neither can catch a winStart that disagrees with the CPU's.
 //
-// WHY A TINY FIXTURE. This test used to drive the real phi3-mini-4k, whose window is 2047: it
-// needed win+40 = 2087 forwards on BOTH the CPU and the GPU of a 3.8B model, took 15-25
-// minutes, and so never actually completed — it was skipped in practice and gated nothing. A
-// gate that cannot finish is not a gate.
-//
-// The window's SPAN is not a property worth scaling: winStart = max(pos-W+1, 0) is the same
-// arithmetic at W=16 as at W=4096. testdata/mistral-tiny-window is a seeded 1.9 MB Mistral with
-// sliding_window=16, so 56 forwards cover the identical logic in ~1s, with ~40 positions PAST
-// the window where winStart is > 0 and MOVING — which is the whole point. It also closes a
-// second gap: the README claims Mistral runs GPU-resident, and this is the only place a Mistral
-// checkpoint is actually run resident.
+// WHY A TINY FIXTURE. The window's SPAN is not a property worth scaling: winStart = max(pos-W+1, 0) is the same arithmetic
+// at W=16 as at W=4096, and the real phi3-mini-4k (window 2047) needs ~2,100 forwards on BOTH the CPU and the GPU of a 3.8B
+// model, which is a gate that cannot finish. testdata/mistral-tiny-window is a seeded 1.9 MB Mistral with
+// sliding_window=16, so 56 forwards cover the identical logic in ~1s, with ~40 positions PAST the window where winStart is
+// > 0 and MOVING. It also closes a second gap: the README claims Mistral runs GPU-resident, and this is the only place a
+// Mistral checkpoint is actually run resident.
 //
 // (Only safetensors can test this at all: the released Mistral and Phi-3 GGUF conversions DROP
 // sliding_window — Mistral-7B-v0.1's is converted as general.architecture="llama" with no key —

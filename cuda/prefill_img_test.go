@@ -9,18 +9,16 @@ import (
 	"testing"
 )
 
-// TestPrefillImageLast_declinesOverChunk pins v1's core safety invariant: a bidirectional image
-// block must never be split across a prefillChunked chunk boundary (unverified, likely unsafe —
-// see PrefillImageLast's own doc comment and decoder.ResidentImagePrefill's), so a prompt wider
-// than one weight-stationary pass must DECLINE cleanly rather than being silently truncated,
-// crashing, or (worst case) producing a wrong answer with no error anywhere. Needs no device: the
-// M>chunk check runs before prefillCore ever touches the executor.
+// TestPrefillImageLast_declinesOverChunk pins that a bidirectional image block is never split across a
+// prefillChunked chunk boundary (unverified, likely unsafe: see PrefillImageLast's doc comment and
+// decoder.ResidentImagePrefill's), so a prompt wider than one weight-stationary pass must DECLINE cleanly
+// rather than truncate, crash or return a wrong answer with no error. Needs no device: the M>chunk check
+// runs before prefillCore touches the executor.
 //
-// Pins prefillImageChunkRows(), NOT prefillChunkRows() — PrefillImageLast has its own, larger,
-// image-specific row budget (prefillImageDefaultChunk); using the wrong constant here would build
-// an "oversized" prompt that is actually well UNDER the real boundary, silently stop exercising
-// the decline path, and fall through to a real device call this no-device test isn't set up for.
-// GOINFER_PREFILL_IMAGE_CHUNK pinned small so the test stays cheap (no need to allocate 2048+ rows).
+// It pins prefillImageChunkRows(), NOT prefillChunkRows(): PrefillImageLast has its own, larger row budget
+// (prefillImageDefaultChunk), and the wrong constant builds a prompt well UNDER the real boundary, which
+// stops exercising the decline path and falls through to a device call this test is not set up for.
+// GOINFER_PREFILL_IMAGE_CHUNK is pinned small so the test stays cheap.
 func TestPrefillImageLast_declinesOverChunk(t *testing.T) {
 	r := declineFixture(1, "int4")
 	t.Setenv("GOINFER_PREFILL_IMAGE_CHUNK", "8")
@@ -42,11 +40,9 @@ func TestPrefillImageLast_declinesOverChunk(t *testing.T) {
 	}
 }
 
-// TestPrefillImageChunkRows_defaultAndOverride pins the default (2048, chosen because
-// prefillDefaultChunk's own measurement table already measured that width safe on this box — see
-// prefillImageDefaultChunk's doc comment) and the GOINFER_PREFILL_IMAGE_CHUNK override, mirroring
-// prefillChunkRows's own env-var behavior (an unparseable/non-positive value is ignored, not fatal
-// — a typo in a tuning knob must not take a model off the fast path).
+// TestPrefillImageChunkRows_defaultAndOverride pins the default (2048; see prefillImageDefaultChunk) and the
+// GOINFER_PREFILL_IMAGE_CHUNK override, mirroring prefillChunkRows: an unparseable or non-positive value is
+// ignored, not fatal, because a typo in a tuning knob must not take a model off the fast path.
 func TestPrefillImageChunkRows_defaultAndOverride(t *testing.T) {
 	if got := prefillImageChunkRows(os.Getenv("GOINFER_PREFILL_IMAGE_CHUNK")); got != prefillImageDefaultChunk {
 		t.Errorf("prefillImageChunkRows() with no override = %d, want the default %d", got, prefillImageDefaultChunk)
