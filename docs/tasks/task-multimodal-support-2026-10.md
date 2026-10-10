@@ -27,8 +27,12 @@
   - S6: the 35B's served image check (G-S6m) and the 31B's step (b') PASS; Gemma 4 E4B PASS on CUDA. E4B on Metal
     (G-E4B-1, G-E4B-2) has not run: its sidecar build was refused for memory on 2026-10-07. A Metal sidecar built by
     serve has been on the Mac since 2026-10-09.
-  - S14 (speech): Qwen3-ASR, the Whisper encoder and Voxtral Mini's gates have passed, except Qwen3-ASR's
-    word-error-rate gate G-S14c4b, which failed again on its re-read (2026-10-09).
+  - S14 (speech), 2026-10-10: Qwen3-ASR's word-error-rate gate G-S14c4b failed on its re-read (2026-10-09); the partial
+    forced prefix that might fix it (G-S14c4d) is queued (`s14c4d`). Voxtral Mini is served (`input_audio`, G-S14e4a and
+    b PASS; the 36 s clip and int4 are queued as `s14e4c`, record only). A pure-Go Whisper is built and equal to
+    transformers on whisper-small: the decoder (G-S14f1, f2), timestamps and long-form (G-S14g1 to g3), the decode policy
+    (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record is queued
+    (`s14f`). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
 - **With the owner:**
   - The `--embed-int4` default, from option D's numbers. To be asked after G-S18g2 reads (owner, 2026-10-10).
   - The int8 Metal tower as the tight-memory default, from G-S18g2.
