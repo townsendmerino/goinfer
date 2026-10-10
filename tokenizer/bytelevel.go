@@ -15,10 +15,9 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Byte-level BPE — the GPT-2 / Llama-3 / Qwen family (G3). Same ordered-merge
-// core as Gemma (mergeSymbols); the wrapper differs: NFC normalize, a GPT-2
-// split-regex pretokenizer, and a byte→printable-rune map so every initial
-// symbol is in-vocab (no byte-fallback).
+// Byte-level BPE: the GPT-2 / Llama-3 / Qwen family. Same ordered-merge core as Gemma
+// (mergeSymbols); the wrapper differs: NFC normalize, a GPT-2 split-regex pretokenizer, and a
+// byte→printable-rune map so every initial symbol is in-vocab (no byte-fallback).
 
 // initByteLevel builds the byte↔unicode tables and resolves special tokens
 // from tokenizer_config.json. Unlike Gemma, no special token is required —
@@ -30,18 +29,12 @@ func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {
 	re := splitRegex(tj.PreTokenizer)
 	t.maxDigits = digitRunCap(re)
 	t.splitDigits = hasIndividualDigits(tj.PreTokenizer)
-	// C-10: compare the declared regex against the shape the walker actually implements. A Digits
-	// pre-tokenizer (Mellum2) carries no Split regex and is handled by splitDigits, so an empty
-	// regex is not a mismatch — only a regex that IS present and is a different alternation.
-	//
-	// V-15 (docs/review-2026-09-04.md): a bare (non-Sequence) `{"type":"ByteLevel",
-	// "use_regex":true}` pre_tokenizer — a real HF `gpt2` export's actual shape
-	// (testdata/gpt2/onnx/tokenizer.json), no separate Split node at all — also carries an empty
-	// splitRegex, but "empty regex" here does NOT mean "no opinion" the way Mellum2's Digits case
-	// does: use_regex:true on a bare ByteLevel is HF's own way of saying "use my built-in GPT-2
-	// regex". Treating it as an unclassified no-op silently walked it with the cl100k alternation
-	// instead — no error, no PreTokenizerDecline, just wrong ids on exactly the inputs (` 2020`,
-	// a `\r\n` after punctuation) where the two shapes diverge.
+	// Compare the declared regex against the shape the walker actually implements. A Digits
+	// pre-tokenizer (Mellum2) carries no Split regex and is handled by splitDigits, so an empty regex is
+	// not a mismatch: only a regex that IS present and is a different alternation is. A bare ByteLevel
+	// use_regex pre_tokenizer also has an empty regex but DOES have an opinion
+	// (isBareByteLevelUseRegex); treating it as unclassified would silently walk it with the cl100k
+	// alternation, with no PreTokenizerDecline.
 	switch {
 	case re != "":
 		t.preShape = classifySplit(re)
@@ -61,7 +54,7 @@ func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {
 		return -1
 	}
 	// dir=="" is no-sibling mode (a self-contained blob load): NEVER fall back to reading
-	// tokenizer_config.json from the process CWD, which would adopt an unrelated config (M-14).
+	// tokenizer_config.json from the process CWD, which would adopt an unrelated config.
 	var cfg tokenizerConfig
 	if dir != "" {
 		cfg = readTokenizerConfig(dir) // best-effort; missing file → empty
@@ -215,10 +208,8 @@ func (t *Tokenizer) decodeByteLevel(ids []int) (string, error) {
 		if id < 0 || id >= len(t.idToPiece) {
 			return "", fmt.Errorf("tokenizer.Decode: id %d out of range [0,%d)", id, len(t.idToPiece))
 		}
-		// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing
-		// it through the byte table is a category error. A rune in U+0080–U+0143 (é ü ñ — and
-		// every chat template that spells a role in a non-ASCII language) maps back to ONE raw
-		// byte, so the result is invalid UTF-8 and the grammar mask sees the wrong surface.
+		// An ADDED token's surface is stored verbatim, not byte-level-encoded (see Tokenizer.isAdded), so it
+		// must not go through the byte table.
 		if id < len(t.isAdded) && t.isAdded[id] {
 			buf = append(buf, t.idToPiece[id]...)
 			continue
@@ -234,15 +225,13 @@ func (t *Tokenizer) decodeByteLevel(ids []int) (string, error) {
 	return string(buf), nil
 }
 
-// splitPre applies the pre-tokenizer alternation this tokenizer actually declares.
-//
-// It used to be splitGPT2 unconditionally — one alternation for every byte-level family, which is
-// audit-2026-09-02 C-10. The shape is classified from the model's own `Split` regex at load, so
-// this dispatches on what the file says rather than on which family someone assumed it was.
+// splitPre applies the pre-tokenizer alternation this tokenizer actually declares: the shape is
+// classified from the model's own `Split` regex at load, so this dispatches on what the file says
+// rather than on which family someone assumed it was.
 //
 // A shape with no walker keeps the cl100k one AND sets PreTokenizerDecline, because a wrong split
-// that says so is strictly better than a wrong split that does not — and refusing to load a model
-// that works today, imperfectly, would be a worse trade than reporting it.
+// that says so is strictly better than a wrong split that does not, and refusing to load a model that
+// works imperfectly would be a worse trade than reporting it.
 func (t *Tokenizer) splitPre(seg string) []string {
 	switch t.preShape {
 	case shapeO200k:
@@ -457,14 +446,12 @@ func splitRegex(raw json.RawMessage) string {
 }
 
 // isBareByteLevelUseRegex reports whether pre_tokenizer is a TOP-LEVEL (not Sequence-wrapped)
-// `{"type":"ByteLevel", "use_regex":true}` node with no separate Split component — HF's own way
-// of saying "use my built-in GPT-2 regex" rather than "no opinion". A real HF `gpt2` export takes
-// exactly this shape (testdata/gpt2/onnx/tokenizer.json carries no `pattern.Regex` anywhere), so
-// splitRegex above returns "" for it — the same empty result a genuinely regex-agnostic
-// pre-tokenizer (Mellum2's Digits+ByteLevel Sequence) produces. The `type` check is what tells
-// them apart: a Sequence's own top-level type is "Sequence", not "ByteLevel", so this is false for
-// Mellum2's shape without needing to inspect its sub-pretokenizers at all (V-15,
-// docs/review-2026-09-04.md).
+// `{"type":"ByteLevel", "use_regex":true}` node with no separate Split component: HF's own way of
+// saying "use my built-in GPT-2 regex" rather than "no opinion". A real HF `gpt2` export has exactly
+// this shape, so splitRegex returns "" for it, the same empty result a genuinely regex-agnostic
+// pre-tokenizer (Mellum2's Digits+ByteLevel Sequence) produces. The `type` check tells them apart: a
+// Sequence's own top-level type is "Sequence", so this is false for Mellum2's shape without
+// inspecting its sub-pretokenizers.
 func isBareByteLevelUseRegex(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return false
@@ -555,12 +542,11 @@ type tokenizerConfig struct {
 
 func readTokenizerConfig(dir string) tokenizerConfig {
 	cfg := readTokenizerConfigJSON(dir)
-	// Recent transformers save the chat template as its own file beside tokenizer_config.json
-	// (and drop the key from it). Without this fallback such a checkpoint reached chat.Detect with
-	// no template at all: it fell through to the vocab heuristic (mellum2 → generic chatml) or to
-	// raw completion (Granite-4.0-H, Laguna XS.2), and a released SmolLM3/Olmo 3 shipped that way
-	// would bypass the M-36 fingerprints and render as plain chatml (docs/tool-call-coverage.md,
-	// finding 1). The JSON key still wins when both are present, as transformers resolves it.
+	// Recent transformers save the chat template as its own file beside tokenizer_config.json (and drop
+	// the key from it). Without this fallback such a checkpoint reaches chat.Detect with no template, and
+	// falls to the vocab heuristic or raw completion instead of its template fingerprint
+	// (docs/tool-call-coverage.md, finding 1). The JSON key still wins when both are present, as
+	// transformers resolves it.
 	if cfg.ChatTemplate == "" {
 		if b, err := os.ReadFile(filepath.Join(dir, "chat_template.jinja")); err == nil {
 			cfg.ChatTemplate = string(b)

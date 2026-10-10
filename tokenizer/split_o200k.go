@@ -12,7 +12,7 @@ import "unicode"
 //	\s+(?!\S)
 //	\s+
 //
-// FOUR DIFFERENCES FROM splitGPT2, each of which changes real text (audit-2026-09-02 C-10):
+// FOUR DIFFERENCES FROM splitGPT2, each of which changes real text:
 //
 //   - Contractions ATTACH to the word they follow instead of standing alone, so `don't` is ONE
 //     pre-token where the cl100k walker emits `don` + `'t`.
@@ -25,8 +25,8 @@ import "unicode"
 // Digits are capped at 3 by the pattern itself, so this takes no cap parameter; the cl100k walker
 // needs one because that family's cap varies (Qwen 1, Llama-3 3).
 //
-// Written against the published o200k_base pattern above and validated by differential testing
-// against an independent ordered-alternative matcher (split_o200k_test.go), not by eyeballing.
+// Written against the published o200k_base pattern above and tested differentially against an
+// independent ordered-alternative matcher (split_o200k_test.go).
 func splitO200k(s string) []string { return splitO200kVariant(s, true, 3) }
 
 // splitTekken walks Mistral's Tekken pattern (Voxtral, Mistral Small 3.x): o200k's alternation with the contraction suffixes REMOVED and `\p{N}` for a single digit:
@@ -86,21 +86,17 @@ func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 		//
 		// THE OPTIONAL PREFIX BACKTRACKS. `X?` is greedy but the engine gives it up when the rest
 		// of the alternative cannot match, so each alternative is tried WITH the prefix and then
-		// WITHOUT it before moving on. A first cut committed to the prefix once and shared it
-		// between both alternatives, which mis-split a combining mark followed by an uppercase
-		// letter: it consumed the mark as the prefix, failed to find a lower run after `É`, and ran
-		// on into alt 2 with the prefix already spent, emitting `◌́É` where the pattern gives
-		// `◌́` then `É`. The differential oracle found it; no hand-written case would have.
+		// WITHOUT it before moving on. Committing to the prefix once and sharing it between both
+		// alternatives mis-splits a combining mark followed by an uppercase letter (`◌́É` where the
+		// pattern gives `◌́` then `É`).
 		hasPrefix := !isNL(r) && !unicode.IsLetter(r) && !unicode.IsNumber(r)
-		// alt1 matches [Lu Lt Lm Lo M]* [Ll Lm Lo M]+ at j — and the two classes OVERLAP on
-		// {Lm, Lo, M}, so the greedy star has to be able to give runes back. Take the longest
-		// upper-ish run, then shrink it until the lower-ish run can match at least one, which is
-		// what a backtracking engine does and is the first success in ITS order.
+		// alt1 matches [Lu Lt Lm Lo M]* [Ll Lm Lo M]+ at j. The two classes OVERLAP on {Lm, Lo, M}, so
+		// the greedy star has to be able to give runes back: take the longest upper-ish run, then shrink
+		// it until the lower-ish run can match at least one, as a backtracking engine does.
 		//
-		// A shortcut here (stopping the star at the first rune that is also lower-ish) was wrong on
-		// exactly the overlap: a combining mark before uppercase, `◌́ΩÉéé`, matched only the mark
-		// where the pattern matches the whole word. Found by the differential oracle, twice — this
-		// is the second time the shortcut looked obviously right.
+		// Do not stop the star at the first rune that is also lower-ish: that is wrong on exactly the
+		// overlap (a combining mark before uppercase, `◌́ΩÉéé`, matches only the mark where the pattern
+		// matches the whole word).
 		alt1 := func(j int) int {
 			kMax := j
 			for kMax < n && isUpperish(rs[kMax]) {

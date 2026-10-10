@@ -9,20 +9,16 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// GGUF tokenizer (G7 follow-up). A .gguf checkpoint carries its tokenizer in
-// metadata — the vocab (tokenizer.ggml.tokens, id == array index), the BPE
-// merges (tokenizer.ggml.merges, space-joined), per-token types, and the
-// special-token ids — so LoadGGUF builds a Tokenizer with no sidecar
-// tokenizer.json, letting a bare .gguf tokenize and chat end-to-end.
+// GGUF tokenizer. A .gguf checkpoint carries its tokenizer in metadata: the vocab
+// (tokenizer.ggml.tokens, id == array index), the BPE merges (tokenizer.ggml.merges, space-joined),
+// per-token types and the special-token ids, so LoadGGUF builds a Tokenizer with no sidecar
+// tokenizer.json and a bare .gguf can tokenize and chat end-to-end.
 //
-// Scope: the SentencePiece-style byte-fallback family (tokenizer.ggml.model ==
-// "llama" — Llama-2/Mistral/TinyLlama and friends), which maps onto the same
-// modeGemma merge-rank core with the ▁ dummy prefix. The merges live in
-// metadata, so tokenization is merge-rank (not score-based) and reuses the
-// shared BPE loop verbatim. The byte-level family ("gpt2" — Llama-3/Qwen/GPT-2)
-// is a follow-up: same machinery as modeByteLevel, but its pretokenizer knobs
-// (digit-run cap, NFC) come from tokenizer.ggml.pre and want a committed
-// byte-level GGUF to parity-gate, which testdata doesn't have yet.
+// Two families, dispatched on tokenizer.ggml.model: "llama" (SentencePiece byte-fallback: reuses the
+// modeGemma merge-rank core with the ▁ dummy prefix) and "gpt2" (byte-level: reuses modeByteLevel,
+// with the pretokenizer knobs read from tokenizer.ggml.pre). Tokenization reuses the shared BPE
+// loop verbatim, ranked by the merges array, or by token scores when an SPM export ships scores
+// instead of merges (Tokenizer.scoreRank).
 //
 // Metadata reference: the GGUF spec (ggml-org/ggml).
 
@@ -122,18 +118,14 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 		}
 	}
 
-	// Merge ranks: the merges array is the space-joined form ("▁ t" for SPM,
-	// "Ġ Ġ" for byte-level); a piece never contains a literal space (it is the
-	// ▁/Ġ marker), so the first space splits the pair unambiguously. Position in
-	// the list is the priority.
-	// Merges are ENCODE-only: the sole consumer is the BPE merge loop in Encode. Decode needs
-	// nothing but idToPiece, which is already populated above. Some SPM exports ship scores
-	// instead of merges (gemma-3 GGUFs do), and hard-failing the whole load on a missing array
-	// blocked decode-only uses — including reading a model's own output back. So treat merges as
-	// optional; Encode refuses loudly rather than silently mis-tokenizing without them.
-	// Distinguish ABSENT (fine — a SentencePiece export may ship scores instead) from PRESENT
-	// BUT MALFORMED (a corrupt merges array), so the latter surfaces here instead of later as a
-	// misleading "decode-only vocab" error (N-20).
+	// Merge ranks: the merges array is the space-joined form ("▁ t" for SPM, "Ġ Ġ" for byte-level); a
+	// piece never contains a literal space (it is the ▁/Ġ marker), so the first space splits the pair
+	// unambiguously. Position in the list is the priority.
+	// Merges are ENCODE-only: the sole consumer is the BPE merge loop in Encode, and Decode needs nothing
+	// but idToPiece. Some SPM exports ship scores instead of merges (gemma-3 GGUFs do), so merges are
+	// optional and Encode refuses loudly rather than silently mis-tokenizing without them. An ABSENT
+	// array is fine; a PRESENT but MALFORMED one (a corrupt merges array) is an error here, not later a
+	// misleading "decode-only vocab" error.
 	merges, err := ggufStringArray(g, ggufTokMerges)
 	if err != nil {
 		if _, present := g.Metadata[ggufTokMerges]; present {
@@ -263,11 +255,9 @@ func setupGGUFByteLevel(t *Tokenizer, g *embed.GGUFFile) {
 	var known bool
 	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits, t.preShape, known = byteLevelKnobs(pre)
 	if !known {
-		// C-10: an unrecognised `pre` used to fall silently to GPT-2-like defaults, and the two
-		// families this repo ships that do that are not hypothetical — measured on the local
-		// assets, gpt-oss-20b-MXFP4.gguf is pre="gpt-4o" and Qwen3.5-35B-A3B-Q4_K_M.gguf is
-		// pre="qwen35". A GGUF carries no Split regex, so there is nothing to classify here; the
-		// name is all the evidence there is, and an unknown name means unknown knobs.
+		// A GGUF carries no Split regex, so there is nothing to classify: the pre name is all the evidence
+		// there is, and an unknown name means unknown knobs. Say so (PreTokenizerDecline) rather than fall
+		// silently to GPT-2-like defaults.
 		t.preDecline = "GGUF tokenizer.ggml.pre=" + strconv.Quote(pre) + " is not a known " +
 			"pre-tokenizer; falling back to cl100k with a 1-digit cap, so this model's token ids " +
 			"may differ from HF and llama.cpp"
@@ -289,53 +279,31 @@ func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMe
 	case "qwen2", "qwen2.5", "qwen":
 		return 1, norm.NFC, true, false, false, shapeCl100k, true
 	case "gpt-4o":
-		// o200k. A GGUF carries no Split regex, so a name→shape mapping is exactly the guess that
-		// produced C-10 — this one is not a guess. Measured: gpt-oss-20b-MXFP4.gguf declares
-		// pre="gpt-4o", and the SAME MODEL's HF tokenizer.json (~/models/gpt-oss-20b-hf) declares a
-		// Split regex byte-identical to the o200k pattern splitO200k implements — sha256 2d1b8dc1…
-		// on both that file's regex and this repo's test constant for it. Digits cap at 3 in that
-		// pattern, and it ships no normalizer.
+		// o200k. A GGUF carries no Split regex, so a name→shape mapping is a guess unless checked against
+		// the family's own tokenizer.json. gpt-oss's HF tokenizer.json declares a Split regex byte-identical
+		// to the o200k pattern splitO200k implements. Digits cap at 3, no normalizer.
 		return 3, norm.NFC, false, false, false, shapeO200k, true
 	case "qwen35":
-		// Qwen3.5's GGUFs. Same family and the same tokenizer.json pipeline as qwen2 — NFC on, one
-		// digit — and it was NOT in this switch, so it fell to the default whose only difference is
-		// NFC OFF. That diverges on exactly the inputs needing normalisation and on nothing else,
-		// which is why it went unnoticed. Measured: Qwen3.5-35B-A3B-Q4_K_M.gguf is pre="qwen35".
+		// Qwen3.5's GGUFs: the same pipeline as qwen2 (NFC on, one digit). The unknown-pre default differs
+		// only in NFC being off, so omitting this case diverges only on inputs that need normalisation.
 		return 1, norm.NFC, true, false, false, shapeCl100k, true
 	case "mellum2":
 		return 1, norm.NFC, false, false, true, shapeCl100k, true
 	case "dbrx":
-		// R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): granite-4.0-h-tiny — a
-		// registry-recommended checkpoint (pull/registry.go) — declared pre="dbrx" and fell
-		// through to this switch's unknown-pre default, so every `pull granite-4.0-h-tiny` user
-		// got a PreTokenizerDecline warning on a checkpoint this project was actively
-		// recommending. Measured, not guessed, same discipline as C-10: ibm-granite/
-		// granite-4.0-h-tiny's HF tokenizer.json (the safetensors source for this project's own
-		// GGUF pin) declares a Split regex byte-identical to the cl100k pattern splitGPT2/
-		// shapeCl100k implements, "\p{N}{1,3}" digit runs (Llama-3's cap, not Qwen's single
-		// digit): "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}|
-		// ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+" (fetched 2026-09-07, HF repo sha
-		// 791e0d3d28c86e106c9b6e0b4cecdee0375b6124). Its `normalizer` is null (normOn=false,
-		// matching llama-bpe) and `model.ignore_merges` is `false` — UNLIKE llama-bpe
-		// (ignoreMerges=true), which is otherwise the same shape+digit-cap; that is the one knob
-		// that makes this its own case rather than an alias for "llama-bpe".
+		// dbrx is granite-4.0-h-tiny's pre name. Its HF tokenizer.json declares the cl100k Split regex with
+		// \p{N}{1,3} digit runs (Llama-3's cap, not Qwen's single digit), a null normalizer, and
+		// ignore_merges false. That last knob is what differs from llama-bpe (ignoreMerges=true), which is
+		// otherwise the same shape and digit cap, so this is its own case rather than an alias for it.
 		return 3, norm.NFC, false, false, false, shapeCl100k, true
 	case "gpt-2", "default", "":
-		// GPT-2's OWN alternation is not the cl100k one either (no contraction clause, ` ?\p{N}+`
-		// rather than a capped run) — shapeGPT2Original implements it directly (split_gpt2orig.go,
-		// its own golden-tested file), not a fallback of unknown correctness (N-72,
-		// docs/audit-2026-09-10.md corrects an earlier, more hedged version of this comment).
+		// GPT-2's OWN alternation is not the cl100k one (no contraction clause, ` ?\p{N}+` rather than a
+		// capped run): shapeGPT2Original implements it directly (split_gpt2orig.go).
 		//
-		// "default" is grouped in here too, but it should NOT be: llama.cpp's own source
-		// (llama-vocab.cpp, fetched directly 2026-09-16) shows LLAMA_VOCAB_PRE_TYPE_DEFAULT falls
-		// to that switch's OWN default: case, whose regex_exprs is FOUR separate patterns —
-		// leading punctuation (`[\p{P}\$\+<=>\^~\|]+`), THEN the same alternation GPT-2 uses, THEN
-		// unbounded digit runs (`\p{N}+`), THEN a fixed 3-digit grouping (`[0-9][0-9][0-9]`) — a
-		// materially different, multi-pass shape from GPT-2's single pattern. A pre="default" (or
-		// absent) GGUF is walked with GPT-2's shape here, a shape the file never actually declared.
-		// Confirmed, not "plausible, from llama.cpp as remembered" as the earlier version of this
-		// finding put it — but implementing the real DEFAULT shape (a new splitShape, its own
-		// goldens) is real new work, deferred rather than rushed into this comment fix.
+		// Known limitation: "default" is grouped in here but should not be. llama.cpp's
+		// LLAMA_VOCAB_PRE_TYPE_DEFAULT is a multi-pass shape (leading punctuation, then GPT-2's alternation,
+		// then unbounded digit runs, then a fixed 3-digit grouping), so a pre="default" (or absent) GGUF is
+		// walked with a shape the file never declared. Implementing the real one needs a new splitShape and
+		// goldens; deferred. Text: docs/code-notes/tokenizer.md#byteLevelKnobs: gpt-2 and default.
 		return 1, norm.NFC, false, false, false, shapeGPT2Original, true
 	default:
 		return 1, norm.NFC, false, false, false, shapeUnknown, false
@@ -411,11 +379,10 @@ func ggufFloatArray(g *embed.GGUFFile, key string) []float32 {
 	return out
 }
 
-// ggufTokenID reads an integer special-token-id metadata value, clamped to a real
-// id in [0, nTokens) or -1 ("none"). The common 0xFFFFFFFF "none" sentinel — and any
-// hostile value — would otherwise flow into Encode as a garbage id that then
-// out-of-range indexes the embedding downstream (M28). int(v) also wraps negative on
-// a huge uint; the >= 0 bound catches that too.
+// ggufTokenID reads an integer special-token-id metadata value, clamped to a real id in [0, nTokens)
+// or -1 ("none"). The common 0xFFFFFFFF "none" sentinel, and any hostile value, would otherwise flow
+// into Encode as a garbage id that then indexes the embedding out of range. int(v) also wraps negative
+// on a huge uint; the >= 0 bound catches that too.
 func ggufTokenID(g *embed.GGUFFile, key string, nTokens int) int {
 	if v, ok := g.Uint(key); ok {
 		if id := int(v); id >= 0 && id < nTokens {

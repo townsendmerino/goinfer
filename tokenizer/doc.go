@@ -2,10 +2,10 @@
 // loaded from the HF tokenizer.json. One ordered-merge core serves two
 // families behind a mode flag (see tokMode):
 //
-//   - modeGemma (M2): Gemma 3's byte-fallback SentencePiece-style BPE —
+//   - modeGemma: Gemma 3's byte-fallback SentencePiece-style BPE —
 //     normalize ASCII space → ▁, per-rune symbols, <0xNN> fallback for
 //     out-of-vocab runes.
-//   - modeByteLevel (G3): the GPT-2 / Llama-3 / Qwen byte-level BPE — NFC
+//   - modeByteLevel: the GPT-2 / Llama-3 / Qwen byte-level BPE — NFC
 //     normalize, a GPT-2 split-regex pretokenizer, and a byte→printable-rune
 //     map (space → Ġ) so every symbol is in-vocab (no byte-fallback).
 //
@@ -23,7 +23,7 @@
 // knob) and "gpt2" (byte-level — reuses modeByteLevel, with the pretokenizer
 // knobs read from tokenizer.ggml.pre instead of tokenizer.json).
 //
-// Golden parity against HF `tokenizers` is the gate for every family (M2 /
-// G3 / GGUF): a single-token drift silently degrades generation, so the bar
-// is exact id equality, not a tolerance.
+// Golden parity against HF `tokenizers` is the gate for every family: a
+// single-token drift silently degrades generation, so the bar is exact id
+// equality, not a tolerance.
 package tokenizer

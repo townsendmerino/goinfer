@@ -5,28 +5,15 @@ import (
 	"strings"
 )
 
-// The pre-tokenizer SHAPE problem (audit-2026-09-02 C-10).
+// The pre-tokenizer SHAPE problem.
 //
 // splitGPT2 is exactly one regex: the cl100k / Llama-3 alternation, parameterised only by the
-// digit-run cap. Nothing ever compared a tokenizer's ACTUAL `Split` regex against that shape, and a
-// GGUF's `tokenizer.ggml.pre` outside a four-name switch fell to a default that is still that
-// walker. So a family whose pre-tokenizer differs was tokenized by the wrong one, silently: no
-// error, no log, and `count_tokens` and usage drift by the same amount.
-//
-// Measured on this machine's own assets, which is what turned the audit's "medium confidence on the
-// exact pre strings" into a fact:
-//
-//	gpt-oss-20b-MXFP4.gguf       pre="gpt-4o"   -> not in the switch -> default
-//	Qwen3.5-35B-A3B-Q4_K_M.gguf  pre="qwen35"   -> not in the switch -> default
-//	Qwen3 / qwen2.5-coder        pre="qwen2"    -> recognised
-//
-// Both unrecognised ones are families this repo ships AND gates. The gpt-oss case is the audit's;
-// the qwen35 case is not in the audit, and it is the quieter of the two — "qwen35" falls to a
-// default that differs from the "qwen2" branch only in NFC being OFF, so it diverges on exactly the
-// inputs that need normalising and on nothing else.
+// digit-run cap. A tokenizer whose `Split` regex has a different shape, or a GGUF whose
+// `tokenizer.ggml.pre` is not a known name, would be tokenized by the wrong walker silently: no error,
+// no log, and `count_tokens` and usage drift by the same amount.
 //
 // This file does not guess a walker for an unknown shape. It NAMES the shape, so a mismatch can be
-// reported instead of silently mis-tokenized.
+// reported (PreTokenizerDecline) instead of silently mis-tokenized.
 
 // splitShape identifies which pre-tokenizer alternation a Split regex is.
 type splitShape int
@@ -80,11 +67,9 @@ var (
 	cl100kLeadContraction = regexp.MustCompile(`^\(\?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d\)\|`)
 	// GPT-2's own: a ` ?\p{L}+` letters clause.
 	gpt2Letters = regexp.MustCompile(` \?\\p\{L\}\+`)
-	// GPT-2's own contraction clause stands alone at the head too, but UNWRAPPED and
-	// case-SENSITIVE — no `(?i:)`. This is the positive marker V-15 (docs/review-2026-09-04.md)
-	// added: the real GPT-2 regex (split_gpt2orig.go's own docstring, transcribed from OpenAI's
-	// source) DOES carry a contraction clause, so a Split spelling it was misclassified as
-	// shapeUnknown by an exclusion that assumed the opposite.
+	// GPT-2's own contraction clause stands alone at the head too, but UNWRAPPED and case-SENSITIVE: no
+	// `(?i:)`. It is a positive marker, because the real GPT-2 regex (split_gpt2orig.go) does carry a
+	// contraction clause, so classifying a Split spelling it by exclusion would call it shapeUnknown.
 	gpt2LeadContraction = regexp.MustCompile(`^'s\|'t\|'re\|'ve\|'m\|'ll\|'d\|`)
 	// Tekken: the o200k case-split classes, NO attached contractions, then a bare `\p{N}` alternative followed by o200k's punctuation tail.
 	tekkenDigitTail = regexp.MustCompile(`\|\\p\{N\}\| \?\[\^\\s\\p\{L\}\\p\{N\}\]\+\[\\r\\n/\]\*`)

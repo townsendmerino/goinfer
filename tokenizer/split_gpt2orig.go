@@ -7,7 +7,7 @@ import "unicode"
 //	's|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
 //
 // NOT the cl100k one splitGPT2 implements, despite the name that file carries. Two differences,
-// both of which change ordinary text (audit-2026-09-02 C-10):
+// both of which change ordinary text:
 //
 //   - Digits run UNBOUNDED with an optional leading space: ` 2020` is ONE pre-token here, where the
 //     cl100k walker with a 1-digit cap gives `Ġ`,`2`,`0`,`2`,`0` — five.
@@ -17,8 +17,8 @@ import "unicode"
 // The contraction clause is case-SENSITIVE here (GPT-2's regex has no `(?i:)`), which the cl100k
 // families do not share; `'S` is punctuation-plus-letter rather than a contraction.
 //
-// Validated by differential testing against an independent ordered-alternative matcher, the same
-// way splitO200k is — see split_gpt2orig_test.go.
+// Tested differentially against an independent ordered-alternative matcher, as splitO200k is
+// (split_gpt2orig_test.go).
 func splitGPT2Original(s string) []string {
 	rs := []rune(s)
 	n := len(rs)
