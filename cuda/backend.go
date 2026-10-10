@@ -676,8 +676,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// for all": allocSlots's headroom (marginBytes) covers per-token costs, not what the forward allocates after it, so on
 	// the real 26B it capped 128 slots to 34 and the warm forward then died with CUDA_ERROR_OUT_OF_MEMORY. 8*topK sits just
 	// above the knee of one measured sweep; it is a heuristic, not a derived constant, because where the knee falls depends
-	// on the model's routing entropy. The sweep and the history: docs/code-notes/cuda.md#BuildResident: MoE cache slots
-	// default.
+	// on the model's routing entropy. The sweep and the history:
+	// docs/code-notes/cuda.md#BuildResident: MoE cache slots default.
 	r.cacheSlots = topK
 	r.cacheSlotsReq = topK
 	if r.cacheExperts && nE > 0 {
