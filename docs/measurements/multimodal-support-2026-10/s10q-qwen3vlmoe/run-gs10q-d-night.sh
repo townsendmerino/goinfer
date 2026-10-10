@@ -73,10 +73,15 @@ for _ in $(seq 1 1200); do
   sleep 1
 done
 grep -E "decode path|backend|resident|declin|paging|vision tower" "$OUT/cuda/serve-cuda.log" | cut -c1-240 | sed 's/^/  /' || true
+# On the 8 GB card the resident build declines by name and serve continues on the CPU path (checked by day, 2026-10-10: CUDA_ERROR_OUT_OF_MEMORY allocating experts,
+# then "decode path: cpu"). Replies from that server are CPU replies: comparing them with the CPU arm proves nothing, so the comparison is labelled.
+FELL_BACK=0; grep -q "decode path: cpu" "$OUT/cuda/serve-cuda.log" 2>/dev/null && FELL_BACK=1
+[ "$FELL_BACK" = 1 ] && echo "  NOTE: the cuda arm fell back to the CPU path (a named decline); its replies below are CPU replies, not CUDA ones"
 if [ "$up" = 1 ]; then
-  python3 - "$OUT/cuda" "$PORT" "$OUT/graded" <<'EOF'
-import base64, json, sys, time, urllib.request
+  FELL_BACK=$FELL_BACK python3 - "$OUT/cuda" "$PORT" "$OUT/graded" <<'EOF'
+import base64, json, os, sys, time, urllib.request
 out, port, graded = sys.argv[1:4]
+fell = os.environ.get("FELL_BACK") == "1"
 def img(p):
     return {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(open("testdata/" + p, "rb").read()).decode()}}
 reqs = {"one-image": [img("glm_ocr/table.png"), {"type": "text", "text": "What does this table show? Answer in one sentence."}],
@@ -96,6 +101,8 @@ for name, content in reqs.items():
     try:
         cpu = open(f"{graded}/reply-{name}-cpu.txt").read()
         same = "IDENTICAL to the cpu arm" if cpu == c else "differs from the cpu arm"
+        if fell:
+            same = "(CPU fallback, not a CUDA reply) " + same
     except OSError:
         same = "no cpu reply to compare"
     print(f"  cuda {name} ({time.time() - t:.1f}s): {same}: {c[:160]!r}", flush=True)

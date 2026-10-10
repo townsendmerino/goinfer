@@ -3007,6 +3007,16 @@ aikit expected 0: L, as registered for S10's MoE variants.
     wrote.
   - **Owed:** the job again, with a step ahead of the arms that builds the CPU sidecar under a long wait, so both graded
     arms read a finished sidecar.
+  - **Prep for the second run, 2026-10-10 by day (exploratory, nothing graded; logs `~/goinfer-logs/gs10q-d-prep-2026-10-10/`).**
+    The partial `.tmp.giw` was deleted and the CPU sidecar built with the job's own flags and pinned binary: **11m15s**,
+    `qwen3-vl-30b-a3b-instruct.int4.cpu-amd64.giw` (17.5 GB on disk, header int4mix), so step 0 of `gs10q-d-2` finds it present.
+    With it present serve is up in **1 s** (mmap), well inside the driver's 600 s wait. The job's exact one-image request
+    answered in **61.8 s** (1,004 prompt tokens, 42 completion tokens: "This table shows the quarterly unit sales ...") against the
+    job's 10-15 minutes per arm, so the job's wall time is nearer 15-20 minutes than 60. The CUDA arm, started exactly as the job
+    starts it: the resident build **declines by name** (`CUDA_ERROR_OUT_OF_MEMORY` allocating expert buffers, "Try -moe-cache-experts"),
+    serve then **continues on the CPU path** (`decode path: cpu`, 59 s load) with no `--quant` error: the default `--quant` leaves the
+    sidecar defect out of this job. Consequence for the reading: the "reported" CUDA arm's replies are CPU replies, so the job's
+    comparison with the CPU arm is now labelled "(CPU fallback, not a CUDA reply)" and reads as no CUDA evidence at all.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
