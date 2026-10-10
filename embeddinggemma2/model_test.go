@@ -59,16 +59,15 @@ func cosMax(got []float32, want []float64) (cos, maxAbs float64) {
 	return dot / math.Sqrt(ng*nw), maxAbs
 }
 
-// TestTiny_parity is Gate 1 (docs/tasks/task-embeddinggemma2.md): on a random-weight fixture pinned with
-// transformers' own embedding_gemma2 modeling code, every layer's hidden state, the projected last hidden state, the
-// pooled vector before normalisation and the sentence embedding match the float32 reference to cosine 0.9999 (each on
-// its own, so a pooling or normalisation bug cannot pass on a matching hidden state), and the embedding is as accurate
-// as the reference's own float32 run: its max |diff| to the same weights run in float64 is at most 1.5x the float32
-// reference's, plus 1e-7 (float32 rounding in the reference is the same size as goinfer's, so an absolute bar on the
-// float32 output cannot tell them apart; the 1e-7 floor is the task doc's original band, about three float32 ulps at
-// these values, because where the reference's own error is a couple of ulps, 1.5x of it is a rounding coin toss that
-// differs by arch: linux/amd64, which does not fuse multiply-adds, read 1.06e-7 against arm64's 6.4e-8 on the one-token
-// case). On a miss the first divergent layer is named.
+// TestTiny_parity is Gate 1 (docs/tasks/task-embeddinggemma2.md): on a random-weight fixture pinned with transformers'
+// own embedding_gemma2 modeling code, every layer's hidden state, the projected last hidden state, the pooled vector
+// before normalisation and the sentence embedding match the float32 reference to cosine 0.9999 (each on its own, so a
+// pooling or normalisation bug cannot pass on a matching hidden state), and the embedding is as accurate as the
+// reference's own float32 run: its max |diff| to the same weights run in float64 is at most 1.5x the float32
+// reference's, plus 1e-7. Float32 rounding in the reference is the same size as goinfer's, so an absolute bar on the
+// float32 output cannot tell them apart; the 1e-7 floor (about three float32 ulps here) exists because 1.5x of an error
+// of a couple of ulps is a rounding coin toss that differs by arch (docs/code-notes/embeddinggemma2.md#TestTiny_parity).
+// On a miss the first divergent layer is named.
 // The fixture has 1-, 2-, 9- and 17-token cases, sliding and full layers of different head dims and KV-head counts,
 // a sliding radius (3) the longer cases exceed, and layer_scalar and norm weights that are not 1.
 func TestTiny_parity(t *testing.T) {
