@@ -2,16 +2,11 @@ package decoder
 
 import "testing"
 
-// N-02: a float-rounding miss must not return a MASKED token.
-//
-// drawChunked and drawFull walked the cumulative distribution and, if rounding left `r` past the
-// final cumulative sum, fell through to the LAST INDEX. The vector is masked — top-k and top-p zero
-// the excluded tail — so the last index is very often a token the filter deliberately removed, and
-// returning it emits something the caller configured to be impossible. spec_sample.go's drawTree
-// already walked back to the last entry with mass; these two did not.
-//
-// ~1e-16 per draw, so a contract nick rather than a live bug — but it is the contract that top-k
-// and top-p exist to provide.
+// A float-rounding miss must not return a MASKED token (N-02). drawChunked and drawFull walk the cumulative
+// distribution; if rounding leaves `r` past the final cumulative sum they must fall back to the last entry WITH
+// MASS, as spec_sample.go's drawTree does, not to the last index: top-k and top-p zero the excluded tail, so the last
+// index is very often a token the filter deliberately removed. About 1e-16 per draw, a contract nick rather than a
+// live bug, but it is the contract top-k and top-p exist to provide.
 func TestLastWithMass_neverReturnsAMaskedToken(t *testing.T) {
 	// A masked distribution: mass only in the first three of eight, as top-k leaves it.
 	probs := []float64{0.2, 0.3, 0.5, 0, 0, 0, 0, 0}

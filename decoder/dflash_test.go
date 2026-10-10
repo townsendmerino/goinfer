@@ -14,33 +14,26 @@ import (
 	"strings"
 )
 
-// P10 kill-gate 1 (docs/spec/08): the Go DFlash trunk must match the upstream reference
-// on dumped fixtures BEFORE any acceptance measurement. This is the gate 05 cleared too
-// late — a structurally-correct-looking head sat at alpha~0.3 for weeks because nothing
-// compared it to the reference at the tensor level.
+// P10 kill-gate 1 (docs/spec/08): the Go DFlash trunk must match the upstream reference on dumped fixtures BEFORE any
+// acceptance measurement (a structurally-correct-looking head can sit at alpha~0.3 for weeks when nothing compares it
+// to the reference at the tensor level).
 //
-// The fixture is the reference's own output, not a reimplementation of it:
-// scripts/pin_dflash_trace.py runs z-lab/Qwen3-4B-DFlash-b16's shipped dflash.py
-// (unmodified, MIT) and dumps the drafter's INPUTS (fused_context, block_in) alongside
-// every layer output. So this test feeds the reference's inputs to our forward and
-// compares layer by layer — a mismatch localizes to a layer instead of surfacing as
-// "the logits are wrong".
+// The fixture is the reference's own output, not a reimplementation of it: scripts/pin_dflash_trace.py runs
+// z-lab/Qwen3-4B-DFlash-b16's shipped dflash.py (unmodified, MIT) and dumps the drafter's INPUTS (fused_context,
+// block_in) alongside every layer output. So this test feeds the reference's inputs to our forward and compares layer
+// by layer: a mismatch localizes to a layer instead of surfacing as "the logits are wrong".
 //
 // Fixtures: testdata/dflash_qwen3_4b_golden.json (stats + drafted ids, committed) and
-// testdata/dflash_qwen3_4b_ref.safetensors (full f32 tensors, committed by an explicit
-// .gitignore exception — it is the reference's output, not weights, and costs ~24 GB of
-// downloads to recreate).
+// testdata/dflash_qwen3_4b_ref.safetensors (full f32 tensors, committed by an explicit .gitignore exception: it is the
+// reference's output, not weights, and costs ~24 GB of downloads to recreate).
 //
-// TIER: T3-in-practice, NOT a CI gate. The drafter WEIGHTS (GOINFER_DFLASH_F32, 2.1 GB)
-// cannot be committed, so this skips without them — labelled per
-// docs/parity-coverage-policy.md's rule that a committed golden over an uncommitted
-// checkpoint is a T3 wearing a T1's clothes. Regenerate the weights with
-// scripts/convert_dflash_f32.py.
+// TIER: T3-in-practice, NOT a CI gate. The drafter WEIGHTS (GOINFER_DFLASH_F32, 2.1 GB) cannot be committed, so this
+// skips without them, labelled per docs/parity-coverage-policy.md's rule that a committed golden over an uncommitted
+// checkpoint is a T3 wearing a T1's clothes. Regenerate the weights with scripts/convert_dflash_f32.py.
 //
-// THE GATE IS FALSIFIABLE, checked rather than assumed (2026-08-15): causal-instead-of-
-// bidirectional block, norming the fused context like the block, roping q at the
-// block-local position, and dropping the per-head k_norm are each REJECTED by it. A
-// first-run cosine of exactly 1.0 is precisely when that check is worth running.
+// The gate is falsifiable, checked by mutation rather than assumed: a causal-instead-of-bidirectional block, norming
+// the fused context like the block, roping q at the block-local position, and dropping the per-head k_norm are each
+// REJECTED by it. A first-run cosine of exactly 1.0 is precisely when that check is worth running.
 const (
 	dflashRefPath    = "../testdata/dflash_qwen3_4b_ref.safetensors"
 	dflashGoldenPath = "../testdata/dflash_qwen3_4b_golden.json"
@@ -280,17 +273,13 @@ func TestDFlash_targetEndToEnd(t *testing.T) {
 	}
 }
 
-// TestDFlash_refusesV2 pins the refusal added after the P15 step-(0)/(2) audit.
+// TestDFlash_refusesV2 pins the refusal of a DFlash 2 checkpoint (P15). It is a CONFIG-ONLY fixture on purpose: a v2
+// checkpoint is field-compatible with the v1 loader (most of its tensors are v1-shaped and every config key the loader
+// reads is present), so without the check it loads WITHOUT ERROR and silently discards the dynamic-conv +
+// candidate-selector weights, and the refusal has to fire before any tensor is read.
 //
-// It is a CONFIG-ONLY fixture on purpose: the danger this guards is that a DFlash 2 checkpoint
-// is field-compatible with the v1 loader, so the check has to fire before any tensor is read.
-// Measured on the real incoai/Qwen3.8-27B-DFlash2 (2026-08-20): 76.2% of its tensors are
-// v1-shaped and every config key this loader reads is present, so it loaded WITHOUT ERROR and
-// silently discarded 914,309,120 bytes of dynamic-conv + candidate-selector weights.
-//
-// Why that mattered enough to gate: DFlash verify is lossless, so the failure produces correct
-// tokens at a worse acceptance rate — slower than v1, with nothing in the logs. A wrong answer
-// gets noticed; a silent 20% throughput loss does not.
+// Why that is worth gating: DFlash verify is lossless, so the failure produces correct tokens at a worse acceptance
+// rate: slower than v1, with nothing in the logs. A wrong answer gets noticed; a silent throughput loss does not.
 func TestDFlash_refusesV2(t *testing.T) {
 	dir := t.TempDir()
 	// The released v2 config's shape, trimmed to what the loader reads. conv_kernel_size and

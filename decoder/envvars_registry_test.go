@@ -9,15 +9,13 @@ import (
 	"testing"
 )
 
-// N-42: docs/env-vars.md is declared a Hard-tier contract by docs/api-tiers.md, and it had
-// drifted in BOTH directions — 40 variables read by production code were absent from it
-// (including the escape hatches for all four default-ON changes, each of which alters greedy
-// output), and one it documented was read by nothing at all.
+// docs/env-vars.md is a Hard-tier contract (docs/api-tiers.md), and it can drift in BOTH directions: variables read by
+// production code but absent from it (including the escape hatches for default-ON changes, each of which alters greedy
+// output), and variables it documents that nothing reads (N-42).
 //
-// This is the TestAssetRegistry_noDirectReads shape the audit's fix text asks for: the doc and
-// the code are compared to each other, so neither can move without the other. It deliberately
-// does NOT check what the doc SAYS about a variable — only that every variable exists in both
-// places. A wrong description is a different problem; a missing entry is this one.
+// This is the TestAssetRegistry_noDirectReads shape: the doc and the code are compared to each other, so neither can
+// move without the other. It deliberately does NOT check what the doc SAYS about a variable, only that every variable
+// exists in both places. A wrong description is a different problem; a missing entry is this one.
 func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	root := ".."
 	docPath := filepath.Join(root, "docs", "env-vars.md")
@@ -29,9 +27,8 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	for _, v := range regexp.MustCompile(`GOINFER_[A-Z0-9_]+`).FindAllString(string(doc), -1) {
 		documented[v] = true
 	}
-	// One ROW per variable. The same var documented twice drifts: GOINFER_CUDA_FLASH_DECODE had an
-	// "(unset = off)" row and an "ON (S=16)" row at once after its default flipped, and
-	// GOINFER_CUDA_GRAPHS_SYNC sat in both the operator and the diagnostics sections.
+	// One ROW per variable: the same var documented twice drifts (a flipped default leaves the old "(unset = off)" row
+	// beside the new one, or one var sits in both the operator and the diagnostics sections).
 	rowSeen := map[string]int{}
 	for i, line := range strings.Split(string(doc), "\n") {
 		if m := regexp.MustCompile("^\\|\\s*`(GOINFER_[A-Z0-9_]+)`").FindStringSubmatch(line); m != nil {
@@ -41,13 +38,11 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 			rowSeen[m[1]] = i + 1
 		}
 	}
-	// M-56 (audit-2026-09-10.md): everything ABOVE the first "not contract" heading is an
-	// operator-facing promise (docs/api-tiers.md's Hard tier); a var documented only there but
-	// referenced by nothing except _test.go files is exactly GOINFER_GEMMA4_RESIDENT's shape —
-	// a bring-up gate that went silently unread while its doc row kept promising an effect. The
-	// phantom check below already tolerates a test-only reference for the diagnostics section
-	// (test-only IS what "not contract" means there); operatorDoc is scanned separately so that
-	// same tolerance can't hide a dead operator knob again.
+	// Everything ABOVE the first "not contract" heading is an operator-facing promise (docs/api-tiers.md's Hard tier). A
+	// var documented only there but referenced by nothing except _test.go files is a bring-up gate that went silently
+	// unread while its doc row kept promising an effect. The phantom check below tolerates a test-only reference for the
+	// diagnostics section (test-only IS what "not contract" means there); operatorDoc is scanned separately so that same
+	// tolerance cannot hide a dead operator knob.
 	operatorDoc := string(doc)
 	if i := strings.Index(operatorDoc, "## Diagnostics and experiment knobs"); i >= 0 {
 		operatorDoc = operatorDoc[:i]

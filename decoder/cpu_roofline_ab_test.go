@@ -125,9 +125,9 @@ func (h *cpuDecodeAB) run(name string, pairs int, set func(on bool)) (median flo
 	return median
 }
 
-// TestCPURoofline_w4a8Batch re-measures R-06's parked GOINFER_W4A8_BATCH (q/k/v as one fork/join,
-// gate/up as one) against the roofline accounting: the fork/join cost the per-component GB/s table
-// attributes to the small projections predicts a win of about 3-4 ms of a 54 ms 1.5B token.
+// TestCPURoofline_w4a8Batch re-measures R-06's parked GOINFER_W4A8_BATCH (q/k/v as one fork/join, gate/up as one)
+// against the roofline accounting: the fork/join cost the per-component GB/s table attributes to the small
+// projections is the win it predicts.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURoofline_w4a8Batch -v -count=1 -timeout 30m
 func TestCPURoofline_w4a8Batch(t *testing.T) {

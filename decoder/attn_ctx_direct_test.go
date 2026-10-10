@@ -10,12 +10,14 @@ import (
 	"testing"
 )
 
-// Audit R-17 (the remainder): the AV kernels (MatmulAVAcc64 / MatmulAVAcc64Group) overwrite a contiguous destination, so attendBatchedHeads's K=1 paths write
-// each head's context straight into ctx instead of into scratch and then copying it there (the per-head `ch`, the grouped `gCtx`, and Arm B's `fullCtx`).
+// attendBatchedHeads's K=1 paths write each head's context straight into ctx (the AV kernels MatmulAVAcc64 /
+// MatmulAVAcc64Group overwrite a contiguous destination) instead of into scratch and then copying (the
+// per-head `ch`, the grouped `gCtx`, and Arm B's `fullCtx`).
 //
-// This pins every one of those paths to the ctx bits the code produced BEFORE that change: a hash of ctx per case, recorded from the unmodified code. The attention
-// kernels accumulate in f64 and are bit-identical across architectures by design (the grouped NEON port and its Go fallback included), so one table serves every
-// arch; if a case ever differs by architecture, the table must be keyed by GOARCH, not loosened.
+// This pins every one of those paths to the ctx bits the scratch-and-copy version produced: a hash of ctx per
+// case. The attention kernels accumulate in f64 and are bit-identical across architectures by design (the
+// grouped NEON port and its Go fallback included), so one table serves every arch; if a case ever differs by
+// architecture, key the table by GOARCH, do not loosen it.
 //
 //	GOINFER_CTX_RECORD=1 go test ./decoder/ -run TestAttendBatchedHeads_ctxBitsUnchanged -v   # prints the table: only from code whose ctx path is the reference
 type ctxCase struct {
@@ -37,7 +39,7 @@ var ctxCases = []ctxCase{
 	{"grouped Arm B many workers, group 6, hd 128, 4 kv heads", 24, 4, 128, 301, maxAttnWorkers, true},
 }
 
-// ctxWant is filled from GOINFER_CTX_RECORD=1 output, recorded at the code before the R-17 AV-writes-into-ctx change.
+// ctxWant is filled from GOINFER_CTX_RECORD=1 output, recorded from the scratch-and-copy code (before the AV kernels wrote into ctx).
 var ctxWant = map[string]string{
 	"ungrouped serial, group 4, hd 64":                           "75ac92b7638d440d079dc39b7cc35c266a81c329cc98285a7100561d91bfd667",
 	"ungrouped head fan-out, group 4, hd 64":                     "75ac92b7638d440d079dc39b7cc35c266a81c329cc98285a7100561d91bfd667",

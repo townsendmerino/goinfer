@@ -5,26 +5,17 @@ import (
 	"testing"
 )
 
-// The CONFIG-DIALECT gate, and it exists because one publisher ships more than one spelling.
-//
-// z-lab's four DFlash drafters differ in every config-driven dimension — taps, trunk depth,
-// block width, hidden, vocab, mask id — and in TWO SPELLINGS the 4B-only loader could not read:
+// The CONFIG-DIALECT gate: one publisher ships more than one spelling. z-lab's four DFlash drafters differ in every
+// config-driven dimension (taps, trunk depth, block width, hidden, vocab, mask id) and in TWO SPELLINGS:
 //
 //   - block_size NESTED in dflash_config (top-level on the other three)
 //   - RoPE as rope_parameters (flat rope_theta on the other three)
 //
-// One publisher, two dialects, and the 4B-only loader reported the 35B as "block_size must be
-// >= 2, got 0" — a supported pairing looking broken. Third instance of this class in P10 after
-// granite's flat-only rope and nemotron's hybrid_override_pattern, which is why it is gated
-// rather than fixed quietly.
+// A loader that reads one dialect reports a supported pairing as broken ("block_size must be >= 2, got 0").
 //
-// TABLE, NOT A ONE-OFF. This started as a single 35B test. It is a table now because the 35B
-// turned out to be the OUTLIER — gpt-oss and gemma-4 both spell block_size at top level — and a
-// single-case gate would have left that as an assumption. The point of the table is that a
-// future drafter is one row, and the row records the dialect it exercises.
-//
-// Every case asserts the SHAPE the loader derived, not merely that loading succeeded: a loader
-// that silently defaulted a dimension would still "load".
+// A table, not a one-off: a future drafter is one row, and the row records the dialect it exercises. Every case
+// asserts the SHAPE the loader derived, not merely that loading succeeded: a loader that silently defaulted a
+// dimension would still "load".
 func TestDFlash_pairingDialects(t *testing.T) {
 	cases := []struct {
 		name    string

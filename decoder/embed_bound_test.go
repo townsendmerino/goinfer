@@ -5,16 +5,12 @@ import (
 	"testing"
 )
 
-// C-07: HiddenLast HAD NO LENGTH BOUND, only a vocab one.
-//
-// It preallocates KV for len(ids) positions and then runs one sequential forward per token with no
-// context to cancel it. So an over-long input is not slow, it is a ~114 GB allocation (28 layers,
-// kvDim 1024, 500k positions) plus attention over up to len(ids) keys per token, holding the
-// caller's mutex until the process is OOM-killed. The serving embedder's only bound was C-21's
-// 1 MiB of BYTES — about 500k tokens of short words.
-//
-// The bound is asserted HERE, where the cost is incurred, so a caller other than the serving
-// embedder cannot reintroduce it.
+// HiddenLast must be bounded by the context window, not only by vocab (C-07). It preallocates KV for len(ids)
+// positions and then runs one sequential forward per token with no context to cancel it, so an over-long input is not
+// slow, it is a huge allocation plus attention over up to len(ids) keys per token, holding the caller's mutex until the
+// process is OOM-killed. The serving embedder's only other bound is a 1 MiB cap in BYTES, about 500k tokens of short
+// words. The bound is asserted HERE, where the cost is incurred, so a caller other than the serving embedder cannot
+// reintroduce it.
 func TestHiddenLast_refusesMoreTokensThanTheContextWindow(t *testing.T) {
 	m := &Model{w: &Weights{
 		Cfg:  Config{MaxPositions: 8},

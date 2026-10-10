@@ -65,15 +65,13 @@ func TestDFlashDraftScaling(t *testing.T) {
 		}
 		return rows
 	}
-	// One round commits the anchor plus the accepted drafts. 5 is close to the measured mean
-	// accepted at the widths that matter (3.97 at k=7, 4.24 at k=8), so it is the realistic
-	// number of new context rows per round.
+	// One round commits the anchor plus the accepted drafts; 5 is close to the measured mean accepted at the widths that
+	// matter, so it is the realistic number of new context rows per round.
 	const newPerRound = 5
 
 	t.Logf("drafter: %d layers, hidden %d, block %d, fc in %d", len(d.layers), d.hidden, B, d.fc.Cols())
-	// Warm-up, discarded: the first draft pays allocator and cache costs that would otherwise
-	// land entirely on the first row and make it read slower than a LARGER context — which is
-	// exactly what the first version of this table showed.
+	// Warm-up, discarded: the first draft pays allocator and cache costs that would otherwise land entirely on the first
+	// row and make it read slower than a LARGER context.
 	if wf, err := d.FuseContext(be, mkctx(64)); err == nil {
 		_, _ = d.DraftBlock(be, wf, block)
 	}

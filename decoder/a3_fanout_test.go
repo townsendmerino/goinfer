@@ -10,55 +10,25 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// A3 fan-out — is the f32 prefill attention path actually single-threaded?
+// A3 fan-out: is the f32 prefill attention path single-threaded? attendBatchedHeads's f32 branch is serial
+// across heads (its per-kv-group gather is shared mutable state), but its two matmuls are linalg.MatmulBT,
+// which already fans out over output columns (parallelCols) above parThreshold = 1<<24 MACs. So the
+// question is the fan-out LEVEL (head vs column); a serial-vs-serial kernel ratio must not be set against a
+// profile share measured on the parallel production path.
 //
-// The premise this test exists to check, quoted from G24's own harness
-// (g24_attnkernel_test.go) and carried into the queue and the Atlas as a
-// costed next move:
+// This measures the real attendBatchedHeads at Mellum2 geometry and reports utilization (CPU time / wall
+// time) beside wall time: a single-threaded path cannot exceed ~1.0x. Arms, on identical inputs: acc64,
+// f32-colpar (pre-A3: column-parallel inside MatmulBT), f32-headpar (A3) and f32-serial (linalg forced
+// serial, the do-nothing arm).
 //
-//	"the f32 branch in attendBatchedHeads is single-threaded by construction
-//	 (its per-kv-group gather is shared mutable state)"
-//
-// That sentence is true about the HEAD LOOP and was then read as if it were
-// true about the WORK. It is not. The f32 arm's two matmuls are
-// linalg.MatmulBT, which fans out internally over its N output columns
-// (parallelCols) above parThreshold = 1<<24 MACs. At the K=8192 tile shape
-// each call is ~268M MACs — 16x over that line — so the f32 path is already
-// using every core, just at the COLUMN level instead of the HEAD level.
-//
-// G24 measured its two arms with MatmulBT forced serial, deliberately and
-// correctly, to get an arithmetic-plus-gather ratio. The error was downstream
-// of it: that serial-vs-serial ratio (8.37x) was fed into an Amdahl estimate
-// against a profile share measured on the PARALLEL production path, and the
-// gap between them was booked as recoverable headroom worth ~13%. Two
-// different parallelism states either side of one division sign.
-//
-// So this measures the real attendBatchedHeads, at real Mellum2 geometry, and
-// reports UTILIZATION (CPU time / wall time) alongside wall time. Utilization
-// is the discriminator: a genuinely single-threaded path cannot exceed ~1.0x
-// no matter what its wall clock says, and no amount of Amdahl arithmetic can
-// argue it up.
-//
-// Arms, all on identical inputs:
-//
-//	acc64            production default before 2026-08-31 (head-parallel)
-//	f32              production default now (column-parallel inside MatmulBT)
-//	f32-serial       f32 with linalg forced serial — the do-nothing arm, and
-//	                 the ONLY arm the "single-threaded by construction" claim
-//	                 actually describes
-//
-// Pre-registered reading (written before the first run):
-//
-//	If f32 utilization is ~1x, the premise holds and head fan-out is worth
-//	building. If it is >2x, the premise is false, the ~13% is not there to
-//	recover, and the queue item closes as already-parallel. The band between
-//	1x and 2x is ambiguous and parks pending a profile.
+// Reading, as coded (utilization of the f32-colpar arm): > 2.0x the premise is false (already parallel),
+// < 1.3x it holds (head fan-out is real headroom), in between is ambiguous and parks.
+// The premise's origin and the figures: docs/code-notes/decoder.md#TestA3FanoutUtilization.
 func TestA3FanoutUtilization(t *testing.T) {
 	if os.Getenv("GOINFER_A3_FANOUT") == "" {
 		t.Skip("set GOINFER_A3_FANOUT=1 to run the A3 fan-out utilization measurement")
 	}
-	// Mellum2 geometry — the model both 8k f32 runs used. 28 layers, but one
-	// layer's attention is what attendBatchedHeads is called with.
+	// Mellum2 geometry; one layer's attention is what attendBatchedHeads is called with.
 	const (
 		nH    = 32
 		nKV   = 4
@@ -78,9 +48,8 @@ func TestA3FanoutUtilization(t *testing.T) {
 	cache := &KVCache{}
 
 	nw := prefillAttnWorkers(K, nKeys, hd, nH)
-	// wantFused=false: this pool is exercised under BOTH useAcc64 states below (run("acc64", true,
-	// ...) and run("f32-headpar", false, ...) both pass `pool`), so it cannot promise fusedOK stays
-	// true for every call — vt/scores must stay allocated for the acc64 arm's `scores` write.
+	// wantFused=false: this pool is used under both useAcc64 states below, so it cannot promise fusedOK;
+	// vt/scores must stay allocated for the acc64 arm's `scores` write.
 	pool := newHeadWorkerPool(nw, K, nKeys, hd, false)
 	fmt.Fprintf(os.Stderr, "A3 fan-out: nH=%d nKV=%d hd=%d nKeys=%d K=%d tile=%d workers=%d GOMAXPROCS=%d\n",
 		nH, nKV, hd, nKeys, K, attnRowTile(K, nKeys), nw, runtime.GOMAXPROCS(0))
@@ -116,14 +85,11 @@ func TestA3FanoutUtilization(t *testing.T) {
 		return best, bestUtil
 	}
 
-	// Interleaved, not blocked: run the arms in an order that does not let a
-	// thermal or page-cache drift line up with one arm (CLAUDE.md measurement
-	// discipline; difference matched observations).
-	// Arms, interleaved. "f32-colpar" is the PRE-A3 shape: a 1-slot pool takes
-	// the serial head loop, whose matmul is the column-parallel package-level
-	// MatmulBT. "f32-headpar" is A3: the 6-slot pool fans out over heads with a
-	// serial matmul per worker. Same function, same inputs, bit-identical
-	// outputs (TestAttendF32Fanout_bitIdentical) — only the fan-out LEVEL moves.
+	// Arms, interleaved so thermal or page-cache drift cannot line up with one arm. "f32-colpar" is the
+	// pre-A3 shape: a 1-slot pool takes the serial head loop, whose matmul is the column-parallel
+	// package-level MatmulBT. "f32-headpar" is A3: the pool fans out over heads with a serial matmul per worker.
+	// Same function and inputs, bit-identical outputs (TestAttendF32Fanout_bitIdentical): only the fan-out
+	// level moves. "f32-serial" forces linalg serial.
 	wAcc, uAcc := run("acc64", true, false, pool)
 	wCol, uCol := run("f32-colpar", false, false, one)
 	wHead, uHead := run("f32-headpar", false, false, pool)
@@ -163,21 +129,15 @@ func randF32(n int, seed uint32) []float32 {
 	return out
 }
 
-// TestAttendF32Fanout_bitIdentical pins A3's central claim: the head-parallel
-// f32 arm produces BYTE-IDENTICAL output to the serial arm.
+// TestAttendF32Fanout_bitIdentical pins A3's central claim: the head-parallel f32 arm produces
+// BYTE-IDENTICAL output to the serial arm. It is bit-identity rather than a tolerance because the two things
+// a tolerance would let through are the two ways this change could be wrong: a worker reading another
+// worker's kh/vt, and MatmulBT's column fan-out being width-sensitive. Both show up as small drift a cosine
+// bar would wave through.
 //
-// It has to be bit-identity rather than a tolerance, because the two things a
-// tolerance would let through are exactly the two ways this change could be
-// wrong: a worker reading another worker's kh/vt (the race the old comment
-// feared), and MatmulBT's column fan-out being width-sensitive after all. Both
-// would show up as small numeric drift, which a cosine bar would wave through.
-//
-// The serial arm runs through a 1-slot pool with the column-parallel
-// package-level MatmulBT; the parallel arm through a 6-slot pool with each
-// worker's serial Workspace. So this simultaneously gates the head split AND
-// the claim that MatmulBT is numerically inert to fan-out width — if aikit
-// ever broke that contract, this goes red here rather than silently in a
-// generated token.
+// The serial arm runs through a 1-slot pool with the column-parallel package-level MatmulBT, the parallel
+// arm through a multi-slot pool with each worker's serial Workspace, so it gates the head split AND the
+// claim that MatmulBT is numerically inert to fan-out width.
 func TestAttendF32Fanout_bitIdentical(t *testing.T) {
 	const (
 		nH    = 8
@@ -198,9 +158,8 @@ func TestAttendF32Fanout_bitIdentical(t *testing.T) {
 	serialCtx := make([]float32, K*qDim)
 	parCtx := make([]float32, K*qDim)
 
-	// wantFused=true: both arms below always pass useAcc64=false against a treeMask-less cache, so
-	// this exercises P-05's vt/scores elimination (default GOINFER_FUSED_ATTENTION=on) as well as
-	// the fan-out bit-identity this test is named for.
+	// wantFused=true: both arms always pass useAcc64=false against a treeMask-less cache, so this also
+	// exercises the vt/scores elimination (GOINFER_FUSED_ATTENTION, default on) beside the fan-out identity.
 	serialPool := newHeadWorkerPool(1, K, nKeys, hd, true)
 	if len(serialPool) != 1 {
 		t.Fatalf("serial arm wants exactly 1 slot, got %d", len(serialPool))
@@ -213,16 +172,14 @@ func TestAttendF32Fanout_bitIdentical(t *testing.T) {
 	}
 	attendBatchedHeads(q, parCtx, keys, vals, 0, cache, 0, startPos, K, true, arch, false, parPool)
 
-	// Assert on the OUTPUT, not on a name: the doc comment above claims the two
-	// arms agree bitwise, and this is the assertion that names that thing.
+	// Assert on the OUTPUT: this is the assertion behind the doc comment's bit-identity claim.
 	for i := range serialCtx {
 		if serialCtx[i] != parCtx[i] {
 			t.Fatalf("f32 fan-out is not bit-identical: ctx[%d] serial=%v parallel=%v (head %d, row %d)",
 				i, serialCtx[i], parCtx[i], (i%qDim)/hd, i/qDim)
 		}
 	}
-	// Guard against the test passing on two buffers of zeros — a gather that
-	// never ran would satisfy the loop above perfectly.
+	// Guard against passing on two buffers of zeros: a gather that never ran would satisfy the loop above.
 	nonzero := 0
 	for _, v := range serialCtx {
 		if v != 0 {

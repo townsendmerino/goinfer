@@ -105,12 +105,12 @@ func (b *fakeNamedResidency) BuildResident(m *Model) (ResidentForward, bool, err
 func (b *fakeNamedResidency) Name() string { return b.name }
 
 // TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/tasks/task-metal-int8-2026-10.md): when
-// auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at the
-// precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively, and is
-// kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is dropped for
-// the CPU. int4, and any model on a metal the user named, go resident as before. Without the guard, the model-included
-// 0.5B goinfer-chat (an int8int8 bundle) went resident on Metal at int4 and loaded in 1.7 s against 0.17 s on the CPU
-// (exploratory runs, docs/measurements/r17-auto-backend-2026-10-01/).
+// auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at
+// the precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively,
+// and is kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is
+// dropped for the CPU. int4, and any model on a metal the user named, go resident as before. Without the guard an
+// int8int8 bundle went resident on Metal at int4 and loaded slower than on the CPU
+// (docs/measurements/r17-auto-backend-2026-10-01/).
 func TestAutoMetalPrecision_keepsTheLoadedPrecision(t *testing.T) {
 	for _, tc := range []struct {
 		auto        bool

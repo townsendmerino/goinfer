@@ -35,9 +35,9 @@ var markState = map[cacheState]func(c *KVCache){
 	stateAdapter:     func(c *KVCache) { c.lora = &loraRuntime{name: markedAdapter} },
 }
 
-// TestKVCache_everyFieldHasAState is the registration test: a KVCache field lands only with a
-// declaration of which kind of state it is, or why it is not state. KDA (audit 2026-09-10 C-03)
-// landed as a field nothing classified and was missed at every lifecycle site; this fails that commit.
+// TestKVCache_everyFieldHasAState is the registration test: a KVCache field lands only with a declaration of which
+// kind of state it is, or why it is not state. A field nothing classified (KDA's) is missed at every lifecycle site;
+// this fails that commit.
 func TestKVCache_everyFieldHasAState(t *testing.T) {
 	ty := reflect.TypeFor[KVCache]()
 	seen := map[string]bool{}
@@ -298,10 +298,10 @@ func TestCacheStateGrid_specRollbackCells(t *testing.T) {
 	}
 }
 
-// TestSession_adapterSwitchGoesCold is the adapter × prefix-reuse cell driven through the session's
-// own reuse decision (rewindForReuse is the first thing Session.Generate and both speculative session
-// entry points do with a non-empty prompt; reconcile is the last). Before 2026-10-08 a library caller
-// that switched adapters on a warm session reused K/V the previous adapter built.
+// TestSession_adapterSwitchGoesCold is the adapter × prefix-reuse cell driven through the session's own reuse
+// decision (rewindForReuse is the first thing Session.Generate and both speculative session entry points do with a
+// non-empty prompt; reconcile is the last). Without it a library caller that switches adapters on a warm session
+// reuses K/V the previous adapter built.
 func TestSession_adapterSwitchGoesCold(t *testing.T) {
 	m := plainModel(t)
 	a, b := &loraRuntime{}, &loraRuntime{}

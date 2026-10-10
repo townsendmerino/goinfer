@@ -10,40 +10,20 @@ import (
 	"testing"
 )
 
-// DOES A ROUTER FLIP EXPLAIN THE A3 MoE DIVERGENCE? — the mechanism experiment for the
-// --cpu-fast-attention MoE exclusion.
+// Does a router flip explain the A3 MoE divergence? The mechanism experiment for the f32-attention flag on a MoE:
+// a cosine cannot tell a routing flip from ordinary numeric drift, so three arms on one prompt separate them.
 //
-// The state of the argument before this test. forwardn.go excludes MoE from A3/G24
-// unconditionally, on a stated mechanism: "an f32 QK reassociation flips a top-k expert at a
-// near-tie and cascades". TestA3MoEExclusionIsMeasured now puts the SYMPTOM at cosine
-// 0.999787-0.999788 — an order of magnitude tighter than the 0.9976 dense already ships behind
-// the same flag. But a cosine cannot tell a routing flip from ordinary numeric drift, and the
-// guard is a claim about routing specifically. This measures the mechanism.
+//	A  acc64 attention, natural routing          (baseline; its routing is recorded)
+//	B  f32 attention, natural routing            (total divergence)
+//	C  f32 attention, A's routing REPLAYED       (divergence with the routing term removed)
 //
-// THE DECOMPOSITION, which is what makes it decisive. Three arms on one prompt:
+// Arm C uses the moeSelOverride seam. cos(A,C) ~= cos(A,B) means flips contribute ~nothing; cos(A,C) >> cos(A,B)
+// means routing flips dominate. It also reports what a flip costs: norm_topk_prob renormalizes over the kept
+// k, so the smallest top-k weight bounds one flip's contribution (a bound, not a margin; the dropped expert's
+// score is not in the trace).
 //
-//	A  acc64 attention, natural routing          — the baseline; its routing is recorded
-//	B  f32 attention, natural routing            — total divergence (what the flag would ship)
-//	C  f32 attention, A's routing REPLAYED       — divergence with the routing term REMOVED
-//
-// Arm C uses the existing moeSelOverride seam (built for E2's higher-precision replay). So:
-//
-//	cos(A,C) ~= cos(A,B)  =>  routing flips contribute ~nothing; the divergence is ordinary
-//	                          drift and the guard is aimed at something that is not happening.
-//	cos(A,C) >>  cos(A,B)  =>  routing flips ARE the dominant term and the guard has its case.
-//
-// THE PREDICTION, stated before the run so it can fail: given a symptom this small, arm C should
-// land close to arm B. If instead C is far cleaner than B, the exclusion is vindicated on its own
-// mechanism and this test says so — which is a real finding, not a failed test.
-//
-// WHAT A FLIP COSTS is reported too, because "a flip happened" is not "a flip mattered".
-// norm_topk_prob renormalizes over the kept k, so swapping the k-th expert perturbs the sum by at
-// most its weight; the SMALLEST top-k weight therefore BOUNDS one flip's contribution. That is a
-// bound, not a margin — the dropped expert's own score is not in the trace — and it is reported
-// as one.
-//
-// DIAGNOSTIC, NOT A GATE. It asserts only what must hold under either story (the arms are
-// comparable, the seams actually fired). The numbers are for a recorded decision.
+// DIAGNOSTIC, NOT A GATE: it asserts only what holds under either story (the arms are comparable, the seams
+// fired). The prediction and the numbers: docs/code-notes/decoder.md#TestA3MoERouteFlips.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_DIAG=1 GOINFER_MELLUM_CKPT=... GOINFER_MELLUM_K=2048 \
 //	go test -tags goinfer_testhooks ./decoder/ -run TestA3MoERouteFlips -v -timeout 60m
@@ -67,8 +47,8 @@ func TestA3MoERouteFlips(t *testing.T) {
 	if m.w.arch.MoE == nil {
 		t.Fatalf("%s is not a MoE", path)
 	}
-	// Varied ids: a constant-id prompt collapses the top-k to one near-identical set and
-	// cannot produce the near-tie flip this test exists to find.
+	// Varied ids: a constant-id prompt collapses the top-k to one near-identical set and cannot produce
+	// the near-tie flip this test exists to find.
 	vocab := m.w.arch.VocabSize
 	ids := make([]int, K)
 	for i := range ids {

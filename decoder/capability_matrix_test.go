@@ -121,7 +121,7 @@ func representativeConfig(modelType string) *Config {
 		}
 	case "qwen2_5_vl":
 		// The qwen2_5_vl adapter degenerates to qwen2 for the text path. It carries an m-RoPE section (head_dim/2 = 2
-		// split [1, 1, 0]): a Qwen-VL without one is refused since 2026-10-09 (a .giw used to drop it silently).
+		// split [1, 1, 0]): a Qwen-VL without one is refused (a .giw would drop it silently).
 		return &Config{
 			ModelType: "qwen2_5_vl", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
@@ -185,11 +185,10 @@ func representativeConfig(modelType string) *Config {
 				`"beta_fast":32.0,"beta_slow":1.0,"attention_factor":1.1}`),
 		}
 	case "olmo_hybrid":
-		// Olmo Hybrid: qwen3_5's Gated DeltaNet (3-of-4 layers) + olmo3's own full-attention
-		// shape (1-of-4), with MIXED NormPlacement per layer kind (the reason G2 paused for a
-		// decision) and NO RoPE at all (rope_theta: null, the real release's own value) — so
-		// this config exercises NoPositionEncoding for real, not the trivial "never checked"
-		// case. MHA (NumKVHeads == NumHeads), matching the one released size fetched.
+		// Olmo Hybrid: qwen3_5's Gated DeltaNet (3-of-4 layers) + olmo3's own full-attention shape (1-of-4), with MIXED
+		// NormPlacement per layer kind and NO RoPE at all (rope_theta: null, the real release's own value), so this config
+		// exercises NoPositionEncoding for real, not the trivial "never checked" case. MHA (NumKVHeads == NumHeads),
+		// matching the one released size fetched.
 		return &Config{
 			ModelType: "olmo_hybrid", VocabSize: 128, HiddenDim: 64, NumLayers: 4, NumHeads: 8,
 			NumKVHeads: 8, IntermediateDim: 128, RMSNormEps: 1e-6, HiddenAct: "silu",
@@ -439,11 +438,9 @@ func representativeConfig(modelType string) *Config {
 			ModelType: "kimi_k2", HiddenDim: 64, NumLayers: 4, NumHeads: 8, NumKVHeads: 8,
 			VocabSize: 128, IntermediateDim: 128, MoeIntermediateSize: 32, RMSNormEps: 1e-6,
 			QLoRARank: 24, KVLoRARank: 16, QKNopeHeadDim: 16, QKRopeHeadDim: 8, VHeadDim: 16,
-			// Real Kimi K2 has 384 routed experts (registry.go:39). The representative must carry the
-			// real count, not a tiny 16, or the generated hardware matrix shows Kimi WebGPU-resident
-			// even though the real model exceeds the router-kernel cap and declines (M22, the
-			// residentBackendMoECap check in features.go). Same representativeConfig-accuracy class as
-			// C6's Mellum yarn.
+			// Real Kimi K2 has 384 routed experts (the registry's kimi_k2 entry). The representative must carry the real count,
+			// not a tiny 16, or the generated hardware matrix shows Kimi WebGPU-resident although the real model exceeds the
+			// router-kernel cap and declines (residentBackendMoECap in features.go).
 			NRoutedExperts: 384, NSharedExperts: 1, NumExpertsPerTok: 4, NGroup: 1, TopkGroup: 1,
 			FirstKDenseReplace: 1, RoutedScalingFactor: 2.827, ScoringFunc: "sigmoid",
 			RopeParameters: json.RawMessage(`{"rope_theta":50000.0,"rope_type":"default"}`),
@@ -668,15 +665,11 @@ type capabilityRow struct {
 	GPUResident   bool     `json:"gpu_residency_eligible"`
 	Parity        string   `json:"parity"` // joined from testdata/parity_manifest.json by Name
 
-	// Checkpoint is the recommended checkpoint for this family, if there is one — the row
-	// pull/registry.go reads to turn a short name into a repo + file + digest.
-	//
-	// IT LIVES HERE, IN THE GENERATOR, because docs/capability-matrix.json is GENERATED and
-	// freshness-gated by this very test. Hand-editing the JSON is silently undone by the next
-	// `-update`, which is how the first version of this shipped and went red in CI. Data that is
-	// meant to survive belongs beside the family definition, not in the rendered artifact.
-	//
-	// Omitted entirely for a family with no recommendation, so the JSON stays free of null keys.
+	// Checkpoint is the recommended checkpoint for this family, if there is one: the row pull/registry.go reads to turn a
+	// short name into a repo + file + digest. It lives in the GENERATOR because docs/capability-matrix.json is generated
+	// and freshness-gated by this test: a hand edit to the JSON is silently undone by the next `-update`. Data meant to
+	// survive belongs beside the family definition. Omitted for a family with no recommendation, so the JSON has no null
+	// keys.
 	Checkpoint *recommendedCheckpoint `json:"checkpoint,omitempty"`
 }
 
@@ -706,10 +699,11 @@ type recommendedCheckpoint struct {
 // Only families whose parity is a T3 method may appear — pull's TestRegistry_noEntryOutrunsItsParity
 // enforces that, so a family still at tiny-golden cannot be recommended to a first-time user.
 var recommendedCheckpoints = map[string]recommendedCheckpoint{
-	// P9(d), owner decision 2026-10-08 (option A): one vision-language checkpoint per box class, each a single safetensors directory (the GGUF loader
-	// reads no image projector). S (CPU only, 16 GB RAM or less): Qwen3.5-0.8B. M (an 8 GB GPU, or 16-32 GB Apple Silicon): Qwen3-VL-2B. L (24 GB GPU or
-	// 64 GB and up): none yet, because nothing at that size is validated, Apache-licensed and a single directory; the explicit owner/repo:safetensors form works.
-	// The digest is Plan.TreeDigest at authoring time (pull prints it); pull refuses a repo that no longer matches.
+	// P9(d): one vision-language checkpoint per box class, each a single safetensors directory (the GGUF loader reads no
+	// image projector). S (CPU only, 16 GB RAM or less): Qwen3.5-0.8B. M (an 8 GB GPU, or 16-32 GB Apple Silicon):
+	// Qwen3-VL-2B. L (24 GB GPU or 64 GB and up): none yet, because nothing at that size is validated, Apache-licensed and
+	// a single directory; the explicit owner/repo:safetensors form works. The digest is Plan.TreeDigest at authoring time
+	// (pull prints it); pull refuses a repo that no longer matches.
 	"qwen3_5": {
 		Name: "qwen3.5-0.8b", Label: "Qwen3.5 0.8B (reads images)", Repo: "Qwen/Qwen3.5-0.8B", Kind: "directory", Quant: "bf16",
 		Bytes: 1769905646, SHA256: "1a91f39bee94362e2daefc14d18bbfa2e8c90890b4a7f0d1f43cf2a4603593e5",
@@ -734,9 +728,8 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		Bytes: 491400064, SHA256: "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
 		GoodFor: "code completion and small edits; the smallest checkpoint here that writes usable Go",
 		Needs:   "~1 GB resident at --quant int4; runs on any laptop",
-		// R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): measured via `serve check`
-		// against this exact checkpoint, nobara-pc, 2026-09-07 — "tools, OpenAI" passed
-		// (call get_weather({"city":"Paris"}) → result → answer in 2 turns), "tools,
+		// R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): measured via `serve check` against this exact
+		// checkpoint: "tools, OpenAI" passed (call get_weather({"city":"Paris"}) → result → answer in 2 turns), "tools,
 		// harness-scale" (12-tool schema) SKIPPED ("model answered without calling the tool").
 		Tools: "minimal schema: ok; harness-scale (12 tools): skip — too small (measured 2026-09-07, nobara-pc)",
 	},
@@ -755,72 +748,45 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		File: "granite-4.0-h-tiny-Q8_0.gguf", Quant: "q8_0",
 		Bytes: 7390331328, SHA256: "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
 		GoodFor: "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
-		// R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): this checkpoint used to load
-		// with "tokenizer.ggml.pre=\"dbrx\" is not a known pre-tokenizer; falling back to
-		// cl100k" on every pull — a registry-recommended entry cannot ship with a tokenizer
-		// decline. Fixed (tokenizer/gguf.go's byteLevelKnobs gained a measured "dbrx" case); the
-		// tokenizer tier is stated here rather than only in the runtime banner, since this is the
-		// line a `pull`-before-you-load reader actually sees.
+		// A registry-recommended entry cannot ship with a tokenizer decline (R8,
+		// docs/measurements/cold-user-2026-09-06-nobara-pc.md): the tokenizer tier is stated here as well as in the runtime
+		// banner, since this is the line a `pull`-before-you-load reader sees.
 		Needs: "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit. " +
 			"Tokenizer: pre=\"dbrx\", measured cl100k-shaped (tokenizer/gguf.go) — no PreTokenizerDecline",
-		// Attempted 2026-09-07: this checkpoint's decode path is CPU-only staged (R9 — no GPU
-		// dispatch exists for int4 in the staged path) and its prefill is sequential (no batched
-		// CPU prefill for this arch), so a full `serve check` run did not finish in a reasonable
-		// time on this box and was not force-completed. Not yet measured (R11 gate: never
-		// guessed) rather than extrapolated from a faster model's result.
+		// Not yet measured (R11 gate: never guessed rather than extrapolated from a faster model's result): a full `serve
+		// check` run was attempted and did not finish in a reasonable time on the box that tried, then a CPU-only staged
+		// decode with sequential prefill.
 		Tools: "not yet measured",
 	},
-	// R7 follow-up (docs/measurements/cold-user-2026-09-06-nobara-pc.md, and review feedback on
-	// that finding): Gemma-4-26B-A4B — this project's own §B4/§B4.1 host↔VRAM C′-streaming
-	// anchor, the model that section's whole design is measured against — DOES have a real,
-	// official download: `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` (Google's own QAT q4_0 GGUF;
-	// README's existing "bake any model" example at a smaller Gemma-4 tier already used this
-	// exact repo's naming convention). The earlier pass concluded no download existed because
-	// every reference IN THIS TREE'S OWN TESTS is a local, unpinned safetensors dir
-	// (GOINFER_GEMMA4_26B=~/models/gemma-4-26b-a4b-it) — that conclusion was about this tree's
-	// test fixtures, not about whether Google ever published GGUF weights, and it should have
-	// searched HF directly before ruling the model out rather than only grepping this repo.
-	// sha256/bytes: HF API blobs=true on the real repo, 2026-09-07 — then CROSS-VERIFIED against
-	// an actual local copy already on this box (~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf,
-	// byte count matches exactly) via TestRegistry_digestsMatchLocalFiles, same as gpt-oss-20b.
+	// R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): Gemma-4-26B-A4B, the §B4/§B4.1 host↔VRAM C′-streaming
+	// anchor, has a real official download: `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` (Google's own QAT q4_0 GGUF).
+	// sha256/bytes: HF API blobs=true on the real repo, cross-verified against a local copy
+	// (~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf, byte count matches) via TestRegistry_digestsMatchLocalFiles,
+	// as for gpt-oss-20b.
 	"gemma4": {
 		Name: "gemma-4-26b-a4b", Label: "Gemma 4 26B-A4B", Repo: "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
 		File: "gemma-4-26B_q4_0-it.gguf", Quant: "q4_0",
 		Bytes: 14439363584, SHA256: "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
 		GoodFor: "the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
 		Needs:   "~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER (driver 595.91.07): 39.3 tok/s at ctx 2048 (median of three runs, 37.3–39.4), every expert kept on the GPU through host→VRAM streaming with the DMA overlap (docs/measurements/peer-sweep-2026-09-29.md cell c), at ~20.0 GiB peak host RSS — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",
-		// Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). This
-		// checkpoint is multimodal (image-text-to-text); Gemma-4's tool template was a known
-		// partial (M-20, docs/tasks/task-embed-and-harness-ux.md §3.1) but that was fixed
-		// 2026-09-02 (chat/gemma4_tools.go's gemmaValue/gemmaParseValue, byte-exact call_result) —
-		// the remaining reason to run this deliberately rather than infer it is simply that it is
-		// not yet measured, not a template gap.
+		// Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). The checkpoint is multimodal and its
+		// tool template is complete (chat/gemma4_tools.go), so the reason to run it is only that it is unmeasured.
 		Tools: "not yet measured",
 	},
-	// R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the README's own "bigger than
-	// your GPU"/"bigger than your RAM" examples named a size class ("qwen3.5-35b-a3b",
-	// "20-35B MoE") with no resolvable owner/repo anywhere — a cold user could not find any
-	// checkpoint actually large enough to need -moe-cache-experts or -stream-weights. This
-	// family's own description above already claims "resident on an 8 GB card via
-	// -moe-cache-experts, validated on the real 20B" — gpt-oss-20b is that real 20B, so it is
-	// the one this project can actually recommend rather than a size class it cannot deliver.
-	// sha256/bytes are the repo's own git-lfs-recorded digest (HF API blobs=true on
-	// ggml-org/gpt-oss-20b-GGUF, 2026-09-07), the same kind of source release-assets.yml's
-	// pinned model URLs use — not re-hashed from a local download (12 GB; impractical for this
-	// entry the way the release workflow's embedded-tier fetch step already does for its own,
-	// much smaller, pins).
+	// R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): gpt-oss-20b is the real 20B this family's description
+	// claims validated (resident on an 8 GB card via -moe-cache-experts), so it is the large checkpoint the README's
+	// "bigger than your GPU/RAM" examples can name. sha256/bytes are the repo's own git-lfs-recorded digest (HF API
+	// blobs=true on ggml-org/gpt-oss-20b-GGUF), the same kind of source release-assets.yml's pinned model URLs use, not
+	// re-hashed from a local 12 GB download.
 	"gpt-oss": {
 		Name: "gpt-oss-20b", Label: "gpt-oss 20B", Repo: "ggml-org/gpt-oss-20b-GGUF",
 		File: "gpt-oss-20b-MXFP4.gguf", Quant: "mxfp4",
 		Bytes: 12109566624, SHA256: "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
 		GoodFor: "the 20-35B-class MoE this project actually validates and measures: too big to hold fully resident on an 8 GB GPU, which is the point — bring -moe-cache-experts or -stream-weights",
 		Needs:   "~12 GB if loaded fully resident (native MXFP4); on an 8 GB card use -moe-cache-experts (CUDA resident-core + cached-experts, measured working, not just eligible — see this family's description above)",
-		// Not yet measured against `serve check`'s tools rows specifically (R11 gate: never
-		// guessed). docs/integrations/claude-code.md's own 2026-09-02 measurement is the closest
-		// existing evidence for this size class: Qwen2.5-7B-Instruct (a different checkpoint, not
-		// this registry) held a 25-tool-schema agent loop where a 1.5B "re-calls the same tool
-		// forever" — worth running this row against once gpt-oss-20b's own harness-scale result
-		// is recorded, rather than assuming a same-class result transfers across families.
+		// Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). The nearest evidence is
+		// docs/integrations/claude-code.md's Qwen2.5-7B-Instruct measurement on a 25-tool schema, a different checkpoint:
+		// a same-class result does not transfer across families.
 		Tools: "not yet measured",
 	},
 }
@@ -978,17 +944,10 @@ func normColumn(a *Architecture) string {
 	return a.Norm.String() + ", " + a.NormPlacement.String()
 }
 
-// gpuResidentEligible is the FULL truth the "GPU-resident" column claims: at least one real
-// backend actually admits this arch (features.go's ResidentEligible — the same
-// decodeRunnerEligible-shape-AND-feature-coverage-AND-MoE-capacity gate hardware_matrix_test.go's
-// rows already use, so the two generated docs can never disagree about the same family) — NOT
-// decodeRunnerEligible() alone, which only answers "is the shape representable" and previously let
-// LFM2 read "GPU-resident: yes" for a family no backend could run at all (caught 2026-08-31, fixed
-// there with a special-case shape decline). olmo3/olmo_hybrid (and, it turns out on checking,
-// cohere/cohere2/mistral3/smollm3 too — five PRE-EXISTING rows, not new ones) hit the same failure
-// mode a different way, through undeclared features rather than a shape incompatibility; using the
-// existing, more complete ResidentEligible here instead of a second one-off special case fixes all
-// of them at once and can't drift from hardware-matrix.md's own answer again.
+// gpuResidentEligible is the full truth the "GPU-resident" column claims: at least one real backend actually admits
+// this arch (features.go's ResidentEligible, the same gate hardware_matrix_test.go's rows use, so the two generated
+// docs cannot disagree about a family). decodeRunnerEligible() alone only answers "is the shape representable" and
+// would let a family that no backend can run (through undeclared features, not shape) read "GPU-resident: yes".
 func gpuResidentEligible(arch *Architecture) bool {
 	for be := range residentBackendFeatures {
 		if ResidentEligible(arch, be) {
@@ -1004,15 +963,13 @@ func gpuResidentEligible(arch *Architecture) bool {
 // that failed to resolve.
 func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 	t.Helper()
-	// G-03: GPUResident derives from arch.decodeRunnerEligible(). Pin EVERY residency env var it
-	// could read, so the generated matrix is a property of the code alone — otherwise a dev/CI job
-	// with one exported fails the freshness check for an unrelated reason, and `-update` bakes an
-	// env-on answer into the doc.
+	// GPUResident derives from arch.decodeRunnerEligible(). Pin EVERY residency env var it could read, so the generated
+	// matrix is a property of the code alone: otherwise a dev/CI job with one exported fails the freshness check for an
+	// unrelated reason, and `-update` bakes an env-on answer into the doc.
 	//
-	// Keep GOINFER_GEMMA4_RESIDENT pinned even though decodeRunnerEligible no longer reads it. The
-	// pin is what makes the generator's independence CHECKED rather than assumed: if someone
-	// reintroduces the read, the matrix stays honest and TestGemma4Admission_unconditional fails
-	// loudly, instead of the doc quietly acquiring an env-dependent answer.
+	// Keep GOINFER_GEMMA4_RESIDENT pinned even though decodeRunnerEligible no longer reads it. The pin is what makes the
+	// generator's independence CHECKED rather than assumed: if someone reintroduces the read, the matrix stays honest and
+	// TestGemma4Admission_unconditional fails loudly, instead of the doc quietly acquiring an env-dependent answer.
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
 	keys := make([]string, 0, len(registry))
@@ -1199,8 +1156,8 @@ func TestCapabilityMatrix(t *testing.T) {
 	const mdPath = "../docs/capability-matrix.md"
 	const jsPath = "../docs/capability-matrix.json"
 	// pull/ embeds a BYTE COPY of the json (pull/registry.go's go:embed cannot reach ../docs), which
-	// TestRegistry_embeddedMatrixMatchesTheDoc keeps in lockstep. -update writes it too: a regeneration that left the
-	// copy behind went red in CI twice (2026-09-29: 49f594d0's qwen3_next row, then the 26B text on top of it).
+	// TestRegistry_embeddedMatrixMatchesTheDoc keeps in lockstep. -update writes it too: a regeneration that leaves the
+	// copy behind goes red in CI.
 	const pullJSPath = "../pull/capability-matrix.json"
 
 	if *updateMatrix {
@@ -1234,8 +1191,6 @@ func TestCapabilityMatrix(t *testing.T) {
 	checkFresh(jsPath, js)
 }
 
-// TestCapabilityMatrix_CoverageComplete asserts every registry key has both a
-// representativeConfig and a familyDoc, so adding a family without these fails CI.
 // TestCapabilityMatrix_checkpointLabels: a checkpoint's page is titled by its label, so a checkpoint without one (or a
 // label that is only its short name again) would title the page with an identifier.
 func TestCapabilityMatrix_checkpointLabels(t *testing.T) {
@@ -1281,6 +1236,8 @@ func TestCapabilityMatrix_siteDocsAreUsable(t *testing.T) {
 	}
 }
 
+// TestCapabilityMatrix_CoverageComplete asserts every registry key has both a representativeConfig and a familyDoc,
+// so adding a family without these fails CI.
 func TestCapabilityMatrix_CoverageComplete(t *testing.T) {
 	for mt := range registry {
 		if representativeConfig(mt) == nil {

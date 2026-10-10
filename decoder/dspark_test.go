@@ -12,20 +12,18 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// P10 kill-gate 1 for DSpark (docs/spec/08): the Go DSpark forward must match DeepSpec's own
-// implementation on dumped fixtures before any acceptance claim rests on OUR code. DSpark's
-// acceptance is already measured (5.76 / 5.73 / 3.04) but that was measured through DeepSpec's
-// loop — this is what lets goinfer claim it.
+// P10 kill-gate 1 for DSpark (docs/spec/08): the Go DSpark forward must match DeepSpec's own implementation on dumped
+// fixtures before any acceptance claim rests on OUR code. DSpark's acceptance was measured through DeepSpec's loop;
+// this is what lets goinfer claim it.
 //
-// It doubles as the test of the SHARED-TRUNK claim. `decoder/dspark.go` reuses `blockTrunk`
-// rather than reimplementing the forward, on the finding that DeepSpec's `_forward_backbone`
-// and z-lab's `DFlashDraftModel.forward` compute the same thing. If that were wrong, the
-// per-layer comparison below would diverge at layer 0 — the same code passes the DFlash
-// fixture, so a DSpark failure here would localize the difference rather than hide it.
+// It doubles as the test of the SHARED-TRUNK claim. `decoder/dspark.go` reuses `blockTrunk` rather than
+// reimplementing the forward, on the finding that DeepSpec's `_forward_backbone` and z-lab's
+// `DFlashDraftModel.forward` compute the same thing. If that were wrong, the per-layer comparison below would diverge
+// at layer 0: the same code passes the DFlash fixture, so a DSpark failure here would localize the difference rather
+// than hide it.
 //
-// Fixtures: testdata/dspark_qwen3_4b_golden.json + dspark_qwen3_4b_ref.safetensors, from
-// scripts/pin_dspark_trace.py. Weights are an asset (GOINFER_DSPARK_F32) — T3-in-practice,
-// not CI, exactly as the DFlash gate.
+// Fixtures: testdata/dspark_qwen3_4b_golden.json + dspark_qwen3_4b_ref.safetensors, from scripts/pin_dspark_trace.py.
+// Weights are an asset (GOINFER_DSPARK_F32): T3-in-practice, not CI, exactly as the DFlash gate.
 const (
 	dsparkRefPath    = "../testdata/dspark_qwen3_4b_ref.safetensors"
 	dsparkGoldenPath = "../testdata/dspark_qwen3_4b_golden.json"

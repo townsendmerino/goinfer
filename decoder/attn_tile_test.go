@@ -5,18 +5,15 @@ import (
 	"testing"
 )
 
-// C-04: THE POOL IS SIZED FROM THE GLOBAL KEY COUNT AND THE TILE IS COMPUTED FROM THE PER-LAYER ONE.
+// The head-worker pool is sized from the GLOBAL key count and the row tile is computed from the PER-LAYER one.
+// forwardLayersN sizes the pool once, from maxKeys = startPos+K, on the premise that nKeys is the same for every
+// layer. A LOCAL (sliding-window) layer whose ring has wrapped assembles a SHORTER window (nKeys = W-1+K) and
+// attendOneHead recomputes its row tile from that. attnRowTile is INVERSE in nKeys, so a shorter window yields a
+// LARGER tile than the slot's qh holds and the Q gather slices past its length (an unrecovered panic, in a
+// worker goroutine on the fan-out arm and the Generate goroutine on the serial one).
 //
-// forwardLayersN sizes the head-worker pool once, from maxKeys = startPos+K, and its comment states
-// the premise outright: "nKeys = startPos+K is the same for every layer in this sweep". It is not.
-// A LOCAL (sliding-window) layer whose ring has wrapped assembles a SHORTER window — nKeys = W-1+K
-// — and attendOneHead recomputes its row tile from that. attnRowTile is INVERSE in nKeys, so a
-// shorter window yields a LARGER tile than the slot's qh was allocated to hold, and the Q gather
-// slices past its length: `panic: slice bounds out of range`, in a worker goroutine on the fan-out
-// arm and in the Generate goroutine on the serial one. Neither is recovered.
-//
-// A COLD PREFILL ALWAYS HAS nKeys == maxKeys, which is why every golden and benchmark misses this.
-// It needs a WARM session: turn 1 leaves the ring past W, turn 2 appends a long suffix.
+// A cold prefill always has nKeys == maxKeys, which is why goldens and benchmarks miss it: it needs a WARM
+// session (turn 1 leaves the ring past W, turn 2 appends a long suffix).
 func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 	// hd tiny keeps the arithmetic cheap; the defect is in the row bookkeeping, not the math.
 	// K*maxKeys must exceed attnScoreTileBytes/4 (2Mi) or attnRowTile returns K for both and the
@@ -83,7 +80,7 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 	}
 }
 
-// The same shape on the acc64 arm, which the audit notes is equally affected: it shares qh.
+// The same shape on the acc64 arm, which shares qh and is equally affected.
 func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot_acc64(t *testing.T) {
 	const nH, nKV, hd, W = 1, 1, 4, 512
 	const startPos, K = 600, 2048

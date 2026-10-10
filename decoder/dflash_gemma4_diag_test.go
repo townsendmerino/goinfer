@@ -11,28 +11,19 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestDFlashGemma4_diag localizes the Gemma-4 pairing's 0.00 acceptance.
+// TestDFlashGemma4_diag localizes why the Gemma-4 pairing's mean acceptance was exactly 0.00 (477 rounds): a merely
+// mismatched drafter still lands the occasional newline or closing brace, so zero says the drafter is fed something it
+// cannot use. The pairing has no gate-1 reference dump to localize it, so this prints intermediate quantities instead of
+// asserting a threshold.
 //
-// 477 rounds, 480 tokens, mean accepted EXACTLY 0.00. That number is not "the drafter
-// transfers badly" — a merely mismatched drafter still lands the occasional newline or
-// closing brace. Zero across 477 first-position proposals says the drafter is being fed
-// something it cannot use, and the pairing has no gate-1 reference dump to localize it,
-// which is why this prints intermediate quantities instead of asserting a threshold.
+// Ruled out, so not re-checked here: the prompt (goinfer's Gemma4 template renders id-identical to HF's, ending in the
+// EMPTY thought block, Gemma 4's non-thinking prompt), the embedding scale (DrafterEmbedBlock goes through embedToken,
+// which applies arch.EmbedScale) and the LM head (DrafterHeadLogits handles tied heads, softcap and logit scale, and
+// argmax is invariant to the monotonic parts).
 //
-// Already RULED OUT, so they are not re-checked here:
-//   - the prompt: goinfer's Gemma4 template renders id-identical to HF's canonical one
-//     (24/24 ids), and its trailing `<|channel>thought\n<channel|>` is the EMPTY thought
-//     block, i.e. Gemma 4's NON-thinking prompt — the analogue of Qwen3's suppressor.
-//   - the embedding scale: DrafterEmbedBlock goes through embedToken, which applies
-//     arch.EmbedScale, so the block embedding matches the target's own convention.
-//   - the LM head: DrafterHeadLogits handles tied heads, softcap and logit scale, and
-//     argmax is invariant to the monotonic parts regardless.
-//
-// What is left is the hidden states, so that is what this measures. The tell is SCALE: the
-// drafter's fc maps taps*hidden -> hidden with weights trained on the reference's residual
-// magnitudes, and Gemma 4's residual stream is unusually large (embedding scale sqrt(2816)
-// ~ 53). If our captured norms are far from the drafter's expectation, everything downstream
-// is saturated noise and 0.00 is the expected consequence rather than a mystery.
+// What is left is the hidden states. The tell is SCALE: the drafter's fc maps taps*hidden -> hidden with weights trained
+// on the reference's residual magnitudes, and Gemma 4's residual stream is unusually large (embedding scale sqrt(2816)
+// ~ 53). If the captured norms are far from the drafter's expectation, everything downstream is saturated noise.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run DFlashGemma4_diag -v
 func TestDFlashGemma4_diag(t *testing.T) {

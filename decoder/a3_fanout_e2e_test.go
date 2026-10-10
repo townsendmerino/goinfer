@@ -9,29 +9,17 @@ import (
 	"time"
 )
 
-// A3 fan-out, END TO END on a real checkpoint.
+// A3 fan-out, end to end on a real checkpoint. The kernel ratio (TestA3FanoutUtilization) does not
+// project to a whole model, so the shipping claim comes from here.
 //
-// The kernel measurement (TestA3FanoutUtilization) says head-level fan-out is
-// 3.3x on attention alone. That is a KERNEL ratio, and this repo has already
-// paid once for projecting one of those to a whole model: the 3.11x four-layer
-// slice that became 1.52x at full depth, and the ~13% this very item was costed
-// at by feeding a serial-vs-serial kernel ratio into an Amdahl model built on a
-// parallel-path profile share. So the shipping claim comes from here, not from
-// there.
+// Method: paired and interleaved (CLAUDE.md measurement discipline: difference matched observations).
+// Each pair runs the same prompt through the same model twice, once with the fan-out and once with
+// GOINFER_PREFILL_ATTN_WORKERS=1, which forces prefillAttnWorkers to one slot and so takes the serial
+// head loop (the pre-A3 shape, MatmulBT still column-parallel inside it).
 //
-// Method: paired and interleaved (CLAUDE.md measurement discipline, rule 7 —
-// difference matched observations, never pool them). Each pair runs the SAME
-// prompt through the SAME model twice, once with the fan-out and once with
-// GOINFER_PREFILL_ATTN_WORKERS=1, which forces prefillAttnWorkers to 1 slot and
-// so takes the serial head loop — exactly the pre-A3 shape, with MatmulBT still
-// column-parallel inside it. That env var already existed as an A/B handle; no
-// measurement-only knob was added to the production path for this.
-//
-// It also asserts the two arms' logits are BIT-IDENTICAL at every depth. That
-// is not decoration: it is what makes the timing a like-for-like comparison
-// rather than a race between two different computations, and it exercises the
-// fan-out through its real caller (forwardLayersN) rather than through a
-// hand-supplied calling convention.
+// It also asserts the two arms' logits are bit-identical at every depth: that is what makes the timing a
+// like-for-like comparison, and it drives the fan-out through its real caller (forwardLayersN).
+// Why a kernel ratio is not quoted for a whole model: docs/code-notes/decoder.md#TestA3FanoutEndToEnd.
 func TestA3FanoutEndToEnd(t *testing.T) {
 	if os.Getenv("GOINFER_A3_FANOUT") == "" {
 		t.Skip("set GOINFER_A3_FANOUT=1 to run the A3 end-to-end prefill A/B")
@@ -42,10 +30,8 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 	}
 	ctx := deadlineCtx(t)
 	const pairs = 3
-	// 8192 added 2026-09-23 (P23, docs/queue-performance.md): the doc's own text says
-	// "K=8192 is NOT measured here and is deliberately not extrapolated to" — the trend across
-	// 1024/2048/4096 is monotone but a fourth point is what actually answers whether it holds,
-	// keeps climbing, or plateaus/reverses at the depth the f32 flag's own headline uses.
+	// 8192 is the depth the f32 flag's own headline uses; the trend over the lower three depths does not
+	// answer whether it holds there (docs/queue-performance.md).
 	depths := []int{1024, 2048, 4096, 8192}
 
 	setKnob(t, m, knobCPUFastAttention, "1") // this item is about the f32 path only
@@ -79,8 +65,7 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 			}
 			return out, d
 		}
-		// Warm both arms once before timing anything, so the first pair does not
-		// carry page-in cost into whichever arm happens to run first.
+		// Warm both arms once so the first pair does not carry page-in cost into whichever arm runs first.
 		refOff, _ := run("1")
 		refOn, _ := run("")
 		for i := range refOn {
@@ -93,8 +78,7 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 		var onD, offD []time.Duration
 		var ratios []float64
 		for p := range pairs {
-			// Alternate which arm leads, so a monotone drift (thermal, page
-			// cache) cannot systematically favour one of them.
+			// Alternate which arm leads, so a monotone drift (thermal, page cache) cannot favour one of them.
 			var dOn, dOff time.Duration
 			if p%2 == 0 {
 				_, dOff = run("1")

@@ -9,15 +9,13 @@ import (
 	"testing"
 )
 
-// R2 (docs/measurements/cold-user-2026-09-06.md, finding #3): on a Mac the runtime printed
-// "decoder: metal backend not built in ... using cpu" and then, on the very next line,
-// "loaded 28-layer model ... [backend=metal quant=int4]". The warning scrolls past; the status
-// line is what gets pasted into an issue, and it named a backend that was not executing. The
-// cost on that box was 37.9 vs 82.3 tok/s.
+// The loaded-model banner must name the backend that EXECUTES, not the one requested (R2,
+// docs/measurements/cold-user-2026-09-06.md, finding #3): a "[backend=metal ...]" status line after a "metal
+// backend not built in ... using cpu" warning named a backend that was not running, and the status line is what
+// gets pasted into an issue.
 //
-// These two tests are the gate. The first pins the semantics of the report; the second pins that
-// every banner in the tree actually uses it, which is the half that would have gone red on
-// v0.16.0 (all three banners formatted the REQUEST).
+// These two tests are the gate. The first pins the semantics of the report; the second pins that every banner in
+// the tree actually uses it.
 func TestBackendReport_namesTheEffectiveBackend(t *testing.T) {
 	decline := errors.New("decoder: metal backend not built in; rebuild with -tags metal")
 
@@ -27,8 +25,8 @@ func TestBackendReport_namesTheEffectiveBackend(t *testing.T) {
 		beErr     error
 		wantEff   string
 		wantReq   string
-		// wantIn are substrings the banner MUST contain; wantNotPrefix rejects the v0.16.0
-		// shape, where the whole field was just the requested name.
+		// wantIn are substrings the banner MUST contain; wantNotPrefix rejects the shape where the whole field was just
+		// the requested name.
 		wantIn        []string
 		wantNotEqual  string
 		wantNotSubstr string
@@ -76,11 +74,10 @@ func TestBackendReport_namesTheEffectiveBackend(t *testing.T) {
 	}
 }
 
-// TestBackendBanner_usesTheReport is the half that goes red on v0.16.0. A correct BackendReport
-// that no banner calls is exactly the state the cold run found, so the semantics test above
-// cannot stand alone: this walks every .go file in the tree, finds each site that formats
-// "[backend=%s", and requires its argument list to carry BackendReport(). A new command that
-// prints its own load banner from the request is caught the day it is written.
+// TestBackendBanner_usesTheReport is the half that goes red when a banner formats the request. A correct
+// BackendReport that no banner calls is a bug the semantics test cannot see, so this walks every .go file in the
+// tree, finds each site that formats "[backend=%s", and requires its argument list to carry BackendReport(). A new
+// command that prints its own load banner from the request is caught the day it is written.
 func TestBackendBanner_usesTheReport(t *testing.T) {
 	// The banner is a bracketed field so this cannot match cmd/gate's prose "(backend=%s)".
 	site := regexp.MustCompile(`\[backend=%s`)

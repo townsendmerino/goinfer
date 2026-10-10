@@ -18,7 +18,7 @@ import (
 // NumLayers-1 must reproduce that tensor EXACTLY. Bitwise — these are the same additions in the
 // same order, so anything but equality means the copy is taken somewhere else.
 //
-// Two further properties, both cheap and both real bugs I would otherwise ship:
+// Two further properties, both cheap and both real bugs:
 //   - capture must not PERTURB: logits with capture on must be bit-identical to logits with it
 //     off, since the seam is documented read-only and a drafter that changes the target's output
 //     is not a drafter.

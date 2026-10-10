@@ -296,11 +296,10 @@ func TestCPUBatchS0b_fusedShapesAndWidth(t *testing.T) {
 	}
 }
 
-// TestCPUBatchS0c_widthAA re-runs S0b's width sweep with an A/A control, because S0b's E2 was confounded: its
-// "default" and "w16" arms are the SAME configuration (the default width is GOMAXPROCS = 16 on nobara) and read 1.41x
-// apart, so position in the rotation (after a long serial arm the workers are parked) mattered more than width. Here
-// there is no serial arm, the default is measured twice (A and A'), every timed block is preceded by an untimed warm
-// block, and blocks are longer. A width result counts only if A/A' agree within a few percent.
+// TestCPUBatchS0c_widthAA re-runs S0b's width sweep with an A/A control: there is no serial arm, the default is
+// measured twice (A and A'), every timed block is preceded by an untimed warm block, and blocks are longer. A width
+// result counts only if A/A' agree within a few percent (a rotation position, not the width, can move a result more
+// than the width does).
 func TestCPUBatchS0c_widthAA(t *testing.T) {
 	path := os.Getenv("GOINFER_CPUBATCH_S0_MODEL")
 	if path == "" {

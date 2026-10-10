@@ -51,12 +51,11 @@ func (blockspecCommitStubWeights) MaskTokenID() int { return 0 }
 
 var _ BlockDrafterWeights = blockspecCommitStubWeights{}
 
-// TestBlockSpecGenerate_commitsResIDsOnFullCompletion is P-05's blockspec.go half (audit-2026-09-10):
-// BlockSpec.generate claimed resBusy and forgot resIDs (R-00) but never committed them back on a
-// completed generation, so a --drafter turn always left the resident cache cold for whatever ran
-// next (a plain Generate turn, or another BlockSpec turn). Uses a real loaded model (embedResident
-// needs real weights) with a stubbed drafter host/trunk so the seed step runs for real and
-// opt.MaxTokens == 1 ends the generation immediately after it, at the ONLY exit that commits.
+// TestBlockSpecGenerate_commitsResIDsOnFullCompletion: BlockSpec.generate must commit resIDs back on a completed
+// generation, or a --drafter turn leaves the resident cache cold for whatever runs next (a plain Generate turn, or
+// another BlockSpec turn). Uses a real loaded model (embedResident needs real weights) with a stubbed drafter
+// host/trunk so the seed step runs for real and opt.MaxTokens == 1 ends the generation right after it, at the ONLY
+// exit that commits.
 func TestBlockSpecGenerate_commitsResIDsOnFullCompletion(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.ResidentActive() {
@@ -124,9 +123,9 @@ func (d blockspecEchoDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 // TestBlockSpecGenerate_commitsOnlyWrittenPositions: a completed block-drafter generation may record in resIDs only
 // positions whose K/V the target actually wrote, since the next turn reuses them as they stand. The token a round (or
 // the seed) ends on is the target's own output, emitted but not yet forwarded: it becomes the next round's anchor.
-// Committing prompt+out at a max_tokens exit therefore claimed one position the cache never received — a rejected
-// draft's K/V, or nothing at all — and the next turn attended to it. Plain decode forwards every token it emits, so
-// the fix forwards that trailing token before committing, and the commit is prompt+out exactly as plain decode's.
+// Committing prompt+out at a max_tokens exit would therefore claim one position the cache never received (a rejected
+// draft's K/V, or nothing), and the next turn would attend to it. Plain decode forwards every token it emits, so the
+// trailing token is forwarded before committing, and the commit is prompt+out exactly as plain decode's.
 // Covered: the seed-only exit (MaxTokens 1), and exits after one and after two full rounds.
 func TestBlockSpecGenerate_commitsOnlyWrittenPositions(t *testing.T) {
 	for _, maxTok := range []int{1, 5, 9} {

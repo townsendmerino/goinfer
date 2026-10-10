@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// Options.ExactPrefill applies to the model that asked for it and to nothing else. Load used to
-// implement it with os.Setenv, which is process-global and never undone: a second model loaded
-// into the same process (serve's multi-model, any library user) inherited exact prefill.
+// Options.ExactPrefill applies to the model that asked for it and to nothing else. Load must not implement it with
+// os.Setenv, which is process-global and never undone: a second model loaded into the same process (serve's
+// multi-model, any library user) would inherit exact prefill.
 func TestExactPrefill_isPerModel(t *testing.T) {
 	for _, v := range []string{"GOINFER_CPU_FAST_ATTENTION", "GOINFER_CUDA_FAST_PREFILL", "GOINFER_METAL_FAST_PREFILL"} {
 		t.Setenv(v, "") // start from the default for every backend's knob

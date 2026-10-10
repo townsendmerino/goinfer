@@ -2,17 +2,14 @@ package decoder
 
 import "testing"
 
-// C-11: THE BLOCK-SPEC LOOP'S STOP SET MUST EQUAL THE ONE PLAIN DECODING USES.
+// The block-spec loop's stop set must equal the one plain decoding uses. Every other speculative loop calls
+// target.isStop(tok, sp); this one must not rebuild the set from Cfg.EOSIDs() alone, which misses
+// generation_config.json's additions (resolveEOSIDs merges them into m.eosIDs) and the caller's StopIDs (the chat
+// template's stops on a served request): an <|endoftext|> would come out as content and generation would run on to
+// <|im_end|> or max_tokens.
 //
-// Every other speculative loop calls target.isStop(tok, sp). This one rebuilt the set from
-// Cfg.EOSIDs() alone — config.json's eos_token_id, missing generation_config.json's additions
-// (which resolveEOSIDs merges into m.eosIDs) and the caller's StopIDs (the chat template's stops on
-// a served request). On the shipped pairing that is {151645} against {151645, 151643}: an
-// <|endoftext|> came out as content, generation continued to <|im_end|> or max_tokens, and
-// streamTokens decoded the stop token into the response.
-//
-// The invariant is AGREEMENT, so the test compares the two predicates directly rather than
-// re-listing what the set should contain — a list would be a second copy of the same belief.
+// The invariant is AGREEMENT, so the test compares the two predicates directly rather than re-listing what the set
+// should contain (a list would be a second copy of the same belief).
 func TestBlockSpec_stopSetAgreesWithPlainDecoding(t *testing.T) {
 	m := &Model{eosIDs: []int{151645, 151643}} // config.json + generation_config.json, merged
 	sp := SamplingParams{StopIDs: []int{151668}}
@@ -38,7 +35,7 @@ func TestBlockSpec_stopSetAgreesWithPlainDecoding(t *testing.T) {
 	}
 }
 
-// M-13: a round commits up to `width` tokens, and the budget was checked once per ROUND.
+// A round commits up to `width` tokens, so the budget (max_tokens and the context cap) must bound the round's width, not just gate the round.
 func TestBlockSpec_roundWidthRespectsBothBudgets(t *testing.T) {
 	const w = 8
 	// max_tokens=2 with 8-wide rounds: the loop condition passes at len(out)=1 and the round then

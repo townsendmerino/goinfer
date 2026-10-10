@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-// syntheticGroupedArch returns an Architecture whose GQA ratio is exactly
-// attnGroupedNEONSize (6) — the group size aikit's NEON port covers — so a
-// test against it can actually exercise attendGroupedHeads rather than
-// silently falling back to attendOneHead (R13 Gate 4's own "bit-identity
-// hides dispatch inertness" concern, applied here instead of assumed away).
+// syntheticGroupedArch returns an Architecture whose GQA ratio is exactly attnGroupedNEONSize (6), the group
+// size aikit's NEON port covers, so a test against it exercises attendGroupedHeads rather than silently falling
+// back to attendOneHead (bit-identity would hide a dispatch that never happened).
 func syntheticGroupedArch(hd int) *Architecture {
 	return &Architecture{
 		NumHeads:   attnGroupedNEONSize * 2, // two kv heads' worth
@@ -63,14 +61,9 @@ func runDecodeAttend(t *testing.T, arch *Architecture, cache *KVCache, q []float
 	return ctx
 }
 
-// TestAttendGroupedHeads_matchesPerHead is R13 Gate (2) (bit-identical, no
-// golden change — this compares directly rather than against a stored
-// golden) and Gate (4) (the wiring proof: attnGroupedRuns must be nonzero
-// with grouping on, at a shape that is actually eligible for it).
-// withGroupedKernels forces the grouped path's platform gate on for one test: these tests exist
-// to exercise and wire-prove the grouped path (Go fallback included), whatever this
-// architecture's shipped default is (cpu_tuning_other.go turns it off on non-arm64 — R9's Linux
-// attribution measured the fallback slower than per-head).
+// withGroupedKernels forces the grouped path's platform gate on for one test: these tests exist to exercise and
+// wire-prove the grouped path (Go fallback included), whatever this architecture's shipped default is
+// (cpu_tuning_other.go turns it off on non-arm64, where the fallback is slower than per-head).
 func withGroupedKernels(t *testing.T) {
 	t.Helper()
 	prev := attnGroupedKernels
@@ -78,6 +71,9 @@ func withGroupedKernels(t *testing.T) {
 	t.Cleanup(func() { attnGroupedKernels = prev })
 }
 
+// TestAttendGroupedHeads_matchesPerHead pins two things: the grouped path is bit-identical to the per-head path
+// (compared directly, not against a stored golden), and the wiring proof, that attnGroupedRuns is nonzero with
+// grouping on at a shape that is actually eligible for it.
 func TestAttendGroupedHeads_matchesPerHead(t *testing.T) {
 	withGroupedKernels(t)
 	arch := syntheticGroupedArch(64)
@@ -107,9 +103,8 @@ func TestAttendGroupedHeads_matchesPerHead(t *testing.T) {
 	}
 }
 
-// TestAttendGroupedHeads_belowNWinGateStaysUngrouped is the nWin gate check:
-// below attnGroupedMinKeys, the grouped path must not run even when enabled,
-// per the brief's "below which the per-head path runs unchanged".
+// TestAttendGroupedHeads_belowNWinGateStaysUngrouped is the nWin gate check: below attnGroupedMinKeys the grouped
+// path must not run even when enabled.
 func TestAttendGroupedHeads_belowNWinGateStaysUngrouped(t *testing.T) {
 	arch := syntheticGroupedArch(64)
 	nKeys := attnGroupedMinKeys - 1
@@ -124,12 +119,10 @@ func TestAttendGroupedHeads_belowNWinGateStaysUngrouped(t *testing.T) {
 	}
 }
 
-// TestAttendGroupedHeads_concurrentWorkers exercises the ACTUAL fan-out path
-// (len(pool) > 1, one goroutine per worker) rather than the serial pool[0]
-// arm every other test in this file takes — R13 Gate (3) needs `go test
-// -race` to see the concurrent grouped calls' writes, which a single-slot
-// pool never reaches. Two workers, two kv heads: each worker's contiguous
-// head range is exactly one kv group, so both take the grouped path.
+// TestAttendGroupedHeads_concurrentWorkers exercises the ACTUAL fan-out path (len(pool) > 1, one goroutine per
+// worker) rather than the serial pool[0] arm every other test in this file takes: `go test -race` must see the
+// concurrent grouped calls' writes, which a single-slot pool never reaches. Two workers, two kv heads: each
+// worker's contiguous head range is exactly one kv group, so both take the grouped path.
 func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 	withGroupedKernels(t)
 	arch := syntheticGroupedArch(64)
@@ -229,10 +222,9 @@ func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
 	}
 }
 
-// TestAttendGroupedHeads_wrongGroupSizeStaysUngrouped: a GQA ratio other than
-// attnGroupedNEONSize must never take the grouped path, even above the nWin
-// gate and with grouping enabled — aikit's NEON port is specialized to
-// exactly that group size (see attnGroupedNEONSize's own comment).
+// TestAttendGroupedHeads_wrongGroupSizeStaysUngrouped: a GQA ratio other than attnGroupedNEONSize must never
+// take the grouped path, even above the nWin gate and with grouping enabled (aikit's NEON port is specialized to
+// exactly that group size; see attnGroupedNEONSize).
 func TestAttendGroupedHeads_wrongGroupSizeStaysUngrouped(t *testing.T) {
 	arch := &Architecture{NumHeads: 8, NumKVHeads: 2, HeadDim: 64, AttnScale: 1 / math.Sqrt(64)} // group=4
 	const nKeys = 200

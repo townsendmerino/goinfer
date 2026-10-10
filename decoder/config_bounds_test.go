@@ -5,34 +5,27 @@ import (
 	"testing"
 )
 
-// M-10: two unbounded per-layer allocations from UNTRUSTED metadata — the M16 fatal-OOM gap,
-// reopened on the paths that did not get ggufLayerCount.
+// Two unbounded per-layer allocations from UNTRUSTED metadata (M-10). The failure mode is not a panic: a count like
+// 68719476736 asks for an allocation under Go's maxAlloc, so the runtime does not reject it: it tries, and the process
+// dies with a FATAL "out of memory" that no recover() can catch (the .giw loader has a recover() and its doc promises
+// a typed error; neither helps). So the bound has to come before the allocation, not around it.
 //
-// The failure mode is worth naming precisely, because it is not a panic: a count like
-// 68719476736 asks for an allocation that is under Go's maxAlloc, so the runtime does not
-// reject it — it tries, and the process dies with a FATAL "out of memory" that no recover()
-// can catch. The .giw loader HAS a recover() and its doc promises a typed error; neither
-// helps. So the bound has to come before the allocation, not around it.
-//
-// Checked at resolveArchitecture, which is the single point every source of config reaches —
-// .giw, safetensors, GGUF — rather than at the two JSON call sites the audit names. Putting it
-// at the callers would be the "one predicate, N consumers" shape that produced a large share
-// of this audit's findings.
+// Checked at resolveArchitecture, the single point every source of config reaches (.giw, safetensors, GGUF), rather
+// than at the JSON call sites: at the callers it would be the "one predicate, N consumers" shape.
 func TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation(t *testing.T) {
 	for name, tc := range map[string]struct {
 		mutate func(*Config)
 		names  string
 	}{
-		// The audit's own example: a 300-byte .giw declaring this is a fatal OOM today.
+		// A 300-byte .giw declaring this would be a fatal OOM.
 		"num_hidden_layers 2^36": {func(c *Config) { c.NumLayers = 1 << 36 }, "num_hidden_layers"},
 		"hidden_size":            {func(c *Config) { c.HiddenDim = 1 << 40 }, "hidden_size"},
 		"num_attention_heads":    {func(c *Config) { c.NumHeads = 1 << 30 }, "num_attention_heads"},
 		"num_key_value_heads":    {func(c *Config) { c.NumKVHeads = 1 << 30 }, "num_key_value_heads"},
 		"vocab_size":             {func(c *Config) { c.VocabSize = 1 << 40 }, "vocab_size"},
 		"num_experts":            {func(c *Config) { c.NumExperts = 1 << 30 }, "num_experts"},
-		// N-68 (docs/audit-2026-09-10.md): num_experts' own two other spellings
-		// (mixtral/gpt-oss/llama4's num_local_experts, glm4_moe/deepseek/nemotron_h's
-		// n_routed_experts) were unbounded here.
+		// N-68 (docs/audit-2026-09-10.md): num_experts' other two spellings (mixtral/gpt-oss/llama4's num_local_experts,
+		// glm4_moe/deepseek/nemotron_h's n_routed_experts) are bounded too.
 		"num_local_experts": {func(c *Config) { c.NumLocalExperts = 1 << 30 }, "num_local_experts"},
 		"n_routed_experts":  {func(c *Config) { c.NRoutedExperts = 1 << 30 }, "n_routed_experts"},
 	} {
@@ -70,8 +63,8 @@ func TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation(t *testing
 	})
 }
 
-// The end-to-end shape of M-10(a): laguna's block_count reaches make([]string, numLayers).
-// granitehybrid, nemotron and llama4 got ggufLayerCount when M16 was fixed; laguna did not.
+// End to end: laguna's block_count reaches make([]string, numLayers) and must be bounded by ggufLayerCount like
+// granitehybrid, nemotron and llama4.
 func TestGGUFLayerCount_boundsTheLagunaPath(t *testing.T) {
 	if _, err := ggufLayerCount(1 << 36); err == nil {
 		t.Fatal("ggufLayerCount accepted 2^36")

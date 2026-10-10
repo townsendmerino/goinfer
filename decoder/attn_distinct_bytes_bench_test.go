@@ -6,27 +6,16 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// BenchmarkAttnDistinctBytes is R13 (docs/tasks/red-october.md) step 0(iii): "the CPU's version of
-// the Metal collapse probe and CUDA's ncu traffic ratio" — it asks whether the real GQA layout
-// (nKV distinct KV heads, each read by nH/nKV query heads) is faster than an otherwise-identical
-// MHA-EXPANDED layout (nH distinct KV heads, one per query head, same per-head QKᵀ/scores·V work)
-// PURELY because of the byte-count difference, or whether the CPU's cache already dedups the
-// group's repeated reads so the two run at the same speed. Neither arm computes anything
-// meaningful (synthetic random data, no softmax, no correctness claim) — this is a memory-access-
-// pattern probe, not a model or a golden.
+// BenchmarkAttnDistinctBytes asks whether the real GQA layout (nKV distinct KV heads, each read by nH/nKV query
+// heads) is faster than an otherwise-identical MHA-EXPANDED layout (nH distinct KV heads, one per query head, same
+// per-head QKᵀ/scores·V work) purely because of the byte-count difference, or whether the CPU's cache already
+// dedups the group's repeated reads. It is a memory-access-pattern probe: synthetic seeded data, no softmax, no
+// correctness claim, not a model or a golden.
 //
-// Reading the result: GQA MARKEDLY faster than expanded ⇒ the hardware is not deduping, every
-// query head pays real DRAM/cache traffic for its group's reads, and an explicit K/V-staging
-// kernel (reading each KV head's row once, sharing it across its group in registers/threadgroup
-// memory) recovers real bandwidth, not just µops — "the top of the band is live" in the brief's own
-// words. GQA and expanded running the SAME speed ⇒ the cache already dedups the repeated reads in
-// hardware (they're hot from the immediately-prior query head's pass), and a grouped kernel's whole
-// gain is the µop sharing R13's own Build section already banks on — no additional bandwidth win to
-// expect.
-//
-// Real head shapes (NumHeads/NumKVHeads/HeadDim) come from loadBenchModel()'s own config so the
-// group size G = NumHeads/NumKVHeads matches what the served kernels actually see; the K/V data
-// itself is synthetic (rand, seeded) since only the ACCESS PATTERN is under test.
+// Reading: GQA markedly faster than expanded means the hardware does not dedup, and an explicit K/V-staging kernel
+// recovers real bandwidth. The same speed means the cache already dedups, and a grouped kernel's gain is the µop
+// sharing alone (docs/tasks/red-october.md, R13). Head shapes come from loadBenchModel()'s config so the group
+// size G = NumHeads/NumKVHeads matches what the served kernels see.
 func BenchmarkAttnDistinctBytes(b *testing.B) {
 	m, err := loadBenchModel()
 	if err != nil {

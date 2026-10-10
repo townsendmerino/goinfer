@@ -10,33 +10,12 @@ import (
 	"time"
 )
 
-// What is the MoE exclusion in A3/G24 actually worth?
-//
-// forwardn.go excludes MoE from --cpu-fast-attention unconditionally, on a stated
-// mechanism: "an f32 QK reassociation flips a top-k expert at a near-tie and
-// cascades ... so MoE is excluded here rather than trusted to the operator." The
-// mechanism is real in kind — routing is discontinuous where a dense MLP is not.
-// But it was never MEASURED on a MoE: no MoE appears in the A3 kernel-ratio
-// record, and both tests in a3_divergence_test.go load the DENSE bench model,
-// including TestA3FastAttentionDivergence, whose doc comment claims it pins "MoE
-// excluded" while asserting nothing about MoE at all.
-//
-// That matters now because the term the exclusion protects is the one that
-// dominates. On a Mellum2 slice, attention is 83.2% of prefill work at K=1024 and
-// 97.1% at K=8192 (ON A 4-LAYER SLICE — the full model is lower, and the measured
-// full-model win is 1.52x/1.59x, not the slice's 3.11x) — so the excluded lever is
-// aimed at most of the cost while
-// expert-major batching competes for what is left.
-//
-// This measures BOTH halves of the trade at once:
-//
-//	COST — output cosine and max abs delta, acc64 vs f32, the same statistic
-//	       a3_divergence_test.go reports for dense (which ships at 0.9976).
-//	GAIN — wall-clock speedup of the same prefill.
-//
-// It deliberately does NOT decide anything. A cosine is not a routing-flip count,
-// and a flip that changes generated TOKENS is the thing that would justify the
-// guard; this bounds the perturbation, and says so.
+// What was the MoE exclusion in A3/G24 worth? Measures both halves of the trade on a MoE checkpoint:
+// COST (output cosine and max abs delta, acc64 vs f32, the statistic a3_divergence_test.go reports for dense)
+// and GAIN (wall-clock speedup of the same prefill). It decides nothing: a cosine is not a routing-flip count,
+// and a flip that changes generated tokens is what would justify a guard (see a3_moe_routeflip_test.go and
+// a3_moe_tokenlevel_test.go). cpuFastAttention no longer excludes MoE. It asserts only that the probe changed
+// something. Context and figures: docs/code-notes/decoder.md#TestA3MoEExclusionIsMeasured.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_MELLUM_CKPT=... GOINFER_MELLUM_K=2048 \
 //	go test -tags goinfer_testhooks ./decoder/ -run TestA3MoEExclusionIsMeasured -v
@@ -49,13 +28,9 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 			t.Fatalf("GOINFER_MELLUM_K=%q: %v", v, err)
 		}
 	}
-	// Quant is an axis here, not a detail. The full 28-layer Mellum2 is ~12 GB at
-	// int8int8 and does not fit the 16 GB Mac at all, but ~6 GB at int4 does — and
-	// int4 is what docs/completed/mellum2-resident.md actually runs. The attention swap under test
-	// is quant-INDEPENDENT (acc64 vs f32 accumulation), but its SHARE is not: int4's
-	// faster weight matmul raises attention's fraction of prefill and so raises the
-	// speedup. So an int4 number is the operator-facing one and an int8int8 number is
-	// the one comparable to this file's earlier runs; label which you quote.
+	// Quant is an axis: the attention swap is quant-independent, but its share of prefill is not (int4's faster
+	// weight matmul raises attention's fraction and so the speedup). Label which quant you quote: int4 is the
+	// operator-facing number (docs/completed/mellum2-resident.md), int8int8 is the one comparable to earlier runs.
 	quant := os.Getenv("GOINFER_BENCH_QUANT")
 	if quant == "" {
 		quant = "int8int8"
@@ -70,9 +45,8 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 	if !m.canBatchN(K) {
 		t.Fatalf("canBatchN(%d) = false", K)
 	}
-	// Varied ids: on a MoE the prompt IS the routing, and a constant-id prompt
-	// collapses the top-k to one near-identical set — which would understate
-	// exactly the near-tie flips this test exists to provoke.
+	// Varied ids: on a MoE the prompt is the routing, and a constant-id prompt collapses the top-k to one
+	// near-identical set, understating the near-tie flips this test exists to provoke.
 	vocab := m.w.arch.VocabSize
 	ids := make([]int, K)
 	for i := range ids {

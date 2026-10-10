@@ -5,24 +5,14 @@ import (
 	"testing"
 )
 
-// P-01 / M-03: A DECODE ALLOCATION GATE. P-01's own note says one would have caught M-03, so here
-// it is.
+// A decode allocation gate (P-01 / M-03). headWorkerPool must not allocate a fusedScratch per pool slot, per layer,
+// per decoded token on a path that never reads it: decode runs acc64=true, and attendBatchedHeads computes
+// fusedOK = !useAcc64 && treeMask == nil. With GOINFER_FUSED_ATTENTION default-on such an allocation is linear in
+// context, zero-filled, GC-churned and unread (two orders of magnitude of TotalAlloc per token at context 256-1024).
 //
-// M-03: headWorkerPool allocated a fresh fusedScratch per pool slot, per layer, per decoded token,
-// on a path that never reads it — decode runs acc64=true and attendBatchedHeads computes
-// fusedOK = !useAcc64 && treeMask == nil. Since 84e0f13 made GOINFER_FUSED_ATTENTION default-on,
-// that was the shipped default. Measured before the fix, TotalAlloc per decoded token on
-// qwen2.5-coder-0.5b int8int8, interleaved:
-//
-//	context 256    11.9 MB/token (fused on)  vs  74 KB/token (=0)   160x
-//	context 1024   42.6 MB/token (fused on)  vs  74 KB/token (=0)   573x
-//
-// linear in context, zero-filled, GC-churned, and unread. After: identical with the schedule on and
-// off.
-//
-// The gate asserts the INVARIANT rather than a byte count, which would be a benchmark pinned as a
-// test and would drift with every unrelated allocation: turning the default-on fused schedule on or
-// off must not change what a decode step allocates, because decode never uses it.
+// The gate asserts the INVARIANT rather than a byte count, which would be a benchmark pinned as a test and would drift
+// with every unrelated allocation: turning the default-on fused schedule on or off must not change what a decode step
+// allocates, because decode never uses it.
 func TestDecode_fusedScheduleCostsNothingPerToken(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {

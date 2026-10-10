@@ -64,10 +64,8 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 		depth = d
 	}
 	tok := 785 // any valid id; content is decode-timing-irrelevant
-	// Reach depth via the BATCHED prefill path (forwardLayersN, K=depth) — O(depth)
-	// via one wide matmul sweep, not O(depth²) via depth sequential single-token
-	// forwards (the naive setup timed out at depth 2048: ~248s, almost all setup).
-	// This is also what production prefill actually does, so it is the
+	// Reach depth via the BATCHED prefill path (forwardLayersN, K=depth): O(depth) via one wide matmul sweep, not
+	// O(depth²) via depth sequential single-token forwards. It is also what production prefill does, so it is the
 	// representative setup, not just the cheap one.
 	if !m.canBatchN(depth) {
 		b.Skipf("model does not support batched prefill (canBatchN(%d)=false); depth setup would be O(depth²)", depth)

@@ -8,29 +8,17 @@ import (
 	"testing"
 )
 
-// A3 (G24) ships a DOCUMENTED DIVERGENCE, so the divergence must be a measured
-// number, not an adjective. This reports what a user gives up by enabling
-// GOINFER_CPU_FAST_ATTENTION, at the prompt depths the flag is for.
+// A3 ships a documented divergence, so the divergence must be a measured number: this reports what
+// enabling GOINFER_CPU_FAST_ATTENTION (f32 prefill attention) costs at the prompt depths the flag is for.
 //
-// WHAT THIS FILE ACTUALLY ASSERTS, stated to match the body rather than to flatter it.
-// It loads the DENSE bench checkpoint, so every assertion below is about dense:
-//   - default OFF: with the env unset, output is bit-identical to acc64;
-//   - explicit "0" is identical to unset;
-//   - the divergence clears the kernel comment's own >= 0.99 bar.
+// It loads the DENSE bench checkpoint, so every assertion is about dense:
+//   - unset is bit-identical to "0" (acc64) below fastAttnMinPrompt and to "1" (f32) at or above it;
+//   - "0" and "1" differ above the floor and agree below it;
+//   - the f32 divergence clears the kernel comment's cosine >= 0.99 bar.
 //
-// It used to claim, here, that it also pinned "MoE excluded: the flag cannot turn f32
-// attention on for a MoE arch at all". It never did — `MoE` appeared exactly once in
-// this file, in that sentence, and `arch.MoE` zero times. The exclusion it advertised
-// as pinned had never been measured on a MoE at all, and an auditor reading the promise
-// and matching it to a test name would have stopped there. That is the failure recorded
-// as its own rule in CLAUDE.md; this comment is the correction.
-//
-// The exclusion itself was dropped on 2026-08-29 after it WAS measured: the mechanism is
-// real (14.5% of moeMLP calls flip their top-k at 28 layers, 70.1% of the divergence) but
-// the magnitude does not support a categorical refusal — 1-cosine 2.126e-3 for MoE against
-// 2.400e-3 for the dense case this flag already ships, depth-matched, with a 48/48
-// IDENTICAL greedy continuation. Those assertions live where the models are:
-// a3_moe_exclusion_test.go, a3_moe_routeflip_test.go, a3_moe_tokenlevel_test.go.
+// MoE is not asserted here (cpuFastAttention does not exclude it); the MoE measurements are
+// a3_moe_exclusion_test.go, a3_moe_routeflip_test.go and a3_moe_tokenlevel_test.go.
+// History and the MoE numbers: docs/code-notes/decoder.md#TestA3FastAttentionDivergence.
 func TestA3FastAttentionDivergence(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
@@ -60,11 +48,9 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 		off := run("0")  // explicitly off
 		fast := run("1") // opted in
 
-		// THE DEFAULT FLIPPED 2026-08-31, so what "unset" must equal now depends on K.
-		// Below fastAttnMinPrompt the f32 path is floored off and unset is still exactly acc64;
-		// at or above it, unset IS the f32 path. Asserting both halves pins the floor itself,
-		// not just the default — a floor set to 0 or to MaxInt would fail here rather than
-		// silently change what every short request returns.
+		// What "unset" must equal depends on K: below fastAttnMinPrompt the f32 path is floored off and unset is
+		// exactly acc64; at or above it unset is the f32 path. Asserting both halves pins the floor itself, not just
+		// the default: a floor of 0 or MaxInt fails here instead of silently changing what every short request returns.
 		want, wantName := off, `"0" (acc64)`
 		if K >= fastAttnMinPrompt {
 			want, wantName = fast, `"1" (f32)`
@@ -75,8 +61,8 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 					K, fastAttnMinPrompt, wantName, i)
 			}
 		}
-		// And the two explicit settings must still DIFFER above the floor, or the flag has
-		// silently stopped doing anything and every divergence number here is measuring noise.
+		// The two explicit settings must still differ above the floor, or the flag has stopped doing anything
+		// and every divergence number here is noise.
 		if K >= fastAttnMinPrompt {
 			same := true
 			for i := range off {
@@ -90,10 +76,8 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 			}
 		}
 
-		// COMPARE off VS fast, not base vs fast. Until 2026-08-31 `base` (unset) WAS the acc64
-		// path, so base-vs-fast measured the trade; with the default flipped, unset IS fast and
-		// that pair is now fast-vs-fast — it reported cosine 1.000000000 and tripped this test's
-		// own "flag had no effect" guard, which was right to fire and pointing at the test.
+		// Compare off vs fast, not base vs fast: above the floor unset IS the f32 path, so base-vs-fast would be
+		// fast-vs-fast (cosine 1.0) and trip the "flag had no effect" guard below.
 		var dot, na, nb, maxAbs float64
 		for i := range off {
 			a, b := float64(off[i]), float64(fast[i])
@@ -105,26 +89,22 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 			}
 		}
 		cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
-		// BIT-IDENTITY IS maxAbs == 0, not `cos == 1.0 && maxAbs == 0`. cos is a float64 quotient
-		// of sums; for two bit-identical vectors it lands NEAR 1.0 and need not equal it, so the
-		// old conjunction could read "not identical" for vectors that were. It never fired before
-		// 2026-08-31 because the two arms always differed, so the weaker half was never load-
-		// bearing — until the floor made them agree below 512 and the inverse assertion ran.
+		// Bit-identity is maxAbs == 0, not cos == 1.0: cos is a float64 quotient of sums and for two
+		// bit-identical vectors lands near 1.0 without being required to equal it.
 		identical := maxAbs == 0
 		fmt.Fprintf(os.Stderr, "  A3 divergence K=%-5d cosine=%.9f maxAbs=%.3g%s\n", K, cos, maxAbs,
 			map[bool]string{true: "  (IDENTICAL — flag had no effect, check the guard)", false: ""}[identical])
 
 		prog.Step(1)
-		// Below the floor the two settings are SUPPOSED to agree — that is the floor working,
-		// not the knob being unwired.
+		// Below the floor the two settings are supposed to agree (the floor working, not the knob unwired).
 		if identical && K >= fastAttnMinPrompt {
 			t.Errorf("K=%d: enabling the flag changed nothing — either the knob is not wired or this arch is excluded", K)
 		}
 		if !identical && K < fastAttnMinPrompt {
 			t.Errorf("K=%d is below the floor (%d) but the settings differ — the floor is not being applied", K, fastAttnMinPrompt)
 		}
-		// The flag is a speed/accuracy trade, not a correctness hole. The kernel
-		// comment's own bar for dense f32 attention is cosine >= 0.99.
+		// The flag is a speed/accuracy trade, not a correctness hole: the kernel comment's bar for dense f32
+		// attention is cosine >= 0.99.
 		if cos < 0.99 && K >= fastAttnMinPrompt {
 			t.Errorf("K=%d: cosine %.9f is below the 0.99 bar the kernel comment sets for dense f32 attention — "+
 				"this is too large to ship behind a speed flag", K, cos)
@@ -132,14 +112,11 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 	}
 }
 
-// The guard that matters most, asserted structurally rather than trusted.
-//
-// A3 gives up "decode == prefill" for the model that enables it. It must NOT
-// give up "spec-decode verify == sequential greedy", because that one is not a
-// quality trade — a verify that disagrees with greedy silently accepts wrong
-// tokens. forwardN backs speculative verify and passes fastAttn=false
-// unconditionally, so the operator cannot reach it with an env var. This proves
-// that by running forwardN with the flag ON and requiring bit-identical output.
+// The guard that matters most, asserted structurally: A3 gives up "decode == prefill" for the model
+// that enables it, but must not give up "spec-decode verify == sequential greedy" (a verify that
+// disagrees with greedy silently accepts wrong tokens). forwardN backs speculative verify and passes
+// fastAttn=false unconditionally, so no env var reaches it. This runs forwardN with the flag ON and
+// requires bit-identical output.
 func TestA3NeverReachesSpeculativeVerify(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {

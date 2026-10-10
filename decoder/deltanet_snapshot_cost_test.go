@@ -1,16 +1,13 @@
 //go:build realckpt
 
-// MEASUREMENT ONLY — prices the narrow DeltaNet state snapshot for MTP speculation.
-// Builds nothing: no snapshot/restore is wired into any decode path, specRollbackSafe is
-// untouched, and nothing here is called from non-test code.
+// MEASUREMENT ONLY: prices the narrow DeltaNet state snapshot for MTP speculation. Builds nothing: no
+// snapshot/restore is wired into any decode path, specRollbackSafe is untouched, and nothing here is called from
+// non-test code.
 //
-// WHAT IS BEING PRICED, and it is not the thing docs/qwen3_5_moe.md deferred. That entry scoped
-// "state checkpoints" for cross-call PREFIX REUSE — restore to an arbitrary earlier position,
-// later, possibly across requests. Speculation needs something much weaker: snapshot immediately
-// before a verify, restore on rejection, discard. One buffer, one round deep, lifetime of
-// milliseconds. The two were bundled because they share a root cause (deltanet.go:150-153: the
-// state is fixed-size and NOT position-truncatable), not because they are the same size of
-// problem.
+// What is priced is not what docs/qwen3_5_moe.md deferred ("state checkpoints" for cross-call PREFIX REUSE: restore to
+// an arbitrary earlier position, later, possibly across requests). Speculation needs something much weaker: snapshot
+// immediately before a verify, restore on rejection, discard; one buffer, one round deep, lifetime of milliseconds.
+// Both stem from deltaState being fixed-size and NOT position-truncatable.
 //
 //	GOINFER_QWEN35_08B=~/models/qwen3.5-0.8b \
 //	  go test -tags realckpt ./decoder/ -run TestDeltaNetSnapshotCost -v -timeout 30m

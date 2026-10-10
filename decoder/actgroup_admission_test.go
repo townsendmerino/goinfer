@@ -7,7 +7,7 @@ import (
 )
 
 // TestActGroupResidentDecline_table is the gate's rule: a set activation group declines every resident
-// backend but CUDA, except Metal's q4k lane, which quantizes no activation (option-path admission finding 1).
+// backend but CUDA, except Metal's q4k lane, which quantizes no activation.
 func TestActGroupResidentDecline_table(t *testing.T) {
 	for _, c := range []struct {
 		backend, quant string

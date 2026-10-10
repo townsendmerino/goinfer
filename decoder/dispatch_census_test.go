@@ -30,14 +30,12 @@ import (
 // PROPERTY. If the property, rewrite it. If it is a genuine special case, add it below with a
 // one-line reason. Adding it without a reason defeats the census.
 
-// declaredIdentityDispatch is every use of an identity predicate in a dispatch position, with why it
-// is legitimate. Definition sites and comments are excluded by the scanner.
+// declaredIdentityDispatch is every use of an identity predicate in a dispatch position, with why it is legitimate.
+// Definition sites and comments are excluded by the scanner.
 //
-// KEYED ON CONTENT, NOT POSITION. The first version keyed on file:line and tripped the moment a
-// mechanical edit (G2's minmax rewrite) removed three lines above a declared site: mlp.go:356 became
-// :353, the site itself unchanged. A census that cries wolf on every reformat is a census someone
-// disables, and the thing it is supposed to notice — a member being named in a dispatch — is a
-// property of the CODE, not of where the code sits.
+// KEYED ON CONTENT, NOT POSITION: a key keyed on file:line trips on any mechanical edit above a declared site, and a
+// census that cries wolf on every reformat is a census someone disables. What it is supposed to notice, a member being
+// named in a dispatch, is a property of the CODE, not of where the code sits.
 var declaredIdentityDispatch = map[string]string{
 	"decoder/attention.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                    "fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
 	"decoder/forwardn.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                     "same fused QKV path on the batched-prefill forward",

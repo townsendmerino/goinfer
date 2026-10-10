@@ -50,11 +50,10 @@ func (d *blockspecReuseStubDrafter) DraftTokens(trunk [][]float32) ([]int, error
 
 var _ ResidentBlockDrafter = (*blockspecReuseStubDrafter)(nil)
 
-// TestBlockSpecGenerate_reusesDrafterContextOnExtension is P-05's deferred half (audit-2026-09-10):
-// a SECOND generate() call on the SAME *BlockSpec instance, whose prompt is a strict extension of
-// the first call's committed sequence, must reuse both the target's resident KV (reuseFrom > 0)
-// AND the drafter's own context (TruncateContext(reuseFrom), not TruncateContext(0)) — seeding
-// and fusing only the new suffix, not re-embedding the whole prompt.
+// TestBlockSpecGenerate_reusesDrafterContextOnExtension: a SECOND generate() call on the SAME *BlockSpec instance,
+// whose prompt is a strict extension of the first call's committed sequence, must reuse both the target's
+// resident KV (reuseFrom > 0) AND the drafter's own context (TruncateContext(reuseFrom), not TruncateContext(0)),
+// seeding and fusing only the new suffix, not re-embedding the whole prompt.
 func TestBlockSpecGenerate_reusesDrafterContextOnExtension(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.ResidentActive() {
@@ -121,14 +120,12 @@ func TestBlockSpecGenerate_reusesDrafterContextOnExtension(t *testing.T) {
 	}
 }
 
-// TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter is the safety half of P-05's
-// deferred fix: resIDs matching alone is not enough to trust the drafter's own context — a
-// DIFFERENT writer (a plain Generate turn, or another BlockSpec instance) can commit a
-// token-identical resIDs without ever touching THIS BlockSpec's drafter, leaving rd's context
-// stale relative to what resIDs now claims. Simulates that by committing resIDs directly
-// (bypassing s.generate, exactly like a plain Generate turn would) between two calls into the
-// SAME BlockSpec instance with an otherwise-reusable extension — the second call must still
-// TruncateContext(0), not trust the mismatched drafter state.
+// TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter is the safety half of drafter-context reuse: resIDs
+// matching alone is not enough to trust the drafter's own context. A DIFFERENT writer (a plain Generate turn, or
+// another BlockSpec instance) can commit a token-identical resIDs without ever touching THIS BlockSpec's drafter,
+// leaving rd's context stale relative to what resIDs claims. Simulates that by committing resIDs directly
+// (bypassing s.generate, as a plain Generate turn would) between two calls into the SAME BlockSpec with an
+// otherwise-reusable extension: the second call must still TruncateContext(0).
 func TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter(t *testing.T) {
 	m, _ := loadWithFakeResident(t)
 	if !m.ResidentActive() {

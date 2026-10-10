@@ -9,23 +9,16 @@ import (
 	"testing"
 )
 
-// G5 (docs/completed/task-families-2026-09.md, batch 2) Bailing Hybrid parity (inclusionAI, Ling 3.0,
-// model_type "bailing_hybrid"): DeepSeek-style Multi-head Latent Attention alternating with Kimi
-// Delta Attention (KDA) every layer_group_size-th layer being MLA, over a DeepSeekMoE FFN.
+// Bailing Hybrid parity (G5, docs/completed/task-families-2026-09.md; inclusionAI Ling 3.0, model_type
+// "bailing_hybrid"): DeepSeek-style Multi-head Latent Attention alternating with Kimi Delta Attention (KDA),
+// every layer_group_size-th layer being MLA, over a DeepSeekMoE FFN. MLA and the MoE router compose the existing
+// deepseekArchitecture primitives (two parameterized naming departures: both mixers are self.attention, and
+// MLA's output projection is self.dense; plus an optional sigmoid output gate). KDA is the new primitive: a
+// delta-rule recurrence like Gated DeltaNet with a PER-CHANNEL decay (decoder/kda_rehearsal.go).
 //
-// MLA and the MoE router are pure composition of goinfer's existing deepseekArchitecture
-// primitives (verified field-for-field against the real modeling_bailing_moe_v3.py, parameterized
-// for two real naming departures — both mixers are self.attention not self.self_attn, and MLA's
-// output projection is self.dense not o_proj — plus an optional Laguna-shaped sigmoid output
-// gate). KDA is the one genuinely new primitive: a delta-rule recurrence structurally identical to
-// Gated DeltaNet but with a PER-CHANNEL decay (batch 1 F4's rehearsal, decoder/kda_rehearsal.go,
-// already proved this against fla-org/flash-linear-attention's actual reference,
-// maxAbsDiff 2.98e-08).
-//
-// Regenerate (hand-assembled tiny checkpoint + golden, both reproducible — see
-// scripts/pin_bailing_hybrid_tiny.py's own docstring for why the real BailingMoeV3ForCausalLM
-// can't be instantiated on this Mac: its modeling file imports fla.ops.kda at module top level,
-// which transitively imports Triton, unavailable on this platform):
+// Regenerate (hand-assembled tiny checkpoint + golden); scripts/pin_bailing_hybrid_tiny.py's docstring says why the
+// real BailingMoeV3ForCausalLM cannot be instantiated on the Mac (its modeling file imports fla.ops.kda, which
+// needs Triton):
 //
 //	~/.venv-nemotron3/bin/python scripts/pin_bailing_hybrid_tiny.py
 const (

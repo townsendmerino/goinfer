@@ -48,40 +48,23 @@ func loadBenchModel() (*Model, error) {
 	return benchModel, benchErr
 }
 
-// BenchmarkDecode times steady-state single-token decode (the chat case:
-// batch=1, greedy). It loads the 0.5B at int8int8, prefills a short fixed
-// prompt, then runs b.N forward+sample steps in the timed loop — the same
+// BenchmarkDecode times steady-state single-token decode (the chat case: batch=1, greedy). It loads the 0.5B at
+// int8int8, prefills a short fixed prompt, then runs b.N forward+sample steps in the timed loop: the same
 // forward/runLayers + LM head + sampler path Generate drives. Reports tok/s.
 //
-// DO NOT COMPARE TWO RUNS OF THIS TAKEN AT DIFFERENT TIMES. Interleave the arms
-// in ONE session, alternating, and discard the first sample of each process.
-//
-// The number that settles it, measured on this box (Ryzen 7 3700X) on
-// 2026-08-12 with the same model, same binary shape, same everything:
-//
-//	morning session   ~0.93–0.97 tok/s
-//	afternoon session ~0.98–1.03 tok/s     — a ~5% SESSION-LEVEL SHIFT
-//
-// Both effects under test that day were smaller than that drift: an aikit
-// regression at −2.96% and its fix at +0.43%. A sequential before/after would
-// have been dominated by whichever session each arm happened to land in, and
-// would have reported whatever the box's mood was. The first attempt at exactly
-// that comparison produced "−4%" and was worthless.
-//
-// Interleaving is not rigour for its own sake here — it is the only reason
-// either result means anything. Pre-register the noise floor before running
-// (2.0% of the pooled mean, ≈2.4σ, from an 8-sample characterization), define
-// the warm-up discard in advance, and apply it identically to both arms.
-// Worked examples with raw samples: docs/measurements/aikit-v1.17.0-decode-ab.md
-// and -v1.17.1-decode-ab.md.
+// DO NOT COMPARE TWO RUNS OF THIS TAKEN AT DIFFERENT TIMES. Session-level drift on a box (about 5% between a morning
+// and an afternoon session) is larger than the effects this benchmark is used to settle, so interleave the arms in ONE
+// session, alternating, and discard the first sample of each process. Pre-register the noise floor and the warm-up
+// discard before running and apply them identically to both arms. Worked examples with raw samples:
+// docs/measurements/aikit-v1.17.0-decode-ab.md and -v1.17.1-decode-ab.md.
 //
 // It is the perf campaign's regression guard; run with profiles:
 //
 //	go test ./decoder -run '^$' -bench BenchmarkDecode -benchmem \
 //	  -cpuprofile cpu.out -memprofile mem.out -benchtime 5s
 //
-// Skips cleanly without the model asset (set GOINFER_PREQUANT_GGUF or drop the
-// gguf in testdata), like the other model-dependent tests.
+// Skips cleanly without the model asset (set GOINFER_PREQUANT_GGUF or drop the gguf in testdata), like the other
+// model-dependent tests.
 func BenchmarkDecode(b *testing.B) {
 	m, err := loadBenchModel()
 	if err != nil {

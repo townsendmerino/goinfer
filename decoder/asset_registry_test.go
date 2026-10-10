@@ -10,22 +10,11 @@ import (
 	"testing"
 )
 
-// THE GATE SIDE OF THE SHARED ASSET REGISTRY (testdata/assets.json).
-//
-// Every heavy gate used to resolve its own asset: read an env var, fall back to a path it spelled
-// out itself, and decide presence with os.Stat. The sweep's preflight did the same thing again in
-// bash with `[ -e ]`. Two implementations of "is this asset present", free to disagree, and they did:
-//
-//   * a DIRECTORY satisfies `-e`, so preflight reported .gguf assets RESOLVED while naming the
-//     directory above them. Four gates were costed by that.
-//   * GOINFER_QWEN35_GOLDEN's real requirement is a readable manifest.json INSIDE the directory,
-//     which `-e` on the directory cannot express -- preflight said present, the gate skipped.
-//   * GOINFER_PREQUANT_GGUF had three different fallbacks across four call sites and, at
-//     loadInt4Model, none at all -- so one box ran different gates against different files.
-//
-// Now both sides read testdata/assets.json and apply the predicate it states. The two
-// implementations (this file and scripts/asset_registry.py) are checked against each other by
-// TestAssetRegistry_agreesWithPreflight rather than assumed to match.
+// The gate side of the shared asset registry (testdata/assets.json). Every heavy gate resolves its asset
+// through assetPath, and the sweep's preflight (scripts/asset_registry.py) applies the same predicate the
+// registry states, instead of each re-implementing "is this asset present" (a directory satisfies bash
+// `-e`; GOINFER_QWEN35_GOLDEN needs a readable manifest.json INSIDE its directory). The two implementations
+// are checked against each other by TestAssetRegistry_agreesWithPreflight rather than assumed to match.
 
 // assetPath is what gates call. It SKIPS when the asset is absent, exactly as the hand-written
 // resolutions it replaces did, but with the reason the predicate produced rather than a bare

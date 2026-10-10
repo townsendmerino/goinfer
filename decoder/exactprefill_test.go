@@ -18,13 +18,11 @@ func unsetenvT(t *testing.T, name string) {
 	os.Unsetenv(name)
 }
 
-// TestLoad_exactPrefillOptionIsAModelProperty is M-26's chokepoint gate (docs/audit-2026-09-10.md),
-// revised 2026-09-24. decoder.Options.ExactPrefill used to be applied by Load setting the three
-// fast-prefill env vars — process-global and never undone, so every model loaded later in the same
-// process inherited it. It is now recorded on the Model and consulted by each backend's switch next
-// to its env var (CPU: Model.cpuFastAttention; CUDA: at resident build; Metal: on its resident). This
-// proves Load reports it on the model, applies it to this model's CPU prefill, and writes nothing to
-// the environment. The two-model inheritance case is TestExactPrefill_isPerModel.
+// TestLoad_exactPrefillOptionIsAModelProperty is M-26's chokepoint gate (docs/audit-2026-09-10.md).
+// decoder.Options.ExactPrefill is recorded on the Model and consulted by each backend's switch next to its env var;
+// Load must not set the three fast-prefill env vars, which are process-global and never undone, so every model loaded
+// later in the same process would inherit it. This proves Load reports it on the model, applies it to this model's CPU
+// prefill, and writes nothing to the environment. The two-model inheritance case is TestExactPrefill_isPerModel.
 func TestLoad_exactPrefillOptionIsAModelProperty(t *testing.T) {
 	unsetenvT(t, "GOINFER_METAL_FAST_PREFILL")
 	unsetenvT(t, "GOINFER_CUDA_FAST_PREFILL")

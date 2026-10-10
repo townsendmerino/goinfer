@@ -2,12 +2,10 @@ package decoder
 
 import "testing"
 
-// TestEmbedInt4Knob gates Options.EmbedInt4 (#3): with int4 quant, the default pins
-// the embed/head table to int8 (logit-critical), but the opt-in knob relaxes it to
-// int4 — halving the largest resident tensor on a big-vocab small model. Asserts the
-// embed table's precision actually changes (int8 → int4) and both models still
-// generate. The quality cost is recorded in docs (≈2.3 pts top-1); this test just
-// gates that the knob takes effect and is lossless-to-load.
+// TestEmbedInt4Knob gates Options.EmbedInt4 (#3): with int4 quant, the default pins the embed/head table to int8
+// (logit-critical), but the opt-in knob relaxes it to int4, halving the largest resident tensor on a big-vocab small
+// model. Asserts the embed table's precision actually changes (int8 → int4) and both models still generate. The
+// quality cost is recorded in docs; this test just gates that the knob takes effect and is lossless-to-load.
 func TestEmbedInt4Knob(t *testing.T) {
 	path := prequantGGUF(t)
 

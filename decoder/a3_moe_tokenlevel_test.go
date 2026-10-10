@@ -10,28 +10,16 @@ import (
 	"time"
 )
 
-// DOES THE A3 MoE DIVERGENCE CHANGE THE TOKENS A USER SEES?
+// Does the A3 MoE divergence change the tokens a user sees? A cosine on hidden states does not say: dense
+// divergence is smooth numeric drift, a MoE's is largely discontinuous routing flips, and the same cosine can
+// behave differently in generated text.
 //
-// The last gap before extending --cpu-fast-attention to MoE. Everything measured so far is a
-// COSINE on hidden states: 0.997874 at full depth, against 0.9976 for the dense case the flag
-// already ships. That comparison is depth-matched (both models are 28 layers) and it says the
-// categorical refusal is unsupported. What it does NOT say is what a user experiences.
-//
-// The two errors differ IN KIND, which is why the cosine alone is not enough. Dense's divergence
-// is smooth numeric drift — every logit nudged slightly. MoE's is 70% ROUTING FLIPS, which are
-// discontinuous: 14.5% of moeMLP calls select a different expert set. Two perturbations with the
-// same cosine can behave differently in generated text, and generated text is the product.
-//
-// WHAT IS COMPARED. The flag perturbs PREFILL only (forwardLayersN); decode is the same code on
-// both sides. So the arms share everything except the KV cache and first logits the prompt
-// produced, and any divergence in the continuation is downstream of exactly the thing under test.
-//
-// WHAT IS REPORTED, and why a bare token-mismatch count would mislead: greedy decode is a
-// sequence of argmaxes, so ONE flip at a near-tie makes every later token "differ" without any
-// quality claim being warranted. So this reports the FIRST divergence and the baseline's
-// top1-vs-top2 margin there, normalized by the logit range — the repo's existing 3%-of-range
-// near-tie rule (gpu/kv_f16_test.go, gpu/kv_i8_parity_test.go). A first divergence at a near-tie
-// is the benign class those tests already accept; one at a real margin is not.
+// The flag perturbs PREFILL only (forwardLayersN); decode is the same code on both sides, so any divergence in
+// the continuation is downstream of the prefill's KV cache and first logits. Greedy decode is a sequence of
+// argmaxes, so one near-tie flip makes every later token differ; a mismatch count would mislead. This reports
+// the FIRST divergence and the baseline's top1-vs-top2 margin there, normalized by the logit range (the
+// repo's 3%-of-range near-tie rule, gpu/kv_f16_test.go and gpu/kv_i8_parity_test.go). Context and figures:
+// docs/code-notes/decoder.md#TestA3MoETokenLevel.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_DIAG=1 GOINFER_MELLUM_CKPT=~/models/mellum2-unq \
 //	GOINFER_MELLUM_K=2048 GOINFER_MELLUM_N=48 \

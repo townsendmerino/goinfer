@@ -7,9 +7,9 @@ import (
 )
 
 // A config.json whose eos_token_id is JSON null (transformers writes the key with None when a model leaves it to
-// generation_config.json: Qwen3-ASR's text_config does) must have NO config-side stop id. json.Unmarshal of null into an int
-// succeeds and leaves 0, so EOSIDs() once returned [0], and token id 0 ended generation: in Qwen's vocabulary id 0 is "!",
-// so every Qwen3-ASR transcription stopped at its first "!" (G-S14c4, 2026-10-08: 2 of the 2 LibriSpeech clips with one).
+// generation_config.json: Qwen3-ASR's text_config does) must have NO config-side stop id. json.Unmarshal of null into
+// an int succeeds and leaves 0, so EOSIDs() would return [0] and token id 0 would end generation (in Qwen's vocabulary
+// id 0 is "!", so a Qwen3-ASR transcription would stop at its first "!").
 func TestConfigEOSIDs_nullIsAbsent(t *testing.T) {
 	for _, tc := range []struct {
 		name string

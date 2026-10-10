@@ -2,17 +2,15 @@
 
 // P10 kill-gate 2: measured acceptance for the DFlash block drafter.
 //
-// Gate 1 (TestDFlash_referenceParity / TestDFlash_targetEndToEnd) proved the forward
-// matches the reference. Only then is this legitimate to run — the pre-registered order,
-// and the one 05 got backwards.
+// Gate 1 (TestDFlash_referenceParity / TestDFlash_targetEndToEnd) proved the forward matches the reference; only then
+// is this legitimate to run (the pre-registered order).
 //
-// WHAT THIS MEASURES, AND WHAT IT DOES NOT. Acceptance is a property of the drafter's
-// distribution against the target's, i.e. NUMERICS — it does not depend on the backend, so
-// it is measured here on CPU and transfers to the GPU paths unchanged (at equal precision).
-// Wall-clock does NOT transfer and is NOT measured here: this loop verifies the block with
-// 16 sequential single-token forwards rather than one batched M=16 pass, because sequential
-// forwards are what ForwardCapture exposes and acceptance is indifferent to the difference.
-// Reading a speed number off this harness would be wrong; that is gate 3, on the GPU.
+// WHAT THIS MEASURES, AND WHAT IT DOES NOT. Acceptance is a property of the drafter's distribution against the
+// target's, i.e. NUMERICS: it does not depend on the backend, so it is measured here on CPU and transfers to the GPU
+// paths unchanged (at equal precision). Wall-clock does NOT transfer and is NOT measured here: this loop verifies the
+// block with 16 sequential single-token forwards rather than one batched M=16 pass, because sequential forwards are
+// what ForwardCapture exposes and acceptance is indifferent to the difference. Reading a speed number off this harness
+// would be wrong; that is gate 3, on the GPU.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestDFlashAcceptance -v -timeout 4h
 package decoder
@@ -86,46 +84,21 @@ func TestDFlashAcceptance(t *testing.T) {
 			maxNew = v
 		}
 	}
-	// maxNew MUST be several blocks, and this is a hard error rather than a note because a
-	// short run does not produce a noisy tok/verify — it produces a systematically INFLATED
-	// one, from two independent mechanisms:
+	// maxNew MUST be several blocks, and this is a hard error rather than a note because a short run does not produce a
+	// noisy tok/verify, it produces a systematically distorted one, from two independent mechanisms:
 	//
-	//  1. END-OF-RUN OVERSHOOT. The loop runs while generated < maxNew, so the final round is
-	//     counted in FULL even though it overshoots — up to block-1 extra tokens credited
-	//     against one verify. The smaller maxNew/block is, the less that overshoot is
-	//     amortized.
-	//  2. AN UNREPRESENTATIVE SLICE OF THE ANSWER. A truncated run measures whatever part of
-	//     the output it reaches, and that part is not the workload. The DIRECTION of this one
-	//     is model-dependent, which an earlier version of this comment got wrong: it asserted
-	//     a general "easy prefix" inflation, on the theory that a coding answer opens with
-	//     near-deterministic boilerplate. The 4B is consistent with that (7.11 -> 6.75 -> 6.14
-	//     as the run lengthens). The 35B does the OPPOSITE, and sharply — 4.77 at maxNew=16 to
-	//     8.15 at 48 — because its easy region is the code block, which arrives AFTER a prose
-	//     preamble that a 16-token run never gets past.
+	//  1. END-OF-RUN OVERSHOOT. The loop runs while generated < maxNew, so the final round is counted in FULL even though
+	//     it overshoots: up to block-1 extra tokens credited against one verify. The smaller maxNew/block is, the less
+	//     that overshoot is amortized.
+	//  2. AN UNREPRESENTATIVE SLICE OF THE ANSWER. A truncated run measures whatever part of the output it reaches, and
+	//     that part is not the workload. The DIRECTION is model-dependent: a coding answer's near-deterministic
+	//     boilerplate prefix inflates one pairing, while another pairing's easy region, the code block, arrives AFTER a
+	//     prose preamble a short run never gets past.
 	//
-	//     This is why the guard is a hard error rather than a directional correction. The bias
-	//     is not "short runs read high"; it is "short runs read UNPREDICTABLY", and at
-	//     maxNew=16 the two pairings rank in the opposite order from maxNew=48.
-	//
-	// MEASURED, not assumed. The Qwen3-4B code suite, same pairing, same quant, non-thinking:
-	//
-	//	              Qwen3-4B      Qwen3.6-35B-A3B
-	//	maxNew=16     7.11          4.77      <- 35B ranks WORSE
-	//	maxNew=48     6.75          8.15      <- and BETTER, at the very next length
-	//	maxNew=160    6.14 (recorded gate-2 number)
-	//
-	// So the inflation is ~1.16x from 16 to 160, and ~1.10x still remains at 48. Real, and
-	// enough to matter when two pairings are being compared, but MUCH smaller than a figure
-	// this comment briefly carried: an earlier draft cited 2.45x by comparing 7.11 against
-	// 2.90. That was wrong — 2.90 is the DISCREDITED thinking-mode measurement this document
-	// supersedes with 6.14, so the 2.45x conflated truncation with the thinking-mode error.
-	// Worth leaving recorded: the correct-looking baseline to grab is the one printed nearby,
-	// not the one that survived re-measurement.
-	//
-	// The conclusion that finding supported is unaffected, because it rested on a MATCHED
-	// control rather than on the recorded number: at maxNew=16 the 35B reads 4.77 against the
-	// 4B's 7.11, so the second pairing accepts LESS, not more. Any two tok/verify numbers
-	// being compared must share this setting; prefer 160, which is what gate 2 is recorded at.
+	// So the bias is not "short runs read high" but "short runs read UNPREDICTABLY", and two pairings can rank in the
+	// opposite order at different maxNew. Any two tok/verify numbers being compared must share this setting; prefer 160,
+	// which is what gate 2 is recorded at. Measurements and the correction history:
+	// docs/code-notes/decoder.md#TestDFlashAcceptance.maxNew.
 	effBlock := d.BlockSize()
 	if vw := verifyWidth(); vw > 0 && vw < effBlock {
 		effBlock = vw
@@ -183,21 +156,13 @@ func TestDFlashAcceptance(t *testing.T) {
 			res.rounds += r.rounds
 			res.accepted += r.accepted
 			res.generated += r.generated
-			// PER-PROMPT PROGRESS. Without this the harness logs once per SUITE, at the
-			// end, so a run that takes half an hour on a big target emits its pairing line
-			// and then nothing — indistinguishable from a hang. That ambiguity already
-			// cost one healthy run, killed on the belief it was stuck (the actual culprit
-			// there was an unbuffered pipe, but a silent harness is what made the belief
-			// plausible). One line per prompt makes progress observable and gives a
+			// PER-PROMPT PROGRESS: one line per prompt, so a half-hour run on a big target does not look like a hang, with a
 			// running estimate of the final figure.
-			// WHAT THE TARGET ACTUALLY PRODUCED, not what the suite label says it was asked
-			// for. The suite names describe the PROMPT; acceptance is a property of the
-			// OUTPUT, and on a reasoning-by-default model the two diverge silently. gpt-oss
-			// is the case in point: harmony has no non-thinking form, so its `code` run
-			// measured the analysis channel — reasoning prose — and produced a number that
-			// looked comparable to three code numbers and was not. That was caught only by
-			// inspecting an anchor token in a separate diagnostic. Printing a preview makes
-			// it visible in the run that produced the number.
+			// WHAT THE TARGET ACTUALLY PRODUCED, not what the suite label says it was asked for. Suite names describe the PROMPT;
+			// acceptance is a property of the OUTPUT, and on a reasoning-by-default model the two diverge silently (gpt-oss has no
+			// non-thinking harmony form, so its `code` run measured the analysis channel, reasoning prose, and gave a number that
+			// looked comparable to the code numbers and was not). Printing a preview makes that visible in the run that produced
+			// the number.
 			preview, perr := tk.Decode(r.emitted[:min(24, len(r.emitted))])
 			if perr != nil {
 				preview = "<decode failed: " + perr.Error() + ">"
@@ -209,21 +174,19 @@ func TestDFlashAcceptance(t *testing.T) {
 				float64(res.generated)/float64(res.rounds), preview)
 		}
 		tpv := float64(res.generated) / float64(res.rounds)
-		// STEADY STATE, reported alongside the raw ratio because the raw one has a third
-		// small upward bias on top of the two the maxNew guard covers.
+		// STEADY STATE, reported alongside the raw ratio because the raw one has a third small upward bias on top of the two
+		// the maxNew guard covers.
 		//
-		// `generated` is seeded at 1 per PROMPT — the anchor, which prefill produced and no
-		// verify round paid for. Over R rounds with P prompts:
+		// `generated` is seeded at 1 per PROMPT (the anchor, which prefill produced and no verify round paid for). Over R rounds
+		// with P prompts:
 		//     generated = P + R + sum(accepted)
 		//     tok/verify = 1 + P/R + mean(accepted)
-		// so the raw ratio carries a +P/R term that has nothing to do with the drafter and
-		// shrinks as the run lengthens: +0.23 on the 35B's 4.77 at 13 rounds, +0.33 on the
-		// 4B's 7.11 at 9 rounds — ~5% each. 1 + mean(accepted) is the prompt-count-independent
-		// figure, and is what two pairings should be compared on.
+		// so the raw ratio carries a +P/R term that has nothing to do with the drafter and shrinks as the run lengthens.
+		// 1 + mean(accepted) is the prompt-count-independent figure, and is what two pairings should be compared on.
 		//
-		// The gate below still uses the raw ratio, deliberately: it is the definition every
-		// recorded number in docs/spec/08 was measured under, and silently redefining a metric
-		// to move a number past its own bar is the move this whole file exists to prevent.
+		// The gate below still uses the raw ratio, deliberately: it is the definition every recorded number in docs/spec/08 was
+		// measured under, and silently redefining a metric to move a number past its own bar is the move this whole file exists
+		// to prevent.
 		meanAcc := float64(res.accepted) / float64(res.rounds)
 		t.Logf("[quant=%q maxNew=%d vw=%d] %-5s  %2d rounds (%.1f/prompt)  %3d tokens  mean accepted %.2f/%d  => %.2f tok/verify (steady state %.2f)",
 			quant, maxNew, verifyWidth(), suite, res.rounds, float64(res.rounds)/float64(len(dflashSuites[suite])),
@@ -242,16 +205,12 @@ func TestDFlashAcceptance(t *testing.T) {
 	}
 }
 
-// noThinkSuffix returns the ids for "<think>\n\n</think>\n\n" — what Qwen3's template emits
-// for enable_thinking=False.
-//
-// THIS USED TO BE A LITERAL []int{151667, 271, 151668, 271}, pinned from Qwen3-4B, and that was
-// a bug waiting for the second pairing. Qwen3.6-35B-A3B has a 248320-token vocab in which
-// <think> is 248068 and 151667 is an unrelated token — so the literal would have quietly fed
-// the 35B four wrong tokens, depressing acceptance in a way that looks exactly like "the
-// drafter transfers badly to this target". Resolve it through the tokenizer that ships with
-// the target, and verify rather than trust: the encode must produce the <think>/</think> ids
-// the tokenizer itself reports.
+// noThinkSuffix returns the ids for "<think>\n\n</think>\n\n", what Qwen3's template emits for
+// enable_thinking=False. It is resolved through the tokenizer that ships with the target, not a literal id list pinned
+// from one pairing: another pairing's vocab puts <think> at a different id (Qwen3.6-35B-A3B: 248068, where 151667 is
+// an unrelated token), and four wrong tokens would depress acceptance in a way that looks exactly like "the drafter
+// transfers badly to this target". Verify rather than trust: the encode must produce the <think>/</think> ids the
+// tokenizer itself reports.
 func noThinkSuffix(t *testing.T, tk *tokenizer.Tokenizer) []int {
 	t.Helper()
 	ids, err := tk.Encode("<think>\n\n</think>\n\n", false)
@@ -297,18 +256,13 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 	t.Helper()
 	vw := verifyWidth()
 	turns := []chat.Turn{{Role: "user", Content: prompt}}
-	// THE TARGET'S OWN TEMPLATE, detected — not ChatML assumed.
+	// THE TARGET'S OWN TEMPLATE, detected, not ChatML assumed. ChatML is right for both Qwen3 pairings and wrong for
+	// Gemma-4 (<|turn>/<|channel> markers) and gpt-oss (harmony): feeding a Gemma target ChatML would not error, it
+	// would measure the drafter against a prompt format the target never sees (raw vs chat accepted 0/15 vs 10/15).
 	//
-	// This was hardcoded to chat.ChatML(), which is right for both Qwen3 pairings and wrong
-	// for the other two: Gemma-4 uses <|turn>/<|channel> markers and gpt-oss uses harmony.
-	// Feeding a Gemma target ChatML would not error — it would just measure the drafter
-	// against a prompt format the target never sees, and increment 2 already measured what
-	// that costs (raw vs chat: 0/15 vs 10/15 accepted).
-	//
-	// An unrecognized template is a HARD ERROR rather than the library's raw-completion
-	// fallback. Falling back would produce a number rather than a failure, and a plausible
-	// acceptance figure measured off a malformed prompt is the single most expensive failure
-	// mode this harness has (it has now produced three retracted conclusions in P10).
+	// An unrecognized template is a HARD ERROR rather than the library's raw-completion fallback: falling back would
+	// produce a number rather than a failure, and a plausible acceptance figure measured off a malformed prompt is the
+	// most expensive failure mode this harness has.
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {
 		t.Fatalf("chat.Detect: %v — refusing the raw-completion fallback, which would measure "+
@@ -451,14 +405,10 @@ func dflashMeanStd(xs []int) (mean, std float64) {
 var _ = fmt.Sprintf
 var _ = dflashMeanStd
 
-// BenchmarkDFlashTrunk times ONE block draft — the cost that decides increment 4's
-// architecture. If the CPU trunk is cheap relative to a resident GPU target step, the
-// target can go resident while the drafter stays on CPU. If it is not, the drafter has to
-// be ported to the GPU too, and increment 4 is a much bigger build.
-//
-// This is the question Lever 2 already answered once the hard way: the DRAFT was the wall,
-// not the verify — a CPU draft against a GPU target measured 0.11×. Measure before
-// building, not after.
+// BenchmarkDFlashTrunk times ONE block draft, the cost that decides increment 4's architecture. If the CPU trunk is
+// cheap relative to a resident GPU target step, the target can go resident while the drafter stays on CPU; if not, the
+// drafter has to be ported to the GPU too, and increment 4 is a much bigger build. Measure before building (a CPU draft
+// against a GPU target was the wall in Lever 2, not the verify).
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run '^$' -bench DFlashTrunk -benchtime 10x
 func BenchmarkDFlashTrunk(b *testing.B) {
