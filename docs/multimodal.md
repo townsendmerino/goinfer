@@ -20,7 +20,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU | Served on CUDA (S6, 2026-10-09). |
 | Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09). |
 | GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | One image per request (2026-10-09). |
-| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU | Pixtral tower, CPU float32 (S10, 2026-10-09). |
+| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU | Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU. |
 
 <!-- END images-and-audio support table -->
 
@@ -32,7 +32,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 >
 > Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; the newest message's images, up to 8 and each its own block in place (S11), while earlier images are replaced by a note, `internal/serveapp/image_history.go`; GLM-OCR takes one) for **Gemma 3** (SigLIP),
 > **Gemma 4** (E2B/E4B/26B-A4B/31B), **Qwen2.5-VL**, **Qwen3.5+ dense** (0.8B and 9B gated; the MoE sizes are accepted by serve's auto-discovery and have never been
-> run) and **GLM-OCR**. Negatives: Qwen3-VL is its text decoder only (no tower), and a `mistral3` checkpoint's tower is ignored (an image gets HTTP 400).
+> run), **GLM-OCR**, **Qwen3-VL** (S10) and **Ministral 3** (the Pixtral tower, CPU float32; S10, G-S10m-a to d, 2026-10-09).
 > In each cell, the first half is where the vision **tower** runs, the second where the **decoder** runs after the image.
 >
 > | | CPU | CUDA | Metal | WebGPU |
@@ -951,7 +951,8 @@ number is published without provenance.
   and a single directory; `pull owner/repo:safetensors` works for anything else. Qwen2.5-VL-3B is deliberately not recommended: its `qwen-research`
   license is non-commercial. Each line carries the tower's cost. Record: `docs/tasks/task-multimodal-support-2026-10.md`, "P9(d) done".
 - **P10 · Breadth on the small end.** LFM2.5-VL-3B (SigLIP2 on `lfm2`), Ministral 3's Pixtral tower
-  (the `ministral3` decoder exists; the tower is in the same checkpoint), North Micro Vision 2.4B.
+  (done 2026-10-09: S10, G-S10m-a to d in `docs/tasks/task-multimodal-support-2026-10.md`), North Micro Vision 2.4B (dropped:
+  never identified).
   Each is a tower descriptor + projector on a decoder already at parity; do them in that order,
   after P6/P7 have made the tower path fast, and only with a real-checkpoint pin each. Multi-image
   per turn and Gemma 3 pan-and-scan (multi-crop) land here as the interleaver's N-block case the

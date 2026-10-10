@@ -549,7 +549,7 @@ twogeom does (`metal/gemma4_twogeom_test.go:52`), before Metal declares the feat
   - Heavy (`GOINFER_HEAVY_TESTS=1`).
   - INFERRED cost: about 2-4 min, dominated by CPU decode of ~500 tokens and two loads. Day-OK, one cell.
 - **G4. Real E2B image chat.** The served reply through Metal resident decode matches the CPU decoder (F2b shape,
-  `docs/multimodal.md:1042,1029`), under the same R10 bar caveat. Same size as G3.
+  `docs/multimodal.md:1043,1029`), under the same R10 bar caveat. Same size as G3.
 - **Speed (night only):** E2B decode tok/s, resident vs CPU, same-session interleaved; record host PLE ms/token.
 
 Size: M-L, consistent with the task doc. S1.0 is S; S1.1 is S-M; S1.3-S1.5 together are M; S1.6-S1.8 are S each. No

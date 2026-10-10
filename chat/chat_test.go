@@ -158,6 +158,15 @@ func TestDetect_fallback(t *testing.T) {
 			t.Errorf("fallback %q → %q, want %q", marker, tmpl.Name(), want)
 		}
 	}
+	// Ministral 3's vocab ([SYSTEM_PROMPT] and [INST] both control tokens) → Ministral(); Mistral v0.3's ([INST] alone) is
+	// not taken for it.
+	ministral := map[string]bool{"[SYSTEM_PROMPT]": true, "[INST]": true, "[/INST]": true}
+	if tmpl, err := Detect(Meta{HasToken: func(s string) bool { return ministral[s] }}); err != nil || tmpl.Name() != "ministral" {
+		t.Errorf("fallback Ministral 3 vocab: %v, %v; want ministral", tmpl, err)
+	}
+	if _, err := Detect(Meta{HasToken: func(s string) bool { return s == "[INST]" || s == "[/INST]" }}); err != ErrUnknownTemplate {
+		t.Errorf("fallback [INST]-only vocab: err = %v, want ErrUnknownTemplate (not Ministral)", err)
+	}
 	// No template, no markers → explicit error for the raw-completion fallback.
 	if _, err := Detect(Meta{HasToken: func(string) bool { return false }}); err != ErrUnknownTemplate {
 		t.Errorf("bare/unknown: err = %v, want ErrUnknownTemplate", err)

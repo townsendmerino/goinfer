@@ -87,7 +87,7 @@ var supportRows = []supportRow{
 	{"GLM-OCR", "glm_ocr", multimodal.TowerGlmOcr, rep("glm_ocr", nil),
 		"One image per request (2026-10-09)."},
 	{"Ministral 3", "mistral3", multimodal.TowerPixtral, rep("mistral3", nil),
-		"Pixtral tower, CPU float32 (S10, 2026-10-09)."},
+		"Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU."},
 }
 
 // supportCell computes one tower / decoder cell.

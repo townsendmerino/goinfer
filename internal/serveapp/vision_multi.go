@@ -197,7 +197,7 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 	if err != nil {
 		return visionInput{}, err
 	}
-	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", pixtral: kind == "pixtral", deepSets: preps[0].deepSets, spans: spans, grids: grids}
+	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", pixtral: kind == "pixtral", deepSets: preps[0].deepSets, spans: spans, grids: grids, images: len(preps)}
 	vi.imgPos, vi.imgLen, vi.imgHash, vi.grid = vi.spans[0].Pos, vi.spans[0].Len, vi.spans[0].Hash, preps[0].grid
 	if kind == "pixtral" {
 		vi.grids = nil // no m-RoPE

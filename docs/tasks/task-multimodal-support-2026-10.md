@@ -54,13 +54,14 @@ The last phase puts the answer where users look first, the README, with a check 
 | Qwen3.5+ MoE | not run | GPU: tower gate passed, served check passed (G-S6m, 2026-10-09) | not run | not run |
 | Qwen3-VL (dense) | CPU / CPU | GPU with DeepStack (S10) / GPU, resident DeepStack prefill on (owner, 2026-10-09, over G-S10k's FAIL) | GPU with DeepStack / GPU, image prefill on the GPU (S16) | not run |
 | GLM-OCR | CPU / CPU | GPU / GPU | GPU / GPU, batched image prefill (pairwise RoPE, 2026-10-09) | CPU / staged |
+| Ministral 3 (Pixtral) | CPU / CPU | CPU / GPU (not run) | CPU / GPU, image prefill on the CPU then uploaded (G-S10m-d) | not run |
 | EmbeddingGemma 2 (text, image, audio) | CPU | CPU | GPU | CPU |
 
 **Gaps in coverage:**
 - **Models:**
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
   - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
-  - Ministral 3 (Pixtral) and LFM2.5-VL have no tower (S10). North was dropped, never identified.
+  - LFM2.5-VL has no tower (S10). Ministral 3 (Pixtral) reads images since 2026-10-09 (S10, G-S10m-a to d), its tower on the CPU in float32 on every backend. North was dropped, never identified.
   - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
@@ -2554,7 +2555,7 @@ families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models
 
 **Size:** aikit about 500 lines, goinfer about 800, both with tests: M, as registered for S10.
 
-**S10 Pixtral progress (2026-10-09, Mac and nobara): G-S10m-a, b and c PASS; d owed.**
+**S10 Pixtral progress (2026-10-09, Mac and nobara): G-S10m-a, b, c and d PASS. S10 Ministral 3 is DONE.**
 - **The code:**
   - aikit, local branch `s10-pixtral` (96259e5, 419c9b3; not pushed): `PixtralVisionEncoder` and `PixtralPatchify`.
     The tiny tower's weights now ship, un-ignored like the other tiny towers' (a fresh checkout on nobara failed both
@@ -2608,13 +2609,124 @@ families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models
   done 16:39:46.
 - **Raw:** `docs/measurements/multimodal-support-2026-10/s10m-pixtral/` (the driver, every step's log, the two refused
   runs, and the reference summary without its float arrays).
-- **Owed:**
-  - G-S10m-d, served CPU against Metal. The 3B is not on the archive, and its HF files are about 7.7 GB against
-    15 GiB free on the Mac (owner's call).
-  - The parity manifest refresh for the `forwardn.go` core edit (`scripts/refresh_parity_hashes.sh`, at merge, in the
-    main checkout, which has the tiny checkpoints).
-  - aikit's release, then merging goinfer's branch.
-  - The README and `docs/multimodal.md` prose that still calls Pixtral "not yet".
+- **Released and merged:** aikit v1.63.0 (the Pixtral tower; tagged on the Mac 2026-10-09 19:05 PDT, releasegate 5/5,
+  vulncheck 16/16 clean at 0f5a008 on nobara, perfgate exception: no `linalg/`/`mmap/` change), and goinfer `main` at
+  62009e1e on it. The parity manifest refresh for the `forwardn.go` edit is 443e0d05 (43 forward goldens green, 0 failed). The
+  site's Ollama snapshot moved mistral-small3.2 from T to S (`docs/measurements/ollama-coverage-2026-10-09.md`, f31e1435).
+- **A third defect, found by G-S10m-d's first arm:** the checkpoint ships no chat template, and `chat.Detect`'s vocab
+  fallback had no Ministral case. Serve refused every image request ("this model has no chat template for vision"), and
+  text from this directory fell back to raw completion. `Detect` now takes `[SYSTEM_PROMPT]` with `[INST]` as control tokens
+  for `Ministral()`. Mistral v0.3's `[INST]`-only vocab is not taken for it (`TestDetect_fallback`).
+- **G-S10m-d, served: PASS.** Read 2026-10-09 19:42-19:49 PDT on the Mac. The Metal serve binary was built from `main` plus
+  the template fix. `--model` and `--vision` were `~/models/ministral3-3b-bf16` (the HF files copied from nobara, byte
+  counts checked), with `--embed-int4=false` on every arm. An explicit system message, 48 greedy tokens. Arms `=cpu`,
+  `metal`, then `cpu` again.
+
+  | request | prompt tokens | Metal against CPU | second CPU run against the first |
+  |---|---|---|---|
+  | one image (`table.png`) | 1,474 | first differs at token 2: CPU " displays" 0.253, Metal's " presents" 0.247 there, a near-tie | identical |
+  | two images (`table.png`, then the 896x896) | 2,527 | first differs at token 25: CPU `)"` 0.420, Metal's `),"` 0.396 there, a near-tie | identical |
+
+  - The Metal arm decoded `metal-resident (int4)`. Its resident image prefill declined ("prefill not implemented for this
+    arch's FFN shape"), so the prefill ran on the CPU and was uploaded. The support table's Metal cell (CPU tower, GPU
+    decode) says what ran, and its note now says where the prefill runs.
+  - The one-image prompt is exactly G-S10m-c's 1,474 ids, so the served path built the same prompt the reference graded.
+  - Request times were 55.6-69.9 s, the CPU float32 tower being most of it (exploratory, one reading each).
+  - Two refused runs before the reading are kept in `gs10m-d/refused/`. The first is the template defect above. The second
+    found the port held by the first run's server, which the driver had leaked on the failed request; it now kills its
+    server on exit.
+- **Raw:** `docs/measurements/multimodal-support-2026-10/s10m-pixtral/gs10m-d/` (the run, each arm's serve log, replies and
+  log-probabilities).
+- **Owed, none of them gates:**
+  - A Metal resident prefill for this FFN shape (the image turn's prefill is on the CPU today).
+  - A GPU Pixtral tower (none declared on any backend).
+  - Mistral Small 3.x's 24B: the same `PixtralVisionModel` architecture, never run.
+
+**S10, LFM2.5-VL: desk map, plan and gates, registered 2026-10-09 before any code** (owner: "on to s10s families", then
+"continue"). Checkpoint `LiquidAI/LFM2.5-VL-1.6B` (bf16, `~/models/lfm25-vl-1.6b` on nobara; the LFM Open License v1.0,
+`license: other` on the hub). The 450M (a smaller SigLIP2) and the 3B are the same `lfm2_vl` architecture and are not part of
+these gates.
+
+**Gate 0, the desk map** (transformers 5.12.0's `lfm2_vl` and `siglip2` sources on nobara, and the checkpoint's own
+`config.json`, `processor_config.json` and `chat_template.jinja`, read 2026-10-09):
+- **Preprocessing** (`Lfm2VlImageProcessorFast`, through the full `Lfm2VlProcessor`):
+  - Bilinear resize with antialias on uint8 (`resample` 2), then (x/255 - 0.5)/0.5.
+  - An image is "too large" when its size, rounded to multiples of 32, exceeds 256 tokens x 32² x 2.0 (the pixel
+    tolerance). A too-large image is resized to a grid of 512x512 tiles. The grid is the (w, h) pair with 2 <= w·h <= 10
+    whose aspect is closest to the image's; on a tie, the later pair wins when the image covers more than half its area.
+    The tiles are followed by a thumbnail.
+  - Otherwise, or as the thumbnail, it is smart-resized: each side rounded to a multiple of 32, then scaled so the token
+    count lies between 64 and 256 (floor on shrink, ceil on growth).
+  - Each tile or thumbnail is patchified into 16x16 patches, each flattened (row, column, channel), channels innermost,
+    and runs through the tower on its own (the padding to 1,024 patches is masked).
+- **Token layout:** `<|image_start|>`, then for a multi-tile image each tile in row-major order as `<|img_row_R_col_C|>`
+  followed by its 256 `<image>` (id 396), then `<|img_thumbnail|>` and the thumbnail's tokens, then `<|image_end|>`. A
+  single-tile image is `<|image_start|>`, its tokens, `<|image_end|>`. The features replace the `<image>` positions only.
+- **The tower** (`Siglip2VisionModel`, NaFlex, 27 layers, hidden 1152, 16 heads, no head):
+  - A linear patch embedding over the 768-value patch vector.
+  - A learned 16x16 position table, resized to each tile's patch grid with `F.interpolate(bilinear, align_corners=False,
+    antialias=True)`.
+  - SigLIP's pre-norm blocks (LayerNorm eps 1e-6, biased q/k/v/o, GELU-tanh MLP), then `post_layernorm`. The output is
+    `last_hidden_state`.
+- **Projector:**
+  - A 2x2 pixel unshuffle over each tile's patch grid. Unit (r, c) takes patches (2r+j, 2c+k) laid out
+    `[(2j+k)·1152 + channel]`: position-major, the opposite of Pixtral's merger.
+  - No LayerNorm, then linear 4608->2048 (bias), GELU (erf), linear 2048->2048 (bias).
+- **Decoder:**
+  - `lfm2` (LFM2-1.2B's shape: 16 layers, 10 short-conv and 6 attention).
+  - Plain 1-D positions and causal attention; the image rows also run through the conv layers in order.
+  - goinfer's `lfm2` is CPU only (no backend implements its short convolution) and runs one token at a time
+    (`runLayersLFM2(id)`). It has no entry that takes an embedding.
+- **Chat:** the checkpoint's template is ChatML after a BOS. An image part is `<image>` in content order, with no newline
+  around it.
+- **Today:** serve has no `lfm2_vl` loader. aikit has no SigLIP2 NaFlex tower and no antialiased bilinear resize.
+
+**Plan:**
+1. **aikit** (a local branch `s10-lfm2vl`, released when done):
+   - `ResizeBilinearAA`: the existing antialiased uint8 resize with a triangle filter.
+   - `Siglip2NaFlexEncoder`: the linear patch embedding, the antialiased position-table resize in float32, SigLIP's
+     blocks and `post_layernorm`, one tile per call.
+   - A tiny-tower test against HF.
+2. **goinfer** (worktree branch `s10-lfm2vl`):
+   - The preprocessing (`multimodal`): too-large, the grid, smart resize, tiles plus thumbnail, patchify.
+   - The projector and the prompt block.
+   - `runLayersLFM2FromEmbed` and a per-token causal image prefill for `lfm2` behind the causal span entry, with one span
+     per tile and thumbnail. It is CPU only, so no resident path.
+   - Serve's `lfm2_vl` branch and the support-table row.
+
+**Gates:**
+- **G-S10l-a, preprocessing:** against the full HF processor (`~/.venv-vl`) on the four F2a images and three layout
+  cases:
+  - a 1000x20 strip (one tile, smart resize);
+  - a 3000x2000 image (the grid search);
+  - 84x56 (upscaled to the 64-token floor).
+  - Grid, tile count, thumbnail size and token counts equal; pixels within one 8-bit level (0.0078 after normalising).
+    torchvision's uint8 bilinear is fixed point, so exactness is the target and one level the bar.
+- **G-S10l-b, the tower and projector on the real 1.6B:**
+  - Every stage (patch embedding plus positions, each block, `post_layernorm`, the unshuffle, linear_1, linear_2) at
+    worst row cosine >= 0.9999, on every tile and thumbnail of the four images. HF's tower runs alone in float32 from its
+    own pixels; 0.999-0.9999 is ambiguous (parked).
+  - aikit's tiny tower (norms randomised, a position table that both shrinks and grows) and goinfer's tiny projector,
+    with planted defects each red:
+    1. the position table resized without antialias;
+    2. patches flattened channel-major;
+    3. `post_layernorm` dropped;
+    4. the unshuffle channel-major (Pixtral's order).
+- **G-S10l-c, the full model on an image prompt against HF `Lfm2VlForConditionalGeneration`:**
+  - Float32, nobara, an explicit system message, goinfer's ids, a multi-tile image. G-S5b's bar: last-position cosine
+    >= 0.999, argmax equal, argmax agreement >= 95% over the text after the image.
+  - Planted defects, each red:
+    1. the tiles' features in column-major order;
+    2. the thumbnail's features placed first;
+    3. features written over the `<|img_row_R_col_C|>` markers.
+- **G-S10l-d, served:**
+  - One-image and two-image requests through serve on the Mac (`--backend cpu`) and a second CPU run: identical replies.
+  - The one-image prompt's ids equal G-S10l-c's.
+  - A `--backend metal` arm must decline the image turn to the CPU path by name, not fail, since `lfm2` has no GPU
+    decoder.
+- **Tier:** b and c hold about 8 GB in float32 on nobara, each well under 10 minutes, so by day.
+
+**Size:** aikit about 400 lines, goinfer about 900, both with tests: M, as registered for S10.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
