@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-// Track 2.3 (testing campaign): LoadSerializedWeights deserializes goinfer's own
-// .giw weights blob. A CRC32 over the whole body gates parsing, so raw-byte
-// fuzzing never reaches the body — this target recomputes the CRC for every
-// input so the mutator actually exercises the config/weightMat/layer reader.
-// Bar: a *SerializeError or a clean *Weights, never a panic/OOM.
+// Fuzz target for LoadSerializedWeights, which deserializes goinfer's own .giw weights blob. A CRC32 over the whole body
+// gates parsing, so raw-byte fuzzing never reaches the body; this target recomputes the CRC for every input so the
+// mutator exercises the config/weightMat/layer reader. Bar: a *SerializeError or a clean *Weights, never a panic/OOM.
 
 // tinyLlamaBlob serializes a minimal valid llama bundle (1 empty layer) using the
 // exact config lora_test loads, so the seed parses all the way through the body.

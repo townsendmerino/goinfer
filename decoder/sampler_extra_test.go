@@ -117,9 +117,8 @@ func TestSampler_logprobs(t *testing.T) {
 	}
 }
 
-// referenceTopLogprobs is the pre-P-13 full-sort implementation, kept only here as
-// an independent oracle: build every (id, prob) pair and sort all of them, rather
-// than computeLogprobs' topKByLogit shortcut.
+// referenceTopLogprobs is the full-sort reference, kept only here as an independent oracle: it builds every (id, prob)
+// pair and sorts all of them, rather than computeLogprobs' topKByLogit shortcut.
 func referenceTopLogprobs(probs []float64, topN int) []TokenLogprob {
 	type ip struct {
 		id int
@@ -145,10 +144,9 @@ func referenceTopLogprobs(probs []float64, topN int) []TokenLogprob {
 	return out
 }
 
-// TestComputeLogprobs_matchesFullSort is the P-13 gate: computeLogprobs' topKByLogit
-// shortcut (O(V·log N)) must return exactly the same (id, logprob) pairs, in the same
-// order, as a full O(V·log V) sort — across random logits, a range of topN including
-// topN >= vocab, and a deliberate tie.
+// TestComputeLogprobs_matchesFullSort pins that computeLogprobs' topKByLogit shortcut (O(V·log N)) returns exactly the
+// same (id, logprob) pairs, in the same order, as a full O(V·log V) sort, across random logits, a range of topN
+// including topN >= vocab, and a deliberate tie.
 func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	for trial := range 50 {
@@ -175,8 +173,8 @@ func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 		}
 	}
 
-	// A deliberate tie: ids 1 and 3 share the highest logit. Both the reference and
-	// the fix must resolve it toward the smaller id.
+	// A deliberate tie: ids 1 and 3 share the highest logit. Reference and computeLogprobs must both resolve it toward
+	// the smaller id.
 	logits := []float32{0, 5, 1, 5, 2}
 	_, got := computeLogprobs(logits, 0, 1, 2, nil)
 	if got[0].ID != 1 || got[1].ID != 3 {
@@ -184,12 +182,11 @@ func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 	}
 }
 
-// TestComputeLogprobs_reusesProvidedScratch is P-07 (audit-2026-09-10): computeLogprobs called
-// softmaxStable directly, allocating a fresh full-vocab []float64 on every logprobs:true
-// request; SampleWithInfo now passes its own distBufN scratch through. Correctness (matches a
-// nil-scratch call exactly) and the reuse itself (the internal softmax write lands in the
-// caller's own buffer) are both asserted — a fix that reused the wrong buffer or silently
-// stopped reusing would each pass a test that checked only one side.
+// TestComputeLogprobs_reusesProvidedScratch pins that computeLogprobs writes its softmax into the caller's scratch
+// (SampleWithInfo passes its distBufN) instead of allocating a full-vocab []float64 per logprobs:true request. It
+// asserts both correctness (matches a nil-scratch call exactly) and the reuse itself (the internal softmax lands in
+// the caller's buffer): a fix that reused the wrong buffer, or silently stopped reusing, would pass a test that
+// checked only one side.
 func TestComputeLogprobs_reusesProvidedScratch(t *testing.T) {
 	logits := []float32{1, 4, 2, 0.5, 3}
 	wantLP, wantTop := computeLogprobs(logits, 1, 1, 2, nil)
@@ -214,15 +211,12 @@ func TestComputeLogprobs_reusesProvidedScratch(t *testing.T) {
 	}
 }
 
-// TestApplyPenalties_incrementalMatchesRebuild is the P-15 gate: applyPenalties'
-// unbounded-window fast path (RepeatLastN ≤ 0) feeds applyPenaltiesFromCounts the
-// incrementally maintained s.histCounts instead of rebuilding a counts map from
-// s.history every call. This drives a mixed sequence of Observe (prompt-seed
-// shape) and Sample (per-token draw shape) calls — both history-mutation sites —
-// and after every step compares the fast path's logit output against the slow
-// reference (applyPenaltiesOver called directly on a fresh rescan of s.history)
-// bit for bit, with all three penalty kinds active so a miscount of ANY kind
-// would show up numerically.
+// TestApplyPenalties_incrementalMatchesRebuild pins applyPenalties' unbounded-window fast path (RepeatLastN <= 0), which
+// feeds applyPenaltiesFromCounts the incrementally maintained s.histCounts instead of rebuilding a counts map from
+// s.history on every call. It drives a mixed sequence of Observe (prompt-seed shape) and Sample (per-token shape)
+// calls, both history-mutation sites, and after every step compares the fast path's logits bit for bit with
+// applyPenaltiesOver on a fresh rescan of s.history, all three penalty kinds active so a miscount of any kind shows
+// up numerically.
 func TestApplyPenalties_incrementalMatchesRebuild(t *testing.T) {
 	sp := SamplingParams{RepeatPenalty: 1.3, PresencePenalty: 0.4, FrequencyPenalty: 0.15}
 	s := NewSampler(sp) // RepeatLastN unset -> unbounded -> the fast path under test

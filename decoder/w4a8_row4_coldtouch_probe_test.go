@@ -10,16 +10,12 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestRow4_coldTouchLatency is the experiment the first two ruled-out hypotheses
-// (mmap-vs-heap: +1.7% noise; row4-vs-canonical on gemma4 shapes: row4 is +57-67%
-// FASTER, matching the original 1.6-1.75x claim) point to directly: both of those
-// tests reused the SAME small set of already-resident experts thousands of times,
-// so they measured warm, steady-state kernel speed -- never the real production path
-// (expertPager.touch() -> WILLNEED -> matmul) on a genuinely cold, first-ever touch.
-// Real decode touches ~240 DISTINCT experts per token under a real cache budget; this
-// test replicates that shape directly: many distinct experts, each touched exactly
-// once, through the real pager, comparing kind-3 (canonical dispatch) against kind-4
-// (row4 dispatch) per-touch latency.
+// TestRow4_coldTouchLatency measures what two earlier probes (mmap-vs-heap; row4-vs-canonical on gemma4 shapes) could
+// not: both reused the SAME small set of already-resident experts thousands of times, so they measured warm,
+// steady-state kernel speed, never the real production path (expertPager.touch() -> WILLNEED -> matmul) on a genuinely
+// cold, first-ever touch. Real decode touches ~240 DISTINCT experts per token under a real cache budget; this test
+// replicates that shape directly: many distinct experts, each touched exactly once, through the real pager, comparing
+// kind-3 (canonical dispatch) against kind-4 (row4 dispatch) per-touch latency.
 func TestRow4_coldTouchLatency(t *testing.T) {
 	requireHeavyModel(t)
 	kind3 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW", "~/models/gemma4-26b-int4.giw"))

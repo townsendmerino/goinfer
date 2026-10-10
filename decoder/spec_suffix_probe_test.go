@@ -13,26 +13,17 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// ---------------------------------------------------------------------------
-// 02 "next step" — Step 1: instrument the SHIPPED NgramDrafter on realistic
-// agentic/code traffic, and Step 2: replay candidate scoring offline.
+// 02 "next step", Step 1: instrument the SHIPPED NgramDrafter on realistic agentic/code traffic. (Step 2, in
+// spec_suffix_replay_test.go, replays candidate scoring offline.)
 //
-// WHY A NEW FILE RATHER THAN specWorkloads. The existing corpus in
-// spec_harness_test.go is hand-written and deliberately copy-heavy (its own
-// comment says so: "prompts with heavy internal repetition — the regime n-gram
-// drafting is built for"). It is a CONSTRUCTION of copy-heavy traffic, not a
-// SAMPLE of it, so it cannot answer "does this drafter fire on real input?" —
-// it was built so the answer is yes. scripts/prompts.json is worse (four unique
-// words per prompt; see docs/spec/10). Both are scored here on the same
-// copy-density metric as the real inputs, so the distance is a number rather
-// than an assertion.
+// WHY A NEW FILE RATHER THAN specWorkloads. The corpus in spec_harness_test.go is hand-written and deliberately
+// copy-heavy: a CONSTRUCTION of copy-heavy traffic, not a SAMPLE of it, so it cannot answer "does this drafter fire on
+// real input?". scripts/prompts.json is worse (four unique words per prompt; see docs/spec/10). Both are scored here on
+// the same copy-density metric as the real inputs, so the distance is a number rather than an assertion.
 //
-// THE INPUTS ARE READ FROM REAL REPO FILES AT RUN TIME. Nothing in the corpus
-// below is prose I wrote for the measurement; the code inputs are actual source
-// files and the agent input is the actual system prompt from demo/agent plus
-// actual source as retrieved context. That is the whole point — an authored
-// prompt is exactly the failure being corrected.
-// ---------------------------------------------------------------------------
+// THE INPUTS ARE READ FROM REAL REPO FILES AT RUN TIME. The code inputs are actual source files and the agent input is
+// the actual system prompt from demo/agent plus actual source as retrieved context: an authored prompt is exactly the
+// failure being corrected.
 
 // copyDensity is the fraction of positions whose preceding n-token suffix already
 // occurred earlier in the stream. It is a property of the TOKEN STREAM ALONE — no
@@ -116,18 +107,13 @@ func realisticInputs(t *testing.T) []struct{ name, prompt string } {
 		return s
 	}
 
-	// Turn 2 of an agent loop. The system prompt, the first user turn, its search
-	// results and the first answer are all RE-SENT verbatim — that resend is the
-	// structural repetition an agent loop really has, and it is why cross-request
+	// Turn 2 of an agent loop. The system prompt, the first user turn, its search results and the first answer are all
+	// RE-SENT verbatim: that resend is the structural repetition an agent loop really has, and it is why cross-request
 	// scope buys less on a stateless surface than the paper's setting implies.
 	//
-	// The SECOND search returns DIFFERENT source, which is the whole correction
-	// here: a first attempt reused the same snippet for both turns, the model
-	// copied it back, and the pre-registered loop guard excluded the trace
-	// (distinct-trigram 0.297). That was a defect in the INPUT, not in the guard —
-	// a real second query retrieves different code — so the input was fixed and
-	// the guard left alone. Recorded because it is exactly the artifact
-	// arXiv 2604.26469 warns about, caught by the rule written in advance.
+	// The SECOND search returns DIFFERENT source, because a real second query retrieves different code: reusing the first
+	// snippet makes the model copy it back and trips the pre-registered loop guard, which is a defect in the input, not in
+	// the guard (arXiv 2604.26469 warns about exactly this artifact).
 	agentTurn2 := answerSystem + "\n\n" +
 		"User: How does the adaptive draft depth controller decide how deep to draft?\n\n" +
 		"Search results:\n" + trunc(adaptive, 1500) + "\n\n" +

@@ -103,10 +103,9 @@ func TestRow4GiwKind_qwen35_pagedEviction(t *testing.T) {
 	}
 	defer full.Close()
 
-	// Post-fix, a kind-4 bundle registers only ONE span per expert (row4 when usable,
-	// canonical otherwise) -- the pageable total is back to matching kind-3's ~15.6 GB,
-	// not the pre-fix doubled ~31.2 GB. 3 GB (~19% residency) forces real eviction over
-	// a 40-token run without landing in the near-zero-residency, all-miss regime.
+	// A kind-4 bundle registers only ONE span per expert (row4 when usable, canonical otherwise), so the pageable total
+	// matches kind-3's (~15.6 GB, not double). 3 GB (~19% residency) forces real eviction over a 40-token run without
+	// landing in the near-zero-residency, all-miss regime.
 	const budget = 3 << 30
 	paged, err := Load(kind4, Options{StreamWeights: true, WeightCacheBytes: budget})
 	if err != nil {

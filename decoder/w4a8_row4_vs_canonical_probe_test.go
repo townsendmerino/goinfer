@@ -11,15 +11,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestRow4_vsCanonical_gemma4Shapes is the follow-up the mmap-vs-heap result directly
-// suggests: memory source is ruled out (TestRow4_mmapVsHeapResident, +1.7% noise), so
-// if gemma4's paged decode is still ~47-49% slower with kind-4 than kind-3
-// (docs/completed/task-zeno-compare.md's "Quiet-machine re-measure"), the remaining candidate is
-// that the row4 kernel itself is not faster than canonical on THESE SPECIFIC expert
-// shapes -- the original 1.6-1.75x figure (docs/completed/task-w4a8-neon-bandwidth.md) may have
-// been measured on different tensor dimensions. Calls both free-function kernels
-// directly on the same real gemma4 expert bytes, same activation, same dst -- isolates
-// kernel choice as the only variable.
+// TestRow4_vsCanonical_gemma4Shapes is the follow-up the mmap-vs-heap result suggests: memory source is ruled out
+// (TestRow4_mmapVsHeapResident), so if gemma4's paged decode is still slower with kind-4 than kind-3
+// (docs/completed/task-zeno-compare.md's "Quiet-machine re-measure"), the remaining candidate is that the row4 kernel is
+// not faster than canonical on THESE SPECIFIC expert shapes (the original speedup, in
+// docs/completed/task-w4a8-neon-bandwidth.md, may have been measured on different tensor dimensions). Calls both
+// free-function kernels directly on the same real gemma4 expert bytes, same activation, same dst: isolates kernel choice
+// as the only variable.
 func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 	requireHeavyModel(t)
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))

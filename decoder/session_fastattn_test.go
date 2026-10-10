@@ -6,18 +6,9 @@ import (
 	"testing"
 )
 
-// TestSessionFastAttnDivergence — THE TEST forwardn.go:44 HAS BEEN CITING ALL ALONG.
-//
-// It did not exist anywhere in the tree. The doc comment above cpuFastAttention says
-// "TestSessionFastAttnDivergence pins the new behaviour", which is the exact "a doc comment
-// claiming coverage is not coverage" class CLAUDE.md describes — one file away from where that
-// rule was written. Whoever audited the claim would find a plausible name, match it to the
-// sentence, and stop.
-//
-// What it now pins is the honest version of the contract: with the fast kernel on (the
-// default), a prompt at or above fastAttnMinPrompt gives DIFFERENT logits from the exact
-// kernel — the split-invariance loss the comment describes and docs/server.md used to deny —
-// and below the floor the two are identical, because the floor turns the fast path off.
+// TestSessionFastAttnDivergence pins the contract cpuFastAttention's doc comment describes: with the fast kernel on (the
+// default), a prompt at or above fastAttnMinPrompt gives DIFFERENT logits from the exact kernel (the split-invariance
+// loss), and below the floor the two are identical, because the floor turns the fast path off.
 func TestSessionFastAttnDivergence(t *testing.T) {
 	const fixture = "../testdata/llama-tiny"
 	if _, err := os.Stat(fixture); err != nil {
@@ -70,10 +61,8 @@ func TestSessionFastAttnDivergence(t *testing.T) {
 		}
 	})
 
-	// AT AND ABOVE THE FLOOR: the fast kernel engages, and the result is NOT bit-identical.
-	// That is the accepted 2026-08-31 behaviour; what was missing is anything pinning it, so a
-	// change that silently made the flag inert — or silently applied it everywhere — would go
-	// unnoticed in both directions.
+	// AT AND ABOVE THE FLOOR: the fast kernel engages, and the result is NOT bit-identical (accepted behaviour). This pins
+	// it, so a change that silently made the flag inert, or silently applied it everywhere, is caught in both directions.
 	t.Run("at the floor the kernels diverge", func(t *testing.T) {
 		long := seq(fastAttnMinPrompt)
 		if !differs(prefill(long, true), prefill(long, false)) {

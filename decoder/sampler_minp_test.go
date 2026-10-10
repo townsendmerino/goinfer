@@ -2,17 +2,11 @@ package decoder
 
 import "testing"
 
-// M-08: MinP > 1 with no TopK panicked inside the sampler.
+// M-08: MinP > 1 with no TopK used to panic. The min-p threshold maxL + T·ln(minP) then sits above maxL, the candidate
+// set comes back empty, and the "always keep the top token" clamps index an empty slice.
 //
-// The min-p threshold is maxL + T·ln(minP); for minP > 1 that sits ABOVE maxL, so the
-// candidate set comes back EMPTY and the "always keep the top token" clamps then slice ips[:1]
-// on an empty slice or read ips[len(ips)-1] at index −1. Measured before the fix:
-// `index out of range [-1]`, panicking in the Generate goroutine. min_p is not on the HTTP
-// surface, so this reached users through the library and `goinfer-chat --min-p`.
-//
-// TWO INDEPENDENT DEFENCES were added, and they are tested independently — together they mask
-// each other, so a single end-to-end "does not panic" test would go green with either one
-// removed and prove neither.
+// Two independent defences exist and are tested independently: together they mask each other, so a single end-to-end
+// "does not panic" test would stay green with either removed and prove neither.
 func TestSampler_minPAboveOne(t *testing.T) {
 	// Defence 1: NewSampler clamps. 1.0 is the identity for min-p (keep only what ties the
 	// max), which is the nearest meaningful reading of "more than everything".

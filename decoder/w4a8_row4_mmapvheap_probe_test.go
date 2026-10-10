@@ -29,22 +29,17 @@ func heapifyRow4(wm *linalg.WeightMat) bool {
 	return true
 }
 
-// TestRow4_mmapVsHeapResident is the discriminating experiment: same kernel, same
-// bytes, one variable (memory source), on a HANDFUL of experts -- not the whole
-// model. The first version of this test heapified all ~7680 expert tensors at once
-// (~14 GB of fresh heap on this 16 GB box) and drove the machine into severe swap
-// thrashing (15 of 16 GB swap used) before being killed; this version times raw
-// MatmulBTW4A8Into calls directly on a small, fixed set of experts instead of running
-// full model decode, keeping the extra heap footprint under 100 MB.
+// TestRow4_mmapVsHeapResident is the discriminating experiment: same kernel, same bytes, one variable (memory source), on
+// a HANDFUL of experts, not the whole model. Heapifying every expert tensor (~14 GB of fresh heap) thrashes swap on a
+// 16 GB box, so this times raw MatmulBTW4A8Into calls directly on a small, fixed set of experts, keeping the extra heap
+// footprint under 100 MB.
 //
-// The resident-path 1.6-1.75x figure (docs/completed/task-w4a8-neon-bandwidth.md) was measured
-// against heap-resident repacked bytes (RepackInt4Row4, the GGUF/safetensors streaming
-// loaders). The kind-4 .giw path's row4 bytes are mmap-aliased even when NOT paged (no
-// StreamWeights) -- Load() always mmaps a .giw file read-only regardless of streaming
-// mode. If mmap-resident calls are slower than heap-resident calls on the identical
-// bytes, the quiet-machine gemma4 gap (docs/completed/task-zeno-compare.md's "Quiet-machine
-// re-measure") is memory-source mechanics (TLB/page-fault residue on mapped pages),
-// not paging-machinery overhead.
+// The resident-path row4 speedup (docs/completed/task-w4a8-neon-bandwidth.md) was measured against heap-resident
+// repacked bytes (RepackInt4Row4, the GGUF/safetensors streaming loaders). The kind-4 .giw path's row4 bytes are
+// mmap-aliased even when NOT paged (no StreamWeights): Load() always mmaps a .giw file read-only. If mmap-resident calls
+// are slower than heap-resident calls on the identical bytes, the quiet-machine gemma4 gap
+// (docs/completed/task-zeno-compare.md's "Quiet-machine re-measure") is memory-source mechanics (TLB/page-fault residue
+// on mapped pages), not paging-machinery overhead.
 func TestRow4_mmapVsHeapResident(t *testing.T) {
 	requireHeavyModel(t)
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))

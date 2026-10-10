@@ -4,11 +4,10 @@ import "testing"
 
 // Theta's domain and the per-backend wiring.
 //
-// The bug these pin: AdaptiveDepth documented and enforced Theta in [0,1) and
-// reset anything outside it to 0.5. Metal measures 1.006-1.048 (two models, two
-// depths, 2026-09-01), so EVERY value Metal actually has was rejected and
-// replaced by 0.5 — the most over-drafting setting on the dial, chosen
-// automatically at the one moment the measurement said "do not draft at all".
+// The bug these pin: AdaptiveDepth enforced Theta in [0,1) and reset anything outside it to 0.5, but Metal's measured
+// Theta is above 1 (a verify node costs more than a decode step), so EVERY value Metal actually has was replaced by 0.5,
+// the most over-drafting setting on the dial, chosen automatically at the one moment the measurement said "do not draft
+// at all".
 
 // TestTheta_geOneIsLegalAndDisablesDrafting is the domain fix. A Theta >= 1 must
 // survive ensure() and must produce depth 0 for every acceptance rate, because

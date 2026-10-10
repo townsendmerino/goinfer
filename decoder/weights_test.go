@@ -60,23 +60,14 @@ func TestLoadWeights_goldenChecksums(t *testing.T) {
 			gemmaModelDir, gemmaModelDir)
 	}
 
-	// Run BOTH sides of P13, because they answer different questions and only
-	// one of them existed before P13 did.
+	// Run BOTH sides of P13, because they answer different questions:
 	//
-	//   p13_off     — the source mapping is retained, so every assertion below
-	//                 runs, INCLUDING the stored-dtype check that proves the
-	//                 BF16 widen path ran. That check reads w.st, which P13
-	//                 closes by default, so without this arm it would quietly
-	//                 stop running rather than fail.
-	//   p13_default — the shipped path, where the mapping is released at end of
-	//                 load. The checksums here are what says that releasing it
-	//                 did not corrupt the weights already loaded out of it,
-	//                 which is the one thing P13 could plausibly break and the
-	//                 exact risk mmapAliasRisk is guarding.
-	//
-	// P13 closing w.st is also why this test panicked rather than failed when it
-	// was first run against a checkpoint: the Mac skips it for want of the asset,
-	// so the nil deref only ever appeared on the box.
+	//   p13_off     — the source mapping is retained, so every assertion below runs, INCLUDING the stored-dtype check that
+	//                 proves the BF16 widen path ran. That check reads w.st, which P13 closes by default, so without this
+	//                 arm it would quietly stop running rather than fail.
+	//   p13_default — the shipped path, where the mapping is released at end of load. The checksums here say that releasing
+	//                 it did not corrupt the weights already loaded out of it: the one thing P13 could plausibly break and
+	//                 the exact risk mmapAliasRisk is guarding.
 	for _, tc := range []struct {
 		name   string
 		p13Off bool

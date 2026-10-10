@@ -149,12 +149,10 @@ func TestSession_reuseParity(t *testing.T) {
 	if !slices.Equal(reused, cold) {
 		t.Fatalf("extension reuse diverged from cold prefill:\n  reused %v\n  cold   %v", reused, cold)
 	}
-	// The whole point of a session is to skip re-prefilling what's already warm — assert
-	// the CPU/staged path (the one every plain session takes, per generateInto's G3 comment)
-	// actually reports that, not just that output matches. Regression test for a bug where
-	// Generation.PrefillReused was set only in generateInto's useGPU branch (decoder/model.go),
-	// so a plain session's CPU-path reuse was real (rewindForReuse genuinely skipped the prefix)
-	// but always reported 0 to every caller (usage.prefill_reused_tokens in the API, and here).
+	// The point of a session is to skip re-prefilling what is already warm: assert the CPU/staged path (the one every plain
+	// session takes) reports it, not just that output matches. Generation.PrefillReused was once set only in generateInto's
+	// useGPU branch (decoder/model.go), so a plain session's reuse was real but reported 0 to every caller
+	// (usage.prefill_reused_tokens in the API).
 	if want := len(ext) - 1; g2.PrefillReused < want {
 		t.Errorf("PrefillReused = %d, want >= %d (all but the one-token reuse floor) — "+
 			"the session's own extension must report the prefix it actually skipped", g2.PrefillReused, want)

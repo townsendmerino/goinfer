@@ -35,13 +35,11 @@ func TestWantsRow4Fallback_metalOnly(t *testing.T) {
 	}
 }
 
-// TestW4A8Row4_skippedForMetalBackend is the end-to-end wiring proof for M-07 (audit-
-// metal-2026-09-12.md): a Backend:"metal" load must have NO row4 layout on its Q/K/V/gate/up
-// projections (isBatchedProjTensor's five standard names — quantizeBatchedProjWM's own scope),
-// while a Backend:""  (unspecified) load on the SAME checkpoint keeps row4 on those same tensors
-// exactly as before this change. o_proj/down_proj are ALSO now row4-free on Metal (M-07's second
-// half, 2026-09-13: quantizeWMSkipRow4 threaded through quantizeWM's ~40 family-specific call
-// sites) — see TestW4A8Row4_skippedForMetalBackend_MoE for router/expert coverage, which this
+// TestW4A8Row4_skippedForMetalBackend is the end-to-end wiring proof for M-07 (audit-metal-2026-09-12.md): a
+// Backend:"metal" load must have NO row4 layout on its Q/K/V/gate/up projections (isBatchedProjTensor's five standard
+// names, quantizeBatchedProjWM's own scope), while a Backend:"" (unspecified) load on the SAME checkpoint keeps row4 on
+// those same tensors. o_proj/down_proj are also row4-free on Metal (quantizeWMSkipRow4 is threaded through quantizeWM's
+// family-specific call sites); see TestW4A8Row4_skippedForMetalBackend_MoE for router/expert coverage, which this
 // dense-only fixture doesn't exercise.
 func TestW4A8Row4_skippedForMetalBackend(t *testing.T) {
 	if !linalg.Int4Row4Usable(4, int4GroupSize, int4GroupSize) {

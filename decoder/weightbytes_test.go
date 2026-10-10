@@ -91,12 +91,10 @@ func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 	}
 }
 
-// TestResidentWeightBytesPaged_capsAtSlots is M-02's break-it-first gate for the accounting half
-// of the fix: before it, the guard always used the unpaged sum, so a model that would fit under
-// GOINFER_METAL_MOE_SLOTS paging (a few GB) was declined on the number it would need fully
-// resident (tens of GB, per the audit's Qwen3.5-35B-A3B example). Verifies three properties, then
-// cross-checks the exact paged byte count against an independently-written per-layer formula
-// rather than trusting the production code's own arithmetic.
+// TestResidentWeightBytesPaged_capsAtSlots is M-02's break-it-first gate for the accounting half of the fix: the guard
+// must price a model that fits under GOINFER_METAL_MOE_SLOTS paging on the paged number, not on the unpaged sum it would
+// need fully resident. Verifies three properties, then cross-checks the exact paged byte count against an
+// independently-written per-layer formula rather than trusting the production code's own arithmetic.
 func TestResidentWeightBytesPaged_capsAtSlots(t *testing.T) {
 	m := loadGemma4MoETiny(t)
 
@@ -150,11 +148,10 @@ func TestResidentWeightBytesPaged_capsAtSlots(t *testing.T) {
 	}
 }
 
-// TestResidentHostCopyBytes_exemptsPagedExperts is M-02's gate for the host-copy addend (2026-09-
-// 09): a unified-memory backend (Metal) holds a quantized HOST WeightMat AND a separately-packed
-// device buffer for the SAME dense weights, but a genuinely PAGED expert streams from disk and
-// never gets a committed host copy — so the addend must shrink under paging exactly where
-// ResidentWeightBytesPaged's OWN estimate does, not stay flat.
+// TestResidentHostCopyBytes_exemptsPagedExperts is M-02's gate for the host-copy addend: a unified-memory backend
+// (Metal) holds a quantized HOST WeightMat AND a separately-packed device buffer for the SAME dense weights, but a
+// genuinely PAGED expert streams from disk and never gets a committed host copy, so the addend must shrink under paging
+// exactly where ResidentWeightBytesPaged's OWN estimate does, not stay flat.
 func TestResidentHostCopyBytes_exemptsPagedExperts(t *testing.T) {
 	m := loadGemma4MoETiny(t)
 

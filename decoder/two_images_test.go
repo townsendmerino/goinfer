@@ -274,8 +274,8 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 
 // TestTwoImages_qwen25vl (G-S11a, G-S11b): Qwen2.5-VL, two images, at its image golden's bar (cosine >= 0.99).
 func TestTwoImages_qwen25vl(t *testing.T) {
-	// Its rope theta is the released one, so a last-position bar of 0.99 barely sees what the image rows carry: the
-	// interleaved swap reads 0.9933 there (measured 2026-10-09). The Qwen3.5 fixture (theta 10) and Gemma 3 catch it.
+	// Its rope theta is the released one, so a last-position bar of 0.99 barely sees what the image rows carry (the
+	// interleaved swap reads 0.9933 there). The Qwen3.5 fixture (theta 10) and Gemma 3 catch it.
 	qwenTwoImages(t, "../testdata/qwen25vl-tiny", "../testdata/qwen25vl_tiny_two_images_golden.json.gz", 0.99,
 		map[string]bool{"interleaved: features swapped": true})
 }

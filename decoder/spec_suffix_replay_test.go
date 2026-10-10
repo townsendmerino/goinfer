@@ -106,12 +106,9 @@ func policyFrequency(ctx []int, k int) ([]int, int) {
 	return path, L
 }
 
-// policyMostRecentDeep is the shipped policy with the MaxMatch probe cap raised
-// 16 -> 64. Added because the step-1 histogram showed 14 of 20 hits sitting at
-// EXACTLY 16 on code-continue-2 — matches pinned at the cap are matches being
-// truncated, and match length is the alpha-hat signal (spec_ngram.go's
-// ngramAlphaAnchors tops out at 16 => 0.97). This asks whether the cap is
-// costing accepted tokens or only mis-reporting confidence.
+// policyMostRecentDeep is the shipped policy with the MaxMatch probe cap raised 16 -> 64: matches pinned at the cap are
+// matches being truncated, and match length is the alpha-hat signal (spec_ngram.go's ngramAlphaAnchors tops out at 16 =>
+// 0.97). This asks whether the cap costs accepted tokens or only mis-reports confidence.
 func policyMostRecentDeep(ctx []int, k int) ([]int, int) {
 	occs, L := occurrencesOfLongestSuffix(ctx, 2, 64)
 	if len(occs) == 0 {
@@ -146,22 +143,17 @@ func policyOracle(ctx []int, k int, truth []int) ([]int, int) {
 	return best, L
 }
 
-// tailCycle is the SECOND, INDEPENDENT loop detector, added when the first one
-// turned out to be ambiguous on code. distinct-trigram measures REPETITIVENESS,
-// and real Go source is legitimately repetitive (`float64`, `\n\t`, receiver
-// names) — the shipped step-1 code trace scored 0.715 against a 0.70 bar written
-// for PROSE coherence. Conflating "repetitive" with "looping" would either
-// discard the exact traffic this task is about, or pass a genuinely degenerate
-// trace. So this checks the actual failure mode instead: is the TAIL periodic?
+// tailCycle is the second, INDEPENDENT loop detector. distinct-trigram measures REPETITIVENESS, and real Go source is
+// legitimately repetitive (`float64`, `\n\t`, receiver names), so a bar written for PROSE coherence is ambiguous on code.
+// Conflating "repetitive" with "looping" would either discard the exact traffic this task is about or pass a genuinely
+// degenerate trace, so this checks the actual failure mode: is the TAIL periodic?
 //
-// It returns the smallest period p (<= 32) such that the last `repeats*p` tokens
-// are exactly periodic with period p, and how many repeats that runs for. A real
-// infinite loop shows a small p repeating many times; repetitive-but-progressing
+// It returns the smallest period p (<= 32) such that the last `repeats*p` tokens are exactly periodic with period p, and
+// how many repeats that runs for. A real infinite loop shows a small p repeating many times; repetitive-but-progressing
 // code does not.
 //
-// Deliberately NOT a replacement for the pre-registered trigram rule: that rule
-// stays binding, this one is reported beside it, and a DISAGREEMENT between them
-// is itself the finding.
+// Deliberately NOT a replacement for the pre-registered trigram rule: that rule stays binding, this one is reported
+// beside it, and a DISAGREEMENT between them is itself the finding.
 func tailCycle(toks []int) (period, repeats int) {
 	n := len(toks)
 	for p := 1; p <= 32 && p*2 <= n; p++ {

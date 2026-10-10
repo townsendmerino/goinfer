@@ -11,18 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Precision-localization for the granite-resident quality gap (measurement only,
-// docs/ssm-int8-quality.md). All runs use the cpu backend (f32 weights throughout),
-// so weight precision is excluded BY CONSTRUCTION — the only variables are the SSM
-// compute precision (f64 vs f32, ssmForceF32) and a forced high-precision routing
-// override. One model load, three teacher-forced passes vs the f64 reference (R1):
-//
-//	E1: cpu f32 SSM                — does downcasting the SSM compute to f32 reproduce
-//	                                 the ~66% resident drop? (confirms SSM compute is the
-//	                                 lever, weights excluded)
-//	E2: cpu f32 SSM + f64 routing  — force R1's (f64) expert selection+weights onto the
-//	                                 f32-SSM forward. Recovers → router-selection island;
-//	                                 doesn't → the whole SSM recurrence needs ~f64.
+// ssmLocHeldOut is the held-out text the SSM quality tests (this file and ssm_w8a16_test.go) score teacher-forced.
 const ssmLocHeldOut = `The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France. ` +
 	`It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889. ` +
 	`Locally nicknamed "La dame de fer", it was constructed as the centerpiece of the 1889 World's Fair. ` +
@@ -33,6 +22,16 @@ const ssmLocHeldOut = `The Eiffel Tower is a wrought-iron lattice tower on the C
 	`restaurants on the first and second levels. Photosynthesis is the process by which green plants convert light ` +
 	`energy into chemical energy stored in glucose. Water boils at one hundred degrees Celsius at sea level pressure.`
 
+// Precision-localization for the granite-resident quality gap (measurement only, docs/ssm-int8-quality.md). All runs
+// use the cpu backend (f32 weights throughout), so weight precision is excluded BY CONSTRUCTION: the only variables are
+// the SSM compute precision (f64 vs f32, ssmForceF32), whether the Mamba projections are int8, and a forced
+// high-precision routing override. One model load, teacher-forced passes vs the f64 reference (R1):
+//
+//	E1: cpu f32 SSM                — does downcasting the SSM compute to f32 reproduce the ~66% resident drop?
+//	E2: cpu f32 SSM + f64 routing  — force R1's (f64) expert selection+weights onto the f32-SSM forward. Recovers →
+//	                                 router-selection island; doesn't → the whole SSM recurrence needs ~f64.
+//	D1: cpu int8 mamba (W8A8)      — the int8 Mamba projections the resident quantizes, on the otherwise-perfect path.
+//	D2: D1 + f64 routing           — the router-island test on the path that reproduces the gap.
 func TestSSMPrecisionLocalize(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
@@ -194,10 +193,9 @@ func TestSSMPrecisionLocalize(t *testing.T) {
 	ssmForceF32 = false
 	score("E2: cpu f32 SSM + f64 routing", e2Dist, e2Arg)
 
-	// E1 refuted "f32 SSM compute is the lever" (100%). The one thing R2 keeps f32 but
-	// the resident quantizes is the int8 MAMBA projections (W8A8 weights + int8 act).
-	// D1 isolates that on the otherwise-perfect CPU path; D2 then forces R1's (f64)
-	// routing onto it — the REAL router-island test, on the path that reproduces the gap.
+	// D1 and D2 isolate the one thing R2 keeps f32 but the resident quantizes: the int8 MAMBA projections (W8A8 weights +
+	// int8 act). D1 runs it on the otherwise-perfect CPU path; D2 then forces R1's (f64) routing onto it: the REAL
+	// router-island test, on the path that reproduces the gap.
 	flipCount := func(idx [][]int) (int, int) {
 		f, n := 0, 0
 		for c := range routeIdx {

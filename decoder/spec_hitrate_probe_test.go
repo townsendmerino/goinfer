@@ -14,29 +14,27 @@ import (
 	"time"
 )
 
-// TestSpecHitRate is Step-6 Step-0b: measure the SPECULATIVE hit rate for Metal MoE expert paging
-// directly, on the CPU MoE path — the business case for building speculation at all. It does NOT
-// rest on CUDA's 38-slot VRAM hit rate (81.6%, different hardware/ratio); it measures the strict
-// quantity speculation needs: given the previous token's expert set plus a bounded per-layer LRU
-// pool, is every expert in THIS token's top-8 already resident (no stall)?
+// TestSpecHitRate is Step 0b of the Metal MoE expert-paging decision: it measures the SPECULATIVE hit rate directly, on
+// the CPU MoE path, rather than resting on CUDA's VRAM hit rate (different hardware and ratio). The strict quantity
+// speculation needs: given the previous token's expert set plus a bounded per-layer LRU pool, is every expert in THIS
+// token's top-8 already resident (no stall)?
 //
-// Model: gemma4-26b-A4B (the real target: 30 MoE layers, nE=128, top-8). Greedy autoregressive
-// generation from a diverse seed (deterministic + repo-reproducible; a repetition guard flags the
-// case where greedy loops, which would inflate locality). Router top-8 per MoE layer per token is
-// captured via SetRouterCaptureForTest. Reports, per layer and aggregated:
+// Model: gemma4-26b-A4B (the real target: 30 MoE layers, nE=128, top-8). Greedy autoregressive generation from a diverse
+// seed (deterministic, repo-reproducible; a repetition guard flags the case where greedy loops, which would inflate
+// locality). Router top-8 per MoE layer per token is captured via SetRouterCaptureForTest. Reports, per layer and
+// aggregated:
 //  1. exact-set match  P(top8_t == top8_{t-1})   — strictest "speculate from previous token".
 //  2. coverage(N)      P(top8_t ⊆ per-layer LRU-N pool, which includes last token's set for N>=8).
-//  3. stalls/token(N) = Σ_layers (1 - coverage_L(N)); implied ms/token at 0.230 ms/stall.
+//  3. stalls/token(N) = Σ_layers (1 - coverage_L(N)); implied ms/token at the per-stall cost in the body.
 //
-// GATE: compare (3) at an affordable N against 6.9 ms/token (full synchronous paging = a stall at
-// every one of the 30 MoE layers). Recovers most → build speculation. Recovers < half → synchronous
-// paging ships and speculation is dropped.
+// GATE: compare (3) at an affordable N against full synchronous paging (a stall at every one of the 30 MoE layers).
+// Recovers most → build speculation. Recovers < half → synchronous paging ships and speculation is dropped.
 func TestSpecHitRate(t *testing.T) {
 	if os.Getenv("GOINFER_SPEC_PROBE") == "" {
 		t.Skip("set GOINFER_SPEC_PROBE=1 to run the speculative hit-rate probe (loads the 26B, ~minutes)")
 	}
-	// N-41: was a hardcoded /Users/<me>/ path — the last surviving dev-home path after G-06,
-	// so this probe could only ever run on one machine and silently did nothing anywhere else.
+	// The .giw path comes from GOINFER_SPEC_PROBE_GIW (default under $HOME/models), never a dev-home path, so the probe runs
+	// or skips on any machine.
 	giw := os.Getenv("GOINFER_SPEC_PROBE_GIW")
 	if giw == "" {
 		giw = filepath.Join(os.Getenv("HOME"), "models", "gemma4-26b-int4.giw")
@@ -68,12 +66,10 @@ func TestSpecHitRate(t *testing.T) {
 	SetRouterCaptureForTest(true)
 	defer SetRouterCaptureForTest(false)
 
-	// TRUSTWORTHY input needs a REAL, diverse token stream. This box has no in-package tokenizer, and
-	// self-generated text from the 26B BASE model (greedy OR temp=1.0 top-k=40 sampling) degenerates
-	// into a low-entropy loop (4–12% distinct tokens) whose expert-locality is NOT representative of
-	// real generation. So the primary path is GOINFER_SPEC_TOKENS=<file of whitespace-separated real
-	// token ids> (e.g. a corpus tokenized elsewhere / on the box), teacher-forced. Absent that, it
-	// falls back to seeded sampling and LOUDLY flags the result as unrepresentative.
+	// TRUSTWORTHY input needs a REAL, diverse token stream. Self-generated text from the 26B BASE model (greedy or sampled)
+	// degenerates into a low-entropy loop whose expert-locality is NOT representative of real generation. So the primary
+	// path is GOINFER_SPEC_TOKENS=<file of whitespace-separated real token ids> (a corpus tokenized elsewhere),
+	// teacher-forced. Absent that, it falls back to seeded sampling and LOUDLY flags the result as unrepresentative.
 	cache := m.NewCache(4 + nGen + 4096)
 	pos := 0
 	var logits []float32

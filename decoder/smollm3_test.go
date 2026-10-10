@@ -103,22 +103,16 @@ func TestSmolLM3_forwardParity(t *testing.T) {
 	emitParityRow(t, "smollm3", "tiny-golden", "HF f32 (smollm3-tiny seeded fixture, per-layer NoPE on layer 3)", 100.0, cos, cos)
 }
 
-// TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/tasks/task-gpu-paths-2026-09.md, FeatNoPE):
-// a resident backend's rope kernel gets an all-zero invFreq table for a NoPE layer instead of a
-// new kernel path (RopeInvFreqLayer, decoder/residency.go), which is exact identity rotation by
-// construction (cos(pos·0)=1, sin(pos·0)=0 for every position — verified against the shipped
-// kernel math directly, cuda/gemv_fwd.cu and metal/kernels.go's rope2, both
-// `c=cos(th)*scale,s=sin(th)*scale` with th=pos·invf[dd]).
+// TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/tasks/task-gpu-paths-2026-09.md, FeatNoPE): a resident
+// backend's rope kernel gets an all-zero invFreq table for a NoPE layer (RopeInvFreqLayer, decoder/residency.go) instead
+// of a new kernel path, which is exact identity rotation by construction (cos(pos·0)=1, sin(pos·0)=0; the rope kernels
+// in cuda/gemv_fwd.cu and metal/kernels.go's rope2 both compute c=cos(th)*scale, s=sin(th)*scale with th=pos·invf[dd]).
 //
-// This is deliberately a PURE, backend-agnostic unit test of RopeInvFreqLayer itself, not a
-// resident-vs-CPU cosine comparison on testdata/smollm3-tiny. Measured directly (not assumed):
-// on that fixture (hidden=64, seeded/synthetic weights, `TestSmolLM3ResidentParityMetal`),
-// zeroing ONLY the NoPE layer, zeroing NO layer, and zeroing EVERY layer's rope all land within
-// ~0.0006 cosine of each other against the CPU reference (worst cosine 0.9617/0.9619/0.9624) —
-// the SAME "cannot discriminate a real bug from int8-on-random-weights noise" finding this
-// backend's own Mellum-on-Metal note (features.go) already recorded for a different family. A
-// resident-vs-CPU cosine floor on this fixture would therefore pass or fail independent of
-// whether NoPE is implemented correctly, which is worse than no gate — this test is the real one.
+// It is deliberately a PURE, backend-agnostic unit test of RopeInvFreqLayer itself, not a resident-vs-CPU cosine
+// comparison on testdata/smollm3-tiny: on that fixture (seeded synthetic weights, int8 resident) zeroing only the NoPE
+// layer, no layer, or every layer's rope all land within ~0.0006 cosine of each other, so a cosine floor there cannot
+// tell a real bug from int8-on-random-weights noise and would pass or fail independent of whether NoPE is implemented
+// correctly, which is worse than no gate.
 func TestRopeInvFreqLayer_NoPEIsZero(t *testing.T) {
 	if _, err := os.Stat(smollm3ModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no SmolLM3 checkpoint at %s — regenerate with scripts/pin_smollm3_tiny.py", smollm3ModelDir)

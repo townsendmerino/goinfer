@@ -16,9 +16,8 @@ import (
 // project's hardest build (a non-contiguous attention mask across the CPU / resident
 // / int8 / ring paths), so measure the upside first.
 //
-// It replays the drafters over a real constrained greedy generation (agent-loop
-// case, where the router already wins 4.25 tok/round) and counts tree-recoverable
-// positions. ~0 ⇒ trees add nothing for these greedy sources ⇒ defer.
+// It replays the drafters over a real constrained greedy generation (the agent-loop case, where the router already wins)
+// and counts tree-recoverable positions. ~0 ⇒ trees add nothing for these greedy sources ⇒ defer.
 func TestTreeUpside(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {

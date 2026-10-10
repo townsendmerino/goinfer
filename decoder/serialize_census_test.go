@@ -1,25 +1,18 @@
 package decoder
 
-// THE SILENT-DROP CENSUS: does a .giw round-trip preserve every per-layer field the loader
-// populated? Generic over the struct, not over a remembered list.
+// THE SILENT-DROP CENSUS: does a .giw round-trip preserve every per-layer field the loader populated? Generic over the
+// struct, not over a remembered list.
 //
-// WHY THIS EXISTS. `canSerialize` is a hand-maintained blocklist of families the writer cannot
-// express, and on 2026-08-19 it was found to have DRIFTED for two of them:
+// WHY THIS EXISTS. `canSerialize` is a hand-maintained blocklist of families the writer cannot express, and it drifts:
+// gpt_oss was once accepted while AttnSinks went 8 -> 0 and the bundle LOADED CLEAN (silent wrong answers), and laguna
+// was accepted and then rejected by the reader at load. Adding a field to LayerWeights and forgetting serialize.go
+// produces no error anywhere, and the gate meant to catch that (TestCanSerialize_refusesUnrepresentable) asks only "is
+// this family on the list?", which is the same memory that failed.
 //
-//   gpt_oss  accepted -> AttnSinks 8 -> 0, and the bundle LOADED CLEAN (silent wrong answers)
-//   laguna   accepted -> reader rejected it at load ("layer 1 QProj: 128 rows, arch expects 64")
-//
-// Neither was exotic: gpt-oss needed ONE []float32 field written. The defect was not difficulty, it
-// was that adding a field to LayerWeights and forgetting to add it to serialize.go produces no
-// error anywhere — and the gate meant to catch that (TestCanSerialize_refusesUnrepresentable) asks
-// only "is this family on the list?", which is the same memory that failed in the first place.
-//
-// So this test asks the struct instead: populate a model, serialize, load, and compare EVERY field
-// of LayerWeights by reflection. A field that was non-empty and comes back empty is a silent drop,
-// whatever family introduced it and whoever forgot it. Refused families are skipped — refusing is a
-// correct answer; silently dropping is not.
-//
-// It runs on committed tiny fixtures only: no assets, no GPU, no network.
+// So this test asks the struct: populate a model, serialize, load, and compare every field of LayerWeights by reflection
+// (populated reads slice, pointer and WeightMat fields; a scalar, bool or map field is not compared). A field that was
+// non-empty and comes back empty is a silent drop, whatever family introduced it. Refused families are skipped: refusing
+// is a correct answer, silently dropping is not. It runs on committed tiny fixtures only: no assets, no GPU, no network.
 
 import (
 	"os"
@@ -68,77 +61,58 @@ var censusList = []string{
 	"../testdata/glm-tiny", "../testdata/mixtral-tiny", "../testdata/phi3-tiny",
 	"../testdata/cohere-tiny", "../testdata/qwen35-tiny", "../testdata/qwen3next-tiny",
 	"../testdata/gemma4-moe-tiny", "../testdata/tiny-qwen2-moe",
-	// Added 2026-09-02 by TestSerializeCensus_everyFixtureIsListedOrExcluded, which found
-	// eleven committed fixtures this list had never mentioned. lfm2-tiny is the one that
-	// mattered: serialize.go dropped its entire conv mixer (audit-2026-09-02 C-03).
+	// lfm2-tiny covers the conv mixer (shortConv) that serialize.go once dropped entirely (TestLFM2_serializeRoundTripsTheConvMixer).
 	"../testdata/lfm2-tiny", "../testdata/cohere2-tiny", "../testdata/gemma3-vl-tiny",
 	"../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-moe-kv-tiny",
 	"../testdata/gemma4-moe-unified-tiny", "../testdata/glm-tiny-bias",
 	"../testdata/glm-tiny.gguf", "../testdata/qwen25vl-tiny", "testdata/qwen3_5_moe-tiny",
 	"../testdata/qwen3asr-tiny", // S14.3: Qwen3-ASR's decoder in the real checkpoint layout (thinker.*, nested config)
 	"../testdata/voxtral-tiny",  // S14.4b: Voxtral's text decoder in the real checkpoint layout (language_model.*, nested text_config, untied head, head_dim != hidden/heads)
-	// llama-tiny (2026-09-02): the plain `llama` arch had NO fixture anywhere in the tree, only
-	// goldens — so the census round-tripped 21 families without ever touching the most common
-	// architecture in the ecosystem, and a required parity gate's family at that. The only
-	// llama checkpoints here are the box's gitignored llama3.2-1b / tinyllama-awq /
-	// tinyllama-gptq, none of them tiny. scripts/pin_llama_tiny.py, 720 KB, tracked.
+	// llama-tiny: the plain `llama` arch has no other tiny fixture (only goldens and the gitignored llama3.2-1b /
+	// tinyllama-awq / tinyllama-gptq, none tiny). scripts/pin_llama_tiny.py regenerates it.
 	"../testdata/llama-tiny",
-	// qwen3moe-tiny / granite-dense-tiny (2026-09-06, docs/completed/task-families-2026-09.md F1/F3): QK-norm
-	// + MoE-with-no-shared-expert and llama+scalar-multipliers respectively are combinations no
-	// other censused fixture exercises together.
+	// qwen3moe-tiny / granite-dense-tiny: QK-norm + MoE with no shared expert, and llama + scalar multipliers; no other
+	// censused fixture exercises either combination (docs/completed/task-families-2026-09.md, F1/F3).
 	"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",
-	// ministral3-tiny (2026-09-06, batch 2 G3): the new AttnTempBeta/AttnTempOrigMaxPos fields
-	// are per-Architecture scalars, not per-layer state, so this is really about the same llama
-	// field set every dense fixture already covers -- added anyway per the census's own default.
+	// ministral3-tiny: AttnTempBeta/AttnTempOrigMaxPos are per-Architecture scalars, not per-layer state, so this repeats the
+	// llama field set every dense fixture covers; listed per the census's own default.
 	"../testdata/ministral3-tiny",
-	// smollm3-tiny (2026-09-06, batch 2 G4): layerNoPE is a per-layer function, not per-layer
-	// STATE, so this is the same generic dense field set every llama-shaped fixture already
-	// covers -- added anyway per the census's own default.
+	// smollm3-tiny: layerNoPE is a per-layer function, not per-layer state, so this is the generic dense field set; listed
+	// per the census's own default.
 	"../testdata/smollm3-tiny",
-	// glm-ocr-tiny (2026-10-01; tracked since glm_ocr O1, ff79b92a, but never listed — found red by the targeted
-	// decoder run for the pairwise-rope change): the pairwise rotation flag (ropeInterleave) and the m-RoPE
-	// sections are the per-Architecture fields a GIW round trip could drop.
+	// glm-ocr-tiny: the pairwise rotation flag (ropeInterleave) and the m-RoPE sections are the per-Architecture fields a
+	// GIW round trip could drop.
 	"../testdata/glm-ocr-tiny",
-	// mistral-tiny-window (2026-10-02): the exclusion said "config-only, Load cannot open it", which was a symptom, not a fact: the weights existed
-	// locally and were gitignored (*.safetensors), so on a fresh checkout Load had nothing to open. They are committed now. SlidingWindow is the
-	// per-Architecture field a GIW round trip could drop.
+	// mistral-tiny-window: SlidingWindow is the per-Architecture field a GIW round trip could drop. Its weights are
+	// committed despite the *.safetensors ignore, so Load can open it on a fresh checkout.
 	"../testdata/mistral-tiny-window",
-	// olmo3-tiny (2026-09-06, batch 2 G2): NormPostOnly (no pre-norm) and QKNormWhole (whole-vector
-	// QK-norm, not per-head) are per-Architecture scalars affecting layer STRUCTURE, not per-layer
-	// state -- added anyway per the census's own default.
+	// olmo3-tiny: NormPostOnly (no pre-norm) and QKNormWhole (whole-vector QK-norm) are per-Architecture scalars that change
+	// layer structure, not per-layer state; listed per the census's own default.
 	"../testdata/olmo3-tiny",
-	// olmo_hybrid-tiny (2026-09-06, batch 2 G2): mixed NormPlacement per layer kind, on top of the
-	// SAME DeltaNet state qwen35-tiny already round-trips -- added anyway per the census's own
-	// default.
+	// olmo_hybrid-tiny: mixed NormPlacement per layer kind on top of the DeltaNet state qwen35-tiny already round-trips;
+	// listed per the census's own default.
 	"../testdata/olmo_hybrid-tiny",
-	// bailing_hybrid-tiny (2026-09-06, batch 2 G5): a THIRD hybrid-cache shape (KDA's per-head
-	// conv-window-triple + matrix state, alongside MLA's latent cache on the same family's other
-	// layers) -- added anyway per the census's own default.
+	// bailing_hybrid-tiny: a third hybrid-cache shape (KDA's per-head conv-window triple + matrix state, alongside MLA's
+	// latent cache on the same family's other layers); listed per the census's own default.
 	"../testdata/bailing_hybrid-tiny",
-	// spark2-5-tiny (2026-09-21, task-spark-x2-5.md): the fused q_k_v_proj split
-	// (buildSpark25Weights) and the generic (non-MLA) sigmoid attention-output gate (GProj under
-	// Architecture.AttnGate/GateSigmoid, not the MLA-only GatedAttentionProjGranularity path
-	// laguna/bailing_hybrid already exercise) are both real per-layer state no other censused
+	// spark2-5-tiny (docs/tasks/task-spark-x2-5.md): the fused q_k_v_proj split (buildSpark25Weights) and the generic
+	// (non-MLA) sigmoid attention-output gate (GProj under Architecture.AttnGate/GateSigmoid, not the MLA-only
+	// GatedAttentionProjGranularity path laguna/bailing_hybrid exercise) are real per-layer state no other censused
 	// fixture covers.
 	"testdata/spark2-5-tiny",
-	// gemma1-tiny / gemma2-tiny (2026-09-30): Gemma 1's Pre2 + (1+w) RMSNorm + MQA and Gemma 2's Sandwich4 without
-	// QK-norm, sliding/full alternating, both softcaps; and their GGUF copies, whose loader derives what the file omits.
+	// gemma1-tiny / gemma2-tiny: Gemma 1's Pre2 + (1+w) RMSNorm + MQA and Gemma 2's Sandwich4 without QK-norm, sliding/full
+	// alternating, both softcaps; and their GGUF copies, whose loader derives what the file omits.
 	"../testdata/gemma1-tiny", "../testdata/gemma2-tiny", "../testdata/gemma1-tiny.gguf", "../testdata/gemma2-hd-tiny.gguf",
 }
 
-// censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with
-// the reason. Every fixture must be in censusList or here — TestSerializeCensus_everyFixtureIsListedOrExcluded.
+// censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with the reason. Every
+// fixture must be in censusList or here (TestSerializeCensus_everyFixtureIsListedOrExcluded).
 //
-// A LIST THAT NOBODY CHECKS IS THE DEFECT THIS TEST WAS BUILT TO REPLACE, AND IT CAME BACK. The
-// census's own preamble says the guard before it failed because it "asks only 'is this family on
-// the list?'" — and the replacement asked a list too, 21 hand-maintained paths. ../testdata/lfm2-tiny
-// has been committed since ed112b0 and was on none of them, so `grep shortConv decoder/serialize.go`
-// returned zero matches for an entire shipped family while this census reported green over 21
-// others (audit-2026-09-02 C-03). Discovery plus an explicit exclusion is what makes the list a
-// decision instead of a memory.
-//
-// The reasons here are COST, measured, not judgement: the census loads, serializes and greedy-decodes
-// every fixture, and 29 of them together take 0.27s.
+// A list nobody checks is the defect this test was built to replace: the census's first fixture list was hand-maintained
+// too and missed lfm2-tiny, so the census reported green over a family whose conv mixer serialize.go dropped entirely.
+// Discovery plus an explicit exclusion is what makes the list a decision instead of a memory. The reasons here are COST,
+// not judgement: the census loads, serializes and greedy-decodes every fixture, and the listed ones together take well
+// under a second.
 var censusExcluded = map[string]string{
 	"gpt2":                   "529 MB — the real GPT-2, not a tiny fixture. Its per-layer fields are the generic dense set every *-tiny fixture here covers, and its distinctive state (learned PosEmbed) is MODEL-level, which this per-layer census does not reflect over at all.",
 	"gemma4-dense-scaled":    "449 MB. gemma4's per-layer state (PLE, the dense‖MoE sub-block, two-geometry head dims) is covered by four other gemma4 fixtures on the list.",
@@ -158,20 +132,16 @@ var censusExcluded = map[string]string{
 	"qwen3_5-tiny-normw":     "qwen3_5-tiny with a random final-norm weight and every other tensor identical (scripts/pin_prompt_hidden.py, D2). The final norm is MODEL-level state, which this per-layer census does not reflect over; its per-layer fields are exactly qwen3_5-tiny's, which is on the list.",
 	"qwen3moe-tiny-k3":       "same qwen3_moe field set qwen3moe-tiny already covers — it differs only in num_experts_per_tok (3 vs 2), needed because float addition of exactly 2 terms is exactly commutative, so a k=2 fixture cannot catch an accumulation-order regression. Its job is cuda/moe_expert_major_test.go's bit-identity gate, not this census.",
 
-	// The Linux box's nine local drops, 549 MB to 17 GB and ~44 GB together. Recorded as decisions
-	// rather than left to be re-reported every run. TWO reasons apply to all of them and both are
-	// measured, not judgement:
+	// The Linux box's nine local drops (549 MB to 17 GB), recorded as decisions rather than re-reported every run. Two
+	// reasons apply to all of them:
 	//
-	//  1. COST. This census loads, serializes and greedy-decodes every fixture, and its whole design
-	//     point is that 30 of them together take 0.19 s — cheap enough to run in every CI. The
-	//     smallest of these is 549 MB; mellum-mellum2-slice at 4.0 GB was still running after 90 s.
-	//  2. NO NEW FIELDS. Eight of the nine are an architecture the census already round-trips, and
-	//     the field set this test compares is a function of the ARCHITECTURE. A second gemma4 or a
-	//     third laguna adds bytes, not coverage.
+	//  1. COST. The census's design point is that every listed fixture together runs cheaply enough for every CI; the
+	//     smallest of these is 549 MB.
+	//  2. NO NEW FIELDS. Eight of the nine are an architecture the census already round-trips, and the field set it
+	//     compares is a function of the ARCHITECTURE. A second gemma4 or a third laguna adds bytes, not coverage.
 	//
-	// The ninth is different and is recorded in docs/QUEUE.md rather than hidden here: llama3.2-1b,
-	// tinyllama-awq and tinyllama-gptq are the ONLY fixtures anywhere for the plain `llama` arch,
-	// and there is no tiny one. See llama-tiny below, which is the answer to that.
+	// The ninth is different (docs/QUEUE.md): llama3.2-1b, tinyllama-awq and tinyllama-gptq are the only fixtures for the
+	// plain `llama` arch besides llama-tiny, and none is tiny.
 	"gptoss120-slice":        "8.7 GB; gpt_oss is round-tripped by decoder/testdata/gptoss_tiny.gguf, same arch, same field set.",
 	"laguna-xs2-slice":       "5.7 GB; laguna is round-tripped by laguna-xs2-tiny, laguna-xs21-tiny and laguna-m1-tiny.",
 	"laguna-xs21-slice":      "5.7 GB; same arch as the three laguna tiny fixtures already censused.",
@@ -215,12 +185,9 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 				t.Fatalf("canSerialize ACCEPTED this family but the bundle does not load: %v", err)
 			}
 			checked++
-			// DECODE IDENTITY, not just field presence. A field can survive a round-trip and still
-			// be wrong — restored at the wrong offset, or restored while some sibling it depends on
-			// was not. Greedy-decoding both models and requiring the SAME tokens is what turns "the
-			// tail is written" into "the model that comes back is the model that went in". This is
-			// the check the qwen3_5_moe and gemma4 round-trip tests already made by hand; here it
-			// runs for every family the census reaches.
+			// DECODE IDENTITY, not just field presence: a field can survive a round trip and still be wrong (restored at the wrong
+			// offset, or without a sibling it depends on). Greedy-decoding both models and requiring the SAME tokens is what turns
+			// "the tail is written" into "the model that comes back is the model that went in".
 			m2, err := NewModel(w2, "cpu")
 			if err != nil {
 				t.Fatalf("new model from round-tripped weights: %v", err)
@@ -256,32 +223,18 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 	t.Logf("censused %d representable fixture(s) field-by-field", checked)
 }
 
-// EVERY TRACKED FIXTURE IS LISTED OR EXPLICITLY EXCLUDED.
+// EVERY TRACKED FIXTURE IS LISTED OR EXPLICITLY EXCLUDED. The census is only as complete as its hand-maintained fixture
+// list. This walks both testdata roots, treats an entry with a config.json (or a .gguf/.giw file) as a model fixture,
+// and requires each to be censused or excluded with a written reason. It is a stat plus one `git ls-files`, not a load,
+// so it costs nothing and cannot be the reason someone trims the list.
 //
-// The census above is only as complete as its fixture list, and that list is hand-maintained — the
-// exact shape whose failure it was written to replace. This walks both testdata roots, treats an
-// entry with a config.json (or a .gguf/.giw file) as a model fixture, and requires each to be
-// censused or excluded with a written reason. It is a STAT plus one `git ls-files`, not a load, so
-// it costs nothing and cannot be the reason someone trims the list.
+// TRACKED, not "present" and not "committed": most fixture checkpoints are GITIGNORED local drops, so a rule over what is
+// present fails on any machine with extras (an override habit rather than a gate), and exclusions naming large untracked
+// fixtures read as STALE on CI. Tracked is the scope that is the same everywhere, and a real one: a new family's tiny
+// fixture gets committed (as lfm2-tiny was), so the defect this gate exists for is inside the blocking set.
 //
-// TRACKED, NOT "PRESENT", AND CERTAINLY NOT "COMMITTED" — two wrong scopes, each caught by a
-// machine that had a different set of files:
-//
-//   - "committed" was the first, and it was never checked. Most fixture checkpoints are GITIGNORED
-//     local drops; 12 of the 35 this machine holds are tracked, and CI's checkout has 14 in total.
-//     Four exclusions naming large untracked fixtures read as STALE there and turned CI red.
-//   - "present in this checkout" was the second. The Linux box carries local drops nobody else has
-//     — `gptoss120-slice`, `laguna-xs2-slice`, and three SCRATCH dot-directories — so a rule that
-//     demands every present fixture be listed fails on any machine with extras, which makes the
-//     gate an override habit rather than a gate.
-//
-// Tracked is the scope that is the same everywhere, and it is a real scope, not a retreat: a new
-// family's tiny fixture gets committed, which is exactly how ../testdata/lfm2-tiny (the fixture
-// whose absence from the list let serialize.go drop an entire family's conv mixer) got there. It
-// is tracked, so the defect this gate exists for is inside the blocking set.
-//
-// An untracked fixture that is present and unlisted is REPORTED, never asserted on: it may be
-// worth adding, and it may be somebody's scratch copy, and this test cannot tell.
+// An untracked fixture that is present and unlisted is REPORTED, never asserted on: it may be worth adding or it may be
+// somebody's scratch copy, and this test cannot tell.
 func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 	tracked, gitOK := trackedFixtureNames()
 	if !gitOK {

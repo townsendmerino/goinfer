@@ -5,19 +5,17 @@ import (
 	"testing"
 )
 
-// C-05: A CANCELLED BATCHED PREFILL ON A WRAPPED RING LEAVES STALE K/V THAT THE NEXT WARM TURN
-// READS AS HISTORY.
+// C-05: a cancelled batched prefill on a wrapped ring leaves stale K/V that the next warm turn reads as history.
 //
-// G18 made the batched sweep abortable per LAYER. Layers below the abort point have already
-// commitBatch'd — their ring count is startPos+K — while c.pos is still startPos, because advanceTo
-// runs only at the end of a completed sweep. reconcile then truncates to c.pos, which rewinds those
-// rings by K on a wrapped window: ring.truncate cannot restore the rows the commit evicted and
-// returns false. reconcile discarded that bool, so the session stayed WARM over K/V RoPE'd at
-// positions the next turn will read as much earlier history. The request that was cancelled reports
-// a clean end, so nothing else in the stack notices.
+// The batched sweep is abortable per LAYER. Layers below the abort point have already commitBatch'd (ring count
+// startPos+K) while c.pos is still startPos, because advanceTo runs only at the end of a completed sweep. reconcile
+// then truncates to c.pos, which rewinds those rings by K; on a wrapped window ring.truncate cannot restore the rows
+// the commit evicted and returns false, and reconcile must not discard that bool, or the session stays WARM over K/V
+// RoPE'd at positions the next turn reads as much earlier history. The cancelled request reports a clean end, so
+// nothing else in the stack notices.
 //
-// This drives reconcile directly. A full serve round-trip would need a client that disconnects
-// mid-prefill; the cache state it produces is what is built here, and it is the state that matters.
+// This drives reconcile directly: a full serve round-trip would need a client that disconnects mid-prefill, and the
+// cache state it produces is what is built here.
 func TestSession_cancelledSweepOnAWrappedRingGoesCold(t *testing.T) {
 	const nKV, hd, W = 1, 4, 64
 	const startPos, K = 200, 32 // startPos > W, so the ring has wrapped

@@ -12,9 +12,9 @@ import (
 // TestGrammarSpec_sessionTwoTurnsMatchPlain: on a Session, a grammar-fused speculative turn that ends by reaching
 // max_tokens leaves the session holding exactly what a plain constrained turn leaves (prompt + every emitted token),
 // and the next turn's reply is the same. Serve runs grammar-fused spec on a CPU session for greedy constrained
-// requests. The loop used to leave its trailing token unforwarded at that exit, the n-gram loop's defect that on Metal
-// changed every later turn (docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). Turn 0 is capped at 6 tokens,
-// short of the object, so it ends at max_tokens rather than at grammar completion.
+// requests. The loop must not leave its trailing token unforwarded at that exit (the n-gram loop's defect, which on
+// Metal changed every later turn: docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). Turn 0 is capped at 6
+// tokens, short of the object, so it ends at max_tokens rather than at grammar completion.
 func TestGrammarSpec_sessionTwoTurnsMatchPlain(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {

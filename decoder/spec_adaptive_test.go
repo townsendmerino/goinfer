@@ -5,16 +5,12 @@ import (
 	"testing"
 )
 
-// M-14: verifyTheta keyed on the BACKEND NAME, so every CUDA model got 0.251 — a value measured
-// on dense 0.5B/1.5B, where the batched prefill pass actually runs. But cuda's ForwardN falls
-// back to one `step` per row for every MoE / K=V / non-uniform / non-int4-or-int8 model, and a
-// loop of single-token forwards has Theta ≈ 1 by construction.
-//
-// So on a resident MoE the controller was told a verify node costs a quarter of a decode step
-// and drafted 8, when each node costs a FULL step: nine sequential steps per round for ~6.7
-// committed tokens at high acceptance, worse below it. Metal hit the same shape, MEASURED it
-// (1.006–1.048, linear to n=16) and ships 1.02 to disable speculation. This makes CUDA reach the
-// same conclusion the same way — by asking the resident instead of inferring from its name.
+// M-14: verifyTheta keyed on the BACKEND NAME, so every CUDA model got the Theta measured on dense models, where the
+// batched prefill pass actually runs. But cuda's ForwardN falls back to one `step` per row for every MoE / K=V /
+// non-uniform / non-int4-or-int8 model, and a loop of single-token forwards has Theta ≈ 1 by construction: a resident
+// MoE was told a verify node costs a fraction of a decode step and drafted 8 at the price of nine sequential steps per
+// round. This pins that verifyTheta asks the resident whether its ForwardN is batched instead of inferring from its
+// name (Metal does the same, and ships a Theta that disables speculation on the sequential path).
 func TestVerifyTheta_asksWhetherForwardNIsBatched(t *testing.T) {
 	for name, tc := range map[string]struct {
 		batched bool
@@ -103,13 +99,9 @@ func TestVerifyTheta_VerifyPathReporter(t *testing.T) {
 	}
 }
 
-// The CUDA constant itself is unchanged and still measured — M-14 is about WHEN it applies, not
-// what it is. Pinned so a change to one is not mistaken for the other.
-//
-// Metal ships thetaFor("metal") = 0.96 (re-measured 2026-09-17 across {0.5B,1.5B} qwen2.5-coder and
-// {0.6B,1.7B} Qwen3, depth 128-2048; down from 1.02+ when ForwardN was an unbatched loop). N-49
-// tripwire: batched verify reports via VerifyPathReporter, unblocking speculative decoding on
-// Metal for all non-paged models.
+// The CUDA constant itself is unchanged: M-14 is about WHEN it applies, not what it is. Pinned so a change to one is not
+// mistaken for the other. Metal's thetaFor("metal") is a separate measured constant that applies only when the resident
+// reports a batched verify (VerifyPathReporter).
 func TestThetaFor_cudaConstantUnchanged(t *testing.T) {
 	if got := thetaFor("cuda"); got != 0.251 {
 		t.Errorf("thetaFor(cuda) = %v, want 0.251 (cuda/theta_probe_test.go, dense 0.5B/1.5B)", got)

@@ -6,13 +6,10 @@ import (
 	"testing"
 )
 
-// TestMatmulInt4_MConsistent verifies the int4 weight matmul gives bit-identical
-// per-row results at M=1 (decode) and M=K (prefill). This holds only because both
-// now run the W4A8 integer kernel (weightmat.go): before prefill was routed onto
-// MatmulBTW4A8 it used the f32-activation MatmulBTQ4, so the two paths differed.
-// The W4A8 dot product for a given (row, output) is independent of M, so the
-// match is exact — this is the self-contained gate for the prefill→W4A8 switch
-// and the prefill↔decode numerics-seam removal.
+// TestMatmulInt4_MConsistent verifies the int4 weight matmul gives bit-identical per-row results at M=1 (decode) and M=K
+// (prefill). That holds because both run the W4A8 integer kernel (weightmat.go), whose dot product for a given (row,
+// output) is independent of M, so the match is exact: the self-contained gate for the prefill→W4A8 switch and the
+// removal of the prefill↔decode numerics seam.
 func TestMatmulInt4_MConsistent(t *testing.T) {
 	const rows, cols, K = 64, 64, 5 // dims are multiples of int4GroupSize (32)
 	rng := rand.New(rand.NewSource(1))
