@@ -112,6 +112,13 @@ next edit above the line.
 **The test for a sentence:** would someone changing this code next week act differently because of it?
 Keep it. Does it explain how we came to know? Move it.
 
+**Length is part of the rule.** Say each thing once, at the declaration it binds, in as many lines as the
+contract needs and no more: an optional-interface or accessor comment is about six lines. Do not restate the
+signature or a sibling's comment, do not list which backends, families or callers currently take a path (the
+code is that list, and the comment is wrong the day one changes), and do not narrate the body. A comment that
+runs past a short paragraph usually holds a design explanation (move it to the doc the comment cites, or
+`docs/code-notes/<package>.md`) or a guardrail (keep it as its own sentence with a pointer to the evidence).
+
 **The comments around you do not set the style; this section does.** Many files still carry long
 history comments; clearing them is `docs/tasks/task-code-comments-2026-10.md`'s work, done package by
 package with a comments-only gate. Do not rewrite comments in a file you are only passing through, and

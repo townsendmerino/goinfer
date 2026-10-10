@@ -64,6 +64,13 @@ content (one may stay as the label on a pointer); measured figures and tables; r
 **The test for a sentence:** would someone changing this code next week act differently because of it? Keep it. Does it
 explain how we came to know? Move it.
 
+**Length is part of the rule** (added 2026-10-10 after the CC3 pilot, §6). Say each thing once, at the declaration it
+binds, in as many lines as the contract needs: an optional-interface or accessor comment is about six lines. Do not
+restate the signature or a sibling's comment, do not list which backends, families or callers currently take a path (the
+code is that list), and do not narrate the body. What a tightening drops that carries information (a per-backend list, a
+rationale beyond a sentence or two) moves to `docs/code-notes/`; wording that only got shorter does not, and the CC2
+moved-text report lists it as not found for the reviewer to read.
+
 **Pointers name things, not lines.** A comment points at a doc by path and heading
 (`docs/code-notes/gpu.md#runModelToModelW`) and at code by declaration (`BuildResident`'s `prefillLast` closure). There
 are about 50 `file.go:NNN`-style references inside Go comments today; each goes stale on the next edit above its line.
@@ -189,6 +196,12 @@ seen red has not been shown to work.
 > ceiling), so the two files are mostly contract, and `residency.go` is mostly interface documentation. The history that was there
 > moved verbatim (`docs/code-notes/gpu.md`, `docs/code-notes/decoder.md`); the rest of the cut is wording tightened to the rule's
 > "a sentence or two" with nothing dropped, listed as NOT FOUND by the moved-text report. Going further means cutting contract.
+>
+> **Rule adjusted, pass 2 (2026-10-10, owner: "adjust the rule").** The rule gained the "Length is part of the rule" paragraph
+> (§2, `CLAUDE.md`), and the pilot files were tightened to it: `gpu/prefillrunner.go` 248 → 132 (−47%), `decoder/residency.go` 941 → 705
+> (−25%), together 1,189 → 837 (−30%). The band is met for `gpu`; `decoder/residency.go`, interface documentation almost
+> throughout, stays under it, and what remains there is contract. Expect a rollout to land between the 25% line and the
+> band for contract-heavy packages and inside it for the ones the §1 census names (`cuda`, `metal`, `gpu`, `cmd/gate`).
 
 Files: `gpu/prefillrunner.go` (248 comment lines of 1,039) and `decoder/residency.go` (941 of 1,816). Neither has an open
 branch against it on 2026-10-09. `decoder/forwardn.go` was the first choice; it is out because `s10-pixtral` edits it.
