@@ -11,29 +11,19 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// PRE-REGISTERED BOUND for TestGemmMMA_vsExact, derived before the kernel was first run.
+// BOUND for TestGemmMMA_vsExact (pre-registered before the kernel's first run). gemm_w4a8_mma and
+// gemv_w4a8_rn compute the SAME int8 products against the SAME per-group f16 scales; the only difference is
+// the association of the cross-group float sum (§4 L3). gemv_w4a8_rn folds one float FMA per WORD (K/8
+// terms); gemm_w4a8_mma folds one per GROUP (K/32 terms), because its MMAs accumulate a group's 32 elements in
+// int32 with no rounding. So the new kernel performs 4x fewer float roundings and the test only bounds the
+// gap; it does not assume which is more accurate.
 //
-// gemm_w4a8_mma and gemv_w4a8_rn compute the SAME int8 products against the SAME per-group f16
-// scales. Neither the products nor the scales differ; the ONLY difference is the association of the
-// cross-group float sum, which is exactly what §4 L3 predicts and what the sibling kernel's header
-// names as the reason bit-identity forecloses tensor cores.
+// THE NUMBER. Summing G terms in two orders differs by roughly eps * sqrt(G) * |result| (f32 eps = 2^-24),
+// which is about 3e-6 at the largest production K (18944); the bar is 1e-5 of the OUTPUT SCALE, ~3x margin.
 //
-// The two differ in how many float roundings they perform. gemv_w4a8_rn folds ONE float FMA PER
-// WORD — K/8 terms — because dp4a can only accumulate 8 elements exactly. gemm_w4a8_mma folds one
-// per GROUP — K/32 terms — because the two m8n8k16 MMAs accumulate all 32 elements of a group in
-// int32 with NO rounding at all. So the new kernel performs 4x FEWER float roundings and is, if
-// anything, the more accurate of the two; the test does not assume that, it just bounds the gap.
-//
-// THE NUMBER: f32 eps = 2^-24 = 6.0e-8. Summing G terms in two different orders differs by roughly
-// eps * sum|partial sums|, which for random-signed terms is ~ eps * sqrt(G) * |result|. The largest
-// production K here is 18944 (G = 2368 words for the reference), giving ~ 6.0e-8 * 49 = 2.9e-6.
-// The bar is set at 1e-5 of the OUTPUT SCALE with ~3x margin.
-//
-// RELATIVE TO max|dst| ACROSS THE OUTPUT, not to each element. That is a deliberate correction
-// learned in this same task: docs/measurements/prefill-l2l3-phase1-2026-09-05.md §2.1 records an
-// L2 bar scaled per-element by a quantity that can cancel to near zero, which made it unmeetable
-// for reasons that had nothing to do with the kernel. A GEMM output element can likewise land near
-// zero by cancellation; the output scale cannot.
+// RELATIVE TO max|dst| ACROSS THE OUTPUT, not to each element: a per-element bar can be unmeetable when an
+// element cancels to near zero (docs/measurements/prefill-l2l3-phase1-2026-09-05.md §2.1), while the output
+// scale cannot.
 const gemmMMAMaxRelDelta = 1e-5
 
 // TestGemmMMA_vsExact gates the L3 tensor-core GEMM against gemv_w4a8_rn — the exact path it is

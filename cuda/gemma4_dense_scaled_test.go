@@ -12,16 +12,15 @@ import (
 )
 
 // TestGemma4DenseScaled_residentParity exercises the CUDA resident bridge on a SCALED dense Gemma 4
-// (hidden 1024, 12 layers, 5:1 sliding/full, REAL head dims 256 local / 512 global, K=V globals) —
-// closing the 256-local geometry gap the tiny Split-A fixture (hd=16) left. Gated exactly as Split A
-// / the MoE 2c gate: pos-0 kernel correctness + the calibrated per-position curve (568f292),
-// CUDA-int4-vs-CPU-int4 measured against the fixture's own CPU-int4-vs-f32 quantization curve so a
-// chaotic int4 floor doesn't masquerade as a kernel bug.
+// (hidden 1024, 12 layers, 5:1 sliding/full, REAL head dims 256 local / 512 global, K=V globals),
+// closing the 256-local geometry gap the tiny Split-A fixture (hd=16) leaves. Gated as Split A / the MoE 2c
+// gate: pos-0 kernel correctness + the calibrated per-position curve, CUDA-int4-vs-CPU-int4 measured against
+// the fixture's own CPU-int4-vs-f32 quantization curve so a chaotic int4 floor doesn't masquerade as a kernel bug.
 //
-// FINDING baked into the gate: random weights over 12 layers are LESS int4-conditioned than the tiny
-// 2-layer fixture (floor ~0.46 vs 0.79) — realistic geometry ≠ realistic conditioning (that needs
-// trained weights). So the multi-position int4-vs-int4 drift is REPORTED, and the gate is the run
-// mean vs that curve, not an absolute floor. No coherence gate: random weights → degenerate greedy.
+// Random weights over 12 layers are LESS int4-conditioned than the tiny 2-layer fixture (realistic geometry ≠
+// realistic conditioning; that needs trained weights), so the multi-position int4-vs-int4 drift is REPORTED and
+// the gate is the run mean vs that curve, not an absolute floor. No coherence gate: random weights → degenerate
+// greedy.
 func TestGemma4DenseScaled_residentParity(t *testing.T) {
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	const dir = "../testdata/gemma4-dense-scaled"
@@ -106,8 +105,9 @@ func TestGemma4DenseScaled_residentParity(t *testing.T) {
 
 	// pos-0 kernel correctness (no KV accumulation): the 256-local + 512-global geometry must compose
 	// correctly. cuda-vs-cpu-int4 differs only in W4A8 activation rounding, so pos 0 is close even when
-	// the int4-vs-f32 floor is chaotic.
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 was 0.996182 before the fix (v_norm missing on the sliding layers), 1.000000 after; the run mean 0.910545 -> 0.999634.
+	// the int4-vs-f32 floor is chaotic. The 0.999 bar sits between the readings before and after the v_norm fix on
+	// the sliding layers (the fix is the mechanism) and is never loosened: docs/tasks/task-multimodal-support-2026-10.md,
+	// S1.0 amendment.
 	if pos0 < 0.999 {
 		t.Errorf("pos-0 CUDA-vs-CPUint4 %.6f < 0.999 — the 256-local/512-global resident geometry diverges from CPU at the first token", pos0)
 	}

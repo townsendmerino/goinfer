@@ -131,8 +131,8 @@ func TestResidentDrafter_fuseParity(t *testing.T) {
 // silent when wrong — the K/V would still be the right shape at the right positions:
 //
 //	INCREMENTAL: extending by 4 then 4 must land the same K/V as extending by 8 in one call.
-//	That is the property the serving path depends on (rebuilding costs 2.4x at ctx=1024, per
-//	TestDFlashDraftScaling), and an off-by-one in the write position breaks it while leaving
+//	That is the property the serving path depends on (rebuilding the context each round costs far
+//	more), and an off-by-one in the write position breaks it while leaving
 //	every buffer plausibly populated.
 //
 //	POSITION-DEPENDENT: rows written at different absolute positions must DIFFER even for
@@ -343,21 +343,19 @@ func TestResidentDrafter_blockParity(t *testing.T) {
 	}
 }
 
-// TestBatchedCapture_matchesPerToken gates the batched hidden-state seam against the per-token
-// one it replaces.
+// TestBatchedCapture_matchesPerToken gates the batched hidden-state seam against the per-token one it
+// replaces.
 //
-// The drafter reads the target's residual at five tap layers for every token the verify commits.
-// The existing seam does that with a sync and a download per tap PER TOKEN (0.465 ms/token
-// measured); the batched one does one download per tap for the whole block. That is only a valid
-// substitution if it records the SAME tensors — and a batched capture taken at the wrong point
-// in the layer loop, or reading the residual before the MLP's residual add, would still be the
-// right shape and the right magnitude.
+// The drafter reads the target's residual at five tap layers for every token the verify commits. The existing
+// seam does that with a sync and a download per tap PER TOKEN; the batched one does one download per tap for
+// the whole block. That is only a valid substitution if it records the SAME tensors, and a batched capture
+// taken at the wrong point in the layer loop, or reading the residual before the MLP's residual add, would
+// still be the right shape and the right magnitude.
 //
-// So: run M tokens sequentially with the per-token seam, run the same M as one batched call with
-// the batched seam, and require BIT EQUALITY. Not cosine — both paths are the same kernels on
-// the same weights, and the batched layer stack is already bit-identical to sequential
-// (TestPrefillLast_e2e). Anything less than == here would mean the two seams disagree about
-// which tensor they are recording.
+// So: run M tokens sequentially with the per-token seam, run the same M as one batched call with the batched
+// seam, and require BIT EQUALITY. Not cosine: both paths are the same kernels on the same weights, and the
+// batched layer stack is already bit-identical to sequential (TestPrefillLast_e2e). Anything less than ==
+// here would mean the two seams disagree about which tensor they are recording.
 func TestBatchedCapture_matchesPerToken(t *testing.T) {
 	requireHeavyModel(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
@@ -449,8 +447,8 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 		t.Errorf("%d values differ", bad)
 	}
 
-	// What it costs. The per-token seam measured 0.465 ms/token (5 taps), so ~2.3 ms per round
-	// at four accepted -- a term the gate-3 projection carries. This is the batched replacement.
+	// What it costs: the per-token seam pays a sync and a download per tap per token; this times the batched
+	// replacement.
 	best := func() float64 {
 		b := 1e9
 		for range 7 {

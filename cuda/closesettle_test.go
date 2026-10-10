@@ -11,23 +11,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestResidentCloseSettleTime measures how long free VRAM takes to stop rising after Close returns.
+// TestResidentCloseSettleTime measures how long free VRAM takes to stop rising after Close returns. It
+// exists because Close() can return before the driver has finished handing memory back; if that interval is
+// long relative to the gap between tests, the next test's Load starts inside it and sees a card still
+// releasing, which reproduces every symptom the CUDA tier shows (passes alone, fails in suite, VRAM
+// signature) with no leak anywhere.
 //
-// WHY THIS EXISTS, and it is the one datum the A12 retraction produced. While disproving the "leak",
-// the tracer's tail showed free VRAM still climbing as the process exited — 2.4 -> 4.3 -> 6.2 GiB
-// across three 50 ms samples. Close() had returned; the driver had not finished. If that interval is
-// long relative to the gap between tests, the next test's Load starts inside it and sees a card that
-// is still handing memory back, which reproduces every symptom the CUDA tier shows: passes alone,
-// fails in suite, VRAM signature, and no leak anywhere.
+// Tests in this package are sequential (the GPU gate passes -p 1, targets ./cuda/ alone, and the package
+// makes no t.Parallel() call), which is exactly what makes a non-instant teardown matter.
 //
-// Cross-package parallelism is already excluded — the GPU gate passes -p 1 on every CUDA invocation,
-// targets the single ./cuda/ package rather than ./cuda/..., and the package contains zero
-// t.Parallel() calls. So the tests ARE sequential, and "sequential" is exactly what makes a
-// non-instant teardown matter: nothing else is running, but the previous test may not be finished.
-//
-// It reports rather than asserts. A threshold pulled out of one machine's timing would be the
-// stale-constant shape this queue keeps finding; what a stabilisation wait should be, if the tier
-// needs one at all, follows from the number rather than preceding it.
+// It reports rather than asserts: a threshold pulled out of one machine's timing is the stale-constant
+// shape, and what a stabilisation wait should be, if the tier needs one at all, follows from the number.
+// Origin: docs/code-notes/cuda.md#TestResidentCloseSettleTime.
 func TestResidentCloseSettleTime(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf")

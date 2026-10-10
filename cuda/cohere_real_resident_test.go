@@ -18,32 +18,26 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestCohereRealResidentParityCUDA -v -timeout 40m
 //
-// WHY IT EXISTS. On 2026-10-01 these two checkpoints, on this resident with the NeoX half-split rope kernels,
-// read per-position resident-vs-CPU worst cosine -0.075 (R7B) / -0.041 (Aya) on a 48-token prompt, exact at
-// position 0 and diverging after, and Aya's greedy continuation matched the HF golden 1/8 against the CPU's
-// 8/8. The committed flat-weight gate (TestCohereResidentParityCUDA, 0.02-std) read 0.9997 on the same wrong
-// kernels. This gate reads the real weights.
+// WHY IT EXISTS. The flat-weight gate (TestCohereResidentParityCUDA, 0.02-std) read ~1.0 on resident kernels that
+// were wrong on real weights (NeoX half-split rope where these families need the pairwise one). This gate reads
+// the real weights. Evidence: docs/measurements/cuda-pairwise-rope-2026-10-01.md.
 //
-// BARS. Pre-registered 2026-10-01 BEFORE the first run with the pairwise kernels: every prompt position,
-// resident vs CPU (same quant), cosine >= 0.995 and relL2 <= 0.15 on the golden prompt and a 48-token prompt;
-// last-token cosine vs the HF golden within 0.01 of the CPU int4's; the 8-token greedy continuation equal to
-// the CPU int4's. THE FIRST AND THIRD DID NOT HOLD, and the reason is int4 noise, not the rotation (measured
-// in docs/measurements/cuda-pairwise-rope-2026-10-01.md against an HF f32 forward over EVERY position of both
-// prompts): the resident is exactly as far from HF f32 as the CPU int4 is (mean per-position cosine to HF 0.9851
-// resident / 0.9853 CPU on Aya, 0.9746 / 0.9761 on R7B; both have positions at 0.85-0.93 on the random-token
-// tail), and the two continuation flips are near-ties (the CPU's own top-2 gap at the flip is 0.17% / 0.07% of
-// its logit range, against the repo's 3% near-tie rule). A tight resident-vs-CPU bar on an 8B int4 model with
-// random-token tails therefore measures the quantizer. The bars asserted below are the PROPOSED, noise-referenced
-// ones; the pre-registered tight tier is still computed and logged ("tight tier") so the gap stays visible:
+// BARS. The pre-registered tight bar (resident vs CPU int4 at every prompt position: cosine >= 0.995 and
+// relL2 <= 0.15; last-token cosine vs the HF golden within 0.01 of the CPU int4's; the 8-token greedy
+// continuation equal to the CPU int4's) measures the quantizer, not the rotation, on an 8B int4 model with
+// random-token tails: the resident is as far from HF f32 as the CPU int4 is, and the continuation flips are
+// near-ties under the repo's 3% rule. So the bars asserted below are the noise-referenced ones; the tight
+// tier is still computed and logged ("tight tier") so the gap stays visible:
 //  1. resident vs CPU int4, golden prompt and 48-token prompt: MEAN per-position cosine >= 0.99 and MIN >= 0.90
-//     (decode), batched-prefill last-token cosine >= 0.98. The NeoX control reads min -0.04 / -0.075;
-//  2. last-token cosine vs the HF golden: resident >= CPU int4 - 0.01 (unchanged from the pre-registration);
+//     (decode), batched-prefill last-token cosine >= 0.98;
+//  2. last-token cosine vs the HF golden: resident >= CPU int4 - 0.01;
 //  3. greedy continuation teacher-forced on the CPU's tokens: the resident's argmax equals the CPU's unless
 //     the CPU's own gap between the two tokens is under 3% of its logit range (decoder.NearTieHardFailPct, the
 //     rule every other gate in this tree uses); every flip is logged with its gap.
 //
 // IT PROVES IT CAN FAIL: after the real measurement it rebinds the NeoX rope pipelines into the SAME resident
 // and re-measures the 48-token prompt (decode and batched prefill), which must read below bar 1.
+// History and figures: docs/code-notes/cuda.md#TestCohereRealResidentParityCUDA.
 func TestCohereRealResidentParityCUDA(t *testing.T) {
 	requireHeavyModel(t)
 	for _, c := range []struct {
@@ -100,7 +94,7 @@ func cohereRealResidentParity(t *testing.T, ckpt, goldenPath string) {
 	defer mCPU.Close()
 	_, _, _, _, _, _, vocab := mCPU.Dims()
 
-	// 48-token prompt: the golden prompt cycled, then a deterministic tail (the construction the 2026-10-01
+	// 48-token prompt: the golden prompt cycled, then a deterministic tail (the construction the earlier
 	// measurement used, so the numbers are comparable).
 	long := make([]int, 48)
 	for i := range long {

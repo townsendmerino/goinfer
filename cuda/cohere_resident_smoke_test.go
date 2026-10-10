@@ -11,21 +11,17 @@ import (
 // This smoke gate passed while every decode token's final norm was the wrong kind (audit-2026-09-10
 // C-04). The numeric gate is TestCohereResidentParityCUDA (cohere_resident_parity_test.go).
 //
-// TestCohereResidentSmokeCUDA and TestCohere2ResidentSmokeCUDA are G5's last row
-// (docs/tasks/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
-// (metal/cohere_resident_smoke_test.go) explains why this is deliberately a smoke check
-// (admission + no NaN) rather than a resident-vs-CPU cosine floor: testdata/cohere-tiny and
-// testdata/cohere2-tiny are both "tiny-random" (scripts/pin_cohere_tiny.py), the same
-// seeded/synthetic class as every other G5 fixture, and FeatParallelBlock is a pure sequencing
-// change (reuse segA's r.aq/r.aSc as the MLP's input instead of re-normalizing the post-attention
-// residual) with no new numerical formula to isolate a floor against — quantizing the same shared
-// input norm once and reusing it is bit-identical to quantizing it twice from the same source.
+// TestCohereResidentSmokeCUDA and TestCohere2ResidentSmokeCUDA are deliberately a smoke check (admission +
+// no NaN) rather than a resident-vs-CPU cosine floor, for the reason the Metal twin
+// (metal/cohere_resident_smoke_test.go) gives: testdata/cohere-tiny and testdata/cohere2-tiny are
+// tiny-random fixtures (scripts/pin_cohere_tiny.py), and FeatParallelBlock is a pure sequencing change
+// (quantizing the shared input norm once and reusing it is bit-identical to quantizing it twice) with no new
+// numerical formula to isolate a floor against.
 //
-// The real correctness evidence sits one level down: layernorm_quant_test.go's TestLayerNormQuant
-// proves the NEW kernel (this backend had no mean-centered norm before) against an exact CPU
-// reference in isolation, and BuildResident's own validation (empty PostNorm/PostAttnNorm/
-// PostMLPNorm required to stay empty and unbuilt for a parallelBlock arch) is exercised simply by
-// this fixture reaching resident at all.
+// The correctness evidence sits one level down: layernorm_quant_test.go's TestLayerNormQuant proves the
+// mean-centred norm kernel against an exact CPU reference, and BuildResident's validation (empty
+// PostNorm/PostAttnNorm/PostMLPNorm for a parallelBlock arch) is exercised by this fixture reaching
+// resident at all.
 func TestCohereResidentSmokeCUDA(t *testing.T) {
 	testCohereFamilyResidentSmokeCUDA(t, "../testdata/cohere-tiny", false)
 }

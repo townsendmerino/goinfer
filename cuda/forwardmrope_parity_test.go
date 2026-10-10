@@ -11,9 +11,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestForwardMRoPE_constantShiftInvariance is ForwardMRoPE's (decoder.ResidentMRoPE) FIRST real
-// correctness test — before this, the new interface (and the rope_kv kernel's ropePos parameter
-// it depends on) had never been exercised outside its own compile.
+// TestForwardMRoPE_constantShiftInvariance is the correctness test for ForwardMRoPE (decoder.ResidentMRoPE) and
+// the rope_kv kernel's ropePos parameter it depends on.
 //
 // It does NOT try to reproduce Qwen2.5-VL's specific (non-constant) mropeDelta end to end — that
 // would need a real Qwen2.5-VL checkpoint, a real image, and an independent CPU oracle for the

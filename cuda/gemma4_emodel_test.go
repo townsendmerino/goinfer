@@ -21,7 +21,7 @@ const (
 
 // requireEModelFixture skips unless the tiny E-model checkpoint is complete. The directory is not gitignored as a whole (only *.safetensors is), so a
 // pinned worktree that symlinks just the ignored weights (run-gate-gpu.sh) holds a directory with model.safetensors and no config.json: present, and
-// unloadable. A dir-only check turns that into a failure; the first 2026-10-07 night gate run hit exactly that.
+// unloadable. A dir-only check turns that into a failure.
 func requireEModelFixture(t testing.TB) {
 	t.Helper()
 	for _, f := range []string{"config.json", "model.safetensors"} {
@@ -194,9 +194,8 @@ func TestGemma4EModel_cudaResidentParity(t *testing.T) {
 }
 
 // TestGemma4EModel_plantedDefects is G2c: each planted defect, alone, must turn G1c red. A defect that stays green means the fixture is degenerate
-// along that axis (fix the fixture, not the bar). Defect (5), the K/V store not skipped on a shared layer, was registered with its outcome open
-// (on Metal it is a byte-for-byte no-op and cannot go red). On CUDA it DOES go red (2026-10-07: mean cosine 0.763998 against 0.999931 clean), because
-// the shared layer's K/V scratch holds another layer's data and the store writes it through the alias into the source's cache; so it is a gate here.
+// along that axis (fix the fixture, not the bar). Defect (5), the K/V store not skipped on a shared layer, is a no-op on Metal and so cannot go red there; on CUDA it DOES go red,
+// because the shared layer's K/V scratch holds another layer's data and the store writes it through the alias into the source's cache; so it is a gate here.
 func TestGemma4EModel_plantedDefects(t *testing.T) {
 	for _, d := range eModelDefects() {
 		t.Run(d.name, func(t *testing.T) {

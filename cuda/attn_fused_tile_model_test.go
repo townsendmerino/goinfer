@@ -15,7 +15,7 @@ import (
 // prefill with the DEFAULT selector equals the same prefill with the 64x64 kernel forced (attnTile = -1), bit for bit on
 // the last-row logits. Every earlier row's K/V reach the last row's attention, so an earlier-chunk difference would surface
 // there. It also asserts WHICH kernel ran (tile128Launches): the hd128 model must use the 128-row tile on every layer of
-// every chunk by default and never when forced; the hd64 model must not use it at all (measured ~5% slower there).
+// every chunk by default and never when forced; the hd64 model must not use it at all (it is slower there).
 func TestAttnFusedTile_defaultBitIdenticalWholeModel(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1")

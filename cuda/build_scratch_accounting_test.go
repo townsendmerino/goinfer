@@ -113,7 +113,7 @@ func TestBuildScratchAccounting(t *testing.T) {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}
 	requireCUDADevice(t)
-	// The first load in a process also pays the context and module cost (~386 MiB on the 0.5B) that a serve process has paid before it plans: a warm-up, not a row.
+	// The first load in a process also pays the context and module cost that a serve process has paid before it plans: a warm-up, not a row.
 	measureBuild(t, accountingModels[0], false)
 	bands := map[string][2]int64{ // residual in MiB: [-8, +64] on the Qwen text models, [-8, +128] on the others
 		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": {-8, 64}, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf": {-8, 64}, "qwen2.5-7b-instruct-q4_k_m.gguf": {-8, 64},
@@ -141,13 +141,12 @@ func TestBuildScratchAccounting(t *testing.T) {
 }
 
 // TestBuildScratchAccounting_plantedDefect plans WITHOUT the slack (the plan as it was) and shows what each half of the change buys, against the same build with it:
-//   - the 7B: without the slack the device is further from Plan than the whole margin (425 MiB against 384, the bound the old TestResidentDenseBytes enforced), with
+//   - the 7B: without the slack the device is further from Plan than the whole margin (the bound the old TestResidentDenseBytes enforced), with
 //     it the residual is under 64 MiB;
 //   - every model: the residual with the slack is smaller than without it;
 //   - Gemma 3 4B, the one bench model whose plan trims at the build: the trim (planned minus final context) is smaller with the slack than without it.
 //
-// The registered G-M2 said the 7B and Gemma 3 4B "trimmed before"; the 7B did not (it plans 16384 and keeps 16384 either way), so the 7B's evidence is the
-// residual, not a trim. Heavy.
+// The 7B plans and keeps the same context either way, so its evidence is the residual, not a trim. Heavy.
 func TestBuildScratchAccounting_plantedDefect(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")

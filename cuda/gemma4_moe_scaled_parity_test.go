@@ -16,28 +16,23 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemma4MoEScaled_residentParity closes audit Check A: until this landed there was NO asserting
-// parity gate for the Gemma-4 resident forward against the CPU path at real width.
-//
-// What existed, and why none of it covered this:
+// TestGemma4MoEScaled_residentParity is the asserting parity gate for the Gemma-4 resident forward against the
+// CPU path at real width (audit Check A). None of the others covers it:
 //   - TestGemma4MoE_residentParity — resident-vs-CPU, but on gemma4-moe-tiny (2 layers, hidden 256,
 //     4 experts). Real assertions, toy width.
 //   - TestGemma4DenseScaled_residentParity — real head geometry, but DENSE and random-weight.
 //   - the real-26B gates (cache/graphs bit-exactness) — compare the resident path against ITSELF
-//     with one knob moved. Nothing anchored either arm to CPU.
+//     with one knob moved. Nothing anchors either arm to CPU.
 //   - TestGemma4_12B_logitParity — CPU vs HF bf16, never touches the resident path.
 //
-// So every real Gemma-4 checkpoint that reached the resident path was compared only to itself, and
-// the shipped "26B decodes coherently at ~17 tok/s" rested on a distinct-trigram degeneracy score —
-// a forward that was numerically wrong but non-repetitive would have passed everything. Until this
-// gate existed, GOINFER_GEMMA4_RESIDENT could not be defaulted on: the flag had become load-bearing
-// by accident. This is what let it come off (a5ebb35).
+// Without it a numerically wrong but non-repetitive forward would pass everything (the 26B's coherence check is a
+// distinct-trigram degeneracy score).
 //
 // The fixture keeps hidden=2816 / moe_inter=704 / head_dim 256 local, 512 global K=V — the real
 // 26B's per-expert and per-head geometry — and shrinks only expert count and depth. Its per-group
-// weight scales are TRANSPLANTED from the real 26B (log2std 0.32, 24.1x spread on experts vs 0.27 /
-// 5.0x for random init), because a fused-multiply-add defect that cost 84% stream divergence in
-// v0.9.0 was invisible on uniform random weights. See scripts/pin_gemma4_moe_scaled.py.
+// weight scales are TRANSPLANTED from the real 26B (a far wider spread than random init), because a
+// fused-multiply-add defect that diverged the stream badly was invisible on uniform random weights. See
+// scripts/pin_gemma4_moe_scaled.py.
 //
 // Instruments are the calibrated pair the other scaled gates use, not a picked absolute floor:
 //
@@ -123,7 +118,7 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 		"exact-argmax %d/%d | mean CUDA-vs-CPUint4=%.6f  CPUint4-vs-f32=%.6f",
 		pos0, exact, len(prompt), meanCuda, meanCpu)
 
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.998601 -> 1.000000, run mean 0.960917 -> 0.996078.
+	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): the 0.9995 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
 	if pos0 < 0.9995 {
 		t.Errorf("pos-0 CUDA-vs-CPUint4 %.6f < 0.9995 — the resident MoE forward diverges from CPU at "+
 			"the first token, at the real per-expert row geometry", pos0)

@@ -4,8 +4,8 @@ package cuda
 
 import "testing"
 
-// TestTrimUnpinnedCtx pins the arithmetic behind the unpinned-context trim (the 2026-10-07 night gate's five default-context failures): the figures are the
-// two real misses, a 7B at 16000 positions (1.84 GB of KV, 1.80 GB free) and Gemma-3 at 11800 (3.29 GB, 3.35 GB free).
+// TestTrimUnpinnedCtx pins the arithmetic behind the unpinned-context trim: the figures are two real misses,
+// a 7B at 16000 positions (1.84 GB of KV, 1.80 GB free) and Gemma-3 at 11800 (3.29 GB, 3.35 GB free).
 func TestTrimUnpinnedCtx(t *testing.T) {
 	const margin = 384 << 20
 	const gb = 1e9

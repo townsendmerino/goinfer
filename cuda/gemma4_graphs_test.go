@@ -61,16 +61,13 @@ func graphsBitExact(t *testing.T, dir string, cache bool) {
 	run := func(graphs bool) [][]float32 {
 		mc, rf := loadG4MoEGraphs(t, dir, graphs, cache)
 		defer mc.Close()
-		// TAUTOLOGY GUARD. This gate compares a graphs-ON build against a graphs-OFF build; if the
-		// ON build did not actually capture, both arms run the live path and the comparison is
-		// live-vs-live — it passes having tested nothing, while logging "replay == live launches,
-		// BIT-IDENTICAL". That is exactly what happened: on a DEFAULT-compute-mode box without MPS,
-		// admitGraphs declines, and the scaled variant spent 704 s of a 26B load to print a
-		// meaningless pass. Its sibling (sameModelUnderLoad) had this guard; the shared helper did
-		// not, so all four bit-exact variants were affected, not just the scaled one.
+		// TAUTOLOGY GUARD. This gate compares a graphs-ON build against a graphs-OFF build; if the ON build did not
+		// actually capture, both arms run the live path and the comparison is live-vs-live: it passes having tested
+		// nothing, while logging "replay == live launches, BIT-IDENTICAL". On a DEFAULT-compute-mode box without MPS,
+		// admitGraphs declines, so this applies to every variant that uses this helper.
 		//
-		// Skip, don't fail: declining under unsafe tenancy is CORRECT production behaviour. What is
-		// not acceptable is reporting it as a pass. Forcing is a separate, labelled gate run.
+		// Skip, don't fail: declining under unsafe tenancy is CORRECT production behaviour. What is not acceptable is
+		// reporting it as a pass. Forcing is a separate, labelled gate run.
 		if graphs && !rf.(*cudaResident).graphs {
 			t.Skip("CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS), so the " +
 				"graphs-ON arm would run the LIVE path and this gate would compare live-vs-live and " +
@@ -211,10 +208,7 @@ func TestGemma4Graphs_offVsOffControl(t *testing.T) {
 // TestGemma4Graphs_bitExact_scaled runs the gate at the width that broke A′ zero-copy (the width that
 // matters for the 26B), gated on a scaled fixture + heavy tests.
 func TestGemma4Graphs_bitExact_scaled(t *testing.T) {
-	// Defaults to the committed-by-generator scaled fixture, like the C′ cache gates. It used to
-	// require GOINFER_HEAVY_TESTS *and* an explicitly-named fixture, which is why it never ran: the
-	// variable pointed at nothing that existed, and aimed at the real 26B it spent 704 s per arm.
-	// The scaled fixture runs it in ~10 s, so it belongs in the forced-graphs group with the rest.
+	// Defaults to the committed-by-generator scaled fixture, like the C′ cache gates (aimed at the real 26B it takes minutes per arm). The scaled fixture runs it in ~10 s, so it belongs in the forced-graphs group with the rest.
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {
 		dir = "../testdata/gemma4-moe-scaled"

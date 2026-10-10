@@ -12,13 +12,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemma4_26B_1bBound is Lever-1b Step 0: bound the win BEFORE building the aikit event primitive
-// + the gemma4MoeMLP reorder. 1b hides the per-layer router-wait drain behind the dense branch, so
-// the recoverable time is capped by the DENSE-BRANCH GPU time. Measure it (loop the dispatch
-// sequence N times, one sync, divide — no event support needed) and compare to the ~12 ms/token
-// drain the skip-readback probe isolated (59→36, minus ~11 ms DMA). If the dense branch is thin, 1b
-// is not worth the primitive+reorder and the fallback (cross-layer pipelining, a larger design) or
-// the dispatch-reduction lever should be chosen deliberately.
+// TestGemma4_26B_1bBound bounds Lever 1b before building it. 1b hides the per-layer router-wait drain behind the
+// dense branch, so the recoverable time is capped by the DENSE-BRANCH GPU time. This measures it (loop the dispatch
+// sequence N times, one sync, divide; no event support needed) and compares it to the per-token drain the
+// skip-readback probe isolated. If the dense branch is thin, 1b is not worth the aikit event primitive plus the
+// gemma4MoeMLP reorder, and the fallback (cross-layer pipelining, a larger design) or the dispatch-reduction lever
+// should be chosen deliberately.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda ./cuda/ -run TestGemma4_26B_1bBound -v -timeout 40m
 func TestGemma4_26B_1bBound(t *testing.T) {
@@ -105,8 +104,7 @@ func TestGemma4_26B_1bBound(t *testing.T) {
 	densePerTok := densePerLayer * float64(nMoE)
 	routerPerTok := routerPerLayer * float64(nMoE)
 
-	// The drain the probe isolated: 59→36 with stale idx removed BOTH the r.stream.Sync() drain AND
-	// ~11 ms of miss-DMA, so the drain alone ≈ 12 ms/token. 1b can hide at most densePerTok of it.
+	// The per-token drain the skip-readback probe isolated, net of its miss-DMA share. 1b can hide at most densePerTok of it.
 	const drainMsPerTok = 12.0
 	recoverable := densePerTok
 	if recoverable > drainMsPerTok {

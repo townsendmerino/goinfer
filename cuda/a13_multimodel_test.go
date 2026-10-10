@@ -9,28 +9,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestA13_MultiModelUnloadPoisons is the shipped-path question, and the one that decides the tag.
+// TestA13_MultiModelUnloadPoisons is the shipped-path question that decides the tag. Every model in a
+// process shares ONE primary context (CreateSystemDefaultDevice takes dev.Primary(); Context.Close is a
+// PrimaryCtxRelease decrement), so POST /admin/models/unload with another model loaded is a
+// multi-gigabyte free inside a live context, the stimulus A13 showed can leave later launches returning
+// success and writing nothing. A is the 7B at int4, the largest release a shipped path can make on this
+// card (chosen as the worst realistic case, not as a point inside a sweep band); B is small so both fit.
 //
-// The correction that produced it: "each resident model builds its own context" is FALSE.
-// CreateSystemDefaultDevice calls dev.Primary() — the device's PRIMARY context, retained by
-// refcount — and Context.Close calls PrimaryCtxRelease, a decrement. gocudrv does not bind
-// cuCtxCreate at all. So every model in a process shares ONE context, destroyed only when the LAST
-// holder releases it.
+// No control is needed for a positive: if B's output degrades after A is unloaded, that is a shipping
+// correctness bug. A clean result means nothing until TestA13_LoadModuleOnResidentExecutor shows this
+// route is poisonable at all.
 //
-// Which means POST /admin/models/unload, with another model loaded, is a multi-gigabyte free INSIDE
-// A LIVE CONTEXT — the exact stimulus the A13 sweep showed can leave later launches returning
-// success and writing nothing. Not synthetic, not a test artifact: a shipped feature reached by
-// ordinary operation.
-//
-// A is the 7B at int4 (~4.9 GB, ~67% of this card) so its release is the largest one a shipped path
-// can make on this device. The ">=25% reliable / 15% ambiguous" sweep bands this comment once cited
-// to justify that size are WITHDRAWN — that probe proved intermittent, and the real trigger is drain
-// to refusal, which an unload never does. The size is chosen as the worst realistic case, not as a
-// point inside a band. B is small, so both fit at once.
-//
-// NO CONTROL IS NEEDED FOR A POSITIVE. If B's output degrades after A is unloaded, that is a
-// shipping correctness bug and the diagnosis stops there. A clean result is NOT clean yet — it needs
-// the (LoadModule, resident-executor) cell to show that this route is poisonable at all.
+// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_MultiModelUnloadPoisons.
 func TestA13_MultiModelUnloadPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_MULTI") == "" {
 		t.Skip("set GOINFER_A13_MULTI=1 — A13 probe, deliberately not part of the tier")

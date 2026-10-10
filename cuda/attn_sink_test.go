@@ -1,6 +1,6 @@
 //go:build cuda && goinfer_testhooks
 
-// Attention-sink kernel gate (gpt-oss residency, step 1 of 2).
+// Attention-sink kernel gate (gpt-oss).
 //
 // The sink is a learned per-head logit with NO key and NO value. It joins the softmax MAX
 // and the DENOMINATOR but never the numerator:
@@ -15,9 +15,7 @@
 // below the score maximum — i.e. in most random tests — and wrong exactly when it is not.
 // This test therefore includes a case where the SINK DOMINATES.
 //
-// It gates the kernel directly rather than through a model, because gpt-oss cannot be
-// resident yet (its clamped-SwiGLU expert kernel does not exist). That is the point of doing
-// the sink first: it is independently checkable.
+// It gates the kernel directly rather than through a model, so it is independently checkable.
 package cuda
 
 import (

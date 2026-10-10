@@ -12,33 +12,19 @@ import (
 
 // Foreign CUDA contexts — asking the real question.
 //
-// Several gates in this package assert against a PINNED device allocation
-// floor, and that floor is not a property of the code: it moves when another
-// process holds a CUDA context on the device. Measured 2026-09-01 on nobara,
-// with KDE's compositor (`kwin_wayland`) holding one:
+// Several gates in this package assert against a PINNED device allocation floor, and that floor is not a
+// property of the code: it moves when another process holds a CUDA context on the device (a desktop
+// compositor's context raised it by exactly 16 MiB on the measuring box). The kernel's requirement is
+// unchanged (the demand identity still closes to the byte); only the environment-dependent component moved.
+// Figures: docs/code-notes/cuda.md#foreign_context_test.header.
 //
-//	floor with a foreign context   18,546,688 B
-//	floor with none (2026-08-26)    1,769,472 B
-//	                    difference 16,777,216 B  = exactly 16 MiB
+// WHY THIS HELPER EXISTS AT ALL. moe_route_demand_test.go used to discriminate the two regimes with
+// `warm := freeBefore < pinnedDeviceFloor`, a heuristic that infers device state from a number and goes red
+// claiming a broken identity once the floor moves. This asks the device.
 //
-// The demand identity itself was NOT disturbed — it closed to the byte in both
-// cases (18,546,688 + 138,412,032 = 156,958,720 = the measured demand) — so the
-// kernel's requirement is unchanged and only the environment-dependent
-// component moved.
-//
-// WHY THIS HELPER EXISTS AT ALL. moe_route_demand_test.go discriminated the two
-// regimes with `warm := freeBefore < pinnedDeviceFloor`, which can only be true
-// when the floor exceeds the residual. That stopped being true on 2026-08-21,
-// and the file has carried a KNOWN LATENT DEFECT note ever since saying the warm
-// branch was unreachable and "a warm run would go red claiming a broken
-// identity". That is exactly what happened. The heuristic was inferring device
-// state from a number; this asks the device.
-//
-// nvidia-smi rather than NVML bindings: this is test-only, runs once, and adding
-// a library dependency to answer a question a shipped tool already answers would
-// be a worse trade. If nvidia-smi is absent the caller is told "unknown" and must
-// decide — never silently "none", which would restore the very failure mode this
-// replaces.
+// nvidia-smi rather than NVML bindings: this is test-only, runs once, and adding a library dependency to answer
+// a question a shipped tool already answers would be a worse trade. If nvidia-smi is absent the caller is told
+// "unknown" and must decide, never silently "none", which would restore the very failure mode this replaces.
 type foreignCtx struct {
 	pid   int
 	name  string

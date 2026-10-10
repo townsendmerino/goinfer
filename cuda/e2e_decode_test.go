@@ -16,20 +16,19 @@ import (
 // gluePTX + gemvFwdPTX now live in kernels.go (shared with the production backend).
 
 // TestE2EDecodeThroughput_synthetic is the end-to-end cgo-free CUDA decode THROUGHPUT measurement
-// (docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the
-// glue the 244 projection omitted (RMSNorm+quant, RoPE, GQA attention, SwiGLU+quant,
-// residual, argmax) — so the tok/s is end-to-end, not a streaming ceiling. Shippable
-// config: PTX compiled offline (NVRTC) + go:embed'd + DRIVER-JIT'd (no libnvrtc in the
-// binary), every launch through gocudrv's LockOSThread executor channel (its hop is in
-// the number), CGO_ENABLED=0. Synthetic weights (bandwidth is value-independent); the
-// non-trivial kernels are cosine-validated vs a CPU reference here. Run:
+// (docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the glue a projection
+// omits (RMSNorm+quant, RoPE, GQA attention, SwiGLU+quant, residual, argmax) — so the tok/s is end-to-end,
+// not a streaming ceiling. Shippable config: PTX compiled offline (NVRTC) + go:embed'd + DRIVER-JIT'd (no
+// libnvrtc in the binary), every launch through gocudrv's LockOSThread executor channel (its hop is in
+// the number), CGO_ENABLED=0. Synthetic weights (bandwidth is value-independent); the non-trivial kernels
+// are cosine-validated vs a CPU reference here. Run:
 // CGO_ENABLED=0 go test -tags cuda -run E2EDecode -v
+//
 // NOT A CORRECTNESS GATE. This measures THROUGHPUT over SYNTHETIC random weights — no model
 // is loaded, so the "token" it argmaxes is a pick over garbage and there is no CPU reference a
-// token-identity assertion could be written against. It was previously named TestE2EDecode and
-// asserted nothing, so it read as e2e correctness evidence for CUDA greedy decode while being a
-// benchmark. Correctness for that path lives in TestRealE2EDecode (real model, token identity vs
-// the CPU reference) and in the per-kernel bit-identity gates.
+// token-identity assertion could be written against. It must not be read as e2e correctness evidence
+// for CUDA greedy decode: that lives in TestRealE2EDecode (real model, token identity vs the CPU
+// reference) and in the per-kernel bit-identity gates.
 func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
@@ -60,9 +59,9 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 	fAttn, _ := glmod.Function("attention")
 	fSwiglu, _ := glmod.Function("glu_quant")
 	fResid, _ := glmod.Function("residual")
-	// argmax_reduce comes from argmaxPTX, NOT gluePTX. C-14 (c6600fc) split it into its own
-	// module so the index tie-break fix could land without regenerating the audited glue.ptx;
-	// binding it off glmod here exercised the PRE-C-14 kernel, i.e. not the one production ships.
+	// argmax_reduce comes from argmaxPTX, NOT gluePTX: it lives in its own module (audit C-14 split it out so the
+	// tie-break fix could land without regenerating the audited glue.ptx), and binding it off glmod here would
+	// exercise the pre-C-14 kernel, not the one production ships.
 	amod, err := ctx.LoadModule(argmaxPTX)
 	if err != nil {
 		t.Fatalf("LoadModule(argmax): %v", err)
@@ -344,14 +343,10 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		dk := mustAlloc[float32](t, ctx, nKeys*kvDim)
 		dv := mustAlloc[float32](t, ctx, nKeys*kvDim)
 		dc := mustAlloc[float32](t, ctx, nH*hd)
-		// ERRORS ARE CHECKED, NOT DROPPED. Every call here used to be `_ =`, so a failure left `dc`
-		// UNWRITTEN, `got` all zeros, and the assertion reported "attention cosine 0.000000" with no
-		// error text at all — a resource failure wearing a numerics bug's clothes. That is the exact
-		// history in the GPU gate's own header, now cmd/gate/gpu.go ("the tests DROPPED those errors, and the resulting
-		// zero-filled buffers surfaced as cosine 0.000000"), and it recurred here: four silent zero
-		// cosines in the tier, with zero CUDA errors anywhere in the log.
-		//
-		// A zero cosine now means the arithmetic is wrong. Anything else names the call that failed.
+		// ERRORS ARE CHECKED, NOT DROPPED. A dropped error leaves `dc` UNWRITTEN and `got` all zeros, and the
+		// assertion then reports "attention cosine 0.000000" with no error text: a resource failure wearing a
+		// numerics bug's clothes (the failure the header of cmd/gate/gpu.go describes). A zero cosine now means the
+		// arithmetic is wrong; anything else names the call that failed.
 		if e := gc.CopyHtoD(bg, dq, qh); e != nil {
 			t.Fatalf("hd=%d: CopyHtoD(q): %v", hd, e)
 		}
@@ -361,14 +356,9 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		if e := gc.CopyHtoD(bg, dv, vh); e != nil {
 			t.Fatalf("hd=%d: CopyHtoD(v): %v", hd, e)
 		}
-		// A13 launch diff (GOINFER_A13_LAUNCH=1). Prints everything the launch depends on, so a
-		// poisoned run and a clean one can be diffed field by field: if an argument or a device
-		// pointer differs, something upstream is holding state from the drain and the culprit is
-		// named; if every field is identical and only the result differs, the state is inside the
-		// driver or the context rather than in this call.
-		// A13 step 1: interrogate the CACHED function handle. Hypothesis under test — the drain
-		// causes driver-side module eviction under pressure, and the cached CUfunction outlives what
-		// it names, so a launch through a stale handle returns success and does nothing.
+		// A13 handle probe (GOINFER_A13_HANDLE=1): interrogate the CACHED function handle. Hypothesis under test: the
+		// drain causes driver-side module eviction under pressure and the cached CUfunction outlives what it names,
+		// so a launch through a stale handle returns success and does nothing.
 		//   errors or implausible values in the poisoned run only -> handle is stale, confirmed
 		//   identical valid attributes in both                    -> handle is live, look elsewhere
 		if os.Getenv("GOINFER_A13_HANDLE") != "" {
@@ -388,11 +378,10 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 				t.Logf("A13HANDLE hd=%d %s=%d err=%v", hd, q.name, v, e)
 			}
 		}
-		// A13 step 2, TEMPORARY PROBE (GOINFER_A13_RELOAD=1) — not a fix. Re-load the module and
-		// re-resolve the function immediately before the launch. If the result becomes correct,
-		// eviction is confirmed from the other direction; if it is still zeros, the state lives
-		// BELOW the module layer, in the context. A reload before every launch would mask the
-		// mechanism rather than address it, which is why this is env-gated and disposable.
+		// A13 reload probe (GOINFER_A13_RELOAD=1), TEMPORARY, not a fix: re-load the module and re-resolve the
+		// function immediately before the launch. If the result becomes correct, eviction is confirmed from the other
+		// direction; if it is still zeros, the state lives BELOW the module layer, in the context. A reload before
+		// every launch would mask the mechanism rather than address it, which is why this is env-gated and disposable.
 		if os.Getenv("GOINFER_A13_RELOAD") != "" {
 			if m2, e := ctx.LoadModule(gluePTX); e != nil {
 				t.Logf("A13RELOAD hd=%d module reload FAILED: %v", hd, e)
@@ -403,6 +392,10 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 				fAttn = f2
 			}
 		}
+		// A13 launch diff (GOINFER_A13_LAUNCH=1): prints everything the launch depends on, so a poisoned run
+		// and a clean one can be diffed field by field. If an argument or a device pointer differs, something
+		// upstream is holding state from the drain; if every field is identical and only the result differs,
+		// the state is inside the driver or the context rather than in this call.
 		if os.Getenv("GOINFER_A13_LAUNCH") != "" {
 			t.Logf("A13LAUNCH hd=%d grid=(%d,1,1) block=(128,1,1) shared=%d nH=%d nKV=%d nKeys=%d scale=%g "+
 				"dq=%#x dk=%#x dv=%#x dc=%#x lens=(%d,%d,%d,%d)",

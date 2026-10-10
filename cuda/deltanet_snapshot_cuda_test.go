@@ -1,19 +1,17 @@
 //go:build cuda && goinfer_testhooks
 
-// MEASUREMENT ONLY — prices the DeltaNet state snapshot on the RESIDENT CUDA path, which is the
-// regime that actually decides the narrow-snapshot question. Builds nothing: specRollbackSafe is
-// untouched and no snapshot is wired into any decode path.
+// MEASUREMENT ONLY: prices the DeltaNet state snapshot on the RESIDENT CUDA path, the regime that decides the
+// narrow-snapshot question. Builds nothing: specRollbackSafe is untouched and no snapshot is wired into any
+// decode path.
 //
-// WHY THIS AND NOT THE CPU NUMBER. docs/spec/09-mtp-heads.md priced the copy on CPU and recorded
-// the direction: the numerator is a fixed 20.2 MiB while the denominator shrinks with every
-// quantization and backend improvement, so the fraction grows over time by construction. On CPU
-// f32 -> int8 already spanned most of the "cheap" band. This measures the endpoint that matters —
-// a resident decode step, where decode is fastest relative to a fixed copy.
+// WHY THIS AND NOT THE CPU NUMBER. docs/spec/09-mtp-heads.md priced the copy on CPU, where the numerator is a
+// fixed state size while the denominator shrinks with every quantization and backend improvement, so the
+// fraction grows over time by construction. This measures the endpoint that matters: a resident decode step.
 //
-// AND THE SHAPE OF THE COPY CHANGES HERE, which is the part the CPU figure cannot speak to. On the
-// resident path both pieces of state are ALREADY on the device (cuda/resident.go:240 — dnWin, the
-// causal-conv ring, and dnState, the recurrent matrix). A snapshot is therefore a device-side
-// copy, not a host memcpy, and the 13.9 GB/s host figure has no bearing on it in either direction.
+// AND THE SHAPE OF THE COPY CHANGES HERE. On the resident path both pieces of state (dnWin, the causal-conv
+// ring, and dnState, the recurrent matrix; fields of cudaResident) are ALREADY on the device, so a snapshot
+// is a device-side copy, not a host memcpy, and the host-bandwidth figure has no bearing on it. Figures:
+// docs/code-notes/cuda.md#deltanet_snapshot_cuda_test.header.
 //
 //	GOINFER_QWEN35_08B=~/models/qwen3.5-0.8b \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestDeltaNetSnapshotCUDA -v -timeout 30m
@@ -91,17 +89,14 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 		}
 	}
 
-	// TWO SNAPSHOT PATHS, MEASURED IN THE SAME LOOP so the comparison is paired rather than
-	// cross-session.
+	// TWO SNAPSHOT PATHS, MEASURED IN THE SAME LOOP so the comparison is paired rather than cross-session.
 	//
-	// (a) PCIe ROUND TRIP — what was implementable before aikit/gpu v0.31.0. With only Upload and
-	//     Download, state that is already on the device has to come back to the host and go out
-	//     again. Kept as the control: it is the number the passthrough was justified against.
+	// (a) PCIe ROUND TRIP: with only Upload and Download, state already on the device has to come back to the
+	//     host and go out again. Kept as the control.
 	//
-	// (b) DEVICE-TO-DEVICE via CopyDeviceBatch (v0.31.0). This is the in-situ measurement the
-	//     synthetic-buffer probe stood in for — real state, real buffers, real decode between
-	//     rounds. The probe reported ~446 us for snapshot+restore; a figure measured through the
-	//     primitive on synthetic buffers is not an integration cost, which is why this exists.
+	// (b) DEVICE-TO-DEVICE via CopyDeviceBatch: the in-situ measurement, with real state, real buffers and real
+	//     decode between rounds. A figure measured through the primitive on synthetic buffers is not an
+	//     integration cost.
 	hw := make([][]float32, len(states))
 	hs := make([][]float32, len(states))
 	shadowWin := make([]gpu.Buffer, len(states))
@@ -125,8 +120,7 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 		}
 	}
 
-	// One batch, one synchronize, for all 36 copies — the form aikit added for exactly this
-	// consumer. A loop over CopyDevice would pay 36 synchronizes instead of one.
+	// One batch, one synchronize, for all the copies: a loop over CopyDevice would pay one synchronize per copy.
 	toShadow := make([]gpu.DeviceCopy, 0, 2*len(states))
 	toLive := make([]gpu.DeviceCopy, 0, 2*len(states))
 	for i, s := range states {
@@ -180,11 +174,9 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 	t.Logf("  snapshot (D2H)        %8v %8v %8v", sLo, sMed, sHi)
 	t.Logf("  restore  (H2D)        %8v %8v %8v", rLo, rMed, rHi)
 
-	// THE RATIO IS FORMED PER ROUND AND CARRIES ITS OWN SPREAD — not median(cost)/median(decode).
-	// A ratio of medians hides the round-to-round covariance, and here that matters: the decode
-	// step alone ranges 2.2x within one run, so a single "100.3%" says nothing about whether the
-	// figure is 100 +/- 5 or 100 +/- 60. Both terms wander; only the paired form shows whether
-	// they wander together.
+	// THE RATIO IS FORMED PER ROUND AND CARRIES ITS OWN SPREAD, not median(cost)/median(decode): a ratio of
+	// medians hides the round-to-round covariance, and the decode step alone varies widely within one run, so
+	// only the paired form shows whether the two terms wander together.
 	ratios := make([]float64, rounds)
 	for i := range dec {
 		ratios[i] = float64(snap[i]+rest[i]) / float64(dec[i])

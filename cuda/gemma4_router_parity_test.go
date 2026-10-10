@@ -21,14 +21,13 @@ import (
 //
 // The resident router uses gemv_f32_f32 (cuda/router_f32.cu) — a PURE-f32 projection, NOT the
 // shared int8-activation gemv_f32_a8. That is a deliberate choice, not a reuse: gemv_f32_a8 would
-// quantize the router input rn to int8 (~1e-2), which can flip a top-k decision near a tie. An
-// earlier version of this test ran that int8 path and found no flip — but the gemma4-moe-tiny
-// fixture's 0.12 routing margin was CONSTRUCTED by least-squares to be wide, so that result is
-// CIRCULAR for a trained 128-expert/top-8 router whose 8th-vs-9th boundary is far tighter. f32xf32
-// quantizes NOTHING, so the only residual is f32 reduction order (~1e-6) — routing cannot flip from
-// activation quant at ANY expert count. This test therefore verifies the kernel we actually ship;
-// the 128/top-8 re-run is no longer a correctness precondition (there is no quant perturbation to
-// re-check), only a nice-to-have when a real router is available.
+// quantize the router input rn to int8 (~1e-2), which can flip a top-k decision near a tie, and the
+// gemma4-moe-tiny fixture's routing margin was CONSTRUCTED by least-squares to be wide, so a no-flip
+// result on it is CIRCULAR for a trained 128-expert/top-8 router whose 8th-vs-9th boundary is far
+// tighter. f32xf32 quantizes NOTHING, so the only residual is f32 reduction order (~1e-6) — routing
+// cannot flip from activation quant at ANY expert count. This test therefore verifies the kernel we
+// actually ship; a 128/top-8 re-run is only a nice-to-have when a real router is available, not a
+// correctness precondition.
 func TestGemma4Router_residentIdxParity(t *testing.T) {
 	const ckpt = "../testdata/gemma4-moe-tiny"
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {

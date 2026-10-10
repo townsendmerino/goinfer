@@ -11,24 +11,20 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDFlashDraftCostProbe measures the one term P10's gate-3 projection could not settle:
-// what a RESIDENT DFlash trunk would cost per block (docs/spec/08).
+// TestDFlashDraftCostProbe measures the one term P10's gate-3 projection could not settle: what a RESIDENT
+// DFlash trunk would cost per block (docs/spec/08).
 //
-// It does it WITHOUT building the trunk, on a structural fact worth stating plainly: the
-// DFlash drafter is exactly FIVE LAYERS OF THE TARGET'S OWN LAYER SHAPE plus `fc`. Same
-// hidden 2560, same 32/8 GQA at head_dim 128, same 9728 SwiGLU — 5 × 100.9 M + 32.8 M =
-// 537.4 M, which matches the checkpoint's tensor count to the digit. So the resident runner
-// ALREADY executes the drafter's per-layer work 36 times per token; the drafter is 5/36ths
-// of it, and the cost can be read off the target instead of modelled.
+// It does it WITHOUT building the trunk, on a structural fact: the DFlash drafter is exactly FIVE LAYERS OF THE
+// TARGET'S OWN LAYER SHAPE plus `fc` (same hidden size, same GQA geometry, same SwiGLU width; the parameter
+// count matches the checkpoint's tensor count). So the resident runner ALREADY executes the drafter's per-layer
+// work once per target layer per token, and the cost can be read off the target instead of modelled.
 //
-// The probe isolates the LM head (launchToken's `head` flag), because the head is 389 M of
-// the target's 4.02 B and the drafter has none — it borrows the target's, and that cost is
-// already inside the verify. Attributing head time to the drafter would overstate it.
+// The probe isolates the LM head (launchToken's `head` flag): the drafter has none (it borrows the target's, and
+// that cost is already inside the verify), so attributing head time to the drafter would overstate it.
 //
-// WHAT THIS IS NOT: a claim that the trunk will hit this number. It excludes the drafter's
-// non-causal attention over [ctx‖block], which is the one part with no counterpart in the
-// target's per-token path, and it assumes the same kernels. It is a floor with a named
-// omission, not a prediction.
+// WHAT THIS IS NOT: a claim that the trunk will hit this number. It excludes the drafter's non-causal attention
+// over [ctx‖block], the one part with no counterpart in the target's per-token path, and it assumes the same
+// kernels. It is a floor with a named omission, not a prediction. Figures: docs/code-notes/cuda.md#TestDFlashDraftCostProbe.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashDraftCostProbe -v

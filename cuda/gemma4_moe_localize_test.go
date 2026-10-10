@@ -12,11 +12,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemma4MoE_localize is the localization harness the task-2c steer asked for BEFORE the gate:
-// at pos 0 it diffs the four gemma4-MoE-layer buffers (rn / wgt / x1 / x2) resident-vs-CPU, so a
-// whole-forward miss points at router vs dense branch vs expert branch (and the join, by elimination)
-// in one run instead of a cosine that only says "wiring". Debug at pos 0 (smallest error), per the
-// steer. Diagnostic: logs, never fails (the gate is TestGemma4MoE_residentParity).
+// TestGemma4MoE_localize is the localization harness: at pos 0 (smallest error) it diffs the four gemma4-MoE-layer
+// buffers (rn / wgt / x1 / x2) resident-vs-CPU, so a whole-forward miss points at router vs dense branch vs
+// expert branch (and the join, by elimination) in one run instead of a cosine that only says "wiring". It logs rn
+// and asserts cosine >= 0.9999 per decision on wgt, x1 and x2; the whole-forward gate is TestGemma4MoE_residentParity.
 func TestGemma4MoE_localize(t *testing.T) {
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	t.Setenv("GOINFER_G4_CAPTURE", "1")
@@ -86,7 +85,7 @@ func TestGemma4MoE_localize(t *testing.T) {
 			}
 		}
 	}
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. Worst decision before the fix: wgt 0.999731, x1 0.999125, x2 0.999387; after: 1.000000 on all three.
+	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): the 0.9999 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
 	assertBranch("wgt", cpuWts, resWgt, 0.9999)
 	assertBranch("x1", cpuX1, resX1, 0.9999)
 	assertBranch("x2", cpuX2, resX2, 0.9999)

@@ -10,16 +10,12 @@ import (
 // Audit C-24 / C-25 — the executor goroutine must survive a panicking job, and the expert-cache
 // sizing must not divide by zero on a dense-prefix MoE.
 //
-// WHY THESE EXIST. Both findings are the same shape: code that the design says should DECLINE
-// instead kills the process, and both do it on the pinned executor goroutine where no caller's
-// `defer recover()` can reach. C-24: `gpu.NewBufferLenOf` panics on OOM per its own contract, and
-// prefillCore allocates hundreds of MB at M=3000 — so a long prompt on a nearly-full card killed
-// serve at the exact seam whose job is to fall back to the sequential path. Two comments claimed
-// this was handled; `BuildResident`'s recover runs on the CALLING goroutine and cannot catch it.
-// C-25 is a reachable trigger for the same crash: GLM/DeepSeek/Kimi put dense layers first, so
+// Both are code the design says should DECLINE and that instead kills the process, on the pinned executor
+// goroutine where no caller's `defer recover()` can reach (BuildResident's recover runs on the CALLING
+// goroutine and cannot catch it). C-24: `gpu.NewBufferLenOf` panics on OOM per its own contract, and
+// prefillCore allocates hundreds of MB for a long prompt, so a long prompt on a nearly-full card must fall
+// back to the sequential path rather than kill serve. C-25: GLM/DeepSeek/Kimi put dense layers first, so
 // layer 0 has no expert strides and `budget / len(moeLayers) / perLayer` divides by zero.
-//
-// NO DEVICE NEEDED: runJob is a pure function, and slotBytesPerLayer reads struct state only.
 
 // TestRunJob_recoversPanic is the C-24 gate: a panicking job becomes an error, not a dead process.
 func TestRunJob_recoversPanic(t *testing.T) {

@@ -8,19 +8,11 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// TestAllocFloor measures how far cuMemAlloc will actually drain the device, against what
-// cuMemGetInfo reports as free at that moment.
-//
-// A10's ordering hypothesis predicted that issuing the largest slot buffers first would let the
-// sequence complete. It did not. It got 27 MiB further (failing with 155,385,856 B free instead of
-// 182,648,832) and allocated more total bytes, but still failed — and the failing request was
-// 4,212,736 B against 155,385,856 B free, a ratio of 36.88. A 4 MiB request refused with 148 MiB
-// free is not a contiguity story.
-//
-// Both failures sit in the same band regardless of request size, which reads as a FLOOR: some
-// quantity cuMemGetInfo counts as free that cuMemAlloc will not hand out. This measures it directly,
-// with no model and no 26B: drain in shrinking chunks until even a 2 MiB request is refused, then
-// report what free says.
+// TestAllocFloor measures how far cuMemAlloc will actually drain the device, against what cuMemGetInfo
+// reports as free at that moment. The shortfall is a FLOOR, not contiguity: some quantity cuMemGetInfo
+// counts as free that cuMemAlloc will not hand out, at any request size. No model, no 26B: it drains in
+// shrinking chunks until even a 2 MiB request is refused, then reports what free says. Record:
+// docs/queue-engineering.md, section A10; the figures that led to it: docs/code-notes/cuda.md#TestAllocFloor.
 func TestAllocFloor(t *testing.T) {
 	drainsDevice(t, "drains the device in shrinking chunks until a 1 MiB request is refused")
 	dev, err := CreateSystemDefaultDevice()
@@ -29,21 +21,12 @@ func TestAllocFloor(t *testing.T) {
 	}
 	read := func() int64 { f, _, _ := dev.Context().MemInfo(); return int64(f) }
 	var hold []gpu.Buffer
-	// FREE THE DRAIN, ON EVERY EXIT PATH. This test deliberately allocates until the device
-	// refuses a 2 MiB request — that is what it measures — and every buffer stays reachable in
-	// `hold` so the GC cannot reclaim one mid-measurement. Without an explicit release the
-	// process then carries an EXHAUSTED device into every later test in the package.
-	//
-	// That is not hypothetical: it made TestAllocGranularity fail with CUDA_ERROR_OUT_OF_MEMORY
-	// on a 5 MiB allocation whenever it ran after this test, and the GPU gate reported it as
-	// "a CUDA forward moved" — a numerics-sounding verdict for a bookkeeping leak. Bisected:
-	// TestAllocFloor+TestAllocGranularity fails, TestA10Floor...+TestAllocGranularity passes.
-	//
-	// THIS IS A defer RATHER THAN A TAIL BLOCK because the function can now exit early: the
-	// foreign-CUDA-context skip below returns via runtime.Goexit and would jump straight past a
-	// trailing release. Adding that skip reintroduced the exact leak this comment documents —
-	// TestMoERouteDemandThreshold went from a 3.8 s bisection to a 0.02 s failure on a drained
-	// device — which is why the cleanup is now structural instead of positional.
+	// FREE THE DRAIN, ON EVERY EXIT PATH. This test allocates until the device refuses a 2 MiB request and
+	// holds every buffer in `hold` so the GC cannot reclaim one; without an explicit release an EXHAUSTED
+	// device carries into every later test in the package (it made TestAllocGranularity fail with
+	// CUDA_ERROR_OUT_OF_MEMORY, which the GPU gate reported as "a CUDA forward moved"). It is a defer rather
+	// than a tail block because the foreign-context skip below returns via runtime.Goexit and would jump
+	// past a trailing release.
 	defer func() {
 		for _, b := range hold {
 			dev.ReleaseBuf(b)
@@ -83,45 +66,19 @@ func TestAllocFloor(t *testing.T) {
 		t.Fatal("free read as zero — the instrument did not run")
 	}
 
-	// THE VALUE IS NOW PINNED, AND IT WAS NOT BEFORE. That absence had a consequence worth stating,
-	// because "not a threshold assertion: the number is the finding" was a deliberate and reasonable
-	// choice when nothing depended on the number — and then something did.
-	//
-	// TestMoERouteDemandThreshold asserts demand == floor + residual and hardcoded this floor,
-	// describing it as "pinned by its own gate". It was not: this test reported the floor and
-	// asserted only the margin relation, which a SMALLER floor satisfies more easily. So when the
-	// floor halved on 2026-08-21 (151,191,552 -> 54,263,808, no reboot, no driver change, nothing in
-	// the tree), this gate stayed green and the demand gate went red accusing the KERNEL of moving.
-	// The identity in fact closed to the byte against the new floor. An unpinned number that another
-	// gate depends on does not stop being load-bearing; it just stops being watched.
-	//
-	// Pinned to a WINDOW, not a byte: this is a machine property, and a byte-exact pin on a machine
-	// property is what made the demand pin brittle in the first place. Re-derive on a new box or a
-	// driver change — and when you do, re-check the demand identity, which is downstream of this.
-	//
-	// RE-DERIVED 2026-08-26 for the driver/distro re-anchor (P16): 54,263,808 -> 1,769,472. The box
-	// went Nobara 43 -> 44 overnight, carrying NVIDIA 595.58.03 -> 595.91.07, kernel 7.0.5 -> 7.2.0
-	// and glibc with it, so this is the "driver change" the paragraph above anticipated. Measured
-	// three times in three separate processes, byte-identical each time. The instruction that
-	// paragraph gives was followed rather than skipped: the demand identity was re-checked and it
-	// CLOSES TO THE BYTE against the new floor —
-	//
-	//	1,769,472 (floor) + 138,412,032 (residual) = 140,181,504 = the measured demand
-	//
-	// — with the residual independently re-measured and UNCHANGED (TestMoERouteFirstLaunchReservation
-	// PASSES at 138,412,032). So a component moved and the downstream pin follows it; the kernel did
-	// not move, and A1/A5/A7/A9 do not need re-deriving. Safety direction is the same one as
-	// 2026-08-21 and it is checked, not assumed: a SMALLER floor means less memory is reported free
-	// but unallocatable, so there is MORE headroom than the cap analysis assumed. The floor is now
-	// small enough that the window's lower edge falls below zero — the bottom is guarded by the
-	// `floor <= 0` fatal above, and "moved" can now only mean "grew".
+	// The floor is pinned to a WINDOW, not a byte: it is a machine property (driver, display stack, device
+	// state), and a byte-exact pin on one is brittle. Re-derive on a new box or a driver change, and re-check
+	// the demand identity of TestMoERouteDemandThreshold (demand == floor + residual), which is downstream of
+	// this number: an unpinned number another gate depends on stops being watched, and when this floor
+	// moved unpinned that gate went red accusing the kernel. A smaller floor means more headroom than the cap
+	// analysis assumed, and the window's lower edge now falls below zero, so the bottom is guarded by the
+	// `floor <= 0` fatal above and "moved" can only mean "grew". Re-derivation record:
+	// docs/code-notes/cuda.md#TestAllocFloor.pin.
 	const (
 		pinnedFloor = 1769472 // measured 2026-08-26, RTX 2070 SUPER, driver 595.91.07 / Nobara 44
 		floorWindow = 4 << 20 // the quantity is a driver reserve, not a program's
 	)
-	// Kept so a REVERSION is recognisable rather than reading as a move somewhere new. Both prior
-	// values were measured on THIS box: the machine has now produced three different floors without
-	// the tree changing once.
+	// Kept so a REVERSION to an earlier floor is recognisable rather than reading as a move somewhere new.
 	previous := []struct {
 		val   int64
 		label string
@@ -136,17 +93,11 @@ func TestAllocFloor(t *testing.T) {
 				hint = " — this is " + p.label + ", so the machine has gone BACK rather than moving somewhere new"
 			}
 		}
-		// The pin is a property of an EXCLUSIVE device. A foreign CUDA context
-		// raises this floor (measured +16 MiB for KDE's compositor, 2026-09-01),
-		// so asserting the exclusive number against a desktop session reports a
-		// machine change that has not happened -- and this gate's failure text
-		// then sends the reader toward TestMoERouteDemandThreshold and the
-		// A1/A5/A7/A9 pins over a window manager.
-		//
-		// So: SKIP rather than fail, and say exactly why. A skip is not a pass --
-		// `gate gpu` lists it as uncovered, which is the honest report -- whereas
-		// a red that everyone learns to expect on a desktop is a gate nobody
-		// reads.
+		// The pin is a property of an EXCLUSIVE device: a foreign CUDA context raises this floor, so asserting
+		// the exclusive number against a desktop session would report a machine change that has not happened
+		// and send the reader toward TestMoERouteDemandThreshold and the A1/A5/A7/A9 pins over a window manager.
+		// So SKIP rather than fail, and say why. A skip is not a pass (`gate gpu` lists it as uncovered), whereas
+		// a red that everyone learns to expect on a desktop is a gate nobody reads.
 		foreign, known := foreignCUDAContexts()
 		if !known {
 			t.Skipf("floor measured %d B, but cannot determine whether another CUDA context is "+
@@ -180,17 +131,9 @@ func TestAllocFloor(t *testing.T) {
 			"treat as unavailable.", float64(floor)/(1<<20))
 	}
 
-	// THE RELATIONSHIP, pinned. Leftover after allocSlots must clear the floor, and the margin is
-	// what guarantees it. Every observation fits:
-	//
-	//	cap 31 -> leftover 501,415,936  > floor  -> works
-	//	cap 33 -> leftover 312,672,256  > floor  -> works
-	//	cap 34 -> leftover  61,014,016  < floor  -> fails mid-allocation
-	//
-	// It also retires a figure A9-MARGIN nearly recommended. A 128 MiB margin (134,217,728) is BELOW
-	// this floor; the cap-33 run under it worked only because that cap's leftover happened to be
-	// 312 MiB. That was luck, not safety, and the assertion below is what turns the distinction into
-	// something a test can see.
+	// THE RELATIONSHIP, pinned: the leftover after allocSlots must clear the floor, and the margin is what
+	// guarantees it. A margin below the floor works only when a cap's leftover happens to be large, which is
+	// luck, not safety; the assertion below is what makes the distinction visible.
 	if int64(slotMarginBytes) < floor {
 		t.Errorf("slotMarginBytes (%d) is below the measured allocation floor (%d). Free VRAM "+
 			"overstates allocatable VRAM by that much, so the cap can be granted at a size whose "+

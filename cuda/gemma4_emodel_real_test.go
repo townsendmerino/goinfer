@@ -160,9 +160,8 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 	if !ok {
 		t.Fatalf("%s: no CUDA resident: %s", label, mg.ResidentDecline())
 	}
-	// The CPU loads the SAME file with the SAME options, so both sides hold the same quantization of every table. (G3c run 1, 2026-10-07, let the CPU
-	// read the CUDA e4h sidecar while the CUDA side loaded the GGUF with Options.EmbedInt4 unset: an int4 head against an int8 pin, the confound
-	// Metal's G3 run 1 fell into. It was caught in the log before anything was recorded and is superseded; see the task doc.)
+	// The CPU loads the SAME file with the SAME options, so both sides hold the same quantization of every table. A CPU arm on a sidecar with an int4 head against the CUDA
+	// side's int8 pin is the confound that invalidated an earlier run (docs/tasks/task-multimodal-support-2026-10.md).
 	mc, err := decoder.Load(gguf, opts)
 	if err != nil {
 		t.Fatalf("%s: load (cpu): %v", label, err)
@@ -174,8 +173,7 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 	return pass, agree, n
 }
 
-// TestGemma4EModel_realE2BNonInferiority is G3c (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA", registered 2026-10-07 before any CUDA
-// run, Metal's re-registered G3 rule unchanged): in one process, g3Run on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E2B.
+// TestGemma4EModel_realE2BNonInferiority is G3c (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"; Metal's re-registered G3 rule unchanged): in one process, g3Run on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E2B.
 // PASS: E2B's teacher-forced agreement >= the reference's - 2.0 points and its free-run passes >= the reference's - 1; 2.0-4.0 points below is
 // ambiguous (parked for the owner); worse, or free-run passes 2+ short, fails.
 //
@@ -243,7 +241,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 		sum/float64(n), sorted[n/2], sorted[n*9/10], n, len(m.EmbedResidentForTest(ids[0])))
 }
 
-// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1 (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara", registered 2026-10-08 before any run): G3c's procedure and rule, unchanged, on Gemma 4 E4B loaded from its
+// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1 (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c's procedure and rule, unchanged, on Gemma 4 E4B loaded from its
 // safetensors directory by both sides.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BNonInferiority$' -v ./cuda/
@@ -269,9 +267,9 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 	}
 }
 
-// TestGemma4EModel_realE4BAnchorDump is an EXPLORATORY dump, not a gate. G-E4B-C1 failed (CUDA against the CPU: 87.59% teacher-forced, 3/8 free-run passes, against the E2B's 94.48% and 7/8), and a G3 comparison
-// of two int4 implementations cannot say which of them, if either, is wrong. This writes, for the CPU's own greedy sequence on each of G3's prompts, both arms' top-8 (id, logit) at every position, so that an HF
-// float32 forward over the SAME ids (scripts/anchor_e4b_hf.py) can say, at every position where the arms disagree, which one HF sides with. Output: $E4B_ANCHOR_DIR (default ~/goinfer-logs/e4b-anchor/dump.json).
+// TestGemma4EModel_realE4BAnchorDump is an EXPLORATORY dump, not a gate. G-E4B-C1 failed, and a G3 comparison of two int4 implementations cannot say which of them, if either, is wrong.
+// This writes, for the CPU's own greedy sequence on each of G3's prompts, both arms' top-8 (id, logit) at every position, so that an HF float32 forward over the SAME ids
+// (scripts/anchor_e4b_hf.py) can say, at every position where the arms disagree, which one HF sides with. Output: $E4B_ANCHOR_DIR (default ~/goinfer-logs/e4b-anchor/dump.json).
 func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
@@ -376,7 +374,7 @@ func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 	}
 }
 
-// TestGemma4EModel_realE4BF32Dump is an EXPLORATORY follow-up to TestGemma4EModel_realE4BAnchorDump, not a gate. The anchor read both int4 arms about 77% from HF float32 (CPU 77.70%, CUDA 77.01%) against 87.59% from each other, which a shared
+// TestGemma4EModel_realE4BF32Dump is an EXPLORATORY follow-up to TestGemma4EModel_realE4BAnchorDump, not a gate. The anchor read both int4 arms about equally far from HF float32 and much further than from each other, which a shared
 // deviation or plain int4 sensitivity could both produce. This removes quantization: goinfer's CPU forward in float32 (Options.Quant "f32") teacher-forced over the SAME ids, written in the dump's shape so scripts/anchor_e4b_hf.py can
 // compare it with HF float32. If the implementation is right, float32 against float32 is near-identical; if it is not, the gap is the bug.
 func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
@@ -447,7 +445,7 @@ func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 	}
 }
 
-// TestGemma4EModel_realE4BQATNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara", re-registered 2026-10-08 before any run on this file): G3c, unchanged in procedure, rule and reference, on Google's
+// TestGemma4EModel_realE4BQATNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c, unchanged in procedure, rule and reference, on Google's
 // quantization-aware-trained E4B GGUF, the equivalent of the E2B file G3c used. The plain bf16 checkpoint (TestGemma4EModel_realE4BNonInferiority) failed for the checkpoint's sake, not the implementation's.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BQATNonInferiority$' -v ./cuda/

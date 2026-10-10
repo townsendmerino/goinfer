@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Since 2026-10-09 Options.EmbedInt4 reaches every family loader (decoder/embed_int4_loaders_test.go), so a family that used to get an int8 head by default
+// Options.EmbedInt4 reaches every family loader (decoder/embed_int4_loaders_test.go), so a family that used to get an int8 head by default
 // now gets an int4 one. The resident must take that table without changing its decision: where a fixture builds resident with the int8 head it builds resident
 // with the int4 head (the same decode path, the head reading int4), and where it declines it declines for the same reason either way. A resident that
 // declined an int4 head would silently move a whole family to the CPU the day the default reached it.

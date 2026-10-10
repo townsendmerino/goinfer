@@ -48,10 +48,9 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 	if err != nil {
 		t.Skipf("tokenizer: %v", err)
 	}
-	// GOINFER_TEST_PROMPT selects the workload. Chat is the case the acceptance guard EXISTS
-	// for: unguarded it measures 0.61x (1.96 accepted/round against a ~3.0 break-even), and
-	// "the guard makes that safe" has so far been an inference from a different losing case
-	// (thinking mode) rather than a measurement of this one.
+	// GOINFER_TEST_PROMPT selects the workload. Chat is the case the acceptance guard EXISTS for (unguarded, it
+	// accepts fewer tokens per round than the break-even), and "the guard makes that safe" has so far been an
+	// inference from a different losing case (thinking mode), not a measurement of this one.
 	promptText := "Write a Python function that returns the nth Fibonacci number."
 	if v := os.Getenv("GOINFER_TEST_PROMPT"); v != "" {
 		promptText = v
@@ -67,8 +66,8 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 		}
 	}
 
-	// Attach ONCE — the weight upload is a per-process cost, not a per-request one. Timing the
-	// attach inside the generation is what made the first version of this path measure 0.17x.
+	// Attach ONCE: the weight upload is a per-process cost, not a per-request one, and timing the attach inside
+	// the generation makes the path measure far slower than it is.
 	spec, err := mc.NewBlockSpec(dr, dr.TargetLayerIDs())
 	if err != nil {
 		t.Fatalf("NewBlockSpec: %v", err)
@@ -80,13 +79,9 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 	}
 	specMs := float64(time.Since(t0).Milliseconds())
 
-	// THE BASELINE IS Model.Generate — the path a server actually takes.
-	//
-	// An earlier version used a PrefillLastNArgmax(M=1) loop, which downloads the full 608 KB
-	// logit row per token; Generate uses launchToken with the GPU argmax fast-path (a 4-byte
-	// readback). That made the baseline slower than production and flattered every speedup
-	// measured against it. Comparing against anything but the real path is measuring the wrong
-	// thing.
+	// THE BASELINE IS Model.Generate, the path a server actually takes: it uses launchToken with the GPU argmax
+	// fast path (a 4-byte readback). A PrefillLastNArgmax(M=1) loop downloads the full logit row per token, which
+	// makes the baseline slower than production and flatters every speedup measured against it.
 	t1 := time.Now()
 	ch, gen := mc.Generate(context.Background(), prompt, len(got), decoder.SamplingParams{})
 	var want []int

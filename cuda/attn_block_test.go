@@ -99,11 +99,8 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 		if e := r.stream.Sync(); e != nil {
 			return fmt.Errorf("attn_batched (causal reference) failed: %w", e)
 		}
-		// Compiled HERE, not bound at model load. The kernel has no production consumer yet
-		// (the resident drafter path is not built), and TestPipelineLint_boundKernelsAreLaunched
-		// exists precisely to stop a kernel being NVRTC-compiled into every model load while
-		// nothing launches it — that was gemv_w4a8_batched's exact history. When the drafter
-		// path lands it binds this at load; until then the only launch site is this gate.
+		// Compiled HERE, with its own pipeline, so this gate launches the kernel directly and does not depend on a
+		// drafter having been built (the drafter binds attn_block_full at its own load).
 		bmod, e := r.dev.CompileLibrary(attnBlockPTX)
 		if e != nil {
 			return e
@@ -156,15 +153,10 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 	t.Logf("rows 0..%d all differ from causal — every block row now attends all %d keys", last-1, nKeys)
 }
 
-// TestAttnBlockFull_cost closes the last substitution in the gate-3 composition.
-//
-// The round-composition measurement stood in for the drafter with the target's stack truncated
-// to 5 layers — right shape, right weights-per-layer, but its attention is CAUSAL where the
-// drafter's is non-causal. Every row attending ALL keys is strictly more work than row m
-// attending m+1 of them, so the stand-in could only have UNDERSTATED the draft.
-//
-// This times both kernels at the drafter's real geometry, which is the only remaining way the
-// 8.82 ms draft could be wrong in the optimistic direction.
+// TestAttnBlockFull_cost times attn_block_full against attn_batched at the drafter's real geometry. The
+// round-composition measurement stood in for the drafter with a truncated target stack whose attention is
+// causal, where the drafter's is non-causal and does strictly more work (every row attends all keys), so
+// the stand-in could only have UNDERSTATED the draft; this bounds that error. Context: docs/code-notes/cuda.md#TestAttnBlockFull_cost.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestAttnBlockFull_cost -v
