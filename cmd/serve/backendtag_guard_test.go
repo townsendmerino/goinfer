@@ -7,17 +7,11 @@ import (
 	"testing"
 )
 
-// TestBackendTagGuardFailsBuild is the gate for audit D-B / field-report F1: since the M-19
-// submodule split the root cmd/serve builds no backend, so `go build -tags cuda ./cmd/serve`
-// (the command in every pre-v0.10.0 doc) used to exit 0 and silently produce a CPU binary. The
-// backendtag_guard_*.go files turn that into a compile error whose text names the submodule
-// entrypoint to run instead. This test proves BOTH halves for all three backends: the build
-// fails (non-zero exit) AND stderr carries the exact replacement command.
-//
-// It runs in the DEFAULT `go test ./...` — no -short, no build tag. A finding about a silent
-// build earns a gate that always runs. (The guard files carry //go:build tags, so they are
-// absent from this default-build test binary; the test shells out to `go build -tags …`, a
-// separate process, to exercise them.)
+// TestBackendTagGuardFailsBuild pins that `go build -tags cuda|gpu|metal ./cmd/serve` fails to compile, and that stderr
+// carries the exact submodule entrypoint to run instead: the root cmd/serve builds no backend, so without the
+// backendtag_guard_*.go files that command would exit 0 and silently produce a CPU binary. Those files carry //go:build
+// tags and are absent from this test binary, so the test shells out to `go build`. It runs in the default
+// `go test ./...` on purpose (no -short, no tag). Origin: docs/code-notes/cmd-serve.md#TestBackendTagGuardFailsBuild.
 func TestBackendTagGuardFailsBuild(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
