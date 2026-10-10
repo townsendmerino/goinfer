@@ -31,6 +31,10 @@ class TestUntrackedDocsSkipped(unittest.TestCase):
     behavior), green with a note while the doc is untracked, red again the moment it is staged."""
 
     def setUp(self):
+        # These pin the LEGACY line-index machinery (content keys, "moved but unchanged", launder refusal), which only runs with the door
+        # OPEN; production has had it shut since CC0 step 4. They stay until that machinery is deleted.
+        self._orig_door = qcl.CLOSE_THE_DOOR
+        qcl.CLOSE_THE_DOOR = False
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = self.tmp.name
         _git(self.repo, "init", "-q")
@@ -73,6 +77,7 @@ class TestUntrackedDocsSkipped(unittest.TestCase):
 
     def tearDown(self):
         qcl.ROOT, qcl.QUEUE = self._orig_root, self._orig_queue
+        qcl.CLOSE_THE_DOOR = self._orig_door
         qcl._tracked_cache = qcl._TRACKED_SENTINEL
         self.tmp.cleanup()
 
@@ -155,6 +160,10 @@ class TestContentGoneRefused(unittest.TestCase):
     state)."""
 
     def setUp(self):
+        # These pin the LEGACY line-index machinery (content keys, "moved but unchanged", launder refusal), which only runs with the door
+        # OPEN; production has had it shut since CC0 step 4. They stay until that machinery is deleted.
+        self._orig_door = qcl.CLOSE_THE_DOOR
+        qcl.CLOSE_THE_DOOR = False
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = self.tmp.name
         _git(self.repo, "init", "-q")
@@ -191,6 +200,7 @@ class TestContentGoneRefused(unittest.TestCase):
 
     def tearDown(self):
         qcl.ROOT, qcl.QUEUE = self._orig_root, self._orig_queue
+        qcl.CLOSE_THE_DOOR = self._orig_door
         qcl._tracked_cache = qcl._TRACKED_SENTINEL
         self.tmp.cleanup()
 
@@ -606,13 +616,14 @@ class TestSymbolCitations(_LintRepo):
             "func (s *Server) Handle(", "// Handle was rewritten, and now says a good many more words\n// than it did when this citation was written.\n// It runs to three lines.\nfunc (s *Server) Handle("))
         self.assertGreen()
 
-    def test_live_sh_line_citations_are_counted_and_reported(self):
+    def test_sh_line_citation_is_red_unpinned_and_green_pinned(self):
+        """A script has no declaration form, so with the door shut its line can be cited only in a pinned record."""
         self.write("pkg/run.sh", "#!/bin/sh\necho one\necho two\n")
-        _git_commit_all(self.repo, "a script")
+        c = _git_commit_all(self.repo, "a script")
         self.doc("the script prints at `pkg/run.sh:2` and `pkg/run.sh:3`\n")
-        self.assertGreen(["--update"])
-        out = self.assertGreen()
-        self.assertIn("2 live .sh line citation(s)", out)
+        self.assertRed("pin this doc")
+        self.doc(f"# R\n\n<!-- citations-at: {c} -->\n\nthe script prints at `pkg/run.sh:2` and `pkg/run.sh:3`\n")
+        self.assertGreen()
 
     def test_python_removed_method_is_red(self):
         self.doc("see `pkg/tool.py:Tool.arun`\n")
@@ -689,13 +700,10 @@ class TestPinnedDocs(_LintRepo):
         self.assertNotIn("record-x.md", pathlib.Path(self.repo, "docs", "citation-index.md").read_text())
         self.assertGreen()
 
-    def test_unpinned_doc_in_the_same_state_does_need_repointing(self):
-        """The control for the case above: the same shift on an UNPINNED doc is noticed (accepted as moved, then re-pointed)."""
+    def test_unpinned_doc_with_the_same_numbers_is_red(self):
+        """The control for the case above: the same numbers in an UNPINNED doc are refused outright (the door), not tracked."""
         self.doc("see `pkg/svc.go:60`\n", name="live-x.md")
-        self.assertGreen(["--update"])
-        self.write("pkg/svc.go", "// two\n// new lines\n" + GO_FIXTURE)
-        out = self.assertGreen()
-        self.assertIn("MOVED but are unchanged", out)
+        self.assertRed("pin this doc")
 
     def test_aikit_path_in_a_pinned_doc_resolves_in_the_module_cache_at_the_commits_version(self):
         # go.mod at the pinned commit requires aikit v9.9.9; the cache holds that version only

@@ -338,16 +338,21 @@ Prefer committed increments that survive interruption over one big commit at the
 ## Citations and the pre-push hook
 
 `scripts/queue_citation_lint.py` runs **as a pre-push hook and REFUSES the push** on a red. Its generated index
-lives in `docs/citation-index.md` (moved out of `docs/QUEUE.md` 2026-09-24). Four
+of commit and bare-file citations lives in `docs/citation-index.md` (moved out of `docs/QUEUE.md` 2026-09-24). Four
 traps worth knowing before you hit them:
 
 - A backtick-quoted concrete path under a **gitignored** directory (`docs/internal/…`) is a
   FORBIDDEN DESTINATION — *including in another repo*, since nobody else can resolve it.
   Describe the record in prose instead; that is what `c494c62` did.
-- A stale `path:line` index is fixed with `--update`, not by deleting the citation. **A cited line that
-  MOVED but is textually unchanged is accepted** (owner decision 2026-09-24): the check passes with a note, and
-  `--update` rewrites the line number in the doc's prose. Still red: content edited or deleted, content now at
-  more than one line (AMBIGUOUS), or found only in another repo/version.
+- **Code is cited by declaration, never by line.** A live doc writes `decoder/registry.go:voxtralArchitecture` or
+  `chat/chat.go:Template.Render` (`Type.Method` for a method; a const or var in a block by its own name), and the lint checks the
+  file declares it today. A rename or a deletion is red, with the message to name what it became; a function that merely moved
+  within its file is green, and nothing has to be renumbered. A **dated record** (an audit, a review, a measurement write-up) is
+  instead **pinned**: `<!-- citations-at: <commit> -->` in its first lines, and its `path:line` numbers are checked against that
+  commit only (the file, the line, a range's end) — never against HEAD, never rewritten. `path:line` in an unpinned doc is red:
+  "pin this doc (`citations-at`) or name the declaration". Pin to the commit the numbers were TRUE at, which is not always the one
+  the header names (a baseline); `docs/measurements/code-comments-2026-10/pins.tsv` shows how that was measured for the first 35.
+  A shell script has no declaration form: cite it by name, or by line in a pinned record.
 - **A missing MODULE reads as a broken lint but is a missing download.** The lint validates
   citations that point into `aikit`, and treats an unresolvable module as a hard failure on
   purpose — calling it a skip "would make the green cover nothing". So when `go.mod`'s pinned

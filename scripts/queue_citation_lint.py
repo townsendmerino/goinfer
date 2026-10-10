@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 """queue_citation_lint.py — every citation in docs/QUEUE.md must resolve, and its target must match.
 
-Two kinds are checked: COMMIT citations (sha -> subject) and PATH citations (file:line -> the trimmed
-content of that line). Both are recorded in a generated index at the bottom of the file and compared
-on every run.
+Commit citations (sha -> subject) are recorded in a generated index (docs/citation-index.md) and compared on every run. Code
+citations come in two forms since CC0 (docs/tasks/task-code-comments-2026-10.md):
+
+  - `path.go:Name` / `path.go:Type.Method` in a LIVE doc names a declaration, and the lint checks the file declares it NOW. Nothing is
+    recorded and nothing goes stale when lines move above it.
+  - `path:line` is accepted only in a PINNED record: a doc carrying `<!-- citations-at: <commit> -->` in its first lines. The lint
+    checks that every cited file and line exists AT THAT COMMIT (aikit paths in the module at the version that commit's go.mod
+    required) and never looks at HEAD, never records content, never rewrites the doc.
+  - `path:line` in an unpinned doc is red: "pin this doc (`citations-at`) or name the declaration". A path under an allow-path
+    comment (stdlib, llama.cpp) is not a citation into this project and is exempt.
+
+The pre-CC0 line-number index (content keyed, with the "moved but unchanged" acceptance) is gone with the door it guarded; what
+follows describes the commit side, which is unchanged.
 
 WHY THIS EXISTS. `9e5f8fa` was cited in docs/QUEUE.md as the precedent for a goldens-gated deps_hash
 refresh — "a metadata field addition re-staled weights.go and the refresh ran 19 goldens". It is
@@ -614,7 +624,7 @@ BARE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py))(?![\
 #
 # Never colliding with the other two forms: PATH_RE needs DIGITS after the colon, BARE_RE refuses a following colon, and a symbol
 # starts with a letter or underscore. Only .go and .py have a symbol form (`def` and `class` count in Python); there is no .sh form,
-# and none was needed — the tree carried zero live .sh line citations when CC0 was written (2026-10-10).
+# so a script is cited by name, or by line in a PINNED record (the tree carried zero live .sh line citations when CC0 was written).
 SYMBOL_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|py)):([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?!\w)")
 
 # A line citation as the docs write it: `x.go:10`, `x.go:10-20`, `x.go:10–20` (an EN DASH) and `x.go:10,34,56` (a comma list of more lines in
@@ -813,7 +823,7 @@ PIN_NEAR_TOP = 40  # the marker must sit in the first N lines; a marker buried i
 PINNED_FILE_CACHE = {}
 
 # Set True by step CC0.c (the door): a path:line in an UNPINNED doc is then a red. Off while live docs are being migrated.
-CLOSE_THE_DOOR = False
+CLOSE_THE_DOOR = True
 DOOR_MESSAGE = "pin this doc (`citations-at`) or name the declaration"
 
 
@@ -1326,30 +1336,35 @@ def _main() -> int:
             lines.append(f"| `{sha}` | {resolved[sha].replace('|', '\\|')} |")
         for sha in unresolved:
             lines.append(f"| `{sha}` | **UNRESOLVED** |")
-        lines += ["", "## Path index", "",
-                  "Generated. Every `file:line` cited above, the repo it resolved in, and the trimmed",
-                  "content of that line. A line that MOVED is reported with its new number; content that",
-                  "has VANISHED is red, because the citation then claims something the file no longer",
-                  "supports.", "",
-                  "| doc \\| path:line | repo | line content |", "|---|---|---|"]
-        for key in sorted(presolved):
-            repo, content = presolved[key]
-            if content is None:
-                continue
-            keyable = discriminating(content) or content.startswith("anchor: ")
-            # TRUNCATE FIRST, THEN ESCAPE. The reverse order silently broke every
-            # citation whose line contains a pipe -- i.e. every Go boolean
-            # condition with `||`. Escaping doubles each pipe's width, so slicing
-            # the ESCAPED string to 88 stored fewer than 88 real characters, while
-            # the checker compares against `content[:88]` of the raw line. They can
-            # never be equal, and the failure reports as "CONTENT ABSENT -- the line
-            # now reads X and the recorded content X is nowhere in the file", with X
-            # identical on both sides because the message truncates for display.
-            # Found 2026-09-01 when four audit citations stayed red across repeated
-            # --update runs; three of the four lines were unique in the tree, so an
-            # anchor collision could not explain it.
-            body_txt = content[:88].replace('|', chr(92) + '|') if keyable else "UNKEYABLE"
-            lines.append(f"| `{key}` | {repo} | `{body_txt}` |")
+        # CC0.c: with the door shut there is no "Path index": a path:line in an unpinned doc is red, so nothing is keyed against a line
+        # number. Symbol citations are checked against the declarations the file has, pinned records at their commit, and neither records
+        # anything. The section is still written when the door is OPEN, which only the legacy tests do (the line-index machinery above is
+        # unreachable in production now and is the next thing to delete).
+        if not CLOSE_THE_DOOR:
+            lines += ["", "## Path index", "",
+                      "Generated. Every `file:line` cited above, the repo it resolved in, and the trimmed",
+                      "content of that line. A line that MOVED is reported with its new number; content that",
+                      "has VANISHED is red, because the citation then claims something the file no longer",
+                      "supports.", "",
+                      "| doc \\| path:line | repo | line content |", "|---|---|---|"]
+            for key in sorted(presolved):
+                repo, content = presolved[key]
+                if content is None:
+                    continue
+                keyable = discriminating(content) or content.startswith("anchor: ")
+                # TRUNCATE FIRST, THEN ESCAPE. The reverse order silently broke every
+                # citation whose line contains a pipe -- i.e. every Go boolean
+                # condition with `||`. Escaping doubles each pipe's width, so slicing
+                # the ESCAPED string to 88 stored fewer than 88 real characters, while
+                # the checker compares against `content[:88]` of the raw line. They can
+                # never be equal, and the failure reports as "CONTENT ABSENT -- the line
+                # now reads X and the recorded content X is nowhere in the file", with X
+                # identical on both sides because the message truncates for display.
+                # Found 2026-09-01 when four audit citations stayed red across repeated
+                # --update runs; three of the four lines were unique in the tree, so an
+                # anchor collision could not explain it.
+                body_txt = content[:88].replace('|', chr(92) + '|') if keyable else "UNKEYABLE"
+                lines.append(f"| `{key}` | {repo} | `{body_txt}` |")
         lines += ["", "## Bare file index", "",
                   "Generated. Every file referenced WITHOUT a line number, and the repo it resolves in.",
                   "Existence only — there is no line to key content against, which is recorded rather",
@@ -1544,9 +1559,6 @@ def _main() -> int:
         for k, r in sorted(skipped_foreign):
             print(f"    {k}  (recorded in: {r})")
     ndocs = len({k.split("|", 1)[0] for k, _, _ in paths})
-    n_sh = sum(1 for _k, rel, _ln in paths if rel.endswith(".sh") and rel not in pallow)
-    print(f"queue_citation_lint: {n_sh} live .sh line citation(s) — shell has no symbol form, so a line number is the only way to cite one; "
-          f"CC0 counts them rather than inventing a form (zero when it was written, 2026-10-10).")
     print(f"queue_citation_lint: {len(symbols)} symbol citation(s) (path.go:Name) across "
           f"{len({d for d, _, _ in symbols})} live document(s), each checked against the declarations the file has now; "
           f"{len(pinned_docs)} PINNED record(s) checked at their commits (citations-at), never against HEAD and never rewritten.")

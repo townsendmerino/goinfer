@@ -4,6 +4,10 @@
 > this doc as § "Code comments"); change how docs link into code first (CC0), because that removes most of the cost
 > of everything after it. Branch `comment-diet-2026-10`; merge when the track is done. Steps CC0–CC6. Nothing here
 > needs a night run.
+>
+> **CC0 DONE 2026-10-09/10 on `comment-diet-2026-10` (not merged, not pushed):** lint support (symbol citations, pinned records) with tests
+> first; 284 live-doc citations now name declarations; 35 records pinned (`docs/measurements/code-comments-2026-10/pins.tsv`); the door is
+> closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC1–CC6 not started.
 
 ## 1. Why
 
