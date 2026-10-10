@@ -86,6 +86,53 @@ def comment_lines(src: str):
     return flags
 
 
+def line_comments(src: str):
+    """{1-based line -> comment text} for every `//` comment on a line, whole-line or trailing, outside raw strings, strings and block
+    comments. A `/* */` comment is not reported (the tree uses `//`)."""
+    out = {}
+    i, n, line = 0, len(src), 1
+    state = None
+    while i < n:
+        c = src[i]
+        if state == 'raw':
+            if c == '`':
+                state = None
+            elif c == '\n':
+                line += 1
+            i += 1
+            continue
+        if state == 'block':
+            if src.startswith('*/', i):
+                state = None
+                i += 2
+                continue
+            if c == '\n':
+                line += 1
+            i += 1
+            continue
+        if c == '\n':
+            line += 1
+        elif src.startswith('//', i):
+            j = src.find('\n', i)
+            j = n if j < 0 else j
+            out[line] = src[i:j]
+            i = j
+            continue
+        elif src.startswith('/*', i):
+            state = 'block'
+            i += 2
+            continue
+        elif c == '`':
+            state = 'raw'
+        elif c == '"' or c == "'":
+            q = c
+            i += 1
+            while i < n and src[i] != q and src[i] != '\n':
+                i += 2 if src[i] == '\\' else 1
+        i += 1
+    return out
+
+
 def blocks(src: str):
     lines = src.split('\n')
     flags = comment_lines(src)

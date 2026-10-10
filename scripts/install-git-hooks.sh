@@ -39,6 +39,9 @@ cat > "$hook" <<'HOOK'
 # writing itself.
 cd "$(git rev-parse --show-toplevel)"
 
+# git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
+refs="$(cat)"
+
 if [ ! -f scripts/queue_citation_lint.py ]; then
     echo "pre-push: scripts/queue_citation_lint.py is missing — not silently passing." >&2
     exit 1
@@ -81,12 +84,25 @@ if [ "$pstatus" -ne 0 ]; then
     exit 1
 fi
 
+# The comment census WARNING (CC6, docs/tasks/task-code-comments-2026-10.md): comments added or changed in the pushed .go files that carry
+# a history marker. It never refuses a push (the script exits 0 and `|| true` makes that explicit): "timeout in ms" is a contract, not history.
+if [ -f scripts/comment_census.py ]; then
+    printf '%s\n' "$refs" | while read -r lref lsha rref rsha; do
+        [ -n "${lsha:-}" ] || continue
+        case "$lsha" in 0000000000000000000000000000000000000000) continue ;; esac
+        base="$rsha"
+        case "$rsha" in 0000000000000000000000000000000000000000) base="$(git merge-base "$lsha" origin/main 2>/dev/null || true)" ;; esac
+        [ -n "$base" ] || continue
+        python3 scripts/comment_census.py diff --base "$base" --head "$lsha" >&2 || true
+    done
+fi
+
 exit 0
 HOOK
 
 chmod +x "$hook"
 echo "installed $hook"
-echo "checks: queue_citation_lint.py, then TestParityManifest_fresh"
+echo "checks: queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
 echo "verifying it fires and that it passes on a clean tree:"
 if bash "$hook" >/dev/null 2>&1; then
     echo "  clean tree -> hook exits 0 (push allowed)"
