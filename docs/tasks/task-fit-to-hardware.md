@@ -104,20 +104,20 @@ Scoped against what exists, the way `task-model-pull.md` was.
 **Already automatic, per backend, in pieces:**
 
 - CUDA expert cache: `--moe-cache-slots 0` means "ask for all and auto-cap to free VRAM"
-  (`decoder/model.go:314`, the cap that accounts for 2 MiB allocation quanta and the first-launch
+  (`decoder/model.go:Model.MoECacheSlotsRequest`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
-  (`internal/loadflags/loadflags.go:68`).
+  (`internal/loadflags/loadflags.go:Register`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
-  (`metal/backend.go:201`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
-  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:525`).
+  (`metal/backend.go:residentMemFraction`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
+  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:residentMemoryDecline`).
 
 **Still the user's decision, with no basis offered for it:**
 
 | decision | today's surface | what the user has to know |
 |---|---|---|
-| which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/loadflags/loadflags.go:267`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
-| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:226`, `metal/moe.go:681`), env only, no flag, no auto | the measured optimum was N=64 (`docs/completed/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it — that doc's archival note also flags that `fitplan.go`'s generic "largest N that fits" auto-sizer would regress past N=64 on Metal if wired here without a cap |
+| which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/loadflags/loadflags.go:backendHelp`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
+| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:buildGemma4MoE`, `metal/moe.go:buildMoE`: both read `metalMoESlotsRequest(m)`), env only, no flag, no auto | the measured optimum was N=64 (`docs/completed/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it — that doc's archival note also flags that `fitplan.go`'s generic "largest N that fits" auto-sizer would regress past N=64 on Metal if wired here without a cap |
 | context cap and KV precision | `-ctx` (`:361`, ignored by WebGPU — M-32), `-kv` (`:360`, breaks three families on WebGPU — M-32), `-kv-quant` (`:362`) | the VRAM a 16k f32 KV costs on their card |
 | quant | `-quant int4` default (`:340`), `--embed-int4` (`:374`) | that int4 is now as fast as int8int8 on CPU (the in-repo guidance was reversed 2026-08-25) |
 | whether it worked | `-require-backend` (`:354`) or reading the decline line | that "declined to CPU" is the failure they are looking for |
@@ -206,7 +206,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
   of 16 GB); expect the 1.5B–7B class". Cheap: the planner reads the header of the file it just
   wrote.
 - **The web UI's Models tab shows fit before download.** `pull.File` already carries `Size`
-  (`pull/pull.go:187`), and a GGUF's size is within a few percent of its resident
+  (`pull/pull.go:File`), and a GGUF's size is within a few percent of its resident
   bytes at the same quant, so the file table can say *fits / needs streaming / will not fit* per
   row from the listing alone, before the multi-gigabyte transfer. The exact plan comes after the
   header is on disk.
@@ -369,10 +369,10 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:398-302` (the flags the plan subsumes) · `decoder/model.go:314-258`
-(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:118-259` (the guard) ·
-`decoder/weightbytes.go:97` (`ResidentWeightBytes`, the accountant to replace) ·
-`pull/pull.go:187` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
+`internal/serveapp/main.go:registerFlags` (the flags the plan subsumes) · `decoder/model.go:Model.MoECacheSlotsRequest`
+(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:metalBackend.BuildResident` (the guard: `if why := residentMemoryDecline(m); why != ""`) ·
+`decoder/weightbytes.go:Model.ResidentWeightBytes` (`ResidentWeightBytes`, the accountant to replace) ·
+`pull/pull.go:File` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).
 
 <!-- doc-reviewed: 2026-09-13 -->

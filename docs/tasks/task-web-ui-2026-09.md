@@ -19,12 +19,12 @@
 
 ## 0. What exists today
 
-The page is **a small embedded directory** — `//go:embed webui` (`internal/serveapp/webui.go:51`):
+The page is **a small embedded directory** — `//go:embed webui` (`internal/serveapp/webui.go:webUIFS`):
 `index.html` plus `ui/app.css` and `ui/app.js`, hand-written HTML, CSS and vanilla JS, no build
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:812`), and it is a client of the same `/v1` routes any other client
+(`internal/serveapp/webui.go:server.webEnabled`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
 Two tabs (`internal/serveapp/webui/index.html:13`):
@@ -186,11 +186,11 @@ refreshes the model list, and selects the new model, so the next message goes to
 stats now follow whichever model is selected, not always the first one listed.
 
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
-(`internal/serveapp/admin.go:125`) takes any caller-named path and stays behind
+(`internal/serveapp/admin.go:server.handleAdminLoad`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:779`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:Main`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:547`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/serveapp/webui.go:webLoadPath`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -204,7 +204,7 @@ Also decided here:
   for nothing. (A pull, by contrast, still stops when the tab closes and deletes its `.part` file.)
 - **"Already loaded" counts as success.** The page selects that model instead of showing an error.
 - **Loading and publishing are shared with the admin load.** Both go through `loadDecoder` and
-  `publishLoaded` (`internal/serveapp/admin.go:183`), so the M-24 close-on-race and the session
+  `publishLoaded` (`internal/serveapp/admin.go:server.publishLoaded`), so the M-24 close-on-race and the session
   restore live in one place, and a web-loaded model unloads like any other.
 
 **What this settles for W22** (the question was to be answered once, for both): a `-web` route
@@ -326,7 +326,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:1113`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:loadedModel.contextWindow`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -371,7 +371,7 @@ inside the binary.
 | **W9** | Conversation list with generated titles | **DONE 2026-09-14** — see below | M (after W3) |
 | **W10** | Full sampling controls | **DONE 2026-09-14** — see below | S |
 | **W11** | Image attach for vision models | **DONE 2026-09-14** — see below | M |
-| **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:187`) | M — **skipped for now** (owner, 2026-09-14) |
+| **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:File`) | M — **skipped for now** (owner, 2026-09-14) |
 | **W13** | Errors that say what to do | **DONE 2026-09-14** — see below | S |
 | **W14** | Export the conversation | **DONE 2026-09-14** — see below | S |
 | **W15** | Dark mode | **DONE 2026-09-15** — see below | S |
@@ -586,7 +586,7 @@ server's own answer rather than a guess from the model's name.
 
 What the server allows decided most of the rest:
 - **One image per request, counted across the whole history** (`maxImagesPerTurn` was 1 then; S11 raised it to 8
-  images in the newest message on 2026-10-09, `internal/serveapp/vision_serve.go:23`). The server attaches it to the *latest* user turn, wherever it
+  images in the newest message on 2026-10-09, `internal/serveapp/vision_serve.go:maxImagesPerTurn`). The server attaches it to the *latest* user turn, wherever it
   was sent. So the page sends **only the most recent image**, as an `image_url` part on the message it
   came with; earlier ones go as plain text. Follow-up questions about that image still work. Attaching
   a second image says it replaces the first in what the model sees.
@@ -632,7 +632,7 @@ system prompt adds every other sampling field `/v1/chat/completions` accepts: `t
 Temperature and max tokens stay in the top row.
 
 **A correction to what this row used to say:** it listed `logit_bias` among the fields the route
-accepts. It does not. The request struct (`internal/serveapp/openai.go:581`) has no such field. The
+accepts. It does not. The request struct (`internal/serveapp/openai.go:server.servedNames`) has no such field. The
 sampler supports `LogitBias`, `MinP` and `RepeatPenalty`, but the HTTP route exposes none of them, so
 W10 covers what the route actually takes. Exposing the other three is a server item of its own.
 
@@ -754,11 +754,11 @@ checks that the list is laid out below its heading at full width (found by W15's
   way to see or change it. Two related gaps, both real, both worth naming separately:
   1. **Repo entry is free text with no memory of what's known-good — DONE 2026-09-16, via a
      stronger mechanism than proposed here.** Not the curated-names dropdown this entry originally
-     asked for (`pull.Curated()`/`CuratedNames()`, `pull/pull.go:101`, `:110` — still reachable only
+     asked for (`pull.Curated()`/`CuratedNames()`, `pull/pull.go:Curated`, `:110` — still reachable only
      via `demo:0.5b`, untouched by this work): live HuggingFace search-as-you-type over the same
      `#repo` box (`internal/serveapp/webui/index.html:98`), typing 4+ characters lists real matching
      GGUF repos to pick from, covering the whole hub rather than a handful of pinned names. Server:
-     `pull.Search` (`pull/pull.go:335`, GGUF-only for now via a `kind`→HF-`filter` table built to grow),
+     `pull.Search` (`pull/pull.go:Search`, GGUF-only for now via a `kind`→HF-`filter` table built to grow),
      `POST /web/models/search`. Client: `internal/serveapp/webui/ui/app.js:1920` (`SEARCH_MIN_CHARS`),
      debounced, cancels a stale in-flight request via both `AbortController` and a sequence guard
      (two independent mechanisms — gated in `scripts/webui_app_gate.mjs` phase 42, including the
@@ -766,7 +766,7 @@ checks that the list is laid out below its heading at full width (found by W15's
      search is substring, not fuzzy — "quen" does not find "Qwen", only completes a correctly-typed
      prefix.
   2. **The quant/backend a model loads at is invisible and unchangeable from the page.** `-quant`
-     and `-backend` (`internal/serveapp/main.go:407`, `:502`) are server-startup flags with "no
+     and `-backend` (`internal/serveapp/main.go:registerFlags`, `:502`) are server-startup flags with "no
      per-request override" (W5's own decision, §2). That was the right call for *requests*; it is
      what made *this* incident invisible — the page had no way to show what quant was about to be
      used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
@@ -786,7 +786,7 @@ checks that the list is laid out below its heading at full width (found by W15's
   **This is not a fresh idea; most of it is already designed.**
   `docs/tasks/task-fit-to-hardware.md` §3 has an entry, "The web UI's Models tab shows fit before
   download," written before this incident and never wired up: `pull.File` already carries `Size`
-  (`pull/pull.go:187`), and a GGUF's size is within a few percent of its resident bytes at the same
+  (`pull/pull.go:File`), and a GGUF's size is within a few percent of its resident bytes at the same
   quant, so *the file table can say fits / needs streaming / will not fit per row from the listing
   alone, before the multi-gigabyte transfer* — no header parsing needed for that coarse read. That
   doc's own worked example is worth re-reading directly: a gemma-4-26B expert-cache decline, three
@@ -794,8 +794,8 @@ checks that the list is laid out below its heading at full width (found by W15's
 
   **What's actually buildable now, checked against the tree rather than assumed:**
   - **A coarse per-file tag in "List files" — DONE 2026-09-17.** `fitEstimate`
-    (`internal/serveapp/webui.go:217`) bands a file's own size against
-    `freeBytesForActiveBackend` (`:172` — `decoder.FreeBytesFor`, `decoder/backend.go:228`, for every
+    (`internal/serveapp/webui.go:fitEstimate`) bands a file's own size against
+    `freeBytesForActiveBackend` (`:172` — `decoder.FreeBytesFor`, `decoder/backend.go:FreeBytesFor`, for every
     GPU backend; `decoder.HostRAMAvailableBytes` special-cased for `cpu`/the empty default, which the
     registry has never covered) into *fits / tight / won't fit*, returned per file from
     `handleWebList` (`:208`) alongside the backend name and free amount — omitted entirely, not
@@ -944,7 +944,7 @@ saying it was stopped). **Effort was: M.**
 ~~A busy server is currently an indistinguishable spinner~~ — most of this shipped as part of the
 server's own job-status work this morning (`de0f13c5`) and W27's client, ahead of this doc catching
 up: `GET /v1/jobs/{id}` reports a still-queued job's `queue: {position, waiting, running}`
-(`internal/serveapp/jobs_http.go:126`, from `lm.turns.position`), and the page polls it once a
+(`internal/serveapp/jobs_http.go:server.handleGetJob`, from `lm.turns.position`), and the page polls it once a
 second while nothing has streamed yet, showing *"Waiting for its turn: 2nd in line (3 waiting, 1
 running)."* in place of a spinner (`pollQueue`, `internal/serveapp/webui/ui/app.js:1101`).
 **Gate, as anticipated:** this is a field on the page's own request's own state (its W27 job), never
@@ -953,7 +953,7 @@ needed deciding.
 
 **What was still missing, and is the actual work of this entry: the 429 itself carried no number.**
 W13's *"its request queue is full"* was true but not informative — it didn't say how full, or
-compared to what. `loadedModel.queueFullMsg()` (`internal/serveapp/openai.go:371`) now names the
+compared to what. `loadedModel.queueFullMsg()` (`internal/serveapp/openai.go:loadedModel.queueFullMsg`) now names the
 configured depth: `cap(lm.queue)-1`, the one number that is always accurate of a queue reported as
 FULL (a live waiting count would already be stale by the time a client could read it) — *"model "q"
 queue full (max 2 queued); retry"*. All three refusal sites share it: the synchronous chat-route and
@@ -1117,7 +1117,7 @@ not the page — caught before it could produce a false pass.
 
 **W5 shipped half a door.** ~~nothing on the page can free the first model to make room~~ — a
 `POST /web/models/unload` route now exists over `unloadByName`
-(`internal/serveapp/admin.go:258`), the two-phase unpublish-then-drain `handleAdminUnload` already
+(`internal/serveapp/admin.go:server.unloadByName`), the two-phase unpublish-then-drain `handleAdminUnload` already
 did (unpublish under `regMu`, drain-and-close detached) — pulled out into its own function
 specifically so the web route and the admin route share it verbatim, rather than the page getting a
 second, parallel implementation of the same use-after-free-avoiding logic.
@@ -1125,8 +1125,8 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 **No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
-client. `handleWebUnload` (`internal/serveapp/webui.go:786`) is `sameOrigin(auth(...))` behind
-`-web` — W5's exact gate stack (`internal/serveapp/main.go:779`) — with `s.models[req.Name]` under
+client. `handleWebUnload` (`internal/serveapp/webui.go:server.handleWebUnload`) is `sameOrigin(auth(...))` behind
+`-web` — W5's exact gate stack (`internal/serveapp/main.go:Main`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
 (`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both
@@ -1136,7 +1136,7 @@ extended to this route rather than left to trust it by resemblance.
 `internal/serveapp/webui/ui/app.js:213`) — filtered to entries with a decoder (an embedding-only
 entry has nothing to unload) — showing quant, decode path and resident size per row, and marking
 whichever one Chat is pointed at. `quant` and `resident_bytes` are new fields on `pathFields`
-(`internal/serveapp/openai.go:556`), the one function `/v1/models` and `/health` already share, so
+(`internal/serveapp/openai.go:server.pathFields`), the one function `/v1/models` and `/health` already share, so
 both surfaces gained them for free rather than the page needing a second, web-only request just to
 ask the registry twice. Each row's **Unload** button names its own free-able size.
 
@@ -1155,7 +1155,7 @@ than claiming to observe it: *"A request already in flight elsewhere will finish
 route to it until it is loaded again."* When *this* page's own reply is the one running on that
 model (`generating.model === name`), the wording says so specifically instead.
 
-**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:749`)
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:server.unloadSuggestion`)
 checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
 unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
 never need that type's unexported fields — and, if something is resident, appends *"Unload
@@ -1453,14 +1453,14 @@ not done: [`../measurements/web-ui-schema-2026-10-02/README.md`](../measurements
 
 ## Sources
 
-`internal/serveapp/webui.go:51`, `:545` (the embed, the `-web` gate) ·
+`internal/serveapp/webui.go:webUIFS`, `:545` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:1113` (`contextWindow`) ·
-`internal/serveapp/admin.go:125` (`handleAdminLoad`) ·
-`internal/serveapp/openai.go:591` (the sampling fields the page never sends) ·
-`anthropic.go`'s request type (no thinking block in v1; added 2026-09-30) · `pull/pull.go:187` (`Size`, for the
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:loadedModel.contextWindow` (`contextWindow`) ·
+`internal/serveapp/admin.go:server.handleAdminLoad` (`handleAdminLoad`) ·
+`internal/serveapp/openai.go:sampling` (the sampling fields the page never sends) ·
+`anthropic.go`'s request type (no thinking block in v1; added 2026-09-30) · `pull/pull.go:File` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §F.3, §0 ·

@@ -28,7 +28,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`decoder/model.go:1755-1782`](../decoder/model.go#L1185-L1532), a
+That outer loop lives in [`decoder/model.go:Model.generateInto`](../decoder/model.go), a
 function called `generateInto`.
 
 ---
@@ -60,9 +60,9 @@ turned back into text.
 This is the heart of it. Given the list of token IDs so far, how do we predict the
 next one? The computation that does this is called the **forward pass** (data
 flows *forward* through the network). In this repo, for a single new token, it's
-[`Model.forward`](../decoder/model.go#L496-L502) — a small wrapper that runs the
-layer stack ([`runLayers`](../decoder/model.go#L358)) and then projects to scores
-([`logitsFromHidden`](../decoder/model.go#L520)). Here are its stages.
+[`Model.forward`](../decoder/model.go) — a small wrapper that runs the
+layer stack ([`runLayers`](../decoder/model.go)) and then projects to scores
+([`logitsFromHidden`](../decoder/model.go)). Here are its stages.
 
 ### 2a. Each token becomes a vector (the embedding)
 
@@ -72,7 +72,7 @@ numbers (a **vector**, maybe 4,096 numbers long). That vector is the model's
 learned "meaning" of that token. Words used in similar ways end up with similar
 vectors.
 
-The lookup is literally one line: [`m.w.Embed.Row(id, h)`](../decoder/model.go#L378)
+The lookup is literally one line: [`m.w.Embed.Row(id, h)`](../decoder/model.go)
 — "go fetch row `id` from the embedding table and put it in `h`." From here on,
 the token *is* that vector, called the **hidden state** (`h` in the code). The
 entire job of the network is to repeatedly transform this vector so that, by the
@@ -84,7 +84,7 @@ This is the "deep" in "deep learning." The model has dozens of **layers** stacke
 on top of each other (could be 32, 80, more). The vector enters layer 1, gets
 transformed, the result enters layer 2, gets transformed, and so on. Each layer
 does the same two operations, and this loop is
-[`runLayersFromEmbed`](../decoder/model.go#L414-L458):
+[`runLayersFromEmbed`](../decoder/model.go):
 
 1. **Attention** — "look at the other words and pull in relevant context."
 2. **MLP** (also called the feed-forward network) — "think about what you just
@@ -114,21 +114,21 @@ matches get high weight; the token then pulls in a weighted blend of those
 tokens' Values. That blend gets added back into its hidden state. That's it —
 that's how "river" reaches forward and disambiguates "bank."
 
-In this repo that's [`causalAttention`](../decoder/attention.go#L49-L187).
+In this repo that's [`causalAttention`](../decoder/attention.go).
 "Causal" means each token may only look *backward*, never at future tokens (you
 can't peek at the answer you're trying to predict). The actual
 matching-and-blending kernel `causalAttention` calls is
-[`attendBatchedHeads`](../decoder/forwardn.go#L292).
+[`attendBatchedHeads`](../decoder/forwardn.go).
 
 Two refinements you'll see in the code, worth knowing because they're everywhere
 in modern models:
 - **Multiple "heads"** — instead of one Query/Key/Value comparison, there are
   many running in parallel (one head might track grammar, another long-range
-  topic). [decoder/attention.go:79](../decoder/attention.go#L59).
+  topic). [decoder/attention.go:causalAttention](../decoder/attention.go).
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:154-141](../decoder/attention.go#L124-L129).
+  is. [decoder/attention.go:causalAttention](../decoder/attention.go).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -137,7 +137,7 @@ processes that enriched vector through a couple of big matrix multiplications wi
 a nonlinear squashing function in between. Loosely: attention is *gathering
 information from neighbors*, the MLP is *computing on it*. This is where a lot of
 the model's stored "knowledge" lives. The standard form here is
-[`gatedMLP`](../decoder/mlp.go#L263).
+[`gatedMLP`](../decoder/mlp.go).
 
 (There's an important variant, **Mixture of Experts**, covered in the engineering
 section — it's central to this repo's recent work.)
@@ -146,7 +146,7 @@ section — it's central to this repo's recent work.)
 
 After the vector exits the last layer, it has been refined into a representation
 of "what should come next." The final step,
-[`logitsFromHidden`](../decoder/model.go#L520-L542), multiplies it against the
+[`logitsFromHidden`](../decoder/model.go), multiplies it against the
 vocabulary table to produce one score for *every* token in the vocabulary —
 100,000 numbers, where a high score means "this token is a likely next one."
 These raw scores are called **logits**.
@@ -160,22 +160,22 @@ many layers → one score per possible next token.**
 
 Now we have 100,000 scores. How do we choose one? That's
 [sampler.go](../decoder/sampler.go), specifically
-[`SampleWithInfo`](../decoder/sampler.go#L246-L296).
+[`SampleWithInfo`](../decoder/sampler.go).
 
 - The simplest choice: just take the highest-scoring token. That's **greedy /
-  argmax** ([decoder/sampler.go:280](../decoder/sampler.go#L266)) — deterministic, the
+  argmax** ([decoder/sampler.go:Sampler.SampleWithInfo](../decoder/sampler.go)) — deterministic, the
   model's single best guess.
 - More commonly we add controlled randomness so output isn't robotic.
   **Temperature** flattens or sharpens the scores (high temperature = more
   adventurous, low = more predictable). Then we usually restrict the random draw
   to the top few candidates — **top-k** (only the k best), **top-p / nucleus**
   (the smallest set covering p% of the probability) — to avoid picking something
-  absurd ([decoder/sampler.go:281-269](../decoder/sampler.go#L267-L269)).
+  absurd ([decoder/sampler.go:Sampler.SampleWithInfo](../decoder/sampler.go)).
 
 The scores are turned into actual probabilities via **softmax** (exponentiate and
 normalize so they sum to 1), and one token is drawn. There are also **penalties**
 to discourage the model from repeating itself
-([decoder/sampler.go:274-261](../decoder/sampler.go#L260-L261)).
+([decoder/sampler.go:Sampler.SampleWithInfo](../decoder/sampler.go)).
 
 The output is a single integer — the next token.
 
@@ -183,7 +183,7 @@ The output is a single integer — the next token.
 
 ## Step 4: The loop (autoregression)
 
-Now zoom back out to [`generateInto`](../decoder/model.go#L931-L1178). We:
+Now zoom back out to [`generateInto`](../decoder/model.go). We:
 
 1. Run the forward pass on the prompt,
 2. Sample one new token,
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L931-L1178). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:2120](../decoder/model.go#L1051-L1177)).
+   ([decoder/model.go:Model.generateInto](../decoder/model.go), the `for range maxTokens` loop).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one
@@ -216,20 +216,20 @@ quadratically slow.
 
 So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
-[KVCache](../decoder/kvcache.go#L50-L105), and it's why generation stays roughly
+[KVCache](../decoder/kvcache.go), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/attention.go:220](../decoder/attention.go#L220)).
+([decoder/attention.go:causalAttention](../decoder/attention.go)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to
 shrink it:
 - **int8 KV quantization** — store the cached Keys/Values as 8-bit integers
   instead of 32-bit floats, ~4× smaller, with a per-head scale factor to
-  reconstruct them ([decoder/kvcache.go:20-25](../decoder/kvcache.go#L20-L25)).
+  reconstruct them ([decoder/kvcache.go:quantizeHeads](../decoder/kvcache.go)).
 - **Ring buffers for sliding-window layers** — some layers only ever need the
   last *W* tokens, so the cache for them is a fixed-size circular buffer that
   overwrites old entries instead of growing forever
-  ([decoder/kvcache.go:149-149](../decoder/kvcache.go#L126-L141)).
+  ([decoder/kvcache.go:KVCache](../decoder/kvcache.go)).
 
 ### Quantization — making the *weights* small too
 
@@ -242,7 +242,7 @@ a big model fit on a normal machine.
 In this repo the abstraction is `linalg.WeightMat` (from the sibling `aikit`
 library), which holds weights as full floats, int8, or int4 behind a uniform
 interface; goinfer's policy for *which* precision a given model uses lives in
-[weightmat.go](../decoder/weightmat.go#L16-L36). When the math needs them, they're
+[weightmat.go](../decoder/weightmat.go). When the math needs them, they're
 reconstructed ("dequantized") on the fly. int4 unpacking is currently the live performance lever because single-stream
 generation is bottlenecked on memory bandwidth — the machine spends its time
 *reading weights from memory*, so making the weights smaller directly makes it
@@ -252,8 +252,8 @@ faster.
 
 Some modern models replace the single MLP with *many* parallel MLPs called
 **experts**, plus a little **router** that, for each token, picks just the top few
-experts to actually run ([`moeMLP`](../decoder/mlp.go#L68),
-[`routeExperts`](../decoder/mlp.go#L134)). The payoff: the model can have
+experts to actually run ([`moeMLP`](../decoder/mlp.go),
+[`routeExperts`](../decoder/mlp.go)). The payoff: the model can have
 huge total knowledge (many experts) while only doing a little work per token (a
 few experts). The cost: all those experts have to *exist in memory* even though
 most go unused each step.
@@ -279,7 +279,7 @@ is precisely the positioning claim in the families roadmap.
 Different model families (Gemma, Llama, Qwen, GLM, Granite…) differ in small but
 real ways — how they normalize, how they do positions, whether they're MoE, etc.
 Rather than one tangled code path, this repo uses a **registry**
-([decoder/registry.go:19-52](../decoder/registry.go#L19-L52)): each family registers an
+([decoder/registry.go:registry](../decoder/registry.go)): each family registers an
 "adapter" describing its quirks, and the engine resolves the right one at load
 time. Most families share a generic forward pass; the genuinely different ones
 (the Gated DeltaNet hybrid in
@@ -290,7 +290,7 @@ adapter."
 
 ### Two more worth a mention
 
-- **Session prefix reuse** ([decoder/session.go:85-113](../decoder/session.go#L71-L99)) —
+- **Session prefix reuse** ([decoder/session.go:Session.rewindForReuse](../decoder/session.go)) —
   in a chat, each new turn shares a long prefix with the last one (the whole
   conversation history). Instead of reprocessing it, the engine keeps the KV
   cache from before and only processes the *new* part. Huge win for chat and

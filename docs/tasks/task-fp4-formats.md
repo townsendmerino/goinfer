@@ -88,10 +88,10 @@ difference is bandwidth or arithmetic.
 ## B — MXFP4 beyond gpt-oss
 
 Today MXFP4 handling is entangled with the gpt-oss family (`forward_gptoss.go`,
-`gptoss_safetensors.go`, `stackedExperts` routing in `decoder/gguf.go:863`). Establish what is
+`gptoss_safetensors.go`, `stackedExperts` routing in `decoder/gguf.go:buildWeightsFromGGUF`). Establish what is
 family-specific and what is format-general.
 
-Note one real trap already recorded in the tree: `decoder/gptoss_safetensors.go:17` documents that MXFP4
+Note one real trap already recorded in the tree: `decoder/gptoss_safetensors.go:buildGptOssWeights` documents that MXFP4
 nibbles are **sequential** in safetensors (byte j holds elements 2j and 2j+1) where GGML uses a
 different order. Any generalization must carry that distinction, and a format-general path that
 assumes one ordering will silently produce wrong weights rather than an error.
@@ -154,7 +154,7 @@ Ambiguous → parked, in every case.
 - `off` is an arm in every comparison.
 - Label the regime at the point of recording. A CPU MXFP4 kernel result does not transfer to a GPU
   path, and an Apple Silicon result does not transfer to x86 — the existing MXFP4 work already
-  notes that x86 speed and bench numbers were deferred (`decoder/forward_gptoss.go:18`).
+  notes that x86 speed and bench numbers were deferred (`decoder/forward_gptoss.go:Model.runLayersGptOss`, the file's header comment: "Parity-first and arch-neutral (no SIMD)").
 - Do not use the words "honest" or "honesty".
 - Leave uncommitted for review.
 

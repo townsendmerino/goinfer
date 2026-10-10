@@ -27,13 +27,13 @@
 
 | minimax-code sends (openai-completions, custom URL) | goinfer |
 |---|---|
-| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1399`) |
-| `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/serveapp/openai.go:46`) |
+| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:messagesToTurns`) |
+| `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/serveapp/openai.go:maxOutputTokensCeiling`) |
 | `stream: true` + `stream_options.include_usage` | supported; final usage chunk |
 | `store: false`, `prompt_cache_key`, tools' `strict: false`, `reasoning_effort` | unknown fields ignored (plain `json` decode) |
 | tool calls read from `delta.tool_calls[i]` with `index` | emitted in that shape (`internal/serveapp/tools.go`) |
 | `Authorization: Bearer <key>` (its `--api-key-env` is mandatory) | ignored when serve has no `--api-key` |
-| overflow detection by error text (`utils/overflow.ts`, generic `/context[_ ]length[_ ]exceeded/i`) | the 400 reads "… context window of N tokens (context_length_exceeded)" (`internal/serveapp/openai.go:214`) — matches, so its compaction should fire |
+| overflow detection by error text (`utils/overflow.ts`, generic `/context[_ ]length[_ ]exceeded/i`) | the 400 reads "… context window of N tokens (context_length_exceeded)" (`internal/serveapp/openai.go:promptByteBudgetError`) — matches, so its compaction should fire |
 
 **Will bite, in order of likelihood:**
 
@@ -41,7 +41,7 @@
    `--context-limit`, and sends its system prompt (`packages/local-runtime-v2/assets/agents/_default/prompt-base-all.md`
    alone is 7.7 KB) plus the tool schemas on every turn — roughly 5–8k tokens before the first user
    message, by estimate from the files (M0 measures it). goinfer's resident defaults are 4096 on Metal
-   (`decoder/fitplan.go:184`) and 4096→8192 fit on CUDA (`cuda/resident.go:48`). The first turn may not fit;
+   (`decoder/fitplan.go:MetalCtxDefault`) and 4096→8192 fit on CUDA (`cuda/resident.go:cudaCtxCapDefault`). The first turn may not fit;
    the second almost certainly will not. It does not read goinfer's `/v1/models` `context_window`.
 2. **Thinking models answer the connection test slowly.** `--use` sends a **non-streaming** `ping` with
    `max_tokens` = the configured output limit (default 16,384) and a **10 s** timeout
@@ -53,7 +53,7 @@
    convention pi-ai reads, `providers/openai-completions.ts`, `reasoningFields`), so `<think>` text is
    shown as the reply and is resent as assistant history, spending context.
 4. **Images with tools are refused.** minimax-code always sends tools; a pasted screenshot gets goinfer's
-   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:819`,
+   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:server.handleChat`,
    N-16 / R-08).
 5. **The other two formats are unverified.** `openai-responses` sends item types the route declares out
    of scope ("reasoning items", `internal/serveapp/responses.go` header); `anthropic-messages` sends

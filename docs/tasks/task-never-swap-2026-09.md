@@ -119,7 +119,7 @@ documents (verified empirically) that `MADV_DONTNEED`, `MADV_FREE` and the `msyn
 RSS unchanged on a read-only file mapping, so eviction is a no-op and the Unified Buffer Cache
 decides what stays resident. The auto budget makes it worse than it looks: `mmap.AutoBudget()`
 reads `/proc/meminfo`, which does not exist on macOS, and falls back to a fixed 8 GB
-(`decoder/moepaging.go:204`, `decoder/layerpaging.go:105`) — while goinfer already has a live
+(`decoder/moepaging.go:newExpertPager`, `decoder/layerpaging.go:newLayerPager`) — while goinfer already has a live
 darwin probe, `HostRAMAvailableBytes` (`decoder/hostram_darwin.go`, from `vm_stat`), that the pager
 never sees. A 20 GB model in ~11 GB of usable RAM therefore re-faults most of its active experts
 from the SSD every token, continuously — the "RSS ~3.2 GB, re-reading weights from disk per token"
@@ -128,10 +128,10 @@ that trips watchdogd. The record does not attribute the panic beyond that; S5's 
 where it gets attributed.
 
 **Two guards exist and neither sees the `.giw` path.** `guardFit(fitCheckFor(...))`
-(`decoder/model.go:708`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
-(`decoder/model.go:567`) returns before it — by design, since a mapped load has no allocation
+(`decoder/model.go:Load`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
+(`decoder/model.go:Load`, `if strings.HasSuffix(dir, ".giw")`) returns before it — by design, since a mapped load has no allocation
 peak to price; it also therefore prices none of the anonymous remainder (KV, scratch, Metal
-buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:201`,
+buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:residentMemFraction`,
 `residentMemFraction`, set from one measured failure), deliberately not a live query because the
 UBC makes "available" report what survived rather than what can be asked for — a stated reason S4
 keeps rather than overrides.
@@ -238,9 +238,9 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
-`internal/prequant/prequant.go:249`) or by the dense fit-guard auto-retry
-(then in serve; since 2026-09-24 in the shared loader, `internal/modelload/modelload.go:194`); `chat` and `fit`
-(`internal/fitcmd/fit.go:107`) loaded direct and had no streaming flag at all. (serve, chat and fit now share one load
+`internal/prequant/prequant.go:EnsureCachedGIW`) or by the dense fit-guard auto-retry
+(then in serve; since 2026-09-24 in the shared loader, `internal/modelload/modelload.go:Load`); `chat` and `fit`
+(`internal/fitcmd/fit.go:Run`) loaded direct and had no streaming flag at all. (serve, chat and fit now share one load
 path, `internal/modelload`.) **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
 anonymous footprint of a sidecar load ≤ 25% of the direct load's, swap-used delta across the load
@@ -253,7 +253,7 @@ on the safetensors no-op; the embed-int4 note; the `DenseStreamable` exclusion a
 reason — "MoE CPU weight streaming is a documented, MEASURED failure mode"); `internal/prequant/prequant.go`
 `Transcode` (temp + rename, the V-01 `.tmp.giw` suffix trap, `cacheFresh`'s load-probe freshness —
 M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` (and, until 2026-09-24, `needsResidentSerialize` — deleted when S2 finished; read S2 for the history);
-`decoder/model.go` `.giw` branch (`decoder/model.go:567`) and what it skips (`decoder/model.go:708`);
+`decoder/model.go` `.giw` branch (`decoder/model.go:Load`) and what it skips (`decoder/model.go:Load`);
 `decoder/weightmat.go` `GIWTargetForBackend` and the kind-5 policy in `docs/tasks/task-int4-layout-2026-09.md`
 L2 (a cpu-arm64 sidecar is row4-only — about the model's int4 size; a kind-4 dual-representation
 bundle is ~2× that and is what "we shouldn't be building bigger files" refers to — check which
@@ -410,7 +410,7 @@ byte-identical to the resident-serialize path's output on the family fixtures (t
 `TestStreamTranscodeMatchesResident` shape, extended per family).**
 
 **Read first.** `decoder/gguf.go` — the qwen35 branch (`loadQ35`, the `sink != nil` streaming
-loop near `decoder/gguf.go:1827`), then each of the six loaders and *why* it was excluded: gemma4's
+loop near `decoder/gguf.go:buildWeightsFromGGUF`), then each of the six loaders and *why* it was excluded: gemma4's
 "fused PLE/MoE tail can't stream incrementally" (a model-level tail written after the layers —
 the head/tail split `writeHeadGlobals` already supports: `decoder/serialize.go`'s "streaming
 transcode can emit the head, then produce-write-free each layer" note), gpt-oss's stacked experts
@@ -846,14 +846,14 @@ and a measured pread rate, and requires an explicit acknowledgement (`--stream-w
 
 **Read first.** `decoder/fitguard.go` in full (the `fitCheck` struct, `srcFileBytes`,
 `cudaBuildBytes`, `smallerFittingContext`, the R13 re-pricing); `decoder/model.go` around
-`decoder/model.go:567`–`decoder/model.go:708`; `decoder/hostram_darwin.go` (the approximation it
+`decoder/model.go:Load`–`decoder/model.go:Load`; `decoder/hostram_darwin.go` (the approximation it
 states: free + inactive + speculative + purgeable, 16 KB pages read from `vm_stat`'s header);
 `decoder/backend.go` `RegisterMemoryProbe` and `metal/backend.go` `residentMemFraction` (the
 reason the Metal probe is static — keep it as the *ceiling* and add the live figure as a second
 bound: `min(0.70 × hw.memsize, HostRAMAvailableBytes − margin)`, so the guard can only get stricter,
 never looser, which is the direction the one measured failure allows); `decoder/moepaging.go`
 `newExpertPager` (budget clamp `[one expert, total expert bytes]`, `AutoBudget` at
-`decoder/moepaging.go:204`); `docs/completed/task-w4a8-neon-bandwidth.md` (the pread rate this
+`decoder/moepaging.go:newExpertPager`); `docs/completed/task-w4a8-neon-bandwidth.md` (the pread rate this
 Mac measured — ~3.7 GB/s at concurrency 1 — as the working-set arithmetic's default until the
 guard measures its own, one 64 MB pread at load); `runtime/debug.SetMemoryLimit` semantics (a
 soft limit: the GC works harder under it, it does not refuse allocation — document it as such;
@@ -964,7 +964,7 @@ cost is worth the cap; and dense layer streaming gets the same option.
 
 **Standing and the registered rule.** (The Metal pager's own M26 runs are R11(c)'s three spirals —
 those are S0's dense-copy term plus slots on a box with no headroom, and S6 is their fix; this brief
-is the CPU pager.) Pool mode (`decoder/moepaging.go:213`; since 2026-09-24 chosen by `decoder.Options.MoEPager` /
+is the CPU pager.) Pool mode (`decoder/moepaging.go:newExpertPager`; since 2026-09-24 chosen by `decoder.Options.MoEPager` /
 `--moe-pager`, with `GOINFER_MOE_PREAD_CPU=1` only an override) selects `newExpertBufferPool`: a fixed set of owned buffers refilled by `pread` on an independent
 fd, "a firm cap on every platform at the cost of a memcpy per miss and losing `.giw` zero-copy
 aliasing" — Lever 1b of `task-moe-streaming.md`, never measured on the Mac against the mmap mode

@@ -520,7 +520,7 @@ quantization and asking `wmBytes` what it cost:
 | `int8` / `int8int8` | **1.0156** | 1.0156 |
 | `int4` / `int4mix` | **1.2500** | 0.6250 |
 
-The cause is `RepackInt4Row4` (`linalg/weightmat_row4_arm64.go:23`): on arm64 with dotprod it
+The cause is `RepackInt4Row4` (`linalg/weightmat_row4_arm64.go:WeightMat.RepackInt4Row4`): on arm64 with dotprod it
 populates `q4Row4` and `q4Row4Scales` **in addition to** the canonical `q4`/`q4s`, clearing
 neither — so an int4 weight carries two full layouts, 0.625 + 0.625. int8 has no such repack. The
 same shape applies on AVX2-without-VNNI amd64 via the split-half repack.
@@ -614,7 +614,7 @@ chatapp/prequant.go`'s `loadEmbedded` never reads `opts.Quant` at all — while 
 1. *`goinfer-chat --version`.* New `internal/chatapp/version.go` (`isVersionArg`,
    `versionReport`), dispatched in `Main()` before `flag.Parse` and registered as a `-version`
    flag, mirroring `internal/serveapp`'s existing pattern deliberately kept as a separate,
-   unshared implementation (`internal/chatapp/version.go:71-77`) rather than shared, so a change
+   unshared implementation (`internal/chatapp/version.go:isVersionArg`) rather than shared, so a change
    to one binary's dispatch cannot silently reach the other.
 2. *Unrecognized positionals now error.* Both `internal/chatapp/main.go` and `internal/serveapp/
    main.go` check `flag.Args()` after `flag.Parse()` and exit 2 naming the real subcommands —
@@ -771,7 +771,7 @@ every load.
 **Measured, same discipline as C-10** — walked the real shape rather than guessing a name→shape
 mapping (the mistake C-10 was). Fetched `ibm-granite/granite-4.0-h-tiny`'s real HF
 `tokenizer.json` (2026-09-07, repo sha `791e0d3d…`): its Split regex is byte-identical to the
-cl100k pattern `tokenizer/bytelevel.go:260` already documents, `\p{N}{1,3}` digit runs
+cl100k pattern `tokenizer/bytelevel.go:splitGPT2` already documents, `\p{N}{1,3}` digit runs
 (Llama-3's cap), `normalizer: null`, `model.ignore_merges: false` — the one knob that makes it
 its own case rather than an alias for `llama-bpe` (which has `ignoreMerges: true`).
 
@@ -812,7 +812,7 @@ tree. That part was right. The first pass then wrote "native f32 and int8/int8in
 reach the backend" as if that were true on every backend, which is what a review pass (comparing
 against `docs/benchmarks.md` §B10's "GPU staged (int8)" row, 485 MiB VRAM, 20-22 tok/s — real
 device use) asked to be reconciled. It reconciles because that row is **WebGPU**, not CUDA
-(`gpu/matrix_bench_test.go:142`, `Backend: "webgpu"`), and re-reading `cuda/backend.go` and
+(`gpu/matrix_bench_test.go:TestDecisionMatrix`, `Backend: "webgpu"`), and re-reading `cuda/backend.go` and
 `metal/backend.go` finds the real shape: **neither implements `decoder.QuantBackend` at all**,
 and each one's own `Backend.MatmulBT` is a bare CPU call (`linalg.MatmulBT`, no device dispatch)
 — so `matmul()`'s `be.(QuantBackend)` assertion fails for int8 on cuda/metal too, falling to the

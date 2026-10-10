@@ -980,7 +980,7 @@ don't advance it.**
 The stronger, previously-uncosted payoff is on the DECODE axis (where goinfer is at parity): **per-row
 scales delete the group scales from the weight byte-stream.** MEASURED against the actual layout
 (not assumed — the ~23×-estimate lesson): the resident GPU int4 carries an **f16** group scale per
-32-value group (`cuda/resident.go:55` — deliberately f16 because "f32 would be 20%"), so scale bytes
+32-value group (`cuda/resident.go:resolveCtxCap` — deliberately f16 because "f32 would be 20%"), so scale bytes
 are `2 / (16 + 2) = 11.1%` of the int4 weight stream. Per-row (one scale per row) deletes ~all of it
 (≈0.2%). Decode reads every weight once per token → fewer weight bytes is the decode lever the dp4a
 ceiling (B2) is NOT.
@@ -1109,8 +1109,8 @@ do not have the heads.
 > [`docs/spec/09-mtp-heads.md`](spec/09-mtp-heads.md).** The text above is left as written: it was
 > true when written, and the record of why we thought it is the useful part.
 >
-> What changed is our own loader. `decoder/gguf.go:756`, `decoder/gguf_qwen35.go:33`,
-> `decoder/weights.go:737` and `decoder/registry.go:1781` detect these heads, name them, and skip
+> What changed is our own loader. `decoder/gguf.go:ggufGlm4MoeConfig`, `decoder/gguf_qwen35.go:ggufQwen35Config`,
+> `decoder/weights.go:buildWeightsFromSafetensorsTo` and `decoder/registry.go:glm4moeArchitecture` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the
@@ -1533,10 +1533,10 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - ~~**embedResident host-scratch reuse — still open.**~~ **DONE, `c28c847` (2026-09-10, P-08 of
-  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1630`);
+  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:Model.embedResidentInto`);
   `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
   call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
-  reused `embScratch` (`decoder/model.go:2279,1489`) instead of allocating fresh per token. Gated by
+  reused `embScratch` (`decoder/model.go:Model.generateInto`) instead of allocating fresh per token. Gated by
   `decoder/embed_resident_scratch_test.go`. Found stale 2026-09-12: this bullet's own line-number
   citations had been silently re-keyed by `--update` in the SAME commit that fixed the code, without
   the "still open" claim itself being revisited. Bigger follow-on, still genuinely open: an
@@ -1547,7 +1547,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   still allocates, amortized over its K-token batch. All MoE-family int4 goldens pass bit-identical.
 - **int4 W4A8 `Workspace` alloc/token — DONE, P9, not via the fix this item originally proposed.** The
   item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in `matmul()`
-  itself (`decoder/weightmat.go:792` `matmulWSPool`), which also covers the free-matmul callers
+  itself (`decoder/weightmat.go:matmulWSPool` `matmulWSPool`), which also covers the free-matmul callers
   `matmulInto` never sees — `matmul()`'s int4 and W8A8-fallback branches now pull their
   `linalg.Workspace` from the pool instead of declaring one fresh per call, so the Workspace's own
   lazily-grown `i8`/`f32` quant scratch survives across calls instead of reallocating
@@ -1591,16 +1591,16 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   bit-identity is structural (per-element, no accumulation order to perturb), not merely convenient.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
-  cuda/resident.go:998,1183) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  `cuda/resident.go:cudaResident.launchToken`) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:1316) does Sync → D2H routing
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:cudaResident.allocSlots) does Sync → D2H routing
   indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:2537) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:cudaResident.Close) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.

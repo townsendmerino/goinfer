@@ -2,7 +2,7 @@
 
 > **Status (corrected 2026-09-13, doc review — stale since the day it was drafted): L1, L2, L3 all
 > DONE 2026-09-11**, all still accurate against the current tree (re-verified: `wantsCanonicalInt4`
-> at `decoder/weightmat.go:497`, `giwVersion = 11`, `decoder/w4a8_row4_giwkind5_test.go` all present
+> at `decoder/weightmat.go:wantsCanonicalInt4`, `giwVersion = 11`, `decoder/w4a8_row4_giwkind5_test.go` all present
 > and matching). **L4 is PARTIALLY SHIPPED 2026-09-13** — not "filed, not scheduled" as the line
 > below still says; see L4's own section for what shipped (as M-07 in a different doc) and what
 > didn't. **L5 remains PARKED**, blocked on the same aikit prerequisite (still v1.41.0, no bump
@@ -53,16 +53,16 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   slower path. The failure mode we are designing against is a Metal box quietly decoding on the
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
-  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:716`,
-  `metal/gemma4_moe.go:256`, `decoder/moepaging.go`).
+  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:buildMoE`,
+  `metal/gemma4_moe.go:buildGemma4MoE`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
 ---
 
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
-**Where.** `decoder/weightmat.go:497 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:717` (computed once
+**Where.** `decoder/weightmat.go:wantsCanonicalInt4 wantsCanonicalInt4(backendName, be)`,
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:Load` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -70,10 +70,10 @@ at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFW
 `QuantBackend4.MatmulW4A8` consult stays under `Int4()`'s ok (mutation-tested: reverting is a
 nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 
-**The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:138`) loads with no
+**The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:TestMetalSnapshotGolden`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:796`) declined via its
+and therefore repacked-only, `int4Concat` (`metal/model.go:int4BufA`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -132,7 +132,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   `TestBackendReport_int4LayoutVisible` (both surfaces, both arms — `Backend:"cpu"` shows
   `row4-only`, unspecified does not).
 - **Item 3 ("Same by inspection in `cuda/` and `gpu/`") found a REAL latent bug in `cuda/`, worse
-  than Metal's.** `cuda/resident.go:4119`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
+  than Metal's.** `cuda/resident.go:packI8`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
   for a repacked-only tensor — `Kind()` is precision, not layout) and used to discard `Int4()`'s
   `ok` entirely (`q4, sc, _, _ := w.Int4()`), so a repacked-only tensor's nil `q4` would panic on
   an out-of-range slice index (`q4[i*4:i*4+4]`) rather than decline through the function's own
@@ -150,8 +150,8 @@ backend-agnostic data into something with a hidden property and a silent failure
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
-- **Item 4: no code change needed.** `internal/serveapp/main.go:531`,
-  `internal/chatapp` (both binaries now register it through `internal/loadflags/loadflags.go:62`), and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
+- **Item 4: no code change needed.** `internal/serveapp/main.go:Main`,
+  `internal/chatapp` (both binaries now register it through `internal/loadflags/loadflags.go:Register`), and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty (since R17, 2026-10-01, it is `"auto"`, which is `cpu` on a binary with no GPU backend). The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.
   `demo/chat`'s embedded variant shares `internal/chatapp`'s flag registration, so the same holds
@@ -159,7 +159,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   default, since gemma-web was out of this item's named list.
 
 **Out of scope, unchanged:** down-proj / router / experts; amd64 split-half (L5); the
-`.giw` path (L2, and its scope note in `decoder/gguf.go:1412` is corrected under L3).
+`.giw` path (L2, and its scope note in `decoder/gguf.go:StreamTranscodeGGUF` is corrected under L3).
 
 **Size.** Small — the branch already had the mechanism; this was the gate's final shape plus
 reporting and the error.
@@ -169,7 +169,7 @@ reporting and the error.
 **Where (as implemented).** `decoder/serialize.go` — format comment (`:49–72`), `giwWriter.target`
 (`:933–970`), `weightMat`/`weightMatKind3Only`/`weightMatKind` (`:1009–1103`), `readWeightMat`
 kinds 3/4/5 (`:1466–1525`), `giwVersion = 11` (`:87`), `SerializeWeightsForTarget`/
-`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:667–614` (`GIWTarget`,
+`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:GIWTarget` (`GIWTarget`,
 `GIWTargetForBackend`, `ParseGIWTarget` — new, not anticipated by the "Where" list above);
 `decoder/gguf.go` (`StreamTranscodeGGUF`'s `target GIWTarget` param); `decoder/weights.go`
 (`repackedOnlyInt4Count`); `decoder/model.go` (the `.giw` branch's post-load backend check);
@@ -279,8 +279,8 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
-  silently loosened, since Metal's OWN expert paging (`metal/moe.go:716`,
-  `metal/gemma4_moe.go:256`, cited by the ground rule, NOT inspected this round) may have a real
+  silently loosened, since Metal's OWN expert paging (`metal/moe.go:buildMoE`,
+  `metal/gemma4_moe.go:buildGemma4MoE`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
   fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose
@@ -341,13 +341,13 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
 
 ## L3 — Doc corrections (do with L1) (DONE 2026-09-11)
 
-- `decoder/gguf.go:1412` and the branch's scope notes say the `.giw` path is out of scope
+- `decoder/gguf.go:StreamTranscodeGGUF` and the branch's scope notes say the `.giw` path is out of scope
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
-  `decoder/serialize.go:1847`. The true precedent is that the **in-RAM** repack is not applied to a
+  `decoder/serialize.go:giwReader.weightMat`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
-- `internal/prequant/prequant.go:41–47` comment: "always emits kind 3" becomes the L2 target
+- `internal/prequant/prequant.go:Transcode` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.
 
 **Findings.** The false "isn't wired into .giw loading" claim was mine — introduced this same
@@ -394,7 +394,7 @@ queue-performance.md entry, whichever is picked up first.
 
 ## L5 — amd64 split-half-only: re-open the parked decision, its own condition is now met
 
-**Where.** `decoder/weightmat.go:348–305 repackW4A8SplitHalfIfEligible`, `:323–347
+**Where.** `decoder/weightmat.go:w4a8Row4RepackEnabled repackW4A8SplitHalfIfEligible`, `:323–347
 w4a8SplitHalfRepackEnabled` (env opt-in `GOINFER_W4A8_SPLITHALF`, default-off);
 `docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`; aikit
 `linalg/weightmat_splithalf_amd64.go` (`RepackInt4SplitHalf` declines on AVX-512 VNNI hosts —

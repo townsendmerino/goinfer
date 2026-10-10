@@ -59,7 +59,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 >   int8 under those backends, which measured not faster and far from f32 (`docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). On CPU and Metal every tower is f32 unless asked.
 > - **Decoder.** Gemma 3 and Qwen2.5-VL decode resident after an image on every backend that has `UploadKV` and `ForwardMRoPE` (CUDA, WebGPU, Metal); only CUDA also has a
 >   resident image prefill (`ResidentImagePrefill`, `ResidentMRoPEPrefill`), the others prefill the image on the CPU and upload the KV. Gemma 4 26B/31B uses the same bridge
->   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:328`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
+>   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:Model.GenerateQwenVLDeepstackSpans`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
 >   resident on CUDA only (pairwise rope); on WebGPU it runs the staged path, on Metal the CPU.
 > - **Release binaries.** `goinfer-serve-linux-{amd64,arm64}` is built from `cuda/cmd/serve` with `CGO_ENABLED=0 -tags cuda`: **CUDA is cgo-free, so a downloaded Linux
 >   binary on an NVIDIA box does Gemma 3 images with the resident tower** (run: `encoder int8/cuda-resident`, 4.9 s for a cold image). The darwin binaries carry Metal (no tower,
@@ -93,7 +93,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 > regardless of which family.~~ **WRONG: only WebGPU needs cgo. The Linux release binary is `CGO_ENABLED=0` and carries the CUDA tower; it is the macOS and Windows binaries, and every family
 > but Gemma 3, that run the tower at CPU speed.** CPU tower cost is ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in `docs/benchmarks.md` — flat vs. the
 > pre-measurement baseline, not a regression) *(still the recorded CPU figure)*. No audio in, no video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
-> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/servecheck/check.go:395`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/tasks/task-first-hour.md`, run 2026-10-05)*.
+> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/servecheck/check.go:Client.Vision`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/tasks/task-first-hour.md`, run 2026-10-05)*.
 >
 > **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** GLM-OCR reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded on the first image)
 > feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered
@@ -784,7 +784,7 @@ number is published without provenance.
      `vision_start`/`vision_end` are TEXT (type 0) so they take scalar positions; an image group at
      `current_pos` gets `T = arange(t)·1 + cp`, `H = arange(h/2) + cp`, `W = arange(w/2) + cp`, then
      `cp += max(h, w)/merge` (**t is dropped**); `delta = max(pos)+1 − seq_len`; decode positions are
-     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:338`) scans by
+     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:mropePositions`) scans by
      image-token runs, gives text `[st,st,st]`, image `[base+tt, base+hh, base+ww]`, resumes at
      `base + max(t, hm, wm)`; `mropeDelta` is `max over any component + 1 − seqLen`. **For an image
      (t = 1 — always, after temporal duplication) the two are identical**: `max(1,hm,wm) == max(hm,wm)`
@@ -805,17 +805,17 @@ number is published without provenance.
      per-token loop, so the image rows are just fed through the same loop; (c) the rotary call in
      `qwen35Attention` is `applyRoPE(q, …, pos, …)` — scalar only; it must become `ropeAt(...)` with
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
-     generic attention makes (`decoder/attention.go:157`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
+     generic attention makes (`decoder/attention.go:causalAttention`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`decoder/registry.go:1685`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:qwen3_vlArchitecture`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
-     (`cuda/resident.go:2316`), the WebGPU `residentDecoder` (`gpu/residency.go:1250`) and `metalResident`
-     (`metal/backend.go:601`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     (`cuda/resident.go:cudaResident.ForwardMRoPE`), the WebGPU `residentDecoder` (`gpu/residency.go:residentDecoder.ForwardMRoPE`) and `metalResident`
+     (`metal/backend.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
-     `residentUploadPrefill` (`decoder/generate_vl_resident.go:20`) copies only layers whose
+     `residentUploadPrefill` (`decoder/generate_vl_resident.go:Model.residentUploadPrefill`) copies only layers whose
      `cache.LayerKV(l)` is non-empty — **a DeltaNet layer has no KV, so it is skipped, and the resident
      decode would start from a ZEROED recurrent state** (no error, wrong tokens: the exact failure class
      `62309847` fixed for reuse). The image rows themselves cannot be prefilled resident either:
@@ -828,7 +828,7 @@ number is published without provenance.
      **Consequence for G4's reuse arm:** with CPU decode the resident cache is never populated by an image
      turn, so an end-to-end "reused == cold" has nothing to reuse and would be VACUOUS — a green test that
      exercises no reuse. `residentReuseLen` today returns 0 for ANY image claim on a recurrent family
-     (`decoder/resident_reuse.go:129`, "no recurrent-family VL arch exists today"). P8a instead extends that
+     (`decoder/resident_reuse.go:Model.reuseLenOf`, "no recurrent-family VL arch exists today"). P8a instead extends that
      rule as a unit: image claims on a recurrent family are honoured only under exact extension AND only
      if every committed image block has a claim with the same nonzero hash (the placeholder id alone
      cannot tell two images apart, and recurrent state cannot be rewound to an image boundary); G4 tests
@@ -1180,16 +1180,16 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-*(June 2026's survey, kept as the design record. Some `file:line` references below now point elsewhere; 2026-10-06 found
-`decoder/weights.go:494` and `decoder/gguf_qwen35.go:77` no longer at what they describe.)*
+*(June 2026's survey, kept as the design record. Its `file:line` references were converted to declaration names on 2026-10-10 (CC0, `docs/tasks/task-code-comments-2026-10.md`);
+before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `decoder/gguf_qwen35.go:ggufQwen35Config` no longer at what they described.)*
 
-- **VL config flattening** — `decoder/config.go:1442` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:loadConfig` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,
   `qwen3_5_moe` (the Qwen3.6-VL text side is already loaded, ignoring
-  `model.visual.*` / MTP — `decoder/weights.go:494`).
-- **m-RoPE stubs** — `decoder/gguf_qwen35.go:77` already notes the image/video mrope
+  `model.visual.*` / MTP — `decoder/weights.go:shardIndexFile`).
+- **m-RoPE stubs** — `decoder/gguf_qwen35.go:ggufQwen35Config` already notes the image/video mrope
   sections (currently unused).
 - **Serve content-array parsing** — `contentText`/`responseInputToMessages`
   already walk OpenAI message content parts; extend to extract `image_url`.

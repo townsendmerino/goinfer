@@ -330,7 +330,7 @@ carries a content-keyed citation and CI fails on the commit that makes one stale
   once, at most.
 
 **Production-side status (checked, `f5ec7a2`).** The CUDA launch path hand-rolls its arguments
-too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:2610`), called
+too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:cudaResident.launch`), called
 variadically from 48 sites (`resident.go` 36, `prefill.go` 11, `testhooks.go` 1). There are
 no typed per-kernel wrappers, so **the compiler enforces neither arity nor argument order** — a
 missing trailing argument is silent, and so is a transposition between same-typed parameters,
@@ -1301,7 +1301,7 @@ tightest margin regime seen here; even there the headroom clears the threshold b
 **Mechanism.** Go's spec permits fusing `x*y + z` into a single-rounding FMA "across statements." gc
 does this on **arm64** and not on **amd64's default GOAMD64 baseline** (FMA is not in v1): `-gcflags=-S`
 shows **85** fused sites in `decoder` and **47** in `aikit/linalg` on arm64 (e.g. `FMADDS` at
-`linalg/dot.go:25`, the SIMD dot inner loop) — **0** on amd64. A fusion-sensitive `x*y+z` reproducer diverges
+`linalg/dot.go:dotF32`, the SIMD dot inner loop) — **0** on amd64. A fusion-sensitive `x*y+z` reproducer diverges
 on arm64, agrees on amd64. One source, two f32 results: 93% of the 151,936 logits differ bit-for-bit.
 
 **On the tail figure, and why ULP is the secondary metric.** The largest single divergence looks like

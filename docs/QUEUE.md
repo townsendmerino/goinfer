@@ -559,9 +559,9 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3856`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:cudaResident.launchToken`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
-> back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
+> back 4 B instead of the whole logits vector", and `cuda/softcap.go:applySoftcap` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
 > family has it. So the 0.703 → 0.950 ms gap is **the whole sampled-path tail**: the full-vocab
 > device→host readback that greedy skips entirely, plus any softcap, plus `Sampler.Sample`.
@@ -1261,7 +1261,7 @@ so the instrument was built and never wired. Raw `docs/measurements/g31-cprime-r
 
 | | 30 slots (48 req) | 16 slots | ratio |
 |---|---|---|---|
-| **stall** (the `Sync` at `cuda/resident.go:1593`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
+| **stall** (the `Sync` at `cuda/resident.go:cudaResident.loadRoutedExperts`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
 | **host** (slot bookkeeping) | 107 ms (2.7%) | 108 ms (2.0%) | 1.01 |
 | **dma** (expert transfers) | 1.808 s (**45.1%**) | 3.227 s (**59.9%**) | **1.785** |
 | misses | 5229 | 9316 | **1.782** |
@@ -1968,7 +1968,7 @@ grammar implementations. Proven able to go red: mis-classifying control bytes as
 - The mask is CPU work that runs *after* the logits come back, so it is additive to the decode
   step rather than overlapped. Not separately verified against the resident path's own timing.
 - **Two costs are excluded and neither is measured here.** A non-nil `LogitProcessor` disables
-  the speculative-decode paths (`decoder/speculative.go:71`, `decoder/spec_ngram.go:173`) and, on the resident backends, the
+  the speculative-decode paths (`decoder/speculative.go:Model.GenerateSpeculative`, `decoder/spec_ngram.go:validateNgramSpec`) and, on the resident backends, the
   on-device greedy argmax fast path. So the real cost of constrained decoding on a spec-enabled
   or greedy-fast-path configuration is HIGHER than the ratios above. Sizing that is open.
 - The remaining L-07 levers (per-state first-byte bitmap, string-state cache, vocab byte-trie)

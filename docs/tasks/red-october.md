@@ -282,7 +282,7 @@ batched path's own 200–270 tok/s makes it 0.75–1.0 s (R3).
 The one row where the peer is the control: on the 0.5B Ollama reads 268.7 greedy and 268.7 / 265.2
 at `temperature 1.0` / `0.8 + top_p 0.95`; goinfer 333–342 greedy, 237.7 and 227.2 sampled
 (§B5.1). That ~30% is D6's cliff ([`ollama-chase.md`](../ollama-chase.md) §D6): any nonzero
-temperature flips `Sampler.ArgmaxEquivalent()` (`decoder/sampler.go:234`), forcing a V-wide logit
+temperature flips `Sampler.ArgmaxEquivalent()` (`decoder/sampler.go:Sampler.ArgmaxEquivalent`), forcing a V-wide logit
 readback and a host softmax over V per token. Understood and scoped: a device-side bounded top-K
 with a host-verified nucleus and a full-readback fallback. Every Mac row on the page is greedy, so
 Metal's version is unmeasured; the counted host cost after the bounded-selection fix (~1.8 ms/token
@@ -330,7 +330,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:1290` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:metalResident.ForwardN` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -814,7 +814,7 @@ moves to the smallest K in {64, 128} at which the §3.2 pooled gate ships; at th
 must beat sequential by ≥2× on TTFT (ships), 1.3–2× parked, below 1.3× the floor stays.**
 
 **Read first.** Audit `M-01`, `M-02` and their closure notes (`6cc862a0` — the floor is 256 today,
-`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:763`; `ForwardNoLogits` shipped
+`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:metalFastPrefillFloorFor`; `ForwardNoLogits` shipped
 synchronous, the `noHead` executor-job version with ~0.9 ms/token of encode-ahead overlap still
 open), `G-02`/`G-08` (the pooled gate drops missing cells silently and never exercises
 `startPos > 0`, which every prefix-reuse turn uses — fix G-08 as part of this brief, since a
@@ -876,10 +876,10 @@ new decision.
 item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchronous-only closure,
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
-(`metal/model.go:570`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:2431-2431`), and `ForwardEmbNoLogitsPipe`
-(`metal/backend.go:674`) as the entry point — matching M-01's own Fix-section sketch almost
-verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:666-678`): its per-layer
+(`metal/model.go:resident.recordExecErr`), `execLoop` branching on it to pre-encode the next command buffer while the
+current one is still on the GPU (`metal/model.go:resident.encodeLogitsCB`), and `ForwardEmbNoLogitsPipe`
+(`metal/backend.go:metalResident.ForwardNoLogits`) as the entry point — matching M-01's own Fix-section sketch almost
+verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:metalResident.ForwardNoLogits`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
 built, which is a structural incompatibility with pre-encoding, not a small extension — genuinely
 pipelining paged MoE would be a separate, larger redesign, not scoped here. Gated by three
@@ -1041,7 +1041,7 @@ order — `splitkv-8000-reanchor`, `splitkv-mechanism-ncu` (the gate's stated re
 `splitkv-q-staging`, `vsum-split-spike`, `vsum-split-fidelity` (and its PREREGISTERED twin —
 the rule that a re-run needs a mechanism, never a re-roll), `reduction-tree-accuracy-2026-09-12.md`,
 `splitkv-d7-fthreshold` and `splitkv-f-depth-invariance` (the gate is now keyed on nKV·hd,
-`cuda/resident.go:408`); `ollama-chase.md` §A2, §D4 (Ollama's `flash_attn_ext`: tiled, parallel
+`cuda/resident.go:splitkvThreshold`); `ollama-chase.md` §A2, §D4 (Ollama's `flash_attn_ext`: tiled, parallel
 over keys, online softmax, *not* bit-exact — which is what this lane accepts), §7 (the strategic
 fork, now partly superseded by L3 on the prefill side — read for the trap paragraph on
 tolerance-gated defaults); `cuda/decode_splitkv.cu`, `cuda/attn_block.cu`.
@@ -1245,7 +1245,7 @@ too small, not that the design is wrong).
 **Read first.** `ollama-chase.md` §D6 in full (the two cliffs — the host sort, fixed 68×, and the
 readback branch, open; the design sketch with the host-verified nucleus; and "the second, larger
 cost", full-vocabulary normalisation on the temperature-only path), `decoder/sampler.go`
-(`ArgmaxEquivalent`, `decoder/sampler.go:234`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
+(`ArgmaxEquivalent`, `decoder/sampler.go:Sampler.ArgmaxEquivalent`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
 (the on-device argmax the greedy path uses — the top-K reduction is its sibling), G26/G28 in
 `docs/QUEUE.md` (why the sampled cells must use a realistic prompt and why the anchor's own spread
 was half the reported delta), `benchmarks.md` Methodology (count tokens from `usage`; early EOS at
@@ -1683,7 +1683,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:1290` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `metal/backend.go:metalResident.ForwardN` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).
@@ -1979,7 +1979,7 @@ cross-backend decode-path review (docs/completed/task-moe-streaming.md's own clo
 not yet measured. `cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
 block-forward path (~597-608) all: sync the stream, download the ENTIRE `M×vocab` logits block to
 host, then run a hand-written serial host argmax loop per row — where the main decode path already
-has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:4082`, `r.fArg`, a 4-byte
+has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:cudaResident.ForwardArgmax`, `r.fArg`, a 4-byte
 readback) for exactly this reduction. `M` here is the speculative block size (small — single-digit
 to low tens of tokens), so the absolute cost is plausibly minor; unlike R11's MoE case, nothing here
 has been measured, so **no band is registered — step 0 is the measurement, same discipline as R4/R10
@@ -2121,7 +2121,7 @@ S0), and end-to-end TTFT against Ollama through `scripts/bench_peer_prefill.py` 
 **Read first (prior art, before any kernel is written).** llama.cpp's Metal `kernel_mul_mm` (the kernel S1b's ≥ 2.96
 TFLOPS comes from) and MLX's quantized GEMM: their threadgroup tile, K-slab, how A and the dequantized weights are
 staged and shared across simdgroups, and how many simdgroups share a tile. The kernel it replaced shared nothing between
-simdgroups (`metal/prefill_gemm_s2_test.go:419-428`, kept verbatim as `gemm_w4f16_store_r15`) and stepped K by 8 with two barriers per step; whether that — or something else —
+simdgroups (`metal/prefill_gemm_s2_test.go:gemmS2Kernels`, kept verbatim as `gemm_w4f16_store_r15`) and stepped K by 8 with two barriers per step; whether that — or something else —
 is what separates 0.75 from ~3 TFLOPS is what the read has to establish. Record the read in the S2 measurement doc.
 
 **Build.** A test-only prototype kernel first, wired only in the benchmark; production wiring only after ship.

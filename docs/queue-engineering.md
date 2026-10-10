@@ -295,7 +295,7 @@ invariant, not the invariant itself.
 | **A5 cap search** (`capSlots`) | **no — pure arithmetic.** `fits(n)` compares `slotRequirement(...)+slotMarginBytes` against `free`; nothing is allocated to probe | **CLEAN** |
 | **`allocSlots` failure** | **no.** OOM arrives as a panic from `MustBuf` and *the resident is discarded on decline* — context torn down | **CLEAN** |
 | **expert cache / KV growth** | no mid-life grow/resize path exists in `cuda/` | **CLEAN** |
-| **prefill scratch** (`cuda/prefill.go:1037`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
+| **prefill scratch** (`cuda/prefill.go:cudaResident.prefillCore`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
 
 **PREFILL SCRATCH IS THE ONE PATH THAT MATCHES THE POISONING CONDITION, and it ships.** Every long
 prompt allocates hundreds of MB of scratch and frees it without leaving the context. That is
@@ -535,7 +535,7 @@ release assets (`gh api repos/townsendmerino/goinfer/releases/tags/v0.18.0 --jq 
 → `0`), against 27 on each of the three releases before it. `release-assets.yml`'s `runtime
 binaries` job failed at `cross-compile goinfer-serve per platform` (run `34807285691`) — a real
 build failure, referencing `syscall.SIGUSR1`/`SIGUSR2` unconditionally, which do not exist on
-`GOOS=windows`. **Fixed forward** (build-tagged `internal/serveapp/haltsignal_unix.go:21,25,27`/
+`GOOS=windows`. **Fixed forward** (build-tagged `internal/serveapp/haltsignal_unix.go:startHaltSignalLoop`/
 `haltsignal_windows.go`, same commit that filed this) — that half is done.
 
 **This entry is about the OTHER half: nothing noticed.** The chat binaries and both
@@ -876,9 +876,9 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:1848` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:cudaBackend.BuildResident` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
-- `cuda/resident.go:621` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
+- `cuda/resident.go:cudaResident` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
   line and a bare `decoder/weightmat.go` one. Both
   are aikit paths written as if they were local ones; the SHA lint learned this distinction for
@@ -890,12 +890,12 @@ line was corrected (it had drifted when A9-FIX inserted the warm-up above it);
 the two bare `decoder/weightmat.go` / `decoder/mlp.go` references repo-qualified or de-numbered; the
 `linalg/quant.go` reference resolves in aikit once the lint searches the sibling set (line 113 at the
 time — the scalar `int8→f32` widen loop this citation was making the point about; that code is gone,
-replaced by the SIMD widen at `linalg/quant.go:222` (shifted from `:216` by the 2026-09-16 aikit
+replaced by the SIMD widen at `linalg/quant.go:q8SpanColumn` (shifted from `:216` by the 2026-09-16 aikit
 v1.44.0 bump; previously shifted from `:138` by the 2026-09-03 aikit v1.33.0 bump) once aikit
 v1.18.0/P2 landed and goinfer bumped to v1.19.0, 2026-08-15 — retargeted so the citation still
 resolves).
 
-**And one turned out not to be a line drift at all.** `cuda/resident.go:621` was cited for audit
+**And one turned out not to be a line drift at all.** `cuda/resident.go:cudaResident` was cited for audit
 C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
 first error into `r.setupErr` and the build declines gracefully. The citation was stale because the
 CLAIM was stale, and F2 had been listing a fixed critical as open. A line-number check would have
@@ -1031,9 +1031,9 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:1588` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:1353` | unchanged — same freeze |
-| `metal/model.go:2011` | unchanged — Metal is on hold for core-numerics surfaces |
+| `decoder/forwardn.go:Model.lmHeadN` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
+| `decoder/model.go:Model.ForwardSubCapture` | unchanged — same freeze |
+| `metal/model.go:buildResident` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
 reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
@@ -1065,7 +1065,7 @@ marks where else the same class may live.
 rediscoveries** — unclaimed. Filed 2026-08-28.
 
 Within one day the same guard was arrived at twice, by different work, without either knowing about
-the other: `gate_cell_idle()` in `scripts/bench_peer.py:1049` (re-check before every cell, refuse on
+the other: `gate_cell_idle()` in `scripts/bench_peer.py:gate_cell_idle` (re-check before every cell, refuse on
 timeout), and a `settle()` in the snapshot-cost driver on the `linux` box. Both started as
 check-once-at-start, both were found insufficient the same way, and **both converged on the same
 non-obvious rule: refuse rather than proceed.**
@@ -1120,7 +1120,7 @@ unclaimed. Filed 2026-08-26 when the rule was consolidated.
 
 `scripts/bench_peer.py` and `scripts/bench_compare.sh` now REFUSE a checkpoint that resolves under
 `/srv/models` or `/Volumes/` (realpath, so a symlink out of `~/models` is caught). `cmd/gate` reads
-`GOINFER_GATE_MODELS` in two places — `cmd/gate/configs.go:14` and `cmd/gate/gpu.go:423`, both defaulting to
+`GOINFER_GATE_MODELS` in two places — `cmd/gate/configs.go:heavyConfig` and `cmd/gate/gpu.go:runGPU`, both defaulting to
 `$HOME/models` — and accepts whatever it is given.
 
 Correctness tests do not care what disk they read from, so this is not urgent. The throughput tests
@@ -1279,14 +1279,14 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 
 | finding | state | anchor |
 |---|---|---|
-| C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
-| C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:1067` |
-| C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
-| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:170` |
-| C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:64` |
-| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:853` |
-| C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
+| C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:TestSnapshot_refusesNonUniformKVWidth_C05` |
+| C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:TestValidateShapes_catchesArchMismatch` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:cudaResident.recordUpload` |
+| C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:TestArgmaxTieBreak` |
+| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:ReadTokFile` |
+| C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:maxEmbedInputs` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:Main` |
+| C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:layerPager` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both
 directions.** Five listed as open were fixed, which wastes attention; and had any been listed as fixed
@@ -1541,7 +1541,7 @@ needlessly dropping a field the buffered path wrote.
 
 **Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
 actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
-writer is in use. `decoder/serialize.go:859` (`hasPopulatedLayers`).
+writer is in use. `decoder/serialize.go:Weights.hasPopulatedLayers` (`hasPopulatedLayers`).
 
 **The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
 returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an
@@ -1569,7 +1569,7 @@ path both ends use.
 streamed length 632821543 != buffered 632821551
 ```
 
-The assertion is `decoder/serialize_test.go:437`.
+The assertion is `decoder/serialize_test.go:TestSerializeWeightsTo_matchesBuffer`.
 
 **632,821,551 − 632,821,543 = 8 bytes. One uint64.** On a ~633 MB payload that is not drift or a
 rounding artifact — it is one field written by one path and not the other, or at a different width.

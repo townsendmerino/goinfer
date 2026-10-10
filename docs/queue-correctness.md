@@ -33,7 +33,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 "GGUF status" line named and did not scope. G1 (`7098769`, 2026-08-31) shipped LFM2/LFM2.5
 safetensors-only; the capability matrix still shows only `safetensors` for `lfm2`
 (`docs/capability-matrix.md:111`), and `ggufConfig`'s architecture switch
-(`decoder/gguf.go:50-88`) has no `"lfm2"` case — a GGUF checkpoint for this family fails to load
+(`decoder/gguf.go:ggufConfig`) has no `"lfm2"` case — a GGUF checkpoint for this family fails to load
 today with "architecture unsupported", listing every arch that DOES have one. llama.cpp supports
 arch `lfm2` natively and an official `LiquidAI/LFM2.5-2.6B-GGUF` checkpoint exists, so the gap is
 real: a user reaching for LFM2.5 via `goinfer-chat pull` (the GGUF-first surface most pulls use)

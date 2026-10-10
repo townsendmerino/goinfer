@@ -53,7 +53,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:601`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:sampling`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](../task-tool-grammar-union-2026-09.md)
@@ -78,7 +78,7 @@ position the grammar or the template controls**, renormalized, optionally temper
 | Request | any schema-constrained generation | state + a question with a finite answer set |
 | Work | full constrained decode | one prefill, no decode |
 | Number | per field, aggregated over the field's free tokens | one distribution over the options |
-| Where the probabilities come from | the masked logits `constrain` already computes (`MaskAt` at `constrain/constrain.go:148`, `Process` at `:208`) and discards after sampling | the label tokens' logits at the last prompt position (Route A), or a trained head over the final hidden state (Route B) |
+| Where the probabilities come from | the masked logits `constrain` already computes (`MaskAt` at `constrain/constrain.go:Masker.MaskAt`, `Process` at `:208`) and discards after sampling | the label tokens' logits at the last prompt position (Route A), or a trained head over the final hidden state (Route B) |
 
 **Where they meet.** An `enum` or `boolean` field in constrained output is a decision: the masked
 distribution at the position that decides the value *is* a distribution over a closed answer set.
@@ -120,7 +120,7 @@ is.
 ## 3. What goinfer has today (verified against `9bf7f3a7`, 2026-09-27)
 
 **Constrained decoding.**
-- `MaskAt` (`constrain/constrain.go:148`) and `Process` (`:208`) walk the full logit vector at
+- `MaskAt` (`constrain/constrain.go:Masker.MaskAt`) and `Process` (`:208`) walk the full logit vector at
   every constrained position and set illegal entries to −∞. The surviving distribution is discarded
   once a token is sampled.
 - `ForcedRun` (`:97`) and `ForcedBytesRun` (`:166`) exist because the grammar often forces the next
@@ -132,25 +132,25 @@ is.
 
 **Decisions.**
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
-  (`decoder/model.go:1325`) returns logits plus captured residuals. `qwen3_5` dense shares
+  (`decoder/model.go:Model.ForwardCapture`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
-  (`decoder/arch.go:959`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
-  contract (`decoder/capture.go:14`) is the residual *after* layer l, before the final norm, so D2
+  (`decoder/arch.go:ownForwards`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
+  contract (`decoder/capture.go:KVCache.captureResidual`) is the residual *after* layer l, before the final norm, so D2
   applies the final RMSNorm itself and must match HF's `hidden_states[-1]`, which is already normed
   on Qwen. Verify in D2; do not assume.
 - **LoRA cannot reach this family.** Both paths are closed:
-  - Merge-at-load (`--lora`): `validateTargets` (`decoder/lora.go:144`, called at
-    `decoder/weights.go:805`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
+  - Merge-at-load (`--lora`): `validateTargets` (`decoder/lora.go:loraAdapter.validateTargets`, called at
+    `decoder/weights.go:buildWeightsFromSafetensorsTo`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
     targets the GDN projections is refused whole. The merge itself runs inside the `loadProj`
-    closure (`decoder/weights.go:868`), and the GDN projections are loaded outside it.
-  - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:353`) refuses every own-forward
+    closure (`decoder/weights.go:buildWeightsFromSafetensorsTo`), and the GDN projections are loaded outside it.
+  - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:Model.LoadAdapter`) refuses every own-forward
     family by design.
-- **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:586`) reports
+- **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:KVCache.TruncateTo`) reports
   inexact on any partial rewind when the model has recurrent state, and `.giw-kv` snapshots skip
-  recurrent state (`decoder/kvsnapshot.go:63`). So "prefill the shared state once, branch per
+  recurrent state (`decoder/kvsnapshot.go:Session.Snapshot`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:601`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:sampling`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
@@ -435,7 +435,7 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
 - Extend the `qwen3_5` loader so `in_proj_qkv`, `in_proj_z` and the linear-attention `out_proj`
   pass through the same f32 merge as `loadProj` before quantization. Extend `validateTargets` with
   the GDN suffixes *from the schema*, not a hand list (lora.go's own V-12 comment records why). Mind
-  `FusedDeltaNetProj` (`decoder/arch.go:368`): the merge has to hit the on-disk tensor before any
+  `FusedDeltaNetProj` (`decoder/arch.go:qwen35Params`): the merge has to hit the on-disk tensor before any
   repack.
 - **Consequence, stated:** a merged model is a decision model; its text generation is no longer the
   base Qwen's. One set of weights serving both is out of scope (§6).
@@ -637,7 +637,7 @@ schema was never published (D0).
 
 - *(Planned shape; superseded 2026-09-28. `/v1/decisions` and `:batch` were never built: autotrust's schema was never published (D0), and the owner picked the TypeSafe shape, `POST /v1/systemone`, which is what exists.)* `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:704`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:Main`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -936,14 +936,14 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 
 ## Sources
 
-`constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:1325` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
-contract) · `decoder/arch.go:959` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
-`decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
-`decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:805`, `:744`
-(merge-at-load) · `decoder/kvcache.go:586` (`TruncateTo`) · `decoder/kvsnapshot.go:63` (snapshot
-skips recurrent state) · `internal/serveapp/openai.go:39`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:704` (route middleware) ·
+`constrain/constrain.go:Masker.ForcedRun`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
+`Process`) · `decoder/model.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/capture.go:KVCache.captureResidual` (the capture
+contract) · `decoder/arch.go:ownForwards` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
+`decoder/arch.go:qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.validateTargets` (`validateTargets`) ·
+`decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:buildWeightsFromSafetensorsTo`, `:744`
+(merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/kvsnapshot.go:Session.Snapshot` (snapshot
+skips recurrent state) · `internal/serveapp/openai.go:maxTopLogprobs`, `:536`, `:538` (`top_logprobs` cap,
+`logprobs`, `response_format`) · `internal/serveapp/main.go:Main` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·

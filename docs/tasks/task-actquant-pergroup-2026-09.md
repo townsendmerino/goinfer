@@ -5,7 +5,7 @@
 >
 > **Correction, 2026-09-29 (doc-review pass; nothing below this block edited).** Track A CPU shipped
 > in full (speed-gate re-run 3, all four cells SHIP; aikit v1.48.0, `cad1973b` "Merge PR #1"). CUDA
-> **decode** shipped the same way (`residentGateReasonAct`, `decoder/features.go:382`, bypasses the
+> **decode** shipped the same way (`residentGateReasonAct`, `decoder/features.go:residentGateReasonAct`, bypasses the
 > hazard guard only for `actSafe && backend == "cuda"`); Phi-3/Phi-4 now default to `--quant q4k` on
 > both CPU and CUDA (`59bc0933`, `1cee4b09`), which sidesteps Track B's int4-weight problem entirely
 > by keeping Q4_K tensors native instead of re-quantizing them. **Still not built, and owned by no
@@ -36,7 +36,7 @@ caught by its result being implausibly bad, not by any gate. A second attempt at
 *previous* default (`--quant int8int8`, forced by `bench_peer.py`'s own `BENCH_QUANT_OVERRIDE`,
 which predates `activationSafeQuant`'s later q4k default) gave 6.3 tok/s, matching the release
 section's informal "guard's 6.3 tok/s" figure exactly — but that quant is no longer what Phi-3
-actually loads at by default (`internal/modelload/modelload.go:232-237`: Phi-3 on `.gguf` now
+actually loads at by default (`internal/modelload/modelload.go:activationSafeQuant`: Phi-3 on `.gguf` now
 defaults to `--quant q4k` on CPU or CUDA, 1.31× int8int8's CPU decode per that doc's own citation).
 Re-run at the TRUE current default, `--quant q4k`:
 
@@ -68,7 +68,7 @@ needs the Mac.
 The decisive ratio is **S = goinfer's CPU fallback ÷ Ollama on Metal**, the two interleaved in one session.
 
 **What the Mac showed before any timing (probe, 2026-09-29, `docs/measurements/phi3-metal-2026-09-29/`).** nobara's read of
-`internal/modelload/modelload.go:123` holds here. A Metal user who passes no `-quant` gets `--quant int8int8` with per-32 activations, and the
+`internal/modelload/modelload.go:Load` holds here. A Metal user who passes no `-quant` gets `--quant int8int8` with per-32 activations, and the
 log says `decode path: cpu (int8int8) — requested metal → running on cpu`. The quant is chosen from the *requested* backend
 (`activationSafeQuant`'s CPU-or-CUDA test for q4k), so the CPU fallback of a Metal user is stuck at the slower int8int8, which
 was 6.3 tok/s on nobara. So there are two goinfer arms, and they are not the same thing.

@@ -1,0 +1,148 @@
+doc	old_cite	new_cite	decl_lines	cited_line	note
+docs/QUEUE.md	cuda/resident.go:1593	cuda/resident.go:cudaResident.loadRoutedExperts	146	} else if e := r.stream.Sync(); e != nil {	
+docs/QUEUE.md	cuda/resident.go:3856	cuda/resident.go:cudaResident.launchToken	120	func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) error {	
+docs/QUEUE.md	decoder/speculative.go:71	decoder/speculative.go:Model.GenerateSpeculative	321	if sp.LogitProcessor != nil {	
+docs/book/09-guessing-ahead.md	decoder/speculative.go:89-93	decoder/speculative.go:Model.GenerateSpeculative	321	// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged	range
+docs/gpu-residency-coverage.md	decoder/features.go:676	decoder/features.go:residentBackendFeatures	285	FeatNoPE: true,	
+docs/gpu-residency-coverage.md	decoder/features.go:684	decoder/features.go:residentBackendFeatures	285	FeatAttnTemp: true,	
+docs/gpu-residency-coverage.md	decoder/features.go:690	decoder/features.go:residentBackendFeatures	285	FeatPostOnlyNorm: true,	
+docs/gpu-residency-coverage.md	decoder/features.go:695	decoder/features.go:residentBackendFeatures	285	FeatQKNormWhole: true,	
+docs/gpu-residency-coverage.md	decoder/features.go:707	decoder/features.go:residentBackendFeatures	285	FeatLayerNorm:     true,	
+docs/gpu-residency-coverage.md	decoder/features.go:732	decoder/features.go:residentBackendFeatures	285	FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)	
+docs/gpu-residency-coverage.md	decoder/features.go:811	decoder/features.go:residentBackendFeatures	285	FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, generalized with 	
+docs/gpu-residency-coverage.md	decoder/features.go:811-775	decoder/features.go:residentBackendFeatures	285	FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, generalized with 	range
+docs/gpu-residency-coverage.md	decoder/features.go:821	decoder/features.go:residentBackendFeatures	285	FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (nH=1,nKV=1,hd	
+docs/gpu-residency-coverage.md	decoder/hardware_matrix_test.go:42	decoder/hardware_matrix_test.go:buildHardwareRows	43	t.Setenv("GOINFER_SSM_RESIDENT", "")	
+docs/gpu-residency-coverage.md	decoder/residency.go:684	decoder/residency.go:Architecture.decodeRunnerEligible	113	return false // own forward, not yet bridged	
+docs/gpu-residency-coverage.md	decoder/residency.go:705-653	decoder/residency.go:Architecture.decodeRunnerEligible	113	if a.granite != nil {	range
+docs/gpu-residency-coverage.md	decoder/residency.go:705-667	decoder/residency.go:Architecture.decodeRunnerEligible	113	if a.granite != nil {	range
+docs/how-inference-works.md	decoder/attention.go:154-141	decoder/attention.go:causalAttention	191	if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {	range
+docs/how-inference-works.md	decoder/attention.go:220	decoder/attention.go:causalAttention	191	cache.Append(layer, k, v)	
+docs/how-inference-works.md	decoder/attention.go:79	decoder/attention.go:causalAttention	191	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim	
+docs/how-inference-works.md	decoder/kvcache.go:149-149	decoder/kvcache.go:KVCache	117	subCapture bool	range
+docs/how-inference-works.md	decoder/model.go:1755-1782	decoder/model.go:Model.generateInto	709	func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, new	range
+docs/how-inference-works.md	decoder/model.go:2120	decoder/model.go:Model.generateInto	709	for range maxTokens {	
+docs/how-inference-works.md	decoder/registry.go:19-52	decoder/registry.go:registry	57	var registry = map[string]archAdapter{	range
+docs/how-inference-works.md	decoder/sampler.go:274-261	decoder/sampler.go:Sampler.SampleWithInfo	42	s.applyLogitBias(work)	range
+docs/how-inference-works.md	decoder/sampler.go:280	decoder/sampler.go:Sampler.SampleWithInfo	42	info.ID = argmax(work)	
+docs/how-inference-works.md	decoder/sampler.go:281-269	decoder/sampler.go:Sampler.SampleWithInfo	42	} else if s.p.TopK > 0 || s.p.TopP > 0 || s.p.MinP > 0 {	range
+docs/multimodal.md	decoder/attention.go:157	decoder/attention.go:causalAttention	191	ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeIn	
+docs/multimodal.md	decoder/generate_vl.go:328	decoder/generate_vl.go:Model.GenerateQwenVLDeepstackSpans	202	recurrent := m.hasRecurrentState()	
+docs/multimodal.md	decoder/gguf_qwen35.go:77	decoder/gguf_qwen35.go:ggufQwen35Config	70	cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")	
+docs/multimodal.md	decoder/registry.go:1685	decoder/registry.go:qwen3_vlArchitecture	58	arch.Name = "qwen3_vl"	
+docs/multimodal.md	decoder/resident_reuse.go:129	decoder/resident_reuse.go:Model.reuseLenOf	100	func (m *Model) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []residentImageBlock,	
+docs/multimodal.md	internal/servecheck/check.go:395	internal/servecheck/check.go:Client.Vision	47	// test image plus a question with exactly one right answer. A server with no vision tower loaded	
+docs/ollama-chase.md	cuda/resident.go:1316	cuda/resident.go:cudaResident.allocSlots	149	// upExperts left the expert stacks host-mapped-only, so the expert GEMVs would bind zero-value	
+docs/ollama-chase.md	cuda/resident.go:2537	cuda/resident.go:cudaResident.Close	43	// exists for, so the release-the-context shortcut was wrong exactly where it mattered most;	
+docs/ollama-chase.md	decoder/gguf.go:756	decoder/gguf.go:ggufGlm4MoeConfig	60	numLayers := u("block_count") - u("nextn_predict_layers")	
+docs/ollama-chase.md	decoder/gguf_qwen35.go:33	decoder/gguf_qwen35.go:ggufQwen35Config	70	numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)	
+docs/ollama-chase.md	decoder/registry.go:1781	decoder/registry.go:glm4moeArchitecture	57	// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The	
+docs/ollama-chase.md	decoder/residency.go:1630	decoder/residency.go:Model.embedResidentInto	41	func (m *Model) embedResidentInto(id int, dst []float32) []float32 {	
+docs/ollama-chase.md	decoder/weights.go:737	decoder/weights.go:buildWeightsFromSafetensorsTo	665	// index so one loader serves both — the vision tower (model.visual.*) and MTP	
+docs/queue-correctness.md	decoder/gguf.go:50-88	decoder/gguf.go:ggufConfig	58	func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {	range
+docs/queue-engineering.md	cmd/gate/configs.go:14	cmd/gate/configs.go:heavyConfig	55	models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))	
+docs/queue-engineering.md	cmd/gate/gpu.go:423	cmd/gate/gpu.go:runGPU	94	g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))	
+docs/queue-engineering.md	cuda/argmax_tiebreak_test.go:19	cuda/argmax_tiebreak_test.go:TestArgmaxTieBreak	57	func TestArgmaxTieBreak(t *testing.T) {	
+docs/queue-engineering.md	cuda/backend.go:1848	cuda/backend.go:cudaBackend.BuildResident	1929	// cache, so the cap is correct by construction rather than covered by a margin.	
+docs/queue-engineering.md	cuda/prefill.go:1037	cuda/prefill.go:cudaResident.prefillCore	864	var scratch []Buffer	
+docs/queue-engineering.md	cuda/resident.go:621	cuda/resident.go:cudaResident	446	// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.	
+docs/queue-engineering.md	decoder/serialize_shapecheck_test.go:15	decoder/serialize_shapecheck_test.go:TestValidateShapes_catchesArchMismatch	63	func TestValidateShapes_catchesArchMismatch(t *testing.T) {	
+docs/queue-engineering.md	internal/giw/bundle.go:170	internal/giw/bundle.go:ReadTokFile	46	if avail := fi.Size() - (tokOff + 4); tokLen > avail {	
+docs/queue-engineering.md	internal/serveapp/main.go:853	internal/serveapp/main.go:Main	507	go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)	
+docs/queue-engineering.md	metal/model.go:2011	metal/model.go:buildResident	1064	r.ensureBatchCap(16)	
+docs/queue-engineering.md	scripts/bench_peer.py:1049	scripts/bench_peer.py:gate_cell_idle	48	def gate_cell_idle():	
+docs/scoping-qwen38-flash-next.md	decoder/registry.go:3113	decoder/registry.go:qwen35DenseArchitecture	50	// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaNet /	
+docs/spec/09-mtp-heads.md	cuda/resident.go:561	cuda/resident.go:cudaLayer	107	// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND, so	
+docs/spec/09-mtp-heads.md	cuda/resident.go:568	cuda/resident.go:cudaLayer	107	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state	
+docs/spec/09-mtp-heads.md	decoder/deltanet.go:230	decoder/deltanet.go:deltaNetCore	82	win := st.convWin	
+docs/spec/09-mtp-heads.md	decoder/gguf.go:756	decoder/gguf.go:ggufGlm4MoeConfig	60	numLayers := u("block_count") - u("nextn_predict_layers")	
+docs/spec/09-mtp-heads.md	decoder/gguf_qwen35.go:33	decoder/gguf_qwen35.go:ggufQwen35Config	70	numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)	
+docs/spec/09-mtp-heads.md	decoder/registry.go:1781	decoder/registry.go:glm4moeArchitecture	57	// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The	
+docs/spec/09-mtp-heads.md	decoder/speculative.go:92	decoder/speculative.go:Model.GenerateSpeculative	321	if !target.specRollbackSafe() {	
+docs/spec/09-mtp-heads.md	decoder/weights.go:737	decoder/weights.go:buildWeightsFromSafetensorsTo	665	// index so one loader serves both — the vision tower (model.visual.*) and MTP	
+docs/tasks/parked/task-constrained-confidence.md	decoder/arch.go:368	decoder/arch.go:qwen35Params	75	// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/	
+docs/tasks/parked/task-constrained-confidence.md	decoder/kvcache.go:586	decoder/kvcache.go:KVCache.TruncateTo	57	func (c *KVCache) TruncateTo(pos int) (exact bool) {	
+docs/tasks/parked/task-constrained-confidence.md	decoder/kvsnapshot.go:63	decoder/kvsnapshot.go:Session.Snapshot	114	// Some families carry recurrent / latent state this format does not persist: qwen3_5_moe's	
+docs/tasks/parked/task-constrained-confidence.md	decoder/weights.go:805	decoder/weights.go:buildWeightsFromSafetensorsTo	665	if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {	
+docs/tasks/parked/task-constrained-confidence.md	decoder/weights.go:868	decoder/weights.go:buildWeightsFromSafetensorsTo	665	if derr = lora.merge(name, data, out, in); derr != nil {	
+docs/tasks/parked/task-constrained-confidence.md	internal/serveapp/main.go:704	internal/serveapp/main.go:Main	507	// the mux is built once, so these routes registered only when a model existed at startup left that	
+docs/tasks/red-october.md	metal/prefill_gemm_s2_test.go:419-428	metal/prefill_gemm_s2_test.go:gemmS2Kernels	429	threadgroup half wscr[8*(CPS*64)];	range
+docs/tasks/task-actquant-pergroup-2026-09.md	internal/modelload/modelload.go:123	internal/modelload/modelload.go:Load	104	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, re	
+docs/tasks/task-embed-and-harness-ux.md	chat/chat.go:158	chat/chat.go:Detect	93	// chat-template string; if that's empty, it falls back to the special-token	
+docs/tasks/task-embed-and-harness-ux.md	chat/chat.go:160	chat/chat.go:Detect	93	func Detect(meta Meta) (*Template, error) {	
+docs/tasks/task-embed-and-harness-ux.md	decoder/model.go:337	decoder/model.go:Options	158	type Options struct {	
+docs/tasks/task-embed-and-harness-ux.md	decoder/model.go:537	decoder/model.go:Load	237	func Load(dir string, opts Options) (*Model, error) {	
+docs/tasks/task-embed-and-harness-ux.md	internal/serveapp/main.go:1610	internal/serveapp/main.go:loadDecoder	169	// State the RESOLVED paths, not the requested ones. Both the resident decode path and the batched	
+docs/tasks/task-embed-and-harness-ux.md	internal/serveapp/main.go:404	internal/serveapp/main.go:registerFlags	79	fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model, and 	
+docs/tasks/task-embeddinggemma2.md	decoder/embed.go:37	decoder/embed.go:Model.HiddenLast	41	func (m *Model) HiddenLast(ids []int) ([]float32, error) {	
+docs/tasks/task-embeddinggemma2.md	decoder/embed_test.go:70	decoder/embed_test.go:TestHiddenLast_shapeDeterminismAndPooling	63	// Extending the sequence moves the pooled position, so the vector must change too. (A mean pool	
+docs/tasks/task-embeddinggemma2.md	decoder/forwardn.go:265	decoder/forwardn.go:Model.runLayersFromEmbedN	502	// (and SetImageBlocks for the bidirectional mask) before the forward. Text rows	
+docs/tasks/task-embeddinggemma2.md	decoder/forwardn.go:721	decoder/forwardn.go:Model.runLayersFromEmbedN	502	case ActGelu:	
+docs/tasks/task-embeddinggemma2.md	decoder/mlp.go:614	decoder/mlp.go:gatedMLP	90	case ActGeluTanh:	
+docs/tasks/task-embeddinggemma2.md	decoder/mlp.go:630	decoder/mlp.go:gatedMLP	90	case ActGelu:	
+docs/tasks/task-first-hour.md	gpu/matrix_bench_test.go:142	gpu/matrix_bench_test.go:TestDecisionMatrix	118	row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, true)	
+docs/tasks/task-first-hour.md	tokenizer/bytelevel.go:260	tokenizer/bytelevel.go:splitGPT2	127	//	(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}|	
+docs/tasks/task-fit-to-hardware.md	internal/serveapp/main.go:398-302	internal/serveapp/main.go:registerFlags	79	sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:808	range
+docs/tasks/task-fit-to-hardware.md	metal/backend.go:118-259	metal/backend.go:metalBackend.BuildResident	67	if why := residentMemoryDecline(m); why != "" {	range
+docs/tasks/task-fit-to-hardware.md	metal/gemma4_moe.go:226	metal/gemma4_moe.go:buildGemma4MoE	106	if s := metalMoESlotsRequest(m); s != "" {	
+docs/tasks/task-fit-to-hardware.md	metal/moe.go:681	metal/moe.go:buildMoE	121	if s := metalMoESlotsRequest(m); s != "" {	
+docs/tasks/task-fp4-formats.md	decoder/gguf.go:863	decoder/gguf.go:ggufGraniteConfig	84	if err != nil {	
+docs/tasks/task-fp4-formats.md	decoder/gptoss_safetensors.go:17	decoder/gptoss_safetensors.go:buildGptOssWeights	184	//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML	
+docs/tasks/task-freetoken-techniques.md	decoder/model.go:359	decoder/model.go:Options	158	MoECacheSlots int	
+docs/tasks/task-gpu-paths-2026-09.md	cuda/prefill.go:431–320	cuda/prefill.go:cudaResident.prefillChunked	63	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {	range
+docs/tasks/task-gpu-paths-2026-09.md	cuda/prefill.go:458–319	cuda/prefill.go:cudaResident.prefillChunked	63	last := i+n == M	range
+docs/tasks/task-gpu-paths-2026-09.md	decoder/embed.go:36–71	decoder/embed.go:Model.HiddenLast	41	// guard, as ForwardCapture.	range
+docs/tasks/task-gpu-paths-2026-09.md	decoder/features.go:571	decoder/features.go:residentBackendFeatures	285	// story: the nGroup/topkGroup argument order was unverified for a real mismatch until this	
+docs/tasks/task-gpu-paths-2026-09.md	decoder/model.go:1624	decoder/model.go:Model.residentPrefillSeed	66	if err = ctx.Err(); err != nil {	
+docs/tasks/task-gpu-paths-2026-09.md	decoder/model.go:1835	decoder/model.go:Model.generateInto	709	// and fall back to CPU, which applies the adapter correctly on its own	
+docs/tasks/task-gpu-paths-2026-09.md	gpu/residency.go:1151	gpu/residency.go:webgpuBackend.BuildResident	1064	rl.hasSink = true	
+docs/tasks/task-gpu-paths-2026-09.md	gpu/residency.go:592	gpu/residency.go:webgpuBackend.BuildResident	1064	return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)	
+docs/tasks/task-gpu-paths-2026-09.md	internal/serveapp/openai.go:1530	internal/serveapp/openai.go:loadedModel.drive	167	// the staged/CPU path: measured 13 tok/s vs ~460 resident on a 0.5B (RTX 2070 SUPER).	
+docs/tasks/task-gpu-paths-2026-09.md	internal/serveapp/openai.go:1553	internal/serveapp/openai.go:loadedModel.drive	167	if lm.model.ResidentActive() && lm.adapter == "" {	
+docs/tasks/task-gpu-paths-2026-09.md	internal/serveapp/openai.go:1660–1077	internal/serveapp/openai.go:loadedModel.driveVL	91	// reuse when the SAME image is resent (P9a); vi.features is then never invoked at	range
+docs/tasks/task-gpu-paths-2026-09.md	internal/serveapp/openai.go:82	internal/serveapp/openai.go:loadedModel	119	turns       admission // J1: FIFO, context-aware turn-granter serializing this model's single	
+docs/tasks/task-gpu-paths-2026-09.md	metal/model.go:1076	metal/model.go:buildResident	1064	// preciseMathCompile (test/measurement toggle, Task 3): fast-math OFF removes the compiler's	
+docs/tasks/task-halt-2026-09.md	internal/serveapp/main.go:740	internal/serveapp/main.go:Main	507	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))	
+docs/tasks/task-halt-2026-09.md	internal/serveapp/main.go:773–683	internal/serveapp/main.go:Main	507	// auth() made that impossible whenever -api-key was set (required off loopback): the	range
+docs/tasks/task-int4-layout-2026-09.md	decoder/gguf.go:1412	decoder/gguf.go:StreamTranscodeGGUF	74	// to choose what to write (repackRow4ForEmit computes row4 from canonical), even on a cpu-arm64	
+docs/tasks/task-int4-layout-2026-09.md	decoder/model.go:717	decoder/model.go:Load	237	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fa	
+docs/tasks/task-int4-layout-2026-09.md	decoder/serialize.go:1847	decoder/serialize.go:giwReader.weightMat	139	return linalg.WrapInt4Row4F16(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)	
+docs/tasks/task-int4-layout-2026-09.md	internal/prequant/prequant.go:41–47	internal/prequant/prequant.go:Transcode	77	// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary	range
+docs/tasks/task-int4-layout-2026-09.md	internal/serveapp/main.go:531	internal/serveapp/main.go:Main	507	--ctx        KV capacity in positions	
+docs/tasks/task-int4-layout-2026-09.md	metal/gemma4_moe.go:256	metal/gemma4_moe.go:buildGemma4MoE	106	if p := m.GiwPath(); p != "" {	
+docs/tasks/task-int4-layout-2026-09.md	metal/model.go:796	metal/model.go:int4BufA	43	return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kind())	
+docs/tasks/task-int4-layout-2026-09.md	metal/moe.go:716	metal/moe.go:buildMoE	121	if p := m.GiwPath(); p != "" {	
+docs/tasks/task-int4-layout-2026-09.md	metal/snapshot_golden_test.go:138	metal/snapshot_golden_test.go:TestMetalSnapshotGolden	155	func TestMetalSnapshotGolden(t *testing.T) {	
+docs/tasks/task-mellum21-2026-10.md	internal/servecheck/check.go:183	internal/servecheck/check.go:Client.Chat	66	if len(ev.Choices) > 0 && ev.Choices[0].Delta.Content != "" {	
+docs/tasks/task-minimax-code-compat-2026-09.md	internal/serveapp/openai.go:819	internal/serveapp/openai.go:server.handleChat	44	writeErr(w, http.StatusBadRequest, "tools are not supported together with image inputs; send images 	
+docs/tasks/task-never-swap-2026-09.md	decoder/gguf.go:1827	decoder/gguf.go:buildWeightsFromGGUF	1515	if sink != nil {	
+docs/tasks/task-never-swap-2026-09.md	decoder/layerpaging.go:105	decoder/layerpaging.go:newLayerPager	63	budget = mmap.AutoBudget()	
+docs/tasks/task-never-swap-2026-09.md	decoder/model.go:567	decoder/model.go:Load	237	if strings.HasSuffix(dir, ".giw") {	
+docs/tasks/task-never-swap-2026-09.md	decoder/model.go:708	decoder/model.go:Load	237	pinnedCtx, err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts))	
+docs/tasks/task-never-swap-2026-09.md	decoder/moepaging.go:204	decoder/moepaging.go:newExpertPager	113	budget = mmap.AutoBudget()	
+docs/tasks/task-never-swap-2026-09.md	decoder/moepaging.go:213	decoder/moepaging.go:newExpertPager	113	if pool && giwPath != "" && len(poolMembers) == len(members) {	
+docs/tasks/task-never-swap-2026-09.md	internal/fitcmd/fit.go:107	internal/fitcmd/fit.go:Run	95	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})	
+docs/tasks/task-never-swap-2026-09.md	internal/modelload/modelload.go:194	internal/modelload/modelload.go:Load	104	opts.StreamWeights = true	
+docs/tasks/task-never-swap-2026-09.md	internal/prequant/prequant.go:249	internal/prequant/prequant.go:EnsureCachedGIW	43	func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 bool) (string, 	
+docs/tasks/task-recompute-audit.md	cuda/resident.go:568	cuda/resident.go:cudaLayer	107	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state	
+docs/tasks/task-recompute-audit.md	decoder/attention.go:98-110	decoder/attention.go:causalAttention	191	if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {	range
+docs/tasks/task-recompute-audit.md	decoder/blockspec.go:201	decoder/blockspec.go:BlockSpec.generate	299	func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) (out []int, 	
+docs/tasks/task-recompute-audit.md	decoder/kvcache.go:586	decoder/kvcache.go:KVCache.TruncateTo	57	func (c *KVCache) TruncateTo(pos int) (exact bool) {	
+docs/tasks/task-recompute-audit.md	decoder/model.go:1807	decoder/model.go:Model.generateInto	709	// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses	
+docs/tasks/task-recompute-audit.md	decoder/model.go:1914	decoder/model.go:Model.generateInto	709	if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {	
+docs/tasks/task-recompute-audit.md	decoder/model.go:2122	decoder/model.go:Model.generateInto	709	case <-ctx.Done():	
+docs/tasks/task-recompute-audit.md	decoder/model.go:2443	decoder/model.go:Model.generateInto	709	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.	
+docs/tasks/task-recompute-audit.md	decoder/model.go:72-66	decoder/model.go:Model	89	// resDrafterSynced identifies which *BlockSpec's own drafter context is currently in sync	range
+docs/tasks/task-recompute-audit.md	decoder/moepaging.go:141-146	decoder/moepaging.go:newExpertPager	113	// A kind-4 tensor carries TWO on-disk representations (canonical + row4,	range
+docs/tasks/task-recompute-audit.md	decoder/resident_reuse.go:125	decoder/resident_reuse.go:Model.reuseLenOf	100	if m.hasRecurrentState() {	
+docs/tasks/task-recompute-audit.md	decoder/session.go:126-130	decoder/session.go:Session.reconcile	41	if rolledBack && s.cache.hasRecurrentState() {	range
+docs/tasks/task-recompute-audit.md	decoder/speculative.go:137-137	decoder/speculative.go:Model.GenerateSpeculative	321	if target.tryClaimResident() {	range
+docs/tasks/task-recompute-audit.md	internal/serveapp/openai.go:1587	internal/serveapp/openai.go:loadedModel.drive	167	sess := lm.sessions.acquire(gr.promptIDs)	
+docs/tasks/task-web-ui-2026-09.md	internal/serveapp/admin.go:125	internal/serveapp/admin.go:server.handleAdminLoad	54	func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {	
+docs/tasks/task-web-ui-2026-09.md	internal/serveapp/main.go:407	internal/serveapp/main.go:registerFlags	79	fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the ser	
+docs/tasks/task-web-ui-2026-09.md	internal/serveapp/main.go:779	internal/serveapp/main.go:Main	507	// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.	
+docs/tasks/task-work-queue-2026-09.md	internal/chatapp/main.go:156	internal/chatapp/main.go:Main	318	func Main() {	
+docs/tasks/task-work-queue-2026-09.md	internal/serveapp/anthropic.go:627	internal/serveapp/anthropic.go:server.serveMessagesWith	162	// A full queue is honest backpressure: 529 overloaded_error (the kind	
+docs/tasks/task-work-queue-2026-09.md	internal/serveapp/main.go:439	internal/serveapp/main.go:registerFlags	79	fs.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights:	
+docs/tasks/task-work-queue-2026-09.md	internal/serveapp/openai.go:108	internal/serveapp/openai.go:loadedModel	119	// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue	
+docs/tasks/task-work-queue-2026-09.md	internal/serveapp/openai.go:1460	internal/serveapp/openai.go:loadedModel.drive	167	// not a client disconnect or shutdown — ended the turn), and any terminal	

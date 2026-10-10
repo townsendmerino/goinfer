@@ -46,17 +46,17 @@ Verified in the tree at `53a241a`:
 
 - **Gated FFN with exact GELU — already there, on both paths.** *(Gate 0, 2026-10-06: the model uses
   `gelu_pytorch_tanh`, not exact GELU, so this bullet is moot for it. The tanh form is in the same switch,
-  `ActGeluTanh` → `geglu` at `decoder/mlp.go:614`, but the encoder does not use the decoder path at all; see Results.
-  Line numbers below re-pointed to the code they describe.)* `decoder/mlp.go:397` `gegluExact`,
-  reached via `ActGelu` in the decode-path switch (`decoder/mlp.go:630`) *and* in the batched-prefill
-  switch (`decoder/forwardn.go:721`, calling `gegluExact` at `:723`). Both were checked: the second one is
+  `ActGeluTanh` → `geglu` at `decoder/mlp.go:gatedMLP`, but the encoder does not use the decoder path at all; see Results.
+  Line numbers below re-pointed to the code they describe.)* `decoder/mlp.go:gegluExact` `gegluExact`,
+  reached via `ActGelu` in the decode-path switch (`decoder/mlp.go:gatedMLP`) *and* in the batched-prefill
+  switch (`decoder/forwardn.go:Model.runLayersFromEmbedN`, calling `gegluExact` at `:723`). Both were checked: the second one is
   the copy Spark-X2.5 had to add after its own three gates missed that `Generate()` would crash on
   any multi-token prompt without it. EmbeddingGemma 2 is the second family to use this activation
   and inherits the fix.
-- **Gemma's 262,144 vocab and tokenizer — already there** (`multimodal/gemma3_block.go:7`,
-  `metal/softcap_test.go:24`).
+- **Gemma's 262,144 vocab and tokenizer — already there** (`multimodal/gemma3_block.go:ImageSoftToken`,
+  `metal/softcap_test.go:TestMetalSoftcapParallel_bitIdentical`).
 - **A bidirectional attention mask over a span — already there, for a different reason.**
-  `decoder/forwardn.go:265` and `:1693` set up a bidirectional mask over image blocks
+  `decoder/forwardn.go:Model.runLayersFromEmbedN` and `:1693` set up a bidirectional mask over image blocks
   (`SetImageBlocks`, handled in `attendBatchedHeads`). A fully bidirectional encoder is the
   degenerate case of that machinery — the whole sequence as one block — which makes this a
   generalization rather than a new mask implementation. **Confirm this is the shape needed; see
@@ -68,9 +68,9 @@ Verified in the tree at `53a241a`:
 
 What is **not** in the tree:
 
-- **Mean pooling.** The decoder-embedder path pools with `HiddenLast` (`decoder/embed.go:37`),
+- **Mean pooling.** The decoder-embedder path pools with `HiddenLast` (`decoder/embed.go:Model.HiddenLast`),
   whose own doc comment says it "runs ids through the layer stack **causally**" (`:19`). A grep for
-  mean pooling finds only a comment in `decoder/embed_test.go:70`. So goinfer's existing embedder
+  mean pooling finds only a comment in `decoder/embed_test.go:TestHiddenLast_shapeDeterminismAndPooling`. So goinfer's existing embedder
   is causal and last-token — both axes differ from what this model does, which is the substance of
   Gate 0. The aikit encoder path may already mean-pool; Gate 0 settles that.
 - **The 512→768 output projection.** Small, but it is a real tensor to load and apply after

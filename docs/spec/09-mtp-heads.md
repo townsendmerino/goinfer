@@ -24,10 +24,10 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 
 | site | what it does |
 |---|---|
-| `decoder/gguf_qwen35.go:33` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
-| `decoder/gguf.go:756` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
-| `decoder/weights.go:737` | "MTP heads (`mtp.*`) are simply never requested" |
-| `decoder/registry.go:1781` | `num_nextn_predict_layers` MTP head is dropped |
+| `decoder/gguf_qwen35.go:ggufQwen35Config` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
+| `decoder/gguf.go:ggufGlm4MoeConfig` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
+| `decoder/weights.go:buildWeightsFromSafetensorsTo` | "MTP heads (`mtp.*`) are simply never requested" |
+| `decoder/registry.go:glm4moeArchitecture` | `num_nextn_predict_layers` MTP head is dropped |
 
 ## Gate 0 — inventory (RUN 2026-08-27, PASSED on availability)
 
@@ -64,7 +64,7 @@ Four facts from the scan worth carrying forward:
 
 ## The binding constraint is the seam, not the checkpoints
 
-`decoder/forwardn.go:209`:
+`decoder/forwardn.go:Model.specRollbackSafe`:
 
 ```go
 func (m *Model) specRollbackSafe() bool {
@@ -95,8 +95,8 @@ different lists:
 
 | gate | refuses |
 |---|---|
-| `ForwardCapture` (`decoder/model.go:1327`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
-| `specRollbackSafe` (`decoder/forwardn.go:209`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
+| `ForwardCapture` (`decoder/model.go:Model.ForwardCapture`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
+| `specRollbackSafe` (`decoder/forwardn.go:Model.specRollbackSafe`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch
 itself: `qwen35Architecture` sets `layerIsLinear: cfg.IsLinearLayer // Gated DeltaNet layers`, and
@@ -176,7 +176,7 @@ accepted length 0.64 → ~1.64 at K=6. **Fails → stop.** The lever is α; if �
 downstream matters and no build is justified.
 
 **Gate 2 — α clears break-even given the round cost**, using `breakEvenTokensPerRound`
-(`decoder/blockspec.go:624`) rather than a new cost model. That comment records **~3.5 tok/round**
+(`decoder/blockspec.go:breakEvenTokensPerRound`) rather than a new cost model. That comment records **~3.5 tok/round**
 on the measured 4B / 2070S pairing (~39 ms per round against an 11.1 ms decode), and records that
 the shipped guard sits at 2.5 — deliberately *below* break-even, because acceptance measured over
 the first few rounds is not acceptance over the generation.
@@ -377,11 +377,11 @@ wired into any decode path, and the harness that produced these numbers
 
 ### What is being priced, and why it is not the deferred track
 
-The refusal above traces to `decoder/deltanet.go:157` — `deltaState` holds a running recurrent
-matrix plus a conv window, and the comment at `decoder/deltanet.go:154` records that it is fixed
+The refusal above traces to `decoder/deltanet.go:deltaState` — `deltaState` holds a running recurrent
+matrix plus a conv window, and the comment at `decoder/deltanet.go:deltaState` records that it is fixed
 size, independent of sequence length, and **not position-truncatable**. A verify advances that
 state by K tokens; a partial rejection needs it as of an earlier token, which no truncation or
-inversion recovers. `decoder/speculative.go:92` is where that refusal is applied.
+inversion recovers. `decoder/speculative.go:Model.GenerateSpeculative` is where that refusal is applied (`if !target.specRollbackSafe() {`).
 
 `docs/completed/qwen3_5_moe.md:134` defers a remedy — *"optimizing those for hybrid models (state
 checkpoints) is a later track"* — but that entry was scoped for **cross-call prefix reuse**:
@@ -486,7 +486,7 @@ The CPU figures must not be read as a bound on a GPU-resident path in either dir
 
 This one is answerable from the code rather than by measurement, and the answer is not "probably".
 `gatedDeltaNetStep` reads `convWin` as the depthwise conv's left context every step
-(`decoder/deltanet.go:230`, taps `j = 0..K-2`) and mutates it every step, appending the current
+(`decoder/deltanet.go:deltaNetCore`, taps `j = 0..K-2`) and mutates it every step, appending the current
 mixed vector and sliding to the last `K-1`. A verify of width K advances that window by K tokens.
 
 **With `ConvKernel = 4` the window is 3 vectors, so any verify of width K ≥ 4 replaces it
@@ -546,7 +546,7 @@ forward.** What is measured is that it does not pay *through the copy primitive 
 available*. Those read identically today and diverge completely once a passthrough exists.
 
 `aikit/gpu` exposes `Upload` and `Download` and no device-to-device copy, so a snapshot of state
-that is *already on the device* (`cuda/resident.go:568` — `dnWin`, `dnState`) has to cross PCIe to
+that is *already on the device* (`cuda/resident.go:cudaLayer` — `dnWin`, `dnState`) has to cross PCIe to
 the host and come back: measured **5.0 GB/s**, about a third of the host memcpy rate. The primitive
 exists one layer down — `gocudrv`'s `memcpyDtoD` / `memcpyDtoDAsync`. The gap is plumbing, and the
 plumbing is worth ~18×.
@@ -646,7 +646,7 @@ synthetic-buffer projection above with an in-situ measurement, and the projectio
 
 Same call, same byte counts, same number of copies. The difference is **buffer layout**: the probe
 allocated its 36 buffers consecutively, so aikit's coalescing had adjacent pairs to merge. The real
-`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:561` calls them
+`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:cudaLayer` calls them
 COMPOUND) interleaved with everything else the model allocated, so there is far less to coalesce.
 A figure measured through a primitive on synthetic buffers is not an integration cost — here the
 gap was 2.6×, not a rounding difference.
