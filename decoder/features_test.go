@@ -92,7 +92,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// against the real Qwen3-30B-A3B config.json), so unlike qwen2_moe it does NOT need
 	// FeatMoEGatedShared.
 	"qwen3_moe":    {FeatMoE, FeatQKNorm},
-	"qwen3_vl_moe": {FeatMoE, FeatQKNorm}, // S10: qwen3_moe's needs; m-RoPE is the qwen3_vl image path's, as for qwen3_vl
+	"qwen3_vl_moe": {FeatMoE, FeatQKNorm}, // qwen3_moe's needs; m-RoPE is the qwen3_vl image path's, as for qwen3_vl
 	"glm4_moe":     {FeatMoE, FeatPartialRotary, FeatQKNorm},
 	// Laguna: sigmoid-routed MoE with an UNGATED shared expert (so FeatMoE, not
 	// FeatMoEGatedShared), QK-norm, partial rotary on the full-attention layers, a

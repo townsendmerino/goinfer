@@ -167,7 +167,7 @@ func representativeConfig(modelType string) *Config {
 			HiddenAct: "silu", NumExperts: 8, NumExpertsPerTok: 2, MoeIntermediateSize: 16,
 		}
 	case "qwen3_vl_moe":
-		// Qwen3-VL MoE (S10): qwen3_moe's experts and router with qwen3_vl's m-RoPE section.
+		// Qwen3-VL MoE: qwen3_moe's experts and router with qwen3_vl's m-RoPE section.
 		return &Config{
 			ModelType: "qwen3_vl_moe", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
 			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-6, RoPEGlobalBase: 5000000,

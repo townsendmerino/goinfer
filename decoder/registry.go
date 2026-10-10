@@ -32,7 +32,7 @@ var registry = map[string]archAdapter{
 	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
-	"qwen3_vl_moe":        qwen3VLMoeArchitecture, // Qwen3-VL-30B-A3B (S10): qwen3_moe + qwen3_vl's interleaved m-RoPE; DeepStack images through the dense Qwen3-VL's path
+	"qwen3_vl_moe":        qwen3VLMoeArchitecture, // Qwen3-VL-30B-A3B: qwen3_moe + qwen3_vl's interleaved m-RoPE; DeepStack images through the dense Qwen3-VL's path
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
 	"smollm3":             smollm3Architecture,    // SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers) on every 4th layer, tied embeddings
 	"olmo3":               olmo3Architecture,      // Olmo 3 (7B/32B): NormPostOnly (no pre-norm at all) + whole-vector QK-norm + sliding/full 3:1 + YaRN
@@ -1529,7 +1529,7 @@ func qwen3VLMRopeSection(cfg *Config, name string) ([]int, error) {
 	return section, nil
 }
 
-// qwen3VLMoeArchitecture expresses Qwen3-VL MoE's text decoder (Qwen3-VL-30B-A3B, S10): qwen3_moe's attention, experts and
+// qwen3VLMoeArchitecture expresses Qwen3-VL MoE's text decoder (Qwen3-VL-30B-A3B): qwen3_moe's attention, experts and
 // router (128 experts, top 8, renormalised; no shared expert) with qwen3_vl's interleaved m-RoPE. The released checkpoint
 // stores its experts in transformers 4.57's fused layout, which loadFusedExperts reads by shape. The vision tower and
 // DeepStack are the dense Qwen3-VL's (aikit's tower, GenerateQwenVLDeepstack).
