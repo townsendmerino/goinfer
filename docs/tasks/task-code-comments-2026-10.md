@@ -8,7 +8,7 @@
 > **CC0 DONE 2026-10-09/10 on `comment-diet-2026-10` (not merged, not pushed):** lint support (symbol citations, pinned records) with tests
 > first; 284 live-doc citations now name declarations; 35 records pinned (`docs/measurements/code-comments-2026-10/pins.tsv`); the door is
 > closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC2 (`gate comments-only`) built and
-> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 wave A done (§7). Waves B and C, CC5 and CC6 not started.
+> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A and B done (§7). Wave C (test files, CC5) and CC6 not started.
 
 ## 1. Why
 
@@ -258,6 +258,24 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > `go vet` (tagged variants) and the citation lint. History-marked lines that remain are mostly `docs/` pointers, which the marker
 > regex counts. Moved history is in `docs/code-notes/{cuda,metal,gpu,cmd-gate,constrain,tokenizer,pull,internal-prequant}.md`.
 
+> **Wave B done 2026-10-09 (nine agent branches merged, not pushed).** Whole non-test package, comment lines before → after
+> (base = the tree after wave A and the merge of `origin/main`):
+>
+> | package | before → after | cut | history-marked | left alone |
+> |---|---|---|---|---|
+> | `decoder` | 15,481 → 11,384 | −27% | 1,524 → 439 | `residency.go` (the pilot's pass stands), `normnoise.go`, `testhooks.go`, `knobs.go` (open branches) |
+> | `internal/serveapp` | 3,739 → 3,057 | −19% | 461 → 123 | none |
+> | `chat` | 916 → 784 | −15% | 42 → 12 | none |
+> | `multimodal` | 400 → 344 | −14% | 30 → 13 | none |
+> | **total** | **20,536 → 15,569** | **−25%** | **2,057 → 587** | |
+>
+> Waves A and B together: 34,657 → 27,837 comment lines (−20%) across the 12 packages worked, history-marked lines 3,736 → 1,714
+> (the remainder is mostly `docs/` pointers, which the marker counts). By group the `decoder` cuts ran from −41% (registry,
+> features, blockspec, fit guard) to −15% (the 69 small files); the contract-heavy groups sit near −20% and the history-heavy ones
+> above −30%. `gate comments-only` is GREEN for every branch and for each merge. `testdata/parity_manifest.json`'s `deps_hash` was
+> refreshed once with `scripts/refresh_parity_hashes.sh` (35 goldens ran, 0 failed). `scripts/comment_diet.py pointers` checks
+> every `docs/code-notes` pointer in the Go comments against the notes headings: 141 checked, 0 unresolved.
+
 One commit per package, or per file group in `decoder`. Subject:
 `comments(<pkg>): history to docs/code-notes, guardrails kept (<before> → <after> comment lines)`. Body: the CC2
 moved-text report, and any open work found (CC1.3).
@@ -303,6 +321,28 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      compile is reported as "selected … but reported nothing". Recorded only in `docs/completed/audit-2026-09-02.md` (N-41).
    - **`tokenizer`, `byteLevelKnobs`**: a GGUF with `pre="default"` (or none) is walked with GPT-2's shape; llama.cpp's default is a
      different multi-pass shape and needs a new `splitShape` and goldens. Recorded only in `docs/completed/audit-2026-09-10.md` (N-72).
+   - **`decoder/model.go:Options.LoadAbort`** is checked only on the GGUF direct-build path (the safetensors direct build and
+     `StreamTranscodeGGUF` ignore it): owned by `docs/tasks/task-never-swap-2026-09.md`. **`kdaParams`**: the LoRA'd KDA path is not
+     implemented; no queue entry.
+   - **`decoder/weights.go:LoadWeights`**: bf16/f16 weights widen to f32 on load, roughly doubling RAM (the old `TODO(M8)`: per-tile
+     widening inside matmul). **`repackW4A8Row4IfEligible`**: non-paged `.giw` tensors get no row4 repack (needs the repack sequenced
+     after `newExpertPager`). No owner for either.
+   - **`decoder/forwardn.go:Model.specRollbackSafe`**: recurrent families and windowed models have no checkpoint/restore rollback, so
+     the n-gram speculative entry points refuse them. **`decoder/deltanet.go`** (file comment): the Gated DeltaNet recurrence is the
+     sequential reference, no chunked or parallel scan. **`decoder/kvcache.go:KVCache.resetMultimodal`**: not a live leak until VL
+     goes through the session path. **`decoder/mlp.go:moeMLPBatch`**: expert-major order for paging is unmeasured. No owner.
+   - **`decoder/hostram_linux.go:HostRAMBytes`**: the cgroup `memory.max` is not read, so a container over-reports. **`dspark.go`**:
+     reusing the resident target's embed/head is unproven. **`gptq.go:parseQuantConfig`**: GPTQModel v2 is refused for want of a
+     checkpoint to validate against. **`actquant_hazard.go:ActivationQuantHazard`** is a guard until per-group activation scales land.
+     No owner for any of the four.
+   - **`chat/tools.go:RenderToolsSegments`** and **`chat/templates.go:Mistral`**: with tools declared, non-Harmony families return one
+     Special segment, so their content spans get no injection hardening (a "follow-up" in the old comments). No owner.
+   - **`internal/serveapp`**: compute-time LoRA is not wired into the resident prefix-reuse path (`loadedModel.drive`), no owner;
+     `pathFields` publishes `context_window` using `lm.adapter == ""` while the text routes enforce with `lm.residentPath()`, so an
+     adapter model on a resident backend publishes `MaxPositions` but is held to the resident cap (a code inconsistency, comment now
+     describes it, not fixed).
+   - **`decoder/fitguard.go:guardGIWFit`** does not price Metal's per-projection host buffer copies (needs a hook; decoder cannot
+     import metal): owned by `docs/tasks/task-never-swap-2026-09.md` ("Not priced").
    - Already owned, listed so they are not re-found: `cuda` `PrefillSeedArgmax` cannot be cancelled (`docs/queue-performance.md`);
      `constrain` N-79 control tokens in constrained JSON strings (`docs/audit-2026-09-10.md`, deferred); `metal` qGate LoRA gap
      (`docs/tasks/task-gpu-paths-2026-09.md`).
