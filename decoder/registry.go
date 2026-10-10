@@ -22,14 +22,14 @@ var registry = map[string]archAdapter{
 	"gemma3":              gemma3Architecture,
 	"gemma3_text":         gemma3Architecture,     // the 270M/1B text checkpoints
 	"gemma4":              gemma4Architecture,     // Gemma 4 top-level model_type for the "gemma4" family wrapper (E2B/E4B/26B-A4B/31B — real vision+audio towers, not built here)
-	"gemma4_text":         gemma4Architecture,     // that family's text_config.model_type (E2B/E4B/26B-A4B MoE/31B dense; parity-gated on E2B+12B)
-	"gemma4_unified_text": gemma4Architecture,     // the SEPARATE "gemma4_unified" family's text_config.model_type — real checkpoints show this is 12B-it ONLY (encoder-free multimodal wrapper, no PLE/MoE in its text decoder; K=V globals, model.language_model.* prefix)
+	"gemma4_text":         gemma4Architecture,     // that family's text_config.model_type
+	"gemma4_unified_text": gemma4Architecture,     // the separate "gemma4_unified" family's text_config.model_type (12B-it: encoder-free multimodal wrapper, no PLE/MoE in its text decoder; K=V globals, model.language_model.* prefix)
 	"qwen3":               qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":               qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
 	"voxtral":             voxtralArchitecture,    // Voxtral Mini's text decoder: exactly Llama (nested text_config, tensors under language_model.*, head_dim 128 != hidden/heads); the audio tower and projector are aikit/audio.VoxtralAudio
 	"qwen3_asr":           qwen3_asrArchitecture,  // Qwen3-ASR's text decoder: exactly Qwen3 (nested thinker_config.text_config, tensors under thinker.*); the audio encoder is aikit/audio
-	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters; no vision, no DeepStack — P8 Phase 0)
+	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
@@ -71,7 +71,7 @@ var registry = map[string]archAdapter{
 	"glm_ocr":          glmOcrArchitecture,        // GLM-OCR (zai-org, 0.9B document OCR) VL wrapper: the text decoder via the flattened text_config (top-level model_type wins)
 	"glm_ocr_text":     glmOcrArchitecture,        // GLM-OCR text decoder: Sandwich4 RMSNorm (names reversed vs Gemma's), fused gate_up_proj, explicit head_dim 128, pairwise m-RoPE [16,24,24], untied head, MTP layer skipped
 	"llama4_text":      llama4Architecture,        // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
-	"gpt_oss":          gptOssArchitecture,        // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
+	"gpt_oss":          gptOssArchitecture,        // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -82,16 +82,10 @@ func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("decoder: unsupported model_type %q (have: %s)", cfg.ModelType, knownModelTypes())
 	}
-	// M-10(b): BOUND THE CONFIG BEFORE THE ADAPTER RUNS. Several adapters allocate
-	// NumLayers-sized slices with only a `> 0` check (qwen3_next, llama4), and loadConfig has
-	// no bound at all — so a 300-byte .giw or a hostile safetensors config.json declaring
-	// num_hidden_layers: 68719476736 is a FATAL out-of-memory, not the typed error
-	// LoadSerializedWeights' doc promises. Under Go's maxAlloc, so no recover() catches it.
-	//
-	// Here rather than at the two JSON chokepoints the audit names: this is the single point
-	// every path reaches — .giw, safetensors, GGUF and whatever is added next — and putting it
-	// at the callers would be the "one predicate, N consumers" shape that produced half the
-	// findings in this audit. The GGUF paths bound some of these already; re-checking costs a
+	// Bound the config before the adapter runs: several adapters allocate NumLayers-sized slices with only a `> 0` check and loadConfig has no
+	// bound, so a hostile config (num_hidden_layers: 68719476736) is a fatal out-of-memory that no recover() catches, not the typed error
+	// LoadSerializedWeights promises. Here, because this is the single point every path reaches (.giw, safetensors, GGUF and whatever is added
+	// next); at the callers it would be the "one predicate, N consumers" shape. The GGUF paths bound some of these already; re-checking costs a
 	// handful of comparisons once per load.
 	if err := validateConfigBounds(cfg); err != nil {
 		return nil, nil, err
@@ -107,46 +101,32 @@ func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	return arch, schema, nil
 }
 
-// validateResolved catches descriptor fields an adapter left at their zero value when zero
-// is not a legal setting. Every adapter builds an Architecture by hand from a struct
-// literal, so a field simply omitted is a compile-clean, load-clean, silently-wrong model.
+// validateResolved catches descriptor fields an adapter left at their zero value when zero is not a legal setting. Every adapter builds an
+// Architecture by hand from a struct literal, so a field simply omitted is a compile-clean, load-clean, silently wrong model. Checked here
+// rather than in each adapter to cover the families nobody has written yet.
 //
-// Both fields here were live bugs in lfm2Architecture, found 2026-08-31 against HF:
-//
-//   - AttnScale 0 makes every q·k score 0, so softmax returns a UNIFORM average over the
-//     context. Invisible at one token (softmax of a single element is 1.0 whatever the
-//     scale) and invisible in any greedy smoke test that only reads argmax, which matched
-//     HF anyway. It showed up as cosine 0.928 at five tokens.
-//   - NormEps 0 divides by rsqrt(variance) with no floor. Not merely imprecise: on a small
-//     first-layer variance it scaled the norm output by a uniform 1.0185x.
-//
-// Checked here rather than in each adapter because the point is to cover the families
-// nobody has written yet. An arch that genuinely wants no attention scaling sets 1.0.
+//   - AttnScale 0 makes every q·k score 0, so softmax returns a UNIFORM average over the context. Invisible at one token (softmax of a
+//     single element is 1.0 whatever the scale) and in any greedy smoke test that only reads argmax. An arch that genuinely wants no
+//     attention scaling sets 1.0.
+//   - NormEps 0 divides by rsqrt(variance) with no floor: not merely imprecise, it rescales the norm output on a small variance.
 func (a *Architecture) validateResolved() error {
 	switch {
-	// !(x > 0) rather than x <= 0: NaN fails EVERY comparison, so `a.AttnScale <= 0` is FALSE
-	// for NaN and the old guard waved it through (M-06). gemma3 with a negative
-	// query_pre_attn_scalar produces exactly that, and +Inf arrives from
-	// num_attention_heads: 0 → Pow(0, -0.5). Both give a forward that runs and returns
-	// garbage rather than one that refuses.
+	// !(x > 0) rather than x <= 0: NaN fails EVERY comparison, so `a.AttnScale <= 0` is false for NaN and would wave it through. gemma3 with a
+	// negative query_pre_attn_scalar produces exactly that, and +Inf arrives from num_attention_heads: 0 → Pow(0, -0.5). Both give a forward
+	// that runs and returns garbage rather than one that refuses.
 	case !(a.AttnScale > 0) || math.IsInf(a.AttnScale, 0):
 		return fmt.Errorf("decoder(%s): AttnScale=%v must be finite and >0 (adapter omitted it, or a config value made it NaN/Inf; 1/sqrt(head_dim) is the usual value, 1.0 means deliberately unscaled)", a.Name, a.AttnScale)
 	case a.Norm == NormRMS && !(a.NormEps > 0):
 		return fmt.Errorf("decoder(%s): NormEps=%v must be >0 (adapter omitted it, or read the wrong config key)", a.Name, a.NormEps)
 	}
 
-	// M-06: POSITION INFORMATION MUST COME FROM SOMEWHERE. finalizeRoPE treats
-	// RoPEGlobalBase <= 0 as "no tables", and applyRoPE is a silent no-op on an empty table,
-	// so an adapter that never reads rope_theta loads clean and generates fluent,
-	// POSITION-BLIND text — and drops YaRN with it. gpt-oss and llama4 both read only the
-	// flat rope_theta, and transformers >= 5.10 nests it under rope_parameters; for
-	// llama/mistral/qwen3 that is a loud error, and for these two it was silence.
+	// Position information must come from somewhere. finalizeRoPE treats RoPEGlobalBase <= 0 as "no tables" and applyRoPE is a silent no-op on
+	// an empty table, so an adapter that never reads rope_theta loads clean and generates fluent, position-blind text (and drops YaRN with it).
+	// transformers >= 5.10 nests rope_theta under rope_parameters, so an adapter that reads only the flat key fails silently.
 	//
-	// The four legitimate ways to have no global RoPE table are named explicitly rather
-	// than inferred, so a new family that simply forgot cannot look like one of them:
-	// GPT-2 has learned positions, Nemotron-H encodes NoPE layers as base 0, MLA carries its
-	// own decoupled rope dims, and Olmo Hybrid's released checkpoint genuinely has none at
-	// all (NoPositionEncoding, verified against rope_parameters: {"rope_theta": null}).
+	// The legitimate ways to have no global RoPE table are named explicitly rather than inferred, so a new family that forgot cannot look like
+	// one of them: GPT-2 has learned positions, Nemotron-H encodes NoPE layers as base 0, MLA carries its own decoupled rope dims, and Olmo
+	// Hybrid's released checkpoint has none at all (NoPositionEncoding; its rope_parameters is {"rope_theta": null}).
 	if !a.LearnedPosEmbed && !a.NoPositionEncoding && a.nemotron == nil && a.mla == nil && len(a.ropeInvFreqGlobal) == 0 {
 		return fmt.Errorf("decoder(%s): no position information — RoPEGlobalBase=%v yields no "+
 			"inv-freq table, and the arch is not learned-position, Nemotron-H or MLA. The adapter "+
@@ -155,9 +135,8 @@ func (a *Architecture) validateResolved() error {
 			a.Name, a.RoPEGlobalBase)
 	}
 
-	// M-06: ZERO DIMS. Every one of these is a divisor, a slice length or both somewhere in
-	// the forward. num_key_value_heads: 0 is the sharpest — `group := nH/nKV` is an integer
-	// divide by zero, a panic in the decode goroutine rather than a load error.
+	// Zero dims. Every one of these is a divisor, a slice length or both somewhere in the forward; num_key_value_heads: 0 is the sharpest:
+	// `group := nH/nKV` is an integer divide by zero, a panic in the decode goroutine rather than a load error.
 	for _, d := range []struct {
 		name string
 		v    int
@@ -197,12 +176,8 @@ func validateConfigBounds(cfg *Config) error {
 		{"num_key_value_heads", cfg.NumKVHeads, maxGGUFHeads},
 		{"vocab_size", cfg.VocabSize, maxGGUFVocabSize},
 		{"num_experts", cfg.NumExperts, maxGGUFExperts},
-		// N-68 (docs/audit-2026-09-10.md): num_local_experts (mixtral/gpt-oss/llama4) and
-		// n_routed_experts (glm4_moe/deepseek/nemotron_h) are the SAME kind of value as
-		// num_experts above under different spellings, but were absent from this loop — the
-		// .giw reader's own caps already stop a hostile/corrupt config from becoming an OOM at
-		// allocation time, so this is defense-in-depth (refuse here, before any allocation),
-		// not closing a live exploit.
+		// num_local_experts and n_routed_experts are the same kind of value as num_experts under other families' spellings. The .giw reader's own
+		// caps already stop a hostile config becoming an OOM at allocation time, so this is defense in depth: refuse here, before any allocation.
 		{"num_local_experts", cfg.NumLocalExperts, maxGGUFExperts},
 		{"n_routed_experts", cfg.NRoutedExperts, maxGGUFExperts},
 	} {
@@ -330,11 +305,9 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// The real unified 26B keeps the RoPE bases nested in rope_parameters (no top-level
 	// rope_theta / rope_local_base_freq); resolve them so the frequencies aren't 0/NaN.
 	localBase, globalBase := cfg.gemma4RopeBases()
-	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block.
-	// The dense E2B/E4B/12B variants leave it false ⇒ MoE stays nil and their forward
-	// is byte-unchanged. The router semantics (softmax-all → top-k → UNCONDITIONAL
-	// renorm, + a weightless-norm/learned-scale pre-projection, + a per-expert scale)
-	// are pinned in docs/task-gemma4-moe.md Phase 1a. The gemma4 forward (Phase 2) reads
+	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block. The dense E2B/E4B/12B variants leave it false, so MoE
+	// stays nil and their forward is unchanged. The router semantics (softmax-all → top-k → UNCONDITIONAL renorm, a weightless-norm/
+	// learned-scale pre-projection, a per-expert scale) are pinned in docs/completed/task-gemma4-moe.md Phase 1a. The gemma4 forward reads
 	// these; the generic moeMLP/swiGLUExpert are NOT reused (experts are gelu-tanh, not SiLU).
 	var moe *MoEConfig
 	if cfg.EnableMoeBlock {
@@ -360,17 +333,14 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		IntermediateDim: cfg.IntermediateDim,
 		VocabSize:       cfg.VocabSize,
 		Norm:            NormRMS,
-		// HF Gemma4RMSNorm is plain `x*weight` (weight init 1), NOT Gemma 3's
-		// `x*(1+weight)` (init 0). So the SPEC is no offset (false). ⚠️ verify
-		// against the real GGUF: if llama.cpp's gemma4 convert pre-subtracts 1
-		// (as some Gemma converts do), flip this to true. (modeling_gemma4.py L~150)
+		// HF Gemma4RMSNorm is plain `x*weight` (weight init 1), not Gemma 3's `x*(1+weight)` (init 0), so the spec is no offset. Unverified
+		// against the real GGUF: if llama.cpp's gemma4 convert pre-subtracts 1 (as some Gemma converts do), flip this to true (modeling_gemma4.py).
 		RMSAddOne:     false,
 		NormEps:       cfg.RMSNormEps,
 		NormPlacement: NormSandwich4,
 		Act:           ActGeluTanh,
 		QKNorm:        true,
-		// Gemma 4 text attention uses scale 1.0 (modeling_gemma4.py L1194): the
-		// learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit
+		// Gemma 4 text attention uses scale 1.0 (modeling_gemma4.py): the learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit
 		// query_pre_attn_scalar^-0.5. A new scale-less v_norm normalizes V.
 		AttnScale:      1.0,
 		SlidingWindow:  cfg.SlidingWindow,
@@ -434,21 +404,11 @@ func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &qwen3TensorSchema, nil
 }
 
-// qwen3MoeArchitecture expresses Qwen3-MoE (Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-
-// Instruct, both model_type "qwen3_moe" — confirmed against both real released
-// config.json files, config-identical apart from max_position_embeddings):
-// qwen3's dense attention (per-head q_norm/k_norm, GQA, no q/k/v bias,
-// 1/√head_dim scale, single-base RoPE) with the FFN replaced on every layer by a
-// sparse MoE — qwen2_moe's router shape (top-k of num_experts at
-// moe_intermediate_size, norm_topk_prob) but with NO always-on shared expert.
-// Verified against a real GGUF file's header too (unsloth/Qwen3-30B-A3B-GGUF
-// Q2_K, HTTP-Range-fetched): architecture string "qwen3moe", plain
-// {arch}.attention.*/{arch}.expert_*/{arch}.rope.freq_base metadata (no
-// sliding-window or YaRN keys), and a tensor set with attn_q_norm/attn_k_norm +
-// ffn_gate_inp/ffn_{gate,up,down}_exps but no ffn_*_shexp — so the existing
-// generic GGUF loadLayer path (gated on arch.QKNorm / arch.MoE /
-// arch.MoE.SharedIntermediateDim>0) handles this family with no new loader code,
-// same as the safetensors path. The tensor schema is qwen3MoeTensorSchema.
+// qwen3MoeArchitecture expresses Qwen3-MoE (model_type qwen3_moe): qwen3's dense attention (per-head q_norm/k_norm, GQA, no q/k/v bias,
+// 1/√head_dim scale, single-base RoPE) with the FFN replaced on every layer by a sparse MoE: qwen2_moe's router shape (top-k of num_experts
+// at moe_intermediate_size, norm_topk_prob) but with NO always-on shared expert. The GGUF loader's generic loadLayer path (gated on
+// arch.QKNorm / arch.MoE / arch.MoE.SharedIntermediateDim>0) handles the family with no loader code of its own. The tensor schema is
+// qwen3MoeTensorSchema.
 func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen3_moe"); err != nil {
 		return nil, nil, err
@@ -498,18 +458,12 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &qwen3MoeTensorSchema, nil
 }
 
-// backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=5.10's
-// rope_parameters object, for the SINGLE-BASE architectures (llama, mistral, qwen3).
+// backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=5.10's rope_parameters object, for the single-base
+// architectures that read only the flat fields (llama, mistral, qwen3 and others).
 //
-// transformers moved RoPE config out of top-level rope_theta/rope_scaling and into
-// rope_parameters — {"rope_theta": 1e4, "rope_type": "default"}, with linear/yarn/llama3
-// scaling carried inside the same object. Archs that only read the flat fields therefore
-// REJECT any checkpoint saved by a current transformers, with "rope_theta must be >0" — a
-// hard load failure on freshly re-saved upstream weights, not a niche path. phi3 already
-// handled this via parseRopeFlat and gemma3/mellum handle the per-layer-type nesting
-// (full_attention/sliding_attention); llama and mistral did not, and each has its own
-// architecture func, which is exactly how one got fixed and the other did not. Hence one
-// helper rather than a third copy.
+// transformers moved RoPE config out of top-level rope_theta/rope_scaling into rope_parameters ({"rope_theta": 1e4, "rope_type": "default"},
+// with linear/yarn/llama3 scaling inside the same object), so an arch that reads only the flat fields rejects any checkpoint saved by a
+// current transformers with "rope_theta must be >0". One helper rather than a copy per architecture.
 func backfillFlatRope(cfg *Config, arch string) error {
 	if cfg.RoPEGlobalBase != 0 || len(cfg.RopeParameters) == 0 {
 		return nil // already flat (older config, or a GGUF) — nothing to backfill
@@ -527,13 +481,10 @@ func backfillFlatRope(cfg *Config, arch string) error {
 	return nil
 }
 
-// llamaArchitecture expresses Llama-2/3 dense: like Qwen3 (RMSNorm no-offset,
-// Pre2 placement, SwiGLU, 1/√head_dim scale, single-base RoPE, no embed scale)
-// but WITHOUT QK-norm — Llama's attention applies RoPE to raw q/k. head_dim is
-// derived (headDim()) since many Llama configs omit it. The LM head is tied on
-// the small text models (1B/3B) and untied on 8B+, finalized from
-// lm_head.weight presence at load. validateLlama rejects scaled RoPE (G4) and
-// attention bias (a later add), so reaching here implies a plain checkpoint.
+// llamaArchitecture expresses Llama-2/3 dense: like Qwen3 (RMSNorm no-offset, Pre2 placement, SwiGLU, 1/√head_dim scale, single-base RoPE,
+// no embed scale) but WITHOUT QK-norm: Llama's attention applies RoPE to raw q/k. head_dim is derived (headDim()) since many Llama configs
+// omit it. The LM head is tied on the small text models and untied on 8B+, finalized from lm_head.weight presence at load. validateLlama
+// rejects attention bias, so reaching here implies a plain checkpoint; linear and llama3 rope scaling are parsed below.
 func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "llama"); err != nil {
 		return nil, nil, err
@@ -573,27 +524,15 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &llamaTensorSchema, nil
 }
 
-// smollm3Architecture expresses SmolLM3-3B (HuggingFaceTB/SmolLM3-3B, model_type "smollm3"): a
-// plain llama-shaped dense GQA model — tensor names byte-identical, `llamaTensorSchema` reused
-// verbatim — with per-layer NoPE on 9 of 36 layers via `no_rope_layers`, reusing the SAME
-// Config field and boolean convention llama4_text already established (`NoRopeLayers[i]==1` ⇒
-// layer i USES RoPE, `==0` ⇒ NoPE), not a new one — and `layerNoPE`, the SAME generic
-// Architecture hook cohere2Architecture already populates for its own global-layer NoPE. The
-// `layer_types` field on real released checkpoints is a RED HERRING here: every entry reads
-// "full_attention" regardless of which layers are actually NoPE (confirmed against the real
-// config.json, not assumed) — `no_rope_layers` is the only authoritative source, unlike
-// Gemma/cohere2 where `layer_types` itself carries the split.
+// smollm3Architecture expresses SmolLM3-3B (model_type smollm3): a plain llama-shaped dense GQA model (llamaTensorSchema reused verbatim)
+// with per-layer NoPE on every 4th layer via `no_rope_layers`, through the same Config field and convention llama4_text uses and the same
+// layerNoPE hook cohere2Architecture populates.
 //
-// THE FIELD NAME IS THE OPPOSITE OF ITS OWN VALUES, verified against the real
-// modeling_smollm3.py rather than guessed from the name (the exact class of silent-wrong bug
-// this repo's own culture names repeatedly): `self.use_rope = config.no_rope_layers[layer_idx]`
-// — a "no_rope_layers" entry of 1 means the layer HAS rope, 0 means NoPE. The real released
-// config's list is `[1,1,1,0]` repeating (0 at every 4th layer, 0-indexed positions 3,7,11,...) —
-// checked against `configuration_smollm3.py`'s own generation formula
-// (`(layer_idx+1) % no_rope_layer_interval != 0`) for when a checkpoint omits the explicit list,
-// which independently confirms the every-4th-layer pattern the brief itself named. Getting the
-// polarity backwards would silently flip 27 RoPE layers to NoPE and 9 NoPE layers to RoPE —
-// correct shapes, plausible logits, wrong model — with no crash to catch it.
+// THE FIELD NAME IS THE OPPOSITE OF ITS VALUES: a `no_rope_layers` entry of 1 means the layer HAS rope, 0 means NoPE (modeling_smollm3.py:
+// `self.use_rope = config.no_rope_layers[layer_idx]`). The released list is [1,1,1,0] repeating, and configuration_smollm3.py generates it
+// as `(layer_idx+1) % no_rope_layer_interval != 0` when a checkpoint omits it. Getting the polarity backwards silently inverts which layers
+// use RoPE: correct shapes, plausible logits, wrong model, no crash. `layer_types` is not authoritative here (every entry reads
+// "full_attention" whichever layers are NoPE); `no_rope_layers` is, unlike Gemma/cohere2 where `layer_types` carries the split.
 func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "smollm3"); err != nil {
 		return nil, nil, err
@@ -648,79 +587,31 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &llamaTensorSchema, nil
 }
 
-// olmo3Architecture expresses Olmo 3 (allenai/Olmo-3-{7B,32B}, model_type "olmo3"): a
-// softmax-GQA/MHA model with two real departures from every existing family, BOTH verified
-// against the real `modeling_olmo3.py` rather than assumed from the brief's own framing:
+// olmo3Architecture expresses Olmo 3 (model_type olmo3): a softmax-GQA/MHA model with two departures from every other family, both checked
+// against the real modeling_olmo3.py:
 //
-//  1. **NormPostOnly**: there is NO pre-norm at all — confirmed by instantiating
-//     `Olmo3ForCausalLM` and reading its `state_dict()`, which has no `input_layernorm` tensor
-//     anywhere. `Olmo3DecoderLayer.forward` reads the RAW residual stream directly into both
-//     `self_attn` and `mlp`, and normalizes each sublayer's OUTPUT (`post_attention_layernorm` /
-//     `post_feedforward_layernorm`) before the residual add. Genuinely different from
-//     `NormSandwich4` (which normalizes BOTH input and output) — a new placement, not a variant.
-//  2. **QKNormWhole**: QK-norm is computed over the FULL projected q/k vector
-//     (`Olmo3RMSNorm(config.num_attention_heads * self.head_dim, ...)`), one statistic over
-//     `num_heads*head_dim` elements, not the standard per-head convention (Qwen3/Gemma3/Mellum
-//     normalize each head independently over `head_dim`). Reuses the SAME `rmsNorm` function
-//     with rows/dim swapped (`QKNormWhole`'s own comment on `Architecture`), not new math.
+//  1. NormPostOnly: there is NO pre-norm at all. Olmo3DecoderLayer reads the raw residual stream into both self_attn and mlp and normalizes
+//     each sublayer's OUTPUT (post_attention_layernorm / post_feedforward_layernorm) before the residual add. Not NormSandwich4 (which
+//     normalizes both input and output): a new placement, not a variant.
+//  2. QKNormWhole: QK-norm is one RMSNorm over the FULL projected q/k vector (num_heads*head_dim elements), not per head as Qwen3/Gemma3/
+//     Mellum do. It reuses rmsNorm with rows/dim swapped (QKNormWhole's comment on Architecture), not new math.
 //
-// Otherwise plain: `num_key_value_heads == num_attention_heads` on the real release (MHA, not
-// GQA — checked, not assumed), sliding-window on 3 of every 4 layers (`layer_types`, reusing
-// `Config.IsGlobalLayer` — the same authoritative layer_types-then-pattern rule cohere2 already
-// uses), `tie_word_embeddings: false`. Tensor names are llama-shaped except the post-only norms
-// and whole-vector QK-norm weight width — `olmo3TensorSchema`.
+// Otherwise plain: MHA on the real release, sliding window on 3 of every 4 layers (layer_types, via Config.IsGlobalLayer as cohere2 does),
+// untied head. Tensor names are llama-shaped except the post-only norms and the whole-vector QK-norm weight width (olmo3TensorSchema).
 //
-// A THIRD real finding, on RoPE, corrected 2026-09-12 (a prior revision of this comment had it
-// backwards — see below): sliding-attention and full-attention layers use GENUINELY DIFFERENT
-// rotary tables, at the SAME theta but different scaling — full gets YaRN (mscale 1.1 on this
-// fixture), sliding gets plain unscaled RoPE (mscale 1.0, no NTK-by-parts interpolation). This
-// is the ORIGINAL family design (the local/global RoPE split Mellum already implements,
-// `RoPELocalBase`/`RoPEGlobalBase` + `ropeScaling`/`ropeScalingLocal`, dispatched on
-// `arch.layerIsGlobal`), and `TestOlmo3_forwardParity` scored 0.9999999999997883 under it at
-// ship time (docs/completed/task-families-2026-09.md G2).
-//
-// **Verified by calling the real forward, not by reading source.** A prior revision of this
-// comment ("0b0f5c9") read `modeling_olmo3.py` and concluded `Olmo3Model.__init__` builds ONE
-// shared `self.rotary_emb` and calls it once per forward with no per-layer distinction — citing
-// the real-checkpoint T3 gate's cosine 0.992789 as confirmation of a "24 of 32 layers at the
-// wrong frequency" bug, and switching every layer to `full`'s YaRN table discarding `sliding`
-// entirely. That reading was WRONG for transformers 5.15.0 (this repo's pinned version, the same
-// one `pin_olmo3_tiny.py` uses): `Olmo3RotaryEmbedding.forward` takes an explicit `layer_type`
-// argument and returns a DIFFERENT (cos, sin) pair per call — confirmed by instantiating the real
-// class and calling `rotary_emb(hidden, pos_ids, "full_attention")` vs `(..., "sliding_attention")`
-// directly: sliding's cos/sin come back with `attention_scaling == 1.0` and no YaRN
-// interpolation; full's come back YaRN-scaled. The forward signature REQUIRING a layer_type
-// argument is itself the tell that a single shared table cannot be what runs — a uniform table
-// would need no such argument. The "uniform" fix's own T3 finding (cosine 0.992789) was real,
-// but the fix over-corrected: it likely traded one wrong frequency table (whatever the T3
-// checkpoint's bug actually was) for a table that is now wrong on 3 of every 4 layers instead of
-// being right on all 4 — this tiny golden's post-fix cosine (0.98997287, argmax still exact) is
-// the same magnitude-only-drift signature as the original bug, on the layers this fix touched.
-// `base` (theta) IS the same value on both layer types on the real release — only the SCALING
-// differs, which is why `localBase`/`base` collapse to the same number below but
-// `scalingLocal`/`scaling` do not.
-//
-// The flat-top-level branch (the real 7B/32B release's on-disk form) is unaffected by this
-// correction: `PretrainedConfig`'s `standardize_rope_params` expands it into the identical
-// nested full/sliding split at construction time, so both branches now agree.
+// RoPE differs by layer type, and the two tables must not be collapsed: full-attention layers get YaRN (with its mscale), sliding layers
+// plain unscaled RoPE, at the same theta, which is the local/global split Mellum implements (RoPELocalBase/RoPEGlobalBase + ropeScaling/
+// ropeScalingLocal, dispatched on layerIsGlobal). Olmo3RotaryEmbedding.forward takes an explicit layer_type and returns a different
+// (cos, sin) per layer type; an earlier reading of the source as one shared table was wrong. The flat top-level form (the real release's
+// on-disk form) is expanded by PretrainedConfig into the same nested split, so both branches agree. Evidence and the retraction:
+// docs/code-notes/decoder.md#olmo3Architecture.
 func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	base := cfg.RoPEGlobalBase
 	localBase := base
 	var scaling, scalingLocal *ropeScaling
 	if len(cfg.RopeParameters) > 0 {
-		// NESTED {"full_attention": {...yarn...}, "sliding_attention": {"rope_type": "default",
-		// "rope_theta": <same theta>}} — see the doc comment above (found 2026-09-12):
-		// `full`/`sliding` are BOTH real and DIFFERENT, not "sliding discarded, one uniform
-		// table" — verified by actually calling `Olmo3RotaryEmbedding.forward(hidden, pos,
-		// layer_type)` for both layer types against transformers 5.15.0 (the same install that
-		// generates olmo3_forward_full.json): sliding_attention's cos/sin come back PLAIN
-		// (attention_scaling 1.0, no YaRN interpolation), full_attention's come back YaRN-scaled
-		// (mscale 1.1 on this fixture). The forward signature itself requiring an explicit
-		// layer_type argument is the tell — a single shared table would need none. A prior
-		// revision of this comment ("0b0f5c9") concluded the opposite from reading
-		// modeling_olmo3.py's forward rather than calling it, and that reading was wrong for
-		// this transformers version. base (theta) is the same value on both layer types on the
-		// real release, so only the SCALING differs — sliding gets no scaling at all.
+		// NESTED {"full_attention": {...yarn...}, "sliding_attention": {"rope_type": "default", "rope_theta": <same theta>}}: full and sliding are
+		// both real and different (see the doc comment). Theta is the same on both layer types, so only the scaling differs; sliding gets none.
 		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
@@ -790,44 +681,25 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &olmo3TensorSchema, nil
 }
 
-// olmoHybridArchitecture expresses Olmo Hybrid (Ai2, model_type "olmo_hybrid"; Olmo Hybrid 7B):
-// the SAME Gated DeltaNet as qwen3_5 on 3-of-4 layers (verified field-for-field against the real
-// modeling_olmo_hybrid.py), olmo3's own full-attention shape (whole-vector QK-norm) on the rest —
-// but the two are NOT simply composed side by side: the full-attention layers use olmo3's
-// NormPostOnly while the DeltaNet layers use plain NormPre2, two placements in ONE model, which is
-// what NormPlacementLinear exists for (docs/completed/task-families-2026-09.md's G2 section has the full
-// norm-placement writeup).
+// olmoHybridArchitecture expresses Olmo Hybrid (Ai2, model_type olmo_hybrid): qwen3_5's Gated DeltaNet on 3 of every 4 layers and olmo3's
+// own full-attention shape (whole-vector QK-norm) on the rest, but not simply composed side by side: the full-attention layers use olmo3's
+// NormPostOnly while the DeltaNet layers use plain NormPre2, two placements in ONE model, which is what NormPlacementLinear exists for
+// (docs/completed/task-families-2026-09.md, G2 section). Every departure from a straight qwen3_5-DeltaNet + olmo3-attention composition is a
+// parameterization of shared code, not new math, checked against the real modeling_olmo_hybrid.py and a real checkpoint's header:
+//   - linear_allow_neg_eigval (default true) doubles the write-gate beta to [0,2) after the sigmoid: NegEigval.
+//   - q_proj/k_proj/v_proj are three fully separate tensors (SeparateQKVProj), and the depthwise causal conv is also three separate tensors
+//     (q_conv1d/k_conv1d/v_conv1d), split at the q/k/v channel boundaries (SeparateConv). Only the published file settled this: the
+//     modeling code shows one combined conv1d, and a locally re-saved checkpoint round-tripped through transformers' conversion mapping
+//     produced yet another shape.
+//   - The DeltaNet output gated-RMSNorm is named o_norm and its projection o_proj (qwen3_5: norm, out_proj): DeltaNetNormSuffix/
+//     DeltaNetOutProjSuffix. Its epsilon is hardcoded 1e-5 in HF's source (FLA's FusedRMSNormGated default) whatever the config says, not the
+//     release's rms_norm_eps 1e-6 used elsewhere: ONormEps. Reusing NormEps there is off by 10x on the one norm most sensitive to it.
+//   - rope_parameters is {"rope_theta": null} on the release: NO RoPE on any layer ("Released ckpt don't use any ROPE", OlmoHybridModel.__init__),
+//     handled by the layerNoPE hook, unconditional here since Olmo 3's nested per-attention-type rope_parameters is not used by this family;
+//     there is no partial_rotary_factor either.
+//   - MHA, not GQA, on the released size (validated, not assumed).
 //
-// Real, checked-not-assumed departures from a straight qwen3_5-DeltaNet + olmo3-attention
-// composition — every one is a parameterization of shared code, not new math:
-//   - linear_allow_neg_eigval (default true): doubles the write-gate beta to [0,2) after the
-//     sigmoid, widening the delta-rule's eigenvalue range — NegEigval.
-//   - q_proj/k_proj/v_proj are THREE fully separate tensors, more unfused than qwen3_5's own
-//     pre-concatenated in_proj_qkv — SeparateQKVProj. The depthwise causal conv is ALSO three
-//     separate tensors (q_conv1d/k_conv1d/v_conv1d), split at the same q/k/v channel boundaries —
-//     SeparateConv. Both verified against a REAL Olmo-Hybrid-7B checkpoint's safetensors header
-//     (HTTP Range on the file, not downloaded in full): the modeling code alone shows one combined
-//     self.conv1d, and a locally re-saved probe checkpoint round-tripped through this
-//     transformers version's own conversion_mapping.py produced YET ANOTHER shape (an arbitrary
-//     equal three-way split, and renamed norm tensors neither the source nor the real file uses)
-//     — source code and a local round-trip both looked like real answers and were both wrong; only
-//     the actual published file settled it.
-//   - The DeltaNet output gated-RMSNorm is named o_norm (qwen3_5: norm) and its out_proj is named
-//     o_proj (qwen3_5: out_proj) — DeltaNetNormSuffix/DeltaNetOutProjSuffix. Its epsilon is
-//     hardcoded 1e-5 in HF's source ("FLA's FusedRMSNormGated uses eps=1e-5 by default")
-//     regardless of config, diverging from the release's own rms_norm_eps=1e-6 used everywhere
-//     else in the model — ONormEps. A silent-wrong trap if skipped: reusing NormEps here is off by
-//     10x on exactly the one norm most sensitive to it.
-//   - rope_parameters is {"rope_theta": null} on the release: NO RoPE at all, on any layer — the
-//     comment in modeling_olmo_hybrid.py's OlmoHybridModel.__init__ says so explicitly ("Released
-//     ckpt don't use any ROPE"). Handled via the existing layerNoPE hook (SmolLM3/Cohere2's own
-//     mechanism), unconditional here since a nested per-attention-type rope_parameters (Olmo 3's
-//     own shape) is not used by this family — verified there is no partial_rotary_factor either.
-//   - MHA, not GQA, on the one released size fetched (num_attention_heads == num_key_value_heads
-//     == 30, linear_num_key_heads == linear_num_value_heads == 30) — validated, not assumed.
-//
-// No MoE variant exists; the FFN is a plain dense SwiGLU on every layer, same tensor names as
-// olmo3/llama.
+// No MoE variant exists; the FFN is a plain dense SwiGLU on every layer, with the same tensor names as olmo3/llama.
 func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateOlmoHybrid(); err != nil {
 		return nil, nil, err
@@ -940,7 +812,7 @@ func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		NormEps:         cfg.LayerNormEps,
 		NormPlacement:   NormParallel, // one input norm → attn + mlp → single residual add
 		Act:             ActSiLU,
-		QKNorm:          false, // cohere1 use_qk_norm rejected in validateCohere (Phase 1)
+		QKNorm:          false, // cohere1 use_qk_norm is rejected in validateCohere
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   0, // cohere1: full attention (sliding_window ⇒ cohere2, rejected)
 		layerIsGlobal:   nil,
@@ -1068,35 +940,20 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &llamaTensorSchema, nil
 }
 
-// ministral3Architecture expresses Ministral 3 (mistralai/Ministral-3-{3b,8b,14b}, model_type
-// "mistral3" — the OUTER Mistral3ForConditionalGeneration wrapper's type, which `loadConfig`'s
-// generic text_config flattening re-applies LAST over whatever the nested text_config's own
-// model_type ("ministral3") set; confirmed by reading that flattening code directly rather than
-// assumed, since it decides which registry key this family actually resolves under): Mistral's
-// GQA skeleton (reused verbatim: same tensor names, confirmed by instantiating
-// Ministral3ForCausalLM directly and reading its state_dict) with two real deltas Phase 0 found,
-// both checked against the released config rather than assumed from the brief's own framing:
+// ministral3Architecture expresses Ministral 3 (model_type "mistral3", the OUTER Mistral3ForConditionalGeneration wrapper's type: loadConfig's
+// text_config flattening re-applies it last over the nested text_config's own "ministral3", so it is the registry key a real checkpoint
+// resolves under): Mistral's GQA skeleton (same tensor names) with two real deltas, checked against the released config:
 //
-//  1. `sliding_window: null` on the real release — mistralArchitecture already treats
-//     SlidingWindow<=0 as full attention (its own "0 ⇒ full attention" comment), so this needs
-//     no new code; the brief's own caution ("verify... whether it is every layer") was answered
-//     "there is no window at all", not "yes, every layer".
-//  2. `rope_parameters` is `rope_type: "yarn"` with a real, load-bearing THIRD field alongside
-//     the standard YaRN ones: `llama_4_scaling_beta`. Verified against the real
-//     modular_ministral3.py (not guessed): `get_llama_4_attn_scale` multiplies the QUERY by
-//     `1 + beta·ln(1 + floor(pos/original_max_position_embeddings))`, AFTER RoPE, on EVERY
-//     layer — the exact formula llama4Architecture's own attnTemp/floorScale primitive already
-//     implements (`decoder/forward_llama4.go`), but Llama4 applies it INSTEAD of RoPE on NoPE
-//     layers only, never combined with RoPE the way this family needs. Generalized to the two
-//     new Architecture fields AttnTempBeta/AttnTempOrigMaxPos (see their own comment) and wired
-//     into the GENERIC causalAttention/forwardN paths rather than copied into an own-forward
-//     function, since every existing family leaves both fields at their zero-value no-op.
+//  1. sliding_window is null on the release, which mistralArchitecture already treats as full attention: no new code.
+//  2. rope_parameters is rope_type "yarn" plus a load-bearing llama_4_scaling_beta: get_llama_4_attn_scale multiplies the QUERY by
+//     1 + beta·ln(1 + floor(pos/original_max_position_embeddings)) AFTER RoPE, on every layer. That is the attnTemp/floorScale formula
+//     llama4Architecture implements, but Llama4 applies it instead of RoPE on NoPE layers only, never combined with RoPE. It is the generic
+//     Architecture.AttnTempBeta/AttnTempOrigMaxPos pair, wired into the generic causalAttention/forwardN paths; every other family leaves
+//     both at the zero-value no-op.
 //
-// Also confirmed: `mscale`/`mscale_all_dim` (both 1.0 on the release) are DeepSeek's own spelling
-// of the YaRN attention_factor, not the generic `attention_factor` key parseRopeScaling reads —
-// left unhandled, its own default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct
-// value (1.0, since mscale == mscale_all_dim here, same reasoning deepseekArchitecture's own
-// comment gives for V2-Lite). Overridden the same way deepseekArchitecture already does.
+// mscale/mscale_all_dim (both 1.0 on the release) are DeepSeek's spelling of the YaRN attention_factor, not the generic `attention_factor`
+// key parseRopeScaling reads. Left unhandled, its default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct 1.0, so it is
+// overridden the way deepseekArchitecture does.
 func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// backfillFlatRope BEFORE validateLlama: the released checkpoints carry ONLY a nested
 	// rope_parameters (no flat rope_theta), and validateLlama itself requires RoPEGlobalBase > 0
@@ -1172,20 +1029,9 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &llamaTensorSchema, nil
 }
 
-// gpt2Architecture expresses GPT-2: the GPT-2/NeoX class
-// that breaks the Llama mold on several axes — LayerNorm (mean-centered, with
-// bias) instead of RMSNorm, learned absolute position embeddings instead of
-// RoPE, a non-gated GELU MLP (up→gelu→down) instead of a gated one, fused q/k/v
-// with bias, an attention output bias, and tied embeddings. The Conv1D weight
-// layout + fused projections need a dedicated loader (buildGPT2Weights), so
-// this returns the gpt2TensorSchema as a marker; the schema's field names are
-// unused.
-// gpt2Act maps GPT-2's activation_function to the ActKind that actually implements it.
-// "gelu_new" (and the empty default, which is GPT-2's own) is the TANH approximation;
-// "gelu" is the exact erf function. validateGPT2 accepts both, and before this they both
-// ran geluTanh — so a checkpoint declaring the exact function silently got the
-// approximation. The two differ by up to 4.73e-4, small enough to pass unnoticed and
-// still wrong. Every shipping GPT-2 config declares gelu_new, so nothing in tree moves.
+// gpt2Act maps GPT-2's activation_function to the ActKind that implements it: "gelu_new" (and the empty default, GPT-2's own) is the TANH
+// approximation, "gelu" the exact erf function. They differ by up to 4.73e-4, small enough to pass unnoticed and still wrong, so a
+// checkpoint declaring the exact function must not get the approximation.
 func gpt2Act(name string) ActKind {
 	if name == "gelu" {
 		return ActGelu
@@ -1193,6 +1039,10 @@ func gpt2Act(name string) ActKind {
 	return ActGeluTanh
 }
 
+// gpt2Architecture expresses GPT-2: the GPT-2/NeoX class that breaks the Llama mold on several axes: LayerNorm (mean-centered, with bias)
+// instead of RMSNorm, learned absolute position embeddings instead of RoPE, a non-gated GELU MLP (up→gelu→down), fused q/k/v with bias, an
+// attention output bias, and tied embeddings. The Conv1D weight layout and fused projections need a dedicated loader (buildGPT2Weights), so
+// this returns gpt2TensorSchema as a marker; its field names are unused.
 func gpt2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGPT2(); err != nil {
 		return nil, nil, err
@@ -1343,12 +1193,10 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &mellumTensorSchema, nil
 }
 
-// qwen35Architecture expresses Qwen3.5/3.6-MoE (model_type qwen3_5_moe): a 3:1
-// hybrid where most layers are Gated DeltaNet (linear attention with a recurrent
-// matrix state — its own forward path) and the rest are QK-norm softmax attention
-// with partial RoPE, over a routed + shared MoE on every layer. The descriptor
-// marks the per-layer kind (layerIsLinear) and carries the DeltaNet geometry;
-// the softmax layers reuse the uniform attention fields. See docs/qwen3_5_moe.md.
+// qwen35Architecture expresses Qwen3.5/3.6-MoE (model_type qwen3_5_moe): a 3:1 hybrid where most layers are Gated DeltaNet (linear attention
+// with a recurrent matrix state, its own forward path) and the rest are QK-norm softmax attention with partial RoPE, over a routed + shared
+// MoE on every layer. The descriptor marks the per-layer kind (layerIsLinear) and carries the DeltaNet geometry; the softmax layers reuse the
+// uniform attention fields. See docs/completed/qwen3_5_moe.md.
 func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateQwen35(); err != nil {
 		return nil, nil, err
@@ -1412,24 +1260,16 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	return arch, &qwen35TensorSchema, nil
 }
 
-// qwen3NextArchitecture expresses Qwen3-Next (model_type qwen3_next): the same
-// Gated-DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe (verified field-for-field
-// against the real config — DeltaNet geometry, MoE dims, QK-norm, RMSNorm's Gemma3-
-// style (1+w) convention all match, confirmed against the real
-// modular_qwen3_next.py rather than assumed from the family resemblance), with
-// two real config-SHAPE deltas, not just value changes:
+// qwen3NextArchitecture expresses Qwen3-Next (model_type qwen3_next): the same Gated-DeltaNet/softmax/MoE hybrid as qwen3_5_moe (DeltaNet
+// geometry, MoE dims, QK-norm and the Gemma-style (1+w) RMSNorm all match modular_qwen3_next.py), with two config-SHAPE deltas, not just
+// value changes:
 //
-//  1. No layer_types field at all — the per-layer pattern is COMPUTED from
-//     full_attention_interval (normalizeQwen3NextLayerTypes, called below,
-//     before validateQwen35 can require LayerTypes to already be populated).
-//  2. partial_rotary_factor is a TOP-LEVEL field, not nested inside
-//     rope_parameters the way qwen3_5_moe's is — confirmed against
-//     configuration_qwen3_next.py's kwargs.setdefault("partial_rotary_factor", …).
-//     The real released config also has no rope_parameters object at all (plain
-//     top-level rope_theta + rope_scaling), so this mirrors deepseekArchitecture's
-//     dual-path RoPE resolution (nested-if-present, flat-fields otherwise) rather
-//     than qwen35Architecture's nested-only parseRopeFlat, which would hard-error
-//     on a real Qwen3-Next config (parseRopeSpec refuses an empty rope_parameters).
+//  1. No layer_types field: the per-layer pattern is COMPUTED from full_attention_interval (normalizeQwen3NextLayerTypes, called below,
+//     before validateQwen35 can require LayerTypes to be populated).
+//  2. partial_rotary_factor is a TOP-LEVEL field, not nested inside rope_parameters, and the released config has no rope_parameters object
+//     at all (top-level rope_theta + rope_scaling). So this mirrors deepseekArchitecture's dual-path RoPE resolution (nested if present, flat
+//     fields otherwise) rather than qwen35Architecture's nested-only parseRopeFlat, which hard-errors on an empty rope_parameters
+//     (parseRopeSpec refuses it).
 func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.normalizeQwen3NextLayerTypes(); err != nil {
 		return nil, nil, err
@@ -1552,13 +1392,10 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &qwen2TensorSchema, nil
 }
 
-// qwen2_5_vlArchitecture expresses the Qwen2.5-VL TEXT decoder: a Qwen2 dense
-// decoder (q/k/v bias, GQA, RMSNorm, SwiGLU, derived head_dim) whose RoPE config
-// lives under transformers-5.x's nested rope_parameters {mrope_section, rope_theta}
-// instead of a top-level rope_theta. For TEXT, m-RoPE degenerates to standard
-// scalar RoPE (the 3 position components are equal), so the text path is exactly
-// Qwen2 — the 3D-position machinery only engages on the image path (P5). The
-// vision_config is ignored here, like the Gemma 3 VL text side. (P5)
+// qwen2_5_vlArchitecture expresses the Qwen2.5-VL TEXT decoder: a Qwen2 dense decoder (q/k/v bias, GQA, RMSNorm, SwiGLU, derived head_dim)
+// whose RoPE config lives under transformers-5.x's nested rope_parameters {mrope_section, rope_theta} instead of a top-level rope_theta.
+// For text, m-RoPE degenerates to standard scalar RoPE (the 3 position components are equal), so the text path is exactly Qwen2; the 3D
+// position machinery only engages on the image path. The vision_config is ignored here, like the Gemma 3 VL text side.
 func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// mrope_section + rope_theta live under EITHER the transformers-5.x nested
 	// rope_parameters {mrope_section, rope_theta} (the tiny synthetic) OR the older
@@ -1601,8 +1438,8 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		section = cfg.MRopeSection // a .giw's config carries it under its own key (rope_scaling was cleared when it was written)
 	}
 	if len(section) != 3 {
-		// A Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A .giw
-		// written before 2026-10-09 dropped it; refusing makes a stale sidecar fail its self-check and rebuild.
+		// Refuse: a Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A stale .giw sidecar that
+		// dropped it then fails its self-check and rebuilds.
 		return nil, nil, fmt.Errorf("decoder(qwen2_5_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it")
 	}
 	cfg.MRopeSection = section
@@ -1615,20 +1452,13 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	return arch, schema, nil
 }
 
-// qwen3_vlArchitecture expresses Qwen3-VL's TEXT decoder ONLY (P8 Phase 0 — see
-// docs/multimodal.md): a Qwen3 dense decoder (per-head q/k RMSNorm, GQA, no q/k/v
-// bias, derived head_dim — confirmed against transformers' Qwen3VLTextAttention,
-// NOT Qwen2's shape, which is what qwen2_5_vlArchitecture aliases) whose RoPE
-// config lives under the same nested rope_parameters {mrope_section, rope_theta}
-// convention qwen2_5_vlArchitecture already parses. For TEXT, m-RoPE degenerates
-// to standard scalar RoPE exactly as it does for Qwen2.5-VL, so the text path is
-// exactly Qwen3 — the only wrinkle is that Qwen3-VL's mrope_section maps frequency
-// index to component via a DIFFERENT, INTERLEAVED formula than Qwen2.5-VL's
-// contiguous-block one (mropeComponentInterleaved vs mropeComponent, decoder/rope.go)
-// — irrelevant for a degenerate (all-equal) TEXT position, but load-bearing the
-// moment an image path is added, so it is wired here even though nothing on the
-// text-only path can currently exercise it. vision_config/deepstack_visual_indexes
-// are ignored here — no vision tower, no DeepStack injection (P8 Phase 0 scope).
+// qwen3_vlArchitecture expresses Qwen3-VL's TEXT decoder only: a Qwen3 dense decoder (per-head q/k RMSNorm, GQA, no q/k/v bias, derived
+// head_dim: Qwen3VLTextAttention, not Qwen2's shape that qwen2_5_vlArchitecture aliases) whose RoPE config lives under the same nested
+// rope_parameters {mrope_section, rope_theta} convention qwen2_5_vlArchitecture parses. For text, m-RoPE degenerates to standard scalar RoPE
+// as for Qwen2.5-VL, so the text path is exactly Qwen3. Qwen3-VL's mrope_section maps frequency index to component through an INTERLEAVED
+// formula, unlike Qwen2.5-VL's contiguous blocks (mropeComponentInterleaved vs mropeComponent, decoder/rope.go): irrelevant for a degenerate
+// text position, load-bearing once an image path runs, so it is wired here. vision_config/deepstack_visual_indexes are ignored: no vision
+// tower and no DeepStack injection in this adapter.
 func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// Same extraction qwen2_5_vlArchitecture uses: mrope_section + rope_theta live under
 	// EITHER the nested rope_parameters (the common transformers-5.x shape) OR the older
@@ -1656,9 +1486,8 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		if err := json.Unmarshal(cfg.RopeScaling, &rs); err != nil {
 			return nil, nil, fmt.Errorf("decoder(qwen3_vl): parse rope_scaling: %w", err)
 		}
-		// The released Qwen3-VL checkpoints write rope_scaling {mrope_interleaved: true, mrope_section: [24, 20, 20],
-		// rope_type: "default"}: m-RoPE is marked by the section being there, not by the type (S10, found by G-S10a's
-		// load printing MRopeSection=[] on Qwen3-VL-2B-Instruct). A section present is taken whatever the type says.
+		// The released Qwen3-VL checkpoints write rope_scaling {mrope_interleaved: true, mrope_section: [...], rope_type: "default"}: m-RoPE is
+		// marked by the section being there, not by the type, so a section present is taken whatever the type says.
 		if rs.Type == "mrope" || rs.RopeType == "mrope" || len(rs.MRopeSection) > 0 {
 			if section == nil {
 				section = rs.MRopeSection
@@ -1673,8 +1502,8 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		section = cfg.MRopeSection // a .giw's config carries it under its own key (rope_scaling was cleared when it was written)
 	}
 	if len(section) != 3 {
-		// A Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A .giw
-		// written before 2026-10-09 dropped it; refusing makes a stale sidecar fail its self-check and rebuild.
+		// Refuse: a Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A stale .giw sidecar that
+		// dropped it then fails its self-check and rebuilds.
 		return nil, nil, fmt.Errorf("decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it")
 	}
 	cfg.MRopeSection = section
@@ -1769,17 +1598,13 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &qwen2MoeTensorSchema, nil
 }
 
-// glm4moeArchitecture expresses GLM-4.5/4.6 (model_type glm4_moe): qwen3-like
-// softmax attention (per-head QK-norm, partial RoPE, NO q/k/v bias) over a
-// DeepSeek-style MoE. The MoE differs from Qwen2-MoE on three axes, all carried by
-// MoEConfig: experts are scored by per-expert sigmoid (not softmax), an
-// e_score_correction_bias steers the top-k SELECTION while the weights stay the
-// un-biased sigmoid scores, the routed weights are scaled by routed_scaling_factor,
-// and the always-on shared expert is added UNGATED. first_k_dense_replace layers at
-// the top are plain dense MLPs (no router) — the only family with mixed dense/MoE
-// layers, handled by the loader populating Experts only on i ≥ FirstKDense. The
-// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The
-// tensor schema is glm4moeTensorSchema. See docs/completed/task-model-families-glm-granite.md.
+// glm4moeArchitecture expresses GLM-4.5/4.6 (model_type glm4_moe): qwen3-like softmax attention (per-head QK-norm, partial RoPE, NO q/k/v
+// bias) over a DeepSeek-style MoE. The MoE differs from Qwen2-MoE on three axes, all carried by MoEConfig: experts are scored by per-expert
+// sigmoid (not softmax), an e_score_correction_bias steers the top-k SELECTION while the weights stay the un-biased sigmoid scores, the
+// routed weights are scaled by routed_scaling_factor, and the always-on shared expert is added UNGATED. first_k_dense_replace layers at the
+// top are plain dense MLPs (no router), handled by the loader populating Experts only on i ≥ FirstKDense. The num_nextn_predict_layers MTP
+// head is dropped (only num_hidden_layers load). The tensor schema is glm4moeTensorSchema. See
+// docs/completed/task-model-families-glm-granite.md.
 func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGlm4Moe(); err != nil {
 		return nil, nil, err
@@ -1870,25 +1695,14 @@ func nopePredicate(kind string) func(int) bool {
 	return nil
 }
 
-// lfm2Architecture expresses LFM2 / LFM2.5 (model_type lfm2): a gated-short-convolution +
-// softmax-attention hybrid. Every layer has a SwiGLU FFN; layer_types decides whether its
-// mixer is a conv block (22 of 30 on LFM2.5-2.6B) or GQA attention with per-head RMSNorm on
-// Q and K (8 of 30, at 2/5/9/13/17/21/24/27).
+// lfm2Architecture expresses LFM2 / LFM2.5 (model_type lfm2): a gated-short-convolution + softmax-attention hybrid. Every layer has a SwiGLU
+// FFN; layer_types decides whether its mixer is a conv block or GQA attention with per-head RMSNorm on Q and K. EXPERIMENTAL tier: validated
+// against the HF reference on a real checkpoint, not against a full-model T3.
 //
-// It is EXPERIMENTAL tier: validated against the HF reference on a real checkpoint, not
-// against a full-model T3.
-//
-// Three facts here were checked against the released LFM2.5-2.6B rather than inherited from
-// the original scoping brief, and two of them contradicted it:
-//
-//   - QK-norm is RMSNorm, not LayerNorm. The brief said LayerNorm; the reference uses
-//     Lfm2RMSNorm(head_dim) per head, and the checkpoint carries q_layernorm.weight with NO
-//     bias tensor anywhere in its 266. That is the difference between reusing the existing
-//     hardcoded QK-norm path and writing a bias-carrying LayerNorm variant.
-//   - vocab is 128,000 (the brief said 65,536, which is the older LFM2-2.6B tokenizer), and
-//     rope_theta is 1e7 (was 1e6).
-//   - intermediate_size is STATED (10752), not computed from block_multiple_of — so the
-//     block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
+// Checked against the released LFM2.5-2.6B rather than inherited from the scoping brief: QK-norm is RMSNorm, not LayerNorm (the reference
+// uses Lfm2RMSNorm(head_dim) per head and the checkpoint carries q_layernorm.weight with no bias tensor), which is the difference between
+// reusing the existing QK-norm path and writing a bias-carrying LayerNorm variant; and intermediate_size is stated, not computed from
+// block_multiple_of, so the block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
 func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateLFM2(); err != nil {
 		return nil, nil, err
@@ -2023,24 +1837,12 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &graniteTensorSchema, nil
 }
 
-// graniteDenseArchitecture expresses dense Granite 4.2 (ibm-granite/granite-4.2-{3b,8b,30b},
-// model_type "granite", GraniteForCausalLM): a plain llama skeleton — confirmed byte-identical
-// tensor names (self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj, input_layernorm/
-// post_attention_layernorm, no bias, no QK-norm) by instantiating GraniteForCausalLM directly and
-// reading its state_dict, not assumed from Granite-4.0-H's own tensor names — plus Granite's four
-// scalar multipliers, THREE of which are already generic on Architecture (embedding_multiplier →
-// EmbedScale, attention_multiplier → AttnScale in place of 1/√d, logits_scaling → LogitScale;
-// granitemoehybrid's own comment on EmbedScale notes it applies "the Gemma sqrt path", but the
-// mechanism itself — multiply the embedding by a constant — is generic regardless of how that
-// constant is derived). residual_multiplier is the one exception: granitemoehybrid's own-forward
-// (runLayersGranite) applies it via graniteParams.ResidMul, and the generic uniform-layer forward
-// this family rides has no such hook. Checked against all three released sizes' real config.json
-// (3b/8b/30b): every one ships residual_multiplier 1.0 (identity), so validateGraniteDense rejects
-// anything else rather than silently dropping it — the same discipline validateLlama already
-// applies to scaled RoPE. Verified against a real GGUF header too (bartowski/granite-4.2-3b-GGUF
-// Q2_K, HTTP-Range-fetched): architecture string "granite", metadata carries the multipliers
-// directly (attention.scale/embedding_scale/logit_scale/residual_scale) and the tensor set is
-// exactly llama's — the tensor schema is llamaTensorSchema, reused rather than duplicated.
+// graniteDenseArchitecture expresses dense Granite 4.2 (model_type "granite", GraniteForCausalLM): a plain llama skeleton (tensor names
+// byte-identical to llama's, so llamaTensorSchema is reused) plus Granite's four scalar multipliers, three of them generic on Architecture
+// (embedding_multiplier → EmbedScale, attention_multiplier → AttnScale in place of 1/√d, logits_scaling → LogitScale). residual_multiplier
+// is the exception: granitemoehybrid's own forward applies it via graniteParams.ResidMul, and the generic uniform-layer forward this family
+// rides has no such hook. All three released sizes ship residual_multiplier 1.0 (identity), so validateGraniteDense rejects anything else
+// rather than silently dropping it, the discipline validateLlama applies to attention bias.
 func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGraniteDense(); err != nil {
 		return nil, nil, err
@@ -2122,18 +1924,11 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	for i, t := range cfg.LayersBlockType {
 		switch t {
 		case "attention", "full_attention":
-			// "full_attention" is transformers' own canonicalized spelling
-			// (configuration_nemotron_h.py's remap_legacy_layer_types /
-			// _pattern_to_list) — a checkpoint saved through a current transformers
-			// version carries this, NOT "attention", even when "attention" is what
-			// was originally passed in (confirmed empirically generating this
-			// family's own MoE test fixture: layers_block_type came back
-			// ["linear_attention","moe","full_attention",...] from an input of
-			// ["mamba","moe","attention",...]). The real NVIDIA-released checkpoint
-			// is unaffected today (it ships hybrid_override_pattern, parsed
-			// independently by normalizeNemotronBlocks, not layers_block_type
-			// directly) — but any checkpoint re-saved through transformers would hit
-			// this, so it's handled as a real alias, not a fixture-only workaround.
+			// "full_attention" is transformers' own canonicalized spelling (configuration_nemotron_h.py's remap_legacy_layer_types/_pattern_to_list): a
+			// checkpoint saved through a current transformers carries it, not "attention", even when "attention" was passed in (layers_block_type came
+			// back ["linear_attention","moe","full_attention",...] from ["mamba","moe","attention",...]). The real NVIDIA release ships
+			// hybrid_override_pattern (parsed independently by normalizeNemotronBlocks) and is unaffected, but any checkpoint re-saved through
+			// transformers hits this, so it is a real alias, not a fixture-only workaround.
 			kind[i] = nemoAttn
 		case "mlp":
 			kind[i] = nemoMLP
@@ -2146,19 +1941,12 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			return nil, nil, fmt.Errorf("decoder(nemotron_h): layers_block_type[%d] = %q unrecognized (want mamba/linear_attention, attention/full_attention, mlp, or moe)", i, t)
 		}
 	}
-	// Nemotron 3 Nano's MoE FFN (model_type still "nemotron_h" — only the pattern's
-	// "E" blocks distinguish it from plain Nemotron-H, which never sets hasMoE).
-	// Routing verified against NVIDIA's own modeling_nemotron_h.py NemotronHTopkRouter,
-	// not inferred from config-field-name similarity to DeepSeek-V3 alone: sigmoid
-	// scores + e_score_correction_bias + group-limited top-k (n_group/topk_group) +
-	// routed_scaling_factor on the selected weights + an UNGATED additive shared
-	// expert ("hidden_states = hidden_states + self.shared_experts(residuals)", no
-	// scoring_func key at all — sigmoid is unconditional for this family, not
-	// config-driven the way DeepSeek's is). The expert FFN itself is non-gated relu²
-	// (up_proj/down_proj only, no gate_proj — confirmed from the real safetensors
-	// index), which routeExperts' selection is agnostic to but moeMLP's SwiGLU-only
-	// expert evaluator cannot run — see nemotronMoE in forward_nemotron.go, a small
-	// LOCAL function, not a change to the shared moeMLP path other families use.
+	// Nemotron 3 Nano's MoE FFN (model_type still "nemotron_h": only the pattern's "E" blocks distinguish it; plain Nemotron-H never sets hasMoE).
+	// Routing follows NVIDIA's NemotronHTopkRouter: sigmoid scores + e_score_correction_bias + group-limited top-k (n_group/topk_group) +
+	// routed_scaling_factor on the selected weights + an UNGATED additive shared expert; sigmoid is unconditional for this family (no
+	// scoring_func key), not config-driven as DeepSeek's is. The expert FFN is non-gated relu² (up_proj/down_proj only), which routeExperts'
+	// selection is agnostic to but moeMLP's SwiGLU-only expert evaluator cannot run: see nemotronMoE in forward_nemotron.go, a local function,
+	// not a change to the shared moeMLP path.
 	var moe *MoEConfig
 	if hasMoE {
 		normTopK := true
@@ -2319,16 +2107,10 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			NGroup:                cfg.NGroup,
 			TopkGroup:             cfg.TopkGroup,
 		},
-		// Plain qk_head_dim^-0.5 — NOT a TODO (audit-2026-09-02.md N-34, resolved 2026-09-11):
-		// an older version of this comment claimed the real V2-Lite/V3 fold YaRN's
-		// mscale_all_dim² into this scale and called it unwired, contradicting the OTHER
-		// mscale comment in this same function (parseRopeScaling's caller above, "transformers
-		// 5.12 does NOT fold mscale² into it"). The real-model gates settle it:
-		// testdata/parity_manifest.json's deepseek_v2/deepseek_v3 entries are "validated"
-		// against real HF bf16 oracles (DeepSeek-V2-Lite 15.7B, Moonlight-16B-A3B) at
-		// cosine_min 0.999+ with THIS plain scale — a ~2x attention-softmax error from a
-		// missing mscale_all_dim²≈0.5 fold would not read as 0.999. No fold needed; the tiny
-		// golden also uses default RoPE, so no mscale there either.
+		// Plain qk_head_dim^-0.5: transformers (5.12) does not fold YaRN's mscale_all_dim² into the attention scale, unlike the old standalone
+		// modeling_deepseek. The real-model gates agree: testdata/parity_manifest.json's deepseek_v2/deepseek_v3 entries validate against HF bf16
+		// oracles (DeepSeek-V2-Lite, Moonlight-16B-A3B) at cosine_min 0.999+ with this scale, which a ~2x softmax error from a missing fold would
+		// not.
 		AttnScale:      math.Pow(float64(qk), -0.5),
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,
@@ -2344,39 +2126,24 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &deepseekTensorSchema, nil
 }
 
-// bailingHybridArchitecture expresses Bailing Hybrid (inclusionAI, model_type "bailing_hybrid";
-// Ling 3.0 — Ling-3.0-tiny/flash): DeepSeek-style Multi-head Latent Attention (MLA) alternating
-// with Kimi Delta Attention (KDA) linear-attention layers every LayerGroupSize-th layer being MLA,
-// over a DeepSeekMoE FFN — verified field-for-field against the real modeling_bailing_moe_v3.py
-// (fetched directly, plus a real checkpoint's actual safetensors header via HTTP Range, not
-// downloaded in full), not the task brief's own paraphrase:
+// bailingHybridArchitecture expresses Bailing Hybrid (inclusionAI, model_type "bailing_hybrid"; Ling 3.0): DeepSeek-style Multi-head
+// Latent Attention (MLA) alternating with Kimi Delta Attention (KDA) linear-attention layers, every LayerGroupSize-th layer being MLA, over a
+// DeepSeekMoE FFN. Checked against the real modeling_bailing_moe_v3.py and a real checkpoint's safetensors header:
 //
-//   - layer_types is NOT a config.json field for this family at all (no released checkpoint
-//     carries it) — the pattern is COMPUTED from layer_group_size, replicated exactly in
-//     normalizeBailingLayerTypes (including a tail-cleanup clause the brief's own description
-//     omitted).
-//   - MLA is reused via forward_deepseek.go's mlaAttention UNCHANGED, parameterized for two real
-//     departures: both mixers are named self.attention (not self.self_attn — mlaParams.AttnPrefix)
-//     and the output projection is self.dense (not self_attn.o_proj — mlaParams.DenseSuffix). An
-//     optional per-head sigmoid output gate (gated_attention_proj_granularity_type) rides the same
-//     mechanism Laguna's own attention-output gate already ships, activation aside.
-//   - MoE reuses moeMLP/routeExperts UNCHANGED (sigmoid + expert_bias + group-limited top-k +
-//     routed_scaling_factor + an ungated shared expert is byte-for-byte DeepSeek-V3's noaux_tc
-//     shape — confirmed from BailingMoeV3Gate/SparseMoeBlock's own forward, not assumed from field
-//     names), but this family spells its expert counts num_experts/num_shared_experts (not
-//     DeepSeek's n_routed_experts/n_shared_experts) and its bias buffer expert_bias (not
-//     e_score_correction_bias) — real, checked-not-assumed naming departures.
-//   - KDA (kda.go) is the one genuinely new primitive: a delta-rule recurrence structurally
-//     identical to Gated DeltaNet but with a PER-CHANNEL decay (fla-org/flash-linear-attention's
-//     actual source, not HF's opaque Triton-kernel call — see F4's own rehearsal,
-//     docs/completed/task-families-2026-09.md). Only the no_kda_lora + kda_safe_gate variant Ling-3.0-tiny's
-//     own config selects is implemented; validateBailingHybrid refuses anything else rather than
-//     silently mis-running an unimplemented variant.
+//   - layer_types is NOT a config.json field for this family: the pattern is computed from layer_group_size (normalizeBailingLayerTypes,
+//     including a tail-cleanup clause).
+//   - MLA is reused via mlaAttention UNCHANGED, parameterized for two departures: both mixers are named self.attention (mlaParams.AttnPrefix)
+//     and the output projection is self.dense (mlaParams.DenseSuffix). An optional per-head sigmoid output gate
+//     (gated_attention_proj_granularity_type) rides the mechanism Laguna's attention-output gate ships, activation aside.
+//   - MoE reuses moeMLP/routeExperts UNCHANGED (sigmoid + expert_bias + group-limited top-k + routed_scaling_factor + an ungated shared expert
+//     is DeepSeek-V3's noaux_tc shape), but this family spells its expert counts num_experts/num_shared_experts and its bias buffer
+//     expert_bias.
+//   - KDA (kda.go) is the one new primitive: a delta-rule recurrence like Gated DeltaNet with a PER-CHANNEL decay (from fla-org/
+//     flash-linear-attention's source, not HF's opaque Triton-kernel call). Only the no_kda_lora + kda_safe_gate variant Ling-3.0-tiny's
+//     config selects is implemented; validateBailingHybrid refuses anything else rather than silently mis-running it.
 //
-// No YaRN/rope_scaling override is wired (the DeepSeek-style mscale/mscale_all_dim ratio
-// deepseekArchitecture applies): Ling-3.0-tiny's own released config carries rope_scaling: null,
-// so nothing exercises it; a future Bailing checkpoint that sets YaRN would need it added, same as
-// deepseekArchitecture's own.
+// No YaRN/rope_scaling override is wired (the mscale/mscale_all_dim ratio deepseekArchitecture applies): the released config carries
+// rope_scaling: null, so a Bailing checkpoint that sets YaRN would need it added.
 func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.normalizeBailingLayerTypes(); err != nil {
 		return nil, nil, err
@@ -2644,25 +2411,12 @@ func (c *Config) validateGlmOcr(hd int) error {
 	return nil
 }
 
-// llama4Architecture expresses the Llama 4 (Scout/Maverick) TEXT decoder (model_type
-// llama4_text): the iRoPE stack. Most layers are RoPE GQA with a parameter-free L2
-// (RMS-over-head-dim) QK-norm; every no_rope_layers==0 layer is NoPE (no RoPE) with
-// attention-temperature tuning (q scaled by log1p(floor((pos+1)/floor_scale))·attn_scale+1
-// for length generalization). The FFN interleaves dense (intermediate_size_mlp) and MoE
-// (moe_layers) blocks; the MoE is top-1 SIGMOID routing (no group, no norm, no scale) plus
-// an always-on UNGATED shared expert, both at intermediate_size. Separate q/k/v/o (no
-// fusion, no bias). Interleaved (complex) RoPE over the full head_dim. The vision tower
-// (early-fusion multimodal) and any MTP heads are dropped — text decoder only. Dedicated
-// loader (buildLlama4Weights) + forward (runLayersLlama4).
-// gptOssArchitecture expresses the gpt-oss sparse-MoE family (model_type gpt_oss,
-// GGUF arch gpt-oss). It marks the family with a gptoss escape hatch — its forward
-// (forward_gptoss.go) adds a learned per-head attention SINK to each softmax and
-// uses a clamped interleaved-SwiGLU expert with per-expert biases — while the layer
-// skeleton stays the shared pre-norm path. Attention alternates sliding (even
-// layers, window sliding_window) and full (odd), q/k/v/o all carry biases, no
-// QK-norm, YaRN RoPE (one table for both attention types). The router carries a
-// per-expert logit bias (LayerWeights.RouterBias). MXFP4 experts are CPU-only; CUDA
-// and Metal decline via FeatAttnSink (features.go).
+// gptOssArchitecture expresses the gpt-oss sparse-MoE family (model_type gpt_oss, GGUF arch gpt-oss). It marks the family with a gptoss
+// escape hatch: its forward (forward_gptoss.go) adds a learned per-head attention SINK to each softmax and uses a clamped interleaved-SwiGLU
+// expert with per-expert biases, while the layer skeleton stays the shared pre-norm path. Attention alternates sliding (even layers, window
+// sliding_window) and full (odd); q/k/v/o all carry biases; no QK-norm; YaRN RoPE (one table for both attention types). The router carries a
+// per-expert logit bias (LayerWeights.RouterBias). A resident backend admits the family only by declaring FeatAttnSink and FeatOutBias
+// (features.go).
 func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGptOss(); err != nil {
 		return nil, nil, err
@@ -2717,6 +2471,13 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, nil, nil
 }
 
+// llama4Architecture expresses the Llama 4 (Scout/Maverick) TEXT decoder (model_type llama4_text): the iRoPE stack. Most layers are RoPE GQA
+// with a parameter-free L2 (RMS-over-head-dim) QK-norm; every no_rope_layers==0 layer is NoPE (no RoPE) with attention-temperature tuning (q
+// scaled by log1p(floor((pos+1)/floor_scale))·attn_scale+1 for length generalization). The FFN interleaves dense (intermediate_size_mlp) and
+// MoE (moe_layers) blocks; the MoE is top-1 SIGMOID routing (no group, no norm, no scale) plus an always-on UNGATED shared expert, both at
+// intermediate_size. Separate q/k/v/o (no fusion, no bias). Interleaved (complex) RoPE over the full head_dim. The vision tower
+// (early-fusion multimodal) and any MTP heads are dropped: text decoder only. Dedicated loader (buildLlama4Weights) + forward
+// (runLayersLlama4).
 func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NumLocalExperts <= 0 || cfg.NumExpertsPerTok <= 0 {
 		return nil, nil, fmt.Errorf("decoder(llama4): bad MoE (num_local_experts=%d num_experts_per_tok=%d)", cfg.NumLocalExperts, cfg.NumExpertsPerTok)
@@ -2819,8 +2580,7 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
 		llama4: &llama4Params{
-			// M-05: attention_chunk_size was read into Config and dropped here, so the RoPE
-			// layers attended full-causal past it.
+			// attention_chunk_size bounds the RoPE layers' attention to chunks; dropping it attends full-causal past it.
 			chunkSize: cfg.AttentionChunkSize,
 			useRope:   useRope, isMoE: isMoE, useQKNorm: cfg.UseQKNorm,
 			attnTemp: cfg.AttnTemperatureTuning, floorScale: floor, attnScale: attnScale,
@@ -2855,7 +2615,7 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 //
 // Attention sinks are NOT enabled in any released checkpoint
 // (swa_attention_sink_enabled absent), so that branch of the vendor code has no
-// counterpart here. See docs/task-laguna.md for the Phase 0 config verification.
+// counterpart here. See docs/completed/task-laguna.md for the config verification.
 func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateLaguna(); err != nil {
 		return nil, nil, err
@@ -2963,38 +2723,25 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &lagunaTensorSchema, nil
 }
 
-// spark25Architecture expresses Spark-X2.5 (model_type spark2_5; XHToken/Spark-X2.5-{1.7B,4B}).
-// docs/tasks/task-spark-x2-5.md / docs/audit-2026-09-10.md L-06 scoped this from a survey-level
-// summary; TWO of its claims did not survive reading the real configuration_spark.py /
-// modeling_spark.py (fetched directly, trust_remote_code) and are corrected here:
+// spark25Architecture expresses Spark-X2.5 (model_type spark2_5; XHToken/Spark-X2.5-{1.7B,4B}). Two claims of the survey-level scoping
+// (docs/tasks/task-spark-x2-5.md) did not survive reading the real configuration_spark.py / modeling_spark.py (trust_remote_code):
 //
-//   - The audit says Spark-X2.5 reuses "the parallel block (Command-R)". It does not — its
-//     decoder layer is the STANDARD sequential residual (norm→attn→residual, norm→mlp→residual),
-//     byte-for-byte the same shape as Llama/Qwen (NormPre2). No parallel-block wiring needed.
-//   - The audit says "non-gated GELU". Spark2_5MLP IS gated (SwiGLU-shaped:
-//     down(gelu(gate(x))*up(x))) — the only real departure from Llama's MLP is the activation
-//     (exact erf GELU, HF's "gelu", NOT gelu_new/gelu_pytorch_tanh) inside that gated shape. See
-//     gegluExact (mlp.go) — ActGelu previously only reached the non-gated path.
+//   - It is not a parallel block (Command-R): the decoder layer is the standard sequential residual, the same shape as Llama/Qwen
+//     (NormPre2).
+//   - It is not a non-gated GELU MLP: Spark2_5MLP is gated (down(gelu(gate(x))*up(x))); the only departure from Llama's MLP is the
+//     activation, exact erf GELU (HF's "gelu"), inside that gated shape (gegluExact in mlp.go).
 //
-// What IS real, confirmed against source:
-//   - Fused QKV: one q_k_v_proj Linear(hidden, qDim+2*kvDim), split Q‖K‖V by output rows in that
-//     order — buildSpark25Weights (weights.go), modeled on buildPhi3Weights's split.
-//   - Head-wise SIGMOID attention-output gate (g_proj: Linear(hidden, numHeads)), applied
-//     element-wise to attn_output BEFORE out_proj — exactly Laguna's g_proj STRUCTURE with a
-//     different activation. This is the one genuinely NEW forward-pass wire: the sigmoid gate
-//     math (applySigmoidGateRow) already existed for MLA (Bailing Hybrid) but had no hook in the
-//     generic (non-MLA) attention path Spark2.5 uses — see AttnGate/GateSigmoid (arch.go).
-//   - Per-layer-type RoPE: full_attention layers get partial_rotary_factor=0.25 (rotary_dim =
-//     head_dim/4) + theta 5e6; sliding_attention layers get partial_rotary_factor=1.0 (full
-//     rotation) + theta 1e4. Exactly Laguna's RotaryDim/RotaryDimLocal/RoPEGlobalBase/
-//     RoPELocalBase mechanism (see lagunaArchitecture above) — reused verbatim, no new plumbing.
-//   - 1:3 sliding:full interleave (sliding_window 512), read generically from layer_types via
-//     cfg.IsGlobalLayer — owned by no single family, every existing consumer already shares it.
-//   - No QK-norm, no embed scale, no logit softcap, no attention sink — the plainest attention
-//     shape this family touches.
-//   - rotate_half is the standard NeoX half-split (ropeInterleave stays false, the default).
-//   - inv_freq is recomputed fresh per forward call in the reference (not a cached
-//     persistent=False buffer) — no internlm2-class fast-init corruption risk on this family.
+// What is real, confirmed against source:
+//   - Fused QKV: one q_k_v_proj Linear(hidden, qDim+2*kvDim), split Q‖K‖V by output rows in that order (buildSpark25Weights, modeled on
+//     buildPhi3Weights's split).
+//   - A head-wise SIGMOID attention-output gate (g_proj: Linear(hidden, numHeads)) applied to attn_output before out_proj: Laguna's g_proj
+//     structure with a different activation, through AttnGate/GateSigmoid (arch.go) in the generic (non-MLA) attention path.
+//   - Per-layer-type RoPE: full_attention layers partial_rotary_factor 0.25 (rotary_dim = head_dim/4) at theta 5e6, sliding_attention
+//     layers full rotation at theta 1e4: Laguna's RotaryDim/RotaryDimLocal/RoPEGlobalBase/RoPELocalBase mechanism, reused verbatim.
+//   - 1:3 sliding:full interleave (sliding_window 512), read from layer_types via cfg.IsGlobalLayer.
+//   - No QK-norm, embed scale, logit softcap or attention sink; rotate_half is the standard NeoX half-split (ropeInterleave false).
+//   - inv_freq is recomputed per forward in the reference (not a cached persistent=False buffer), so there is no internlm2-class
+//     fast-init corruption risk on this family.
 func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	hd := cfg.headDim()
 	if hd != 256 {
@@ -3110,31 +2857,21 @@ func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}, &internlm2TensorSchema, nil
 }
 
-// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaNet /
-// softmax 3:1 hybrid as qwen3_5_moe and qwen3_next, with a plain SwiGLU where they have a
-// router. It is a dense sibling, not a new family — the DeltaNet math, the double-width gated
-// q_proj, the per-head QK-norm, the partial RoPE and the hybrid cache are all shared.
+// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the same Gated-DeltaNet / softmax 3:1 hybrid as qwen3_5_moe and
+// qwen3_next, with a plain SwiGLU where they have a router. A dense sibling, not a new family: the DeltaNet math, the double-width gated
+// q_proj, the per-head QK-norm, the partial RoPE and the hybrid cache are all shared. Checked against the released checkpoint and
+// transformers' models/qwen3_5, not inherited by resemblance:
 //
-// VERIFIED AGAINST THE RELEASED CHECKPOINT AND transformers 5.12's models/qwen3_5, not
-// inherited by resemblance (the house standard the qwen3_next adapter set):
-//
-//   - head_dim 256 with hidden 5120 and 24 heads, so nH·hd = 6144 ≠ hidden. Never derive
-//     head_dim from hidden for this family.
-//   - RMSAddOne TRUE: Qwen3_5RMSNorm is `output * (1.0 + weight)` with weight zero-init,
-//     the same Gemma-style form its MoE siblings use.
-//   - The DeltaNet projections ship as FOUR separate tensors (in_proj_qkv / in_proj_z /
-//     in_proj_a / in_proj_b), i.e. qwen3_5_moe's packing — NOT qwen3_next's fused
-//     in_proj_qkvz/in_proj_ba. So FusedDeltaNetProj stays false and the existing loader path
-//     applies unchanged. Read from the safetensors index, not assumed.
-//   - The attention output gate is torch.sigmoid(gate) despite the config's
-//     output_gate_type:"swish" — the field is not consulted by the modeling code.
-//   - m-RoPE: the text config carries mrope_section [11,11,10] with mrope_interleaved true,
-//     a new variant. For TEXT it reduces EXACTLY to standard partial RoPE: position_ids
-//     arrive 2-D and are expand()ed to three identical components, so
-//     apply_interleaved_mrope overwrites interleaved indices with identical values — a no-op.
-//     The text path is unaffected by MRopeSection being set (ropeAt only consults it when a
-//     cache carries mropePos, which only GenerateQwenVL sets); P8a sets it from rope_parameters
-//     for the image path (parseMRopeFlat), proven byte-identical by TestQwen35_textIdentityHashes.
+//   - head_dim is 256 with hidden 5120 and 24 heads, so nH·hd = 6144 ≠ hidden. Never derive head_dim from hidden for this family.
+//   - RMSAddOne is TRUE: Qwen3_5RMSNorm is `output * (1.0 + weight)` with weight zero-init, as its MoE siblings.
+//   - The DeltaNet projections ship as FOUR separate tensors (in_proj_qkv / in_proj_z / in_proj_a / in_proj_b), qwen3_5_moe's packing, not
+//     qwen3_next's fused in_proj_qkvz/in_proj_ba, so FusedDeltaNetProj stays false.
+//   - The attention output gate is torch.sigmoid(gate) whatever the config's output_gate_type "swish" says: the modeling code does not
+//     consult it.
+//   - m-RoPE: the text config carries mrope_section with mrope_interleaved true. For text it reduces exactly to standard partial RoPE
+//     (position_ids are expanded to three identical components, so apply_interleaved_mrope overwrites with identical values). ropeAt
+//     consults MRopeSection only when a cache carries mropePos, which only GenerateQwenVL sets; parseMRopeFlat sets it for the image path,
+//     and TestQwen35_textIdentityHashes pins the text path byte-identical.
 //
 // rope fields are NESTED under rope_parameters on this release, which parseRopeFlat reads.
 func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
