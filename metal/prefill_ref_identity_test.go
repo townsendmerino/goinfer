@@ -21,9 +21,8 @@ import (
 // TestPrefillRefIdentity audits a prompt set's CPU reference files against the prompts the gates feed them. The files
 // carry no prompt ids, so each (model, K, prompt) is checked the way runDecodeFidelityGate's identity check does it:
 // prefill the snapshot prompt's first K tokens on Metal and compare the reference's prompt-final logits with the
-// resident's. A reference generated from the same text lands at the W4A8-vs-CPU level (measured 0.0015–0.072 on
-// set B's S-K3900); one generated from different text lands orders of magnitude higher (3–18 on set A's). Found
-// 2026-09-25: set A's 2026-09-05 files predate the 2026-09-09 snapshot (metal-decode-attn-r17-2026-09-25.md).
+// resident's. A reference generated from the same text lands at the W4A8-vs-CPU level; one generated from different text lands
+// orders of magnitude higher (set A's older files predate the prompt snapshot: docs/measurements/metal-decode-attn-r17-2026-09-25.md).
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=a go test -tags goinfer_testhooks -run '^TestPrefillRefIdentity$' -v ./metal/
 //

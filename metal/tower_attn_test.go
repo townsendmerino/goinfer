@@ -119,8 +119,8 @@ func TestTowerAttnKernel(t *testing.T) {
 // Metal lever B", registered before the code): tower_gemm_w32 and tower_gemm_w16 against a float64 A·Wᵀ + bias from the
 // f32 inputs, at the towers' projection shapes (rows trimmed so the host reference stays fast) and at edge shapes (M, N
 // and K off every tile multiple). Bars: every output within 1e-5 (w32: f32 accumulation order only) or 1e-3 (w16: the
-// weights rounded to f16) of its own Σ|a·w| + |bias|. (The first f16-activation kernel's bar was 2e-3; it passed here
-// and failed the tower bars, see the doc.) Weights at a tower's scale (σ 0.02), so a dropped bias is far over either bar. Each
+// weights rounded to f16) of its own Σ|a·w| + |bias|.
+// Weights at a tower's scale (σ 0.02), so a dropped bias is far over either bar. Each
 // planted defect must miss it, on both kernels.
 //
 // tower_gemm_w8 is G-S18e (S18 on the Mac, registered before the code): int8 weights in groups of 32 with an f32 scale

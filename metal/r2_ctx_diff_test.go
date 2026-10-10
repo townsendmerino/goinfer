@@ -20,7 +20,7 @@ import (
 // FINAL LOGITS of an attention_fa generation against a shipped-kernel generation, 28 layers and an
 // int8-activation-quantized pipeline downstream of the kernel under test, on Gaussian-noise
 // embeddings. The follow-up's own ULP control showed that pipeline is hypersensitive on that input
-// (a 1-ULP scale nudge flips logits by ~0.9 immediately), so "two clean steps, then a stable
+// (a 1-ULP scale nudge flips logits immediately), so "two clean steps, then a stable
 // plateau" is consistent with BOTH a real position-linked kernel defect AND a single int8 rounding
 // flip whose timing happened to line up. This test separates them by comparing the kernels'
 // OWN outputs (r.ctx) on IDENTICAL inputs, per layer, per decode step:
@@ -192,7 +192,7 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 	// attention_fa's output; modePerturb = shipped kernels only, but after layer 0 add a tiny
 	// fixed pseudo-random perturbation to the residual (GOINFER_R2_PERTURB, default 1e-6 — the
 	// magnitude of attention_fa's own measured layer-output discrepancy) and continue: the
-	// control the 2026-09-20 follow-up's ULP test should have been (same magnitude and
+	// control the follow-up record's ULP test should have been (same magnitude and
 	// location as the real discrepancy, not a global scale change at every layer).
 	const (
 		modeControl = iota

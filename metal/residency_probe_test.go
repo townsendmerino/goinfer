@@ -8,14 +8,13 @@ import (
 	"time"
 )
 
-// TestZZ_residencyProbe isolates the per-submit RESIDENCY cost that dominates the paged-MoE decode
-// (~15 ms/boundary of GPU-idle-in-wait, 72× Step-0's 0.213 ms). Three arms separate per-buffer from
-// per-byte from re-validation, with trivial GPU work (1 thread) and many buffers REFERENCED (bound +
-// read) per command buffer. Load-bearing result (Arm A): a REPEATED identical set caches — submit[0]
-// ~70 ms, submit[1..] ~0.4 ms — so the cost is the referenced set CHANGING per submit, and pinning
-// the working set resident once (MTLResidencySet / heap useHeap) collapses it. Arms B/C show the
-// uncached cost has both a per-buffer term (tracked-allocation count) and a per-byte term. Diagnostic,
-// not a gate; documents why the residency-set fix is the lever and would flag an OS residency change.
+// TestZZ_residencyProbe isolates the per-submit RESIDENCY cost that dominates the paged-MoE decode (GPU-idle-in-wait at every
+// boundary). Three arms separate per-buffer from per-byte from re-validation, with trivial GPU work (1 thread) and many buffers
+// REFERENCED (bound + read) per command buffer. Load-bearing result (Arm A): a REPEATED identical set caches (the first submit
+// is far slower than the rest), so the cost is the referenced set CHANGING per submit, and pinning the working set resident once
+// (MTLResidencySet / heap useHeap) collapses it. Arms B/C show the uncached cost has both a per-buffer term (tracked-allocation
+// count) and a per-byte term. Diagnostic, not a gate; documents why the residency-set fix is the lever and would flag an OS
+// residency change.
 const residProbeSrc = `
 #include <metal_stdlib>
 using namespace metal;

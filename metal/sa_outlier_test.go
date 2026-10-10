@@ -8,25 +8,21 @@ import (
 	"testing"
 )
 
-// TestSAGemv_OutlierRegime is the decisive experiment for the Gemma o-proj amplitude bug
-// (docs/prompts/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
-// contribution inflates 2–6× and flips on the secondary channels while CUDA's dp4a stays clean,
-// and named it a Metal W4A8 GEMV scale bug. TestSAGemvLargeK already proves the kernel correct at
-// K=4096 — but with a BENIGN random activation. This drives the same production kernel in the
-// regime that actually triggers the bug: at Gemma's o-proj K=2048, with an activation carrying
-// ONE massive outlier channel that sets the int8 scale (~558) and crushes every other channel to
-// near-zero int8 — exactly the post-quant state of the attention context feeding the o-proj.
+// TestSAGemv_OutlierRegime drives the production gemv_w4a8_sa in the regime that triggers the Gemma o-proj amplitude finding
+// (docs/completed/gemma-metal-signflip-bisect.md, Fork 2: Metal's o-proj contribution inflated and flipped on the secondary
+// channels while CUDA's dp4a stayed clean): Gemma's o-proj K=2048 with an activation carrying ONE massive outlier channel that
+// sets the int8 scale (~558) and crushes every other channel to near-zero int8, the post-quant state of the attention context
+// feeding the o-proj. TestSAGemvLargeK proves the kernel at K=4096 with a benign random activation only.
 //
-// The CPU reference computes the kernel's OWN formula bit-for-bit (dequant nibble × int8 act ×
-// f16 group scale × asc). So this isolates the KERNEL from the quant scheme:
-//   - Metal == CPU here ⇒ the o-proj GEMV arithmetic is FAITHFUL even in the outlier regime, and
-//     Metal's divergence-vs-CUDA lives upstream (a different attention context) or in the quant
-//     policy, NOT this kernel — which would redirect the fix.
-//   - Metal ≠ CPU here ⇒ the kernel mis-handles the outlier regime (group-scale accumulation or
-//     asc application under extreme dynamic range) — the bug, localized.
+// The CPU reference computes the kernel's OWN formula bit-for-bit (dequant nibble × int8 act × f16 group scale × asc), so this
+// isolates the KERNEL from the quant scheme:
+//   - Metal == CPU here ⇒ the o-proj GEMV arithmetic is FAITHFUL even in the outlier regime, and Metal's divergence-vs-CUDA
+//     lives upstream (a different attention context) or in the quant policy, NOT this kernel;
+//   - Metal ≠ CPU here ⇒ the kernel mis-handles the outlier regime (group-scale accumulation or asc application under extreme
+//     dynamic range).
 //
-// Reported per-channel on the crushed rows, because a whole-vector cosine is dominated by the one
-// massive output and would hide a 6× error on the secondary rows (the sink lesson).
+// Reported per-channel on the crushed rows, because a whole-vector cosine is dominated by the one massive output and would hide
+// a large error on the secondary rows (the sink lesson).
 func TestSAGemv_OutlierRegime(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

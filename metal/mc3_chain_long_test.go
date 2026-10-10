@@ -11,12 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMC3Chain_newcomerJoinsLongPrompts and TestMC3Chain_stalledConsumerLongPrompts are the two TestMC3Chain_ scenarios
-// with prompts long enough for the batched pass (100/80 and 90/70 tokens) instead of the step. Their alone runs are
-// cold and their joint runs reuse the slot the alone run left, so they also pin warm-against-cold identity: before
-// decoder.PrefillTailExact a warm prompt re-ran its last position through decode where the cold one had used the pass,
-// and both generations diverged tens of tokens in (A at token 42 of 160, B at 47 of 64). That was first read as an MC3
-// batching defect; batching is bit-identical (the joint run on a fresh model matches), the cold/warm route was not.
+// TestMC3Chain_newcomerJoinsLongPrompts and TestMC3Chain_stalledConsumerLongPrompts are the two TestMC3Chain_ scenarios with
+// prompts long enough for the batched pass (100/80 and 90/70 tokens) instead of the step. Their alone runs are cold and their
+// joint runs reuse the slot the alone run left, so they also pin warm-against-cold identity: a warm prompt must take the same
+// route as a cold one (decoder.PrefillTailExact). Batching itself is bit-identical (the joint run on a fresh model matches);
+// history in docs/code-notes/metal.md#TestMC3Chain_newcomerJoinsLongPrompts.
 func TestMC3Chain_newcomerJoinsLongPrompts(t *testing.T) {
 	pa, pb := mc3ChainPrompt(2, 100), mc3ChainPrompt(3, 80)
 	const na, nb = 160, 64

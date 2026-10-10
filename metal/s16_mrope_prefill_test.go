@@ -245,7 +245,7 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 // (the CPU prefill and upload, then Metal decode, so both arms decode on the same kernels), over the last prompt row and 8
 // teacher-forced decode steps.
 //
-// The bar, re-registered 2026-10-08 (owner, option a) because Metal's shipped f16 text prefill itself reads 0.977-0.997
+// The bar, re-registered by the owner (option a) because Metal's shipped f16 text prefill itself reads 0.977-0.997
 // against the CPU's: non-inferiority to a text control. Per image prompt, four text-only prompts of the same length run
 // the same isolated comparison (the CPU's batched prefill and upload against Metal's batched pass). PASS when the image
 // turn's worst per-step cosine is at least the control's minimum minus 0.005 and every argmax difference is an R10
@@ -340,10 +340,9 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			if fx.hybrid || fx.deep {
 				ctxLen = 2048 // the Qwen3.5+ / Qwen3-VL towers are capped at serve's 1,024 merged rows
 			}
-			// Through the directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, what serve's Metal load reads):
-			// its int4 weights are mapped, not held twice, which is what the 2026-10-08 night's live budget (2.80 GB
-			// against 3.77 GB for Qwen2.5-VL) lacked. It generates exactly what the direct load does
-			// (prequant.TestDirSidecar_matchesDirectLoad).
+			// Through the directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, what serve's Metal load reads): its int4 weights
+			// are mapped, not held twice, which a direct load's live budget lacks for Qwen2.5-VL. It generates exactly what the direct load
+			// does (prequant.TestDirSidecar_matchesDirectLoad).
 			src := dir
 			if g := dir + ".int4.metal.giw"; func() bool { _, err := os.Stat(g); return err == nil }() {
 				src = g
@@ -443,7 +442,7 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 						}
 					}
 				}
-				// The re-registered bar (owner, 2026-10-08, option a): the same comparison on four text-only prompts of the same
+				// The re-registered bar (owner, option a): the same comparison on four text-only prompts of the same
 				// length (the CPU's batched prefill and upload against Metal's batched pass, both decoding on Metal).
 				ctlMin := 1.0
 				for seed := 1; seed <= 4; seed++ {

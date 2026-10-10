@@ -4,11 +4,10 @@ package metal
 
 import "testing"
 
-// TestPoolCells pins §3.2's pooled arithmetic (prefill_gate_ref_test.go's poolCells) against
-// hand-computed numbers on synthetic cells — no device, no checkpoint, pure logic — before
-// trusting it with real compute (docs/completed/task-prefill-gap.md §4 L1, 2026-09-09). The bug class this
-// guards: a per-cell veto silently reappearing (the exact defect §3.2 found and removed from the
-// 2026-09-05 form) would still compile and would still produce plausible-looking numbers.
+// TestPoolCells pins §3.2's pooled arithmetic (prefill_gate_ref_test.go's poolCells) against hand-computed numbers on
+// synthetic cells (no device, no checkpoint, pure logic) before it is trusted with real compute (docs/completed/task-prefill-gap.md
+// §4 L1). The bug class this guards: a per-cell veto silently reappearing (the defect §3.2 found and removed from the first
+// form) would still compile and would still produce plausible-looking numbers.
 func TestPoolCells(t *testing.T) {
 	// Two cells, hand-chosen so every criterion's arithmetic is checkable by hand.
 	cells := []*cellSummary{

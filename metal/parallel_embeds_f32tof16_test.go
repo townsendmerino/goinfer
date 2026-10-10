@@ -7,13 +7,10 @@ import (
 	"testing"
 )
 
-// TestParallelEmbedsF32ToF16_matchesSerial is P-14 (audit-2026-09-10): PrefillLast's host
-// f32→f16 conversion was a serial scalar loop over M×H elements on the TTFT path;
-// parallelEmbedsF32ToF16 splits it by row across up to 8 workers. f32ToF16 is a pure,
-// per-element function (no shared state, no reduction to reassociate), so the parallel split
-// must be BYTE-IDENTICAL to the serial reference, not merely close — asserted directly here
-// rather than assumed from parallelF32ToF16's own analogous proof, since this is a different
-// function (row-parallel over [][]float32, not index-parallel over one flat []float32).
+// TestParallelEmbedsF32ToF16_matchesSerial pins P-14 (docs/audit-2026-09-10.md): PrefillLast's host f32→f16 conversion, on the
+// TTFT path, is split by row across up to 8 workers by parallelEmbedsF32ToF16. f32ToF16 is a pure per-element function (no
+// shared state, no reduction to reassociate), so the split must be byte-identical to the serial reference, not merely close;
+// asserted directly because this function is row-parallel over [][]float32, unlike parallelF32ToF16's flat []float32.
 func TestParallelEmbedsF32ToF16_matchesSerial(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	for _, shape := range []struct{ M, H int }{

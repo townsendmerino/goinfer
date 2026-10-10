@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Gates F2 and F3 of docs/tasks/task-metal-int8-2026-10.md, pre-registered 2026-10-01: does a dense int8 model on
+// Gates F2 and F3 of docs/tasks/task-metal-int8-2026-10.md, pre-registered: does a dense int8 model on
 // Metal's native int8 path (r.w8) agree with the CPU at the same quant, and is it as close to f32 as the CPU's int8?
 // They run on the 0.5B coder by day; GOINFER_W8_GATE_MODEL names another checkpoint (the 1.5B runs with gate S).
 
@@ -60,7 +60,7 @@ func TestW8Native_F2_matchesCPUAtSameQuant(t *testing.T) {
 // continuation, 24 positions), the mean per-position KL(f32 ‖ Metal int8int8) is at most 1.10 × KL(f32 ‖ CPU
 // int8int8). KL(f32 ‖ Metal int4) is reported beside it. Positions 0 and 1 are left out, as residentParity's cosine
 // leaves them out. The models load one at a time at a 1024-position context, so a 16 GB Mac holds the f32 reference
-// only while it runs; by day the fit guard still refused it there (needs ~2.8 GB against a 2.2 GB budget), so F3
+// only while it runs; by day the fit guard refuses it there, so F3
 // runs on the night queue.
 func TestW8Native_F3_closerToF32(t *testing.T) {
 	path := w8GateModel(t)

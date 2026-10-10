@@ -8,15 +8,12 @@ import (
 	"testing"
 )
 
-// TestLoRADelta_multiThreadgroupMatchesReference gates M-08 (audit-metal-2026-09-12.md): the
-// widened lora_delta grid — one threadgroup per 256-row block of Out, each independently
-// recomputing t[R] — against a direct scalar reference of the LoRA formula itself
-// (y[o] += scale * sum_r B[o,r] * (sum_k A[r,k] * dequant(aq,asc)[k])), computed without going
-// through the kernel at all. Out=600 forces ceil(600/256)=3 threadgroups (tgs=256, total=768,
-// with the last threadgroup's tail 232 rows masked by the kernel's own `row < Out` check) — the
-// existing whole-model resident-vs-CPU LoRA parity test (lora_resident_parity_test.go) never
-// exercises this: its fixture's widest projection is 128, one threadgroup either way, so it
-// would pass identically whether this widened grid were wired correctly or not at all.
+// TestLoRADelta_multiThreadgroupMatchesReference pins the widened lora_delta grid (one threadgroup per 256-row block of Out,
+// each recomputing t[R]) against a direct scalar reference of the LoRA formula, y[o] += scale * sum_r B[o,r] * (sum_k A[r,k] *
+// dequant(aq,asc)[k]), computed without the kernel. Out=600 forces ceil(600/256)=3 threadgroups (tgs=256, total=768, the last
+// one's 232-row tail masked by the kernel's own `row < Out`). The whole-model parity test (lora_resident_parity_test.go) cannot
+// see this: its widest projection is 128, one threadgroup either way, so it passes whether the widened grid is wired or not
+// (audit M-08, docs/audit-metal-2026-09-12.md).
 func TestLoRADelta_multiThreadgroupMatchesReference(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -49,14 +46,13 @@ func TestLoRADelta_multiThreadgroupMatchesReference(t *testing.T) {
 	}
 	const scale = 0.5
 
-	// Kernel run: A/B as f16 (M-08).
+	// Kernel run: A/B as f16.
 	aHalf, bHalf := make([]uint16, len(A)), make([]uint16, len(B))
 	parallelF32ToF16(aHalf, A)
 	parallelF32ToF16(bHalf, B)
 
-	// Reference: plain scalar Go, no kernel involved — but through the SAME f16-rounded A/B the
-	// kernel actually reads, so this isolates the grid-assignment question (M-08's real risk: a
-	// wrong/missed/duplicated row at a threadgroup boundary) from f16's accepted precision trade.
+	// Reference: plain scalar Go over the same f16-rounded A/B the kernel reads, so it isolates the grid-assignment question (a
+	// wrong, missed or duplicated row at a threadgroup boundary) from f16's accepted precision trade.
 	want := make([]float32, Out)
 	for i := range want {
 		want[i] = float32(i) * 0.001 // pre-existing base-projection content the delta adds onto
@@ -111,10 +107,8 @@ func TestLoRADelta_multiThreadgroupMatchesReference(t *testing.T) {
 		}
 	}
 	t.Logf("Out=%d (3 threadgroups, last ragged): maxAbs=%.6f", Out, maxAbs)
-	// The reference reads the SAME f16-rounded A/B the kernel does (see above), so this is pure
-	// f32 accumulation-order noise (SIMD tree reduction vs the reference's linear sum) — a tight
-	// bound is the right check: a wrong/missed/duplicated row at a threadgroup boundary would
-	// show up as an error many orders larger than float rounding, not a marginal miss.
+	// The reference reads the same f16-rounded A/B, so the residual is f32 accumulation-order noise (SIMD tree reduction vs a
+	// linear sum). A wrong, missed or duplicated row at a threadgroup boundary would be orders larger, hence the tight bound.
 	if maxAbs > 1e-4 {
 		t.Fatalf("multi-threadgroup lora_delta diverges from the scalar reference: maxAbs=%.6f (want <= 1e-4) "+
 			"— a wrong row assignment or missed/duplicated row would show as a large, structured error here", maxAbs)

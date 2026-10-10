@@ -17,29 +17,27 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMetalPrefillDecomp is S0 of the Metal prefill GEMM scoping (2026-09-25): where does the fast
-// prefill's GPU time go, by kernel category, on a real checkpoint at the prompt lengths the peer
-// claim grades (K=512, 3900)? It answers one question before any kernel is designed: what share of
-// TTFT the GEMM is, since a GEMM-only redesign can move TTFT by at most 1/((1-X) + X/s).
+// TestMetalPrefillDecomp is S0 of the Metal prefill GEMM scoping: where does the fast prefill's GPU time go, by kernel
+// category, on a real checkpoint at the prompt lengths the peer claim grades (K=512, 3900)? It answers one question before any
+// kernel is designed: what share of TTFT the GEMM is, since a GEMM-only redesign can move TTFT by at most 1/((1-X) + X/s).
 //
-// METHOD. PrefillLast is one command buffer, so its GPU timestamps give only a total. Each category
-// here gets its OWN command buffer holding that category's dispatch for EVERY layer — each layer's
-// own weights, PrefillLast's exact grids and buffers — so the cache footprint matches production
-// (repeating one layer's dispatch would keep its weights hot in the SLC and flatter the kernel).
-// Three checks make the split trustworthy rather than assumed:
-//   - a full in-order replay of all categories must produce logits BIT-IDENTICAL to PrefillLast,
-//     which proves the replica issues production's dispatches;
+// METHOD. PrefillLast is one command buffer, so its GPU timestamps give only a total. Each category here gets its OWN command
+// buffer holding that category's dispatch for EVERY layer — each layer's own weights, PrefillLast's exact grids and buffers —
+// so the cache footprint matches production (repeating one layer's dispatch would keep its weights hot in the SLC and flatter
+// the kernel). Three checks make the split trustworthy rather than assumed:
+//   - a full in-order replay of all categories must produce logits BIT-IDENTICAL to PrefillLast, which proves the replica
+//     issues production's dispatches;
 //   - the categories' sum is compared with the full replay's GPU time (non-additivity);
 //   - the full replay's GPU time is compared with PrefillLast's wall time (host share).
 //
-// Plain dense families only (no MoE / sandwich / postOnly / QK-norm), which is what it is run on.
+// Plain dense families only (no MoE / sandwich / postOnly / QK-norm).
 //
 //	GOINFER_METAL_DECOMP=1 go test -tags goinfer_testhooks -run TestMetalPrefillDecomp -v -timeout 40m ./metal/
 //
-// GOINFER_METAL_DECOMP_MODEL overrides the checkpoint, GOINFER_METAL_DECOMP_K the lengths
-// (comma-separated), GOINFER_METAL_DECOMP_REPS the repetitions per measurement (default 5), and
-// GOINFER_METAL_DECOMP_LOO=1 adds the leave-one-out in-sequence costs and GOINFER_METAL_DECOMP_STATE=1 the
-// prior-state test, and GOINFER_METAL_S2=1 the R16 prototype comparison (all below).
+// GOINFER_METAL_DECOMP_MODEL overrides the checkpoint, GOINFER_METAL_DECOMP_K the lengths (comma-separated),
+// GOINFER_METAL_DECOMP_REPS the repetitions per measurement (default 5), GOINFER_METAL_DECOMP_LOO=1 adds the leave-one-out
+// in-sequence costs, GOINFER_METAL_DECOMP_STATE=1 the prior-state test, and GOINFER_METAL_S2=1 the R16 prototype comparison
+// (all below).
 func TestMetalPrefillDecomp(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_DECOMP") != "1" {
 		t.Skip("set GOINFER_METAL_DECOMP=1 (loads a real checkpoint; minutes of GPU time)")
@@ -188,10 +186,9 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		return func(mp int) float64 { return 2 * float64(mp) * float64(N) * float64(Kd) }
 	}
 
-	// R16 (S2): the GEMM categories dispatch through dispatchGemm(), which runs either production's gemm_w4f16_store (the
-	// R16 kernel since 2026-09-25) or,
-	// when protoOn, the test-only prototype (prefill_gemm_s2_test.go) with the same buffer list. protoOn stays
-	// false unless GOINFER_METAL_S2=1 compiled the prototype, so every other phase is unchanged.
+	// R16 (S2): the GEMM categories dispatch through dispatchGemm(), which runs production's gemm_w4f16_store or, when protoOn, the
+	// test-only prototype (prefill_gemm_s2_test.go) with the same buffer list. protoOn stays false unless GOINFER_METAL_S2=1
+	// compiled the prototype, so every other phase is unchanged.
 	var protoPipe Pipeline
 	protoOn := false
 	// R19 (GOINFER_METAL_R19=1): with attnProtoOn the attention category runs the comparison arm — since R19's wiring,
@@ -327,22 +324,19 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 			})
 			pb, sb := vmPageCounts()
 			catMs[ci] = append(catMs[ci], v)
-			// Every repeat of every category that matters, so a wide spread can be traced to its reps
-			// (S0's first run printed medians only, and its two >50% spreads could not be read back).
+			// Every repeat of every category that matters, so a wide spread can be traced to its reps.
 			if v >= 100 {
 				hb("K=%d rep %d/%d:   %-22s %9.1f ms GPU  pageins +%d swapins +%d", M, rep+1, reps, c.name, v, pb-pa, sb-sa)
 			}
 		}
 	}
 
-	// Leave-one-out (GOINFER_METAL_DECOMP_LOO=1): a category timed in its own command buffer ran in two
-	// modes ~2x apart on the MLP GEMMs at K=3900 (S0's first run, 52-55% spreads), and in a stable
-	// all-fast run the categories summed to only 64.6% of the full replay — so an isolated time is not
-	// that kernel's cost inside production. Here each large category's IN-SEQUENCE cost is the full
-	// replay's time minus the time of the same replay with that category's dispatches removed, rep by
-	// rep interleaved. Kernel timing does not depend on the values it reads (no data-dependent
-	// branches), so the stale inputs a removed category leaves behind change no downstream kernel's
-	// work — only the cache and memory state it sees, which is the effect being measured.
+	// Leave-one-out (GOINFER_METAL_DECOMP_LOO=1): a category timed alone in its own command buffer is not that kernel's cost inside
+	// production (isolated MLP GEMM times flip between two modes, and the isolated categories sum to well under the full replay).
+	// Here each large category's IN-SEQUENCE cost is the full replay's time minus the time of the same replay with that category's
+	// dispatches removed, rep by rep interleaved. Kernel timing does not depend on the values it reads (no data-dependent
+	// branches), so the stale inputs a removed category leaves behind change no downstream kernel's work, only the cache and memory
+	// state it sees, which is the effect being measured.
 	if os.Getenv("GOINFER_METAL_DECOMP_LOO") == "1" {
 		fullWithout := func(skip int) func(e *Encoder) {
 			return func(e *Encoder) {
@@ -398,10 +392,9 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		fmt.Fprintf(os.Stderr, "  in-sequence sum %.1f ms = %.1f%% of the full replay (%.1f ms, spread %.1f%%)\n\n", sumIn, 100*sumIn/fm, fm, 100*spreadOf(looFull))
 	}
 
-	// Prior-state test (GOINFER_METAL_DECOMP_STATE=1): the MLP GEMMs run ~1.9x slower inside the sequence
-	// than alone, at both K, and alone they flip between two levels ~2x apart. If that tracks the GPU's
-	// RECENT WORKLOAD (a clock/power state) rather than the kernel's inputs, gate/up timed alone should
-	// be slow straight after heavy work and fast after an idle gap. Four conditions, interleaved per rep.
+	// Prior-state test (GOINFER_METAL_DECOMP_STATE=1): the MLP GEMMs run slower inside the sequence than alone, and alone they flip
+	// between two levels. If that tracks the GPU's RECENT WORKLOAD (a clock/power state) rather than the kernel's inputs, gate/up
+	// timed alone should be slow straight after heavy work and fast after an idle gap. Four conditions, interleaved per rep.
 	if os.Getenv("GOINFER_METAL_DECOMP_STATE") == "1" {
 		gu, att := -1, -1
 		for ci, c := range cats {

@@ -12,8 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestVLImageTurn_metalResident is S3's tiny-fixture check (2026-10-07, first run: Gemma 3 8/8 tokens identical,
-// Qwen2.5-VL 6/8) (docs/tasks/task-multimodal-support-2026-10.md): a Gemma 3 and a
+// TestVLImageTurn_metalResident is S3's tiny-fixture check (docs/tasks/task-multimodal-support-2026-10.md): a Gemma 3 and a
 // Qwen2.5-VL image turn decode on a Metal resident, from the committed tiny checkpoints and their goldens' image
 // features, against the CPU decoder (both int4). It is the first image turn on a Mac's GPU for either family; the
 // registered S3 gate is the served turn on the real checkpoints.

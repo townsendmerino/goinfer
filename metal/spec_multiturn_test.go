@@ -139,10 +139,9 @@ func TestSpecNgram_multiTurnMatchesPlain(t *testing.T) {
 // draft deep: rounds well under the token count. Reports both arms' wall time (exploratory; the served grading is the
 // measure).
 //
-// Both compared arms reuse the cache's prompt prefix, so both re-decode the prompt's last position. A cold arm would
-// have prefilled it, and the f16 prefill is not bit-identical to decode: comparing spec against the cold arm is a
-// cold-against-warm comparison, which on 2026-10-03 diverged at token 105 with attnFADepthFloor at 1024 and was taken
-// for a spec defect (B-P03's revert, since undone). The cold run is a warm-up only.
+// Both compared arms reuse the cache's prompt prefix, so both re-decode the prompt's last position. A cold arm would have
+// prefilled it, and the f16 prefill is not bit-identical to decode: comparing spec against the cold arm is a cold-against-warm
+// comparison that diverges and was once taken for a spec defect. The cold run is a warm-up only.
 //
 //	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestSpecNgram_copyOnStepVerify$' -v ./metal/
 func TestSpecNgram_copyOnStepVerify(t *testing.T) {

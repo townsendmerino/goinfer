@@ -75,11 +75,9 @@ func assertParity(t *testing.T, what string, st parityStats, minCosBar float64) 
 	}
 }
 
-// skipIfMemoryDeclined skips a resident parity test whose resident build the memory guard declined. That is "this machine
-// does not have the free memory right now", and no forward ran, so it is not a parity result. It used to fail as
-// "admission says it should be admitted", which `go run ./cmd/gate gpu` reports as "a Metal forward moved":
-// TestMellumResidentParity did exactly that on 2026-09-30 (needs 4.30 GB; the guard's budget is 70% of live free memory,
-// about 3.4 GB with the owner's apps open). A skip is still named under the gate's "does NOT cover" list, so the gap
+// skipIfMemoryDeclined skips a resident parity test whose resident build the memory guard declined. That is "this machine does
+// not have the free memory right now", and no forward ran, so it is not a parity result (failing it would be reported by
+// `go run ./cmd/gate gpu` as "a Metal forward moved"). A skip is still named under the gate's "does NOT cover" list, so the gap
 // stays visible. Any other decline (a feature or admission mismatch) still fails at the caller.
 func skipIfMemoryDeclined(t *testing.T, m *decoder.Model) {
 	t.Helper()

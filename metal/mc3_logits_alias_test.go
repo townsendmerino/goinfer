@@ -12,13 +12,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMC3_soloLogitsSurviveAnotherGeneration is E-C01 (docs/audit-metal-2026-09-30.md). metalResident.Forward returns
-// the resident's one host logits buffer, reused by every call. Under MC3 a token served alone (the solo path) hands that
-// buffer to its generation, which reads it AFTER leaving the resident: in its LogitProcessor and its sampler. Another
-// generation's solo token rewrites the buffer as soon as it runs. Generation A here takes 30 ms in its processor while
-// generation B, 8 ms in its own, decodes alongside; both are on the full-logits path (a processor rules out the
-// on-device argmax). A's greedy tokens must equal A's alone. Before the fix they did not: A sampled from B's logits,
-// from its first token (the prompt's seed, handed out by mc3Prefill) and in decode (a solo token's logits).
+// TestMC3_soloLogitsSurviveAnotherGeneration pins E-C01 (docs/audit-metal-2026-09-30.md). metalResident.Forward returns the
+// resident's one host logits buffer, reused by every call. Under MC3 a token served alone (the solo path) hands that buffer to
+// its generation, which reads it after leaving the resident, in its LogitProcessor and its sampler, while another generation's
+// solo token rewrites it. Generation A here takes 30 ms in its processor while B, 8 ms in its own, decodes alongside; both are
+// on the full-logits path (a processor rules out on-device argmax). A's greedy tokens must equal A's alone; a regression
+// samples A from B's logits, from the prompt's seed (handed out by mc3Prefill) on.
 func TestMC3_soloLogitsSurviveAnotherGeneration(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

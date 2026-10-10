@@ -8,13 +8,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestResidentKVBytes_excludesDeltaNetLayers gates N-36 (audit-metal-2026-09-12.md):
-// residentKVBytes used to charge every layer the model's default kvDim, including Gated-DeltaNet
-// (linear-attention) layers that allocate NO KV cache at all — metal/model.go's own layer-build
-// loop leaves r.kc[l]/r.vc[l] zero-value for exactly these layers. testdata/qwen35-tiny is a real
-// 3:1 hybrid (3 linear_attention layers, 1 full_attention) — a fixture where the bug and the fix
-// give DIFFERENT, easily distinguished answers (4x vs 1x one layer's KV bytes), not just a
-// theoretical concern.
+// TestResidentKVBytes_excludesDeltaNetLayers gates N-36 (docs/audit-metal-2026-09-12.md): residentKVBytes must not charge every
+// layer the model's default kvDim, because Gated-DeltaNet (linear-attention) layers allocate NO KV cache (metal/model.go's
+// layer-build loop leaves r.kc[l]/r.vc[l] zero-value for them). testdata/qwen35-tiny is a real 3:1 hybrid (3 linear_attention
+// layers, 1 full_attention), a fixture where the bug and the fix give distinctly different answers (4x vs 1x one layer's KV
+// bytes).
 func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	m, err := decoder.Load("../testdata/qwen35-tiny", decoder.Options{Quant: "int4"})
 	if err != nil {

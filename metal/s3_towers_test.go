@@ -74,13 +74,12 @@ var (
 	}
 )
 
-// The tiny towers are degenerate along several of the registered defects' axes, and G-S3a's first tiny run showed it:
-// their biases are all zero (a dropped patch bias cannot show) and Qwen2.5-VL's q/k weights are at init scale (0.02), so
-// attention is nearly uniform and the scale, RoPE and windowing barely matter (each defect read 0.99999 or better). So,
-// before comparing, the check sharpens the fixture through the exports' aliasing slices, which the CPU tower reads too:
-// random biases (s3Sharpen) and q/k projections scaled up (s3Scale), so the attention logits are not near zero; for
-// Qwen2.5-VL also v and the output projection, whose init scale left attention a negligible share of the residual stream
-// (defect (3) still read 0.99992 with q/k alone: the tiny tower has one windowed block, then a full one).
+// The tiny towers are degenerate along several of the registered defects' axes: their biases are all zero (a dropped patch bias
+// cannot show) and Qwen2.5-VL's q/k weights are at init scale (0.02), so attention is nearly uniform and the scale, RoPE and
+// windowing barely matter (each defect read 0.99999 or better). So, before comparing, the check sharpens the fixture through the
+// exports' aliasing slices, which the CPU tower reads too: random biases (s3Sharpen) and q/k projections scaled up (s3Scale), so
+// the attention logits are not near zero; for Qwen2.5-VL also v and the output projection, whose init scale left attention a
+// negligible share of the residual stream (the tiny tower has one windowed block, then a full one).
 
 func s3Sharpen(rng *rand.Rand, xs ...[]float32) {
 	for _, x := range xs {

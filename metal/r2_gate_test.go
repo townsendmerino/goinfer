@@ -90,8 +90,8 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	}
 	const contN = 64
 	label, promptFiles := decoder.PrefillGatePromptSet()
-	// The reference directory follows the prompt set (refDirFor, the generator's own rule). This was hardcoded to set
-	// A's directory, so GOINFER_PREFILL_GATE_PROMPTS=b silently scored set-B prompts against set-A logits.
+	// The reference directory follows the prompt set (refDirFor, the generator's own rule); a hardcoded set-A directory would
+	// silently score set-B prompts against set-A logits.
 	refDir := refDirFor(home, label)
 	for pi := range promptFiles {
 		p := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", cell, K, pi))
@@ -147,11 +147,9 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 			t.Fatalf("read reference %s: %v", refPath, err)
 		}
 		res := runR2GateCell(t, rf, m, ids[:K], K, refLogitsRef)
-		// Prompt identity: the reference files carry no prompt ids, so check the one row both arms share — the
-		// prompt-final logits (reference row 0 vs the batched prefill's seed). A reference generated from different
-		// text lands far above the W4A8 level here. Found 2026-09-25: set A's S-K3900 files (generated 2026-09-05 from
-		// the live docs) predate the 2026-09-09 snapshot the prompts now come from, and 4 of 10 prompts changed inside
-		// the 3900-token window (metal-decode-attn-r17-2026-09-25.md).
+		// Prompt identity: the reference files carry no prompt ids, so check the one row both arms share — the prompt-final logits
+		// (reference row 0 vs the batched prefill's seed). A reference generated from different text lands far above the W4A8 level
+		// here (set A's older S-K3900 files predate the prompt snapshot: metal-decode-attn-r17-2026-09-25.md).
 		if res.seedKL > 1.0 {
 			suspect = append(suspect, pi+1)
 		}
@@ -198,7 +196,7 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 		verdict)
 	t.Logf("%s: pooled verdict = %s (critA=%v critB=%v critC=%v)", tag, verdict, pooled.critA, pooled.critB, pooled.critC)
 
-	// The decode-attention verdict under the owner's 2026-09-25 amendment
+	// The decode-attention verdict under the owner's amendment
 	// (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md), for kernels that change only the
 	// reduction order: critA, critB and the 1.1x ceiling as above; critC is CUDA R6's KL-ratio form — pooled
 	// candidate/exact mean KL <= 1.05 passes, 1.05-1.10 is PARKED, > 1.10 fails. The strict critC above is printed
@@ -262,7 +260,7 @@ func runR2GateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids []int,
 		// Drop the command buffer the pipelined executor pre-encoded under the PREVIOUS arm's toggle: execLoop
 		// encodes token t+1 right after committing t, from the state at that moment, and PrefillLast does not
 		// go through it — so without this each arm's first continuation step ran the other arm's attention
-		// kernel (found 2026-09-25, R17: metal-decode-attn-r17-2026-09-25.md). ensureExec restarts it.
+		// kernel (metal-decode-attn-r17-2026-09-25.md). ensureExec restarts it.
 		r.stopExec()
 		if fa {
 			// every continuation position is past the floor; confirm the toggle engages

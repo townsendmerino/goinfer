@@ -26,9 +26,8 @@ func loadOptFwdBenchModel(tb testing.TB) *decoder.Model {
 	return m
 }
 
-// BenchmarkOptFwd measures real end-to-end tok/s at a few temperatures, with and without the
-// feature (GOINFER_NO_OPTFWD), on the same prompt/seed — the whole-generation "election" check
-// this session's report method calls for, not just optFwdStep's isolated cost.
+// BenchmarkOptFwd measures real end-to-end tok/s at a few temperatures, with and without the feature (GOINFER_NO_OPTFWD), on
+// the same prompt/seed: the whole-generation check, not just optFwdStep's isolated cost.
 func BenchmarkOptFwd(b *testing.B) {
 	m := loadOptFwdBenchModel(b)
 	ctx := context.Background()

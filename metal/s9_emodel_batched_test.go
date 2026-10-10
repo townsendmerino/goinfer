@@ -20,8 +20,8 @@ import (
 // width; PLE P=32; layer scalars; v_norm), the f16 batched pass against the S9 layer-major pass (the validated path,
 // bit-identical to sequential) on one Metal resident. Compared: the last prompt row and 8 decode steps teacher-forced
 // along the layer-major pass's own greedy tokens; the bar is cosine >= 0.98 with every argmax equal or an R10 near-tie
-// (amended 2026-10-08 by the owner from the registered 0.9999, which the pass missed at 0.9907/0.9916 with no non-tie
-// argmax difference: the task doc's G-S9c record has the mechanism; 0.98 sits between that and the nearest defect, 0.94).
+// (the owner amended it from the registered 0.9999, which the pass missed with no non-tie
+// argmax difference: the task doc's G-S9c record has the mechanism and the readings; 0.98 sits between the pass's own and the nearest planted defect's).
 // Two prompts: the golden 12-token prompt and a synthetic 96-token one, which runs every local layer past its window of 4
 // and both shared layers over long sources. The batched pass is called directly, so a silent fallback cannot stand in for
 // it. Each planted defect (emodelBatchDefect) must go red on at least one prompt.

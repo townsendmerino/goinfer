@@ -123,9 +123,8 @@ func TestPairwiseRoPERealMetal(t *testing.T) {
 			}
 			mean, worst, wp, real, ties := measure()
 			fmt.Fprintf(os.Stderr, "[%s] PAIRWISE %d positions: mean cos %.6f, worst %.6f (pos %d); continuation flips: %d near-tie, %d real\n", name, len(toks), mean, worst, wp, ties, real)
-			// The mean bar is 0.99 for every model but Command-R7B, whose 0.989242 the owner accepted on 2026-10-09 ("close
-			// enough, so it's a go"; docs/tasks/task-metal-pairwise-rope-2026-10.md G-PR5). Part C of
-			// docs/tasks/task-metal-pairwise-followups-2026-10.md localizes that gap; this floor records the decision, it is
+			// The mean bar is 0.99 for every model but Command-R7B, whose 0.989242 the owner accepted (docs/tasks/task-metal-pairwise-rope-2026-10.md
+			// G-PR5). Part C of docs/tasks/task-metal-pairwise-followups-2026-10.md localizes that gap; this floor records the decision, it is
 			// not a measured tolerance.
 			meanBar := 0.99
 			if name == "command-r7b" {

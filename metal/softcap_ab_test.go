@@ -13,7 +13,7 @@ import (
 
 // TestZZ_metalSoftcapTokenShare loads a real dense Gemma (final-logit softcap, 262k vocab) and times
 // the full-logits sampling path (ForwardEmb → forwardLogits → finalizeLogits) per token, so the
-// isolated softcap A/B (BenchmarkSoftcap_gemmaVocab_*: serial ~3.4ms, parallel ~0.86ms) can be
+// isolated softcap A/B (BenchmarkSoftcap_gemmaVocab_*) can be
 // expressed as a share of the token. Opt-in timing diagnostic, not a gate.
 func TestZZ_metalSoftcapTokenShare(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_SOFTCAP_AB") == "" {

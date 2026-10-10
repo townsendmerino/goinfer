@@ -15,21 +15,17 @@ import (
 // TestSpecVerifyCurveMetal is the Metal side of cuda/spec_verify_ceiling_test.go (D1/P10): the
 // batched-verify curve T(M) = W + C*M a resident Metal target needs so P10's speedup formula
 // (decode_ms*(1+accepted)/(draft_ms+verify_ms(k))) can be projected on this backend instead of
-// only CUDA's. See docs/prompts/metal-verify-curve.md for the full task.
+// only CUDA's. See docs/completed/metal-verify-curve.md for the full task.
 //
-// CRITICAL, and the reason this needs stating before any number below: `PrefillLast` — the batched
-// primitive this test times — is NOT bit-identical to decode's int8 path (its f16-MMA activation
-// path once measured 54% stream divergence, §A2-Metal, docs/ollama-chase.md:623 — historical
-// record; the test that produced that figure, TestMetalPrefillDivergenceRate, no longer exists,
-// superseded by TestPrefillGateVsReference's pooled §3.2 criteria, G-07 audit-metal-2026-09-12.md).
-// PrefillLast is now default-ON above metalFastPrefillFloor for admitted architectures (it declined
-// by default only historically, when this comment was written); GOINFER_METAL_BATCHED_PREFILL=1
-// here forces it on regardless of the floor, for exactly the "measurement/TTFT-at-the-cost-of-
-// exactness" use this test is. So every number this test produces characterizes a kernel that is
-// NOT currently usable as P10's verify oracle on Metal — P10's own design requires the verify step
-// to reproduce sequential greedy exactly (00-core's lossless contract). A real Metal P10 leg needs
-// that bit-identity gap closed FIRST; this test answers "is the timing shape even worth it", not
-// "is this safe to ship".
+// CRITICAL: `PrefillLast`, the batched primitive this test times, is NOT bit-identical to decode's int8 path (its f16-MMA
+// activation path diverged from decode's token stream on a measured fraction of prompts: §A2-Metal, docs/ollama-chase.md; the
+// test that produced that figure no longer exists, superseded by TestPrefillGateVsReference's pooled §3.2 criteria, G-07
+// docs/audit-metal-2026-09-12.md). PrefillLast is default-ON above metalFastPrefillFloor for admitted architectures;
+// GOINFER_METAL_BATCHED_PREFILL=1 here forces it on regardless of the floor, for exactly the
+// "measurement/TTFT-at-the-cost-of-exactness" use this test is. So every number this test produces characterizes a kernel that
+// is NOT currently usable as P10's verify oracle on Metal: P10's own design requires the verify step to reproduce sequential
+// greedy exactly (00-core's lossless contract). A real Metal P10 leg needs that bit-identity gap closed FIRST; this test
+// answers "is the timing shape even worth it", not "is this safe to ship".
 //
 //	GOINFER_HEAVY_TESTS=1 go test ./metal -run TestSpecVerifyCurveMetal -v
 func TestSpecVerifyCurveMetal(t *testing.T) {

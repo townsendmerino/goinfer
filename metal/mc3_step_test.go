@@ -157,10 +157,10 @@ func mc3Step(t *testing.T, r *resident, seqs []batchSeq) [][]float32 {
 //	GOINFER_METAL_MC3=1 go test -count=1 -run '^TestMC3Step_bitIdentical$' -v ./metal/
 func TestMC3Step_bitIdentical(t *testing.T) { mc3Identity(t, []int{5, 23, 40, 300}, 1024) }
 
-// TestMC3Step_qwen3BitIdentical (E-P07): a Qwen3-shaped model (per-head QK-norm) runs the batched step, and its rows
-// equal production's single-token forward bit for bit, as TestMC3Step_bitIdentical checks for the qwen2 shape. On the
-// generated qwen3 fixture by default; under GOINFER_METAL_MC3=1 the identity suite runs on whatever checkpoint
-// GOINFER_METAL_MC3_MODEL names (the real Qwen3-0.6B read 0 differing values, 2026-10-04).
+// TestMC3Step_qwen3BitIdentical (E-P07): a Qwen3-shaped model (per-head QK-norm) runs the batched step, and its rows equal
+// production's single-token forward bit for bit, as TestMC3Step_bitIdentical checks for the qwen2 shape. On the generated
+// qwen3 fixture by default; under GOINFER_METAL_MC3=1 the identity suite runs on whatever checkpoint GOINFER_METAL_MC3_MODEL
+// names.
 func TestMC3Step_qwen3BitIdentical(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
 		t.Skip("the fixture form; under GOINFER_METAL_MC3=1 run TestMC3Step_bitIdentical with GOINFER_METAL_MC3_MODEL set to a Qwen3")

@@ -35,11 +35,9 @@ func cosv(a, b []float32) float64 {
 	return d / (math.Sqrt(na*nb) + 1e-12)
 }
 
-// Fable's hypothesis: the probe token is <bos> (id 2), Gemma's ATTENTION SINK. Sink V vectors
-// are trained near-zero (sink K is a strong direction; sink V is a no-op). A cosine between two
-// near-zero vectors is rounding noise — which would make "layer-1 V cos = -0.047 ⇒ x after
-// layer 0 is orthogonal" a measurement artifact, not a bug. Every number in the debug report was
-// a cosine; nobody measured a NORM. So measure norms — and probe a NON-sink token too.
+// TestSink_NormsNotCosines: the probe token is <bos> (id 2), Gemma's ATTENTION SINK. Sink V vectors are trained near-zero (sink
+// K is a strong direction; sink V is a no-op), and a cosine between two near-zero vectors is rounding noise, so a low layer-1 V
+// cosine would be a measurement artifact, not a bug. So this measures NORMS, not cosines, and probes a NON-sink token too.
 func TestSink_NormsNotCosines(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")

@@ -7,12 +7,10 @@ import (
 	"testing"
 )
 
-// TestSwigluQuant_MassiveChannel isolates the BOS geglu bug (b04d799) to KERNEL vs DATA. The L0
-// BOS trace found swiglu_quant emitting ~0 for the dominant channel (gate=12.14, up=-18.49, so
-// geglu should be -224.4). This drives the SHIPPED swiglu_quant (allKernels) with exactly that
-// value at one channel and small values elsewhere. If the dequantized output there is ~-224 the
-// kernel is fine and the r.gu data was corrupted upstream; if it's ~0 the kernel itself drops the
-// massive geglu channel.
+// TestSwigluQuant_MassiveChannel isolates the BOS geglu bug to KERNEL vs DATA. The L0 BOS trace found swiglu_quant emitting ~0
+// for the dominant channel (gate=12.14, up=-18.49, so geglu should be -224.4). This drives the SHIPPED swiglu_quant (allKernels)
+// with exactly that value at one channel and small values elsewhere. If the dequantized output there is ~-224 the kernel is fine
+// and the r.gu data was corrupted upstream; if it's ~0 the kernel itself drops the massive geglu channel.
 func TestSwigluQuant_MassiveChannel(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
