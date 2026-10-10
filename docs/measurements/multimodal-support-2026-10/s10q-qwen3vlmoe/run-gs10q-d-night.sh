@@ -16,7 +16,7 @@
 #   python3 scripts/night.py add gs10q-d-2 --est 90 --by "Claude, S10 Qwen3-VL MoE G-S10q-d" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <this script>
 # GS10QD_DRY=1 checks the preconditions and prints the plan.
 set -uo pipefail
-SRC=${SRC:-$HOME/wt/goinfer-gs10qd}
+SRC=${SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}   # the repo root (the driver reads testdata/ relative to it)
 BIN=${BIN:-$HOME/goinfer-bench/gs10q-d}
 OUT=${1:-$HOME/goinfer-logs/gs10q-d-$(date +%F)}
 MODEL=$HOME/models/qwen3-vl-30b-a3b-instruct

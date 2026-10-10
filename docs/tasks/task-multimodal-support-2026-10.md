@@ -34,7 +34,7 @@
   - S14 (speech), 2026-10-10: Qwen3-ASR's word-error-rate gate G-S14c4b failed on its re-read (2026-10-09); the partial
     forced prefix (G-S14c4d) read 2026-10-10: (a) PASS, (b) PARKED (int4 +1.04 points over float32 with it, +4.17 without),
     serve unchanged until the owner decides. Voxtral Mini is served (`input_audio`, G-S14e4a and b PASS; `s14e4c` read: int4
-    equals float32 on both clips, the float32 36 s arm was refused by the swap guard). A pure-Go Whisper is built and equal to
+    equals float32 on both clips, and float32 on the 36 s clip is byte-equal to the reference, read by a same-day rerun after the swap guard refused it in the night run). A pure-Go Whisper is built and equal to
     transformers on whisper-small: the decoder (G-S14f1, f2), timestamps and long-form (G-S14g1 to g3), the decode policy
     (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record (G-S14f3)
     PASSED 2026-10-10 (73/73 byte-equal, WER 6.70% both sides). Not built: word timestamps, `prompt`, a GPU path, other checkpoints checked.
@@ -3105,6 +3105,29 @@ aikit expected 0: L, as registered for S10's MoE variants.
     - **What this does not say:** which side is nearer a float reference. The rule grades CUDA against the CPU arm at
       one token; G-S10q-c's teacher-forced reading against HF is the instrument that would. Not run for the paged CUDA
       path.
+  - **Investigation of the CUDA FAIL, 2026-10-10 by day (exploratory, nothing re-graded; owner: "investigate").** Two reads, both from
+    top-3 log-probabilities the arms already recorded or a same-day run of the pinned serve (`~/goinfer-logs/gs10q-d-factor-2026-10-10/`).
+    - **On identical prefixes the two arms agree closely.** Over the 7 (one-image) and 23 (two-image) positions before the first
+      difference, the chosen token's probability differs between CPU and CUDA by 0.003 and 0.013 on average (largest single position
+      0.113), so there is no sign of a systematic decoder error in the text before the divergence. The CPU arm against itself was
+      identical both times.
+    - **The divergence is not the vision tower.** A third arm, CUDA decoder (`--moe-cache-experts`) with the tower on the CPU
+      (`--vision-device cpu`, the same image features as the CPU arm), reproduces the CUDA arm's two-image reply: it also says "six
+      regions". At token 23: CPU arm ' different' 0.383, ' five' 0.211, ' six' 0.147; CUDA arm ' six' 0.457, ' five' 0.193, ' different'
+      0.192; CUDA decoder with the CPU tower ' six' 0.336, ' five' 0.311, ' different' 0.165. Moving the tower to the CPU moved the
+      distribution by about 0.12 and did not bring it back to the CPU arm's. On the one-image request the position-7 three-way near-tie
+      is resolved three ways by the three configurations (CPU ' (' 0.363, CUDA ' by' 0.452, CUDA with the CPU tower ',' 0.442).
+    - **Reading.** The decoder path (the CUDA int4 kernels and the paged experts, against the CPU W4A8 kernel) moves the distribution at
+      a counting token by 0.1 to 0.3 in probability while moving it by about 0.01 elsewhere. That is a larger shift than the near-tie
+      rule allows at this token and smaller than anything that would break the text; the replies are fluent and describe the same
+      table. It does not say which side is nearer the float model (the CPU arm is not a reference, only the arm the rule was written
+      against). **The FAIL stands and no bar moved.**
+    - **The instrument that would settle it, not built:** G-S10q-c's teacher-forced agreement with HF on the paged CUDA path, which
+      needs per-position logits from the resident GPU path for a prompt-plus-continuation (the CPU test `TestQwen3VLMoe_goinferLogits`
+      does it for the CPU arms; the resident path returns the last position's logits only). If the CUDA path's agreement with HF
+      (CPU int4: 92.5% on the 30B) is about equal, the FAIL is the CPU arm being an unfair reference at a sensitive token; if it is
+      lower, it is a CUDA-path quality gap. Owner decision whether to build it.
+    - The job script's default `SRC` pointed at a worktree that has been removed; it now defaults to the repo root.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
@@ -6114,10 +6137,10 @@ list's order: S15, S12, full S13.
 - **Consequence, per the registration:** a PARKED reading does not ship the prefix on its own. **Owner decision, 2026-10-10: ship it** (int4pf is 4.1 points better than the unforced int4 and about one point from float32). `serve` now opens a Qwen3-ASR assistant turn with `language` (`multimodal.QwenASRPromptOpenLanguage`) and emits the word ahead of the generated text (`visionInput.replyPrefix`, written by `driveVL`), so the reply keeps its shape `language <Name><asr_text>...` and `usage.completion_tokens` is one lower while `prompt_tokens` is one higher. There is no switch back to the unforced prompt in serve; `multimodal.QwenASRPrompt` and the harness arms still build it. Checked on the real `qwen3-asr-0.6b` (CPU, int4, the 5.9 s LibriSpeech clip, greedy): the reply is byte-identical to the previous build's, prompt 92 / completion 24 against 91 / 25, and the streamed deltas carry `language` first (exploratory, one clip: the 73-clip number is the gate above, which ran this prompt). The +1.04 points remain, and the first-transcript-token position is where it lives.
 
 **G-S14e4c (record only, nothing graded): partly read.** Binary `s14e4` at `891a51ba`.
-- **(a), float32 on the 36 s clip: NOT READ.** serve's swap guard refused the request with HTTP 503 (the float32 load, 18 GB, left swap +0.56 GB over the baseline, past the +512 MB limit), so `reply-f32-libri6x.json` does not exist and the 133-token comparison against the transformers reference was not made at float32. The 5.9 s float32 request (79 s) is **byte-equal** to the reference, reproducing G-S14e4b.
+- **(a), float32 on the 36 s clip: refused in the night run, READ the same day (rerun 15:42-15:47 PDT, `~/goinfer-logs/s14e4c-2026-10-10-rerun/`, same pinned `serve-cpu`, same reference).** The night run's request got HTTP 503 from serve's swap guard (the box's swap baseline was 3.95 GB and grew 0.56 GB, over the +512 MB threshold). Rerun on an idle box with `--quant f32`, the 36 s clip as `input_audio`: 755 prompt tokens, 132 completion tokens then the stop, finish stop, 215 s, **byte-equal to the transformers float32 reference's 133 generated tokens** (six sentences). The guard tripped AFTER the reply (swap 5.64 GB baseline, +0.64 GB by the end of the request, memory used 39 GB of 62): the 18 GB float32 server plus its float32 audio tower is close to what this box holds beside its normal swap use, and a request that starts with the swap already high will be refused.
 - **(b), serve's default int4 (int4 head):** on the 5.9 s clip 22 completion tokens, finish stop, **0 word edits over 17 words** against float32, no control token; on the 36 s clip (two windows, 755 prompt tokens, 140 s) 132 completion tokens, finish stop, six repetitions of the sentence, **byte-equal to the transformers float32 reference's 133 generated tokens including the stop** (checked against the reference run in the same job, 265 s).
 - **Prediction scored:** "int4 within three words of float32 on the single clip" at 0.5, "a control token or empty first position in at least one int4 reply" at 0.3: the first held (0 edits), the second did not occur.
 - **Limit:** one voice, one sentence, six times; no WER gate on Voxtral's int4. The registration said a word-error gate would follow only if (b) showed damage, and it did not, so none is registered.
-- **Owed:** (a) on the 36 s clip needs the float32 server to start without the swap guard firing (a clean box, or a lower-RSS start); not re-queued, because int4 matched the float32 reference and the question it would answer is narrower than it was.
+- **Nothing owed on G-S14e4c.** Float32 served equals the reference on both clips and int4 equals float32 on both (0 word edits over 17 and over 102 words); no WER gate on Voxtral's int4 is registered because none of the int4 replies showed damage.
 
 **G-S14f3: PASS.** Binary at `55dbc0d8`; transformers 310 s, goinfer 1,088 s on the CPU. 73/73 texts byte-equal (bar >= 70), WER 6.70% on both sides, |WER diff| 0.00 points (bar <= 0.30). The language each side detected differs on 0/73 clips. The prediction (PASS at 0.75) held. Established: the pure-Go Whisper decoder at float32 on the CPU, short form, greedy, equals transformers on the 73 clips of G-S14c4, with whisper-small. Not established: any language but English, a long clip against a reference at WER level, the GPU.
