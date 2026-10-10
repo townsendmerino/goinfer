@@ -1,6 +1,8 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10, nothing built. The gates below are registered before any code. Two parts, in this
+**Status:** scoped 2026-10-10. **T0 and T6 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 for T6 is PASS on
+the Mac** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). T1–T5, T7 and V are not started. The gates
+below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
 `giw-v16-2026-10`, merged when the track is done.
@@ -20,6 +22,8 @@ direction and the projection bands, and is never quoted as a result. The results
   1.5B int4 transcode's CPU in the exploratory profile, `math.Round` alone 28%. The same model at int8int8 took
   3.9 s against int4's 19.5 s: the int8 quantizer is vectorized, the int4 one is not. int4 is the default quant,
   and the default sidecar (`e4h`) sends the embedding and head through the int4 quantizer too.
+  - **Not on the Mac (T0, 2026-10-10, exploratory):** there it is about 14% of the CPU, and the GGUF dequantizer is
+    about two thirds. See F3.
 - **Three smaller costs:** on arm64 every int4 tensor built during a transcode also gets an in-RAM row4 copy that
   nothing reads; the safetensors fused-expert path transposes with a loop that hits power-of-two cache aliasing
   (a tiled version is 5.2× faster, bit-identical); and it copies each expert's f32 three more times than needed.
@@ -115,6 +119,11 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
   `FCVTAS`, AVX2) with `quantizeRowInt8CoreScalar` kept verbatim as the bit-identity oracle. int4 never got the same
   treatment. On amd64 `math.Round` is not an intrinsic; on arm64 it compiles to `FRINTA`, so the Mac's split differs
   and T0 measures it.
+  - **T0, 2026-10-10 (the Mac, exploratory; the audit folder's arm64 section):** the split differs completely.
+    `QuantizeGroupInt4Row` is about 14% of a 1.5B int4 transcode's CPU, and `math.Round` is not a node in the profile.
+    The GGUF dequantizer is about two thirds: `dequantQ4KBlock` 55%, of which `encoding/binary.LittleEndian.Uint16`
+    17%, and `dequantQ6KBlock` 12%.
+  - So on arm64 T4 can remove at most about 14%, and the dequantizer is the first cost there before T4, not after it.
 - **F4. Safetensors experts are built one at a time.** `decoder/weights.go:loadFusedExperts`, `streamExperts`
   (gemma4), and the per-expert `loadMatQ` loop in the generic builder's layer loader all loop over experts
   sequentially. `buildGptOssWeights` does too, but gpt-oss directories still take the resident (layer-parallel) path.
@@ -133,6 +142,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
   `RepackInt4Row4` (or `repackedOnlyOrCanonical` keeps canonical plus row4) on every eligible tensor. The writer never
   reads that copy: it chooses from canonical and, for a cpu-arm64 target, recomputes row4 in `repackRow4ForEmit`. So
   every Mac transcode does one wasted repack per tensor, and a cpu-arm64 one does it twice.
+  - **T0, 2026-10-10 (the Mac, exploratory):** confirmed, and small. The in-RAM repack is 0.21–0.25 s, about 2% of the
+    CPU, on both targets. The writer's own repack for kind 5 is another 0.22 s on cpu-arm64, and that one is needed.
 - **F7. The writer round-trips scales through f32.** `giwWriter.weightMatKind` widens the stored binary16 scales to
   f32 (`Int4F32`, an allocation), `giwWriter.int4Scales` narrows them back (`F32ToF16Scales`, another), and
   `giwWriter.scales16` copies them to bytes (a third). About 2% of the profile; fold it into V1's writer change.
@@ -142,17 +153,24 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
 - **F9. The self-check re-reads the whole file.** That matters only when the file is larger than free RAM. For a file
   that fits, the read comes from page cache and compares the bytes Go wrote with the CRC Go computed over those same
   bytes. That checks the writer against itself, not the disk.
+  - **T0, 2026-10-10 (the Mac, by day):** the phase line reads 3.0–5.0 s of self-check on a 1.2–1.3 GB int4 sidecar
+    with int8 logit tables, and 0.2 s on the `e4h` one, where the cloud box read 0.13 s.
+  - The same load in a fresh process takes 0.2 s, and the self-check's CPU is 0.5–0.6 s. So the time is not the
+    check's own work. What it waits on is not established
+    ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
 
 ### Checked and not worth doing
 
 - **A buffered sink.** The transcode makes 3,218 `Write` calls for the whole 1.5B. The small header writes are real
   but negligible. A large MoE makes more (about ten per matrix), still under a second.
-- **The self-check for a file that fits in RAM:** 0.13 s of 19.3 s. A sidecar larger than RAM (the 16.7 GB 30B on the
+- **The self-check for a file that fits in RAM:** 0.13 s of 19.3 s. **Not so on the Mac (T0, 2026-10-10): 3–5 s of a
+  15–20 s transcode for a plain int4 sidecar. See F9; it is an open question, not a closed one.** A sidecar larger than RAM (the 16.7 GB 30B on the
   16 GB Mac) re-reads from disk. T0's phase line measures that before anything changes (F9).
 - **The disk write:** about 0.5 s per GB on the cloud box. Not representative of the Mac's SSD, but not where the time
   is either.
 - **GGUF dequant (Q4_K/Q6_K, scalar):** 12.7% today. It becomes a larger share once T4 lands. Re-rank it from T0's
-  profile after T4, not before.
+  profile after T4, not before. **On arm64 it is already about 67% (T0, 2026-10-10; F3): on the Mac it ranks first
+  now.**
 
 ## Part T — transcode speed
 
@@ -172,6 +190,13 @@ change what runs when and how fast, never what is written.
   - **A `-cpuprofile` flag on `cmd/prequant`** (a flag, not an env read), and with it a profile on the Mac of the
     1.5B int4 cpu-arm64 and Metal transcodes. Under a minute each: day tier, exploratory. That gives arm64's split for
     F3 and F6.
+  - **Built 2026-10-10.** What the tree made different from the text above:
+    - `Transcode` keeps its signature. `internal/prequant/prequant.go:TranscodeTimed` and `TranscodeLoRATimed` return
+      the two phases, and `Transcode` wraps the first.
+    - `cmd/prequant` refuses a GGUF with no embedded tokenizer, and no tiny GGUF fixture has one. So `-giw` covers the
+      tiny safetensors directories and real GGUFs; the tiny GGUFs are not in its matrix.
+    - `-giw bytes` hashes each bundle and removes it before the next is written, so a real cell needs one sidecar's
+      worth of free disk, not three.
 - **T1. Windowed layer parallelism in every streaming loop.**
   - One helper replaces the nine loops (eight in `buildWeightsFromGGUF`, plus `finishLayers`): build a window of K
     layers with `parallelLayers`, write them in order, free them, repeat. Output is byte-identical by construction,
@@ -221,6 +246,10 @@ change what runs when and how fast, never what is written.
     `skipRow4=false` today.
   - The writer already builds row4 from canonical (`repackRow4ForEmit`), so the file does not change.
   - It has to be checked on the Mac: on amd64, row4 is a no-op.
+  - **Built 2026-10-10.** The predicate is `decoder/weightmat.go:repackForDecode`. The two builders that can have a sink
+    (`buildWeightsFromGGUF`, `buildWeightsFromSafetensorsTo`) fold it into `skipRow4` before any tensor is built, and
+    `streamQuantizedEmbed` takes it as a parameter. The amd64 split-half repack, off by default, is not covered. G-T1
+    on the Mac: PASS.
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
@@ -285,6 +314,14 @@ exactly that.
   every cell or the item does not ship.
   - **By day, tiny assets:** G-DS1's matrix (42 fixtures × int4 metal with and without `-embed-int4`, int4 cpu,
     int8int8), plus int4 cpu-arm64. Run on the Mac, so T6's arm64 path is covered.
+    - **What that matrix is on the Mac (2026-10-10):** the walk also takes `decoder/testdata/` and finds 64 fixture
+      directories, of which 55 transcode (46 under `testdata/`; 42 was G-DS1's count on 2026-10-09). `cpu` resolves to
+      `cpu-arm64` there, so "int4 cpu" and "int4 cpu-arm64" are one cell written twice.
+    - **One cell added, `int4:cpu-arm64:e4h`:** the int4 logit tables are a path T6 changes, and no registered cell
+      writes them for a CPU target.
+    - **T6: PASS, 2026-10-10.** 330 tiny cells and 3 real cells IDENTICAL, 0 DIFFERENT; 54 NOT RUN, nine directories
+      that are not models, each listed in the record. The real 1.5B cells ran by day, ahead of the night this gate
+      names for them: an identity check of about 20 s a transcode, nothing timed.
   - **At night, real:** 1.5B int4 cpu-arm64 and metal (Mac); 7B int4 cpu-amd64 and cuda, and Qwen3-VL-30B-A3B int4
     from its directory (nobara).
   - T4 also passes aikit's oracle test (G-T4) before goinfer sees it.

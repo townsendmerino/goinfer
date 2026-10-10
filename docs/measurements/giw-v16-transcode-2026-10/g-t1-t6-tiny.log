@@ -1,0 +1,98 @@
+== identity provenance ==
+  repo        5555d4a5
+  date (UTC)  2026-10-10T15:55:42Z
+  host        Darwin arm64
+  old         eee75d83 metal-q4k: G-Q2 and G-Q3 queued again with the load-time fit guard byp
+  new         5555d4a5 decoder: T6, no in-RAM row4 repack while building for a sink (task-giw
+  mode        giw bytes: each revision's own cmd/prequant transcodes the source; the files' sha256 are compared
+  assets      tiny — every directory with a .safetensors file under /Users/francistownsend-merino/tmcode/goinfer/testdata and decoder/testdata
+  configs     int4:metal:e4h, int4:metal, int4:cpu, int8int8:cpu, int4:cpu-arm64, int4:cpu-arm64:e4h (quant:target[:e4h]; cpu is this box's arch)
+  env         GOINFER_* removed from both sides' transcodes (none were set) — the code is the only difference
+  build       go build -trimpath ./cmd/prequant in each worktree's root module, GOWORK=off -mod=readonly
+  run dir     <run dir>/gate-identity-20261010-085541-3310389652
+  started     08:55:41 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+
+== giw bytes: old eee75d83 vs new 5555d4a5, per source ==
+  IDENTICAL  bailing_hybrid-tiny                6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  cohere-tiny                        6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  cohere2-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/internlm2-tiny             6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/internlm3-tiny             6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/laguna-m1-tiny             6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/laguna-xs2-tiny            6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/laguna-xs21-tiny           6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    decoder/mellum-mellum2-slice       nothing ran — see NOT RUN
+  IDENTICAL  decoder/qwen3_5-tiny               6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    decoder/qwen3_5-tiny-lora          nothing ran — see NOT RUN
+  IDENTICAL  decoder/qwen3_5-tiny-normw         6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/qwen3_5_moe-tiny           6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  decoder/spark2-5-tiny              6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  deepseek-tiny                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    embeddinggemma2-tiny               nothing ran — see NOT RUN
+  IDENTICAL  gemma1-tiny                        6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma2-hd-tiny                     6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma2-tiny                        6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma3-vl-tiny                     6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    gemma4-audio-tiny                  nothing ran — see NOT RUN
+  IDENTICAL  gemma4-dense-scaled                6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma4-dense-twogeom-tiny          6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma4-emodel-tiny                 6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma4-moe-kv-tiny                 6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma4-moe-tiny                    6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gemma4-moe-unified-tiny            6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    gemma4-vision-tiny                 nothing ran — see NOT RUN
+  IDENTICAL  gemma4-vl-bidir-tiny               6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  glm-ocr-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    glm-ocr-vision-tiny                nothing ran — see NOT RUN
+  IDENTICAL  glm-tiny                           6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  glm-tiny-bias                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  gpt2                               6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  granite-dense-tiny                 6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  granite-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  kimi-tiny                          6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  lfm2-tiny                          6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  llama-attnfa-tiny                  6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  llama-tiny                         6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  llama4-tiny                        6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  ministral3-tiny                    6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  mistral-tiny-window                6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  mixtral-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  nemotron-tiny                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  nemotron3nano-tiny                 6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  olmo3-tiny                         6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  olmo_hybrid-tiny                   6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  phi3-tiny                          6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen25vl-tiny                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen35-tiny                        6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen35vl-tiny                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen3asr-tiny                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen3moe-tiny                      6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen3moe-tiny-k3                   6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen3next-tiny                     6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  qwen3vl-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    qwen3vl-vision-tiny                nothing ran — see NOT RUN
+  IDENTICAL  qwen3vlmoe-tiny                    6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    siglip-tiny                        nothing ran — see NOT RUN
+  IDENTICAL  smollm3-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  tiny-qwen2-moe                     6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  IDENTICAL  voxtral-tiny                       6 cell(s): int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h
+  NOT RUN    whisper-tiny-rand                  nothing ran — see NOT RUN
+
+== NOT RUN (54 cell(s)) — reported, never counted as a pass ==
+  NOT RUN  decoder/mellum-mellum2-slice       [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] 4.3 GB: over the tiny matrix's 1 GB cap (a real checkpoint under testdata)
+  NOT RUN  decoder/qwen3_5-tiny-lora          [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder: read config.json: open config.json: no such file or directory
+  NOT RUN  embeddinggemma2-tiny               [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, d
+  NOT RUN  gemma4-audio-tiny                  [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, d
+  NOT RUN  gemma4-vision-tiny                 [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deep
+  NOT RUN  glm-ocr-vision-tiny                [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder(glm_ocr): missing required dim (hidden=0 layers=0 heads=0 headDim=0)
+  NOT RUN  qwen3vl-vision-tiny                [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written b
+  NOT RUN  siglip-tiny                        [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2
+  NOT RUN  whisper-tiny-rand                  [int4:metal:e4h int4:metal int4:cpu int8int8:cpu int4:cpu-arm64 int4:cpu-arm64:e4h] neither build transcodes it — new: write bundle: stream weights: decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v
+
+== verdict ==
+  cells    384: 330 IDENTICAL, 0 DIFFERENT, 54 NOT RUN (a skip is not a pass)
+  wall     1m1s (08:55:41 → 08:56:43): builds 6s, transcodes 56s (each cell: new, old, new again)
+  logs     <run dir>/gate-identity-20261010-085541-3310389652/logs (bundles removed after hashing (pass -keep to retain them); worktrees removed)
+  record   <run dir>/gt1-tiny.jsonl (one JSON line per cell: verdict, sha256, bytes, prequant's phase line)
+  GREEN — every cell that ran is IDENTICAL
