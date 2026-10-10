@@ -44,11 +44,12 @@ type visionInput struct {
 	imgPos, imgLen int
 	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
 	qwen           bool
-	deepSets       int  // Qwen3-VL: features() returns the merged rows, then this many DeepStack sets of the same size
-	gemma4         bool // selects GenerateGemma4VL in driveVL
-	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR, Voxtral)
-	causal         bool // Ministral 3 and LFM2-VL, causal image tokens (GenerateVLCausalSpans)
-	images         int  // the images in the turn (a Pixtral image is one span per merged row, so not len(spans))
+	deepSets       int    // Qwen3-VL: features() returns the merged rows, then this many DeepStack sets of the same size
+	gemma4         bool   // selects GenerateGemma4VL in driveVL
+	asr            bool   // selects GenerateAudio in driveVL (Qwen3-ASR, Voxtral)
+	replyPrefix    string // text the prompt already ends with that belongs at the head of the reply; driveVL emits it before the generated text
+	causal         bool   // Ministral 3 and LFM2-VL, causal image tokens (GenerateVLCausalSpans)
+	images         int    // the images in the turn (a Pixtral image is one span per merged row, so not len(spans))
 	// Every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then returns
 	// every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the one-media builders
 	// (GLM-OCR, audio), whose single span driveVL reads from imgPos/imgLen.
@@ -647,8 +648,9 @@ func (lm *loadedModel) qwenASREncoder() (*audio.QwenASREncoder, error) {
 }
 
 // qwenASRPrompt is the Qwen3-ASR path: the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for Gemma 4's audio) through the Qwen3-ASR front end, whose
-// frame count fixes the number of audio tokens, into the fixed prompt layout (multimodal.QwenASRPrompt). The encoder runs lazily inside features(). The reply is the model's raw
-// "language <Name><asr_text><transcription>"; text in the user turn is not part of the template and is ignored, the system message is passed through.
+// frame count fixes the number of audio tokens, into the fixed prompt layout with the assistant turn already opened by "language" (multimodal.QwenASRPromptOpenLanguage; the
+// model still writes the name and <asr_text>). The encoder runs lazily inside features(). The reply is the model's raw "language <Name><asr_text><transcription>", the word
+// supplied from the prompt via replyPrefix, so completion_tokens does not count it. Text in the user turn is not part of the template and is ignored, the system message is passed through.
 func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput, error) {
 	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
 	if err != nil {
@@ -677,11 +679,11 @@ func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput,
 		}
 		return emb, nil
 	}
-	ids, pos, err := multimodal.QwenASRPrompt(lm.tk, system, n, "")
+	ids, pos, err := multimodal.QwenASRPromptOpenLanguage(lm.tk, system, n)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true}, nil
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true, replyPrefix: multimodal.QwenASRLanguageWord}, nil
 }
 
 // voxtralMaxSeconds is the longest clip a request may carry. Each 30 s window is a full encoder pass (about a minute on a CPU), so this is a cost bound, not the model's limit; a clip over it is

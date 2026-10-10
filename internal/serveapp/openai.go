@@ -1615,6 +1615,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	} else {
 		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	}
+	if vi.replyPrefix != "" {
+		onText(vi.replyPrefix)
+	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
