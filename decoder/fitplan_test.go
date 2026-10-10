@@ -4,10 +4,8 @@ import (
 	"testing"
 )
 
-// loadDenseTiny loads testdata/llama-tiny — TRACKED in git (712 KB), unlike the MoE/hybrid
-// fixtures below, so this one row of the table runs in CI unconditionally; the other two skip
-// when their (gitignored, real) fixtures are absent, same convention as every other MoE/hybrid
-// test in this package.
+// loadDenseTiny loads testdata/llama-tiny, TRACKED in git (unlike the MoE/hybrid fixtures below), so this row of the
+// table runs in CI unconditionally; the other two skip when their (gitignored, real) fixtures are absent.
 func loadDenseTiny(t *testing.T) *Model {
 	t.Helper()
 	m, err := Load("../testdata/llama-tiny", Options{Quant: "f32"})
@@ -33,13 +31,11 @@ func loadSkippableTiny(t *testing.T, dir, what string) *Model {
 	return m
 }
 
-// TestPlan_tableDriven is G4 (docs/tasks/task-fit-to-hardware.md §6): "a table-driven unit test on
-// synthetic headers — dense, MoE, hybrid, every backend, every budget... pins the placement and
-// the ctx cap. A change to the priority order is a change to this table, reviewed." Not literally
-// synthetic headers (Phase 1 was scoped Load()-based, docs/tasks/task-gpu-paths-2026-09.md's G11 entry)
-// — real tiny checkpoints instead, budgets scaled to each fixture's OWN measured byte counts
-// rather than the doc's literal "6 to 64 GB" (these are toy-sized parity fixtures, not real
-// deployment checkpoints, so a literal GB range would never exercise the decline path at all).
+// TestPlan_tableDriven is G4 (docs/tasks/task-fit-to-hardware.md §6): a table over dense, MoE, hybrid, every backend
+// and every budget that pins the placement and the ctx cap. A change to the priority order is a change to this table,
+// reviewed. It runs on real tiny checkpoints through Load() rather than synthetic headers
+// (docs/tasks/task-gpu-paths-2026-09.md, G11), with budgets scaled to each fixture's OWN byte counts: a literal "6 to
+// 64 GB" range would never reach the decline path on toy-sized fixtures.
 func TestPlan_tableDriven(t *testing.T) {
 	const ctxWant = 8192
 
@@ -179,7 +175,7 @@ func TestPlan_tableDriven(t *testing.T) {
 		}
 	})
 
-	// Phase 3 (tasks/task-fit-to-hardware.md §7): webgpu admitted to Plan now that M-32 is fixed.
+	// webgpu is admitted to Plan (docs/tasks/task-fit-to-hardware.md §7, Phase 3; M-32).
 	t.Run("dense/webgpu/generous_admits_like_other_backends", func(t *testing.T) {
 		m := loadDenseTiny(t)
 		dense := m.ResidentDenseWeightBytes()
@@ -243,12 +239,11 @@ func TestPlan_tableDriven(t *testing.T) {
 	})
 }
 
-// TestPlan_extraBytesReservedAheadOfExperts is the regression this session's own G11 CUDA guard
-// work (docs/tasks/task-gpu-paths-2026-09.md) traces back to: tasks/task-fit-to-hardware.md's motivating
-// example (a --drafter attach after BuildResident grabbed VRAM an MoE expert cache had already
-// claimed). PlanRequest.ExtraBytes exists so the CALLER can price a companion allocation (a
-// drafter, a vision tower) as a FIXED term ahead of the elastic expert-slot count, per §2's "every
-// allocation is a term of the plan, including the ones that attach after load."
+// TestPlan_extraBytesReservedAheadOfExperts: PlanRequest.ExtraBytes lets the CALLER price a companion allocation (a
+// drafter, a vision tower) as a FIXED term ahead of the elastic expert-slot count (docs/tasks/task-fit-to-hardware.md
+// §2: every allocation is a term of the plan, including the ones that attach after load). The motivating case is a
+// --drafter attach after BuildResident taking VRAM an MoE expert cache had already claimed
+// (docs/tasks/task-gpu-paths-2026-09.md).
 func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 	m := loadGemma4MoETiny(t)
 	nExperts, _, isMoE := m.moeGeometry()
@@ -279,14 +274,11 @@ func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 	}
 }
 
-// TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch is the M-08 gate
-// (docs/audit-2026-09-10.md): the existing "nonsense backend declines" test
-// (moe/nonsense_backend_declines_on_features_not_bytes, above) only proves the decline for an
-// arch with NON-EMPTY RequiredResidentFeatures — a plain Llama has none, so
-// MissingResidentFeatures(nil) returned empty (nothing required, nothing implemented, so
-// "nothing missing") and Plan fell through to RESIDENT for ANY backend name, including one that
-// does not exist. This is the same shape as "Llama-4/cuda", "dense Gemma-4/webgpu" and
-// "Kimi-K2/metal" in the finding: a family whose feature list alone doesn't catch the decline.
+// TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch (M-08, docs/audit-2026-09-10.md): a nonsense backend must
+// decline even for an arch with EMPTY RequiredResidentFeatures. The "nonsense backend declines" subtest above
+// (moe/nonsense_backend_declines_on_features_not_bytes) covers only an arch with non-empty required features; a plain
+// Llama requires none, so MissingResidentFeatures(nil) was empty and Plan fell through to RESIDENT for ANY backend
+// name. The same shape applies to any family whose feature list alone does not catch the decline.
 func TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch(t *testing.T) {
 	m := loadDenseTiny(t)
 	if got := m.RequiredResidentFeatures(); len(got) != 0 {

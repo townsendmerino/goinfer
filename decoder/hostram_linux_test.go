@@ -4,11 +4,10 @@ package decoder
 
 import "testing"
 
-// R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's live re-run of the R13
-// fix): HostRAMAvailableBytes exists because HostRAMBytes (total physical RAM) is what the fit
-// guard budgeted against, and a fixed fraction of TOTAL RAM assumes nothing else on the machine
-// ever needs more than the rest — false on a real machine with a browser or IDE open. This tests
-// the shared meminfo-field parser both readers now use.
+// HostRAMAvailableBytes exists because HostRAMBytes (total physical RAM) is what the fit guard budgeted against, and a
+// fixed fraction of TOTAL RAM assumes nothing else on the machine ever needs more than the rest, which is false on a
+// real machine with a browser or IDE open (docs/measurements/cold-user-2026-09-07-macbook-arm64.md, R13). This tests
+// the shared meminfo-field parser both readers use.
 const sampleMeminfo = `MemTotal:       16311288 kB
 MemFree:         1234567 kB
 MemAvailable:    5766224 kB

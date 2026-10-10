@@ -27,9 +27,8 @@ import (
 
 func TestGptOssReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the
-	// gate and the sweep preflight apply the SAME predicate to the same candidate paths
-	// (testdata/assets.json). This file predated GOINFER_GPTOSS_GGUF being registered.
+	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the gate and the sweep preflight apply
+	// the SAME predicate to the same candidate paths (testdata/assets.json).
 	gguf := assetPath(t, "GOINFER_GPTOSS_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8"})
 	if err != nil {
@@ -108,9 +107,8 @@ func TestGptOssReal_logitParity(t *testing.T) {
 		t.Fatalf("parse golden: %v", err)
 	}
 
-	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the
-	// gate and the sweep preflight apply the SAME predicate to the same candidate paths
-	// (testdata/assets.json). This file predated GOINFER_GPTOSS_GGUF being registered.
+	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the gate and the sweep preflight apply
+	// the SAME predicate to the same candidate paths (testdata/assets.json).
 	gguf := assetPath(t, "GOINFER_GPTOSS_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8"})
 	if err != nil {

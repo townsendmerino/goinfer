@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-// TestGraniteResidentBridge validates the P5b.1 accessor bridge: the resident SSM builder
-// reads the Mamba geometry, per-layer mixer-kind, and correctly-shaped f32 mixer tensors
-// through these accessors. Shape-checks the weights against the projDim/convDim/dInner the
-// kernels expect, so a wiring error surfaces here before any GPU dispatch. Additive — no
-// production routing change (eligibility flip is P6).
+// TestGraniteResidentBridge validates the accessor bridge: the resident SSM builder reads the Mamba geometry, per-layer
+// mixer-kind, and correctly-shaped f32 mixer tensors through these accessors. It shape-checks the weights against the
+// projDim/convDim/dInner the kernels expect, so a wiring error surfaces here before any GPU dispatch.
 func TestGraniteResidentBridge(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/granite/granite-4.0-h-tiny-Q8_0.gguf")

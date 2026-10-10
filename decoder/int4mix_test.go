@@ -2,11 +2,10 @@ package decoder
 
 import "testing"
 
-// TestInt4MixMode gates the per-tensor mixed-precision mode (idea #5): -quant int4mix
-// keeps attention (q/k/v/o) at int8 — where the spike found the int4→int8 quality loss
-// concentrated — and the FFN bulk (gate/up/down) at int4. Asserts the per-tensor kinds,
-// that Quant() reports it distinctly (so the KV fingerprint won't collide with int4/int8),
-// that it generates, and that a mixed model round-trips through the .giw serialize format.
+// TestInt4MixMode gates the per-tensor mixed-precision mode: -quant int4mix keeps attention (q/k/v/o) at int8, where
+// the int4->int8 quality loss concentrates, and the FFN bulk (gate/up/down) at int4. Asserts the per-tensor kinds, that
+// Quant() reports it distinctly (so the KV fingerprint won't collide with int4/int8), that it generates, and that a
+// mixed model round-trips through the .giw serialize format.
 func TestInt4MixMode(t *testing.T) {
 	path := prequantGGUF(t)
 	m, err := Load(path, Options{Quant: "int4mix"})

@@ -10,11 +10,10 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
-// task-never-swap-2026-09.md S4 item 1: a .giw load's weights are file-backed (fitCheckFor is
-// never called for one, by design — its own srcFileBytes doc comment), but KV and prefill scratch
-// ARE real anonymous cost this path priced nowhere before. guardGIWFit is the load-time guard;
-// these are its own gates, mirroring fitguard_test.go's existing conventions for the .gguf side
-// (injectHostRAM, the same Config field shape) rather than inventing new ones.
+// S4 item 1 of docs/tasks/task-never-swap-2026-09.md: a .giw load's weights are file-backed (fitCheckFor is never
+// called for one, by design; see its srcFileBytes doc comment), but KV and prefill scratch ARE real anonymous cost, and
+// guardGIWFit is the load-time guard that prices them. These are its gates, mirroring fitguard_test.go's conventions
+// for the .gguf side (injectHostRAM, the same Config field shape).
 
 func TestGuardGIWFit_fitsComfortably(t *testing.T) {
 	defer injectHostRAM(t, 16<<30)()
@@ -191,11 +190,9 @@ func TestLoad_giwAutoPinsUnderTightMemory(t *testing.T) {
 		t.Fatalf("write bundle: %v", werr)
 	}
 
-	// &w.Cfg directly — the actual struct Load will use internally — rather than hand-copying
-	// fields into a fresh Config, which silently dropped HeadDim to 0 the first time this was
-	// written (caught here: HeadDim=0 makes estimateKVBytes return 0 regardless of context,
-	// so the "floor vs max" need never actually differed and this test could not have told
-	// an auto-pin from a no-op).
+	// &w.Cfg directly, the actual struct Load uses internally, rather than hand-copying fields into a fresh Config: a copy
+	// that drops HeadDim makes estimateKVBytes return 0 regardless of context, so the floor and max needs never differ and
+	// the test could not tell an auto-pin from a no-op.
 	floorNeed := estimateKVBytes(&w.Cfg, ctxFloor, false, false) + prefillAttnScratchBudget
 	maxNeed := estimateKVBytes(&w.Cfg, w.Cfg.MaxPositions, false, false) + prefillAttnScratchBudget
 	if maxNeed <= floorNeed {

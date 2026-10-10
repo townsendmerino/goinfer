@@ -7,11 +7,11 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Weights format v14 (metal target): every canonical group-32 int4 tensor also carries its group scales
-// pre-converted by F16Bits, so a Metal no-copy buffer can alias them instead of converting the f32 scales
-// into a new buffer (~389 MB on the 7B, S6). Singles are kind 7; kind-6 groups gain an f16 block. These pin
-// that the f16 arrays exist for exactly those tensors, equal the kernels' own conversion, live in the
-// mapping where the Metal build can find them, and that other targets and older files are unaffected.
+// Weights format v14 (metal target): every canonical group-32 int4 tensor also carries its group scales pre-converted
+// by F16Bits, so a Metal no-copy buffer can alias them instead of converting the f32 scales into a new buffer (S6).
+// Singles are kind 7; kind-6 groups gain an f16 block. These pin that the f16 arrays exist for exactly those tensors,
+// equal the kernels' own conversion, live in the mapping where the Metal build can find them, and that other targets
+// and older files are unaffected.
 
 func f16Fixture(t *testing.T) *Weights {
 	t.Helper()

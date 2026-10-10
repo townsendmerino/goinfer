@@ -9,18 +9,13 @@ import (
 	"testing"
 )
 
-// TestGemma4VL_textParity loads the tiny Gemma 4 VL checkpoint (scripts/
-// pin_gemma4_vl_tiny.py) through goinfer's loader + forward and asserts the
-// TEXT-ONLY path matches the HF golden. Same P0 invariant as Gemma 3's own
-// TestGemma3VL_textParity: a VL checkpoint's text decoder (vision_tower/
-// embed_vision ignored) loads and runs exactly like a plain gemma4.
+// TestGemma4VL_textParity loads the tiny Gemma 4 VL checkpoint (scripts/pin_gemma4_vl_tiny.py) through goinfer's loader and
+// forward and asserts the TEXT-ONLY path matches the HF golden. Same P0 invariant as Gemma 3's TestGemma3VL_textParity: a VL
+// checkpoint's text decoder (vision_tower/embed_vision ignored) loads and runs exactly like a plain gemma4.
 //
-// This fixture's num_kv_shared_layers=2 (of 4 layers) is not incidental — it
-// is the exact shape that caught two real, pre-existing bugs in
-// buildWeightsFromSafetensors's gemma4 branch this session (a missing
-// cross-layer-KV-sharing skip, and a missing per-layer FFN-width discovery),
-// found only by loading a real checkpoint of this shape for the first time.
-// This test is what gives that fix CI-repeatable coverage.
+// This fixture's num_kv_shared_layers=2 (of 4 layers) is not incidental: it is the shape that exposed two bugs in
+// buildWeightsFromSafetensors's gemma4 branch (a missing cross-layer-KV-sharing skip, and a missing per-layer FFN-width
+// discovery), and this test is that fix's CI-repeatable coverage.
 func TestGemma4VL_textParity(t *testing.T) {
 	const golden = "../testdata/gemma4_vl_tiny_text_golden.json"
 	const ckpt = "../testdata/gemma4-vl-tiny"

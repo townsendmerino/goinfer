@@ -9,13 +9,10 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// Track 2.2 (testing campaign): goinfer's INTERPRETATION of a GGUF — metadata →
-// Config synthesis — must turn a hostile header into a typed error, never a
-// panic. FuzzGGUFConfig fuzzes that path; TestGGUF_hostileDims_typedError is the
-// regression for the makeslice panic that surfaced (block_count overflowing int
-// → negative NumLayers). The container parse below it (string lengths, map
-// pre-sizing) is aikit's and was hardened in v1.2.1, so the fuzzer now reaches
-// goinfer's layer instead of dying in the parser.
+// goinfer's INTERPRETATION of a GGUF (metadata -> Config synthesis) must turn a hostile header into a typed error,
+// never a panic. FuzzGGUFConfig fuzzes that path; TestGGUF_hostileDims_typedError is the regression for the makeslice
+// panic (block_count overflowing int to a negative NumLayers). The container parse below it (string lengths, map
+// pre-sizing) is aikit's (hardened in aikit v1.2.1), so the fuzzer reaches goinfer's layer.
 
 // --- a minimal, faithful GGUF encoder (matches aikit/embed.parseGGUF) ---
 
@@ -253,11 +250,9 @@ func ggufSeeds() [][]byte {
 	}, []ggufTensorDecl{emb})
 
 	var seeds [][]byte
-	// Every dispatchable architecture gets a seed so the fuzzer exercises its family
-	// builder — the div-by-zero / makeslice sites M16 hardened live inside these, and
-	// the previous corpus reached none of the last seven (granite/nemotron/deepseek/
-	// glm4moe/qwen35moe/phi3/llama4). A generic dense seed is enough to drive each
-	// builder's entry; the fuzzer mutates from there.
+	// Every dispatchable architecture gets a seed so the fuzzer exercises its family builder: the div-by-zero / makeslice
+	// sites M16 hardened live inside these. A generic dense seed is enough to drive each builder's entry; the fuzzer
+	// mutates from there.
 	for _, a := range []string{
 		"llama", "qwen2", "qwen3", "gemma3", "phi3",
 		"deepseek2", "glm4moe", "granitehybrid", "nemotron_h", "qwen35moe", "llama4",

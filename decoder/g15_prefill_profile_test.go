@@ -12,29 +12,18 @@ import (
 	"time"
 )
 
-// Prefill profiler — time and profile ONE batched CPU prefill at a chosen prompt
-// length and quantization.
+// Prefill profiler: time and profile ONE batched CPU prefill at a chosen prompt length and quantization (history:
+// docs/code-notes/decoder.md#TestG15PrefillProfile.file).
 //
-// Built for queue G15 (a suspected int4-specific prefill cliff at ~3k tokens).
-// **G15 was WITHDRAWN: the cliff was a measurement artifact** — one 3020-token
-// int4 timing of 1587.1 s that three later measurements put at ~350 s, int4 and
-// int8int8 scaling alike at ~n^1.85. This instrument is what caught it, by
-// disagreeing with the number, so it is kept: the disagreement was the finding.
+// It records MACHINE STATE beside the number (load average before and after), because a timing with no recorded state
+// cannot be argued with later; both are required by docs/benchmarks.md's methodology list. It REFUSES to run when another
+// goinfer serve or decoder test binary is running, unless overridden: an abandoned prefill still burning a core is what
+// corrupts a prefill timing.
 //
-// Two things it does that the original measurement did not, both of which are now
-// required by `docs/benchmarks.md`'s methodology list:
+// The profile covers the PREFILL ONLY. Model load is excluded deliberately: it is seconds of unrelated I/O and quantization
+// that would dominate a short profile and differ between arms by construction.
 //
-//  1. It records MACHINE STATE beside the number (load average before and after).
-//     A timing with no recorded state cannot be argued with later, which is what
-//     made the artifact expensive rather than merely wrong.
-//  2. It REFUSES to run on a busy box unless explicitly overridden, because the
-//     artifact's leading suspect is an abandoned prefill still burning a core.
-//
-// The profile covers the PREFILL ONLY. Model load is excluded deliberately: it is
-// seconds of unrelated I/O and quantization that would otherwise dominate a short
-// profile and differ between arms by construction.
-//
-// Run (one quant per process — loadBenchModel is a sync.Once):
+// Run (one quant per process: loadBenchModel is a sync.Once):
 //
 //	GOINFER_PREQUANT_GGUF=<model.gguf> GOINFER_BENCH_QUANT=int4 \
 //	GOINFER_G15_K=3020 GOINFER_G15_PROF=/tmp/int4-3020.prof \
@@ -42,8 +31,7 @@ import (
 //
 // Then: go tool pprof -top -nodecount=30 <prof>
 //
-// Set GOINFER_G15_ALLOW_BUSY=1 to run anyway on a loaded box — and then say so
-// beside any number it produces.
+// Set GOINFER_G15_ALLOW_BUSY=1 to run anyway on a loaded box, and then say so beside any number it produces.
 
 // loadAvg returns the 1/5/15-minute load averages as printed by uptime, or "" if
 // they cannot be read. Best-effort by design: an unreadable load average must
@@ -108,21 +96,12 @@ func TestG15PrefillProfile(t *testing.T) {
 			t.Fatalf("GOINFER_G15_K=%q: %v", v, err)
 		}
 	}
-	// Pre-flight. The hazard that produced the G15 artifact was OUR OWN competing
-	// work — an abandoned prefill still saturating a core — not a busy desktop.
-	// The first version of this check refused on absolute load > 1.5, which is
-	// wrong for the machine it runs on: a developer Mac idles above that with
-	// Spotlight and an editor open, so the check skipped every real measurement
-	// and its only effect would have been to train people to set ALLOW_BUSY=1.
-	//
-	// So: refuse on a COMPETING PROCESS OF OURS (the real hazard, and precisely
-	// reproducible), and always RECORD the load rather than gating on it. A number
-	// with its machine state attached can be argued with later, which is the
-	// property that was actually missing.
+	// Pre-flight: refuse on a COMPETING PROCESS OF OURS (the real hazard, precisely reproducible) and always RECORD the
+	// load rather than gating on it. An absolute load threshold is wrong for a developer Mac, which idles above it with an
+	// editor open, so such a check skips every real measurement and only trains people to set ALLOW_BUSY=1.
 	loadBefore := loadAvg()
-	// Ambient load does not invalidate the number, but it does belong ON it: a
-	// timing taken at load 5 deserves to be read with more suspicion than one
-	// taken at load 0, and the reader can only do that if it is written down.
+	// Ambient load does not invalidate the number, but it belongs ON it: a timing taken at load 5 deserves more suspicion
+	// than one at load 0, and the reader can only apply that if it is written down.
 	if v, ok := firstLoad(loadBefore); ok && v > 2.0 {
 		t.Logf("NOTE: ambient load is %.2f — not our own work (that is refused below), but this "+
 			"timing is noisier than an idle one. Quote it with the load.", v)
@@ -152,9 +131,8 @@ func TestG15PrefillProfile(t *testing.T) {
 	}
 	defer f.Close()
 
-	// Report the allocation delta alongside the profile: the GC hypothesis for the
-	// cliff predicts a large one, and it costs nothing to answer here rather than
-	// in a second run.
+	// Report the allocation delta alongside the profile: it costs nothing here and answers the GC question without a
+	// second run.
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)

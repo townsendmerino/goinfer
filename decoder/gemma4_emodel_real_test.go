@@ -6,11 +6,10 @@ import (
 	"testing"
 )
 
-// TestGemma4EModel_realDeclinesResident confirms on the REAL E2B GGUF (not a synthetic arch) that a
-// Gemma-4 E-model resolves to the E-model shape and is DECLINED by every resident backend that does not
-// implement it (CUDA, WebGPU) — so it falls back to the CPU/staged path there instead of being admitted to a
-// runner that skips its PLE branch and silently mis-runs. Metal implements the shape since S1
-// (docs/tasks/task-multimodal-support-2026-10.md) and must NOT report it missing.
+// TestGemma4EModel_realDeclinesResident confirms on the REAL E2B GGUF (not a synthetic arch) that a Gemma-4 E-model resolves
+// to the E-model shape and is DECLINED by every resident backend that does not implement it (WebGPU), so it falls back to the
+// CPU/staged path there instead of being admitted to a runner that skips its PLE branch and silently mis-runs. Metal and CUDA
+// implement the shape (docs/tasks/task-multimodal-support-2026-10.md, S1) and must NOT report it missing.
 // Heavy (loads a multi-GB checkpoint) — opt in with GOINFER_HEAVY_TESTS=1.
 func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 	requireHeavyModel(t)

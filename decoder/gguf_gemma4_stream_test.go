@@ -14,22 +14,20 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// S2 (task-never-swap-2026-09.md): gemma4 was the last family transcoded by building the whole model
-// resident and serializing it once — 34.7 GB RSS for the 26B-A4B, which no 16 GB Mac can build. It now
-// streams (build → write → release per layer). These gates pin that the streamed bundle is
-// byte-identical to the resident one on synthetic gemma4 GGUFs shaped like the two real layouts:
+// S2 (docs/tasks/task-never-swap-2026-09.md): gemma4 transcodes by streaming (build -> write -> release per layer), not by
+// building the whole model resident and serializing it once (34.7 GB RSS for the 26B-A4B, which no 16 GB Mac can build).
+// These gates pin that the streamed bundle is byte-identical to the resident one on synthetic gemma4 GGUFs shaped like the
+// two real layouts:
 //
-//   - "26b": the 26B-A4B's parallel dense+MoE FFN (router, stacked gate‖up and down experts, the three
-//     extra norms) and a global layer with no attn_v (K=V, VFromK);
-//   - "e2b": the E-models' Per-Layer Embeddings (model-level per_layer_* inputs in the head, per-layer
-//     inp_gate/proj/post_norm) and a KV-shared tail layer, with per-layer FFN widths.
+//   - "26b": the 26B-A4B's parallel dense+MoE FFN (router, stacked gate||up and down experts, the three extra norms) and a
+//     global layer with no attn_v (K=V, VFromK);
+//   - "e2b": the E-models' Per-Layer Embeddings (model-level per_layer_* inputs in the head, per-layer inp_gate/proj/post_norm)
+//     and a KV-shared tail layer, with per-layer FFN widths.
 //
-// Both carry a sliding/global pattern with different head dims and KV-head counts per type, so every
-// per-layer geometry branch in loadG4 is exercised. The resident arm is exactly what
-// StreamTranscodeGGUF did for gemma4 before (resolve EOS, build with needCanonical, serialize), so the
-// comparison is against the behaviour being replaced. The quant label is excluded by construction: a
-// streamed body records "" (the layers do not exist yet when the head is written — see
-// writeHeadGlobals' B11 note), the resident one the resolved label.
+// Both carry a sliding/global pattern with different head dims and KV-head counts per type, so every per-layer geometry
+// branch in loadG4 is exercised. The resident arm is residentGemma4GIW, the behaviour the stream replaced. The quant label is
+// excluded by construction: a streamed body records "" (the layers do not exist yet when the head is written, see
+// writeHeadGlobals), the resident one the resolved label.
 
 type g4Variant struct {
 	name              string

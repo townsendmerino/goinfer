@@ -5,14 +5,11 @@ import (
 	"testing"
 )
 
-// TestEstimateSafetensors_gptqPackFactor gates M-29's GPTQ/AWQ sub-fix on a synthetic checkpoint
-// (no real GPTQ download needed — the estimator only reads tensor NAMES and SHAPES, never
-// dtype-specific values, so a fake .qweight tensor with the real packed SHAPE exercises the same
-// code path a real one would). qweight's on-disk shape is [in/8, out] (decoder/gptq.go: "8 4-bit
-// codes pack into each int32... qweight packs the input dim"); the true logical matrix it
-// represents once reconstructed and re-quantized is [in, out] — 8x more elements than its raw
-// shape reports. Also confirms qzeros/g_idx/scales are excluded entirely (M-29's second half),
-// not double-counted as if they persisted resident alongside the corrected qweight price.
+// TestEstimateSafetensors_gptqPackFactor pins the GPTQ/AWQ pack factor (M-29) on a synthetic checkpoint: the estimator
+// reads only tensor NAMES and SHAPES, so a fake .qweight with the real packed shape exercises the real path. qweight's
+// on-disk shape is [in/8, out] (decoder/gptq.go: 8 4-bit codes pack into each int32); the logical matrix it
+// reconstructs to is [in, out], 8x more elements than the raw shape reports. qzeros/g_idx/scales must be excluded
+// entirely, not counted beside the corrected qweight price.
 func TestEstimateSafetensors_gptqPackFactor(t *testing.T) {
 	const in, out = 4096, 4096 // must be a multiple of 8 for the packed dims below
 	dir := t.TempDir()
@@ -42,12 +39,10 @@ func TestEstimateSafetensors_gptqPackFactor(t *testing.T) {
 	}
 }
 
-// TestEstimateSafetensors_visionTowerPricedAtF32 gates M-29's vision-tower sub-fix: a bundled
-// multimodal checkpoint's vision_tower.*/multi_modal_projector.* tensors load at their OWN
-// precision (aikit/vision.LoadEncoder's independent -vision-quant knob, default f32) rather than
-// the text model's requested quant — decoder/weights.go's text loader already never requests
-// these names, but this estimator walks every tensor in the checkpoint's metadata and must
-// recognize them explicitly or they get swept into the text quant's rate.
+// TestEstimateSafetensors_visionTowerPricedAtF32 (M-29): a bundled multimodal checkpoint's vision_tower.* and
+// multi_modal_projector.* tensors load at their OWN precision (aikit/vision.LoadEncoder's -vision-quant knob, default
+// f32), not the text model's quant. decoder/weights.go's text loader never requests these names, but the estimator walks
+// every tensor in the metadata and must recognise them explicitly or they are priced at the text quant's rate.
 func TestEstimateSafetensors_visionTowerPricedAtF32(t *testing.T) {
 	const dim = 1024
 	dir := t.TempDir()

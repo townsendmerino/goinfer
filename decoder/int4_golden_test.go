@@ -11,36 +11,25 @@ import (
 	"testing"
 )
 
-// Q1(c) — the int4 forward goldens.
+// Q1(c): the int4 forward goldens. int4 is the runtime's documented default quantization, so it needs a golden of its own: an
+// f32 golden proves f32 numerics and nothing else, including through `scripts/refresh_parity_hashes.sh`, the sanctioned
+// freeze-exception path and the only numeric proof a `decoder/` core edit gets.
 //
-// int4 is the runtime's documented default quantization and, until this file, NOTHING gated it.
-// Every golden that ran was f32: the three int8int8 goldens skipped for want of an env var (fixed,
-// 23b2ee7) and the one int8 golden sits behind `//go:build realckpt` plus a missing checkpoint. So
-// `scripts/refresh_parity_hashes.sh` — the sanctioned freeze-exception path, and the only numeric
-// proof a `decoder/` core edit gets — proved f32 numerics and silently nothing else.
+// WHAT AN int4 GOLDEN IS, and what it deliberately is NOT. It is **int4 output compared against recorded int4 output**. It is
+// NOT int4 compared to f32 within a tolerance: a tolerance band against f32 measures how lossy the quantizer is, which is a
+// real question with its own gate (the policy's quant axis: quant-vs-f32 argmax + cosine), and it would read on a dashboard
+// as "int4 is covered" while proving nothing about whether the int4 CODE PATH still computes what it computed yesterday. Only
+// a self-comparison catches a regression in the W4A8 path itself, which is what the freeze is protecting.
 //
-// WHAT AN int4 GOLDEN IS, and what it deliberately is NOT.
+// The comparison is argmax-exact plus a tight value tolerance on recorded samples and moments, matching the existing goldens'
+// treatment and for the same reason: the CPU reference is bit-identical WITHIN an architecture but not across one (see
+// parity-coverage-policy.md), so a bit-exact checksum would be a machine assertion rather than a code assertion.
 //
-// It is **int4 output compared against recorded int4 output**. It is NOT int4 compared to f32 within
-// a tolerance. That distinction is the whole point: a tolerance band against f32 measures how lossy
-// the quantizer is, which is a real question with its own gate (the policy's quant axis:
-// quant-vs-f32 argmax + cosine), and it would read on a dashboard as "int4 is covered" while proving
-// nothing about whether the int4 CODE PATH still computes what it computed yesterday. Only a
-// self-comparison catches a regression in the W4A8 path itself, which is what the freeze is
-// protecting and what P7 will change.
-//
-// The comparison is argmax-exact plus a tight value tolerance on recorded samples and moments —
-// matching the existing goldens' treatment, and for the same reason: the CPU reference is
-// bit-identical WITHIN an architecture but not across one (see parity-coverage-policy.md), so a
-// bit-exact checksum would be a machine assertion rather than a code assertion.
-//
-// SCOPE, measured before authoring rather than described after: 23 fixtures across 16 model_types
-// load at int4 today. int4 has no divisibility constraint (`nGroups` is a ceiling divide), so the
-// limit is which fixtures exist, not which families are eligible. Recorded absences, which are NOT
-// counted as gaps: `gpt_oss` is MXFP4-prequant and rejects a conflicting `--quant` by design;
-// `siglip_vision_model` is an encoder, not a decoder; `gpt2`, `mellum`, `qwen2` and `qwen3` have no
-// tiny safetensors fixture; `qwen2_moe` and the `gemma4-dense-scaled-{24,48,64}` variants have
-// incomplete fixture dirs (no config.json).
+// SCOPE: every testdata fixture with a safetensors checkpoint that loads at int4. int4 has no divisibility constraint
+// (`nGroups` is a ceiling divide), so the limit is which fixtures exist, not which families are eligible. Recorded absences,
+// which are NOT counted as gaps: `gpt_oss` is MXFP4-prequant and rejects a conflicting `--quant` by design;
+// `siglip_vision_model` is an encoder, not a decoder; `gpt2`, `mellum`, `qwen2` and `qwen3` have no tiny safetensors fixture;
+// `qwen2_moe` and the `gemma4-dense-scaled-{24,48,64}` variants have incomplete fixture dirs (no config.json).
 //
 // Regenerate with: GOINFER_INT4_GOLDEN_UPDATE=1 go test ./decoder/ -run TestInt4_forwardParity
 const int4GoldenPath = "../testdata/int4_forward_goldens.json"
@@ -226,35 +215,18 @@ func TestInt4_forwardParity(t *testing.T) {
 	// different FMA contraction on another architecture, tight enough that a real change to the
 	// W4A8 path moves it — the same 5e-3 the family goldens use.
 	const valTol = 5e-3
-	// gpt2 is the ONLY real, fully-trained checkpoint this gate runs (every other fixture is a
-	// tiny/near-random test config — e.g. qwen35-tiny and phi3-tiny are both hidden_size=64,
-	// vocab_size in the hundreds — which quantizes far more cleanly than real learned weights
-	// with outlier features). Bisected 2026-08-22 (ForwardCapture, per-layer, same box, no cross-
-	// arch involved): int4-vs-f32 relative hidden-state error is already ~5-10% at LAYER 0 and
-	// stays in a 4-20% band through all 12 layers; int8-vs-f32 shows the SAME shape at ~7-8x
-	// SMALLER error at every layer — exactly the expected 4-bit-vs-8-bit precision ratio. That is
-	// the signature of ordinary (if large) round-to-nearest int4 quantization noise on a real
-	// trained model, not a logic bug — naive int4 without GPTQ/AWQ-style calibration is
-	// documented to do this to real checkpoints. Holding gpt2 to the same tight per-sample
-	// absolute gate as the tiny fixtures was never appropriate; argmax-exactness + a floor on
-	// centered cosine similarity (the same bar TestGPT2_forwardParity's f32 golden uses) is.
-	// Mutation-checked (int4GroupSize 32->64, decoder/weightmat.go): that mutation moves individual
-	// samples by up to 7.39 while argmax stays unchanged, so only a cosine floor catches it.
+	// gpt2 is the ONLY real, fully-trained checkpoint this gate runs (every other fixture is a tiny/near-random test config,
+	// which quantizes far more cleanly than real learned weights with outlier features). Its int4-vs-f32 relative hidden-state
+	// error is already large at LAYER 0 and stays so through all 12 layers, with int8 showing the SAME shape at ~7-8x smaller
+	// error: ordinary round-to-nearest int4 noise on a trained model, not a logic bug. So gpt2 is held to argmax-exactness plus a
+	// floor on centered cosine similarity (the bar TestGPT2_forwardParity's f32 golden uses), not the tiny fixtures' tight
+	// per-sample absolute gate.
 	//
-	// Re-calibrated 2026-08-26. The previous calibration ("baseline 0.9995 on both, mutation 0.9938",
-	// 2026-08-22) was measured against goldens that a11c56b REPLACED the next day, when the int4 LM
-	// head moved weight-only-Q8 -> full W8A8. The current goldens are arm64-baked, so amd64 carries a
-	// fixed FMA-contraction offset and the stale 0.999 floor failed a HEALTHY Linux box. All four
-	// numbers below re-measured at c5ae3c1 on both boxes, golden restored after every run:
-	//
-	//	                arm64 (Mac)     amd64 (Linux)
-	//	  healthy       1.0000000000    0.9977745721   <- golden is arm64-baked, so exact there
-	//	  32->64 mut.   0.9761066556    0.9761066320   <- mutation dwarfs the cross-arch offset
-	//
-	// argmax is unaffected by the cross-arch offset (16 on both) and is gated separately above.
-	// 0.995 sits between with balanced margin: 2.2x the healthy amd64 deficit (2.23e-3), and it fails
-	// the mutation by 4.8x (2.39e-2). Do NOT raise this toward 0.999 without baking per-arch goldens
-	// first -- 0.999 is BELOW the natural cross-arch baseline and fails a correct build.
+	// The floor is mutation-checked (int4GroupSize 32->64, decoder/weightmat.go, moves individual samples by up to 7.39 while
+	// argmax stays unchanged, so only a cosine floor catches it). The goldens are arm64-baked, so amd64 carries a fixed
+	// FMA-contraction offset; 0.995 sits between that healthy offset and the mutation's deficit. Do NOT raise this toward
+	// 0.999 without baking per-arch goldens first: 0.999 is BELOW the natural cross-arch baseline and fails a correct build.
+	// Figures and the re-calibration: docs/code-notes/decoder.md#gpt2CosFloor
 	const gpt2CosFloor = 0.995
 	ran := 0
 	for _, d := range dirs {
@@ -277,8 +249,9 @@ func TestInt4_forwardParity(t *testing.T) {
 				t.Fatalf("vocab = %d, want %d", g.Vocab, w.Vocab)
 			}
 			if len(forcedFallbacks()) > 0 {
-				// A forced narrower kernel is another numeric realization of the same arithmetic, so the recorded samples cannot be matched to 5e-3 (H1.3: gemma4-dense-scaled reads 0.9938). The argmax above
-				// is still exact; the samples are held to a centered-cosine floor, the way gpt2 is (see forced_fallbacks_test.go for the measurement).
+				// A forced narrower kernel is another numeric realization of the same arithmetic, so the recorded samples cannot be
+				// matched to 5e-3. The argmax above is still exact; the samples are held to a centered-cosine floor, the way gpt2
+				// is (see forced_fallbacks_test.go for the measurement).
 				if cos := centeredCosine(g.Samples, w.Samples); cos < forcedInt4CosFloor {
 					t.Errorf("forced %v: centered cosine(samples) = %g, want >= %g — the forced int4 forward changed", forcedFallbacks(), cos, forcedInt4CosFloor)
 				}

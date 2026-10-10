@@ -8,15 +8,10 @@ import (
 	"testing"
 )
 
-// TestGemmaConfirmerReference assembles the matched-input confirmer's reference bundle from
-// existing seams — no new capture code — so the Metal box can inject goinfer's exact L1 state
-// into Metal's attention and isolate the crater (0.9994 @ L0 -> 0.640 @ L1) to one of:
-//
-//	Metal's L1 context MATCHES this reference given matched input  -> the crater is accumulated
-//	  f16/precision drift in the residual+KV feeding attention (fix: f32 KV / f32 attention
-//	  accumulate for Gemma's low-magnitude contexts).
-//	Metal's L1 context STILL inflates on matched input            -> Metal's attention op
-//	  (softmax/scale/accumulate) has a real bug, independent of drift.
+// TestGemmaConfirmerReference assembles the matched-input confirmer's reference bundle from existing seams (no new capture
+// code), so the Metal box can inject goinfer's exact L1 state into Metal's attention and tell accumulated f16/precision
+// drift in the residual+KV feeding attention (Metal's L1 context matches this reference given matched input) from a real bug
+// in Metal's attention op (the context still inflates on matched input).
 //
 // The bundle at layer L1, position 5 ("The capital of France is"):
 //
@@ -24,9 +19,9 @@ import (
 //	K/V at L1            = cache.Keys(1) / cache.Vals(1)     (post-RoPE K, raw V, f32)
 //	target context       = ForwardSubCapture -> subCtx[1]
 //
-// Runs on CPU int4 over the byte-identical Q4_K_M gguf (sha 882e8d2d), which reproduces the
-// CUDA resident context to decimals — so the Metal box gets the same reference either box would
-// produce, and the injection stays entirely on its side (naturally-f32 KV, no faked state).
+// Runs on CPU int4 over the byte-identical Q4_K_M gguf (sha 882e8d2d), which reproduces the CUDA resident context to
+// decimals, so the Metal box gets the same reference either box would produce and the injection stays entirely on its side
+// (naturally-f32 KV, no faked state).
 func TestGemmaConfirmerReference(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")

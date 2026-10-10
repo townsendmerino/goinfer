@@ -22,10 +22,9 @@ import (
 
 func TestGraniteReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	// assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the
-	// sweep preflight apply the SAME predicate to the same candidate paths. Required by the sweep
-	// since 2026-09-02, and a required gate whose presence check disagrees with the preflight's is
-	// a SKIP nobody can attribute.
+	// assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the sweep preflight apply the
+	// SAME predicate to the same candidate paths, and a required gate whose presence check disagrees with the preflight's
+	// is a SKIP nobody can attribute.
 	gguf := assetPath(t, "GOINFER_GRANITE_GGUF")
 
 	m, err := Load(gguf, Options{Quant: "int8int8"})
@@ -66,14 +65,10 @@ func TestGraniteReal_gate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGGUF tokenizer: %v", err)
 	}
-	// AUDIT NOTE (da5a6ec): raw completion prompt on an instruction-tuned checkpoint
-	// (granite-4.0-h), gated only by the distinct<3 floor below — which measures "did the
-	// forward avoid TOTAL collapse", not coherence. On gemma-4-26b-a4b-it a raw prompt
-	// manufactured a false "int4 is broken" signal that survived a week, and distinct<3
-	// would not have caught it (repetition has >3 distinct tokens). This gate currently
-	// passes, so the completion is in-distribution ENOUGH for this checkpoint — but when
-	// it is next revalidated, adopt TestGemma4_26B_gate's pattern (render the family chat
-	// template + distinctTrigramRatio floor) instead of trusting distinct<3.
+	// KNOWN GAP: this gate prompts a raw completion to an instruction-tuned checkpoint and only checks the distinct<3
+	// floor below, which measures "did the forward avoid TOTAL collapse", not coherence (repetition has more than 3
+	// distinct tokens and would pass). When it is next revalidated, adopt TestGemma4_26B_gate's pattern (render the family
+	// chat template, then the distinctTrigramRatio floor). Why: docs/code-notes/decoder.md#TestGraniteReal.coherence.
 	prompt := "The capital of France is"
 	ids, err := tk.Encode(prompt, true)
 	if err != nil {
@@ -100,12 +95,11 @@ func TestGraniteReal_gate(t *testing.T) {
 	}
 	t.Logf("granite real gate OK.\n  prompt: %q\n  cont:   %q", prompt, text)
 
-	// NoPE on the GGUF path. The Q8_0 convert carries the same base weights as the
-	// safetensors release, so the bf16 golden is a valid reference for it too — and it is
-	// the ONLY check that the rope.scaling.finetuned → NoPE mapping in ggufGraniteConfig is
-	// right, since llama.cpp writes rope.dimension_count/freq_base on this model regardless.
-	// Roped, this reads ~0.9936 with a diverging continuation; NoPE, ~0.9958 and exact. Not
-	// a parity row: the T3 row is the safetensors oracle below, on weights HF actually ran.
+	// NoPE on the GGUF path. The Q8_0 convert carries the same base weights as the safetensors release, so the bf16 golden
+	// is a valid reference for it too, and it is the ONLY check that the rope.scaling.finetuned -> NoPE mapping in
+	// ggufGraniteConfig is right, since llama.cpp writes rope.dimension_count/freq_base on this model regardless (roped,
+	// the continuation diverges; NoPE matches exactly). Not a parity row: the T3 row is the safetensors oracle below, on
+	// weights HF actually ran.
 	if !a.isNoPELayer(0) {
 		t.Errorf("granitehybrid GGUF resolved to roped attention; the released granite-4.0-h models are NoPE")
 	}
@@ -158,12 +152,9 @@ func graniteGGUFvsOracle(t *testing.T, m *Model) {
 	}
 }
 
-// TestGraniteReal_oracle is the T3 row: the released bf16 safetensors loaded at int8 and
-// matched against an HF bf16 forward of the SAME weights. The gate above runs on a
-// DIFFERENT artifact (a llama.cpp Q8_0 convert), and until this golden existed it had no
-// reference to compare against at all — which is why granitemoehybrid sat at `pending`
-// while having a passing "real gate": coherent-generation is not a T3 method. The row is
-// recorded here, on the weights HF actually ran.
+// TestGraniteReal_oracle is the T3 row: the released bf16 safetensors loaded at int8 and matched against an HF bf16 forward
+// of the SAME weights. The gate above runs on a DIFFERENT artifact (a llama.cpp Q8_0 convert), and coherent generation is not
+// a T3 method, so the row is recorded here, on the weights HF actually ran.
 //
 // Fixture: scripts/pin_granite_real.py.
 //

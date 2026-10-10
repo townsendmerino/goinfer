@@ -5,14 +5,11 @@ import (
 	"testing"
 )
 
-// STEP 1 (de-risk the crux, zero download): prove the inverse V-head reorder is
-// bit-clean. llama.cpp's converter tiles HF's grouped-by-K V heads when
-// num_v_heads > num_k_heads; the GGUF loader must undo it exactly or it silently
-// corrupts every linear-attn layer. We replicate the converter's FORWARD with an
-// INDEPENDENT permutation-index reference (gather, not the production copy loop),
-// then require untileVHeads to recover the original bit-for-bit across every
-// tensor block geometry the loader will touch — with the real ratio num_k=16,
-// num_v=32 (num_v_per_k=2), head_dim=128.
+// The inverse V-head reorder must be bit-clean. llama.cpp's converter tiles HF's grouped-by-K V heads when num_v_heads
+// > num_k_heads; the GGUF loader must undo it exactly or it silently corrupts every linear-attn layer. This replicates
+// the converter's FORWARD with an INDEPENDENT permutation-index reference (gather, not the production copy loop), then
+// requires untileVHeads to recover the original bit-for-bit across every tensor block geometry the loader will touch,
+// with the real ratio num_k=16, num_v=32 (num_v_per_k=2), head_dim=128. No download needed.
 
 // fwdReorderRef is an independent reference for the converter's forward
 // (HF grouped → GGUF tiled): it builds the permutation index the way llama.cpp's

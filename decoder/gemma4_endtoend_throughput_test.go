@@ -9,22 +9,14 @@ import (
 	"time"
 )
 
-// TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap
-// (docs/completed/task-zeno-compare.md's "Quiet-machine re-measure": gemma4-26b kind-4
-// vs kind-3, -47.0%/-49.0% at 4GB/8GB, budget-invariant) — the number the
-// whole cold-touch investigation was chasing an explanation for, now that
-// the kernel-level 69%-slower finding has failed to reproduce 3/3 on a
-// corrected methodology. This is NOT the isolated kernel microbenchmark;
-// it's the real production path (Load with StreamWeights+WeightCacheBytes,
-// then Model.Generate), same steady-state total_tokens/wall_time metric the
-// original measurement used, adapted from cmd/serve+HTTP to a direct
-// in-process call (no HTTP round-trip noise; the model is loaded ONCE and
-// generation run 3 times against the same resident/paged state, matching
-// the original "3 runs against one running server" shape without paying a
-// multi-minute reload cost 3 times over).
+// TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap (docs/completed/task-zeno-compare.md,
+// "Quiet-machine re-measure": gemma4-26b kind-4 vs kind-3 at 4GB/8GB, budget-invariant). It is NOT the isolated kernel
+// microbenchmark: it is the real production path (Load with StreamWeights+WeightCacheBytes, then Model.Generate), with the
+// steady-state total_tokens/wall_time metric the original measurement used, called in-process so there is no HTTP round-trip
+// noise. The model is loaded ONCE and generation run 3 times against the same resident/paged state.
 //
-// Env vars: GOINFER_EE_GIW (path), GOINFER_EE_BUDGET_GB (float, WeightCacheBytes
-// in GB), GOINFER_EE_LABEL (free-text label for the log line).
+// Env vars: GOINFER_EE_GIW (path), GOINFER_EE_BUDGET_GB (float, WeightCacheBytes in GB), GOINFER_EE_LABEL (free-text label
+// for the log line).
 func TestGemma4EndToEndThroughput(t *testing.T) {
 	requireHeavyModel(t)
 	path := expandHome(t, envOr("GOINFER_EE_GIW", "~/models/gemma4-26b-int4.giw"))

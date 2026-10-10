@@ -1,12 +1,10 @@
 //go:build realckpt
 
-// Real-model gate for gemma-3-4b-it TEXT decoder (gemma3) — the safetensors loader + gemma3
-// forward on actual released weights, text-only (the VL wrapper's vision path is not exercised).
-// 4B fits an f32 forward in RAM, so Options{} ⇒ quantNone and the gate is a TIGHT cosine vs the
-// HF f32 golden (argmax + greedy continuation + cosine ≥ 0.9999). Verifies the gemma3 axis on
-// real weights: sandwich (4-norm) placement + per-head QK-norm + sliding-window interleave +
-// embed scale. Fixture: scripts/pin_gemma3_4b_text.py. This is the real-oracle emit gate that
-// moves gemma3 pending → validated (batched-prefill coverage: gemma3 is canBatchN-batchable).
+// Real-model gate for the gemma-3-4b-it TEXT decoder (gemma3): the safetensors loader and forward on released weights,
+// text-only (the VL wrapper's vision path is not exercised). 4B fits an f32 forward in RAM, so Options{} gives quantNone
+// and the gate is a TIGHT comparison against the HF f32 golden (argmax, greedy continuation, cosine >= 0.999). It covers
+// the gemma3 axis on real weights: sandwich (4-norm) placement, per-head QK-norm, sliding-window interleave, embed scale,
+// and batched prefill (gemma3 is canBatchN-batchable). Fixture: scripts/pin_gemma3_4b_text.py.
 //
 //	go test -tags realckpt ./decoder/ -run TestGemma3Real -v -timeout 20m
 package decoder

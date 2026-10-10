@@ -12,12 +12,11 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
-// A .giw's int4/int8 group SCALES used to be copied to the Go heap on every load (giwReader.f32
-// copies because the file did not align them): 3.75 GB of a streamed M35's 5.8 GB heap, and 3.0 GB of
-// the M26 Metal load's 4.4 GB. v12 pads every weight-matrix payload array to a 16-byte boundary
-// (giwWriter.alignArray) inside a v3 bundle whose blob starts at file offset 64, so the reader can
-// alias them out of the mapping. These are the gates: the scales really live in the mapping, an
-// older layout and a misaligned blob still load (by copying), and a corrupted layout is caught.
+// A .giw's int4/int8 group SCALES must alias the mapping, not be copied to the Go heap on every load (giwReader.f32
+// copies when the file does not align them). v12 pads every weight-matrix payload array to a 16-byte boundary
+// (giwWriter.alignArray) inside a v3 bundle whose blob starts at file offset 64, so the reader can alias them out of
+// the mapping. These are the gates: the scales really live in the mapping, an older layout and a misaligned blob still
+// load (by copying), and a corrupted layout is caught.
 
 func synthInt4(rows, cols, group int, seed float32) linalg.WeightMat {
 	q4 := make([]byte, rows*((cols+1)/2))
@@ -285,9 +284,11 @@ func TestGIWAligned_paddingIsCoveredByTheCRC(t *testing.T) {
 	}
 }
 
-// TestGIWTargetForBackend_cpuArm64NeedsDotProd: the default CPU target on arm64 is cpu-arm64 (row4-only sidecars) only on a core that can read that layout. Found 2026-10-04 by the first
-// windows-arm64 CI run: aikit assumes no DotProd there, the default load wrote a cpu-arm64 sidecar its own core refused ("this core cannot use that layout"), and it was rebuilt on every start.
-// The test follows the core it runs on, so it asserts the right half on a DotProd Mac or Linux runner and on a no-DotProd one (QEMU Cortex-A72, windows-11-arm).
+// TestGIWTargetForBackend_cpuArm64NeedsDotProd: the default CPU target on arm64 is cpu-arm64 (row4-only sidecars) only
+// on a core that can read that layout. aikit assumes no DotProd on windows-arm64, and a default load that wrote a
+// cpu-arm64 sidecar its own core refused ("this core cannot use that layout") rebuilt it on every start. The test
+// follows the core it runs on, so it asserts the right half on a DotProd Mac or Linux runner and on a no-DotProd one
+// (QEMU Cortex-A72, windows-11-arm).
 func TestGIWTargetForBackend_cpuArm64NeedsDotProd(t *testing.T) {
 	got := GIWTargetForBackend("cpu")
 	switch runtime.GOARCH {

@@ -20,8 +20,7 @@ import (
 // reproduces GPT-2's ids (GPT-2 prepends no BOS).
 //
 // Regenerate:  ~/.venv-vl/bin/python scripts/pin_gpt2_real.py
-// (that script writes both the committed golden and the gitignored full-logit dump the
-// cosine reads; the previously-named pin_llama_forward.py no longer exists.)
+// (that script writes both the committed golden and the gitignored full-logit dump the cosine reads.)
 const (
 	gpt2ModelDir        = "../testdata/gpt2"
 	gpt2ForwardGolden   = "../testdata/gpt2_forward_golden.json"
