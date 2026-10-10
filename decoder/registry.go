@@ -1879,6 +1879,24 @@ func nopePredicate(kind string) func(int) bool {
 // It is EXPERIMENTAL tier: validated against the HF reference on a real checkpoint, not
 // against a full-model T3.
 //
+// lfm2FFNDim is HF's Lfm2MLP width: intermediate_size, or with block_auto_adjust_ff_dim int(2*intermediate_size/3) and,
+// only when block_ffn_dim_multiplier is set, int(multiplier*width) rounded up to block_multiple_of (HF's rounding sits
+// inside the multiplier branch).
+func lfm2FFNDim(cfg *Config) int {
+	d := cfg.IntermediateDim
+	if !cfg.BlockAutoAdjustFFDim {
+		return d
+	}
+	d = int(2 * float64(d) / 3)
+	if cfg.BlockFFNDimMultiplier != nil {
+		d = int(*cfg.BlockFFNDimMultiplier * float64(d))
+		if m := cfg.BlockMultipleOf; m > 0 {
+			d = m * ((d + m - 1) / m)
+		}
+	}
+	return d
+}
+
 // Three facts here were checked against the released LFM2.5-2.6B rather than inherited from
 // the original scoping brief, and two of them contradicted it:
 //
@@ -1888,12 +1906,14 @@ func nopePredicate(kind string) func(int) bool {
 //     hardcoded QK-norm path and writing a bias-carrying LayerNorm variant.
 //   - vocab is 128,000 (the brief said 65,536, which is the older LFM2-2.6B tokenizer), and
 //     rope_theta is 1e7 (was 1e6).
-//   - intermediate_size is STATED (10752), not computed from block_multiple_of — so the
-//     block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
+//   - intermediate_size is STATED (10752) on LFM2.5-2.6B, with block_auto_adjust_ff_dim false. LFM2-VL's
+//     LFM2-1.2B text_config sets the flag (S10), and the width is then computed as HF's Lfm2MLP does
+//     (lfm2FFNDim): 12288 -> 8192.
 func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateLFM2(); err != nil {
 		return nil, nil, err
 	}
+	cfg.IntermediateDim = lfm2FFNDim(cfg)
 	hd := cfg.HeadDim
 	if hd == 0 {
 		hd = cfg.HiddenDim / cfg.NumHeads

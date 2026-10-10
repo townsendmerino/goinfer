@@ -115,3 +115,25 @@ func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 		t.Errorf("GenerateVLCausalSpans produced %v, want first %d (the prefill's argmax)", toks, want)
 	}
 }
+
+// TestLfm2FFNDim pins HF's Lfm2MLP width rule (S10: LFM2-VL-1.6B's text_config has block_auto_adjust_ff_dim, 12288 ->
+// 8192, and a load at the stated width was refused by the checkpoint's own shapes).
+func TestLfm2FFNDim(t *testing.T) {
+	one := 1.0
+	for _, c := range []struct {
+		inter, multipleOf int
+		auto              bool
+		mult              *float64
+		want              int
+	}{
+		{10752, 256, false, &one, 10752}, // LFM2.5-2.6B: stated
+		{12288, 256, true, &one, 8192},   // LFM2-1.2B (LFM2.5-VL-1.6B's text_config)
+		{1000, 256, true, &one, 768},     // rounded up to the multiple
+		{1000, 256, true, nil, 666},      // no multiplier: HF does not round
+	} {
+		cfg := &Config{IntermediateDim: c.inter, BlockAutoAdjustFFDim: c.auto, BlockFFNDimMultiplier: c.mult, BlockMultipleOf: c.multipleOf}
+		if got := lfm2FFNDim(cfg); got != c.want {
+			t.Errorf("intermediate %d auto %v mult %v multiple_of %d: %d, want %d", c.inter, c.auto, c.mult, c.multipleOf, got, c.want)
+		}
+	}
+}
