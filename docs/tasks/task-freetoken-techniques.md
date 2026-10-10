@@ -360,7 +360,7 @@ verify needs — stands for any *future*, differently-shaped attempt at this lea
 
 **Not a lead — a note, and a correction to how the original comparison framed it.**
 The first draft of the goinfer-vs-FreeToken comparison called this a gap. It isn't
-one, as of when this doc was opened (2026-08-27): `README.md:854-857` at the time stated
+one, as of when this doc was opened (2026-08-27): `README.md:855-858` at the time stated
 "the resident decode path is fast enough that the per-request session optimization isn't
 worth it. The OpenAI API is stateless [clients resend the whole conversation], so this is
 a throughput trade, not a correctness change." That was a considered decision, not an

@@ -108,3 +108,24 @@ func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, rmp ResidentMRoPEP
 	}
 	return logits, len(ids), nil
 }
+
+// residentCausalImagePrefill is residentImagePrefill for a causal image family (Pixtral, S10): the same spliced rows,
+// through the backend's plain batched pass (Prefiller.PrefillLast), which is exactly a causal prefill. The resident's
+// recorded ids are forgotten first: the pass overwrites its cache from position 0 even when it then declines.
+func (m *Model) residentCausalImagePrefill(ctx context.Context, pf Prefiller, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
+	hidden := m.w.arch.HiddenDim
+	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
+		return nil, 0, err
+	}
+	h := m.embedN(ids)
+	spliceImageSpans(h, spans, imageEmbeds, hidden)
+	rows := make([][]float32, len(ids))
+	for i := range rows {
+		rows[i] = h[i*hidden : (i+1)*hidden]
+	}
+	m.residentForgetIDs()
+	if logits, err = pf.PrefillLast(ctx, rows, 0); err != nil {
+		return nil, 0, err
+	}
+	return logits, len(ids), nil
+}

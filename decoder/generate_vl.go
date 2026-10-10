@@ -89,6 +89,18 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 // backend implements ResidentImageBlocksPrefill (one span needs only ResidentImagePrefill), and otherwise the turn
 // takes the CPU-prefill + UploadKV bridge with the reason in Generation.ImgPrefillDecline.
 func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	return m.generateVLSpans(ctx, ids, spans, features, maxTokens, sp, false)
+}
+
+// GenerateVLCausalSpans is GenerateVLSpans for a family whose image tokens attend CAUSALLY, with plain 1-D positions:
+// Ministral 3's Pixtral (S10, docs/tasks/task-multimodal-support-2026-10.md), whose features fill only the [IMG]
+// positions, one span per merged row, the [IMG_BREAK]/[IMG_END] between them ordinary text. No bidirectional block and
+// no window check; the resident prefill is the backend's plain batched pass (Prefiller) over the spliced rows.
+func (m *Model) GenerateVLCausalSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	return m.generateVLSpans(ctx, ids, spans, features, maxTokens, sp, true)
+}
+
+func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams, causal bool) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
 	go func() {
@@ -99,6 +111,9 @@ func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 			return
 		}
 		for _, s := range spans {
+			if causal {
+				break // no bidirectional block, so no window to outgrow
+			}
 			if err := m.checkImageBlockFitsWindow(s.Len); err != nil {
 				g.err = err
 				return
@@ -172,8 +187,16 @@ func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 		// Any decline (no capability, prompt too large for one chunk, resident busy) falls
 		// through UNCHANGED to the CPU-prefill+UploadKV bridge; the claim is released before
 		// falling through so the tower/CPU-prefill work below never runs while holding it.
-		if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {
-			if logits, gpuPos, ferr := m.residentImagePrefill(ctx, rip, ids, feats, spans); ferr == nil {
+		var resPrefill func() ([]float32, int, error)
+		if causal {
+			if pf, ok := m.resident.(Prefiller); ok && m.knobs.get(knobBatchedPrefill) != "0" {
+				resPrefill = func() ([]float32, int, error) { return m.residentCausalImagePrefill(ctx, pf, ids, feats, spans) }
+			}
+		} else if rip, ok := m.resident.(ResidentImagePrefill); ok {
+			resPrefill = func() ([]float32, int, error) { return m.residentImagePrefill(ctx, rip, ids, feats, spans) }
+		}
+		if resPrefill != nil && m.tryClaimResident() {
+			if logits, gpuPos, ferr := resPrefill(); ferr == nil {
 				g.ImgPrefillResident = true
 				if capper, ok := m.resident.(ResidentCapped); ok {
 					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
@@ -208,7 +231,7 @@ func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 		}
 
 		cache := m.NewCache(len(ids) + maxTokens)
-		logits, err := m.prefillLogitsVLSpans(ctx, ids, spans, feats, cache)
+		logits, err := m.prefillLogitsVLSpans(ctx, ids, spans, feats, cache, causal)
 		if err != nil {
 			g.err = err
 			return

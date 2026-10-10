@@ -811,14 +811,14 @@ re-baked by the code it checks (G-04).
 ### D. Cross-repo and unassessed
 
 #### M-15 · On a Metal box every image turn runs the vision tower on the CPU, and aikit's Metal tower cannot be wired as a win until three shapes change (aikit M-14/M-09/M-10 Metal halves)
-- **Where:** `internal/serveapp/main.go:1109-1176` (`EnableResident` only for `webgpu`; nothing imports
+- **Where:** `internal/serveapp/main.go:1109-1178` (`EnableResident` only for `webgpu`; nothing imports
   `visionmetal`/`qwenmetal`); aikit `metal_vit.go:168-221` (attention: one threadgroup per
   (head, query), re-streams K and V per query — no query tile; score lanes 4,608 B apart; PV keeps
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular
   staging, scalar int8 — the shape CUDA's M-14 retired), `qwenmetal/encoder.go:188-213,311-334`
   (per-op `Run1D`/`Run2D`, each a commit + `waitUntilCompleted` + pool drain: 544–704 synchronous
   submits per image at 32 blocks); aikit `CHANGELOG.md:332-333` (batched SigLIP tower 0.46×/0.33× of
-  CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:195`
+  CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:196`
   ("Metal — still not started"), `docs/benchmarks.md:566-569` (CPU SigLIP 31.3 s/image).
 <!-- citation-lint: allow-path qwenmetal/encoder.go aikit's own SEPARATE Go module (own go.mod), added after the aikit/gpu v0.32.0 release goinfer's cuda/go.mod currently pins — goinfer does not depend on it yet (line 477's own "nothing imports qwenmetal" is this in prose), so no checked-out or module-cache root can verify it here. -->
 <!-- citation-lint: allow-path visionmetal/encoder.go same as qwenmetal/encoder.go above: aikit's own separate, not-yet-pinned Go module. -->
@@ -883,7 +883,7 @@ re-baked by the code it checks (G-04).
   G-06 already went through this session; (b) the crossover measurement itself, since this
   session had no real SigLIP/Qwen2.5-VL checkpoint or Metal hardware benchmark run to confirm the
   Mechanism section's arithmetic actually closes the gap to the CPU tower's recorded times, only
-  that each kernel change is individually correct; (c) `docs/multimodal.md:195` /
+  that each kernel change is individually correct; (c) `docs/multimodal.md:196` /
   `docs/benchmarks.md:566-569`, the two doc paths this finding's own Where cites, do not exist
   under those names in the current aikit tree — reconciling the promised "crossover row" needs
   finding wherever that content now lives first.
@@ -1579,10 +1579,10 @@ re-baked by the code it checks (G-04).
   warm-cache for the same reason.
 - N-38 `metal/prefill_ttft_test.go:80` — the first `PrefillLast` (P=256) includes the one-time compile;
   the L2 record's P=256 row carries it in both arms.
-- N-39 `internal/serveapp/openai.go:1526-1345` — comment says adapter requests "drop to the staged
+- N-39 `internal/serveapp/openai.go:1529-1348` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1526-1352,753-757,844-847`) to say what  `decoder/model.go:1801`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
+  adapter routing (`internal/serveapp/openai.go:1529-1355,753-757,844-847`) to say what  `decoder/model.go:1801`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
   the same session (`prefillFrom>0`, continuing off the reused warm prefix) still drops to CPU,

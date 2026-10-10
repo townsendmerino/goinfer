@@ -1702,13 +1702,14 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 // embeddings are RAW (the projector output), matching HF's masked_scatter, which
 // overwrites the scaled placeholder embed. See docs/multimodal.md §4–5.
 func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
-	return m.prefillLogitsVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageEmbeds, cache)
+	return m.prefillLogitsVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageEmbeds, cache, false)
 }
 
 // prefillLogitsVLSpans is prefillLogitsVL for several images (S11): each span is its own bidirectional block, and
 // imageEmbeds holds every span's rows concatenated in span order.
-func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
-	hN, err := m.prefillHiddenVLSpans(ctx, ids, spans, imageEmbeds, cache)
+// causal (Pixtral, S10) splices the spans without a bidirectional block: plain causal attention over the prompt.
+func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
+	hN, err := m.prefillHiddenVLSpans(ctx, ids, spans, imageEmbeds, cache, causal)
 	if err != nil {
 		return nil, err
 	}
@@ -1718,7 +1719,7 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
 // the LM head), so a test can grade every position, not only the last, through the production path.
-func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
 	}
@@ -1728,7 +1729,9 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 	}
 	h := m.embedN(ids)
 	spliceImageSpans(h, spans, imageEmbeds, hidden) // raw projected features, no embed scale
-	cache.SetImageBlocks(imageSpanBlocks(spans))
+	if !causal {
+		cache.SetImageBlocks(imageSpanBlocks(spans))
+	}
 	return m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
 }
 

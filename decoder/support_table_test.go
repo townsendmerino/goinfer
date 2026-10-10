@@ -86,6 +86,8 @@ var supportRows = []supportRow{
 		"DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09)."},
 	{"GLM-OCR", "glm_ocr", multimodal.TowerGlmOcr, rep("glm_ocr", nil),
 		"One image per request (2026-10-09)."},
+	{"Ministral 3", "mistral3", multimodal.TowerPixtral, rep("mistral3", nil),
+		"Pixtral tower, CPU float32 (S10, 2026-10-09)."},
 }
 
 // supportCell computes one tower / decoder cell.

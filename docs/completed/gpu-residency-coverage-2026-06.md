@@ -284,7 +284,7 @@ whole conversation), so this is a throughput trade, not a correctness change.~~
 shipped NATIVELY on the resident KV itself in `3358e6b` (2026-09-02) — "agent turn 3 goes
 9.13s → 0.42s (21.7x)" — so a resident model is not left without reuse at all, it does reuse
 on-device instead of via the CPU-side session cache this note assumed. Speculative decoding is
-also not skipped: `internal/serveapp/openai.go:1006-1028` runs BOTH the pretrained block drafter
+also not skipped: `internal/serveapp/openai.go:1009-1031` runs BOTH the pretrained block drafter
 (`--drafter`, which the flag's own help text says *requires* a resident GPU backend) and lossless
 n-gram speculative decode on the resident path, using the resident KV and a batched `ForwardN`
 (the comment there: "the resident batched ForwardN ... genNgramInto claims the shared resident KV
