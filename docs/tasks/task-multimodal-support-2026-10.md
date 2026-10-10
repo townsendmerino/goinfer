@@ -2824,6 +2824,93 @@ planted defects BLIND, the cover accepted by the owner. S10 LFM2.5-VL is DONE.**
   - A batched lfm2 prefill: the per-token image prefill is the slow part of a served image turn.
   - The 450M and 3B sizes, never run.
 
+**S10, Qwen3-VL MoE: desk map, plan and gates, registered 2026-10-09 before any code** (owner: "continue", the next family
+in the S10 order). Checkpoint `Qwen/Qwen3-VL-30B-A3B-Instruct` (Apache-2.0, bf16, 13 shards, about 62 GB,
+`~/models/qwen3-vl-30b-a3b-instruct` on nobara). There is no smaller Qwen3-VL MoE; the 235B is out of reach.
+
+**Gate 0, the desk map** (transformers 5.12.0's `qwen3_vl_moe`, `qwen3_vl` and `qwen3_moe` sources, and the checkpoint's
+`config.json`, index and one shard's header, read 2026-10-09):
+- **The decoder** (`Qwen3VLMoeTextModel`, 48 layers, hidden 2048, 32 heads, 4 KV heads, head dim 128):
+  - Qwen3's attention (per-head RMSNorm QK-norm, no bias) with Qwen3-VL's interleaved m-RoPE (section [24, 20, 20],
+    theta 5e6).
+  - A sparse MoE on every layer: 128 experts, top 8, intermediate 768, no shared expert. The router is softmax over all
+    128, then top-8, then renormalised (transformers 5.12 always renormalises; `norm_topk_prob` is true anyway).
+  - DeepStack: three sets, added to the hidden state at the image positions after decoder layers 0, 1 and 2, as in the
+    dense Qwen3-VL.
+  - An untied head.
+- **The experts on disk are in transformers 4.57's layout:** `mlp.experts.gate_up_proj` `[128, 2048, 1536]` (expert,
+  hidden, gate then up) and `mlp.experts.down_proj` `[128, 768, 2048]`. transformers 5.12's module holds the transpose
+  (`[128, 1536, 2048]`) and converts on load.
+  - **goinfer's `loadFusedExperts` (Qwen3.5-MoE's) checks element counts, not shapes, and the two layouts have equal
+    counts.** Loading this checkpoint through it as it stands would give transposed experts with no error. The loader
+    must read the shape and transpose this layout.
+- **The tower** (`Qwen3VLMoeVisionModel`): the Qwen3-VL tower aikit already runs (`Qwen3VisionEncoder` with DeepStack,
+  S10), here 27 blocks, hidden 1152, 16 heads, patch 16, a 48x48 position table, out 2048, DeepStack taps at blocks 8,
+  16 and 24, under `model.visual.`.
+- **Preprocessing and prompt:** Qwen3-VL's (`Qwen2VLImageProcessor` settings from the checkpoint, the
+  `<|vision_start|>` + `<|image_pad|>`… + `<|vision_end|>` block), the same as the dense 2B's.
+- **Today:**
+  - goinfer has no `qwen3_vl_moe` decoder; `qwen3_moe` (attention, experts, router) and `qwen3_vl` (m-RoPE) exist
+    separately.
+  - Serve has no `qwen3_vl_moe` tower branch.
+  - The support-table loader test plants `qwen3_vl_moe` as its row with no loader.
+- **Reference:** a float32 Hugging Face forward of the 30B is about 120 GB, beyond nobara's 62 GB. goinfer cannot run it
+  in float32 either. So the full-model gate is step (b')'s design: HF's own decoder-layer modules run layer-major, one
+  layer's weights at a time.
+
+**Plan:**
+1. **goinfer:**
+   - A `qwen3_vl_moe` architecture: `qwen3_moe`'s attention, experts and router, with `qwen3_vl`'s m-RoPE.
+   - `loadFusedExperts` reads the shape: the Qwen3.5 layout as now, the 4.57 layout transposed, anything else refused.
+   - The image path through the existing DeepStack entry (`GenerateQwenVLDeepstack`).
+   - Serve's `qwen3_vl_moe` branch on the Qwen3-VL tower path, and the support-table row.
+2. **aikit:** the tower is expected to load as it is. If its loader refuses the `qwen3_vl_moe` vision config or the
+   tensor prefix, the change goes on a branch for a release.
+3. **The streaming reference:** `g31b_hf_stream.py`'s design for Qwen3-VL MoE text layers with the image features and
+   DeepStack spliced in.
+
+**Gates:**
+- **G-S10q-a, the decoder against HF on a tiny random `Qwen3VLMoeForConditionalGeneration`** (text config at toy size;
+  the experts written to disk in the released 4.57 layout). Two inputs:
+  - a text prompt;
+  - an image prompt with random merged rows and three DeepStack sets, through `prefillLogitsQwenVLSpans`'s entry.
+  - Every position at cosine >= 0.99999.
+  - Planted defects, each red:
+    1. the experts loaded without the transpose (the element-count path);
+    2. the router's softmax taken after the top-8;
+    3. the m-RoPE not interleaved;
+    4. each DeepStack set added one layer late.
+- **G-S10q-b, the tower on the real 30B:** HF's `Qwen3VLMoeVisionModel` alone, in float32, from its own pixel values, on
+  the four F2a images. Every stage (the embedding with positions, each block, the main merger, each DeepStack set) at
+  worst-token cosine >= 0.9999; 0.999-0.9999 is ambiguous (parked).
+- **G-S10q-c, the full model against the layer-streaming HF float32 reference** (step (b')'s design):
+  - **The sequences:** 8 prompts (the four F2a images x two questions, an explicit system message, the checkpoint's
+    template), each followed by goinfer's own int8int8 greedy continuation of 32 tokens, recorded once and pinned:
+    256 teacher-forced positions.
+  - **Arms:** goinfer CPU at int8int8 (the primary) and int4 (serve's default), the image features from goinfer's tower.
+  - **Statistic:** per arm, argmax agreement with HF over the 256 positions, and mean KL(HF || arm), with a cluster
+    bootstrap over the 8 prompts (10,000 resamples, a fixed seed).
+  - **The sibling the bar is read against:** the dense Qwen3-VL-2B, same prompts, same arms, against an ordinary HF
+    float32 forward (it fits), measured in the same run.
+  - **PASS** if the 30B's agreement is at least the 2B's minus 5.0 points, per arm. More than 5 points below is
+    ambiguous (parked, to the owner). More than 15 below is FAIL.
+  - **Controls, run by day before anything is queued:**
+    1. The streaming script against an ordinary HF float32 forward of the tiny fixture, on an image sequence: relative
+       max|diff| <= 1e-4.
+    2. Planted defects in the stream, each red against control 1's bar: DeepStack skipped; two layers swapped; the
+       router not renormalised.
+- **G-S10q-d, served on nobara:** one-image and two-image requests through serve at int4 on the CPU, twice: identical
+  replies. A `--backend cuda` arm on the 8 GB card is reported (resident with expert paging, or a named decline), not
+  graded.
+- **Tier:**
+  - a, b and the controls by day.
+  - c on the night queue: the 30B streamed through 48 layers on 8 sequences, plus goinfer's two 30B loads. Estimated
+    90 minutes, firmed up from the controls' timings before queueing.
+  - d by day if its two arms fit in 10 minutes, else at night.
+
+**Size:** goinfer about 600 lines (the architecture, the loader's shape check, serve), the streaming script about 250,
+aikit expected 0: L, as registered for S10's MoE variants.
+
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
 owner's choice is that decision. The dev checkpoint is `Qwen/Qwen3-VL-2B-Instruct`, downloaded on nobara (`~/models/
