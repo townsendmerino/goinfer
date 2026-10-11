@@ -1,0 +1,23 @@
+[11:29:29] gemma-4-E4B_q4_0-it.gguf: arm metal (--backend metal -vision-device cpu --vision /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers --embed-int4=false)
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)
+loaded Gemma 4 vision tower for "gemma-4-E4B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on CPU) from /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  metal (7.9s): 'The user wants a brief description of the provided image.\nThe image is a table titled "Table 2. Quarterly unit sales by region (thousands)".\n'
+[11:29:59] gemma-4-E4B_q4_0-it.gguf: arm cpu (--backend cpu -vision-device cpu --vision /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+loaded Gemma 4 vision tower for "gemma-4-E4B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on CPU) from /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers
+"gemma-4-E4B_q4_0-it" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cpu (26.2s): 'The user wants a brief description of the provided image.\nThe image is a table titled "Table 2. Quarterly unit sales by region (thousands)".\n'
+[11:30:58] gemma-4-E4B_q4_0-it.gguf: arm cpu2 (--backend cpu -vision-device cpu --vision /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+loaded Gemma 4 vision tower for "gemma-4-E4B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on CPU) from /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers
+"gemma-4-E4B_q4_0-it" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cpu2 (19.8s): 'The user wants a brief description of the provided image.\nThe image is a table titled "Table 2. Quarterly unit sales by region (thousands)".\n'
+gemma-4-E4B_q4_0-it.gguf: reference arm cpu
+gemma-4-E4B_q4_0-it.gguf: metal against cpu: IDENTICAL replies
+gemma-4-E4B_q4_0-it.gguf: cpu2 against cpu: IDENTICAL replies

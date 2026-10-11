@@ -1,0 +1,5 @@
+binaries /Users/francistownsend-merino/goinfer-bench/s6-e4b-metal-2026-10-11/bin rev 070dd19d
+started 2026-10-11 11:19:40 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+11:19  up 17 days,  1:15, 1 user, load averages: 3.22 2.52 2.83

@@ -1,0 +1,34 @@
+[11:31:48] arm cpu (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+Gemma 4 audio input on for "gemma-4-E4B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers
+  cpu short (4.2s, 29 prompt tokens): "The user wants me to transcribe the audio. I need to listen to the audio and write down the words spoken.<channel|>I'm s"
+  cpu mid (5.1s, 79 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio contains a sound that resembles a dog barking.\nI will tran'
+  cpu long (12.1s, 216 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio contains a sound that resembles a bird chirping or a mecha'
+  vision: decoded 32 tokens on the cpu path (prefill cpu)
+  vision: decoded 32 tokens on the cpu path (prefill cpu)
+  vision: decoded 32 tokens on the cpu path (prefill cpu)
+[11:32:12] arm metal (--backend metal --embed-int4=false)
+  decode path: metal-resident (int4)
+Gemma 4 audio input on for "gemma-4-E4B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers
+  metal short (3.5s, 29 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio is not provided.\nI need to inform the user that I cannot t'
+  metal mid (1.9s, 79 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio contains a sound that resembles a dog barking.\nI will tran'
+  metal long (3.0s, 216 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio is a sound of a cat meowing.\n\nTranscription: "Meeow" or "'
+  vision: decoded 32 tokens on the resident path (prefill resident)
+  vision: decoded 32 tokens on the resident path (prefill resident)
+  vision: decoded 32 tokens on the resident path (prefill resident)
+[11:32:28] arm cpu2 (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+Gemma 4 audio input on for "gemma-4-E4B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E4B-qat-unq-towers
+  cpu2 short (4.5s, 29 prompt tokens): "The user wants me to transcribe the audio. I need to listen to the audio and write down the words spoken.<channel|>I'm s"
+  cpu2 mid (5.0s, 79 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio contains a sound that resembles a dog barking.\nI will tran'
+  cpu2 long (11.7s, 216 prompt tokens): 'The user wants me to transcribe the provided audio.\nThe audio contains a sound that resembles a bird chirping or a mecha'
+  vision: decoded 32 tokens on the cpu path (prefill cpu)
+  vision: decoded 32 tokens on the cpu path (prefill cpu)
+  vision: decoded 32 tokens on the cpu path (prefill cpu)
+reference arm cpu
+short: metal against cpu: first differing token 7: cpu ' audio', metal ' provided'; cpu top-3 ' audio' 0.512, ' provided' 0.468, ' given' 0.002; near-tie True
+short: cpu2 against cpu: IDENTICAL replies
+mid: metal against cpu: IDENTICAL replies
+mid: cpu2 against cpu: IDENTICAL replies
+long: metal against cpu: first differing token 13: cpu ' contains', metal ' is'; cpu top-3 ' contains' 0.372, ' is' 0.327, ' consists' 0.078; near-tie True
+long: cpu2 against cpu: IDENTICAL replies

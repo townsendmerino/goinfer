@@ -70,7 +70,7 @@ var supportRows = []supportRow{
 	{"Gemma 3", "gemma3", multimodal.TowerSigLIP, rep("gemma3", nil),
 		"CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08); WebGPU: int8 tower. Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08)."},
 	{"Gemma 4 E2B, E4B", "gemma4", multimodal.TowerGemma4, jsonConfig(eModelConfig),
-		"E4B validated on CUDA (2026-10-08), not yet on Metal (2026-10-09)."},
+		"E4B validated on CUDA (2026-10-08) and on Metal (2026-10-11), on the quantization-aware checkpoint."},
 	{"Gemma 4 E2B, E4B audio", "gemma4", multimodal.TowerGemma4Audio, jsonConfig(eModelConfig),
 		"One clip per request; 16-bit WAV, any rate (2026-10-09)."},
 	{"Gemma 4 26B", "gemma4", multimodal.TowerGemma4, rep("gemma4_unified_text", bidirectional),
