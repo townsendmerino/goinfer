@@ -2,7 +2,8 @@
 
 **Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). G-CL1 PASS.
 The timed gates G-CL2, G-CL3 and G-CL4 are queued on nobara for the night and **not read**; the kill rule below still
-applies to what is on `main`. Step 0 (the Mac's measurement) is owed and nothing changes on darwin until it is done.
+applies to what is on `main`. Step 0 (the Mac's measurement) is read (below): macOS has no read-around problem, and a pre-read helps there for a
+different reason; nothing is built for darwin yet.
 The measurements that scope it are exploratory ([record](../measurements/giw-cold-load-2026-10/README.md)); the gates
 below were registered before any code. Owner decisions: § Decisions.
 
@@ -104,6 +105,21 @@ N: four pairs a cell, fixed, no early stop. Ambiguous band: parked results go to
   (`-stream-weights -weight-cache 8`) inside a 16 GB memory scope, evicted first so the scope is charged for what it
   reads.
 
+## Step 0 read, 2026-10-11: the Mac has a different problem
+
+The record's section 6 (exploratory, CPU backend, by day on the owner's word):
+
+- **L2 has nothing to do on macOS.** There is no large read-around: the MoE bundle's default walk reads 5.6% of the
+  file in 1.5 s. Nothing is built for darwin from L2.
+- **L1's reason does not hold either, but a pre-read still pays, and for a dense bundle too.** The cold first reply
+  is slow because the decode faults the weights in a page at a time. With the file read once first it is done in
+  3.7 s instead of 8.4-9.7 s on the Mellum MoE and in 3.5 s instead of 5.6-6.3 s on the dense 7B.
+- **How to read it matters:** `MADV_WILLNEED` over the whole mapping works on macOS (7 GB in 2.5 s) and a plain
+  `read(2)` pass does; the CRC does not (8-11 s).
+- **Not yet a change.** A darwin pre-read would be a different rule from Linux's (every bundle that is cold and fits,
+  not only small-matrix MoEs), most loads on the Mac are on Metal, which this did not measure, and 16 GB makes "fits"
+  the sharp edge. It needs its own gates, registered before its code: § Decisions, 4.
+
 ## Decisions
 
 **Decided 2026-10-11 (owner: "yes build it", on the recommendations):** a plain read, not the CRC; Linux first, the Mac
@@ -114,3 +130,8 @@ measured before it gets any change; one reader.
 2. **Linux first, darwin after its own measurement** (recommended), or hold both until the Mac is measured.
 3. **One reader or several?** One sequential pass is what is measured (about 1.75 GB/s here). Several readers may be
    faster on NVMe; it would be its own gate, after L1.
+4. **A darwin pre-read (open, from step 0).** Register gates and build it, or leave the Mac as it is. If built: for
+   any bundle that is cold and fits with room, `MADV_WILLNEED` over the mapping before the walk; cells on the CPU and
+   on Metal, a dense and an MoE bundle, with the cold time to a first reply as the measure and a warm start and a
+   does-not-fit case as the no-harm cells. Recommended: yes, as its own registered step, with the Metal cells
+   deciding.

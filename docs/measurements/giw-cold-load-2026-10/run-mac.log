@@ -1,0 +1,45 @@
+started 2026-10-11 09:17:01 PDT; load averages: 3.56 2.83 2.66; 16 GB RAM; APFS
+giwload-xp, serve-xp, prequant: goinfer 360bc020 (main) with the experimental advice switch (XP_MADV), darwin/arm64, CPU backend; on darwin the shipped cold-load plan is unsupported, so with no XP_MADV this is the default load
+wrote ~/goinfer-bench/coldload-mac/7b.giw: 4548 MB (int4) in 13.4s: stream 13.3s, self-check 0.1s
+part A started 09:17:15
+== mellum2.int4.giw (7055350985 bytes)
+rep 1  default: load 12.22s, close 0.03s, major faults 430192 | resident before: 0.0% of 7055 MB resident; after: 99.9% of 7055 MB resident
+rep 1  random: load 1.18s, close 0.01s, major faults 12031 | resident before: 0.0% of 7055 MB resident; after: 2.8% of 7055 MB resident
+rep 1  sequential: load 1.19s, close 0.01s, major faults 12031 | resident before: 0.0% of 7055 MB resident; after: 2.9% of 7055 MB resident
+rep 1  willneed: load 2.52s, close 0.02s, major faults 424085 | resident before: 0.0% of 7055 MB resident; after: 100.0% of 7055 MB resident
+rep 2  default: load 1.45s, close 0.01s, major faults 12031 | resident before: 0.0% of 7055 MB resident; after: 5.6% of 7055 MB resident
+rep 2  random: load 1.17s, close 0.01s, major faults 12031 | resident before: 0.0% of 7055 MB resident; after: 2.8% of 7055 MB resident
+rep 2  sequential: load 1.14s, close 0.01s, major faults 12031 | resident before: 0.0% of 7055 MB resident; after: 2.9% of 7055 MB resident
+rep 2  willneed: load 2.51s, close 0.02s, major faults 424090 | resident before: 0.0% of 7055 MB resident; after: 100.0% of 7055 MB resident
+== 7b.giw (4768988163 bytes)
+rep 1  default: load 0.07s, close 0.00s, major faults 479 | resident before: 0.0% of 4769 MB resident; after: 0.3% of 4769 MB resident
+rep 1  random: load 0.05s, close 0.00s, major faults 479 | resident before: 0.0% of 4769 MB resident; after: 0.2% of 4769 MB resident
+rep 1  sequential: load 0.05s, close 0.00s, major faults 479 | resident before: 0.0% of 4769 MB resident; after: 0.2% of 4769 MB resident
+rep 1  willneed: load 1.76s, close 0.02s, major faults 286534 | resident before: 0.0% of 4769 MB resident; after: 100.0% of 4769 MB resident
+rep 2  default: load 0.06s, close 0.00s, major faults 479 | resident before: 0.0% of 4769 MB resident; after: 0.3% of 4769 MB resident
+rep 2  random: load 0.05s, close 0.00s, major faults 479 | resident before: 0.0% of 4769 MB resident; after: 0.2% of 4769 MB resident
+rep 2  sequential: load 0.05s, close 0.00s, major faults 479 | resident before: 0.0% of 4769 MB resident; after: 0.2% of 4769 MB resident
+rep 2  willneed: load 1.74s, close 0.02s, major faults 286534 | resident before: 0.0% of 4769 MB resident; after: 100.0% of 4769 MB resident
+part A finished 09:17:48
+part C on mellum2.int4.giw (7055350985 bytes) started 09:17:48
+rep 1  default: resident before 0.0% | serving at   2.4s (5.8%) | first reply done at   9.7s (76.0%) | second reply took   2.4s   [The first five prime numbers are 2, 3, 5]
+rep 1  random: resident before 0.0% | serving at   1.3s (2.9%) | first reply done at   7.9s (76.1%) | second reply took   2.4s   [The first five prime numbers are 2, 3, 5]
+rep 1  crc: resident before 0.0% | serving at  11.2s (100.0%) | first reply done at  13.4s (99.6%) | second reply took   2.0s   [The first five prime numbers are 2, 3, 5]
+rep 1  cat: resident before 0.0% | serving at   1.3s (100.0%) | first reply done at   3.7s (95.9%) | second reply took   2.2s   [The first five prime numbers are 2, 3, 5]
+rep 2  default: resident before 0.0% | serving at   1.7s (5.8%) | first reply done at   8.4s (76.8%) | second reply took   2.7s   [The first five prime numbers are 2, 3, 5]
+rep 2  random: resident before 0.0% | serving at   1.5s (2.9%) | first reply done at   8.1s (76.1%) | second reply took   2.4s   [The first five prime numbers are 2, 3, 5]
+rep 2  crc: resident before 0.0% | serving at  11.5s (93.4%) | first reply done at  15.1s (93.1%) | second reply took   2.2s   [The first five prime numbers are 2, 3, 5]
+rep 2  cat: resident before 0.0% | serving at   1.3s (95.8%) | first reply done at   3.8s (91.5%) | second reply took   2.2s   [The first five prime numbers are 2, 3, 5]
+part C finished 09:19:19
+part C on 7b.giw (4768988163 bytes) started 09:19:19
+rep 1  default: resident before 0.0% | serving at   0.2s (0.6%) | first reply done at   6.3s (88.6%) | second reply took   2.2s   [The first five prime numbers are 2, 3, 5]
+rep 1  random: resident before 0.0% | serving at   0.2s (0.3%) | first reply done at   5.6s (88.6%) | second reply took   2.5s   [The first five prime numbers are 2, 3, 5]
+rep 1  crc: resident before 0.0% | serving at   8.2s (100.0%) | first reply done at  10.6s (100.0%) | second reply took   2.3s   [The first five prime numbers are 2, 3, 5]
+rep 1  cat: resident before 0.0% | serving at   0.9s (100.0%) | first reply done at   3.5s (100.0%) | second reply took   2.2s   [The first five prime numbers are 2, 3, 5]
+rep 2  default: resident before 0.0% | serving at   0.2s (0.6%) | first reply done at   5.6s (88.6%) | second reply took   2.2s   [The first five prime numbers are 2, 3, 5]
+rep 2  random: resident before 0.0% | serving at   0.2s (0.3%) | first reply done at   6.1s (88.6%) | second reply took   2.7s   [The first five prime numbers are 2, 3, 5]
+rep 2  crc: resident before 0.0% | serving at   9.1s (100.0%) | first reply done at  11.6s (100.0%) | second reply took   2.3s   [The first five prime numbers are 2, 3, 5]
+rep 2  cat: resident before 0.0% | serving at   0.9s (100.0%) | first reply done at   3.5s (100.0%) | second reply took   2.4s   [The first five prime numbers are 2, 3, 5]
+part C finished 09:20:32
+finished 09:20:33
+rc=0

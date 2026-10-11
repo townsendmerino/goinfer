@@ -88,11 +88,61 @@ The replies are the same text. One run a side shows the change acting and nothin
 lock, while another session's timed run (`mellum21-c5`) held it. It read 28.2 s to serving and 46.9 s to a first
 reply, on a box doing two things at once. It is discarded here, and it may have disturbed the other session's run.
 
+## 6. The Mac (step 0): no read-around to speak of, and a slow first reply for a different reason
+
+`run-mac.log`, 2026-10-11 09:17, by day on the owner's word, under the timing lock with the box in use (load average
+3.6). MacBook Pro M1 Pro, 16 GB, APFS, CPU backend, goinfer `360bc020` with the advice switch built for darwin. A file
+is made cold with `msync(MS_INVALIDATE)` on a mapping of it (checked with `mincore`: 100% resident to 0%;
+`maccache.py`). Two bundles: the Mellum MoE (7.06 GB, copied from nobara, byte count matched) and a dense 7B built
+here (4.77 GB). The 35B is not run on this box. Exploratory, two repetitions.
+
+**The load alone** (`mac-a.sh`):
+
+| bundle | default | `random` | `sequential` | `willneed` |
+|---|---|---|---|---|
+| Mellum MoE | 1.45 s; 12,031 major faults; 5.6% of the file resident after | 1.17, 1.18 s; 12,031; 2.8% | 1.14, 1.19 s; 2.9% | 2.51, 2.52 s; 424,000; **100%** |
+| 7B dense | 0.06, 0.07 s; 479 faults; 0.3% | 0.05 s; 0.2% | 0.05 s; 0.2% | 1.74, 1.76 s; 286,534; **100%** |
+
+- **macOS does not read megabytes around a fault.** The default walk of the MoE bundle reads 5.6% of it in about a
+  second and a half, where nobara's reads 92% in eight. The problem this task was opened for does not exist here, and
+  turning the read-around off (L2) buys nothing.
+- **`MADV_WILLNEED` over the whole mapping works here**, where on Linux it is honoured for one window: it reads all
+  7 GB in 2.5 s.
+- **The first default load of Mellum is not in the table.** It took 12.2 s and read the whole file: it ran the CRC.
+  The bundle's marker did not survive the copy, because the Mac's `rsync` (openrsync, protocol 29) drops the
+  nanoseconds of a modification time and the marker records them. The load rewrote the marker and every later load
+  skipped the CRC.
+
+**Cold start to a finished reply** (`mac-c.sh`):
+
+| bundle | | server up | first reply done | second reply |
+|---|---|---|---|---|
+| Mellum MoE | default | 2.4, 1.7 s | **9.7, 8.4 s** | 2.4-2.7 s |
+| | `random` during the walk | 1.3, 1.5 s | **7.9, 8.1 s** | 2.4 s |
+| | `crc` | 11.2, 11.5 s | **13.4, 15.1 s** | 2.0-2.2 s |
+| | `cat` first | 1.3 s | **3.7, 3.8 s** | 2.2 s |
+| 7B dense | default | 0.2 s | **6.3, 5.6 s** | 2.2 s |
+| | `random` during the walk | 0.2 s | **5.6, 6.1 s** | 2.5-2.7 s |
+| | `crc` | 8.2, 9.1 s | **10.6, 11.6 s** | 2.3 s |
+| | `cat` first | 0.9 s | **3.5, 3.5 s** | 2.2-2.4 s |
+
+- **The first reply is slow on the Mac because the decode faults the weights in through the mapping**, a page at a
+  time: the first reply takes 6-7 s where the second takes 2.2-2.7 s. Reading the file once with `read(2)` first
+  takes the cold time to a first reply to 0.41 of the default on Mellum and 0.59 on the dense 7B. Unlike on Linux,
+  the dense bundle gains too.
+- **The CRC is the wrong way to read the file here.** It takes 8-11 s over 4.8-7 GB (it is bound by its own page
+  faults and arithmetic, not by the disk), so forcing it makes the cold start worse, where on nobara it made it
+  better.
+- The `random` arm is level with the default (7.9-8.1 s against 8.4-9.7 s on Mellum, inside the spread on the 7B).
+- Not measured here: the Metal backend, which is how most loads on this box run and which binds the mapping's pages
+  into GPU buffers; a bundle that does not fit in 16 GB; a quiet box.
+
 ## What is not measured
 
 - Any other filesystem. btrfs sets a large read-ahead window; a filesystem with a small one would make the default
   walk read less, and the trade would move.
-- macOS.
+- macOS on the Metal backend, and macOS with a bundle that does not fit (section 6 is the CPU backend, two bundles
+  that fit).
 - A bundle that does not fit in memory. Every cell here fits (62 GB). That is the case the `random` walk is for: it
   would save reading 18.7 GB that cannot stay.
 - A file that is already in the page cache, where a front-to-back read is pure cost (the transcode record's reference
@@ -104,5 +154,7 @@ reply, on a box doing two things at once. It is discarded here, and it may have 
 - `cold-a.sh`, `cold-b.sh`, `cold-c.sh`: the load alone, the cold start to a reply by advice mode, and the same with
   the shipped loader. `run.sh`, `run2.sh`, `run3.sh`: the three runs; `run1.log`, `run2.log`, `run3.log`: their output.
 - `gcl_night.py`, `run-gcl-night-nobara.sh`: the night driver and wrapper for the task's timed gates.
+- `mac-a.sh`, `mac-c.sh`, `run-mac.sh`, `maccache.py`, `run-mac.log`: the Mac's step 0 (section 6). Its build is the same
+  advice switch through darwin's `madvise` system call.
 - `xp-advice.patch.txt`: the experimental loader's change (a scratch build, not committed). `cachestat.py`: how much
   of a file is in the page cache.
