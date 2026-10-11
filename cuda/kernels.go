@@ -90,6 +90,12 @@ var gluePTX []byte
 //go:embed testdata/argmax.ptx
 var argmaxPTX []byte
 
+// moeFoldPTX: moe_fold_wacc, the rank-order fold of the expert-major MoE prefill: the per-row kernel's one fused
+// multiply-add, applied after the experts have run in another order. See cuda/moe_fold.cu.
+//
+//go:embed testdata/moe_fold.ptx
+var moeFoldPTX []byte
+
 // topkPTX: topk_select, the device-side bounded top-K the sampled-decode fast path reads instead of the full logits row.
 // Built at the ambient NVRTC (12.9.86). See cuda/topk.cu.
 //
