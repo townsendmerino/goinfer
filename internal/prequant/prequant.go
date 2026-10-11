@@ -127,7 +127,7 @@ func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, 
 		afterWriteForTest(tmp)
 	}
 	t1 := time.Now()
-	if err := selfCheck(tmp); err != nil {
+	if err := transcodeSelfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
 		return ph, fmt.Errorf("self-check: %w", err)
 	}
@@ -212,7 +212,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		afterWriteForTest(tmp)
 	}
 	t1 := time.Now()
-	if err := selfCheck(tmp); err != nil {
+	if err := transcodeSelfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
 		return ph, fmt.Errorf("self-check: %w", err)
 	}
@@ -450,6 +450,10 @@ func selfCheck(path string) error {
 	}
 	return m.Close()
 }
+
+// transcodeSelfCheck is the self-check a transcode runs on the bundle it has just written. A variable so a test can
+// make the span it is timed over longer than the clock's resolution.
+var transcodeSelfCheck = selfCheck
 
 // afterWriteForTest, when set, is called with the temp bundle once it is written and markWritten has run, before its
 // self-check.
