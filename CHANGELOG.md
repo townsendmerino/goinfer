@@ -25,6 +25,26 @@ off for the walk; a dense bundle and a file already in the page cache load as be
 runs on one Linux box (btrfs) a cold Qwen3.6 35B reached its first reply in 24 s instead of 38 s and Mellum in 8 s instead of
 12.7 s; the gates are registered and not yet read ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
 
+### Fixed — a MoE model with `--moe-cache-experts` on CUDA gave a repeated prompt a different answer than a fresh one
+
+With expert caching on, the batched prompt pass ran its MoE feed-forward through an expert-grouped path (on by default
+since 2026-09-21) that was meant to be bit-identical to the token-by-token path and was not: it wrote each routed
+expert's weighted output to a scratch buffer and added it afterwards, where the token-by-token kernel adds it in one
+fused multiply-add. The two differ in the last bit of the residual, and the int8 requantization and expert routing
+downstream turn that into different tokens some dozens of tokens later.
+- **What it looked like:** the first request of a prompt and the same prompt sent again (which reuses the prompt's
+  prefix and recomputes its last few tokens one by one) returned different text; and a model run with
+  `--moe-cache-experts` did not match the same model fully resident. Both are deterministic, not a race. Seen on
+  Mellum2.1 on an 8 GB card; Gemma 4's MoE path had the same construction.
+- **Fix:** the expert-grouped path now stores each expert's output unweighted and folds it in rank order with the same
+  single fused multiply-add (`moe_fold_wacc`, a new kernel in its own file; the audited `moe.ptx` is unchanged). The
+  fold is one launch per rank, as before; the prompt pass's speed has not been re-measured.
+- **Gate:** `TestMoEExpertMajorCUDA_residualIdentical` compares the f32 residual of every prompt row, expert-grouped
+  against token-by-token and against the fully resident build, on four tiny fixtures. The earlier gate compared the last
+  row's logits and passed throughout: on the old code the residuals differ on 13% to 32% of elements while the logits
+  agree to the bit.
+- `GOINFER_CUDA_MOE_EXPERT_MAJOR=0` still selects the token-by-token path.
+
 ### Changed — `.giw` weights format v16: one layout, and it is the only one read (breaking for a hand-built or embedded bundle)
 
 This build writes weights format v16 and reads only v16; the bundle frame stays v3, and its v1 and v2 forms are no longer read.

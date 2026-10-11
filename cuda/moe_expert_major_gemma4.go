@@ -19,9 +19,9 @@ import (
 //	x2 = postFFNNorm2( Σ_j wgt[j]·expertDown_j(geluTanh(gu_j)·up_j) )    xe = preFFNNorm2(h)  [MoE]
 //	h  = (h + postFFNNorm(x1 + x2)) · layerScalar                                             [join]
 //
-// Same mechanism as the generic file (route every row first, bucket by expert, admit/DMA each distinct expert once, fold
-// each row's topK contributions in rank order via sequential residual_batched launches; see that file's header for the
-// bit-identity argument), but the expert loop accumulates into a per-row g4x2 buffer, not the residual xB, because
+// Same mechanism as the generic file (route every row first, bucket by expert, admit/DMA each distinct expert once, store
+// each term unweighted and fold each row's topK terms in rank order with moe_fold_wacc; see that file's header for the
+// bit-identity argument), but the fold accumulates into a per-row g4x2 buffer, not the residual xB, because
 // gemma4's join (normF32(g4x2), x1+=x2, normF32, h+=comb, *layerScalar) still has to run per row afterward. The dense
 // branch (x1) and the router's pre-fold activation (xe) are computed in the same pre-pass, per row, into their own
 // scratch, since both are needed again only after the deferred expert-major fold completes.
@@ -29,7 +29,7 @@ import (
 // prefillGemma4ExpertMajorEligible mirrors prefillMoEExpertMajorEligible's shape for g4moe layers.
 // No shared-expert / gpt-oss-bias exclusion needed here — gemma4's join has neither.
 func (r *cudaResident) prefillGemma4ExpertMajorEligible(Ly *cudaLayer) bool {
-	return r.prefillExpertMajorEnabled() && Ly.g4moe && r.cacheExperts && Ly.expCache != nil
+	return r.prefillExpertMajorEnabled() && Ly.g4moe && r.cacheExperts && Ly.expCache != nil && r.bMoeFold != (Pipeline{})
 }
 
 // prefillGemma4ExpertMajorRun replaces the per-row `for m := range M { segBFFN; layerTail }` loop
@@ -52,15 +52,11 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 	mScAll := af(M)
 	wgtAll := af(M * r.topK)
 	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop
-	emSlot := r.au32(1)
-	rankScratch := make([]Buffer, r.topK) // this layer's Σ_j wgt[j]·expertDown_j(...), per rank
+	emSlot := au(1)
+	rankScratch := make([]Buffer, r.topK) // each (row, rank)'s unweighted expert output, expertDown_j(...)
 	for j := range rankScratch {
+		// Not zeroed: every (row, rank) is routed to exactly one expert, whose plain-store GEMV writes the whole row.
 		rankScratch[j] = af(M * hidden)
-		// The expert kernel accumulates into these, so they must start at zero: zeroed on r.stream, with no host zero slice and
-		// no context sync, and the fresh buffer has no earlier reader to wait for.
-		if e := r.stream.ZeroAsync(rankScratch[j], M*hidden*4); e != nil {
-			return e
-		}
 	}
 	hostIdx := make([]uint32, M*r.topK)
 	nullBias := ArgNull()
@@ -168,25 +164,27 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 			if e := r.launchGluSplitExpert(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr, Buffer{}, 0); e != nil {
 				return e
 			}
-			wgtOff := wgtAll.At((s.row*r.topK + s.rank) * 4)
+			// The down projection, stored unweighted (gemv_w4a8_moe: the wacc kernel's reduction with a plain store).
 			dstOff := rankScratch[s.rank].At(s.row * hidden * 4)
-			if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(emSlot), Arg(wgtOff),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
+			if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(emSlot), gpu.ArgValue(int32(0)),
+				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
 				gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)), Arg(dstOff)); e != nil {
 				return e
 			}
 		}
 	}
 
-	// --- Phase 3: fold every row's topK contributions into g4x2All, IN RANK ORDER. ---
+	// --- Phase 3: fold every row's topK terms into g4x2All in rank order, with the per-row kernel's fused multiply-add. The
+	// accumulator starts at +0, as gemma4MoeMLPPost's g4x2 does. ---
 	g4x2All := af(M * hidden)
-	if e := r.stream.ZeroAsync(g4x2All, M*hidden*4); e != nil { // stream-ordered, like rankScratch; the fold below adds each rank into it
+	if e := r.stream.ZeroAsync(g4x2All, M*hidden*4); e != nil { // on r.stream, so it is ordered before the fold
 		return e
 	}
 	for j := 0; j < r.topK; j++ {
-		if e := r.launch(r.bRes, LaunchConfig{GridX: uint32((M*hidden + 255) / 256), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-			Arg(g4x2All), Arg(rankScratch[j]), gpu.ArgValue(int32(M*hidden))); e != nil {
+		if e := r.launch(r.bMoeFold, LaunchConfig{GridX: uint32((M*hidden + 255) / 256), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(g4x2All), Arg(rankScratch[j]), Arg(wgtAll), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.topK)),
+			gpu.ArgValue(int32(hidden)), gpu.ArgValue(int32(M*hidden))); e != nil {
 			return e
 		}
 	}

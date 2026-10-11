@@ -689,6 +689,7 @@ type cudaResident struct {
 	// GEMV; the rest are the M=1 glue kernels with an M dimension, each bit-identical per row. Loaded once at build
 	// (small module).
 	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes Pipeline
+	bMoeFold                                     Pipeline // moe_fold_wacc (moe_fold.cu); zero when it did not load
 	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); nil ⇒ int8 prefill declines
 	bQKN                                         Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
 	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set

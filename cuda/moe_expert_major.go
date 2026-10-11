@@ -19,11 +19,14 @@ import (
 // GEMV/SwiGLU/down-proj kernel: gemv_w4a8_moe(_wacc) and glu_quant are the per-row path's own kernels (moe.ptx, the
 // audited artifact, is untouched), called with a dedicated one-entry "current slot" index instead of the live r.slotIdx.
 //
-// Bit-identity is required: float addition is not associative, and expert iteration order has nothing to do with any one
-// row's rank order. So every (row, rank) expert output goes into a separate rank-indexed scratch (moeScratch[rank],
-// written by the unchanged gemv_w4a8_moe_wacc into a buffer that starts at exactly zero, so 0+x is exact), and each row
-// is then folded in rank order by topK sequential residual_batched launches on one stream, so launch order is per-row
-// term order for every row. This is decoder/mlp.go's moeMLPBatch technique, restated for a stream-ordered GPU.
+// Bit-identity with the per-row path is required, and it is a statement about one operation. The per-row path adds each
+// routed expert into the residual inside gemv_w4a8_moe_wacc, whose epilogue in the shipped moe.ptx is a single fused
+// multiply-add: x = fma(val, wgt, x), val = facc*aScale. So each (row, rank) expert output is stored UNWEIGHTED in a
+// rank-indexed scratch by gemv_w4a8_moe (the same reduction with a plain store), and each row is then folded in rank
+// order by topK launches of moe_fold_wacc (moe_fold.cu), which does that same fused operation: launch order on one
+// stream is per-row term order. Writing wgt*val to the scratch and adding it later would round the product separately;
+// that differs from the per-row path in the last bit of the residual, and TestMoEExpertMajorCUDA_residualIdentical is the
+// gate that sees it (the logits do not: an int8 requantization sits between).
 //
 // It refuses (falls through to the per-row path, as moeMLPBatch does) on a shared expert (Ly.hasShared), on any
 // per-expert bias table (gpt-oss: its bias lookup is keyed by the live per-token slot index, which this scheme does not
@@ -46,7 +49,7 @@ var cudaMoeExpertMajorRuns int64
 type moeExpertMajorState struct {
 	M, hidden, moeInter, topK int
 	mqAll, mScAll, wgtAll     Buffer   // per-row scratch: mqAll[row]=quantized activation, mScAll[row]=its scale, wgtAll[row*topK+j]=routing weight
-	scratch                   []Buffer // rank-indexed [M,hidden] accumulators, len topK
+	scratch                   []Buffer // rank-indexed [M,hidden] unweighted expert outputs, len topK
 	hostIdx                   []uint32 // [M*topK], this chunk's routed expert ids
 	emSlot                    Buffer   // 1-element: the CURRENTLY-resident expert's cache slot, for gemv_w4a8_moe's idx[0]
 }
@@ -63,7 +66,7 @@ func (r *cudaResident) prefillMoEExpertMajorEligible(Ly *cudaLayer) bool {
 	if !r.cacheExperts || Ly.expCache == nil {
 		return false // the mechanism this exists for (bounded slots forcing repeat DMA) requires C′ to be on
 	}
-	return true
+	return r.bMoeFold != (Pipeline{}) // the fold kernel did not load: the per-row loop is the exact path
 }
 
 // prefillMoEExpertMajorRun replaces the per-row `for m := range M { segBFFN; layerTail }` loop for one MoE layer of one
@@ -87,16 +90,12 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	st.mScAll = af(M)
 	st.wgtAll = af(M * r.topK)
 	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop (audit R-22)
-	st.emSlot = r.au32(1)
+	st.emSlot = au(1)
 	st.scratch = make([]Buffer, r.topK)
 	for j := range st.scratch {
+		// Not zeroed: every (row, rank) is routed to exactly one expert, whose plain-store GEMV below writes all of that row's
+		// hidden elements before the fold reads them.
 		st.scratch[j] = af(M * hidden)
-		// The expert kernel accumulates into these, so they must start at zero. Zeroed on r.stream, where every kernel below
-		// launches: no host copy of a zero slice and no context sync, and the buffer is fresh, so no earlier reader needs
-		// waiting for.
-		if e := r.stream.ZeroAsync(st.scratch[j], M*hidden*4); e != nil {
-			return e
-		}
 	}
 	st.hostIdx = make([]uint32, M*r.topK)
 
@@ -182,22 +181,23 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 			if e := r.launchGluSplitExpert(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr, Buffer{}, 0); e != nil {
 				return e
 			}
-			wgtOff := st.wgtAll.At((s.row*r.topK + s.rank) * 4)
+			// The down projection, stored unweighted: gemv_w4a8_moe is gemv_w4a8_moe_wacc's reduction with dst = facc*aScale.
 			dstOff := st.scratch[s.rank].At(s.row * hidden * 4)
-			if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(st.emSlot), Arg(wgtOff),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
+			if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(st.emSlot), gpu.ArgValue(int32(0)),
+				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
 				gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)), Arg(dstOff)); e != nil {
 				return e
 			}
 		}
 	}
 
-	// --- Phase 3: fold each row in RANK order (topK sequential launches, each covering all M rows — same stream,
-	// so launch order IS per-row term order for every row, matching the per-row path's own j=0..topK-1 fold). ---
+	// --- Phase 3: fold each row in RANK order with the per-row kernel's own fused multiply-add: topK launches, each over all
+	// M rows on one stream, so launch order is per-row term order (the per-row path's j = 0..topK-1). ---
 	for j := 0; j < r.topK; j++ {
-		if e := r.launch(r.bRes, LaunchConfig{GridX: uint32((M*hidden + 255) / 256), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-			Arg(xB), Arg(st.scratch[j]), gpu.ArgValue(int32(M*hidden))); e != nil {
+		if e := r.launch(r.bMoeFold, LaunchConfig{GridX: uint32((M*hidden + 255) / 256), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(xB), Arg(st.scratch[j]), Arg(st.wgtAll), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.topK)),
+			gpu.ArgValue(int32(hidden)), gpu.ArgValue(int32(M*hidden))); e != nil {
 			return e
 		}
 	}
