@@ -164,6 +164,17 @@ func TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad(t *testing.
 		mCPU.Close()
 	}
 
+	// M5 (docs/measurements/library-surface-2026-10-09.md): the zero Options is "cpu (default)" and must load it too,
+	// with the same weights the explicit name gets.
+	if mZero, err := Load(giwPath, Options{}); err != nil {
+		t.Fatalf("kind-5 .giw failed to load under the zero Options: %v", err)
+	} else {
+		if got := mZero.EffectiveBackend(); got != "cpu" {
+			t.Errorf("zero Options loaded on %q, want cpu", got)
+		}
+		mZero.Close()
+	}
+
 	_, err = Load(giwPath, Options{Backend: "metal"})
 	if err == nil {
 		t.Fatal("Load succeeded for a kind-5 (repacked-only) .giw under Backend:\"metal\" — want a loud decline naming the reason")

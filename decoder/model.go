@@ -557,7 +557,15 @@ func Load(dir string, opts Options) (*Model, error) {
 		// this core cannot run (wrong arch/shape); this catches the other mismatch, a kind-5 file under a backend that needs canonical
 		// bytes (e.g. Metal), which withResidency's decline would not fail loudly for (it logs and falls back to CPU/staged,
 		// non-fatal by design).
-		if wantsCanonicalInt4(opts.Backend, be) {
+		//
+		// The zero Backend is the CPU here, as Options.Backend documents. wantsCanonicalInt4 keeps "" conservative for the GGUF
+		// paths, where canonical bytes can still be built at load; a .giw's bytes are fixed, and the plain CPU backend runs
+		// row4-only weights. A resident build on such a model still refuses by name.
+		giwBackend := opts.Backend
+		if giwBackend == "" {
+			giwBackend = "cpu"
+		}
+		if wantsCanonicalInt4(giwBackend, be) {
 			if n := repackedOnlyInt4Count(w); n > 0 {
 				_ = mmap.Unmap(data)
 				closeBackend(be)

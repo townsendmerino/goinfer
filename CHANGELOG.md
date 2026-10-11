@@ -15,6 +15,25 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — a zero `decoder.Options` loads a cpu-arm64 `.giw`
+
+`decoder.Load(path, Options{})` on a `.giw` prequantized for cpu-arm64 failed with "Backend \"\" needs canonical bytes —
+rebuild with `go run ./cmd/prequant`", although the zero `Backend` is documented as the CPU and `Backend: "cpu"` loaded
+the same file. The zero value now loads it on the CPU (library surface review M5).
+
+### Added — `/v1/models` publishes `context_length` and `max_model_len`
+
+The same number as `context_window`, under the names Hermes and Oh My Pi read. Without them both assume a 128K window
+and overrun a smaller served one.
+
+### Fixed — `/v1/responses` reads tools in the Responses API's own shape
+
+`/v1/responses` decoded `tools` only in the Chat Completions nesting (`{"function":{"name":…}}`), so a tool sent in the
+Responses shape (`{"type":"function","name":…}`), as Codex and every harness's Responses mode send it, reached the
+prompt with an empty name and no schema while the request returned 200. Both shapes are now read, on both routes, and
+so is a Responses-shaped named `tool_choice`. Tool types the server cannot run (`custom` freeform-grammar tools,
+`web_search`, `tool_search`, `namespace`) are left out of the prompt and named in an `X-Goinfer-Tools-Dropped` header.
+
 ### Fixed — on an amd64 CPU without AVX2, a quantized model no longer stops with an illegal instruction
 
 The activation quantizer that every quantized matmul runs called its AVX2 kernels with no CPU check, so on an amd64 CPU without
