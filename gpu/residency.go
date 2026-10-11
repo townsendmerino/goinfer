@@ -1243,7 +1243,7 @@ func (rd *residentDecoder) SetAdapter(layers []decoder.ResidentAdapterLayer) err
 }
 
 // UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute positions base..base+n-1, the
-// prefill bridge. keys/vals are [n*kvDim] f32, packed to the cache's precision (f32 raw, f16 via packF16Pairs, int8
+// prefill bridge. keys/vals are [n*kvDim] f32, kvDim being the layer's own (its KV heads times its head_dim), packed to the cache's precision (f32 raw, f16 via packF16Pairs, int8
 // per-head + scales) so the upload matches what an on-device decode would have written. base is normally 0; a wrapped
 // CPU-side sliding-window ring's live K/V can start later (KVCache.LayerKV's base return). Element widths: f32 raw = 4
 // B/elem; f16 (2 values/u32) = 2 B/elem; int8 (4 values/u32) = 1 B/elem for the KV buffers, and nKV f32 scales per
@@ -1252,19 +1252,30 @@ func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error
 	if layer < 0 || layer >= len(rd.rm.layers) {
 		return fmt.Errorf("gpu: UploadKV layer %d out of range", layer)
 	}
-	kvDim := rd.nKV * rd.hd
+	// A layer with its own attention geometry (runLayer.ghd != 0) stores rows of its own width and head grouping.
+	l := rd.rm.layers[layer]
+	nKV, hd := rd.nKV, rd.hd
+	if l.ghd != 0 {
+		nKV, hd = l.gnKV, l.ghd
+	}
+	if uploadKVModelGeomForTest {
+		nKV, hd = rd.nKV, rd.hd
+	}
+	kvDim := nKV * hd
 	if kvDim > 0 {
+		if len(keys)%kvDim != 0 || len(vals) != len(keys) {
+			return fmt.Errorf("gpu: UploadKV layer %d: %d key and %d value floats are not whole rows of %d", layer, len(keys), len(vals), kvDim)
+		}
 		if err := rd.checkCap(base, len(keys)/kvDim); err != nil {
 			return err
 		}
 	}
-	l := rd.rm.layers[layer]
 	switch {
 	case rd.rm.kvI8:
-		kw, ks := packKVInt8(keys, rd.nKV, rd.hd)
-		vw, vs := packKVInt8(vals, rd.nKV, rd.hd)
+		kw, ks := packKVInt8(keys, nKV, hd)
+		vw, vs := packKVInt8(vals, nKV, hd)
 		kvOff := uint64(base) * uint64(kvDim)
-		scOff := uint64(base) * uint64(rd.nKV) * 4
+		scOff := uint64(base) * uint64(nKV) * 4
 		if err := rd.c.queue.TryWriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
 			return err
 		}

@@ -43,7 +43,9 @@
   - Decided 2026-10-10: the `--embed-int4` default is on (option D's numbers). It already is everywhere but Metal;
     on Metal it needs an int4 table in the resident, which is not built or scheduled.
   - The paged CUDA arm of Qwen3-VL MoE: FAIL under A2 on one of two requests.
-- **Not started:** S15 (video), S12 (WebGPU), full S13.
+- **Next (owner, 2026-10-11):** S12 (WebGPU), in the order "Gemma 4 resident decode, then the towers, then the
+  release-binary question"; its desk map, order and first gates are in S12. S15 (video) is parked for now.
+- **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
 measurement (CLAUDE.md, "Pre-registration").
@@ -1655,8 +1657,24 @@ under the timing lock. Nothing here is timed. `run-s6-e4b-metal-day.sh` in the r
   - Two of E4B's 25 disagreements sit at a wide gap by the test's measure (the CPU's top logit minus its logit for
     Metal's token, over the top logit's magnitude): 15.2% at a generated position of prompt 6 and 37.9% at a prompt
     position of prompt 8. E2B on Metal had none above 7.6% and E4B on CUDA none above 10%. The measure is relative to
-    one logit's size, so it is not a probability; the rule does not grade it, and I have not looked at those two
-    positions.
+    one logit's size, so it is not a probability, and the rule does not grade it.
+  - **Looked at the same day (exploratory; `widegap/` in the raw folder).** Both arms' last-layer residuals for
+    prompts 6 and 8 and their continuations (108 positions), against a float32 CPU pass of the same GGUF on the same
+    ids, run on nobara (float32 E4B does not fit the Mac).
+    - **Neither int4 arm is the one nearer float32.** Mean residual cosine to float32: 0.957-0.986 for the CPU and
+      0.958-0.986 for Metal, by prompt and by prompt or generated positions; Metal is the nearer at 48 of 108.
+    - **The 37.9% position is the model turn's `<|turn>` token,** whose prediction is never sampled. There every
+      int4 arm is far from float32: CPU 0.839, Metal 0.828, the amd64 CPU 0.845. It is not Metal's defect.
+    - **The turn markers are where int4 leaves float32 on every arm:** `<turn|>` and the second `<|turn>` read
+      0.75-0.92 against float32, where ordinary tokens read 0.96-0.995. At one of them (prompt 6's `<|turn>`) Metal
+      is clearly the farther, 0.749 against the CPU's 0.873. E2B shows the same shape at a tenth the size (Metal
+      against the CPU 0.986-0.994 at those tokens; E4B 0.85-0.94).
+    - **The 15.2% position is an ordinary generated token where Metal is the arm that moved:** the CPU's argmax
+      equals float32's and Metal's does not (residual 0.963 against 0.981).
+    - **Argmax equal to float32 over the 108 positions:** CPU 85.2%, Metal 80.6%, amd64 CPU 86.1%. Two prompts,
+      picked because Metal disagreed widely on them, and 46 of the positions are template tokens, so this is not an
+      estimate of anything and the 4.6 points between the arms is not resolved.
+    - Not done: the same anchor on E2B, and on prompts not chosen for a Metal disagreement.
 - **The plain checkpoint, record only (`4-plain-record.log`):** 376/435 = **86.44%**, 4 of 8 prompts; delta
   **-7.56 points**, which would be a FAIL under the rule. CUDA read 87.59%, 3 of 8, -6.38 on the same checkpoint. Two
   backends now show the drop on the plain file and neither shows it on the quantization-aware one. That supports
@@ -3637,6 +3655,136 @@ release binary (it needs cgo).
   and the release-binary question (a cgo build per platform, or a documented build-it-yourself).
 - **Gates:** the S1/S2 gates, run on WebGPU; written per sub-phase before it starts.
 - **Size:** L.
+
+#### S12, the desk map and the order (2026-10-11, from the code; declarations named, not lines)
+
+Owner, 2026-10-11: S12 next, "Gemma 4 resident decode, then the towers, then the release-binary question"; video
+(S15) parked. The paragraph above was written on 2026-10-07 and part of it has been overtaken.
+
+**What WebGPU does today, per family** (`decoder/features.go:residentBackendFeatures`,
+`gpu/residency.go:webgpuBackend.BuildResident`):
+
+| family | resident decode | an image turn |
+|---|---|---|
+| Gemma 3 | builds | int8 SigLIP on the GPU; CPU prefill, `UploadKV`, resident decode |
+| Gemma 4 dense (31B) | builds, on tiny fixtures only (two geometries, K=V, sandwich norms, `v_norm`, the layer scalar, the softcap are all in `gpu/`) | CPU tower; resident only for a bidirectional checkpoint |
+| Gemma 4 E2B, E4B | declines: no `gemma4-e-model` | CPU for the whole model |
+| Gemma 4 26B | declines: the parallel dense and MoE FFN; sandwich norms with an MoE are refused too | CPU |
+| Qwen2.5-VL, Qwen3-VL dense | builds | CPU tower, CPU prefill (DeepStack included), `UploadKV`, `ForwardMRoPE` |
+| Qwen3.5+ dense | builds for text | CPU prefill and decode (no upload for a recurrent family) |
+| GLM-OCR | declines (pairwise RoPE): staged | CPU tower |
+| Ministral 3, LFM2.5-VL | decline (`attn-temp`; not runner-eligible) | CPU |
+
+- **Missing for the E-model:** the per-layer FFN width, the shared KV, PLE (S1's three parts), a length check on
+  the resident row at every entry, and a prefill for E-model rows (`gpu`'s `PrefillLast` takes a plain dense W8A8
+  model only).
+- **Towers:** SigLIP at int8 is the only one (`gpu/vision_register.go`). Metal registers seven.
+- **Image prefill on the GPU:** none of `ResidentImagePrefill`, `ResidentMRoPEPrefill` or the DeepStack one.
+- **No end-to-end image turn has ever been gated on WebGPU:** no test in `gpu/` calls a `GenerateVL` function.
+- **A suspected defect, to check before anything is built on it:** `gpu/residency.go:residentDecoder.UploadKV`
+  sizes every layer from the model's one geometry, where Metal and CUDA use each layer's own. Its only test runs a
+  model with one geometry.
+- **Release binaries:** the binding is cgo (`github.com/oliverbestmann/webgpu`), and `release-assets.yml` builds
+  with `CGO_ENABLED=0`.
+- **Where "Where it stands" is stale:** Gemma 4 31B's and Qwen3-VL's WebGPU cells read "not validated" and "not
+  run"; by the code both decode resident with a CPU tower, and neither has been run. Left as they are until a run.
+
+**The order:**
+- **S12.0, checks on what exists (day).** The `UploadKV` question, and a served image turn on WebGPU for Gemma 3
+  and Qwen2.5-VL against the CPU. A defect found here is fixed here.
+- **S12.1, E-model decode on WebGPU (E2B, E4B):** S1's three parts and the entry checks, then E-model image and
+  audio turns through a prefill that is the sequential walk (speed is S12.4's).
+- **S12.2, the 26B's parallel FFN.** Tiny fixtures on the Mac. A real 26B on WebGPU has no box: the Mac's limit and
+  nobara's 8 GB card.
+- **S12.3, towers:** Gemma 4 vision and audio, a float32 SigLIP, Qwen2.5-VL, the grid towers. Gates written when it
+  starts, from S2's and S4's.
+- **S12.4, image prefill on the GPU and the S7 cells on WebGPU** (the timed part; night).
+- **S12.5, the release binary:** the owner's decision, with the options written when it is reached.
+
+**Gates for S12.0 and S12.1, registered 2026-10-11 before any S12 code.**
+
+- **G-S12.0a, `UploadKV` under per-layer geometry.** `gpu`'s `TestUploadKV_matchesSequentialForward` procedure
+  (resident sequential prefill and four decode steps, against a CPU prefill uploaded layer by layer and the same
+  four steps) on `testdata/gemma4-dense-twogeom-tiny`, at float32 KV and at `--kv i8`. Bar: the existing test's, on
+  every step. Planted defect: one layer's rows uploaded with another layer's geometry must be red.
+  Prediction: float32 passes (the bytes look right by reading); i8 errors or is red (0.6).
+- **G-S12.0b, a served image turn on what exists.** `run-gs3c-served.sh`, arms `webgpu:cpu,=cpu:cpu,cpu:cpu`, on
+  `gemma-3-4b-it` and `qwen25vl-3b-instruct`, with `--embed-int4=false`: identical replies or a first divergence at
+  a near-tie, the CPU repeat identical, and the WebGPU arm decoding resident. Then Gemma 3's own default
+  (`webgpu:auto`, the int8 tower on the GPU) as a record against `webgpu:cpu`. Prediction: both pass (0.7); the
+  likeliest failure is the arm not staying resident on the 16 GB Mac.
+- **G-S12.1a (G1 on WebGPU).** `testdata/gemma4-emodel-tiny`, the WebGPU resident against the CPU, int4 on both
+  sides, every position: argmax identical or a first divergence at a near-tie under 3%, and the mean cosine at least
+  the CPU's own int4-against-float32 mean.
+- **G-S12.1b (G2 on WebGPU), planted defects, each alone red on G-S12.1a:** (1) PLE skipped; (2) PLE's
+  token-identity term zeroed; (3) the shared-KV source one layer off; (4) one FFN width for the model; (5) the K/V
+  store not skipped on a shared layer, red, or shown bit-identical with the mechanism as on Metal; (6) the layer
+  scalar dropped; (7) `v_norm` dropped; (8) the PLE offset one layer off. A defect that stays green without a
+  mechanism means the fixture or the bar is wrong, and is recorded so.
+- **G-S12.1c, the row length.** Every resident entry refuses a row that is not `ResidentEmbedLen` long (a test
+  that calls each with a short row).
+- **G-S12.1d (G3 on WebGPU).** The re-registered G3 rule, unchanged: in one process, the reference
+  Qwen2.5-Coder-1.5B on WebGPU against the CPU, then E2B (the quantization-aware GGUF), then E4B if its resident
+  fits. PASS at >= the reference's - 2.0 points with free-run passes >= the reference's - 1; 2.0-4.0 below parked.
+- **G-S12.1e, served.** G4's image request and G-S5c's three audio clips, `webgpu` against `cpu`,
+  `-vision-device cpu` and `--embed-int4=false` on every arm, the CPU arm repeated: G-E4B-2's rule.
+- **Prediction, written now:** G-S12.1a and b pass once the three parts are in (0.8). G-S12.1d: PASS at 0.6. The
+  WebGPU decode quantizes activations as the CPU does, which should hold it nearer the CPU than Metal is; the risk
+  is the scale of the E-model's residual at the turn markers (the anchor above) on a third arithmetic.
+- **Tier and cost.** The tiny gates are quick and run by day. G-S12.1d and e are untimed and a few minutes each
+  (G-E4B-1b took 147 s on Metal); by day. Nothing timed is in S12.0 or S12.1.
+
+#### S12.0, G-S12.0a read 2026-10-11: the defect is real and fixed; the bar holds at float32 KV only (raw `docs/measurements/multimodal-support-2026-10/s12-webgpu/`)
+
+- **Before the fix (`g-s12-0a-before.log`).** On the two-geometry tiny (a sliding layer of head_dim 16, a global one
+  of 512) `UploadKV` counted the global layer's rows by the sliding layer's width, 32 times over:
+  - a 7-token prefill was refused against the 128-position cap ("KV position 0(+224) exceeds resident context cap
+    128"), at every KV precision;
+  - a 3-token prefill went through at float32 (the bytes are right at base 0) and read 0.88-0.93 against the
+    sequential forward at `--kv i8`, whose rows were quantized in the wrong head groups.
+  The prediction ("float32 passes, i8 errors or is red") held for i8 and missed the float32 refusal.
+- **The fix (`75c070bb`):** `gpu/residency.go:residentDecoder.UploadKV` reads the layer's own geometry and refuses
+  floats that are not whole rows.
+- **After it (`g-s12-0a-after.log`).** Float32 KV: cosine 1.00000000 on every step at both prompt lengths (largest
+  difference 2e-07). **PASS.** With the model's geometry planted back, every precision is red (a refused upload at
+  7 tokens; i8 at 0.88-0.93 at 3).
+- **The registered bar does not hold at f16 or int8 KV, and that is not the geometry
+  (`g-s12-0a-after-first-bar.log`).** There the fixed code reads 0.9998-0.9999 at f16 and 0.9959-0.9998 at i8. A
+  model with one geometry (`testdata/llama-tiny`, which the old code handled correctly) reads the same way through
+  the same procedure: float32 exact, f16 0.99991-0.99996, i8 0.99982-0.99994.
+  - **Why, as far as I can say:** the two arms are not the same computation at a lossy KV precision. The resident's
+    own prefill attends over rows already quantized; the CPU prefill attends over exact rows, and its result is
+    quantized once on upload. I have not separated that from a rounding difference between the host's packing and
+    the device's.
+  - **Amended after the run, and flagged because it follows a failing reading:** the 0.999999 bar is float32 KV's
+    alone. At f16 and i8 the test holds a floor of 0.99, which the wrong geometry misses by a wide margin. The
+    existing float32 test never ran a lossy precision, so this bar was mine and it assumed something untrue.
+  - **Open:** i8 on the two-geometry model reads lower than the control at one step (0.9959 against 0.9998). Two
+    tiny random models; not explained.
+- **What it means:** a WebGPU image turn on a dense Gemma 4 (the bridge a bidirectional checkpoint takes) could not
+  have worked past a few tokens. Nothing ran it: no real dense Gemma 4 fits either box's WebGPU, and no test did.
+
+#### S12.0, G-S12.0b read 2026-10-11: PASS on both models, and a record that is not good news for Gemma 3's default tower
+
+The WebGPU server at `75c070bb`, the Mac, by day (12:27 to 12:36 PDT), `--embed-int4=false` on every arm; raw
+`0b-image/` and `0b-gemma3-tower/`.
+
+- **Gemma 3 4B, towers on the CPU: PASS.** The WebGPU arm `decode path: webgpu:metal-resident (int4)`; its reply
+  first differs from the CPU's at generated token 7 (CPU ' by' 0.499, ' broken' 0.437: a near-tie); the CPU repeat
+  IDENTICAL.
+- **Qwen2.5-VL-3B, tower on the CPU: PASS.** Resident on WebGPU; the reply IDENTICAL to the CPU's; the CPU repeat
+  IDENTICAL.
+- These are the first end-to-end image turns gated on WebGPU. The prediction (both pass, 0.7) held, and the arm
+  stayed resident by day.
+- **The record: Gemma 3's default on WebGPU, the int8 tower on the GPU, against the float32 CPU tower (both
+  decoding on WebGPU).** The replies differ at the first token, and not at a near-tie (the float32-tower arm puts
+  'The' at 0.985). The int8-tower reply reads the image wrongly: "a table comparing various regions of France ...
+  based on their average population density", where the float32-tower reply is "quarterly unit sales data broken
+  down by geographic region". One image, one request.
+  - It is the served face of a known figure: the int8 SigLIP is relative L2 0.16-0.52 from float32 at real size.
+    CUDA's default went to float32 for that on 2026-10-08; WebGPU kept int8 "until S12 gives it a float32 tower".
+  - **For the owner:** S12.3's float32 SigLIP moves to the front of the towers, and until it exists the default
+    under `--backend webgpu` could be the float32 CPU tower (slower, right) in place of the int8 GPU one.
 
 ### S13 — Against the peers
 
