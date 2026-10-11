@@ -655,7 +655,7 @@ goinfer pinned it (`96f3a4aa`) and refreshed the parity hashes (`b2e9d19b`; forw
   functions.
 - Files: `g-t1-t8-tiny.log`, `g-t1-t8-tiny.jsonl`, `g-t1-t8-real.log`, `g-t1-t8-real.jsonl`, `g-t1-t8-real-lines.txt`.
 
-## Part V, 2026-10-10: format v16 built; G-V1 PASS on every cell read, G-V2 holds with two projection misses, G-V4 PASS; the 7B's Metal cells wait for the night
+## Part V, 2026-10-10: format v16 built; G-V1, G-V3 and G-V4 PASS, G-V2 holds with two projection misses
 
 Part V makes `.giw` one layout that the reader reads exactly (the task doc's V1 to V7, with T7). Base `c07c7f5d` (`main`,
 weights format v15); the code is `124fc9fb`, followed by the parity refresh, the docs and one gate asset. The gates were
@@ -671,14 +671,16 @@ loads its own file, and the logits are compared bit for bit.
 | tiny assets, CPU | 43 | 36 | 0 | 7 | 59 s |
 | tiny assets, Metal | 43 | 24 | 0 | 19 | 1 min 23 s |
 | the 1.5B Q4_K_M GGUF, Metal, int4 (read by day) | 1 cell | 1, on `metal-resident` | 0 | 0 | 24 s |
-| the 7B Q4_K_M GGUF, Metal, int4 | | | | **queued for the night** | |
+| the 1.5B and the 7B Q4_K_M GGUFs, Metal, int4 (the night run, 21:49) | 2 cells | 2, both on `metal-resident` | 0 | 0 | 1 min 9 s |
 
 - CPU's 7 NOT RUN: `voxtral` and `qwen3_asr` (their tiny goldens are zip files this tool does not read), `deepseek_v2`
   (no tiny fixture), `mellum` (its fixture is a 4.2 GB slice), `qwen2` and `qwen3` (their tiny-table assets are not in
   `testdata/` on this Mac), and `gpt-oss` (its tiny GGUF carries no tokenizer, so neither build transcodes it).
 - Metal's 19 NOT RUN are those plus families Metal does not build resident from a tiny fixture. The two MoE fixtures
   that decline with a "K%32" message decline with the same message on the v15 build.
-- Reports: `g-v1-cpu.log`, `g-v1-metal.log`, `g-v1-real-metal-1.5b.log`.
+- The night run is the registered real cell: `run-gv-night-mac.sh` at load average 0.95, through the pinned gate
+  binary, new revision `d8f1918a`. The 7B built resident on Metal on both sides.
+- Reports: `g-v1-cpu.log`, `g-v1-metal.log`, `g-v1-real-metal-1.5b.log`, `g-v1-real-metal-night.log`.
 
 ### G-V2, sizes: every non-Metal file keeps its size; Metal files shrink as projected except the two small default files
 
@@ -706,7 +708,7 @@ goinfer `f2b90014` on the aikit tree that became v1.67.0) and a v16 one (`124fc9
 - **The clarification's timing.** The task doc's G-V2 amendment (16 bytes, sizes read by day) was written before the
   first size was read and committed after it (`278ace87`). The history cannot show the order; this note does.
 
-### G-V3, Metal binding: equal on the 0.5B and the 1.5B; the 7B is queued for the night
+### G-V3, Metal binding: PASS, the 7B binds 4020 MB in place under both formats
 
 The alias banner from `serve` on Metal, the old build on its own v15 sidecar and the new build on the v16 one it rebuilt
 (`g-v4-0.5b-serve-*.log`, `g-v3-1.5b-serve-*.log`):
@@ -715,12 +717,15 @@ The alias banner from `serve` on Metal, the old build on its own v15 sidecar and
 |---|---|---|---|
 | 0.5B | 322 MB | 322 MB | 1 MB in both |
 | 1.5B | 925 MB | 925 MB | 1 MB in both |
-| 7B | | | **not read by day** |
+| 7B (the night run) | 4020 MB | 4020 MB | 1 MB in both |
 
 - The gate is on the 7B. By day both builds declined it on Metal at the fit guard (the resident build needs 4.65 GB and
   the box's live-available memory left a 4.0-4.1 GB budget), ran on the CPU and printed no banner
   (`g-v3-7b-day-declined-*.log`). The guard was not bypassed.
-- Queued: `run-gv-night-mac.sh` reads it tonight, with G-V1's 7B cell. It fails if either build prints no banner.
+- The night run read it (`g-v3-7b-night-v15.log`, `g-v3-7b-night-v16.log`; the job's own log is
+  `gv-night-mac-job.log`): both builds ran `metal-resident`, each with 3112 MB of int4 nibbles, 520 MB of int8 codes
+  and 389 MB of f16 scales bound in place, no group found not adjacent and no scale set copied. The gate asks for at
+  least v15's figure; it is equal. The v16 build refused the v15 sidecar and rebuilt it first (7.5 s).
 
 ### G-V4, refusal and rebuild: PASS
 
