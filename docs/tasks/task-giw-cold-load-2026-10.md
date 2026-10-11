@@ -1,8 +1,10 @@
 # Task — the cold load of a `.giw`: read an MoE bundle deliberately, or not at all (2026-10)
 
-**Status:** scoped 2026-10-11, not built. The measurements that scope it are exploratory
-([record](../measurements/giw-cold-load-2026-10/README.md)); the gates below are registered before any code. Owner
-decisions: § Decisions.
+**Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). G-CL1 PASS.
+The timed gates G-CL2, G-CL3 and G-CL4 are queued on nobara for the night and **not read**; the kill rule below still
+applies to what is on `main`. Step 0 (the Mac's measurement) is owed and nothing changes on darwin until it is done.
+The measurements that scope it are exploratory ([record](../measurements/giw-cold-load-2026-10/README.md)); the gates
+below were registered before any code. Owner decisions: § Decisions.
 
 ## Why
 
@@ -74,7 +76,38 @@ N: four pairs a cell, fixed, no early stop. Ambiguous band: parked results go to
 - **Kill rule for L1:** if G-CL2 parks or fails on either cell, L1 is not shipped; the exploratory figures were two
   repetitions.
 
+## Built, 2026-10-11
+
+- `decoder/coldload.go:planColdLoad` is the rule and `prepareColdLoad` gathers the facts and acts, called from
+  `decoder/model.go:Load` through a hook between the header and the matrix walk (`loadSerializedWeightsHook`). The
+  Linux probes and actions are in `decoder/coldload_linux.go`; every other system reports the plan unsupported.
+- **The rule as built**, a little tighter than the sketch above:
+  - "An MoE" is an MoE whose separate expert matrices average at most 4 MB (file size over layers x experts x 3). An
+    MoE with a few large experts walks as cheaply as a dense model and is left alone. The two bundles measured
+    average 0.65 MB and 1.26 MB; the dense 7B's matrices average 24 MB.
+  - "Cold" is under half of 512 evenly spaced pages resident (`mincore`).
+  - "Fits with room" is the file at most three quarters of the available memory. "Does not fit" is paged
+    (`Options.StreamWeights`) or larger than the installed memory. Between the two nothing is done, because the
+    record's second table shows the read-around switched off losing to nothing done when the bundle does fit.
+- **G-CL1: PASS.** `gate identity 3e0e084f 2d4b9630` on the tiny assets, CPU: 37 of 43 families IDENTICAL, 0
+  different, 6 not run (the six with no usable tiny fixture). That run loads checkpoints directly, so it shows the
+  rest of the load is untouched; the `.giw` branch is covered by `TestLoad_coldLoadPlan` (a real tiny MoE bundle and a
+  dense one through `Load`, each plan, the actions asserted through the seams), `TestPlanColdLoad` (the rule's
+  table) and `TestExpertMatricesAreSmall`. With the hook never called, planted, `TestLoad_coldLoadPlan` fails.
+- **`TestColdLoad_linuxProbesAndActions` caught a defect before the first push.** It runs the real `mincore`, `madvise`
+  and read-through on a file dropped from the page cache. The first read-through summed one byte a page into a value
+  nothing used, the compiler removed the loop, and the file sampled 0% resident after it. On nobara it has to be run
+  with its temporary directory on the disk: `/tmp` there is memory-backed, and the test skips where a file cannot be
+  made cold.
+- **Queued for the night on nobara:** `docs/measurements/giw-cold-load-2026-10/run-gcl-night-nobara.sh` (driver
+  `gcl_night.py`, old `3e0e084f` and new `2d4b9630` as pinned binaries). The does-not-fit cell is the 35B paged
+  (`-stream-weights -weight-cache 8`) inside a 16 GB memory scope, evicted first so the scope is charged for what it
+  reads.
+
 ## Decisions
+
+**Decided 2026-10-11 (owner: "yes build it", on the recommendations):** a plain read, not the CRC; Linux first, the Mac
+measured before it gets any change; one reader.
 
 1. **Plain read or the CRC for L1?** The plain read is about a second cheaper on 20 GB; the CRC re-verifies a file
    whose marker already vouches for it. Recommended: the plain read.

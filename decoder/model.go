@@ -526,7 +526,11 @@ func Load(dir string, opts Options) (*Model, error) {
 		// file replaced mid-load cannot inherit the marker.
 		gfi, statErr := os.Stat(dir)
 		crcDone := statErr == nil && giwVerified(dir, gfi)
-		w, lerr := loadSerializedWeights(weightsBlob, crcDone)
+		afterWalk := func() {}
+		w, lerr := loadSerializedWeightsHook(weightsBlob, crcDone, func(a *Architecture) {
+			afterWalk = prepareColdLoad(dir, data, a, opts)
+		})
+		afterWalk()
 		if lerr != nil {
 			_ = mmap.Unmap(data)
 			closeBackend(be)

@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — a cold MoE `.giw` is read front to back before it is loaded (Linux)
+
+Loading a `.giw` walks every matrix's header through the file's mapping, and the kernel reads around each page it faults in. On a
+bundle of thousands of small expert matrices that walk read nearly the whole file in scattered pieces. On Linux the load now
+decides before the walk: an MoE bundle that is not in the page cache and fits in memory with room is read front to back first (the
+load says so on stderr); one that is paged with `--stream-weights`, or larger than the installed memory, has the read-around turned
+off for the walk; a dense bundle and a file already in the page cache load as before. No weight or logit changes. In exploratory
+runs on one Linux box (btrfs) a cold Qwen3.6 35B reached its first reply in 24 s instead of 38 s and Mellum in 8 s instead of
+12.7 s; the gates are registered and not yet read ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
+
 ### Changed — `.giw` weights format v16: one layout, and it is the only one read (breaking for a hand-built or embedded bundle)
 
 This build writes weights format v16 and reads only v16; the bundle frame stays v3, and its v1 and v2 forms are no longer read.

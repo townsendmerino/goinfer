@@ -71,6 +71,23 @@ for 20 GB.
 - The CRC costs about a second over the plain read on 20 GB.
 - So a marked bundle, which skips the CRC to load faster, loads an evicted MoE file slower than an unmarked one.
 
+## 5. After the build: one start of each build (exploratory)
+
+The change of `docs/tasks/task-giw-cold-load-2026-10.md` as built (`2d4b9630`) against `main` before it (`3e0e084f`), the
+35B evicted before each start, one start each, 08:51 under the timing lock:
+
+| build | server up | first reply done | the load's read-first line |
+|---|---|---|---|
+| old | 25.8 s | 37.8 s | absent |
+| new | 11.6 s | 22.5 s | present |
+
+The replies are the same text. One run a side shows the change acting and nothing more; the graded cells are
+`run-gcl-night-nobara.sh`, queued for the night.
+
+**A run of mine that must not be read.** A first smoke of the new build ran at about 08:47 without taking the timing
+lock, while another session's timed run (`mellum21-c5`) held it. It read 28.2 s to serving and 46.9 s to a first
+reply, on a box doing two things at once. It is discarded here, and it may have disturbed the other session's run.
+
 ## What is not measured
 
 - Any other filesystem. btrfs sets a large read-ahead window; a filesystem with a small one would make the default
@@ -86,5 +103,6 @@ for 20 GB.
 
 - `cold-a.sh`, `cold-b.sh`, `cold-c.sh`: the load alone, the cold start to a reply by advice mode, and the same with
   the shipped loader. `run.sh`, `run2.sh`, `run3.sh`: the three runs; `run1.log`, `run2.log`, `run3.log`: their output.
+- `gcl_night.py`, `run-gcl-night-nobara.sh`: the night driver and wrapper for the task's timed gates.
 - `xp-advice.patch.txt`: the experimental loader's change (a scratch build, not committed). `cachestat.py`: how much
   of a file is in the page cache.
