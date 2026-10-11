@@ -632,7 +632,28 @@ at 19:46 (load average 2.1, in use); nobara at 19:47 under the timing lock (load
   oracle is not affected: it ran natively on nobara, and under Rosetta before the check existed.
 - **Both steps against v1.66.0:** 3.20 to 2.56 s of CPU on the Mac and 3.73 to 2.63 s on nobara, from two runs each
   (the two steps' medians, not one paired reading).
-- G-T8b, identity through the gate on the pin, follows the aikit release (v1.67.0).
+- G-T8b, identity through the gate on the pin: the next section.
+
+### G-T8b, 2026-10-10: PASS, every cell that ran is IDENTICAL; `gate quick` GREEN on the pin
+
+aikit v1.67.0 was tagged the same evening (perfgate PASS against v1.66.0 with 14 of 47 shapes resolving 5%, and the
+vulnerability scan clean in 16 of 16 modules, both on nobara at `c7975b2`; root CI green at the release commit).
+goinfer pinned it (`96f3a4aa`) and refreshed the parity hashes (`b2e9d19b`; forward goldens 43 passed, 0 failed).
+`gate identity -giw bytes`, base `eee75d83`, new `b2e9d19b`:
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 390 | 330 | 0 | 60 | 44 s |
+| the two bench GGUFs (0.5B and 1.5B Q4_K_M), four configurations each | 8 | 8 | 0 | 0 | 2 min 2 s |
+
+- The real run is the two GGUFs only, by the owner's rule for day runs; both hold Q4_K and Q6_K tensors, so both
+  kernels are on the path. All 8 cells have the sha256 they had in T4b's run.
+- NOT RUN is the same 60 tiny cells as every earlier run.
+- `go run ./cmd/gate quick` on `b2e9d19b`: GREEN, 2338 tests passed (512 skipped), 9 min 21 s, with its two standing
+  notes on this Mac (two cells of modules that do not build here; the `constrain` checkpoint cell skipped every
+  test). Its GGUF forward goldens are the registered check on resident loads, which go through the same two
+  functions.
+- Files: `g-t1-t8-tiny.log`, `g-t1-t8-tiny.jsonl`, `g-t1-t8-real.log`, `g-t1-t8-real.jsonl`, `g-t1-t8-real-lines.txt`.
 
 ## Files
 

@@ -4,9 +4,10 @@
 T0-T6 with T4b, on aikit v1.66.0. G-T1 PASS on tiny and real cells on both boxes. G-T2 SHIP on every graded cell: new/old
 wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on the 30B directory. G-T3 within its
 bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
-follow-up (a vectorized GGUF dequantizer) opens on the Mac's cell by a hair and is not started. F3's arm64 profile is
-retracted. T0-T6 without T4b are on `main`; T4b's pin and records are on branch `giw-v16-t4b-2026-10`. **Next: T7 and
-V** (Decisions 2 and 4 are made). The gates
+follow-up (a vectorized GGUF dequantizer) opened on the Mac's cell by a hair and is **built and graded as T8**, on aikit
+v1.67.0: single-thread transcode CPU new/old 0.847 and 0.809 for the Q4_K kernel (Mac, nobara), then 0.931 and 0.864
+for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. T0-T6 with T4b are on `main`; T8's pin
+and records are on branch `giw-v16-dequant-2026-10`. **Next: T7 and V** (Decisions 2 and 4 are made). The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -493,6 +494,9 @@ change what runs when and how fast, never what is written.
     - **Q6_K graded, 2026-10-10: SHIP on both cells** (0.931 on the Mac, 0.864 on nobara, the record's "second
       step"). nobara is below the expected range; the expectation was built from the Mac's share. Both kernels go
       in aikit v1.67.0.
+    - **G-T8b, 2026-10-10: PASS.** aikit v1.67.0 is tagged and pinned. `gate identity -giw bytes`: 330 of 330 tiny
+      cells that ran and 8 of 8 on the two real GGUFs are IDENTICAL; `gate quick` is GREEN on the pin. **T8 is built
+      and graded.** The copy floor's re-read on a later night's cells is still owed (recorded, not gated).
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
