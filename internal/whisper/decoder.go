@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -130,8 +132,10 @@ func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 type State struct {
 	d              *Decoder
 	nSrc           int
-	crossK, crossV [][]float32 // per layer, [nSrc][D]
-	selfK, selfV   [][]float32 // per layer, [pos][D], grown as tokens arrive
+	crossK, crossV [][]float32   // per layer, [nSrc][D]; nil once crossKh/crossVt hold them (every path but the planted cross-from-x defect)
+	crossKh        [][][]float32 // per layer, per head, [nSrc][hd]: the cross keys in the layout attendCross multiplies
+	crossVt        [][][]float32 // per layer, per head, [hd][nSrc]: the cross values, transposed, so the weighted sum is the same product
+	selfK, selfV   [][]float32   // per layer, [pos][D], grown as tokens arrive
 	pos            int
 }
 
@@ -150,8 +154,10 @@ func (d *Decoder) NewState(enc []float32) (*State, error) {
 			s.crossK, s.crossV = append(s.crossK, nil), append(s.crossV, nil)
 			continue
 		}
-		s.crossK = append(s.crossK, linear(src, l.ckW, nil, nSrc, D, D))
-		s.crossV = append(s.crossV, linear(src, l.cvW, l.cvB, nSrc, D, D))
+		ck, cv := linear(src, l.ckW, nil, nSrc, D, D), linear(src, l.cvW, l.cvB, nSrc, D, D)
+		kh, vt := headLayouts(ck, cv, nSrc, d.Cfg.Heads, D/d.Cfg.Heads)
+		s.crossK, s.crossV = append(s.crossK, nil), append(s.crossV, nil)
+		s.crossKh, s.crossVt = append(s.crossKh, kh), append(s.crossVt, vt)
 	}
 	return s, nil
 }
@@ -218,12 +224,12 @@ func (s *State) Forward(tokens []int, all bool) ([][]float32, error) {
 		h = append(h[:0], x...)
 		layerNorm(h, l.caLnW, l.caLnB, m, D)
 		q = linear(h, l.cqW, l.cqB, m, D, D)
-		ck, cv, n := s.crossK[li], s.crossV[li], s.nSrc
-		if d.defect == defectCrossFromX {
-			ck, cv, n = linear(h, l.ckW, nil, m, D, D), linear(h, l.cvW, l.cvB, m, D, D), m
-		}
 		scaleRows(q, scale)
-		att = attend(q, ck, cv, m, n, c.Heads, hd, 0, false)
+		if d.defect == defectCrossFromX {
+			att = attend(q, linear(h, l.ckW, nil, m, D, D), linear(h, l.cvW, l.cvB, m, D, D), m, m, c.Heads, hd, 0, false)
+		} else {
+			att = attendCross(q, s.crossKh[li], s.crossVt[li], m, s.nSrc, c.Heads, hd)
+		}
 		add(x, linear(att, l.coW, l.coB, m, D, D))
 		// feed-forward
 		h = append(h[:0], x...)
@@ -255,6 +261,58 @@ func (s *State) Forward(tokens []int, all bool) ([][]float32, error) {
 		out[i] = flat[i*c.Vocab : (i+1)*c.Vocab]
 	}
 	return out, nil
+}
+
+// headLayouts splits the cross keys and values ([n][D] each) into per-head matrices: keys [n][hd] and values transposed to [hd][n], so that scores = q . keys^T and the weighted sum = scores . valuesT^T are both one MatmulBT.
+func headLayouts(k, v []float32, n, heads, hd int) (kh, vt [][]float32) {
+	D := heads * hd
+	kh, vt = make([][]float32, heads), make([][]float32, heads)
+	for h := range heads {
+		off := h * hd
+		kh[h], vt[h] = make([]float32, n*hd), make([]float32, hd*n)
+		for j := range n {
+			copy(kh[h][j*hd:(j+1)*hd], k[j*D+off:j*D+off+hd])
+			for t := range hd {
+				vt[h][t*n+j] = v[j*D+off+t]
+			}
+		}
+	}
+	return kh, vt
+}
+
+// attendCross is attend over the fixed cross keys and values in headLayouts' form, with no mask: per head one product for the scores, aikit's contract softmax per row, one product for the weighted sum, the heads on
+// separate goroutines (each head's products are far under MatmulBT's own fan-out threshold at one query row). q arrives already multiplied by head_dim^-0.5, as in attend.
+func attendCross(q []float32, kh, vt [][]float32, m, n, heads, hd int) []float32 {
+	D := heads * hd
+	out := make([]float32, m*D)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, max(1, runtime.GOMAXPROCS(0)))
+	for h := range heads {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			off := h * hd
+			qh := make([]float32, m*hd)
+			for i := range m {
+				copy(qh[i*hd:(i+1)*hd], q[i*D+off:i*D+off+hd])
+			}
+			sc := make([]float32, m*n)
+			linalg.MatmulBT(qh, kh[h], sc, m, hd, n)
+			for i := range m {
+				row := sc[i*n : (i+1)*n]
+				linalg.SoftmaxRowContractInto(row, row)
+			}
+			ctx := make([]float32, m*hd)
+			linalg.MatmulBT(sc, vt[h], ctx, m, n, hd)
+			for i := range m {
+				copy(out[i*D+off:i*D+off+hd], ctx[i*hd:(i+1)*hd])
+			}
+		}()
+	}
+	wg.Wait()
+	return out
 }
 
 // attend is multi-head attention of m query rows q [m][D] against n key rows k and value rows v ([n][D]). With causal, query i (at absolute position base+i) sees keys 0..base+i; otherwise every key.
