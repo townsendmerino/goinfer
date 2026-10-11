@@ -1,0 +1,14 @@
+started 23:42:02
+== gemma4-26b-int4.giw
+  old: {"content": "The first five prime numbers are 2, 3, 5, 7, and 11.\n\n", "finish": "length", "usage": {"prompt_tokens": 32, "completion_tokens": 24, "total_tokens": 56, "prefill_reused_tokens": 0}}
+  new: {"content": "The first five prime numbers are 2, 3, 5, 7, and 11.\n\n", "finish": "length", "usage": {"prompt_tokens": 32, "completion_tokens": 24, "total_tokens": 56, "prefill_reused_tokens": 0}}
+  SAME reply
+== gemma4-26b-int4-v14st.metal.giw
+  old: {"content": "The first five prime numbers are 2, 3, 5, 7, and 11.\n\n", "finish": "length", "usage": {"prompt_tokens": 32, "completion_tokens": 24, "total_tokens": 56, "prefill_reused_tokens": 0}}
+  new: {"content": "The first five prime numbers are 2, 3, 5, 7, and 11.\n\n", "finish": "length", "usage": {"prompt_tokens": 32, "completion_tokens": 24, "total_tokens": 56, "prefill_reused_tokens": 0}}
+  SAME reply
+== mellum2.int4.giw
+  old: {"content": "The first five prime numbers are 2, 3, 5, 7, and 11; ", "finish": "length", "usage": {"prompt_tokens": 27, "completion_tokens": 24, "total_tokens": 51, "prefill_reused_tokens": 0}}
+  new: {"content": "The first five prime numbers are 2, 3, 5, 7, and 11; ", "finish": "length", "usage": {"prompt_tokens": 27, "completion_tokens": 24, "total_tokens": 51, "prefill_reused_tokens": 0}}
+  SAME reply
+finished 23:44:34

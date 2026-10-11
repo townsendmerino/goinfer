@@ -1,0 +1,81 @@
+started 2026-10-10 23:15:35 PDT; free on ~: 213G
+-- old ~/models/qwen3.6-35b-a3b-int4.giw
+embed 79ec1e02a3e2ca67f565978a
+head  242dc1659b404ee8d774574b
+dense cef32aa1ae0e5735548586bd (200 matrices)
+expert 00405b464daaeb50430a2b70 (30720 matrices)
+== qwen3.6-35b-a3b-int4.giw from qwen3.6-35b-a3b-Q8_0.gguf (target canonical), started 23:15:59
+wrote ~/goinfer-bench/v16-rebuild/new/qwen3.6-35b-a3b-int4.giw: 19117 MB (int4) in 216.9s: stream 142.7s, self-check 73.9s
+-- new qwen3.6-35b-a3b-int4.giw (20046054009 bytes)
+embed 79ec1e02a3e2ca67f565978a
+head  242dc1659b404ee8d774574b
+dense cef32aa1ae0e5735548586bd (200 matrices)
+expert 00405b464daaeb50430a2b70 (30720 matrices)
+-- old /srv/models/qwen3.6-35b-a3b-int4-v12.giw
+embed 2a2c9f1d0615b96908099969
+head  eb3dddb34ee282b4ea2f3971
+dense 585c6cc8eb195d5223a419df (200 matrices)
+expert 5f8ebd236f11c127e08f0237 (30720 matrices)
+== qwen3.6-35b-a3b-int4-v12.giw from qwen3.6-35b-a3b-q4_k_m.gguf (target canonical), started 23:31:18
+wrote ~/goinfer-bench/v16-rebuild/new/qwen3.6-35b-a3b-int4-v12.giw: 19117 MB (int4) in 67.7s: stream 57.1s, self-check 10.4s
+-- new qwen3.6-35b-a3b-int4-v12.giw (20046054009 bytes)
+embed 2a2c9f1d0615b96908099969
+head  eb3dddb34ee282b4ea2f3971
+dense 585c6cc8eb195d5223a419df (200 matrices)
+expert 5f8ebd236f11c127e08f0237 (30720 matrices)
+waiting for the source copies ...
+== gemma-4-26b-a4b-it started 23:14:38
+gemma-4-26b-a4b-it: archive 51644341560 bytes, local 51644341560 bytes MATCH
+== mellum2-unq started 23:23:31
+mellum2-unq: archive 24308193573 bytes, local 24308193573 bytes MATCH
+pull finished 23:28:07
+-- old ~/models/mellum2.int4.giw
+embed 843b85d8836f91b67da70a47
+head  2cba25561a124ebc56ea8eb1
+dense 2ca596cdb899cccb03e3a321 (140 matrices)
+expert 4a5d84247d6b83d32d54f5b9 (5376 matrices)
+== mellum2.int4.giw from mellum2-unq (target canonical), started 23:33:38
+wrote ~/goinfer-bench/v16-rebuild/new/mellum2.int4.giw: 6729 MB (int4) in 26.8s: stream 26.6s, self-check 0.1s
+-- new mellum2.int4.giw (7055350985 bytes)
+embed 843b85d8836f91b67da70a47
+head  2cba25561a124ebc56ea8eb1
+dense 2ca596cdb899cccb03e3a321 (140 matrices)
+expert 4a5d84247d6b83d32d54f5b9 (5376 matrices)
+-- old ~/models/gemma4-26b-int4.giw
+embed dc3cc88126ea6baf3fd36336
+head  374708fff7719dd5979ec875
+dense 5cbf48786971899325b4c7cc (205 matrices)
+expert e3b0c44298fc1c149afbf4c8 (0 matrices)
+== gemma4-26b-int4.giw from gemma-4-26b-a4b-it (target canonical), started 23:35:03
+wrote ~/goinfer-bench/v16-rebuild/new/gemma4-26b-int4.giw: 13914 MB (int4) in 143.9s: stream 83.6s, self-check 59.7s
+-- new gemma4-26b-int4.giw (14589786795 bytes)
+embed dc3cc88126ea6baf3fd36336
+head  374708fff7719dd5979ec875
+dense 5cbf48786971899325b4c7cc (205 matrices)
+expert e3b0c44298fc1c149afbf4c8 (0 matrices)
+-- old ~/models/gemma4-26b-int4-v14st.metal.giw
+embed dc3cc88126ea6baf3fd36336
+head  374708fff7719dd5979ec875
+dense 5cbf48786971899325b4c7cc (205 matrices)
+expert e3b0c44298fc1c149afbf4c8 (0 matrices)
+== gemma4-26b-int4-v14st.metal.giw from gemma-4-26b-a4b-it (target metal), started 23:38:07
+wrote ~/goinfer-bench/v16-rebuild/new/gemma4-26b-int4-v14st.metal.giw: 13914 MB (int4) in 157.5s: stream 80.4s, self-check 76.6s
+-- new gemma4-26b-int4-v14st.metal.giw (14589782875 bytes)
+embed dc3cc88126ea6baf3fd36336
+head  374708fff7719dd5979ec875
+dense 5cbf48786971899325b4c7cc (205 matrices)
+expert e3b0c44298fc1c149afbf4c8 (0 matrices)
+finished 23:40:48; free on ~: 99G
+ 
+562 .
+230 ..
+14589782875 gemma4-26b-int4-v14st.metal.giw
+38 gemma4-26b-int4-v14st.metal.giw.verified
+14589786795 gemma4-26b-int4.giw
+38 gemma4-26b-int4.giw.verified
+7055350985 mellum2.int4.giw
+37 mellum2.int4.giw.verified
+20046054009 qwen3.6-35b-a3b-int4-v12.giw
+38 qwen3.6-35b-a3b-int4-v12.giw.verified
+20046054009 qwen3.6-35b-a3b-int4.giw
+38 qwen3.6-35b-a3b-int4.giw.verified

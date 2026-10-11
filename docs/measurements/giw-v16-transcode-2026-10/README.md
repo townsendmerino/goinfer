@@ -854,6 +854,57 @@ what the first load of any large MoE sidecar costs after a reboot, on every box 
 telling the kernel not to read around during that walk would remove most of it. Untested; a candidate for its own
 gate.
 
+## Decision 4, 2026-10-10 night: the five hand-built bundles rebuilt at v16, each with the weights it had
+
+A hand-built `.giw` has no source beside it by name, so nothing rebuilds it when the format moves. The owner's Decision
+4 gave the rebuilds to the session that landed Part V. Scripts, tool sources and logs are in `rebuild-v16/`.
+
+**The old headers named the sources, and two were not what the task doc's table said.** `giwinfo` (built against the
+v15 reader) printed each old file's format, header id and a census of its matrices:
+
+| bundle | old format | built from (the header's id) | settings the file shows |
+|---|---|---|---|
+| `gemma4-26b-int4.giw` | v12 | the safetensors directory `gemma-4-26b-a4b-it` (the table said the GGUF) | int4, int8 embedding, canonical |
+| `gemma4-26b-int4-v14st.metal.giw` | v14 | the same directory | the same, Metal target |
+| `qwen3.6-35b-a3b-int4.giw` | v15 | `qwen3.6-35b-a3b-Q8_0.gguf` (the table said the Q4_K_M GGUF) | int4, int8 embedding and head, canonical |
+| `qwen3.6-35b-a3b-int4-v12.giw` (archive only) | v12 | `qwen3.6-35b-a3b-q4_k_m.gguf` | the same |
+| `mellum2.int4.giw` | v12 | the directory `mellum2-unq` | int4, int8 embedding and head, canonical |
+
+The two directory sources were archive-only; both were copied to `~/models` first (51.6 GB and 24.3 GB, byte counts
+matched) and the rebuilds read them from there.
+
+**Each rebuild was compared with the file it replaces before anything moved.** `giwdigest`, one source built against
+the v15 reader and against the v16 one, prints a sha256 over the loaded embedding, head, dense projections and expert
+matrices (codes and scales). `cmd/prequant` at `78931869`, `-quant int4 -target canonical` (`-target metal` for the
+Metal bundle):
+
+| bundle | old bytes | v16 bytes | digests, old against new |
+|---|---|---|---|
+| `qwen3.6-35b-a3b-int4.giw` | 20,046,053,929 | 20,046,054,009 | embedding, head, 200 dense, 30,720 expert matrices: all equal |
+| `qwen3.6-35b-a3b-int4-v12.giw` | 22,147,138,041 | 20,046,054,009 | the same four: all equal |
+| `mellum2.int4.giw` | 7,786,142,841 | 7,055,350,985 | embedding, head, 140 dense, 5,376 expert matrices: all equal |
+| `gemma4-26b-int4.giw` | 16,120,001,115 | 14,589,786,795 | embedding, head, 205 dense: equal; its experts are not reachable |
+| `gemma4-26b-int4-v14st.metal.giw` | 16,222,840,395 | 14,589,782,875 | the same |
+
+- So a bundle built in September and its rebuild hold the same quantized weights, to the bit, wherever the digest
+  reaches. The two Qwen bundles differ from each other, as their sources do.
+- **Gemma 4's MoE experts are outside the digest** (they live in a per-layer structure the tool cannot see from outside
+  the package). For those, and for Mellum as a control, one greedy reply of 24 tokens was taken from the old file on
+  the old build and from the rebuild on the new build, on the CPU (`e2e.sh`): identical text and token counts in all
+  three. That is a sanity check, not a proof of every expert.
+
+**In place.** Each rebuild now sits under its existing name, because 37 to 62 files in this repository name each of the
+large ones; `…-int4-v12.giw` therefore names a v16 file. Every old file is kept beside its replacement as
+`<name>.pre-v16`, with its marker:
+
+- nobara `~/models`: the two Gemma 4 bundles, `qwen3.6-35b-a3b-int4.giw` and `mellum2.int4.giw`. All four load from
+  their final paths on the v16 build with the digests above.
+- the archive: `gemma4-26b-int4-v14st.metal.giw` and `qwen3.6-35b-a3b-int4-v12.giw`, copied with their markers, byte
+  counts matched.
+- Left for the owner: the six `.pre-v16` files (60 GB on nobara's NVMe, 38 GB in the archive), which no current build
+  reads, and the two source directories now also in nobara's `~/models` (72 GB).
+- A build from before Part V no longer reads these five names.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -868,6 +919,8 @@ gate.
   `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`: its second step, the Q6_K kernel over the Q4_K one.
   `t8-cpu-nobara-preguard.jsonl`: nobara's first reading, before the AVX2 check.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
+- `rebuild-v16/`: Decision 4's scripts (`pull.sh`, `rebuild.sh`, `e2e.sh`, `reply.sh`, `swap.sh`), the two tools' sources and the
+  four logs.
 - `selfcheck-30b/`: the 30B self-check investigation's scripts (`e1.sh`, `e2.sh`, `e3.sh`, `run-all.sh`, `run-ab.sh`,
   `cachestat.py`, `sampler.py`, the loader's source), outputs (`run-all.log`, `run-ab.log`, `e3.log`) and sample logs.
 - Part V: `g-v1-*.log` (the identity reports), `g-v2-sizes.sh` and `g-v2-sizes-*.txt`, `serve-once.sh` with

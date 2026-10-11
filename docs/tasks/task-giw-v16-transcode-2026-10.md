@@ -10,7 +10,10 @@ for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. Pa
 **Part V is built, graded and on `main`** (V1-V7 with T7; merge `78931869`): G-V1 PASS (tiny assets on CPU and Metal,
 the 1.5B and the 7B on Metal), G-V3 PASS (the 7B binds 4020 MB in place under both formats), G-V4 PASS, and G-V2 holds
 with two projection misses on the small default files (the projection counted one int4 table where there are two).
-**Next:** Decision 4's four rebuilds on nobara; the hand-built bundles there do not load on `main` until then. The gates
+Decision 4's rebuilds are done (five bundles on nobara and the archive, each bit-identical in weights to the file it
+replaces). The copy floor was read again with T8 (10-16% off the wall on the GGUF cells). The 30B's slower
+self-check is explained (the read-back overlapping the kernel's flush; not the new code). **Open, unscheduled:** an
+evicted MoE bundle loads in 20 s without the CRC and 10 s with it. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -790,6 +793,13 @@ hand-built bundles are rebuilt by the session that lands V ("I rebuild them").
 
   The flags each was built with are not recorded beside it; they are read from each old file's header before it is
   replaced. Every other `.giw` on either box is a sidecar and rebuilds by itself.
+
+- **Decision 4 done, 2026-10-10 night** (the record's "Decision 4"). The old headers corrected the table above on two
+  rows: the two Gemma 4 bundles were built from the safetensors directory `gemma-4-26b-a4b-it`, not from the GGUF, and
+  nobara's `qwen3.6-35b-a3b-int4.giw` from `qwen3.6-35b-a3b-Q8_0.gguf`, not from the Q4_K_M one (the archive's
+  `…-int4-v12.giw` is the Q4_K_M build). All five are plain int4 with an int8 embedding and the canonical layout,
+  one of them for the Metal target. Each was rebuilt at v16 from the source its header names, compared with the old
+  file by digest, and put in place under its existing name; the old files are kept beside them as `<name>.pre-v16`.
 
 **Amended 2026-10-10, after T3:** Decision 5, second part. Asked "can we have another thread do this as bytes are
 written", and offered the size rule alone, the size rule with a trailing reader, or the trailing reader alone, the

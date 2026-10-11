@@ -1,0 +1,10 @@
+started 23:45:37
+~/models/gemma4-26b-int4.giw: 14589786795 bytes (old kept: 16120001115 bytes)
+~/models/gemma4-26b-int4-v14st.metal.giw: 14589782875 bytes (old kept: 16222840395 bytes)
+~/models/qwen3.6-35b-a3b-int4.giw: 20046054009 bytes (old kept: 20046053929 bytes)
+~/models/mellum2.int4.giw: 7055350985 bytes (old kept: 7786142841 bytes)
+== archive
+archive gemma4-26b-int4-v14st.metal.giw: 14589782875 bytes, local 14589782875 bytes MATCH
+archive qwen3.6-35b-a3b-int4-v12.giw: 20046054009 bytes, staged 20046054009 bytes MATCH
+staging copy of qwen3.6-35b-a3b-int4-v12.giw removed
+finished 23:49:15; free on ~: 115G; staging: 0 files

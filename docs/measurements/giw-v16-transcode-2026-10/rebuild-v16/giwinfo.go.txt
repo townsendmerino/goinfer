@@ -1,0 +1,84 @@
+// giwinfo prints what a .giw was built with, as far as the file shows it: the frame and weights-format versions, the
+// id and quant label in its header, and a census of its weight matrices (precision, and for int4 whether the
+// canonical layout, the row4 layout or both are stored). For rebuilding a hand-built bundle with the same settings.
+package main
+
+import (
+	"encoding/binary"
+	"fmt"
+	"os"
+
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func kind(w *linalg.WeightMat) string {
+	if w.Rows() == 0 {
+		return "absent"
+	}
+	if w.IsInt4() {
+		_, _, _, canon := w.Int4F16()
+		_, _, row4 := w.Int4Row4F16()
+		switch {
+		case canon && row4:
+			return "int4 canonical+row4"
+		case canon:
+			return "int4 canonical"
+		default:
+			return "int4 row4-only"
+		}
+	}
+	if _, _, w8a8, ok := w.Int8(); ok {
+		if w8a8 {
+			return "int8 (w8a8)"
+		}
+		return "int8"
+	}
+	return "f32"
+}
+
+func main() {
+	path := os.Args[1]
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	hdr := make([]byte, 4096)
+	n, _ := f.ReadAt(hdr, 0)
+	f.Close()
+	hdr = hdr[:n]
+	frame := binary.LittleEndian.Uint32(hdr[5:9])
+	off := map[uint32]int{1: 13, 2: 17, 3: 64}[frame]
+	b := hdr[off:]
+	ver := binary.LittleEndian.Uint32(b[5:9])
+	idLen := int(binary.LittleEndian.Uint32(b[13:17]))
+	fmt.Printf("%s\n  frame v%d, weights format v%d, header id %q\n", path, frame, ver, string(b[17:17+idLen]))
+
+	m, err := decoder.Load(path, decoder.Options{Backend: "cpu", ResidentContext: 1})
+	if err != nil {
+		fmt.Println("  load:", err)
+		os.Exit(1)
+	}
+	defer m.Close()
+	w := m.Weights()
+	fmt.Printf("  quant label %q; embed: %s [%dx%d]; lm head: %s; layers %d\n", m.Quant(), kind(&w.Embed), w.Embed.Rows(), w.Embed.Cols(), kind(&w.LMHead), len(w.Layers))
+	census := map[string]int{}
+	experts := map[string]int{}
+	for i := range w.Layers {
+		l := &w.Layers[i]
+		for _, p := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj, &l.Router} {
+			if p.Rows() > 0 {
+				census[kind(p)]++
+			}
+		}
+		for e := range l.Experts {
+			for _, p := range []*linalg.WeightMat{&l.Experts[e].Gate, &l.Experts[e].Up, &l.Experts[e].Down} {
+				if p.Rows() > 0 {
+					experts[kind(p)]++
+				}
+			}
+		}
+	}
+	fmt.Printf("  dense projections: %v\n  expert matrices:   %v\n", census, experts)
+}

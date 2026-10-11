@@ -1,0 +1,87 @@
+// giwdigest prints sha256 digests of a .giw's weights as loaded: the embedding, the head, the dense projections and
+// the expert matrices, each over its codes and its scales in file order. Two bundles of one model with the same
+// digests hold the same weights, whatever their file layouts.
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"hash"
+	"math"
+	"os"
+	"unsafe"
+
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func add(h hash.Hash, w *linalg.WeightMat) {
+	var dims [16]byte
+	binary.LittleEndian.PutUint64(dims[0:], uint64(w.Rows()))
+	binary.LittleEndian.PutUint64(dims[8:], uint64(w.Cols()))
+	h.Write(dims[:])
+	if w.Rows() == 0 {
+		return
+	}
+	if q4, s16, _, ok := w.Int4F16(); ok {
+		h.Write([]byte{4})
+		h.Write(q4)
+		h.Write(unsafe.Slice((*byte)(unsafe.Pointer(&s16[0])), 2*len(s16)))
+		return
+	}
+	if w.IsInt4() {
+		q, s, _ := w.Int4Row4F16()
+		h.Write([]byte{5})
+		h.Write(q)
+		h.Write(unsafe.Slice((*byte)(unsafe.Pointer(&s[0])), 2*len(s)))
+		return
+	}
+	if q8, sc, w8a8, ok := w.Int8(); ok {
+		h.Write([]byte{8, map[bool]byte{false: 0, true: 1}[w8a8]})
+		h.Write(unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8)))
+		for _, v := range sc {
+			var b [4]byte
+			binary.LittleEndian.PutUint32(b[:], math.Float32bits(v))
+			h.Write(b[:])
+		}
+		return
+	}
+	f, _ := w.F32()
+	h.Write([]byte{32})
+	for _, v := range f {
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], math.Float32bits(v))
+		h.Write(b[:])
+	}
+}
+
+func main() {
+	m, err := decoder.Load(os.Args[1], decoder.Options{Backend: "cpu", ResidentContext: 1})
+	if err != nil {
+		fmt.Println("load:", err)
+		os.Exit(1)
+	}
+	defer m.Close()
+	w := m.Weights()
+	he, hh, hd, hx := sha256.New(), sha256.New(), sha256.New(), sha256.New()
+	add(he, &w.Embed)
+	add(hh, &w.LMHead)
+	nd, nx := 0, 0
+	for i := range w.Layers {
+		l := &w.Layers[i]
+		for _, p := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj, &l.Router, &l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down, &l.SharedGate} {
+			add(hd, p)
+			if p.Rows() > 0 {
+				nd++
+			}
+		}
+		for e := range l.Experts {
+			for _, p := range []*linalg.WeightMat{&l.Experts[e].Gate, &l.Experts[e].Up, &l.Experts[e].Down} {
+				add(hx, p)
+				nx++
+			}
+		}
+	}
+	fmt.Printf("embed %x\nhead  %x\ndense %x (%d matrices)\nexpert %x (%d matrices)\n", he.Sum(nil)[:12], hh.Sum(nil)[:12], hd.Sum(nil)[:12], nd, hx.Sum(nil)[:12], nx)
+}
