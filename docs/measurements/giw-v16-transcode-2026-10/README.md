@@ -576,6 +576,37 @@ same CRC. Before the fix the new arm read 19-25 s with no CRC. So the fix restor
 time, and the arms' difference is not the CRC: the old arm's check follows an eleven-minute stream and the new arm's
 a ninety-second one. What the file's pages are doing in that case was not measured.
 
+## T8's day gate, 2026-10-10: the Q4_K dequantizer kernel, SHIP on both cells
+
+T8 vectorizes the body of aikit's `embed.dequantQ4KBlock` (NEON and AVX2), the copy floor's registered follow-up. Its
+gates are in the task doc (G-T8a to G-T8c), registered before the code.
+
+- **Instrument:** `t4b_cpu_ab.py`, as T4b's gate. Two `cmd/prequant` builds of goinfer `f2b90014`: old on aikit
+  v1.66.0, new on the aikit working tree that became the release. `GOMAXPROCS=1`, user plus system seconds, one
+  discarded warm-up per arm, five pairs in alternating order. Records `t8-cpu-mac.jsonl`, `t8-cpu-nobara.jsonl`.
+- **Boxes:** the Mac at 19:32 (load average 1.4, by day, in use); nobara at 19:39 under the timing lock (load 0.01).
+
+| cell | old CPU | new CPU | new/old, five pairs | median | band | verdict |
+|---|---|---|---|---|---|---|
+| Mac, 1.5B Q4_K_M GGUF to `cpu-arm64` | 3.20 s | 2.71 s | 0.839-0.850 | **0.847** | ship at most 0.98 (expected 0.75-0.85) | **SHIP** |
+| nobara, 1.5B Q4_K_M GGUF to `cpu-amd64` | 3.73 s | 3.02 s | 0.796-0.839 | **0.809** | the same | **SHIP** |
+
+- Every arm of both cells wrote the same sha256 (`655aa585...`), so the transcode's bytes do not change.
+- **nobara was read twice.** The first reading, 0.816 (0.795-0.824, `t8-cpu-nobara-preguard.jsonl`), was on a build
+  whose amd64 kernel ran without checking the CPU for AVX2. The check was added and the cell read again; the table
+  holds the second. The Mac's binary is the same file with and without the check (`cmp`).
+- **G-T8a, the oracle: PASS** natively on arm64 (M1 Pro) and on amd64 (Ryzen 7 3700X), and on amd64 under Rosetta.
+  `TestDequantQ4KBlock_matchesScalar`: 20,000 random blocks, every half-float as d and as dmin, pairs of special
+  values, every byte value in every scales position, every nibble byte value in every lane.
+  `TestDequantQ4KBlock_realFile`: the 1.5B GGUF's 169 Q4_K tensors, 5,255,424 blocks, 1,345,388,544 weights, the
+  kernel's bits equal to the scalar's. Four planted kernel defects each turned the tests red.
+- **The two architectures agree on this file.** The crc32 of every Q4_K weight's bits is `a7454364` on arm64 and on
+  amd64. The registration expected a last-bit difference between a fused subtract and a two-step one; the products are
+  exact in float32, so there is none for finite weights (the task doc's amendment).
+- **One thing the first NEON kernel got wrong, caught by the oracle:** it fused `mul*q - off`, where Go's arm64 code
+  is a multiply and then a subtract fused with `dmin*min`. The two agree on every finite input and differ in which NaN
+  comes out when d and dmin are both NaN. The kernel now follows the scalar's order.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -586,6 +617,8 @@ a ninety-second one. What the file's pages are doing in that case was not measur
   the same runs with T4b in the new arm.
 - `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records. `g-t1-t4b-*`: its
   run through `gate identity`, the same five files as the earlier runs.
+- `t8-cpu-mac.jsonl`, `t8-cpu-nobara.jsonl`: T8's day gate, the Q4_K kernel (the same instrument).
+  `t8-cpu-nobara-preguard.jsonl`: nobara's first reading, before the AVX2 check.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
   run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

@@ -473,6 +473,23 @@ change what runs when and how fast, never what is written.
     The expectation: the Q4_K dequantizer is about 24% of the Mac cell's CPU by the sampler, and a kernel four to
     six times faster leaves about 5%. The ship line is the repo's default (1.02x), not the expectation.
   - **Recorded, not gated:** the copy floor on the next night's cells (3.08 on the Mac's 1.5B today).
+  - **Amendment, 2026-10-10 (after the Q4_K kernel was measured, before any Q6_K code).**
+    - **The Q4_K kernel: G-T8a PASS, G-T8c SHIP on both cells** (new/old CPU 0.847 on the Mac, 0.809 on nobara;
+      [record](../measurements/giw-v16-transcode-2026-10/README.md), "T8's day gate"). G-T8b waits for the pin.
+    - **The note above on the two architectures is wrong for every finite weight.** `d*scale*nibble` is exact in
+      float32 (an 11-bit half-float, a 6-bit scale and a 4-bit nibble), and so is `dmin*min`, so the fused subtract
+      and the two-step one round once, to the same value. Measured: the crc32 of every Q4_K weight of the 1.5B GGUF is
+      the same on arm64 and on amd64. The builds can differ only in which NaN comes out when d or dmin is not finite,
+      and there each kernel reproduces its own scalar, which the oracle checks.
+    - **The amd64 kernel takes the CPU check** (AVX2 present, or the scalar body). The first nobara reading (0.816)
+      was on a build without it; the graded one (0.809) is on the build with it.
+    - **Q6_K's gate, the second step.** The instrument and the two cells are G-T8c's. **Old is the build with the Q4_K
+      kernel; new adds the Q6_K kernel.** Ship at most 0.98, park 0.98-1.00, off above 1.00. Expected 0.93-0.97: Q6_K
+      was about 5% of the Mac cell's CPU before the Q4_K kernel, so about 6% of this old arm, and a kernel four to
+      six times faster leaves a little over 1%. The expectation sits close to the ship line, so a park is a live
+      outcome, and a parked Q6_K kernel is not released. Its oracle is G-T8a's with Q6_K's fields: random blocks, every
+      half-float as d, every scale byte, every `ql` and `qh` byte value in every lane, the real 1.5B GGUF's Q6_K
+      tensors, and planted defects. If it ships, both kernels go in one aikit release and G-T8b runs once on that pin.
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
