@@ -528,7 +528,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		crcDone := statErr == nil && giwVerified(dir, gfi)
 		afterWalk := func() {}
 		w, lerr := loadSerializedWeightsHook(weightsBlob, crcDone, func(a *Architecture) {
-			afterWalk = prepareColdLoad(dir, data, a, opts)
+			afterWalk = prepareColdLoad(dir, data, a, opts, be)
 		})
 		afterWalk()
 		if lerr != nil {

@@ -1,0 +1,96 @@
+[09:53:39 +    0s] started 2026-10-11 09:53:39 PDT on macbookpro.lan
+[09:53:39 +    0s] estimate 15 min, expect done ~10:08
+[09:53:39 +    0s] binaries: serve-old: goinfer ac85083a (main before the darwin pre-read), metal module (serves the CPU backend too) | serve-new: goinfer 3533a383 (branch giw-cold-load-darwin-2026-10), metal module | prequant: goinfer 360bc020 (weights format v16) | built 2026-10-11 on the MacBook, go1.27.2, -trimpath
+[09:53:39 +    0s] cell aa-cold-mellum-cpu (1/10): mellum2.int4.giw, 7.1 GB, cpu, cold, 2 pair(s) of old and old
+[09:53:49 +   10s]   pair 1 old: serving at 1.9s, first reply done at 9.9s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:53:58 +   19s]   pair 1 old: serving at 1.7s, first reply done at 8.9s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:07 +   28s]   pair 2 old: serving at 1.7s, first reply done at 8.8s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:16 +   37s]   pair 2 old: serving at 1.8s, first reply done at 8.8s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:16 +   37s]   {"cell": "aa-cold-mellum-cpu", "state": "cold", "arms": "old:old", "pairs": 2, "first_reply_b_over_a": [0.8945, 0.9955], "first_reply_b_over_a_median": 0.945, "serving_b_minus_a_s": [-0.11, -0.06], "serving_b_minus_a_s_median": -0.085, "a_first_reply_s_median": 9.39, "b_first_reply_s_median": 8.85, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["cpu (int4) [int4 layout: canonical (qkv)]"], "replies_identical": true}
+[09:54:16 +   37s] cell cold-mellum-cpu (2/10): mellum2.int4.giw, 7.1 GB, cpu, cold, 4 pair(s) of old and new
+[09:54:25 +   46s]   pair 1 old: serving at 1.7s, first reply done at 8.9s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:31 +   52s]   pair 1 new: serving at 3.2s, first reply done at 5.4s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:37 +   58s]   pair 2 new: serving at 3.1s, first reply done at 5.3s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:46 +   67s]   pair 2 old: serving at 1.7s, first reply done at 8.8s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:54:55 +   76s]   pair 3 old: serving at 1.7s, first reply done at 8.8s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:55:00 +   81s]   pair 3 new: serving at 3.2s, first reply done at 5.4s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: canonical (qkv)]
+[09:55:06 +   87s]   pair 4 new: serving at 3.2s, first reply done at 5.4s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: canonical (qkv)]
+[09:55:15 +   96s]   pair 4 old: serving at 1.7s, first reply done at 8.8s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:55:15 +   96s]   {"cell": "cold-mellum-cpu", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.6095, 0.602, 0.6084, 0.6107], "first_reply_b_over_a_median": 0.609, "serving_b_minus_a_s": [1.47, 1.45, 1.49, 1.52], "serving_b_minus_a_s_median": 1.48, "a_first_reply_s_median": 8.82, "b_first_reply_s_median": 5.37, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 4, "decode_paths": ["cpu (int4) [int4 layout: canonical (qkv)]"], "replies_identical": true}
+[09:55:15 +   96s] cell cold-7b-cpu (3/10): 7b.cpu.giw, 4.8 GB, cpu, cold, 4 pair(s) of old and new
+[09:55:21 +  102s]   pair 1 old: serving at 0.2s, first reply done at 5.7s, read -0.00 GB by serving, 1% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:25 +  106s]   pair 1 new: serving at 1.8s, first reply done at 4.1s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:29 +  110s]   pair 2 new: serving at 1.8s, first reply done at 4.1s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:35 +  116s]   pair 2 old: serving at 0.2s, first reply done at 5.5s, read -0.00 GB by serving, 1% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:40 +  121s]   pair 3 old: serving at 0.2s, first reply done at 5.5s, read -0.00 GB by serving, 1% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:45 +  126s]   pair 3 new: serving at 1.8s, first reply done at 4.1s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:49 +  130s]   pair 4 new: serving at 1.8s, first reply done at 4.1s, read -0.00 GB by serving, 100% resident, read-first True, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:54 +  135s]   pair 4 old: serving at 0.2s, first reply done at 5.5s, read -0.00 GB by serving, 1% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:55:54 +  135s]   {"cell": "cold-7b-cpu", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.7226, 0.7382, 0.7459, 0.7368], "first_reply_b_over_a_median": 0.7375, "serving_b_minus_a_s": [1.66, 1.63, 1.66, 1.62], "serving_b_minus_a_s_median": 1.645, "a_first_reply_s_median": 5.51, "b_first_reply_s_median": 4.07, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 4, "decode_paths": ["cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]"], "replies_identical": true}
+[09:55:54 +  135s] cell aa-cold-7b-metal (4/10): 7b.metal.giw, 4.8 GB, metal, cold, 2 pair(s) of old and old
+[09:55:58 +  140s]   pair 1 old: serving at 1.1s, first reply done at 3.9s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:03 +  144s]   pair 1 old: serving at 1.1s, first reply done at 3.7s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:07 +  148s]   pair 2 old: serving at 1.0s, first reply done at 3.7s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:11 +  152s]   pair 2 old: serving at 1.1s, first reply done at 3.7s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:11 +  152s]   {"cell": "aa-cold-7b-metal", "state": "cold", "arms": "old:old", "pairs": 2, "first_reply_b_over_a": [0.9515, 0.984], "first_reply_b_over_a_median": 0.9677, "serving_b_minus_a_s": [-0.1, -0.03], "serving_b_minus_a_s_median": -0.065, "a_first_reply_s_median": 3.83, "b_first_reply_s_median": 3.71, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["metal-resident (int4)"], "replies_identical": true}
+[09:56:11 +  152s] cell cold-7b-metal (5/10): 7b.metal.giw, 4.8 GB, metal, cold, 4 pair(s) of old and new
+[09:56:16 +  157s]   pair 1 old: serving at 1.1s, first reply done at 3.7s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:20 +  161s]   pair 1 new: serving at 2.6s, first reply done at 3.9s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:24 +  165s]   pair 2 new: serving at 2.5s, first reply done at 3.8s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:29 +  170s]   pair 2 old: serving at 1.0s, first reply done at 3.7s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:33 +  174s]   pair 3 old: serving at 1.0s, first reply done at 3.7s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:37 +  178s]   pair 3 new: serving at 2.5s, first reply done at 3.9s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:42 +  183s]   pair 4 new: serving at 2.6s, first reply done at 3.9s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:46 +  187s]   pair 4 old: serving at 1.1s, first reply done at 3.8s, read -0.00 GB by serving, 15% resident, read-first False, metal-resident (int4)
+[09:56:46 +  187s]   {"cell": "cold-7b-metal", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [1.0374, 1.0323, 1.0405, 1.0426], "first_reply_b_over_a_median": 1.039, "serving_b_minus_a_s": [1.49, 1.49, 1.49, 1.53], "serving_b_minus_a_s_median": 1.49, "a_first_reply_s_median": 3.73, "b_first_reply_s_median": 3.87, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 4, "decode_paths": ["metal-resident (int4)"], "replies_identical": true}
+[09:56:46 +  187s] cell cold-1.5b-metal (6/10): 15b.metal.giw, 1.2 GB, metal, cold, 4 pair(s) of old and new
+[09:56:48 +  189s]   pair 1 old: serving at 0.8s, first reply done at 1.6s, read -0.00 GB by serving, 13% resident, read-first False, metal-resident (int4)
+[09:56:50 +  191s]   pair 1 new: serving at 1.1s, first reply done at 1.6s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:51 +  193s]   pair 2 new: serving at 1.2s, first reply done at 1.6s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:53 +  195s]   pair 2 old: serving at 0.8s, first reply done at 1.6s, read -0.00 GB by serving, 13% resident, read-first False, metal-resident (int4)
+[09:56:55 +  196s]   pair 3 old: serving at 0.8s, first reply done at 1.6s, read -0.00 GB by serving, 13% resident, read-first False, metal-resident (int4)
+[09:56:57 +  198s]   pair 3 new: serving at 1.2s, first reply done at 1.6s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:56:59 +  200s]   pair 4 new: serving at 1.2s, first reply done at 1.6s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:57:01 +  202s]   pair 4 old: serving at 0.8s, first reply done at 1.6s, read -0.00 GB by serving, 13% resident, read-first False, metal-resident (int4)
+[09:57:01 +  202s]   {"cell": "cold-1.5b-metal", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [1.0, 0.9875, 0.9873, 0.9812], "first_reply_b_over_a_median": 0.9874, "serving_b_minus_a_s": [0.39, 0.37, 0.36, 0.34], "serving_b_minus_a_s_median": 0.365, "a_first_reply_s_median": 1.59, "b_first_reply_s_median": 1.56, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 4, "decode_paths": ["metal-resident (int4)"], "replies_identical": true}
+[09:57:01 +  202s] cell warm-mellum-cpu (7/10): mellum2.int4.giw, 7.1 GB, cpu, warm, 4 pair(s) of old and new
+[09:57:05 +  206s]   pair 1 old: serving at 0.1s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:08 +  209s]   pair 1 new: serving at 0.2s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:11 +  212s]   pair 2 new: serving at 0.2s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:15 +  216s]   pair 2 old: serving at 0.1s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:18 +  219s]   pair 3 old: serving at 0.1s, first reply done at 2.2s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:21 +  222s]   pair 3 new: serving at 0.1s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:24 +  225s]   pair 4 new: serving at 0.2s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:28 +  229s]   pair 4 old: serving at 0.1s, first reply done at 2.3s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:57:28 +  229s]   {"cell": "warm-mellum-cpu", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [1.0221, 1.022, 1.0134, 1.0354], "first_reply_b_over_a_median": 1.0221, "serving_b_minus_a_s": [0.05, 0.06, 0.0, 0.05], "serving_b_minus_a_s_median": 0.05, "a_first_reply_s_median": 2.26, "b_first_reply_s_median": 2.31, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["cpu (int4) [int4 layout: canonical (qkv)]"], "replies_identical": true}
+[09:57:28 +  229s] cell warm-7b-cpu (8/10): 7b.cpu.giw, 4.8 GB, cpu, warm, 4 pair(s) of old and new
+[09:57:31 +  232s]   pair 1 old: serving at 0.1s, first reply done at 2.6s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:35 +  236s]   pair 1 new: serving at 0.1s, first reply done at 2.5s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:38 +  239s]   pair 2 new: serving at 0.1s, first reply done at 2.5s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:41 +  242s]   pair 2 old: serving at 0.1s, first reply done at 2.4s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:44 +  245s]   pair 3 old: serving at 0.1s, first reply done at 2.4s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:47 +  248s]   pair 3 new: serving at 0.1s, first reply done at 2.4s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:50 +  251s]   pair 4 new: serving at 0.1s, first reply done at 2.4s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:53 +  254s]   pair 4 old: serving at 0.1s, first reply done at 2.4s, read -0.00 GB by serving, 100% resident, read-first False, cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+[09:57:53 +  254s]   {"cell": "warm-7b-cpu", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.9423, 1.0458, 0.9958, 0.9917], "first_reply_b_over_a_median": 0.9938, "serving_b_minus_a_s": [0.0, 0.0, -0.01, 0.01], "serving_b_minus_a_s_median": 0.0, "a_first_reply_s_median": 2.41, "b_first_reply_s_median": 2.42, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]"], "replies_identical": true}
+[09:57:53 +  254s] cell warm-7b-metal (9/10): 7b.metal.giw, 4.8 GB, metal, warm, 4 pair(s) of old and new
+[09:57:56 +  257s]   pair 1 old: serving at 0.8s, first reply done at 2.2s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:57:59 +  260s]   pair 1 new: serving at 0.8s, first reply done at 2.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:02 +  263s]   pair 2 new: serving at 0.8s, first reply done at 2.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:04 +  265s]   pair 2 old: serving at 0.8s, first reply done at 2.2s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:07 +  268s]   pair 3 old: serving at 0.8s, first reply done at 2.2s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:10 +  271s]   pair 3 new: serving at 0.8s, first reply done at 2.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:13 +  274s]   pair 4 new: serving at 0.8s, first reply done at 2.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:16 +  277s]   pair 4 old: serving at 0.8s, first reply done at 2.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:16 +  277s]   {"cell": "warm-7b-metal", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.9862, 0.9815, 0.9633, 1.0], "first_reply_b_over_a_median": 0.9839, "serving_b_minus_a_s": [-0.03, -0.03, -0.08, -0.02], "serving_b_minus_a_s_median": -0.03, "a_first_reply_s_median": 2.17, "b_first_reply_s_median": 2.12, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["metal-resident (int4)"], "replies_identical": true}
+[09:58:16 +  277s] cell warm-1.5b-metal (10/10): 15b.metal.giw, 1.2 GB, metal, warm, 4 pair(s) of old and new
+[09:58:17 +  278s]   pair 1 old: serving at 0.9s, first reply done at 1.3s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:18 +  280s]   pair 1 new: serving at 0.7s, first reply done at 1.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:20 +  281s]   pair 2 new: serving at 0.7s, first reply done at 1.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:21 +  282s]   pair 2 old: serving at 0.7s, first reply done at 1.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:22 +  283s]   pair 3 old: serving at 0.7s, first reply done at 1.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:24 +  285s]   pair 3 new: serving at 0.7s, first reply done at 1.1s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:25 +  286s]   pair 4 new: serving at 1.0s, first reply done at 1.4s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:27 +  288s]   pair 4 old: serving at 0.8s, first reply done at 1.2s, read -0.00 GB by serving, 100% resident, read-first False, metal-resident (int4)
+[09:58:27 +  288s]   {"cell": "warm-1.5b-metal", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.8779, 0.9474, 1.0364, 1.104], "first_reply_b_over_a_median": 0.9919, "serving_b_minus_a_s": [-0.17, -0.06, 0.04, 0.13], "serving_b_minus_a_s_median": -0.01, "a_first_reply_s_median": 1.19, "b_first_reply_s_median": 1.15, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["metal-resident (int4)"], "replies_identical": true}
+[09:58:27 +  288s] finished in 4.8 min: every start ran and each cell's replies are the same

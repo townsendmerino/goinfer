@@ -15,15 +15,15 @@ any surface may still change.
 
 ## [Unreleased]
 
-### Changed — on macOS a cold `.giw` that fits in memory is prefetched before it is loaded
+### Changed — on macOS a cold `.giw` that fits in memory is prefetched before a load on the CPU
 
-macOS reads little around a page fault, so a cold bundle's first reply was slow for a different reason than on Linux: the decode
-pulled the weights in a page at a time. Before the load, a bundle that is not in memory and fits in three quarters of the available
-memory is now prefetched (`MADV_WILLNEED` over its mapping), dense or MoE; one that is paged or does not fit loads as before. On a
-16 GB Mac in use that means small bundles. No weight or logit changes. In an exploratory run on the CPU backend a pre-read took a
-cold 7 GB MoE's first reply from 8.4-9.7 s to 3.7 s and a dense 7B's from 5.6-6.3 s to 3.5 s; one exploratory pair on Metal with
-a 1.5B was level. The gates, which include Metal cells that decide whether a Metal load keeps the prefetch, are registered and not
-yet read ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
+macOS reads little around a page fault, so a cold bundle's first reply was slow for a different reason than on Linux: the CPU decode
+pulled the weights in a page at a time. Before a load on the CPU backend, a bundle that is not in memory and fits in three quarters
+of the available memory is now prefetched (`MADV_WILLNEED` over its mapping), dense or MoE; one that is paged or does not fit loads
+as before. On a 16 GB Mac in use that means small bundles. No weight or logit changes. In its gate on one 16 GB MacBook (four
+interleaved pairs a cell) a cold 7 GB MoE reached its first reply in 5.4 s instead of 8.8 s and a dense 7B in 4.1 s instead of
+5.5 s. A load on Metal is left as it was: with the same prefetch the 7B's first reply came 4% later (3.87 s against 3.73 s), so the
+gate's kill rule took it off Metal ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
 
 ### Changed — a cold MoE `.giw` is read front to back before it is loaded (Linux)
 
