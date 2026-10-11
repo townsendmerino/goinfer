@@ -76,7 +76,8 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 			return o.ExactPrefill && (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0"
 		}},
 		"cpu-exact-prefill": {"--cpu-exact-prefill", func(o decoder.Options, _ *Flags) bool { return (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0" }},
-		"windowed-kv":       {"--windowed-kv", func(o decoder.Options, _ *Flags) bool { return o.ResidentWindowedKV }},
+		// Default is true (docs/tasks/task-cuda-windowed-kv-2026-10.md, section 12): the row probes the opt-out.
+		"windowed-kv": {"--windowed-kv=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentWindowedKV }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}
@@ -276,5 +277,17 @@ func TestBackend_autoOnThisTestBinary(t *testing.T) {
 	}
 	if got, want := f.BackendLine(), "backend: cpu (auto: this binary has no GPU backend)"; got != want {
 		t.Errorf("BackendLine() = %q, want %q", got, want)
+	}
+}
+
+// --windowed-kv is on by default and --windowed-kv=false turns it off; both reach Options.
+func TestWindowedKV_defaultOnAndOptOut(t *testing.T) {
+	_, def := parse(t, Chat)
+	if !def.Options().ResidentWindowedKV {
+		t.Fatal("windowed KV must be on by default")
+	}
+	_, off := parse(t, Chat, "--windowed-kv=false")
+	if off.Options().ResidentWindowedKV {
+		t.Fatal("--windowed-kv=false must turn it off")
 	}
 }
