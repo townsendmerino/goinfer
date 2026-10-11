@@ -2,8 +2,8 @@
 
 **Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). G-CL1 PASS.
 The timed gates G-CL2, G-CL3 and G-CL4 are queued on nobara for the night and **not read**; the kill rule below still
-applies to what is on `main`. Step 0 (the Mac's measurement) is read (below): macOS has no read-around problem, and a pre-read helps there for a
-different reason; nothing is built for darwin yet.
+applies to what is on `main`. Step 0 (the Mac's measurement) is read (below), and **the darwin pre-read is built** from it (§ "The darwin
+pre-read": G-CLd1 PASS; its timed cells are queued on the Mac for the night and not read).
 The measurements that scope it are exploratory ([record](../measurements/giw-cold-load-2026-10/README.md)); the gates
 below were registered before any code. Owner decisions: § Decisions.
 
@@ -157,6 +157,24 @@ gate. N: four pairs a cell, fixed. Ambiguous band: parked results go to the owne
   is done.
 - **Kill rules.** If a Metal cell is above 1.00, the pre-read is not applied to a Metal load. If a CPU cell parks or
   fails, it is not shipped for the CPU either.
+
+### Built, 2026-10-11
+
+- The rule is now a per-system policy (`decoder/coldload.go:coldLoadPolicy`): `coldPolicyLinux` is the rule above,
+  unchanged; `coldPolicyDarwin` covers any bundle, reads first with `MADV_WILLNEED` (`decoder/coldload_darwin.go`), and
+  never touches the read-around. `prepareColdLoad` asks for the memory figures only for a cold bundle.
+- **G-CLd1: PASS.** `gate identity ac85083a 3533a383` on the tiny assets: CPU 37 of 43 families IDENTICAL, Metal 25
+  of 43, none different (the rest have no usable tiny fixture or do not build resident on Metal). The tests named in
+  the gate pass, on the Mac and, for Linux's policy, natively on nobara; with the prefetch replaced by a no-op,
+  planted, `TestColdLoad_darwinProbesAndActions` fails.
+- **A smoke by day** (the record's section 7, exploratory, one pair): the 1.5B on Metal prefetched and was level
+  (1.6 s against 1.6 s); the Mellum cell did not prefetch because 7 GB did not fit in the 5 GB available, as the rule
+  intends.
+- **Queued for the night on the Mac:** `docs/measurements/giw-cold-load-2026-10/run-gcl-night-mac.sh`. A registered
+  cell whose bundle does not fit with room that night will read NOT RUN: Mellum needs about 9.4 GB available and the
+  7B about 6.4 GB.
+- The driver's eviction now checks itself: straight after a Metal server exits the drop does nothing for a moment,
+  and the first smoke's "cold" Metal start was warm.
 
 ## Decisions
 

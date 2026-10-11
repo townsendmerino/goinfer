@@ -51,8 +51,8 @@ A transcode from a safetensors directory (`prequant` given an HF directory) stre
 
 The loader maps a bundle and reads each matrix's header through the mapping. The kernel reads around every page it
 faults in, so on a bundle of thousands of small matrices, which is what an MoE's experts are, that walk would read
-nearly the whole file in scattered pieces. On Linux the load therefore decides, once the header has named the model
-and before any matrix is read:
+nearly the whole file in scattered pieces. The load therefore decides, once the header has named the model and before
+any matrix is read. On Linux:
 
 - **An MoE bundle that is not in the page cache and fits in memory with room** (three quarters of what the kernel
   reports available) **is read front to back first.** The load prints a line when it does. The weights are needed
@@ -62,7 +62,12 @@ and before any matrix is read:
 - **A dense bundle, a file already in the page cache, and any case in between are left alone.** A dense bundle has a
   few hundred matrices and its walk is cheap.
 
-Other systems load as before; none is measured yet. The measurements and gates are in
+On macOS the reason is different and so is the rule. The kernel reads little around a fault there, so the walk is
+cheap; it is the first decode that is slow, pulling the weights in a page at a time. So **any bundle, dense or MoE,
+that is not in memory and fits with room is prefetched** before the load (the same line is printed), and nothing is
+done about the read-around. On a 16 GB Mac in use, "fits with room" keeps this to small bundles.
+
+Other systems load as before; none is measured. The measurements and gates are in
 [`tasks/task-giw-cold-load-2026-10.md`](tasks/task-giw-cold-load-2026-10.md).
 
 ## One version

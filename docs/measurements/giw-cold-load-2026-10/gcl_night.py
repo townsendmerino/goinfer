@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""gcl_night.py: the timed gates of docs/tasks/task-giw-cold-load-2026-10.md (G-CL2, G-CL3, G-CL4) on nobara.
+"""gcl_night.py: the timed gates of docs/tasks/task-giw-cold-load-2026-10.md, on Linux (G-CL2, G-CL3, G-CL4) and on
+macOS (G-CLd2, G-CLd3).
 
-Two pinned CPU `serve` binaries, old and new. A start is: the bundle evicted (or read into the page cache, for a warm
+Two pinned `serve` binaries, old and new. A start is: the bundle evicted (or read into the page cache, for a warm
 start), the server started, one greedy 24-token reply taken, the server stopped by PID. Recorded per start: seconds from
 process start to serving and to the finished reply, the bytes the process had read from disk when it began serving, how
 much of the file was in the page cache then, whether the load announced a read-first, and the reply. Pairs alternate
 their order. The bars are in the task doc; this script prints each cell's figures and verdict and writes JSON lines.
 """
-import argparse, ctypes, json, mmap, os, statistics, subprocess, sys, time, urllib.request
+import argparse, ctypes, json, mmap, os, platform, statistics, subprocess, sys, time, urllib.request
 
 T0 = time.time()
 PAGE = os.sysconf("SC_PAGESIZE")
-libc = ctypes.CDLL("libc.so.6", use_errno=True)
+DARWIN = platform.system() == "Darwin"
+libc = ctypes.CDLL(None, use_errno=True)
 libc.mmap.restype = ctypes.c_void_p
-libc.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_long]
+libc.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_longlong]
 libc.mincore.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_ubyte)]
 libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+libc.msync.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
 PROMPT = "List the first five prime numbers and say in one sentence why 1 is not among them."
 
 
@@ -36,8 +39,15 @@ def resident_fraction(path):
 
 
 def evict(path):
+    """Drop the file from the page cache: posix_fadvise(DONTNEED) on Linux, msync(MS_INVALIDATE) on a mapping on macOS."""
     fd = os.open(path, os.O_RDONLY)
-    os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+    if DARWIN:
+        size = os.path.getsize(path)
+        p = libc.mmap(None, size, mmap.PROT_READ, mmap.MAP_SHARED, fd, 0)
+        libc.msync(p, size, 0x0002)
+        libc.munmap(p, size)
+    else:
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
     os.close(fd)
 
 
@@ -57,13 +67,23 @@ def read_bytes(pid):
     return -1
 
 
-def start(binary, model, port, logpath, state, extra, limit_gb):
+def start(binary, model, port, logpath, state, extra, limit_gb, backend):
+    before = 0.0
     if state == "cold":
-        evict(model)
+        # Evict, then check: straight after a Metal process exits its pages are still wired for a moment and the
+        # drop does nothing. A start that is not cold is not a cold start.
+        for _ in range(40):
+            evict(model)
+            before = resident_fraction(model)
+            if before <= 0.02:
+                break
+            time.sleep(0.25)
+        if before > 0.02:
+            return {"resident_before": round(before, 4), "error": f"the bundle could not be made cold: {100 * before:.0f}% resident after 10 s of trying"}
     else:
         warm(model)
-    before = resident_fraction(model)
-    cmd = [binary, "-model", model, "-backend", "cpu", "-addr", f"127.0.0.1:{port}"] + extra
+        before = resident_fraction(model)
+    cmd = [binary, "-model", model, "-backend", backend, "-addr", f"127.0.0.1:{port}"] + extra
     if limit_gb:
         cmd = ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={limit_gb}G", "-p", "MemorySwapMax=0"] + cmd
     out = open(logpath, "w")
@@ -90,7 +110,9 @@ def start(binary, model, port, logpath, state, extra, limit_gb):
         reply = json.load(urllib.request.urlopen(req, timeout=1800))
         ev["first_reply_s"] = round(time.time() - t0, 2)
         ev["reply"] = reply["choices"][0]["message"]["content"]
-        ev["read_first_announced"] = "not in memory" in open(logpath).read()
+        text = open(logpath).read()
+        ev["read_first_announced"] = "not in memory" in text
+        ev["decode_path"] = next((l.split("decode path:", 1)[1].strip()[:60] for l in text.splitlines() if "decode path:" in l), "")
     except Exception as e:  # recorded; the run goes on
         ev["error"] = repr(e)
     finally:
@@ -109,7 +131,7 @@ def main():
     ap.add_argument("--log-dir", required=True)
     ap.add_argument("--record", required=True)
     ap.add_argument("--est-min", type=float, default=0)
-    ap.add_argument("cells", nargs="+", help="name|model|state(cold,warm)|pairs|arms(old:new or old:old)|extra args|memory limit GB or 0")
+    ap.add_argument("cells", nargs="+", help="name|model|state(cold,warm)|pairs|arms(old:new or old:old)|extra args|memory limit GB or 0[|backend, default cpu]")
     a = ap.parse_args()
     os.makedirs(a.log_dir, exist_ok=True)
     rec = open(a.record, "a")
@@ -127,18 +149,20 @@ def main():
         pass
     port, failed = 18900, False
     for ci, spec in enumerate(a.cells):
-        name, model, state, pairs, arms, extra, limit = spec.split("|")
+        fields = spec.split("|")
+        name, model, state, pairs, arms, extra, limit = fields[:7]
+        backend = fields[7] if len(fields) > 7 else "cpu"
         model, pairs, limit = os.path.expanduser(model), int(pairs), int(limit)
         first, second = arms.split(":")
         extra = extra.split() if extra.strip() else []
         size = os.path.getsize(model)
-        log(f"cell {name} ({ci + 1}/{len(a.cells)}): {os.path.basename(model)}, {size / 1e9:.1f} GB, {state}, {pairs} pair(s) of {first} and {second}" + (f", in a {limit} GB memory scope" if limit else "") + (f", args {' '.join(extra)}" if extra else ""))
+        log(f"cell {name} ({ci + 1}/{len(a.cells)}): {os.path.basename(model)}, {size / 1e9:.1f} GB, {backend}, {state}, {pairs} pair(s) of {first} and {second}" + (f", in a {limit} GB memory scope" if limit else "") + (f", args {' '.join(extra)}" if extra else ""))
         runs = {"a": [], "b": []}
         for k in range(pairs):
             order = [("a", first), ("b", second)] if k % 2 == 0 else [("b", second), ("a", first)]
             for slot, arm in order:
                 port += 1
-                ev = start(os.path.join(a.bin_dir, f"serve-{arm}"), model, port, os.path.join(a.log_dir, f"{name}-{slot}-{arm}-{k + 1}.log"), state, extra, limit)
+                ev = start(os.path.join(a.bin_dir, f"serve-{arm}"), model, port, os.path.join(a.log_dir, f"{name}-{slot}-{arm}-{k + 1}.log"), state, extra, limit, backend)
                 ev.update({"event": "start", "cell": name, "pair": k + 1, "slot": slot, "arm": arm, "file_bytes": size})
                 emit(ev)
                 runs[slot].append(ev)
@@ -146,7 +170,7 @@ def main():
                     failed = True
                     log(f"  pair {k + 1} {arm}: ERROR {ev['error'][:200]}")
                 else:
-                    log(f"  pair {k + 1} {arm}: serving at {ev['serving_s']:.1f}s, first reply done at {ev['first_reply_s']:.1f}s, read {ev['read_bytes_at_serving'] / 1e9:.2f} GB by serving, {100 * ev['resident_at_serving']:.0f}% resident, read-first {ev['read_first_announced']}")
+                    log(f"  pair {k + 1} {arm}: serving at {ev['serving_s']:.1f}s, first reply done at {ev['first_reply_s']:.1f}s, read {ev['read_bytes_at_serving'] / 1e9:.2f} GB by serving, {100 * ev['resident_at_serving']:.0f}% resident, read-first {ev['read_first_announced']}, {ev['decode_path']}")
         ok = [(x, y) for x, y in zip(runs["a"], runs["b"]) if "error" not in x and "error" not in y]
         line = {"event": "summary", "cell": name, "state": state, "arms": arms, "pairs": len(ok)}
         if ok:
@@ -158,6 +182,8 @@ def main():
             line["b_first_reply_s_median"] = round(statistics.median(y["first_reply_s"] for _, y in ok), 2)
             line["b_read_fraction_at_serving_max"] = round(max(y["read_bytes_at_serving"] for _, y in ok) / size, 4)
             line["a_read_fraction_at_serving_max"] = round(max(x["read_bytes_at_serving"] for x, _ in ok) / size, 4)
+            line["b_read_first_announced"] = sum(1 for _, y in ok if y["read_first_announced"])
+            line["decode_paths"] = sorted({e["decode_path"] for pair in ok for e in pair})
             line["replies_identical"] = len({e["reply"] for pair in ok for e in pair}) == 1
             if not line["replies_identical"]:
                 failed = True
