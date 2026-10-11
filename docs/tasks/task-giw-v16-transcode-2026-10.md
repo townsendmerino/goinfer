@@ -444,6 +444,35 @@ change what runs when and how fast, never what is written.
     (`buildWeightsFromGGUF`, `buildWeightsFromSafetensorsTo`) fold it into `skipRow4` before any tensor is built, and
     `streamQuantizedEmbed` takes it as a parameter. The amd64 split-half repack, off by default, is not covered. G-T1
     on the Mac: PASS.
+- **T8. A vectorized GGUF dequantizer (aikit). Registered 2026-10-10, before any code** (owner: "do it", after the
+  copy floor's consequence opened on the Mac's 1.5B at 3.08).
+  - **What:** NEON and AVX2 kernels for the body of `embed.dequantQ4KBlock`: per 32-weight sub-block, the nibbles
+    widened to float32, times the sub-block's scale, minus its offset. The scalar body stays as the oracle and serves
+    other architectures. The block's prologue (the two half-floats, the 6-bit scale and min unpack, the eight products)
+    stays in Go.
+  - **Each architecture matches its own scalar.** `d1*float32(q) - off1` is one fused operation in Go's arm64 code and
+    two rounded ones on amd64, so the two builds already differ in the last bit, and each kernel must reproduce its
+    own: fused on NEON, a multiply and a subtract on AVX2. The oracle test decides, not this note.
+  - **Reach.** This function is every Q4_K GGUF load, resident loads included, not only the transcode. So the forward
+    goldens that load a GGUF are part of the gate.
+  - **Second step, only if the first ships:** the same for `dequantQ6KBlock`, which the bench GGUFs use for a few
+    tensors (about 5% of the Mac cell's CPU after T4b, by the system sampler).
+  - **G-T8a, oracle (aikit, day).** The kernel equals the scalar bit for bit on: every nibble value under random
+    scales and offsets; d and dmin that are zero, negative, subnormal, infinite and NaN; random blocks; and the whole
+    of the real 1.5B GGUF's Q4_K tensors (a hash of the dequantized floats). Natively on arm64 and on amd64. Planted
+    kernel defects must turn it red.
+  - **G-T8b, identity (goinfer, day).** `gate identity -giw bytes` on the tiny matrix and the two real GGUFs, and
+    `gate quick` (its GGUF forward goldens) on the pin.
+  - **G-T8c, speed (day; `t4b_cpu_ab.py`, the instrument T4b's gate used).** Single-thread transcode CPU, new over
+    old, old being the v1.66.0 build, on the Mac's 1.5B GGUF to `cpu-arm64` and nobara's 1.5B GGUF to `cpu-amd64`.
+
+    | | expected | ship | park | off |
+    |---|---|---|---|---|
+    | each cell | 0.75-0.85 | at most 0.98 | 0.98-1.00 | above 1.00 |
+
+    The expectation: the Q4_K dequantizer is about 24% of the Mac cell's CPU by the sampler, and a kernel four to
+    six times faster leaves about 5%. The ship line is the repo's default (1.02x), not the expectation.
+  - **Recorded, not gated:** the copy floor on the next night's cells (3.08 on the Mac's 1.5B today).
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
