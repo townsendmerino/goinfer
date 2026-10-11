@@ -493,8 +493,7 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 	leaveExact := s.m.enterExactAttention() // decode and verify must share one attention tree
-	go func() {
-		defer close(out)
+	s.m.runGen(ctx, out, g, leaveExact, func(ctx context.Context) {
 		defer leaveExact()
 		// The loop emits in bursts (anchor plus accepted drafts), so tokens are forwarded as
 		// each round commits rather than at the end — a server streams them straight through.
@@ -536,7 +535,7 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 			// A cancelled generation reports ctx.Err(), so the caller does not read a truncated stream as a clean finish.
 			g.err = ctx.Err()
 		}
-	}()
+	})
 	return out, g, nil
 }
 

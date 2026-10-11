@@ -183,11 +183,10 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 	leaveExact := target.enterExactAttention() // decode and verify must share one attention tree
-	go func() {
-		defer close(out)
+	target.runGen(ctx, out, g, leaveExact, func(ctx context.Context) {
 		defer leaveExact()
 		target.genNgramInto(ctx, out, g, stats, drafter, prompt, 0, maxTokens, K, sp, tr, ad, nil, nil)
-	}()
+	})
 	return out, g, nil
 }
 

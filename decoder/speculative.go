@@ -109,8 +109,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	// step, so its rows are exact whether or not the scope is held; TestFlashDecodeTwoModelSpecLane's mutant survives) — kept as defense in depth. The n-gram loop is
 	// the one that needs it (TestFlashDecodeSpeculativeScope kills its mutant).
 	leaveExact := target.enterExactAttention() // decode and verify must share one attention tree
-	go func() {
-		defer close(out)
+	target.runGen(ctx, out, g, leaveExact, func(ctx context.Context) {
 		defer leaveExact()
 		// Claim the single shared resident KV before any device write: a second concurrent Generate on the same *Model would
 		// otherwise prefill into the same positional device KV, interleaving writes and corrupting both streams, against a
@@ -351,6 +350,6 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				return
 			}
 		}
-	}()
+	})
 	return out, g, nil
 }

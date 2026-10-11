@@ -161,8 +161,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
-	go func() {
-		defer close(out)
+	s.m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		// A session always owns its cache, so generateInto's lazy cache allocation is never taken (newCache is nil).
 		s.m.generateInto(ctx, out, g, s.cache, nil, prompt, matched, maxTokens, sp, commit)
 		// Bookkeeping runs before the deferred close, so a consumer that observes the channel close
@@ -171,7 +170,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 		if len(prompt) > 0 {
 			s.reconcile(seq)
 		}
-	}()
+	})
 	return out, g
 }
 
@@ -229,11 +228,10 @@ func (s *Session) GenerateGrammarSpeculative(ctx context.Context, prompt []int, 
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
-	go func() {
-		defer close(out)
+	s.m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		s.m.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, matched, maxTokens, K, sp, nil, s.cache, commit)
 		s.reconcile(seq)
-	}()
+	})
 	return out, g, nil
 }
 
@@ -254,15 +252,14 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
-	go func() {
-		defer close(out)
+	s.m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		s.m.genNgramInto(ctx, out, g, stats, drafter, prompt, matched, maxTokens, K, sp, nil, ad, s.cache, commit)
 		// An empty prompt is a genNgramInto error: skip rewind and reconcile so a rejected call leaves a warm session's KV intact,
 		// as Session.Generate does.
 		if len(prompt) > 0 {
 			s.reconcile(seq)
 		}
-	}()
+	})
 	return out, g, nil
 }
 

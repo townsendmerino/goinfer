@@ -116,8 +116,7 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
-	go func() {
-		defer close(out)
+	m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		if len(spans) == 0 {
 			g.err = fmt.Errorf("decoder: GenerateGemma4VLSpans needs at least one image span")
 			return
@@ -196,7 +195,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 			committed = true
 		}
-	}()
+	})
 	return out, g
 }
 

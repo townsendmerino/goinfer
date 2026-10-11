@@ -37,8 +37,7 @@ func (m *Model) prefillLogitsAudio(ctx context.Context, ids []int, feats []float
 func (m *Model) GenerateAudio(ctx context.Context, ids []int, audioPos, audioLen int, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
-	go func() {
-		defer close(out)
+	m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		feats, err := features()
 		if err != nil {
 			g.err = err
@@ -54,6 +53,6 @@ func (m *Model) GenerateAudio(ctx context.Context, ids []int, audioPos, audioLen
 		sampler := NewSampler(sp)
 		sampler.Observe(ids...)
 		m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) { return m.forward(next, cache) })
-	}()
+	})
 	return out, g
 }

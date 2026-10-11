@@ -43,6 +43,7 @@ type Model struct {
 	be       Backend
 	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
 	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	lifeP    unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy  int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
@@ -776,11 +777,22 @@ func (m *Model) Config() *Config {
 	return &c
 }
 
-// Close releases backend resources (GPU resident buffers + the backend) and
-// unmaps the .giw mapping if the model was loaded from a prequant bundle. A no-op
-// for the CPU backend with no mapping. Safe to call once after the model is done;
-// the weights must not be touched afterward (the mapping is gone).
+// Close ends every generation in flight, waits for each to finish, then releases backend resources (GPU resident
+// buffers + the backend) and unmaps the .giw mapping if the model was loaded from a prequant bundle. A no-op for the CPU
+// backend with no mapping.
+//
+// Contract: Close may be called while generations are running, from any goroutine. Each running generation is cancelled
+// and its channel closes with Generation.Err reporting ErrClosed; Close returns once they have all ended, so it can wait
+// as long as the longest uninterruptible step (one decode step, or a prefill chunk). A Generate, Session.Generate or
+// speculative call made after Close returns a closed channel at once with ErrClosed. Do not call Close from inside a
+// LogitProcessor or another callback a generation runs, which would wait on itself. Calling Close again is safe and
+// returns nil. Only the Generate family is guarded: Embed, NewCache, Forward and the other methods read the weights
+// directly and must not be called after Close (the mapping is gone).
 func (m *Model) Close() error {
+	m.endGenerations()
+	if !m.lifeState().beginRelease() {
+		return nil
+	}
 	if m.pager != nil {
 		_ = m.pager.close()
 		m.pager = nil
@@ -1349,10 +1361,9 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 	// The host KV cache is not allocated here: generateInto calls newCache only when it reaches the CPU path (never resident, or
 	// lost the resBusy race), so a resident-and-won call never pays for host KV capacity it never touches.
 	newCache := func() *KVCache { return m.NewCache(len(prompt) + maxTokens) }
-	go func() {
-		defer close(out)
+	m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		m.generateInto(ctx, out, g, nil, newCache, prompt, 0, maxTokens, sp, nil)
-	}()
+	})
 	return out, g
 }
 

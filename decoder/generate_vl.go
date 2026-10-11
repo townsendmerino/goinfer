@@ -91,8 +91,7 @@ func (m *Model) GenerateVLCausalSpans(ctx context.Context, ids []int, spans []Im
 func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams, causal bool) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
-	go func() {
-		defer close(out)
+	m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 
 		if len(spans) == 0 {
 			g.err = fmt.Errorf("decoder: GenerateVLSpans needs at least one image span")
@@ -262,7 +261,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 			committed = true
 		}
-	}()
+	})
 	return out, g
 }
 
@@ -299,8 +298,7 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, [][]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
-	go func() {
-		defer close(out)
+	m.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		if len(spans) == 0 || len(gridTHW) != len(spans) {
 			g.err = fmt.Errorf("decoder: %d image spans and %d grids; each image needs its own grid", len(spans), len(gridTHW))
 			return
@@ -490,7 +488,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 			committed = true
 		}
-	}()
+	})
 	return out, g
 }
 

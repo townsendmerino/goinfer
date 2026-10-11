@@ -193,10 +193,9 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 	out := make(chan int)
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
-	go func() {
-		defer close(out)
+	target.runGen(ctx, out, g, nil, func(ctx context.Context) {
 		target.genGrammarInto(ctx, out, g, stats, mask, drafter, prompt, 0, maxTokens, K, sp, nil, nil, nil)
-	}()
+	})
 	return out, g, nil
 }
 
