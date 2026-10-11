@@ -1,0 +1,4 @@
+The user wants me to transcribe the provided audio.
+The audio is a sound of a cat meowing.
+
+Transcription: "Meeow" or "

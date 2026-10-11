@@ -1,6 +1,6 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: ACTIVE (refreshed 2026-10-10).** The phases' state:
+**Status: ACTIVE (refreshed 2026-10-10; S6 closed 2026-10-11).** The phases' state:
 - **Done:**
   - S1 (E-model decode on the GPU), Metal and CUDA.
   - S2 (Qwen3.5+ and GLM-OCR towers); `s2-towers` is merged into `main` (`471a500e`, 2026-10-08).
@@ -21,6 +21,9 @@
     - Qwen2.5-VL-3B at 5.45 s is the one cell over; accepted as it is (owner, 2026-10-10: "we will just accept 5.51
       as OK").
   - The `--embed-int4` default's evaluation (option D): 7 of 7 models graded, none costly.
+  - S6: the 35B's served image check (G-S6m) and the 31B's step (b') PASS; Gemma 4 E4B PASS on CUDA (2026-10-08) and
+    on Metal (2026-10-11: G-E4B-1b +0.26 points against the reference, G-E4B-2 identical or near-tie on the image and
+    the three audio clips), both on the quantization-aware checkpoint.
 - **In flight:**
   - S10 for Qwen3-VL MoE: G-S10q-a, b and c PASS. The served check G-S10q-d read 2026-10-10 (`gs10q-d-2`): the graded
     CPU arms PASS (identical replies twice); the paged CUDA arm, graded by amendment A2, FAIL (its two-image reply
@@ -28,9 +31,6 @@
   - S18: every gate has read. G-S18g read FAIL as registered, on a rule that cannot grade a tower on Gemma 3 (the f16
     reference fails it too). The owner withdrew its consequence; G-S18g2 replaces it and read **PARKED** 2026-10-10
     (D's upper bound 0.124 nats, between 0.05 and 0.20; A passes), so the decision is the owner's.
-  - S6: the 35B's served image check (G-S6m) and the 31B's step (b') PASS; Gemma 4 E4B PASS on CUDA. E4B on Metal
-    (G-E4B-1, G-E4B-2) has not run: its sidecar build was refused for memory on 2026-10-07. A Metal sidecar built by
-    serve has been on the Mac since 2026-10-09.
   - S14 (speech), 2026-10-10: Qwen3-ASR's word-error-rate gate G-S14c4b failed on its re-read (2026-10-09); the partial
     forced prefix (G-S14c4d) read 2026-10-10: (a) PASS, (b) PARKED (int4 +1.04 points over float32 with it, +4.17 without),
     serve unchanged until the owner decides. Voxtral Mini is served (`input_audio`, G-S14e4a and b PASS; `s14e4c` read: int4
@@ -69,7 +69,7 @@ The last phase puts the answer where users look first, the README, with a check 
 | Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | GPU (int8) / GPU |
 | Gemma 4 E2B | CPU / CPU | GPU / GPU, batched image prefill (S9 on CUDA) | GPU / GPU, layer-major prefill (S9) | CPU / CPU |
 | Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU / GPU | CPU / CPU |
-| Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | not validated (the Mac's sidecar build was refused by the fit guard) | CPU / CPU |
+| Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | validated (S6: G-E4B-1b, G-E4B-2, 2026-10-11; towers on the CPU in the gate) | CPU / CPU |
 | Gemma 4 26B | CPU / CPU | GPU (checked on E2B) / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
 | Gemma 4 31B | CPU / CPU: runs, coherent (G-31a: text and one table image); text logits agree with Hugging Face float32 as well as the E4B's do ((b'), 12 prompts, CPU); the image path is not checked against Hugging Face | not validated (8 GB card) | too large for the Mac | not validated |
 | Qwen2.5-VL | CPU / CPU | GPU / GPU | GPU / GPU, image prefill on the GPU (S16) | CPU / GPU |
@@ -83,7 +83,7 @@ The last phase puts the answer where users look first, the README, with a check 
 **Gaps in coverage:**
 - **Models:**
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
-  - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
+  - Gemma 4 E4B is validated on CUDA and, since 2026-10-11, on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
   - Ministral 3 (Pixtral) and LFM2.5-VL read images since 2026-10-09 (S10: G-S10m-a to d; G-S10l-a, b, d and c's reading, its planted defect 1 blind), their towers on the CPU in float32 on every backend; LFM2.5-VL's decoder is CPU only. North was dropped, never identified.
   - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
@@ -1636,6 +1636,60 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
 - **EmbeddingGemma 2 on CUDA:** text, image and audio. Optional. The Metal kernels show the shapes; the work is a CUDA
   twin.
 - **WebGPU:** moved to its own phase, S12 (owner: invest, 2026-10-07).
+
+#### S6, Gemma 4 E4B on Metal: G-E4B-1b and G-E4B-2 PASS (read 2026-10-11, the Mac; raw `docs/measurements/multimodal-support-2026-10/s6-e4b-metal/`)
+
+Run by day on the owner's word (11:19 to 11:33 PDT, load 2.5-3.2, his session open), binaries at `070dd19d`, every step
+under the timing lock. Nothing here is timed. `run-s6-e4b-metal-day.sh` in the raw folder is the run.
+
+- **The sidecars built.** The quantization-aware GGUF's int4 Metal sidecar: 5,478 MB in 15.7 s. The plain
+  checkpoint's, for the record arm: 5,494 MB in 44.8 s. The 2026-10-07 refusal (15.9 GB needed against 7.5 GB
+  available) is gone with the streaming transcode. Metal's fit guard did not decline E4B's resident by day.
+- **G-E4B-1b: PASS.** E4B teacher-forced agreement **410/435 = 94.25%**, 7 of 8 prompts through the free-run rule;
+  the reference (Qwen2.5-Coder-1.5B, same process) 532/566 = 93.99%, 7 of 8. Delta **+0.26 points** against the -2.0
+  margin (`2-g-e4b-1b.log`, 147 s). The one prompt that misses the free-run rule first diverges at generated token 26
+  with the test's gap at 3.04%, a hair over its 3% near-tie line.
+  - The reference's sequences are 21 tokens a prompt longer than in the E2B run of 2026-10-07 (566 positions against
+    398). Its rendered prompt changed between the two; I did not trace which commit. The rule compares against the
+    reference of the same process, so it is not affected.
+  - Two of E4B's 25 disagreements sit at a wide gap by the test's measure (the CPU's top logit minus its logit for
+    Metal's token, over the top logit's magnitude): 15.2% at a generated position of prompt 6 and 37.9% at a prompt
+    position of prompt 8. E2B on Metal had none above 7.6% and E4B on CUDA none above 10%. The measure is relative to
+    one logit's size, so it is not a probability; the rule does not grade it, and I have not looked at those two
+    positions.
+- **The plain checkpoint, record only (`4-plain-record.log`):** 376/435 = **86.44%**, 4 of 8 prompts; delta
+  **-7.56 points**, which would be a FAIL under the rule. CUDA read 87.59%, 3 of 8, -6.38 on the same checkpoint. Two
+  backends now show the drop on the plain file and neither shows it on the quantization-aware one. That supports
+  nobara's reading that the checkpoint is the cause; it is still not a mechanism (the plain E2B at int4 has not been
+  run on either box).
+- **G-E4B-2, served: PASS.** The GGUF as `--model`, `-vision-device cpu` and `--embed-int4=false` on every arm.
+  - **Image (table.png, 32 greedy tokens):** the Metal arm `decode path: metal-resident (int4)`; its reply is
+    IDENTICAL to the CPU's; the CPU repeat IDENTICAL.
+  - **Audio (three clips):** the Metal arm `prefill resident`, resident on all three. short first differs at token 7
+    (CPU ' audio' 0.512, ' provided' 0.468: a near-tie); mid IDENTICAL; long first differs at token 13 (' contains'
+    0.372, ' is' 0.327: a near-tie); the CPU repeats IDENTICAL on all three. The clips are synthetic tones, so the
+    replies describe sounds; the gate is Metal against the CPU.
+  - The CPU arms loaded their own cpu-arm64 sidecar of the same GGUF, as the E2B gate's did.
+- **A departure from the amendment's wording, for disk.** `--vision` was not the whole
+  `google/gemma-4-E4B-it-qat-q4_0-unquantized` checkpoint (15.88 GB; the Mac had 9.8 GB free) but a file holding that
+  checkpoint's vision and audio tensors and nothing else: all 1,411 tensors under `model.vision_tower`,
+  `model.embed_vision`, `model.audio_tower` and `model.embed_audio`, 956,176,768 bytes fetched by byte range, with
+  the repo's `config.json` (`build_qat_towers.py`; per-tensor sha256 in `TOWERS-MANIFEST.json`). serve's two loaders
+  read `config.json` and those tensors by name; both loaded from it and the image and audio turns ran.
+  - On the way: the plain checkpoint's towers are byte-identical to the quantization-aware checkpoint's in 1,410 of
+    the 1,411 tensors. The one that differs is `model.embed_vision.embedding_projection.weight`, so the plain
+    directory cannot stand in as `--vision` for images (`compare_towers.py`).
+- **Predictions scored.** G-E4B-1b "PASS at 0.75, delta between -2.0 and +1.0": held (+0.26). The plain arm "3 to 8
+  points below at 0.6": held (-7.56). G-E4B-2 "every Metal arm resident; at least two of four replies differ, each
+  at a near-tie": held (two differ, both near-ties). The surprise I named as likeliest, the fit guard declining by
+  day, did not happen.
+- **Established:** the E-model at E4B's width (42 layers, hidden 2560, 18 KV-shared layers) decodes resident on Metal
+  and agrees with the CPU at the reference's level on the quantization-aware checkpoint, on text, an image turn and
+  audio turns. **Not done:** a speed record for E4B on Metal with this file (S7's E4B cell ran the plain checkpoint's
+  sidecar); the towers on Metal for E4B (the gate keeps them on the CPU in every arm); WebGPU.
+- **On the Mac's disk after it:** the GGUF (5.15 GB), its Metal sidecar (5.74 GB) and the towers file (0.96 GB) under
+  `~/models`. The plain `~/models/gemma-4-E4B-it` (15 GB, also in the archive) is no longer read by any E4B gate
+  here; removing it is the owner's call.
 
 ### S7 — Measure every cell, once, at night
 
@@ -6125,6 +6179,9 @@ suggestion"): G-IP4, then S11 (it unblocks S15), then S8.
 item 3, S18 owes G-S18g2. In item 4, S10's families are done but for Qwen3-VL MoE's served check ("North" dropped, the
 Qwen3.5+ MoE images covered by S6's G-S6m), S11 and S8 are done, and S14 is in flight. What has not started, in the
 list's order: S15, S12, full S13.
+
+**Where the order stands, 2026-10-11:** item 1 is done: S6's E4B on Metal read PASS on both gates. What has not
+started is unchanged, in the list's order: S15, S12, full S13.
 
 ## Decisions for the owner
 
