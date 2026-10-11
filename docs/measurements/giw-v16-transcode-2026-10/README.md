@@ -576,7 +576,7 @@ same CRC. Before the fix the new arm read 19-25 s with no CRC. So the fix restor
 time, and the arms' difference is not the CRC: the old arm's check follows an eleven-minute stream and the new arm's
 a ninety-second one. What the file's pages are doing in that case was not measured.
 
-## T8's day gate, 2026-10-10: the Q4_K dequantizer kernel, SHIP on both cells
+## T8's day gate, 2026-10-10: the Q4_K and Q6_K dequantizer kernels, SHIP on both cells each
 
 T8 vectorizes the body of aikit's `embed.dequantQ4KBlock` (NEON and AVX2), the copy floor's registered follow-up. Its
 gates are in the task doc (G-T8a to G-T8c), registered before the code.
@@ -607,6 +607,33 @@ gates are in the task doc (G-T8a to G-T8c), registered before the code.
   is a multiply and then a subtract fused with `dmin*min`. The two agree on every finite input and differ in which NaN
   comes out when d and dmin are both NaN. The kernel now follows the scalar's order.
 
+### The second step, Q6_K: SHIP on both cells
+
+Registered in the task doc's amendment before its code: the same instrument and cells, **old the build with the Q4_K
+kernel, new the build that adds the Q6_K kernel**. Records `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`. The Mac
+at 19:46 (load average 2.1, in use); nobara at 19:47 under the timing lock (load 1.5 from the oracle run just before).
+
+| cell | old CPU | new CPU | new/old, five pairs | median | band | verdict |
+|---|---|---|---|---|---|---|
+| Mac, 1.5B Q4_K_M GGUF to `cpu-arm64` | 2.74 s | 2.56 s | 0.924-0.942 | **0.931** | ship at most 0.98 (expected 0.93-0.97) | **SHIP** |
+| nobara, 1.5B Q4_K_M GGUF to `cpu-amd64` | 3.05 s | 2.63 s | 0.856-0.870 | **0.864** | the same | **SHIP** |
+
+- Every arm wrote the same sha256 as the Q4_K step's arms.
+- nobara's reading is below the expected range: the expectation came from the Mac's sampler share (about 5%), and the
+  scalar Q6_K body is a larger share of amd64's time. The file holds 29 Q6_K tensors, 431,554,560 weights, against
+  1,345,388,544 in Q4_K.
+- **The oracle: PASS** natively on arm64 and on amd64. `TestDequantQ6KBlock_matchesScalar` (20,000 random blocks,
+  every half-float as d, every byte value in every scale position, every `ql` and `qh` byte value in every lane) and
+  `TestDequantQ6KBlock_realFile` (the 1.5B GGUF's 29 Q6_K tensors; crc32 of every weight `67f2a56d` on both).
+- **The amd64 oracle first passed without testing anything.** On the Mac it runs under Rosetta, which does not
+  advertise AVX to the process, so with the CPU check in place both arms were the scalar. Four planted AVX2 defects
+  passed, which is how it showed. The four oracle tests now skip on a CPU that runs no kernel, and with
+  `ROSETTA_ADVERTISE_AVX=1` five planted AVX2 defects and four NEON ones each turn them red. The Q4_K kernel's amd64
+  oracle is not affected: it ran natively on nobara, and under Rosetta before the check existed.
+- **Both steps against v1.66.0:** 3.20 to 2.56 s of CPU on the Mac and 3.73 to 2.63 s on nobara, from two runs each
+  (the two steps' medians, not one paired reading).
+- G-T8b, identity through the gate on the pin, follows the aikit release (v1.67.0).
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -618,6 +645,7 @@ gates are in the task doc (G-T8a to G-T8c), registered before the code.
 - `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records. `g-t1-t4b-*`: its
   run through `gate identity`, the same five files as the earlier runs.
 - `t8-cpu-mac.jsonl`, `t8-cpu-nobara.jsonl`: T8's day gate, the Q4_K kernel (the same instrument).
+  `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`: its second step, the Q6_K kernel over the Q4_K one.
   `t8-cpu-nobara-preguard.jsonl`: nobara's first reading, before the AVX2 check.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the

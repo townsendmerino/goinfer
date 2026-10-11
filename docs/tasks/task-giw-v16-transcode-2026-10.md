@@ -490,6 +490,9 @@ change what runs when and how fast, never what is written.
       outcome, and a parked Q6_K kernel is not released. Its oracle is G-T8a's with Q6_K's fields: random blocks, every
       half-float as d, every scale byte, every `ql` and `qh` byte value in every lane, the real 1.5B GGUF's Q6_K
       tensors, and planted defects. If it ships, both kernels go in one aikit release and G-T8b runs once on that pin.
+    - **Q6_K graded, 2026-10-10: SHIP on both cells** (0.931 on the Mac, 0.864 on nobara, the record's "second
+      step"). nobara is below the expected range; the expectation was built from the Mac's share. Both kernels go
+      in aikit v1.67.0.
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
