@@ -102,7 +102,7 @@ def rotary_check(model, cfg):
     return out
 
 
-def run(model_dir, golden, dump, out_dir):
+def run(model_dir, golden, dump, out_dir, dtype="bfloat16"):
     import torch
     from transformers import AutoModelForCausalLM
     os.makedirs(out_dir, exist_ok=True)
@@ -115,7 +115,8 @@ def run(model_dir, golden, dump, out_dir):
     elif d["argmax"] != d["golden_argmax"]:
         print(f"note: quant {d['quant']} argmax {d['argmax']} differs from the int8int8 golden's {d['golden_argmax']} (reported, not an error)")
     print(f"goinfer dump: quant {d['quant']}, argmax {d['argmax']}, sample-256 logit cosine {d['sample256_logit_cosine']:.5f}")
-    model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=torch.bfloat16, low_cpu_mem_usage=True).eval()
+    model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=getattr(torch, dtype), low_cpu_mem_usage=True).eval()
+    print(f"HF reference dtype: {dtype}")
     cfg = model.config
     print("rotary buffers (persistent=False check):")
     print("\n".join(rotary_check(model, cfg)) or "  (none found)")
@@ -204,6 +205,66 @@ def compare(base_json, arm_json, margin=1e-4):
         print("CLASS M: mixed: " + ", ".join(f"{r:.2f}" for r in rs) + " (parked)")
 
 
+I2_CELL = 0.01   # a "crater cell": 1 - cos against the bf16 reference at least this
+I2_GUARD = 0.9999  # f32 against f32 at the short positions 10 and 300, last layer: below this the instrument is suspect
+
+
+def i2(bf16_json, f32_json):
+    """I2 of docs/tasks/task-mellum21-2026-10.md (registered before the run). The same goinfer dump (the f32 forward) is read against HF in bf16 and
+    HF in float32. Cells S = every (layer, position) where 1 - cos against the bf16 reference >= I2_CELL; rho = (1 - cos vs f32 reference) / (1 - cos vs
+    bf16 reference). G (the craters were the bf16 reference): median rho <= 0.25 and at least 80% of the cells have rho <= 0.5. D (a goinfer-side
+    difference): median rho >= 0.75. M otherwise. Guard: the last-layer cosine against the f32 reference at positions 10 and 300 must be >= I2_GUARD,
+    else X (the instrument is suspect, no reading)."""
+    b, f = json.load(open(bf16_json)), json.load(open(f32_json))
+    pos = b["positions"]
+    assert pos == f["positions"], "the two tables are not of the same positions"
+    cells = [(l, i) for l in range(len(b["cos"])) for i in range(len(pos)) if 1 - b["cos"][l][i] >= I2_CELL]
+    rho = [(1 - f["cos"][l][i]) / (1 - b["cos"][l][i]) for l, i in cells]
+    last = len(b["cos"]) - 1
+    guard = [(p, f["cos"][last][pos.index(p)]) for p in (10, 300)]
+    print(f"cells with 1 - cos(bf16 reference) >= {I2_CELL}: {len(cells)}")
+    if cells:
+        print(f"rho = (1 - cos f32 reference) / (1 - cos bf16 reference): median {float(np.median(rho)):.3f}, 10th {float(np.percentile(rho, 10)):.3f}, 90th {float(np.percentile(rho, 90)):.3f}; fraction <= 0.5: {np.mean([r <= 0.5 for r in rho]):.2f}")
+    for p, c in guard:
+        print(f"guard: position {p} last layer, goinfer against the f32 reference: {c:.6f}")
+    print("last-layer relative L2 against the f32 reference: " + " ".join(f"p{p}={f['rel_l2'][last][i]:.4f}" for i, p in enumerate(pos)))
+    print("craters (position, layer): " + ", ".join(f"p{p} L{l}: bf16-ref {b['cos'][l][pos.index(p)]:.5f} f32-ref {f['cos'][l][pos.index(p)]:.5f}" for p, l in CRATERS))
+    if any(c < I2_GUARD for _, c in guard) or not cells:
+        print("CLASS X: the f32 reference is not close to goinfer at the short positions (or there are no crater cells): suspect, no reading")
+        return
+    med = float(np.median(rho))
+    if med <= 0.25 and np.mean([r <= 0.5 for r in rho]) >= 0.8:
+        print("CLASS G: the craters were the bf16 reference: against an f32 reference goinfer's f32 forward agrees")
+    elif med >= 0.75:
+        print("CLASS D: the craters survive an f32 reference: a goinfer-side difference (or one common to any reference)")
+    else:
+        print(f"CLASS M: mixed (median rho {med:.2f}), parked")
+
+
+def selftest_i2():
+    import io, contextlib, tempfile
+    pos = [10, 300, 1030, 1300]
+    def mk(c, guard=0.99999, rel=0.01):
+        C = [[0.99999] * 4 for _ in range(28)]
+        for (l, i), v in c.items():
+            C[l][i] = v
+        C[27][0] = C[27][1] = guard
+        return {"cos": C, "positions": pos, "rel_l2": [[rel] * 4 for _ in range(28)]}
+    bf = mk({(10, 3): 0.95, (12, 3): 0.96, (14, 2): 0.97}, guard=0.9999)
+    cases = {"CLASS G": mk({(10, 3): 0.9999, (12, 3): 0.9998, (14, 2): 0.99995}),
+             "CLASS D": mk({(10, 3): 0.951, (12, 3): 0.958, (14, 2): 0.969}),
+             "CLASS M": mk({(10, 3): 0.99, (12, 3): 0.999, (14, 2): 0.9}),
+             "CLASS X": mk({(10, 3): 0.9999, (12, 3): 0.9998, (14, 2): 0.99995}, guard=0.99)}
+    for want, arm in cases.items():
+        with tempfile.TemporaryDirectory() as d:
+            json.dump(bf, open(d + "/b.json", "w")); json.dump(arm, open(d + "/f.json", "w"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                i2(d + "/b.json", d + "/f.json")
+            assert want in buf.getvalue(), (want, buf.getvalue())
+    print("selftest ok: i2 returns G, D, M and X on four synthetic readings")
+
+
 def selftest_compare():
     import tempfile
     pos = [300, 600, 1030, 1300]
@@ -242,8 +303,12 @@ def selftest_compare():
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "selftest":
         selftest()
-    elif len(sys.argv) == 6 and sys.argv[1] == "run":
+    elif len(sys.argv) in (6, 7) and sys.argv[1] == "run":
         run(*sys.argv[2:])
+    elif len(sys.argv) == 4 and sys.argv[1] == "i2":
+        i2(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 2 and sys.argv[1] == "selftest-i2":
+        selftest_i2()
     elif len(sys.argv) in (4, 5) and sys.argv[1] == "compare":
         compare(sys.argv[2], sys.argv[3], float(sys.argv[4]) if len(sys.argv) == 5 else 1e-4)
     elif len(sys.argv) == 2 and sys.argv[1] == "selftest-compare":
