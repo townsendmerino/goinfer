@@ -462,6 +462,22 @@ new over old, registered before the reading with its cells and instrument (the t
 - The kernel alone, in one process, interleaved, 31 rounds of 9.2M normal weights (direction): 0.094 of the scalar's
   time on the Mac (6.23 to 0.59 ns a weight), 0.097 on nobara (7.2 to 0.70 ns), faster in 31 of 31 each.
 
+### G-T1 for T4b through the gate, 2026-10-10: PASS, every cell that ran is IDENTICAL
+
+aikit v1.66.0 was tagged the same afternoon (perfgate PASS against v1.65.0 and the vulnerability scan clean, both on
+nobara) and goinfer pinned it (`c3e921e6`). `gate identity -giw bytes`, base `eee75d83`, new `f4babc67`:
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 390 | 330 | 0 | 60 | 1 min |
+| six real sources under `~/models`, four configurations each | 24 | 24 | 0 | 0 | 9 min 45 s |
+
+- NOT RUN is T6's nine directories and one that `main` has since gained, `whisper-tiny-ts` (a Whisper
+  encoder-decoder, not a decoder model).
+- The 24 real files have the sha256 of the run that carried T3, cell for cell.
+- This is arm64's kernel. The amd64 kernel's bytes are the day gate's two nobara cells above, and the night's cells.
+- `gate quick` on the pin: green, 2,337 tests passed.
+
 ### The retraction this gate forced
 
 The amendment that named the cells said the Mac's GGUF cell "cannot go under about 0.86", from the arm64 profile's 14%
@@ -493,7 +509,8 @@ reads its stacks, on the old build with one thread (1.5B GGUF to int4 `cpu-arm64
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
 - `gt_night.py`, `run-gt-night-mac.sh`, `run-gt-night-nobara.sh`: the T runs' driver and the two boxes' cells.
   `gt-mac.jsonl`, `gt-mac.log`, `gt-nobara.jsonl`, `gt-nobara.log`: their records.
-- `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records.
+- `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records. `g-t1-t4b-*`: its
+  run through `gate identity`, the same five files as the earlier runs.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
   run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

@@ -3,9 +3,9 @@
 **Status:** scoped 2026-10-10. **T0-T6 are built** ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
 T0, T6, T1, T2, T3, T4a and T5 are on `main` on aikit v1.65.0 and graded: G-T1 PASS on tiny and real cells on both
 boxes; G-T2 SHIP on every graded cell (new/old wall 0.28 on the Mac's 1.5B, 0.13 and 0.12 on nobara's 1.5B and 7B, 0.18
-on the 30B directory). **T4b is built in aikit (`244a10e`) and its day gate ships** (single-thread CPU 0.30 on nobara's
-1.5B GGUF, 0.41 on the Mac's bf16 directory); its release, goinfer's pin and the night's cells are owed. **F3's arm64
-profile is retracted:** the quantizer leads on the Mac too. Next: v1.66.0, then T7 and V. The gates
+on the 30B directory). **T4b is released (aikit v1.66.0), pinned, and its day gate ships** (single-thread CPU 0.30 on nobara's 1.5B GGUF,
+0.41 on the Mac's bf16 directory; G-T1 PASS); the night's cells with it are queued. **F3's arm64
+profile is retracted:** the quantizer leads on the Mac too. Next: T7 and V (Decisions 2 and 4 are made). The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -400,6 +400,9 @@ change what runs when and how fast, never what is written.
         on nobara.
     - **Owed:** aikit v1.66.0's tag (its perfgate and vulnerability scan are on nobara's night queue as
       `aikit-v1660-gates`), then goinfer's pin and G-T1 through `gate identity`, and the next night's cells.
+    - **Released and pinned 2026-10-10** (owner: "run it now"): perfgate PASS against v1.65.0 and the scan clean on
+      nobara by day, aikit v1.66.0 tagged, goinfer on it from `c3e921e6`. **G-T1 for T4b: PASS on the Mac** (330 tiny
+      and 24 real cells IDENTICAL, 0 DIFFERENT). The night's cells with T4b in the new arm are queued on both boxes.
 - **T5. `loadFusedExperts` without the waste.**
   - A tiled transpose that converts from bf16 on the way. It needs a small aikit API, because the raw bytes are
     unexported, for example `Tensor.SubF32Transposed(start, rows, cols)`. 16×16 tiles through a local buffer, written
