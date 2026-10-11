@@ -576,6 +576,171 @@ same CRC. Before the fix the new arm read 19-25 s with no CRC. So the fix restor
 time, and the arms' difference is not the CRC: the old arm's check follows an eleven-minute stream and the new arm's
 a ninety-second one. What the file's pages are doing in that case was not measured.
 
+## T8's day gate, 2026-10-10: the Q4_K and Q6_K dequantizer kernels, SHIP on both cells each
+
+T8 vectorizes the body of aikit's `embed.dequantQ4KBlock` (NEON and AVX2), the copy floor's registered follow-up. Its
+gates are in the task doc (G-T8a to G-T8c), registered before the code.
+
+- **Instrument:** `t4b_cpu_ab.py`, as T4b's gate. Two `cmd/prequant` builds of goinfer `f2b90014`: old on aikit
+  v1.66.0, new on the aikit working tree that became the release. `GOMAXPROCS=1`, user plus system seconds, one
+  discarded warm-up per arm, five pairs in alternating order. Records `t8-cpu-mac.jsonl`, `t8-cpu-nobara.jsonl`.
+- **Boxes:** the Mac at 19:32 (load average 1.4, by day, in use); nobara at 19:39 under the timing lock (load 0.01).
+
+| cell | old CPU | new CPU | new/old, five pairs | median | band | verdict |
+|---|---|---|---|---|---|---|
+| Mac, 1.5B Q4_K_M GGUF to `cpu-arm64` | 3.20 s | 2.71 s | 0.839-0.850 | **0.847** | ship at most 0.98 (expected 0.75-0.85) | **SHIP** |
+| nobara, 1.5B Q4_K_M GGUF to `cpu-amd64` | 3.73 s | 3.02 s | 0.796-0.839 | **0.809** | the same | **SHIP** |
+
+- Every arm of both cells wrote the same sha256 (`655aa585...`), so the transcode's bytes do not change.
+- **nobara was read twice.** The first reading, 0.816 (0.795-0.824, `t8-cpu-nobara-preguard.jsonl`), was on a build
+  whose amd64 kernel ran without checking the CPU for AVX2. The check was added and the cell read again; the table
+  holds the second. The Mac's binary is the same file with and without the check (`cmp`).
+- **G-T8a, the oracle: PASS** natively on arm64 (M1 Pro) and on amd64 (Ryzen 7 3700X), and on amd64 under Rosetta.
+  `TestDequantQ4KBlock_matchesScalar`: 20,000 random blocks, every half-float as d and as dmin, pairs of special
+  values, every byte value in every scales position, every nibble byte value in every lane.
+  `TestDequantQ4KBlock_realFile`: the 1.5B GGUF's 169 Q4_K tensors, 5,255,424 blocks, 1,345,388,544 weights, the
+  kernel's bits equal to the scalar's. Four planted kernel defects each turned the tests red.
+- **The two architectures agree on this file.** The crc32 of every Q4_K weight's bits is `a7454364` on arm64 and on
+  amd64. The registration expected a last-bit difference between a fused subtract and a two-step one; the products are
+  exact in float32, so there is none for finite weights (the task doc's amendment).
+- **One thing the first NEON kernel got wrong, caught by the oracle:** it fused `mul*q - off`, where Go's arm64 code
+  is a multiply and then a subtract fused with `dmin*min`. The two agree on every finite input and differ in which NaN
+  comes out when d and dmin are both NaN. The kernel now follows the scalar's order.
+
+### The second step, Q6_K: SHIP on both cells
+
+Registered in the task doc's amendment before its code: the same instrument and cells, **old the build with the Q4_K
+kernel, new the build that adds the Q6_K kernel**. Records `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`. The Mac
+at 19:46 (load average 2.1, in use); nobara at 19:47 under the timing lock (load 1.5 from the oracle run just before).
+
+| cell | old CPU | new CPU | new/old, five pairs | median | band | verdict |
+|---|---|---|---|---|---|---|
+| Mac, 1.5B Q4_K_M GGUF to `cpu-arm64` | 2.74 s | 2.56 s | 0.924-0.942 | **0.931** | ship at most 0.98 (expected 0.93-0.97) | **SHIP** |
+| nobara, 1.5B Q4_K_M GGUF to `cpu-amd64` | 3.05 s | 2.63 s | 0.856-0.870 | **0.864** | the same | **SHIP** |
+
+- Every arm wrote the same sha256 as the Q4_K step's arms.
+- nobara's reading is below the expected range: the expectation came from the Mac's sampler share (about 5%), and the
+  scalar Q6_K body is a larger share of amd64's time. The file holds 29 Q6_K tensors, 431,554,560 weights, against
+  1,345,388,544 in Q4_K.
+- **The oracle: PASS** natively on arm64 and on amd64. `TestDequantQ6KBlock_matchesScalar` (20,000 random blocks,
+  every half-float as d, every byte value in every scale position, every `ql` and `qh` byte value in every lane) and
+  `TestDequantQ6KBlock_realFile` (the 1.5B GGUF's 29 Q6_K tensors; crc32 of every weight `67f2a56d` on both).
+- **The amd64 oracle first passed without testing anything.** On the Mac it runs under Rosetta, which does not
+  advertise AVX to the process, so with the CPU check in place both arms were the scalar. Four planted AVX2 defects
+  passed, which is how it showed. The four oracle tests now skip on a CPU that runs no kernel, and with
+  `ROSETTA_ADVERTISE_AVX=1` five planted AVX2 defects and four NEON ones each turn them red. The Q4_K kernel's amd64
+  oracle is not affected: it ran natively on nobara, and under Rosetta before the check existed.
+- **Both steps against v1.66.0:** 3.20 to 2.56 s of CPU on the Mac and 3.73 to 2.63 s on nobara, from two runs each
+  (the two steps' medians, not one paired reading).
+- G-T8b, identity through the gate on the pin: the next section.
+
+### G-T8b, 2026-10-10: PASS, every cell that ran is IDENTICAL; `gate quick` GREEN on the pin
+
+aikit v1.67.0 was tagged the same evening (perfgate PASS against v1.66.0 with 14 of 47 shapes resolving 5%, and the
+vulnerability scan clean in 16 of 16 modules, both on nobara at `c7975b2`; root CI green at the release commit).
+goinfer pinned it (`96f3a4aa`) and refreshed the parity hashes (`b2e9d19b`; forward goldens 43 passed, 0 failed).
+`gate identity -giw bytes`, base `eee75d83`, new `b2e9d19b`:
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 390 | 330 | 0 | 60 | 44 s |
+| the two bench GGUFs (0.5B and 1.5B Q4_K_M), four configurations each | 8 | 8 | 0 | 0 | 2 min 2 s |
+
+- The real run is the two GGUFs only, by the owner's rule for day runs; both hold Q4_K and Q6_K tensors, so both
+  kernels are on the path. All 8 cells have the sha256 they had in T4b's run.
+- NOT RUN is the same 60 tiny cells as every earlier run.
+- `go run ./cmd/gate quick` on `b2e9d19b`: GREEN, 2338 tests passed (512 skipped), 9 min 21 s, with its two standing
+  notes on this Mac (two cells of modules that do not build here; the `constrain` checkpoint cell skipped every
+  test). Its GGUF forward goldens are the registered check on resident loads, which go through the same two
+  functions.
+- Files: `g-t1-t8-tiny.log`, `g-t1-t8-tiny.jsonl`, `g-t1-t8-real.log`, `g-t1-t8-real.jsonl`, `g-t1-t8-real-lines.txt`.
+
+## Part V, 2026-10-10: format v16 built; G-V1 PASS on every cell read, G-V2 holds with two projection misses, G-V4 PASS; the 7B's Metal cells wait for the night
+
+Part V makes `.giw` one layout that the reader reads exactly (the task doc's V1 to V7, with T7). Base `c07c7f5d` (`main`,
+weights format v15); the code is `124fc9fb`, followed by the parity refresh, the docs and one gate asset. The gates were
+registered on 2026-10-10 before any code.
+
+### G-V1, logits identity through each build's own sidecar: PASS on every cell that ran
+
+`gate identity -giw logits c07c7f5d <new>`: each revision transcodes the source with its own writer (v15, v16) and
+loads its own file, and the logits are compared bit for bit.
+
+| run | families | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny assets, CPU | 43 | 36 | 0 | 7 | 59 s |
+| tiny assets, Metal | 43 | 24 | 0 | 19 | 1 min 23 s |
+| the 1.5B Q4_K_M GGUF, Metal, int4 (read by day) | 1 cell | 1, on `metal-resident` | 0 | 0 | 24 s |
+| the 7B Q4_K_M GGUF, Metal, int4 | | | | **queued for the night** | |
+
+- CPU's 7 NOT RUN: `voxtral` and `qwen3_asr` (their tiny goldens are zip files this tool does not read), `deepseek_v2`
+  (no tiny fixture), `mellum` (its fixture is a 4.2 GB slice), `qwen2` and `qwen3` (their tiny-table assets are not in
+  `testdata/` on this Mac), and `gpt-oss` (its tiny GGUF carries no tokenizer, so neither build transcodes it).
+- Metal's 19 NOT RUN are those plus families Metal does not build resident from a tiny fixture. The two MoE fixtures
+  that decline with a "K%32" message decline with the same message on the v15 build.
+- Reports: `g-v1-cpu.log`, `g-v1-metal.log`, `g-v1-real-metal-1.5b.log`.
+
+### G-V2, sizes: every non-Metal file keeps its size; Metal files shrink as projected except the two small default files
+
+`g-v2-sizes.sh`: one source, one target, a v15 transcode (the `cmd/prequant` T8's speed gate used as its new arm:
+goinfer `f2b90014` on the aikit tree that became v1.67.0) and a v16 one (`124fc9fb`), bytes from `stat`. Records `g-v2-sizes-small.txt`, `g-v2-sizes-7b.txt`. MB is 10^6 bytes.
+
+| source | target | v15 bytes | v16 bytes | shrink | projection, ±5% | |
+|---|---|---|---|---|---|---|
+| 0.5B | Metal, `-embed-int4` | 439,436,771 | 360,672,451 | 78.8 MB | 62 MB | **outside (more)** |
+| 0.5B | Metal, plain | 525,736,387 | 481,005,763 | 44.7 MB | 45 MB | inside |
+| 1.5B | Metal, `-embed-int4` | 1,228,191,843 | 1,006,071,235 | 222.1 MB | 193 MB | **outside (more)** |
+| 1.5B | Metal, plain | 1,375,265,859 | 1,211,488,707 | 163.8 MB | 164 MB | inside |
+| 7B | Metal, `-embed-int4` | 5,242,808,035 | 4,290,894,915 | 951.9 MB | 952 MB | inside |
+| 7B | Metal, plain | 5,584,647,875 | 4,768,984,131 | 815.7 MB | 816 MB | inside |
+| each of the three | cpu-arm64, both; cuda | equal | equal | 0 | the same size | holds |
+
+- **The two misses are the projection's.** It counted one int4 table for the 0.5B and the 1.5B, and their GGUFs carry
+  a separate embedding and head, so two tables lose a float32 scale array. On the 0.5B a table has 151,936 rows of 28
+  scales, 17,016,832 bytes as float32; twice that is 34,033,664, and the default file's shrink exceeds the plain file's
+  by 34,033,696. On the 1.5B the same arithmetic gives 58.3 MB against a measured 58.3 MB. The 7B's projection counted
+  two and lands. The band is not moved: these two rows are outside it, on the side of a smaller file.
+- The kill rule (a Metal file that does not shrink) does not fire.
+- A cpu-target file is the same size to the byte, not 16 bytes smaller: the shorter header ends on the same boundary
+  for these three models.
+- **The clarification's timing.** The task doc's G-V2 amendment (16 bytes, sizes read by day) was written before the
+  first size was read and committed after it (`278ace87`). The history cannot show the order; this note does.
+
+### G-V3, Metal binding: equal on the 0.5B and the 1.5B; the 7B is queued for the night
+
+The alias banner from `serve` on Metal, the old build on its own v15 sidecar and the new build on the v16 one it rebuilt
+(`g-v4-0.5b-serve-*.log`, `g-v3-1.5b-serve-*.log`):
+
+| model | v15, bound in place | v16, bound in place | copied |
+|---|---|---|---|
+| 0.5B | 322 MB | 322 MB | 1 MB in both |
+| 1.5B | 925 MB | 925 MB | 1 MB in both |
+| 7B | | | **not read by day** |
+
+- The gate is on the 7B. By day both builds declined it on Metal at the fit guard (the resident build needs 4.65 GB and
+  the box's live-available memory left a 4.0-4.1 GB budget), ran on the CPU and printed no banner
+  (`g-v3-7b-day-declined-*.log`). The guard was not bypassed.
+- Queued: `run-gv-night-mac.sh` reads it tonight, with G-V1's 7B cell. It fails if either build prints no banner.
+
+### G-V4, refusal and rebuild: PASS
+
+- The three tests: `TestLoadSerializedWeights_refusesEveryOtherVersion` (a blob stamped v15, v17 or v3 with its CRC
+  recomputed is refused with the message naming both versions and the fix),
+  `TestEnsureCachedGIW_olderFormatIsRebuiltOnce` (a sidecar stamped as the previous version is refused, rebuilt, and
+  found fresh on the next call; with freshness by mtime alone, planted, it fails) and
+  `TestWeightAlias_olderBundleTakesCopyPath` (a non-Metal bundle's single int4 tensors bind their scales in place on
+  Metal, which they could not before the side map went).
+- The manual run, `serve` on Metal over the 0.5B in a scratch directory (`serve-once.sh`): the old build wrote a v15
+  sidecar (525.7 MB); the new build printed "does not load (... format v15, this build reads v16 ...) — rebuilding",
+  transcoded once (0.4 s, 481.0 MB), served a reply, and on its next start transcoded nothing. The 7B's day run did the
+  same on the CPU path (13.7 s for the v15 transcode, 10.6 s for the v16 one).
+
+### What a mixed pair of builds does
+
+A build from before Part V refuses a v16 sidecar as newer than it reads and rewrites it as v15; a v16 build then
+rewrites it again. Each switch costs one transcode. The manual runs above were kept in a scratch directory so no
+sidecar in `~/models` changed format.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -586,6 +751,11 @@ a ninety-second one. What the file's pages are doing in that case was not measur
   the same runs with T4b in the new arm.
 - `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records. `g-t1-t4b-*`: its
   run through `gate identity`, the same five files as the earlier runs.
+- `t8-cpu-mac.jsonl`, `t8-cpu-nobara.jsonl`: T8's day gate, the Q4_K kernel (the same instrument).
+  `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`: its second step, the Q6_K kernel over the Q4_K one.
+  `t8-cpu-nobara-preguard.jsonl`: nobara's first reading, before the AVX2 check.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
+- Part V: `g-v1-*.log` (the identity reports), `g-v2-sizes.sh` and `g-v2-sizes-*.txt`, `serve-once.sh` with
+  `g-v3-*.log` and `g-v4-*.log` (the `serve` runs), `run-gv-night-mac.sh` (tonight's 7B Metal cells).
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
   run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

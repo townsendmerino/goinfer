@@ -4,9 +4,13 @@
 T0-T6 with T4b, on aikit v1.66.0. G-T1 PASS on tiny and real cells on both boxes. G-T2 SHIP on every graded cell: new/old
 wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on the 30B directory. G-T3 within its
 bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
-follow-up (a vectorized GGUF dequantizer) opens on the Mac's cell by a hair and is not started. F3's arm64 profile is
-retracted. T0-T6 without T4b are on `main`; T4b's pin and records are on branch `giw-v16-t4b-2026-10`. **Next: T7 and
-V** (Decisions 2 and 4 are made). The gates
+follow-up (a vectorized GGUF dequantizer) opened on the Mac's cell by a hair and is **built and graded as T8**, on aikit
+v1.67.0: single-thread transcode CPU new/old 0.847 and 0.809 for the Q4_K kernel (Mac, nobara), then 0.931 and 0.864
+for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. Part T with T8 is on `main`.
+**Part V is built** (V1-V7 with T7) on branch `giw-v16-v-2026-10`: G-V1 PASS on every cell read (tiny assets on CPU and
+Metal, the 1.5B on Metal), G-V2 holds with two projection misses on the small default files (the projection counted
+one int4 table where there are two), G-V4 PASS. The 7B's Metal cells (G-V1 and G-V3) are queued for the night: by day
+the fit guard declined the 7B on Metal. **Next:** read the night cells, then Decision 4's four rebuilds on nobara. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -44,18 +48,18 @@ direction and the projection bands, and is never quoted as a result. The results
 
 ### The format
 
-`decoder/serialize.go:giwMinReadV` is 3 and `giwVersion` is 15: the reader accepts thirteen layouts. What that costs:
+`giwMinReadV` (in `decoder/serialize.go`, removed by V2) is 3 and `giwVersion` is 15: the reader accepts thirteen layouts. What that costs:
 
 - About thirteen version gates across `giwReader.weightMat`, `giwReader.fusedGroup`, `giwReader.int4Scales`,
   `giwReader.alignArray`, `giwReader.layer` and `loadSerializedWeights` (the v4/v6/v8/v9 family tails, the v5 quant
   label, v12 alignment, the v10 Granite refusal, the f32-to-f16 scale conversion for pre-v15 files, the pre-v14
   fused-group path).
-- **Kind 4**, retired but still read and still writable through `decoder/serialize.go:SerializeWeightsRow4` and
+- **Kind 4**, retired but still read and still writable through `SerializeWeightsRow4` and
   `SerializeWeightsToRow4`, with two test files of its own.
-- A test-only writer switch, `decoder/serialize.go:giwEmitVersion` with `giwWriter.emitVersion`, so four test files can
+- A test-only writer switch, `giwEmitVersion` with `giwWriter.emitVersion`, so four test files can
   write old layouts and prove they still load.
 - The v1 and v2 bundle frames in `internal/giw/bundle.go:Read` and `WeightsVersionFile`.
-- `internal/prequant/prequant.go:minInt4CacheGIWVersion` and `cacheLayoutCurrent`, which exist to force a rebuild the
+- `minInt4CacheGIWVersion` (in `internal/prequant/prequant.go`) and `cacheLayoutCurrent`, which exist to force a rebuild the
   reader would otherwise never ask for.
 - A new read-side shim this week: `82d53dc6` takes an `int4mix` label from the weights on read "so a bundle written
   under that rule needs no rebuild".
@@ -66,7 +70,7 @@ And the current layout is not single-representation:
   writes an f32 scale array and then an f16 copy (`giwWriter.fusedGroup`, `giwWriter.weightMatKind`). The reader uses
   the f32 array only for a length check, and for kind 6 converts it to f16 and throws the result away.
 - **Kind 7 is v15's kind 3 plus that dead array.** Kind 3 has stored aligned binary16 scales since v15.
-- **The f16 side map** (`giwReader.recordF16`, `Weights.int4F16`, `decoder/model.go:Model.Int4ScalesF16`) exists
+- **The f16 side map** (`giwReader.recordF16`, `Weights.int4F16`, `Model.Int4ScalesF16`) exists
   because weights loaded from pre-v15 files held f32 scales. From v15 every int4 `WeightMat`'s own scales are the f16
   bytes in the mapping. `metal/moe.go` and `metal/gemma4_moe.go` already read them from the `WeightMat`
   (`Int4ScalesF16()`); only `metal/alias.go:weightAlias.scales16` still goes through the side map.
@@ -444,6 +448,58 @@ change what runs when and how fast, never what is written.
     (`buildWeightsFromGGUF`, `buildWeightsFromSafetensorsTo`) fold it into `skipRow4` before any tensor is built, and
     `streamQuantizedEmbed` takes it as a parameter. The amd64 split-half repack, off by default, is not covered. G-T1
     on the Mac: PASS.
+- **T8. A vectorized GGUF dequantizer (aikit). Registered 2026-10-10, before any code** (owner: "do it", after the
+  copy floor's consequence opened on the Mac's 1.5B at 3.08).
+  - **What:** NEON and AVX2 kernels for the body of `embed.dequantQ4KBlock`: per 32-weight sub-block, the nibbles
+    widened to float32, times the sub-block's scale, minus its offset. The scalar body stays as the oracle and serves
+    other architectures. The block's prologue (the two half-floats, the 6-bit scale and min unpack, the eight products)
+    stays in Go.
+  - **Each architecture matches its own scalar.** `d1*float32(q) - off1` is one fused operation in Go's arm64 code and
+    two rounded ones on amd64, so the two builds already differ in the last bit, and each kernel must reproduce its
+    own: fused on NEON, a multiply and a subtract on AVX2. The oracle test decides, not this note.
+  - **Reach.** This function is every Q4_K GGUF load, resident loads included, not only the transcode. So the forward
+    goldens that load a GGUF are part of the gate.
+  - **Second step, only if the first ships:** the same for `dequantQ6KBlock`, which the bench GGUFs use for a few
+    tensors (about 5% of the Mac cell's CPU after T4b, by the system sampler).
+  - **G-T8a, oracle (aikit, day).** The kernel equals the scalar bit for bit on: every nibble value under random
+    scales and offsets; d and dmin that are zero, negative, subnormal, infinite and NaN; random blocks; and the whole
+    of the real 1.5B GGUF's Q4_K tensors (a hash of the dequantized floats). Natively on arm64 and on amd64. Planted
+    kernel defects must turn it red.
+  - **G-T8b, identity (goinfer, day).** `gate identity -giw bytes` on the tiny matrix and the two real GGUFs, and
+    `gate quick` (its GGUF forward goldens) on the pin.
+  - **G-T8c, speed (day; `t4b_cpu_ab.py`, the instrument T4b's gate used).** Single-thread transcode CPU, new over
+    old, old being the v1.66.0 build, on the Mac's 1.5B GGUF to `cpu-arm64` and nobara's 1.5B GGUF to `cpu-amd64`.
+
+    | | expected | ship | park | off |
+    |---|---|---|---|---|
+    | each cell | 0.75-0.85 | at most 0.98 | 0.98-1.00 | above 1.00 |
+
+    The expectation: the Q4_K dequantizer is about 24% of the Mac cell's CPU by the sampler, and a kernel four to
+    six times faster leaves about 5%. The ship line is the repo's default (1.02x), not the expectation.
+  - **Recorded, not gated:** the copy floor on the next night's cells (3.08 on the Mac's 1.5B today).
+  - **Amendment, 2026-10-10 (after the Q4_K kernel was measured, before any Q6_K code).**
+    - **The Q4_K kernel: G-T8a PASS, G-T8c SHIP on both cells** (new/old CPU 0.847 on the Mac, 0.809 on nobara;
+      [record](../measurements/giw-v16-transcode-2026-10/README.md), "T8's day gate"). G-T8b waits for the pin.
+    - **The note above on the two architectures is wrong for every finite weight.** `d*scale*nibble` is exact in
+      float32 (an 11-bit half-float, a 6-bit scale and a 4-bit nibble), and so is `dmin*min`, so the fused subtract
+      and the two-step one round once, to the same value. Measured: the crc32 of every Q4_K weight of the 1.5B GGUF is
+      the same on arm64 and on amd64. The builds can differ only in which NaN comes out when d or dmin is not finite,
+      and there each kernel reproduces its own scalar, which the oracle checks.
+    - **The amd64 kernel takes the CPU check** (AVX2 present, or the scalar body). The first nobara reading (0.816)
+      was on a build without it; the graded one (0.809) is on the build with it.
+    - **Q6_K's gate, the second step.** The instrument and the two cells are G-T8c's. **Old is the build with the Q4_K
+      kernel; new adds the Q6_K kernel.** Ship at most 0.98, park 0.98-1.00, off above 1.00. Expected 0.93-0.97: Q6_K
+      was about 5% of the Mac cell's CPU before the Q4_K kernel, so about 6% of this old arm, and a kernel four to
+      six times faster leaves a little over 1%. The expectation sits close to the ship line, so a park is a live
+      outcome, and a parked Q6_K kernel is not released. Its oracle is G-T8a's with Q6_K's fields: random blocks, every
+      half-float as d, every scale byte, every `ql` and `qh` byte value in every lane, the real 1.5B GGUF's Q6_K
+      tensors, and planted defects. If it ships, both kernels go in one aikit release and G-T8b runs once on that pin.
+    - **Q6_K graded, 2026-10-10: SHIP on both cells** (0.931 on the Mac, 0.864 on nobara, the record's "second
+      step"). nobara is below the expected range; the expectation was built from the Mac's share. Both kernels go
+      in aikit v1.67.0.
+    - **G-T8b, 2026-10-10: PASS.** aikit v1.67.0 is tagged and pinned. `gate identity -giw bytes`: 330 of 330 tiny
+      cells that ran and 8 of 8 on the two real GGUFs are IDENTICAL; `gate quick` is GREEN on the pin. **T8 is built
+      and graded.** The copy floor's re-read on a later night's cells is still owed (recorded, not gated).
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
@@ -639,6 +695,11 @@ exactly that.
       952 MB on the 7B.
     - Plain int4: 45 MB, 164 MB, 816 MB.
   - **Kill V1's layout change if a Metal file does not shrink:** the dead array is not what § Why says it is.
+  - **Amendment, 2026-10-10 (V1 built, before any size was read).** V1 does drop the header's 4-byte quant enum, and the
+    header is padded to a 16-byte boundary. So a cpu-target v16 file is its v15 twin's size, or exactly 16 bytes smaller
+    where the shorter header ends on an earlier boundary. "The same size" above is read as that. Nothing else in a
+    cpu-target file changes length. The real sizes are deterministic and each transcode now takes seconds, so they are
+    read by day; no band moves.
 - **G-V3, Metal binding.** The alias banner's "N MB bound in place" is at least v15's figure on the 7B. Metal decode
   is byte-identical (G-V1).
 - **G-V4, refusal and rebuild.** V6's three new tests pass, plus one manual run on the Mac: a v15 sidecar is rebuilt

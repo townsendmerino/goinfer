@@ -195,7 +195,9 @@ func TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only(t *testin
 	wr.u32(uint32(cols))
 	wr.u32(uint32(group))
 	wr.raw([]byte{0}) // w8a8
-	wr.f32(make([]float32, wantScales))
+	wr.alignArray()
+	wr.scales16(make([]uint16, wantScales))
+	wr.alignArray()
 	wr.bytesField(make([]byte, wantQ4))
 
 	r := &giwReader{data: wr.buf}

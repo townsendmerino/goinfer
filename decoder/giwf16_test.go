@@ -1,54 +1,54 @@
 package decoder
 
 import (
+	"bytes"
 	"testing"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Weights format v14 (metal target): every canonical group-32 int4 tensor also carries its group scales pre-converted
-// by F16Bits, so a Metal no-copy buffer can alias them instead of converting the f32 scales into a new buffer (S6).
-// Singles are kind 7; kind-6 groups gain an f16 block. These pin that the f16 arrays exist for exactly those tensors,
-// equal the kernels' own conversion, live in the mapping where the Metal build can find them, and that other targets
-// and older files are unaffected.
+// Every int4 tensor's group scales are stored as binary16 and aliased from the mapping as the WeightMat's own storage.
+// On a Metal target a fused group's members have their scales back to back in one block, so a no-copy buffer can bind
+// the whole group's scales as one run; a single tensor's scales are one run by themselves (kind 3).
 
 func f16Fixture(t *testing.T) *Weights {
 	t.Helper()
 	w := fusedFixture(t) // int4 Q/K/V and Gate/Up (fused groups)
 	l := &w.Layers[0]
-	l.OProj = synthInt4(8, 64, 32, 13)    // single → kind 7
-	l.DownProj = synthInt4(8, 64, 32, 17) // single → kind 7
+	l.OProj = synthInt4(8, 64, 32, 13)    // a single tensor: kind 3
+	l.DownProj = synthInt4(8, 64, 32, 17) // a single tensor: kind 3
 	return w
 }
 
-func requireF16(t *testing.T, w *Weights, view []byte, name string, m *linalg.WeightMat, wantAligned bool) {
+// requireScalesInMapping checks that got's binary16 scales are src's, bit for bit, and are aliased from view; with
+// wantAligned, that they start 16-aligned (a single tensor, or the first member of a fused group).
+func requireScalesInMapping(t *testing.T, view []byte, name string, src, got *linalg.WeightMat, wantAligned bool) []uint16 {
 	t.Helper()
-	q4, q4s, _, ok := Int4F32(m)
-	if !ok {
-		t.Fatalf("%s: not int4", name)
+	want, f16 := src.Int4ScalesF16(), got.Int4ScalesF16()
+	if len(f16) == 0 || len(f16) != len(want) {
+		t.Fatalf("%s: %d scales, want %d", name, len(f16), len(want))
 	}
-	f16, ok := w.int4F16[uintptr(unsafe.Pointer(&q4[0]))]
-	if !ok {
-		t.Fatalf("%s: no f16 scales recorded in a v14 metal-target load", name)
-	}
-	if len(f16) != len(q4s) {
-		t.Fatalf("%s: %d f16 scales, want %d", name, len(f16), len(q4s))
-	}
-	for i, v := range q4s {
-		if f16[i] != F16Bits(v) {
-			t.Fatalf("%s: f16[%d] = %#x, want F16Bits(%g) = %#x", name, i, f16[i], v, F16Bits(v))
+	for i := range want {
+		if f16[i] != want[i] {
+			t.Fatalf("%s: scale %d = %#x, want %#x", name, i, f16[i], want[i])
 		}
 	}
 	if !within(unsafe.Pointer(&f16[0]), view) {
-		t.Errorf("%s: f16 scales were copied, not aliased from the mapping", name)
+		t.Errorf("%s: scales were copied, not aliased from the mapping", name)
 	}
 	if wantAligned && uintptr(unsafe.Pointer(&f16[0]))%16 != 0 {
-		t.Errorf("%s: f16 scales not 16-byte aligned (%#x)", name, uintptr(unsafe.Pointer(&f16[0])))
+		t.Errorf("%s: scales not 16-byte aligned (%#x)", name, uintptr(unsafe.Pointer(&f16[0])))
 	}
+	return f16
 }
 
-func TestGIWF16_metalTargetCarriesF16ScalesForEveryInt4Tensor(t *testing.T) {
+// adjacent reports whether b starts where a ends.
+func adjacent(a, b []uint16) bool {
+	return uintptr(unsafe.Pointer(&a[0]))+uintptr(2*len(a)) == uintptr(unsafe.Pointer(&b[0]))
+}
+
+func TestGIWF16_metalTargetScalesAreAliasedAndGroupsAreOneRun(t *testing.T) {
 	src := f16Fixture(t)
 	blob, err := SerializeWeightsForTarget(src, "f16", GIWTargetMetal)
 	if err != nil {
@@ -60,60 +60,44 @@ func TestGIWF16_metalTargetCarriesF16ScalesForEveryInt4Tensor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSerializedWeights: %v", err)
 	}
-	l := &got.Layers[0]
-	requireF16(t, got, view, "OProj (kind 7)", &l.OProj, true)
-	requireF16(t, got, view, "DownProj (kind 7)", &l.DownProj, true)
-	requireF16(t, got, view, "QProj (group head)", &l.QProj, true)
-	requireF16(t, got, view, "KProj (group member)", &l.KProj, false)
-	requireF16(t, got, view, "VProj (group member)", &l.VProj, false)
-	requireF16(t, got, view, "GateProj (group head)", &l.GateProj, true)
-	requireF16(t, got, view, "UpProj (group member)", &l.UpProj, false)
-	// The round trip itself is unchanged by the extra array.
+	sl, l := &src.Layers[0], &got.Layers[0]
+	requireScalesInMapping(t, view, "OProj (single)", &sl.OProj, &l.OProj, true)
+	requireScalesInMapping(t, view, "DownProj (single)", &sl.DownProj, &l.DownProj, true)
+	q := requireScalesInMapping(t, view, "QProj (group head)", &sl.QProj, &l.QProj, true)
+	k := requireScalesInMapping(t, view, "KProj (group member)", &sl.KProj, &l.KProj, false)
+	v := requireScalesInMapping(t, view, "VProj (group member)", &sl.VProj, &l.VProj, false)
+	g := requireScalesInMapping(t, view, "GateProj (group head)", &sl.GateProj, &l.GateProj, true)
+	u := requireScalesInMapping(t, view, "UpProj (group member)", &sl.UpProj, &l.UpProj, false)
+	if !adjacent(q, k) || !adjacent(k, v) {
+		t.Error("the Q/K/V group's scales are not one contiguous run")
+	}
+	if !adjacent(g, u) {
+		t.Error("the Gate/Up group's scales are not one contiguous run")
+	}
 	for name, p := range map[string][2]*linalg.WeightMat{
-		"OProj": {&src.Layers[0].OProj, &l.OProj}, "DownProj": {&src.Layers[0].DownProj, &l.DownProj},
+		"OProj": {&sl.OProj, &l.OProj}, "DownProj": {&sl.DownProj, &l.DownProj},
 	} {
 		sameMat(t, name, p[0], p[1])
 	}
-
-	m := &Model{w: got}
-	if f, ok := m.Int4ScalesF16(&l.OProj); !ok || len(f) == 0 {
-		t.Errorf("Model.Int4ScalesF16(OProj) = %d scales, ok=%v", len(f), ok)
-	}
-	if _, ok := m.Int4ScalesF16(&linalg.WeightMat{}); ok {
-		t.Error("Model.Int4ScalesF16 returned scales for an empty WeightMat")
-	}
 }
 
-func TestGIWF16_otherTargetsAndOlderFilesCarryNone(t *testing.T) {
-	src := f16Fixture(t)
-	for _, tgt := range []GIWTarget{GIWTargetNone, GIWTargetCUDA} {
-		blob, err := SerializeWeightsForTarget(src, "f16", tgt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := LoadSerializedWeights(blob)
-		if err != nil {
-			t.Fatalf("%q: %v", tgt, err)
-		}
-		if got.int4F16 != nil {
-			t.Errorf("target %q: %d f16 entries, want none", tgt, len(got.int4F16))
-		}
-	}
-	prev := giwEmitVersion
-	giwEmitVersion = giwVFused // a v13 metal-target file: fused groups, no f16
-	blob, err := SerializeWeightsForTarget(src, "f16-v13", GIWTargetMetal)
-	giwEmitVersion = prev
+// TestGIWF16_metalSingleIsKind3: on a Metal target a single int4 tensor is written exactly as on any other target,
+// so the two blobs' records for it are the same bytes. Kind 7, a Metal-only record for a single tensor, is not
+// written and not read.
+func TestGIWF16_metalSingleIsKind3(t *testing.T) {
+	src := alignFixtureWeights(t) // int4 beside int8 and f32: no group is eligible to fuse
+	src.Layers[0].OProj = synthInt4(8, 64, 32, 13)
+	metal, err := SerializeWeightsForTarget(src, "single", GIWTargetMetal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadSerializedWeights(blob)
+	plain, err := SerializeWeightsForTarget(src, "single", GIWTargetNone)
 	if err != nil {
-		t.Fatalf("a v13 metal-target blob no longer loads: %v", err)
+		t.Fatal(err)
 	}
-	if got.int4F16 != nil {
-		t.Errorf("v13 metal-target blob: %d f16 entries, want none", len(got.int4F16))
+	if !bytes.Equal(metal, plain) {
+		t.Errorf("with no fused group, a Metal-target blob (%d bytes) differs from a plain one (%d bytes)", len(metal), len(plain))
 	}
-	sameMat(t, "OProj (v13)", &src.Layers[0].OProj, &got.Layers[0].OProj)
 }
 
 // F16Bits is the conversion the Metal kernels' scales were validated with (round half UP on the dropped

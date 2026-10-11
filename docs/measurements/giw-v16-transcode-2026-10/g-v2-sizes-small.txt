@@ -1,0 +1,10 @@
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf target=metal -embed-int4 v15=439436771 v16=360672451
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf target=metal plain v15=525736387 v16=481005763
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf target=cpu-arm64 -embed-int4 v15=360675907 v16=360675907
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf target=cpu-arm64 plain v15=481009219 v16=481009219
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf target=cuda plain v15=481009219 v16=481009219
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf target=metal -embed-int4 v15=1228191843 v16=1006071235
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf target=metal plain v15=1375265859 v16=1211488707
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf target=cpu-arm64 -embed-int4 v15=1006075267 v16=1006075267
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf target=cpu-arm64 plain v15=1211492739 v16=1211492739
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf target=cuda plain v15=1211492739 v16=1211492739

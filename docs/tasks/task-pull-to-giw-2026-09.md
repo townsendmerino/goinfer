@@ -75,7 +75,7 @@ is dead weight until someone asks for a different quant or backend layout.
 **How a `.giw` is found and trusted today**
 - It is found by name from its `.gguf`: the `.gguf` path, plus the quant and the target.
 - It counts as fresh (`cacheFresh`) if the source `.gguf` exists, the `.giw` is newer than it, and the `.giw` loads. The
-  source's mtime is the only thing compared: no size, no hash. **[2026-10-05: also, for an int4 sidecar, its weights layout must be at least v15 (binary16 group scales), or it is rebuilt once (`minInt4CacheGIWVersion`).]**
+  source's mtime is the only thing compared: no size, no hash. **[2026-10-05: also, for an int4 sidecar, its weights layout must be at least v15 (binary16 group scales), or it is rebuilt once (`minInt4CacheGIWVersion`).]** **[2026-10-10: from weights format v16 the reader reads one version, so a sidecar at any other version fails "does it load" and is rebuilt once; that rule and its constant are gone (`docs/giw-bundles.md`, "One version").]**
 - It records only the source's basename, as its header id, and the reader discards that. There is no provenance hash
   in the format.
 

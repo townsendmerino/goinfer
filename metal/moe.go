@@ -732,7 +732,7 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 		nGuW, nGuS := len(gw0)+len(uw0), len(gs0)+len(us0)
 		experts := lw.Experts // capture (aliases the model's own weights; kept alive by the Model)
-		// Each expert's f16 scales are read from its own WeightMats (Int4ScalesF16), which a v14 metal or v15 .giw
+		// Each expert's f16 scales are read from its own WeightMats (Int4ScalesF16), which a .giw
 		// aliases from the mapping, rather than from a build-time heap cache that would hold the same bits again.
 		stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
 			gw, _ := int4DirectBytesOnly(&experts[e].Gate)
@@ -754,7 +754,7 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		// hands over one already-fused gate|up span), so the slot's fused gate|up buffer is filled in two ranges, gate
 		// at byte 0 and up at byte len(gate), reproducing the byte-copy path's append(gw, uw...) and hence the stacked
 		// layout gemv_w4a8_moe reads. The f16 scales are pread the same way, into the two halves of the slot's gate|up
-		// scale range and the down scale buffer, when every expert's lie in the mapping (a v14 metal or v15 .giw);
+		// scale range and the down scale buffer, when every expert's lie in the mapping (a .giw);
 		// otherwise they are copied from the WeightMats (an older file converts them onto the heap at load).
 		//
 		// Falls back to the byte-copy path if the fd is absent or any expert's nibbles are not .giw-mmap-backed (a

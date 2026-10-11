@@ -1,0 +1,5 @@
+qwen2.5-7b-instruct-q4_k_m.gguf target=metal -embed-int4 v15=5242808035 v16=4290894915
+qwen2.5-7b-instruct-q4_k_m.gguf target=metal plain v15=5584647875 v16=4768984131
+qwen2.5-7b-instruct-q4_k_m.gguf target=cpu-arm64 -embed-int4 v15=4290898947 v16=4290898947
+qwen2.5-7b-instruct-q4_k_m.gguf target=cpu-arm64 plain v15=4768988163 v16=4768988163
+qwen2.5-7b-instruct-q4_k_m.gguf target=cuda plain v15=4768988163 v16=4768988163
