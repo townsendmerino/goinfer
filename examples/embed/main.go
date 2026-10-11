@@ -43,11 +43,15 @@ func main() {
 	check(err, "encode")
 
 	out, _ := m.Generate(context.Background(), ids, 256, decoder.SamplingParams{})
+	// A Stream, not tok.Decode per id: it keeps each piece's leading space and holds half a multi-byte character
+	// until the next token completes it.
+	stream := tok.NewStream()
 	for id := range out {
-		s, err := tok.Decode([]int{id})
+		s, err := stream.Write(id)
 		check(err, "decode")
 		fmt.Print(s)
 	}
+	fmt.Print(stream.Flush())
 	fmt.Println()
 }
 

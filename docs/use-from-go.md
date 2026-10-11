@@ -90,13 +90,26 @@ the next one checks it.
 
 ```go
 	out, _ := m.Generate(context.Background(), ids, 256, decoder.SamplingParams{})
+	// A Stream, not tok.Decode per id: it keeps each piece's leading space and holds half a multi-byte character
+	// until the next token completes it.
+	stream := tok.NewStream()
 	for id := range out {
-		s, err := tok.Decode([]int{id})
+		s, err := stream.Write(id)
 		check(err, "decode")
 		fmt.Print(s)
 	}
+	fmt.Print(stream.Flush())
 	fmt.Println()
 ```
+
+**Print tokens through a `Stream`, not `Decode` one id at a time.** `Decode` treats each id as a
+whole sequence, so on a SentencePiece tokenizer (Llama-2, Mistral, Phi-3, Gemma) it drops every
+piece's leading space and the answer prints as `ThecapitalofFranceisParis.`, with no error. A
+character can also arrive split over several tokens (an emoji is up to four byte-fallback tokens),
+and printing each token's bytes as they come writes half of it. `tok.NewStream()` handles both:
+`Write(id)` returns the text that is complete so far (possibly empty), `Flush()` returns what is
+left at the end, and what it wrote, joined, equals `Decode` of all the ids. Use one `Stream` per
+generation. To decode a whole finished sequence, `Decode(ids)` is still the call.
 
 ## Output shaped like a Go struct
 
@@ -233,6 +246,24 @@ prompt by `multimodal.SpliceImageBlock`. Needs the GLM-OCR checkpoint (`zai-org/
 on a CPU. Over HTTP the same request is an `image_url` part plus `response_format` (`docs/server.md`); in the terminal it is
 `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json`.
 
+## Closing a model
+
+`defer m.Close()` is the right way to finish, and it is safe while a generation is still running:
+
+- `Close` cancels every generation in flight (`Generate`, `Session.Generate`, the speculative calls),
+  waits for each to stop, and only then releases the weights and the GPU. A generation it ends has
+  its channel closed and `Generation.Err()` reports `decoder.ErrClosed`; a generation you cancelled
+  yourself through its `ctx` still reports your `ctx` error.
+- It does not matter whether you are still reading the channel: a generation blocked on sending its
+  next token is cancelled too. `Close` can wait as long as one decode step or one prefill chunk.
+- A generation started after `Close` is refused: the channel is already closed, with no token, and
+  `Err()` is `decoder.ErrClosed`. A second `Close` returns nil.
+- Do not call `Close` from inside a callback a generation runs (a `LogitProcessor`, a drafter): it
+  would wait for the generation that is calling it.
+- Only the generation calls are guarded. `Embed`, `NewCache`, `Forward` and the other methods read
+  the weights directly, and the mapping is gone after `Close`: do not call them concurrently with
+  `Close` or after it.
+
 ## What v1.0 will bind
 
 goinfer is pre-1.0, so any of this can still change. Which surfaces the v1.0 tag will hold to
@@ -242,7 +273,7 @@ page uses from `decoder`, `tokenizer` and `chat`:
 - `decoder.Load`, `decoder.Options` (with `Quant`), `Model.Generate`, `Close` and `Config`,
   `decoder.SamplingParams` and `decoder.Generation`;
 - the `tokenizer.Tokenizer` methods used here (`Encode`, `EncodeSegments`, `Decode`,
-  `TokenText`, `TokenID`, `Has`, `Special`, `ChatTemplate`) and `tokenizer.LoadGGUF`;
+  `NewStream` and the `Stream`'s `Write` and `Flush`, `TokenText`, `TokenID`, `Has`, `Special`, `ChatTemplate`) and `tokenizer.LoadGGUF`;
 - `chat.Detect`, `chat.Meta`, `chat.ErrUnknownTemplate`, `chat.Template`'s `Render` and
   `RenderSegments`, and the `chat.Turn` and `chat.Stops` types;
 - from `constrain`: `NewMasker`, the `Masker`'s `Process` and `StopWhenComplete`, `TokenBytes`

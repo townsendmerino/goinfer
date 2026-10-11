@@ -15,6 +15,24 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — `Model.Close` during a generation, and a generation after `Close`
+
+`Close` while a generation was running released the Metal device under an open decode chain and killed the process
+(`panic: send on closed channel`, on a library goroutine that cannot be recovered); on a `.giw` model a `Generate` after
+`Close` was a SIGSEGV. `Close` now cancels every generation in flight, waits for each, and only then releases the weights
+and the device; a generation it ends reports the new `decoder.ErrClosed` from `Generation.Err`, and a generation started
+after `Close` is refused with the same error and a closed channel. The contract is written in
+[`docs/use-from-go.md`](docs/use-from-go.md#closing-a-model) and on `Model.Close`. The Metal case itself needs the Mac to
+confirm (`metal/close_during_generation_test.go`); the CUDA resident path is tested (`cuda/close_during_generation_test.go`).
+
+### Added — `Tokenizer.NewStream`: a streaming detokenizer
+
+The smallest program in [`docs/use-from-go.md`](docs/use-from-go.md) printed each token with `tok.Decode([]int{id})`, which on a
+SentencePiece tokenizer drops every piece's leading space (`ThecapitalofFranceisParis.`) and cannot hold half of a multi-byte
+character. `tok.NewStream()` returns a `tokenizer.Stream`: `Write(id)` returns the text that is complete so far, `Flush()` the
+rest, and the joined text equals `Decode` of all the ids (checked on 41 real tokenizers, byte-level and SentencePiece). The docs
+and `examples/embed` use it.
+
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 
 The two small Gemma 4 models ran on the CPU for the whole model under WebGPU. They now decode resident on the GPU, text, image

@@ -28,14 +28,15 @@ From v1.0 these follow semver: no breaking change before a v2.0.
   Experimental** (see below), because the option exists only to reach it.
 - `decoder.Model`: `Close`, `Config`, `Dims`, `Quant`, `NewCache`, `NewSession`, `Generate`
 - `decoder.Session`: `Generate`, `Reset`, `Tokens`, `Snapshot`, and `Model.LoadSession`
-- `decoder.SamplingParams`, `decoder.Generation` (`Err`), `decoder.KVCache` as an opaque handle
+- `decoder.SamplingParams`, `decoder.Generation` (`Err`), `decoder.ErrClosed`, `decoder.KVCache` as an opaque handle
 - `decoder.Config` as a READ surface (what a loaded model reports)
 
 ### `tokenizer`
 
 - `tokenizer.Load`, `LoadGGUF`, `LoadGGUFBytes`, `LoadJSONBytes`
-- `tokenizer.Tokenizer`: `Encode`, `EncodeSegments`, `Decode`, `DecodePiece`, `TokenText`,
+- `tokenizer.Tokenizer`: `Encode`, `EncodeSegments`, `Decode`, `DecodePiece`, `NewStream`, `TokenText`,
   `TokenID`, `Has`, `Special`, `ChatTemplate`
+- `tokenizer.Stream`: `Write`, `Flush`
 - `tokenizer.Segment`, `tokenizer.SpecialTokens`
 
 ### `chat`
