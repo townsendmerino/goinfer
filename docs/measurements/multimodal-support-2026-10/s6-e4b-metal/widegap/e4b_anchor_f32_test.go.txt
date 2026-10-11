@@ -1,0 +1,75 @@
+//go:build goinfer_testhooks
+
+package decoder
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+)
+
+// TestZZE4BAnchorF32 (throwaway): the ids of E4B_ANCHOR_IN teacher-forced through the CPU forward of the GGUF at
+// float32 and at int4, the last layer's residual and the argmax at every position written to E4B_ANCHOR_OUT.
+func TestZZE4BAnchorF32(t *testing.T) {
+	raw, err := os.ReadFile(os.Getenv("E4B_ANCHOR_IN"))
+	if err != nil {
+		t.Skip(err)
+	}
+	var in []struct {
+		Prompt int   `json:"prompt"`
+		Ids    []int `json:"ids"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		t.Fatal(err)
+	}
+	type arm struct {
+		Prompt int         `json:"prompt"`
+		Argmax []int       `json:"argmax"`
+		Resid  [][]float32 `json:"resid"`
+	}
+	out := map[string][]arm{}
+	t0 := time.Now()
+	for _, q := range []string{"f32", "int4"} {
+		m, err := Load(os.Getenv("E4B_GGUF"), Options{Quant: q, ResidentContext: 512})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(os.Stderr, "[%6.1fs] %s loaded\n", time.Since(t0).Seconds(), q)
+		for _, d := range in {
+			a := arm{Prompt: d.Prompt}
+			cc := m.NewCache(len(d.Ids) + 1)
+			for i, id := range d.Ids {
+				SetGemma4HiddenCaptureForTest(true)
+				l, err := m.ForwardForTest(id, cc)
+				if err != nil {
+					t.Fatal(err)
+				}
+				h := Gemma4HiddenCaptureForTest()
+				a.Resid = append(a.Resid, append([]float32(nil), h[len(h)-1]...))
+				SetGemma4HiddenCaptureForTest(false)
+				bi := 0
+				for j, x := range l {
+					if x > l[bi] {
+						bi = j
+					}
+				}
+				a.Argmax = append(a.Argmax, bi)
+				if i%10 == 0 {
+					fmt.Fprintf(os.Stderr, "[%6.1fs] %s prompt %d pos %d/%d (%d hidden states)\n", time.Since(t0).Seconds(), q, d.Prompt, i, len(d.Ids), len(h))
+				}
+			}
+			out[q] = append(out[q], a)
+		}
+		m.Close()
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(os.Getenv("E4B_ANCHOR_OUT"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "[%6.1fs] wrote %d bytes\n", time.Since(t0).Seconds(), len(b))
+}
