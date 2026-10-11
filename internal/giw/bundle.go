@@ -15,19 +15,14 @@ import (
 
 const (
 	bundleMagic = "GINFB"
-	// v2 writes the weights length as u64; v1 used u32 and so truncated weight
-	// blobs > 4 GiB (a 7B int4 blob is ~5.2 GB → corruption). v1 bundles still
-	// load. tok stays u32 — it's a metadata-only GGUF, always well under 4 GiB.
-	//
-	// v3 pads the header with zeros to bundleBlobOffsetV3 bytes so the weights blob starts on a
-	// 16-byte boundary of the FILE (and so of an mmap of it, whose base is page-aligned). v2 put the
-	// blob at file offset 17, which made every array inside it misaligned by a constant and is why
-	// the decoder had to COPY int4/int8 group scales to the heap instead of aliasing them
-	// (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"). Older bundles still read.
+	// bundleVersion is the one frame version this build writes and reads. The weights length is a u64 (a 7B int4
+	// blob is over 4 GiB); tok stays u32, a metadata-only GGUF. The header is padded with zeros to
+	// bundleBlobOffsetV3 bytes so the weights blob starts on a 16-byte boundary of the FILE (and so of an mmap of
+	// it, whose base is page-aligned), which is what lets the decoder alias the arrays inside it.
 	bundleVersion = 3
 
-	// bundleBlobOffsetV3 is where a v3 bundle's weights blob begins. A multiple of 16 (and a divisor
-	// of any page size), larger than the 17-byte v2 header so the length fields always fit.
+	// bundleBlobOffsetV3 is where the weights blob begins. A multiple of 16 (and a divisor of any page size),
+	// larger than the 17 bytes of magic, version and length.
 	bundleBlobOffsetV3 = 64
 )
 
@@ -104,19 +99,11 @@ func WeightsVersionFile(path string) (uint32, error) {
 	if string(hdr[:len(bundleMagic)]) != bundleMagic {
 		return 0, fmt.Errorf("giw: bad bundle magic %q", hdr[:len(bundleMagic)])
 	}
-	var blobOff int64
-	switch ver := binary.LittleEndian.Uint32(hdr[5:9]); ver {
-	case 1:
-		blobOff = 13 // magic+u32ver+u32len
-	case 2:
-		blobOff = 17 // magic+u32ver+u64len
-	case 3:
-		blobOff = bundleBlobOffsetV3
-	default:
-		return 0, fmt.Errorf("giw: bundle version %d, this build reads 1–3", ver)
+	if ver := binary.LittleEndian.Uint32(hdr[5:9]); ver != bundleVersion {
+		return 0, errBundleVersion(ver)
 	}
 	var wh [len(weightsMagic) + 4]byte
-	if _, err := f.ReadAt(wh[:], blobOff); err != nil {
+	if _, err := f.ReadAt(wh[:], bundleBlobOffsetV3); err != nil {
 		return 0, fmt.Errorf("giw: read weights header: %w", err)
 	}
 	if string(wh[:len(weightsMagic)]) != weightsMagic {
@@ -136,24 +123,17 @@ func ReadTokFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	var hdr [17]byte // magic(5) + u32 version + u64 weights-len (v2/v3; v1 uses 4 of the 8)
+	var hdr [17]byte // magic(5) + u32 version + u64 weights-len
 	if _, err := f.ReadAt(hdr[:], 0); err != nil {
 		return nil, fmt.Errorf("giw: read header: %w", err)
 	}
 	if string(hdr[:len(bundleMagic)]) != bundleMagic {
 		return nil, fmt.Errorf("giw: bad bundle magic %q", hdr[:len(bundleMagic)])
 	}
-	var tokOff int64
-	switch ver := binary.LittleEndian.Uint32(hdr[5:9]); ver {
-	case 1:
-		tokOff = 13 + int64(binary.LittleEndian.Uint32(hdr[9:13])) // magic+u32ver+u32len
-	case 2:
-		tokOff = 17 + int64(binary.LittleEndian.Uint64(hdr[9:17])) // magic+u32ver+u64len
-	case 3:
-		tokOff = bundleBlobOffsetV3 + int64(binary.LittleEndian.Uint64(hdr[9:17])) // padded header
-	default:
-		return nil, fmt.Errorf("giw: bundle version %d, this build reads 1–3", ver)
+	if ver := binary.LittleEndian.Uint32(hdr[5:9]); ver != bundleVersion {
+		return nil, errBundleVersion(ver)
 	}
+	tokOff := bundleBlobOffsetV3 + int64(binary.LittleEndian.Uint64(hdr[9:17]))
 	var tl [4]byte
 	if _, err := f.ReadAt(tl[:], tokOff); err != nil {
 		return nil, fmt.Errorf("giw: read tok length: %w", err)
@@ -180,30 +160,29 @@ func ReadTokFile(path string) ([]byte, error) {
 // Read splits a bundle back into the weights blob and the tokenizer GGUF. The
 // returned slices alias data (zero-copy), so data must outlive their use — which
 // is the point: the weights half is aliased all the way down to the int8 arrays.
-// Reads v1 (u32 weights length), v2 (u64) and v3 (u64, header padded to 64 bytes). Returns an error on a bad
-// magic/version or truncation so the caller can fall back to a GGUF.
+// Returns an error on a bad magic, a frame version other than bundleVersion, or truncation.
 func Read(data []byte) (weights, tok []byte, err error) {
 	c := &cur{b: data}
 	if got := c.take(len(bundleMagic)); string(got) != bundleMagic {
 		return nil, nil, fmt.Errorf("giw: bad bundle magic %q (want %q)", got, bundleMagic)
 	}
-	switch v := c.u32(); v {
-	case 1:
-		weights = c.take(int(c.u32())) // v1: u32 weights length (≤ 4 GiB)
-	case 2:
-		weights = c.take(int(c.u64())) // v2: u64 weights length
-	case 3:
-		n := int(c.u64()) // v3: u64 weights length, then zero pad so the blob starts at offset 64
-		c.take(bundleBlobOffsetV3 - c.off)
-		weights = c.take(n)
-	default:
-		return nil, nil, fmt.Errorf("giw: bundle version %d, this build reads 1–3", v)
+	if v := c.u32(); c.err == nil && v != bundleVersion {
+		return nil, nil, errBundleVersion(v)
 	}
+	n := int(c.u64()) // then zero pad so the blob starts at bundleBlobOffsetV3
+	c.take(bundleBlobOffsetV3 - c.off)
+	weights = c.take(n)
 	tok = c.take(int(c.u32()))
 	if c.err != nil {
 		return nil, nil, fmt.Errorf("giw: truncated bundle")
 	}
 	return weights, tok, nil
+}
+
+// errBundleVersion is the refusal for a frame this build does not read. A sidecar is rebuilt from its source; a
+// hand-built or embedded bundle has to be rebuilt with cmd/prequant.
+func errBundleVersion(v uint32) error {
+	return fmt.Errorf("giw: bundle frame v%d, this build reads v%d — delete the sidecar (it rebuilds) or rebuild with `go run ./cmd/prequant …`", v, bundleVersion)
 }
 
 type cur struct {
@@ -229,7 +208,7 @@ func (c *cur) u64() uint64 {
 }
 
 func (c *cur) take(n int) []byte {
-	// `n > len(c.b)-c.off` rather than `c.off+n > len(c.b)`: a hostile v2 length
+	// `n > len(c.b)-c.off` rather than `c.off+n > len(c.b)`: a hostile weights length
 	// (int(u64) near maxint64) makes c.off+n overflow to a negative value that
 	// slips past the bound check and panics the slice. c.off <= len(c.b) is an
 	// invariant (take only advances on a valid read), so len(c.b)-c.off is a safe,

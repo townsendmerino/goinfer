@@ -182,11 +182,11 @@ func residentGemma4GIW(t *testing.T, path, quant string, target GIWTarget) []byt
 }
 
 // splitAtLabel returns the body before the quant-label string field and everything after it and the
-// v12 header pad that follows it (the pad's length depends on the label's).
+// header pad that follows it (the pad's length depends on the label's).
 func splitAtLabel(t *testing.T, b []byte) (pre, post []byte, label string) {
 	t.Helper()
-	off := len(giwMagic) + 4 + 4 // magic, version, legacy quant enum
-	for range 2 {                // id, then config JSON: u32 length + bytes
+	off := len(giwMagic) + 4 // magic, version
+	for range 2 {            // id, then config JSON: u32 length + bytes
 		n := int(binary.LittleEndian.Uint32(b[off:]))
 		off += 4 + n
 	}

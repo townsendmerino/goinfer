@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"hash/crc32"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -132,6 +134,35 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 		t.Fatalf("greedy token differs: gguf=%d prequant=%d", tok1, tok2)
 	}
 	t.Logf("identical greedy token: %d", tok1)
+}
+
+// TestLoadSerializedWeights_refusesEveryOtherVersion: the reader reads exactly giwVersion. A blob stamped with the
+// version before it, the one after, or an early one is refused with a *SerializeError that names both versions and
+// the fix. The CRC is recomputed over the stamped blob, so the version is the only thing wrong with it.
+func TestLoadSerializedWeights_refusesEveryOtherVersion(t *testing.T) {
+	good, err := SerializeWeightsForTarget(fusedFixture(t), "versions", GIWTargetNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSerializedWeights(good); err != nil {
+		t.Fatalf("the control blob does not load: %v", err)
+	}
+	for _, v := range []uint32{giwVersion - 1, giwVersion + 1, 3} {
+		b := slices.Clone(good)
+		binary.LittleEndian.PutUint32(b[len(giwMagic):], v)
+		binary.LittleEndian.PutUint32(b[len(b)-4:], crc32.ChecksumIEEE(b[:len(b)-4]))
+		_, err := LoadSerializedWeights(b)
+		var se *SerializeError
+		if !asSerializeError(err, &se) {
+			t.Errorf("v%d: got %v (%T), want a *SerializeError", v, err, err)
+			continue
+		}
+		for _, want := range []string{fmt.Sprintf("format v%d", v), fmt.Sprintf("this build reads v%d", giwVersion), "delete the sidecar", "cmd/prequant"} {
+			if !strings.Contains(se.Reason, want) {
+				t.Errorf("v%d: refusal %q does not say %q", v, se.Reason, want)
+			}
+		}
+	}
 }
 
 // TestLoadSerializedWeights_guards: every corruption returns a *SerializeError,
@@ -462,7 +493,7 @@ func TestSerialize_unpopulatedLayersOmitsLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	off := len(giwMagic) + 4 + 4 // magic, version(u32), quant(u32)
+	off := len(giwMagic) + 4 // magic, version(u32)
 	readStr := func() string {
 		n := binary.LittleEndian.Uint32(blob[off:])
 		off += 4

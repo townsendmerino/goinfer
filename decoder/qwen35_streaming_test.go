@@ -131,7 +131,6 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 		r := &giwReader{data: data}
 		r.rawN(len(giwMagic))
 		r.u32()        // version
-		r.u32()        // quantMode
 		r.str()        // id
 		r.bytesField() // cfgJSON
 		start := r.off

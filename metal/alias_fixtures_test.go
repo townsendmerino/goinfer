@@ -20,12 +20,12 @@ import (
 
 // S6's byte-identity gate over every resident-parity fixture, not just the two real checkpoints
 // TestWeightAlias_logitsByteIdentical is pointed at. Each tiny fixture is transcoded to a metal-target
-// .giw (the current weights format: fused q|k|v and gate|up groups, kind-7 singles, f16 scales), loaded twice
+// .giw (fused q|k|v and gate|up groups, single tensors, binary16 scales), loaded twice
 // with GOINFER_METAL_ALIAS off and on via Options.Knobs, and driven through the same tokens; every
 // logit must match bit for bit. A fixture Metal does not build resident is skipped (named in the log),
 // and one whose shapes leave nothing aliasable (cols not a multiple of 32) is compared anyway — the
-// copy path must then be the only path — but at least one fixture must alias fused groups, kind-7
-// singles, f16 scales and the int8 LM head, or this gate would be copy-vs-copy everywhere.
+// copy path must then be the only path — but at least one fixture must alias fused groups, single
+// tensors, f16 scales and the int8 LM head, or this gate would be copy-vs-copy everywhere.
 func TestWeightAlias_fixturesByteIdentical(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -59,7 +59,7 @@ func TestWeightAlias_fixturesByteIdentical(t *testing.T) {
 			t.Logf("aliased: %d int4 tensors (%d fused groups, %.2f MB nibbles), %.2f MB f16 scales, %d int8 (%.2f MB); copied %d, declined %d, non-adjacent groups %d",
 				a.tensors, a.groups, mb(a.aliased), mb(a.scaleBytes), a.int8Tensors, mb(a.int8Bytes), a.copied, a.declined, a.nonAdjacent)
 			if a.declined != 0 {
-				t.Errorf("%d tensors declined as unaligned in a freshly written v14 file — the writer's alignment regressed", a.declined)
+				t.Errorf("%d tensors declined as unaligned in a freshly written file — the writer's alignment regressed", a.declined)
 			}
 			cover.groups = cover.groups || a.groups > 0
 			cover.singles = cover.singles || a.tensors > a.groups
@@ -75,7 +75,7 @@ func TestWeightAlias_fixturesByteIdentical(t *testing.T) {
 		t.Fatal("no fixture was built resident on Metal — the gate compared nothing")
 	}
 	if !cover.groups || !cover.singles || !cover.f16 || !cover.int8 {
-		t.Errorf("coverage hole across all fixtures: fused groups=%v kind-7 singles=%v f16 scales=%v int8 LM head=%v — "+
+		t.Errorf("coverage hole across all fixtures: fused groups=%v singles=%v f16 scales=%v int8 LM head=%v — "+
 			"a layout no fixture exercises is a layout this gate does not vouch for", cover.groups, cover.singles, cover.f16, cover.int8)
 	}
 }
@@ -237,15 +237,14 @@ func requireSameBits(t *testing.T, got, want [][]float32) {
 	}
 }
 
-// A bundle for a target other than Metal must still load with aliasing on: its 16-aligned singles alias, its fused groups
-// and the scales Metal cannot bind in place take the copy path, the logits stay bit-identical, and the banner says why and what
-// fixes it. A current metal-target file of the same model carries no such note, and the anonymous figure it reports is the small
-// remainder the format does not cover.
+// A bundle for a target other than Metal must still load with aliasing on. Its single tensors bind in place, nibbles and
+// binary16 scales both, because a single tensor's arrays are each one aligned run in any file. Its fused groups take the copy
+// path, because only a -target metal file lays a group's members out back to back. The logits stay bit-identical, and the
+// banner says why less was aliased and what fixes it. A metal-target file of the same model carries no such note, and the
+// anonymous figure it reports is the small remainder the format does not cover.
 //
-// The "old" bundle is built here by prequant with GIWTargetNone, and the writer emits one weights format (v15 today) for every
-// target, so it is a NON-METAL bundle at that version: its int4 scales are stored as binary16 but not in the kind-7 / fused-group
-// layout Metal binds, so they are converted into a new buffer. The test reads the version from each file's header and asserts it,
-// so the label cannot go stale. Why it is labelled this way: docs/code-notes/metal.md#TestWeightAlias_olderBundleTakesCopyPath.
+// The name is historical: the non-Metal bundle is written here by this build, at the same format version as the Metal one,
+// which the test asserts. docs/code-notes/metal.md#TestWeightAlias_olderBundleTakesCopyPath has the history.
 func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -263,13 +262,8 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 		return p
 	}
 	old, cur := build(decoder.GIWTargetNone, "llama-tiny.int4.giw"), build(decoder.GIWTargetMetal, "llama-tiny.int4.metal.giw")
-	// Both bundles were just written by this build, so both are at least v15 (binary16 scales stored): the case whose banner
-	// this test pins. If the writer's version moves, read the new case and relabel, don't loosen this.
-	const wantMinVersion = 15
-	for name, p := range map[string]string{"non-metal": old, "metal": cur} {
-		if v := giwFileVersion(t, p); v < wantMinVersion {
-			t.Fatalf("the %s bundle is weights format v%d, want >= v%d (binary16 scales stored): this test would no longer cover the v15 case", name, v, wantMinVersion)
-		}
+	if vo, vc := giwFileVersion(t, old), giwFileVersion(t, cur); vo != vc {
+		t.Fatalf("the non-metal bundle is weights format v%d and the metal one v%d: the writer emits one version for every target", vo, vc)
 	}
 
 	oldOff, ok := aliasArm(t, old, "0")
@@ -283,11 +277,17 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	if a.tensors == 0 {
 		t.Errorf("non-metal bundle aliased no int4 tensor — its singles are 16-aligned and should bind in place")
 	}
-	if a.scaleBytes != 0 || a.f16Converted == 0 {
-		t.Errorf("non-metal bundle: %d f16 scale bytes aliased, %d scale sets converted — want 0 aliased and >0 converted (its scales are not in the layout Metal binds)", a.scaleBytes, a.f16Converted)
+	if a.scaleBytes == 0 {
+		t.Errorf("non-metal bundle: no f16 scale bytes bound in place — a single tensor's binary16 scales are one aligned run in any file")
+	}
+	if a.f16Converted != 0 {
+		t.Errorf("non-metal bundle: %d tensors had their nibbles bound in place and their scales copied — a single tensor's scales bind too", a.f16Converted)
+	}
+	if a.groups != 0 || a.nonAdjacent == 0 {
+		t.Errorf("non-metal bundle: %d fused groups bound in place, %d found not adjacent — want 0 and >0 (its members are separate records)", a.groups, a.nonAdjacent)
 	}
 	if a.copyB == 0 {
-		t.Errorf("non-metal bundle reports 0 bytes copied, but its fused groups and scales took the copy path")
+		t.Errorf("non-metal bundle reports 0 bytes copied, but its fused groups took the copy path")
 	}
 	if !strings.Contains(oldOn.summary, "not in the layout Metal binds") || !strings.Contains(oldOn.summary, "-target metal") {
 		t.Errorf("non-metal bundle: banner has no note saying why less was aliased and how to fix it:\n%s", oldOn.summary)

@@ -280,7 +280,7 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		}
 		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
 		down := b.ExpertsDown
-		// Each expert's f16 scales are read from its own WeightMat (Int4ScalesF16), which a v14 metal or v15 .giw aliases from the
+		// Each expert's f16 scales are read from its own WeightMat (Int4ScalesF16), which a .giw aliases from the
 		// mapping; a build-time heap cache of them would hold the same bits again.
 		stage := func(ei int) ([]byte, []uint16, []byte, []uint16) {
 			gw, _ := int4DirectBytesOnly(experts[ei]) // nibble bytes aliased from mmap; no reconstruction/alloc
@@ -290,7 +290,7 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
 		// pread staging (GOINFER_MOE_PREAD, default on): resolve each expert's nibble file offset within the .giw mmap (pointer
 		// arithmetic, no page touch), then pread straight into the slot's unified-memory words: no mmap faults, one sequential read per
-		// expert. The f16 scales are pread the same way when every expert's lie in the mapping (a v14 metal or v15 .giw) and copied from
+		// expert. The f16 scales are pread the same way when every expert's lie in the mapping (a .giw) and copied from
 		// the WeightMat otherwise. Falls back to the byte-copy path if the fd is absent or ANY expert's nibbles are not .giw-mmap-backed
 		// (a requantized HF load): the offsets must all resolve for pread to be correct.
 		//

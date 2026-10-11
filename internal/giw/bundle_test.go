@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,89 +65,58 @@ func TestWriteStream_matchesWrite(t *testing.T) {
 
 // TestReadTokFile_matchesRead: reading just the tokenizer half from a bundle file
 // (seek past the weights, used to serve a large .giw without aliasing its tens of
-// GB of weights) returns the same bytes as Read's tok half — for both v2 and v1
-// frames.
+// GB of weights) returns the same bytes as Read's tok half.
 func TestReadTokFile_matchesRead(t *testing.T) {
 	weights := []byte("a-multi-gb-weights-blob-stand-in")
 	tok := []byte("the-metadata-gguf-tokenizer-half")
 
-	// v2 (via Write)
-	pathV2 := t.TempDir() + "/v2.giw"
-	if err := os.WriteFile(pathV2, Write(weights, tok), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadTokFile(pathV2)
-	if err != nil {
-		t.Fatalf("ReadTokFile v2: %v", err)
-	}
-	if !bytes.Equal(got, tok) {
-		t.Fatalf("v2 tok = %q, want %q", got, tok)
-	}
-
-	// v1 frame (u32 weights length), hand-built like TestBundle_v1_compat
-	var v1 []byte
-	v1 = append(v1, bundleMagic...)
-	v1 = binary.LittleEndian.AppendUint32(v1, 1)
-	v1 = binary.LittleEndian.AppendUint32(v1, uint32(len(weights)))
-	v1 = append(v1, weights...)
-	v1 = binary.LittleEndian.AppendUint32(v1, uint32(len(tok)))
-	v1 = append(v1, tok...)
-	pathV1 := t.TempDir() + "/v1.giw"
-	if err := os.WriteFile(pathV1, v1, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := ReadTokFile(pathV1); err != nil || !bytes.Equal(got, tok) {
-		t.Fatalf("v1 ReadTokFile = %q, err=%v, want %q", got, err, tok)
-	}
-}
-
-// TestBundle_v1_compat: a v1 bundle (u32 weights length) still loads, so existing
-// .giw files keep working after the v2 (u64) bump.
-func TestBundle_v1_compat(t *testing.T) {
-	weights, tok := []byte("v1-weights"), []byte("v1-tok")
-	var b []byte
-	b = append(b, bundleMagic...)
-	b = binary.LittleEndian.AppendUint32(b, 1) // version 1
-	b = binary.LittleEndian.AppendUint32(b, uint32(len(weights)))
-	b = append(b, weights...)
-	b = binary.LittleEndian.AppendUint32(b, uint32(len(tok)))
-	b = append(b, tok...)
-	w, tk, err := Read(b)
-	if err != nil {
-		t.Fatalf("Read v1: %v", err)
-	}
-	if !bytes.Equal(w, weights) || !bytes.Equal(tk, tok) {
-		t.Fatalf("v1 mismatch: weights=%q tok=%q", w, tk)
-	}
-}
-
-// v2Bundle hand-builds a v2 bundle (u64 length, blob at file offset 17) — the layout every .giw
-// written before v3 has, which must keep loading and keep its tokenizer readable.
-func v2Bundle(weights, tok []byte) []byte {
-	var b []byte
-	b = append(b, bundleMagic...)
-	b = binary.LittleEndian.AppendUint32(b, 2)
-	b = binary.LittleEndian.AppendUint64(b, uint64(len(weights)))
-	b = append(b, weights...)
-	b = binary.LittleEndian.AppendUint32(b, uint32(len(tok)))
-	return append(b, tok...)
-}
-
-// TestBundle_v2_compat: a v2 bundle still loads through both readers after the v3 bump.
-func TestBundle_v2_compat(t *testing.T) {
-	weights, tok := []byte("v2-weights-blob"), []byte("v2-tok")
-	b := v2Bundle(weights, tok)
-	w, tk, err := Read(b)
-	if err != nil || !bytes.Equal(w, weights) || !bytes.Equal(tk, tok) {
-		t.Fatalf("Read v2: %v weights=%q tok=%q", err, w, tk)
-	}
-	path := filepath.Join(t.TempDir(), "v2.giw")
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+	path := t.TempDir() + "/b.giw"
+	if err := os.WriteFile(path, Write(weights, tok), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadTokFile(path)
-	if err != nil || !bytes.Equal(got, tok) {
-		t.Fatalf("ReadTokFile v2: %v %q", err, got)
+	if err != nil {
+		t.Fatalf("ReadTokFile: %v", err)
+	}
+	if !bytes.Equal(got, tok) {
+		t.Fatalf("tok = %q, want %q", got, tok)
+	}
+}
+
+// TestBundle_olderFramesAreRefused: frames v1 (u32 weights length) and v2 (u64 length, blob at offset 17) are not
+// read. Each is built by hand, whole and well-formed, so the refusal is for the version and not for a short read, and
+// the error names the fix.
+func TestBundle_olderFramesAreRefused(t *testing.T) {
+	weights, tok := []byte("old-weights-blob"), []byte("old-tok")
+	var v1, v2 []byte
+	v1 = append(v1, bundleMagic...)
+	v1 = binary.LittleEndian.AppendUint32(v1, 1)
+	v1 = binary.LittleEndian.AppendUint32(v1, uint32(len(weights)))
+	v1 = append(append(v1, weights...), binary.LittleEndian.AppendUint32(nil, uint32(len(tok)))...)
+	v1 = append(v1, tok...)
+	v2 = append(v2, bundleMagic...)
+	v2 = binary.LittleEndian.AppendUint32(v2, 2)
+	v2 = binary.LittleEndian.AppendUint64(v2, uint64(len(weights)))
+	v2 = append(append(v2, weights...), binary.LittleEndian.AppendUint32(nil, uint32(len(tok)))...)
+	v2 = append(v2, tok...)
+	// Long enough that every fixed-offset header read succeeds, so only the version can refuse them.
+	pad := make([]byte, bundleBlobOffsetV3+16)
+	dir := t.TempDir()
+	for name, b := range map[string][]byte{"v1": append(v1, pad...), "v2": append(v2, pad...)} {
+		want := "this build reads v3"
+		if _, _, err := Read(b); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "prequant") {
+			t.Errorf("Read %s: %v, want a refusal naming the version and the rebuild", name, err)
+		}
+		path := filepath.Join(dir, name+".giw")
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadTokFile(path); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ReadTokFile %s: %v, want a version refusal", name, err)
+		}
+		if _, err := WeightsVersionFile(path); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("WeightsVersionFile %s: %v, want a version refusal", name, err)
+		}
 	}
 }
 
@@ -202,18 +172,18 @@ func TestBundle_v3_blobStartsAligned(t *testing.T) {
 	}
 }
 
-// TestBundle_hostileLength_noPanic pins that a v2 weights length near maxint64, which made c.off+n wrap negative in
+// TestBundle_hostileLength_noPanic pins that a weights length near maxint64, which made c.off+n wrap negative in
 // cur.take and slip past the bound check into a panicking slice, makes Read return a typed error instead. Origin
 // (FuzzGIWRead): docs/code-notes/internal-giw.md#TestBundle_hostileLength_noPanic.
 func TestBundle_hostileLength_noPanic(t *testing.T) {
 	var b []byte
 	b = append(b, bundleMagic...)
-	b = binary.LittleEndian.AppendUint32(b, 2)                  // v2
+	b = binary.LittleEndian.AppendUint32(b, bundleVersion)
 	b = binary.LittleEndian.AppendUint64(b, 0x7fffffffffffffff) // ~maxint64 weights length
-	b = append(b, "some-bytes"...)
+	b = append(b, make([]byte, bundleBlobOffsetV3)...)          // past the header pad, so the length is what fails
 	defer func() {
 		if r := recover(); r != nil {
-			t.Fatalf("Read panicked on hostile v2 length: %v", r)
+			t.Fatalf("Read panicked on a hostile weights length: %v", r)
 		}
 	}()
 	if _, _, err := Read(b); err == nil {
@@ -230,15 +200,15 @@ func TestBundle_badVersion(t *testing.T) {
 	}
 }
 
-// TestBundle_over4GiB proves the v2 u64 length round-trips a weights blob past
-// the v1 u32 (4 GiB) ceiling — the 7B-int4 regime. Allocates >4 GiB, so it is
+// TestBundle_over4GiB proves the u64 length round-trips a weights blob past
+// 4 GiB — the 7B-int4 regime. Allocates >4 GiB, so it is
 // opt-in (GIW_BIG=1); the real integration gate is `prequant --quant int4` on a
 // 7B, which self-checks emit→Read→LoadSerializedWeights.
 func TestBundle_over4GiB(t *testing.T) {
 	if os.Getenv("GIW_BIG") == "" {
 		t.Skip("set GIW_BIG=1 (allocates >4 GiB)")
 	}
-	const n = (1 << 32) + 1024 // just past 2^32, where v1 truncated
+	const n = (1 << 32) + 1024 // just past 2^32, where a u32 length would truncate
 	weights := make([]byte, n)
 	weights[0], weights[n-1] = 0xAB, 0xCD // sentinels at both ends
 	tok := []byte("tok")
@@ -252,24 +222,25 @@ func TestBundle_over4GiB(t *testing.T) {
 }
 
 // TestReadTokFile_boundsAlloc is the C-31 gate: ReadTokFile must not allocate from an unbounded
-// file-controlled u32 tok length. The 21-byte exploit (v2 header, weightsLen=0, tokLen=0xFFFFFFFF)
+// file-controlled u32 tok length. The exploit (a header, weightsLen=0, tokLen=0xFFFFFFFF)
 // would make a 4 GiB allocation before the trailing ReadAt fails; now it's rejected up front. A valid
 // bundle written to a file still round-trips (the bound doesn't reject honest files).
 func TestReadTokFile_boundsAlloc(t *testing.T) {
 	dir := t.TempDir()
 
 	// the exploit: tokLen far larger than the file.
-	bad := make([]byte, 21)
+	bad := make([]byte, bundleBlobOffsetV3+4)
 	copy(bad, bundleMagic)
-	binary.LittleEndian.PutUint32(bad[5:9], 2)            // version 2
-	binary.LittleEndian.PutUint64(bad[9:17], 0)           // weightsLen 0 → tokOff 17
-	binary.LittleEndian.PutUint32(bad[17:21], 0xFFFFFFFF) // tokLen 4 GiB
+	binary.LittleEndian.PutUint32(bad[5:9], bundleVersion)
+	binary.LittleEndian.PutUint64(bad[9:17], 0)                         // weightsLen 0, so the tok length is at the blob offset
+	binary.LittleEndian.PutUint32(bad[bundleBlobOffsetV3:], 0xFFFFFFFF) // tokLen 4 GiB
 	badPath := filepath.Join(dir, "bad.giw")
 	if err := os.WriteFile(badPath, bad, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadTokFile(badPath); err == nil {
-		t.Fatal("ReadTokFile accepted a tokLen far larger than the file (would 4 GiB-allocate) — C-31")
+	// The refusal must be the length bound, not some earlier check: any other error would leave the bound untested.
+	if _, err := ReadTokFile(badPath); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("ReadTokFile on a tokLen far larger than the file: %v, want the length bound's refusal (C-31)", err)
 	}
 
 	// control: a valid bundle round-trips through ReadTokFile.
@@ -287,26 +258,10 @@ func TestReadTokFile_boundsAlloc(t *testing.T) {
 	}
 }
 
-// TestWeightsVersionFile reads the blob version through every bundle layout: v1 (u32 length, blob at 13),
-// v2 (u64 length, blob at 17) and v3 (padded, blob at 64). Getting an offset wrong reads the version
-// out of the header's own length bytes, which is why each layout is built by hand here.
+// TestWeightsVersionFile reads the blob version out of a bundle, and refuses a bad magic and a truncated file.
 func TestWeightsVersionFile(t *testing.T) {
 	blob := append([]byte(weightsMagic), 15, 0, 0, 0, 0xAA, 0xBB) // version 15, then payload
-	le32 := func(v uint32) []byte { return binary.LittleEndian.AppendUint32(nil, v) }
-	le64 := func(v uint64) []byte { return binary.LittleEndian.AppendUint64(nil, v) }
-	join := func(parts ...[]byte) []byte {
-		var out []byte
-		for _, p := range parts {
-			out = append(out, p...)
-		}
-		return out
-	}
-	tok := []byte("tok")
-	cases := map[string][]byte{
-		"v1": join([]byte(bundleMagic), le32(1), le32(uint32(len(blob))), blob, le32(3), tok),
-		"v2": join([]byte(bundleMagic), le32(2), le64(uint64(len(blob))), blob, le32(3), tok),
-		"v3": Write(blob, tok),
-	}
+	cases := map[string][]byte{"v3": Write(blob, []byte("tok"))}
 	dir := t.TempDir()
 	for name, b := range cases {
 		p := filepath.Join(dir, name+".giw")

@@ -120,7 +120,7 @@ func giwSplit(t *testing.T, b []byte, at int, wantLabel string) (pre, post []byt
 // giwLabelOffset returns the byte offset of the v5 quant-label field by PARSING the .giw header,
 // per the format spec in decoder/serialize.go:
 //
-//	magic [5]byte "GINFW" | version u32 | quant u32 | id str | config str | quantLabel str | …
+//	magic [5]byte "GINFW" | version u32 | id str | config str | quantLabel str | …
 //	str = u32 length + that many bytes
 //
 // Parsing beats locating the field as "the first byte where the two bundles differ": that would
@@ -136,7 +136,7 @@ func giwLabelOffset(t *testing.T, b []byte) int {
 	if got := string(b[:len(magic)]); got != magic {
 		t.Fatalf("bad magic %q, want %q", got, magic)
 	}
-	off := len(magic) + 4 + 4 // magic + version + legacy quant enum
+	off := len(magic) + 4 // magic + version
 	// Skip the two length-prefixed strings that precede the label: id, then config JSON.
 	for _, field := range []string{"id", "config"} {
 		if off+4 > len(b) {
@@ -400,7 +400,7 @@ func TestSidecar_interruptedWriteDoesNotPoisonTheCache(t *testing.T) {
 		t.Fatal("premise broke: the partial cache is not newer than the source, so this no " +
 			"longer reproduces the state a killed transcode leaves")
 	}
-	if cacheFresh(cache, src, "int8") {
+	if cacheFresh(cache, src) {
 		t.Error("a truncated bundle newer than its source is reported FRESH — serve then fails " +
 			"at boot with `truncated bundle` and never rebuilds (M-12)")
 	}

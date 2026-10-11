@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -185,48 +184,3 @@ func TestGGUF_graniteDenseUnpermutesQK(t *testing.T) { checkUnpermuted(t, "grani
 // TestGGUF_llamaUnpermutesQK is the control: the same synthetic writer and permute on the family
 // that has always been un-permuted. If THIS fails, the harness is wrong, not the loader.
 func TestGGUF_llamaUnpermutesQK(t *testing.T) { checkUnpermuted(t, "llama") }
-
-// TestGIW_refusesPreFixDenseGraniteBundle closes C-05's breaking-after-tag half. A dense-granite
-// .giw transcoded from a GGUF before the fix is CRC-valid, shape-valid, mtime-fresh and WRONG, so
-// every freshness check passed it. Refusing pre-v10 granite bundles is what makes prequant's
-// selfCheck (decoder.Load -> LoadSerializedWeights) see it as not loading, and rebuild it.
-func TestGIW_refusesPreFixDenseGraniteBundle(t *testing.T) {
-	const lastUnfixedVersion = 9 // the last format version written before the C-05 fix
-	for _, tc := range []struct {
-		arch        string
-		wantRefused bool
-	}{
-		{"granite", true},
-		{"llama", false}, // a version gate for one family must not refuse another's bundles
-	} {
-		raw, _, _, _ := tinyNormRopeGGUF(tc.arch)
-		w := loadTinyGGUFWeights(t, raw, tc.arch)
-		b, err := SerializeWeights(w, "c05-test")
-		if err != nil {
-			t.Fatalf("%s: SerializeWeights: %v", tc.arch, err)
-		}
-		if _, err := LoadSerializedWeights(b); err != nil {
-			t.Fatalf("%s: a current-version bundle must load: %v", tc.arch, err)
-		}
-		// A genuinely OLD bundle: written with the pre-v12 layout and a v9 header, not the current
-		// bytes relabelled as v9. Relabelling was valid only while every version shared one layout;
-		// v12 pads arrays, so a padded blob stamped v9 is read without the pad skip and misparses.
-		prevEmit := giwEmitVersion
-		giwEmitVersion = lastUnfixedVersion
-		old, oerr := SerializeWeights(w, "c05-test")
-		giwEmitVersion = prevEmit
-		if oerr != nil {
-			t.Fatalf("%s: SerializeWeights (v%d layout): %v", tc.arch, lastUnfixedVersion, oerr)
-		}
-		_, err = LoadSerializedWeights(old)
-		switch {
-		case tc.wantRefused && err == nil:
-			t.Errorf("%s: a v%d bundle LOADED — a pre-fix sidecar with permuted q/k would be served "+
-				"as fresh forever (audit C-05)", tc.arch, lastUnfixedVersion)
-		case tc.wantRefused && !strings.Contains(err.Error(), "C-05"):
-			t.Errorf("%s: refused, but not for C-05: %v", tc.arch, err)
-		case !tc.wantRefused && err != nil:
-			t.Errorf("%s: a v%d bundle was refused — the C-05 gate is over-broad: %v", tc.arch, lastUnfixedVersion, err)
-		}
-	}
-}

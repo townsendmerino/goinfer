@@ -161,21 +161,6 @@ func TestQuantLabel_float32BesideInt4IsNotAMix(t *testing.T) {
 	}
 }
 
-// TestQuantLabel_oldInt4MixHeaderIsRederived: a bundle written under the rule that called float32 beside int4 a mix
-// still says "int4mix" in its header. The reader checks that one value against the weights, so the file needs no rebuild.
-func TestQuantLabel_oldInt4MixHeaderIsRederived(t *testing.T) {
-	m := moeInt4Tiny(t)
-	giwLabelForTest = "int4mix"
-	g := bakeAndLoad(t, m, "moe.old.int4.giw")
-	giwLabelForTest = ""
-	if g.w.bakedQuant != "int4" || g.Quant() != "int4" {
-		t.Errorf("old-header bundle: label %q, Quant() %q, want int4 re-derived from the weights", g.w.bakedQuant, g.Quant())
-	}
-	if err := g.CheckGiwQuantMatch("int4"); err != nil {
-		t.Errorf("an explicit int4 against the old-header bundle was refused: %v", err)
-	}
-}
-
 // TestQuantLabel_int8BesideInt4IsAMix is the control: int4 beside an int8 body weight is still int4mix, in memory and
 // after a bake, and an explicit int4 against it is still refused.
 func TestQuantLabel_int8BesideInt4IsAMix(t *testing.T) {

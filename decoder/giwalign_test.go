@@ -148,12 +148,13 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 					// kind 5 stores the REPACKED scales; the same repack of the source is the truth.
 					// repackRow4ForEmit is the writer's own cross-arch entry point; this branch is only
 					// reachable where it is real (arm64), because elsewhere the writer emits kind 3.
-					q4, q4s, group, _ := Int4F32(pair[0])
+					q4, q4s, group, _ := pair[0].Int4F16()
 					_, rs, ok := repackRow4ForEmit(q4, q4s, pair[0].Rows(), pair[0].Cols(), group)
 					if !ok {
 						t.Fatalf("%s: stored as row4 but the source shape is not row4-eligible", name)
 					}
-					want = rs
+					want = make([]float32, len(rs))
+					linalg.F16ToF32Slice(want, rs)
 				}
 				if !sameF32(want, gotS) {
 					t.Errorf("%s: scales differ after the round trip (%s)", name, gotKind)
@@ -161,7 +162,7 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 				}
 				if !within(gotPtr, view) {
 					t.Errorf("%s: scales were COPIED to the heap, not aliased into the mapping — "+
-						"a v12+ file's scale arrays must be aligned so the reader can alias them (v15: binary16)", name)
+						"a file's scale arrays must be aligned so the reader can alias them", name)
 				}
 				if uintptr(gotPtr)%16 != 0 {
 					t.Errorf("%s: aliased scale array is not 16-byte aligned (addr %#x)", name, uintptr(gotPtr))
@@ -171,46 +172,7 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 	}
 }
 
-// A pre-v12 layout (no padding) must keep loading byte-for-byte correctly. giwEmitVersion is the
-// writer's test seam for producing one.
-func TestGIWAligned_legacyLayoutStillLoads(t *testing.T) {
-	prev := giwEmitVersion
-	giwEmitVersion = 11
-	t.Cleanup(func() { giwEmitVersion = prev })
-
-	src := alignFixtureWeights(t)
-	blob, err := SerializeWeightsForTarget(src, "align-legacy", GIWTargetNone)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The padded layout to compare against is v12's own: from v15 the int4 scale arrays are binary16, so a
-	// current blob is smaller than a legacy one for a different reason than padding.
-	giwEmitVersion = giwVAligned
-	current, err := SerializeWeightsForTarget(src, "align-legacy", GIWTargetNone)
-	giwEmitVersion = prev
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(blob) >= len(current) {
-		t.Fatalf("legacy blob (%d B) is not smaller than the padded v12 blob (%d B) — the emit seam is not producing the old layout", len(blob), len(current))
-	}
-	got, err := LoadSerializedWeights(blob)
-	if err != nil {
-		t.Fatalf("a v11-layout blob no longer loads: %v", err)
-	}
-	for name, pair := range map[string][2]*linalg.WeightMat{
-		"QProj": {&src.Layers[0].QProj, &got.Layers[0].QProj},
-		"KProj": {&src.Layers[0].KProj, &got.Layers[0].KProj},
-	} {
-		want, _, _ := scalesOf(t, pair[0])
-		gotS, _, _ := scalesOf(t, pair[1])
-		if !sameF32(want, gotS) {
-			t.Errorf("%s: scales differ after loading a legacy-layout blob", name)
-		}
-	}
-}
-
-// A v12 blob whose mapping is NOT aligned (an embedded build, a caller-supplied []byte) must still
+// A blob whose mapping is NOT aligned (an embedded build, a caller-supplied []byte) must still
 // load — by copying — and must never take an unaligned float32 pointer into the data (Go's checkptr,
 // on under -race, forbids it).
 func TestGIWAligned_misalignedBlobFallsBackToCopy(t *testing.T) {
@@ -262,13 +224,10 @@ func TestGIWAligned_paddingIsCoveredByTheCRC(t *testing.T) {
 	// that is provably padding by re-deriving the header end the way the reader does.
 	r := &giwReader{data: blob}
 	r.rawN(len(giwMagic))
-	r.version = r.u32()
-	r.u32()
+	r.u32() // version
 	r.str()
 	r.bytesField()
-	if r.version >= 5 {
-		r.str()
-	}
+	r.str()
 	end := r.off
 	if pad := int((-int64(end)) & 15); pad > 0 {
 		blob[end] ^= 0xFF

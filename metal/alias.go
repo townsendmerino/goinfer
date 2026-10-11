@@ -20,10 +20,10 @@ import (
 // owns the memory changes.
 //
 // One buffer per tensor, over the page-aligned window that encloses it (Model.MmapAliasWindow), not one over the whole mapping: a
-// large .giw exceeds a 16 GB Mac's MTLBuffer size limit, and a window per tensor needs no page padding in the file (v12 already
-// 16-byte-aligns every array, which is all the kernels' vector loads need). Scales alias too when the file carries them as f16
-// (weights format v14, -target metal); an older file stores only f32, so its scales are converted into a small buffer and the
-// banner says so.
+// large .giw exceeds a 16 GB Mac's MTLBuffer size limit, and a window per tensor needs no page padding in the file (every array
+// is 16-byte-aligned, which is all the kernels' vector loads need). The binary16 group scales alias too wherever they are one
+// run in the mapping: a single tensor's always are, and a fused group's are in a file written with -target metal. Otherwise
+// they are copied into a small buffer and the banner says so.
 //
 // The mapping must be MAP_SHARED (decoder.Load does this on darwin, decoder/giwmap_darwin.go). IOKit wires a no-copy buffer's
 // pages with write intent, so over a MAP_PRIVATE mapping every GPU-read page becomes a wired anonymous copy-on-write copy:
@@ -39,18 +39,18 @@ type weightAlias struct {
 	aliased int64 // int4 nibble bytes served from the mapping
 
 	int8Tensors int   // int8 matrices (the LM head) whose codes are wrapped in place
-	scaleBytes  int64 // f16 group-scale bytes served from the mapping (v14 metal-target files)
+	scaleBytes  int64 // f16 group-scale bytes served from the mapping
 	int8Bytes   int64 // int8 code bytes served from the mapping
 	copied      int   // eligible int4 tensors that were not in the mapping (heap-backed) and took the copy path
 	copiedB     int64
-	declined    int // in the mapping but not 16-byte-aligned (an older .giw layout), so copied
+	declined    int // in the mapping but not 16-byte-aligned, so copied
 
 	groups      int   // fused groups (q|k|v, gate|up) wrapped as ONE buffer over their contiguous nibbles
 	groupBytes  int64 // nibble bytes those groups cover
-	nonAdjacent int   // fused groups whose members are in the mapping but not back to back (a pre-v13 layout, or a K=V layer's Q|K|K)
+	nonAdjacent int   // fused groups whose members are in the mapping but not back to back (a file for another target, or a K=V layer's Q|K|K)
 
 	copyB        int64 // weight bytes (nibbles/codes + scales) the build still COPIED into new buffers with aliasing on: the anonymous part
-	f16Converted int   // tensors/groups whose f16 scales were converted at load because the file carries none (pre-v14, or not -target metal)
+	f16Converted int   // tensors/groups whose f16 scales were copied into a buffer because they are not one run in the mapping
 }
 
 // addCopy records n weight bytes built on the copy path while aliasing was on (nil-safe: aliasing off counts nothing).
@@ -201,11 +201,10 @@ func (a *weightAlias) concatNibbles(d *Device, wms []*linalg.WeightMat) (Buffer,
 	return d.NewBufferNoCopy(base, n).At(off), true
 }
 
-// scales16 binds the f16 group scales of wms (one tensor, or a fused group in member order) in place, when the
-// model was loaded from a v14 metal-target .giw that stores them (decoder.Model.Int4ScalesF16) AND they form
-// one contiguous run in the mapping — which the file guarantees for a group and for a single tensor. The file
-// stores exactly F16Bits of each f32 scale, the conversion this package applies at load (f32ToF16 IS
-// F16Bits), so the kernels read the same bits either way. ok=false (and the caller converts) otherwise.
+// scales16 binds the binary16 group scales of wms (one tensor, or a fused group in member order) in place, when they
+// form one contiguous, 16-aligned run in the model's mapping. A .giw gives that to every single int4 tensor, and to a
+// fused group written for the Metal target; a group from a file for another target has its members' scales apart, and
+// a heap-built weight has none in the mapping. ok=false then, and the caller copies them into a buffer.
 func (a *weightAlias) scales16(d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
 	if a == nil || len(wms) == 0 {
 		return Buffer{}, false
@@ -213,8 +212,8 @@ func (a *weightAlias) scales16(d *Device, wms []*linalg.WeightMat) (Buffer, bool
 	parts := make([][]uint16, len(wms))
 	total := 0
 	for i, w := range wms {
-		f, ok := a.m.Int4ScalesF16(w)
-		if !ok || len(f) == 0 {
+		f := w.Int4ScalesF16()
+		if len(f) == 0 {
 			return Buffer{}, false
 		}
 		if i > 0 {
@@ -249,7 +248,7 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 		a.addCopy(int4ConcatBytes(wms))
 		return int4Concat(d, wms...)
 	}
-	if sc, ok := a.scales16(d, wms); ok { // v14 metal-target file: the members' f16 scales are one run too
+	if sc, ok := a.scales16(d, wms); ok { // a metal-target file: the members' f16 scales are one run too
 		return nib, sc
 	}
 	nScales := 0
@@ -270,9 +269,8 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 }
 
 // summary is the banner line: how much of the weights is served from the file and how much the build still copied into anonymous
-// memory, plus, for a file whose int4 scales are not in the layout Metal binds, what to do about it. Since weights format v15
-// every bundle stores binary16 scales, but only a -target metal bundle lays them out to be bound, so a v15 file for another
-// target is converted too.
+// memory, plus, for a file none of whose fused groups could be bound in place, what to do about it. A single tensor's nibbles
+// and scales bind from any file; only a -target metal bundle lays a fused group's members out back to back.
 func (a *weightAlias) summary() string {
 	if a == nil {
 		return ""
@@ -283,9 +281,9 @@ func (a *weightAlias) summary() string {
 		filepath.Base(a.m.GiwPath()), float64(a.aliased+a.int8Bytes+a.scaleBytes)/(1<<20), float64(a.copyB)/(1<<20),
 		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), float64(a.int8Bytes)/(1<<20), a.int8Tensors,
 		float64(a.scaleBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent, a.f16Converted)
-	if a.f16Converted > 0 && a.scaleBytes == 0 {
-		line += fmt.Sprintf("[metal] note: %s's int4 scales are not in the layout Metal binds (a file written before weights format "+
-			"v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too\n",
+	if a.groups == 0 && a.nonAdjacent > 0 {
+		line += fmt.Sprintf("[metal] note: %s's fused weight groups are not in the layout Metal binds (a file not written with "+
+			"-target metal), so they were copied at load — rebuild it with prequant -target metal to alias them too\n",
 			filepath.Base(a.m.GiwPath()))
 	}
 	return line

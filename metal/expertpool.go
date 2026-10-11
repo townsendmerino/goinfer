@@ -142,7 +142,7 @@ func preadRangeIntoU32Buf(fd int, dst Buffer, dstOff int, off int64, n int) erro
 
 // preadScalesIntoPoolSlot is preadRangeIntoPoolSlot for a pool's f16 scale buffer (guS or dS, uint16 elements): it reads n
 // bytes from file offset off into slot's region at byte subOff, addressed against the BASE buffer by slot number for the
-// same reason (U16s ignores a view's offset). C-P01 (docs/audit-metal-2026-09-30.md): a v14 metal or v15 .giw stores each
+// same reason (U16s ignores a view's offset). C-P01 (docs/audit-metal-2026-09-30.md): a .giw stores each
 // tensor's f16 scales in the file, so the pread stage reads them as it reads the nibbles instead of copying them out of the
 // mapping and taking a page fault per 16 KB on a cold expert.
 func preadScalesIntoPoolSlot(fd int, base Buffer, slot, strideElems, subOff int, off int64, n int) error {
