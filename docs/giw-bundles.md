@@ -63,9 +63,10 @@ any matrix is read. On Linux:
   few hundred matrices and its walk is cheap.
 
 On macOS the reason is different and so is the rule. The kernel reads little around a fault there, so the walk is
-cheap; it is the first decode that is slow, pulling the weights in a page at a time. So **any bundle, dense or MoE,
-that is not in memory and fits with room is prefetched** before the load (the same line is printed), and nothing is
-done about the read-around. On a 16 GB Mac in use, "fits with room" keeps this to small bundles.
+cheap; it is the first decode on the CPU that is slow, pulling the weights in a page at a time. So **before a load on
+the CPU backend, any bundle, dense or MoE, that is not in memory and fits with room is prefetched** (the same line is
+printed), and nothing is done about the read-around. On a 16 GB Mac in use, "fits with room" keeps this to small
+bundles. **A load on Metal is left as it is:** there the prefetch cost a little more than it saved.
 
 Other systems load as before; none is measured. The measurements and gates are in
 [`tasks/task-giw-cold-load-2026-10.md`](tasks/task-giw-cold-load-2026-10.md).

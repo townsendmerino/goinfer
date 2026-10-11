@@ -203,12 +203,70 @@ Records `gcl-nobara.jsonl`, `gcl-nobara.log`. Every cell's replies are the same 
   The graded cold cells of G-CL2 are clear of all three. The owner may still want the run repeated on a box left
   alone.
 
+## 9. The Mac's gates, 2026-10-11: the CPU cells SHIP, the 7B on Metal reads 1.039 and the kill rule fires
+
+`run-gcl-night-mac.sh` on the MacBook (16 GB), 09:53 to 09:58 (4.8 min; the queue was started by day, on the owner's
+word, with his editor open), old `ac85083a` against new `3533a383`, Metal-module servers, four pairs a cell in
+alternating order, the bundle evicted and checked cold before every cold start. Records `gcl-mac.jsonl`,
+`gcl-mac.log`. Every cell's replies are the same text in every start, and the new build prefetched in every cold
+start of every cell, so every registered cell ran.
+
+**G-CLd2, the cold start**, time from process start to the first finished reply:
+
+| cell | new/old (pairs) | median | old to new | expected | verdict |
+|---|---|---|---|---|---|
+| Mellum MoE, CPU | 0.610, 0.602, 0.608, 0.611 | **0.609** | 8.82 s to 5.37 s | 0.40-0.60 | **SHIP** |
+| 7B dense, CPU | 0.723, 0.738, 0.746, 0.737 | **0.738** | 5.51 s to 4.07 s | 0.55-0.75 | **SHIP** |
+| 7B, Metal | 1.037, 1.032, 1.041, 1.043 | **1.039** | 3.73 s to 3.87 s | none | **OFF** |
+| 1.5B, Metal | 1.000, 0.988, 0.987, 0.981 | **0.987** | 1.59 s to 1.56 s | none | PARK |
+
+- **The CPU cells ship.** On Mellum the server is up 1.5 s later (the prefetch) and the reply then takes 2.2 s where
+  it took 7.1 s. Mellum's median is a hair above the expected range.
+- **On Metal the prefetch costs what it saves, and a little more.** On the 7B the server is up 1.49 s later in every
+  pair, and the reply after it is 1.36 s shorter (2.66 s to 1.30 s). The old build serves with 15% of the bundle in
+  memory and Metal brings the rest in about as fast as the prefetch does. All four pairs are above 1.00, in both
+  orders, within 0.011 of each other.
+- **The kill rule fires, as registered:** a Metal cell is above 1.00, so the pre-read is not applied to a Metal load
+  (next section's code). The 1.5B's park is moot with it.
+- **Noise, old against old:** Mellum on the CPU read 0.895 and 0.996, the 7B on Metal 0.952 and 0.984. The low
+  figure in each is the cell's first pair, whose first start is the slow one. The graded cells alternate the order
+  and their pairs agree within 0.02.
+
+**G-CLd3, the warm starts** (the file in the page cache), time to serving, new minus old:
+
+| cell | pairs | median | first reply, new/old |
+|---|---|---|---|
+| Mellum MoE, CPU | +0.05, +0.06, 0.00, +0.05 s | **+0.05 s** | 1.022 |
+| 7B dense, CPU | 0.00, 0.00, -0.01, +0.01 s | 0.00 s | 0.994 |
+| 7B, Metal | -0.03, -0.03, -0.08, -0.02 s | -0.03 s | 0.984 |
+| 1.5B, Metal | -0.17, -0.06, +0.04, +0.13 s | -0.01 s | 0.992 |
+
+- **PASS on the registered measure, with Mellum at the bar and not resolved by this instrument.** The driver polls
+  every 50 ms. Mellum's old starts all landed on one poll (0.11-0.12 s) and three of the new build's four on the
+  next (0.16-0.17 s); one pair reads 60 ms.
+- **In process the difference is under a millisecond (exploratory, after the run).** `Load` of the warm Mellum
+  bundle with the darwin policy and with none, twelve interleaved pairs in one process: 21.2 ms against 21.4 ms, the
+  paired difference -0.1 ms at the median (-1.8 to +2.7 ms). The residency sample, which is all the new build adds
+  to a warm load, took 0.3-0.8 ms. So the sample does not explain a 50 ms step, and I have not explained why three
+  of four served pairs fell on the later poll.
+- No warm start announced a prefetch.
+
+**The kill rule, built (`e6421641`).** The darwin policy now covers a load on the CPU backend only
+(`decoder/coldload.go:coldPolicyDarwin`), and the planner is given the load's backend. Checked on the real server
+built from that commit against `3533a383`, one cold start each of the 1.5B (exploratory, a check of the action, not
+a timing): on the CPU both builds prefetched; on Metal the earlier build prefetched and the new one did not, and
+served with 12.7% of the bundle in memory, which is the old build's figure in the gate. A Metal load is therefore
+what it was before the pre-read, and it is not timed again.
+
+**Beyond the rule as written:** the policy leaves alone every backend that is not the CPU, so WebGPU on macOS is not
+given the prefetch either. It was never measured, and the Metal cells are the nearest evidence.
+
 ## What is not measured
 
 - Any other filesystem. btrfs sets a large read-ahead window; a filesystem with a small one would make the default
   walk read less, and the trade would move.
-- macOS on the Metal backend, and macOS with a bundle that does not fit (section 6 is the CPU backend, two bundles
-  that fit).
+- macOS on WebGPU (left as it was, section 9), and macOS with a bundle that does not fit: sections 6 and 9 are
+  bundles that fit, and the does-not-fit case is held by tests of the action, not by a timing.
 - A bundle that does not fit in memory. Every cell here fits (62 GB). That is the case the `random` walk is for: it
   would save reading 18.7 GB that cannot stay.
 - A file that is already in the page cache, where a front-to-back read is pure cost (the transcode record's reference
@@ -220,6 +278,7 @@ Records `gcl-nobara.jsonl`, `gcl-nobara.log`. Every cell's replies are the same 
 - `cold-a.sh`, `cold-b.sh`, `cold-c.sh`: the load alone, the cold start to a reply by advice mode, and the same with
   the shipped loader. `run.sh`, `run2.sh`, `run3.sh`: the three runs; `run1.log`, `run2.log`, `run3.log`: their output.
 - `gcl-nobara.jsonl`, `gcl-nobara.log`: section 8, the Linux gates' record.
+- `gcl-mac.jsonl`, `gcl-mac.log`: section 9, the Mac gates' record.
 - `gcl_night.py`, `run-gcl-night-nobara.sh`, `run-gcl-night-mac.sh`: the night driver (Linux and macOS) and the two boxes'
   wrappers for the task's timed gates. `gcl-mac-smoke.log`: section 7's smoke.
 - `mac-a.sh`, `mac-c.sh`, `run-mac.sh`, `maccache.py`, `run-mac.log`: the Mac's step 0 (section 6). Its build is the same

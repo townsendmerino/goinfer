@@ -2,7 +2,9 @@
 
 **Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). **Every Linux
 gate is read: G-CL1 PASS, G-CL2 SHIP on both MoE cells (0.597 and 0.613), G-CL3 PASS, G-CL4 PASS.** Step 0 (the Mac's measurement) is read (below), and **the darwin pre-read is built** from it (§ "The darwin
-pre-read": G-CLd1 PASS; its timed cells are queued on the Mac for the night and not read).
+pre-read"), **and its gates are read: G-CLd1 PASS; G-CLd2 SHIP on both CPU cells (0.609 and 0.738) and OFF on the 7B
+on Metal (1.039), so the registered kill rule fired and the pre-read applies to a CPU load only; G-CLd3 PASS, with one
+warm cell at the bar.**
 The measurements that scope it are exploratory ([record](../measurements/giw-cold-load-2026-10/README.md)); the gates
 below were registered before any code. Owner decisions: § Decisions.
 
@@ -180,6 +182,29 @@ gate. N: four pairs a cell, fixed. Ambiguous band: parked results go to the owne
   7B about 6.4 GB.
 - The driver's eviction now checks itself: straight after a Metal server exits the drop does nothing for a moment,
   and the first smoke's "cold" Metal start was warm.
+
+### Read, 2026-10-11
+
+The Mac's queue was started by day on the owner's word; the run took 4.8 minutes. Every registered cell ran (the new
+build prefetched in every cold start) and replies are the same text throughout. The record's section 9 has the pairs.
+
+| gate | cell | median | bar | verdict |
+|---|---|---|---|---|
+| G-CLd2 | Mellum MoE, CPU, cold | 0.609 (8.82 s to 5.37 s) | ship at most 0.98, expected 0.40-0.60 | **SHIP** |
+| G-CLd2 | 7B dense, CPU, cold | 0.738 (5.51 s to 4.07 s) | the same, expected 0.55-0.75 | **SHIP** |
+| G-CLd2 | 7B, Metal, cold | 1.039 (3.73 s to 3.87 s) | off above 1.00 | **OFF** |
+| G-CLd2 | 1.5B, Metal, cold | 0.987 (1.59 s to 1.56 s) | park 0.98-1.00 | PARK |
+| G-CLd3 | warm starts, time to serving | +0.05 s Mellum CPU; 0.00, -0.03, -0.01 s the others | at most 50 ms slower | **PASS**, Mellum at the bar |
+
+- **The kill rule fired and is built** (`e6421641`): a Metal cell is above 1.00, so the pre-read is not applied to a
+  Metal load. `coldPolicyDarwin` covers a load on the CPU backend only. Both CPU cells ship, so the CPU keeps it.
+- **Beyond the rule as written:** no backend other than the CPU gets the prefetch on macOS, so WebGPU is left as it
+  was too. It was never measured. Owner's call if that should be its own cell.
+- **The warm Mellum cell is at the bar and the driver cannot resolve it** (it polls every 50 ms). An in-process read
+  after the run puts what the new build adds to a warm load under a millisecond; the served step of one poll is not
+  explained.
+- Linux's policy is not changed by any of this: its read-first is for a header walk that reads the file whatever the
+  backend decodes on, and its gate cells were on the CPU backend.
 
 ## Decisions
 
