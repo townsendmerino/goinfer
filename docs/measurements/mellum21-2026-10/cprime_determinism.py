@@ -49,7 +49,22 @@ def ask(model, prompt):
     return {"text": c["message"].get("content") or "", "toks": toks}
 
 
-def session(binary, model_dir, tag, flags, env, order, outdir):
+def ask_stream(model, prompt, maxtok):
+    """Follow-up C's own request shape: streamed, greedy, thinking off; the text is the concatenated content deltas."""
+    body = {"model": model, "stream": True, "temperature": 0, "max_tokens": maxtok, "chat_template_kwargs": {"enable_thinking": False},
+            "messages": [{"role": "user", "content": prompt}]}
+    text = []
+    for line in http("/v1/chat/completions", body):
+        line = line.decode().strip()
+        if not line.startswith("data:") or line.endswith("[DONE]"):
+            continue
+        for ch in json.loads(line[5:]).get("choices", []):
+            d = ch.get("delta", {})
+            text.append(d.get("content") or d.get("reasoning_content") or "")
+    return {"text": "".join(text), "toks": []}
+
+
+def session(binary, model_dir, tag, flags, env, order, outdir, stream=False):
     log = open(os.path.join(outdir, f"serve-{tag}.log"), "w")
     cmd = [binary, "--model", model_dir, "--backend", "cuda", "--ctx", "2048", "--addr", f"127.0.0.1:{PORT}"] + flags
     p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True, env={**os.environ, **env})
@@ -74,9 +89,10 @@ def session(binary, model_dir, tag, flags, env, order, outdir):
         model = json.load(http("/v1/models"))["data"][0]["id"]
         ask(model, "Say hello.")  # warm, discarded
         out = {}
-        for pi in order:
-            out[pi] = ask(model, PROMPTS[pi])
-            print(f"  {tag} prompt {pi}: {len(out[pi]['toks'])} tokens", flush=True)
+        for k, pi in enumerate(order):
+            r = ask_stream(model, PROMPTS[pi], 128) if stream else ask(model, PROMPTS[pi])
+            out[(pi, k) if stream else pi] = r
+            print(f"  {tag} request {k} prompt {pi}: {len(r['text'])} chars", flush=True)
         return out
     finally:
         p.terminate()
@@ -162,9 +178,51 @@ def selftest():
     print("selftest ok")
 
 
+def grade_c3(res):
+    """Follow-up C's own history: P0 x3, P1 x3, P2 x3, streamed, text only. res: tag -> {(prompt, k) -> {text}}."""
+    lines = []
+    def same(a, b):
+        keys = sorted(res[a])
+        return [res[a][k]["text"] == res[b][k]["text"] for k in keys]
+    d1, dr = same("S1a", "S1b"), same("R1", "S1a")
+    rep = {tag: [len({res[tag][k]["text"] for k in res[tag] if k[0] == pi}) for pi in range(3)] for tag in res}
+    lines.append(f"C3 S1a vs S1b identical per request {d1}")
+    lines.append(f"C3 R1 vs S1a identical per request {dr}")
+    lines.append(f"C3 distinct texts per prompt within a session (3 reps each): {rep}")
+    v1 = "DETERMINISTIC at C's history" if all(d1) else "NONDETERMINISTIC at C's history"
+    vr = "MATCHES RESIDENT" if all(dr) else "DIFFERS FROM RESIDENT"
+    lines.append(f"C3 VERDICT: {v1}; {vr}")
+    return lines
+
+
+def selftest_c3():
+    mk = lambda t: {"text": t, "toks": []}
+    keys = [(p, k) for p in range(3) for k in range(3)]
+    base = {k: mk(f"t{k[0]}") for k in keys}
+    assert grade_c3({"R1": base, "S1a": base, "S1b": base})[-1] == "C3 VERDICT: DETERMINISTIC at C's history; MATCHES RESIDENT"
+    bad = {**base, (1, 2): mk("other")}
+    assert "NONDETERMINISTIC" in grade_c3({"R1": base, "S1a": base, "S1b": bad})[-1]
+    assert "DIFFERS FROM RESIDENT" in grade_c3({"R1": base, "S1a": bad, "S1b": bad})[-1]
+    print("selftest c3 ok")
+
+
 def main():
     if "--selftest" in sys.argv:
-        return selftest()
+        selftest()
+        return selftest_c3()
+    if "--c-history" in sys.argv:
+        binary, model_dir, outdir = [a for a in sys.argv[1:] if not a.startswith("--")][:3]
+        os.makedirs(outdir, exist_ok=True)
+        order = [p for p in range(3) for _ in range(3)]
+        C = ["--moe-cache-experts"]
+        res = {}
+        for tag, flags in (("R1", []), ("S1a", C), ("S1b", C)):
+            res[tag] = session(binary, model_dir, tag, flags, {}, order, outdir, stream=True)
+        json.dump({t: {f"{k[0]}.{k[1]}": r for k, r in v.items()} for t, v in res.items()}, open(os.path.join(outdir, "sessions.json"), "w"))
+        lines = grade_c3(res)
+        print("\n".join(lines))
+        open(os.path.join(outdir, "result.txt"), "w").write("\n".join(lines) + "\n")
+        return
     binary, model_dir, outdir = sys.argv[1:4]
     os.makedirs(outdir, exist_ok=True)
     try:

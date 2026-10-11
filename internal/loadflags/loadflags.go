@@ -77,7 +77,7 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", fitHelp) // lenient: --fit=off works (M-14)
 	fs.BoolVar(&f.ExactPrefill, "exact-prefill", false, ExactPrefillHelp)
 	fs.BoolVar(&f.CPUExactPrefill, "cpu-exact-prefill", false, CPUExactPrefillHelp)
-	fs.BoolVar(&f.WindowedKV, "windowed-kv", false, WindowedKVHelp)
+	fs.BoolVar(&f.WindowedKV, "windowed-kv", true, WindowedKVHelp)
 	return f
 }
 
@@ -313,8 +313,8 @@ const fitHelp = "size an unpinned load to what this machine actually has, instea
 // test. It is the universal opt-out: one flag that disables fast prefill on EVERY backend that has one.
 const ExactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables the CPU's default f32 prompt attention (above 512 prompt tokens), Metal's f16-MMA batched prefill (default-on since 2026-09-09, above 16 prompt tokens), AND CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL, default-on above 512 prompt tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. CPU and Metal's fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
 
-// WindowedKVHelp is --windowed-kv's usage text. Off by default until the owner turns it on (docs/tasks/task-cuda-windowed-kv-2026-10.md).
-const WindowedKVHelp = "CUDA only: give each sliding-window attention layer a KV cache of window+512 positions instead of the whole context, so a model that mixes sliding-window and full layers fits a longer context in the same VRAM (Mellum2.1: 21 of 28 layers are windowed to 1024). Output is meant to be identical to the full cache (docs/tasks/task-cuda-windowed-kv-2026-10.md); the cost is that reusing a conversation prefix whose window has been dropped re-prefills from the start, and CUDA graphs (GOINFER_CUDA_GRAPHS) are declined. Ignored by the other backends and by models without sliding-window layers"
+// WindowedKVHelp is --windowed-kv's usage text. On by default (docs/tasks/task-cuda-windowed-kv-2026-10.md, section 12); --windowed-kv=false opts out.
+const WindowedKVHelp = "On by default; --windowed-kv=false opts out. CUDA only: give each sliding-window attention layer a KV cache of window+512 positions instead of the whole context, so a model that mixes sliding-window and full layers fits a longer context in the same VRAM (Mellum2.1: 21 of 28 layers are windowed to 1024). Output is meant to be identical to the full cache (docs/tasks/task-cuda-windowed-kv-2026-10.md); the cost is that reusing a conversation prefix whose window has been dropped re-prefills from the start, and CUDA graphs (GOINFER_CUDA_GRAPHS) are declined. Ignored by the other backends and by models without sliding-window layers"
 
 // CPUExactPrefillHelp is --cpu-exact-prefill's usage text — the only CPU-specific prefill flag since
 // --cpu-fast-attention was removed (it defaulted to true, so its only reachable use, =false, was this
