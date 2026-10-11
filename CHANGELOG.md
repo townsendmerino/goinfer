@@ -33,6 +33,14 @@ character. `tok.NewStream()` returns a `tokenizer.Stream`: `Write(id)` returns t
 rest, and the joined text equals `Decode` of all the ids (checked on 41 real tokenizers, byte-level and SentencePiece). The docs
 and `examples/embed` use it.
 
+### Changed — under `--backend webgpu`, Gemma 3 reads images with its float32 tower on the CPU by default
+
+WebGPU's only vision tower for Gemma 3 is an int8 one, and it was the default there. On five test images it misread three that the
+float32 tower read correctly (an invoice came back as "a map of the city of Vinotai, Ireland"), and on a MacBook it was also the
+slower of the two (47 s an image against 26 s). The default is now the float32 tower on the CPU, as it already was in effect on
+CUDA and Metal, where float32 runs on the GPU. `--vision-quant int8` still selects the int8 WebGPU tower
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), "Gemma 3's default tower on WebGPU").
+
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 
 The two small Gemma 4 models ran on the CPU for the whole model under WebGPU. They now decode resident on the GPU, text, image

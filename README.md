@@ -373,7 +373,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 | family (`model_type`) | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Gemma 4 E2B, E4B audio (`gemma4`) | CPU / CPU | CPU / GPU | GPU / GPU | CPU / GPU |
 | Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU |
@@ -389,7 +389,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 <!-- END images-and-audio support table -->
 
-Not yet: Qwen3-VL MoE images, video, and images on WebGPU beyond Gemma 3's tower.
+Not yet: Qwen3-VL MoE images, video, and a float32 vision tower on WebGPU (its only device tower is Gemma 3's int8 one, opt-in with `--vision-quant int8`).
 
 ## Docs
 

@@ -406,8 +406,10 @@ was available.** Per family:*
 | **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image; from a checkpoint directory or a GGUF `mmproj` (below) | **CUDA: resident image prefill and decode** since 2026-10-06 (P26b; dense only); every other backend: CPU prefill and CPU decode (a recurrent family refuses the other resident branches); a repeated image does not re-run the tower (the feature cache) |
 | **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
 
-**The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. `--backend cuda` and `--backend webgpu` (including `--backend auto` when it
-resolves to CUDA) **also** give Gemma 3 an int8 tower whatever `-vision-quant` says, because only its resident tower has a GPU path and that path needs int8 weights. **Every other tower
+**The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. Unset, **Gemma 3's
+tower is float32 on every backend**: on the GPU under `--backend cuda` (which falls back to its int8 device tower when the card cannot hold float32) and `--backend metal`, and on the CPU under
+`--backend webgpu`, whose only device tower is int8. `-vision-quant int8` asks for that WebGPU tower; on 2026-10-11 it misread three of five test images that the float32 tower read correctly, and
+on a MacBook it was the slower of the two. **Every other tower
 (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`:** until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which was not faster and was
 not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`), and GLM-OCR's int8 form is not gated
 on the real checkpoint. The f32 tower holds more host memory. `EnableResident` is called in one place only (the Gemma 3 tower on cuda/webgpu); if it fails, serve warns and runs that tower on
