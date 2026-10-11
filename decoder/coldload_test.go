@@ -46,8 +46,8 @@ func TestPlanColdLoad(t *testing.T) {
 	}
 }
 
-// TestColdLoadPolicy_qualifies: Linux's policy covers only a small-matrix MoE, darwin's every bundle, and a system with
-// no policy none.
+// TestColdLoadPolicy_qualifies: Linux's policy covers only a small-matrix MoE, on any backend; darwin's every bundle,
+// on the CPU only; and a system with no policy none.
 func TestColdLoadPolicy_qualifies(t *testing.T) {
 	const gb = int64(1) << 30
 	moe := &Architecture{NumLayers: 40, MoE: &MoEConfig{NumExperts: 256}}
@@ -56,16 +56,20 @@ func TestColdLoadPolicy_qualifies(t *testing.T) {
 		name   string
 		policy coldLoadPolicy
 		arch   *Architecture
+		onCPU  bool
 		want   bool
 	}{
-		{"linux, a small-matrix MoE", coldPolicyLinux, moe, true},
-		{"linux, a dense model", coldPolicyLinux, dense, false},
-		{"darwin, a small-matrix MoE", coldPolicyDarwin, moe, true},
-		{"darwin, a dense model", coldPolicyDarwin, dense, true},
-		{"no policy, an MoE", coldLoadPolicy{}, moe, false},
-		{"no policy, a dense model", coldLoadPolicy{}, dense, false},
+		{"linux, a small-matrix MoE", coldPolicyLinux, moe, true, true},
+		{"linux, a small-matrix MoE, not on the CPU", coldPolicyLinux, moe, false, true},
+		{"linux, a dense model", coldPolicyLinux, dense, true, false},
+		{"darwin, a small-matrix MoE", coldPolicyDarwin, moe, true, true},
+		{"darwin, a dense model", coldPolicyDarwin, dense, true, true},
+		{"darwin, a small-matrix MoE, not on the CPU", coldPolicyDarwin, moe, false, false},
+		{"darwin, a dense model, not on the CPU", coldPolicyDarwin, dense, false, false},
+		{"no policy, an MoE", coldLoadPolicy{}, moe, true, false},
+		{"no policy, a dense model", coldLoadPolicy{}, dense, true, false},
 	} {
-		if got := c.policy.qualifies(c.arch, 20*gb); got != c.want {
+		if got := c.policy.qualifies(c.arch, 20*gb, c.onCPU); got != c.want {
 			t.Errorf("%s: qualifies = %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -134,6 +138,11 @@ func coldLoadCalls(t *testing.T, policy coldLoadPolicy, path string, opts Option
 	return calls, memProbes
 }
 
+// notCPUBackend is the CPU backend under another name.
+type notCPUBackend struct{ Backend }
+
+func (notCPUBackend) Name() string { return "not-cpu" }
+
 // bakeTiny writes the fixture at dir as an int4 .giw and returns its path.
 func bakeTiny(t *testing.T, dir string) string {
 	t.Helper()
@@ -157,10 +166,20 @@ func bakeTiny(t *testing.T, dir string) string {
 //
 // Linux's: a cold MoE bundle that fits is read through once and nothing else; one in the page cache is left alone; one
 // larger than the box, or paged, has its read-around turned off and then back on; a dense bundle is never touched.
-// darwin's: a cold bundle that fits is read through, dense or MoE; one that cannot stay, or is paged, is left alone,
-// and its read-around is never touched. Under either, a warm bundle is not asked how much memory there is.
+// darwin's: a cold bundle that fits is read through, dense or MoE, when the load is on the CPU and not when it is on
+// another backend; one that cannot stay, or is paged, is left alone, and its read-around is never touched. Under
+// either, a warm bundle is not asked how much memory there is.
 func TestLoad_coldLoadPlan(t *testing.T) {
 	const huge, tiny = int64(1) << 50, int64(1)
+	// A backend that computes as the CPU does and is not the CPU by name, which is what the policy reads.
+	other := "cold-load-not-cpu-" + t.Name()
+	RegisterBackend(other, func() (Backend, error) {
+		cpu, err := NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		return notCPUBackend{cpu}, nil
+	})
 	moe := bakeTiny(t, "../testdata/qwen3moe-tiny")
 	dense := bakeTiny(t, "../testdata/llama-tiny")
 	readThrough, offOn := []string{"read through"}, []string{"read-around off", "read-around on"}
@@ -186,6 +205,9 @@ func TestLoad_coldLoadPlan(t *testing.T) {
 		{"darwin, MoE, larger than the installed memory", coldPolicyDarwin, moe, Options{}, 0, tiny, tiny, nil},
 		{"darwin, MoE, paged", coldPolicyDarwin, moe, Options{StreamWeights: true}, 0, huge, huge, nil},
 		{"darwin, dense, fits the box but not with room", coldPolicyDarwin, dense, Options{}, 0, tiny, huge, nil},
+		{"darwin, dense, cold and fits, not on the CPU", coldPolicyDarwin, dense, Options{Backend: other}, 0, huge, huge, nil},
+		{"darwin, MoE, cold and fits, not on the CPU", coldPolicyDarwin, moe, Options{Backend: other}, 0, huge, huge, nil},
+		{"linux, MoE, cold and fits, not on the CPU", coldPolicyLinux, moe, Options{Backend: other}, 0, huge, huge, readThrough},
 		{"no policy, MoE, cold and fits", coldLoadPolicy{}, moe, Options{}, 0, huge, huge, nil},
 	} {
 		got, probes := coldLoadCalls(t, c.policy, c.bundle, c.opts, c.resident, c.avail, c.ram)

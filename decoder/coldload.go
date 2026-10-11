@@ -33,6 +33,7 @@ const (
 type coldLoadPolicy struct {
 	supported      bool // false: the load does nothing about the page cache
 	anyBundle      bool // every bundle qualifies; false: only a small-matrix MoE (expertMatricesAreSmall)
+	cpuOnly        bool // only a load whose backend is the CPU qualifies
 	dropReadAround bool // the walk reads around its faults enough for coldLoadNoReadAround to matter
 }
 
@@ -40,14 +41,17 @@ var (
 	// coldPolicyLinux: only the bundle whose walk would read it anyway, and the read-around is worth turning off for
 	// one that cannot stay.
 	coldPolicyLinux = coldLoadPolicy{supported: true, anyBundle: false, dropReadAround: true}
-	// coldPolicyDarwin: any bundle, because it is the decode's page-at-a-time faults that a read-first saves; the
-	// walk's read-around is small and is left alone.
-	coldPolicyDarwin = coldLoadPolicy{supported: true, anyBundle: true, dropReadAround: false}
+	// coldPolicyDarwin: any bundle on the CPU, because it is the CPU decode's page-at-a-time faults that a read-first
+	// saves; the walk's read-around is small and is left alone. A load on another backend is left as it is: the Metal
+	// cold start measured slower with the read-first (the task doc, § "The darwin pre-read"), so turning it on there
+	// needs a measurement on that backend first.
+	coldPolicyDarwin = coldLoadPolicy{supported: true, anyBundle: true, cpuOnly: true, dropReadAround: false}
 )
 
-// qualifies reports whether the policy reads a bundle of fileBytes for arch first when it is cold.
-func (p coldLoadPolicy) qualifies(arch *Architecture, fileBytes int64) bool {
-	return p.supported && (p.anyBundle || expertMatricesAreSmall(arch, fileBytes))
+// qualifies reports whether the policy reads a bundle of fileBytes for arch first when it is cold, in a load whose
+// backend is the CPU (onCPU) or another.
+func (p coldLoadPolicy) qualifies(arch *Architecture, fileBytes int64, onCPU bool) bool {
+	return p.supported && (onCPU || !p.cpuOnly) && (p.anyBundle || expertMatricesAreSmall(arch, fileBytes))
 }
 
 // coldLoadFacts is what planColdLoad decides from.
@@ -111,13 +115,13 @@ var (
 	coldAdviseReadAround = giwAdviseReadAround
 )
 
-// prepareColdLoad runs the plan for the .giw at path, mapped as mapping, whose header resolved to arch. It is called
-// once the header is read and before any matrix is. The returned function undoes what must be undone after the walk.
+// prepareColdLoad runs the plan for the .giw at path, mapped as mapping, whose header resolved to arch, in a load on
+// backend be. It is called once the header is read and before any matrix is. The returned function undoes what must be undone after the walk.
 // A bundle the policy does not cover, and one already in the page cache, cost a residency sample at most: the memory
 // probes run only for a cold bundle.
-func prepareColdLoad(path string, mapping []byte, arch *Architecture, opts Options) (after func()) {
+func prepareColdLoad(path string, mapping []byte, arch *Architecture, opts Options, be Backend) (after func()) {
 	after = func() {}
-	if !coldPolicy.qualifies(arch, int64(len(mapping))) {
+	if !coldPolicy.qualifies(arch, int64(len(mapping)), be.Name() == "cpu") {
 		return after
 	}
 	resident := coldResidentFraction(mapping)
