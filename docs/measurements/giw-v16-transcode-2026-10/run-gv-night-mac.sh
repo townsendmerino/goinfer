@@ -1,5 +1,5 @@
 #!/bin/bash
-# The Mac's night run for Part V of docs/tasks/task-giw-v16-transcode-2026-10.md:
+# The Mac's night run for Part V of docs/completed/task-giw-v16-transcode-2026-10.md:
 #   G-V1's real Metal cells: logits identity, v15 against v16, each build through its own transcode, on the 1.5B and the 7B.
 #   G-V3: the Metal alias banner's "bound in place" figure on the 7B under each format.
 # Pre-built binaries in ~/goinfer-bench/v16-manual/bin (BUILD.txt beside them names the revisions). Sidecars are written

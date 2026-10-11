@@ -9,7 +9,7 @@ import (
 const streamLayerBudgetFallback = 1 << 30
 
 // streamLayerBudget is the memory a streaming transcode may hold in built, unwritten layers: a quarter of the RAM
-// available when the transcode starts (docs/tasks/task-giw-v16-transcode-2026-10.md, Decision 3).
+// available when the transcode starts (docs/completed/task-giw-v16-transcode-2026-10.md, Decision 3).
 func streamLayerBudget() int64 {
 	if a := HostRAMAvailableBytes(); a > 0 {
 		return a / 4

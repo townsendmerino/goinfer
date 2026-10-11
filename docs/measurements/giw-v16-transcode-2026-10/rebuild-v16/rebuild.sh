@@ -1,5 +1,5 @@
 #!/bin/bash
-# Decision 4 of docs/tasks/task-giw-v16-transcode-2026-10.md: rebuild the hand-built bundles at weights format v16,
+# Decision 4 of docs/completed/task-giw-v16-transcode-2026-10.md: rebuild the hand-built bundles at weights format v16,
 # each from the source its old header names, with the settings its old file shows (int4, int8 embedding, canonical
 # layout; Metal target for the one Metal bundle). New files are written under $B/new and nothing in ~/models or the
 # archive is replaced here: the digests of old and new are printed for review first. Not a timed run.

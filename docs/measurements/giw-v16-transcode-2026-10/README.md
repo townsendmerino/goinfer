@@ -1,6 +1,6 @@
 # `.giw` v16 and the transcode: gate records
 
-The gates are registered in [`docs/tasks/task-giw-v16-transcode-2026-10.md`](../../tasks/task-giw-v16-transcode-2026-10.md).
+The gates are registered in [`docs/completed/task-giw-v16-transcode-2026-10.md`](../../completed/task-giw-v16-transcode-2026-10.md).
 The exploratory profiles that set its bands are in [`../transcode-audit-2026-10/`](../transcode-audit-2026-10/README.md).
 
 ## G-T1 for T6, 2026-10-10: PASS, every cell that ran is IDENTICAL

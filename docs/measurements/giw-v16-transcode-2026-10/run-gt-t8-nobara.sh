@@ -1,5 +1,5 @@
 #!/bin/bash
-# nobara's copy-floor re-read with T8 in the new arm (docs/tasks/task-giw-v16-transcode-2026-10.md, T8: recorded, not gated).
+# nobara's copy-floor re-read with T8 in the new arm (docs/completed/task-giw-v16-transcode-2026-10.md, T8: recorded, not gated).
 # The earlier night runs' cells and driver. old = the T4b build, new = the same with T8 (bin-t8/BUILD.txt). Estimate: 30 min.
 set -euo pipefail
 B=$HOME/goinfer-bench/giw-v16

@@ -19628,7 +19628,7 @@ compares two different algorithms and cannot answer the G26 question.
 ## The .giw format before v16
 
 Moved from `decoder/serialize.go` (the file comment's Versions list and its kind-4 paragraph) on 2026-10-10, when the
-reader stopped reading every version but the current one (`docs/tasks/task-giw-v16-transcode-2026-10.md`, Part V).
+reader stopped reading every version but the current one (`docs/completed/task-giw-v16-transcode-2026-10.md`, Part V).
 Nothing below describes a file this build reads.
 
 ```text
