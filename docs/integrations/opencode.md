@@ -102,11 +102,11 @@ this project had never had a data point that was true on both until nobara-pc's 
 above.** The Mac's real available memory tops out well under what a 7B model needs; nobara-pc's
 GPU has real headroom to spare for exactly that size. Different hardware, different bottleneck.
 
-## Picking a model, honestly
+## Picking a model
 
 **Qwen2.5-7B-Instruct on a CUDA GPU with ≥8 GB VRAM is now a measured, working recommendation**,
 not a suggestive data point — see "The working configuration, measured" above. Off that specific
-hardware profile, the honest picture is narrower:
+hardware profile, the measured picture is narrower:
 
 | checkpoint | hardware tried | tools (harness-scale, 12 tools) |
 |---|---|---|
@@ -120,7 +120,7 @@ hardware profile, the honest picture is narrower:
 
 Run `serve check` against whichever checkpoint and hardware you actually have before pointing
 opencode at it — it has predicted every outcome in this table, including the success. If your
-hardware is CPU-only or a smaller GPU, the honest state is: nothing between 3B and 7B has been
+hardware is CPU-only or a smaller GPU, what is measured: nothing between 3B and 7B has been
 tested, and 7B has only been shown to fit on a discrete GPU with real VRAM headroom, not on a
 16 GB Mac's host RAM.
 

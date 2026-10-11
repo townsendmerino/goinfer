@@ -62,7 +62,8 @@ finished, and loads any complete one; `goinfer-chat cache` prints the same list.
 other route**, so a liveness probe must send the API key when one is configured (N-36). Each `/v1/models`
 entry also carries goinfer-only fields: the resolved `decode_path`/`prefill_path`, and `context_window`,
 the exact token limit a text request is held to (the resident KV cap on a GPU backend when that is lower than
-the model's own maximum), from the same function that enforces it; and `vision`, whether the model
+the model's own maximum), from the same function that enforces it, repeated as `context_length` and
+`max_model_len` (the names Hermes and Oh My Pi read); and `vision`, whether the model
 accepts image content parts (from the same check that refuses them otherwise);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 `frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
@@ -280,7 +281,11 @@ not with a chat model's context. The resolved caps are printed on the startup li
 
 **Responses API.** `/v1/responses` honors `input` (string or message items),
 `instructions`, `text.format` (→ the same constrained grammar), `tools`, and
-streaming (`response.created`/`output_text.delta`/`completed`). `store` +
+streaming (`response.created`/`output_text.delta`/`completed`). Function tools and a named `tool_choice` are
+accepted in the Responses shape (`{"type":"function","name":…,"parameters":…}`) or the Chat Completions one
+(`{"type":"function","function":{…}}`). Tool types this server cannot run (`custom` freeform-grammar tools such as
+Codex's apply_patch, `web_search`, `tool_search`, `namespace`) are left out of the prompt and named in the
+`X-Goinfer-Tools-Dropped` response header; `/v1/chat/completions` does the same. `store` +
 `previous_response_id` continue a conversation from an in-memory ring — by
 construction a prompt-prefix extension, so it rides the warm-KV cache below.
 
