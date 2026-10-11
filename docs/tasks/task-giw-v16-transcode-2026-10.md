@@ -12,8 +12,8 @@ the 1.5B and the 7B on Metal), G-V3 PASS (the 7B binds 4020 MB in place under bo
 with two projection misses on the small default files (the projection counted one int4 table where there are two).
 Decision 4's rebuilds are done (five bundles on nobara and the archive, each bit-identical in weights to the file it
 replaces). The copy floor was read again with T8 (10-16% off the wall on the GGUF cells). The 30B's slower
-self-check is explained (the read-back overlapping the kernel's flush; not the new code). **Open, unscheduled:** an
-evicted MoE bundle loads in 20 s without the CRC and 10 s with it. The gates
+self-check is explained (the read-back overlapping the kernel's flush; not the new code). The by-product (an evicted MoE bundle loads
+in 20 s without the CRC and 10 s with it) is scoped as its own task, `docs/tasks/task-giw-cold-load-2026-10.md`. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:

@@ -1,0 +1,32 @@
+started 2026-10-11 08:02:02 PDT; load average: 1.18, 2.56, 1.55
+part A started 08:02:02
+== qwen3.6-35b-a3b-int4.giw (20046054009 bytes)
+rep 1  default: load 24.56s, close 0.18s, major faults 6506 | resident before: 0 MB of 20046 MB resident (0.0%); after: 18751 MB of 20046 MB resident (93.5%)
+rep 1  willneed: load 25.18s, close 0.18s, major faults 6491 | resident before: 0 MB of 20046 MB resident (0.0%); after: 18751 MB of 20046 MB resident (93.5%)
+rep 1  willneed,random: load 9.71s, close 0.03s, major faults 84262 | resident before: 0 MB of 20046 MB resident (0.0%); after: 432 MB of 20046 MB resident (2.2%)
+rep 2  default: load 24.32s, close 0.18s, major faults 6529 | resident before: 0 MB of 20046 MB resident (0.0%); after: 18751 MB of 20046 MB resident (93.5%)
+rep 2  willneed: load 24.40s, close 0.18s, major faults 6523 | resident before: 0 MB of 20046 MB resident (0.0%); after: 18751 MB of 20046 MB resident (93.5%)
+rep 2  willneed,random: load 9.53s, close 0.04s, major faults 84266 | resident before: 0 MB of 20046 MB resident (0.0%); after: 432 MB of 20046 MB resident (2.2%)
+== mellum2.int4.giw (7055350985 bytes)
+rep 1  default: load 8.44s, close 0.05s, major faults 2367 | resident before: 0 MB of 7055 MB resident (0.0%); after: 6507 MB of 7055 MB resident (92.2%)
+rep 1  willneed: load 8.23s, close 0.05s, major faults 2396 | resident before: 0 MB of 7055 MB resident (0.0%); after: 6507 MB of 7055 MB resident (92.2%)
+rep 1  willneed,random: load 1.78s, close 0.01s, major faults 14737 | resident before: 0 MB of 7055 MB resident (0.0%); after: 81 MB of 7055 MB resident (1.1%)
+rep 2  default: load 8.36s, close 0.05s, major faults 2381 | resident before: 0 MB of 7055 MB resident (0.0%); after: 6507 MB of 7055 MB resident (92.2%)
+rep 2  willneed: load 8.46s, close 0.05s, major faults 2366 | resident before: 0 MB of 7055 MB resident (0.0%); after: 6507 MB of 7055 MB resident (92.2%)
+rep 2  willneed,random: load 1.76s, close 0.00s, major faults 14735 | resident before: 0 MB of 7055 MB resident (0.0%); after: 81 MB of 7055 MB resident (1.1%)
+part A finished 08:05:13
+part B on qwen3.6-35b-a3b-int4.giw started 08:05:13
+rep 1  default: serving at  24.4s (18760 MB (93.6%)) | first reply done at  37.7s (19577 MB (97.7%)) | second reply took  10.6s (19586 MB (97.7%))
+      replies: [The first five prime] [Here are three major]
+rep 1  willneed: serving at  24.8s (18760 MB (93.6%)) | first reply done at  38.1s (19577 MB (97.7%)) | second reply took  10.7s (19586 MB (97.7%))
+      replies: [The first five prime] [Here are three major]
+rep 1  willneed,random: serving at   9.9s (443 MB (2.2%)) | first reply done at  44.9s (16713 MB (83.4%)) | second reply took  11.8s (17613 MB (87.9%))
+      replies: [The first five prime] [Here are three major]
+rep 2  default: serving at  24.6s (18760 MB (93.6%)) | first reply done at  37.9s (19577 MB (97.7%)) | second reply took  10.6s (19586 MB (97.7%))
+      replies: [The first five prime] [Here are three major]
+rep 2  willneed: serving at  24.4s (18760 MB (93.6%)) | first reply done at  37.9s (19577 MB (97.7%)) | second reply took  10.6s (19586 MB (97.7%))
+      replies: [The first five prime] [Here are three major]
+rep 2  willneed,random: serving at  10.0s (443 MB (2.2%)) | first reply done at  45.0s (16712 MB (83.4%)) | second reply took  11.8s (17670 MB (88.1%))
+      replies: [The first five prime] [Here are three major]
+part B finished 08:10:44
+finished 08:10:44

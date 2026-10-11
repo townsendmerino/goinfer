@@ -1,0 +1,29 @@
+The experimental loader (giwload-xp, serve-xp) is goinfer main with this change, built in a scratch worktree and never
+committed. XP_MADV is a comma-separated list of modes applied to the whole .giw mapping before the header walk; a list
+containing "random" is followed by "normal" after the walk.
+
+decoder/model.go, in Load's .giw branch, before giw.Read(data):
+
+    for _, mode := range strings.Split(os.Getenv("XP_MADV"), ",") {
+        xpAdvise(data, mode)
+    }
+
+and after loadSerializedWeights returns:
+
+    if strings.Contains(os.Getenv("XP_MADV"), "random") {
+        xpAdvise(data, "normal")
+    }
+
+decoder/xp_madvise_linux.go:
+
+    func xpAdvise(data []byte, mode string) {
+        switch mode {
+        case "random":     _ = syscall.Madvise(data, syscall.MADV_RANDOM)
+        case "sequential": _ = syscall.Madvise(data, syscall.MADV_SEQUENTIAL)
+        case "normal":     _ = syscall.Madvise(data, syscall.MADV_NORMAL)
+        case "willneed":   _ = syscall.Madvise(data, syscall.MADV_WILLNEED)
+        }
+    }
+
+The first run's build took one mode only and restored "normal" after the walk for any mode. giwload-xp is the loader in
+selfcheck-30b/giwload.go.txt of the transcode record, with the process's major-fault count added to its output.

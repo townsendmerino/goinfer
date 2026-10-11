@@ -1,0 +1,40 @@
+started 2026-10-11 07:51:38 PDT; load average: 0.55, 0.38, 0.16; btrfs; read_ahead_kb: unknown
+wrote ~/goinfer-bench/coldload/out/7b.giw: 4548 MB (int4) in 5.5s: stream 5.3s, self-check 0.0s
+part A started 07:51:44
+== qwen3.6-35b-a3b-int4.giw (20046054009 bytes)
+rep 1  default: load 34.10s, close 0.17s, major faults 6140 | resident before: 0 MB of 20046 MB resident (0.0%); after: 18751 MB of 20046 MB resident (93.5%)
+rep 1  random: load 9.64s, close 0.03s, major faults 84260 | resident before: 0 MB of 20046 MB resident (0.0%); after: 428 MB of 20046 MB resident (2.1%)
+rep 1  sequential: load 23.32s, close 0.18s, major faults 3187 | resident before: 0 MB of 20046 MB resident (0.0%); after: 17743 MB of 20046 MB resident (88.5%)
+rep 2  default: load 24.10s, close 0.18s, major faults 6551 | resident before: 0 MB of 20046 MB resident (0.0%); after: 18751 MB of 20046 MB resident (93.5%)
+rep 2  random: load 9.68s, close 0.04s, major faults 84258 | resident before: 0 MB of 20046 MB resident (0.0%); after: 428 MB of 20046 MB resident (2.1%)
+rep 2  sequential: load 23.38s, close 0.18s, major faults 3175 | resident before: 0 MB of 20046 MB resident (0.0%); after: 17743 MB of 20046 MB resident (88.5%)
+== mellum2.int4.giw (7055350985 bytes)
+rep 1  default: load 16.38s, close 0.04s, major faults 1987 | resident before: 0 MB of 7055 MB resident (0.0%); after: 6507 MB of 7055 MB resident (92.2%)
+rep 1  random: load 1.79s, close 0.01s, major faults 14736 | resident before: 0 MB of 7055 MB resident (0.0%); after: 76 MB of 7055 MB resident (1.1%)
+rep 1  sequential: load 8.01s, close 0.05s, major faults 1041 | resident before: 0 MB of 7055 MB resident (0.0%); after: 5886 MB of 7055 MB resident (83.4%)
+rep 2  default: load 8.49s, close 0.05s, major faults 2363 | resident before: 0 MB of 7055 MB resident (0.0%); after: 6507 MB of 7055 MB resident (92.2%)
+rep 2  random: load 1.77s, close 0.00s, major faults 14736 | resident before: 0 MB of 7055 MB resident (0.0%); after: 76 MB of 7055 MB resident (1.1%)
+rep 2  sequential: load 8.04s, close 0.05s, major faults 1049 | resident before: 0 MB of 7055 MB resident (0.0%); after: 5886 MB of 7055 MB resident (83.4%)
+== 7b.giw (4768988163 bytes)
+rep 1  default: load 1.21s, close 0.00s, major faults 195 | resident before: 0 MB of 4769 MB resident (0.0%); after: 1033 MB of 4769 MB resident (21.7%)
+rep 1  random: load 0.05s, close 0.00s, major faults 720 | resident before: 0 MB of 4769 MB resident (0.0%); after: 3 MB of 4769 MB resident (0.1%)
+rep 1  sequential: load 1.10s, close 0.00s, major faults 174 | resident before: 0 MB of 4769 MB resident (0.0%); after: 952 MB of 4769 MB resident (20.0%)
+rep 2  default: load 1.23s, close 0.00s, major faults 195 | resident before: 0 MB of 4769 MB resident (0.0%); after: 1033 MB of 4769 MB resident (21.7%)
+rep 2  random: load 0.05s, close 0.00s, major faults 720 | resident before: 0 MB of 4769 MB resident (0.0%); after: 3 MB of 4769 MB resident (0.1%)
+rep 2  sequential: load 1.01s, close 0.00s, major faults 179 | resident before: 0 MB of 4769 MB resident (0.0%); after: 952 MB of 4769 MB resident (20.0%)
+part A finished 07:55:09
+part B on qwen3.6-35b-a3b-int4.giw started 07:55:09
+rep 1  default: serving at  24.6s (18760 MB (93.6%)) | first reply done at  38.0s (19577 MB (97.7%)) | second reply took  10.6s (19586 MB (97.7%))
+      replies: [The first five prime] [Here are three major]
+rep 1  random: serving at   9.9s (439 MB (2.2%)) | first reply done at  44.8s (16703 MB (83.3%)) | second reply took  11.7s (17668 MB (88.1%))
+      replies: [The first five prime] [Here are three major]
+rep 1  sequential: serving at  23.6s (17750 MB (88.5%)) | first reply done at  37.9s (19022 MB (94.9%)) | second reply took  10.8s (19101 MB (95.3%))
+      replies: [The first five prime] [Here are three major]
+rep 2  default: serving at  24.6s (18760 MB (93.6%)) | first reply done at  37.9s (19577 MB (97.7%)) | second reply took  10.6s (19586 MB (97.7%))
+      replies: [The first five prime] [Here are three major]
+rep 2  random: serving at   9.9s (439 MB (2.2%)) | first reply done at  44.8s (16760 MB (83.6%)) | second reply took  11.7s (17663 MB (88.1%))
+      replies: [The first five prime] [Here are three major]
+rep 2  sequential: serving at  23.2s (17750 MB (88.5%)) | first reply done at  37.5s (19022 MB (94.9%)) | second reply took  10.6s (19101 MB (95.3%))
+      replies: [The first five prime] [Here are three major]
+part B finished 08:00:42
+finished 08:00:42

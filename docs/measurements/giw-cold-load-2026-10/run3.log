@@ -1,0 +1,27 @@
+started 2026-10-11 08:10:48 PDT; load average: 6.18, 3.81, 2.37
+wrote ~/goinfer-bench/coldload/out/7b.giw: 4548 MB (int4) in 3.5s: stream 3.1s, self-check 0.3s
+part C on qwen3.6-35b-a3b-int4.giw (20046054009 bytes) started 08:10:52
+rep 1  default: serving at  24.4s (18760 MB (93.6%)) | first reply done at  37.7s (19577 MB (97.7%)) | second reply took  10.6s   [The first five prime]
+rep 1  crc: serving at  12.6s (20040 MB (100.0%)) | first reply done at  24.7s (20040 MB (100.0%)) | second reply took  10.4s   [The first five prime]
+rep 1  cat: serving at  11.4s (20046 MB (100.0%)) | first reply done at  23.3s (20046 MB (100.0%)) | second reply took  10.4s   [The first five prime]
+rep 2  default: serving at  24.8s (18760 MB (93.6%)) | first reply done at  38.1s (19577 MB (97.7%)) | second reply took  10.6s   [The first five prime]
+rep 2  crc: serving at  12.0s (20046 MB (100.0%)) | first reply done at  23.9s (20046 MB (100.0%)) | second reply took  10.4s   [The first five prime]
+rep 2  cat: serving at  11.3s (20046 MB (100.0%)) | first reply done at  23.3s (20046 MB (100.0%)) | second reply took  10.4s   [The first five prime]
+part C finished 08:14:56
+part C on mellum2.int4.giw (7055350985 bytes) started 08:14:56
+rep 1  default: serving at   8.7s (6512 MB (92.3%)) | first reply done at  12.6s (6847 MB (97.0%)) | second reply took   3.6s   [The first five prime numbers are 2, 3, 5]
+rep 1  crc: serving at   4.5s (7055 MB (100.0%)) | first reply done at   7.9s (7055 MB (100.0%)) | second reply took   3.4s   [The first five prime numbers are 2, 3, 5]
+rep 1  cat: serving at   4.2s (7055 MB (100.0%)) | first reply done at   7.7s (7055 MB (100.0%)) | second reply took   3.4s   [The first five prime numbers are 2, 3, 5]
+rep 2  default: serving at   8.9s (6512 MB (92.3%)) | first reply done at  12.8s (6847 MB (97.0%)) | second reply took   3.6s   [The first five prime numbers are 2, 3, 5]
+rep 2  crc: serving at   4.7s (7055 MB (100.0%)) | first reply done at   8.1s (7055 MB (100.0%)) | second reply took   3.3s   [The first five prime numbers are 2, 3, 5]
+rep 2  cat: serving at   4.3s (7055 MB (100.0%)) | first reply done at   7.7s (7055 MB (100.0%)) | second reply took   3.4s   [The first five prime numbers are 2, 3, 5]
+part C finished 08:16:17
+part C on 7b.giw (4768988163 bytes) started 08:16:17
+rep 1  default: serving at   1.2s (1037 MB (21.7%)) | first reply done at   8.8s (4280 MB (89.7%)) | second reply took   6.1s   [The first five prime numbers are 2, 3, 5]
+rep 1  crc: serving at   2.8s (4769 MB (100.0%)) | first reply done at   9.1s (4769 MB (100.0%)) | second reply took   5.9s   [The first five prime numbers are 2, 3, 5]
+rep 1  cat: serving at   2.8s (4769 MB (100.0%)) | first reply done at   9.0s (4769 MB (100.0%)) | second reply took   5.9s   [The first five prime numbers are 2, 3, 5]
+rep 2  default: serving at   1.2s (1037 MB (21.7%)) | first reply done at   9.0s (4280 MB (89.7%)) | second reply took   5.9s   [The first five prime numbers are 2, 3, 5]
+rep 2  crc: serving at   3.0s (4769 MB (100.0%)) | first reply done at   9.4s (4769 MB (100.0%)) | second reply took   5.9s   [The first five prime numbers are 2, 3, 5]
+rep 2  cat: serving at   2.8s (4769 MB (100.0%)) | first reply done at   9.0s (4769 MB (100.0%)) | second reply took   6.0s   [The first five prime numbers are 2, 3, 5]
+part C finished 08:17:49
+finished 08:17:49
