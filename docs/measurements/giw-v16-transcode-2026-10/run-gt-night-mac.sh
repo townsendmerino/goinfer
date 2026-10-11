@@ -1,5 +1,5 @@
 #!/bin/bash
-# The Mac's night run for docs/tasks/task-giw-v16-transcode-2026-10.md: G-T1's real cells, G-T2, G-T2c, G-T3.
+# The Mac's night run for docs/completed/task-giw-v16-transcode-2026-10.md: G-T1's real cells, G-T2, G-T2c, G-T3.
 # Pre-built binaries (BUILD.txt beside them names the revisions). Estimate: 20 min.
 set -euo pipefail
 B=$HOME/goinfer-bench/giw-v16

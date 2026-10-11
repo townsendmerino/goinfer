@@ -1,7 +1,7 @@
 # Transcode audit, 2026-10-10: exploratory profile
 
 **Exploratory, not a result.** These runs set direction and the projection bands in
-[`docs/tasks/task-giw-v16-transcode-2026-10.md`](../../tasks/task-giw-v16-transcode-2026-10.md). They were taken on
+[`docs/completed/task-giw-v16-transcode-2026-10.md`](../../completed/task-giw-v16-transcode-2026-10.md). They were taken on
 neither rig, so no figure here is quoted as a measurement. That task's gates measure on the Mac and on nobara.
 
 ## Setup

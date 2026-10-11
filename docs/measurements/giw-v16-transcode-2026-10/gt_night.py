@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The night run for docs/tasks/task-giw-v16-transcode-2026-10.md: G-T1's real cells, G-T2, G-T2c and G-T3.
+"""The night run for docs/completed/task-giw-v16-transcode-2026-10.md: G-T1's real cells, G-T2, G-T2c and G-T3.
 
 Two pre-built cmd/prequant binaries (old, new) transcode each cell's source. Per cell: one discarded warm-up per arm,
 then pairs in ABAB order with the copy floor's two copies made straight after the old arm, whose output they read:

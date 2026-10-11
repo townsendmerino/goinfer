@@ -1,5 +1,5 @@
 #!/bin/bash
-# nobara's night run for docs/tasks/task-giw-v16-transcode-2026-10.md: G-T1's real cells, G-T2, G-T2c, G-T3.
+# nobara's night run for docs/completed/task-giw-v16-transcode-2026-10.md: G-T1's real cells, G-T2, G-T2c, G-T3.
 # Pre-built linux/amd64 binaries (BUILD.txt beside them names the revisions). Estimate: 85 min.
 set -euo pipefail
 B=$HOME/goinfer-bench/giw-v16

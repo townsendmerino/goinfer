@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""T4b's day gate (docs/tasks/task-giw-v16-transcode-2026-10.md, G-T2's last row, as amended 2026-10-10): the
+"""T4b's day gate (docs/completed/task-giw-v16-transcode-2026-10.md, G-T2's last row, as amended 2026-10-10): the
 single-thread CPU time of a transcode, new build over old build.
 
     t4b_cpu_ab.py --old <prequant> --new <prequant> --out-dir <scratch> --record <jsonl> name|source|quant|target ...

@@ -1,6 +1,11 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **Part T is built and graded** ([record](../measurements/giw-v16-transcode-2026-10/README.md)):
+**Status: COMPLETE, archived 2026-10-11.** Parts T (with T8) and V are on `main`, every gate is read, and Decision 4's
+rebuilds are done. Nothing here is open. Two things it found live elsewhere: the cold load of a `.giw` is its own
+task, built and graded (`docs/tasks/task-giw-cold-load-2026-10.md`); and aikit's activation quantizer, which called
+its AVX2 kernels on amd64 without a CPU check, was fixed in aikit v1.67.1, which goinfer takes at its next pin bump.
+
+Scoped 2026-10-10. **Part T is built and graded** ([record](../measurements/giw-v16-transcode-2026-10/README.md)):
 T0-T6 with T4b, on aikit v1.66.0. G-T1 PASS on tiny and real cells on both boxes. G-T2 SHIP on every graded cell: new/old
 wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on the 30B directory. G-T3 within its
 bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
