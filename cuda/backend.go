@@ -924,6 +924,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				load(&r.bQuant, pbmod, "quant_vec_batched")
 				load(&r.bSw, pbmod, "glu_quant_batched")
 				load(&r.bRes, pbmod, "residual_batched")
+				// The expert-major MoE prefill's fold. Optional: without it that path is ineligible and the per-row loop runs.
+				if fmod, e7 := r.dev.CompileLibrary(moeFoldPTX); e7 == nil {
+					if p, e8 := r.dev.NewComputePipeline(fmod, "moe_fold_wacc"); e8 == nil {
+						r.bMoeFold = p
+					}
+				}
 				if lnmod, e6 := r.dev.CompileLibrary(layernormQuantPTX); e6 == nil {
 					load(&r.bLN, lnmod, "layernorm_quant_batched")
 				}
