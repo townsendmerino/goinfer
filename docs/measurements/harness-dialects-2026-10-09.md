@@ -1,5 +1,7 @@
 # Harness wire dialects: Gate 0 of the harness-reliability task (2026-10-09)
 
+<!-- citations-at: 5802692a0ea6 -->
+
 Desk work for `docs/tasks/task-harness-reliability-2026-10.md` §2 Gate 0. Two research agents read each harness's
 published package or source on 2026-10-09; every row names what was read. Each claimed gap was then checked
 against `internal/serveapp` at `origin/main` 5802692a (the "serve today" column). Nothing here was run against a
@@ -79,7 +81,7 @@ harnesses need things `serve` lacks. Per the second branch, each becomes its own
 
 Gate 1 (the `/v1/messages` harness-scale row) is unaffected by these and proceeds.
 
-**Status (same day, branch `libsurface-harness-2026-10`):** H-a fixed (both tool shapes and a flat named
+**Status (same day, branch `libsurface-harness-2026-10`; merged to `main` 2026-10-11):** H-a fixed (both tool shapes and a flat named
 `tool_choice` decode; unrunnable tool types are dropped and named in `X-Goinfer-Tools-Dropped`; `TestServe_responses`
 step 4b end to end). H-b fixed (`context_length`, `max_model_len`). H-c open as a decision, not a defect: the
 resident-cap overflow message was worded on purpose so a client does not compact against a server limit
