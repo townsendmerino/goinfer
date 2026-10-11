@@ -1,11 +1,12 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0-T6 are built** ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
-T0, T6, T1, T2, T3, T4a and T5 are on `main` on aikit v1.65.0 and graded: G-T1 PASS on tiny and real cells on both
-boxes; G-T2 SHIP on every graded cell (new/old wall 0.28 on the Mac's 1.5B, 0.13 and 0.12 on nobara's 1.5B and 7B, 0.18
-on the 30B directory). **T4b is released (aikit v1.66.0), pinned, and its day gate ships** (single-thread CPU 0.30 on nobara's 1.5B GGUF,
-0.41 on the Mac's bf16 directory; G-T1 PASS); the night's cells with it are queued. **F3's arm64
-profile is retracted:** the quantizer leads on the Mac too. Next: T7 and V (Decisions 2 and 4 are made). The gates
+**Status:** scoped 2026-10-10. **Part T is built and graded** ([record](../measurements/giw-v16-transcode-2026-10/README.md)):
+T0-T6 with T4b, on aikit v1.66.0. G-T1 PASS on tiny and real cells on both boxes. G-T2 SHIP on every graded cell: new/old
+wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on the 30B directory. G-T3 within its
+bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
+follow-up (a vectorized GGUF dequantizer) opens on the Mac's cell by a hair and is not started. F3's arm64 profile is
+retracted. T0-T6 without T4b are on `main`; T4b's pin and records are on branch `giw-v16-t4b-2026-10`. **Next: T7 and
+V** (Decisions 2 and 4 are made). The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -245,6 +246,10 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
       5.6 GB plus 4.7 GB against 16 GB).
     - It is a rule about installed memory, not free memory: a box whose memory is mostly taken by other work can
       still evict a bundle the rule marks. The 30B's new self-check time has not been re-measured.
+    - **Re-measured the same evening (the T runs with T4b):** the 30B is unmarked and its self-check runs the CRC
+      again, at 20.8-28.0 s, about what it took before the fix without one. The old arm's, with the same CRC, reads
+      9.5-13.3 s. The check is restored; the time did not move, and why the new arm's is twice the old arm's is not
+      established.
 
 ### Checked and not worth doing
 
@@ -555,6 +560,10 @@ exactly that.
   4.2 s to 1.7 s). Recorded: the Mac's 1.5B GGUF 0.304 (10.5 s to 3.2 s), nobara's 0.6B directory 0.402. Every cell's
   two arms wrote the same sha256. The new arm was built on aikit `244a10e`, ahead of its tag.
 
+  **Read again 2026-10-10 with T4b in the new arm: SHIP on all four cells.** Medians: Mac 1.5B `cpu-arm64` 0.128
+  (was 0.278); nobara 1.5B 0.065 (0.131) and 7B 0.051 (0.117); the 30B directory 0.181 (0.178, unchanged: it is
+  within a factor of two of its own I/O). G-T1's real cells identical again, all seven.
+
   **Read 2026-10-10: SHIP on all three graded cells.** Paired new/old wall, medians: Mac 1.5B `cpu-arm64` 0.278
   (three pairs, 0.278-0.279); nobara 1.5B `cpu-amd64` 0.131 and 7B `cpu-amd64` 0.117 (three pairs each); the 30B
   directory 0.178 (two pairs, 0.189 and 0.168). The stream phase's ratios are beside them in the record and none is in
@@ -592,6 +601,12 @@ exactly that.
     - writing one window of layers while the next is built.
 
     At 3× or below, the transcode is near its disk floor and no follow-up opens.
+  - **Recorded 2026-10-10 after T4b, and the consequence read.** new/C-io: 3.08 on the Mac's 1.5B, 2.72 on nobara's
+    7B, 1.83 on the 30B directory, each inside or better than its "after T + T4b" range. **The consequence opens, on
+    the Mac's cell only and by a hair** (its three pairs read 3.09, 3.19 and 2.54; the copy varied on a box in use).
+    The follow-up is therefore open and not started: its first lever, a vectorized Q4_K/Q6_K dequantizer in aikit, is
+    about 24% of that cell's CPU by the system sampler, so it bounds the gain at about a quarter; the second lever is
+    writing one window while the next is built. Whether it is worth doing at 3.08 is the owner's call.
   - **Recorded 2026-10-10 (after T, before T4b).** new/C-io: 8.0 on the Mac's 1.5B, 6.2 on nobara's 7B, 2.0 on the 30B
     directory; old/C-io 28.8, 53.1 and 11.2. The two dense cells are inside their "after T" ranges; the 30B is better
     than its range because its copy is slower than projected (49-69 s). The consequence above is read after T4b.
@@ -599,6 +614,9 @@ exactly that.
   - Dense: at most the old peak plus 1.5× K layers' bytes, and never above Decision 3's budget.
   - MoE: at most the old peak plus workers × 3 × one expert's f32.
   - Mac: swap flat across every run (`vm.swapusage` before and after). The never-swap rule is not traded for speed.
+  - **Read again 2026-10-10 with the available memory recorded: within the bounds, the budget clause included.** The
+    largest dense increases are 1.56 GB on the Mac's 7B (a quarter of the 9.8-10.2 GB available is 2.5 GB) and
+    2.26 GB on nobara's 7B (a quarter is 15.9 GB). Mac swap flat at 1,059.0 MB over 22 transcodes.
   - **Read 2026-10-10: within the bounds.** Dense increases: 0.05-0.08 GB (1.5B), 1.56 GB (the Mac's 7B, footprint),
     2.07-2.18 GB (nobara's 7B, maximum RSS). The 30B's new peak is under its old one (maximum RSS, which is mostly the
     mapped source). Mac swap flat at 1,021.5 MB over 22 transcodes. Not shown by the record: the available memory each

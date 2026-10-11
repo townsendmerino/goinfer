@@ -502,13 +502,88 @@ reads its stacks, on the old build with one thread (1.5B GGUF to int4 `cpu-arm64
 - **For the next profile on the Mac:** `sample <pid> <seconds>`, read under "Sort by top of stack", leaving out the
   threads parked in the kernel.
 
+## The T runs with T4b, 2026-10-10: G-T1 PASS, G-T2 SHIP on every graded cell, the copy floor's consequence opens on one cell
+
+The same cells and driver as the T runs above, with T4b in the new arm: old `cf66f5b3`, new `946e5ca8` (aikit
+v1.66.0, and the size rule that counts the source). Both queues were started by day. The Mac's `giw-gt-mac-t4b` ran
+17:29-17:35 after the settle wait gave up at a load average of 2.79 (macOS's own daemons, woken when the charger went
+in). nobara's `giw-gt-nobara-t4b` ran 17:57-18:54 at a load of 0.90. Records: `gt-mac-t4b.jsonl`,
+`gt-nobara-t4b.jsonl` and their logs.
+
+- **G-T1, real cells: PASS.** All seven cells, 50 transcodes, the same sha256 from both arms, and the sha256 of the
+  earlier run cell for cell.
+
+### G-T2 with T4b: SHIP on the four graded cells
+
+| cell | old wall | new wall | new/old, each pair | median | without T4b | band | verdict |
+|---|---|---|---|---|---|---|---|
+| Mac 1.5B `cpu-arm64` | 10.5-10.6 s | 1.35-1.38 s | 0.128, 0.131, 0.128 | **0.128** | 0.278 | ship at most 0.45 | **SHIP** |
+| nobara 1.5B `cpu-amd64` | 17.2-17.3 s | 1.12-1.15 s | 0.065, 0.067, 0.065 | **0.065** | 0.131 | the same | **SHIP** |
+| nobara 7B `cpu-amd64` | 82.6-82.8 s | 4.21-4.26 s | 0.051, 0.052, 0.051 | **0.051** | 0.117 | the same | **SHIP** |
+| nobara 30B directory | 662-667 s | 98-142 s | 0.214, 0.148 | **0.181** | 0.178 | ship at most 0.40 | **SHIP** |
+| Mac 1.5B `metal` (recorded) | 10.5-10.6 s | 1.25-1.26 s | 0.119, 0.119, 0.118 | 0.119 | 0.259 | | |
+| Mac 7B `metal` (recorded) | 63.4-63.9 s | 7.3-10.4 s | 0.163, 0.115 | 0.139 | 0.236 | | |
+| nobara 7B `cuda` (recorded) | 83.2-83.3 s | 4.24-4.32 s | 0.052, 0.051 | 0.052 | 0.118 | | |
+
+- **The dense cells roughly halve again.** A 7B GGUF on nobara transcodes in 4.2 s where the old build takes 83 s.
+- **The 30B does not move** (0.181 against 0.178, and its two pairs differ by half: 142 s and 98 s). Its new arm is
+  now within a factor of two of reading the source and writing the output (below), so the quantizer is no longer
+  what it waits on.
+- **The Mac's 7B pairs differ too** (10.4 s and 7.3 s for the new arm), on a box in use with background daemons
+  running. That cell is recorded, not graded.
+
+### G-T3 with the available memory recorded: within the bounds
+
+| cell | old peak | new peak | increase | available before | a quarter of it |
+|---|---|---|---|---|---|
+| Mac 1.5B `cpu-arm64` (footprint) | 1.24 GB | 1.31 GB | 0.07 GB | 10.0-11.1 GB | 2.5-2.8 GB |
+| Mac 7B `metal` | 2.93 GB | 4.49 GB | 1.56 GB | 9.8-10.2 GB | 2.5-2.6 GB |
+| nobara 7B `cpu-amd64` (max RSS) | 7.37 GB | 9.63 GB | 2.26 GB | 63.6 GB | 15.9 GB |
+| nobara 30B directory | 55.08 GB | 52.58 GB | none | 63.6 GB | |
+
+- Every dense increase is under a quarter of the memory available when its transcode started, which is the clause the
+  first runs could not check. Mac swap: 1,059.0 MB before and after all 22 transcodes.
+
+### G-T2c after T4b, and its registered consequence
+
+| cell | C-io | new/C-io | without T4b | the text's "after T + T4b" | C-src | new/C-src |
+|---|---|---|---|---|---|---|
+| Mac 1.5B `cpu-arm64` | 0.44 s | **3.08** | 8.0 | 2-6 | 0.47 s | 2.9 |
+| Mac 1.5B `metal` | 0.60 s | 2.09 | 6.2 | | 0.53 s | 2.4 |
+| Mac 7B `metal` | 3.69 s | 2.40 | 6.3 | | 3.62 s | 2.5 |
+| nobara 1.5B `cpu-amd64` | 0.40 s | 2.83 | 5.5 | | 0.29 s | 3.9 |
+| nobara 7B `cpu-amd64` | 1.56 s | **2.72** | 6.2 | 2-6 | 1.20 s | 3.5 |
+| nobara 7B `cuda` | 1.55 s | 2.76 | 6.2 | | 1.19 s | 3.6 |
+| nobara 30B directory | 65.6 s | **1.83** | 2.0 | 2-5 | 53.3 s | 2.3 |
+
+- The three projected cells land inside their ranges, the 30B a little better than its.
+- **The consequence** ("above 3x on either dense cell opens a follow-up") reads on the Mac's 1.5B and nobara's 7B.
+  nobara's is under the line (2.72). **The Mac's is over it by a hair (3.08), so the follow-up opens**, and it should
+  be read for what it is: the three pairs' own ratios are 3.09, 3.19 and 2.54, because the copy itself varied
+  (0.43-0.53 s) on a box in use. A quiet run could land either side.
+- **What the follow-up would rank,** from the system sampler after T4b on that cell (above): the Q4_K dequantizer
+  about 24% of the on-CPU samples, the int4 kernel about 21%, the CRC 8%, the file's row4 repack 7%. So the registered
+  first lever, a vectorized Q4_K/Q6_K dequantizer in aikit, is the largest single item and bounds the gain at about a
+  quarter of the CPU.
+- The 30B's new arm (98-142 s) does not finish faster than a copy of its source (53 s), which the text asked to have
+  recorded.
+
+### The 30B's self-check with its CRC back
+
+The size rule now leaves the 30B unmarked (17.5 GB plus 58 GB of source against 62 GB of memory), so its self-check
+runs the whole-file CRC again. It reads 20.8-28.0 s in the new arm, against 9.5-13.3 s in the old arm, which runs the
+same CRC. Before the fix the new arm read 19-25 s with no CRC. So the fix restored the check and did not change the
+time, and the arms' difference is not the CRC: the old arm's check follows an eleven-minute stream and the new arm's
+a ninety-second one. What the file's pages are doing in that case was not measured.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
 - `gt_night.py`, `run-gt-night-mac.sh`, `run-gt-night-nobara.sh`: the T runs' driver and the two boxes' cells.
-  `gt-mac.jsonl`, `gt-mac.log`, `gt-nobara.jsonl`, `gt-nobara.log`: their records.
+  `gt-mac.jsonl`, `gt-mac.log`, `gt-nobara.jsonl`, `gt-nobara.log`: their records. `gt-mac-t4b.*`, `gt-nobara-t4b.*`:
+  the same runs with T4b in the new arm.
 - `t4b_cpu_ab.py`, `t4b-cpu-mac.jsonl`, `t4b-cpu-nobara.jsonl`: T4b's day gate and its records. `g-t1-t4b-*`: its
   run through `gate identity`, the same five files as the earlier runs.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
