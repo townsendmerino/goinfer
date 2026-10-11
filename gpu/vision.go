@@ -56,7 +56,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 `
 
 // geluTanhWGSL: the tanh approximation of GELU (SigLIP's hidden_act), elementwise.
-// 0.5x(1 + tanh(√(2/π)(x + 0.044715x³))).
+// 0.5x(1 + tanh(√(2/π)(x + 0.044715x³))). The tanh argument is clamped to ±15, where tanh is already ±1 in float32: a
+// device tanh may return NaN for a large argument, and a float32 tower's activations reach one at real size.
 const geluTanhWGSL = `
 struct P { n: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read_write> x: array<f32>;
@@ -67,7 +68,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
     let c = 0.7978845608028654; // sqrt(2/pi)
     for (var i: u32 = gid.x; i < p.n; i = i + total) {
         let v = x[i];
-        x[i] = 0.5 * v * (1.0 + tanh(c * (v + 0.044715 * v * v * v)));
+        x[i] = 0.5 * v * (1.0 + tanh(clamp(c * (v + 0.044715 * v * v * v), -15.0, 15.0)));
     }
 }
 `
@@ -135,6 +136,9 @@ func (c *Context) ensureVision() error {
 		return err
 	}
 	if c.addRowsPipeline, c.addRowsLayout, err = mk("addRows", addRowsWGSL); err != nil {
+		return err
+	}
+	if c.mmTiledF32Pipeline, c.mmTiledF32Layout, err = mk("matmulTiledF32", matmulTiledF32WGSL); err != nil {
 		return err
 	}
 	if c.copyHeadPipeline, c.copyHeadLayout, err = mk("copyHead", copyHeadWGSL); err != nil {
@@ -297,10 +301,53 @@ func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffe
 	return nil
 }
 
-// matmulF32Device runs dst[M,N] = a[M,K] · b[N,K]ᵀ on the naive f32 matmul
-// pipeline (c.pipeline), output to a fresh device buffer, NO Poll. Used for the
-// patch-embed and the attention QKᵀ / scores·V (activation×activation, no resident
-// weight). a,b are device buffers.
+// matmulTiledF32WGSL computes dst[m,n] = Σ_k a[m,k]·b[n,k], the naive kernel's contract and bindings, with both
+// operands staged through workgroup memory: one workgroup computes a 16×16 block of dst and walks K in strips of 16, so
+// each element it loads is used by 16 outputs where the naive kernel streams a whole row of each operand per output.
+// A strip's tail past K, and rows past M or N, are zero-filled. The sum runs over k in order, as the naive kernel's does.
+const matmulTiledF32WGSL = `
+struct Dims { m: u32, k: u32, n: u32, _pad: u32 };
+@group(0) @binding(0) var<storage, read>       a:    array<f32>;  // [M, K]
+@group(0) @binding(1) var<storage, read>       b:    array<f32>;  // [N, K]
+@group(0) @binding(2) var<storage, read_write> dst:  array<f32>;  // [M, N]
+@group(0) @binding(3) var<uniform>             dims: Dims;
+const TS: u32 = 16u;
+var<workgroup> As: array<f32, 256>;  // [16 rows][16 k]
+var<workgroup> Bs: array<f32, 256>;  // [16 cols][16 k]
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let row = wid.y * TS + lid.y;
+    let col = wid.x * TS + lid.x;
+    let brow = wid.x * TS + lid.y;
+    let nStrips = (dims.k + TS - 1u) / TS;
+    var acc: f32 = 0.0;
+    for (var s: u32 = 0u; s < nStrips; s = s + 1u) {
+        let kc = s * TS + lid.x;
+        var av: f32 = 0.0;
+        if (row < dims.m && kc < dims.k) { av = a[row * dims.k + kc]; }
+        As[lid.y * TS + lid.x] = av;
+        var bv: f32 = 0.0;
+        if (brow < dims.n && kc < dims.k) { bv = b[brow * dims.k + kc]; }
+        Bs[lid.y * TS + lid.x] = bv;
+        workgroupBarrier();
+        for (var w: u32 = 0u; w < TS; w = w + 1u) {
+            acc = acc + As[lid.y * TS + w] * Bs[lid.x * TS + w];
+        }
+        workgroupBarrier();
+    }
+    if (row < dims.m && col < dims.n) {
+        dst[row * dims.n + col] = acc;
+    }
+}
+`
+
+// visionNaiveMatmulForTest sends matmulF32Device to the naive kernel, for the tiled kernel's gate and its timing
+// comparison.
+var visionNaiveMatmulForTest bool
+
+// matmulF32Device runs dst[M,N] = a[M,K] · b[N,K]ᵀ on the tiled float32 kernel, output to a fresh device buffer, NO
+// Poll. Used for the tower's patch embed, its float32 projections, and the attention QKᵀ / scores·V. a,b are device
+// buffers.
 func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer, error) {
 	dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
@@ -319,7 +366,12 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 		return nil, err
 	}
 	defer dims.Release()
-	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.layout, Entries: []wgpu.BindGroupEntry{
+	// The naive kernel indexes rows by its x dimension and the tiled one by y.
+	pl, ly, gx, gy := c.mmTiledF32Pipeline, c.mmTiledF32Layout, (uint32(N)+15)/16, (uint32(M)+15)/16
+	if visionNaiveMatmulForTest || pl == nil {
+		pl, ly, gx, gy = c.pipeline, c.layout, (uint32(M)+15)/16, (uint32(N)+15)/16
+	}
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: a, Size: a.GetSize()},
 		{Binding: 1, Buffer: b, Size: b.GetSize()},
 		{Binding: 2, Buffer: dst, Size: dst.GetSize()},
@@ -332,9 +384,9 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline(c.pipeline)
+	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
-	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
+	pass.DispatchWorkgroups(gx, gy, 1)
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, err

@@ -66,8 +66,14 @@ func siglipTinySharpened(t *testing.T) (*vision.Encoder, vision.SiglipWeights, [
 	return enc, w, g.PixelValues
 }
 
-// minTokenCos is the lowest per-token cosine between two [tokens, hidden] outputs.
+// minTokenCos is the lowest per-token cosine between two [tokens, hidden] outputs, NaN if any value of a is NaN (cosG
+// alone would not say: a token of NaNs has a zero norm test that fails open).
 func minTokenCos(a, b []float32, hidden int) float64 {
+	for _, x := range a {
+		if x != x {
+			return math.NaN()
+		}
+	}
 	lowest := 1.0
 	for o := 0; o+hidden <= len(a); o += hidden {
 		lowest = math.Min(lowest, cosG(a[o:o+hidden], b[o:o+hidden]))
@@ -116,7 +122,7 @@ func TestVisionEncoderF32_parity(t *testing.T) {
 	const bar = 0.9999
 	clean := minTokenCos(siglipF32Device(t, c, enc, w, pixels), cpu, hidden)
 	t.Logf("float32 WebGPU tower against the CPU float32 tower: lowest token cosine %.7f over %d tokens", clean, len(cpu)/hidden)
-	if clean < bar {
+	if !(clean >= bar) { // written this way so a NaN fails
 		t.Errorf("lowest token cosine %.7f, want at least %v", clean, bar)
 	}
 	for d, name := range map[int]string{
@@ -133,6 +139,30 @@ func TestVisionEncoderF32_parity(t *testing.T) {
 		if got >= bar {
 			t.Errorf("planted defect (%d) %s left the gate green (%.7f)", d, name, got)
 		}
+	}
+}
+
+// TestVisionEncoderF32_largeActivations: a GELU input far past where a device tanh stays finite. The first layer's fc1
+// bias is pushed to about ±40, as a real float32 SigLIP reaches; the CPU tower handles it and the device tower must
+// match it, not return NaN.
+func TestVisionEncoderF32_largeActivations(t *testing.T) {
+	c, err := New()
+	if err != nil {
+		t.Skipf("no gpu: %v", err)
+	}
+	defer c.Close()
+	enc, w, pixels := siglipTinySharpened(t)
+	for i := range w.Blocks[0].FC1.B {
+		w.Blocks[0].FC1.B[i] += float32(40 * (1 - 2*(i%2)))
+	}
+	cpu, err := enc.Forward(pixels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := minTokenCos(siglipF32Device(t, c, enc, w, pixels), cpu, w.Cfg.HiddenSize)
+	t.Logf("with GELU inputs near ±40: lowest token cosine %.7f", got)
+	if !(got >= 0.9999) {
+		t.Errorf("lowest token cosine %.7f, want at least 0.9999 (NaN is a tanh that overflowed)", got)
 	}
 }
 
@@ -176,7 +206,7 @@ func TestVisionEnableResidentF32_parity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lowest := minTokenCos(got, cpu, cpuEnc.Cfg.HiddenSize); lowest < 0.9999 {
+	if lowest := minTokenCos(got, cpu, cpuEnc.Cfg.HiddenSize); !(lowest >= 0.9999) {
 		t.Errorf("Encoder.Forward through the float32 device tower: lowest token cosine %.7f, want at least 0.9999", lowest)
 	}
 }
@@ -291,7 +321,7 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 	}
 	logf("float32 WebGPU tower: lowest token cosine over the five images %.7f", worst)
 	switch {
-	case worst < 0.999:
+	case math.IsNaN(worst) || worst < 0.999:
 		t.Errorf("G-S12.3a-2 FAIL: lowest token cosine %.7f", worst)
 	case worst < 0.9999:
 		t.Errorf("G-S12.3a-2 PARKED (for the owner): lowest token cosine %.7f, between 0.999 and 0.9999", worst)
