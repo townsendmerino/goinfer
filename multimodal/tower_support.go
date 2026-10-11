@@ -43,6 +43,16 @@ func DeclaredTower(backend, family string) bool {
 	return slices.Contains(declaredTowers[backend], family)
 }
 
+// DefaultTowerOnDevice reports whether backend runs family's tower on the device when the user asks for nothing. It is
+// DeclaredTower except for WebGPU's SigLIP: that device tower is int8 only, and serve's default tower for Gemma 3 is
+// float32, so there it runs on the CPU unless -vision-quant int8 asks for the device one.
+func DefaultTowerOnDevice(backend, family string) bool {
+	if backend == "webgpu" && family == TowerSigLIP {
+		return false
+	}
+	return DeclaredTower(backend, family)
+}
+
 var (
 	residentNamesMu sync.Mutex
 	residentNames   = map[string][]string{} // tower family -> device names

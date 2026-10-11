@@ -1,0 +1,16 @@
+[15:34:53] gemma-3-4b-it: arm webgpu (--backend webgpu -vision-device cpu --embed-int4=false)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu (36.2s): 'This image shows an invoice from Harbor Light Supply Co. to Thistle & Rowan Ltd for materials and design review services, with a total due amount of £'
+[15:35:46] gemma-3-4b-it: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder int8/webgpu-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (56.5s): 'This image is a promotional spread for **Subtotal** tax (likely related to sales tax) and **Total Due** amounts, likely for a business called "'
+gemma-3-4b-it: reference arm webgpu
+gemma-3-4b-it: webgpu-towerauto against webgpu: first differing generated token 2: webgpu ' shows', webgpu-towerauto ' is'
+  webgpu top-3: ' shows' 0.855, ' is' 0.144, ' displays' 0.000
+  near-tie (p(other) >= half p(top) = 0.428): False

@@ -46,8 +46,11 @@
 - **Next (owner, 2026-10-11):** S12 (WebGPU), in the order "Gemma 4 resident decode, then the towers, then the
   release-binary question"; its desk map, order and first gates are in S12. S15 (video) is parked for now.
   - S12.0 and S12.1 are done: E2B and E4B decode resident on WebGPU, shipped on the owner's word with E4B's text
-    gate parked and one served image request red under the near-tie rule. Next is S12.2 (the 26B's FFN) or S12.3
+    gate parked and one served image request red under the near-tie rule. E4B served on WebGPU PASS (2026-10-11).
+    Gemma 3's default tower under WebGPU is now the float32 CPU tower. Next is S12.2 (the 26B's FFN) or S12.3
     (the towers, a float32 SigLIP first).
+  - Open inside S12.1: where WebGPU first differs from the CPU on E4B is traced to the first layer's value path and
+    not to an operation; a kernel-by-kernel check at E4B's shape is not scheduled.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -71,7 +74,7 @@ The last phase puts the answer where users look first, the README, with a check 
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | GPU (int8) / GPU |
+| Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | float32 on the CPU by default (2026-10-11; `--vision-quant int8` puts the int8 tower on the GPU) / GPU |
 | Gemma 4 E2B | CPU / CPU | GPU / GPU, batched image prefill (S9 on CUDA) | GPU / GPU, layer-major prefill (S9) | CPU / GPU (S12.1, 2026-10-11) |
 | Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU / GPU | CPU / GPU (S12.1; served on E2B) |
 | Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | validated (S6: G-E4B-1b, G-E4B-2, 2026-10-11; towers on the CPU in the gate) | CPU / GPU (S12.1; its text gate parked at -2.48 points, shipped on the owner's word) |
@@ -98,9 +101,10 @@ The last phase puts the answer where users look first, the README, with a check 
   - E4B audio rides on S6.
   - G-S5b, the HF anchor for audio into the model, PASS.
   - Speech beyond Gemma 4 is S14: Qwen3-ASR's decoder runs (S14.3); Whisper and Voxtral are not started.
-- **Precision:** under `--backend webgpu`, serve gives Gemma 3 an int8 SigLIP tower (no float32 WebGPU tower; S12). At
-  real size that tower is relative L2 0.16-0.52 from float32, worst token 0.01-0.17
-  (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`). CUDA's default became float32 on 2026-10-08 (owner).
+- **Precision:** WebGPU's only SigLIP tower is int8 (no float32 WebGPU tower; S12.3). At real size that tower is
+  relative L2 0.16-0.52 from float32, worst token 0.01-0.17
+  (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`), and it misread three of five test images. CUDA's default
+  became float32 on 2026-10-08 (owner); WebGPU's became the float32 CPU tower on 2026-10-11, the int8 one opt-in.
 - **Release binaries:** WebGPU needs cgo and is in no release binary.
 
 **Speed** (the most recent read of each, exploratory unless marked; S7 measures every cell against the 5 s bar; not
@@ -3841,6 +3845,68 @@ for E2B and E4B). The Mac, by day, every run under the timing lock; raw in `s12-
 - **Not done:** E4B served; why WebGPU's closer agreement on the reference does not carry to E4B; the towers stay
   on the CPU (S12.3); nothing here is a speed reading. The generated support table reads "CPU / GPU" for E-models
   on WebGPU, which is what the served runs showed.
+
+#### S12.1 follow-ups, 2026-10-11: E4B served PASS; where E4B's text-gate gap comes from, as far as it was traced
+
+- **E4B served on WebGPU (G-S12.1e's procedure, the towers-only `--vision` directory): PASS.** `1e-e4b-image/`,
+  `1e-e4b-audio/`, the server at `682f2a05`. Resident in every WebGPU arm (`prefill resident`).
+  - Image: the reply IDENTICAL to the CPU's; the CPU repeat IDENTICAL.
+  - Audio: short first differs at token 7 (' audio' 0.512, ' provided' 0.468), mid at token 30 ('Bark' 0.228,
+    'bark' 0.200), long at token 13 (' contains' 0.372, ' is' 0.327): three near-ties; the CPU repeats IDENTICAL.
+- **Why E4B parked while E2B and the reference did not (exploratory; `e4b-position-scan.log`,
+  `e4b-layer-scan.log`).**
+  - **The gap is at template positions, not at generated ones.** Of E4B's 30 disagreements with the CPU on WebGPU,
+    28 are prompt positions and 16 of those are positions 0 and 1 (`<bos>` and the first `<|turn>`) of all eight
+    prompts, the same two tokens counted eight times. Only 2 are generated tokens, where Metal has 8 and CUDA 4.
+    Metal and CUDA each lose one fixed early position eight times (position 3, position 1); WebGPU loses two. The
+    predictions at those positions are never sampled.
+  - **On E2B, WebGPU reproduces the CPU exactly; on E4B it does not, from the first layer.** At the first three
+    positions of a prompt every layer's output on E2B has cosine 1.00000 against the CPU's, and the logits differ
+    by 0.00. On E4B the first layer at position 0 already reads 0.99992, and the difference grows layer by layer to
+    0.98 at the last. Position 0 has no history, so this is in a per-token operation at E4B's shape, not in
+    attention over a cache.
+  - **Not the cause:** activation outliers. The residual's largest element over its rms is 32-46 at those
+    positions on E4B (23-38 on E2B), under 127 at every layer, so one int8 scale a vector is not starved there.
+  - **Where it starts (`e4b-sublayer-scan.log`, with a temporary capture of the CPU's post-attention residual, not
+    committed):** in the first layer's attention, on the value path. At position 0 the attention context is the
+    normed value vector alone (one key, weight 1). On E2B it equals the CPU's to float rounding (largest difference
+    7e-07). On E4B it reads cosine 0.999992 with a largest difference of 0.014, and the residual after the attention
+    add 0.99988. Each later quantization of the activations then widens it.
+  - **Not established: which of three operations, and whether it is a defect.** The value path is the fused
+    RMSNorm-and-quantize of the layer input (2560 wide on E4B, 1536 on E2B), the value projection, and `v_norm`
+    over the KV heads (two on E4B, one on E2B). I read the three shaders and found no width or head-count limit.
+    A seed that size is more than a few rounding flips would give by my estimate, which is why I do not call it
+    benign. A sweep of the int4 projection kernel against the CPU's across widths told nothing: as I built it the
+    two sides read their scales at different precisions, so no width was bit-equal.
+  - **What it means for now:** E4B's graded and served readings on WebGPU stand as they are (parked, PASS). Gemma 3
+    4B shares the 2560 width and its served turn passed. The open item is a kernel-by-kernel bit-identity check of
+    that value path against the CPU at E4B's shape; it is not scheduled.
+
+#### Gemma 3's default tower on WebGPU: the float32 CPU tower (owner, 2026-10-11: "take care of" it; evidence below)
+
+The record in G-S12.0b showed the int8 WebGPU tower misreading one image. Four more were run before changing a
+default (exploratory, one request an image, both arms decoding on WebGPU; `s12-webgpu/gemma3-tower-images/`):
+
+| image | float32 tower on the CPU | int8 tower on WebGPU |
+|---|---|---|
+| table | quarterly unit sales by region | "regions of France ... average population density" |
+| invoice | an invoice from Harbor Light Supply Co. to Northwind Printing LLC, totaling $1140.55 | "a map of the city of Vinotai, Ireland" |
+| inv01 | an invoice from Harbor Light Supply Co. to Thistle & Rowan Ltd | "a promotional spread for Subtotal tax" |
+| formula | a note explaining the Gaussian integral | "a complex diagram with various symbols and text", the title read |
+| gradient | a gradient blend of dark green and pink | a gradient of green, gray and pink |
+
+- **Three of five misread, one vaguer, one fine.** Two of the five first differences are not near-ties (0.985 and
+  0.855 on the float32 side).
+- **On this Mac the int8 device tower is also the slower one:** 47-48 s an image against 26-28 s for the float32 CPU
+  tower, on all five (by day, a record, not a timing gate).
+- **The change:** under `--backend webgpu`, with no `-vision-quant`, Gemma 3's tower is the float32 one on the CPU
+  (`internal/serveapp/main.go:gemma3TowerBackend`, `towerInt8`), with a one-line note at load; `-vision-quant int8`
+  still puts the int8 tower on the GPU. The support table's tower cell now shows the default
+  (`multimodal/tower_support.go:DefaultTowerOnDevice`), so Gemma 3 on WebGPU reads "CPU / GPU".
+- **Checked on the real model** (`gemma3-default-check/`): the default under `-require-backend` loads, prints the
+  note, reports `encoder f32`, and its reply is IDENTICAL to the `-vision-device cpu` arm's.
+- **What it does not settle:** a float32 SigLIP on WebGPU (S12.3) is still what makes Gemma 3's tower run on the GPU
+  there; and the int8 tower's speed on a discrete card was not measured.
 
 ### S13 — Against the peers
 

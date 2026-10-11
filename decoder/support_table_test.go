@@ -13,7 +13,8 @@ import (
 
 // S8 (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"): the images-and-audio support table in
 // docs/multimodal.md and the README, generated here. Every tower / decoder cell is computed from code:
-//   - tower: GPU when the backend's build declares that tower family (multimodal.DeclaredTower; each backend module's test
+//   - tower: GPU when the backend runs that tower family on the device by default (multimodal.DefaultTowerOnDevice, which
+//     is the build's declaration, multimodal.DeclaredTower, less a device tower that is opt-in; each backend module's test
 //     proves its live registrations equal the declaration);
 //   - decoder: GPU when an image turn decodes on the backend's resident (imageTurnDecodesResident: ResidentEligible, the
 //     hybrid image prefill declaration, Gemma 4's rule).
@@ -68,7 +69,7 @@ func bidirectional(c *Config) { c.UseBidirectionalAttention = "vision" }
 
 var supportRows = []supportRow{
 	{"Gemma 3", "gemma3", multimodal.TowerSigLIP, rep("gemma3", nil),
-		"CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08); WebGPU: int8 tower. Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08)."},
+		"CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08). WebGPU: the float32 tower on the CPU by default; `--vision-quant int8` puts an int8 tower on the GPU, which misread three of five test images (2026-10-11). Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08)."},
 	{"Gemma 4 E2B, E4B", "gemma4", multimodal.TowerGemma4, jsonConfig(eModelConfig),
 		"E4B validated on CUDA (2026-10-08) and on Metal (2026-10-11), on the quantization-aware checkpoint."},
 	{"Gemma 4 E2B, E4B audio", "gemma4", multimodal.TowerGemma4Audio, jsonConfig(eModelConfig),
@@ -100,7 +101,7 @@ func supportCell(t *testing.T, row supportRow, backend string) string {
 		return "CPU / CPU"
 	}
 	tower := "CPU"
-	if multimodal.DeclaredTower(backend, row.tower) {
+	if multimodal.DefaultTowerOnDevice(backend, row.tower) {
 		tower = "GPU"
 	}
 	cfg := row.cfg(t)

@@ -1,0 +1,113 @@
+=== RUN   TestZZEModelPromptScanWebGPU
+decoder: gemma-4-E2B_q4_0-it.int4.metal.giw is not in memory: reading its 3.8 GB once before the load
+
+== E2B prompt 8 (21 prompt tokens): pos, token, agree, logits cosine, max|diff|, argmax==f32 (cpu, webgpu)
+    0 "<bos>"      agree=true  cos 1.00000 maxdiff   0.00
+    1 "<|turn>"    agree=true  cos 1.00000 maxdiff   0.00
+    2 "user"       agree=true  cos 1.00000 maxdiff   0.00
+    3 "\n"         agree=true  cos 0.99811 maxdiff   2.00
+    4 "What"       agree=true  cos 1.00000 maxdiff   0.00
+    5 " are"       agree=true  cos 0.99802 maxdiff   1.79
+    6 " the"       agree=true  cos 0.99578 maxdiff   2.22
+    7 " main"      agree=true  cos 0.97915 maxdiff   3.30
+    8 " causes"    agree=true  cos 0.98872 maxdiff   2.63
+    9 " of"        agree=true  cos 0.99035 maxdiff   2.46
+   10 " inflation" agree=true  cos 0.98081 maxdiff   3.34
+   11 "?"          agree=true  cos 0.98137 maxdiff   5.32
+   12 "<turn|>"    agree=true  cos 0.97191 maxdiff   5.33
+   13 "\n"         agree=true  cos 0.99318 maxdiff   3.73
+   14 "<|turn>"    agree=false cos 0.98474 maxdiff   6.02
+   15 "model"      agree=true  cos 0.98449 maxdiff   3.20
+   16 "\n"         agree=true  cos 0.99878 maxdiff   3.26
+   17 "<|channel>" agree=true  cos 0.99940 maxdiff   4.46
+   18 "thought"    agree=true  cos 0.98262 maxdiff  10.22
+   19 "\n"         agree=true  cos 0.99735 maxdiff   5.15
+   20 "<channel|>" agree=true  cos 0.98424 maxdiff   6.40
+
+== E2B prompt 6 (25 prompt tokens): pos, token, agree, logits cosine, max|diff|, argmax==f32 (cpu, webgpu)
+    0 "<bos>"      agree=true  cos 1.00000 maxdiff   0.00
+    1 "<|turn>"    agree=true  cos 1.00000 maxdiff   0.00
+    2 "user"       agree=true  cos 1.00000 maxdiff   0.00
+    3 "\n"         agree=true  cos 0.99811 maxdiff   2.00
+    4 "Summar"     agree=true  cos 1.00000 maxdiff   0.00
+    5 "ize"        agree=true  cos 0.99898 maxdiff   1.51
+    6 " the"       agree=true  cos 0.99088 maxdiff   3.17
+    7 " plot"      agree=true  cos 0.98548 maxdiff   2.69
+    8 " of"        agree=true  cos 0.99011 maxdiff   3.31
+    9 " Romeo"     agree=true  cos 0.98848 maxdiff   2.65
+   10 " and"       agree=true  cos 0.99822 maxdiff   3.54
+   11 " Juliet"    agree=true  cos 0.97924 maxdiff   4.17
+   12 " in"        agree=true  cos 0.98300 maxdiff   3.13
+   13 " one"       agree=true  cos 0.98909 maxdiff   3.25
+   14 " paragraph" agree=true  cos 0.98075 maxdiff   3.58
+   15 "."          agree=true  cos 0.99204 maxdiff   4.20
+   16 "<turn|>"    agree=true  cos 0.99327 maxdiff   6.09
+   17 "\n"         agree=true  cos 0.97742 maxdiff   5.90
+   18 "<|turn>"    agree=true  cos 0.99021 maxdiff   7.91
+   19 "model"      agree=true  cos 0.99292 maxdiff   4.62
+   20 "\n"         agree=true  cos 0.99738 maxdiff   5.03
+   21 "<|channel>" agree=true  cos 0.99949 maxdiff   2.38
+   22 "thought"    agree=true  cos 0.98984 maxdiff   8.02
+   23 "\n"         agree=true  cos 0.99525 maxdiff   6.92
+   24 "<channel|>" agree=true  cos 0.95247 maxdiff   7.15
+
+== E4B prompt 8 (21 prompt tokens): pos, token, agree, logits cosine, max|diff|, argmax==f32 (cpu, webgpu)
+    0 "<bos>"      agree=false cos 0.95199 maxdiff   6.21 f32: cpu=true webgpu=false
+        CPU   : "." 21.66/0.350; "," 21.28/0.238; " the" 20.39/0.098; " (" 19.64/0.047;
+        WebGPU: " the" 22.28/0.301; "." 22.19/0.276; "," 21.62/0.156; " (" 20.49/0.050;
+    1 "<|turn>"    agree=false cos 0.95669 maxdiff   7.14 f32: cpu=false webgpu=false
+        CPU   : " and" 14.53/0.141; "..." 13.51/0.051; " also" 13.03/0.032; " علي" 12.54/0.019;
+        WebGPU: "也" 14.00/0.172; " علي" 13.22/0.079; "你也" 12.96/0.061; " also" 12.41/0.035;
+    2 "user"       agree=true  cos 0.98497 maxdiff   5.72 f32: cpu=true webgpu=true
+    3 "\n"         agree=true  cos 0.93006 maxdiff  10.87 f32: cpu=true webgpu=true
+    4 "What"       agree=false cos 0.97447 maxdiff   4.60 f32: cpu=false webgpu=true
+    5 " are"       agree=true  cos 0.99260 maxdiff   3.38 f32: cpu=true webgpu=true
+    6 " the"       agree=true  cos 0.94989 maxdiff   9.19 f32: cpu=true webgpu=true
+    7 " main"      agree=true  cos 0.98584 maxdiff   3.68 f32: cpu=false webgpu=false
+    8 " causes"    agree=true  cos 0.97778 maxdiff   4.05 f32: cpu=true webgpu=true
+    9 " of"        agree=true  cos 0.98710 maxdiff   3.35 f32: cpu=true webgpu=true
+   10 " inflation" agree=true  cos 0.98420 maxdiff   4.31 f32: cpu=true webgpu=true
+   11 "?"          agree=true  cos 0.97378 maxdiff   3.94 f32: cpu=true webgpu=true
+   12 "<turn|>"    agree=false cos 0.93444 maxdiff  13.51 f32: cpu=false webgpu=false
+   13 "\n"         agree=true  cos 0.99436 maxdiff   5.14 f32: cpu=true webgpu=true
+   14 "<|turn>"    agree=false cos 0.94467 maxdiff  14.00 f32: cpu=false webgpu=true
+   15 "model"      agree=true  cos 0.98890 maxdiff   3.66 f32: cpu=true webgpu=true
+   16 "\n"         agree=true  cos 0.99885 maxdiff   4.09 f32: cpu=true webgpu=true
+   17 "<|channel>" agree=true  cos 0.99486 maxdiff   3.39 f32: cpu=true webgpu=true
+   18 "thought"    agree=true  cos 0.97981 maxdiff   6.73 f32: cpu=true webgpu=true
+   19 "\n"         agree=true  cos 0.99875 maxdiff   4.10 f32: cpu=true webgpu=true
+   20 "<channel|>" agree=true  cos 0.93247 maxdiff   8.24 f32: cpu=true webgpu=true
+
+== E4B prompt 6 (25 prompt tokens): pos, token, agree, logits cosine, max|diff|, argmax==f32 (cpu, webgpu)
+    0 "<bos>"      agree=false cos 0.95199 maxdiff   6.21 f32: cpu=true webgpu=false
+        CPU   : "." 21.66/0.350; "," 21.28/0.238; " the" 20.39/0.098; " (" 19.64/0.047;
+        WebGPU: " the" 22.28/0.301; "." 22.19/0.276; "," 21.62/0.156; " (" 20.49/0.050;
+    1 "<|turn>"    agree=false cos 0.95669 maxdiff   7.14 f32: cpu=false webgpu=false
+        CPU   : " and" 14.53/0.141; "..." 13.51/0.051; " also" 13.03/0.032; " علي" 12.54/0.019;
+        WebGPU: "也" 14.00/0.172; " علي" 13.22/0.079; "你也" 12.96/0.061; " also" 12.41/0.035;
+    2 "user"       agree=true  cos 0.98497 maxdiff   5.72 f32: cpu=true webgpu=true
+    3 "\n"         agree=true  cos 0.93006 maxdiff  10.87 f32: cpu=true webgpu=true
+    4 "Summar"     agree=true  cos 0.98651 maxdiff   4.64 f32: cpu=true webgpu=true
+    5 "ize"        agree=true  cos 0.98370 maxdiff   4.02 f32: cpu=true webgpu=true
+    6 " the"       agree=true  cos 0.90570 maxdiff   8.57 f32: cpu=false webgpu=false
+    7 " plot"      agree=true  cos 0.98163 maxdiff   6.48 f32: cpu=true webgpu=true
+    8 " of"        agree=true  cos 0.98954 maxdiff   3.58 f32: cpu=false webgpu=false
+    9 " Romeo"     agree=true  cos 0.99391 maxdiff   3.02 f32: cpu=true webgpu=true
+   10 " and"       agree=true  cos 0.99891 maxdiff   2.91 f32: cpu=true webgpu=true
+   11 " Juliet"    agree=true  cos 0.98476 maxdiff   4.27 f32: cpu=false webgpu=false
+   12 " in"        agree=true  cos 0.99466 maxdiff   3.45 f32: cpu=true webgpu=true
+   13 " one"       agree=true  cos 0.99666 maxdiff   3.15 f32: cpu=false webgpu=false
+   14 " paragraph" agree=true  cos 0.99144 maxdiff   4.18 f32: cpu=true webgpu=true
+   15 "."          agree=true  cos 0.98329 maxdiff   4.85 f32: cpu=true webgpu=true
+   16 "<turn|>"    agree=true  cos 0.94452 maxdiff  11.86 f32: cpu=false webgpu=false
+   17 "\n"         agree=true  cos 0.99706 maxdiff   5.27 f32: cpu=true webgpu=true
+   18 "<|turn>"    agree=false cos 0.94307 maxdiff  12.83 f32: cpu=false webgpu=false
+   19 "model"      agree=true  cos 0.97940 maxdiff   5.92 f32: cpu=false webgpu=false
+   20 "\n"         agree=false cos 0.99800 maxdiff   4.69 f32: cpu=true webgpu=false
+   21 "<|channel>" agree=true  cos 0.99295 maxdiff   4.45 f32: cpu=true webgpu=true
+   22 "thought"    agree=true  cos 0.98093 maxdiff   6.56 f32: cpu=true webgpu=true
+   23 "\n"         agree=true  cos 0.99737 maxdiff   4.62 f32: cpu=true webgpu=true
+   24 "<channel|>" agree=true  cos 0.98327 maxdiff   5.15 f32: cpu=true webgpu=true
+--- PASS: TestZZEModelPromptScanWebGPU (27.67s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	28.313s

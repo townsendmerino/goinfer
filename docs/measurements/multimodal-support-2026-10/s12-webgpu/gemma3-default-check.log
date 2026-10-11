@@ -1,0 +1,15 @@
+[15:41:47] gemma-3-4b-it: arm webgpu (--backend webgpu -vision-device cpu --embed-int4=false -require-backend)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu (39.3s): 'The image shows quarterly unit sales data broken down by geographic region (North, South, East, West, and Central). It also presents the total unit sa'
+[15:42:45] gemma-3-4b-it: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false -require-backend)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant int8 puts an int8 tower on the GPU, which reads images less accurately
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (41.3s): 'The image shows quarterly unit sales data broken down by geographic region (North, South, East, West, and Central). It also presents the total unit sa'
+gemma-3-4b-it: reference arm webgpu
+gemma-3-4b-it: webgpu-towerauto against webgpu: IDENTICAL replies
