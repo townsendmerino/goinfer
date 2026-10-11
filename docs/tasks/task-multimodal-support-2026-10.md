@@ -1605,6 +1605,32 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
     `--backend metal` against `--backend cpu`, `--embed-int4=false` and `-vision-device cpu` on every arm, plus a
     second CPU run. Identical replies, or a first divergence at a near-tie; the CPU repeat byte-identical; a Metal arm
     not decoding resident voids that reading.
+  - **Amended 2026-10-11, before any E4B measurement on Metal** (owner, the same day: run S6's E4B on Metal now, by
+    day, nothing queued). The two gates above named the plain bf16 checkpoint. On 2026-10-08 nobara's twin of
+    G-E4B-1 read FAIL on that checkpoint for a cause outside the implementation (post-hoc int4 of a checkpoint not
+    trained for it; "S6 on nobara, G-E4B-C1 read 2026-10-08", below) and was re-registered on Google's
+    quantization-aware file, which is what the E2B gates always ran. The Metal gates take the same change. The bars,
+    the procedure and the reference do not move.
+    - **G-E4B-1b** is G-E4B-1's rule on `google/gemma-4-E4B-it-qat-q4_0-gguf` (`gemma-4-E4B_q4_0-it.gguf`,
+      5,154,941,280 bytes, sha256 `676c3507…53fbaee`), through its int4 Metal sidecar (`prequant -quant int4 -target
+      metal` on the GGUF, the E2B's layout), the tokenizer and chat template from the GGUF. PASS at >= the
+      reference's - 2.0 points with free-run passes >= the reference's - 1; 2.0-4.0 points below parked; worse fails.
+    - **G-E4B-2** runs with that GGUF as `--model` and `google/gemma-4-E4B-it-qat-q4_0-unquantized` as `--vision`,
+      nobara's G-E4B-C2 layout; its rule is unchanged (identical replies or a first divergence at a near-tie, the CPU
+      repeat byte-identical, a Metal arm not decoding resident voids the reading).
+    - **Record only, not graded: G-E4B-1's procedure on the plain checkpoint's sidecar,** if it builds. It asks
+      whether Metal shows the drop CUDA showed (87.59% against a 93.97% reference), which would be a second backend
+      for an explanation the nobara record calls fitting and not proven.
+    - **Predictions, written now.** G-E4B-1b: PASS at about 0.75, the delta between -2.0 and +1.0 points (E2B on
+      Metal read +0.72, E4B on CUDA -0.87). The plain arm: 3 to 8 points below the reference at about 0.6; if it
+      lands inside 2 points, the checkpoint explanation is weaker than nobara's record says. G-E4B-2: every Metal
+      arm resident; at least two of the four replies differ from the CPU's, each at a near-tie (CUDA: three of four).
+      The likeliest surprise is not a number: Metal's fit guard declining E4B's resident by day.
+    - **Tier and cost.** Neither gate is timed, so the daytime load changes the wall time and not the reading. By
+      day on the owner's word. Instrument: `TestGemma4EModel_realE4BNonInferiority` for G-E4B-1b and the plain arm;
+      `run-gs3c-served.sh` and `run-gs5c-served.sh` for G-E4B-2. Stopping rule: fixed prompts, every arm runs.
+      Cost basis: E2B's G3 on this Mac took 90 s and nobara's E4B 225 s, so about 5 minutes a run; a sidecar build
+      a few minutes; the served arms about 10 minutes. The fit guards stay on: a decline is reported as the finding.
   - **The 31B** (`google/gemma-4-31B-it`, 62.6 GB) is downloading on nobara. It is too large for this Mac by any
     path, so its gates (the 26B's shape) are nobara's.
 - **EmbeddingGemma 2 on CUDA:** text, image and audio. Optional. The Metal kernels show the shapes; the work is a CUDA
