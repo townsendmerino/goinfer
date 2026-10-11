@@ -1,0 +1,21 @@
+=== RUN   TestZZEModelSubScan
+decoder: gemma-4-E2B_q4_0-it.int4.metal.giw is not in memory: reading its 3.8 GB once before the load
+
+== E2B position 0: layer: context before o_proj | residual after attention | residual after the layer  (cosine, max |diff|)
+   L0: 1.0000000 7.15e-07 | 1.0000000 9.16e-05 | 1.0000000 9.54e-07   (len ctx 2048/2048)
+   L1: 1.0000000 9.54e-07 | 1.0000000 1.91e-06 | 1.0000000 4.77e-07   (len ctx 2048/2048)
+   L2: 1.0000000 1.19e-07 | 1.0000000 7.15e-07 | 1.0000000 9.54e-07   (len ctx 2048/2048)
+   L3: 1.0000000 1.91e-06 | 1.0000000 1.91e-06 | 1.0000000 9.54e-07   (len ctx 2048/2048)
+   L4: 1.0000000 4.77e-07 | 1.0000000 3.81e-06 | 1.0000000 3.81e-06   (len ctx 4096/2048)
+   L5: 1.0000000 5.96e-08 | 1.0000000 3.81e-06 | 1.0000000 2.86e-06   (len ctx 2048/2048)
+
+== E4B position 0: layer: context before o_proj | residual after attention | residual after the layer  (cosine, max |diff|)
+   L0: 0.9999920 0.0136 | 0.9998837 1.49 | 0.9999161 0.115   (len ctx 2048/2048)
+   L1: 0.9998449 0.0665 | 0.9999691 0.858 | 0.9999676 0.143   (len ctx 2048/2048)
+   L2: 0.9999134 0.0462 | 0.9999750 0.151 | 0.9999676 0.137   (len ctx 2048/2048)
+   L3: 0.9999533 0.0296 | 0.9999694 0.131 | 0.9999726 0.0881   (len ctx 2048/2048)
+   L4: 0.9998401 0.0541 | 0.9999487 0.158 | 0.9999635 0.0837   (len ctx 2048/2048)
+   L5: 0.9999634 0.0279 | 0.9999792 0.0803 | 0.9999821 0.053   (len ctx 4096/2048)
+--- PASS: TestZZEModelSubScan (15.27s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	15.991s

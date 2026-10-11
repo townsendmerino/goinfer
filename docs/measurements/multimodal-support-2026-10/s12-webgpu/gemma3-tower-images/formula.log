@@ -1,0 +1,16 @@
+[15:30:34] gemma-3-4b-it: arm webgpu (--backend webgpu -vision-device cpu --embed-int4=false)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu (35.6s): 'The image is a note explaining the Gaussian integral and its connection to the normal distribution (bell curve). It shows the integral of e^(-x^2) fro'
+[15:31:26] gemma-3-4b-it: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder int8/webgpu-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (60.4s): 'This image shows a complex diagram with various symbols and text, including a "A Note on the Gaussian Integral" label. It appears to be related to mat'
+gemma-3-4b-it: reference arm webgpu
+gemma-3-4b-it: webgpu-towerauto against webgpu: first differing generated token 0: webgpu 'The', webgpu-towerauto 'This'
+  webgpu top-3: 'The' 0.576, 'This' 0.423, 'Here' 0.001
+  near-tie (p(other) >= half p(top) = 0.288): True
