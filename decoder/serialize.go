@@ -245,6 +245,13 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 // only for a caller that already holds proof THIS file passed it (see giwverify.go). Everything
 // else (magic, version, header, bounds, arch, per-tensor validation) still runs.
 func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, error) {
+	return loadSerializedWeightsHook(data, crcAlreadyVerified, nil)
+}
+
+// loadSerializedWeightsHook is loadSerializedWeights with beforeWalk, when non-nil, called once the header is read
+// and its architecture resolved, before any weight matrix is: the point at which a caller that holds the file's
+// mapping can prepare the page cache for the walk over the matrices (prepareColdLoad).
+func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture)) (*Weights, error) {
 	r := &giwReader{data: data}
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {
 		return nil, &SerializeError{fmt.Sprintf("bad magic %q (want %q)", got, giwMagic)}
@@ -282,6 +289,9 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 		return nil, &SerializeError{"arch: " + err.Error()}
 	}
 	r.arch = arch // gates the gemma4 model-level inputs and per-layer tail
+	if beforeWalk != nil {
+		beforeWalk(arch)
+	}
 
 	w := &Weights{Cfg: cfg, arch: arch, backing: data, bakedQuant: bakedQuant}
 	w.Embed = r.weightMat()
