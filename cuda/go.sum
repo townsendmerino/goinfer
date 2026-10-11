@@ -16,6 +16,8 @@ github.com/townsendmerino/aikit v1.64.0 h1:xEfEd19w1pCmOm8AgHdXZHwMXTVl1dvrYExVD
 github.com/townsendmerino/aikit v1.64.0/go.mod h1:HKA6IMr1YvzbCOgusf1zio9uo29Js+xCuOhB0eKtdWA=
 github.com/townsendmerino/aikit v1.65.0 h1:b2uKCUym2qbJE7uxp8jTtvCv/Um/xUs5yTN6RQJrW8U=
 github.com/townsendmerino/aikit v1.65.0/go.mod h1:HKA6IMr1YvzbCOgusf1zio9uo29Js+xCuOhB0eKtdWA=
+github.com/townsendmerino/aikit v1.66.0 h1:MhtJwejQR3zBH/Gq+9oejBbWmzaBOmdRnxibzEmQsnY=
+github.com/townsendmerino/aikit v1.66.0/go.mod h1:HKA6IMr1YvzbCOgusf1zio9uo29Js+xCuOhB0eKtdWA=
 github.com/townsendmerino/aikit/gpu v0.33.5 h1:25cPfdw0nGjtSwEV/iaRZMYrKd0o/ShsYXMrg01CCS0=
 github.com/townsendmerino/aikit/gpu v0.33.5/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
 github.com/townsendmerino/aikit/gpu/visioncuda v0.1.0 h1:FEh0HRb5R5XqVDVsgfPLira+m/b/5+wYP/Cdimzf9Cc=
