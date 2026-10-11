@@ -25,6 +25,17 @@ after `Close` is refused with the same error and a closed channel. The contract 
 [`docs/use-from-go.md`](docs/use-from-go.md#closing-a-model) and on `Model.Close`. The Metal case itself needs the Mac to
 confirm (`metal/close_during_generation_test.go`); the CUDA resident path is tested (`cuda/close_during_generation_test.go`).
 
+### Added — Whisper and Voxtral's audio encoder on the GPU under `--backend cuda`
+
+The speech route and Voxtral's `input_audio` ran their encoder on the CPU. Under `--backend cuda` it now runs on the device
+(`--vision-device cpu` keeps it on the CPU): `whisper-small`'s 30 s window 1.74 s to 0.13 s (13.6 times) and Voxtral's tower
+8.84 s to 0.75 s (11.9 times), float32, per-position cosine against the CPU encoder at least 0.99999999; the 73 LibriSpeech clips
+come out byte-equal to transformers' and to the CPU encoder's. Where the layers do not fit next to a resident decoder (int4
+Voxtral on an 8 GB card), the encoder streams them one at a time over the bus instead: bit-identical output, 1.0 s a window, and a
+served 36 s clip 49 s to 34 s. Needs aikit v1.69.0 (`audio.WhisperDevice`). The Whisper decoder's cross-attention is also
+1.95 times faster on every backend
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S14.6).
+
 ### Added — `Tokenizer.NewStream`: a streaming detokenizer
 
 The smallest program in [`docs/use-from-go.md`](docs/use-from-go.md) printed each token with `tok.Decode([]int{id})`, which on a

@@ -5,6 +5,7 @@ package cuda
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,6 +95,29 @@ func TestAudioEncoder_realMatchesCPU(t *testing.T) {
 				t.Fatal(err)
 			}
 			second := time.Since(t0)
+			// the streamed tower on the same window: bit-identical to the resident one, and what it costs
+			beforeS := gpuMemUsedMiB()
+			st, err := newAudioTowerMode(enc, true)
+			if err != nil {
+				t.Fatalf("streamed tower: %v", err)
+			}
+			defer st.Close()
+			heldS := gpuMemUsedMiB() - beforeS
+			if _, err := st.Forward(feats); err != nil { // warm
+				t.Fatal(err)
+			}
+			t0 = time.Now()
+			sgot, err := st.Forward(feats)
+			if err != nil {
+				t.Fatal(err)
+			}
+			streamedT := time.Since(t0)
+			for i := range sgot {
+				if math.Float32bits(sgot[i]) != math.Float32bits(got[i]) {
+					t.Fatalf("%s: streamed output differs from resident at %d", name, i)
+				}
+			}
+			t.Logf("%s: streamed %.3fs (VRAM held by the streamed tower %d MiB), bit-identical to resident", name, streamedT.Seconds(), heldS)
 			c := audioMinCosine(got, want, enc.Cfg.DModel)
 			t.Logf("%s: min per-position cosine %.9f; CPU %.2fs, CUDA first %.3fs then %.3fs; VRAM held %d MiB", name, c, cpu.Seconds(), first.Seconds(), second.Seconds(), gpuMemUsedMiB()-before)
 			if c < 0.99999 {
