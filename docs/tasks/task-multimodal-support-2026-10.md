@@ -3941,6 +3941,34 @@ kernel, so a float32 form may be right and still slower than the CPU.
 - **Tier and cost.** a-1 seconds. a-2 five images at about a minute each on the device and half a minute on the
   CPU: about 10 minutes, untimed. a-3 about 12 minutes. a-4 at night, about 10 minutes.
 
+#### S12.3b, a tiled float32 GEMM for the WebGPU tower: registered 2026-10-11 before any code, after the first real-size run
+
+**Why now.** The first real-size run of the float32 tower (G-S12.3a-2, read below once it has run clean) took
+112 s an image on this Mac where the CPU float32 tower takes 25 s and the int8 device tower 48 s (by day, a smoke).
+G-S12.3a-4 would read off by a factor of four, so it is not queued until this lever is in: the registered
+consequence of an off reading, taken on a by-day smoke that is not close. The tower's matmuls are the naive kernel,
+one invocation an output element, each streaming a whole row of both operands from global memory.
+
+**What:** a float32 form of the tiled kernel the int8 prefill already has (`gpu/gemm.go`): 16x16 tiles of both
+operands staged in workgroup memory, K walked in strips of 16, the same four bindings as the naive kernel, so
+`matmulF32Device` can take either. It serves the tower's projections, its patch embed and its attention matmuls.
+
+- **G-S12.3b-1, the kernel against the naive one (day).** Random float32 operands at shapes that are and are not
+  multiples of 16 in M, N and K, including the tower's (4096 by 1152 by 4304, and 4096 by 4096 by 72): every output
+  equal to the naive kernel's to a relative 1e-5, and the naive kernel against a float64 host reference as the
+  control. Planted defect: the strip's last partial tile read past K (no zero fill) must be red on a K that is not
+  a multiple of 16.
+- **G-S12.3b-2, the tower is unchanged by it (day).** G-S12.3a-1 with its five planted defects, the large-activation
+  case, and the int8 tower's two existing tests, all on the tiled kernel.
+- **G-S12.3b-3, a by-day smoke (exploratory).** The float32 tower's time for one image at real size, tiled against
+  naive, same process. No bar: it says whether G-S12.3a-4 is worth a night.
+- **The decision stays G-S12.3a-4's** (the float32 device tower becomes WebGPU's default at a ratio of at most 0.98
+  of the CPU tower's time). If the smoke is still far over the CPU's time, G-S12.3a-4 is not queued and the float32
+  device tower stays opt-in; that is recorded as the outcome.
+- **Prediction, written now:** b-1 and b-2 pass (0.85). b-3: between two and five times faster than naive, which
+  puts the tower between 22 s and 56 s; under the CPU's 25 s at about 0.25.
+- **Tier and cost.** b-1 and b-2 seconds to a minute. b-3 about four minutes.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
