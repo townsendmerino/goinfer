@@ -321,7 +321,8 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   an end user's machine instead of here at build time. Fixed by passing `-target canonical`
   explicitly — a new value (`ParseGIWTarget`, not one of the doc's 5 named targets) added for
   exactly this "more than one consumer" case.
-- **Kind 4 (`SerializeWeightsRow4`/`SerializeWeightsToRow4`) was NOT retired**, despite "Kind 4 is
+- **[2026-10-10: kind 4 and both functions were retired with weights format v16, `docs/giw-bundles.md`.]**
+  **Kind 4 (`SerializeWeightsRow4`/`SerializeWeightsToRow4`) was NOT retired**, despite "Kind 4 is
   no longer emitted" in the Fix list above. Read that as describing the NEW target-driven pathway
   (`Transcode`/`EnsureCachedGIW`/`cmd/prequant`, which indeed never chooses kind 4 anymore after
   this change), not as an instruction to delete the pre-existing legacy API and its three

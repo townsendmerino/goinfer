@@ -138,6 +138,8 @@ cacheLayoutCurrent — quant is the cache's own quant, which decides whether tha
 ## minInt4CacheGIWVersion
 
 Moved from `internal/prequant/prequant.go` (the comment above `minInt4CacheGIWVersion`) on 2026-10-09.
+The constant and `cacheLayoutCurrent` were removed on 2026-10-10 with weights format v16: the reader reads one
+version, so an older sidecar fails the load check in `cacheFresh` and is rebuilt.
 
 ```text
 minInt4CacheGIWVersion is the oldest weights-blob version whose int4 group scales an mmap load
