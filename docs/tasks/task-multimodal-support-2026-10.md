@@ -3908,6 +3908,39 @@ default (exploratory, one request an image, both arms decoding on WebGPU; `s12-w
 - **What it does not settle:** a float32 SigLIP on WebGPU (S12.3) is still what makes Gemma 3's tower run on the GPU
   there; and the int8 tower's speed on a discrete card was not measured.
 
+#### S12.3a, a float32 SigLIP tower on WebGPU: gates registered 2026-10-11 before any code (owner: do S12's towers, the E4B trace, the 26B FFN and the GPU prefill, in that order)
+
+**What:** WebGPU's SigLIP tower runs its six projections a layer through an int8 kernel and is opt-in since today.
+The float32 form runs the same forward with float32 projection weights from aikit's `Encoder.Weights`, through the
+float32 matmul the tower already uses for its patch embed and attention. No aikit change.
+
+**What is known going in (exploratory, 2026-10-11, this Mac):** the int8 WebGPU tower takes 47-48 s an image where
+the float32 CPU tower takes 26-28 s and Metal's float32 tower about 9.5 s. The WebGPU tower's matmuls are the naive
+kernel, so a float32 form may be right and still slower than the CPU.
+
+- **G-S12.3a-1, tiny, day.** `testdata/siglip-tiny`, with its norms, biases and position table randomised through
+  `Weights`' aliasing slices first (a fixture of ones hides swaps): the WebGPU float32 tower against the CPU float32
+  tower, every output token at cosine >= 0.9999. Planted defects, each alone red: (1) the position table not added;
+  (2) one layer's q bias dropped; (3) q and k weights swapped in one layer; (4) the GELU skipped in one layer;
+  (5) the second residual add dropped in one layer.
+- **G-S12.3a-2, real size, day (untimed).** `gemma-3-4b-it`'s tower at 896x896 on the five test images of the
+  default-tower comparison: every one of the 4,096 tokens at cosine >= 0.9999 against the CPU float32 tower is a
+  PASS; a lowest token in 0.999-0.9999 is parked; lower fails. The int8 tower is run beside it as a record.
+- **G-S12.3a-3, served, day.** The same five images through one WebGPU server, `=webgpu:cpu` against the float32
+  device tower: identical replies, or a first divergence at a near-tie, on all five; the device arm must report a
+  float32 WebGPU tower.
+- **G-S12.3a-4, speed, night.** The tower's encode time at 896x896 on the Mac, WebGPU float32 against CPU float32,
+  five interleaved pairs on one image, the first of each arm discarded as a warm-up. **The float32 device tower
+  becomes WebGPU's default at a ratio of at most 0.98; 0.98-1.00 is parked; above 1.00 it stays opt-in and the CPU
+  tower stays the default.** A day smoke of one pair is run first and is exploratory.
+- **If G-S12.3a-4 is off:** the lever is a tiled float32 GEMM for the tower's matmuls (they are the naive kernel
+  today); it gets its own registration, with the same bar, before any code.
+- **Prediction, written now:** a-1, a-2 and a-3 pass (0.8; float32 against float32, the same forward). a-4: off
+  (0.6): the int8 form is 1.8 times slower than the CPU and its projections are a minority of the tower's work,
+  so the float32 projections do not move it under the CPU's time.
+- **Tier and cost.** a-1 seconds. a-2 five images at about a minute each on the device and half a minute on the
+  CPU: about 10 minutes, untimed. a-3 about 12 minutes. a-4 at night, about 10 minutes.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
