@@ -1198,7 +1198,6 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	case "int8":
 		return true
 	case "f32":
-		// Explicit f32. On webgpu there is no float32 device tower, so the attach declines by name and the CPU tower runs.
 		return false
 	}
 	switch modelType {
@@ -1208,13 +1207,14 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	return (backend == "webgpu" || backend == "cuda") && modelType != "gemma3" // gemma3: float32 by default everywhere
 }
 
-// gemma3TowerBackend is where Gemma 3's SigLIP tower attaches: the tower backend, except that WebGPU's unset default,
-// a float32 tower it has no device form of, is the CPU tower by choice and not by a failed attach. An explicit
-// -vision-quant keeps the tower backend: int8 attaches there, and f32 declines by name (or fails under -require-backend).
+// gemma3TowerBackend is where Gemma 3's SigLIP tower attaches: the tower backend, except that WebGPU's unset default
+// is the float32 tower on the CPU, by choice and not by a failed attach. An explicit -vision-quant keeps the tower on
+// WebGPU: f32 attaches its float32 device tower and int8 its int8 one. Which of the CPU and the float32 device tower is
+// the default is decided by a speed gate (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4).
 func gemma3TowerBackend(cfg config, int8Tower bool, note io.Writer) string {
 	be := cfg.towerBackend()
 	if be == "webgpu" && cfg.visionQuant == "" && !int8Tower {
-		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant int8 puts an int8 tower on the GPU, which reads images less accurately")
+		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant f32 puts the float32 tower on the GPU, and --vision-quant int8 an int8 one that reads images less accurately")
 		return "cpu"
 	}
 	return be
