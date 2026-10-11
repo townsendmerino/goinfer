@@ -1,0 +1,122 @@
+== identity provenance ==
+  repo        d8f1918a
+  date (UTC)  2026-10-11T04:10:01Z
+  host        Darwin arm64
+  old         c07c7f5d Merge giw-v16-dequant-2026-10: T8, the vectorized Q4_K and Q6_K GGUF d
+  new         d8f1918a gate identity: the 7B GGUF is a real asset on Metal (its source, so -g
+  backend     metal
+  mode        giw logits: each revision's own cmd/prequant transcodes the cell's source for target metal; the dumper loads that file
+  assets      real — checkpoints under /Users/francistownsend-merino/models, L1's two prose prompts tokenized by this build
+  quants      int4
+  steps       32 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (none were set) — the code is the only difference
+  build       go build -trimpath; dumper in metal/ (registers the backend), ephemeral go.work: . ./metal
+  run dir     <run dir>/gate-identity-20261010-211001-4058602578
+  started     21:10:01 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 1 cell(s) over 43 family(ies), started 21:10:01 — building c07c7f5d and d8f1918a ==
+   built both in 11s (old 11s, new 11s)
+   [1/1] qwen2              1 cell(s): new1 4.6s, old 4.8s, new2 3.5s — 12.9s total, elapsed 24s (started 21:10:01)
+
+== determinism: the new build (d8f1918a) run twice, separate processes, on metal ==
+  1 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+== identity: old c07c7f5d vs new d8f1918a, per family ==
+  NOT RUN          bailing_hybrid     nothing ran — see NOT RUN
+  NOT RUN          cohere             nothing ran — see NOT RUN
+  NOT RUN          cohere2            nothing ran — see NOT RUN
+  NOT RUN          deepseek_v2        nothing ran — see NOT RUN
+  NOT RUN          deepseek_v3        nothing ran — see NOT RUN
+  NOT RUN          gemma              nothing ran — see NOT RUN
+  NOT RUN          gemma2             nothing ran — see NOT RUN
+  NOT RUN          gemma3             nothing ran — see NOT RUN
+  NOT RUN          gemma4             nothing ran — see NOT RUN
+  NOT RUN          glm4_moe           nothing ran — see NOT RUN
+  NOT RUN          glm_ocr            nothing ran — see NOT RUN
+  NOT RUN          gpt-oss            nothing ran — see NOT RUN
+  NOT RUN          gpt2               nothing ran — see NOT RUN
+  NOT RUN          granite            nothing ran — see NOT RUN
+  NOT RUN          granitemoehybrid   nothing ran — see NOT RUN
+  NOT RUN          internlm2          nothing ran — see NOT RUN
+  NOT RUN          kimi_k2            nothing ran — see NOT RUN
+  NOT RUN          laguna             nothing ran — see NOT RUN
+  NOT RUN          lfm2               nothing ran — see NOT RUN
+  NOT RUN          llama              nothing ran — see NOT RUN
+  NOT RUN          llama4_text        nothing ran — see NOT RUN
+  NOT RUN          mellum             nothing ran — see NOT RUN
+  NOT RUN          mistral            nothing ran — see NOT RUN
+  NOT RUN          mistral3           nothing ran — see NOT RUN
+  NOT RUN          mixtral            nothing ran — see NOT RUN
+  NOT RUN          nemotron_h         nothing ran — see NOT RUN
+  NOT RUN          olmo3              nothing ran — see NOT RUN
+  NOT RUN          olmo_hybrid        nothing ran — see NOT RUN
+  NOT RUN          phi3               nothing ran — see NOT RUN
+  IDENTICAL        qwen2              1/1 cell(s) ran  the two builds' sidecars give the same logits
+      IDENTICAL  coder-1.5b-q4km @ int4                 metal-resident (int4)
+  NOT RUN          qwen2_5_vl         nothing ran — see NOT RUN
+  NOT RUN          qwen2_moe          nothing ran — see NOT RUN
+  NOT RUN          qwen3              nothing ran — see NOT RUN
+  NOT RUN          qwen3_5            nothing ran — see NOT RUN
+  NOT RUN          qwen3_5_moe        nothing ran — see NOT RUN
+  NOT RUN          qwen3_asr          nothing ran — see NOT RUN
+  NOT RUN          qwen3_moe          nothing ran — see NOT RUN
+  NOT RUN          qwen3_next         nothing ran — see NOT RUN
+  NOT RUN          qwen3_vl           nothing ran — see NOT RUN
+  NOT RUN          qwen3_vl_moe       nothing ran — see NOT RUN
+  NOT RUN          smollm3            nothing ran — see NOT RUN
+  NOT RUN          spark2_5           nothing ran — see NOT RUN
+  NOT RUN          voxtral            nothing ran — see NOT RUN
+
+== NOT RUN (42 cell(s)) — reported, never counted as a pass ==
+  NOT RUN  bailing_hybrid     -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  cohere             -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  cohere2            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  deepseek_v2        -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  deepseek_v3        -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  gemma              -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  gemma2             -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  gemma3             -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  gemma4             -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  glm4_moe           -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  glm_ocr            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  gpt-oss            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  gpt2               -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  granite            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  granitemoehybrid   -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  internlm2          -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  kimi_k2            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  laguna             -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  lfm2               -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  llama              -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  llama4_text        -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  mellum             -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  mistral            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  mistral3           -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  mixtral            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  nemotron_h         -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  olmo3              -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  olmo_hybrid        -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  phi3               -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen2_5_vl         -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen2_moe          -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3              -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_5            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_5_moe        -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_asr          -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_moe          -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_next         -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_vl           -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  qwen3_vl_moe       -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  smollm3            -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  spark2_5           -                      [-] no real checkpoint for this family in the -assets real table
+  NOT RUN  voxtral            -                      [-] no real checkpoint for this family in the -assets real table
+
+== would record (the parity manifest is NOT written by this item) ==
+  nothing — -giw compares two builds' sidecars of one source; no family's parity row is inherited from it
+  scope: this machine (Darwin/arm64) and backend (metal) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+== verdict ==
+  families 43: 1 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 42 NOT RUN (a skip is not a pass)
+  wall     24s (21:10:01 → 21:10:25): builds 11s, runs 13s
+  logs     <run dir>/gate-identity-20261010-211001-4058602578/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  GREEN — every family that ran is IDENTICAL

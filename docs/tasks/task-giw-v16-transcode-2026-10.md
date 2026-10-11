@@ -6,8 +6,11 @@ wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on t
 bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
 follow-up (a vectorized GGUF dequantizer) opened on the Mac's cell by a hair and is **built and graded as T8**, on aikit
 v1.67.0: single-thread transcode CPU new/old 0.847 and 0.809 for the Q4_K kernel (Mac, nobara), then 0.931 and 0.864
-for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. T0-T6 with T4b are on `main`; T8's pin
-and records are on branch `giw-v16-dequant-2026-10`. **Next: T7 and V** (Decisions 2 and 4 are made). The gates
+for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. Part T with T8 is on `main`.
+**Part V is built** (V1-V7 with T7) on branch `giw-v16-v-2026-10`: G-V1 PASS on every cell read (tiny assets on CPU and
+Metal, the 1.5B on Metal), G-V2 holds with two projection misses on the small default files (the projection counted
+one int4 table where there are two), G-V4 PASS. The 7B's Metal cells (G-V1 and G-V3) are queued for the night: by day
+the fit guard declined the 7B on Metal. **Next:** read the night cells, then Decision 4's four rebuilds on nobara. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
