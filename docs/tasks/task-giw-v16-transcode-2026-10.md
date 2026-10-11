@@ -4,9 +4,10 @@
 T0-T6 with T4b, on aikit v1.66.0. G-T1 PASS on tiny and real cells on both boxes. G-T2 SHIP on every graded cell: new/old
 wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on the 30B directory. G-T3 within its
 bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
-follow-up (a vectorized GGUF dequantizer) opens on the Mac's cell by a hair and is not started. F3's arm64 profile is
-retracted. T0-T6 without T4b are on `main`; T4b's pin and records are on branch `giw-v16-t4b-2026-10`. **Next: T7 and
-V** (Decisions 2 and 4 are made). The gates
+follow-up (a vectorized GGUF dequantizer) opened on the Mac's cell by a hair and is **built and graded as T8**, on aikit
+v1.67.0: single-thread transcode CPU new/old 0.847 and 0.809 for the Q4_K kernel (Mac, nobara), then 0.931 and 0.864
+for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. T0-T6 with T4b are on `main`; T8's pin
+and records are on branch `giw-v16-dequant-2026-10`. **Next: T7 and V** (Decisions 2 and 4 are made). The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -444,6 +445,58 @@ change what runs when and how fast, never what is written.
     (`buildWeightsFromGGUF`, `buildWeightsFromSafetensorsTo`) fold it into `skipRow4` before any tensor is built, and
     `streamQuantizedEmbed` takes it as a parameter. The amd64 split-half repack, off by default, is not covered. G-T1
     on the Mac: PASS.
+- **T8. A vectorized GGUF dequantizer (aikit). Registered 2026-10-10, before any code** (owner: "do it", after the
+  copy floor's consequence opened on the Mac's 1.5B at 3.08).
+  - **What:** NEON and AVX2 kernels for the body of `embed.dequantQ4KBlock`: per 32-weight sub-block, the nibbles
+    widened to float32, times the sub-block's scale, minus its offset. The scalar body stays as the oracle and serves
+    other architectures. The block's prologue (the two half-floats, the 6-bit scale and min unpack, the eight products)
+    stays in Go.
+  - **Each architecture matches its own scalar.** `d1*float32(q) - off1` is one fused operation in Go's arm64 code and
+    two rounded ones on amd64, so the two builds already differ in the last bit, and each kernel must reproduce its
+    own: fused on NEON, a multiply and a subtract on AVX2. The oracle test decides, not this note.
+  - **Reach.** This function is every Q4_K GGUF load, resident loads included, not only the transcode. So the forward
+    goldens that load a GGUF are part of the gate.
+  - **Second step, only if the first ships:** the same for `dequantQ6KBlock`, which the bench GGUFs use for a few
+    tensors (about 5% of the Mac cell's CPU after T4b, by the system sampler).
+  - **G-T8a, oracle (aikit, day).** The kernel equals the scalar bit for bit on: every nibble value under random
+    scales and offsets; d and dmin that are zero, negative, subnormal, infinite and NaN; random blocks; and the whole
+    of the real 1.5B GGUF's Q4_K tensors (a hash of the dequantized floats). Natively on arm64 and on amd64. Planted
+    kernel defects must turn it red.
+  - **G-T8b, identity (goinfer, day).** `gate identity -giw bytes` on the tiny matrix and the two real GGUFs, and
+    `gate quick` (its GGUF forward goldens) on the pin.
+  - **G-T8c, speed (day; `t4b_cpu_ab.py`, the instrument T4b's gate used).** Single-thread transcode CPU, new over
+    old, old being the v1.66.0 build, on the Mac's 1.5B GGUF to `cpu-arm64` and nobara's 1.5B GGUF to `cpu-amd64`.
+
+    | | expected | ship | park | off |
+    |---|---|---|---|---|
+    | each cell | 0.75-0.85 | at most 0.98 | 0.98-1.00 | above 1.00 |
+
+    The expectation: the Q4_K dequantizer is about 24% of the Mac cell's CPU by the sampler, and a kernel four to
+    six times faster leaves about 5%. The ship line is the repo's default (1.02x), not the expectation.
+  - **Recorded, not gated:** the copy floor on the next night's cells (3.08 on the Mac's 1.5B today).
+  - **Amendment, 2026-10-10 (after the Q4_K kernel was measured, before any Q6_K code).**
+    - **The Q4_K kernel: G-T8a PASS, G-T8c SHIP on both cells** (new/old CPU 0.847 on the Mac, 0.809 on nobara;
+      [record](../measurements/giw-v16-transcode-2026-10/README.md), "T8's day gate"). G-T8b waits for the pin.
+    - **The note above on the two architectures is wrong for every finite weight.** `d*scale*nibble` is exact in
+      float32 (an 11-bit half-float, a 6-bit scale and a 4-bit nibble), and so is `dmin*min`, so the fused subtract
+      and the two-step one round once, to the same value. Measured: the crc32 of every Q4_K weight of the 1.5B GGUF is
+      the same on arm64 and on amd64. The builds can differ only in which NaN comes out when d or dmin is not finite,
+      and there each kernel reproduces its own scalar, which the oracle checks.
+    - **The amd64 kernel takes the CPU check** (AVX2 present, or the scalar body). The first nobara reading (0.816)
+      was on a build without it; the graded one (0.809) is on the build with it.
+    - **Q6_K's gate, the second step.** The instrument and the two cells are G-T8c's. **Old is the build with the Q4_K
+      kernel; new adds the Q6_K kernel.** Ship at most 0.98, park 0.98-1.00, off above 1.00. Expected 0.93-0.97: Q6_K
+      was about 5% of the Mac cell's CPU before the Q4_K kernel, so about 6% of this old arm, and a kernel four to
+      six times faster leaves a little over 1%. The expectation sits close to the ship line, so a park is a live
+      outcome, and a parked Q6_K kernel is not released. Its oracle is G-T8a's with Q6_K's fields: random blocks, every
+      half-float as d, every scale byte, every `ql` and `qh` byte value in every lane, the real 1.5B GGUF's Q6_K
+      tensors, and planted defects. If it ships, both kernels go in one aikit release and G-T8b runs once on that pin.
+    - **Q6_K graded, 2026-10-10: SHIP on both cells** (0.931 on the Mac, 0.864 on nobara, the record's "second
+      step"). nobara is below the expected range; the expectation was built from the Mac's share. Both kernels go
+      in aikit v1.67.0.
+    - **G-T8b, 2026-10-10: PASS.** aikit v1.67.0 is tagged and pinned. `gate identity -giw bytes`: 330 of 330 tiny
+      cells that ran and 8 of 8 on the two real GGUFs are IDENTICAL; `gate quick` is GREEN on the pin. **T8 is built
+      and graded.** The copy floor's re-read on a later night's cells is still owed (recorded, not gated).
 - **T7. Scales stay binary16 through the writer.** Write the `WeightMat`'s own f16 scales straight out (a
   little-endian view, or an encode on a big-endian host). For kind 5, repack with aikit's
   `RepackW4A8Row4ScalesF16` instead of the f32 form. Small (F7); do it inside V1, which rewrites these functions
