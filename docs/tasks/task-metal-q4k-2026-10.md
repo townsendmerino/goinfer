@@ -1,6 +1,6 @@
 # `--quant q4k` on Metal: Phi-3 mini resident (2026-10)
 
-**Status: the decode lane is BUILT 2026-10-08; G-Q1 PASS; G-Q3 PASS (2026-10-10); G-Q2 owed** (its 2026-10-10 run skipped on a missing reference sidecar). Their first night (2026-10-08) was
+**Status: the decode lane is BUILT 2026-10-08; G-Q1, G-Q2 and G-Q3 PASS (G-Q2 and G-Q3 read 2026-10-10); the peer cell M1 is owed.** Their first night (2026-10-08) was
 void on memory, the fit guard on. They are queued again for the night of 2026-10-10 with the load-time fit guard
 bypassed on the owner's word, under a swap watch (below). Registered 2026-10-08, before any code. Owner decision 2026-10-08: "for Phi-3, Mac Metal lets do the code fix
 now".
@@ -209,6 +209,27 @@ Job exit 0 in 1 minute at 13:25, with the queue started by day. Raw:
     sidecar, exits 5 when G-Q2's test prints no PASS line of its own, and takes `GQ_GATES` (here `gq2`: G-Q3 has read
     at this revision and is not repeated). Queued as `metal-q4k-gq-3` on the Mac, 45 minutes, the same pinned binaries
     (`eee75d83`).
+
+### G-Q2 read 2026-10-10 (`metal-q4k-gq-3`): PASS
+
+The Mac, 17:19-17:24 (5 minutes; the queue was started by day, load average 1.85 at the start), binaries at
+`eee75d83`, the load-time fit guard bypassed and the swap watch on. Raw:
+`docs/measurements/metal-q4k-2026-10/night-2026-10-10/gq-3/`.
+
+| arm | free-run rule | teacher-forced agreement, Metal against the CPU |
+|---|---|---|
+| reference, Qwen2.5-Coder-1.5B through its int4 Metal sidecar | 7 of 8 prompts | 532/566 = 93.99% |
+| Phi-3 mini 4k at q4k, the q4k lane | 8 of 8 prompts | 367/372 = 98.66% |
+
+- **Delta +4.66 points** against a bar of no worse than -2.0, and 8 free-run passes against the reference's 7 (bar:
+  at least 6). **PASS.**
+- **The path.** The test builds the Metal resident and fails unless it took the q4k lane, and it logged "loaded
+  (template phi3_orig, the q4k lane)". It does not print the `decode path` string the registration names; the lane
+  assertion is what stands in for it. Metal's own resident memory guard was not bypassed and did not decline.
+- **Memory.** Swap stayed at 1,067.0 MB for the whole gate (the watch's five samples read +0).
+- G-Q3 passed earlier the same day. **G-Q1, G-Q2 and G-Q3 have all read PASS.** What is left of this task is the peer
+  cell M1, at night, by an amendment to the Mac record, and a look at the Metal reply's run into chat-template text
+  that G-Q3's rule did not see.
 - **G-Q3: PASS by the registered rule.** Both arms served Phi-3 at q4k, context 512, the fit guard bypassed, swap flat
   (1,029.5 MB before and after).
   - CPU: `decode path: cpu (q4k)`, 64 tokens in 51.2 s. Metal: `decode path: metal-resident (q4k)`, 64 tokens in 9.0 s.

@@ -1,0 +1,12 @@
+rev eee75d83 (test sha256 b3e2682fe49b76c6, serve sha256 c9ffcf4159edbbfe)
+phi3 8a83c7fb9049a9b2
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 2048.00M  used = 1067.00M  free = 981.00M  (encrypted)
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                    39473.
+Pages active:                                 335463.
+Pages inactive:                               469750.
+Pages speculative:                             14356.
+17:19  up 16 days,  7:14, 1 user, load averages: 2.02 4.12 3.99
+the load-time fit guard is BYPASSED for this run (GQ_NO_FIT_GUARD), swap watch at +1024 MB
