@@ -746,6 +746,42 @@ A build from before Part V refuses a v16 sidecar as newer than it reads and rewr
 rewrites it again. Each switch costs one transcode. The manual runs above were kept in a scratch directory so no
 sidecar in `~/models` changed format.
 
+## The copy floor read again with T8, 2026-10-10 night: recorded, not gated
+
+T8's registration left one thing owed: the copy floor (G-T2c) on a later night's cells with the dequantizer kernels
+in. The earlier night runs' driver and cells, with different arms: **old is the earlier runs' new arm** (goinfer
+`946e5ca8` on aikit v1.66.0, T0-T6 with T4b) and **new is the same with T8** (`c07c7f5d` on aikit v1.67.0). Both write
+weights format v15, so every cell's arms wrote the same bytes. Records `gt-nobara-t8.jsonl`, `gt-mac-t8.jsonl`,
+`gt-mac-t8b.jsonl` and their logs; nobara's wrapper is `run-gt-t8-nobara.sh`.
+
+| box | cell | wall, new/old (pairs) | median | old / C-io | new / C-io |
+|---|---|---|---|---|---|
+| nobara | 1.5B GGUF to `cpu-amd64` | 0.879, 0.849, 0.878 | **0.878** | 2.80 | **2.41** |
+| nobara | 7B GGUF to `cpu-amd64` | 0.883, 0.838, 0.843 | **0.843** | 2.52 | **2.12** |
+| nobara | 7B GGUF to `cuda` | 0.862, 0.842 | **0.852** | 1.90 | **1.62** |
+| nobara | 30B directory to `cpu-amd64` | 1.305, 0.927 | 1.116 | 1.05 | 1.16 |
+| Mac, second pass | 1.5B GGUF to `cpu-arm64` | 0.887, 0.902, 0.897 | **0.897** | 3.40 | **3.04** |
+| Mac, second pass | 1.5B GGUF to Metal | 0.897, 0.866, 0.859 | **0.866** | 2.76 | **2.42** |
+| Mac, second pass | 7B GGUF to Metal | 0.879, 1.009 | 0.944 | 3.33 | 3.14 |
+| Mac, first pass | 1.5B GGUF to `cpu-arm64` | 0.890, 0.886, 0.890 | 0.890 | 2.98 | 2.65 |
+| Mac, first pass | 1.5B GGUF to Metal | 0.901, 0.890, 0.848 | 0.890 | 2.34 | 2.09 |
+| Mac, first pass | 7B GGUF to Metal | 0.858, 0.976 | 0.917 | 3.76 | 3.45 |
+
+- **nobara** ran at 22:17 under the timing lock, load average 0.3 at the start. **The Mac ran twice.** The first pass
+  (22:17) started at a load average of 5.9, seconds after cross-compiles on the same box; the second (22:29) waited
+  for the load to fall to 1.2. The second is the one to read.
+- **On the GGUF cells the kernels take 10-16% off the wall and move the transcode 0.3-0.4 closer to its own I/O.**
+  That is the end-to-end size of T8, where its gate read single-thread CPU (0.80 on the Mac, 0.70 on nobara).
+- **Read the floor inside one run.** The same old-arm binary read 3.08 on the Mac's 1.5B in the earlier night run and
+  2.98 and 3.40 in tonight's two; on the Mac's 7B it read 2.40 then, and 3.76 and 3.33 tonight. The level moves
+  between sessions by more than the kernels move it, so "3.08 before, 2.65 after" (what the first pass looked like
+  against the earlier night) is two sessions set side by side, not a measurement. Inside each run the new arm is
+  below the old one on every GGUF cell.
+- **The Mac's 7B cell does not resolve:** its two pairs read 0.879 and 1.009 in the clean pass.
+- **The 30B directory is not a T8 cell** (a safetensors source has no GGUF blocks to dequantize); it rode along. Its
+  pairs read 1.305 and 0.927, which is its self-check and stream moving from run to run (the next section), and its
+  copies took 86 s tonight against 66 s in the earlier night run.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
