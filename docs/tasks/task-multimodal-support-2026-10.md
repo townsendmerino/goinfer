@@ -3734,6 +3734,58 @@ Owner, 2026-10-11: S12 next, "Gemma 4 resident decode, then the towers, then the
 - **Tier and cost.** The tiny gates are quick and run by day. G-S12.1d and e are untimed and a few minutes each
   (G-E4B-1b took 147 s on Metal); by day. Nothing timed is in S12.0 or S12.1.
 
+#### S12.0, G-S12.0a read 2026-10-11: the defect is real and fixed; the bar holds at float32 KV only (raw `docs/measurements/multimodal-support-2026-10/s12-webgpu/`)
+
+- **Before the fix (`g-s12-0a-before.log`).** On the two-geometry tiny (a sliding layer of head_dim 16, a global one
+  of 512) `UploadKV` counted the global layer's rows by the sliding layer's width, 32 times over:
+  - a 7-token prefill was refused against the 128-position cap ("KV position 0(+224) exceeds resident context cap
+    128"), at every KV precision;
+  - a 3-token prefill went through at float32 (the bytes are right at base 0) and read 0.88-0.93 against the
+    sequential forward at `--kv i8`, whose rows were quantized in the wrong head groups.
+  The prediction ("float32 passes, i8 errors or is red") held for i8 and missed the float32 refusal.
+- **The fix (`75c070bb`):** `gpu/residency.go:residentDecoder.UploadKV` reads the layer's own geometry and refuses
+  floats that are not whole rows.
+- **After it (`g-s12-0a-after.log`).** Float32 KV: cosine 1.00000000 on every step at both prompt lengths (largest
+  difference 2e-07). **PASS.** With the model's geometry planted back, every precision is red (a refused upload at
+  7 tokens; i8 at 0.88-0.93 at 3).
+- **The registered bar does not hold at f16 or int8 KV, and that is not the geometry
+  (`g-s12-0a-after-first-bar.log`).** There the fixed code reads 0.9998-0.9999 at f16 and 0.9959-0.9998 at i8. A
+  model with one geometry (`testdata/llama-tiny`, which the old code handled correctly) reads the same way through
+  the same procedure: float32 exact, f16 0.99991-0.99996, i8 0.99982-0.99994.
+  - **Why, as far as I can say:** the two arms are not the same computation at a lossy KV precision. The resident's
+    own prefill attends over rows already quantized; the CPU prefill attends over exact rows, and its result is
+    quantized once on upload. I have not separated that from a rounding difference between the host's packing and
+    the device's.
+  - **Amended after the run, and flagged because it follows a failing reading:** the 0.999999 bar is float32 KV's
+    alone. At f16 and i8 the test holds a floor of 0.99, which the wrong geometry misses by a wide margin. The
+    existing float32 test never ran a lossy precision, so this bar was mine and it assumed something untrue.
+  - **Open:** i8 on the two-geometry model reads lower than the control at one step (0.9959 against 0.9998). Two
+    tiny random models; not explained.
+- **What it means:** a WebGPU image turn on a dense Gemma 4 (the bridge a bidirectional checkpoint takes) could not
+  have worked past a few tokens. Nothing ran it: no real dense Gemma 4 fits either box's WebGPU, and no test did.
+
+#### S12.0, G-S12.0b read 2026-10-11: PASS on both models, and a record that is not good news for Gemma 3's default tower
+
+The WebGPU server at `75c070bb`, the Mac, by day (12:27 to 12:36 PDT), `--embed-int4=false` on every arm; raw
+`0b-image/` and `0b-gemma3-tower/`.
+
+- **Gemma 3 4B, towers on the CPU: PASS.** The WebGPU arm `decode path: webgpu:metal-resident (int4)`; its reply
+  first differs from the CPU's at generated token 7 (CPU ' by' 0.499, ' broken' 0.437: a near-tie); the CPU repeat
+  IDENTICAL.
+- **Qwen2.5-VL-3B, tower on the CPU: PASS.** Resident on WebGPU; the reply IDENTICAL to the CPU's; the CPU repeat
+  IDENTICAL.
+- These are the first end-to-end image turns gated on WebGPU. The prediction (both pass, 0.7) held, and the arm
+  stayed resident by day.
+- **The record: Gemma 3's default on WebGPU, the int8 tower on the GPU, against the float32 CPU tower (both
+  decoding on WebGPU).** The replies differ at the first token, and not at a near-tie (the float32-tower arm puts
+  'The' at 0.985). The int8-tower reply reads the image wrongly: "a table comparing various regions of France ...
+  based on their average population density", where the float32-tower reply is "quarterly unit sales data broken
+  down by geographic region". One image, one request.
+  - It is the served face of a known figure: the int8 SigLIP is relative L2 0.16-0.52 from float32 at real size.
+    CUDA's default went to float32 for that on 2026-10-08; WebGPU kept int8 "until S12 gives it a float32 tower".
+  - **For the owner:** S12.3's float32 SigLIP moves to the front of the towers, and until it exists the default
+    under `--backend webgpu` could be the float32 CPU tower (slower, right) in place of the int8 GPU one.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.

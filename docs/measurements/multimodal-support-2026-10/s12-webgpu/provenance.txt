@@ -1,0 +1,4 @@
+binaries /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin rev 75c070bb
+started 2026-10-11 12:27:08 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+12:27  up 17 days,  2:22, 1 user, load averages: 5.15 5.23 4.13

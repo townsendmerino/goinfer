@@ -1,0 +1,85 @@
+=== RUN   TestUploadKV_perLayerGeometry
+=== RUN   TestUploadKV_perLayerGeometry/kv-f32/inside-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 2.384e-07
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_perLayerGeometry/kv-f32/past-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 1.192e-07
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 1.788e-07
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_perLayerGeometry/kv-f16/inside-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 0.99988361, max |diff| 0.0163
+    uploadkv_geom_test.go:116: decode step 0: cosine 0.99988361, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 0.99980392, max |diff| 0.01821
+    uploadkv_geom_test.go:116: decode step 2: cosine 0.99980392, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 0.99984491, max |diff| 0.01602
+    uploadkv_geom_test.go:116: decode step 3: cosine 0.99984491, want at least 0.999999
+=== RUN   TestUploadKV_perLayerGeometry/kv-f16/past-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 0.99916179, max |diff| 0.03359
+    uploadkv_geom_test.go:116: decode step 0: cosine 0.99916179, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 0.99983452, max |diff| 0.01657
+    uploadkv_geom_test.go:116: decode step 1: cosine 0.99983452, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 0.99984494, max |diff| 0.02588
+    uploadkv_geom_test.go:116: decode step 2: cosine 0.99984494, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 0.99984054, max |diff| 0.01945
+    uploadkv_geom_test.go:116: decode step 3: cosine 0.99984054, want at least 0.999999
+=== RUN   TestUploadKV_perLayerGeometry/kv-i8/inside-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 0.99980510, max |diff| 0.01735
+    uploadkv_geom_test.go:116: decode step 0: cosine 0.99980510, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 0.99981997, max |diff| 0.01916
+    uploadkv_geom_test.go:116: decode step 1: cosine 0.99981997, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 0.99980699, max |diff| 0.0184
+    uploadkv_geom_test.go:116: decode step 2: cosine 0.99980699, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 0.99901552, max |diff| 0.03707
+    uploadkv_geom_test.go:116: decode step 3: cosine 0.99901552, want at least 0.999999
+=== RUN   TestUploadKV_perLayerGeometry/kv-i8/past-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 0.99966236, max |diff| 0.02762
+    uploadkv_geom_test.go:116: decode step 0: cosine 0.99966236, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 0.99586655, max |diff| 0.08009
+    uploadkv_geom_test.go:116: decode step 1: cosine 0.99586655, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 0.99953661, max |diff| 0.02741
+    uploadkv_geom_test.go:116: decode step 2: cosine 0.99953661, want at least 0.999999
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 0.99979943, max |diff| 0.02013
+    uploadkv_geom_test.go:116: decode step 3: cosine 0.99979943, want at least 0.999999
+--- FAIL: TestUploadKV_perLayerGeometry (2.57s)
+    --- PASS: TestUploadKV_perLayerGeometry/kv-f32/inside-the-window (1.66s)
+    --- PASS: TestUploadKV_perLayerGeometry/kv-f32/past-the-window (0.22s)
+    --- FAIL: TestUploadKV_perLayerGeometry/kv-f16/inside-the-window (0.12s)
+    --- FAIL: TestUploadKV_perLayerGeometry/kv-f16/past-the-window (0.21s)
+    --- FAIL: TestUploadKV_perLayerGeometry/kv-i8/inside-the-window (0.12s)
+    --- FAIL: TestUploadKV_perLayerGeometry/kv-i8/past-the-window (0.21s)
+=== RUN   TestUploadKV_perLayerGeometry_planted
+=== RUN   TestUploadKV_perLayerGeometry_planted/kv-f32/inside-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 2.384e-07
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_perLayerGeometry_planted/kv-f32/past-the-window
+    uploadkv_geom_test.go:99: planted: UploadKV layer 1 refused: gpu: KV position 0(+224) exceeds resident context cap 128 — use the staged path for longer contexts
+=== RUN   TestUploadKV_perLayerGeometry_planted/kv-f16/inside-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 0.99988361, max |diff| 0.0163
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 0.99980392, max |diff| 0.01821
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 0.99984491, max |diff| 0.01602
+=== RUN   TestUploadKV_perLayerGeometry_planted/kv-f16/past-the-window
+    uploadkv_geom_test.go:99: planted: UploadKV layer 1 refused: gpu: KV position 0(+224) exceeds resident context cap 128 — use the staged path for longer contexts
+=== RUN   TestUploadKV_perLayerGeometry_planted/kv-i8/inside-the-window
+    uploadkv_geom_test.go:112: decode step 0: cosine(sequential, uploaded) = 0.92357442, max |diff| 0.4003
+    uploadkv_geom_test.go:112: decode step 1: cosine(sequential, uploaded) = 0.93111001, max |diff| 0.3662
+    uploadkv_geom_test.go:112: decode step 2: cosine(sequential, uploaded) = 0.88302085, max |diff| 0.4927
+    uploadkv_geom_test.go:112: decode step 3: cosine(sequential, uploaded) = 0.91491620, max |diff| 0.4325
+=== RUN   TestUploadKV_perLayerGeometry_planted/kv-i8/past-the-window
+    uploadkv_geom_test.go:99: planted: UploadKV layer 1 refused: gpu: KV position 0(+224) exceeds resident context cap 128 — use the staged path for longer contexts
+--- PASS: TestUploadKV_perLayerGeometry_planted (0.91s)
+    --- PASS: TestUploadKV_perLayerGeometry_planted/kv-f32/inside-the-window (0.12s)
+    --- PASS: TestUploadKV_perLayerGeometry_planted/kv-f32/past-the-window (0.18s)
+    --- PASS: TestUploadKV_perLayerGeometry_planted/kv-f16/inside-the-window (0.12s)
+    --- PASS: TestUploadKV_perLayerGeometry_planted/kv-f16/past-the-window (0.18s)
+    --- PASS: TestUploadKV_perLayerGeometry_planted/kv-i8/inside-the-window (0.12s)
+    --- PASS: TestUploadKV_perLayerGeometry_planted/kv-i8/past-the-window (0.20s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	4.041s
+FAIL

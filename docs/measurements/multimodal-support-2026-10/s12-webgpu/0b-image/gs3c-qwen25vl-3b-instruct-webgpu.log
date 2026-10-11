@@ -1,0 +1,26 @@
+stream-weights: transcoding qwen25vl-3b-instruct → qwen25vl-3b-instruct.int4.webgpu.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1793 MB) in 7s: stream 7.2s, self-check 0.0s
+swap guard (load): not armed for /Users/francistownsend-merino/models/qwen25vl-3b-instruct.int4.webgpu.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+decoder: .giw context capped at 67860 (model allows 128000) so that KV+scratch fits: needs ~4.91 GB of 5.91 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+webgpu: resident context 15168, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+loaded "qwen25vl-3b-instruct": 36-layer model (vocab 151936) in 2.271s [chat: chatml, thinking: unmanaged]
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+  head table: int8
+  context: 15168 tokens (backend default; model maximum 128000 — raise with --ctx) · KV f32
+  fit: 15168-token cap needs 1.0 GB KV (weights 1.7 GB, budget 3.9 GB, 2.9 GB left for a request's own prefill)
+  KV plan: 4 conversations x 15168 positions
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+loaded Qwen2.5-VL vision tower for "qwen25vl-3b-instruct" (merge 2, image-pad id 151655, tower on CPU) from /Users/francistownsend-merino/models/qwen25vl-3b-instruct
+"qwen25vl-3b-instruct" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18454 [chat:[qwen25vl-3b-instruct]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 62.5 MiB (text) / 94.5 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 4.87 GB swap-used
+vision: encoded a 59792-byte image in 27.957s (sha256 d4352b06); a resend of it will skip this
+
+shutting down…
