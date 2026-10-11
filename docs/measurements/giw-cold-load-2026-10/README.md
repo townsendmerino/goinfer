@@ -159,6 +159,50 @@ cell, 09:36 under the timing lock, by day (`gcl-mac-smoke.log`, the wrapper's sm
   start, which then read 0.44 of the old build's time for no reason of its own. `gcl_night.py` now evicts, checks the
   residency, retries for up to ten seconds, and fails the start if the bundle is not cold.
 
+## 8. The Linux gates, 2026-10-11: G-CL2 SHIP on both cells, G-CL3 and G-CL4 PASS
+
+`run-gcl-night-nobara.sh` on nobara, 09:14 to 09:35 (20.8 min; the queue was started by day), old `3e0e084f` against
+new `2d4b9630`, CPU backend, four pairs a cell in alternating order, the bundle evicted before every cold start.
+Records `gcl-nobara.jsonl`, `gcl-nobara.log`. Every cell's replies are the same text in every start.
+
+| gate | cell | new/old, first reply (pairs) | median | old to new | bar | verdict |
+|---|---|---|---|---|---|---|
+| G-CL2 | 35B MoE, cold | 0.597, 0.598, 0.597, 0.602 | **0.597** | 38.5 s to 23.0 s | ship at most 0.98 (expected 0.60-0.70) | **SHIP** |
+| G-CL2 | Mellum MoE, cold | 0.616, 0.602, 0.610, 0.616 | **0.613** | 12.6 s to 7.7 s | the same | **SHIP** |
+| G-CL3 | 7B dense, cold | 0.993, 0.998, 1.003, 1.008 | **1.001** | 8.96 s to 8.97 s | at most 1.02 | **PASS** |
+| G-CL4 | 35B paged, in a 16 GB memory scope | 0.967, 0.978, 0.974, 0.979 | **0.976** | 41.3 s to 40.3 s | at most 1.00 | **PASS** |
+
+- **G-CL2.** The new build announced its read-first in all four starts of both cells, and the bundle was 99-100%
+  resident when the server came up, against 92-93% for the old build's walk. The server is up 13.8 s sooner on the
+  35B and 4.6 s sooner on Mellum. The 35B's median is a hair under the expected range.
+- **G-CL3, the warm starts** (the file read into the page cache first), time to serving, new minus old:
+
+  | cell | pairs | median |
+  |---|---|---|
+  | 35B | +0.05, +0.05, -0.05, 0.00 s | +0.025 s |
+  | Mellum | -0.05, 0.00, +0.05, 0.00 s | 0.00 s |
+  | 7B | 0.00, 0.00, 0.00, -0.05 s | 0.00 s |
+
+  All within the 50 ms bar, and **the driver polls every 50 ms, so the bar is at the instrument's resolution**: these
+  rows show no slowdown of 100 ms or more, not one of 20. The warm first replies are level (0.991, 1.001, 0.999).
+  Neither build read anything from the disk by the time it served.
+- **G-CL4.** With the read-around off, the paged load had read **2.1%** of the file when it served (bar: at most a
+  tenth) against 92.8% for the old build, and the server was up 15.3 s sooner (25.3 s to 10.0 s). The first reply
+  finishes about a second earlier: inside the scope the weights cannot stay, so the old build's read of the whole file
+  bought it nothing.
+- **Noise, old against old:** Mellum's two pairs read 0.993 and 1.014. The 35B's read 0.925 and 1.008, and the first
+  of those is not a clean pair (next item).
+- **Three overlaps, all mine.** The session that queued this run also used the box while it ran, without looking at
+  the timing lock.
+  - 09:14:08 to 09:16:45: a 7 GB `rsync` of the Mellum bundle off nobara. It covers the first two starts of the 35B's
+    old-against-old cell, which read 43.3 s and 40.0 s where the next two read 38.8 s and 38.5 s. That pair (0.925) is
+    discarded. The graded 35B cell began at 09:17:56, after the copy ended.
+  - About 09:27: a 22 MB upload and a test that writes and reads a 64 MB file, inside the 35B's warm cell.
+  - About 09:35: a small upload and a 64 MB write, read and `sync`, inside the fourth pair of the does-not-fit cell
+    (0.979, level with the other three).
+  The graded cold cells of G-CL2 are clear of all three. The owner may still want the run repeated on a box left
+  alone.
+
 ## What is not measured
 
 - Any other filesystem. btrfs sets a large read-ahead window; a filesystem with a small one would make the default
@@ -175,6 +219,7 @@ cell, 09:36 under the timing lock, by day (`gcl-mac-smoke.log`, the wrapper's sm
 
 - `cold-a.sh`, `cold-b.sh`, `cold-c.sh`: the load alone, the cold start to a reply by advice mode, and the same with
   the shipped loader. `run.sh`, `run2.sh`, `run3.sh`: the three runs; `run1.log`, `run2.log`, `run3.log`: their output.
+- `gcl-nobara.jsonl`, `gcl-nobara.log`: section 8, the Linux gates' record.
 - `gcl_night.py`, `run-gcl-night-nobara.sh`, `run-gcl-night-mac.sh`: the night driver (Linux and macOS) and the two boxes'
   wrappers for the task's timed gates. `gcl-mac-smoke.log`: section 7's smoke.
 - `mac-a.sh`, `mac-c.sh`, `run-mac.sh`, `maccache.py`, `run-mac.log`: the Mac's step 0 (section 6). Its build is the same

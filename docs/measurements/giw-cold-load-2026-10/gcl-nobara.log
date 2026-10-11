@@ -1,0 +1,86 @@
+[09:15:01 +    0s] started 2026-10-11 09:15:01 PDT on nobara-pc
+[09:15:01 +    0s] estimate 45 min, expect done ~10:00
+[09:15:01 +    0s] binaries: serve-old: goinfer 3e0e084f (main before the cold-load change) | serve-new: goinfer 2d4b9630 (branch giw-cold-load-2026-10) | built 2026-10-11 on the MacBook for linux/amd64, go1.27.2, GOWORK=off -mod=readonly -trimpath, CGO off (CPU backend)
+[09:15:01 +    0s] cell aa-cold-35b (1/9): qwen3.6-35b-a3b-int4.giw, 20.0 GB, cold, 2 pair(s) of old and old
+[09:15:46 +   45s]   pair 1 old: serving at 29.3s, first reply done at 43.3s, read 18.59 GB by serving, 94% resident, read-first False
+[09:16:30 +   89s]   pair 1 old: serving at 26.2s, first reply done at 40.0s, read 18.59 GB by serving, 94% resident, read-first False
+[09:17:13 +  132s]   pair 2 old: serving at 25.6s, first reply done at 38.8s, read 18.59 GB by serving, 94% resident, read-first False
+[09:17:56 +  175s]   pair 2 old: serving at 25.2s, first reply done at 38.5s, read 18.59 GB by serving, 94% resident, read-first False
+[09:17:56 +  175s]   {"cell": "aa-cold-35b", "state": "cold", "arms": "old:old", "pairs": 2, "first_reply_b_over_a": [0.9246, 1.0075], "first_reply_b_over_a_median": 0.9661, "serving_b_minus_a_s": [-3.11, 0.33], "serving_b_minus_a_s_median": -1.39, "a_first_reply_s_median": 40.88, "b_first_reply_s_median": 39.4, "b_read_fraction_at_serving_max": 0.9275, "a_read_fraction_at_serving_max": 0.9275, "replies_identical": true}
+[09:17:56 +  175s] cell cold-35b (2/9): qwen3.6-35b-a3b-int4.giw, 20.0 GB, cold, 4 pair(s) of old and new
+[09:18:39 +  217s]   pair 1 old: serving at 25.3s, first reply done at 38.6s, read 18.59 GB by serving, 94% resident, read-first False
+[09:19:06 +  244s]   pair 1 new: serving at 11.4s, first reply done at 23.0s, read 19.88 GB by serving, 100% resident, read-first True
+[09:19:30 +  268s]   pair 2 new: serving at 11.3s, first reply done at 23.0s, read 19.88 GB by serving, 100% resident, read-first True
+[09:20:09 +  308s]   pair 2 old: serving at 25.2s, first reply done at 38.4s, read 18.59 GB by serving, 94% resident, read-first False
+[09:20:52 +  351s]   pair 3 old: serving at 25.2s, first reply done at 38.5s, read 18.59 GB by serving, 94% resident, read-first False
+[09:21:19 +  377s]   pair 3 new: serving at 11.4s, first reply done at 23.0s, read 19.88 GB by serving, 100% resident, read-first True
+[09:21:43 +  402s]   pair 4 new: serving at 11.4s, first reply done at 23.1s, read 19.88 GB by serving, 100% resident, read-first True
+[09:22:23 +  441s]   pair 4 old: serving at 25.1s, first reply done at 38.3s, read 18.59 GB by serving, 94% resident, read-first False
+[09:22:23 +  441s]   {"cell": "cold-35b", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.5967, 0.5978, 0.5969, 0.6016], "first_reply_b_over_a_median": 0.5974, "serving_b_minus_a_s": [-13.89, -13.89, -13.8, -13.65], "serving_b_minus_a_s_median": -13.845, "a_first_reply_s_median": 38.45, "b_first_reply_s_median": 23.0, "b_read_fraction_at_serving_max": 0.9917, "a_read_fraction_at_serving_max": 0.9275, "replies_identical": true}
+[09:22:23 +  441s] cell aa-cold-mellum (3/9): mellum2.int4.giw, 7.1 GB, cold, 2 pair(s) of old and old
+[09:22:36 +  455s]   pair 1 old: serving at 9.0s, first reply done at 12.7s, read 6.50 GB by serving, 92% resident, read-first False
+[09:22:50 +  469s]   pair 1 old: serving at 8.9s, first reply done at 12.6s, read 6.50 GB by serving, 92% resident, read-first False
+[09:23:04 +  483s]   pair 2 old: serving at 9.0s, first reply done at 12.7s, read 6.50 GB by serving, 92% resident, read-first False
+[09:23:19 +  497s]   pair 2 old: serving at 8.8s, first reply done at 12.5s, read 6.50 GB by serving, 92% resident, read-first False
+[09:23:19 +  497s]   {"cell": "aa-cold-mellum", "state": "cold", "arms": "old:old", "pairs": 2, "first_reply_b_over_a": [0.9929, 1.0136], "first_reply_b_over_a_median": 1.0032, "serving_b_minus_a_s": [-0.1, 0.16], "serving_b_minus_a_s_median": 0.03, "a_first_reply_s_median": 12.62, "b_first_reply_s_median": 12.65, "b_read_fraction_at_serving_max": 0.9207, "a_read_fraction_at_serving_max": 0.9207, "replies_identical": true}
+[09:23:19 +  497s] cell cold-mellum (4/9): mellum2.int4.giw, 7.1 GB, cold, 4 pair(s) of old and new
+[09:23:33 +  511s]   pair 1 old: serving at 8.8s, first reply done at 12.6s, read 6.50 GB by serving, 92% resident, read-first False
+[09:23:42 +  520s]   pair 1 new: serving at 4.4s, first reply done at 7.8s, read 7.04 GB by serving, 100% resident, read-first True
+[09:23:50 +  528s]   pair 2 new: serving at 4.3s, first reply done at 7.7s, read 7.04 GB by serving, 100% resident, read-first True
+[09:24:03 +  542s]   pair 2 old: serving at 9.0s, first reply done at 12.8s, read 6.50 GB by serving, 92% resident, read-first False
+[09:24:17 +  556s]   pair 3 old: serving at 8.9s, first reply done at 12.7s, read 6.50 GB by serving, 92% resident, read-first False
+[09:24:27 +  565s]   pair 3 new: serving at 4.4s, first reply done at 7.7s, read 7.04 GB by serving, 100% resident, read-first True
+[09:24:35 +  573s]   pair 4 new: serving at 4.4s, first reply done at 7.8s, read 7.04 GB by serving, 100% resident, read-first True
+[09:24:48 +  586s]   pair 4 old: serving at 8.9s, first reply done at 12.6s, read 6.50 GB by serving, 92% resident, read-first False
+[09:24:48 +  586s]   {"cell": "cold-mellum", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.616, 0.6019, 0.6098, 0.6156], "first_reply_b_over_a_median": 0.6127, "serving_b_minus_a_s": [-4.47, -4.67, -4.57, -4.57], "serving_b_minus_a_s_median": -4.57, "a_first_reply_s_median": 12.64, "b_first_reply_s_median": 7.73, "b_read_fraction_at_serving_max": 0.9977, "a_read_fraction_at_serving_max": 0.9207, "replies_identical": true}
+[09:24:48 +  586s] cell cold-7b (5/9): 7b.giw, 4.8 GB, cold, 4 pair(s) of old and new
+[09:24:57 +  596s]   pair 1 old: serving at 1.4s, first reply done at 9.0s, read 1.03 GB by serving, 22% resident, read-first False
+[09:25:07 +  606s]   pair 1 new: serving at 1.4s, first reply done at 8.9s, read 1.03 GB by serving, 22% resident, read-first False
+[09:25:17 +  616s]   pair 2 new: serving at 1.4s, first reply done at 8.9s, read 1.03 GB by serving, 22% resident, read-first False
+[09:25:27 +  626s]   pair 2 old: serving at 1.4s, first reply done at 9.0s, read 1.03 GB by serving, 22% resident, read-first False
+[09:25:37 +  636s]   pair 3 old: serving at 1.4s, first reply done at 9.0s, read 1.03 GB by serving, 22% resident, read-first False
+[09:25:47 +  645s]   pair 3 new: serving at 1.4s, first reply done at 9.0s, read 1.03 GB by serving, 22% resident, read-first False
+[09:25:57 +  655s]   pair 4 new: serving at 1.4s, first reply done at 9.0s, read 1.03 GB by serving, 22% resident, read-first False
+[09:26:07 +  665s]   pair 4 old: serving at 1.4s, first reply done at 8.9s, read 1.03 GB by serving, 22% resident, read-first False
+[09:26:07 +  665s]   {"cell": "cold-7b", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.9933, 0.9978, 1.0033, 1.0078], "first_reply_b_over_a_median": 1.0006, "serving_b_minus_a_s": [0.0, 0.04, 0.0, 0.01], "serving_b_minus_a_s_median": 0.005, "a_first_reply_s_median": 8.96, "b_first_reply_s_median": 8.97, "b_read_fraction_at_serving_max": 0.2152, "a_read_fraction_at_serving_max": 0.2152, "replies_identical": true}
+[09:26:07 +  665s] cell warm-35b (6/9): qwen3.6-35b-a3b-int4.giw, 20.0 GB, warm, 4 pair(s) of old and new
+[09:26:24 +  682s]   pair 1 old: serving at 0.5s, first reply done at 13.0s, read 0.00 GB by serving, 100% resident, read-first False
+[09:26:40 +  698s]   pair 1 new: serving at 0.6s, first reply done at 12.9s, read 0.00 GB by serving, 100% resident, read-first False
+[09:26:56 +  715s]   pair 2 new: serving at 0.6s, first reply done at 12.9s, read 0.00 GB by serving, 100% resident, read-first False
+[09:27:13 +  731s]   pair 2 old: serving at 0.6s, first reply done at 13.0s, read 0.00 GB by serving, 100% resident, read-first False
+[09:27:29 +  748s]   pair 3 old: serving at 0.6s, first reply done at 13.0s, read 0.00 GB by serving, 100% resident, read-first False
+[09:27:45 +  764s]   pair 3 new: serving at 0.5s, first reply done at 12.7s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:02 +  780s]   pair 4 new: serving at 0.5s, first reply done at 12.9s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:18 +  797s]   pair 4 old: serving at 0.5s, first reply done at 13.0s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:18 +  797s]   {"cell": "warm-35b", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.9908, 0.9923, 0.9792, 0.9908], "first_reply_b_over_a_median": 0.9908, "serving_b_minus_a_s": [0.05, 0.05, -0.05, 0.0], "serving_b_minus_a_s_median": 0.025, "a_first_reply_s_median": 13.0, "b_first_reply_s_median": 12.88, "b_read_fraction_at_serving_max": 0.0, "a_read_fraction_at_serving_max": 0.0, "replies_identical": true}
+[09:28:18 +  797s] cell warm-mellum (7/9): mellum2.int4.giw, 7.1 GB, warm, 4 pair(s) of old and new
+[09:28:23 +  802s]   pair 1 old: serving at 0.2s, first reply done at 3.8s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:28 +  807s]   pair 1 new: serving at 0.2s, first reply done at 3.8s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:33 +  812s]   pair 2 new: serving at 0.2s, first reply done at 3.8s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:38 +  817s]   pair 2 old: serving at 0.2s, first reply done at 3.8s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:43 +  822s]   pair 3 old: serving at 0.2s, first reply done at 3.8s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:48 +  827s]   pair 3 new: serving at 0.2s, first reply done at 3.8s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:53 +  832s]   pair 4 new: serving at 0.2s, first reply done at 3.7s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:58 +  837s]   pair 4 old: serving at 0.2s, first reply done at 3.7s, read 0.00 GB by serving, 100% resident, read-first False
+[09:28:58 +  837s]   {"cell": "warm-mellum", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [1.0027, 1.0, 0.9947, 1.0081], "first_reply_b_over_a_median": 1.0013, "serving_b_minus_a_s": [-0.05, 0.0, 0.05, 0.0], "serving_b_minus_a_s_median": 0.0, "a_first_reply_s_median": 3.77, "b_first_reply_s_median": 3.77, "b_read_fraction_at_serving_max": 0.0, "a_read_fraction_at_serving_max": 0.0, "replies_identical": true}
+[09:28:58 +  837s] cell warm-7b (8/9): 7b.giw, 4.8 GB, warm, 4 pair(s) of old and new
+[09:29:06 +  844s]   pair 1 old: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:13 +  851s]   pair 1 new: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:20 +  858s]   pair 2 new: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:27 +  866s]   pair 2 old: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:34 +  873s]   pair 3 old: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:41 +  880s]   pair 3 new: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:48 +  887s]   pair 4 new: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:56 +  894s]   pair 4 old: serving at 0.1s, first reply done at 6.3s, read 0.00 GB by serving, 100% resident, read-first False
+[09:29:56 +  894s]   {"cell": "warm-7b", "state": "warm", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [1.0032, 1.0, 0.9984, 0.9937], "first_reply_b_over_a_median": 0.9992, "serving_b_minus_a_s": [0.0, 0.0, 0.0, -0.05], "serving_b_minus_a_s_median": 0.0, "a_first_reply_s_median": 6.31, "b_first_reply_s_median": 6.31, "b_read_fraction_at_serving_max": 0.0, "a_read_fraction_at_serving_max": 0.0, "replies_identical": true}
+[09:29:56 +  894s] cell nofit-35b (9/9): qwen3.6-35b-a3b-int4.giw, 20.0 GB, cold, 4 pair(s) of old and new, in a 16 GB memory scope, args -stream-weights -weight-cache 8 -accept-slow
+[09:30:41 +  940s]   pair 1 old: serving at 25.4s, first reply done at 41.6s, read 18.59 GB by serving, 84% resident, read-first False
+[09:31:25 +  984s]   pair 1 new: serving at 9.9s, first reply done at 40.2s, read 0.42 GB by serving, 2% resident, read-first False
+[09:32:09 + 1028s]   pair 2 new: serving at 10.0s, first reply done at 40.3s, read 0.42 GB by serving, 2% resident, read-first False
+[09:32:54 + 1072s]   pair 2 old: serving at 25.2s, first reply done at 41.2s, read 18.59 GB by serving, 84% resident, read-first False
+[09:33:39 + 1117s]   pair 3 old: serving at 25.3s, first reply done at 41.2s, read 18.59 GB by serving, 84% resident, read-first False
+[09:34:23 + 1161s]   pair 3 new: serving at 9.9s, first reply done at 40.1s, read 0.42 GB by serving, 2% resident, read-first False
+[09:35:06 + 1205s]   pair 4 new: serving at 10.1s, first reply done at 40.6s, read 0.42 GB by serving, 2% resident, read-first False
+[09:35:51 + 1250s]   pair 4 old: serving at 25.4s, first reply done at 41.5s, read 18.59 GB by serving, 84% resident, read-first False
+[09:35:51 + 1250s]   {"cell": "nofit-35b", "state": "cold", "arms": "old:new", "pairs": 4, "first_reply_b_over_a": [0.9673, 0.9777, 0.9738, 0.9785], "first_reply_b_over_a_median": 0.9758, "serving_b_minus_a_s": [-15.57, -15.22, -15.36, -15.26], "serving_b_minus_a_s_median": -15.31, "a_first_reply_s_median": 41.34, "b_first_reply_s_median": 40.25, "b_read_fraction_at_serving_max": 0.021, "a_read_fraction_at_serving_max": 0.9276, "replies_identical": true}
+[09:35:51 + 1250s] finished in 20.8 min: every start ran and each cell's replies are the same

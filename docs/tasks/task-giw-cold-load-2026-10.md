@@ -1,8 +1,7 @@
 # Task — the cold load of a `.giw`: read an MoE bundle deliberately, or not at all (2026-10)
 
-**Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). G-CL1 PASS.
-The timed gates G-CL2, G-CL3 and G-CL4 are queued on nobara for the night and **not read**; the kill rule below still
-applies to what is on `main`. Step 0 (the Mac's measurement) is read (below), and **the darwin pre-read is built** from it (§ "The darwin
+**Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). **Every Linux
+gate is read: G-CL1 PASS, G-CL2 SHIP on both MoE cells (0.597 and 0.613), G-CL3 PASS, G-CL4 PASS.** Step 0 (the Mac's measurement) is read (below), and **the darwin pre-read is built** from it (§ "The darwin
 pre-read": G-CLd1 PASS; its timed cells are queued on the Mac for the night and not read).
 The measurements that scope it are exploratory ([record](../measurements/giw-cold-load-2026-10/README.md)); the gates
 below were registered before any code. Owner decisions: § Decisions.
@@ -100,7 +99,13 @@ N: four pairs a cell, fixed, no early stop. Ambiguous band: parked results go to
   nothing used, the compiler removed the loop, and the file sampled 0% resident after it. On nobara it has to be run
   with its temporary directory on the disk: `/tmp` there is memory-backed, and the test skips where a file cannot be
   made cold.
-- **Queued for the night on nobara:** `docs/measurements/giw-cold-load-2026-10/run-gcl-night-nobara.sh` (driver
+- **The timed gates read, 2026-10-11 (the record's section 8): G-CL2 SHIP on both cells** (time to a first reply,
+  new over old: 0.597 on the 35B, 38.5 s to 23.0 s; 0.613 on Mellum, 12.6 s to 7.7 s), **G-CL3 PASS** (the dense 7B
+  cold 1.001; every warm start within 50 ms, which is also the driver's resolution), **G-CL4 PASS** (the paged 35B in
+  a 16 GB scope reads 2.1% of the file by the time it serves and reaches its first reply at 0.976 of the old
+  build's). The kill rule does not fire; L1 and L2 stay. The run was disturbed three times by the session that
+  queued it; the record names the minutes and the cells, and the graded cold cells are clear of them.
+- **As queued:** `docs/measurements/giw-cold-load-2026-10/run-gcl-night-nobara.sh` (driver
   `gcl_night.py`, old `3e0e084f` and new `2d4b9630` as pinned binaries). The does-not-fit cell is the 35B paged
   (`-stream-weights -weight-cache 8`) inside a 16 GB memory scope, evicted first so the scope is charged for what it
   reads.

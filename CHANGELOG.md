@@ -31,9 +31,10 @@ Loading a `.giw` walks every matrix's header through the file's mapping, and the
 bundle of thousands of small expert matrices that walk read nearly the whole file in scattered pieces. On Linux the load now
 decides before the walk: an MoE bundle that is not in the page cache and fits in memory with room is read front to back first (the
 load says so on stderr); one that is paged with `--stream-weights`, or larger than the installed memory, has the read-around turned
-off for the walk; a dense bundle and a file already in the page cache load as before. No weight or logit changes. In exploratory
-runs on one Linux box (btrfs) a cold Qwen3.6 35B reached its first reply in 24 s instead of 38 s and Mellum in 8 s instead of
-12.7 s; the gates are registered and not yet read ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
+off for the walk; a dense bundle and a file already in the page cache load as before. No weight or logit changes. In
+its gate on one Linux box (btrfs, NVMe, CPU backend, four interleaved pairs a cell) a cold Qwen3.6 35B reached its first reply in
+23.0 s instead of 38.5 s (0.597) and Mellum in 7.7 s instead of 12.6 s (0.613); a dense 7B was level (1.001), and a paged 35B that
+cannot stay in memory read 2% of its file at load instead of 93% ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
 
 ### Fixed — a MoE model with `--moe-cache-experts` on CUDA gave a repeated prompt a different answer than a fresh one
 
