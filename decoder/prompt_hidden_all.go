@@ -29,6 +29,18 @@ import (
 // The batched paths are bounded against the sequential one by TestPromptHiddenAll_batchedMatchesSequential; they are not claimed bit-identical,
 // since a batched matmul may reduce in another order than its matvec.
 func (m *Model) PromptHiddenAll(ctx context.Context, prompt []int) ([][]float32, error) {
+	parent := ctx
+	ctx, done, err := m.enterCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	out, err := m.promptHiddenAll(ctx, prompt)
+	return out, m.closeErr(parent, err)
+}
+
+// promptHiddenAll is PromptHiddenAll without the lifecycle guard (lifecycle.go).
+func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32, error) {
 	if len(prompt) == 0 {
 		return nil, fmt.Errorf("decoder.PromptHiddenAll: empty prompt")
 	}
@@ -127,6 +139,16 @@ func splitRows(flat []float32, k, hidden int) [][]float32 {
 // joint head averages these over each option's tokens, docs/measurements/decisions-d10-clef-2026-10-02.md). The row is read from the weights as LOADED,
 // so a quantized load returns the dequantized row of the quantized weight: the quantization is part of the arm being run, not hidden from it.
 func (m *Model) OutputEmbeddingRow(id int, dst []float32) error {
+	_, done, err := m.enterCall(context.Background())
+	if err != nil {
+		return err
+	}
+	defer done()
+	return m.closeErr(context.Background(), m.outputEmbeddingRow(id, dst))
+}
+
+// outputEmbeddingRow is OutputEmbeddingRow without the lifecycle guard (lifecycle.go).
+func (m *Model) outputEmbeddingRow(id int, dst []float32) error {
 	a := m.w.arch
 	if id < 0 || id >= a.VocabSize {
 		return fmt.Errorf("decoder.OutputEmbeddingRow: token id %d outside the vocabulary [0, %d)", id, a.VocabSize)

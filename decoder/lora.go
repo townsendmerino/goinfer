@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -338,6 +339,16 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchem
 // a copy would load and validate cleanly and then silently apply nothing (runLayersLFM2 takes no lora parameter).
 // History: docs/code-notes/decoder.md#Model.LoadAdapter.
 func (m *Model) LoadAdapter(name, dir string) error {
+	_, done, err := m.enterCall(context.Background())
+	if err != nil {
+		return err
+	}
+	defer done()
+	return m.closeErr(context.Background(), m.loadAdapter(name, dir))
+}
+
+// loadAdapter is LoadAdapter without the lifecycle guard (lifecycle.go).
+func (m *Model) loadAdapter(name, dir string) error {
 	arch := m.w.arch
 	_, hasOwnForward := arch.ownForward()
 	switch {

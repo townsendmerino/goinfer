@@ -22,6 +22,17 @@ import (
 // Generic decode path only: families with their own runLayers return an error rather than a silently wrong vector, the
 // same contract and guard as ForwardCapture.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
+	_, done, err := m.enterCall(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	out, err := m.hiddenLast(ids)
+	return out, m.closeErr(context.Background(), err)
+}
+
+// hiddenLast is HiddenLast without the lifecycle guard (lifecycle.go).
+func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("decoder.HiddenLast: empty token sequence")
 	}
@@ -143,6 +154,18 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 // modules bounds the difference. ctx is checked between tokens (CPU) or at the backend's own granularity, so a long
 // prompt can be abandoned.
 func (m *Model) PromptHidden(ctx context.Context, prompt []int) ([]float32, error) {
+	parent := ctx
+	ctx, done, err := m.enterCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	out, err := m.promptHidden(ctx, prompt)
+	return out, m.closeErr(parent, err)
+}
+
+// promptHidden is PromptHidden without the lifecycle guard (lifecycle.go).
+func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, error) {
 	if len(prompt) == 0 {
 		return nil, fmt.Errorf("decoder.PromptHidden: empty prompt")
 	}

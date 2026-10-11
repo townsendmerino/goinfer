@@ -21,7 +21,8 @@ any surface may still change.
 (`panic: send on closed channel`, on a library goroutine that cannot be recovered); on a `.giw` model a `Generate` after
 `Close` was a SIGSEGV. `Close` now cancels every generation in flight, waits for each, and only then releases the weights
 and the device; a generation it ends reports the new `decoder.ErrClosed` from `Generation.Err`, and a generation started
-after `Close` is refused with the same error and a closed channel. The contract is written in
+after `Close` is refused with the same error and a closed channel; the calls that read the weights for a caller (`HiddenLast`,
+`PromptHidden*`, `PromptLogitsMany`, `ForwardCapture`, `OutputEmbeddingRow`, `NewBlockSpec`, `LoadAdapter`) are guarded the same way. The contract is written in
 [`docs/use-from-go.md`](docs/use-from-go.md#closing-a-model) and on `Model.Close`. The Metal case itself needs the Mac to
 confirm (`metal/close_during_generation_test.go`); the CUDA resident path is tested (`cuda/close_during_generation_test.go`).
 
