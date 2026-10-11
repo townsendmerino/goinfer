@@ -1,5 +1,5 @@
 #!/bin/bash
-# The Mac's night run for docs/tasks/task-giw-cold-load-2026-10.md, "The darwin pre-read": G-CLd2 (the cold start on
+# The Mac's night run for docs/completed/task-giw-cold-load-2026-10.md, "The darwin pre-read": G-CLd2 (the cold start on
 # the CPU and on Metal) and G-CLd3 (the warm starts), with old and new Metal-module servers as pinned binaries
 # (bin/BUILD.txt names the revisions), plus an old-against-old pair on one CPU and one Metal cell for the noise.
 # The dense and Metal bundles are built here, in the scratch directory, at the weights format both servers read.

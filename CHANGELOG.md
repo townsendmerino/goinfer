@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — on an amd64 CPU without AVX2, a quantized model no longer stops with an illegal instruction
+
+The activation quantizer that every quantized matmul runs called its AVX2 kernels with no CPU check, so on an amd64 CPU without
+AVX2 (or under an OS that does not save the wide registers) the first quantized forward crashed. It now takes the scalar path
+there. On a CPU with AVX2 the output is unchanged, and arm64 is not touched. The fix is aikit v1.67.1, which every module now
+pins; aikit tested it under an emulated pre-AVX2 CPU, and goinfer has not been run on such a machine.
+
 ### Changed — on macOS a cold `.giw` that fits in memory is prefetched before a load on the CPU
 
 macOS reads little around a page fault, so a cold bundle's first reply was slow for a different reason than on Linux: the CPU decode
@@ -23,7 +30,7 @@ of the available memory is now prefetched (`MADV_WILLNEED` over its mapping), de
 as before. On a 16 GB Mac in use that means small bundles. No weight or logit changes. In its gate on one 16 GB MacBook (four
 interleaved pairs a cell) a cold 7 GB MoE reached its first reply in 5.4 s instead of 8.8 s and a dense 7B in 4.1 s instead of
 5.5 s. A load on Metal is left as it was: with the same prefetch the 7B's first reply came 4% later (3.87 s against 3.73 s), so the
-gate's kill rule took it off Metal ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
+gate's kill rule took it off Metal ([`docs/completed/task-giw-cold-load-2026-10.md`](docs/completed/task-giw-cold-load-2026-10.md)).
 
 ### Changed — a cold MoE `.giw` is read front to back before it is loaded (Linux)
 
@@ -34,7 +41,7 @@ load says so on stderr); one that is paged with `--stream-weights`, or larger th
 off for the walk; a dense bundle and a file already in the page cache load as before. No weight or logit changes. In
 its gate on one Linux box (btrfs, NVMe, CPU backend, four interleaved pairs a cell) a cold Qwen3.6 35B reached its first reply in
 23.0 s instead of 38.5 s (0.597) and Mellum in 7.7 s instead of 12.6 s (0.613); a dense 7B was level (1.001), and a paged 35B that
-cannot stay in memory read 2% of its file at load instead of 93% ([`docs/tasks/task-giw-cold-load-2026-10.md`](docs/tasks/task-giw-cold-load-2026-10.md)).
+cannot stay in memory read 2% of its file at load instead of 93% ([`docs/completed/task-giw-cold-load-2026-10.md`](docs/completed/task-giw-cold-load-2026-10.md)).
 
 ### Fixed — a MoE model with `--moe-cache-experts` on CUDA gave a repeated prompt a different answer than a fresh one
 

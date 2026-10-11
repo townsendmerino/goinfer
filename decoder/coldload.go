@@ -7,7 +7,7 @@ import (
 )
 
 // What a .giw load does about the page cache before it walks the bundle's matrix headers. Two systems, two reasons
-// (docs/tasks/task-giw-cold-load-2026-10.md has the measurements and the gates):
+// (docs/completed/task-giw-cold-load-2026-10.md has the measurements and the gates):
 //
 //   - Linux reads megabytes around every page fault, so on a bundle of thousands of small matrices (an MoE's experts)
 //     the walk is a scattered read of nearly the whole file.

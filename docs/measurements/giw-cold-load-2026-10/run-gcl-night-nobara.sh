@@ -1,5 +1,5 @@
 #!/bin/bash
-# nobara's night run for docs/tasks/task-giw-cold-load-2026-10.md: the timed gates G-CL2 (the MoE cold start), G-CL3
+# nobara's night run for docs/completed/task-giw-cold-load-2026-10.md: the timed gates G-CL2 (the MoE cold start), G-CL3
 # (the dense cold start and every warm start) and G-CL4 (the bundle that does not fit: the 35B paged, in a 16 GB
 # memory scope), each with old and new CPU servers as pinned binaries (bin/BUILD.txt names the revisions), plus an
 # old-against-old pair of cold starts on each MoE bundle for the noise. Estimate: 45 min.

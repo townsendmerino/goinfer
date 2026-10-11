@@ -2,7 +2,7 @@
 
 A by-product of the 30B self-check investigation (`../giw-v16-transcode-2026-10/README.md`, "The 30B's self-check,
 investigated"): a bundle that is not in the page cache loaded in 20 s without the CRC and in 10 s with it. This
-record is the follow-up. The task it scopes is `docs/tasks/task-giw-cold-load-2026-10.md`.
+record is the follow-up. The task it scopes is `docs/completed/task-giw-cold-load-2026-10.md`.
 
 Everything here is **exploratory**: two repetitions a cell, one box, by day under the timing lock, no gate. nobara
 (Ryzen 7 3700X, 62 GB, NVMe, **btrfs with `compress=zstd:1`**), CPU backend, weights format v16, goinfer `92391e9a`
@@ -73,7 +73,7 @@ for 20 GB.
 
 ## 5. After the build: one start of each build (exploratory)
 
-The change of `docs/tasks/task-giw-cold-load-2026-10.md` as built (`2d4b9630`) against `main` before it (`3e0e084f`), the
+The change of `docs/completed/task-giw-cold-load-2026-10.md` as built (`2d4b9630`) against `main` before it (`3e0e084f`), the
 35B evicted before each start, one start each, 08:51 under the timing lock:
 
 | build | server up | first reply done | the load's read-first line |

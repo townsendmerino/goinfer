@@ -1,5 +1,5 @@
 #!/bin/bash
-# Step 0 of docs/tasks/task-giw-cold-load-2026-10.md on the Mac (exploratory, no bar), part A: the cold load alone,
+# Step 0 of docs/completed/task-giw-cold-load-2026-10.md on the Mac (exploratory, no bar), part A: the cold load alone,
 # by read-ahead mode. Before each load the bundle is dropped from memory with msync(MS_INVALIDATE) and its residency
 # checked; after it, the residency is read again.
 set -uo pipefail
