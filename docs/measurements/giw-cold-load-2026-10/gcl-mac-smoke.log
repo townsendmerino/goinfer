@@ -1,0 +1,12 @@
+[09:33:57 +    0s] started 2026-10-11 09:33:57 PDT on macbookpro.lan
+[09:33:57 +    0s] estimate 2 min, expect done ~09:35
+[09:33:57 +    0s] binaries: serve-old: goinfer ac85083a (main before the darwin pre-read), metal module (serves the CPU backend too) | serve-new: goinfer 3533a383 (branch giw-cold-load-darwin-2026-10), metal module | prequant: goinfer 360bc020 (weights format v16) | built 2026-10-11 on the MacBook, go1.27.2, -trimpath
+[09:33:57 +    0s] cell smoke-cold-mellum-cpu (1/2): mellum2.int4.giw, 7.1 GB, cpu, cold, 1 pair(s) of old and new
+[09:34:07 +   10s]   pair 1 old: serving at 1.7s, first reply done at 9.7s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:34:16 +   19s]   pair 1 new: serving at 1.8s, first reply done at 8.9s, read -0.00 GB by serving, 6% resident, read-first False, cpu (int4) [int4 layout: canonical (qkv)]
+[09:34:16 +   19s]   {"cell": "smoke-cold-mellum-cpu", "state": "cold", "arms": "old:new", "pairs": 1, "first_reply_b_over_a": [0.9181], "first_reply_b_over_a_median": 0.9181, "serving_b_minus_a_s": [0.07], "serving_b_minus_a_s_median": 0.07, "a_first_reply_s_median": 9.65, "b_first_reply_s_median": 8.86, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 0, "decode_paths": ["cpu (int4) [int4 layout: canonical (qkv)]"], "replies_identical": true}
+[09:34:16 +   19s] cell smoke-cold-1.5b-metal (2/2): 15b.metal.giw, 1.2 GB, metal, cold, 1 pair(s) of old and new
+[09:34:18 +   21s]   pair 1 old: serving at 0.8s, first reply done at 1.6s, read -0.00 GB by serving, 13% resident, read-first False, metal-resident (int4)
+[09:34:20 +   23s]   pair 1 new: serving at 1.2s, first reply done at 1.6s, read -0.00 GB by serving, 100% resident, read-first True, metal-resident (int4)
+[09:34:20 +   23s]   {"cell": "smoke-cold-1.5b-metal", "state": "cold", "arms": "old:new", "pairs": 1, "first_reply_b_over_a": [0.9938], "first_reply_b_over_a_median": 0.9938, "serving_b_minus_a_s": [0.37], "serving_b_minus_a_s_median": 0.37, "a_first_reply_s_median": 1.61, "b_first_reply_s_median": 1.6, "b_read_fraction_at_serving_max": -0.0, "a_read_fraction_at_serving_max": -0.0, "b_read_first_announced": 1, "decode_paths": ["metal-resident (int4)"], "replies_identical": true}
+[09:34:20 +   23s] finished in 0.4 min: every start ran and each cell's replies are the same

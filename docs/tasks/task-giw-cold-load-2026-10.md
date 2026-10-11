@@ -2,8 +2,8 @@
 
 **Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). G-CL1 PASS.
 The timed gates G-CL2, G-CL3 and G-CL4 are queued on nobara for the night and **not read**; the kill rule below still
-applies to what is on `main`. Step 0 (the Mac's measurement) is read (below): macOS has no read-around problem, and a pre-read helps there for a
-different reason; nothing is built for darwin yet.
+applies to what is on `main`. Step 0 (the Mac's measurement) is read (below), and **the darwin pre-read is built** from it (§ "The darwin
+pre-read": G-CLd1 PASS; its timed cells are queued on the Mac for the night and not read).
 The measurements that scope it are exploratory ([record](../measurements/giw-cold-load-2026-10/README.md)); the gates
 below were registered before any code. Owner decisions: § Decisions.
 
@@ -120,6 +120,62 @@ The record's section 6 (exploratory, CPU backend, by day on the owner's word):
   not only small-matrix MoEs), most loads on the Mac are on Metal, which this did not measure, and 16 GB makes "fits"
   the sharp edge. It needs its own gates, registered before its code: § Decisions, 4.
 
+## The darwin pre-read (registered 2026-10-11, before any code)
+
+**What:** on macOS, before the matrix walk, a bundle that is not in the page cache and fits with room (the Linux
+rule's three quarters of the available memory, and not paged against a budget) is prefetched with `MADV_WILLNEED` over
+its whole mapping. Any bundle, dense or MoE: step 0 measured a gain on both. Nothing is done about the read-around
+(L2), which step 0 found has nothing to do there. The rule lives beside Linux's as a per-system policy; Linux's does
+not change.
+
+**Why not the Linux read-through:** touching the mapping a page at a time is what makes the CRC take 8-11 s on the
+Mac. `MADV_WILLNEED` read 7 GB in 2.5 s in step 0.
+
+Tier: day for G-CLd1; night for the timed cells, on the Mac. Instrument: `gcl_night.py` made to run on darwin (evict
+with `msync(MS_INVALIDATE)`, residency with `mincore`), old and new Metal-module servers as pinned binaries (they
+serve the CPU backend too), arms interleaved in alternating order. Noise: step 0's pairs repeat within 1.3 s on
+8-10 s for Mellum's default and within 0.7 s on the 7B's, by day; an old-against-old pair of cells is run with the
+gate. N: four pairs a cell, fixed. Ambiguous band: parked results go to the owner.
+
+- **G-CLd1, nothing numeric moves (day).** `gate identity <base> <new>` on the tiny assets, on the CPU and on Metal:
+  every family that runs is byte-identical. The rule's table for the darwin policy; `Load` through each plan with the
+  darwin policy on a real tiny bundle, dense included; and on darwin a test of the real calls (a file dropped from
+  memory, prefetched, sampled resident).
+- **G-CLd2, the cold start (the Mac, night).** Time from process start to the first finished reply, new over old.
+
+  | cell | expected | ship | park | off |
+  |---|---|---|---|---|
+  | Mellum MoE, CPU | 0.40-0.60 | at most 0.98 | 0.98-1.00 | above 1.00 |
+  | 7B dense, CPU | 0.55-0.75 | the same | | |
+  | 7B, Metal | none (unmeasured) | the same | | |
+  | 1.5B, Metal | none (unmeasured) | the same | | |
+
+  A cell in which the new build did not prefetch (the bundle did not fit with room that night) is not run, and a cell
+  that is not run is not a pass.
+- **G-CLd3, no harm.** The warm start of each of the four cells (the file in the page cache): the load is at most
+  50 ms slower. The does-not-fit and paged cases are held by tests through the seams (the action asserted): nothing
+  is done.
+- **Kill rules.** If a Metal cell is above 1.00, the pre-read is not applied to a Metal load. If a CPU cell parks or
+  fails, it is not shipped for the CPU either.
+
+### Built, 2026-10-11
+
+- The rule is now a per-system policy (`decoder/coldload.go:coldLoadPolicy`): `coldPolicyLinux` is the rule above,
+  unchanged; `coldPolicyDarwin` covers any bundle, reads first with `MADV_WILLNEED` (`decoder/coldload_darwin.go`), and
+  never touches the read-around. `prepareColdLoad` asks for the memory figures only for a cold bundle.
+- **G-CLd1: PASS.** `gate identity ac85083a 3533a383` on the tiny assets: CPU 37 of 43 families IDENTICAL, Metal 25
+  of 43, none different (the rest have no usable tiny fixture or do not build resident on Metal). The tests named in
+  the gate pass, on the Mac and, for Linux's policy, natively on nobara; with the prefetch replaced by a no-op,
+  planted, `TestColdLoad_darwinProbesAndActions` fails.
+- **A smoke by day** (the record's section 7, exploratory, one pair): the 1.5B on Metal prefetched and was level
+  (1.6 s against 1.6 s); the Mellum cell did not prefetch because 7 GB did not fit in the 5 GB available, as the rule
+  intends.
+- **Queued for the night on the Mac:** `docs/measurements/giw-cold-load-2026-10/run-gcl-night-mac.sh`. A registered
+  cell whose bundle does not fit with room that night will read NOT RUN: Mellum needs about 9.4 GB available and the
+  7B about 6.4 GB.
+- The driver's eviction now checks itself: straight after a Metal server exits the drop does nothing for a moment,
+  and the first smoke's "cold" Metal start was warm.
+
 ## Decisions
 
 **Decided 2026-10-11 (owner: "yes build it", on the recommendations):** a plain read, not the CRC; Linux first, the Mac
@@ -130,7 +186,9 @@ measured before it gets any change; one reader.
 2. **Linux first, darwin after its own measurement** (recommended), or hold both until the Mac is measured.
 3. **One reader or several?** One sequential pass is what is measured (about 1.75 GB/s here). Several readers may be
    faster on NVMe; it would be its own gate, after L1.
-4. **A darwin pre-read (open, from step 0).** Register gates and build it, or leave the Mac as it is. If built: for
+4. **A darwin pre-read (from step 0). Decided 2026-10-11: build it** (owner: "yes fix this for macos"). Its gates are
+   § "The darwin pre-read", registered before its code. As first written:
+   **A darwin pre-read (open, from step 0).** Register gates and build it, or leave the Mac as it is. If built: for
    any bundle that is cold and fits with room, `MADV_WILLNEED` over the mapping before the walk; cells on the CPU and
    on Metal, a dense and an MoE bundle, with the cold time to a first reply as the measure and a warm start and a
    does-not-fit case as the no-harm cells. Recommended: yes, as its own registered step, with the Metal cells

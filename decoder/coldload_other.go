@@ -1,10 +1,9 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package decoder
 
-// coldLoadSupported: off Linux the load does nothing about the page cache. No other system's read-around is measured.
-// A variable so a test can run the plan, with its probes and actions replaced, on any system.
-var coldLoadSupported = false
+// coldPolicyHere: on a system that is not measured, the load does nothing about the page cache.
+var coldPolicyHere = coldLoadPolicy{}
 
 func giwResidentFraction(mapping []byte) float64 { return 1 }
 

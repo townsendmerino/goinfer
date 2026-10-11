@@ -137,6 +137,28 @@ here (4.77 GB). The 35B is not run on this box. Exploratory, two repetitions.
 - Not measured here: the Metal backend, which is how most loads on this box run and which binds the mapping's pages
   into GPU buffers; a bundle that does not fit in 16 GB; a quiet box.
 
+## 7. After the darwin build: a two-cell smoke (exploratory), and a cold start that was not cold
+
+The darwin pre-read as built (`3533a383`) against `main` before it (`ac85083a`), Metal-module servers, one pair a
+cell, 09:36 under the timing lock, by day (`gcl-mac-smoke.log`, the wrapper's smoke mode):
+
+| cell | build | server up | first reply done | the bundle at serving | prefetched |
+|---|---|---|---|---|---|
+| Mellum MoE, CPU | old | 1.7 s | 9.7 s | 6% resident | |
+| | new | 1.8 s | 8.9 s | 6% resident | **no** |
+| 1.5B, Metal | old | 0.8 s | 1.6 s | 13% resident | |
+| | new | 1.2 s | 1.6 s | 100% resident | yes |
+
+- **The Mellum cell did not prefetch, correctly.** The bundle is 7.1 GB and the box had about 5 GB available by day;
+  the rule reads first only what fits in three quarters of that. On a 16 GB Mac in use, the pre-read is for small
+  bundles.
+- **On the 1.5B on Metal the one pair is level:** the prefetch added 0.4 s to the load and the reply was 0.4 s
+  shorter. One pair shows the change acting; the night's four pairs and the 7B decide the Metal cells.
+- **A first smoke is discarded: its second start was not cold.** Straight after a Metal server exits, its pages are
+  still wired for a moment and `msync(MS_INVALIDATE)` drops nothing: the bundle was 93% resident before the "cold"
+  start, which then read 0.44 of the old build's time for no reason of its own. `gcl_night.py` now evicts, checks the
+  residency, retries for up to ten seconds, and fails the start if the bundle is not cold.
+
 ## What is not measured
 
 - Any other filesystem. btrfs sets a large read-ahead window; a filesystem with a small one would make the default
@@ -153,7 +175,8 @@ here (4.77 GB). The 35B is not run on this box. Exploratory, two repetitions.
 
 - `cold-a.sh`, `cold-b.sh`, `cold-c.sh`: the load alone, the cold start to a reply by advice mode, and the same with
   the shipped loader. `run.sh`, `run2.sh`, `run3.sh`: the three runs; `run1.log`, `run2.log`, `run3.log`: their output.
-- `gcl_night.py`, `run-gcl-night-nobara.sh`: the night driver and wrapper for the task's timed gates.
+- `gcl_night.py`, `run-gcl-night-nobara.sh`, `run-gcl-night-mac.sh`: the night driver (Linux and macOS) and the two boxes'
+  wrappers for the task's timed gates. `gcl-mac-smoke.log`: section 7's smoke.
 - `mac-a.sh`, `mac-c.sh`, `run-mac.sh`, `maccache.py`, `run-mac.log`: the Mac's step 0 (section 6). Its build is the same
   advice switch through darwin's `madvise` system call.
 - `xp-advice.patch.txt`: the experimental loader's change (a scratch build, not committed). `cachestat.py`: how much
