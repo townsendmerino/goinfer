@@ -894,15 +894,16 @@ Metal bundle):
   three. That is a sanity check, not a proof of every expert.
 
 **In place.** Each rebuild now sits under its existing name, because 37 to 62 files in this repository name each of the
-large ones; `…-int4-v12.giw` therefore names a v16 file. Every old file is kept beside its replacement as
-`<name>.pre-v16`, with its marker:
+large ones; `…-int4-v12.giw` therefore names a v16 file. Every old file was first kept beside its replacement as
+`<name>.pre-v16`, with its marker (deleted the next morning, below):
 
 - nobara `~/models`: the two Gemma 4 bundles, `qwen3.6-35b-a3b-int4.giw` and `mellum2.int4.giw`. All four load from
   their final paths on the v16 build with the digests above.
 - the archive: `gemma4-26b-int4-v14st.metal.giw` and `qwen3.6-35b-a3b-int4-v12.giw`, copied with their markers, byte
   counts matched.
-- Left for the owner: the six `.pre-v16` files (60 GB on nobara's NVMe, 38 GB in the archive), which no current build
-  reads, and the two source directories now also in nobara's `~/models` (72 GB).
+- **2026-10-11: the six `.pre-v16` files were deleted on the owner's word**, after a check that each replacement was
+  in place. The older formats of these five bundles no longer exist on either box or in the archive. The two source
+  directories copied to nobara's `~/models` (72 GB) stay.
 - A build from before Part V no longer reads these five names.
 
 ## Files

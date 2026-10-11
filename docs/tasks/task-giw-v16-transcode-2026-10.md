@@ -799,7 +799,8 @@ hand-built bundles are rebuilt by the session that lands V ("I rebuild them").
   nobara's `qwen3.6-35b-a3b-int4.giw` from `qwen3.6-35b-a3b-Q8_0.gguf`, not from the Q4_K_M one (the archive's
   `…-int4-v12.giw` is the Q4_K_M build). All five are plain int4 with an int8 embedding and the canonical layout,
   one of them for the Metal target. Each was rebuilt at v16 from the source its header names, compared with the old
-  file by digest, and put in place under its existing name; the old files are kept beside them as `<name>.pre-v16`.
+  file by digest, and put in place under its existing name. The old files were kept beside them as `<name>.pre-v16`
+  until 2026-10-11, when they were deleted on the owner's word.
 
 **Amended 2026-10-10, after T3:** Decision 5, second part. Asked "can we have another thread do this as bytes are
 written", and offered the size rule alone, the size rule with a trailing reader, or the trailing reader alone, the
