@@ -1739,3 +1739,7 @@ type dnetRunParams struct {
 // show that v_norm is what moves the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test
 // seam; never in production.
 var g4DropVNormForTest bool
+
+// uploadKVModelGeomForTest makes UploadKV size and group every layer's rows by the model's geometry, ignoring a layer's
+// own, so a test can show that reads wrong on a model with two.
+var uploadKVModelGeomForTest bool
