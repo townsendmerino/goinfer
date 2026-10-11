@@ -9,11 +9,12 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
-// TestPlanColdLoad is the rule, row by row: a bundle is read first only when it is small-matrix, cold and fits with
-// room; its read-around is turned off only when it certainly cannot stay; everything else is left alone.
+// TestPlanColdLoad is the rule, row by row: a bundle is read first only when the policy covers it, it is cold and it
+// fits with room; one that certainly cannot stay is never read first, and has its read-around turned off only where
+// the policy says that matters; everything else is left alone.
 func TestPlanColdLoad(t *testing.T) {
 	const gb = int64(1) << 30
-	base := coldLoadFacts{smallMatrices: true, residentFrac: 0, fileBytes: 20 * gb, availBytes: 60 * gb, ramBytes: 62 * gb}
+	base := coldLoadFacts{qualifies: true, dropReadAround: true, residentFrac: 0, fileBytes: 20 * gb, availBytes: 60 * gb, ramBytes: 62 * gb}
 	with := func(edit func(*coldLoadFacts)) coldLoadFacts { f := base; edit(&f); return f }
 	for _, c := range []struct {
 		name string
@@ -21,7 +22,7 @@ func TestPlanColdLoad(t *testing.T) {
 		want coldLoadAction
 	}{
 		{"cold, fits with room", base, coldLoadReadFirst},
-		{"a dense bundle", with(func(f *coldLoadFacts) { f.smallMatrices = false }), coldLoadNothing},
+		{"a bundle the policy does not cover", with(func(f *coldLoadFacts) { f.qualifies = false }), coldLoadNothing},
 		{"already in the page cache", with(func(f *coldLoadFacts) { f.residentFrac = 1 }), coldLoadNothing},
 		{"half in the page cache is warm", with(func(f *coldLoadFacts) { f.residentFrac = coldResidentWarm }), coldLoadNothing},
 		{"just under half is cold", with(func(f *coldLoadFacts) { f.residentFrac = 0.49 }), coldLoadReadFirst},
@@ -34,10 +35,42 @@ func TestPlanColdLoad(t *testing.T) {
 		{"available memory unknown", with(func(f *coldLoadFacts) { f.availBytes = 0 }), coldLoadNothing},
 		{"both sizes unknown", with(func(f *coldLoadFacts) { f.availBytes, f.ramBytes = 0, 0 }), coldLoadNothing},
 		{"an empty mapping", with(func(f *coldLoadFacts) { f.fileBytes = 0 }), coldLoadNothing},
+		// A policy with a small read-around never turns it off, and never reads first what cannot stay.
+		{"small read-around: cold, fits with room", with(func(f *coldLoadFacts) { f.dropReadAround = false }), coldLoadReadFirst},
+		{"small read-around: larger than the installed memory", with(func(f *coldLoadFacts) { f.dropReadAround = false; f.availBytes = 12 * gb; f.ramBytes = 16 * gb }), coldLoadNothing},
+		{"small read-around: paged", with(func(f *coldLoadFacts) { f.dropReadAround = false; f.paged = true }), coldLoadNothing},
 	} {
 		if got := planColdLoad(c.f); got != c.want {
 			t.Errorf("%s: plan %d, want %d (facts %+v)", c.name, got, c.want, c.f)
 		}
+	}
+}
+
+// TestColdLoadPolicy_qualifies: Linux's policy covers only a small-matrix MoE, darwin's every bundle, and a system with
+// no policy none.
+func TestColdLoadPolicy_qualifies(t *testing.T) {
+	const gb = int64(1) << 30
+	moe := &Architecture{NumLayers: 40, MoE: &MoEConfig{NumExperts: 256}}
+	dense := &Architecture{NumLayers: 28}
+	for _, c := range []struct {
+		name   string
+		policy coldLoadPolicy
+		arch   *Architecture
+		want   bool
+	}{
+		{"linux, a small-matrix MoE", coldPolicyLinux, moe, true},
+		{"linux, a dense model", coldPolicyLinux, dense, false},
+		{"darwin, a small-matrix MoE", coldPolicyDarwin, moe, true},
+		{"darwin, a dense model", coldPolicyDarwin, dense, true},
+		{"no policy, an MoE", coldLoadPolicy{}, moe, false},
+		{"no policy, a dense model", coldLoadPolicy{}, dense, false},
+	} {
+		if got := c.policy.qualifies(c.arch, 20*gb); got != c.want {
+			t.Errorf("%s: qualifies = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if !coldPolicyLinux.dropReadAround || coldPolicyDarwin.dropReadAround {
+		t.Errorf("the read-around is turned off under Linux's policy (%v) and not under darwin's (%v)", coldPolicyLinux.dropReadAround, coldPolicyDarwin.dropReadAround)
 	}
 }
 
@@ -66,33 +99,27 @@ func TestExpertMatricesAreSmall(t *testing.T) {
 	}
 }
 
-// coldLoadCalls drives Load on a baked tiny bundle with the plan switched on and its probes and actions replaced, and
-// returns what the load did to the page cache, in order.
-func coldLoadCalls(t *testing.T, path string, opts Options, resident float64, avail, ram int64) []string {
+// coldLoadCalls drives Load on a baked tiny bundle under policy, with the probes and actions replaced, and returns
+// what the load did to the page cache, in order, and how many times it asked how much memory is available.
+func coldLoadCalls(t *testing.T, policy coldLoadPolicy, path string, opts Options, resident float64, avail, ram int64) (calls []string, memProbes int) {
 	t.Helper()
 	fi, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var calls []string
 	wantLen := int(fi.Size())
 	check := func(mapping []byte) {
 		if len(mapping) != wantLen {
 			t.Errorf("the action was given %d bytes, want the whole mapping of %d", len(mapping), wantLen)
 		}
 	}
-	saved := []any{coldLoadSupported, coldResidentFraction, coldAvailBytes, coldRAMBytes, coldReadThrough, coldAdviseReadAround}
+	savedPolicy, savedRes, savedAvail, savedRAM, savedRead, savedAdvise := coldPolicy, coldResidentFraction, coldAvailBytes, coldRAMBytes, coldReadThrough, coldAdviseReadAround
 	t.Cleanup(func() {
-		coldLoadSupported = saved[0].(bool)
-		coldResidentFraction = saved[1].(func([]byte) float64)
-		coldAvailBytes = saved[2].(func() int64)
-		coldRAMBytes = saved[3].(func() int64)
-		coldReadThrough = saved[4].(func([]byte))
-		coldAdviseReadAround = saved[5].(func([]byte, bool))
+		coldPolicy, coldResidentFraction, coldAvailBytes, coldRAMBytes, coldReadThrough, coldAdviseReadAround = savedPolicy, savedRes, savedAvail, savedRAM, savedRead, savedAdvise
 	})
-	coldLoadSupported = true
+	coldPolicy = policy
 	coldResidentFraction = func(m []byte) float64 { check(m); return resident }
-	coldAvailBytes = func() int64 { return avail }
+	coldAvailBytes = func() int64 { memProbes++; return avail }
 	coldRAMBytes = func() int64 { return ram }
 	coldReadThrough = func(m []byte) { check(m); calls = append(calls, "read through") }
 	coldAdviseReadAround = func(m []byte, on bool) {
@@ -104,7 +131,7 @@ func coldLoadCalls(t *testing.T, path string, opts Options, resident float64, av
 		t.Fatalf("load: %v", err)
 	}
 	m.Close()
-	return calls
+	return calls, memProbes
 }
 
 // bakeTiny writes the fixture at dir as an int4 .giw and returns its path.
@@ -126,52 +153,47 @@ func bakeTiny(t *testing.T, dir string) string {
 	return p
 }
 
-// TestLoad_coldLoadPlan: Load acts on the plan, on a real MoE bundle. A cold bundle that fits is read through once
-// and nothing else; one in the page cache is left alone; one larger than the box, or paged, has its read-around
-// turned off and then back on. A dense bundle is never touched, whatever the probes say.
+// TestLoad_coldLoadPlan: Load acts on the plan, on real bundles, under each system's policy.
+//
+// Linux's: a cold MoE bundle that fits is read through once and nothing else; one in the page cache is left alone; one
+// larger than the box, or paged, has its read-around turned off and then back on; a dense bundle is never touched.
+// darwin's: a cold bundle that fits is read through, dense or MoE; one that cannot stay, or is paged, is left alone,
+// and its read-around is never touched. Under either, a warm bundle is not asked how much memory there is.
 func TestLoad_coldLoadPlan(t *testing.T) {
 	const huge, tiny = int64(1) << 50, int64(1)
 	moe := bakeTiny(t, "../testdata/qwen3moe-tiny")
+	dense := bakeTiny(t, "../testdata/llama-tiny")
+	readThrough, offOn := []string{"read through"}, []string{"read-around off", "read-around on"}
 	for _, c := range []struct {
 		name       string
+		policy     coldLoadPolicy
+		bundle     string
 		opts       Options
 		resident   float64
 		avail, ram int64
 		want       []string
 	}{
-		{"cold and fits", Options{}, 0, huge, huge, []string{"read through"}},
-		{"in the page cache", Options{}, 1, huge, huge, nil},
-		{"larger than the installed memory", Options{}, 0, tiny, tiny, []string{"read-around off", "read-around on"}},
-		{"paged", Options{StreamWeights: true}, 0, huge, huge, []string{"read-around off", "read-around on"}},
-		{"fits the box, not with room", Options{}, 0, tiny, huge, nil},
+		{"linux, MoE, cold and fits", coldPolicyLinux, moe, Options{}, 0, huge, huge, readThrough},
+		{"linux, MoE, in the page cache", coldPolicyLinux, moe, Options{}, 1, huge, huge, nil},
+		{"linux, MoE, larger than the installed memory", coldPolicyLinux, moe, Options{}, 0, tiny, tiny, offOn},
+		{"linux, MoE, paged", coldPolicyLinux, moe, Options{StreamWeights: true}, 0, huge, huge, offOn},
+		{"linux, MoE, fits the box but not with room", coldPolicyLinux, moe, Options{}, 0, tiny, huge, nil},
+		{"linux, dense, cold and fits", coldPolicyLinux, dense, Options{}, 0, huge, huge, nil},
+		{"linux, dense, paged and larger than the box", coldPolicyLinux, dense, Options{StreamWeights: true}, 0, tiny, tiny, nil},
+		{"darwin, MoE, cold and fits", coldPolicyDarwin, moe, Options{}, 0, huge, huge, readThrough},
+		{"darwin, dense, cold and fits", coldPolicyDarwin, dense, Options{}, 0, huge, huge, readThrough},
+		{"darwin, dense, in the page cache", coldPolicyDarwin, dense, Options{}, 1, huge, huge, nil},
+		{"darwin, MoE, larger than the installed memory", coldPolicyDarwin, moe, Options{}, 0, tiny, tiny, nil},
+		{"darwin, MoE, paged", coldPolicyDarwin, moe, Options{StreamWeights: true}, 0, huge, huge, nil},
+		{"darwin, dense, fits the box but not with room", coldPolicyDarwin, dense, Options{}, 0, tiny, huge, nil},
+		{"no policy, MoE, cold and fits", coldLoadPolicy{}, moe, Options{}, 0, huge, huge, nil},
 	} {
-		if got := coldLoadCalls(t, moe, c.opts, c.resident, c.avail, c.ram); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("MoE bundle, %s: the load did %v, want %v", c.name, got, c.want)
+		got, probes := coldLoadCalls(t, c.policy, c.bundle, c.opts, c.resident, c.avail, c.ram)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: the load did %v, want %v", c.name, got, c.want)
 		}
-	}
-	dense := bakeTiny(t, "../testdata/llama-tiny")
-	if got := coldLoadCalls(t, dense, Options{}, 0, huge, huge); got != nil {
-		t.Errorf("dense bundle, cold and fits: the load did %v, want nothing", got)
-	}
-	if got := coldLoadCalls(t, dense, Options{StreamWeights: true}, 0, tiny, tiny); got != nil {
-		t.Errorf("dense bundle, paged and larger than the box: the load did %v, want nothing", got)
-	}
-}
-
-// TestLoad_coldLoadOffWhereUnsupported: where the plan is not supported, Load asks nothing of the page cache.
-func TestLoad_coldLoadOffWhereUnsupported(t *testing.T) {
-	moe := bakeTiny(t, "../testdata/qwen3moe-tiny")
-	saved, savedRead := coldLoadSupported, coldReadThrough
-	t.Cleanup(func() { coldLoadSupported, coldReadThrough = saved, savedRead })
-	coldLoadSupported = false
-	called := false
-	coldReadThrough = func([]byte) { called = true }
-	m, err := Load(moe, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.Close()
-	if called {
-		t.Error("the bundle was read through with the plan unsupported")
+		if c.resident >= coldResidentWarm && probes != 0 {
+			t.Errorf("%s: a warm bundle asked for the available memory %d time(s), want none", c.name, probes)
+		}
 	}
 }

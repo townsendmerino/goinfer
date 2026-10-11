@@ -8,9 +8,8 @@ import (
 	"unsafe"
 )
 
-// coldLoadSupported: the plan is measured on Linux and runs there. A variable so a test can run the plan, with its
-// probes and actions replaced, on any system.
-var coldLoadSupported = true
+// coldPolicyHere is this system's rule.
+var coldPolicyHere = coldPolicyLinux
 
 // coldResidentSamples is how many evenly spaced pages giwResidentFraction asks the kernel about.
 const coldResidentSamples = 512
@@ -37,7 +36,8 @@ func giwResidentFraction(mapping []byte) float64 {
 	return float64(resident) / float64(n)
 }
 
-// giwReadThrough touches every page of mapping in order, so the kernel reads the file front to back.
+// giwReadThrough brings mapping into the page cache: it touches every page in order, so the kernel reads the file
+// front to back. (MADV_WILLNEED over a whole mapping is honoured for one read-ahead window here.)
 func giwReadThrough(mapping []byte) { _ = sumOnePerPage(mapping, os.Getpagesize()) }
 
 // sumOnePerPage adds up one byte of every page. It is not inlined, so the sum is a result a caller might use and the
