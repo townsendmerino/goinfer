@@ -175,10 +175,11 @@ def selftest():
 CRATERS = [(1030, 5), (1300, 10), (1300, 15)]
 
 
-def compare(base_json, arm_json):
+def compare(base_json, arm_json, margin=1e-4):
     """Registered rule: Q if every crater has r <= 0.25 (the craters are quantization sensitivity); P if every r >= 0.75 (the craters
     survive without that quantization: the window path, or a difference present in both arms); M otherwise. Control: at the short
-    positions 300 and 600 the arm's last-layer cosine must be no worse than the int8int8 arm's, or the arm is suspect (class X)."""
+    positions 300 and 600 the arm's last-layer cosine must be no worse than the int8int8 arm's by more than `margin`, or the arm is suspect
+    (class X). The margin is 1e-4 as registered for A2 and A3; A4 registers a wider one."""
     b, a = json.load(open(base_json)), json.load(open(arm_json))
     pos = b["positions"]
     assert pos == a["positions"], "the two dumps are not of the same positions"
@@ -193,7 +194,7 @@ def compare(base_json, arm_json):
     ctl = [(p, b["cos"][last][pos.index(p)], a["cos"][last][pos.index(p)]) for p in (300, 600)]
     for p, cb, ca in ctl:
         print(f"control position {p} last layer: int8int8 {cb:.5f}, arm {ca:.5f}")
-    if any(ca < cb - 1e-4 for _, cb, ca in ctl):
+    if any(ca < cb - margin for _, cb, ca in ctl):
         print("CLASS X: the arm is worse than int8int8 at the short control positions: suspect, no reading")
     elif all(r <= 0.25 for r in rs):
         print("CLASS Q: every crater is gone without int8 activations/weights: quantization sensitivity, not the window path")
@@ -225,7 +226,17 @@ def selftest_compare():
             with contextlib.redirect_stdout(buf):
                 compare(d + "/b.json", d + "/a.json")
             assert want in buf.getvalue(), (want, buf.getvalue())
-    print("selftest ok: compare returns Q, P, M and X on the four synthetic arms")
+    # the margin is a parameter: a control 5e-4 worse is X at the registered 1e-4 and not at 1e-3 (then the crater rule decides)
+    near = mk({(1030, 5): 0.9999, (1300, 10): 0.9990, (1300, 15): 0.9990})
+    near["cos"][27][1] = 0.9999 - 5e-4
+    with tempfile.TemporaryDirectory() as d:
+        json.dump(base, open(d + "/b.json", "w")); json.dump(near, open(d + "/a.json", "w"))
+        for m, want in ((1e-4, "CLASS X"), (1e-3, "CLASS Q")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                compare(d + "/b.json", d + "/a.json", m)
+            assert want in buf.getvalue(), (m, want, buf.getvalue())
+    print("selftest ok: compare returns Q, P, M and X on the four synthetic arms, and honours its margin")
 
 
 if __name__ == "__main__":
@@ -233,8 +244,8 @@ if __name__ == "__main__":
         selftest()
     elif len(sys.argv) == 6 and sys.argv[1] == "run":
         run(*sys.argv[2:])
-    elif len(sys.argv) == 4 and sys.argv[1] == "compare":
-        compare(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) in (4, 5) and sys.argv[1] == "compare":
+        compare(sys.argv[2], sys.argv[3], float(sys.argv[4]) if len(sys.argv) == 5 else 1e-4)
     elif len(sys.argv) == 2 and sys.argv[1] == "selftest-compare":
         selftest_compare()
     else:
