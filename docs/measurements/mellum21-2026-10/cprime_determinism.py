@@ -41,12 +41,13 @@ def http(path, body=None, timeout=600):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def ask(model, prompt):
-    body = {"model": model, "stream": False, "temperature": 0, "max_tokens": MAXTOK, "logprobs": True, "top_logprobs": 3,
+def ask(model, prompt, maxtok=MAXTOK):
+    body = {"model": model, "stream": False, "temperature": 0, "max_tokens": maxtok, "logprobs": True, "top_logprobs": 3,
             "chat_template_kwargs": {"enable_thinking": False}, "messages": [{"role": "user", "content": prompt}]}
-    c = json.load(http("/v1/chat/completions", body))["choices"][0]
+    resp = json.load(http("/v1/chat/completions", body))
+    c = resp["choices"][0]
     toks = [{"token": x["token"], "logprob": x["logprob"], "top": [(t["token"], t["logprob"]) for t in x["top_logprobs"]]} for x in (c.get("logprobs") or {}).get("content") or []]
-    return {"text": c["message"].get("content") or "", "toks": toks}
+    return {"text": c["message"].get("content") or "", "toks": toks, "reused": resp.get("usage", {}).get("prefill_reused_tokens", 0)}
 
 
 def ask_stream(model, prompt, maxtok):
@@ -64,7 +65,7 @@ def ask_stream(model, prompt, maxtok):
     return {"text": "".join(text), "toks": []}
 
 
-def session(binary, model_dir, tag, flags, env, order, outdir, stream=False):
+def session(binary, model_dir, tag, flags, env, order, outdir, stream=False, by_request=False):
     log = open(os.path.join(outdir, f"serve-{tag}.log"), "w")
     cmd = [binary, "--model", model_dir, "--backend", "cuda", "--ctx", "2048", "--addr", f"127.0.0.1:{PORT}"] + flags
     p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True, env={**os.environ, **env})
@@ -91,7 +92,7 @@ def session(binary, model_dir, tag, flags, env, order, outdir, stream=False):
         out = {}
         for k, pi in enumerate(order):
             r = ask_stream(model, PROMPTS[pi], 128) if stream else ask(model, PROMPTS[pi])
-            out[(pi, k) if stream else pi] = r
+            out[(pi, k) if stream else (k if by_request else pi)] = r
             print(f"  {tag} request {k} prompt {pi}: {len(r['text'])} chars", flush=True)
         return out
     finally:
@@ -178,6 +179,42 @@ def selftest():
     print("selftest ok")
 
 
+def grade_c4(res):
+    """C4: which in-session state makes C' differ from itself? Sessions R (resident) and S (C'), requests A B A A (A = prompt 0, B = prompt 1), non-streamed.
+    res: tag -> {k -> {text, reused}} for k = 0..3. Returns (lines, verdict)."""
+    lines = []
+    def t(tag, k):
+        return res[tag][k]["text"]
+    ru = [res["S"][k]["reused"] for k in range(4)]
+    lines.append(f"C4 S prefill_reused_tokens per request (A B A A): {ru}")
+    if not (ru[0] == 0 and ru[2] == 0 and ru[3] > 0):
+        return lines + ["C4 VERDICT: VOID: the reuse pattern is not the one the design needs (A#1 and A#3 cold, A#4 reused)"], "VOID"
+    r_all = t("R", 0) == t("R", 2) == t("R", 3)
+    a13, a34 = t("S", 0) == t("S", 2), t("S", 2) == t("S", 3)
+    lines.append(f"C4 R resident: A#1 == A#3 == A#4: {r_all}")
+    lines.append(f"C4 S: A#1 == A#3 (both cold, different expert-cache state): {a13}; A#3 == A#4 (cold against reused): {a34}")
+    if a13 and not a34:
+        v = "REUSE-DEPENDENT: the repeated prompt (prefix reuse) differs from the cold one, whatever the expert cache holds"
+    elif not a13:
+        v = "CACHE-STATE-DEPENDENT: two cold requests of one prompt differ"
+    else:
+        v = "NOT REPRODUCED: A#1, A#3 and A#4 are all equal in C' here"
+    lines.append(f"C4 VERDICT: {v}" + ("" if r_all else " [resident control NOT constant]"))
+    return lines, v
+
+
+def selftest_c4():
+    mk = lambda text, reused=0: {"text": text, "reused": reused}
+    same = {0: mk("a"), 1: mk("b"), 2: mk("a"), 3: mk("a", 100)}
+    assert grade_c4({"R": same, "S": same})[1].startswith("NOT REPRODUCED")
+    reuse = {0: mk("a"), 1: mk("b"), 2: mk("a"), 3: mk("a2", 100)}
+    assert grade_c4({"R": same, "S": reuse})[1].startswith("REUSE-DEPENDENT")
+    cache = {0: mk("a"), 1: mk("b"), 2: mk("a3"), 3: mk("a3", 100)}
+    assert grade_c4({"R": same, "S": cache})[1].startswith("CACHE-STATE-DEPENDENT")
+    assert grade_c4({"R": same, "S": {0: mk("a"), 1: mk("b"), 2: mk("a", 5), 3: mk("a", 100)}})[1] == "VOID"
+    print("selftest c4 ok")
+
+
 def grade_c3(res):
     """Follow-up C's own history: P0 x3, P1 x3, P2 x3, streamed, text only. res: tag -> {(prompt, k) -> {text}}."""
     lines = []
@@ -209,7 +246,19 @@ def selftest_c3():
 def main():
     if "--selftest" in sys.argv:
         selftest()
-        return selftest_c3()
+        selftest_c3()
+        return selftest_c4()
+    if "--c4" in sys.argv:
+        binary, model_dir, outdir = [a for a in sys.argv[1:] if not a.startswith("--")][:3]
+        os.makedirs(outdir, exist_ok=True)
+        res = {}
+        for tag, flags in (("R", []), ("S", ["--moe-cache-experts"])):
+            res[tag] = session(binary, model_dir, tag, flags, {}, [0, 1, 0, 0], outdir, by_request=True)
+        json.dump({t: {str(k): v for k, v in r.items()} for t, r in res.items()}, open(os.path.join(outdir, "sessions.json"), "w"))
+        lines, _ = grade_c4(res)
+        print("\n".join(lines))
+        open(os.path.join(outdir, "result.txt"), "w").write("\n".join(lines) + "\n")
+        return
     if "--c-history" in sys.argv:
         binary, model_dir, outdir = [a for a in sys.argv[1:] if not a.startswith("--")][:3]
         os.makedirs(outdir, exist_ok=True)
