@@ -1,0 +1,23 @@
+=== RUN   TestGemma4EModel_webgpuResidentParity
+    gemma4_emodel_test.go:157:   pos  0 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=241
+    gemma4_emodel_test.go:157:   pos  1 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=157
+    gemma4_emodel_test.go:157:   pos  2 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=114
+    gemma4_emodel_test.go:157:   pos  3 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.887118  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:157:   pos  4 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=9
+    gemma4_emodel_test.go:157:   pos  5 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=16
+    gemma4_emodel_test.go:157:   pos  6 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=111
+    gemma4_emodel_test.go:157:   pos  7 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.741181  argmax cpu=174 webgpu=174
+    gemma4_emodel_test.go:157:   pos  8 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:157:   pos  9 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=129
+    gemma4_emodel_test.go:157:   pos 10 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=64
+    gemma4_emodel_test.go:157:   pos 11 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=135
+    gemma4_emodel_test.go:157:   pos 12 WebGPU-vs-CPUint4 0.999881 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=254
+    gemma4_emodel_test.go:157:   pos 13 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.715923  argmax cpu=140 webgpu=140
+    gemma4_emodel_test.go:157:   pos 14 WebGPU-vs-CPUint4 0.999919 | CPUint4-vs-f32 0.712461  argmax cpu=155 webgpu=244
+    gemma4_emodel_test.go:157:   pos 15 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.829194  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:157:   pos 16 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=4
+    gemma4_emodel_test.go:157:   pos 17 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:157: E-model G1: exact argmax 17/18, gaps over 3%: 0, worst near-tie 0.32% | mean WebGPU-vs-CPUint4 0.999989 (min 0.999881), mean CPUint4-vs-f32 0.777695
+--- PASS: TestGemma4EModel_webgpuResidentParity (1.60s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	2.158s

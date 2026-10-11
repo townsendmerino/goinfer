@@ -15,6 +15,21 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
+
+The two small Gemma 4 models ran on the CPU for the whole model under WebGPU. They now decode resident on the GPU, text, image
+and audio turns alike; the vision and audio towers still run on the CPU there. On one MacBook, against the CPU decoder at int4:
+E2B agrees with it as closely as a reference model does (96.3% of positions against 95.6%); E4B agrees at 93.1%, 2.5 points under
+that reference, which is the level it reads on CUDA. A served image request on E2B gave a correct reply that first differs from
+the CPU's at a token the CPU itself was 75% sure of, so replies under WebGPU can differ from the CPU's in wording
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.1).
+
+### Fixed — an image turn on a dense Gemma 4 under WebGPU could not upload its prefill
+
+The upload that carries a CPU-prefilled image turn to the GPU used one attention shape for every layer, so on a model whose
+layers differ it refused a prefill of a few tokens and grouped an int8 KV cache wrongly. No shipped checkpoint that fits a
+tested box took that path; it is fixed before one does.
+
 ### Fixed — a zero `decoder.Options` loads a cpu-arm64 `.giw`
 
 `decoder.Load(path, Options{})` on a `.giw` prequantized for cpu-arm64 failed with "Backend \"\" needs canonical bytes —

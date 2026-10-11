@@ -45,6 +45,9 @@
   - The paged CUDA arm of Qwen3-VL MoE: FAIL under A2 on one of two requests.
 - **Next (owner, 2026-10-11):** S12 (WebGPU), in the order "Gemma 4 resident decode, then the towers, then the
   release-binary question"; its desk map, order and first gates are in S12. S15 (video) is parked for now.
+  - S12.0 and S12.1 are done: E2B and E4B decode resident on WebGPU, shipped on the owner's word with E4B's text
+    gate parked and one served image request red under the near-tie rule. Next is S12.2 (the 26B's FFN) or S12.3
+    (the towers, a float32 SigLIP first).
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -69,9 +72,9 @@ The last phase puts the answer where users look first, the README, with a check 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
 | Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | GPU (int8) / GPU |
-| Gemma 4 E2B | CPU / CPU | GPU / GPU, batched image prefill (S9 on CUDA) | GPU / GPU, layer-major prefill (S9) | CPU / CPU |
-| Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU / GPU | CPU / CPU |
-| Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | validated (S6: G-E4B-1b, G-E4B-2, 2026-10-11; towers on the CPU in the gate) | CPU / CPU |
+| Gemma 4 E2B | CPU / CPU | GPU / GPU, batched image prefill (S9 on CUDA) | GPU / GPU, layer-major prefill (S9) | CPU / GPU (S12.1, 2026-10-11) |
+| Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU / GPU | CPU / GPU (S12.1; served on E2B) |
+| Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | validated (S6: G-E4B-1b, G-E4B-2, 2026-10-11; towers on the CPU in the gate) | CPU / GPU (S12.1; its text gate parked at -2.48 points, shipped on the owner's word) |
 | Gemma 4 26B | CPU / CPU | GPU (checked on E2B) / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
 | Gemma 4 31B | CPU / CPU: runs, coherent (G-31a: text and one table image); text logits agree with Hugging Face float32 as well as the E4B's do ((b'), 12 prompts, CPU); the image path is not checked against Hugging Face | not validated (8 GB card) | too large for the Mac | not validated |
 | Qwen2.5-VL | CPU / CPU | GPU / GPU | GPU / GPU, image prefill on the GPU (S16) | CPU / GPU |
@@ -3785,6 +3788,59 @@ The WebGPU server at `75c070bb`, the Mac, by day (12:27 to 12:36 PDT), `--embed-
     CUDA's default went to float32 for that on 2026-10-08; WebGPU kept int8 "until S12 gives it a float32 tower".
   - **For the owner:** S12.3's float32 SigLIP moves to the front of the towers, and until it exists the default
     under `--backend webgpu` could be the float32 CPU tower (slower, right) in place of the int8 GPU one.
+
+#### S12.1 read 2026-10-11: built and shipped on the owner's word; the tiny gates and E2B's text gate PASS, E4B PARKED, the served image request FAIL as registered, the audio PASS
+
+Two readings below are not a PASS. **Owner decision, 2026-10-11, after reading them: ship it** ("1 yes" to shipping
+for E2B and E4B). The Mac, by day, every run under the timing lock; raw in `s12-webgpu/`.
+
+- **What was built** (`gpu/decoderunner.go`, `gpu/residency.go`): a shared-KV layer binds its source's cache and
+  projects Q only; each dense layer's FFN runs at its own width; the per-layer-embedding branch is composed from
+  kernels the runner already had (quantize, gemv, the gated product, RMSNorm, add); the row is
+  `[hidden ‖ layers·pleDim]` and `writeInputs` refuses any other length; the prefill entry walks E-model rows in
+  order. No new shader.
+- **A latent defect found on the way:** the `v_norm` pipeline was built only for a model with a K=V layer, and an
+  E-model has `v_norm` without one. The first run of the gate died in the device on an invalid bind group.
+- **G-S12.1a: PASS.** The tiny E-model on WebGPU against the CPU, int4: mean cosine 0.999989 (lowest 0.999881)
+  against an envelope of 0.7777; 17 of 18 argmax equal, the other a near-tie at 0.32%.
+- **G-S12.1b: seven defects RED, one cannot be built.** (1), (2), (3), (4), (6), (7), (8) each turn the gate red.
+  (5), a shared layer storing its own K and V, has nothing to store here: such a layer is built with no K or V
+  projection, which the gate test checks.
+- **G-S12.1c: PASS.** `Forward`, `ForwardMRoPE`, `ForwardNoLogits` and `ForwardSample` each refuse a row of the
+  hidden width alone, one float short and one long.
+- **Not registered, added:** the prefill walk and the batched forward are bit-identical to the one-row forward on
+  the tiny E-model (`TestGemma4EModel_webgpuPrefillAndBatch`).
+- **G-S12.1d, E2B: PASS.** `g-s12-1d-e2b.log`, 137 s: E2B 419/435 = **96.32%**, 7 of 8 prompts; the reference
+  541/566 = 95.58%, 7 of 8; delta **+0.74 points**. Both `webgpu:metal-resident (int4)`.
+- **G-S12.1d, E4B: PARKED.** `g-s12-1d-e4b.log`, 194 s: E4B 405/435 = **93.10%**, 7 of 8 prompts; delta
+  **-2.48 points**, inside the 2.0-4.0 band. Its resident fit by day.
+  - Said beside it: 93.10% is the figure E4B read on CUDA (405/435) and near Metal's 94.25%. The delta is larger
+    here because WebGPU's reference is higher (95.58% against 93.97% and 93.99%): WebGPU tracks the CPU more
+    closely than the other two on the reference and on E2B, and less of that carries to E4B. I have not looked
+    for why.
+- **G-S12.1e, served, E2B, towers on the CPU, `--embed-int4=false`.**
+  - **Audio: PASS.** WebGPU `prefill resident`, resident on all three clips: short IDENTICAL; mid first differs at
+    token 2 (' Trans' 0.125, ' I' 0.105: a near-tie); long at token 0 ('M' 0.214, 'Hmm' 0.213: a near-tie); the
+    CPU repeats IDENTICAL.
+  - **Image: FAIL as registered.** The WebGPU arm ran resident ("decoded 32 tokens on the resident path (prefill
+    resident)") and its reply matches the CPU's for 21 tokens, then differs at a token that is not a near-tie:
+    CPU ' FY' 0.745, ' ' 0.244 (the rule needs 0.372). WebGPU puts ' ' at 0.581 and ' FY' at 0.401. Both replies
+    read the table correctly ("...for the fiscal year FY2025" against "...for the fiscal year 2025 (FY2025"); the
+    CPU repeat is IDENTICAL.
+  - **Context, not a new bar:** up to that token the arms' probabilities agree within 0.01 on confident tokens and
+    drift 0.06-0.17 on uncertain ones. And the WebGPU reply is the reply both arms gave in S1's G4 on 2026-10-06
+    ("...2025 (FY2025", byte-identical on Metal and the CPU then): the CPU's own choice at this token has changed
+    since, under a different embedding-table precision. The token is a two-way split that int4 details move.
+- **Predictions scored.** "G-S12.1a and b pass once the three parts are in" (0.8): held. "G-S12.1d PASS" (0.6):
+  held for E2B, missed for E4B. I did not predict the image divergence.
+- **Put to the owner, who decided to ship (above):** whether the E-model ships on WebGPU with E4B parked and the
+  image request red under the near-tie rule. My reading was: ship it for E2B and E4B. The implementation is held by the tiny gates and the planted
+  defects, E2B passes the graded text gate, E4B's absolute agreement is CUDA's, and the red token is one the CPU
+  flipped on itself. The other reading is that the rule exists for exactly this and E4B should wait for a look
+  at why WebGPU's edge on the reference does not carry.
+- **Not done:** E4B served; why WebGPU's closer agreement on the reference does not carry to E4B; the towers stay
+  on the CPU (S12.3); nothing here is a speed reading. The generated support table reads "CPU / GPU" for E-models
+  on WebGPU, which is what the served runs showed.
 
 ### S13 — Against the peers
 

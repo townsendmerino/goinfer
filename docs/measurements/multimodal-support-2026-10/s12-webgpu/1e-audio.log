@@ -1,0 +1,34 @@
+[13:19:05] arm cpu (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+Gemma 4 audio input on for "gemma-4-E2B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+  cpu short (3.0s, 25 prompt tokens): "I'm sorry, I cannot transcribe the audio."
+  cpu mid (2.2s, 75 prompt tokens): 'Oh, Transcribe this audio.'
+  cpu long (5.9s, 212 prompt tokens): 'Mmm.'
+  vision: decoded 11 tokens on the cpu path (prefill cpu)
+  vision: decoded 7 tokens on the cpu path (prefill cpu)
+  vision: decoded 3 tokens on the cpu path (prefill cpu)
+[13:19:19] arm webgpu (--backend webgpu --embed-int4=false)
+  decode path: webgpu:metal-resident (int4)
+Gemma 4 audio input on for "gemma-4-E2B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+  webgpu short (4.0s, 25 prompt tokens): "I'm sorry, I cannot transcribe the audio."
+  webgpu mid (3.9s, 75 prompt tokens): "Oh, I'm sorry, I can't transcribe that audio."
+  webgpu long (10.9s, 212 prompt tokens): 'Hmm.'
+  vision: decoded 11 tokens on the resident path (prefill resident)
+  vision: decoded 15 tokens on the resident path (prefill resident)
+  vision: decoded 2 tokens on the resident path (prefill resident)
+[13:19:46] arm cpu2 (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+Gemma 4 audio input on for "gemma-4-E2B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+  cpu2 short (3.2s, 25 prompt tokens): "I'm sorry, I cannot transcribe the audio."
+  cpu2 mid (2.1s, 75 prompt tokens): 'Oh, Transcribe this audio.'
+  cpu2 long (6.1s, 212 prompt tokens): 'Mmm.'
+  vision: decoded 11 tokens on the cpu path (prefill cpu)
+  vision: decoded 7 tokens on the cpu path (prefill cpu)
+  vision: decoded 3 tokens on the cpu path (prefill cpu)
+reference arm cpu
+short: webgpu against cpu: IDENTICAL replies
+short: cpu2 against cpu: IDENTICAL replies
+mid: webgpu against cpu: first differing token 2: cpu ' Trans', webgpu ' I'; cpu top-3 ' Trans' 0.125, ' I' 0.105, ' trans' 0.099; near-tie True
+mid: cpu2 against cpu: IDENTICAL replies
+long: webgpu against cpu: first differing token 0: cpu 'M', webgpu 'Hmm'; cpu top-3 'M' 0.214, 'Hmm' 0.213, 'Um' 0.128; near-tie True
+long: cpu2 against cpu: IDENTICAL replies
