@@ -105,6 +105,8 @@ var identityReal = []identityAsset{
 	{Family: "qwen2", Name: "coder-1.5b-q4km", Path: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", Tok: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 	{Family: "qwen2", Name: "7b-cpu-giw", Path: "qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw", Tok: "qwen2.5-7b-instruct-q4_k_m.gguf", Backends: []string{"cpu"}},
 	{Family: "qwen2", Name: "7b-metal-giw", Path: "qwen2.5-7b-instruct-q4_k_m.int4.metal.giw", Tok: "qwen2.5-7b-instruct-q4_k_m.gguf", Backends: []string{"metal"}},
+	// The 7B's source, for -giw: each revision transcodes it. Metal only, so a CPU run does not load a 7B it was not asked for.
+	{Family: "qwen2", Name: "7b-q4km", Path: "qwen2.5-7b-instruct-q4_k_m.gguf", Tok: "qwen2.5-7b-instruct-q4_k_m.gguf", Backends: []string{"metal"}},
 	{Family: "qwen3", Name: "0.6b-bf16", Path: "qwen3-0.6b-bf16", Tok: "qwen3-0.6b-bf16"},
 	{Family: "lfm2", Name: "2.6b", Path: "lfm2.5-2.6b", Tok: "lfm2.5-2.6b"},
 	{Family: "internlm2", Name: "1.8b", Path: "internlm2-1_8b", Tok: "internlm2-1_8b"},

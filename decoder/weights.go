@@ -176,14 +176,9 @@ type Weights struct {
 	Cfg  Config
 	arch *Architecture // resolved descriptor the forward pass reads
 
-	// int4F16 maps an int4 tensor's nibble address to the f16 group scales a v14 metal-target .giw stores
-	// for it (Int4ScalesF16). nil for every other load.
-	int4F16 map[uintptr][]uint16
-	// bakedQuant is the resolved quant label recorded in the .giw header (v5+): "int4" |
-	// "int4mix" | "int8int8" | "int8" | "native". Non-empty only for a v5 .giw loaded with the
-	// field present; Model.Quant() prefers it over re-inferring from tensor kinds. Empty for a
-	// direct GGUF/safetensors load, a pre-v5 bundle, or a streamed v5 bundle (which records "")
-	// — those fall back to quantLabel() inference.
+	// bakedQuant is the resolved quant label recorded in the .giw header: "int4" | "int4mix" | "int8int8" | "int8" |
+	// "native". Model.Quant() prefers it over re-inferring from tensor kinds. Empty for a direct GGUF/safetensors load
+	// and for a streamed bundle (which records ""); those fall back to quantLabel() inference.
 	bakedQuant    string
 	Embed         linalg.WeightMat // [VocabSize, HiddenDim] — input embedding (AND tied LM head when LMHead unset)
 	LMHead        linalg.WeightMat // [VocabSize, HiddenDim] — separate output head (untied families); zero value when tied

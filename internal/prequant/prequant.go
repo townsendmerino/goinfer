@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -259,7 +258,7 @@ func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, targe
 func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 bool) (string, error) {
 	target := decoder.GIWTargetForBackend(backend)
 	cache := streamCachePath(ggufPath, quant, embedInt4, target)
-	if cacheFresh(cache, ggufPath, quant) {
+	if cacheFresh(cache, ggufPath) {
 		return cache, nil
 	}
 	// Refuse up front when the sidecar will not fit: a half-written sidecar on a full disk is worse than
@@ -304,7 +303,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 // transcode just to check fit would cost as much as the resident build it avoids.
 func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string, bool) {
 	cache := streamCachePath(ggufPath, quant, embedInt4, decoder.GIWTargetForBackend(backend))
-	if cacheFresh(cache, ggufPath, quant) {
+	if cacheFresh(cache, ggufPath) {
 		return cache, true
 	}
 	return "", false
@@ -358,17 +357,10 @@ func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWT
 // the first time a sidecar from elsewhere is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
 // of failing at boot with an error that names the .giw rather than the cause.
 //
-// Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion DOES
-// load, by converting, and would be kept forever (cacheNewer and selfCheck both pass). See
-// cacheLayoutCurrent; quant is the cache's own quant, which decides whether that applies.
-func cacheFresh(cache, src, quant string) bool {
+// A sidecar in an older format is one of those: the reader reads exactly one version (decoder/serialize.go), so
+// it fails here on its header, before any of the file is read, and is rebuilt once.
+func cacheFresh(cache, src string) bool {
 	if !cacheNewer(cache, src) {
-		return false
-	}
-	if v, ok := cacheLayoutCurrent(cache, quant); !ok {
-		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is format v%d; this build keeps int4 group scales "+
-			"as binary16 (v%d) and would convert them on every load, holding both copies — rebuilding once\n",
-			filepath.Base(cache), v, minInt4CacheGIWVersion)
 		return false
 	}
 	if err := selfCheck(cache); err != nil {
@@ -377,32 +369,6 @@ func cacheFresh(cache, src, quant string) bool {
 		return false
 	}
 	return true
-}
-
-// minInt4CacheGIWVersion is the oldest weights-blob version whose int4 group scales an mmap load can
-// ALIAS: v15 stores them as binary16, aikit's in-RAM form (decoder/serialize.go's giwVF16Scales). An
-// older int4 bundle still loads, but the reader converts its f32 scales to a heap f16 copy that sits
-// beside the file's pages on every load, and a sidecar that loads is judged fresh, so an upgraded box
-// would pay it forever.
-//
-// Raise this only when an older file loads at a real cost, never merely because the format gained a
-// kind: every bump here costs each user a one-time re-transcode.
-const minInt4CacheGIWVersion = 15
-
-// cacheLayoutCurrent reports whether cache's weights layout is one this build loads without
-// converting, and the version it read. Only an int4-bearing quant ("int4", "int4mix") is held to
-// minInt4CacheGIWVersion — v15 changed nothing else, so rebuilding an int8/f32 sidecar would cost
-// a transcode for nothing. An unreadable header reports ok, leaving the verdict to selfCheck,
-// which names the actual failure.
-func cacheLayoutCurrent(cache, quant string) (uint32, bool) {
-	if !strings.HasPrefix(quant, "int4") {
-		return 0, true
-	}
-	v, err := giw.WeightsVersionFile(cache)
-	if err != nil {
-		return 0, true
-	}
-	return v, v >= minInt4CacheGIWVersion
 }
 
 // cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what

@@ -6,8 +6,11 @@ wall 0.128 on the Mac's 1.5B, 0.065 and 0.051 on nobara's 1.5B and 7B, 0.18 on t
 bounds. G-T2c: the transcode is 2.7-3.1 times its own I/O on the dense cells and 1.8 on the 30B; its registered
 follow-up (a vectorized GGUF dequantizer) opened on the Mac's cell by a hair and is **built and graded as T8**, on aikit
 v1.67.0: single-thread transcode CPU new/old 0.847 and 0.809 for the Q4_K kernel (Mac, nobara), then 0.931 and 0.864
-for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. T0-T6 with T4b are on `main`; T8's pin
-and records are on branch `giw-v16-dequant-2026-10`. **Next: T7 and V** (Decisions 2 and 4 are made). The gates
+for the Q6_K kernel on top; bytes identical. F3's arm64 profile is retracted. Part T with T8 is on `main`.
+**Part V is built** (V1-V7 with T7) on branch `giw-v16-v-2026-10`: G-V1 PASS on every cell read (tiny assets on CPU and
+Metal, the 1.5B on Metal), G-V2 holds with two projection misses on the small default files (the projection counted
+one int4 table where there are two), G-V4 PASS. The 7B's Metal cells (G-V1 and G-V3) are queued for the night: by day
+the fit guard declined the 7B on Metal. **Next:** read the night cells, then Decision 4's four rebuilds on nobara. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -45,18 +48,18 @@ direction and the projection bands, and is never quoted as a result. The results
 
 ### The format
 
-`decoder/serialize.go:giwMinReadV` is 3 and `giwVersion` is 15: the reader accepts thirteen layouts. What that costs:
+`giwMinReadV` (in `decoder/serialize.go`, removed by V2) is 3 and `giwVersion` is 15: the reader accepts thirteen layouts. What that costs:
 
 - About thirteen version gates across `giwReader.weightMat`, `giwReader.fusedGroup`, `giwReader.int4Scales`,
   `giwReader.alignArray`, `giwReader.layer` and `loadSerializedWeights` (the v4/v6/v8/v9 family tails, the v5 quant
   label, v12 alignment, the v10 Granite refusal, the f32-to-f16 scale conversion for pre-v15 files, the pre-v14
   fused-group path).
-- **Kind 4**, retired but still read and still writable through `decoder/serialize.go:SerializeWeightsRow4` and
+- **Kind 4**, retired but still read and still writable through `SerializeWeightsRow4` and
   `SerializeWeightsToRow4`, with two test files of its own.
-- A test-only writer switch, `decoder/serialize.go:giwEmitVersion` with `giwWriter.emitVersion`, so four test files can
+- A test-only writer switch, `giwEmitVersion` with `giwWriter.emitVersion`, so four test files can
   write old layouts and prove they still load.
 - The v1 and v2 bundle frames in `internal/giw/bundle.go:Read` and `WeightsVersionFile`.
-- `internal/prequant/prequant.go:minInt4CacheGIWVersion` and `cacheLayoutCurrent`, which exist to force a rebuild the
+- `minInt4CacheGIWVersion` (in `internal/prequant/prequant.go`) and `cacheLayoutCurrent`, which exist to force a rebuild the
   reader would otherwise never ask for.
 - A new read-side shim this week: `82d53dc6` takes an `int4mix` label from the weights on read "so a bundle written
   under that rule needs no rebuild".
@@ -67,7 +70,7 @@ And the current layout is not single-representation:
   writes an f32 scale array and then an f16 copy (`giwWriter.fusedGroup`, `giwWriter.weightMatKind`). The reader uses
   the f32 array only for a length check, and for kind 6 converts it to f16 and throws the result away.
 - **Kind 7 is v15's kind 3 plus that dead array.** Kind 3 has stored aligned binary16 scales since v15.
-- **The f16 side map** (`giwReader.recordF16`, `Weights.int4F16`, `decoder/model.go:Model.Int4ScalesF16`) exists
+- **The f16 side map** (`giwReader.recordF16`, `Weights.int4F16`, `Model.Int4ScalesF16`) exists
   because weights loaded from pre-v15 files held f32 scales. From v15 every int4 `WeightMat`'s own scales are the f16
   bytes in the mapping. `metal/moe.go` and `metal/gemma4_moe.go` already read them from the `WeightMat`
   (`Int4ScalesF16()`); only `metal/alias.go:weightAlias.scales16` still goes through the side map.
@@ -692,6 +695,11 @@ exactly that.
       952 MB on the 7B.
     - Plain int4: 45 MB, 164 MB, 816 MB.
   - **Kill V1's layout change if a Metal file does not shrink:** the dead array is not what § Why says it is.
+  - **Amendment, 2026-10-10 (V1 built, before any size was read).** V1 does drop the header's 4-byte quant enum, and the
+    header is padded to a 16-byte boundary. So a cpu-target v16 file is its v15 twin's size, or exactly 16 bytes smaller
+    where the shorter header ends on an earlier boundary. "The same size" above is read as that. Nothing else in a
+    cpu-target file changes length. The real sizes are deterministic and each transcode now takes seconds, so they are
+    read by day; no band moves.
 - **G-V3, Metal binding.** The alias banner's "N MB bound in place" is at least v15's figure on the 7B. Metal decode
   is byte-identical (G-V1).
 - **G-V4, refusal and rebuild.** V6's three new tests pass, plus one manual run on the Mac: a v15 sidecar is rebuilt

@@ -15,6 +15,24 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — `.giw` weights format v16: one layout, and it is the only one read (breaking for a hand-built or embedded bundle)
+
+This build writes weights format v16 and reads only v16; the bundle frame stays v3, and its v1 and v2 forms are no longer read.
+[`docs/giw-bundles.md`](docs/giw-bundles.md) has the layout and the policy ("One version").
+
+- **Sidecars rebuild by themselves.** A sidecar written by an earlier build fails its freshness check on the first load and is
+  transcoded again from the source beside it, once.
+- **A hand-built or embedded `.giw` from an earlier build is refused**, with `format vN, this build reads v16 — delete the sidecar
+  (it rebuilds) or rebuild with go run ./cmd/prequant …`. Rebuild it with `cmd/prequant`.
+- **Two builds on one box rebuild each other's sidecars.** A build from before this change refuses a v16 sidecar as too new and
+  rewrites it in its own format; this build then rewrites it again. Each switch costs one transcode per model.
+- What left the layout: int4 kinds 4 (canonical plus row4) and 7 (a Metal-only single tensor), the float32 copy of every int4 scale
+  array that a `-target metal` file carried beside the binary16 one, and the header's legacy quant enum. A `-target metal` file is
+  smaller by those float32 arrays; a file for any other target keeps its size.
+- On Metal a single int4 tensor's group scales now bind in place from any bundle, not only from a `-target metal` one.
+- Removed from the serialization plumbing (Experimental tier): `decoder.SerializeWeightsRow4`, `decoder.SerializeWeightsToRow4` and
+  `(*decoder.Model).Int4ScalesF16`. Each weight's own `Int4ScalesF16()` is the scale storage.
+
 ### Changed — Command-R7B and Command-R prefill on the GPU on Apple silicon
 
 Metal's batched prefill now runs the Cohere family: a bias-free LayerNorm, its parallel attention-and-MLP block, and its logit scale

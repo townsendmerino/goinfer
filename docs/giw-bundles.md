@@ -22,6 +22,7 @@ go run ./cmd/prequant -o model.giw ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.g
 | `-o PATH` | output bundle path (**required**) |
 | `-quant` | quant baked into the bundle: `int8int8` (default), `int8`, or `int4` |
 | `-embed-int4` | with `-quant int4`, store the token-embedding / LM-head table at int4 too instead of pinning it at int8 — roughly halves the head's per-token traffic on a big-vocab model |
+| `-target` | which consumer the bundle is promised to: `cpu-arm64`, `cpu-amd64`, `metal`, `cuda`, `webgpu`, `cpu` (this box's CPU) or `canonical`; see "Targets" below |
 
 The quant is **baked in at build time**: a bundle made with `-quant int8int8` is an int8int8
 model, and `serve --quant` cannot change it afterwards. Build a separate bundle per quant you
@@ -43,88 +44,83 @@ at once (S2, `docs/tasks/task-never-swap-2026-09.md`; measured on a real `gpt-os
 transcode). gemma4 was the last family to get there (2026-09-24,
 `docs/measurements/transcode-streaming-gemma4-2026-09-24.md`): the 26B-A4B's transcode went from
 18.1 GB of anonymous memory (34.8 GB RSS) resident to a 1.61 GB peak streamed, byte-identical output.
-A transcode *from safetensors* (`prequant` given an HF directory) is a different path and still builds
-resident.
+A transcode from a safetensors directory (`prequant` given an HF directory) streams layer by layer too
+(`docs/tasks/task-prequant-dir-streaming-2026-10.md`).
 
-## File layout: aligned arrays (weights format v12 / bundle v3)
+## One version
 
-Until v11 a `.giw` did not align the arrays inside it, so the loader could only alias the packed
-int4/int8 **codes** out of the file and had to **copy the per-group scales** to the Go heap on every
-load. Measured 2026-09-24 (`docs/measurements/moe-pager-mode-darwin-2026-09-23.md`, "Finding"):
-that copy was 3.75 GB of a streamed Qwen3.6-35B-A3B's 5.8 GB heap and 3.0 GB of the 4.4 GB heap of
-the M26 Metal load — anonymous memory the pager can neither budget nor evict.
+A `.giw` is a cache of its source, so the format has **one version at a time**. This build writes weights format
+**v16** in bundle frame **v3**, and reads only those. There is no compatibility window in either direction.
 
-From v12 every weight-matrix payload array (int8 scales + codes, int4 scales + nibbles, and the
-row4 pair) is preceded by zero padding so it starts on a **16-byte boundary relative to the blob**,
-the header ends on one too (so a present-or-absent quant label cannot shift what follows), and the
-bundle header itself is padded to 64 bytes (**bundle v3**) so the blob starts 16-aligned in the
-file. A mapping of the file therefore has every such array aligned, and the loader aliases the
-scales like it already did the codes. f32 *matrices*, norms and biases still copy (small, and the
-mapping is read-only).
+- **A sidecar rebuilds itself.** A sidecar from another version fails its freshness check on the first load (the
+  reader refuses it on its header, before reading the rest of the file) and is transcoded again from the source
+  beside it, once. A format bump therefore costs each cached model one transcode.
+- **A hand-built or embedded bundle is refused.** A `.giw` named with `--model`, or built into a binary, has no
+  source for the loader to rebuild from. It fails with `format vN, this build reads v16 — delete the sidecar (it
+  rebuilds) or rebuild with go run ./cmd/prequant …`, and has to be rebuilt with `cmd/prequant`.
+- **Why not read old versions:** the reader had accepted thirteen layouts, each with its own gates, tests and
+  test-only writer switches, and a file in an old layout loaded at a real cost (scales copied to the heap) with
+  nothing to say so. The `.giw-kv` session snapshots already work this way.
 
-Compatibility, both ways:
+What the earlier versions were, and the measurements that motivated alignment, fused groups and stored f16 scales,
+are in [`code-notes/decoder.md`](code-notes/decoder.md) under "The .giw format before v16".
 
-- A **v12 reader loads every older bundle** unchanged (it aliases a scale array only when its address
-  happens to be 4-byte aligned, and copies otherwise — a quarter of an old file's arrays qualify).
-- A **pre-v12 reader refuses a v12 file** through the format's own version guard; it does not misread it.
-- **Existing sidecars keep their old layout and their heap copies** — nothing rebuilds them
-  automatically (a 20 GB transcode is not something to trigger silently). To get the memory win,
-  delete the sidecar (`<model>.<quant>.<target>.giw`, next to the `.gguf`) and it is rebuilt on the
-  next `--stream-weights` / darwin default load, or re-run `cmd/prequant`.
-- The trailing CRC still covers the padding; a flipped pad byte fails the load.
+## File layout
 
-## File layout: fused groups for Metal (weights format v13, kind 6)
+A bundle is a 64-byte frame header (`GINFB`, frame version, the weights length), the **weights blob**, then the
+tokenizer GGUF. The blob starts at file offset 64, a multiple of 16, so every aligned array inside it is aligned in
+a mapping of the file. `decoder/serialize.go`'s file comment is the field-by-field authority; in outline:
 
-S6 (`docs/tasks/task-never-swap-2026-09.md`) wants a Metal load's dense int4 weights to be **file-backed
-views of the mapping** instead of a second, anonymous MTLBuffer copy of every tensor. Metal's fused
-GEMVs read **one buffer** holding q‖k‖v (or gate‖up) rows back to back, and an mmap'd file can only be
-aliased into such a buffer if those rows are *adjacent in the file* — which per-tensor records (a
-scales array between each pair of nibble arrays) never are.
+- **Header:** `GINFW`, the version, the model id, the config as JSON, the resolved quant label (empty in a streamed
+  bundle, where the reader infers it from the tensors), then zero padding to a 16-byte boundary.
+- **Tensors:** the embedding, head and norms, then each layer's weights in a fixed order.
+- **A trailing CRC-32** over everything before it, padding included.
 
-For **`-target metal` only**, v13 writes each fused tuple — `(q,k,v)` and `(gate,up)` per layer — as a
-**group**: every member as a kind-6 record (`kind 6 | rows | cols | group | w8a8 | pad | u32 nScales |
-f32 scales`, *no nibbles*), then one **group block**: padding to 16 bytes, then each member's nibbles
-one after another with **no length prefixes** (lengths are `rows*cols/2`; a prefix between members
-would be exactly the gap this removes). Members are canonical group-32 int4 with the same K
-(K%32==0 keeps every member 16-aligned back to back). A tuple with an int8 member, an absent member (a
-K=V layer has no V), or a mixed K is written as ordinary consecutive records — no kind 6.
+Every weight matrix is a record: a kind byte, its shape, then the kind's arrays. Each aliased array is preceded by
+zero padding so its payload starts on a 16-byte boundary, which is what lets the loader alias the scales as well as
+the codes instead of copying them to the heap.
 
-The reader takes the nibbles out of the mapping as before (`WrapInt4` keeps the alias); the Metal
-build (aliasing is on by default since 2026-09-24; `GOINFER_METAL_ALIAS=0` turns it off) checks whether a fused tuple's nibbles are **one contiguous
-run** in the mapping and, if so, binds one no-copy buffer over them (`metal/alias.go`). It is detected,
-not assumed, so a pre-v13 file, a layer whose members are not adjacent, or a heap-backed weight all
-take the old copy path unchanged. In a v13 file the scales are still converted f32→f16 into a small buffer (about ⅛ of
-the nibble bytes); v14, below, stores them as f16 so they alias too.
+| kind | holds | arrays |
+|---|---|---|
+| 0 | nothing (an absent tensor) | none |
+| 1 | float32 | the values, copied at load |
+| 2 | int8 | float32 row scales, then the codes |
+| 3 | int4, canonical | binary16 group scales, then the packed nibbles |
+| 5 | int4 in the arm64 row4 layout only | binary16 scales and nibbles in that layout; no canonical arrays |
+| 6 | int4, member of a fused group | none in the record; see below |
 
-Compatibility:
+The int4 group scales are binary16 in the file because that is their form in memory: the loader aliases them as the
+weight's own storage.
 
-- **Only a metal-target file is v13.** Every other target still writes v12 (`giwWriter.emitVersion`),
-  so a file that can contain no kind 6 stays readable by a pre-v13 reader. A pre-v13 reader refuses a
-  metal-target v13 file through the version guard, as it did for v12.
-- A v13 reader loads every older bundle unchanged.
-- A metal-target sidecar is now a promise to **one backend**, the way kind 5 is to one arch: nothing
-  stops a CPU load from reading it (the nibbles and scales are ordinary canonical int4), but the
-  group block layout exists for Metal's benefit.
-- Existing metal-target sidecars keep their layout; the Metal aliasing simply does not apply to their
-  fused tuples (it logs `N fused groups not adjacent`). Rebuild to get it.
+### Targets
 
-## File layout: f16 scales for Metal (weights format v14, kind 7)
+`cmd/prequant -target` and the sidecar's file name (`<model>.<quant>.<target>.giw`) say which consumer a bundle is
+promised to. The target changes only which int4 kind a tensor takes:
 
-v13 made a Metal fused buffer's NIBBLES aliasable; the group SCALES still had to be converted f32 → f16
-into a new buffer at every load, because the file stored f32 (the CPU path's format) and the kernels read
-f16 — about ⅛ of the nibble bytes (389 MB on a 7B). For **`-target metal` only**, v14 additionally stores
-each canonical group-32 int4 tensor's scales already converted by `decoder.F16Bits` — the one definition of
-that conversion, which the Metal build itself now calls — so the bits the kernels read are identical whether
-they came from the file or were converted at load:
+- **`cpu-arm64`:** a tensor whose shape allows it is kind 5, the split-half, four-row-interleaved layout the NEON
+  kernel reads. A core that cannot run that layout refuses the file with a message naming the fix.
+- **`metal`:** each layer's `(q, k, v)` and `(gate, up)` are written as a **fused group**, below.
+- **Every other target:** kind 3 for every int4 tensor.
 
-- a kind-6 group gains an **f16 block** after its nibbles: 16-byte pad, then the members' f16 scales back to
-  back in member order (the same adjacency the nibbles have);
-- an eligible **single** int4 tensor is written as **kind 7**: header, f32 scales, nibbles, f16 scales, each
-  16-aligned. (A distinct kind, not a "group of one": a group whose members fall back to single records must
-  never look like group members to the reader.)
+### Fused groups (Metal)
 
-f32 scales stay in the file, so the CPU path is untouched; the cost is the f16 copy (+5–8% file size: 7B
-5.18 → 5.58 GB). The reader records each tensor's f16 view (`Model.Int4ScalesF16`); the Metal build binds it
-in place when present and converts as before when not. Compatibility follows the earlier rule: only a
-metal-target file is v14, every other target still writes v12, a pre-v14 reader refuses a v14 file, and a v14
-reader loads every older layout (a v13 metal-target file simply has no f16 scales to alias).
+Metal's fused kernels read one buffer holding q‖k‖v (or gate‖up) rows back to back, and a mapped file can be bound
+into such a buffer only if those rows are adjacent in the file. So for `-target metal` each such tuple is written as
+a group: one kind-6 header per member (shape only), then two blocks with no length prefixes, each starting on a
+16-byte boundary:
+
+1. every member's nibbles, one after another;
+2. every member's binary16 scales, one after another.
+
+The lengths follow from the shapes, so a prefix between members is not needed, and would be exactly the gap this
+layout removes. Members are group-32 int4 with the same K, a multiple of 32. A tuple with an int8 member, an absent
+member (a K=V layer has no V) or a mixed K is written as ordinary records.
+
+The Metal build (`metal/alias.go`; aliasing is on by default, `GOINFER_METAL_ALIAS=0` turns it off) checks whether a
+tuple's nibbles and scales are each one contiguous run in the mapping and binds them in place if so. It is detected,
+not assumed:
+
+- A single int4 tensor's nibbles and scales bind in place from **any** bundle, because each is one aligned run.
+- A fused tuple binds in place only from a `-target metal` bundle. From any other, it is copied, and the load banner
+  says so and names the rebuild.
+- A CPU load reads a `-target metal` bundle without trouble: the nibbles and scales are ordinary canonical int4.

@@ -1,0 +1,27 @@
+stream-weights: transcoding q15.gguf → q15.int4.metal.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1312 MB) in 3s: stream 2.8s, self-check 0.1s
+swap guard (load): not armed for m15/q15.int4.metal.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+[metal] weights aliased from q15.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.016 ms, fragment 0.038 ms), gate|up at B <= 2 (0.109, 0.250); 0 = always the fragment
+loaded "q15": 28-layer model (vocab 151936) in 873ms [chat: chatml, thinking: unmanaged]
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA from 32 prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)
+  head table: int8
+  context: 4096 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+  fit: 4096-token cap needs 0.1 GB KV (weights 1.1 GB, budget 4.1 GB, 4.0 GB left for a request's own prefill)
+  KV plan: 2 conversations x 4096 positions (4 asked for)
+  session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions not given: Metal keeps 2 by default, and a memory guard may keep fewer; --kv-sessions 4 asks for 4)
+  features: tools (constrainable call form) · structured output
+"q15" concurrency: 2 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); 4 asked, capped by the 2 resident KV slots (--kv-sessions); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18451 [chat:[q15]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+
+shutting down…
+resident batch "q15": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0]
+resident batch "q15" held: 2 tokens in 1 holds
+resident batch "q15" time: runs 0.027 s, exclusive 0.115 s (prefill 1 passes 0.115 s, bookkeeping 0.000 s)

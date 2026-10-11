@@ -91,10 +91,8 @@ func TestGIWFused_roundTripAndAdjacency(t *testing.T) {
 	}
 }
 
-// Nothing about fused groups (the Metal-only kinds 6 and 7) may leak into a bundle whose reader never asked
-// for them. Before v15 that meant a non-Metal target wrote exactly v12; from v15 (binary16 int4 scales,
-// which every target writes) it means every non-Metal target writes the same bytes as the plain target,
-// at the current version, and the pre-v15 emitter still writes exactly v12 for them.
+// Nothing about fused groups (the Metal-only kind 6) may leak into a bundle whose reader never asked for them: every
+// non-Metal target writes the same bytes as the plain target.
 func TestGIWFused_nonMetalTargetIsUnchanged(t *testing.T) {
 	src := fusedFixture(t)
 	plain, err := SerializeWeightsForTarget(src, "fused", GIWTargetNone)
@@ -112,17 +110,8 @@ func TestGIWFused_nonMetalTargetIsUnchanged(t *testing.T) {
 		if v := binary.LittleEndian.Uint32(now[len(giwMagic):]); v != giwVersion {
 			t.Errorf("target %q: version %d, want %d", tgt, v, giwVersion)
 		}
-		prev := giwEmitVersion
-		giwEmitVersion = giwVF16 // the last version before binary16 scales: non-Metal must still emit v12 there
-		pre, err := SerializeWeightsForTarget(src, "fused", tgt)
-		giwEmitVersion = giwVAligned
-		old, err2 := SerializeWeightsForTarget(src, "fused", tgt)
-		giwEmitVersion = prev
-		if err != nil || err2 != nil {
-			t.Fatal(err, err2)
-		}
-		if !bytes.Equal(pre, old) {
-			t.Errorf("target %q: a pre-v15 emit differs from a v12 write (%d vs %d) — fused content leaked", tgt, len(pre), len(old))
+		if bytes.Contains(now, []byte{6, 8, 0, 0, 0, 64, 0, 0, 0, 32, 0, 0, 0}) {
+			t.Errorf("target %q: a kind-6 record in a non-Metal blob", tgt)
 		}
 	}
 }
@@ -197,7 +186,7 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 			w.fusedGroup(ptrs...)
 			w.raw([]byte{0xAB, 0xCD}) // a trailer: the reader must stop exactly at the group's end
 
-			r := &giwReader{data: w.buf, off: lead, version: w.emitVersion()}
+			r := &giwReader{data: w.buf, off: lead}
 			got := make([]linalg.WeightMat, len(shape))
 			gp := make([]*linalg.WeightMat, len(shape))
 			for i := range got {
@@ -223,27 +212,25 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 						t.Errorf("shape %v lead %d: members %d and %d are not adjacent", shape, lead, i-1, i)
 					}
 				}
-				// v14: the member's f16 scales, recorded against its nibbles, equal F16Bits of its f32 scales,
-				// and the members' f16 arrays are one contiguous run starting 16-aligned.
-				f16 := r.f16[uintptr(unsafe.Pointer(&q4[0]))]
-				_, q4s, _, _ := Int4F32(&ms[i])
-				if len(f16) != len(q4s) {
-					t.Fatalf("shape %v lead %d member %d: %d f16 scales recorded, want %d", shape, lead, i, len(f16), len(q4s))
+				// The member's binary16 scales are the source's, and the members' scale arrays are one contiguous run
+				// starting 16-aligned.
+				f16, want := got[i].Int4ScalesF16(), ms[i].Int4ScalesF16()
+				if len(f16) != len(want) {
+					t.Fatalf("shape %v lead %d member %d: %d scales, want %d", shape, lead, i, len(f16), len(want))
 				}
-				for j := range q4s {
-					if f16[j] != F16Bits(q4s[j]) {
-						t.Fatalf("shape %v lead %d member %d: f16[%d] = %#x, want F16Bits = %#x", shape, lead, i, j, f16[j], F16Bits(q4s[j]))
+				for j := range want {
+					if f16[j] != want[j] {
+						t.Fatalf("shape %v lead %d member %d: scale %d = %#x, want %#x", shape, lead, i, j, f16[j], want[j])
 					}
 				}
 				at16 := int(uintptr(unsafe.Pointer(&f16[0])) - uintptr(unsafe.Pointer(&w.buf[0])))
 				if i == 0 && at16%16 != 0 {
-					t.Errorf("shape %v lead %d: f16 block at blob offset %d, not 16-aligned", shape, lead, at16)
+					t.Errorf("shape %v lead %d: scale block at blob offset %d, not 16-aligned", shape, lead, at16)
 				}
 				if i > 0 {
-					pq, _, _, _ := got[i-1].Int4F16()
-					pf := r.f16[uintptr(unsafe.Pointer(&pq[0]))]
+					pf := got[i-1].Int4ScalesF16()
 					if uintptr(unsafe.Pointer(&pf[0]))+uintptr(2*len(pf)) != uintptr(unsafe.Pointer(&f16[0])) {
-						t.Errorf("shape %v lead %d: f16 scales of members %d and %d are not adjacent", shape, lead, i-1, i)
+						t.Errorf("shape %v lead %d: scales of members %d and %d are not adjacent", shape, lead, i-1, i)
 					}
 				}
 			}

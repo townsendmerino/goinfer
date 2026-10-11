@@ -13,100 +13,61 @@ import (
 	"unsafe"
 )
 
-// This file defines a versioned binary format for an already-quantized *Weights bundle (a ".giw", goinfer weights), so the
-// resident weights can be produced once at build time and embedded, skipping the GGUF dequant and requant on every launch.
-// The big int8/int4 weight arrays are aliased directly over the input slice at load (zero-copy: this is the speed and RAM
-// win); the small per-row scale floats and the norm/bias vectors are copied (the input is not guaranteed 4-byte aligned,
-// and unaligned float reads are UB).
+// This file defines the binary format of an already-quantized *Weights bundle (a ".giw", goinfer weights), so the
+// resident weights can be produced once and mapped, skipping the GGUF dequant and requant on every launch. The big
+// int8/int4 weight arrays and their scale arrays are aliased over the input slice at load (zero-copy: this is the speed
+// and RAM win); the norm and bias vectors and f32 matrices are copied.
 //
-// Discipline mirrors ken's index_serialize.go: magic + version + a config/quant guard + CRC; any mismatch returns a typed
-// error and never panics. There is no automatic fallback to the GGUF: a sidecar that fails its freshness check is rebuilt
-// (internal/prequant), and an embedded or explicitly named bundle refuses to load.
+// There is one layout. This build writes giwVersion and reads only giwVersion; a file at any other version is refused
+// with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (internal/prequant).
+// There is no fallback to the GGUF: an embedded or explicitly named bundle that does not load is an error. The
+// history of the earlier versions is in docs/code-notes/decoder.md ("The .giw format before v16").
 //
 // Format (little-endian throughout):
 //
 //	magic   [5]byte = "GINFW"
-//	version uint32
-//	quant   uint32   (quantMode enum: first-weight kind, the legacy tag, validated on read)
+//	version uint32   (giwVersion)
 //	id      str      (model identity, the source's basename; not validated on read)
 //	config  str      (Config as JSON; arch is re-derived from it on load)
-//	quantLabel str   (v5+: the resolved quant label (int4|int4mix|int8int8|int8|native), or "" to
-//	                  fall back to inference; the reader PREFERS this over re-deriving from kinds)
+//	quantLabel str   (the resolved quant label (int4|int4mix|int8int8|int8|native), or "" for a streamed bundle,
+//	                  whose label the reader infers from the tensors)
+//	zero padding to a 16-byte boundary
 //	Embed, LMHead, PosEmbed     weightMat
 //	FinalNorm, FinalNormBias    f32
+//	(gemma4 only: the model-level Per-Layer-Embedding inputs)
 //	numLayers uint32
-//	  per layer: the LayerWeights fields, in declaration order, then a v2 hybrid
-//	  tail (uint8 kind: 0 none | 1 DeltaNet | 2 gated-softmax) with the
-//	  qwen3_5_moe per-layer delta / qattn f32 tensors when set.
+//	  per layer: the LayerWeights fields in the order giwWriter.layer writes them, with the per-family tails
 //	crc     uint32   (CRC32-IEEE over every preceding byte)
 //
 // str  = uint32 len + len bytes
 // f32  = uint32 len + len*4 LE-float32 bytes   (len 0 => nil on load)
 // i8   = uint32 len + len bytes                (aliased on load)
 // raw  = uint32 len + len bytes                (aliased on load)
-// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4|5 q4-row4-only|6 fused-group member|7 q4 with f16 scales);
-//             if non-empty: int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
-//             kind 4 (v7+, legacy: no longer emitted, still read) is kind 3's arrays (q4s, q4: canonical) followed by
-//             q4Row4Scales, q4Row4 (the arm64 split-half + 4-row-interleaved layout), both layouts, so any reader could
-//             use the file. Opt-in via SerializeWeightsRow4/SerializeWeightsToRow4, for shapes
-//             RepackW4A8Row4/RepackW4A8Row4Scales accept; every other int4 tensor still writes kind 3.
+// u16  = uint32 len + len*2 LE-uint16 bytes    (aliased on load)
 //
-//             kind 5 (v11+) is q4Row4Scales, q4Row4 ALONE, no canonical arrays at all: the on-disk form of a
-//             repacked-only WeightMat. Chosen per tensor by giwWriter.target: only on a cpu-arm64 target, only for a
-//             tensor whose call site opted into kind-5 eligibility (weightMat, not weightMatKind3Only; see that
-//             function for which tensors are excluded and why), and only when repackRow4ForEmit succeeds for this
-//             shape/core; everything else stays kind 3. Loaded with linalg.WrapInt4Row4Only, which declines (a named
-//             *SerializeError, not a panic or silent fallback) when Int4Row4Usable is false for the reader's own
-//             core: a kind-5 file is a promise to ONE target, unlike kind 4's "usable anywhere". Dispatch is
-//             bit-identical either way (TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical): this is a storage choice,
-//             not a numerics one, so no golden depends on which kind a tensor took.
+// weightMat = uint8 kind; if non-empty: int32 rows, cols, group; uint8 w8a8; then the kind's arrays. Every aliased array
+// is preceded by zero padding so its payload starts 16-aligned relative to the blob start (giwArrayPad); the v3 bundle
+// frame puts the blob at file offset 64, so the payload is aligned in the mapping too.
 //
-// Versions. Each version only adds: a reader refuses a newer file via the version guard, and reads every older layout
-// back to giwMinReadV (older bundles stay valid and fall back to inference).
+//	0  empty
+//	1  f32: an f32 array, not aligned (it is copied)
+//	2  int8: f32 row scales, then i8 codes
+//	3  int4, canonical: u16 binary16 group scales, then raw nibbles
+//	5  int4, row4-only: u16 scales and raw nibbles in the arm64 split-half + 4-row-interleaved layout, with no canonical
+//	   arrays. Written per tensor on a cpu-arm64 target only, for a tensor whose call site allows it (weightMat, not
+//	   weightMatKind3Only) and whose shape repackRow4ForEmit accepts; everything else is kind 3. Loaded with
+//	   linalg.WrapInt4Row4OnlyF16, which declines (a named *SerializeError) on a core that cannot run that layout. A
+//	   storage choice, not a numerics one: dispatch is bit-identical either way.
+//	6  int4, fused-group member (Metal target): a header with no arrays; the group's nibbles and then its binary16
+//	   scales follow the group's last header as two unprefixed 16-aligned blocks (giwWriter.fusedGroup).
 //
-//	v2   per-layer hybrid tail (qwen3_5_moe DeltaNet / gated-softmax); v1 blobs (no tail) are rejected and rebuilt from
-//	     the source GGUF.
-//	v3   per-layer RouterBias (DeepSeek/GLM e_score_correction_bias).
-//	v4   the gemma4-gated tail.
-//	v5   the quant-label field.
-//	v6   the completeness tail (GProj, AttnSinks, per-expert biases, MLA, Mamba-2), written unconditionally (v6Layer).
-//	v7   kind 4.
-//	v8   the LFM2 short-conv mixer (presence byte + inProj/convW/outProj), the same shape as the v6 Mamba-2 block.
-//	v9   Bailing Hybrid's KDA mixer + MLA's optional attention-output gate.
-//	v10  a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused.
-//	v11  adds kind 5, gated on version so a pre-v11 reader refuses the file rather than hitting an unknown kind byte.
-//	v12  no new kind: every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4
-//	     nibbles) is preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray),
-//	     which lets the reader alias the group scales instead of copying them to the heap. Needs the v3 bundle header
-//	     (blob at offset 64) to be aligned in the file.
-//	v13  adds kind 6: an int4 tensor whose nibbles live in a shared group block after the group's headers, so the
-//	     members' nibbles are adjacent in the file (a Metal fused QKV / gate|up buffer can then alias them). Written
-//	     only for GIWTargetMetal, the only writer that emits version 13; every other target still emits 12, so a
-//	     pre-v13 reader keeps reading them.
-//	v14  metal target only: every canonical group-32 int4 tensor also carries its group scales pre-converted to f16
-//	     (decoder.F16Bits, the kernels' own conversion), so a Metal no-copy buffer can alias them too. A kind-6 group
-//	     gains an f16 block after its nibbles (members' scales back to back), and an eligible single int4 tensor is
-//	     written as kind 7 (f32 scales, nibbles, f16 scales, each 16-aligned), a distinct kind so a group's per-member
-//	     fallback records can never be mistaken for group members. Other targets still emitted v12.
-//	v15  every target: int4 kinds 3/4/5 store their group scales as binary16 (a u32 count + little-endian uint16
-//	     payload, 16-aligned like every array) instead of f32, which is aikit's in-RAM representation, so the reader
-//	     aliases them as the WeightMat's storage; kinds 6/7 keep their v14 layout and the reader takes their f16 block as
-//	     the storage. A v15 reader converts an older file's f32 scales at load (the same rounding fresh quantization
-//	     applies).
+// Kinds 4 and 7 existed before v16 and are not read.
 
 const (
-	giwMagic        = "GINFW"
-	giwVersion      = 15 // format version; what each version added is under Versions in the file comment above
-	giwMinReadV     = 3  // read v3/v4 too (each version only adds; see Versions above)
-	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
-	giwVAligned     = 12 // the version from which weight-matrix payload arrays are 16-byte aligned (see giwVersion)
-	giwVFused       = 13 // the version from which int4 fused-group blocks (kind 6) exist (see giwVersion)
-	giwVF16         = 14 // the version from which metal-target int4 tensors carry f16 scales (kind 7, kind-6 f16 block)
-	giwVF16Scales   = 15 // the version from which int4 kinds 3/4/5 store binary16 scales (see giwVersion)
-	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
-	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
-	giwV8ShortConv  = 8  // the version at/after which the LFM2 short-conv tail is present
-	giwV9KDAGate    = 9  // the version at/after which the KDA tail + MLA's optional attention-output gate are present
+	giwMagic = "GINFW"
+	// giwVersion is the one format version this build writes and reads. A file at any other version is refused, and a
+	// sidecar is then rebuilt from its source (docs/giw-bundles.md, "One version").
+	giwVersion = 16
 	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
 	// cannot drive a multi-GB make() before the body reader hits its first short read. A LayerWeights is a large struct, so an
 	// unbounded layer count is the worst offender.
@@ -119,10 +80,6 @@ const (
 	// above any legitimate session and far below the TBs the unbounded path could reach.
 	maxSnapshotCacheBytes int64 = 1 << 34
 )
-
-// giwLabelForTest, when set, is written as the header's quant label in place of the computed one: a bundle as a writer
-// with a different labelling rule produced it.
-var giwLabelForTest string
 
 // SerializeError is returned by LoadSerializedWeights on any magic/version/
 // quant/CRC mismatch. It is distinct so callers can fall back to building from
@@ -174,40 +131,10 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 	return wr.n + 4, nil
 }
 
-// SerializeWeightsRow4 is SerializeWeights, but also opts every eligible int4 tensor into weightMat kind 4, the on-disk
-// arm64 split-half + 4-row-interleaved layout, so the paged-MoE path can use the faster kernel without an in-RAM repack.
-// Legacy and opt-in: SerializeWeights (kind 3 only) is what every existing caller gets. A tensor whose shape
-// RepackW4A8Row4/RepackW4A8Row4Scales reject (the router, or any int4 tensor not a multiple of 4 rows / group cols), or a
-// run on a non-arm64 build, falls back to kind 3 automatically, so this is always safe to call.
-func SerializeWeightsRow4(w *Weights, id string) ([]byte, error) {
-	wr := &giwWriter{row4: true}
-	if err := wr.writeBundle(w, id); err != nil {
-		return nil, err
-	}
-	wr.u32(crc32.ChecksumIEEE(wr.buf))
-	return wr.buf, nil
-}
-
-// SerializeWeightsToRow4 is SerializeWeightsTo with the same kind-4 opt-in as
-// SerializeWeightsRow4 — see that function's doc for the fallback contract.
-func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error) {
-	wr := &giwWriter{sink: out, row4: true}
-	if err := wr.writeBundle(w, id); err != nil {
-		return wr.n, err
-	}
-	var crc [4]byte
-	binary.LittleEndian.PutUint32(crc[:], wr.crc)
-	if _, err := out.Write(crc[:]); err != nil {
-		return wr.n, err
-	}
-	return wr.n + 4, nil
-}
-
 // SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE consumer (docs/tasks/task-int4-layout-2026-09.md):
 // on a cpu-arm64 target, every eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5 (row4-only)
 // instead of kind 3; every other target, including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
-// SerializeWeights. internal/prequant.Transcode/EnsureCachedGIW and cmd/prequant drive this; SerializeWeightsRow4 and
-// kind 4 are legacy, kept for their "usable on any core" contract.
+// SerializeWeights. internal/prequant.Transcode/EnsureCachedGIW and cmd/prequant drive this.
 func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte, error) {
 	wr := &giwWriter{target: target}
 	if err := wr.writeBundle(w, id); err != nil {
@@ -250,7 +177,7 @@ func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 }
 
 // writeHeadGlobals writes everything up to and including the layer count: the
-// header (magic/version/quant/id/config), the global tensors, and u32(len(Layers)).
+// header (magic/version/id/config/label), the global tensors, and u32(len(Layers)).
 // Split out so a streaming transcode can emit the head, then produce-write-free each
 // layer one at a time (peak RAM ~one layer, not the whole model) before the loop in
 // writeBundle. The layer count is len(w.Layers), so the streamer must allocate
@@ -261,12 +188,11 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 		return fmt.Errorf("decoder: marshal config: %w", err)
 	}
 	wr.raw([]byte(giwMagic))
-	wr.u32(wr.emitVersion())
-	wr.u32(uint32(w.quantMode()))
+	wr.u32(giwVersion)
 	wr.str(id)
 	wr.bytesField(cfgJSON)
 
-	// v5: the resolved quant label, recorded so the reader need not re-infer it. It is gated on whether w.Layers is
+	// The resolved quant label, recorded so the reader need not re-infer it. It is gated on whether w.Layers is
 	// populated, not on which writer is in use. The incremental GGUF transcode calls writeHeadGlobals on a freshly make()'d,
 	// all-zero Layers slice before any layer streams, where quantLabel() cannot see real data and its default case returns
 	// "native", a real quant mode, so calling it unconditionally would bake a false "native" label into every streamed
@@ -276,11 +202,8 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	if w.hasPopulatedLayers() {
 		label = w.quantLabel()
 	}
-	if giwLabelForTest != "" {
-		label = giwLabelForTest
-	}
 	wr.str(label)
-	wr.alignHead() // v12: variable-length header (the label, present or not) must not shift what follows
+	wr.alignHead() // the variable-length header (the label, present or not) must not shift what follows
 
 	wr.weightMat(&w.Embed)
 	wr.weightMat(&w.LMHead)
@@ -288,9 +211,9 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.f32(w.FinalNorm)
 	wr.f32(w.FinalNormBias)
 
-	// v4: Gemma 4 model-level Per-Layer-Embedding inputs (empty on the PLE-free
+	// Gemma 4 model-level Per-Layer-Embedding inputs (empty on the PLE-free
 	// E-model/26B variants, but present as empty WeightMats so the layout is stable).
-	// Gated on gemma4 so every other family's bundle is byte-identical to v3.
+	// Written for gemma4 only; no other family's bundle carries them.
 	if wr.arch != nil && wr.arch.gemma4 != nil {
 		wr.weightMat(&w.PerLayerTokenEmbed)
 		wr.weightMat(&w.PerLayerModelProj)
@@ -326,20 +249,13 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {
 		return nil, &SerializeError{fmt.Sprintf("bad magic %q (want %q)", got, giwMagic)}
 	}
-	v := r.u32()
-	if v < giwMinReadV || v > giwVersion {
-		return nil, &SerializeError{fmt.Sprintf("format version %d, this build reads %d..%d", v, giwMinReadV, giwVersion)}
+	if v := r.u32(); r.err == nil && v != giwVersion {
+		return nil, &SerializeError{fmt.Sprintf("format v%d, this build reads v%d — delete the sidecar (it rebuilds) "+
+			"or rebuild with `go run ./cmd/prequant …`", v, giwVersion)}
 	}
-	r.version = v
-	quant := quantMode(r.u32())
 	_ = r.str() // id — stored for tooling, not validated here
 	cfgJSON := r.bytesField()
-	// v5+: the recorded resolved quant label (may be "" for a streamed bundle → infer). Absent
-	// entirely in v3/v4 bundles, which keep working unchanged.
-	bakedQuant := ""
-	if v >= 5 {
-		bakedQuant = r.str()
-	}
+	bakedQuant := r.str() // the resolved quant label; "" for a streamed bundle, which is then inferred from the tensors
 	r.alignHead()
 	if r.err != nil {
 		return nil, &SerializeError{"truncated header"}
@@ -365,15 +281,7 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	if err != nil {
 		return nil, &SerializeError{"arch: " + err.Error()}
 	}
-	r.arch = arch // gates the v4 gemma4 model-level + per-layer tail
-	// Before v10 the GGUF loader left dense Granite's q/k in llama.cpp's permuted RoPE order, so an older granite bundle can be
-	// CRC-valid, shape-valid, mtime-fresh and wrong. Refusing it is what makes prequant's selfCheck see a stale sidecar and
-	// rebuild it; a bundle that came from safetensors is refused too, which costs one rebuild and nothing else.
-	if r.version < giwV10GraniteQK && arch.Name == "granite" {
-		return nil, &SerializeError{fmt.Sprintf("dense-granite bundle is format v%d: before v%d the GGUF "+
-			"loader left q/k in llama.cpp's permuted RoPE order (audit C-05) — rebuild it from the source",
-			r.version, giwV10GraniteQK)}
-	}
+	r.arch = arch // gates the gemma4 model-level inputs and per-layer tail
 
 	w := &Weights{Cfg: cfg, arch: arch, backing: data, bakedQuant: bakedQuant}
 	w.Embed = r.weightMat()
@@ -385,7 +293,7 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	w.PosEmbed = r.weightMat()
 	w.FinalNorm = r.f32()
 	w.FinalNormBias = r.f32()
-	if r.version >= giwV4Gemma4 && arch.gemma4 != nil { // v4 gemma4 model-level PLE inputs
+	if arch.gemma4 != nil { // gemma4 model-level PLE inputs
 		w.PerLayerTokenEmbed = r.weightMat()
 		w.PerLayerModelProj = r.weightMat()
 		w.PerLayerProjNorm = r.f32()
@@ -419,19 +327,9 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	if r.err != nil {
 		return nil, &SerializeError{"truncated body: " + r.err.Error()}
 	}
-	if quant != w.quantMode() {
-		// the serialized quant tag must match what the tensors actually are
-		return nil, &SerializeError{fmt.Sprintf("quant tag %d disagrees with tensor kinds", quant)}
-	}
 	if err := validateShapes(w, arch); err != nil {
 		return nil, err
 	}
-	if w.bakedQuant == "int4mix" {
-		// The one label an earlier rule could get wrong (it counted float32 body weights as a mix): take it from the
-		// weights, so a bundle written under that rule needs no rebuild. A real mix reads back as "int4mix".
-		w.bakedQuant = w.quantLabel()
-	}
-	w.int4F16 = r.f16
 	return w, nil
 }
 
@@ -881,28 +779,6 @@ func NewModelWithOptions(w *Weights, opts Options) (*Model, error) {
 	return modelFromOptions(w, be, opts).withBackendNames(opts.Backend, beErr).bindKnobs(opts.Knobs.values()).withResidency(), nil
 }
 
-// quantMode reports the precision the bundle's matmul weights are in, derived
-// from the first non-empty weightMat (they are all quantized uniformly at load).
-func (w *Weights) quantMode() quantMode {
-	for _, m := range w.matmulWeights() {
-		if m.Rows() == 0 {
-			continue
-		}
-		switch m.Kind() {
-		case "int4":
-			return quantInt4
-		case "int8":
-			if _, _, w8a8, _ := m.Int8(); w8a8 {
-				return quantInt8I8
-			}
-			return quantInt8
-		default:
-			return quantNone
-		}
-	}
-	return quantNone
-}
-
 // --- writer ---
 
 // giwWriter serializes the .giw / .giw-kv formats in one of two modes: buffer mode
@@ -917,20 +793,12 @@ type giwWriter struct {
 	crc  uint32        // running CRC32-IEEE over bytes written (stream mode)
 	n    int64         // bytes written (stream mode)
 	err  error         // first sink error (stream mode)
-	arch *Architecture // set in writeBundle; gates the v4 gemma4 model-level + per-layer tail
-
-	// row4 opts weightMat into emitting kind 4 (the on-disk split-half + 4-row layout, both canonical and row4) for every
-	// eligible int4 tensor, instead of always kind 3. Legacy: set only by SerializeWeightsRow4/SerializeWeightsToRow4, kept for
-	// their "usable on any core" portability; no production caller sets it (StreamTranscodeGGUF and internal/prequant drive
-	// target). It must stay opt-in, since a tensor's WeightMat may already carry an in-RAM row4 repack
-	// (repackW4A8Row4IfEligible) that has nothing to do with whether this serialize call should bake it onto disk.
-	row4 bool
+	arch *Architecture // set in writeBundle; gates the gemma4 model-level inputs and per-layer tail
 
 	// target opts weightMat into emitting kind 5 (row4-only, no canonical arrays) for every eligible int4 tensor on a
 	// cpu-arm64 target, instead of kind 3: the one-representation-per-target policy, .giw's counterpart to
 	// wantsCanonicalInt4's in-RAM decision (docs/tasks/task-int4-layout-2026-09.md). GIWTargetNone (the zero value) keeps
-	// kind 3 for every int4 tensor. Checked ahead of row4 in weightMat: if a caller set both, the newer, narrower promise
-	// (one target) wins over the older, broader one (any core).
+	// kind 3 for every int4 tensor.
 	target GIWTarget
 
 	// layerBudget is the memory streamLayers may hold in built, unwritten layers (stream mode). Zero builds one layer at
@@ -952,24 +820,6 @@ func (w *giwWriter) raw(b []byte) {
 	w.n += int64(len(b))
 }
 
-// giwEmitVersion is the version the writer stamps and lays out. It is a variable ONLY so a test can
-// write a genuine pre-v12 (unpadded) bundle and prove the reader still loads it; production always
-// leaves it at giwVersion.
-var giwEmitVersion uint32 = giwVersion
-
-// emitVersion is the format version this writer stamps: giwEmitVersion, except that a non-Metal target
-// stays at the last version with no fused-group kind, so a file that can contain no kind 6 is not made
-// unreadable to a pre-v13 reader for nothing.
-func (w *giwWriter) emitVersion() uint32 {
-	v := giwEmitVersion
-	switch {
-	case v < giwVFused || w.target == GIWTargetMetal || v >= giwVF16Scales:
-		return v // v15 changes kinds 3/4/5, which every target writes
-	default:
-		return giwVFused - 1
-	}
-}
-
 // pos is how many bytes have been written since the blob start, in either mode — the quantity the
 // alignment padding is defined over.
 func (w *giwWriter) pos() int64 {
@@ -984,26 +834,23 @@ func (w *giwWriter) pos() int64 {
 // offset, so writer and reader compute the same answer without recording it.
 func giwArrayPad(off int64) int { return int((-(off + 4)) & 15) }
 
-// alignHead ends the variable-length header on a 16-byte boundary (v12+). The header carries a length-prefixed quant label
+// alignHead ends the variable-length header on a 16-byte boundary. The header carries a length-prefixed quant label
 // that the resident writer emits and the streaming writer deliberately does not, so the two paths' offsets differ by the
 // label's length. Every later array's padding is a function of its absolute offset, so without this the two would lay out
 // the same weights with different padding and stop being byte-identical (internal/prequant
 // TestStreamTranscodeMatchesResident). With it, everything after the header is at the same offsets in both.
-func (w *giwWriter) alignHead() {
-	if giwEmitVersion < giwVAligned {
-		return
-	}
+func (w *giwWriter) alignHead() { w.align16() }
+
+// align16 pads to a 16-byte boundary: before a block that carries no count (a fused group's nibbles and scales).
+func (w *giwWriter) align16() {
 	if pad := int((-w.pos()) & 15); pad > 0 {
 		var z [16]byte
 		w.raw(z[:pad])
 	}
 }
 
-// alignArray pads before the next array's count (v12+; a no-op when emitting an older layout).
+// alignArray pads before the next array's count.
 func (w *giwWriter) alignArray() {
-	if giwEmitVersion < giwVAligned {
-		return
-	}
 	if pad := giwArrayPad(w.pos()); pad > 0 {
 		var z [16]byte
 		w.raw(z[:pad])
@@ -1019,19 +866,15 @@ func (w *giwWriter) str(s string) { w.u32(uint32(len(s))); w.raw([]byte(s)) }
 
 func (w *giwWriter) bytesField(b []byte) { w.u32(uint32(len(b))); w.raw(b) }
 
-// f16Scales writes q4s converted by F16Bits as a u32 count + little-endian uint16 payload.
-func (w *giwWriter) f16Scales(q4s []float32) {
-	w.u32(uint32(len(q4s)))
-	b := make([]byte, 2*len(q4s))
-	for i, v := range q4s {
-		binary.LittleEndian.PutUint16(b[2*i:], F16Bits(v))
+// u16s writes s as little-endian uint16s, with no count.
+func (w *giwWriter) u16s(s []uint16) {
+	if len(s) == 0 {
+		return
 	}
-	w.raw(b)
-}
-
-// scales16 writes binary16 int4 scales as a u32 count + little-endian uint16 payload (v15 kinds 3/4/5).
-func (w *giwWriter) scales16(s []uint16) {
-	w.u32(uint32(len(s)))
+	if nativeLittleEndian {
+		w.raw(unsafe.Slice((*byte)(unsafe.Pointer(&s[0])), 2*len(s)))
+		return
+	}
 	b := make([]byte, 2*len(s))
 	for i, v := range s {
 		binary.LittleEndian.PutUint16(b[2*i:], v)
@@ -1039,15 +882,10 @@ func (w *giwWriter) scales16(s []uint16) {
 	w.raw(b)
 }
 
-// int4Scales writes an int4 scale array in the form this writer's version uses: binary16 from v15, f32
-// before. q4s is always the exact widening of binary16 values (Int4F32), so either form holds the same
-// numbers.
-func (w *giwWriter) int4Scales(q4s []float32) {
-	if w.emitVersion() >= giwVF16Scales {
-		w.scales16(linalg.F32ToF16Scales(q4s))
-		return
-	}
-	w.f32(q4s)
+// scales16 writes binary16 int4 scales, the WeightMat's own storage, as a u32 count + little-endian uint16 payload.
+func (w *giwWriter) scales16(s []uint16) {
+	w.u32(uint32(len(s)))
+	w.u16s(s)
 }
 
 // f32 batches into one raw write (a per-tensor temp), not 4 bytes at a time — the
@@ -1076,7 +914,7 @@ func (w *giwWriter) i8(s []int8) {
 func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
 
 // weightMatKind3Only is weightMat for a tensor that must never take kind 5 regardless of target: it always writes kind 3
-// (or, under the legacy row4 opt-in, kind 4) for an int4 tensor. Two reasons put a call site here:
+// for an int4 tensor. Two reasons put a call site here:
 //
 //   - MoE-paged experts (l.Experts[*], gemma4's mo.expertsGateUp/expertsDown): moepaging.go reads these off the mmap with
 //     no load-time repack step, so the file must carry whatever layout the pager needs, chosen once at write time, not
@@ -1101,49 +939,19 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		w.raw([]byte{0}) // empty
 		return
 	}
-	if eligible && w.f16SingleEligible(m) {
-		// kind 7 (v14, metal target): canonical int4 + its f16 scales for a no-copy Metal buffer.
-		q4, q4s, group, _ := Int4F32(m)
-		w.raw([]byte{7})
-		w.u32(uint32(m.Rows()))
-		w.u32(uint32(m.Cols()))
-		w.u32(uint32(group))
-		w.raw([]byte{0})
-		w.alignArray()
-		w.f32(q4s)
-		w.alignArray()
-		w.bytesField(q4)
-		w.alignArray()
-		w.f16Scales(q4s)
-		return
-	}
-	q4, q4s, group, isQ4 := Int4F32(m)
+	q4, q4s, group, isQ4 := m.Int4F16()
 	q8, scales, w8a8, isQ8 := m.Int8()
 	f32, _ := m.F32()
 	var kind byte
-	var q4Row4 []byte
-	var q4Row4Scales []float32
 	switch {
 	case isQ4:
 		kind = 3
-		// Row4 emission (kind 4 or 5) is purely a function of the writer's own
-		// opt-in state + this tensor's shape — NEVER of whatever repack state
-		// already happens to sit in RAM (repackW4A8Row4IfEligible populates
-		// q4Row4 unconditionally for every GGUF/safetensors-streamed int4 tensor
-		// on an arm64 box, regardless of whether THIS serialize call is a
-		// prequant path at all). Recomputing from canonical q4/q4s here, rather
-		// than reading m.Int4Row4(), keeps kind 3 the default for every existing
-		// caller unless w.target or w.row4 is set.
-		switch {
-		case eligible && w.target == GIWTargetCPUArm64:
+		// Kind 5 is a function of the writer's target and this tensor's shape, never of whatever repack state already
+		// sits in RAM (repackW4A8Row4IfEligible repacks every heap-built int4 tensor on arm64, whether or not this call
+		// is a prequant path). So the row4 arrays are recomputed here from the canonical ones.
+		if eligible && w.target == GIWTargetCPUArm64 {
 			if r4, r4s, ok := repackRow4ForEmit(q4, q4s, m.Rows(), m.Cols(), group); ok {
-				kind = 5
-				q4Row4, q4Row4Scales = r4, r4s
-			}
-		case w.row4:
-			if r4, r4s, ok := repackRow4ForEmit(q4, q4s, m.Rows(), m.Cols(), group); ok {
-				kind = 4
-				q4Row4, q4Row4Scales = r4, r4s
+				kind, q4, q4s = 5, r4, r4s
 			}
 		}
 	case isQ8:
@@ -1172,44 +980,20 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		w.f32(scales)
 		w.alignArray()
 		w.i8(q8)
-	case 3:
+	case 3, 5: // binary16 group scales, then the nibbles: canonical for kind 3, the row4 layout for kind 5
 		w.alignArray()
-		w.int4Scales(q4s)
-		w.alignArray()
-		w.bytesField(q4)
-	case 4:
-		w.alignArray()
-		w.int4Scales(q4s)
+		w.scales16(q4s)
 		w.alignArray()
 		w.bytesField(q4)
-		w.alignArray()
-		w.int4Scales(q4Row4Scales)
-		w.alignArray()
-		w.bytesField(q4Row4)
-	case 5:
-		w.alignArray()
-		w.int4Scales(q4Row4Scales)
-		w.alignArray()
-		w.bytesField(q4Row4)
 	}
 }
 
-// f16SingleEligible reports whether m is written as kind 7 (v14, metal target): a canonical group-32 int4 tensor with
-// K%32==0, the same member rule as a fused group, for a tensor written on its own.
-func (w *giwWriter) f16SingleEligible(m *linalg.WeightMat) bool {
-	if w.target != GIWTargetMetal || w.emitVersion() < giwVF16 || m.Rows() == 0 || m.Cols()%32 != 0 {
-		return false
-	}
-	_, _, group, ok := m.Int4F16()
-	return ok && group == 32
-}
-
-// fusedEligible reports whether ms can be written as one fused group (kind 6): a Metal-target writer at v13+, at least
+// fusedEligible reports whether ms can be written as one fused group (kind 6): a Metal-target writer, at least
 // two members, every member a canonical group-32 int4 with the same K (K%32==0, so every member's nibble bytes are a
 // multiple of 16 and the members stay 16-aligned back to back). Anything else (an absent V on a K=V layer, an int8
 // tensor, a mixed K) is written the ordinary way, one record at a time.
 func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
-	if w.target != GIWTargetMetal || w.emitVersion() < giwVFused || len(ms) < 2 {
+	if w.target != GIWTargetMetal || len(ms) < 2 {
 		return false
 	}
 	k := ms[0].Cols()
@@ -1225,15 +1009,16 @@ func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
 }
 
 // fusedGroup writes ms, in the order a resident backend fuses them (q,k,v / gate,up), as ONE group whose nibbles are
-// contiguous: a Metal fused GEMV wants its rows in one buffer, and an mmap'd file can only be aliased into one if the rows
-// are adjacent there. Layout:
+// contiguous, and whose binary16 scales are too: a Metal fused GEMV wants its rows in one buffer, and an mmap'd file can
+// only be aliased into one if the rows are adjacent there. Layout:
 //
-//	per member:  kind 6 | rows | cols | group | w8a8=0 | pad | u32 nScales | f32 scales     (no nibbles)
+//	per member:  kind 6 | rows | cols | group | w8a8=0                                      (no arrays)
 //	then:        pad to 16 | nibbles of member 0 | nibbles of member 1 | ...                (no length prefixes)
+//	then:        pad to 16 | scales of member 0 | scales of member 1 | ...                  (little-endian uint16)
 //
-// The nibble lengths are a pure function of each member's shape (rows*cols/2), so the block needs no prefixes: a prefix
-// between two members would be exactly the gap this exists to remove. A group that is not eligible is written as plain
-// consecutive records, byte-for-byte what weightMat writes.
+// Both blocks' lengths are a pure function of each member's shape (rows*cols/2 nibble bytes, rows*cols/group scales),
+// so they need no prefixes: a prefix between two members would be exactly the gap this exists to remove. A group that
+// is not eligible is written as plain consecutive records, byte-for-byte what weightMat writes.
 func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 	if !w.fusedEligible(ms) {
 		for _, m := range ms {
@@ -1242,38 +1027,21 @@ func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 		return
 	}
 	for _, m := range ms {
-		_, q4s, group, _ := Int4F32(m)
+		_, _, group, _ := m.Int4F16()
 		w.raw([]byte{6})
 		w.u32(uint32(m.Rows()))
 		w.u32(uint32(m.Cols()))
 		w.u32(uint32(group))
 		w.raw([]byte{0})
-		w.alignArray()
-		w.f32(q4s)
 	}
-	if pad := int((-w.pos()) & 15); pad > 0 {
-		var z [16]byte
-		w.raw(z[:pad])
-	}
+	w.align16()
 	for _, m := range ms {
 		q4, _, _, _ := m.Int4F16()
 		w.raw(q4)
 	}
-	if w.emitVersion() >= giwVF16 {
-		// v14: the members' f16 scales, back to back in member order and starting 16-aligned — the same
-		// adjacency the nibbles have, so a fused buffer's scales can be aliased as one run too.
-		if pad := int((-w.pos()) & 15); pad > 0 {
-			var z [16]byte
-			w.raw(z[:pad])
-		}
-		for _, m := range ms {
-			_, q4s, _, _ := Int4F32(m)
-			b := make([]byte, 2*len(q4s))
-			for i, v := range q4s {
-				binary.LittleEndian.PutUint16(b[2*i:], F16Bits(v))
-			}
-			w.raw(b)
-		}
+	w.align16()
+	for _, m := range ms {
+		w.u16s(m.Int4ScalesF16())
 	}
 }
 
@@ -1297,7 +1065,7 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.f32(l.PreMLPNormBias)
 	w.f32(l.PostMLPNorm)
 	w.weightMat(&l.Router)
-	w.f32(l.RouterBias) // v3: DeepSeek/GLM e_score_correction_bias
+	w.f32(l.RouterBias) // DeepSeek/GLM e_score_correction_bias
 	w.u32(uint32(len(l.Experts)))
 	for e := range l.Experts {
 		w.weightMatKind3Only(&l.Experts[e].Gate)
@@ -1309,12 +1077,12 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.weightMat(&l.SharedExpert.Down)
 	w.weightMat(&l.SharedGate)
 	w.hybridLayer(l)
-	if w.arch != nil && w.arch.gemma4 != nil { // v4 gemma4 per-layer tail
+	if w.arch != nil && w.arch.gemma4 != nil {
 		w.gemma4Layer(l)
 	}
-	w.v6Layer(l) // v6 completeness tail — see below
-	w.v8Layer(l) // v8 LFM2 short-conv tail — see below
-	w.v9Layer(l) // v9 KDA + MLA-gate tail — see below
+	w.v6Layer(l) // the completeness tail
+	w.v8Layer(l) // the LFM2 short-conv tail
+	w.v9Layer(l) // the KDA and MLA-gate tail
 }
 
 // v6Layer writes the state that made five families unrepresentable, in one unconditional tail. Unconditional rather than
@@ -1492,14 +1260,10 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 // --- reader (cursor over data; big arrays aliased, floats copied) ---
 
 type giwReader struct {
-	data    []byte
-	off     int
-	err     error
-	version uint32        // parsed file version; gemma4 v4 fields are read only when ≥4
-	arch    *Architecture // resolved from the serialized config; gates the gemma4 tail
-	// f16 holds, per int4 tensor (keyed by its nibbles' address), the f16 scales a v14 metal-target file
-	// stores for it — aliased from the blob when aligned. Moved onto the Weights at the end of the load.
-	f16 map[uintptr][]uint16
+	data []byte
+	off  int
+	err  error
+	arch *Architecture // resolved from the serialized config; gates the gemma4 tail
 }
 
 func (r *giwReader) fail(msg string) {
@@ -1549,9 +1313,10 @@ func (r *giwReader) u8() byte {
 	return b
 }
 
-// alignHead skips the padding a v12+ writer put at the end of the header (see giwWriter.alignHead).
-func (r *giwReader) alignHead() {
-	if r.err != nil || r.version < giwVAligned {
+// align16 skips the padding the writer put before a 16-aligned position (giwWriter.align16): the end of the header and
+// the two blocks of a fused group.
+func (r *giwReader) align16() {
+	if r.err != nil {
 		return
 	}
 	if pad := int((-int64(r.off)) & 15); r.need(pad) {
@@ -1559,10 +1324,11 @@ func (r *giwReader) alignHead() {
 	}
 }
 
-// alignArray skips the zero padding a v12+ writer put before an aligned array's count (see
-// giwArrayPad). Older layouts have none.
+func (r *giwReader) alignHead() { r.align16() }
+
+// alignArray skips the zero padding the writer put before an aligned array's count (see giwArrayPad).
 func (r *giwReader) alignArray() {
-	if r.err != nil || r.version < giwVAligned {
+	if r.err != nil {
 		return
 	}
 	if pad := giwArrayPad(int64(r.off)); r.need(pad) {
@@ -1574,9 +1340,8 @@ func (r *giwReader) alignArray() {
 var nativeLittleEndian = func() bool { x := uint16(1); return *(*byte)(unsafe.Pointer(&x)) == 1 }()
 
 // f32Alias reads a padded f32 array as an ALIAS of the mapping when its payload is 4-byte aligned
-// in memory (always true for a v12 bundle inside a v3-bundle mapping; true by luck for a quarter of
-// an older file's arrays), and copies otherwise — so an old or oddly-placed blob still loads, just
-// onto the heap as before. For weight-matrix scale arrays only: the mapping is read-only, and a
+// in memory (always true for a blob inside a v3-bundle mapping), and copies otherwise, so an
+// oddly-placed blob still loads, onto the heap. For weight-matrix scale arrays only: the mapping is read-only, and a
 // scale array is read-only by construction (its sibling nibble/int8 arrays are already aliased).
 // The caller must have called alignArray first.
 func (r *giwReader) f32Alias() []float32 {
@@ -1640,25 +1405,9 @@ func (r *giwReader) u16View(n int) []uint16 {
 	return out
 }
 
-// int4Scales reads a kind-3/4/5 int4 scale array as binary16: aliased from the mapping in a v15+ blob
-// (a u16 array, 16-aligned), converted from an older blob's f32 array otherwise. The caller must have
+// int4Scales reads an int4 scale array (kinds 3 and 5) as binary16, aliased from the mapping. The caller must have
 // called alignArray first.
-func (r *giwReader) int4Scales() []uint16 {
-	if r.version >= giwVF16Scales {
-		return r.u16View(int(r.u32()))
-	}
-	return linalg.F32ToF16Scales(r.f32Alias())
-}
-
-func (r *giwReader) recordF16(q4 []byte, f16 []uint16) {
-	if len(q4) == 0 || len(f16) == 0 {
-		return
-	}
-	if r.f16 == nil {
-		r.f16 = map[uintptr][]uint16{}
-	}
-	r.f16[uintptr(unsafe.Pointer(&q4[0]))] = f16
-}
+func (r *giwReader) int4Scales() []uint16 { return r.u16View(int(r.u32())) }
 
 // rawAlias ALIASES a []byte (int4 packed nibbles): a plain subslice of data.
 func (r *giwReader) rawAlias() []byte {
@@ -1715,7 +1464,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		return linalg.WrapInt8(q8, scales, rows, cols, w8a8)
 	case 3:
 		r.alignArray()
-		q4s := r.int4Scales() // binary16: aliased from a v15 blob, converted from an older one
+		q4s := r.int4Scales()
 		r.alignArray()
 		q4 := r.rawAlias() // zero-copy alias into the mmap'd blob (WrapInt4 keeps it)
 		if group <= 0 {
@@ -1728,38 +1477,12 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			return linalg.WeightMat{}
 		}
 		return linalg.WrapInt4F16(q4, q4s, rows, cols, group)
-	case 4:
-		r.alignArray()
-		q4s := r.int4Scales()
-		r.alignArray()
-		q4 := r.rawAlias() // canonical bytes stay authoritative — same as kind 3
-		if group <= 0 {
-			r.fail(fmt.Sprintf("int4-row4 weightMat group %d ≤ 0", group))
-			return linalg.WeightMat{}
-		}
-		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
-		if len(q4) != wantQ4 || len(q4s) != wantScales {
-			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
-			return linalg.WeightMat{}
-		}
-		r.alignArray()
-		q4Row4Scales := r.int4Scales()
-		r.alignArray()
-		q4Row4 := r.rawAlias() // zero-copy — the whole point of kind 4 (WrapInt4Row4 gates on row4Usable() before aliasing it in)
-		// RepackW4A8Row4/RepackW4A8Row4Scales preserve length exactly (a repack,
-		// not a requant), so the row4 arrays share kind 3's own want* values.
-		if len(q4Row4) != wantQ4 || len(q4Row4Scales) != wantScales {
-			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
-			return linalg.WeightMat{}
-		}
-		return linalg.WrapInt4Row4F16(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)
 	case 5:
 		if group <= 0 {
 			r.fail(fmt.Sprintf("int4-row4-only weightMat group %d ≤ 0", group))
 			return linalg.WeightMat{}
 		}
-		// row4 arrays share kind 3/4's own want* values (a repack, not a requant —
-		// RepackW4A8Row4/RepackW4A8Row4Scales preserve length exactly).
+		// The row4 arrays have kind 3's lengths: a repack, not a requant.
 		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
 		r.alignArray()
 		q4Row4Scales := r.int4Scales()
@@ -1771,59 +1494,33 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		wm, ok := linalg.WrapInt4Row4OnlyF16(q4Row4, q4Row4Scales, rows, cols, group)
 		if !ok {
-			// Named and actionable: a kind-5 file is a promise to one target (the box/core that wrote it), unlike kind 4's "usable
-			// anywhere". ok=false here means Int4Row4Usable rejected this core: wrong arch (the file was written on/for arm64), or a
-			// shape this core's build cannot run the row4 kernel for.
+			// Named and actionable: a kind-5 file is a promise to one target. ok=false here means Int4Row4Usable rejected
+			// this core: wrong arch (the file was written for arm64), or a shape this core's build cannot run the row4
+			// kernel for.
 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d is stored row4-only (kind 5, a cpu-arm64 prequant target) but this core cannot use that layout — rebuild with `go run ./cmd/prequant -target <this core>` (or delete the stream-weights cache so it rebuilds automatically)", rows, cols, group))
 			return linalg.WeightMat{}
 		}
 		return wm
-	case 7:
-		if r.version < giwVF16 {
-			r.fail(fmt.Sprintf("weightMat kind 7 in a v%d blob (kind 7 exists from v%d)", r.version, giwVF16))
-			return linalg.WeightMat{}
-		}
-		if group <= 0 {
-			r.fail(fmt.Sprintf("int4-f16 weightMat group %d ≤ 0", group))
-			return linalg.WeightMat{}
-		}
-		r.alignArray()
-		q4s := r.f32Alias()
-		r.alignArray()
-		q4 := r.rawAlias()
-		r.alignArray()
-		f16 := r.u16View(int(r.u32()))
-		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
-		if len(q4) != wantQ4 || len(q4s) != wantScales || len(f16) != wantScales {
-			r.fail(fmt.Sprintf("int4-f16 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d f16=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), len(f16), wantScales))
-			return linalg.WeightMat{}
-		}
-		r.recordF16(q4, f16)
-		// The f16 block is F16Bits of the f32 scales (the writer's f16Scales), the same bits
-		// linalg.F32ToF16 gives, so it is the WeightMat's scale storage as it stands.
-		return linalg.WrapInt4F16(q4, f16, rows, cols, group)
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
 		return linalg.WeightMat{}
 	}
 }
 
-// fusedPending is a kind-6 member whose header and scales have been read but whose nibbles are in the
-// group block that follows the group's last record.
+// fusedPending is a kind-6 member whose header has been read; its nibbles and scales are in the group's two
+// blocks, which follow the group's last record.
 type fusedPending struct {
 	dst               *linalg.WeightMat
 	rows, cols, group int
-	scales            []float32
 }
 
 // fusedGroup reads what giwWriter.fusedGroup wrote: for each member either an ordinary weightMat record or a
-// kind-6 record (header + scales), then — if any member was kind 6 — the shared nibble block, each member's
-// nibbles aliased out of it in member order. A pre-v13 blob never contains kind 6, so it reads exactly as
-// before (each member is just a weightMat).
+// kind-6 header, then, if any member was kind 6, the shared nibble block and the shared binary16 scale block, each
+// member's part aliased out of them in member order.
 func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 	var pend []fusedPending
 	for _, d := range dst {
-		if r.err == nil && r.version >= giwVFused && r.need(1) && r.data[r.off] == 6 {
+		if r.err == nil && r.need(1) && r.data[r.off] == 6 {
 			r.off++
 			rows, cols, group := int(r.u32()), int(r.u32()), int(r.u32())
 			if !r.need(1) {
@@ -1835,13 +1532,7 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 				r.fail(fmt.Sprintf("fused int4 member implausible dims %d×%d group=%d", rows, cols, group))
 				return
 			}
-			r.alignArray()
-			scales := r.f32Alias()
-			if want := rows * ((cols + group - 1) / group); len(scales) != want {
-				r.fail(fmt.Sprintf("fused int4 member %d×%d group=%d: scales=%d (want %d)", rows, cols, group, len(scales), want))
-				return
-			}
-			pend = append(pend, fusedPending{dst: d, rows: rows, cols: cols, group: group, scales: scales})
+			pend = append(pend, fusedPending{dst: d, rows: rows, cols: cols, group: group})
 			continue
 		}
 		*d = r.weightMat()
@@ -1849,35 +1540,22 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 	if len(pend) == 0 || r.err != nil {
 		return
 	}
-	// The block starts 16-aligned (the writer pads with the position, not with a length prefix) and each
-	// member is a multiple of 16 bytes (K%32==0), so every member's nibbles stay 16-aligned and adjacent.
-	if pad := int((-int64(r.off)) & 15); r.need(pad) {
-		r.off += pad
+	// Each block starts 16-aligned (the writer pads with the position, not with a length prefix). A member's nibbles
+	// are a multiple of 16 bytes (K%32==0), so every member's nibbles stay 16-aligned and adjacent.
+	r.align16()
+	nibbles := make([][]byte, len(pend))
+	for i, p := range pend {
+		if nibbles[i] = r.rawN(p.rows * ((p.cols + 1) / 2)); r.err != nil {
+			return
+		}
 	}
-	for _, p := range pend {
-		n := p.rows * ((p.cols + 1) / 2)
-		q4 := r.rawN(n)
+	r.align16()
+	for i, p := range pend {
+		scales := r.u16View(p.rows * ((p.cols + p.group - 1) / p.group))
 		if r.err != nil {
 			return
 		}
-		*p.dst = linalg.WrapInt4F16(q4, linalg.F32ToF16Scales(p.scales), p.rows, p.cols, p.group)
-	}
-	if r.version >= giwVF16 {
-		// v14: the members' f16 scales, back to back, starting 16-aligned (see the writer).
-		if pad := int((-int64(r.off)) & 15); r.need(pad) {
-			r.off += pad
-		}
-		for _, p := range pend {
-			f16 := r.u16View(len(p.scales))
-			if r.err != nil {
-				return
-			}
-			q4, _, _, _ := p.dst.Int4F16()
-			r.recordF16(q4, f16)
-			// The block holds F16Bits of the member's f32 scales — the same bits linalg.F32ToF16 gave the
-			// WeightMat above — so it becomes the storage, aliased, and the converted copy is dropped.
-			*p.dst = linalg.WrapInt4F16(q4, f16, p.rows, p.cols, p.group)
-		}
+		*p.dst = linalg.WrapInt4F16(nibbles[i], scales, p.rows, p.cols, p.group)
 	}
 }
 
@@ -1901,7 +1579,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.PreMLPNormBias = r.f32()
 	l.PostMLPNorm = r.f32()
 	l.Router = r.weightMat()
-	l.RouterBias = r.f32() // v3: DeepSeek/GLM e_score_correction_bias
+	l.RouterBias = r.f32() // DeepSeek/GLM e_score_correction_bias
 	ne := int(r.u32())
 	if ne < 0 || ne > maxSerializedExperts {
 		r.fail("implausible expert count")
@@ -1927,23 +1605,15 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.SharedExpert.Down = r.weightMat()
 	l.SharedGate = r.weightMat()
 	r.hybridLayer(l)
-	if r.version >= giwV4Gemma4 && r.arch != nil && r.arch.gemma4 != nil { // v4 gemma4 tail
+	if r.arch != nil && r.arch.gemma4 != nil {
 		r.gemma4Layer(l)
 	}
-	if r.version >= giwV6Tail { // v6 completeness tail
-		r.v6Layer(l)
-	}
-	if r.version >= giwV8ShortConv { // v8 LFM2 short-conv tail
-		r.v8Layer(l)
-	}
-	if r.version >= giwV9KDAGate { // v9 KDA + MLA-gate tail
-		r.v9Layer(l)
-	}
+	r.v6Layer(l) // the completeness tail
+	r.v8Layer(l) // the LFM2 short-conv tail
+	r.v9Layer(l) // the KDA and MLA-gate tail
 }
 
-// v6Layer mirrors giwWriter.v6Layer: the state that made five families unrepresentable before v6.
-// Bundles written at v3-v5 simply do not carry it, which is why it is version-gated rather than
-// probed — an older bundle's layer block ends where it always did.
+// v6Layer mirrors giwWriter.v6Layer.
 func (r *giwReader) v6Layer(l *LayerWeights) {
 	l.GProj = r.weightMat()
 	l.AttnSinks = r.f32()

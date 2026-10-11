@@ -655,6 +655,92 @@ goinfer pinned it (`96f3a4aa`) and refreshed the parity hashes (`b2e9d19b`; forw
   functions.
 - Files: `g-t1-t8-tiny.log`, `g-t1-t8-tiny.jsonl`, `g-t1-t8-real.log`, `g-t1-t8-real.jsonl`, `g-t1-t8-real-lines.txt`.
 
+## Part V, 2026-10-10: format v16 built; G-V1 PASS on every cell read, G-V2 holds with two projection misses, G-V4 PASS; the 7B's Metal cells wait for the night
+
+Part V makes `.giw` one layout that the reader reads exactly (the task doc's V1 to V7, with T7). Base `c07c7f5d` (`main`,
+weights format v15); the code is `124fc9fb`, followed by the parity refresh, the docs and one gate asset. The gates were
+registered on 2026-10-10 before any code.
+
+### G-V1, logits identity through each build's own sidecar: PASS on every cell that ran
+
+`gate identity -giw logits c07c7f5d <new>`: each revision transcodes the source with its own writer (v15, v16) and
+loads its own file, and the logits are compared bit for bit.
+
+| run | families | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny assets, CPU | 43 | 36 | 0 | 7 | 59 s |
+| tiny assets, Metal | 43 | 24 | 0 | 19 | 1 min 23 s |
+| the 1.5B Q4_K_M GGUF, Metal, int4 (read by day) | 1 cell | 1, on `metal-resident` | 0 | 0 | 24 s |
+| the 7B Q4_K_M GGUF, Metal, int4 | | | | **queued for the night** | |
+
+- CPU's 7 NOT RUN: `voxtral` and `qwen3_asr` (their tiny goldens are zip files this tool does not read), `deepseek_v2`
+  (no tiny fixture), `mellum` (its fixture is a 4.2 GB slice), `qwen2` and `qwen3` (their tiny-table assets are not in
+  `testdata/` on this Mac), and `gpt-oss` (its tiny GGUF carries no tokenizer, so neither build transcodes it).
+- Metal's 19 NOT RUN are those plus families Metal does not build resident from a tiny fixture. The two MoE fixtures
+  that decline with a "K%32" message decline with the same message on the v15 build.
+- Reports: `g-v1-cpu.log`, `g-v1-metal.log`, `g-v1-real-metal-1.5b.log`.
+
+### G-V2, sizes: every non-Metal file keeps its size; Metal files shrink as projected except the two small default files
+
+`g-v2-sizes.sh`: one source, one target, a v15 transcode (the `cmd/prequant` T8's speed gate used as its new arm:
+goinfer `f2b90014` on the aikit tree that became v1.67.0) and a v16 one (`124fc9fb`), bytes from `stat`. Records `g-v2-sizes-small.txt`, `g-v2-sizes-7b.txt`. MB is 10^6 bytes.
+
+| source | target | v15 bytes | v16 bytes | shrink | projection, ±5% | |
+|---|---|---|---|---|---|---|
+| 0.5B | Metal, `-embed-int4` | 439,436,771 | 360,672,451 | 78.8 MB | 62 MB | **outside (more)** |
+| 0.5B | Metal, plain | 525,736,387 | 481,005,763 | 44.7 MB | 45 MB | inside |
+| 1.5B | Metal, `-embed-int4` | 1,228,191,843 | 1,006,071,235 | 222.1 MB | 193 MB | **outside (more)** |
+| 1.5B | Metal, plain | 1,375,265,859 | 1,211,488,707 | 163.8 MB | 164 MB | inside |
+| 7B | Metal, `-embed-int4` | 5,242,808,035 | 4,290,894,915 | 951.9 MB | 952 MB | inside |
+| 7B | Metal, plain | 5,584,647,875 | 4,768,984,131 | 815.7 MB | 816 MB | inside |
+| each of the three | cpu-arm64, both; cuda | equal | equal | 0 | the same size | holds |
+
+- **The two misses are the projection's.** It counted one int4 table for the 0.5B and the 1.5B, and their GGUFs carry
+  a separate embedding and head, so two tables lose a float32 scale array. On the 0.5B a table has 151,936 rows of 28
+  scales, 17,016,832 bytes as float32; twice that is 34,033,664, and the default file's shrink exceeds the plain file's
+  by 34,033,696. On the 1.5B the same arithmetic gives 58.3 MB against a measured 58.3 MB. The 7B's projection counted
+  two and lands. The band is not moved: these two rows are outside it, on the side of a smaller file.
+- The kill rule (a Metal file that does not shrink) does not fire.
+- A cpu-target file is the same size to the byte, not 16 bytes smaller: the shorter header ends on the same boundary
+  for these three models.
+- **The clarification's timing.** The task doc's G-V2 amendment (16 bytes, sizes read by day) was written before the
+  first size was read and committed after it (`278ace87`). The history cannot show the order; this note does.
+
+### G-V3, Metal binding: equal on the 0.5B and the 1.5B; the 7B is queued for the night
+
+The alias banner from `serve` on Metal, the old build on its own v15 sidecar and the new build on the v16 one it rebuilt
+(`g-v4-0.5b-serve-*.log`, `g-v3-1.5b-serve-*.log`):
+
+| model | v15, bound in place | v16, bound in place | copied |
+|---|---|---|---|
+| 0.5B | 322 MB | 322 MB | 1 MB in both |
+| 1.5B | 925 MB | 925 MB | 1 MB in both |
+| 7B | | | **not read by day** |
+
+- The gate is on the 7B. By day both builds declined it on Metal at the fit guard (the resident build needs 4.65 GB and
+  the box's live-available memory left a 4.0-4.1 GB budget), ran on the CPU and printed no banner
+  (`g-v3-7b-day-declined-*.log`). The guard was not bypassed.
+- Queued: `run-gv-night-mac.sh` reads it tonight, with G-V1's 7B cell. It fails if either build prints no banner.
+
+### G-V4, refusal and rebuild: PASS
+
+- The three tests: `TestLoadSerializedWeights_refusesEveryOtherVersion` (a blob stamped v15, v17 or v3 with its CRC
+  recomputed is refused with the message naming both versions and the fix),
+  `TestEnsureCachedGIW_olderFormatIsRebuiltOnce` (a sidecar stamped as the previous version is refused, rebuilt, and
+  found fresh on the next call; with freshness by mtime alone, planted, it fails) and
+  `TestWeightAlias_olderBundleTakesCopyPath` (a non-Metal bundle's single int4 tensors bind their scales in place on
+  Metal, which they could not before the side map went).
+- The manual run, `serve` on Metal over the 0.5B in a scratch directory (`serve-once.sh`): the old build wrote a v15
+  sidecar (525.7 MB); the new build printed "does not load (... format v15, this build reads v16 ...) — rebuilding",
+  transcoded once (0.4 s, 481.0 MB), served a reply, and on its next start transcoded nothing. The 7B's day run did the
+  same on the CPU path (13.7 s for the v15 transcode, 10.6 s for the v16 one).
+
+### What a mixed pair of builds does
+
+A build from before Part V refuses a v16 sidecar as newer than it reads and rewrites it as v15; a v16 build then
+rewrites it again. Each switch costs one transcode. The manual runs above were kept in a scratch directory so no
+sidecar in `~/models` changed format.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -669,5 +755,7 @@ goinfer pinned it (`96f3a4aa`) and refreshed the parity hashes (`b2e9d19b`; forw
   `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`: its second step, the Q6_K kernel over the Q4_K one.
   `t8-cpu-nobara-preguard.jsonl`: nobara's first reading, before the AVX2 check.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
+- Part V: `g-v1-*.log` (the identity reports), `g-v2-sizes.sh` and `g-v2-sizes-*.txt`, `serve-once.sh` with
+  `g-v3-*.log` and `g-v4-*.log` (the `serve` runs), `run-gv-night-mac.sh` (tonight's 7B Metal cells).
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
   run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

@@ -51,6 +51,6 @@ func dequantInt8ToF32Row(q8 []int8, scale float32, K, Kpad int) []float32 {
 // f32ToF16 converts to IEEE-754 half. W4A8 group scales are small positive finite values, so the
 // subnormal/overflow edges are for completeness. f16's ~2^-11 relative precision is far below the 4-bit
 // weight-quant noise, so this is parity-neutral (gated). It is decoder.F16Bits — ONE definition, because a
-// metal-target .giw (weights format v14) stores scales already converted, and the kernels must see the same
-// bits whether a scale came from the file or was converted here.
+// .giw stores scales as binary16, and the kernels must see the same bits whether a scale came from the file or
+// was converted here.
 func f32ToF16(f float32) uint16 { return decoder.F16Bits(f) }
