@@ -1,6 +1,10 @@
 # Task: harness breadth and tool-call reliability, both dialects, whole sessions (2026-10)
 
-> **Status: SCOPED 2026-10-01, not started.** Merges two proposals made the same day: harness breadth (how many wire
+> **Status: Gate 0 DONE 2026-10-09** ([`harness-dialects-2026-10-09.md`](../measurements/harness-dialects-2026-10-09.md)):
+> three dialects, not two, and four named gaps (H-a Responses tool shape, which stops Codex outright; H-b
+> `/v1/models` context fields; H-c Anthropic overflow wording; H-d keep-alive form, unverified). Each is its own item
+> per §3. Gate 1 next; it needs nobara-pc for the 7B reproduction. Doc hygiene done (opencode.md's wording).
+> **Was: SCOPED 2026-10-01.** Merges two proposals made the same day: harness breadth (how many wire
 > dialects the coding-agent harnesses speak, and whether `serve check` predicts both) and tool-call reliability
 > widened past T0 (more traces, whole sessions, more families and backends). Gates run cheapest first and stop at
 > the first negative one (§2). To start after v0.20.0 is tagged.

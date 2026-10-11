@@ -1,0 +1,107 @@
+=== RUN   TestZZEModelPromptScan
+decoder: gemma-4-E2B_q4_0-it.int4.metal.giw is not in memory: reading its 3.8 GB once before the load
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+
+== E2B prompt 8 (21 prompt tokens): pos, input token, agree, logits cosine, max|diff|, last-layer residual cosine, CPU p(top)
+    0 "<bos>"        agree=true  cos 0.99851 maxdiff   2.03 resid 0.99928 p(top) 0.116
+    1 "<|turn>"      agree=true  cos 0.98572 maxdiff   4.15 resid 0.99672 p(top) 0.492
+    2 "user"         agree=true  cos 0.93348 maxdiff   4.43 resid 0.99834 p(top) 0.166
+    3 "\n"           agree=true  cos 0.99676 maxdiff   2.39 resid 0.99874 p(top) 0.468
+    4 "What"         agree=true  cos 0.99517 maxdiff   2.10 resid 0.99941 p(top) 0.673
+    5 " are"         agree=true  cos 0.99747 maxdiff   1.94 resid 0.99932 p(top) 0.787
+    6 " the"         agree=true  cos 0.98712 maxdiff   2.94 resid 0.99882 p(top) 0.234
+    7 " main"        agree=true  cos 0.98914 maxdiff   2.77 resid 0.99889 p(top) 0.286
+    8 " causes"      agree=true  cos 0.99090 maxdiff   2.28 resid 0.99901 p(top) 0.989
+    9 " of"          agree=true  cos 0.99319 maxdiff   2.23 resid 0.99924 p(top) 0.588
+   10 " inflation"   agree=false cos 0.98636 maxdiff   3.48 resid 0.99790 p(top) 0.534
+   11 "?"            agree=true  cos 0.95315 maxdiff   6.82 resid 0.99430 p(top) 0.857
+   12 "<turn|>"      agree=true  cos 0.89123 maxdiff   7.14 resid 0.99376 p(top) 0.629
+   13 "\n"           agree=true  cos 0.99312 maxdiff   4.27 resid 0.99681 p(top) 0.829
+   14 "<|turn>"      agree=true  cos 0.98576 maxdiff   6.11 resid 0.99319 p(top) 0.469
+   15 "model"        agree=true  cos 0.99072 maxdiff   2.98 resid 0.99862 p(top) 0.529
+   16 "\n"           agree=true  cos 0.99832 maxdiff   3.65 resid 0.99802 p(top) 0.950
+   17 "<|channel>"   agree=true  cos 0.99962 maxdiff   3.15 resid 0.99755 p(top) 1.000
+   18 "thought"      agree=true  cos 0.97446 maxdiff  11.21 resid 0.98325 p(top) 0.997
+   19 "\n"           agree=true  cos 0.99671 maxdiff   6.18 resid 0.99403 p(top) 0.810
+   20 "<channel|>"   agree=false cos 0.96462 maxdiff   7.74 resid 0.99146 p(top) 0.277
+
+== E2B prompt 6 (25 prompt tokens): pos, input token, agree, logits cosine, max|diff|, last-layer residual cosine, CPU p(top)
+    0 "<bos>"        agree=true  cos 0.99851 maxdiff   2.03 resid 0.99928 p(top) 0.116
+    1 "<|turn>"      agree=true  cos 0.98572 maxdiff   4.15 resid 0.99672 p(top) 0.492
+    2 "user"         agree=true  cos 0.93348 maxdiff   4.43 resid 0.99834 p(top) 0.166
+    3 "\n"           agree=true  cos 0.99676 maxdiff   2.39 resid 0.99874 p(top) 0.468
+    4 "Summar"       agree=true  cos 0.99258 maxdiff   2.27 resid 0.99917 p(top) 0.726
+    5 "ize"          agree=true  cos 0.99777 maxdiff   2.27 resid 0.99925 p(top) 0.906
+    6 " the"         agree=true  cos 0.98268 maxdiff   3.59 resid 0.99848 p(top) 0.247
+    7 " plot"        agree=true  cos 0.98444 maxdiff   3.13 resid 0.99864 p(top) 0.986
+    8 " of"          agree=true  cos 0.99086 maxdiff   2.96 resid 0.99845 p(top) 0.637
+    9 " Romeo"       agree=true  cos 0.98213 maxdiff   3.64 resid 0.99844 p(top) 0.992
+   10 " and"         agree=true  cos 0.99879 maxdiff   3.44 resid 0.99847 p(top) 0.998
+   11 " Juliet"      agree=true  cos 0.98122 maxdiff   3.68 resid 0.99784 p(top) 0.788
+   12 " in"          agree=true  cos 0.96964 maxdiff   3.45 resid 0.99864 p(top) 0.700
+   13 " one"         agree=true  cos 0.98471 maxdiff   3.91 resid 0.99852 p(top) 0.712
+   14 " paragraph"   agree=true  cos 0.97555 maxdiff   4.43 resid 0.99688 p(top) 0.952
+   15 "."            agree=true  cos 0.99143 maxdiff   3.73 resid 0.99719 p(top) 0.737
+   16 "<turn|>"      agree=true  cos 0.96030 maxdiff   8.58 resid 0.99404 p(top) 0.920
+   17 "\n"           agree=true  cos 0.95854 maxdiff   7.64 resid 0.99288 p(top) 0.821
+   18 "<|turn>"      agree=false cos 0.98737 maxdiff   8.74 resid 0.98573 p(top) 0.276
+   19 "model"        agree=true  cos 0.99218 maxdiff   4.59 resid 0.99725 p(top) 0.511
+   20 "\n"           agree=true  cos 0.99668 maxdiff   5.00 resid 0.99732 p(top) 0.506
+   21 "<|channel>"   agree=true  cos 0.99940 maxdiff   2.34 resid 0.99853 p(top) 1.000
+   22 "thought"      agree=true  cos 0.98762 maxdiff   9.38 resid 0.98304 p(top) 0.992
+   23 "\n"           agree=true  cos 0.99447 maxdiff   8.57 resid 0.98940 p(top) 0.534
+   24 "<channel|>"   agree=true  cos 0.94088 maxdiff   7.01 resid 0.99396 p(top) 0.587
+[metal] weights aliased from gemma-4-E4B_q4_0-it.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 2756 MB bound in place, 1 MB copied (anonymous) — 1881 MB int4 nibbles (168 single tensors + 84 fused groups = 1208 MB) + 640 MB int8 codes (1 matrices) + 235 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+
+== E4B prompt 8 (21 prompt tokens): pos, input token, agree, logits cosine, max|diff|, last-layer residual cosine, CPU p(top)
+    0 "<bos>"        agree=true  cos 0.95025 maxdiff   6.06 resid 0.98357 p(top) 0.350
+    1 "<|turn>"      agree=true  cos 0.94015 maxdiff   7.11 resid 0.98326 p(top) 0.141
+    2 "user"         agree=true  cos 0.98496 maxdiff   6.24 resid 0.98919 p(top) 0.304
+    3 "\n"           agree=false cos 0.92873 maxdiff   9.56 resid 0.95900 p(top) 0.153
+    4 "What"         agree=true  cos 0.95058 maxdiff   5.51 resid 0.99053 p(top) 0.398
+    5 " are"         agree=true  cos 0.99212 maxdiff   3.31 resid 0.99404 p(top) 0.539
+    6 " the"         agree=true  cos 0.94251 maxdiff   9.87 resid 0.96331 p(top) 0.127
+    7 " main"        agree=true  cos 0.98900 maxdiff   3.54 resid 0.99452 p(top) 0.223
+    8 " causes"      agree=true  cos 0.98303 maxdiff   3.44 resid 0.99586 p(top) 0.985
+    9 " of"          agree=true  cos 0.99267 maxdiff   3.19 resid 0.99530 p(top) 0.495
+   10 " inflation"   agree=true  cos 0.99206 maxdiff   4.36 resid 0.99529 p(top) 0.956
+   11 "?"            agree=true  cos 0.97456 maxdiff   4.46 resid 0.99255 p(top) 0.885
+   12 "<turn|>"      agree=false cos 0.95055 maxdiff  12.00 resid 0.92078 p(top) 0.264
+   13 "\n"           agree=true  cos 0.99356 maxdiff   5.56 resid 0.98861 p(top) 0.730
+   14 "<|turn>"      agree=false cos 0.95053 maxdiff  14.06 resid 0.90621 p(top) 0.408
+   15 "model"        agree=true  cos 0.98218 maxdiff   4.45 resid 0.99093 p(top) 0.533
+   16 "\n"           agree=true  cos 0.99904 maxdiff   3.56 resid 0.99440 p(top) 0.833
+   17 "<|channel>"   agree=true  cos 0.99530 maxdiff   3.36 resid 0.99345 p(top) 1.000
+   18 "thought"      agree=true  cos 0.97215 maxdiff   7.54 resid 0.97503 p(top) 0.987
+   19 "\n"           agree=true  cos 0.99848 maxdiff   4.29 resid 0.98925 p(top) 0.818
+   20 "<channel|>"   agree=true  cos 0.97313 maxdiff   5.56 resid 0.98452 p(top) 0.735
+
+== E4B prompt 6 (25 prompt tokens): pos, input token, agree, logits cosine, max|diff|, last-layer residual cosine, CPU p(top)
+    0 "<bos>"        agree=true  cos 0.95025 maxdiff   6.06 resid 0.98357 p(top) 0.350
+    1 "<|turn>"      agree=true  cos 0.94015 maxdiff   7.11 resid 0.98326 p(top) 0.141
+    2 "user"         agree=true  cos 0.98496 maxdiff   6.24 resid 0.98919 p(top) 0.304
+    3 "\n"           agree=false cos 0.92873 maxdiff   9.56 resid 0.95900 p(top) 0.153
+    4 "Summar"       agree=true  cos 0.99235 maxdiff   3.25 resid 0.99571 p(top) 0.954
+    5 "ize"          agree=true  cos 0.98457 maxdiff   4.05 resid 0.99050 p(top) 0.949
+    6 " the"         agree=true  cos 0.93335 maxdiff   9.09 resid 0.97050 p(top) 0.477
+    7 " plot"        agree=true  cos 0.98464 maxdiff   5.73 resid 0.98547 p(top) 0.988
+    8 " of"          agree=false cos 0.98803 maxdiff   3.75 resid 0.99331 p(top) 0.448
+    9 " Romeo"       agree=true  cos 0.99377 maxdiff   2.80 resid 0.99651 p(top) 0.999
+   10 " and"         agree=true  cos 0.99758 maxdiff   4.47 resid 0.99520 p(top) 0.997
+   11 " Juliet"      agree=true  cos 0.97817 maxdiff   4.21 resid 0.99399 p(top) 0.559
+   12 " in"          agree=true  cos 0.99422 maxdiff   3.61 resid 0.99414 p(top) 0.610
+   13 " one"         agree=true  cos 0.99580 maxdiff   3.57 resid 0.99492 p(top) 0.691
+   14 " paragraph"   agree=true  cos 0.98965 maxdiff   5.42 resid 0.99275 p(top) 0.991
+   15 "."            agree=true  cos 0.98446 maxdiff   4.69 resid 0.99219 p(top) 0.789
+   16 "<turn|>"      agree=true  cos 0.93474 maxdiff  12.86 resid 0.94369 p(top) 0.796
+   17 "\n"           agree=true  cos 0.99554 maxdiff   6.80 resid 0.98609 p(top) 0.306
+   18 "<|turn>"      agree=false cos 0.89386 maxdiff  18.94 resid 0.84721 p(top) 0.092
+   19 "model"        agree=true  cos 0.97664 maxdiff   6.77 resid 0.98168 p(top) 0.119
+   20 "\n"           agree=true  cos 0.99849 maxdiff   4.83 resid 0.99102 p(top) 0.536
+   21 "<|channel>"   agree=true  cos 0.99376 maxdiff   4.23 resid 0.99326 p(top) 0.999
+   22 "thought"      agree=true  cos 0.97680 maxdiff   6.96 resid 0.97950 p(top) 0.999
+   23 "\n"           agree=true  cos 0.99708 maxdiff   5.38 resid 0.98827 p(top) 0.868
+   24 "<channel|>"   agree=false cos 0.98380 maxdiff   5.46 resid 0.98624 p(top) 0.361
+--- PASS: TestZZEModelPromptScan (15.45s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	16.045s

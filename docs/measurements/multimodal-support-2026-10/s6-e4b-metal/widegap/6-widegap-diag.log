@@ -1,0 +1,41 @@
+=== RUN   TestZZE4BWideGap
+[metal] weights aliased from gemma-4-E4B_q4_0-it.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 2756 MB bound in place, 1 MB copied (anonymous) — 1881 MB int4 nibbles (168 single tensors + 84 fused groups = 1208 MB) + 640 MB int8 codes (1 matrices) + 235 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+
+== prompt 6 pos 50 (generated; 25 prompt tokens), input token " Two": agree=false
+   logits cosine 0.998023, max |diff| 4.792; CPU p(own top) 0.7863, CPU p(Metal's top) 0.0214; Metal p(own top) 0.4533, Metal p(CPU's top) 0.3839
+   CPU   top-4: " fe" logit 23.641 p 0.7863; " rival" logit 21.688 p 0.1115; " families" logit 20.680 p 0.0407; " young" logit 20.040 p 0.0214;
+   Metal top-4: " young" logit 22.545 p 0.4533; " fe" logit 22.379 p 0.3839; " families" logit 20.768 p 0.0767; " rival" logit 19.953 p 0.0339;
+   residual cosine by layer: L0:1.00000 L5:0.99979 L11:0.99942 L17:0.99251 L23:0.99639 L29:0.99648 L35:0.99526 L41:0.98795; lowest 0.98795 at L41
+
+== prompt 8 pos 14 (prompt; 21 prompt tokens), input token "<|turn>": agree=false
+   logits cosine 0.950533, max |diff| 14.060; CPU p(own top) 0.4076, CPU p(Metal's top) 0.0001; Metal p(own top) 0.1224, Metal p(CPU's top) 0.1222
+   CPU   top-4: "The" logit 21.101 p 0.4076; "Here" logit 19.651 p 0.0957; ":" logit 19.339 p 0.0700; "T" logit 18.697 p 0.0369;
+   Metal top-4: "Tone" logit 18.759 p 0.1224; "The" logit 18.757 p 0.1222; "T" logit 18.561 p 0.1004; "Gu" logit 17.641 p 0.0400;
+   residual cosine by layer: L0:0.99996 L5:0.99986 L11:0.99959 L17:0.99582 L23:0.99272 L29:0.98142 L35:0.97594 L41:0.90621; lowest 0.90621 at L41
+
+== prompt 6 pos 49 (generated; 25 prompt tokens), input token ":**": agree=true
+   logits cosine 0.998825, max |diff| 3.971; CPU p(own top) 0.6239, CPU p(Metal's top) 0.6239; Metal p(own top) 0.6538, Metal p(CPU's top) 0.6538
+   CPU   top-4: " Two" logit 25.692 p 0.6239; " Fe" logit 24.249 p 0.1475; " The" logit 24.029 p 0.1183; " Rival" logit 22.861 p 0.0368;
+   Metal top-4: " Two" logit 25.912 p 0.6538; " Fe" logit 24.523 p 0.1631; " The" logit 23.997 p 0.0964; " Rival" logit 22.789 p 0.0288;
+   residual cosine by layer: L0:0.99998 L5:0.99982 L11:0.99980 L17:0.99790 L23:0.99875 L29:0.99884 L35:0.99879 L41:0.99369; lowest 0.99369 at L41
+
+== prompt 8 pos 13 (prompt; 21 prompt tokens), input token "\n": agree=true
+   logits cosine 0.993564, max |diff| 5.560; CPU p(own top) 0.7296, CPU p(Metal's top) 0.7296; Metal p(own top) 0.7225, Metal p(CPU's top) 0.7225
+   CPU   top-4: "Inflation" logit 27.429 p 0.7296; "The" logit 25.777 p 0.1398; "There" logit 24.945 p 0.0608; "In" logit 23.294 p 0.0117;
+   Metal top-4: "Inflation" logit 27.477 p 0.7225; "The" logit 25.786 p 0.1332; "There" logit 25.243 p 0.0774; "While" logit 23.498 p 0.0135;
+   residual cosine by layer: L0:0.99999 L5:0.99970 L11:0.99963 L17:0.99705 L23:0.99556 L29:0.99490 L35:0.99587 L41:0.98861; lowest 0.98861 at L41
+
+== prompt 8 pos 15 (prompt; 21 prompt tokens), input token "model": agree=true
+   logits cosine 0.982181, max |diff| 4.455; CPU p(own top) 0.5327, CPU p(Metal's top) 0.5327; Metal p(own top) 0.4656, Metal p(CPU's top) 0.4656
+   CPU   top-4: ":" logit 24.704 p 0.5327; "\n" logit 23.026 p 0.0994; "," logit 22.707 p 0.0723; "\n\n" logit 22.699 p 0.0717;
+   Metal top-4: ":" logit 24.556 p 0.4656; "\n" logit 23.519 p 0.1651; "." logit 22.905 p 0.0893; "\n\n" logit 22.848 p 0.0844;
+   residual cosine by layer: L0:0.99992 L5:0.99985 L11:0.99935 L17:0.99238 L23:0.98764 L29:0.99198 L35:0.99375 L41:0.99093; lowest 0.98413 at L40
+
+== prompt 4 pos 51 (generated; 26 prompt tokens), input token " the": agree=false
+   logits cosine 0.999559, max |diff| 2.885; CPU p(own top) 0.5961, CPU p(Metal's top) 0.2728; Metal p(own top) 0.4194, Metal p(CPU's top) 0.4102
+   CPU   top-4: " English" logit 25.708 p 0.5961; " translation" logit 24.926 p 0.2728; " French" logit 24.055 p 0.1142; " phrase" logit 22.094 p 0.0161;
+   Metal top-4: " translation" logit 25.319 p 0.4194; " English" logit 25.297 p 0.4102; " French" logit 24.304 p 0.1521; " phrase" logit 22.138 p 0.0174;
+   residual cosine by layer: L0:0.99998 L5:0.99975 L11:0.99970 L17:0.99862 L23:0.99860 L29:0.99829 L35:0.99897 L41:0.99563; lowest 0.99563 at L41
+--- PASS: TestZZE4BWideGap (31.13s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	31.727s

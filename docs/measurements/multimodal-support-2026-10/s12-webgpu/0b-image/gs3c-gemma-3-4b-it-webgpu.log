@@ -1,0 +1,28 @@
+stream-weights: transcoding gemma-3-4b-it → gemma-3-4b-it.int4.webgpu.giw (int4, one-time — minutes + ~model-size on disk)…
+decoder: gemma-3-4b-it.int4.webgpu.tmp.giw is not in memory: reading its 2.5 GB once before the load
+stream-weights: cache ready (2396 MB) in 13s: stream 11.2s, self-check 0.9s
+swap guard (load): not armed for /Users/francistownsend-merino/models/gemma-3-4b-it.int4.webgpu.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+webgpu: resident context 4096 (the floor), not 16384, for the 4 requested KV slots (--kv-sessions); the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots
+webgpu: 2 resident KV slots of 4 requested — each costs 1088 MB of KV at the resident context (4096 positions); with 2362 MB of weights (+0 MB host copy), 70% of 16384 MB RAM and 4806 MB available before the build allow 2
+loaded "gemma-3-4b-it": 34-layer model (vocab 262208) in 4.67s [chat: gemma3]
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+  head table: int8
+  context: 4096 tokens (backend default; the model declares no maximum — raise with --ctx) · KV f32
+  fit: 4096-token cap needs 1.1 GB KV (weights 2.3 GB, budget 2.5 GB, 1.4 GB left for a request's own prefill)
+  KV plan: 2 conversations x 4096 positions (4 asked for)
+  session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions not given: the default asks for 4 and the memory guard allowed 2; --kv-sessions 4 asks for 4)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+"gemma-3-4b-it" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18454 [chat:[gemma-3-4b-it]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 2.82 GB swap-used
+vision: encoded a 59792-byte image in 25.104s (sha256 d4352b06); a resend of it will skip this
+swap guard: TRIPPED — swap grew 2.26 GB over baseline (5.08 GB used now); refusing new requests until it recovers
+
+shutting down…

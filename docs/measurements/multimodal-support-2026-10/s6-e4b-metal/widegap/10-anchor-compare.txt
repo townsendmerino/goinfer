@@ -1,0 +1,66 @@
+
+== prompt 6 (25 prompt tokens, 56 positions)
+   pos token            cos(CPU-int4,f32) cos(Metal,f32) cos(amd64-int4,f32) cos(Metal,CPU)  argmax==f32: cpu metal
+     0 '<bos>'             0.96385        0.96859          0.96245         0.98357        True  True 
+     1 '<|turn>'           0.96853        0.97222          0.96638         0.98326        False False
+     2 'user'              0.98148        0.98170          0.98099         0.98919        True  True 
+     3 '\n'                0.91911        0.93904          0.91418         0.95900        True  False <
+     4 'Summar'            0.99360        0.99419          0.99386         0.99571        True  True 
+     5 'ize'               0.98224        0.98100          0.98019         0.99050        True  True 
+     6 ' the'              0.95191        0.93028          0.95350         0.97050        False False
+     7 ' plot'             0.96581        0.96762          0.96478         0.98547        True  True 
+     8 ' of'               0.98702        0.98560          0.98605         0.99331        False True 
+     9 ' Romeo'            0.99460        0.99463          0.99258         0.99651        True  True 
+    10 ' and'              0.99019        0.98888          0.98993         0.99520        True  True 
+    11 ' Juliet'           0.98292        0.98341          0.98066         0.99399        False False
+    12 ' in'               0.98030        0.98066          0.98049         0.99414        True  True 
+    13 ' one'              0.98350        0.97974          0.98149         0.99492        False False
+    14 ' paragraph'        0.98586        0.98511          0.98542         0.99275        True  True  <
+    15 '.'                 0.97775        0.97582          0.97156         0.99219        True  True 
+    16 '<turn|>'           0.90990        0.92365          0.89768         0.94369        False False <
+    17 '\n'                0.97312        0.97111          0.96956         0.98609        True  True 
+    18 '<|turn>'           0.87258        0.74858          0.86461         0.84721        False False <
+    19 'model'             0.96366        0.95609          0.95967         0.98168        False False
+    20 '\n'                0.97390        0.97217          0.96881         0.99102        True  True 
+    21 '<|channel>'        0.97786        0.97943          0.97708         0.99326        True  True 
+    22 'thought'           0.93658        0.93406          0.93981         0.97950        True  True 
+    23 '\n'                0.95996        0.96374          0.95350         0.98827        True  True 
+    24 '<channel|>'        0.95160        0.94692          0.95349         0.98624        True  False
+    36 ' of'               0.98659        0.98615          0.98635         0.99483        False False
+    41 '*.'                0.97032        0.96953          0.96830         0.99142        False False
+    42 '\n\n'              0.98126        0.98107          0.98087         0.99424        False False
+    45 '   '               0.98116        0.98035          0.97989         0.99499        True  False
+    50 ' Two'              0.98074        0.96292          0.96950         0.98795        True  False <
+    53 ' families'         0.99265        0.99220          0.99293         0.99703        True  False
+   prompt positions: mean cos to f32: CPU-int4 0.96511, Metal 0.96017; Metal nearer f32 at 12/25; min CPU 0.87258, min Metal 0.74858
+   generated positions: mean cos to f32: CPU-int4 0.98639, Metal 0.98556; Metal nearer f32 at 10/31; min CPU 0.95691, min Metal 0.96039
+
+== prompt 8 (21 prompt tokens, 52 positions)
+   pos token            cos(CPU-int4,f32) cos(Metal,f32) cos(amd64-int4,f32) cos(Metal,CPU)  argmax==f32: cpu metal
+     0 '<bos>'             0.96385        0.96859          0.96245         0.98357        True  True 
+     1 '<|turn>'           0.96853        0.97222          0.96638         0.98326        False False
+     2 'user'              0.98148        0.98170          0.98099         0.98919        True  True 
+     3 '\n'                0.91911        0.93904          0.91418         0.95900        True  False <
+     4 'What'              0.98728        0.98359          0.98715         0.99053        False False
+     5 ' are'              0.98853        0.99023          0.98966         0.99404        True  True 
+     6 ' the'              0.96963        0.95423          0.97104         0.96331        True  True 
+     7 ' main'             0.98603        0.98587          0.98781         0.99452        False False
+     8 ' causes'           0.99152        0.99250          0.99179         0.99586        True  True 
+     9 ' of'               0.99112        0.98908          0.99058         0.99530        True  True 
+    10 ' inflation'        0.98611        0.98539          0.98631         0.99529        True  True 
+    11 '?'                 0.98342        0.98132          0.98003         0.99255        True  True 
+    12 '<turn|>'           0.75628        0.81753          0.81497         0.92078        False False <
+    13 '\n'                0.97280        0.97230          0.97242         0.98861        True  True 
+    14 '<|turn>'           0.83914        0.82764          0.84540         0.90621        False False <
+    15 'model'             0.98509        0.98545          0.98547         0.99093        True  True 
+    16 '\n'                0.98402        0.98533          0.98358         0.99440        True  True 
+    17 '<|channel>'        0.98232        0.98163          0.98006         0.99345        True  True 
+    18 'thought'           0.96000        0.95823          0.95646         0.97503        True  True  <
+    19 '\n'                0.97745        0.97351          0.97577         0.98925        True  True 
+    20 '<channel|>'        0.96851        0.96584          0.96680         0.98452        True  True 
+    29 ' to'               0.86417        0.87337          0.86900         0.95608        True  True  <
+    50 ' "'                0.99428        0.99405          0.99419         0.99738        True  True  <
+   prompt positions: mean cos to f32: CPU-int4 0.95915, Metal 0.96149; Metal nearer f32 at 9/21; min CPU 0.75628, min Metal 0.81753
+   generated positions: mean cos to f32: CPU-int4 0.95677, Metal 0.95790; Metal nearer f32 at 17/31; min CPU 0.86417, min Metal 0.87337
+
+argmax equal to float32: {'cpu': '92/108 = 85.2%', 'metal': '87/108 = 80.6%', 'amd': '93/108 = 86.1%'}

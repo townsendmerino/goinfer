@@ -150,6 +150,32 @@ func TestServe_responses(t *testing.T) {
 		t.Errorf("tool round-trip: no get_weather function_call in %+v", to.Output)
 	}
 
+	// 4b. The same call in the Responses API's own shapes (H-a): flat tool, flat tool_choice, and a tool type this
+	// server cannot run beside it (Codex's freeform apply_patch), which must be dropped and named, not break the call.
+	rb := post(`{"model":"m","input":"What is the weather in Paris?","max_output_tokens":64,"temperature":0,
+		"tool_choice":{"type":"function","name":"get_weather"},
+		"tools":[{"type":"custom","name":"apply_patch","format":{"type":"grammar","syntax":"lark","definition":"start: /.+/"}},
+			{"type":"function","name":"get_weather","description":"Get weather for a city.",
+			"parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}}]}`)
+	if rb.StatusCode != 200 {
+		t.Fatalf("flat-shape tools: status %d", rb.StatusCode)
+	}
+	if got := rb.Header.Get("X-Goinfer-Tools-Dropped"); got != "custom:apply_patch" {
+		t.Errorf("X-Goinfer-Tools-Dropped = %q, want custom:apply_patch", got)
+	}
+	var flat respObj
+	if err := json.NewDecoder(rb.Body).Decode(&flat); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	rb.Body.Close()
+	fc = false
+	for _, it := range flat.Output {
+		fc = fc || it.Type == "function_call" && it.Name == "get_weather"
+	}
+	if !fc {
+		t.Errorf("flat-shape tool round-trip: no get_weather function_call in %+v", flat.Output)
+	}
+
 	// 5. store/previous_response_id continuation.
 	first := create(`{"model":"m","input":"My favorite color is blue.","max_output_tokens":16,"temperature":0,"store":true}`)
 	if first.ID == "" {

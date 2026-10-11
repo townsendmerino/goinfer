@@ -1,6 +1,9 @@
 package decoder
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // TestGemma4Admission_unconditional pins that Gemma-4 admission does not read GOINFER_GEMMA4_RESIDENT. Dense Gemma 4 is
 // admitted on cuda, metal and webgpu, enable_moe_block on cuda and not webgpu, and an E-model on metal and cuda and not
@@ -54,18 +57,18 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 		t.Error("webgpu admits gemma4_text (enable_moe_block) but lacks its Gemma kernels — the feature gate must refuse it")
 	}
 
-	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by Metal (S1) and CUDA (S1 on CUDA,
-	// docs/tasks/task-multimodal-support-2026-10.md), which implement all three. WebGPU has none of it, so admitting the model there
-	// would silently skip PLE and mis-run: its feature gate must refuse it.
+	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by every backend that declares
+	// FeatGemma4EModel, which is all three (docs/tasks/task-multimodal-support-2026-10.md, S1 and S12.1). A backend without the
+	// feature would skip the per-layer embeddings and mis-run, so the gate must refuse it: the made-up backend below.
 	e := denseArch()
 	e.gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape
-	for _, be := range []string{"metal", "cuda"} {
+	for _, be := range []string{"metal", "cuda", "webgpu"} {
 		if !ResidentEligible(e, be) {
 			t.Errorf("%s declines a Gemma-4 E-model although it declares FeatGemma4EModel (missing %v)", be, missingFeatures(e.residentFeatures(), residentBackendFeatures[be]))
 		}
 	}
-	if ResidentEligible(e, "webgpu") {
-		t.Error("webgpu: admits a Gemma-4 E-model (PLE hidden_size_per_layer_input>0) — the bridge skips the PLE branch and would mis-run")
+	if missing := missingFeatures(e.residentFeatures(), map[ResidentFeature]bool{}); !slices.Contains(missing, FeatGemma4EModel) {
+		t.Errorf("an E-model does not require FeatGemma4EModel (missing from a backend with no features: %v)", missing)
 	}
 
 	// The MoE variant is inert to the variable too.

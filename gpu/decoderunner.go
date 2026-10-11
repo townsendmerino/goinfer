@@ -27,10 +27,14 @@ type DecodeRunner struct {
 	steps                []runStep
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
-	lmHead               decodeWeight // kept for LMHeadForTest; the gemv() closures already capture it too
-	smp                  *gumbelState // device Gumbel-max sampling resources, built on first RunSample
-	vocab                int
-	uniScratch           [16]uint32
+	// hidden is the residual width and pleIn the per-layer buffers the row's tail is written to (nil unless the model has
+	// per-layer embeddings): writeInputs takes a row of hidden + len(pleIn)·pleDim floats and refuses any other length.
+	hidden, pleDim int
+	pleIn          []*wgpu.Buffer
+	lmHead         decodeWeight // kept for LMHeadForTest; the gemv() closures already capture it too
+	smp            *gumbelState // device Gumbel-max sampling resources, built on first RunSample
+	vocab          int
+	uniScratch     [16]uint32
 	// logitsHost is the reused host-side logits buffer Run fills and returns, allocated once (vocab is fixed for the
 	// runner's life). The returned slice is overwritten by the next Run, so the caller must consume it first.
 	logitsHost []float32
@@ -180,6 +184,13 @@ type runLayer struct {
 	// does on every K/V-owning layer; K=V layers always do (gKEqV). See g4DropVNormForTest.
 	vNorm bool
 
+	// Gemma 4 E-model. kvShared: the layer owns no K/V; kCache/vCache (and the int8 scales) are an earlier layer's, and
+	// it projects and rotates Q only. pleGate/pleProj/postPLENorm: the per-layer-embedding branch after the FFN
+	// residual (nil pleGate ⇒ none); its input is the layer's slice of the row tail (DecodeRunner.pleIn).
+	kvShared         bool
+	pleGate, pleProj decodeWeight
+	postPLENorm      *wgpu.Buffer
+
 	// MoE: when isMoE, this layer's FFN is a sparse mixture of experts instead of the dense gate/up/down above. router scores
 	// all nE experts; the on-GPU top-k (moeRoute) writes the chosen indices/weights, then k indexed GEMVs per projection read
 	// the right expert out of the stacked buffers (expGate/expUp/expDown) and the down-combine folds the router weight.
@@ -250,6 +261,9 @@ type runModel struct {
 	// does not go through BuildResident) leaves it at its Go zero value, and that must stay the SiLU behavior those tests
 	// assume. BuildResident sets it to `m.GatedActResident() == 0`. Why: docs/code-notes/gpu.md#runModel.gatedGELU.
 	gatedGELU bool
+	// pleDim is a Gemma 4 E-model's per-layer input width; 0 for every other model. With it the resident row is
+	// [hidden ‖ layers·pleDim] and each dense layer runs the per-layer-embedding branch.
+	pleDim int
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
@@ -385,7 +399,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		// into a staged fallback.
 		ensures = append(ensures, c.ensureAttnWide)
 	}
-	if slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.gKEqV }) {
+	if slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.gKEqV || l.vNorm }) {
 		ensures = append(ensures, c.ensureVNorm)
 	}
 	if slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.layerScalar != 0 && l.layerScalar != 1.0 }) {
@@ -403,7 +417,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers), lmHead: m.lmHead}
+	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers), lmHead: m.lmHead, hidden: hidden, pleDim: m.pleDim}
 	// buildErr holds the FIRST device-allocation/bind failure: the storF/uni/bind helpers short-circuit once it is set and the
 	// constructor returns it, so VRAM exhaustion is an error the caller can fall back on, never a panic in library code.
 	var buildErr error
@@ -479,6 +493,18 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// the big buffer stays off the spine. With gatedGELU it uses the geglu(Quant) pipelines instead (gelu_tanh(gate)·up);
 	// otherwise it is byte-identical to the SiLU path.
 	gelu := m.gatedGELU
+	// actQuantPad is the gated product over K activations into an int8 buffer padded to kp; swigluQuant is the common
+	// case kp == padK32(K).
+	actQuantPad := func(gate, up *wgpu.Buffer, K, kp int) (*wgpu.Buffer, *wgpu.Buffer) {
+		q, s := storF(kp/4), storF(1)
+		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
+		pl, ly := c.swigluQuantPipeline, c.swigluQuantLayout
+		if m.gatedGELU {
+			pl, ly = c.gegluQuantPipeline, c.gegluQuantLayout
+		}
+		add(pl, bind(ly, gate, up, q, s, p), 1, 1)
+		return q, s
+	}
 	swigluQuant := func(gate, up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 down-proj gemv, which reads to the weight's
 		// kPad == padK32 (see rmsQuant); padK32 also zeroes the tail, matching the zero-padded weight.
@@ -1019,6 +1045,20 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 		return keepBuf(b)
 	}()
+	if m.pleDim > 0 {
+		r.pleIn = make([]*wgpu.Buffer, len(m.layers))
+		for i := range r.pleIn {
+			if buildErr != nil {
+				break
+			}
+			b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(m.pleDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+			if e != nil {
+				buildErr = e
+				break
+			}
+			r.pleIn[i] = keepBuf(b)
+		}
+	}
 
 	// Per-layer capture (GOINFER_GPU_CAPTURE=1): a kv-store dispatch (dst[i] = src[i]) copying
 	// a live buffer into a build-once capture buffer, recorded in plan order so it sees exactly
@@ -1166,7 +1206,15 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			g := geomFor(ghd, gnKV, ghalf, lw.gKEqV)
 			var q, k, v, aGate *wgpu.Buffer
 			_, w8 := lw.q.(*ResidentW8A8)
-			if lw.qBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)
+			if lw.kvShared {
+				// The source layer stored this position's K and V earlier in the same token; this layer adds nothing to the cache.
+				q = gemv(aq, as, lw.q)
+				r.loraHooks = append(r.loraHooks, loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraQ, aq: aq, ascale: as, dst: q, k: hidden})
+				if lw.qNorm != nil {
+					qkNorm(q, lw.qNorm, nH, g.hd)
+				}
+				rope(g, q, lw.invFreq, lw.ropeScale)
+			} else if lw.qBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)
 				q = gemvBias(aq, as, lw.q, lw.qBias)
 				k = gemvBias(aq, as, lw.k, lw.kBias)
 				if !lw.gKEqV {
@@ -1185,7 +1233,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 					}
 				}
 			}
-			if lw.gKEqV {
+			if lw.gKEqV && !lw.kvShared {
 				// K=V (Gemma 4 globals): V is scale-less v_norm(raw k pre-RoPE).
 				v = storF(g.kvDim)
 				vNorm(k, v, g.nKV, g.hd)
@@ -1195,16 +1243,18 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			// share one afterIdx (the last of the three base dispatches just recorded, whichever branch produced them) since nothing
 			// else runs between them.
 			after := len(r.steps) - 1
-			r.loraHooks = append(r.loraHooks,
-				loraHook{afterIdx: after, layer: i, kind: loraQ, aq: aq, ascale: as, dst: q, k: hidden},
-				loraHook{afterIdx: after, layer: i, kind: loraK, aq: aq, ascale: as, dst: k, k: hidden},
-			)
-			if !lw.gKEqV {
+			if !lw.kvShared {
 				r.loraHooks = append(r.loraHooks,
-					loraHook{afterIdx: after, layer: i, kind: loraV, aq: aq, ascale: as, dst: v, k: hidden},
+					loraHook{afterIdx: after, layer: i, kind: loraQ, aq: aq, ascale: as, dst: q, k: hidden},
+					loraHook{afterIdx: after, layer: i, kind: loraK, aq: aq, ascale: as, dst: k, k: hidden},
 				)
+				if !lw.gKEqV {
+					r.loraHooks = append(r.loraHooks,
+						loraHook{afterIdx: after, layer: i, kind: loraV, aq: aq, ascale: as, dst: v, k: hidden},
+					)
+				}
 			}
-			if lw.vNorm && !lw.gKEqV {
+			if lw.vNorm && !lw.gKEqV && !lw.kvShared {
 				// Gemma 4, a layer with a real v_proj: scale-less v_norm of the v_proj output, after the LoRA hooks above (they splice in
 				// after the base projection) and before the KV store. The shader reads src and writes dst, and one buffer cannot be bound
 				// as both, so it writes a fresh buffer, as the K=V branch does.
@@ -1215,11 +1265,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			if lw.qGate { // attn_output_gate: q_proj emitted [query ‖ gate] per head
 				q, aGate = qSplit(q, nH*g.hd, g.hd)
 			}
-			if lw.qNorm != nil { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
+			if lw.qNorm != nil && !lw.kvShared { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
 				qkNorm(q, lw.qNorm, nH, g.hd)
 				qkNorm(k, lw.kNorm, g.nKV, g.hd)
 			}
-			if m.kvF16 || m.kvI8 {
+			if lw.kvShared {
+				// Q is already normed and rotated above; nothing is stored.
+			} else if m.kvF16 || m.kvI8 {
 				rope(g, q, lw.invFreq, lw.ropeScale)
 				ropeStore(g, k, lw.invFreq, lw.kCache, lw.kScale, lw.ropeScale) // rotate K + append into cache
 				vStore(g, v, lw.vCache, lw.vScale)                              // append V into cache
@@ -1347,17 +1399,38 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraGate, aq: mq, ascale: ms, dst: gate, k: hidden},
 				loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraUp, aq: mq, ascale: ms, dst: up, k: hidden},
 			)
-			dq, ds := swigluQuant(gate, up, inter)
+			// The FFN width is the layer's own (a Gemma 4 E-model's layers do not share one); ffnAct is how many of its
+			// activations the gated product covers, the same number except under the planted one-width defect.
+			ffn := lw.gate.nRows()
+			ffnAct := ffn
+			if g4OneFFNWidthForTest && inter < ffn {
+				ffnAct = inter
+			}
+			dq, ds := actQuantPad(gate, up, ffnAct, padK32(ffn))
 			if lw.postMLPNorm != nil { // FeatSandwichNorm: same defeat-the-fusion shape as o-proj above
 				downOut := gemv(dq, ds, lw.down)
 				r.loraHooks = append(r.loraHooks,
-					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraDown, aq: dq, ascale: ds, dst: downOut, k: inter})
+					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraDown, aq: dq, ascale: ds, dst: downOut, k: ffn})
 				downOut = rmsnormF32(downOut, lw.postMLPNorm, hidden)
 				biasAdd(r.xd, downOut, hidden)
 			} else {
 				gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
 				r.loraHooks = append(r.loraHooks,
-					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraDown, aq: dq, ascale: ds, dst: r.xd, k: inter})
+					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraDown, aq: dq, ascale: ds, dst: r.xd, k: ffn})
+			}
+			if lw.pleGate != nil && !g4SkipPLEForTest {
+				// Per-layer embedding: gate the residual down to pleDim, multiply gelu_tanh of it by this layer's slice of the
+				// row tail, project back, norm, add. The gated product is the FFN's own (gelu_tanh(a)·b, quantized).
+				pl := r.pleIn[i]
+				if g4PLEOffByOneForTest {
+					pl = r.pleIn[(i+1)%len(r.pleIn)]
+				}
+				hq, hs := quant(r.xd, hidden)
+				px := gemv(hq, hs, lw.pleGate)
+				pq, ps := actQuantPad(px, pl, m.pleDim, padK32(m.pleDim))
+				sub := gemv(pq, ps, lw.pleProj)
+				sub = rmsnormF32(sub, lw.postPLENorm, hidden)
+				biasAdd(r.xd, sub, hidden)
 			}
 		}
 		if lw.layerScalar != 0 && lw.layerScalar != 1.0 {
@@ -1400,8 +1473,17 @@ func (r *DecodeRunner) GeomVariantCount() int { return r.geomVariants }
 // the batched RunN can prime K runners before recording one command buffer. ropePos:
 // see posUni's doc comment — equal to pos except for Qwen2.5-VL m-RoPE decode.
 func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
-	if err := r.c.queue.TryWriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
+	if want := r.hidden + len(r.pleIn)*r.pleDim; len(x) != want {
+		return fmt.Errorf("gpu: the resident row is %d floats, want %d (hidden %d + %d layers × %d per-layer inputs)", len(x), want, r.hidden, len(r.pleIn), r.pleDim)
+	}
+	if err := r.c.queue.TryWriteBuffer(r.xd, 0, wgpu.ToBytes(x[:len(x)-len(r.pleIn)*r.pleDim])); err != nil {
 		return err
+	}
+	for i, b := range r.pleIn {
+		off := r.hidden + i*r.pleDim
+		if err := r.c.queue.TryWriteBuffer(b, 0, wgpu.ToBytes(x[off:off+r.pleDim])); err != nil {
+			return err
+		}
 	}
 	for _, pu := range r.posUnis {
 		n := pu.fill(&r.uniScratch, pos, ropePos)
@@ -1739,3 +1821,16 @@ type dnetRunParams struct {
 // show that v_norm is what moves the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test
 // seam; never in production.
 var g4DropVNormForTest bool
+
+// uploadKVModelGeomForTest makes UploadKV size and group every layer's rows by the model's geometry, ignoring a layer's
+// own, so a test can show that reads wrong on a model with two.
+var uploadKVModelGeomForTest bool
+
+// Planted defects for the Gemma 4 E-model gate (gpu/gemma4_emodel_test.go); each is off outside it.
+var (
+	g4SkipPLEForTest         bool // the per-layer-embedding branch skipped
+	g4PLEOffByOneForTest     bool // a layer reads the next layer's per-layer inputs
+	g4KVSrcOffForTest        bool // a shared layer reads the previous owning layer of its type, not its source
+	g4OneFFNWidthForTest     bool // every dense layer's gated product covers only the model's one width
+	g4DropLayerScalarForTest bool // the per-layer output scalar dropped
+)

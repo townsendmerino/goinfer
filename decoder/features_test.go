@@ -363,6 +363,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,
 			FeatRMSAddOne,
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
+			FeatGemma4EModel, // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
 		},
 		// Metal: declaration follows evidence. FeatRopeMscale also admits Mellum as a documented side effect
 		// (docs/queue-correctness.md G10/G11): declared on an explicit owner call, with Mellum's own real-weight Metal gate

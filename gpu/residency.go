@@ -527,6 +527,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 	}
 
+	rd.rm.pleDim = m.Gemma4PLEDimResident()
 	for i := range w.Layers {
 		lw := &w.Layers[i]
 		lhd := m.HeadDimAtResident(i)
@@ -539,6 +540,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			ropeScale:   float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale
 			layerScalar: m.Gemma4DenseLayerScalarAtResident(i),
 			vNorm:       m.IsGemma4Resident() && !g4DropVNormForTest,
+		}
+		if g4DropLayerScalarForTest {
+			rl.layerScalar = 1
 		}
 		if lhd != hd || lnKV != nKV || lrhalf != half || kEqV {
 			rl.ghd = lhd
@@ -859,47 +863,72 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.ghd != 0 {
 				lnKV, lhd, lkvDim = rl.gnKV, rl.ghd, rl.gnKV*rl.ghd
 			}
-			var kc, vc *DeviceBuffer
-			var e1, e2 error
-			switch {
-			case kvI8:
-				var ks, vs *DeviceBuffer
-				kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*lkvDim, lnKV, lhd)
-				vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*lkvDim, lnKV, lhd)
-				if e1 == nil && e2 == nil {
-					keepF(ks.Release)
-					keepF(vs.Release)
-					rl.kScale, rl.vScale = ks.buf, vs.buf
+			// A Gemma 4 E-model's tail layers attend over an earlier layer's K/V (Model.KVSrcAtResident): such a layer owns no
+			// cache, binds its source's, and projects Q only.
+			kvSrc := m.KVSrcAtResident(i)
+			if g4KVSrcOffForTest && kvSrc != i {
+				for j := kvSrc - 1; j >= 0; j-- {
+					if m.LayerIsLocalResident(j) == m.LayerIsLocalResident(i) {
+						kvSrc = j
+						break
+					}
 				}
-			case kvF16:
-				kc, e1 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
-				vc, e2 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
-			default:
-				kc, e1 = c.NewKVCache(nil, ctxCap*lkvDim)
-				vc, e2 = c.NewKVCache(nil, ctxCap*lkvDim)
 			}
-			if e1 != nil || e2 != nil {
-				return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
+			if kvSrc != i {
+				if kvSrc < 0 || kvSrc >= len(rd.rm.layers) {
+					return fail(fmt.Errorf("gpu: layer %d shares the K/V of layer %d, which is not built before it", i, kvSrc))
+				}
+				sl := rd.rm.layers[kvSrc]
+				if sl.kCache == nil || sl.ghd != rl.ghd || sl.gnKV != rl.gnKV || sl.gKEqV != rl.gKEqV {
+					return fail(fmt.Errorf("gpu: layer %d shares the K/V of layer %d, whose attention geometry differs", i, kvSrc))
+				}
+				rl.kCache, rl.vCache, rl.kScale, rl.vScale = sl.kCache, sl.vCache, sl.kScale, sl.vScale
+				rl.kvShared = true
+			} else {
+				var kc, vc *DeviceBuffer
+				var e1, e2 error
+				switch {
+				case kvI8:
+					var ks, vs *DeviceBuffer
+					kc, ks, e1 = c.NewKVCacheI8(nil, ctxCap*lkvDim, lnKV, lhd)
+					vc, vs, e2 = c.NewKVCacheI8(nil, ctxCap*lkvDim, lnKV, lhd)
+					if e1 == nil && e2 == nil {
+						keepF(ks.Release)
+						keepF(vs.Release)
+						rl.kScale, rl.vScale = ks.buf, vs.buf
+					}
+				case kvF16:
+					kc, e1 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
+					vc, e2 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
+				default:
+					kc, e1 = c.NewKVCache(nil, ctxCap*lkvDim)
+					vc, e2 = c.NewKVCache(nil, ctxCap*lkvDim)
+				}
+				if e1 != nil || e2 != nil {
+					return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
+				}
+				// Cross-file invariant guard: the decode runner indexes this cache with strides of g.kvDim = gnKV·ghd up to ctxCap
+				// positions. The alloc above derives lkvDim from the same tuple, so this holds by construction; a builder that sized the
+				// cache from an independent source would index off the end into garbage output, not a panic, so assert it here, loudly, at
+				// plan time.
+				if want := ctxCap * lkvDim; kc.n < want || vc.n < want {
+					return fail(fmt.Errorf("gpu: layer %d KV cache too small for its geometry: have k=%d v=%d elems, need ctxCap·nKV·hd = %d·%d·%d = %d", i, kc.n, vc.n, ctxCap, lnKV, lhd, want))
+				}
+				keepF(kc.Release)
+				keepF(vc.Release)
+				rl.kCache, rl.vCache = kc.buf, vc.buf
 			}
-			// Cross-file invariant guard: the decode runner indexes this cache with strides of g.kvDim = gnKV·ghd up to ctxCap
-			// positions. The alloc above derives lkvDim from the same tuple, so this holds by construction; a builder that sized the
-			// cache from an independent source would index off the end into garbage output, not a panic, so assert it here, loudly, at
-			// plan time.
-			if want := ctxCap * lkvDim; kc.n < want || vc.n < want {
-				return fail(fmt.Errorf("gpu: layer %d KV cache too small for its geometry: have k=%d v=%d elems, need ctxCap·nKV·hd = %d·%d·%d = %d", i, kc.n, vc.n, ctxCap, lnKV, lhd, want))
-			}
-			keepF(kc.Release)
-			keepF(vc.Release)
-			rl.kCache, rl.vCache = kc.buf, vc.buf
 			if rl.q, e = proj(&lw.QProj); e != nil {
 				return fail(e)
 			}
-			if rl.k, e = proj(&lw.KProj); e != nil {
-				return fail(e)
-			}
-			if !rl.gKEqV {
-				if rl.v, e = proj(&lw.VProj); e != nil {
+			if !rl.kvShared {
+				if rl.k, e = proj(&lw.KProj); e != nil {
 					return fail(e)
+				}
+				if !rl.gKEqV {
+					if rl.v, e = proj(&lw.VProj); e != nil {
+						return fail(e)
+					}
 				}
 			}
 			if rl.o, e = projMul(&lw.OProj, rmul); e != nil {
@@ -962,6 +991,18 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			}
 			if rl.down, e = projMul(&lw.DownProj, rmul); e != nil {
 				return fail(e)
+			}
+			// Gemma 4 E-model: the per-layer-embedding branch's two projections and its norm.
+			if rd.rm.pleDim > 0 {
+				if rl.pleGate, e = proj(&lw.PLEGate); e != nil {
+					return fail(e)
+				}
+				if rl.pleProj, e = proj(&lw.PLEProj); e != nil {
+					return fail(e)
+				}
+				if rl.postPLENorm, e = up32(lw.PostPLENorm); e != nil {
+					return fail(e)
+				}
 			}
 		}
 		if len(lw.QBias) > 0 { // Qwen2 q/k/v bias
@@ -1215,6 +1256,24 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 			return nil, rd.resetErr
 		}
 	}
+	if rd.rm.pleDim > 0 {
+		// A Gemma 4 E-model's rows carry per-layer inputs and its tail layers share K/V, neither of which the batched pass
+		// takes: walk the rows in order, which is the sequential forward.
+		for i, row := range embeddings[:n-1] {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if err := rd.runner.RunNoLogits(row, startPos+i, startPos+i); err != nil {
+				return nil, err
+			}
+		}
+		logits, err := rd.runner.Run(embeddings[n-1], startPos+n-1, startPos+n-1)
+		if err != nil {
+			return nil, err
+		}
+		applySoftcap(logits, rd.finalSoftcap)
+		return logits, nil
+	}
 	logits, err := rd.prefillLast(embeddings, startPos)
 	if err != nil {
 		return nil, err
@@ -1243,7 +1302,7 @@ func (rd *residentDecoder) SetAdapter(layers []decoder.ResidentAdapterLayer) err
 }
 
 // UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute positions base..base+n-1, the
-// prefill bridge. keys/vals are [n*kvDim] f32, packed to the cache's precision (f32 raw, f16 via packF16Pairs, int8
+// prefill bridge. keys/vals are [n*kvDim] f32, kvDim being the layer's own (its KV heads times its head_dim), packed to the cache's precision (f32 raw, f16 via packF16Pairs, int8
 // per-head + scales) so the upload matches what an on-device decode would have written. base is normally 0; a wrapped
 // CPU-side sliding-window ring's live K/V can start later (KVCache.LayerKV's base return). Element widths: f32 raw = 4
 // B/elem; f16 (2 values/u32) = 2 B/elem; int8 (4 values/u32) = 1 B/elem for the KV buffers, and nKV f32 scales per
@@ -1252,19 +1311,30 @@ func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error
 	if layer < 0 || layer >= len(rd.rm.layers) {
 		return fmt.Errorf("gpu: UploadKV layer %d out of range", layer)
 	}
-	kvDim := rd.nKV * rd.hd
+	// A layer with its own attention geometry (runLayer.ghd != 0) stores rows of its own width and head grouping.
+	l := rd.rm.layers[layer]
+	nKV, hd := rd.nKV, rd.hd
+	if l.ghd != 0 {
+		nKV, hd = l.gnKV, l.ghd
+	}
+	if uploadKVModelGeomForTest {
+		nKV, hd = rd.nKV, rd.hd
+	}
+	kvDim := nKV * hd
 	if kvDim > 0 {
+		if len(keys)%kvDim != 0 || len(vals) != len(keys) {
+			return fmt.Errorf("gpu: UploadKV layer %d: %d key and %d value floats are not whole rows of %d", layer, len(keys), len(vals), kvDim)
+		}
 		if err := rd.checkCap(base, len(keys)/kvDim); err != nil {
 			return err
 		}
 	}
-	l := rd.rm.layers[layer]
 	switch {
 	case rd.rm.kvI8:
-		kw, ks := packKVInt8(keys, rd.nKV, rd.hd)
-		vw, vs := packKVInt8(vals, rd.nKV, rd.hd)
+		kw, ks := packKVInt8(keys, nKV, hd)
+		vw, vs := packKVInt8(vals, nKV, hd)
 		kvOff := uint64(base) * uint64(kvDim)
-		scOff := uint64(base) * uint64(rd.nKV) * 4
+		scOff := uint64(base) * uint64(nKV) * 4
 		if err := rd.c.queue.TryWriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
 			return err
 		}

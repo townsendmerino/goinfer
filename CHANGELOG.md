@@ -15,6 +15,40 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
+
+The two small Gemma 4 models ran on the CPU for the whole model under WebGPU. They now decode resident on the GPU, text, image
+and audio turns alike; the vision and audio towers still run on the CPU there. On one MacBook, against the CPU decoder at int4:
+E2B agrees with it as closely as a reference model does (96.3% of positions against 95.6%); E4B agrees at 93.1%, 2.5 points under
+that reference, which is the level it reads on CUDA. A served image request on E2B gave a correct reply that first differs from
+the CPU's at a token the CPU itself was 75% sure of, so replies under WebGPU can differ from the CPU's in wording
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.1).
+
+### Fixed — an image turn on a dense Gemma 4 under WebGPU could not upload its prefill
+
+The upload that carries a CPU-prefilled image turn to the GPU used one attention shape for every layer, so on a model whose
+layers differ it refused a prefill of a few tokens and grouped an int8 KV cache wrongly. No shipped checkpoint that fits a
+tested box took that path; it is fixed before one does.
+
+### Fixed — a zero `decoder.Options` loads a cpu-arm64 `.giw`
+
+`decoder.Load(path, Options{})` on a `.giw` prequantized for cpu-arm64 failed with "Backend \"\" needs canonical bytes —
+rebuild with `go run ./cmd/prequant`", although the zero `Backend` is documented as the CPU and `Backend: "cpu"` loaded
+the same file. The zero value now loads it on the CPU (library surface review M5).
+
+### Added — `/v1/models` publishes `context_length` and `max_model_len`
+
+The same number as `context_window`, under the names Hermes and Oh My Pi read. Without them both assume a 128K window
+and overrun a smaller served one.
+
+### Fixed — `/v1/responses` reads tools in the Responses API's own shape
+
+`/v1/responses` decoded `tools` only in the Chat Completions nesting (`{"function":{"name":…}}`), so a tool sent in the
+Responses shape (`{"type":"function","name":…}`), as Codex and every harness's Responses mode send it, reached the
+prompt with an empty name and no schema while the request returned 200. Both shapes are now read, on both routes, and
+so is a Responses-shaped named `tool_choice`. Tool types the server cannot run (`custom` freeform-grammar tools,
+`web_search`, `tool_search`, `namespace`) are left out of the prompt and named in an `X-Goinfer-Tools-Dropped` header.
+
 ### Fixed — on an amd64 CPU without AVX2, a quantized model no longer stops with an illegal instruction
 
 The activation quantizer that every quantized matmul runs called its AVX2 kernels with no CPU check, so on an amd64 CPU without

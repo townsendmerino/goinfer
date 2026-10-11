@@ -476,6 +476,10 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatGatedGELU: true,
 		// FeatOutBias: gpt-oss's o_proj bias, composed from a bare gemv then biasAdd (the general vec[i] += other[i] kernel); no new kernel.
 		FeatOutBias: true,
+		// FeatGemma4EModel: shared-KV layers bind their source's cache and project Q only, each layer's FFN runs at its own width, and the
+		// per-layer-embedding branch is composed from the gated-product and gemv kernels (gpu/decoderunner.go, runLayer.kvShared and
+		// pleGate). The resident row is [hidden ‖ layers·pleDim] and DecodeRunner.writeInputs refuses any other length.
+		FeatGemma4EModel: true,
 		// FeatAttnSink: the learned sink threaded through every attention pipeline (attn, attn-keys, attn-f16, attn-i8 and the wide variants),
 		// the clamped interleaved-SwiGLU expert (gptossGluQuantWGSL) and a router whose bias reaches the mixing weight (routeGptOssWGSL;
 		// moeRouteWGSL's contract is wrong for this family). The sink needs its own per-layer uniform (HS in gpu/attention.go): hasSink is a

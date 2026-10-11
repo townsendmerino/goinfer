@@ -1,0 +1,276 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+func TestZZE4BWideGap(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	eb := filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it")
+	tk, err := tokenizer.LoadGGUF(eb + ".gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := decoder.Options{Quant: "int4", ResidentContext: 512}
+	mg, err := decoder.Load(eb+".int4.metal.giw", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, err := buildResident(mg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	mc, err := decoder.Load(eb+".int4.metal.giw", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close()
+	tokStr := func(id int) string {
+		s, err := tk.Decode([]int{id})
+		if err != nil {
+			return fmt.Sprintf("<%d>", id)
+		}
+		return fmt.Sprintf("%q", s)
+	}
+	top := func(l []float32, k int) string {
+		idx := make([]int, len(l))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+		mx := float64(l[idx[0]])
+		var z float64
+		for _, x := range l {
+			z += math.Exp(float64(x) - mx)
+		}
+		var b strings.Builder
+		for _, i := range idx[:k] {
+			fmt.Fprintf(&b, " %s logit %.3f p %.4f;", tokStr(i), l[i], math.Exp(float64(l[i])-mx)/z)
+		}
+		return b.String()
+	}
+	prob := func(l []float32, id int) float64 {
+		mx := float64(l[argmaxF(l)])
+		var z float64
+		for _, x := range l {
+			z += math.Exp(float64(x) - mx)
+		}
+		return math.Exp(float64(l[id])-mx) / z
+	}
+	for _, c := range []struct{ prompt, pos int }{{6, 50}, {8, 14}, {6, 49}, {8, 13}, {8, 15}, {4, 51}} {
+		ids, err := tk.Encode(tmpl.Render("", []chat.Turn{{Role: "user", Content: g3Prompts[c.prompt-1]}}), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cc := mc.NewCache(c.pos + 1)
+		seq := append([]int(nil), ids...)
+		for i := 0; i < c.pos; i++ {
+			l, err := mc.ForwardForTest(seq[i], cc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if i >= len(ids)-1 {
+				seq = append(seq, argmaxF(l))
+			}
+			r.ForwardEmb(mg.EmbedResidentForTest(seq[i]), i)
+		}
+		decoder.SetGemma4HiddenCaptureForTest(true)
+		cl, err := mc.ForwardForTest(seq[c.pos], cc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cl = append([]float32(nil), cl...)
+		cpuH := decoder.Gemma4HiddenCaptureForTest()
+		decoder.SetGemma4HiddenCaptureForTest(false)
+		emb := mg.EmbedResidentForTest(seq[c.pos])
+		var line strings.Builder
+		minCos, minAt := 2.0, 0
+		for n := 1; n <= len(r.layers); n++ {
+			cs, _ := cosMaxAbs(cpuH[n], r.forwardTrunkForTest(emb, c.pos, n))
+			if cs < minCos {
+				minCos, minAt = cs, n-1
+			}
+			if n == 1 || n%6 == 0 || n == len(r.layers) {
+				fmt.Fprintf(&line, " L%d:%.5f", n-1, cs)
+			}
+		}
+		gl := append([]float32(nil), r.ForwardEmb(emb, c.pos)...)
+		ca, ga := argmaxF(cl), argmaxF(gl)
+		cs, mx := cosMaxAbs(cl, gl)
+		where := "prompt"
+		if c.pos >= len(ids)-1 {
+			where = "generated"
+		}
+		fmt.Fprintf(os.Stderr, "\n== prompt %d pos %d (%s; %d prompt tokens), input token %s: agree=%v\n", c.prompt, c.pos, where, len(ids), tokStr(seq[c.pos]), ca == ga)
+		fmt.Fprintf(os.Stderr, "   logits cosine %.6f, max |diff| %.3f; CPU p(own top) %.4f, CPU p(Metal's top) %.4f; Metal p(own top) %.4f, Metal p(CPU's top) %.4f\n",
+			cs, mx, prob(cl, ca), prob(cl, ga), prob(gl, ga), prob(gl, ca))
+		fmt.Fprintf(os.Stderr, "   CPU   top-4:%s\n   Metal top-4:%s\n", top(cl, 4), top(gl, 4))
+		fmt.Fprintf(os.Stderr, "   residual cosine by layer:%s; lowest %.5f at L%d\n", line.String(), minCos, minAt)
+	}
+}
+
+func TestZZEModelPromptScan(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	for _, m := range []struct{ label, base string }{
+		{"E2B", filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it")},
+		{"E4B", filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it")},
+	} {
+		func() {
+			tk, err := tokenizer.LoadGGUF(m.base + ".gguf")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := decoder.Options{Quant: "int4", ResidentContext: 512}
+			mg, err := decoder.Load(m.base+".int4.metal.giw", opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mg.Close()
+			r, err := buildResident(mg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			mc, err := decoder.Load(m.base+".int4.metal.giw", opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mc.Close()
+			for _, p := range []int{8, 6} {
+				ids, err := tk.Encode(tmpl.Render("", []chat.Turn{{Role: "user", Content: g3Prompts[p-1]}}), false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cc := mc.NewCache(len(ids) + 1)
+				fmt.Fprintf(os.Stderr, "\n== %s prompt %d (%d prompt tokens): pos, input token, agree, logits cosine, max|diff|, last-layer residual cosine, CPU p(top)\n", m.label, p, len(ids))
+				for i := range ids {
+					decoder.SetGemma4HiddenCaptureForTest(true)
+					cl, err := mc.ForwardForTest(ids[i], cc)
+					if err != nil {
+						t.Fatal(err)
+					}
+					cl = append([]float32(nil), cl...)
+					cpuH := decoder.Gemma4HiddenCaptureForTest()
+					decoder.SetGemma4HiddenCaptureForTest(false)
+					emb := mg.EmbedResidentForTest(ids[i])
+					rc, _ := cosMaxAbs(cpuH[len(r.layers)], r.forwardTrunkForTest(emb, i, len(r.layers)))
+					gl := append([]float32(nil), r.ForwardEmb(emb, i)...)
+					cs, mx := cosMaxAbs(cl, gl)
+					s, _ := tk.Decode([]int{ids[i]})
+					mxl := float64(cl[argmaxF(cl)])
+					var z float64
+					for _, x := range cl {
+						z += math.Exp(float64(x) - mxl)
+					}
+					fmt.Fprintf(os.Stderr, "   %2d %-14q agree=%-5v cos %.5f maxdiff %6.2f resid %.5f p(top) %.3f\n", i, s, argmaxF(cl) == argmaxF(gl), cs, mx, rc, 1/z)
+				}
+			}
+		}()
+	}
+}
+
+// TestZZE4BAnchorDump writes, for two prompts and the CPU's 32 greedy tokens after each, the token ids and both arms'
+// last-layer residual at every position, for a float32 pass elsewhere to be compared with.
+func TestZZE4BAnchorDump(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	eb := filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it")
+	tk, err := tokenizer.LoadGGUF(eb + ".gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := decoder.Options{Quant: "int4", ResidentContext: 512}
+	mg, err := decoder.Load(eb+".int4.metal.giw", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, err := buildResident(mg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	mc, err := decoder.Load(eb+".int4.metal.giw", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close()
+	type dump struct {
+		Prompt    int         `json:"prompt"`
+		PromptLen int         `json:"prompt_len"`
+		Ids       []int       `json:"ids"`
+		Tokens    []string    `json:"tokens"`
+		CPUArg    []int       `json:"cpu_argmax"`
+		MetalArg  []int       `json:"metal_argmax"`
+		CPU       [][]float32 `json:"cpu_resid"`
+		Metal     [][]float32 `json:"metal_resid"`
+	}
+	var all []dump
+	for _, p := range []int{6, 8} {
+		ids, err := tk.Encode(tmpl.Render("", []chat.Turn{{Role: "user", Content: g3Prompts[p-1]}}), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := len(ids) + g3NewTokens
+		cc := mc.NewCache(n)
+		d := dump{Prompt: p, PromptLen: len(ids)}
+		seq := append([]int(nil), ids...)
+		for i := 0; i < n-1; i++ {
+			decoder.SetGemma4HiddenCaptureForTest(true)
+			cl, err := mc.ForwardForTest(seq[i], cc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cpuH := decoder.Gemma4HiddenCaptureForTest()
+			d.CPU = append(d.CPU, append([]float32(nil), cpuH[len(r.layers)]...))
+			decoder.SetGemma4HiddenCaptureForTest(false)
+			ca := argmaxF(cl)
+			if i >= len(ids)-1 {
+				seq = append(seq, ca)
+			}
+			emb := mg.EmbedResidentForTest(seq[i])
+			d.Metal = append(d.Metal, append([]float32(nil), r.forwardTrunkForTest(emb, i, len(r.layers))...))
+			d.CPUArg = append(d.CPUArg, ca)
+			d.MetalArg = append(d.MetalArg, argmaxF(r.ForwardEmb(emb, i)))
+			s, _ := tk.Decode([]int{seq[i]})
+			d.Tokens = append(d.Tokens, s)
+		}
+		d.Ids = seq[:n-1]
+		all = append(all, d)
+	}
+	raw, err := json.Marshal(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := os.Getenv("E4B_ANCHOR_OUT")
+	if err := os.WriteFile(out, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "wrote %s (%d bytes)\n", out, len(raw))
+}
