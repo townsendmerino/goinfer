@@ -1,0 +1,24 @@
+started 2026-10-10 22:38:38 PDT; load average: 0.88, 4.64, 5.03; MemAvailable: 61116184 kB Cached: 7481072 kB Dirty: 11372 kB 
+E2 r1: started 22:38:38
+wrote ~/goinfer-bench/selfcheck/out/30b.r1.giw: 16689 MB (int4) in 84.3s: stream 74.5s, self-check 9.5s
+elapsed 84.28s, max RSS 52924412 kB, major faults 2155, fs inputs 130228576, fs outputs 34179352
+E2 r1: finished 22:40:04; ~/goinfer-bench/selfcheck/out/30b.r1.giw: 17500 MB of 17500 MB resident (100.0%)
+E2 r2: started 22:40:05
+wrote ~/goinfer-bench/selfcheck/out/30b.r2.giw: 16689 MB (int4) in 91.2s: stream 81.4s, self-check 9.6s
+elapsed 91.20s, max RSS 50472652 kB, major faults 2511, fs inputs 124358664, fs outputs 34179440
+E2 r2: finished 22:41:39; ~/goinfer-bench/selfcheck/out/30b.r2.giw: 17470 MB of 17500 MB resident (99.8%)
+E2 r3: started 22:41:40
+wrote ~/goinfer-bench/selfcheck/out/30b.r3.giw: 16689 MB (int4) in 105.4s: stream 82.9s, self-check 22.2s
+elapsed 105.45s, max RSS 51291544 kB, major faults 1325, fs inputs 128845272, fs outputs 34179336
+E2 r3: finished 22:43:27; ~/goinfer-bench/selfcheck/out/30b.r3.giw: 17500 MB of 17500 MB resident (100.0%)
+E1 on ~/goinfer-bench/selfcheck/out/30b.r3.giw (17499790393 bytes), started 22:43:28
+rep 1  cold  crc: load 9.78s, close 0.06s   [before: 0 MB of 17500 MB resident (0.0%); after: 17499 MB of 17500 MB resident (100.0%)]
+rep 1  cold  nocrc: load 20.40s, close 0.11s   [before: 0 MB of 17500 MB resident (0.0%); after: 16775 MB of 17500 MB resident (95.9%)]
+rep 1  warm  crc: load 2.14s, close 0.66s   [before: 17500 MB of 17500 MB resident (100.0%); after: 17500 MB of 17500 MB resident (100.0%)]
+rep 1  warm  nocrc: load 0.19s, close 0.11s   [before: 17500 MB of 17500 MB resident (100.0%); after: 17500 MB of 17500 MB resident (100.0%)]
+rep 2  cold  crc: load 10.00s, close 0.06s   [before: 0 MB of 17500 MB resident (0.0%); after: 17499 MB of 17500 MB resident (100.0%)]
+rep 2  cold  nocrc: load 20.56s, close 0.12s   [before: 0 MB of 17500 MB resident (0.0%); after: 16775 MB of 17500 MB resident (95.9%)]
+rep 2  warm  crc: load 2.15s, close 0.65s   [before: 17500 MB of 17500 MB resident (100.0%); after: 17500 MB of 17500 MB resident (100.0%)]
+rep 2  warm  nocrc: load 0.22s, close 0.12s   [before: 17500 MB of 17500 MB resident (100.0%); after: 17500 MB of 17500 MB resident (100.0%)]
+finished 22:45:01
+finished 22:45:04

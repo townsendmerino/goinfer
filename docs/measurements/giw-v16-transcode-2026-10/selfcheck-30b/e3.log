@@ -1,0 +1,12 @@
+E3 started 22:47:18; source 17499790393 bytes
+rep 1 a (flush in progress): load 9.61s   [before the load: Dirty 7856 kB, 0 MB of 17500 MB resident]
+rep 1 b (synced, evicted):   load 9.53s   [before the load: Dirty 364 kB, 0 MB resident]
+rep 1 c (synced, cached):    load 1.55s   [before the load: 17500 MB of 17500 MB resident]
+rep 2 a (flush in progress): load 9.52s   [before the load: Dirty 524 kB, 0 MB resident]
+rep 2 b (synced, evicted):   load 9.52s   [before the load: Dirty 432 kB, 0 MB resident]
+rep 2 c (synced, cached):    load 1.56s   [before the load: 17500 MB resident]
+rep 3 a (flush in progress): load 9.65s   [before the load: Dirty 4700 kB, 0 MB resident]
+rep 3 b (synced, evicted):   load 9.53s   [before the load: Dirty 1416 kB, 0 MB resident]
+rep 3 c (synced, cached):    load 1.58s   [before the load: 17500 MB resident]
+E3 finished 22:54:56
+(transcribed from the terminal: the run's output was not saved to a file on the box)

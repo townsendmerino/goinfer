@@ -1,0 +1,28 @@
+// giwload loads a .giw the way a transcode's self-check does (mmap, CPU backend), closes it, and prints how long
+// each took. GOINFER_GIW_VERIFY=always forces the whole-file CRC; a matching .verified marker skips it.
+package main
+
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: giwload <file.giw>")
+		os.Exit(2)
+	}
+	t0 := time.Now()
+	m, err := decoder.Load(os.Args[1], decoder.Options{Backend: "cpu", ResidentContext: 1})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load:", err)
+		os.Exit(1)
+	}
+	load := time.Since(t0)
+	t1 := time.Now()
+	m.Close()
+	fmt.Printf("load %.2fs, close %.2fs\n", load.Seconds(), time.Since(t1).Seconds())
+}

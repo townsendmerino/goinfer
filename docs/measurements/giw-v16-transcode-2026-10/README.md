@@ -415,7 +415,9 @@ Transcode wall over C-io (read the source, write the output, no compute) and ove
 
 ### Two findings from the 30B
 
-- **Its self-check got slower, and it is not a CRC pass.** Old arm 9.6-11.6 s, new arm 19.2-24.9 s (warm-ups
+- **[2026-10-10 night: measured since, in "The 30B's self-check, investigated". This reading holds: an evicted
+  bundle loaded without the CRC takes 20 s.]**
+  **Its self-check got slower, and it is not a CRC pass.** Old arm 9.6-11.6 s, new arm 19.2-24.9 s (warm-ups
   included). A profiled
   repeat by day (20.6 s; the profile is not kept) shows no CRC under the self-check and 11.3 s of CPU in the bundle
   reader's walk over each matrix's header. The reading that fits: with 58 GB of source mapped on a 62 GB box, the
@@ -575,6 +577,10 @@ runs the whole-file CRC again. It reads 20.8-28.0 s in the new arm, against 9.5-
 same CRC. Before the fix the new arm read 19-25 s with no CRC. So the fix restored the check and did not change the
 time, and the arms' difference is not the CRC: the old arm's check follows an eleven-minute stream and the new arm's
 a ninety-second one. What the file's pages are doing in that case was not measured.
+
+**[2026-10-10 night: measured, in "The 30B's self-check, investigated". After a ninety-second stream the kernel is
+still flushing the bundle's last gigabytes, and the CRC's read-back slows when the two overlap. An `fsync` first puts
+every self-check at 10-12 s and does not shorten the transcode.]**
 
 ## T8's day gate, 2026-10-10: the Q4_K and Q6_K dequantizer kernels, SHIP on both cells each
 
@@ -782,6 +788,72 @@ weights format v15, so every cell's arms wrote the same bytes. Records `gt-nobar
   pairs read 1.305 and 0.927, which is its self-check and stream moving from run to run (the next section), and its
   copies took 86 s tonight against 66 s in the earlier night run.
 
+## The 30B's self-check, investigated 2026-10-10 night: it is the flush, not the build
+
+The earlier sections left one thing unexplained: on nobara's 30B the new arm's self-check read 19-28 s where the old
+arm's read 10-13 s. Scripts, outputs and the 2-second sample logs are in `selfcheck-30b/`. Everything here is
+exploratory: single runs or small sets by night under the timing lock, no gate.
+
+**The split was never old code against new code.** In the copy floor's run the same night both arms were fast builds
+(75-91 s streams), and the 30B's six self-checks read 13.6, 19.7, 9.8, 23.4, 11.1 and 17.2 s: both builds in both
+ranges. What the earlier nights compared was a build whose stream takes eleven minutes against builds whose stream
+takes ninety seconds.
+
+**What the self-check does on this box.** The source is 58 GB and the box has 62 GB, so the page cache fills with
+source pages and the bundle's own pages are pushed out as it is written: at the end of the stream only 2-8 GB of its
+17.5 GB were still in memory in eleven sampled runs. The 30B is over the size rule, so its self-check runs the
+whole-file CRC, which reads the rest back from the disk (btrfs, `compress=zstd:1`).
+
+**Reference times for that load** (`e1.sh`, the finished bundle, two repetitions each):
+
+| the file | CRC | load |
+|---|---|---|
+| in the page cache | no | 0.19, 0.22 s |
+| in the page cache | yes | 2.14, 2.15 s |
+| evicted | yes | 9.78, 10.00 s (it ends 100% resident) |
+| evicted | **no** | **20.40, 20.56 s** (it ends 95.9% resident) |
+
+**The slow self-check is the read-back overlapping the kernel's flush of the bundle's last gigabytes.** Nothing syncs
+the file between the stream and the self-check, and a fast stream ends with anything from a few megabytes to 5 GB
+of it still dirty.
+
+- In the three sampled runs of `run-all.sh`, the two fast self-checks (9.5, 9.6 s) had no flush under way: one ended
+  its stream with 7 MB dirty, the other with 3.2 GB dirty that stayed dirty throughout. The slow one (22.2 s) read at
+  about 0.4 GB/s while the dirty count fell from 2.3 GB to zero over fourteen seconds, then at 1.2 GB/s.
+- **The intervention** (`run-ab.sh`): the same build with one `fsync` before the self-check, four pairs in
+  alternating order.
+
+  | arm | self-check | whole transcode |
+  |---|---|---|
+  | as built | 13.4, 24.7, 17.0, 15.7 s | 87.6, 109.0, 98.3, 94.8 s |
+  | with the `fsync` | 10.3, 11.3, 12.2, 11.0 s | 101.1, 96.4, 105.4, 92.1 s |
+
+  With the flush done first, every self-check lands at the evicted-with-CRC reference. So the overlap is the cause.
+- **The `fsync` is not a speed-up.** The four pairs' whole-transcode ratios (with over without) are 1.15, 0.88, 1.07
+  and 0.97. The flush is the same work either way; the sync moves it into the stream. The fastest run as built
+  (87.6 s) still had 2.4 GB dirty when it exited, so its flush happened after the measurement ended.
+- **The eleven-minute build** never overlaps: nothing is left to flush when its stream ends.
+
+**`e3.sh` did not test what it was written to test.** It copied the bundle and evicted it with `posix_fadvise`, to load
+it "while the flush is in progress"; that call starts and waits out the writeback itself, so all three of its arms
+loaded a clean file (9.5-9.7 s, the same as the synced arm). It is kept as a record of that, not as evidence.
+
+**What the earlier sections got right and wrong.**
+- "Two findings from the 30B" (the first T runs): right. That build marked the 30B and ran no CRC, and its 19-25 s is
+  the fourth row of the table above, an evicted file loaded without the CRC.
+- "The 30B's self-check with its CRC back": the CRC was restored and the time did not move, and the section left the
+  reason open. It is two different costs that happen to be the same size: before the fix, the no-CRC load of an
+  evicted file (20 s); after it, the CRC read-back colliding with the flush (17-28 s when they overlap, 10 s when
+  they do not).
+
+**A separate finding: loading an evicted MoE bundle without the CRC is slower than with it, and reads the file
+anyway.** 20.5 s against 9.9 s, and 96% of the file is in memory afterwards. Not established why. The reading that
+fits: the load walks about 18,000 small expert matrices through the mapping, and each page fault's read-around pulls
+in the megabyte around it, which over the whole file is a scattered read of nearly all of it. If that is right it is
+what the first load of any large MoE sidecar costs after a reboot, on every box with this kernel behaviour, and
+telling the kernel not to read around during that walk would remove most of it. Untested; a candidate for its own
+gate.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
@@ -796,6 +868,8 @@ weights format v15, so every cell's arms wrote the same bytes. Records `gt-nobar
   `t8-q6k-cpu-mac.jsonl`, `t8-q6k-cpu-nobara.jsonl`: its second step, the Q6_K kernel over the Q4_K one.
   `t8-cpu-nobara-preguard.jsonl`: nobara's first reading, before the AVX2 check.
 - `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
+- `selfcheck-30b/`: the 30B self-check investigation's scripts (`e1.sh`, `e2.sh`, `e3.sh`, `run-all.sh`, `run-ab.sh`,
+  `cachestat.py`, `sampler.py`, the loader's source), outputs (`run-all.log`, `run-ab.log`, `e3.log`) and sample logs.
 - Part V: `g-v1-*.log` (the identity reports), `g-v2-sizes.sh` and `g-v2-sizes-*.txt`, `serve-once.sh` with
   `g-v3-*.log` and `g-v4-*.log` (the `serve` runs), `run-gv-night-mac.sh` (tonight's 7B Metal cells).
 - `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the

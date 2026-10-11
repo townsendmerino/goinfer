@@ -254,6 +254,12 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
       again, at 20.8-28.0 s, about what it took before the fix without one. The old arm's, with the same CRC, reads
       9.5-13.3 s. The check is restored; the time did not move, and why the new arm's is twice the old arm's is not
       established.
+    - **Established 2026-10-10 night** (the record's "The 30B's self-check, investigated"). It is not the new code.
+      A ninety-second stream ends with gigabytes of the bundle still unwritten, and the CRC's read-back slows when the
+      kernel's flush overlaps it (13-28 s) and does not when it does not (10 s); both fast builds land in both
+      ranges. An `fsync` before the self-check puts every one at 10-12 s and does not shorten the transcode: the
+      flush is the same work. Not changed. A by-product is open: an evicted MoE bundle loads in 20 s without the CRC
+      and 10 s with it, and reads nearly the whole file either way.
 
 ### Checked and not worth doing
 
