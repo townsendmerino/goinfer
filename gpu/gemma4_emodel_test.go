@@ -231,3 +231,80 @@ func TestGemma4EModel_webgpuRowLength(t *testing.T) {
 		t.Errorf("Forward refused a full row: %v", err)
 	}
 }
+
+// TestGemma4EModel_webgpuPrefillAndBatch: the two entries that take several rows at once agree with the one-row
+// forward on an E-model. PrefillLast, which an E-model's image and audio turns go through, must return the last
+// position's logits of the sequential walk and leave the same cache behind; ForwardN must return each position's.
+func TestGemma4EModel_webgpuPrefillAndBatch(t *testing.T) {
+	if _, err := os.Stat(eModelDir); err != nil {
+		t.Skipf("no fixture (%s)", eModelDir)
+	}
+	if _, err := New(); err != nil {
+		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	prompt := eModelPrompt(t)
+	mg, err := decoder.Load(eModelDir, decoder.Options{Backend: "webgpu", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	rd, ok := mg.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Fatal("webgpu declined the tiny E-model")
+	}
+	rows := make([][]float32, len(prompt))
+	for i, tok := range prompt {
+		rows[i] = mg.EmbedResidentForTest(tok)
+	}
+	// The reference: one row at a time.
+	seq := make([][]float32, len(rows))
+	for i, row := range rows {
+		l, err := rd.Forward(row, i)
+		if err != nil {
+			t.Fatalf("sequential pos %d: %v", i, err)
+		}
+		seq[i] = append([]float32(nil), l...)
+	}
+	same := func(what string, got, want []float32) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s: %d logits, want %d", what, len(got), len(want))
+		}
+		for i := range got {
+			if math.Float32bits(got[i]) != math.Float32bits(want[i]) {
+				c, m := cosMaxAbs(got, want)
+				t.Errorf("%s differs from the sequential forward (logit %d: %v against %v; cosine %.8f, max |diff| %.4g)", what, i, got[i], want[i], c, m)
+				return
+			}
+		}
+	}
+	const n = 12
+	rd.Reset()
+	last, err := rd.PrefillLast(t.Context(), rows[:n], 0)
+	if err != nil {
+		t.Fatalf("PrefillLast: %v", err)
+	}
+	same("PrefillLast's logits", last, seq[n-1])
+	// The cache it left: the next positions, one row at a time, must match too.
+	for i := n; i < len(rows); i++ {
+		l, err := rd.Forward(rows[i], i)
+		if err != nil {
+			t.Fatalf("after PrefillLast, pos %d: %v", i, err)
+		}
+		same("the forward after PrefillLast", l, seq[i])
+	}
+	// ForwardN over positions n..n+3 after a sequential prefix.
+	rd.Reset()
+	for i := 0; i < n; i++ {
+		if _, err := rd.Forward(rows[i], i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	batch, err := rd.ForwardN(rows[n:n+4], n)
+	if err != nil {
+		t.Fatalf("ForwardN: %v", err)
+	}
+	for i, l := range batch {
+		same("ForwardN's row", l, seq[n+i])
+	}
+}
