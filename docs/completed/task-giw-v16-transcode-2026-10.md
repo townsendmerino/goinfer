@@ -2,8 +2,8 @@
 
 **Status: COMPLETE, archived 2026-10-11.** Parts T (with T8) and V are on `main`, every gate is read, and Decision 4's
 rebuilds are done. Nothing here is open. Two things it found live elsewhere: the cold load of a `.giw` is its own
-task, built and graded (`docs/tasks/task-giw-cold-load-2026-10.md`); and aikit's activation quantizer, which called
-its AVX2 kernels on amd64 without a CPU check, was fixed in aikit v1.67.1, which goinfer takes at its next pin bump.
+task, built and graded (`docs/completed/task-giw-cold-load-2026-10.md`); and aikit's activation quantizer, which called
+its AVX2 kernels on amd64 without a CPU check, was fixed in aikit v1.67.1, which goinfer pins.
 
 Scoped 2026-10-10. **Part T is built and graded** ([record](../measurements/giw-v16-transcode-2026-10/README.md)):
 T0-T6 with T4b, on aikit v1.66.0. G-T1 PASS on tiny and real cells on both boxes. G-T2 SHIP on every graded cell: new/old
@@ -18,7 +18,7 @@ with two projection misses on the small default files (the projection counted on
 Decision 4's rebuilds are done (five bundles on nobara and the archive, each bit-identical in weights to the file it
 replaces). The copy floor was read again with T8 (10-16% off the wall on the GGUF cells). The 30B's slower
 self-check is explained (the read-back overlapping the kernel's flush; not the new code). The by-product (an evicted MoE bundle loads
-in 20 s without the CRC and 10 s with it) is scoped as its own task, `docs/tasks/task-giw-cold-load-2026-10.md`. The gates
+in 20 s without the CRC and 10 s with it) is scoped as its own task, `docs/completed/task-giw-cold-load-2026-10.md`. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:

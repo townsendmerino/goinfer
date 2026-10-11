@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gcl_night.py: the timed gates of docs/tasks/task-giw-cold-load-2026-10.md, on Linux (G-CL2, G-CL3, G-CL4) and on
+"""gcl_night.py: the timed gates of docs/completed/task-giw-cold-load-2026-10.md, on Linux (G-CL2, G-CL3, G-CL4) and on
 macOS (G-CLd2, G-CLd3).
 
 Two pinned `serve` binaries, old and new. A start is: the bundle evicted (or read into the page cache, for a warm
