@@ -1,5 +1,5 @@
 #!/bin/bash
-# Step 0 of docs/tasks/task-giw-cold-load-2026-10.md: the cold load on the Mac (exploratory, no bar; run by day on the
+# Step 0 of docs/completed/task-giw-cold-load-2026-10.md: the cold load on the Mac (exploratory, no bar; run by day on the
 # owner's word). The Mellum MoE bundle and a dense 7B control built here. Estimate: 12 min.
 set -uo pipefail
 D=$HOME/goinfer-bench/coldload-mac; M=$HOME/models

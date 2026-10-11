@@ -132,9 +132,10 @@ carrying figures), docs linking to code by declaration name and dated records pi
 a `gate comments-only` check, notes files for moved text, a pilot with its band written first, and the package order.
 Its rule is `CLAUDE.md` § "Code comments".
 
-[`task-giw-cold-load-2026-10.md`](tasks/task-giw-cold-load-2026-10.md) (filed 2026-10-11, built on Linux and macOS, every gate read) is the cold
+[`task-giw-cold-load-2026-10.md`](completed/task-giw-cold-load-2026-10.md) (filed 2026-10-11, **complete and archived the same day**: built on Linux and macOS, every gate read) is the cold
 load of a `.giw`. The loader's header walk reads nearly the whole file of an MoE bundle in scattered windows (btrfs); reading
-it front to back first took a cold 35B's first reply from 38 s to 24 s in an exploratory run, and a dense model is unaffected.
+it front to back first took a cold 35B's first reply from 38.5 s to 23.0 s in its gate, and a dense model is unaffected. On macOS
+a cold bundle that fits is prefetched before a CPU load (a 7 GB MoE's first reply from 8.8 s to 5.4 s); a Metal load is left alone.
 
 [`task-giw-v16-transcode-2026-10.md`](completed/task-giw-v16-transcode-2026-10.md) (T0–T8 and V1–V7, filed 2026-10-10, **complete and archived 2026-10-11**)
 makes the transcode fast, then makes `.giw` one readable layout. The transcode half is byte-identical work: windowed layer

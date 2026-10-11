@@ -69,7 +69,7 @@ printed), and nothing is done about the read-around. On a 16 GB Mac in use, "fit
 bundles. **A load on Metal is left as it is:** there the prefetch cost a little more than it saved.
 
 Other systems load as before; none is measured. The measurements and gates are in
-[`tasks/task-giw-cold-load-2026-10.md`](tasks/task-giw-cold-load-2026-10.md).
+[`completed/task-giw-cold-load-2026-10.md`](completed/task-giw-cold-load-2026-10.md).
 
 ## One version
 

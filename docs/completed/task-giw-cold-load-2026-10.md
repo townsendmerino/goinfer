@@ -1,6 +1,11 @@
 # Task — the cold load of a `.giw`: read an MoE bundle deliberately, or not at all (2026-10)
 
-**Status:** scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). **Every Linux
+**Status: COMPLETE, archived 2026-10-11.** Built on Linux and on macOS, every registered gate read, the Metal kill
+rule applied. Not done, and not scheduled: any Linux filesystem other than btrfs; several readers at once (Decision
+3); WebGPU on macOS, which is left without the prefetch and was never measured; and a repeat of the Linux gate on a
+box left alone, which the owner may still want (the record's section 8 names three overlaps).
+
+Scoped 2026-10-11 and **built the same day on Linux** (steps 1 to 4; owner: "yes build it"). **Every Linux
 gate is read: G-CL1 PASS, G-CL2 SHIP on both MoE cells (0.597 and 0.613), G-CL3 PASS, G-CL4 PASS.** Step 0 (the Mac's measurement) is read (below), and **the darwin pre-read is built** from it (§ "The darwin
 pre-read"), **and its gates are read: G-CLd1 PASS; G-CLd2 SHIP on both CPU cells (0.609 and 0.738) and OFF on the 7B
 on Metal (1.039), so the registered kill rule fired and the pre-read applies to a CPU load only; G-CLd3 PASS, with one
