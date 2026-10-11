@@ -148,7 +148,7 @@ func TestVoxtralPrompt_refusals(t *testing.T) {
 		t.Error("a non-WAV was accepted")
 	}
 	s := &server{models: map[string]*loadedModel{"m": {name: "m", tk: lm.tk}}}
-	if err := s.loadVoxtral("dir"); err != nil {
+	if err := s.loadVoxtral("dir", "cpu"); err != nil {
 		t.Errorf("loadVoxtral with an [AUDIO] token: %v", err)
 	}
 	// a tokenizer without [AUDIO]: the tiny Tekken minus the name
@@ -158,7 +158,7 @@ func TestVoxtralPrompt_refusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = &server{models: map[string]*loadedModel{"m": {name: "m", tk: tk}}}
-	if err := s.loadVoxtral("dir"); err == nil || !strings.Contains(err.Error(), "[AUDIO]") {
+	if err := s.loadVoxtral("dir", "cpu"); err == nil || !strings.Contains(err.Error(), "[AUDIO]") {
 		t.Errorf("a tokenizer with no [AUDIO]: want a named refusal, got %v", err)
 	}
 }

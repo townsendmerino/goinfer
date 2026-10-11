@@ -150,6 +150,8 @@ type loadedModel struct {
 	qwenASROnce sync.Once
 	// Voxtral Mini: the checkpoint directory (the audio tower and projector are in its own safetensors) and the encoder, loaded on the first clip.
 	voxtralDir      string
+	voxtralBackend  string // the backend the tower is placed on at its load (-vision-device cpu makes it "cpu")
+	voxtralDevice   audio.WhisperDevice
 	voxtral         *audio.VoxtralAudio
 	voxtralErr      error
 	voxtralOnce     sync.Once

@@ -44,7 +44,7 @@
   {
    "name": "vision-device",
    "group": "Choosing models",
-   "summary": "Where the vision tower runs: `auto` (on the `--backend` GPU when this binary has a tower there) or `cpu` (the model keeps its own backend).",
+   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has one there; a device that declines, say for memory, leaves the CPU and says so) or `cpu` (the model keeps its own backend).",
    "type": "auto | cpu"
   },
   {

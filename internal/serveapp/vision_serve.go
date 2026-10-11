@@ -692,7 +692,14 @@ const voxtralMaxSeconds = 600
 
 // voxtralEncoder is Voxtral's audio tower and projector (aikit's, CPU, float32), loaded on the first clip.
 func (lm *loadedModel) voxtralEncoder() (*audio.VoxtralAudio, error) {
-	lm.voxtralOnce.Do(func() { lm.voxtral, lm.voxtralErr = audio.LoadVoxtralAudio(lm.voxtralDir) })
+	lm.voxtralOnce.Do(func() {
+		lm.voxtral, lm.voxtralErr = audio.LoadVoxtralAudio(lm.voxtralDir)
+		if lm.voxtralErr == nil {
+			var where string
+			lm.voxtralDevice, where = attachWhisperDevice(lm.voxtral.Enc, lm.voxtralBackend, os.Stderr)
+			fmt.Fprintf(os.Stderr, "audio: loaded the Voxtral audio tower for %q (encoder on %s)\n", lm.name, where)
+		}
+	})
 	return lm.voxtral, lm.voxtralErr
 }
 

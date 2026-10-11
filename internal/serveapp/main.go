@@ -414,7 +414,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
-	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision tower runs: auto (default: on the --backend's GPU when this binary has a tower there, else the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend)")
+	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend)")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere except Gemma 3 under --backend webgpu, whose only device tower is int8; on CUDA Gemma 3 is f32 since 2026-10-08, or int8 (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back, and on webgpu runs the CPU tower)")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
@@ -1133,7 +1133,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadQwenASR(dir)
 	}
 	if mt == "voxtral" { // speech to text; the audio tower and projector are in the model's own directory
-		return s.loadVoxtral(dir)
+		return s.loadVoxtral(dir, cfg.towerBackend())
 	}
 	if mt == "glm_ocr" {
 		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
@@ -1371,13 +1371,13 @@ func (s *server) loadQwenASR(dir string) error {
 
 // loadVoxtral turns on audio input for a Voxtral Mini model, as loadQwenASR does for Qwen3-ASR: the encoder lives beside the decoder in the same safetensors and loads on the first clip, so
 // there is only the [AUDIO] placeholder to check for and the directory to remember.
-func (s *server) loadVoxtral(dir string) error {
+func (s *server) loadVoxtral(dir, backend string) error {
 	for _, lm := range s.models {
 		if _, ok := lm.tk.TokenID("[AUDIO]"); !ok {
 			return fmt.Errorf("audio: %s is a Voxtral checkpoint but its tokenizer has no [AUDIO] token (a Tekken tokenizer is needed: tekken.json beside the weights)", dir)
 		}
-		lm.voxtralDir = dir
-		fmt.Fprintf(os.Stderr, "Voxtral audio input on for %q (the encoder loads on the first clip, CPU float32; a clip over %d s is refused) from %s\n", lm.name, voxtralMaxSeconds, dir)
+		lm.voxtralDir, lm.voxtralBackend = dir, backend
+		fmt.Fprintf(os.Stderr, "Voxtral audio input on for %q (the encoder loads on the first clip, float32, on %s when this binary has a device encoder for it, else the CPU; a clip over %d s is refused) from %s\n", lm.name, backend, voxtralMaxSeconds, dir)
 	}
 	return nil
 }

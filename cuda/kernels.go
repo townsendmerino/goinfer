@@ -96,6 +96,12 @@ var argmaxPTX []byte
 //go:embed testdata/moe_fold.ptx
 var moeFoldPTX []byte
 
+// audioEncoderPTX: audio_gelu_erf (the exact GELU, aikit's contract kernel on the device) and audio_im2col_k3 (the Whisper-style encoder's two Conv1d stems as
+// GEMMs). See cuda/audio_encoder.cu.
+//
+//go:embed testdata/audio_encoder.ptx
+var audioEncoderPTX []byte
+
 // topkPTX: topk_select, the device-side bounded top-K the sampled-decode fast path reads instead of the full logits row.
 // Built at the ambient NVRTC (12.9.86). See cuda/topk.cu.
 //

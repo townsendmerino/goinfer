@@ -66,8 +66,9 @@ func loadSpeech(spec modelSpec, cfg config) (*speechModel, error) {
 			name = filepath.Base(strings.TrimRight(spec.path, "/"))
 		}
 	}
-	fmt.Fprintf(os.Stderr, "loaded Whisper %q (%d mels, d_model %d, %d+%d layers, %d languages; float32, CPU; POST /v1/audio/transcriptions) in %s\n",
-		name, tr.Mels, tr.Dec.Cfg.D, tr.Enc.Cfg.Layers, tr.Dec.Cfg.Layers, len(tr.Gen.LangToID), time.Since(t0).Round(time.Millisecond))
+	_, where := attachWhisperDevice(tr.Enc, cfg.towerBackend(), os.Stderr)
+	fmt.Fprintf(os.Stderr, "loaded Whisper %q (%d mels, d_model %d, %d+%d layers, %d languages; float32, encoder on %s, decoder on the CPU; POST /v1/audio/transcriptions) in %s\n",
+		name, tr.Mels, tr.Dec.Cfg.D, tr.Enc.Cfg.Layers, tr.Dec.Cfg.Layers, len(tr.Gen.LangToID), where, time.Since(t0).Round(time.Millisecond))
 	return &speechModel{name: name, dir: spec.path, eng: tr}, nil
 }
 
