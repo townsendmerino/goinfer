@@ -47,6 +47,24 @@ transcode). gemma4 was the last family to get there (2026-09-24,
 A transcode from a safetensors directory (`prequant` given an HF directory) streams layer by layer too
 (`docs/tasks/task-prequant-dir-streaming-2026-10.md`).
 
+## A cold load
+
+The loader maps a bundle and reads each matrix's header through the mapping. The kernel reads around every page it
+faults in, so on a bundle of thousands of small matrices, which is what an MoE's experts are, that walk would read
+nearly the whole file in scattered pieces. On Linux the load therefore decides, once the header has named the model
+and before any matrix is read:
+
+- **An MoE bundle that is not in the page cache and fits in memory with room** (three quarters of what the kernel
+  reports available) **is read front to back first.** The load prints a line when it does. The weights are needed
+  either way; this reads them at the disk's sequential rate.
+- **An MoE bundle that cannot stay in memory** (paged with `--stream-weights`, or larger than the installed memory) has
+  the read-around turned off for the walk, so the load reads the headers and not the file.
+- **A dense bundle, a file already in the page cache, and any case in between are left alone.** A dense bundle has a
+  few hundred matrices and its walk is cheap.
+
+Other systems load as before; none is measured yet. The measurements and gates are in
+[`tasks/task-giw-cold-load-2026-10.md`](tasks/task-giw-cold-load-2026-10.md).
+
 ## One version
 
 A `.giw` is a cache of its source, so the format has **one version at a time**. This build writes weights format
