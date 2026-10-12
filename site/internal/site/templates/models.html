@@ -49,6 +49,7 @@
         <button type="button" data-v="chat">Chat</button>
         <button type="button" data-v="code">Code</button>
         <button type="button" data-v="vision">Images</button>
+        <button type="button" data-v="audio">Speech</button>
       </div>
     </div>
     <div class="frow"><span class="lab">Checked</span>
@@ -81,6 +82,12 @@
     {{end}}
     <li class="empty" id="empty" hidden>Nothing matches all of those. Loosen a filter.</li>
   </ul>
+</section>
+
+<section aria-labelledby="sp-h" id="speech">
+  <div class="s-head"><div><h2 class="s" id="sp-h">Speech to text</h2><p class="s-sub">Two ways in: a transcription endpoint, and an audio clip in a chat message.</p></div></div>
+  <p class="prose"><strong>Whisper.</strong> Point <code>goinfer serve --model</code> at an OpenAI Whisper checkpoint and it answers OpenAI's <code>/v1/audio/transcriptions</code>. The Whisper is written in Go like the rest of goinfer, and runs in float32 on the CPU. On <code>whisper-small</code> its transcripts are byte-equal to HuggingFace transformers' on 73 of 73 LibriSpeech clips, checked 2026-10-10. It is not a family above because it is not a chat model. Only <code>whisper-small</code> and English clips have been checked, and the audio has to be a WAV file.</p>
+  <p class="prose"><strong>Audio in a chat message.</strong> Three families above take an audio clip as <code>input_audio</code>: <a href="/models/qwen3_asr/">Qwen3-ASR</a>, <a href="/models/voxtral/">Voxtral Mini</a> and the small E-models of <a href="/models/gemma4/">Gemma 4</a>. The Speech filter lists them. All of this is in releases after v0.22.0. Details in <a href="{{cfg.GitHubURL}}/blob/main/docs/server.md">the server docs</a>.</p>
 </section>
 
 <section aria-labelledby="e-h" id="embeddings">

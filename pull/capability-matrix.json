@@ -414,10 +414,11 @@
     ],
     "display_name": "Gemma 4",
     "description": "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)",
-    "summary": "Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.",
+    "summary": "Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images; the E-models also take an audio clip (verified on E2B).",
     "tasks": [
       "chat",
-      "vision"
+      "vision",
+      "audio"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense ‖ sparse, no-shared",
@@ -866,7 +867,7 @@
     ],
     "display_name": "Qwen3-ASR",
     "description": "Qwen3-ASR speech to text: a Qwen3 decoder (tensors under thinker.*) fed by an audio encoder (three strided Conv2d, windowed attention, a projector)",
-    "summary": "Qwen3-ASR, speech to text in 30 languages (0.6B and 1.7B). Reads audio (verified on Qwen3-ASR-0.6B).",
+    "summary": "Qwen3-ASR, speech to text in 30 languages (0.6B and 1.7B). Takes an audio clip in a chat message (verified on Qwen3-ASR-0.6B, English clips only).",
     "tasks": [
       "audio"
     ],
@@ -1026,7 +1027,7 @@
     ],
     "display_name": "Voxtral",
     "description": "Mistral Voxtral Mini 3B: a Llama decoder (tensors under language_model.*, head_dim 128) fed by a Whisper-style audio tower, four-frame stacking and a two-linear projector",
-    "summary": "Mistral's Voxtral Mini 3B, speech understanding and transcription. Reads audio in the library (verified on Voxtral Mini 3B: the LibriSpeech clip transcribed token for token against transformers); not yet served.",
+    "summary": "Mistral's Voxtral Mini 3B, speech understanding and transcription. Takes an audio clip in a chat message (verified on Voxtral Mini 3B: two English clips transcribed token for token against transformers).",
     "tasks": [
       "audio"
     ],

@@ -74,7 +74,7 @@
       });
       $("#shown").textContent = "Showing " + n + " of " + total + " families";
       var e = $("#empty");
-      e.textContent = F.task === "vision" ? "Nothing matches. Only two families take images today: Gemma 4 and Qwen2.5-VL." : "Nothing matches all of those. Loosen a filter.";
+      e.textContent = "Nothing matches all of those. Loosen a filter.";
       e.hidden = n !== 0;
     }
     [["#f-task", "task"], ["#f-proof", "proof"]].forEach(function (p) {
