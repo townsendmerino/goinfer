@@ -77,8 +77,8 @@
     gates (queued for tonight on both boxes). The device m-RoPE image prefill (Qwen2.5-VL) is built and right in
     its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere.
     The owner chose a gate against the float reference first (G-S12.4b-4a-5): registered and piloted, the
-    instrument goes red on a planted defect, and its agreement margin needs about 250 prompts where 94 are
-    registered, so the design is back with the owner.
+    instrument goes red on a planted defect. Its 1-point agreement margin needed about 250 prompts where 94 are
+    registered; the owner widened it to 2 points, and the gate is queued on nobara for tonight.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -5094,6 +5094,23 @@ the prefill; it sizes the gate and tests the instrument.
    (29 needed). Also a change to the registered criteria.
 
 Predictions scored so far: "the planted defect reads OFF (0.9)": yes. The verdict's own predictions wait for a run.
+
+#### G-S12.4b-4a-5, amended 2026-10-12 on the owner's word, before any run on its prompts
+
+Asked which of the three ways on to take, the owner chose the second: **"Widen agreement to 2 pts"**.
+
+- **The amendment:** `AgreeMarginPts` goes from 1 to **2**. `KLMargin` stays 0.10, alpha 0.05, hard flips as
+  registered. This is a change to a registered margin made after the pilot had read; the reason is the pilot's own
+  spread (6.3 points a prompt), under which 1 point needs about 250 prompts and this image set has 19 images.
+- **The decision set is both registered sets, pooled: 94 prompts** (64 small, 30 served), `fidelity.PromptSetHash`
+  `af1083227f1a5f32e7677ab68267f4e4b8bc05506af83683ea1f80b4b60423ae` (the 49 then the 45, in that order). At a
+  2-point margin the pilot's spreads ask for 64 prompts for agreement and 29 for KL.
+- **Unchanged:** the instrument, the reference, the arms, the 32 positions, the bands (PASS adds Vulkan to
+  `gpu/residency.go:mropePrefillBackends` and queues G-S12.4b-4a-4; PARKED and OFF leave it off), the limit that
+  prompts sharing an image are not independent, and the predictions.
+- **The run:** `s12-webgpu/s12-4b/run-g-s12-4b-4a-5-night.sh` on nobara's night queue, from a pinned test binary
+  and a pinned copy of the images. From the pilot's times: 64 small prompts at 30 s, 30 served prompts at about
+  100 s, and the towers, about 95 minutes; queued at 130.
 
 ### S13 — Against the peers
 
