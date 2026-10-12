@@ -414,7 +414,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
-	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU; under --backend webgpu the Gemma 3 and Gemma 4 towers stay on the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend) | gpu (as auto, and under --backend webgpu the Gemma 3 and Gemma 4 towers run on the GPU in float32)")
+	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU; under --backend webgpu every vision tower stays on the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend) | gpu (as auto, and under --backend webgpu the towers that have a WebGPU form run on the GPU in float32: Gemma 3's, Gemma 4's, Qwen3.5+'s, Qwen3-VL's and GLM-OCR's)")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere; on CUDA Gemma 3 is int8 instead (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back). Under --backend webgpu Gemma 3's unset default runs the float32 tower on the CPU; f32 or int8 given explicitly puts that tower on the GPU")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
@@ -1119,7 +1119,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.towerBackend()), cfg.towerBackend(), cfg.requireBE)
+		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.towerBackend()), cfg.towerBackend(), cfg.visionDevice == "gpu", cfg.requireBE)
 	}
 	mt := visionModelType(dir)
 	// cfg.towerBackend(), not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
@@ -1129,7 +1129,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" || mt == "qwen3_vl_moe" { // qwen3_vl, qwen3_vl_moe: the same tower plus DeepStack; literals, which the support-table loader test reads
-		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
+		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.visionDevice == "gpu", cfg.requireBE)
 	}
 	if mt == "qwen3_asr" { // speech to text; the audio encoder is in the model's own directory
 		return s.loadQwenASR(dir)
@@ -1138,7 +1138,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadVoxtral(dir, cfg.towerBackend())
 	}
 	if mt == "glm_ocr" {
-		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
+		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.visionDevice == "gpu", cfg.requireBE)
 	}
 	if mt == "gemma4" {
 		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.visionDevice == "gpu", cfg.requireBE)

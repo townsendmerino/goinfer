@@ -127,9 +127,9 @@ func TestG4VWebGPU_matchesCPU(t *testing.T) {
 		shuffle bool
 	}
 	grids := []grid{{2, 1, false}, {3, 2, true}, {5, 3, false}, {5, 3, true}}
-	defer func() { g4vBlockForTest, g4vDefectForTest = 0, 0 }()
+	defer func() { towerBlockForTest, g4vDefectForTest = 0, 0 }()
 	for _, B := range []int{0, 6, 5} {
-		g4vBlockForTest = B
+		towerBlockForTest = B
 		for gi, g := range grids {
 			p, pos := g4vCase(enc, g.gw, g.gh, g.shuffle, uint64(10+gi))
 			low := g4vLowest(t, enc, a, p, pos)
@@ -139,7 +139,7 @@ func TestG4VWebGPU_matchesCPU(t *testing.T) {
 			}
 		}
 	}
-	g4vBlockForTest = 0
+	towerBlockForTest = 0
 	p, pos := g4vCase(enc, 5, 3, false, 99)
 	for d, name := range []string{1: "the clamps skipped", 2: "the x and y position tables swapped", 3: "RoPE not applied to k",
 		4: "the v norm skipped", 5: "k normed with q's weight"} {

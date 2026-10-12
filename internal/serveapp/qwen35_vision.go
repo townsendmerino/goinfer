@@ -165,12 +165,12 @@ func deepstackSets(dir string) int {
 // loadQwen35VisionTower attaches a Qwen3.5+ tower to the single loaded model. Everything that can be
 // checked without reading the tower's weights is checked here, at startup, so a bad -vision dir fails
 // loudly now rather than at the first image; the weights themselves load on first use.
-func (s *server) loadQwen35VisionTower(dir string, int8Tower bool, backend string, require bool) error {
+func (s *server) loadQwen35VisionTower(dir string, int8Tower bool, backend string, asked, require bool) error {
 	tower, pp, err := setupQwen35Vision(dir, int8Tower)
 	if err != nil {
 		return err
 	}
-	if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, require); err != nil {
+	if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, asked, require); err != nil {
 		return err
 	}
 	return s.attachQwen35Tower(tower, pp, dir)
@@ -198,14 +198,14 @@ func setupQwen35MMProj(path, modelType string, textHidden int, int8Tower bool) (
 }
 
 // loadQwen35MMProj attaches a Qwen3.5+ tower from a GGUF mmproj to the single loaded model.
-func (s *server) loadQwen35MMProj(path string, int8Tower bool, backend string, require bool) error {
+func (s *server) loadQwen35MMProj(path string, int8Tower bool, backend string, asked, require bool) error {
 	for _, lm := range s.models {
 		c := lm.model.Config()
 		tower, pp, err := setupQwen35MMProj(path, c.ModelType, c.HiddenDim, int8Tower)
 		if err != nil {
 			return err
 		}
-		if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, require); err != nil {
+		if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, asked, require); err != nil {
 			return err
 		}
 		return s.attachQwen35Tower(tower, pp, path)
