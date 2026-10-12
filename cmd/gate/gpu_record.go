@@ -1,0 +1,249 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+)
+
+// The GPU gate's record. `gate gpu` prints a verdict and keeps its raw stream in the log directory, and nothing durable said
+// "cuda, this commit, PASS": RELEASING.md's read 8 was prose, and v0.21.0 and v0.22.0 shipped with the Metal run and no recorded
+// CUDA one. Every run now writes one small JSON file, committed beside the other measurement records, and `gate gpu-records`
+// reads them: a backend is covered at a commit when its newest passing record's commit has the same tree under each of
+// gpuQualifyingTrees as that commit does, which is RELEASING.md's rule ("a run at an earlier commit counts only if nothing under
+// metal/, cuda/, gpu/ or decoder/ changed since") made checkable.
+
+// gpuRecordDirDefault is where a run's record goes, relative to the repository root.
+const gpuRecordDirDefault = "docs/measurements/gpu-gate"
+
+// gpuQualifyingTrees are the directories whose content a GPU-gate run vouches for. A change in any of them since the run
+// voids the run for a later commit; a change anywhere else (docs, the site, cmd) does not.
+var gpuQualifyingTrees = []string{"metal", "cuda", "gpu", "decoder"}
+
+// gpuRecord is one run of `gate gpu`, whatever its verdict. Only a PASS on a clean tree with the heavy tier run can qualify.
+type gpuRecord struct {
+	Schema       int               `json:"schema"`
+	Backend      string            `json:"backend"`
+	Commit       string            `json:"commit"` // the full SHA the run was made at
+	Date         string            `json:"date"`   // UTC, RFC 3339
+	Host         string            `json:"host"`
+	GPU          string            `json:"gpu,omitempty"`
+	Verdict      string            `json:"verdict"` // PASS, FAIL, INCONCLUSIVE (green on a dirty tree), NO_GATE, VACUOUS, EMPTY
+	Dirty        bool              `json:"dirty"`
+	HeavySkipped bool              `json:"heavy_skipped"`
+	Groups       gpuRecordGroups   `json:"groups"`
+	Trees        map[string]string `json:"trees"` // git tree id of each gpuQualifyingTrees directory at Commit, for a reader; qualification recomputes them
+}
+
+type gpuRecordGroups struct {
+	Declared int `json:"declared"`
+	Reported int `json:"reported"`
+	Pass     int `json:"pass"`
+	Skip     int `json:"skip"`
+	Fail     int `json:"fail"`
+	Ran      int `json:"ran"`
+}
+
+// writeRecord writes this run's record. A record that cannot be written is said loudly and does not change the exit code: the
+// run's verdict is what it is, and the release command will read the missing record as owed.
+func (g *gpuGate) writeRecord(verdict string) {
+	if g.recordDir == "" {
+		return
+	}
+	root, err := repoRoot()
+	if err != nil {
+		fmt.Fprintf(g.w, "\n  RECORD NOT WRITTEN: %v\n", err)
+		return
+	}
+	dir := g.recordDir
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(root, dir)
+	}
+	full, err := gitOut(root, "rev-parse", "HEAD")
+	if err != nil {
+		fmt.Fprintf(g.w, "\n  RECORD NOT WRITTEN: %v\n", err)
+		return
+	}
+	now := time.Now().UTC()
+	rec := gpuRecord{
+		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped,
+		GPU: g.gpuName, Trees: map[string]string{},
+		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
+	}
+	if b, err := exec.Command("uname", "-sm").Output(); err == nil {
+		rec.Host = strings.TrimSpace(string(b))
+	}
+	for _, d := range gpuQualifyingTrees {
+		if t, err := gitTree(root, full, d); err == nil {
+			rec.Trees[d] = t
+		}
+	}
+	b, err := json.MarshalIndent(rec, "", " ")
+	if err != nil {
+		fmt.Fprintf(g.w, "\n  RECORD NOT WRITTEN: %v\n", err)
+		return
+	}
+	name := fmt.Sprintf("%s-%s-%s.json", g.backend, now.Format("20060102T150405Z"), full[:8])
+	path := filepath.Join(dir, name)
+	if err := writeFileAtomic(path, append(b, '\n')); err != nil {
+		fmt.Fprintf(g.w, "\n  RECORD NOT WRITTEN: %v\n", err)
+		return
+	}
+	fmt.Fprintf(g.w, "\n  record: %s (commit it with the release; `gate gpu-records` reads it)\n", path)
+}
+
+// writeFileAtomic writes b to path through a temporary file and a rename, so a reader never sees half a record.
+func writeFileAtomic(path string, b []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// gitTree is the git tree id of dir at rev.
+func gitTree(root, rev, dir string) (string, error) {
+	return gitOut(root, "rev-parse", rev+":"+dir)
+}
+
+// loadGPURecords reads every record in dir, oldest first. A file that is not a record is an error, not a skip: a record that
+// cannot be read must not read as "no record".
+func loadGPURecords(dir string) ([]gpuRecord, error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var recs []gpuRecord
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var r gpuRecord
+		if err := json.Unmarshal(b, &r); err != nil || r.Schema != 1 || r.Backend == "" || r.Commit == "" {
+			return nil, fmt.Errorf("%s is not a GPU-gate record (schema 1 with a backend and a commit): %v", e.Name(), err)
+		}
+		recs = append(recs, r)
+	}
+	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Date < recs[j].Date })
+	return recs, nil
+}
+
+// valid says whether the run itself is one a release can lean on: a PASS, on a clean tree, with the heavy tier run.
+func (r gpuRecord) valid() (bool, string) {
+	switch {
+	case r.Verdict != "PASS":
+		return false, "verdict " + r.Verdict
+	case r.Dirty:
+		return false, "the run was made on a dirty tree"
+	case r.HeavySkipped:
+		return false, "the heavy tier (real models) was skipped"
+	}
+	return true, ""
+}
+
+// changedSince names the first gpuQualifyingTrees directory whose tree at head differs from its tree at the run's commit, or "".
+// An error reading either side is returned, not read as "unchanged".
+func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (string, error)) (string, error) {
+	for _, d := range gpuQualifyingTrees {
+		then, err1 := treeOf(r.Commit, d)
+		now, err2 := treeOf(head, d)
+		if err1 != nil || err2 != nil {
+			return "", fmt.Errorf("could not compare %s/ (%v %v)", d, err1, err2)
+		}
+		if then != now {
+			return d, nil
+		}
+	}
+	return "", nil
+}
+
+// gpuCoverage is, for one backend, whether the records cover head. The newest record made at the same code (every
+// gpuQualifyingTrees directory identical) decides, whatever its verdict: a later FAIL at unchanged code is not hidden by an
+// earlier PASS. With no record at the same code, the reason names the newest record and what changed since it.
+func gpuCoverage(recs []gpuRecord, backend, head string, treeOf func(rev, dir string) (string, error)) (*gpuRecord, string) {
+	var newest *gpuRecord
+	var newestWhy string
+	for i := len(recs) - 1; i >= 0; i-- {
+		r := &recs[i]
+		if r.Backend != backend {
+			continue
+		}
+		changed, err := r.changedSince(head, treeOf)
+		if err != nil {
+			return nil, err.Error()
+		}
+		if changed == "" {
+			if ok, why := r.valid(); !ok {
+				return nil, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
+			}
+			return r, ""
+		}
+		if newest == nil {
+			newest, newestWhy = r, fmt.Sprintf("newest record %s @ %s: %s/ changed since", r.Date, r.Commit[:8], changed)
+		}
+	}
+	if newest == nil {
+		return nil, "no record"
+	}
+	return nil, newestWhy
+}
+
+// runGPURecords is `gate gpu-records`: for each backend, whether a GPU-gate run still covers head. Exit 0 only when both do.
+func runGPURecords(args []string, w io.Writer) int {
+	fs := flag.NewFlagSet("gate gpu-records", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	head := fs.String("head", "HEAD", "the revision to be covered")
+	dir := fs.String("dir", gpuRecordDirDefault, "where the records are")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	root, err := repoRoot()
+	if err != nil {
+		fmt.Fprintln(w, err)
+		return 2
+	}
+	d := *dir
+	if !filepath.IsAbs(d) {
+		d = filepath.Join(root, d)
+	}
+	recs, err := loadGPURecords(d)
+	if err != nil {
+		fmt.Fprintf(w, "gate gpu-records: %v\n", err)
+		return 2
+	}
+	full, err := gitOut(root, "rev-parse", *head)
+	if err != nil {
+		fmt.Fprintf(w, "gate gpu-records: %v\n", err)
+		return 2
+	}
+	treeOf := func(rev, dir string) (string, error) { return gitTree(root, rev, dir) }
+	code := 0
+	fmt.Fprintf(w, "GPU gate records in %s, against %s\n", *dir, full[:8])
+	for _, be := range []string{"cuda", "metal"} {
+		r, why := gpuCoverage(recs, be, full, treeOf)
+		if r != nil {
+			fmt.Fprintf(w, "  %-6s done   %s @ %s (%d pass, %d skip)\n", be, r.Date, r.Commit[:8], r.Groups.Pass, r.Groups.Skip)
+			continue
+		}
+		code = 1
+		fmt.Fprintf(w, "  %-6s OWED   %s\n", be, why)
+	}
+	return code
+}

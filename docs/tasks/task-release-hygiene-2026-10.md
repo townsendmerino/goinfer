@@ -100,11 +100,7 @@ agreement test, the hardware matrix test) it calls that function, so the command
 | 7 | the CHANGELOG has a line for each user-visible change | item 2's `gate changelog` | exit 0 |
 | 8 | the citation lint, `gofmt`, CI at HEAD | `scripts/queue_citation_lint.py`, `gh run list` at the full SHA, run-level `completed` | each green |
 
-**The prerequisite that is real work: row 4 has no record to read.** `gate gpu` prints a verdict and writes its raw
-stream to the log directory; nothing durable says "cuda, commit X, PASS, N tests". Before the release command can count
-it, `gate gpu` must write one: `docs/measurements/gpu-gate/<backend>-<date>.json`, holding the backend, the commit, the
-verdict, the counts and the hash of the four trees. Row 4 then reads the newest per backend. About half a day, and it
-is the part that would have caught v0.21.0 and v0.22.0.
+**The prerequisite, BUILT 2026-10-11: row 4's record.** `gate gpu` writes `docs/measurements/gpu-gate/<backend>-<time>-<commit>.json` on every run (`-record DIR`, empty for none): backend, full commit, verdict (PASS, FAIL, INCONCLUSIVE for green on a dirty tree, NO_GATE, VACUOUS, EMPTY), dirty, whether the heavy tier was skipped, the group and test counts, and the git tree id of `metal/`, `cuda/`, `gpu/` and `decoder/` at that commit. `gate gpu-records [-head REV]` reads them: the newest record made at the same code (those four trees identical to HEAD's) decides, whatever its verdict, and it counts only if it is a PASS on a clean tree with the heavy tier run; exit 0 only when cuda and metal both do. Tested against a git repository built in the test (a docs change keeps a run valid, a change under any of the four voids it, a later FAIL at the same code is not hidden by an earlier PASS, each non-qualifying kind of run is named); dropping `decoder` from the rule fails a test. **Not exercised end to end:** no real `gate gpu` run has written one yet, so the first CUDA night run is also the writer's first real use. `go.mod` pins are not in the qualifying set (RELEASING.md's rule names the four directories); an aikit bump between the run and the tag is read by row 2, not here. Both backends read OWED until each box has run the gate and its record is committed.
 
 **Design decisions to make before building**
 1. *Branch rule (row 6).* "Carries a fix" is a heuristic on commit subjects. It will miss a fix called "change". It
@@ -120,5 +116,5 @@ half with the GPU record; two rows (1, 2) are one-line calls into existing funct
 
 ## Order
 
-1 (done) → the GPU gate's record file (the prerequisite above, small and useful alone) → 2 → 3, because 3 calls 2. Items
+1 (done) → the GPU gate's record file (done) → 2 → 3, because 3 calls 2. Items
 2 and 3 change nothing a user runs; they change what a release costs the person cutting it.
