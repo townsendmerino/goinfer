@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — the sidecar's file name carries the format version, so two builds on one box stop rebuilding each other's
+
+A sidecar is now `<model>.<quant>[.e4h].<target>.v16.giw` (the number is the weights format version this build reads), where it
+was `<model>.<quant>[.e4h].<target>.giw`. A release binary and a dev build at different formats each keep their own file; a switch
+between them costs nothing. A sidecar left under the old name by an earlier build is used when it already loads as this build's
+format (it is hard-linked to the new name, no transcode); one in another format is left alone. **Nothing deletes an old-version
+sidecar**, since another build may be using it: after a format bump the old file stays, as large as the model, until you remove
+it. The build prints a note when it leaves one behind. `fit` finds the versioned name too
+([`docs/giw-bundles.md`](docs/giw-bundles.md), "One version"). A script that builds the name itself needs the `.v16` segment.
+
 ### Fixed — `Model.Close` during a generation, and a generation after `Close`
 
 `Close` while a generation was running released the Metal device under an open decode chain and killed the process
@@ -144,8 +154,9 @@ This build writes weights format v16 and reads only v16; the bundle frame stays 
   transcoded again from the source beside it, once.
 - **A hand-built or embedded `.giw` from an earlier build is refused**, with `format vN, this build reads v16 — delete the sidecar
   (it rebuilds) or rebuild with go run ./cmd/prequant …`. Rebuild it with `cmd/prequant`.
-- **Two builds on one box rebuild each other's sidecars.** A build from before this change refuses a v16 sidecar as too new and
-  rewrites it in its own format; this build then rewrites it again. Each switch costs one transcode per model.
+- **Two builds on one box rebuild each other's sidecars** (until the next entry: sidecar names now carry the version). A build
+  from before this change refuses a v16 sidecar as too new and rewrites it in its own format; this build then rewrites it
+  again. Each switch costs one transcode per model.
 - What left the layout: int4 kinds 4 (canonical plus row4) and 7 (a Metal-only single tensor), the float32 copy of every int4 scale
   array that a `-target metal` file carried beside the binary16 one, and the header's legacy quant enum. A `-target metal` file is
   smaller by those float32 arrays; a file for any other target keeps its size.

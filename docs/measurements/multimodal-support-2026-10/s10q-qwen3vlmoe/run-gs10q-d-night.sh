@@ -30,7 +30,8 @@ for p in "$MODEL" "$OUT"; do case "$p" in /srv/models*|/Volumes/*) fatal "$p is 
 free_gb=$(df -BG --output=avail "$HOME/models" | tail -1 | tr -dc '0-9'); [ "$free_gb" -ge 30 ] || fatal "only ${free_gb} GB free under ~/models, need 30 (the int4 sidecar is ~17 GB)"
 mkdir -p "$OUT/graded" "$OUT/cuda"
 { echo "binaries: $BIN (rev $(cat "$BIN/rev"))"; echo "started: $(date '+%F %T %Z')"; echo "free: ${free_gb} GB; load: $(cat /proc/loadavg)"; free -g | sed -n 2p; nvidia-smi --query-gpu=driver_version,memory.total,memory.used --format=csv,noheader 2>/dev/null; } | tee "$OUT/provenance.txt"
-SIDECAR=$MODEL.int4.cpu-amd64.giw
+SIDECAR=$MODEL.int4.cpu-amd64.giw   # the name a serve built before the sidecar carried its format version writes
+for v in "$MODEL".int4.cpu-amd64.v*.giw; do [ -e "$v" ] && SIDECAR=$v; done   # a later build's name (versioned): present if either exists
 [ -n "${GS10QD_DRY:-}" ] && { echo "DRY: preconditions hold; plan = sidecar ($([ -e "$SIDECAR" ] && echo present || echo "to build")), graded =cpu,cpu at int4, then the graded cuda arm (--moe-cache-experts)"; exit 0; }
 cd "$SRC"
 # int4 is serve's default and is left unset on purpose: at the pinned rev an explicit --quant int4 on a MoE directory is

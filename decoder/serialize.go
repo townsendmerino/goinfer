@@ -63,6 +63,10 @@ import (
 //
 // Kinds 4 and 7 existed before v16 and are not read.
 
+// GIWFormatVersion is the weights format version this build writes and reads: the "vN" a sidecar's file name carries
+// (internal/prequant), so builds at different versions keep separate sidecars of one model.
+const GIWFormatVersion = giwVersion
+
 const (
 	giwMagic = "GINFW"
 	// giwVersion is the one format version this build writes and reads. A file at any other version is refused, and a

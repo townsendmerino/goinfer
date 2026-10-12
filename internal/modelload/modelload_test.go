@@ -2,6 +2,7 @@ package modelload
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,7 +107,7 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 		return res
 	}
 	first := load(false)
-	want := src + ".int4.e4h.metal.giw"
+	want := src + fmt.Sprintf(".int4.e4h.metal.v%d.giw", decoder.GIWFormatVersion)
 	if first.LoadPath != want {
 		t.Fatalf("LoadPath = %q, want the sidecar %q", first.LoadPath, want)
 	}

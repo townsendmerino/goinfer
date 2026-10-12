@@ -335,7 +335,7 @@ flowchart TB
   end
   REF --> FILE
   FILE --> ML["internal/modelload.Load"]
-  ML -- ".gguf, default on darwin and Linux" --> SIDE["sidecar &lt;base&gt;.&lt;quant&gt;.&lt;target&gt;.giw<br/>StreamTranscodeGGUF, one layer at a time<br/>self-checked, then renamed into place"]
+  ML -- ".gguf, default on darwin and Linux" --> SIDE["sidecar &lt;base&gt;.&lt;quant&gt;.&lt;target&gt;.v&lt;N&gt;.giw<br/>StreamTranscodeGGUF, one layer at a time<br/>self-checked, then renamed into place"]
   SIDE --> MAP["mapGIW → loadSerializedWeights<br/>int4 / int8 payloads and their scales ALIASED from the mapping"]
   ML -- ".giw" --> MAP
   BAKED --> MAP
@@ -420,7 +420,7 @@ weights are mapped from the image rather than copied to the heap.
 **Where `.giw` files come from.**
 - **`cmd/prequant`** builds one from a GGUF or a safetensors checkpoint.
 - **The sidecar.** A `.gguf` given to chat or serve is transcoded **once** to a sidecar beside it,
-  named `<base>.<quant>.<target>.giw`.
+  named `<base>.<quant>.<target>.v<N>.giw` (N is the weights format version, so builds at different formats keep separate sidecars).
   - It is the default on darwin (since 2026-09-22) and Linux (since 2026-09-24).
     [measurements/cpu-giw-vs-direct-2026-09-24.md](measurements/cpu-giw-vs-direct-2026-09-24.md)
     found no CPU decode cost, and a load that maps in about 0.01 s instead of requantizing for

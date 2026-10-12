@@ -2,6 +2,7 @@ package fitcmd
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
@@ -279,9 +280,10 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cpuSidecar := filepath.Join(dir, "tiny."+label+"."+string(target)+".giw")
+	ver := fmt.Sprintf(".v%d.giw", decoder.GIWFormatVersion) // the name carries the format version (internal/prequant)
+	cpuSidecar := filepath.Join(dir, "tiny."+label+"."+string(target)+ver)
 	if target == decoder.GIWTargetNone {
-		cpuSidecar = filepath.Join(dir, "tiny."+label+".canonical.giw") // a GOARCH with no cpu-specific target
+		cpuSidecar = filepath.Join(dir, "tiny."+label+".canonical"+ver) // a GOARCH with no cpu-specific target
 	}
 	if err := os.WriteFile(cpuSidecar, giw.Write(blob, nil), 0o644); err != nil {
 		t.Fatal(err)
