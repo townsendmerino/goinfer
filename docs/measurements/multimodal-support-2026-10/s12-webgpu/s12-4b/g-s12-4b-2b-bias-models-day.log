@@ -1,0 +1,31 @@
+Mon Oct 12 09:11:21 PDT 2026
+=== RUN   TestPrefillInt4_real
+G-S12.4b-2b qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, 64 rows, rows: pass
+G-S12.4b-2b qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, 64 rows, tiled: pass
+G-S12.4b-2b qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, 300 rows, rows: pass
+G-S12.4b-2b qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, 300 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (18.86s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	19.928s
+exit 0 (qwen2.5-coder-0.5b-instruct-q4_k_m.gguf)
+=== RUN   TestPrefillInt4_real
+decoder: .giw context capped at 107194 (model allows 128000) so that KV+scratch fits: needs ~7.61 GB of 8.61 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw, 64 rows, rows: pass
+decoder: .giw context capped at 99123 (model allows 128000) so that KV+scratch fits: needs ~7.06 GB of 8.06 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw, 64 rows, tiled: pass
+decoder: .giw context capped at 104729 (model allows 128000) so that KV+scratch fits: needs ~7.44 GB of 8.44 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw, 300 rows, rows: pass
+decoder: .giw context capped at 100129 (model allows 128000) so that KV+scratch fits: needs ~7.13 GB of 8.13 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw, 300 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (53.75s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	54.158s
+exit 0 (qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw)
+=== RUN   TestPrefillInt4_real
+    prefill_int4_test.go:58: /Users/francistownsend-merino/models/gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 64 rows: gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/…)
+--- FAIL: TestPrefillInt4_real (9.16s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	9.674s
+FAIL
+exit 1 (gemma-3-4b-it.int4.e4h.webgpu.v16.giw)
+Mon Oct 12 09:12:48 PDT 2026

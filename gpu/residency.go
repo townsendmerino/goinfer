@@ -106,8 +106,8 @@ type residentDecoder struct {
 	adapter []decoder.ResidentAdapterLayer
 
 	// prefillLast is decoder.Prefiller's batched-M forward, a closure over BuildResident's hidden/nH/inter/eps/scale/addOne
-	// locals like newRunner. It reads rd.rm lazily, at call time (not a snapshot), and converts it with runModelToModelW to the
-	// plain dense-W8A8 ModelW shape PrefillLastW8A8 needs, declining models outside that scope.
+	// locals like newRunner. It reads rd.rm lazily, at call time (not a snapshot), and converts it with runModelToPrefill to the
+	// plain dense shape the batched pass takes, declining models outside that scope.
 	prefillLast func(xs [][]float32, startPos int) ([]float32, error)
 
 	// resetErr holds the first error from Reset's state re-zero. Reset satisfies the cross-backend ResidentForward interface
@@ -1139,23 +1139,27 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	rd.newRunner = func() (*DecodeRunner, error) { return rd.runnerFor(rd.rm) }
 	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
-		mw, ok := runModelToModelW(&rd.rm, hd)
+		mw, pp, ok := runModelToPrefill(&rd.rm, hd)
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/sliding-window/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/…)")
 		}
-		// q/k/v bias (Qwen2) is admitted on Vulkan only: the fused-epilogue tiled GEMM (matmulTiledW8A8BiasKernelWGSL, see
-		// runModelToModelW) is bit-exact there but still diverges on Metal past nKeys~15 (cosine ~0.998, a real gap, not float
-		// noise). Do not widen this gate to another backend without a bit-exactness check on it, or a check against the real ship
-		// gate (docs/completed/task-prefill-gap.md §3.2); docs/code-notes/gpu.md#webgpuBackend.BuildResident.biasgate has the
-		// measurements.
-		if mw.hasBias() && c.Backend() != "vulkan" {
+		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
+		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15
+		// (cosine ~0.998, a real gap, not float noise). Do not widen this gate to another backend without a bit-exactness check
+		// on it, or a check against the real ship gate (docs/completed/task-prefill-gap.md §3.2);
+		// docs/code-notes/gpu.md#webgpuBackend.BuildResident.biasgate has the measurements. An int4 projection adds its bias in
+		// a separate step, as decode does, and is not behind this gate.
+		if pp.int4() && !w4MultiVerified[c.Backend()] {
+			return nil, fmt.Errorf("gpu: PrefillLast declines — the multi-row int4 kernels are not yet verified bit-exact on backend %q", c.Backend())
+		}
+		if pp.int8Bias(mw) && c.Backend() != "vulkan" {
 			return nil, fmt.Errorf("gpu: PrefillLast declines — q/k/v bias on backend %q is not yet verified bit-exact (Vulkan only for now)", c.Backend())
 		}
 		positions := make([]int, len(xs))
 		for i := range positions {
 			positions[i] = startPos + i
 		}
-		return c.PrefillLastW8A8(xs, mw, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
+		return c.prefillLastRows(xs, mw, pp, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
 	}
 	runner, err := rd.newRunner()
 	if err != nil {
@@ -1306,7 +1310,7 @@ var _ decoder.Prefiller = (*residentDecoder)(nil)
 // PrefillLast is decoder.Prefiller: process the whole embeddings slice in ONE on-device batched pass
 // (docs/completed/task-gpu-batched-prefill.md) and return only the LAST position's logits, the sub-linear-TTFT alternative
 // to residentPrefillSeed's per-token Forward loop. It declines (the caller falls back to that loop; warnPrefillDeclined logs
-// it) when the model is not plain dense W8A8 (rd.prefillLast's runModelToModelW guard); a decline is not fatal.
+// it) when the model is outside the plain dense pass (rd.prefillLast's runModelToPrefill guard); a decline is not fatal.
 func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err // checked once, up front — the whole pass has no finer-grained cancel point
@@ -1344,13 +1348,26 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 		applySoftcap(logits, rd.finalSoftcap)
 		return logits, nil
 	}
-	logits, err := rd.prefillLast(embeddings, startPos)
-	if err != nil {
-		return nil, err
+	// The pass's scratch grows with its row count, so a long prompt goes through in blocks. A block attends to the K/V
+	// the blocks before it wrote, as it would in one pass, so the result is the same bits; only the last block's logits
+	// are kept.
+	var logits []float32
+	for from := 0; from < n; from += prefillBlockRows {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var err error
+		if logits, err = rd.prefillLast(embeddings[from:min(from+prefillBlockRows, n)], startPos+from); err != nil {
+			return nil, err
+		}
 	}
 	applySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
+
+// prefillBlockRows is the most rows the batched pass takes in one call. A variable so a test can cross a block boundary
+// on a tiny fixture.
+var prefillBlockRows = 512
 
 // TruncateTo is a no-op on the resident cache: it is positional and Forward sets
 // nKeys=pos+1, so entries past pos are never read and get overwritten next round
