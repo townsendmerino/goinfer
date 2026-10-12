@@ -10,22 +10,99 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once (int8 matmul weights as ResidentW8A8, f32
-// norms/biases as device buffers) and runs ForwardPatches entirely on the device: the [np, hidden] activation stays
-// resident, every op chains as a Submit, and there is ONE Poll per layer (which just waits for that layer's compute and
-// bounds memory before the next layer's scratch is allocated). vision.Encoder delegates here when a resident backend is
-// attached (-tags gpu); the default build is pure-Go CPU. History: docs/code-notes/gpu.md#VisionEncoder.
+// VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once (the matmul weights as int8 ResidentW8A8,
+// or as float32 device buffers in the float32 form; f32 norms/biases as device buffers) and runs ForwardPatches entirely
+// on the device: the [np, hidden] activation stays resident, every op chains as a Submit, and there is ONE Poll per layer
+// (which just waits for that layer's compute and bounds memory before the next layer's scratch is allocated).
+// vision.Encoder delegates here when a resident backend is attached (-tags gpu); the default build is pure-Go CPU.
+// History: docs/code-notes/gpu.md#VisionEncoder.
 type VisionEncoder struct {
-	c                                        *Context
+	c *Context
+	// w carries the tower's dimensions and eps in both forms; its Layers are set in the int8 form only.
 	w                                        vision.GPUWeights
 	patchW, patchB, posEmb, postLNw, postLNb *DeviceBuffer
 	layers                                   []visLayer
+	// f32: the projections are float32 (NewVisionEncoderF32). ForwardPatches then returns the last block's output and the
+	// caller applies the post-layernorm on the host (vision.Encoder.FinishHidden), which the float32 export leaves there.
+	f32 bool
 }
 
 type visLayer struct {
 	ln1w, ln1b, ln2w, ln2b     *DeviceBuffer
 	qb, kb, vb, ob, fc1b, fc2b *DeviceBuffer
-	qw, kw, vw, ow, fc1w, fc2w *ResidentW8A8
+	qw, kw, vw, ow, fc1w, fc2w *ResidentW8A8 // the int8 form's projections
+	qf, kf, vf, of, fc1f, fc2f *DeviceBuffer // the float32 form's, each [out, in]
+}
+
+// visionDefectForTest plants one defect in the float32 forward's first layer, for the tower gate's planted-defect
+// arm (gpu/vision_f32_test.go): 1 the position table not added, 2 the q bias dropped, 3 q and k weights swapped, 4 the
+// GELU skipped, 5 the MLP residual dropped. 0, the only value outside that test, plants nothing.
+var visionDefectForTest int
+
+// NewVisionEncoderF32 uploads the tower in float32 from the encoder's own weights (vision.Encoder.Weights; the tower must
+// be loaded with quant=false).
+func (c *Context) NewVisionEncoderF32(w vision.SiglipWeights) (*VisionEncoder, error) {
+	if err := c.ensureVision(); err != nil {
+		return nil, err
+	}
+	cfg := w.Cfg
+	if cfg.NumAttentionHeads <= 0 || cfg.HiddenSize%cfg.NumAttentionHeads != 0 {
+		return nil, fmt.Errorf("gpu: vision tower hidden %d does not divide into %d heads", cfg.HiddenSize, cfg.NumAttentionHeads)
+	}
+	ve := &VisionEncoder{c: c, f32: true, w: vision.GPUWeights{
+		Hidden: cfg.HiddenSize, Inter: cfg.IntermediateSize, NumLayers: len(w.Blocks), NumHeads: cfg.NumAttentionHeads,
+		HeadDim: cfg.HiddenSize / cfg.NumAttentionHeads, NumPatches: w.NumPatches, PatchSize: cfg.PatchSize,
+		NumChannels: cfg.NumChannels, Eps: float32(cfg.LayerNormEps),
+	}}
+	var err error
+	up := func(x []float32) *DeviceBuffer {
+		if err != nil {
+			return nil
+		}
+		var d *DeviceBuffer
+		d, err = c.UploadF32(x)
+		return d
+	}
+	upP := func(name string, p vision.VisionProj, out, in int) (*DeviceBuffer, *DeviceBuffer) {
+		if err == nil && (p.Out != out || p.In != in || len(p.W) != out*in || len(p.B) != out) {
+			err = fmt.Errorf("%s is [%d, %d] with %d weights and %d biases, want [%d, %d]", name, p.Out, p.In, len(p.W), len(p.B), out, in)
+		}
+		return up(p.W), up(p.B)
+	}
+	h, inter := cfg.HiddenSize, cfg.IntermediateSize
+	ve.patchW, ve.patchB, ve.posEmb = up(w.PatchW), up(w.PatchB), up(w.PosEmb)
+	ve.layers = make([]visLayer, len(w.Blocks))
+	for i := range w.Blocks {
+		b := &w.Blocks[i]
+		L := &ve.layers[i]
+		L.ln1w, L.ln1b, L.ln2w, L.ln2b = up(b.LN1W), up(b.LN1B), up(b.LN2W), up(b.LN2B)
+		L.qf, L.qb = upP("q", b.Q, h, h)
+		L.kf, L.kb = upP("k", b.K, h, h)
+		L.vf, L.vb = upP("v", b.V, h, h)
+		L.of, L.ob = upP("o", b.O, h, h)
+		L.fc1f, L.fc1b = upP("fc1", b.FC1, inter, h)
+		L.fc2f, L.fc2b = upP("fc2", b.FC2, h, inter)
+	}
+	if err != nil {
+		ve.Close()
+		return nil, fmt.Errorf("gpu: upload float32 vision tower: %w", err)
+	}
+	return ve, nil
+}
+
+// projF32 runs a float32 projection: src[M,K] · w[N,K]ᵀ + bias[N] → out[M,N].
+func (ve *VisionEncoder) projF32(src, w, bias *DeviceBuffer, M, K, N int) (*DeviceBuffer, error) {
+	out, err := ve.c.matmulF32Device(src.buf, w.buf, M, K, N)
+	if err != nil {
+		return nil, err
+	}
+	if bias != nil {
+		if err := ve.c.addRowsDevice(out.buf, bias.buf, M*N, N, 0); err != nil {
+			out.Release()
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // NewVisionEncoder uploads the tower to the device.
@@ -152,10 +229,19 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	if err := c.addRowsDevice(h.buf, ve.patchB.buf, np*hidden, hidden, 0); err != nil {
 		return nil, err
 	}
-	if err := c.addRowsDevice(h.buf, ve.posEmb.buf, np*hidden, hidden, 1); err != nil {
-		return nil, err
+	if !(ve.f32 && visionDefectForTest == 1) {
+		if err := c.addRowsDevice(h.buf, ve.posEmb.buf, np*hidden, hidden, 1); err != nil {
+			return nil, err
+		}
 	}
 	c.device.Poll(true, nil)
+	// proj is one projection in whichever form the tower was uploaded.
+	proj := func(src *DeviceBuffer, w8 *ResidentW8A8, wf, bias *DeviceBuffer, M, K, N int) (*DeviceBuffer, error) {
+		if ve.f32 {
+			return ve.projF32(src, wf, bias, M, K, N)
+		}
+		return ve.proj(src, w8, bias, M, K)
+	}
 
 	for li := range ve.layers {
 		L := &ve.layers[li]
@@ -179,15 +265,21 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if err != nil {
 			return nil, fail(err)
 		}
-		q, err := add(ve.proj(n1, L.qw, L.qb, np, hidden))
+		qf, kf, qb := L.qf, L.kf, L.qb
+		if planted := ve.f32 && li == 0; planted && visionDefectForTest == 2 {
+			qb = nil
+		} else if planted && visionDefectForTest == 3 {
+			qf, kf = kf, qf
+		}
+		q, err := add(proj(n1, L.qw, qf, qb, np, hidden, hidden))
 		if err != nil {
 			return nil, fail(err)
 		}
-		k, err := add(ve.proj(n1, L.kw, L.kb, np, hidden))
+		k, err := add(proj(n1, L.kw, kf, L.kb, np, hidden, hidden))
 		if err != nil {
 			return nil, fail(err)
 		}
-		v, err := add(ve.proj(n1, L.vw, L.vb, np, hidden))
+		v, err := add(proj(n1, L.vw, L.vf, L.vb, np, hidden, hidden))
 		if err != nil {
 			return nil, fail(err)
 		}
@@ -240,7 +332,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			}
 			hrel()
 		}
-		o, err := add(ve.proj(att, L.ow, L.ob, np, hidden))
+		o, err := add(proj(att, L.ow, L.of, L.ob, np, hidden, hidden))
 		if err != nil {
 			return nil, fail(err)
 		}
@@ -253,19 +345,23 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if err != nil {
 			return nil, fail(err)
 		}
-		mid, err := add(ve.proj(n2, L.fc1w, L.fc1b, np, hidden)) // [np, inter]
+		mid, err := add(proj(n2, L.fc1w, L.fc1f, L.fc1b, np, hidden, inter)) // [np, inter]
 		if err != nil {
 			return nil, fail(err)
 		}
-		if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, mid.buf, []uint32{uint32(np * inter), 0, 0, 0}, maxWG((np*inter+63)/64)); err != nil {
-			return nil, fail(err)
+		if !(ve.f32 && li == 0 && visionDefectForTest == 4) {
+			if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, mid.buf, []uint32{uint32(np * inter), 0, 0, 0}, maxWG((np*inter+63)/64)); err != nil {
+				return nil, fail(err)
+			}
 		}
-		mlp, err := add(ve.proj(mid, L.fc2w, L.fc2b, np, inter)) // [np, hidden]
+		mlp, err := add(proj(mid, L.fc2w, L.fc2f, L.fc2b, np, inter, hidden)) // [np, hidden]
 		if err != nil {
 			return nil, fail(err)
 		}
-		if err := c.addRowsDevice(h.buf, mlp.buf, np*hidden, hidden, 1); err != nil { // h += mlp
-			return nil, fail(err)
+		if !(ve.f32 && li == 0 && visionDefectForTest == 5) {
+			if err := c.addRowsDevice(h.buf, mlp.buf, np*hidden, hidden, 1); err != nil { // h += mlp
+				return nil, fail(err)
+			}
 		}
 
 		c.device.Poll(true, nil) // ONE sync per layer; release this layer's scratch
@@ -274,6 +370,9 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		}
 	}
 
+	if ve.f32 { // the post-layernorm is the host's (vision.Encoder.FinishHidden)
+		return c.Readback(h)
+	}
 	out, err := ve.ln(h, ve.postLNw, ve.postLNb, np, hidden)
 	if err != nil {
 		return nil, err
@@ -299,7 +398,7 @@ func (ve *VisionEncoder) release() {
 	}
 	for i := range ve.layers {
 		L := &ve.layers[i]
-		for _, d := range []*DeviceBuffer{L.ln1w, L.ln1b, L.ln2w, L.ln2b, L.qb, L.kb, L.vb, L.ob, L.fc1b, L.fc2b} {
+		for _, d := range []*DeviceBuffer{L.ln1w, L.ln1b, L.ln2w, L.ln2b, L.qb, L.kb, L.vb, L.ob, L.fc1b, L.fc2b, L.qf, L.kf, L.vf, L.of, L.fc1f, L.fc2f} {
 			if d != nil {
 				_ = d.Close()
 			}

@@ -1,0 +1,171 @@
+//go:build gpu && goinfer_testhooks
+
+package gpu
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// TestZZEModelValuePath (throwaway; GOINFER_GPU_CAPTURE=1): at position 0, layer 0, each kernel of the value path on
+// the device against a host computation of that kernel's own contract, and the result against the CPU path's V.
+func TestZZEModelValuePath(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	for _, m := range []struct{ label, giw string }{
+		{"E2B", filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it.int4.metal.giw")},
+		{"E4B", filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it.int4.metal.giw")},
+	} {
+		func() {
+			mg, err := decoder.Load(m.giw, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 512})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mg.Close()
+			rd, ok := mg.ResidentForwardForTest().(*residentDecoder)
+			if !ok {
+				t.Fatal("no resident")
+			}
+			mc, err := decoder.Load(m.giw, decoder.Options{Quant: "int4", ResidentContext: 512})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mc.Close()
+			hidden := rd.runner.hidden
+			row := mg.EmbedResidentForTest(2)
+			x := row[:hidden]
+			// The CPU path's V at layer 0.
+			cc := mc.NewCache(2)
+			decoder.ZZSetTraceV(true)
+			if _, err := mc.ForwardForTest(2, cc); err != nil {
+				t.Fatal(err)
+			}
+			cpuV := decoder.ZZTraceV[0]
+			decoder.ZZSetTraceV(false)
+			if _, err := rd.Forward(row, 0); err != nil {
+				t.Fatal(err)
+			}
+			zb := rd.runner.zzBufs
+			if len(zb) < 4 {
+				t.Fatalf("%d captured buffers, want 4", len(zb))
+			}
+			kp := padK32(hidden)
+			aqW, err := rd.runner.zzRead(zb[0], kp/4)
+			if err != nil {
+				t.Fatal(err)
+			}
+			asW, _ := rd.runner.zzRead(zb[1], 1)
+			kv := len(cpuV)
+			vW, _ := rd.runner.zzRead(zb[2], kv)
+			vnW, _ := rd.runner.zzRead(zb[3], kv)
+			f := func(w []uint32) []float32 {
+				o := make([]float32, len(w))
+				for i, u := range w {
+					o[i] = math.Float32frombits(u)
+				}
+				return o
+			}
+			gpuScale := math.Float32frombits(asW[0])
+			gpuCodes := make([]int, hidden)
+			for k := range gpuCodes {
+				gpuCodes[k] = int(int8(aqW[k/4] >> (8 * (k % 4))))
+			}
+			gpuV, gpuVN := f(vW), f(vnW)
+			// (1) the fused norm-and-quantize, on the host in float64 from the same input.
+			lw := &mg.Weights().Layers[0]
+			eps, addOne := float64(mg.NormEps()), mg.RMSAddOne()
+			var ss float64
+			for _, v := range x {
+				ss += float64(v) * float64(v)
+			}
+			inv := 1 / math.Sqrt(ss/float64(hidden)+eps)
+			xn := make([]float64, hidden)
+			var mx float64
+			for i, v := range x {
+				w := float64(lw.PreAttnNorm[i])
+				if addOne {
+					w++
+				}
+				xn[i] = float64(v) * inv * w
+				mx = math.Max(mx, math.Abs(xn[i]))
+			}
+			hostScale := mx / 127
+			diffCodes, maxCodeDiff := 0, 0
+			for i := range xn {
+				q := int(math.RoundToEven(xn[i] / hostScale))
+				q = max(-127, min(127, q))
+				if d := q - gpuCodes[i]; d != 0 {
+					diffCodes++
+					maxCodeDiff = max(maxCodeDiff, max(d, -d))
+				}
+			}
+			fmt.Fprintf(os.Stderr, "\n== %s (hidden %d, V %d): norm-and-quantize: device scale %.9g, host %.9g (relative %.2e); codes differing %d of %d (largest step %d)\n",
+				m.label, hidden, kv, gpuScale, hostScale, math.Abs(float64(gpuScale)-hostScale)/hostScale, diffCodes, hidden, maxCodeDiff)
+			// (2) the value projection, on the host from the DEVICE's own codes and scale.
+			q4, sc16, group, ok4 := lw.VProj.Int4F16()
+			if !ok4 {
+				t.Fatalf("%s: the V projection is not int4 (%s)", m.label, lw.VProj.Kind())
+			}
+			N, K := lw.VProj.Rows(), lw.VProj.Cols()
+			nG := (K + group - 1) / group
+			rowBytes := (K + 1) / 2
+			sc := make([]float32, len(sc16))
+			for i, u := range sc16 {
+				sc[i] = f16to32(u)
+			}
+			hostV := make([]float32, N)
+			for n := range N {
+				var tot float64
+				for g := range nG {
+					var idot int
+					for e := range group {
+						k := g*group + e
+						if k >= K {
+							break
+						}
+						b := q4[n*rowBytes+k/2]
+						nib := int(b & 0x0F)
+						if k&1 == 1 {
+							nib = int(b >> 4)
+						}
+						idot += (nib - 8) * gpuCodes[k]
+					}
+					tot += float64(idot) * float64(sc[n*nG+g])
+				}
+				hostV[n] = float32(tot * float64(gpuScale))
+			}
+			c2, m2 := cosMaxAbs(hostV, gpuV)
+			fmt.Fprintf(os.Stderr, "   value projection [%d x %d], group %d: device against the host product of the device's own codes: cosine %.9f, largest difference %.3g\n", N, K, group, c2, m2)
+			// (3) v_norm per KV head, on the host from the device's V.
+			nKV := rd.rm.layers[0].gnKV
+			hd := rd.rm.layers[0].ghd
+			if nKV == 0 {
+				nKV, hd = rd.nKV, rd.hd
+			}
+			hostVN := make([]float32, kv)
+			for h := range nKV {
+				var s2 float64
+				for i := range hd {
+					s2 += float64(gpuV[h*hd+i]) * float64(gpuV[h*hd+i])
+				}
+				iv := 1 / math.Sqrt(s2/float64(hd)+eps)
+				for i := range hd {
+					hostVN[h*hd+i] = float32(float64(gpuV[h*hd+i]) * iv)
+				}
+			}
+			c3, m3 := cosMaxAbs(hostVN, gpuVN)
+			fmt.Fprintf(os.Stderr, "   v_norm over %d heads of %d: device against the host norm of the device's V: cosine %.9f, largest difference %.3g\n", nKV, hd, c3, m3)
+			// (4) against the CPU path.
+			c4, m4 := cosMaxAbs(cpuV, gpuVN)
+			fmt.Fprintf(os.Stderr, "   the device's normed V against the CPU path's: cosine %.9f, largest difference %.3g\n", c4, m4)
+			for h := range nKV {
+				ch, mh := cosMaxAbs(cpuV[h*hd:(h+1)*hd], gpuVN[h*hd:(h+1)*hd])
+				fmt.Fprintf(os.Stderr, "      KV head %d: cosine %.9f, largest difference %.3g\n", h, ch, mh)
+			}
+		}()
+	}
+}

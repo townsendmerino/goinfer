@@ -1,0 +1,10 @@
+=== RUN   TestVisionEncoderF32_tiledSmoke
+[G-S12.3b-3   45.9s] float32 tower, tiled matmul: 43.4 s
+[G-S12.3b-3   88.5s] float32 tower, tiled matmul: 42.7 s
+[G-S12.3b-3  199.0s] float32 tower, naive matmul: 110.5 s
+[G-S12.3b-3  234.3s] int8 tower, tiled matmul: 33.1 s
+[G-S12.3b-3  267.3s] int8 tower, tiled matmul: 33.0 s
+[G-S12.3b-3  315.1s] int8 tower, naive matmul: 47.8 s
+--- PASS: TestVisionEncoderF32_tiledSmoke (315.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	315.654s

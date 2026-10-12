@@ -162,7 +162,11 @@ type Context struct {
 	addRowsPipeline  *wgpu.ComputePipeline
 	addRowsLayout    *wgpu.BindGroupLayout
 	copyHeadPipeline *wgpu.ComputePipeline
-	copyHeadLayout   *wgpu.BindGroupLayout
+	// The tiled float32 matmul the vision tower's activation-by-weight and activation-by-activation products run on
+	// (vision.go); built with the other vision kernels.
+	mmTiledF32Pipeline *wgpu.ComputePipeline
+	mmTiledF32Layout   *wgpu.BindGroupLayout
+	copyHeadLayout     *wgpu.BindGroupLayout
 
 	// RoPE + single-query attention pipelines, lazy via ensureAttn (attention.go).
 	ropeShader   *wgpu.ShaderModule

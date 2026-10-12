@@ -1,0 +1,21 @@
+=== RUN   TestVisionEncoderF32_parity
+    vision_f32_test.go:124: float32 WebGPU tower against the CPU float32 tower: lowest token cosine 1.0000000 over 16 tokens
+    vision_f32_test.go:138: planted (3) q and k weights swapped in the first layer: lowest token cosine 0.8156137
+    vision_f32_test.go:138: planted (4) the GELU skipped in the first layer: lowest token cosine 0.7019785
+    vision_f32_test.go:138: planted (5) the MLP residual dropped in the first layer: lowest token cosine 0.8009823
+    vision_f32_test.go:138: planted (1) the position table not added: lowest token cosine 0.7738707
+    vision_f32_test.go:138: planted (2) the q bias dropped in the first layer: lowest token cosine 0.9993055
+--- PASS: TestVisionEncoderF32_parity (0.24s)
+=== RUN   TestVisionEncoderF32_largeActivations
+    vision_f32_test.go:163: with GELU inputs near ±40: lowest token cosine 1.0000000
+--- PASS: TestVisionEncoderF32_largeActivations (0.02s)
+=== RUN   TestVisionEnableResidentF32_parity
+--- PASS: TestVisionEnableResidentF32_parity (0.02s)
+=== RUN   TestVisionEncoder_parity
+    vision_test.go:206: resident GPU vs CPU-W8A8 cosine=1.000000 | GPU vs HF golden cosine=0.999959
+--- PASS: TestVisionEncoder_parity (0.02s)
+=== RUN   TestVisionEnableResident_parity
+    vision_test.go:268: EnableResident Forward vs CPU cosine=1.000000
+--- PASS: TestVisionEnableResident_parity (0.02s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	0.798s

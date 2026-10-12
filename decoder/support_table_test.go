@@ -69,7 +69,7 @@ func bidirectional(c *Config) { c.UseBidirectionalAttention = "vision" }
 
 var supportRows = []supportRow{
 	{"Gemma 3", "gemma3", multimodal.TowerSigLIP, rep("gemma3", nil),
-		"CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08). WebGPU: the float32 tower on the CPU by default; `--vision-quant int8` puts an int8 tower on the GPU, which misread three of five test images (2026-10-11). Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08)."},
+		"CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08). WebGPU: the float32 tower on the CPU by default; `--vision-quant f32` or `int8` puts a tower on the GPU, neither faster than the CPU's on the Mac it was measured on (2026-10-11). Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08)."},
 	{"Gemma 4 E2B, E4B", "gemma4", multimodal.TowerGemma4, jsonConfig(eModelConfig),
 		"E4B validated on CUDA (2026-10-08) and on Metal (2026-10-11), on the quantization-aware checkpoint."},
 	{"Gemma 4 E2B, E4B audio", "gemma4", multimodal.TowerGemma4Audio, jsonConfig(eModelConfig),

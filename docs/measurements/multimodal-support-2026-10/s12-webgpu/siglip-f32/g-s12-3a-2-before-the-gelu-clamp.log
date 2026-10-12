@@ -1,0 +1,22 @@
+=== RUN   TestVisionEncoderF32_realGemma3
+[G-S12.3a-2    2.4s] float32 tower loaded: 27 layers, hidden 1152, 4096 patches
+[G-S12.3a-2   27.7s] image 1/5 ../testdata/glm_ocr/table.png: CPU float32 tower 25.3 s
+[G-S12.3a-2   52.5s] image 2/5 ../testdata/glm_ocr/invoice.png: CPU float32 tower 24.8 s
+[G-S12.3a-2   77.2s] image 3/5 ../testdata/glm_ocr/formula.png: CPU float32 tower 24.7 s
+[G-S12.3a-2  102.1s] image 4/5 ../testdata/gemma3_preprocess_image.png: CPU float32 tower 24.9 s
+[G-S12.3a-2  127.2s] image 5/5 ../testdata/glm_ocr/invoices/inv01.png: CPU float32 tower 25.0 s
+[G-S12.3a-2  240.8s] image 1/5: float32 WebGPU tower 112.7 s, lowest token cosine NaN, whole-output cosine NaN
+[G-S12.3a-2  352.7s] image 2/5: float32 WebGPU tower 111.9 s, lowest token cosine NaN, whole-output cosine NaN
+[G-S12.3a-2  465.0s] image 3/5: float32 WebGPU tower 112.3 s, lowest token cosine NaN, whole-output cosine NaN
+[G-S12.3a-2  576.4s] image 4/5: float32 WebGPU tower 111.4 s, lowest token cosine NaN, whole-output cosine NaN
+[G-S12.3a-2  688.5s] image 5/5: float32 WebGPU tower 112.1 s, lowest token cosine NaN, whole-output cosine NaN
+[G-S12.3a-2  739.9s] image 1/5: int8 WebGPU tower (record) 49.0 s, lowest token cosine -0.2102, whole-output cosine 0.3605
+[G-S12.3a-2  788.5s] image 2/5: int8 WebGPU tower (record) 48.5 s, lowest token cosine -0.2166, whole-output cosine 0.3025
+[G-S12.3a-2  837.1s] image 3/5: int8 WebGPU tower (record) 48.6 s, lowest token cosine -0.2091, whole-output cosine 0.3286
+[G-S12.3a-2  885.6s] image 4/5: int8 WebGPU tower (record) 48.5 s, lowest token cosine -0.2137, whole-output cosine 0.3009
+[G-S12.3a-2  933.9s] image 5/5: int8 WebGPU tower (record) 48.3 s, lowest token cosine -0.2273, whole-output cosine 0.3255
+[G-S12.3a-2  933.9s] float32 WebGPU tower: lowest token cosine over the five images NaN
+    vision_f32_test.go:299: G-S12.3a-2 PASS: lowest token cosine NaN
+--- PASS: TestVisionEncoderF32_realGemma3 (934.03s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	934.602s

@@ -49,8 +49,11 @@
     gate parked and one served image request red under the near-tie rule. E4B served on WebGPU PASS (2026-10-11).
     Gemma 3's default tower under WebGPU is now the float32 CPU tower. Next is S12.2 (the 26B's FFN) or S12.3
     (the towers, a float32 SigLIP first).
-  - Open inside S12.1: where WebGPU first differs from the CPU on E4B is traced to the first layer's value path and
-    not to an operation; a kernel-by-kernel check at E4B's shape is not scheduled.
+  - Closed inside S12.1: WebGPU's first difference from the CPU on E4B is two rounding flips in the first layer's
+    activation quantization, amplified by E4B's coarse int8 activation codes; every device kernel meets its contract.
+  - S12.3a and S12.3b: a float32 SigLIP tower on WebGPU, right at real size, opt-in (43 s an image tiled against
+    the CPU's 25 s). A tanh overflow in the WebGPU tower's GELU is fixed; it, and not int8 precision, was why the
+    int8 tower misread images this morning.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -74,7 +77,7 @@ The last phase puts the answer where users look first, the README, with a check 
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | float32 on the CPU by default (2026-10-11; `--vision-quant int8` puts the int8 tower on the GPU) / GPU |
+| Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | float32 on the CPU by default (2026-10-11; `--vision-quant f32` or `int8` puts a tower on the GPU) / GPU |
 | Gemma 4 E2B | CPU / CPU | GPU / GPU, batched image prefill (S9 on CUDA) | GPU / GPU, layer-major prefill (S9) | CPU / GPU (S12.1, 2026-10-11) |
 | Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU / GPU | CPU / GPU (S12.1; served on E2B) |
 | Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | validated (S6: G-E4B-1b, G-E4B-2, 2026-10-11; towers on the CPU in the gate) | CPU / GPU (S12.1; its text gate parked at -2.48 points, shipped on the owner's word) |
@@ -103,8 +106,9 @@ The last phase puts the answer where users look first, the README, with a check 
   - Speech beyond Gemma 4 is S14: Qwen3-ASR's decoder runs (S14.3); Whisper and Voxtral are not started.
 - **Precision:** WebGPU's only SigLIP tower is int8 (no float32 WebGPU tower; S12.3). At real size that tower is
   relative L2 0.16-0.52 from float32, worst token 0.01-0.17
-  (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`), and it misread three of five test images. CUDA's default
-  became float32 on 2026-10-08 (owner); WebGPU's became the float32 CPU tower on 2026-10-11, the int8 one opt-in.
+  (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`). CUDA's default became float32 on 2026-10-08 (owner);
+  WebGPU's became the float32 CPU tower on 2026-10-11, the device towers opt-in. (The int8 WebGPU tower's misreads
+  of that morning were a tanh overflow in the tower's GELU, fixed the same day, and not its precision.)
 - **Release binaries:** WebGPU needs cgo and is in no release binary.
 
 **Speed** (the most recent read of each, exploratory unless marked; S7 measures every cell against the 5 s bar; not
@@ -3895,8 +3899,33 @@ for E2B and E4B). The Mac, by day, every run under the timing lock; raw in `s12-
   - **What it means for now:** E4B's graded and served readings on WebGPU stand as they are (parked, PASS). Gemma 3
     4B shares the 2560 width and its served turn passed. The open item is a kernel-by-kernel bit-identity check of
     that value path against the CPU at E4B's shape; it is not scheduled.
+  - **Resolved the same day: no kernel is off; it is two rounding flips (`e4b-value-path-kernels.log`; the test's
+    source is beside it, run with a temporary capture, not committed).** At position 0, layer 0, each device kernel
+    was checked against a host computation of its own contract:
+    - the fused norm-and-quantize: the scale equal to 2e-08, and **2 of the 2,560 int8 codes one step apart** from a
+      float64 host quantization (none of E2B's 1,536);
+    - the value projection: equal to the host product of the device's own codes (largest difference 0);
+    - `v_norm`: equal to the host norm of the device's V (1e-06).
+    The device's V then sits at cosine 0.999992 from the CPU path's, both KV heads alike. Two codes are enough:
+    E4B's normed activations have a largest element 32-46 times their rms, so under one int8 scale a vector a
+    typical code is about 3 of 127 levels, and one code moving one step changes every output of the projection by
+    about half a percent.
+  - **Two things I wrote above are wrong and are corrected here.** "Not the cause: activation outliers" holds for
+    the seed and not for the size: the outliers are why two flips cost what they do. And my estimate that the seed
+    was "more than a few rounding flips would give" assumed codes near full scale; it was off by the factor above.
+  - **So:** the half-step cases round differently in the device's float32 and the CPU's arithmetic, which neither
+    is wrong about, and E4B's coarse activation codes amplify it through 42 layers. It is the same fragility that
+    puts every int4 arm far from float32 on E4B. Nothing is owed on the WebGPU side.
 
 #### Gemma 3's default tower on WebGPU: the float32 CPU tower (owner, 2026-10-11: "take care of" it; evidence below)
+
+**Corrected the same afternoon (S12.3a's reading has the runs).** The table below was measured on a tower with a
+defect: its GELU's tanh overflowed to NaN on this GPU at real size. With that fixed, the int8 WebGPU tower reads
+all five images correctly; its whole-output cosine against the float32 tower went from 0.30-0.36 to 0.87-0.985. So
+"three of five misread" is a reading of the defect, not of int8, and is withdrawn wherever it was quoted (the
+CHANGELOG, the server doc, the support table's note). The default stays the float32 CPU tower for what is still
+true: it is the exact one and, on this Mac, the fastest (25 s an image against 33 s for the int8 device tower and
+43 s for the float32 one). The speed line below was also taken before the tiled matmul.
 
 The record in G-S12.0b showed the int8 WebGPU tower misreading one image. Four more were run before changing a
 default (exploratory, one request an image, both arms decoding on WebGPU; `s12-webgpu/gemma3-tower-images/`):
@@ -3921,6 +3950,123 @@ default (exploratory, one request an image, both arms decoding on WebGPU; `s12-w
   note, reports `encoder f32`, and its reply is IDENTICAL to the `-vision-device cpu` arm's.
 - **What it does not settle:** a float32 SigLIP on WebGPU (S12.3) is still what makes Gemma 3's tower run on the GPU
   there; and the int8 tower's speed on a discrete card was not measured.
+
+#### S12.3a, a float32 SigLIP tower on WebGPU: gates registered 2026-10-11 before any code (owner: do S12's towers, the E4B trace, the 26B FFN and the GPU prefill, in that order)
+
+**What:** WebGPU's SigLIP tower runs its six projections a layer through an int8 kernel and is opt-in since today.
+The float32 form runs the same forward with float32 projection weights from aikit's `Encoder.Weights`, through the
+float32 matmul the tower already uses for its patch embed and attention. No aikit change.
+
+**What is known going in (exploratory, 2026-10-11, this Mac):** the int8 WebGPU tower takes 47-48 s an image where
+the float32 CPU tower takes 26-28 s and Metal's float32 tower about 9.5 s. The WebGPU tower's matmuls are the naive
+kernel, so a float32 form may be right and still slower than the CPU.
+
+- **G-S12.3a-1, tiny, day.** `testdata/siglip-tiny`, with its norms, biases and position table randomised through
+  `Weights`' aliasing slices first (a fixture of ones hides swaps): the WebGPU float32 tower against the CPU float32
+  tower, every output token at cosine >= 0.9999. Planted defects, each alone red: (1) the position table not added;
+  (2) one layer's q bias dropped; (3) q and k weights swapped in one layer; (4) the GELU skipped in one layer;
+  (5) the second residual add dropped in one layer.
+- **G-S12.3a-2, real size, day (untimed).** `gemma-3-4b-it`'s tower at 896x896 on the five test images of the
+  default-tower comparison: every one of the 4,096 tokens at cosine >= 0.9999 against the CPU float32 tower is a
+  PASS; a lowest token in 0.999-0.9999 is parked; lower fails. The int8 tower is run beside it as a record.
+- **G-S12.3a-3, served, day.** The same five images through one WebGPU server, `=webgpu:cpu` against the float32
+  device tower: identical replies, or a first divergence at a near-tie, on all five; the device arm must report a
+  float32 WebGPU tower.
+- **G-S12.3a-4, speed, night.** The tower's encode time at 896x896 on the Mac, WebGPU float32 against CPU float32,
+  five interleaved pairs on one image, the first of each arm discarded as a warm-up. **The float32 device tower
+  becomes WebGPU's default at a ratio of at most 0.98; 0.98-1.00 is parked; above 1.00 it stays opt-in and the CPU
+  tower stays the default.** A day smoke of one pair is run first and is exploratory.
+- **If G-S12.3a-4 is off:** the lever is a tiled float32 GEMM for the tower's matmuls (they are the naive kernel
+  today); it gets its own registration, with the same bar, before any code.
+- **Prediction, written now:** a-1, a-2 and a-3 pass (0.8; float32 against float32, the same forward). a-4: off
+  (0.6): the int8 form is 1.8 times slower than the CPU and its projections are a minority of the tower's work,
+  so the float32 projections do not move it under the CPU's time.
+- **Tier and cost.** a-1 seconds. a-2 five images at about a minute each on the device and half a minute on the
+  CPU: about 10 minutes, untimed. a-3 about 12 minutes. a-4 at night, about 10 minutes.
+
+#### S12.3b, a tiled float32 GEMM for the WebGPU tower: registered 2026-10-11 before any code, after the first real-size run
+
+**Why now.** The first real-size run of the float32 tower (G-S12.3a-2, read below once it has run clean) took
+112 s an image on this Mac where the CPU float32 tower takes 25 s and the int8 device tower 48 s (by day, a smoke).
+G-S12.3a-4 would read off by a factor of four, so it is not queued until this lever is in: the registered
+consequence of an off reading, taken on a by-day smoke that is not close. The tower's matmuls are the naive kernel,
+one invocation an output element, each streaming a whole row of both operands from global memory.
+
+**What:** a float32 form of the tiled kernel the int8 prefill already has (`gpu/gemm.go`): 16x16 tiles of both
+operands staged in workgroup memory, K walked in strips of 16, the same four bindings as the naive kernel, so
+`matmulF32Device` can take either. It serves the tower's projections, its patch embed and its attention matmuls.
+
+- **G-S12.3b-1, the kernel against the naive one (day).** Random float32 operands at shapes that are and are not
+  multiples of 16 in M, N and K, including the tower's (4096 by 1152 by 4304, and 4096 by 4096 by 72): every output
+  equal to the naive kernel's to a relative 1e-5, and the naive kernel against a float64 host reference as the
+  control. Planted defect: the strip's last partial tile read past K (no zero fill) must be red on a K that is not
+  a multiple of 16.
+- **G-S12.3b-2, the tower is unchanged by it (day).** G-S12.3a-1 with its five planted defects, the large-activation
+  case, and the int8 tower's two existing tests, all on the tiled kernel.
+- **G-S12.3b-3, a by-day smoke (exploratory).** The float32 tower's time for one image at real size, tiled against
+  naive, same process. No bar: it says whether G-S12.3a-4 is worth a night.
+- **The decision stays G-S12.3a-4's** (the float32 device tower becomes WebGPU's default at a ratio of at most 0.98
+  of the CPU tower's time). If the smoke is still far over the CPU's time, G-S12.3a-4 is not queued and the float32
+  device tower stays opt-in; that is recorded as the outcome.
+- **Prediction, written now:** b-1 and b-2 pass (0.85). b-3: between two and five times faster than naive, which
+  puts the tower between 22 s and 56 s; under the CPU's 25 s at about 0.25.
+- **Tier and cost.** b-1 and b-2 seconds to a minute. b-3 about four minutes.
+
+#### S12.3a and S12.3b read 2026-10-11: the float32 tower is right at real size; a tanh overflow found in the tower's GELU; tiled it takes 43 s an image, still over the CPU's (raw `s12-webgpu/siglip-f32/`)
+
+The Mac, by day, every run under the timing lock. Times are a smoke, not a gate.
+
+- **G-S12.3a-1: PASS.** On the sharpened tiny fixture every token of the float32 WebGPU tower is at cosine 1.0000000
+  against the CPU float32 tower; the five planted defects read 0.70 to 0.9993, each under the 0.9999 bar.
+- **G-S12.3a-2, first run: every output NaN** (`g-s12-3a-2-before-the-gelu-clamp.log`), and my test printed PASS on
+  it, because a NaN fails no `<` comparison. Both are fixed: the gate tests now fail on a NaN.
+  - **The defect is in the tower's GELU and is older than the float32 form.** Its tanh returns NaN on this device
+    for a large argument, and a float32 SigLIP's activations reach one at real size. The decoder's gated kernels
+    clamp the argument to ±15 for the same reason; the vision kernel did not. Reproduced on the tiny fixture
+    (`TestVisionEncoderF32_largeActivations`: NaN without the clamp, 1.0000000 with it).
+  - **It was also most of what was wrong with the int8 tower here.** Beside the float32 tower, the int8 device
+    tower's whole-output cosine against the CPU float32 tower read **0.30-0.36** before the clamp and
+    **0.87-0.985** after it (lowest token -0.21 before, 0.02-0.13 after). So this morning's five-image comparison,
+    on which the default was changed, measured the overflow as well as the quantization; it is run again below.
+- **G-S12.3a-2, with the clamp: PASS.** The five images: lowest token cosine 0.9999996, 0.9999996, 0.9999998,
+  0.9999999, 0.9999997 over 4,096 tokens each; whole-output cosine 1.0000000.
+- **G-S12.3b-1: PASS.** The tiled float32 kernel's every output is bit-equal to the naive kernel's at all ten shapes,
+  the tower's three included; the naive kernel is within 6e-06 of a float64 host product; the planted variant with
+  no zero fill past K reads 0.47.
+- **G-S12.3b-2: PASS.** The tower's tiny gates, the large-activation case and the int8 tower's two tests on the
+  tiled kernel.
+- **G-S12.3b-3, the smoke (one image, one process, the first pass of each discarded):**
+
+  | tower | tiled | naive |
+  |---|---|---|
+  | float32 | 42.7 s | 110.5 s |
+  | int8 | 33.0 s | 47.8 s |
+
+  The CPU float32 tower read 24.7-28.4 s in the same hour. The tiled kernel is 2.6 times the naive one on the
+  float32 tower, inside the predicted 2-5, and the tower is still about 1.6 times the CPU's time.
+- **Consequence, as registered in S12.3b:** G-S12.3a-4 is not queued, and the float32 device tower stays opt-in
+  (`--vision-quant f32` under `--backend webgpu`); the default stays the float32 CPU tower. Recorded as the outcome
+  on a by-day smoke that is not close.
+- **Predictions scored.** a-1 and a-2 pass (0.8): held, after a defect I did not predict. a-4 off (0.6): not run,
+  and the smoke agrees. b-3 "22 to 56 s, under 25 s at 0.25": 42.7 s.
+- **Where the time is now, not measured:** one device sync a layer, and per head three gathers, two matmuls, a
+  softmax and a scatter. A per-step profile is the next thing to read before any further lever.
+- **G-S12.3a-3, served: FAIL as registered, on a rule I should not have registered** (`g-s12-3a-3-served/`; the
+  device arm reports `encoder f32/webgpu-resident`). The float32 device tower's reply first differs from the
+  float32 CPU tower's at a token that is not a near-tie on four of the five images (0.843 against 0.157, 0.691
+  against 0.309, 0.682 against 0.300, and a token outside the top three); the fifth is a near-tie.
+  - The repository already records that the near-tie reply rule cannot grade a tower on Gemma 3: G-S18g read FAIL
+    on it with a float16 tower against the exact one, and the owner withdrew its consequence for that reason. A
+    tower at cosine 0.9999996 a token is far inside that floor. The gate that can grade this tower is a-2, which
+    passed; S18's sensitivity instrument is the downstream one and was not run.
+  - What the replies say: all three towers (CPU float32, WebGPU float32, WebGPU int8) read the table, both invoices
+    and the formula correctly, in different words. On the colour gradient they name different colours ("dark green
+    and pink", "dark purple and bright green", "dark green, gray, and pink").
+- **The int8 WebGPU tower, served again with the GELU fixed (the same folder's `-int8` runs): every reply
+  correct.** The invoice that came back as "a map of the city of Vinotai, Ireland" reads "an invoice from Harbor
+  Light Supply Co. to Northwind Printing LLC ... totaling $1140.55".
+- **Tower encode times in those served runs (a record):** CPU float32 25.0-26.3 s, WebGPU int8 32.6-33.7 s, WebGPU
+  float32 43.3-43.7 s.
 
 ### S13 — Against the peers
 

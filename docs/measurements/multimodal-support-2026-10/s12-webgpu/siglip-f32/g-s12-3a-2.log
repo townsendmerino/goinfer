@@ -1,0 +1,22 @@
+=== RUN   TestVisionEncoderF32_realGemma3
+[G-S12.3a-2    2.4s] float32 tower loaded: 27 layers, hidden 1152, 4096 patches
+[G-S12.3a-2   29.1s] image 1/5 ../testdata/glm_ocr/table.png: CPU float32 tower 26.7 s
+[G-S12.3a-2   58.4s] image 2/5 ../testdata/glm_ocr/invoice.png: CPU float32 tower 29.3 s
+[G-S12.3a-2   86.8s] image 3/5 ../testdata/glm_ocr/formula.png: CPU float32 tower 28.4 s
+[G-S12.3a-2  114.5s] image 4/5 ../testdata/gemma3_preprocess_image.png: CPU float32 tower 27.7 s
+[G-S12.3a-2  142.8s] image 5/5 ../testdata/glm_ocr/invoices/inv01.png: CPU float32 tower 28.3 s
+[G-S12.3a-2  257.1s] image 1/5: float32 WebGPU tower 113.3 s, lowest token cosine 0.9999997, whole-output cosine 1.0000000
+[G-S12.3a-2  369.5s] image 2/5: float32 WebGPU tower 112.4 s, lowest token cosine 0.9999996, whole-output cosine 1.0000000
+[G-S12.3a-2  481.8s] image 3/5: float32 WebGPU tower 112.3 s, lowest token cosine 0.9999998, whole-output cosine 1.0000000
+[G-S12.3a-2  592.5s] image 4/5: float32 WebGPU tower 110.7 s, lowest token cosine 0.9999999, whole-output cosine 1.0000000
+[G-S12.3a-2  703.5s] image 5/5: float32 WebGPU tower 111.0 s, lowest token cosine 0.9999997, whole-output cosine 1.0000000
+[G-S12.3a-2  753.9s] image 1/5: int8 WebGPU tower (record) 47.9 s, lowest token cosine 0.1285, whole-output cosine 0.9853
+[G-S12.3a-2  801.9s] image 2/5: int8 WebGPU tower (record) 47.9 s, lowest token cosine 0.0403, whole-output cosine 0.9598
+[G-S12.3a-2  849.8s] image 3/5: int8 WebGPU tower (record) 47.9 s, lowest token cosine 0.0780, whole-output cosine 0.9731
+[G-S12.3a-2  897.7s] image 4/5: int8 WebGPU tower (record) 47.9 s, lowest token cosine 0.0222, whole-output cosine 0.8731
+[G-S12.3a-2  945.7s] image 5/5: int8 WebGPU tower (record) 47.9 s, lowest token cosine 0.0542, whole-output cosine 0.9742
+[G-S12.3a-2  945.7s] float32 WebGPU tower: lowest token cosine over the five images 0.9999996
+    vision_f32_test.go:329: G-S12.3a-2 PASS: lowest token cosine 0.9999996
+--- PASS: TestVisionEncoderF32_realGemma3 (945.74s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	946.225s
