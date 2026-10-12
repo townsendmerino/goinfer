@@ -649,10 +649,15 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 		}
 	}
 	if pp.gemma() {
-		for _, f := range []func() error{c.ensureVNorm, c.ensureScaleVec, c.ensureAttnWide} {
+		for _, f := range []func() error{c.ensureVNorm, c.ensureScaleVec} {
 			if err := f(); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if hd > attnWG || slices.ContainsFunc(pp.layers, func(l prefillLayerProj) bool { return l.hd > attnWG }) {
+		if err := c.ensureAttnWide(); err != nil { // a wide head runs decode's own attention kernel once a row
+			return nil, err
 		}
 	}
 	if pp.int4() {

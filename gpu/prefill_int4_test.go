@@ -467,7 +467,7 @@ func TestPrefillInt4_profile(t *testing.T) {
 	_, nLayers, nH, nKV, hd, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(3))
 	ctx := context.Background()
-	fmt.Fprintf(os.Stderr, "PROFILE %s on %s: %d layers, %d heads of %d (%d KV heads), sliding window %d\n", filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.slidingWindow)
+	fmt.Fprintf(os.Stderr, "PROFILE %s on %s: %d layers, %d heads of %d (%d KV heads), sliding window %d; key-split attention off: %v\n", filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.slidingWindow, attnKeysDisabled)
 	for _, n := range prefillRowCounts(t, 256, 1024) {
 		rows := make([][]float32, n)
 		for i := range rows {
@@ -483,11 +483,25 @@ func TestPrefillInt4_profile(t *testing.T) {
 		}
 		pass()
 		wall := pass()
+		// The row-by-row walk, once, for the same rows: what the pass replaced, and what a decode step at this depth costs.
+		rd.Reset()
+		t0 := time.Now()
+		for i, row := range rows[:n-1] {
+			if err := rd.ForwardNoLogits(row, i); err != nil {
+				t.Fatalf("walk, row %d: %v", i, err)
+			}
+		}
+		t1 := time.Now()
+		if _, err := rd.Forward(rows[n-1], n-1); err != nil {
+			t.Fatal(err)
+		}
+		walk, lastStep := time.Since(t0).Seconds(), time.Since(t1).Seconds()
 		rd.c.prefillProf = &prefillProf{}
 		profiled := pass()
 		p := *rd.c.prefillProf
 		rd.c.prefillProf = nil
 		sum := (p.gemm + p.attn + p.normsRope + p.kvWrite).Seconds()
+		fmt.Fprintf(os.Stderr, "PROFILE %d rows: the walk %.2f s, its last step (a decode step at this depth) %.1f ms\n", n, walk, 1000*lastStep)
 		fmt.Fprintf(os.Stderr, "PROFILE %d rows: wall %.2f s unprofiled, %.2f s profiled; projections %.2f s (%.0f%%), attention %.2f s (%.0f%%), norms and rotary %.2f s (%.0f%%), K/V write %.2f s (%.0f%%)\n",
 			n, wall, profiled, p.gemm.Seconds(), 100*p.gemm.Seconds()/sum, p.attn.Seconds(), 100*p.attn.Seconds()/sum,
 			p.normsRope.Seconds(), 100*p.normsRope.Seconds()/sum, p.kvWrite.Seconds(), 100*p.kvWrite.Seconds()/sum)

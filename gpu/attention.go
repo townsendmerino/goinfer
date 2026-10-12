@@ -293,6 +293,10 @@ func (c *Context) attnKernel(hd, kvDim int, kvF16 bool) (*wgpu.ComputePipeline, 
 		return c.attnF16WidePipeline, c.attnF16WideLayout
 	case kvF16:
 		return c.attnF16Pipeline, c.attnF16Layout
+	case wide && !attnKeysDisabled && attnKeysWideEligible(hd, kvDim, kvF16):
+		// Key-split attention for a head of up to 256: the per-dimension kernel below pays a cross-lane reduction for
+		// every key, which is most of a long prompt's time on a wide head.
+		return c.attnKeysWide.pl, c.attnKeysWide.layout
 	case wide:
 		return c.attnWidePipeline, c.attnWideLayout
 	case !attnKeysDisabled && attnKeysEligible(hd, kvDim, kvF16, false):
@@ -1115,6 +1119,17 @@ func (c *Context) ensureAttnWide() error {
 	if lim := c.device.GetLimits().MaxComputeInvocationsPerWorkgroup; lim < attnWGWide {
 		return fmt.Errorf("gpu: device maxComputeInvocationsPerWorkgroup=%d < %d — cannot run the "+
 			"wide attention kernel needed for head_dim > %d", lim, attnWGWide, attnWG)
+	}
+	if c.attnKeysWide.pl == nil {
+		src, err := attnKeysWideSource()
+		if err != nil {
+			return err
+		}
+		sh, pl, ly, err := c.mkPipeline("attn-keys-wide", src)
+		if err != nil {
+			return err
+		}
+		c.attnKeysWide = tiledPipes{sh: sh, pl: pl, layout: ly}
 	}
 	dst := [][3]any{
 		{&c.attnWideShader, &c.attnWidePipeline, &c.attnWideLayout},
