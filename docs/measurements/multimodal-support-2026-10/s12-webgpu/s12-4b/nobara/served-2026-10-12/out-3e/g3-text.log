@@ -1,0 +1,34 @@
+12:49:17 [    0s] 5 rounds x 2 arms x 2 depths ([400, 1600] words); model /home/francis/models/gemma-3-4b-it
+12:49:17 [    0s] round 1 of 5, new: starting serve-webgpu-s3 (load 0.83)
+12:49:32 [   15s] round 1 of 5, new, 400 words (457 prompt tokens): TTFT 5.38 s
+12:50:42 [   84s] round 1 of 5, new, 1600 words (1783 prompt tokens): TTFT 68.49 s
+12:50:42 [   85s] round 1 of 5, old: starting serve-webgpu-new (load 0.49)
+12:51:01 [  103s] round 1 of 5, old, 400 words (457 prompt tokens): TTFT 10.70 s
+12:52:29 [  192s] round 1 of 5, old, 1600 words (1783 prompt tokens): TTFT 87.62 s
+12:52:30 [  192s] round 2 of 5, old: starting serve-webgpu-new (load 0.94)
+12:52:48 [  211s] round 2 of 5, old, 400 words (457 prompt tokens): TTFT 10.71 s
+12:54:17 [  300s] round 2 of 5, old, 1600 words (1783 prompt tokens): TTFT 87.63 s
+12:54:17 [  300s] round 2 of 5, new: starting serve-webgpu-s3 (load 0.94)
+12:54:30 [  312s] round 2 of 5, new, 400 words (457 prompt tokens): TTFT 5.39 s
+12:55:40 [  382s] round 2 of 5, new, 1600 words (1783 prompt tokens): TTFT 68.85 s
+12:55:40 [  383s] round 3 of 5, new: starting serve-webgpu-s3 (load 0.50)
+12:55:52 [  395s] round 3 of 5, new, 400 words (457 prompt tokens): TTFT 5.39 s
+12:57:02 [  464s] round 3 of 5, new, 1600 words (1783 prompt tokens): TTFT 68.50 s
+12:57:02 [  465s] round 3 of 5, old: starting serve-webgpu-new (load 0.41)
+12:57:21 [  483s] round 3 of 5, old, 400 words (457 prompt tokens): TTFT 10.70 s
+12:58:50 [  572s] round 3 of 5, old, 1600 words (1783 prompt tokens): TTFT 87.62 s
+12:58:50 [  572s] round 4 of 5, old: starting serve-webgpu-new (load 0.89)
+12:59:08 [  591s] round 4 of 5, old, 400 words (457 prompt tokens): TTFT 10.70 s
+13:00:37 [  680s] round 4 of 5, old, 1600 words (1783 prompt tokens): TTFT 87.63 s
+13:00:37 [  680s] round 4 of 5, new: starting serve-webgpu-s3 (load 1.07)
+13:00:50 [  692s] round 4 of 5, new, 400 words (457 prompt tokens): TTFT 5.42 s
+13:02:00 [  762s] round 4 of 5, new, 1600 words (1783 prompt tokens): TTFT 68.94 s
+13:02:00 [  763s] round 5 of 5, new: starting serve-webgpu-s3 (load 0.75)
+13:02:12 [  775s] round 5 of 5, new, 400 words (457 prompt tokens): TTFT 5.36 s
+13:03:22 [  844s] round 5 of 5, new, 1600 words (1783 prompt tokens): TTFT 68.41 s
+13:03:22 [  845s] round 5 of 5, old: starting serve-webgpu-new (load 0.48)
+13:03:41 [  863s] round 5 of 5, old, 400 words (457 prompt tokens): TTFT 10.70 s
+13:05:10 [  952s] round 5 of 5, old, 1600 words (1783 prompt tokens): TTFT 87.62 s
+
+RESULT 400 words: new 5.38 5.39 5.39 5.42 5.36 s; old 10.70 10.71 10.70 10.70 10.70 s; ratios 0.503 0.503 0.504 0.506 0.501; median 0.503 -> SHIP; replies equal in 5 of 5 rounds
+RESULT 1600 words: new 68.49 68.85 68.50 68.94 68.41 s; old 87.62 87.63 87.62 87.63 87.62 s; ratios 0.782 0.786 0.782 0.787 0.781; median 0.782 -> SHIP; replies equal in 5 of 5 rounds

@@ -1,0 +1,49 @@
+{
+ "rounds": 4,
+ "per_round": 2,
+ "rotate": true,
+ "cells": [
+  {
+   "cell": "gemma-4-e2b-image-new",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18654,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/goinfer-bench/s12-4b-2026-10-12/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-s3",
+    "--model",
+    "/home/francis/models/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/home/francis/models/gemma-4-E2B-unq",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18654"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b-image-old",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18654,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/goinfer-bench/s12-4b-2026-10-12/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-new",
+    "--model",
+    "/home/francis/models/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/home/francis/models/gemma-4-E2B-unq",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18654"
+   ]
+  }
+ ]
+}
