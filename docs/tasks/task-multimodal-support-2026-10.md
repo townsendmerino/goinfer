@@ -62,8 +62,8 @@
     CPU's 40 s on a 1.1 MP image by a day smoke; slower than the CPU on a tiny image).
   - S12.3f: Qwen2.5-VL's tower on WebGPU, with windowed attention kernels, right at real size (lowest row
     0.9999965), opt-in the same way until its night speed gate reads (about 14 s against the CPU's 31 s on the
-    same image by a day smoke). Left in S12.3: Gemma 4's audio tower, not built (its CPU tower takes under a
-    second; for the owner).
+    same image by a day smoke). Gemma 4's audio tower is not built and was dropped from S12 by the owner
+    (2026-10-11): its CPU tower takes under a second.
   - S12.2: the 26B's parallel dense and MoE feed-forward is in the WebGPU decode runner and matches the CPU on the
     tiny fixtures (cosine 1.0000000, seven planted defects red). No real 26B has run on WebGPU.
   - S12.4a: S7's cells under `--backend webgpu`, each family at the defaults and with the WebGPU towers, queued
@@ -4284,6 +4284,10 @@ The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/gri
   the default: the registered speed gate reads one large image, so a tower that ships on it would still be slower
   than the CPU on a thumbnail. **For the owner when the gate reads:** flip the default as registered, flip it only
   above a patch count, or batch a block's kernels into one submit first.
+  **Decided by the owner, 2026-10-11 evening ("do as you suggest"):** when G-S12.3e-4 reads SHIP, the device tower
+  becomes the default only above a patch count, and below it the CPU tower runs. If the gate's ratio is marginal
+  (near 0.98), batch a block's kernels into one submit first and read it again. The patch count is set from a
+  measurement of both towers at a few image sizes, registered before it is run.
 - **Predictions scored:** "e-1 and e-1b pass (0.7)": passed, first run. "e-2 passes on all three towers (0.65)":
   passed. "Both towers under the CPU's time (0.75)": true on every image of 280 patches or more, false on the
   48-patch one for GLM-OCR.
@@ -4374,6 +4378,8 @@ conformer blocks take 0.24 to 0.70 s on the CPU for the clips S5 measured (G-S5d
 save is about half a second a clip, and at that size a WebGPU forward's per-kernel submits are a large share of its
 time (S12.3e's 48-patch reading). **For the owner:** build it anyway, or drop it from S12. It stays owed until one
 of those is said; the work moved on to S12.2.
+
+**Decided by the owner, 2026-10-11 evening: dropped from S12.** Gemma 4's audio tower stays on the CPU under WebGPU.
 
 #### S12.2, the 26B's parallel dense and MoE feed-forward on WebGPU: gates registered 2026-10-11 before any code
 

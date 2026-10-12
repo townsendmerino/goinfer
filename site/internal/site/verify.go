@@ -27,6 +27,10 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 	if !strings.Contains(idx, `id="embeddings"`) || !strings.Contains(idx, "/v1/embeddings") {
 		bad = append(bad, "the Models page has no Embeddings section")
 	}
+	// Whisper is not a family either (it has no chat route), so the transcription endpoint has a hand-written section too.
+	if !strings.Contains(idx, `id="speech"`) || !strings.Contains(idx, "/v1/audio/transcriptions") {
+		bad = append(bad, "the Models page has no Speech section")
+	}
 	// The Ollama section: its heading, its headline sentence, and every tag in the data, in the built page.
 	if m.Ollama != nil {
 		if !strings.Contains(idx, `id="ollama"`) || !strings.Contains(idx, html.EscapeString(m.Ollama.Headline)) {
