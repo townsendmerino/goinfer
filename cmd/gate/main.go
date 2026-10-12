@@ -62,7 +62,8 @@ usage:
   gate parity                                      the release-tag parity sweep (named-gate checkset)
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
-  gate gpu                                         the pre-tag GPU correctness gate (cuda | metal)
+  gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
+  gate gpu-records [-head REV] [-dir DIR]          which backends have a record that still qualifies at REV (exit 1 if one does not)
   gate mutation <name> <file> <sed-expr> <cmd...>  prove a gate can FAIL: green -> mutate -> red -> restore -> green
   gate quick [-base REF] [-files a,b] [-count1] [-j N] [-select] [-v]
                                                    the day loop: gofmt, vet, staticcheck and the tests that can
@@ -135,6 +136,10 @@ func run(argv []string, w io.Writer) int {
 	if name == "comments-only" {
 		return runCommentsOnly(rest, w)
 	}
+	// `gpu-records` reads the records `gate gpu` wrote (gpu_record.go).
+	if name == "gpu-records" {
+		return runGPURecords(rest, w)
+	}
 	// `identity` takes two revs as positionals, interleaved with its flags (identity.go).
 	if name == "identity" {
 		return runIdentity(rest, w)
@@ -154,6 +159,7 @@ func run(argv []string, w io.Writer) int {
 	fs.SetOutput(os.Stderr)
 	fs.Bool("v", false, "composition: print the per-gate table as well as the counts")
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
+	recordDir := fs.String("record", gpuRecordDirDefault, "gpu: directory the run's JSON record is written to (empty: none); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
 	if err := fs.Parse(rest); err != nil {
 		return 2
@@ -163,7 +169,7 @@ func run(argv []string, w io.Writer) int {
 	// asset registry, the composition census and the gate ledger, so it owns its own entry point
 	// rather than pretending to be a gateConfig with an unusual report.
 	if name == "gpu" {
-		return runGPU(w, *logDir)
+		return runGPU(w, *logDir, *recordDir)
 	}
 	if name == "selector" {
 		return selectorCoverage(w)

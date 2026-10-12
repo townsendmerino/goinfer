@@ -54,6 +54,10 @@ type gpuGate struct {
 	// check cannot see once any other cell has run.
 	emptyCells []string
 	notes      []string
+
+	heavySkipped bool   // the real-model tier was skipped: the run is not the whole gate, and its record says so
+	recordDir    string // where the run's record is written (gpu_record.go); empty writes none
+	gpuName      string // the device line printed in the provenance block, for the record
 }
 
 func (g *gpuGate) grp(name string) { g.cur = name }
@@ -375,8 +379,8 @@ func classifyAdapterProbe(out []byte, err error) (present bool, backend, note st
 		"\"no hardware\"; treating as no adapter present but this is NOT the same finding (V-21).\n", err)
 }
 
-func runGPU(w io.Writer, logDir string) int {
-	g := &gpuGate{w: w, logDir: logDir, emitted: map[string]bool{}}
+func runGPU(w io.Writer, logDir, recordDir string) int {
+	g := &gpuGate{w: w, logDir: logDir, recordDir: recordDir, emitted: map[string]bool{}}
 	g.backend = detectBackend()
 	g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
 
@@ -427,13 +431,15 @@ func runGPU(w io.Writer, logDir string) int {
 	switch g.backend {
 	case "cuda":
 		if b, err := exec.Command("nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader").Output(); err == nil {
-			fmt.Fprintf(w, "  gpu         %s\n", strings.SplitN(strings.TrimSpace(string(b)), "\n", 2)[0])
+			g.gpuName = strings.SplitN(strings.TrimSpace(string(b)), "\n", 2)[0]
+			fmt.Fprintf(w, "  gpu         %s\n", g.gpuName)
 		}
 	case "metal":
 		cpu := "Apple Silicon"
 		if b, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output(); err == nil {
 			cpu = strings.TrimSpace(string(b))
 		}
+		g.gpuName = cpu
 		fmt.Fprintf(w, "  gpu         %s\n", cpu)
 	}
 	if g.dirty {
@@ -627,6 +633,7 @@ func (g *gpuGate) cudaHeavy() {
 	g.grp("heavy")
 	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; measured 78 min on 2026-09-28)")
 	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
+		g.heavySkipped = true
 		g.skip("heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert\n" +
 			"        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks")
 		return
@@ -1332,7 +1339,16 @@ func unescapeCI(s string) string {
 }
 
 // ---- 6. group reconciliation + verdict ----
+// verdict prints the verdict block, writes the run's record (gpu_record.go) and returns the exit code.
 func (g *gpuGate) verdict() int {
+	code, label := g.verdictLabel()
+	g.writeRecord(label)
+	return code
+}
+
+// verdictLabel is the verdict block: the exit code and the one-word outcome the record carries (PASS, FAIL, INCONCLUSIVE for a green run on a dirty
+// tree, NO_GATE, VACUOUS or EMPTY for a run that vouches for nothing).
+func (g *gpuGate) verdictLabel() (int, string) {
 	// Reconcile against the DECLARED group set: a block that dies mid-way emits nothing, and a tally computed
 	// from what emitted cannot see the hole.
 	g.cur = "" // reconciliation failures belong to no group
@@ -1388,7 +1404,7 @@ func (g *gpuGate) verdict() int {
 	}
 	if g.ran == 0 {
 		fmt.Fprintf(g.w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
-		return 1
+		return 1, "NO_GATE"
 	}
 	// A FILTERED CELL WHOSE TESTS ALL SKIPPED IS THE SAME CLASS AS AN EMPTY ONE: coverage the verdict vouches
 	// for did not run. It is separate from emptyCells because the tests exist and were selected, they all
@@ -1400,7 +1416,7 @@ func (g *gpuGate) verdict() int {
 		}
 		fmt.Fprintf(g.w, "    A skip is not a pass. Usually a missing asset, or an opt-in env var\n"+
 			"    the cell must set for itself because the gate deliberately unsets ambient ones.\n")
-		return 1
+		return 1, "VACUOUS"
 	}
 	if len(g.emptyCells) > 0 {
 		fmt.Fprintf(g.w, "\n  %sEMPTY CELL(S)%s — a -run pattern matched no test, so that coverage is gone:\n", red, off)
@@ -1408,7 +1424,7 @@ func (g *gpuGate) verdict() int {
 			fmt.Fprintf(g.w, "    - %s\n", c)
 		}
 		fmt.Fprintf(g.w, "    Nothing FAILED; the tests were not there to run. Fix the pattern or the name.\n")
-		return 1
+		return 1, "EMPTY"
 	}
 	host := "?"
 	if b, err := exec.Command("uname", "-s").Output(); err == nil {
@@ -1420,7 +1436,7 @@ func (g *gpuGate) verdict() int {
 			d = " +dirty"
 		}
 		fmt.Fprintf(g.w, "\n  %sFAIL%s — %s on %s @ %s%s. Do not tag.\n", red, off, g.backend, host, g.commit, d)
-		return 1
+		return 1, "FAIL"
 	}
 	// THREE STATES, NOT TWO. Every check is green here, but a dirty tree is a failure of PROVENANCE, not of
 	// the checks: the verdict names a commit, and an uncommitted edit means it does not describe what that
@@ -1438,10 +1454,10 @@ func (g *gpuGate) verdict() int {
 				fmt.Fprintf(g.w, "    %s\n", ln)
 			}
 		}
-		return 1
+		return 1, "INCONCLUSIVE"
 	}
 	fmt.Fprintf(g.w, "\n  %sPASS%s — %s on %s @ %s (%s)\n", green, off, g.backend, host, g.commit,
 		time.Now().UTC().Format("2006-01-02T15:04:05Z"))
 	fmt.Fprintf(g.w, "  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.\n")
-	return 0
+	return 0, "PASS"
 }
