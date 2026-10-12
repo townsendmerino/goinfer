@@ -1,0 +1,24 @@
+=== RUN   TestGridVisionWebGPU_matchesCPU
+=== RUN   TestGridVisionWebGPU_matchesCPU/qwen3
+    grid_vision_test.go:177: Qwen3.5, block 0: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:177: Qwen3.5, block 5: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:187: Qwen3.5 planted, the attention scale dropped: lowest 0.974966
+    grid_vision_test.go:187: Qwen3.5 planted, the RoPE halves swapped: lowest 0.996732
+    grid_vision_test.go:187: Qwen3.5 planted, the position rows for the transposed grid: lowest 0.994887
+    grid_vision_test.go:187: Qwen3.5 planted, the patch bias dropped: lowest 0.993714
+=== RUN   TestGridVisionWebGPU_matchesCPU/glm-ocr
+    grid_vision_test.go:177: GLM-OCR, block 0: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:177: GLM-OCR, block 5: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:187: GLM-OCR planted, the q and k norms skipped: lowest 0.118984
+    grid_vision_test.go:187: GLM-OCR planted, the patch bias dropped: lowest 0.531329
+    grid_vision_test.go:187: GLM-OCR planted, the attention scale dropped: lowest 0.126404
+    grid_vision_test.go:187: GLM-OCR planted, the RoPE halves swapped: lowest 0.698253
+--- PASS: TestGridVisionWebGPU_matchesCPU (0.72s)
+    --- PASS: TestGridVisionWebGPU_matchesCPU/qwen3 (0.36s)
+    --- PASS: TestGridVisionWebGPU_matchesCPU/glm-ocr (0.33s)
+=== RUN   TestGridVisionWebGPU_deepstackTiny
+[G-S12.3e-1b] tiny [[1 4 6]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S12.3e-1b] tiny [[1 6 4] [1 4 4]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S12.3e-1b] tiny, taps one block late: merged 1.000000000, deep0 0.997922316, deep1 0.998646717
+--- PASS: TestGridVisionWebGPU_deepstackTiny (0.07s)
+PASS
