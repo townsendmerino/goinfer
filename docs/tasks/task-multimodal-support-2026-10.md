@@ -4289,6 +4289,41 @@ The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/gri
   code at other widths); a multi-image request at real size (two segments are exercised on the tiny towers only);
   GLM-OCR above 1.3 MP.
 
+#### S12.3f, Qwen2.5-VL's vision tower on WebGPU: gates registered 2026-10-11 before any code
+
+**What:** the tower Metal runs (`metal/vl_towers.go`, `qwen25VResident`), in float32 from aikit's `GPUWeights`:
+aikit's `BuildWindowPlan` on the host (the window permutation, both segmentations, RoPE in window order), the pixel
+rows permuted into window order before the patch embed (no bias), then every block on S12.3e's grid engine: RMSNorm,
+the fused qkv, rotate-half RoPE, attention at 1/sqrt(head_dim) per window except in the full-attention blocks (per
+image frame), the SiLU-gated MLP; the output permuted back and aikit's merger on the host. It attaches through
+aikit's resident seam (`vision.RegisterQwenResident`), as Metal's does.
+
+**New here, windowed attention.** A real image has dozens of windows of at most 64 patches (64 at a 64x64 grid), and
+attention as matmuls costs about seven submits a head a window. So a windowed block runs three kernels over all
+windows at once instead: the scores of every (row, head) against the keys of the row's own window, a softmax of each
+of those rows, and the weighted sum of the window's values. A block whose segments are longer than the kernels'
+window bound (the full-attention blocks) keeps the matmul path.
+
+- **G-S12.3f-1, tiny, day.** Metal's G-S3a for this tower, on WebGPU: `testdata/qwen25vl-tiny` sharpened as there
+  (random norms and qkv biases, the q, k, v and output projections scaled up); grids (1,8,8), (1,12,16) and a
+  two-image batch; the WebGPU `ForwardViT` then aikit's merger against the CPU `Forward`, every merged token at
+  cosine >= 0.9999. Run twice: with the windowed kernels, and with them off so every block takes the matmul path.
+  Planted defects, each alone red: (1) the attention scale dropped; (2) the RoPE halves swapped; (3) every block
+  attends its whole frame; (4) the window reordering skipped; (5) the windowed kernels read each row's window one
+  key late.
+- **G-S12.3f-2, real size, day (untimed).** `qwen25vl-3b-instruct`'s tower through serve's preprocessing on the four
+  images S3 used: every merged token at cosine >= 0.9999 against the CPU tower is a PASS; a lowest token in
+  0.999-0.9999 is parked; lower, or a NaN, fails.
+- **G-S12.3f-3, wiring, day.** One image request through a WebGPU server with `-vision-device gpu` on Qwen2.5-VL 3B:
+  the load line names a WebGPU tower and the turn completes. The reply is recorded, not graded.
+- **G-S12.3f-4, speed, night.** Encode time on one image, WebGPU over CPU, five interleaved pairs after a discarded
+  pass of each: the default under `--backend webgpu` at a median ratio of at most 0.98; 0.98-1.00 parked; above 1.00
+  it stays on the CPU. Until it reads, the default is the CPU tower.
+- **Prediction, written now:** f-1 passes (0.6; the windowed kernels and the window ordering are both new here).
+  f-2 passes (0.6). The day smoke under the CPU's time at a 64x64 grid (0.7).
+- **Tier and cost.** f-1 seconds; f-2 about three minutes (the CPU tower is about 22 s at a 64x64 grid); f-3 two
+  minutes; f-4 at night, about five minutes.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
