@@ -502,23 +502,6 @@ func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
 	}
 }
 
-// isoDatePrefix reports whether a reason opens with a YYYY-MM-DD date.
-func isoDatePrefix(s string) bool {
-	if len(s) < 10 {
-		return false
-	}
-	for i, c := range s[:10] {
-		if i == 4 || i == 7 {
-			if c != '-' {
-				return false
-			}
-		} else if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 // A FAILURE IN A TEST NOBODY LISTED IS STILL A FAILURE. The sweep's decision is a checkset, so
 // `blockers` came only from the named gates; a FAIL anywhere else must still block, or an unlisted
 // family parity test could go red and the verdict still read ALL REQUIRED GATES GREEN, exit 0.

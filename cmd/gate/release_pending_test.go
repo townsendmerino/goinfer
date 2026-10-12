@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -20,34 +17,6 @@ import (
 // pace, which says nothing about what shipped): at tag time, an entry dated before the PREVIOUS
 // release has already ridden through one release unconfirmed, and it blocks this one. Between
 // releases nothing is enforced.
-
-// changelogRelease matches a released CHANGELOG header, "## [v0.17.2] — 2026-09-08". The dates come
-// from the CHANGELOG rather than git tags because the release workflow's checkout carries no tags.
-var changelogRelease = regexp.MustCompile(`(?m)^## \[(v[0-9][^\]]*)\]\s*[—–-]+\s*(\d{4}-\d{2}-\d{2})`)
-
-// pendingOutlivingRelease finds the release before `releasing` (the newest dated CHANGELOG release
-// that is not `releasing` itself) and returns every pending entry dated before it, sorted.
-func pendingOutlivingRelease(pending map[string]string, changelog, releasing string) (prevVer, prevDate string, blockers []string, err error) {
-	for _, m := range changelogRelease.FindAllStringSubmatch(changelog, -1) {
-		if m[1] != releasing {
-			prevVer, prevDate = m[1], m[2]
-			break
-		}
-	}
-	if prevVer == "" {
-		return "", "", nil, fmt.Errorf("no dated release before %s in CHANGELOG.md (want a header like \"## [v0.17.2] — 2026-09-08\")", releasing)
-	}
-	for gate, reason := range pending {
-		if !isoDatePrefix(reason) {
-			return "", "", nil, fmt.Errorf("%s has no leading ISO date (%q), so it cannot be placed against a release", gate, reason)
-		}
-		if reason[:10] < prevDate {
-			blockers = append(blockers, fmt.Sprintf("%s (pending since %s)", gate, reason[:10]))
-		}
-	}
-	sort.Strings(blockers)
-	return prevVer, prevDate, blockers, nil
-}
 
 // TestParity_noPendingGateOutlivesARelease applies the rule to the real map. It enforces only when
 // GOINFER_RELEASE_TAG names the version being released: RELEASING.md's pre-flight sets it before
