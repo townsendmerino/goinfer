@@ -59,18 +59,18 @@ func TestPlanGridTower(t *testing.T) {
 	}
 }
 
-// TestTowerBackend: -vision-device cpu keeps a device tower on the CPU while the model keeps its backend; auto follows
-// the backend.
+// TestTowerBackend: -vision-device cpu keeps a device tower on the CPU while the model keeps its backend; auto and gpu
+// follow the backend; any other value is refused.
 func TestTowerBackend(t *testing.T) {
 	var c config
 	c.load.Backend = "metal"
-	for dev, want := range map[string]string{"auto": "metal", "cpu": "cpu"} {
+	for dev, want := range map[string]string{"auto": "metal", "gpu": "metal", "cpu": "cpu"} {
 		c.visionDevice = dev
 		if got := c.towerBackend(); got != want {
 			t.Errorf("-vision-device %s under metal: tower backend %q, want %q", dev, got, want)
 		}
 	}
-	c.visionDevice = "gpu"
+	c.visionDevice = "npu"
 	if err := (&server{}).loadVisionTower(c); err == nil || !strings.Contains(err.Error(), "-vision-device") {
 		t.Errorf("an unknown -vision-device must be refused, got %v", err)
 	}
