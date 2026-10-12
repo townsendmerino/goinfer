@@ -267,9 +267,10 @@ func TestPrefillInt4_real(t *testing.T) {
 	}
 }
 
-// G-S12.4b-1b and G-S12.4b-2c, in process: the batched pass under each multi-row int4 kernel and the row-by-row walk
-// (the production loop: no logits read until the last row), at 256 and 1,024 rows. One discarded pass of each arm,
-// then five rounds in alternating order. It reports the per-round ratios and their medians and grades nothing.
+// G-S12.4b-1b and G-S12.4b-2c, in process: the batched pass under each multi-row int4 kernel, the row-by-row walk (the
+// production loop: no logits read until the last row), and the route an image turn takes today, the CPU's batched
+// prefill of the same tokens uploaded to the resident. At 256 and 1,024 rows: one discarded pass of each arm, then
+// five rounds in alternating order. It reports the per-round ratios and their medians and grades nothing.
 func TestPrefillInt4_speed(t *testing.T) {
 	path := prefillInt4RealPath(t)
 	m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int4"})
@@ -283,6 +284,7 @@ func TestPrefillInt4_speed(t *testing.T) {
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(3))
+	var ids []int // the tokens rows embed, for the CPU arm
 	pass := func(kind w4MultiKind) func([][]float32) error {
 		return func(rows [][]float32) error {
 			rd.c.w4MultiPin = int(kind) + 1
@@ -305,13 +307,22 @@ func TestPrefillInt4_speed(t *testing.T) {
 			_, err := rd.Forward(rows[len(rows)-1], len(rows)-1)
 			return err
 		}},
+		{"cpu+upload", func([][]float32) error {
+			cache := m.NewCache(len(ids) + 1)
+			if _, err := m.PrefillLogitsForTest(context.Background(), ids, cache); err != nil {
+				return err
+			}
+			return m.ResidentUploadPrefillForTest(cache)
+		}},
 	}
 	const rounds = 5
 	began := time.Now()
 	for _, n := range []int{256, 1024} {
 		rows := make([][]float32, n)
+		ids = make([]int, n)
 		for i := range rows {
-			rows[i] = m.EmbedResidentForTest(rng.Intn(vocab - 1))
+			ids[i] = rng.Intn(vocab - 1)
+			rows[i] = m.EmbedResidentForTest(ids[i])
 		}
 		secs := make([][]float64, len(arms))
 		timeArm := func(a int) float64 {
@@ -326,14 +337,14 @@ func TestPrefillInt4_speed(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, discarded pass, %s: %.2f s\n", time.Since(began).Seconds(), n, arms[a].name, timeArm(a))
 		}
 		for r := range rounds {
-			order := []int{0, 1, 2}
+			order := []int{0, 1, 2, 3}
 			if r%2 == 1 {
-				order = []int{2, 1, 0}
+				order = []int{3, 2, 1, 0}
 			}
 			for _, a := range order {
 				secs[a] = append(secs[a], timeArm(a))
 			}
-			fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, round %d of %d: rows %.2f s, tiled %.2f s, walk %.2f s\n", time.Since(began).Seconds(), n, r+1, rounds, secs[0][r], secs[1][r], secs[2][r])
+			fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, round %d of %d: rows %.2f s, tiled %.2f s, walk %.2f s, cpu+upload %.2f s\n", time.Since(began).Seconds(), n, r+1, rounds, secs[0][r], secs[1][r], secs[2][r], secs[3][r])
 		}
 		ratio := func(a, b int) (rs []float64, med float64) {
 			for r := range rounds {
@@ -343,7 +354,7 @@ func TestPrefillInt4_speed(t *testing.T) {
 			sort.Float64s(s)
 			return rs, s[rounds/2]
 		}
-		for _, pr := range [][2]int{{1, 0}, {0, 2}, {1, 2}} {
+		for _, pr := range [][2]int{{1, 0}, {0, 2}, {1, 2}, {1, 3}} {
 			rs, med := ratio(pr[0], pr[1])
 			fmt.Fprintf(os.Stderr, "RESULT %d rows, %s over %s: ratios %.3f, median %.3f\n", n, arms[pr[0]].name, arms[pr[1]].name, rs, med)
 		}

@@ -1,0 +1,31 @@
+Mon Oct 12 09:17:18 PDT 2026
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+28fe964f gpu: the int4 batched pass is admitted on Vulkan: the kernel and pass identity tests pass there (nobara, RTX 2070 SUPER), tiny fixtures and real checkpoints
+=== RUN   TestPrefillInt4_speed
+[   0s] 256 rows, discarded pass, rows: 0.90 s
+[   1s] 256 rows, discarded pass, tiled: 0.31 s
+[   1s] 256 rows, discarded pass, walk: 1.87 s
+[   6s] 256 rows, round 1 of 5: rows 0.82 s, tiled 0.32 s, walk 1.88 s
+[   9s] 256 rows, round 2 of 5: rows 0.81 s, tiled 0.32 s, walk 1.87 s
+[  12s] 256 rows, round 3 of 5: rows 0.81 s, tiled 0.31 s, walk 1.88 s
+[  15s] 256 rows, round 4 of 5: rows 0.82 s, tiled 0.31 s, walk 1.87 s
+[  18s] 256 rows, round 5 of 5: rows 0.82 s, tiled 0.32 s, walk 1.88 s
+RESULT 256 rows, tiled over rows: ratios [0.387 0.389 0.387 0.383 0.385], median 0.387
+RESULT 256 rows, rows over walk: ratios [0.435 0.434 0.434 0.438 0.435], median 0.435
+RESULT 256 rows, tiled over walk: ratios [0.168 0.169 0.168 0.168 0.167], median 0.168
+[  18s] 1024 rows, discarded pass, rows: 3.44 s
+[  22s] 1024 rows, discarded pass, tiled: 1.41 s
+[  23s] 1024 rows, discarded pass, walk: 10.86 s
+[  50s] 1024 rows, round 1 of 5: rows 3.42 s, tiled 1.41 s, walk 10.86 s
+[  65s] 1024 rows, round 2 of 5: rows 3.43 s, tiled 1.41 s, walk 10.83 s
+[  81s] 1024 rows, round 3 of 5: rows 3.44 s, tiled 1.41 s, walk 10.87 s
+[  97s] 1024 rows, round 4 of 5: rows 3.46 s, tiled 1.41 s, walk 10.83 s
+[ 112s] 1024 rows, round 5 of 5: rows 3.46 s, tiled 1.41 s, walk 10.87 s
+RESULT 1024 rows, tiled over rows: ratios [0.413 0.410 0.410 0.407 0.408], median 0.410
+RESULT 1024 rows, rows over walk: ratios [0.315 0.317 0.317 0.319 0.318], median 0.317
+RESULT 1024 rows, tiled over walk: ratios [0.130 0.130 0.130 0.130 0.130], median 0.130
+--- PASS: TestPrefillInt4_speed (115.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	115.806s
+exit 0
+Mon Oct 12 09:19:17 PDT 2026
