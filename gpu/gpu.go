@@ -166,6 +166,8 @@ type Context struct {
 	// (vision.go); built with the other vision kernels.
 	mmTiledF32Pipeline *wgpu.ComputePipeline
 	mmTiledF32Layout   *wgpu.BindGroupLayout
+	mmRB64F32Pipeline  *wgpu.ComputePipeline
+	mmRB64F32Layout    *wgpu.BindGroupLayout
 	copyHeadLayout     *wgpu.BindGroupLayout
 
 	// RoPE + single-query attention pipelines, lazy via ensureAttn (attention.go).
