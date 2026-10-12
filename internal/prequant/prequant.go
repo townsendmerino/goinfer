@@ -247,8 +247,8 @@ func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, targe
 }
 
 // EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant, promised to backend,
-// transcoding once into a sidecar cache (alongside the GGUF, "<base>.<quant>.<target>.giw", or
-// "<base>.<quant>.e4h.<target>.giw" when embedInt4 is set) when no fresh cache exists. The cache is
+// transcoding once into a sidecar cache (alongside the GGUF, "<base>.<quant>.<target>.v<N>.giw", or
+// "<base>.<quant>.e4h.<target>.v<N>.giw" when embedInt4 is set; streamCachePath) when no fresh cache exists. The cache is
 // fresh when it is newer than the source AND was built for the same target (the cache key carries the
 // target, so a CPU-built cache is never reused by a Metal load) AND the same embedInt4 setting (a
 // plain-head sidecar and an embed-int4 one are different bundles, never interchangeable; folding
@@ -258,7 +258,7 @@ func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, targe
 func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 bool) (string, error) {
 	target := decoder.GIWTargetForBackend(backend)
 	cache := streamCachePath(ggufPath, quant, embedInt4, target)
-	if cacheFresh(cache, ggufPath) {
+	if freshCache(cache, legacyCachePath(ggufPath, quant, embedInt4, target), ggufPath) {
 		return cache, nil
 	}
 	// Refuse up front when the sidecar will not fit: a half-written sidecar on a full disk is worse than
@@ -294,6 +294,10 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 		fmt.Fprintf(os.Stderr, "stream-weights: cache ready (%.0f MB) in %s: %s\n",
 			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second), ph)
 	}
+	if lf, e := os.Stat(legacyCachePath(ggufPath, quant, embedInt4, target)); e == nil {
+		fmt.Fprintf(os.Stderr, "stream-weights: note: %s (%.0f MB) is from a build that wrote unversioned sidecar names; this build leaves it alone. Delete it once no such build is in use.\n",
+			filepath.Base(legacyCachePath(ggufPath, quant, embedInt4, target)), float64(lf.Size())/1048576)
+	}
 	return cache, nil
 }
 
@@ -302,8 +306,9 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 // (docs/tasks/task-never-swap-2026-09.md) where measuring is supposed to stay cheap: forcing a
 // transcode just to check fit would cost as much as the resident build it avoids.
 func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string, bool) {
-	cache := streamCachePath(ggufPath, quant, embedInt4, decoder.GIWTargetForBackend(backend))
-	if cacheFresh(cache, ggufPath) {
+	target := decoder.GIWTargetForBackend(backend)
+	cache := streamCachePath(ggufPath, quant, embedInt4, target)
+	if freshCache(cache, legacyCachePath(ggufPath, quant, embedInt4, target), ggufPath) {
 		return cache, true
 	}
 	return "", false
@@ -323,12 +328,21 @@ func DefaultToSidecar(directLoad bool) bool {
 }
 
 // streamCachePath is the sidecar cache for a GGUF at a quant, embedInt4 setting and target:
-// "<base>.<quant>.<target>.giw", or "<base>.<quant>.e4h.<target>.giw" when embedInt4 is set —
-// GIWTargetNone spells as "canonical" rather than an empty segment, so the path stays
-// unambiguous. The "e4h" segment (embed-int4-head) exists so a plain-head sidecar built before
-// EmbedInt4 defaulted on is never mistaken for, or overwritten by, an embed-int4 one built after:
-// they are different bundles at the same source and quant, and need different cache keys.
+// "<base>.<quant>.<target>.v<N>.giw", or "<base>.<quant>.e4h.<target>.v<N>.giw" when embedInt4 is set, N being the
+// weights format version this build reads (decoder.GIWFormatVersion). The version is in the name so two builds at
+// different formats on one box keep a sidecar each instead of rewriting one file in turn (a build that reads only vN
+// refuses a v(N+1) file as too new and replaces it, and the other then does the same). GIWTargetNone spells as
+// "canonical" rather than an empty segment, so the path stays unambiguous. The "e4h" segment (embed-int4-head)
+// exists so a plain-head sidecar built before EmbedInt4 defaulted on is never mistaken for, or overwritten by, an
+// embed-int4 one built after: they are different bundles at the same source and quant, and need different cache keys.
 func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWTarget) string {
+	return strings.TrimSuffix(legacyCachePath(ggufPath, quant, embedInt4, target), ".giw") + fmt.Sprintf(".v%d.giw", decoder.GIWFormatVersion)
+}
+
+// legacyCachePath is the sidecar name builds before the version was in it wrote: "<base>.<quant>[.e4h].<target>.giw".
+// A build from before the change still reads and rewrites that name, so this build never writes or deletes it; it only
+// adopts a file there that already loads as this build's format (adoptLegacy).
+func legacyCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWTarget) string {
 	base := ggufPath[:len(ggufPath)-len(filepath.Ext(ggufPath))]
 	if isDir(ggufPath) {
 		// A safetensors directory: the sidecar sits beside it, named after the whole directory. Its name is not a
@@ -344,6 +358,33 @@ func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWT
 		label += ".e4h"
 	}
 	return base + "." + label + "." + tgt + ".giw"
+}
+
+// freshCache reports whether the sidecar at cache is fresh for src, adopting the legacy-named file first when this
+// build has none of its own: a legacy file that is newer than src and loads under this build's format is already
+// this build's sidecar, so it is hard-linked to the versioned name (no copy, no transcode). The old name stays, for
+// the builds that still use it, and an older build rewriting it by temp-and-rename leaves this link untouched. A
+// legacy file in another format, or stale, is left alone, silently: the one that matters is the versioned name.
+func freshCache(cache, legacy, src string) bool {
+	if cacheFresh(cache, src) {
+		return true
+	}
+	return adoptLegacy(cache, legacy, src) && cacheFresh(cache, src)
+}
+
+func adoptLegacy(cache, legacy, src string) bool {
+	if _, err := os.Stat(cache); err == nil {
+		return false // a versioned file exists and was refused: it is rebuilt, not replaced by an older name
+	}
+	if !cacheNewer(legacy, src) || selfCheck(legacy) != nil {
+		return false
+	}
+	if err := os.Link(legacy, cache); err != nil {
+		return false
+	}
+	_ = os.Link(decoder.GIWVerifiedMarkerPath(legacy), decoder.GIWVerifiedMarkerPath(cache)) // best effort: the marker keeps the first load off a whole-file CRC
+	fmt.Fprintf(os.Stderr, "stream-weights: using %s as %s (the same file: already this build's format)\n", filepath.Base(legacy), filepath.Base(cache))
+	return true
 }
 
 // cacheFresh reports whether cache exists, is newer than src, AND actually loads.

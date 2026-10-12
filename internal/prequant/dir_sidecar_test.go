@@ -89,7 +89,7 @@ func TestDirSidecar_cachePathAndFreshness(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := streamCachePath(dir, "int4", true, decoder.GIWTargetMetal)
-	if want := filepath.Join(root, "qwen2.5-0.5b-instruct.int4.e4h.metal.giw"); cache != want {
+	if want := filepath.Join(root, fmt.Sprintf("qwen2.5-0.5b-instruct.int4.e4h.metal.v%d.giw", decoder.GIWFormatVersion)); cache != want {
 		t.Fatalf("streamCachePath(dir) = %q, want %q", cache, want)
 	}
 	time.Sleep(20 * time.Millisecond)

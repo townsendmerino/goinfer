@@ -3,6 +3,7 @@ package prequant
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -116,5 +117,130 @@ func TestEnsureCachedGIW_olderFormatIsRebuiltOnce(t *testing.T) {
 	}
 	if strings.Contains(msg, "transcoding") {
 		t.Errorf("the rebuilt sidecar was transcoded again (stderr %q): every load would rebuild", msg)
+	}
+}
+
+// tinySource copies the tiny MoE checkpoint into a fresh directory, so the sidecars written beside it do not land in testdata.
+func tinySource(t *testing.T) string {
+	t.Helper()
+	fixture := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	src := filepath.Join(t.TempDir(), "qwen3moe-tiny")
+	if err := os.Mkdir(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors"} {
+		copyFixture(t, filepath.Join(fixture, name), filepath.Join(src, name))
+	}
+	return src
+}
+
+// The name carries the format version: "<base>.<quant>.<target>.v<N>.giw".
+func TestSidecarName_carriesTheFormatVersion(t *testing.T) {
+	src := tinySource(t)
+	cache, err := EnsureCachedGIW(context.Background(), src, "int4", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := fmt.Sprintf(".v%d.giw", decoder.GIWFormatVersion); !strings.HasSuffix(cache, want) {
+		t.Fatalf("sidecar %s does not end in %s", cache, want)
+	}
+	if v, err := giw.WeightsVersionFile(cache); err != nil || v != decoder.GIWFormatVersion {
+		t.Fatalf("the file named for v%d holds v%d (%v)", decoder.GIWFormatVersion, v, err)
+	}
+}
+
+// A sidecar an earlier build wrote under the unversioned name, already in this build's format, is this build's sidecar: it is
+// hard-linked to the versioned name, with no transcode, and the old name stays for the builds that still read it.
+func TestEnsureCachedGIW_adoptsAnUnversionedSidecarInThisFormat(t *testing.T) {
+	src := tinySource(t)
+	ctx := context.Background()
+	cache, err := EnsureCachedGIW(ctx, src, "int4", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := legacyCachePath(src, "int4", false, decoder.GIWTargetForBackend(""))
+	if err := os.Rename(cache, legacy); err != nil { // as if a build before the change had written it
+		t.Fatal(err)
+	}
+	var got string
+	msg := captureStderr(t, func() { got, err = EnsureCachedGIW(ctx, src, "int4", "", false) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != cache {
+		t.Fatalf("returned %s, want the versioned name %s", got, cache)
+	}
+	if strings.Contains(msg, "transcoding") {
+		t.Errorf("a loadable sidecar under the old name was transcoded again (stderr %q)", msg)
+	}
+	a, errA := os.Stat(cache)
+	b, errB := os.Stat(legacy)
+	if errA != nil || errB != nil || !os.SameFile(a, b) {
+		t.Fatalf("the versioned name is not a link to the old one (%v, %v)", errA, errB)
+	}
+	// SidecarPathIfFresh, the cheap probe fit uses, finds it too.
+	if p, ok := SidecarPathIfFresh(src, "int4", "", false); !ok || p != cache {
+		t.Errorf("SidecarPathIfFresh = %q, %v; want %q, true", p, ok, cache)
+	}
+}
+
+// Two builds, one box: a build from before the change rewriting the unversioned name (by temp and rename, as it does) does not
+// disturb this build's sidecar, and this build never touches that name. Neither transcodes again.
+func TestEnsureCachedGIW_buildsAtDifferentFormatsKeepSeparateSidecars(t *testing.T) {
+	src := tinySource(t)
+	ctx := context.Background()
+	cache, err := EnsureCachedGIW(ctx, src, "int4", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := legacyCachePath(src, "int4", false, decoder.GIWTargetForBackend(""))
+	// the other build's file: a different format, newer than the source
+	copyFixture(t, cache, legacy)
+	stampWeightsVersion(t, legacy, decoder.GIWFormatVersion+1)
+	before, err := os.ReadFile(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again string
+	msg := captureStderr(t, func() { again, err = EnsureCachedGIW(ctx, src, "int4", "", false) })
+	if err != nil || again != cache {
+		t.Fatalf("EnsureCachedGIW = %q, %v; want %q", again, err, cache)
+	}
+	if strings.Contains(msg, "transcoding") {
+		t.Errorf("this build transcoded because the other build's file sits beside its own (stderr %q)", msg)
+	}
+	after, _ := os.ReadFile(legacy)
+	if string(before) != string(after) {
+		t.Error("this build rewrote the unversioned sidecar, which belongs to the other build")
+	}
+}
+
+// An unversioned sidecar in another format is not adopted, is left in place, and the build that finds none of its own transcodes
+// once and says the old file is there.
+func TestEnsureCachedGIW_leavesAnUnversionedSidecarOfAnotherFormat(t *testing.T) {
+	src := tinySource(t)
+	ctx := context.Background()
+	cache, err := EnsureCachedGIW(ctx, src, "int4", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := legacyCachePath(src, "int4", false, decoder.GIWTargetForBackend(""))
+	if err := os.Rename(cache, legacy); err != nil {
+		t.Fatal(err)
+	}
+	stampWeightsVersion(t, legacy, decoder.GIWFormatVersion-1)
+	var got string
+	msg := captureStderr(t, func() { got, err = EnsureCachedGIW(ctx, src, "int4", "", false) })
+	if err != nil || got != cache {
+		t.Fatalf("EnsureCachedGIW = %q, %v; want %q", got, err, cache)
+	}
+	if !strings.Contains(msg, "transcoding") || !strings.Contains(msg, "unversioned") {
+		t.Errorf("expected one transcode and a note about the old name (stderr %q)", msg)
+	}
+	if v, err := giw.WeightsVersionFile(legacy); err != nil || v != decoder.GIWFormatVersion-1 {
+		t.Errorf("the old file was changed: v%d (%v)", v, err)
+	}
+	if v, err := giw.WeightsVersionFile(cache); err != nil || v != decoder.GIWFormatVersion {
+		t.Errorf("the new sidecar is v%d (%v)", v, err)
 	}
 }
