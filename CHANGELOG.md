@@ -123,15 +123,24 @@ for a new float32 one that matches the CPU tower to a cosine of 0.9999996 a toke
 stays the default until a timed comparison with the float32 device tower has been read; the device towers have not been
 timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
 
-### Added — the Gemma 4, Qwen3.5+, Qwen3-VL and GLM-OCR vision towers on WebGPU, opt-in (`--vision-device gpu`)
+### Added — the Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR vision towers on WebGPU, opt-in (`--vision-device gpu`)
 
 Under `--backend webgpu` these vision towers can now run on the GPU in float32: `--vision-device gpu` asks for it, and
 without it each tower stays on the CPU as before. Each one's image features match its CPU tower's on real checkpoints:
-Gemma 4 E2B's to a cosine of 1.0000000 on every soft token of five test images, Qwen3.5 0.8B's to 0.9999993, GLM-OCR's
-to 0.999987 and Qwen3-VL 2B's (its DeepStack sets included) to 0.9999985, the lowest row in each case. Whether a tower
+Gemma 4 E2B's to a cosine of 1.0000000 on every soft token of five test images, Qwen2.5-VL 3B's to 0.9999965, Qwen3.5
+0.8B's to 0.9999993, GLM-OCR's to 0.999987 and Qwen3-VL 2B's (its DeepStack sets included) to 0.9999985, the lowest row
+in each case. Whether a tower
 becomes the default is decided by a timed comparison with its CPU tower, not yet read. On a very small image (a 6 by 8
 grid of patches) the GLM-OCR device tower was slower than the CPU's
-([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d and S12.3e).
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d to S12.3f).
+
+### Added — Gemma 4 26B's feed-forward block on WebGPU (checked on tiny fixtures only)
+
+`--backend webgpu` no longer declines a Gemma 4 model whose layers carry the parallel dense and MoE feed-forward (the
+26B-A4B): the decode runner now has that block. It matches the CPU on three tiny fixtures of that shape (every layer and
+every logit vector at a cosine of 1.0000000). No real 26B has run under WebGPU: the model fits neither test machine's
+GPU memory there, so treat it as unvalidated at real size
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.2).
 
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 

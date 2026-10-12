@@ -334,7 +334,7 @@ func residentPerLayerGeomOK(a *Architecture, backend string) bool {
 
 // residentGemma4MoEBackends declares which resident backends implement Gemma 4's parallel dense+MoE FFN (enable_moe_block,
 // gemma4MoeMLP): the joint dense‖MoE bridge, not just the per-layer attention geometry of dense Gemma 4.
-var residentGemma4MoEBackends = map[string]bool{"cuda": true, "metal": true}
+var residentGemma4MoEBackends = map[string]bool{"cuda": true, "metal": true, "webgpu": true}
 
 func residentGemma4MoEOK(a *Architecture, backend string) bool {
 	if a.gemma4 == nil || a.MoE == nil {

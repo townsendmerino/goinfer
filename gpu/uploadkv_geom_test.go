@@ -24,7 +24,16 @@ import (
 // one geometry reads 0.9998-0.9999 the same way (the task doc's G-S12.0a reading). There the floor is 0.99, which
 // the wrong geometry misses (0.88-0.93, or a refused upload).
 func TestUploadKV_perLayerGeometry(t *testing.T) {
-	uploadKVGeomRun(t, false)
+	uploadKVGeomRun(t, twoGeomDir, false, "", "f16", "i8")
+}
+
+// TestUploadKV_gemma4MoE is the same procedure on a Gemma 4 model whose layers carry the parallel dense and MoE
+// feed-forward (S12.2): a CPU prefill uploaded layer by layer, then decoded on the resident, against the resident's own
+// sequential walk. It is what an image turn on the 26B does after its CPU prefill. Float32 and f16 KV only: at int8 KV
+// this fixture's sequential walk is itself 0.93-0.99 from its float32-KV result (the router turns KV rounding into a
+// different expert), further than the uploaded arm is, so the two arms' agreement says nothing about the upload there.
+func TestUploadKV_gemma4MoE(t *testing.T) {
+	uploadKVGeomRun(t, g4MoEFixtures[0], false, "", "f16")
 }
 
 // TestUploadKV_perLayerGeometry_planted is the gate's planted defect: with every layer's rows sized and grouped by
@@ -32,33 +41,34 @@ func TestUploadKV_perLayerGeometry(t *testing.T) {
 func TestUploadKV_perLayerGeometry_planted(t *testing.T) {
 	uploadKVModelGeomForTest = true
 	defer func() { uploadKVModelGeomForTest = false }()
-	uploadKVGeomRun(t, true)
+	uploadKVGeomRun(t, twoGeomDir, true, "", "f16", "i8")
 }
 
-// uploadKVGeomRun runs the comparison at every KV precision and both prompt lengths. With wantRed, a case passes when
-// the upload is refused or a decode step falls under the bar, and the longer prompt must do one of the two.
-func uploadKVGeomRun(t *testing.T, wantRed bool) {
-	if _, err := os.Stat(twoGeomDir); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no fixture (%s)", twoGeomDir)
+// uploadKVGeomRun runs the comparison at the given KV precisions ("" is float32) and both prompt lengths. With wantRed,
+// a case passes when the upload is refused or a decode step falls under the bar, and the longer prompt must do one of
+// the two.
+func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no fixture (%s)", dir)
 	}
 	if _, err := New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	for _, kv := range []string{"", "f16", "i8"} {
+	for _, kv := range kvs {
 		for _, n := range []int{3, 7} {
 			name := "kv-f32"
 			if kv != "" {
 				name = "kv-" + kv
 			}
 			t.Run(name+"/"+map[int]string{3: "inside-the-window", 7: "past-the-window"}[n], func(t *testing.T) {
-				mc, err := decoder.Load(twoGeomDir, decoder.Options{Backend: "webgpu", Quant: "int4", KVPrecision: kv})
+				mc, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4", KVPrecision: kv})
 				if err != nil {
 					t.Fatalf("load: %v", err)
 				}
 				defer mc.Close()
 				rf := mc.ResidentForwardForTest()
 				if rf == nil {
-					t.Fatal("webgpu declined the dense Gemma 4 fixture")
+					t.Fatalf("webgpu declined the Gemma 4 fixture %s", dir)
 				}
 				_, nLayers, _, _, _, _, vocab := mc.Dims()
 				rng := rand.New(rand.NewSource(7))

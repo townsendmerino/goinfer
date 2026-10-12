@@ -1,0 +1,8 @@
+=== RUN   TestQwen25VisionWebGPU_real
+[G-S12.3f-2] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): lowest token cosine 0.999996462; tower WebGPU 20.441s, CPU 22.428s (a smoke)
+[G-S12.3f-2] qwen25vl_preprocess_image.png  grid [1 4 6] (6 merged): lowest token cosine 0.999999999; tower WebGPU 520ms, CPU 888ms (a smoke)
+[G-S12.3f-2] glm_ocr/formula.png            grid [1 86 72] (1548 merged): lowest token cosine 0.999999024; tower WebGPU 16.489s, CPU 35.546s (a smoke)
+[G-S12.3f-2] glm_ocr/table.png              grid [1 64 86] (1376 merged): lowest token cosine 0.999999503; tower WebGPU 14.352s, CPU 30.743s (a smoke)
+--- PASS: TestQwen25VisionWebGPU_real (150.48s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	151.245s

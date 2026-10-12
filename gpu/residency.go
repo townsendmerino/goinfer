@@ -152,7 +152,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				nE, nGroup, capE, capG)
 		}
 	}
-	if m.HasGemma4MoEResident() {
+	if m.HasGemma4MoEResident() && !m.Gemma4MoEOK("webgpu") {
 		return nil, false, decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
 	}
 	b.mu.Lock()
@@ -427,27 +427,28 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// Gemma's NormSandwich4 (FeatSandwichNorm): extra norms on each sublayer OUTPUT, applied before the residual add. Required
 	// on every layer when the arch declares it (a silently missing one would DROP the norm, not error).
 	sandwichOK := m.SandwichNormResident()
+	g4MoE := m.HasGemma4MoEResident() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
 	if sandwichOK {
 		for i := range w.Layers {
 			lw := &w.Layers[i]
-			if len(lw.PostAttnNorm) != hidden || len(lw.PostMLPNorm) != hidden {
+			_, moeLayer := m.Gemma4MoEResidentLayer(i)
+			if len(lw.PostAttnNorm) != hidden || (!moeLayer && len(lw.PostMLPNorm) != hidden) {
 				return fail(fmt.Errorf("gpu: layer %d: arch declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
 					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm)))
 			}
 		}
-		// Sandwich norms + MoE is refused: decoderunner.go's MoE FFN branch writes the expert-down output and the shared-expert add
-		// straight into r.xd with no postMLPNorm step (the dense FFN branch applies it before the residual add), so admitting the
-		// combination would give silently wrong logits. Unreachable today (Gemma 4 MoE, the only family with both, is declined above
-		// by HasGemma4MoEResident); refuse loudly so the gap cannot ship silently.
-		if moeOK {
+		// Sandwich norms + the generic MoE branch is refused: decoderunner.go's MoE FFN branch writes the expert-down output and
+		// the shared-expert add straight into r.xd with no postMLPNorm step (the dense FFN branch applies it before the residual
+		// add), so admitting the combination would give silently wrong logits. Gemma 4's own MoE block is a different branch with
+		// its norms inside (runLayer.g4moe); refuse any other family loudly so the gap cannot ship silently.
+		if moeOK && !g4MoE {
 			return fail(fmt.Errorf("gpu: sandwich norms (FeatSandwichNorm) + MoE is not supported — " +
 				"the MoE FFN dispatch has no postMLPNorm step (N-89, docs/audit-2026-09-10.md)"))
 		}
 	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a resident stacked buffer (int8 or int4; a
 	// mixed set is an error) that the indexed expert GEMV reads. mult folds Granite's ResidMul into the scales.
-	buildStacked := func(lw *decoder.LayerWeights, get func(e int) *linalg.WeightMat, mult float32) (*ResidentStackedW8A8, error) {
-		nE := len(lw.Experts)
+	buildStacked := func(nE int, get func(e int) *linalg.WeightMat, mult float32) (*ResidentStackedW8A8, error) {
 		w0 := get(0)
 		N, K := w0.Rows(), w0.Cols()
 		switch w0.Kind() {
@@ -641,11 +642,11 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 						return fail(e)
 					}
 				}
-				if rl.expUp, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
+				if rl.expUp, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
 					return fail(e)
 				}
 				keepF(rl.expUp.Release)
-				if rl.expDown, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, 1); e != nil {
+				if rl.expDown, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, 1); e != nil {
 					return fail(e)
 				}
 				keepF(rl.expDown.Release)
@@ -675,8 +676,11 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if rl.attnNorm, e = up32(lw.PreAttnNorm); e != nil {
 			return fail(e)
 		}
-		if rl.mlpNorm, e = up32(lw.PreMLPNorm); e != nil {
-			return fail(e)
+		g4b, isG4MoE := m.Gemma4MoEResidentLayer(i)
+		if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
+			if rl.mlpNorm, e = up32(lw.PreMLPNorm); e != nil {
+				return fail(e)
+			}
 		}
 		if rl.invFreq, e = ropeInvBuf(i); e != nil {
 			return fail(e)
@@ -935,7 +939,71 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		}
-		if moeOK && len(lw.Experts) > 0 { // Mixtral-class sparse MoE FFN
+		if isG4MoE { // Gemma 4's parallel dense and MoE block (decoder's gemma4MoEFFN)
+			g := &g4MoELayer{nE: g4b.NE, topK: g4b.TopK, denseInter: g4b.DenseInter, moeInter: g4b.MoeInter}
+			if g4b.NE <= 0 || g4b.TopK <= 0 || g4b.TopK > g4b.NE || len(g4b.ExpertsGateUp) != g4b.NE || len(g4b.ExpertsDown) != g4b.NE ||
+				len(g4b.RouterProjScaled) != g4b.NE*hidden || len(g4b.PerExpertScale) != g4b.NE {
+				return fail(fmt.Errorf("gpu: layer %d: Gemma 4 MoE block with %d experts (top %d), router %d values, %d per-expert scales, %d/%d expert projections",
+					i, g4b.NE, g4b.TopK, len(g4b.RouterProjScaled), len(g4b.PerExpertScale), len(g4b.ExpertsGateUp), len(g4b.ExpertsDown)))
+			}
+			for _, nb := range []struct {
+				dst *(*wgpu.Buffer)
+				v   []float32
+			}{{&g.preFFNNorm, g4b.PreFFNNorm}, {&g.postFFNNorm1, g4b.PostFFNNorm1}, {&g.preFFNNorm2, g4b.PreFFNNorm2},
+				{&g.postFFNNorm2, g4b.PostFFNNorm2}, {&g.postFFNNorm, g4b.PostFFNNorm}} {
+				if len(nb.v) != hidden {
+					return fail(fmt.Errorf("gpu: layer %d: a Gemma 4 MoE block norm has %d weights, want %d", i, len(nb.v), hidden))
+				}
+				if *nb.dst, e = up32(nb.v); e != nil {
+					return fail(e)
+				}
+			}
+			// The router's norm has no weight. The runner's RMSNorm multiplies by 1+w when the arch adds one and by w otherwise, so
+			// the weight that makes it weightless is 0 or 1.
+			flat := make([]float32, hidden)
+			if !m.RMSAddOne() {
+				for j := range flat {
+					flat[j] = 1
+				}
+			}
+			if g.routerNorm, e = up32(flat); e != nil {
+				return fail(e)
+			}
+			if g.router, e = up32(g4b.RouterProjScaled); e != nil {
+				return fail(e)
+			}
+			if g.perExpertScale, e = up32(g4b.PerExpertScale); e != nil {
+				return fail(e)
+			}
+			if g.zeroBias, e = up32(make([]float32, g4b.NE)); e != nil {
+				return fail(e)
+			}
+			if g.gate, e = proj(g4b.MlpGate); e != nil {
+				return fail(e)
+			}
+			if g.up, e = proj(g4b.MlpUp); e != nil {
+				return fail(e)
+			}
+			if g.down, e = proj(g4b.MlpDown); e != nil {
+				return fail(e)
+			}
+			if g.expGateUp, e = buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsGateUp[x] }, 1); e != nil {
+				return fail(e)
+			}
+			keepF(g.expGateUp.Release)
+			if g.expDown, e = buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsDown[x] }, 1); e != nil {
+				return fail(e)
+			}
+			keepF(g.expDown.Release)
+			if g.expGateUp.rows != 2*g4b.MoeInter || g.expDown.rows != hidden {
+				return fail(fmt.Errorf("gpu: layer %d: Gemma 4 expert projections have %d and %d rows, want %d and %d", i, g.expGateUp.rows, g.expDown.rows, 2*g4b.MoeInter, hidden))
+			}
+			rl.g4moe, rd.rm.g4moe = g, true
+			rl.layerScalar = g4b.LayerScalar
+			if g4DropLayerScalarForTest {
+				rl.layerScalar = 1
+			}
+		} else if moeOK && len(lw.Experts) > 0 { // Mixtral-class sparse MoE FFN
 			rl.isMoE = true
 			if rl.router, e = proj(&lw.Router); e != nil {
 				return fail(e)
@@ -945,15 +1013,15 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					return fail(e)
 				}
 			}
-			if rl.expGate, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }, 1); e != nil {
+			if rl.expGate, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }, 1); e != nil {
 				return fail(e)
 			}
 			keepF(rl.expGate.Release)
-			if rl.expUp, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
+			if rl.expUp, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
 				return fail(e)
 			}
 			keepF(rl.expUp.Release)
-			if rl.expDown, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, rmul); e != nil {
+			if rl.expDown, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, rmul); e != nil {
 				return fail(e)
 			}
 			keepF(rl.expDown.Release)
@@ -1035,8 +1103,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.postAttnNorm, e = up32(lw.PostAttnNorm); e != nil {
 				return fail(e)
 			}
-			if rl.postMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
-				return fail(e)
+			if !isG4MoE {
+				if rl.postMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
+					return fail(e)
+				}
 			}
 		}
 		// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a one-element dummy when the layer has none) because WGSL bind groups
@@ -1256,9 +1326,9 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 			return nil, rd.resetErr
 		}
 	}
-	if rd.rm.pleDim > 0 {
-		// A Gemma 4 E-model's rows carry per-layer inputs and its tail layers share K/V, neither of which the batched pass
-		// takes: walk the rows in order, which is the sequential forward.
+	if rd.rm.pleDim > 0 || rd.rm.g4moe {
+		// A Gemma 4 E-model's rows carry per-layer inputs and its tail layers share K/V, and a Gemma 4 MoE layer's feed-forward
+		// is its own block; the batched pass takes none of them: walk the rows in order, which is the sequential forward.
 		for i, row := range embeddings[:n-1] {
 			if err := ctx.Err(); err != nil {
 				return nil, err

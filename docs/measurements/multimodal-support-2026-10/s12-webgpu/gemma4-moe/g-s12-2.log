@@ -1,0 +1,65 @@
+=== RUN   TestGemma4MoE_webgpuResidentParity
+    gemma4_moe_test.go:141:   ../testdata/gemma4-moe-kv-tiny after layer 0: cosine 1.0000000
+    gemma4_moe_test.go:141:   ../testdata/gemma4-moe-kv-tiny after layer 1: cosine 1.0000000
+    gemma4_moe_test.go:147: ../testdata/gemma4-moe-kv-tiny: 2 layers (2 with the MoE block); lowest layer cosine 1.0000000; exact argmax 10/10, gaps over 3%: 0 (worst near-tie 0.00%); lowest logit cosine 1.0000000
+    gemma4_moe_test.go:141:   ../testdata/gemma4-moe-tiny after layer 0: cosine 1.0000000
+    gemma4_moe_test.go:141:   ../testdata/gemma4-moe-tiny after layer 1: cosine 1.0000000
+    gemma4_moe_test.go:147: ../testdata/gemma4-moe-tiny: 2 layers (2 with the MoE block); lowest layer cosine 1.0000000; exact argmax 10/10, gaps over 3%: 0 (worst near-tie 0.00%); lowest logit cosine 1.0000000
+    gemma4_moe_test.go:141:   ../testdata/gemma4-moe-unified-tiny after layer 0: cosine 1.0000000
+    gemma4_moe_test.go:141:   ../testdata/gemma4-moe-unified-tiny after layer 1: cosine 1.0000000
+    gemma4_moe_test.go:147: ../testdata/gemma4-moe-unified-tiny: 2 layers (2 with the MoE block); lowest layer cosine 1.0000000; exact argmax 10/10, gaps over 3%: 0 (worst near-tie 0.00%); lowest logit cosine 1.0000000
+--- PASS: TestGemma4MoE_webgpuResidentParity (1.71s)
+=== RUN   TestGemma4MoE_webgpuPlantedDefects
+    gemma4_moe_test.go:177: planted (1) the per-expert scale skipped, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.994016, hard gaps 6, lowest logit cosine 0.934287
+    gemma4_moe_test.go:177: planted (1) the per-expert scale skipped, ../testdata/gemma4-moe-tiny: lowest layer cosine 0.998735, hard gaps 1, lowest logit cosine 0.989654
+    gemma4_moe_test.go:177: planted (1) the per-expert scale skipped, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 0.998735, hard gaps 1, lowest logit cosine 0.989654
+    gemma4_moe_test.go:177: planted (2) post_ffn_norm_1 skipped, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.574114, hard gaps 10, lowest logit cosine 0.206841
+    gemma4_moe_test.go:177: planted (2) post_ffn_norm_1 skipped, ../testdata/gemma4-moe-tiny: lowest layer cosine 0.803680, hard gaps 5, lowest logit cosine 0.658942
+    gemma4_moe_test.go:177: planted (2) post_ffn_norm_1 skipped, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 0.803680, hard gaps 5, lowest logit cosine 0.658942
+    gemma4_moe_test.go:177: planted (3) the expert branch fed pre_ffn_norm, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.997708, hard gaps 1, lowest logit cosine 0.973908
+    gemma4_moe_test.go:177: planted (3) the expert branch fed pre_ffn_norm, ../testdata/gemma4-moe-tiny: lowest layer cosine 0.996975, hard gaps 1, lowest logit cosine 0.983296
+    gemma4_moe_test.go:177: planted (3) the expert branch fed pre_ffn_norm, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 0.996975, hard gaps 1, lowest logit cosine 0.983296
+    gemma4_moe_test.go:177: planted (4) the joint post_ffn_norm skipped, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.997814, hard gaps 2, lowest logit cosine 0.859676
+    gemma4_moe_test.go:177: planted (4) the joint post_ffn_norm skipped, ../testdata/gemma4-moe-tiny: lowest layer cosine 0.974397, hard gaps 4, lowest logit cosine 0.879046
+    gemma4_moe_test.go:177: planted (4) the joint post_ffn_norm skipped, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 0.974397, hard gaps 4, lowest logit cosine 0.879046
+    gemma4_moe_test.go:177: planted (5) the expert sum not cleared between tokens, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 1.000000, hard gaps 7, lowest logit cosine 0.553509
+    gemma4_moe_test.go:177: planted (5) the expert sum not cleared between tokens, ../testdata/gemma4-moe-tiny: lowest layer cosine 1.000000, hard gaps 3, lowest logit cosine 0.556736
+    gemma4_moe_test.go:177: planted (5) the expert sum not cleared between tokens, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 1.000000, hard gaps 3, lowest logit cosine 0.556736
+    gemma4_moe_test.go:177: planted (6) the gate and up halves exchanged, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.996858, hard gaps 1, lowest logit cosine 0.759735
+    gemma4_moe_test.go:177: planted (6) the gate and up halves exchanged, ../testdata/gemma4-moe-tiny: lowest layer cosine 0.960948, hard gaps 2, lowest logit cosine 0.867727
+    gemma4_moe_test.go:177: planted (6) the gate and up halves exchanged, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 0.960948, hard gaps 2, lowest logit cosine 0.867727
+    gemma4_moe_test.go:177: planted (7) the router fed the dense branch's weighted norm, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.999971, hard gaps 1, lowest logit cosine 0.943692
+    gemma4_moe_test.go:177: planted (7) the router fed the dense branch's weighted norm, ../testdata/gemma4-moe-tiny: lowest layer cosine 0.999868, hard gaps 0, lowest logit cosine 0.961178
+    gemma4_moe_test.go:177: planted (7) the router fed the dense branch's weighted norm, ../testdata/gemma4-moe-unified-tiny: lowest layer cosine 0.999868, hard gaps 0, lowest logit cosine 0.961178
+--- PASS: TestGemma4MoE_webgpuPlantedDefects (1.61s)
+=== RUN   TestGemma4MoE_webgpuPrefill
+    gemma4_moe_test.go:235: last token's logits, prefilled then decoded against walked: cosine 1.000000000, largest difference 0.000e+00
+--- PASS: TestGemma4MoE_webgpuPrefill (0.09s)
+=== RUN   TestUploadKV_gemma4MoE
+=== RUN   TestUploadKV_gemma4MoE/kv-f32/inside-the-window
+    uploadkv_geom_test.go:130: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:130: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:130: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 1.192e-07
+    uploadkv_geom_test.go:130: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_gemma4MoE/kv-f32/past-the-window
+    uploadkv_geom_test.go:130: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:130: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:130: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 5.96e-08
+    uploadkv_geom_test.go:130: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_gemma4MoE/kv-f16/inside-the-window
+    uploadkv_geom_test.go:130: decode step 0: cosine(sequential, uploaded) = 0.99980869, max |diff| 0.009306
+    uploadkv_geom_test.go:130: decode step 1: cosine(sequential, uploaded) = 0.99987265, max |diff| 0.007579
+    uploadkv_geom_test.go:130: decode step 2: cosine(sequential, uploaded) = 0.99991325, max |diff| 0.006391
+    uploadkv_geom_test.go:130: decode step 3: cosine(sequential, uploaded) = 0.99988710, max |diff| 0.007145
+=== RUN   TestUploadKV_gemma4MoE/kv-f16/past-the-window
+    uploadkv_geom_test.go:130: decode step 0: cosine(sequential, uploaded) = 0.99975558, max |diff| 0.00941
+    uploadkv_geom_test.go:130: decode step 1: cosine(sequential, uploaded) = 0.99984035, max |diff| 0.008907
+    uploadkv_geom_test.go:130: decode step 2: cosine(sequential, uploaded) = 0.99985380, max |diff| 0.009115
+    uploadkv_geom_test.go:130: decode step 3: cosine(sequential, uploaded) = 0.99953794, max |diff| 0.01446
+--- PASS: TestUploadKV_gemma4MoE (0.94s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f32/inside-the-window (0.16s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f32/past-the-window (0.31s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f16/inside-the-window (0.17s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f16/past-the-window (0.30s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	4.907s

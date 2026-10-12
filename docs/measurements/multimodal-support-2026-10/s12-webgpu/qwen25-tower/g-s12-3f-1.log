@@ -1,0 +1,10 @@
+=== RUN   TestQwen25VisionWebGPU_matchesCPU
+    qwen25_vision_test.go:105: windowed kernels off false: lowest merged-token cosine 1.000000000 over 3 grid sets (3 blocks ran on the windowed kernels)
+    qwen25_vision_test.go:105: windowed kernels off true: lowest merged-token cosine 1.000000000 over 3 grid sets (0 blocks ran on the windowed kernels)
+    qwen25_vision_test.go:127: planted (1) the attention scale dropped: lowest 0.521762
+    qwen25_vision_test.go:127: planted (2) the RoPE halves swapped: lowest 0.749527
+    qwen25_vision_test.go:127: planted (3) every block attends its whole frame: lowest 0.848107
+    qwen25_vision_test.go:127: planted (4) the window reordering skipped: lowest 0.749652
+    qwen25_vision_test.go:127: planted (5) the windowed kernels read each key one row late: lowest 0.559122
+--- PASS: TestQwen25VisionWebGPU_matchesCPU (0.31s)
+PASS

@@ -59,8 +59,13 @@
     reads (about 2 s an image against the CPU's 5 s by a day smoke).
   - S12.3e: the Qwen3.5+, Qwen3-VL (DeepStack) and GLM-OCR towers on WebGPU, on one grid engine, right at real size
     (lowest row 0.999987), opt-in the same way until their night speed gates read (GLM-OCR about 14 s against the
-    CPU's 40 s on a 1.1 MP image by a day smoke; slower than the CPU on a tiny image). Next towers: Qwen2.5-VL
-    (windowed attention), then Gemma 4 audio (its CPU tower takes under a second); then S12.2 and S12.4.
+    CPU's 40 s on a 1.1 MP image by a day smoke; slower than the CPU on a tiny image).
+  - S12.3f: Qwen2.5-VL's tower on WebGPU, with windowed attention kernels, right at real size (lowest row
+    0.9999965), opt-in the same way until its night speed gate reads (about 14 s against the CPU's 31 s on the
+    same image by a day smoke). Left in S12.3: Gemma 4's audio tower, not built (its CPU tower takes under a
+    second; for the owner).
+  - S12.2: the 26B's parallel dense and MoE feed-forward is in the WebGPU decode runner and matches the CPU on the
+    tiny fixtures (cosine 1.0000000, seven planted defects red). No real 26B has run on WebGPU. Next: S12.4.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4288,6 +4293,154 @@ The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/gri
 - **Not measured:** the towers on a discrete GPU; Qwen3.5+ larger than 0.8B and Qwen3-VL larger than 2B (the same
   code at other widths); a multi-image request at real size (two segments are exercised on the tiny towers only);
   GLM-OCR above 1.3 MP.
+
+#### S12.3f, Qwen2.5-VL's vision tower on WebGPU: gates registered 2026-10-11 before any code
+
+**What:** the tower Metal runs (`metal/vl_towers.go`, `qwen25VResident`), in float32 from aikit's `GPUWeights`:
+aikit's `BuildWindowPlan` on the host (the window permutation, both segmentations, RoPE in window order), the pixel
+rows permuted into window order before the patch embed (no bias), then every block on S12.3e's grid engine: RMSNorm,
+the fused qkv, rotate-half RoPE, attention at 1/sqrt(head_dim) per window except in the full-attention blocks (per
+image frame), the SiLU-gated MLP; the output permuted back and aikit's merger on the host. It attaches through
+aikit's resident seam (`vision.RegisterQwenResident`), as Metal's does.
+
+**New here, windowed attention.** A real image has dozens of windows of at most 64 patches (64 at a 64x64 grid), and
+attention as matmuls costs about seven submits a head a window. So a windowed block runs three kernels over all
+windows at once instead: the scores of every (row, head) against the keys of the row's own window, a softmax of each
+of those rows, and the weighted sum of the window's values. A block whose segments are longer than the kernels'
+window bound (the full-attention blocks) keeps the matmul path.
+
+- **G-S12.3f-1, tiny, day.** Metal's G-S3a for this tower, on WebGPU: `testdata/qwen25vl-tiny` sharpened as there
+  (random norms and qkv biases, the q, k, v and output projections scaled up); grids (1,8,8), (1,12,16) and a
+  two-image batch; the WebGPU `ForwardViT` then aikit's merger against the CPU `Forward`, every merged token at
+  cosine >= 0.9999. Run twice: with the windowed kernels, and with them off so every block takes the matmul path.
+  Planted defects, each alone red: (1) the attention scale dropped; (2) the RoPE halves swapped; (3) every block
+  attends its whole frame; (4) the window reordering skipped; (5) the windowed kernels read each row's window one
+  key late.
+- **G-S12.3f-2, real size, day (untimed).** `qwen25vl-3b-instruct`'s tower through serve's preprocessing on the four
+  images S3 used: every merged token at cosine >= 0.9999 against the CPU tower is a PASS; a lowest token in
+  0.999-0.9999 is parked; lower, or a NaN, fails.
+- **G-S12.3f-3, wiring, day.** One image request through a WebGPU server with `-vision-device gpu` on Qwen2.5-VL 3B:
+  the load line names a WebGPU tower and the turn completes. The reply is recorded, not graded.
+- **G-S12.3f-4, speed, night.** Encode time on one image, WebGPU over CPU, five interleaved pairs after a discarded
+  pass of each: the default under `--backend webgpu` at a median ratio of at most 0.98; 0.98-1.00 parked; above 1.00
+  it stays on the CPU. Until it reads, the default is the CPU tower.
+- **Prediction, written now:** f-1 passes (0.6; the windowed kernels and the window ordering are both new here).
+  f-2 passes (0.6). The day smoke under the CPU's time at a 64x64 grid (0.7).
+- **Tier and cost.** f-1 seconds; f-2 about three minutes (the CPU tower is about 22 s at a 64x64 grid); f-3 two
+  minutes; f-4 at night, about five minutes.
+
+#### S12.3f read 2026-10-11: Qwen2.5-VL's tower is built and matches the CPU tower at real size; opt-in until its night speed gate reads
+
+The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/qwen25-tower/`. The times are a smoke.
+
+- **Built:** `gpu/qwen25_vision.go` (`qwen25VResident`, attached through aikit's resident seam) on the grid engine,
+  which gained a third kind, per-block segments and the three windowed attention kernels (`gvWinScoresWGSL`,
+  `gvWinSoftmaxWGSL`, `gvWinValuesWGSL`). A block takes them when it has more than one segment, none longer than 256
+  rows, and its score buffer fits 128 MB; otherwise attention runs as matmuls, a segment at a time. So a multi-image
+  batch of small frames on the Qwen3 and GLM-OCR towers takes them too (their tiny two-image cases still read
+  1.000000000).
+- **G-S12.3f-1: PASS** (`g-s12-3f-1.log`). The tiny tower over the three grid sets: 1.000000000 with the windowed
+  kernels (a windowed block ran in each set) and 1.000000000 with every block on the matmul path. The planted
+  defects, each alone: scale dropped 0.522, RoPE halves swapped 0.750, every block attends its whole frame 0.848,
+  window reordering skipped 0.750, the windowed kernels' keys one row late 0.559. All five red.
+- **G-S12.3f-2: PASS** (`g-s12-3f-2.log`). `qwen25vl-3b-instruct`'s tower (32 blocks, hidden 1280) on the four
+  images, grids from 4x6 to 86x72: lowest merged token 0.999996462 (the 64x64 grid; the other three 0.9999990 or
+  better). No NaN.
+- **G-S12.3f-3: PASS** (`g-s12-3f-3-wiring.log`). Served on WebGPU with `-vision-device gpu`: the load line reads
+  "tower on WebGPU", the turn completes, and the reply is identical to the CPU-tower arm's (the turn 58.8 s with the
+  CPU tower, 44.6 s with the device tower).
+- **The smoke, from the real-size gate's own timings** (one pass an image, not interleaved, not a result): 16.5 s
+  against the CPU's 35.5 s at 86x72 and 14.4 s against 30.7 s at 64x86; 0.52 s against 0.89 s at the 4x6 grid. The
+  first image of the run, 64x64, read 20.4 s against 22.4 s; it was the process's first forward, and the two larger
+  images after it were faster, so that reading includes a one-time cost that was not separated out.
+- **Predictions scored:** "f-1 passes (0.6)": passed, first run. "f-2 passes (0.6)": passed. "The day smoke under
+  the CPU's time at a 64x64 grid (0.7)": under it, by little, on a first forward (20.4 s against 22.4 s); the gate
+  at night discards a pass first.
+- **Wiring:** `qwenTowerPlacement` takes the `-vision-device gpu` request and names WebGPU in its fallbacks;
+  WebGPU's declaration lists the tower; the support table's cell stays "CPU" until the speed gate reads.
+- **Consequence, as registered:** **G-S12.3f-4 is queued on the Mac's night queue**
+  (`s12-webgpu/run-s12-3f-4-night.sh`, a pinned test binary at `26c798c7`, five interleaved pairs on
+  `glm_ocr/table.png`, about six minutes). Until it reads, the default is the CPU tower.
+- **Not measured:** the tower on a discrete GPU; Qwen2.5-VL 7B's tower (the same code); a multi-image request at
+  real size; where the first forward's extra seconds go.
+
+#### S12.3, what is left: Gemma 4's audio tower, not built (2026-10-11)
+
+Five of the six towers S12.3 named are built (S12.3a, d, e, f). The sixth, Gemma 4's audio tower, is not. Its twelve
+conformer blocks take 0.24 to 0.70 s on the CPU for the clips S5 measured (G-S5d), so the most a device tower can
+save is about half a second a clip, and at that size a WebGPU forward's per-kernel submits are a large share of its
+time (S12.3e's 48-patch reading). **For the owner:** build it anyway, or drop it from S12. It stays owed until one
+of those is said; the work moved on to S12.2.
+
+#### S12.2, the 26B's parallel dense and MoE feed-forward on WebGPU: gates registered 2026-10-11 before any code
+
+**What:** a Gemma 4 layer with `enable_moe_block` (`decoder/forward_gemma4_moe.go:gemma4MoEFFN`) in the WebGPU decode
+runner, from the bundle CUDA and Metal build from (`Gemma4MoEResidentLayer`): the router on the raw residual (a
+weightless RMSNorm, the float32 projection with its learned scale folded in, softmax over every expert, the top k,
+renormalised, times the per-expert scale); the dense branch (`pre_ffn_norm`, gate and up, gated GELU, down,
+`post_ffn_norm_1`); the expert branch (`pre_ffn_norm_2`, each chosen expert's fused gate‖up, gated GELU, down,
+summed by weight, `post_ffn_norm_2`); the join (`post_ffn_norm` of the sum, the residual add, the layer scalar). The
+attention half is the dense Gemma 4 layer WebGPU already runs. The runner's router top-k and indexed expert kernels
+are reused; the per-expert scale and the split of a fused gate‖up output are new steps.
+
+**No real checkpoint can run it here:** the 26B does not fit the 16 GB Mac under WebGPU and nobara's card has 8 GB.
+So this is gated on the tiny fixtures only, and the support table's 26B cell under WebGPU stays as it is until a
+box runs the real model.
+
+- **G-S12.2a, tiny parity, day.** Metal's two gates on WebGPU, int4 on both sides, on `testdata/gemma4-moe-kv-tiny`
+  (tracked), and on `gemma4-moe-tiny` and `gemma4-moe-unified-tiny` where they are present: (i) the residual after
+  each layer at position 0 at cosine >= 0.9999 against the CPU's; (ii) over the fixed ten-token prompt, the argmax
+  identical or a first difference at a near-tie under 3%, and the lowest logit cosine >= 0.995.
+- **G-S12.2b, planted defects, each alone red on G-S12.2a:** (1) the per-expert scale skipped; (2)
+  `post_ffn_norm_1` skipped; (3) the expert branch fed `pre_ffn_norm` in place of `pre_ffn_norm_2`; (4) the joint
+  `post_ffn_norm` skipped; (5) the expert sum not cleared between tokens; (6) the gate and up halves of the fused
+  expert projection exchanged; (7) the router fed the dense branch's weighted norm in place of its weightless one. A
+  defect that stays green is recorded with its mechanism, not argued.
+- **G-S12.2c, admission and prefill.** `decoder`'s feature table admits Gemma 4's MoE block on webgpu and the
+  admission tests say so; a prompt prefilled through the resident then decoded matches the same prompt walked a
+  token at a time (the runner's prefill for this family is the sequential walk).
+- **Prediction, written now:** (i) passes on the first complete build (0.5); the likeliest miss is the expert
+  accumulator or the norm offset of the weightless router norm. Defects (1) to (7) all red (0.6); (5) is the one
+  most likely to stay green on a fixture this small.
+- **Tier and cost.** Seconds; all by day.
+
+#### S12.2 read 2026-10-11: the 26B's block is in the WebGPU runner and matches the CPU on the tiny fixtures
+
+The Mac, by day; raw in `s12-webgpu/gemma4-moe/g-s12-2.log`. Tiny fixtures, int4 on both sides.
+
+- **Built:** `gpu/gemma4_moe.go` (the layer's fields, two small kernels: the per-expert scale on the chosen weights,
+  and the copy of a fused gate‖up output's up half), the block's branch in `gpu/decoderunner.go:Context.newDecodeRunner`,
+  and its build in `gpu/residency.go:webgpuBackend.BuildResident` from `Gemma4MoEResidentLayer`. The router's top-k
+  and the indexed expert GEMVs are the runner's existing MoE kernels; the float32 router projection runs on the
+  plain matmul kernel. A prompt for this family is prefilled by the sequential walk.
+- **G-S12.2a: PASS.** On all three fixtures (two layers each, both with the block; 8 experts top 2 at hidden 64, and
+  4 experts top 2 at hidden 256): the residual after each layer at position 0 at cosine 1.0000000, 10 of 10 argmax
+  identical, lowest logit cosine 1.0000000.
+- **G-S12.2b: PASS.** Each of the seven planted defects puts every fixture outside the gate. Lowest logit cosine on
+  the committed fixture: (1) per-expert scale skipped 0.934; (2) `post_ffn_norm_1` skipped 0.207; (3) the expert
+  branch fed `pre_ffn_norm` 0.974; (4) joint norm skipped 0.860; (5) the expert sum not cleared 0.554 (its layer
+  reading at position 0 is 1.000000, as it must be: the defect only shows from the second token); (6) gate and up
+  exchanged 0.760; (7) the router fed the weighted norm 0.944. On the two larger fixtures (7) leaves the argmax
+  intact (0 hard gaps) and is red on the logit cosine, 0.961.
+- **G-S12.2c: PASS.** `decoder`'s `residentGemma4MoEBackends` lists webgpu and the admission test checks all three
+  backends admit the shape and a backend outside the table does not. A prompt prefilled through the resident then
+  decoded gives the logits the walked prompt gives, bit for bit.
+- **A check beyond the registered gates, and what it found.** The upload path an image turn takes (a CPU prefill
+  uploaded layer by layer, then decoded) on the committed MoE fixture: identical to the sequential walk at float32
+  KV (cosine 1.00000000) and 0.9995 to 0.9999 at f16 KV, as the dense fixture reads. At int8 KV the two arms agree
+  only to 0.89 to 0.99. A control run before reading that as an upload defect: against the float32-KV result, the
+  **sequential** int8 arm reads 0.927 to 0.995 and the **uploaded** int8 arm 0.981 to 0.9998. So it is the
+  sequential arm that drifts (KV rounding changes which expert the router picks on this tiny model), not the
+  upload. The test (`TestUploadKV_gemma4MoE`) therefore gates float32 and f16 KV, and says why in its comment.
+  **Not explained further:** whether int8 KV would move routing on a real 26B; no box can run it.
+- **Predictions scored:** "(i) passes on the first complete build (0.5)": it did. "Defects (1) to (7) all red
+  (0.6); (5) the one most likely to stay green": all red, (5) included.
+- **An amendment to the registration, 2026-10-11.** It said the support table's 26B cell under WebGPU would stay as
+  it was until a box runs the real model. The table's cells are computed from the feature table, so admitting the
+  block moved the cell from "CPU / CPU" to "CPU / GPU". The row's note now says the decoder is checked on tiny
+  fixtures only and that no real 26B has run there; the CHANGELOG says the same.
+- **Not measured:** a real 26B on WebGPU (no box); the block at int8 weights (int4 only); expert paging, which
+  WebGPU does not have, so a 26B there needs every expert resident.
 
 ### S13 — Against the peers
 
