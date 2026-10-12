@@ -32,13 +32,22 @@ mkdir -p "$OUT/graded" "$OUT/cuda"
 { echo "binaries: $BIN (rev $(cat "$BIN/rev"))"; echo "started: $(date '+%F %T %Z')"; echo "free: ${free_gb} GB; load: $(cat /proc/loadavg)"; free -g | sed -n 2p; nvidia-smi --query-gpu=driver_version,memory.total,memory.used --format=csv,noheader 2>/dev/null; } | tee "$OUT/provenance.txt"
 SIDECAR=$MODEL.int4.cpu-amd64.giw   # the name a serve built before the sidecar carried its format version writes
 for v in "$MODEL".int4.cpu-amd64.v*.giw; do [ -e "$v" ] && SIDECAR=$v; done   # a later build's name (versioned): present if either exists
-[ -n "${GS10QD_DRY:-}" ] && { echo "DRY: preconditions hold; plan = sidecar ($([ -e "$SIDECAR" ] && echo present || echo "to build")), graded =cpu,cpu at int4, then the graded cuda arm (--moe-cache-experts)"; exit 0; }
+# A sidecar in a format the pinned serve does not read (this binary reads v16) is NOT present: serve would rebuild it inside the CPU arm's load, past the driver's 600 s wait for
+# a server, and the job would read VOID (the 2026-10-11 survey found the 30B's sidecar at v15). Treated as missing, the prebuild step below rebuilds it under its own 40 min wait.
+sidecar_ok() { [ -e "$SIDECAR" ] && python3 - "$SIDECAR" <<'PY'
+import sys
+b = open(sys.argv[1], "rb").read(1 << 16)
+i = b.find(b"GINFW")
+sys.exit(0 if i >= 0 and int.from_bytes(b[i + 5:i + 9], "little") == 16 else 1)
+PY
+}
+[ -n "${GS10QD_DRY:-}" ] && { echo "DRY: preconditions hold; plan = sidecar ($(sidecar_ok && echo present || echo "to build")), graded =cpu,cpu at int4, then the graded cuda arm (--moe-cache-experts)"; exit 0; }
 cd "$SRC"
 # int4 is serve's default and is left unset on purpose: at the pinned rev an explicit --quant int4 on a MoE directory is
 # refused against the sidecar the same load builds (its header says int4mix; the task doc's G-S10q-d record).
 FLAGS=(--model "$MODEL" --vision "$MODEL")
 
-if [ -e "$SIDECAR" ]; then
+if sidecar_ok; then
   echo "[$(date +%T)] 0/2 sidecar: present ($SIDECAR)"
 else
   echo "[$(date +%T)] 0/2 sidecar: building $SIDECAR"
