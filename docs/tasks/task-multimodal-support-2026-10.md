@@ -3318,6 +3318,10 @@ aikit expected 0: L, as registered for S10's MoE variants.
     - **Smoke, by day, exploratory (not a reading):** the same instrument on the dense Qwen3-VL-2B and its G-S10q-c files: the CPU arm reproduced 90.50%
       exactly, CUDA 88.83%, difference -1.68 points [-4.1, +1.0], every logit finite. It proves the instrument runs end to end and the baseline is the
       registered one; the 2B is not the paged path and decides nothing about the 30B.
+    - **Run 1 (2026-10-12 13:11, job `gs10q-e`) made no reading: a fault in the instrument.** The test set no resident context, so the 30B asked for a
+      115,768-position KV (22.8 GB) on the 8 GB card and the CUDA resident declined at load (3 min). It now pins 4,096, serve's own context here. The
+      fix was checked by day on the first sequence alone (a smoke, `GOINFER_Q3M_SEQS=1`; 32 positions, finite, CUDA argmax equal to the CPU arm's at
+      31 of 32); nothing in the rule or the inputs changed, and the queued job is the same script at the fixed rev.
     - **Tier (TE11):** night. Instrument: `TestQwen3VLMoe_cudaLogits` plus the grader. Stopping rule: the 8 pinned sequences, no early stop. Cost basis:
       the 2B smoke took 143 s end to end for 179 positions (about 80 s of it the CPU tower and load); the 30B adds the sidecar build (87 s measured in
       `gs10q-d3`), a CPU prefill of about 70 s per image prompt, and 200 paged steps: estimate 30 minutes. Queued as `gs10q-e`.

@@ -19,6 +19,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -122,7 +123,8 @@ func TestQwen3VLMoe_cudaLogits(t *testing.T) {
 	enc = nil
 
 	phase.Store("model load")
-	opts := decoder.Options{Backend: "cuda", Quant: "int4"}
+	// serve's own context on this card; the default would size a KV for the model's full window and the resident would decline.
+	opts := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4096}
 	opts.MoECacheExperts = os.Getenv("GOINFER_Q3M_PAGED") != "0"
 	m, err := decoder.Load(dir, opts)
 	if err != nil {
@@ -134,6 +136,11 @@ func TestQwen3VLMoe_cudaLogits(t *testing.T) {
 	}
 	logf("loaded: paged=%v, resident present", opts.MoECacheExperts)
 
+	if n, err := strconv.Atoi(os.Getenv("GOINFER_Q3M_SEQS")); err == nil && n > 0 && n < len(seqs) {
+		logf("GOINFER_Q3M_SEQS=%d: only the first %d of %d sequences (a smoke, not a reading)", n, n, len(seqs))
+		seqs = seqs[:n]
+		out += ".smoke"
+	}
 	f, err := os.Create(out + ".cuda.f32")
 	if err != nil {
 		t.Fatal(err)
