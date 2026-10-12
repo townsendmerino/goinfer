@@ -1185,10 +1185,9 @@ func (s *server) loadVisionTower(cfg config) error {
 }
 
 // towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP defaults to float32 on every
-// backend, because the int8 tower is lossy at real size and changes what the model says about an image
-// (docs/measurements/siglip-int8-fidelity-2026-10-07.md; docs/tasks/task-multimodal-support-2026-10.md, "Gemma 3's
-// default tower on WebGPU"). WebGPU has only an int8 device tower, so its default tower runs on the CPU
-// (gemma3TowerBackend) and -vision-quant int8 asks for the device one.
+// backend, because the int8 tower is lossy at real size (docs/measurements/siglip-int8-fidelity-2026-10-07.md). Under
+// WebGPU the default tower runs on the CPU (gemma3TowerBackend), where it measured faster than either device tower;
+// -vision-quant f32 or int8 asks for a device one (docs/tasks/task-multimodal-support-2026-10.md, S12.3a).
 // Every other tower gets int8 only when asked for, whatever the backend: its device towers are float32 and its gates ran
 // float32, and forcing int8 under cuda/webgpu bought no speed (the CPU int8 tower is not faster) and cost fidelity
 // (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). A new vision model type must be added to the list below,
@@ -1214,7 +1213,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 func gemma3TowerBackend(cfg config, int8Tower bool, note io.Writer) string {
 	be := cfg.towerBackend()
 	if be == "webgpu" && cfg.visionQuant == "" && !int8Tower {
-		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant f32 puts the float32 tower on the GPU, and --vision-quant int8 an int8 one that reads images less accurately")
+		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant f32 or int8 puts a tower on the GPU (the int8 one is lossy against float32)")
 		return "cpu"
 	}
 	return be

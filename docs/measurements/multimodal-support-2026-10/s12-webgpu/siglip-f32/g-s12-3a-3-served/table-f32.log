@@ -1,0 +1,16 @@
+[17:06:29] gemma-3-4b-it: arm webgpu (--backend webgpu -vision-device cpu --embed-int4=false --vision-quant f32)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu (37.6s): 'The image shows quarterly unit sales data broken down by geographic region (North, South, East, West, and Central). It also presents the total unit sa'
+[17:07:38] gemma-3-4b-it: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false --vision-quant f32)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/webgpu-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (58.8s): 'The image shows a table detailing quarterly unit sales by region (North, South, East, West, and Central) for the fiscal year 2025'
+gemma-3-4b-it: reference arm webgpu
+gemma-3-4b-it: webgpu-towerauto against webgpu: first differing generated token 3: webgpu ' quarterly', webgpu-towerauto ' a'
+  webgpu top-3: ' quarterly' 0.843, ' a' 0.157, ' the' 0.000
+  near-tie (p(other) >= half p(top) = 0.422): False

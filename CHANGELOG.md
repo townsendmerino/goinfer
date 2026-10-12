@@ -33,13 +33,19 @@ character. `tok.NewStream()` returns a `tokenizer.Stream`: `Write(id)` returns t
 rest, and the joined text equals `Decode` of all the ids (checked on 41 real tokenizers, byte-level and SentencePiece). The docs
 and `examples/embed` use it.
 
-### Changed — under `--backend webgpu`, Gemma 3 reads images with its float32 tower on the CPU by default
+### Fixed — under `--backend webgpu` on an Apple GPU, Gemma 3 misread images
 
-WebGPU's only vision tower for Gemma 3 is an int8 one, and it was the default there. On five test images it misread three that the
-float32 tower read correctly (an invoice came back as "a map of the city of Vinotai, Ireland"), and on a MacBook it was also the
-slower of the two (47 s an image against 26 s). The default is now the float32 tower on the CPU, as it already was in effect on
-CUDA and Metal, where float32 runs on the GPU. `--vision-quant int8` still selects the int8 WebGPU tower
-([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), "Gemma 3's default tower on WebGPU").
+The WebGPU vision tower's GELU overflowed to NaN on Apple's GPU for the activations the tower reaches at real size, and
+the corrupted features made the model misdescribe images: an invoice came back as "a map of the city of Vinotai, Ireland".
+The tanh argument is now clamped, as the decoder's kernels already did. On five test images the tower's output went from
+a cosine of 0.30-0.36 against the float32 CPU tower to 0.87-0.985 (it is an int8 tower), and all five are read correctly.
+
+### Changed — under `--backend webgpu`, Gemma 3's vision tower runs on the CPU in float32 by default
+
+The WebGPU tower is now opt-in: `--vision-quant int8` for the int8 one, `--vision-quant f32` for a new float32 one that
+matches the CPU tower to a cosine of 0.9999996 a token. On the MacBook they were measured on, neither is faster than the
+CPU tower (25 s an image; int8 33 s, float32 43 s), and the CPU tower is the exact one, so it is the default. They have
+not been timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
 
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 

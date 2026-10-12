@@ -408,8 +408,8 @@ was available.** Per family:*
 
 **The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. Unset, **Gemma 3's
 tower is float32 on every backend**: on the GPU under `--backend cuda` (which falls back to its int8 device tower when the card cannot hold float32) and `--backend metal`, and on the CPU under
-`--backend webgpu`, whose only device tower is int8. `-vision-quant int8` asks for that WebGPU tower; on 2026-10-11 it misread three of five test images that the float32 tower read correctly, and
-on a MacBook it was the slower of the two. **Every other tower
+`--backend webgpu`, whose device towers are opt-in. `-vision-quant int8` asks for that WebGPU tower and `-vision-quant f32` for a float32 one; on the MacBook they were measured on (2026-10-11)
+both were slower than the CPU tower (33 s and 43 s an image against 25 s). **Every other tower
 (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`:** until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which was not faster and was
 not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`), and GLM-OCR's int8 form is not gated
 on the real checkpoint. The f32 tower holds more host memory. `EnableResident` is called in one place only (the Gemma 3 tower on cuda/webgpu); if it fails, serve warns and runs that tower on
