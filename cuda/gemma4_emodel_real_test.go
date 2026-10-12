@@ -389,6 +389,9 @@ func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-E4B-it")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s", dir)
+	}
 	outDir := os.Getenv("E4B_ANCHOR_DIR")
 	if outDir == "" {
 		outDir = filepath.Join(home, "goinfer-logs", "e4b-anchor")
