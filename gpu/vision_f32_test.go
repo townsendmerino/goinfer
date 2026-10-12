@@ -329,3 +329,75 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 		t.Logf("G-S12.3a-2 PASS: lowest token cosine %.7f", worst)
 	}
 }
+
+// TestVisionEncoderF32_tiledSmoke is G-S12.3b-3, a by-day smoke with no bar: the real float32 and int8 towers' time for
+// one image, each on the tiled matmul and on the naive one, in one process, the first pass of each tower discarded.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoderF32_tiledSmoke$' -v ./gpu/
+func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
+	requireHeavyModel(t)
+	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("no gemma-3-4b-it")
+	}
+	c, err := New()
+	if err != nil {
+		t.Skipf("no gpu: %v", err)
+	}
+	defer c.Close()
+	raw, err := os.ReadFile(siglipRealImages[0])
+	if err != nil {
+		t.Skip(err)
+	}
+	pv, err := vision.Preprocess(raw, vision.Gemma3())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now()
+	logf := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[G-S12.3b-3 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	run := func(label string, ve *VisionEncoder, patches []float32) {
+		for _, naive := range []bool{false, false, true} { // tiled (warm-up), tiled, naive
+			visionNaiveMatmulForTest = naive
+			ts := time.Now()
+			if _, err := ve.ForwardPatches(patches); err != nil {
+				t.Fatal(err)
+			}
+			logf("%s tower, %s matmul: %.1f s", label, map[bool]string{false: "tiled", true: "naive"}[naive], time.Since(ts).Seconds())
+		}
+		visionNaiveMatmulForTest = false
+	}
+	enc, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := enc.Weights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	patches, err := enc.GridPatches(pv.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve, err := c.NewVisionEncoderF32(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run("float32", ve, patches)
+	ve.Close()
+	enc8, err := vision.LoadEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w8, err := enc8.GPUWeights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve8, err := c.NewVisionEncoder(w8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ve8.Close()
+	run("int8", ve8, patches)
+}
