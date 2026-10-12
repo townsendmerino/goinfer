@@ -1,0 +1,35 @@
+=== RUN   TestVisionEncoderF32_parity
+    vision_f32_test.go:125: float32 WebGPU tower against the CPU float32 tower: lowest token cosine 1.0000000 over 16 tokens
+    vision_f32_test.go:139: planted (5) the MLP residual dropped in the first layer: lowest token cosine 0.8009823
+    vision_f32_test.go:139: planted (1) the position table not added: lowest token cosine 0.7738707
+    vision_f32_test.go:139: planted (2) the q bias dropped in the first layer: lowest token cosine 0.9993055
+    vision_f32_test.go:139: planted (3) q and k weights swapped in the first layer: lowest token cosine 0.8156137
+    vision_f32_test.go:139: planted (4) the GELU skipped in the first layer: lowest token cosine 0.7019785
+--- PASS: TestVisionEncoderF32_parity (0.31s)
+=== RUN   TestVisionEncoderF32_largeActivations
+    vision_f32_test.go:164: with GELU inputs near ±40: lowest token cosine 1.0000000
+--- PASS: TestVisionEncoderF32_largeActivations (0.02s)
+=== RUN   TestVisionEnableResidentF32_parity
+--- PASS: TestVisionEnableResidentF32_parity (0.02s)
+=== RUN   TestVisionEncoder_parity
+    vision_test.go:206: resident GPU vs CPU-W8A8 cosine=1.000000 | GPU vs HF golden cosine=0.999959
+--- PASS: TestVisionEncoder_parity (0.02s)
+=== RUN   TestVisionEnableResident_parity
+    vision_test.go:268: EnableResident Forward vs CPU cosine=1.000000
+--- PASS: TestVisionEnableResident_parity (0.02s)
+=== RUN   TestMatmulTiledF32_matchesNaive
+    vision_tiled_test.go:130: M=16 K=16 N=16: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 1.14e-07
+    vision_tiled_test.go:130: M=17 K=31 N=19: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 2.22e-07
+    vision_tiled_test.go:130: M=5 K=100 N=3: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.08e-07
+    vision_tiled_test.go:130: M=64 K=72 N=64: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.89e-07
+    vision_tiled_test.go:130: M=33 K=1152 N=47: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 1.60e-06
+    vision_tiled_test.go:130: M=130 K=72 N=130: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 5.39e-07
+    vision_tiled_test.go:130: M=1 K=5 N=1: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.05e-08
+    vision_tiled_test.go:130: M=4096 K=1152 N=4304: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.83e-06
+    vision_tiled_test.go:130: M=4096 K=72 N=4096: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 9.43e-07
+    vision_tiled_test.go:130: M=4096 K=4096 N=72: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 6.12e-06
+    vision_tiled_test.go:176: planted in the 16x16 kernel (no zero fill past K) at K=31: relative 4.73e-01
+    vision_tiled_test.go:176: planted in the register-blocked kernel (no zero fill past K) at K=31: relative 4.73e-01
+--- PASS: TestMatmulTiledF32_matchesNaive (6.20s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	7.225s
