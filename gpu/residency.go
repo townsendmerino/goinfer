@@ -108,7 +108,9 @@ type residentDecoder struct {
 	// prefillLast is decoder.Prefiller's batched-M forward, a closure over BuildResident's hidden/nH/inter/eps/scale/addOne
 	// locals like newRunner. It reads rd.rm lazily, at call time (not a snapshot), and converts it with runModelToPrefill to the
 	// plain dense shape the batched pass takes, declining models outside that scope.
-	prefillLast func(xs [][]float32, startPos int) ([]float32, error)
+	prefillLast func(xs [][]float32, startPos int, mrope [][3]int) ([]float32, error)
+	// mropeAxis is the model's m-RoPE axis table for a head half; it returns nil for a model without m-RoPE.
+	mropeAxis func(half int) []int
 
 	// resetErr holds the first error from Reset's state re-zero. Reset satisfies the cross-backend ResidentForward interface
 	// and returns nothing, so the error is recorded here and surfaced by the next Forward (the same shape metal/ uses for its
@@ -1138,8 +1140,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return c.newDecodeRunner(rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}
 	rd.newRunner = func() (*DecodeRunner, error) { return rd.runnerFor(rd.rm) }
-	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
+	rd.mropeAxis = m.MRopeAxisResident
+	rd.prefillLast = func(xs [][]float32, startPos int, mrope [][3]int) ([]float32, error) {
 		mw, pp, ok := runModelToPrefill(&rd.rm, hd)
+		pp.mropeAxis = rd.mropeAxis
 		if !ok {
 			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/…)")
 		}
@@ -1159,7 +1163,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		for i := range positions {
 			positions[i] = startPos + i
 		}
-		return c.prefillLastRows(xs, mw, pp, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
+		return c.prefillLastRows(xs, mw, pp, mrope, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
 	}
 	runner, err := rd.newRunner()
 	if err != nil {
@@ -1330,7 +1334,7 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 			return nil, rd.resetErr
 		}
 	}
-	logits, err := rd.prefillBlocks(ctx, embeddings, startPos)
+	logits, err := rd.prefillBlocks(ctx, embeddings, startPos, nil)
 	if err != nil && (rd.rm.pleDim > 0 || rd.rm.g4moe) && ctx.Err() == nil {
 		// A Gemma 4 E-model or a Gemma 4 MoE model that the pass declines is still prefilled here: the rows are walked in
 		// order, which is the sequential forward and overwrites whatever a declined pass stored. Their image turns count
@@ -1354,18 +1358,65 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 
 // prefillBlocks runs the batched pass over embeddings in blocks. The pass's scratch grows with its row count, so a
 // long prompt goes through in several; a block attends to the K/V the blocks before it wrote, as it would in one pass,
-// so the result is the same bits, and only the last block's logits are kept.
-func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+// so the result is the same bits, and only the last block's logits are kept. mrope is nil, or each row's three rotary
+// positions.
+func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]float32, startPos int, mrope [][3]int) ([]float32, error) {
 	var logits []float32
 	for from := 0; from < len(embeddings); from += prefillBlockRows {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		to := min(from+prefillBlockRows, len(embeddings))
+		var rows [][3]int
+		if mrope != nil {
+			rows = mrope[from:to]
+		}
 		var err error
-		if logits, err = rd.prefillLast(embeddings[from:min(from+prefillBlockRows, len(embeddings))], startPos+from); err != nil {
+		if logits, err = rd.prefillLast(embeddings[from:to], startPos+from, rows); err != nil {
 			return nil, err
 		}
 	}
+	return logits, nil
+}
+
+// mropePrefillBackends lists the WebGPU backends on which an image turn's m-RoPE prefill runs on the device. On the
+// others PrefillMRoPELast declines and the turn keeps the CPU's prefill and the upload, which is the faster route
+// there (docs/tasks/task-multimodal-support-2026-10.md, "S12.4b-1 and S12.4b-2", the fourth arm).
+var mropePrefillBackends = map[string]bool{"vulkan": true}
+
+var _ decoder.ResidentMRoPEPrefill = (*residentDecoder)(nil)
+
+// PrefillMRoPELast is decoder.ResidentMRoPEPrefill: PrefillLast for rows whose rotary position is three numbers.
+// mropePos is prompt-absolute and covers [0, startPos+len(embeddings)). It declines on a backend outside
+// mropePrefillBackends, on a model without m-RoPE, and wherever PrefillLast would.
+func (rd *residentDecoder) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !mropePrefillBackends[rd.c.Backend()] {
+		return nil, fmt.Errorf("gpu: PrefillMRoPELast declines on backend %q: the CPU prefill and upload is the faster route there", rd.c.Backend())
+	}
+	n := len(embeddings)
+	if n == 0 || len(mropePos) != startPos+n {
+		return nil, fmt.Errorf("gpu: PrefillMRoPELast declines %d rows at %d with %d positions: the positions must cover the prompt up to the last row", n, startPos, len(mropePos))
+	}
+	if rd.mropeAxis == nil || rd.mropeAxis(1) == nil {
+		return nil, fmt.Errorf("gpu: PrefillMRoPELast declines: the model has no m-RoPE sections")
+	}
+	if err := rd.checkCap(startPos, n); err != nil {
+		return nil, err
+	}
+	if startPos == 0 {
+		rd.Reset()
+		if rd.resetErr != nil {
+			return nil, rd.resetErr
+		}
+	}
+	logits, err := rd.prefillBlocks(ctx, embeddings, startPos, mropePos[startPos:])
+	if err != nil {
+		return nil, err
+	}
+	applySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
 

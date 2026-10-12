@@ -409,6 +409,9 @@ type prefillProjs struct {
 	lmHead prefillProj
 	window int // a sliding-window layer attends its last window positions; 0 when no layer is one
 	pleDim int // a Gemma 4 E-model's per-layer input width: a row is [hidden ‖ layers·pleDim]; 0 otherwise
+	// mropeAxis is an m-RoPE model's axis table for a head half (decoder.Model.MRopeAxisResident): which of a row's
+	// three positions each rotary pair reads. nil for any other model, and for a caller that has no such table.
+	mropeAxis func(half int) []int
 }
 
 // gemma reports whether the model has anything of the Gemma shape, which a ModelW cannot carry.
@@ -603,14 +606,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // activation is quantized by decode's own fused kernel in its rows form, prefill_fused.go), int32 accumulation, per-row
 // ops and ordering; gated by TestPrefillLastW8A8_parity and TestTiledDP4A_parity.
 func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([]float32, error) {
-	return c.prefillLastRows(xs, m, modelWProjs(m), hidden, nH, nKV, hd, inter, positions, start, eps, scale, addOne)
+	return c.prefillLastRows(xs, m, modelWProjs(m), nil, hidden, nH, nKV, hd, inter, positions, start, eps, scale, addOne)
 }
 
 // prefillLastRows is PrefillLastW8A8 with each projection int8 or int4 (pp; m's own projection fields are not read).
 // An int4 projection runs a multi-row int4 kernel (Context.w4MultiFor) and adds its q/k/v bias in a separate step, as
 // decode does. Both kernels reproduce the single-row kernel's sum, so an int4 model's pass is bit-equivalent to the
 // sequential DecodeRunner calls as the int8 pass is; gated by TestPrefillInt4_matchesWalk.
-func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([]float32, error) {
+//
+// mrope, when not nil, is each row's three rotary positions (time, height, width) for an m-RoPE model: a pair rotates
+// by the one pp.mropeAxis names for it, and positions still gives each row's cache slot.
+func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mrope [][3]int, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([]float32, error) {
 	M := len(xs)
 	if M == 0 {
 		return nil, fmt.Errorf("gpu: PrefillLastW8A8 M=0")
@@ -631,6 +637,14 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, hid
 			return nil, err
 		}
 		if err := c.ensureDeltaAttnGate(); err != nil {
+			return nil, err
+		}
+	}
+	if mrope != nil {
+		if len(mrope) != M || pp.mropeAxis == nil {
+			return nil, fmt.Errorf("gpu: the batched pass got %d rows of rotary positions for %d rows (axis table set: %v)", len(mrope), M, pp.mropeAxis != nil)
+		}
+		if err := c.ensureMRoPERows(); err != nil {
 			return nil, err
 		}
 	}
@@ -896,6 +910,53 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, hid
 	// dispatch. positions are always start, start+1, …, start+M-1 within one
 	// PrefillLastW8A8 call (residency.go), so passing start (not a per-row array) is
 	// enough — ropeBatchedShaderWGSL recovers row r's position as start+r.
+	// mposBuf is each row's three rotary positions and axisFor a head half's axis table, for an m-RoPE pass.
+	var mposBuf *wgpu.Buffer
+	axisBufs := map[int]*wgpu.Buffer{}
+	axisFor := func(half int) *wgpu.Buffer {
+		if b, ok := axisBufs[half]; ok || buildErr != nil {
+			return b
+		}
+		ax := pp.mropeAxis(half)
+		if len(ax) != half {
+			buildErr = fmt.Errorf("gpu: the batched pass has no m-RoPE axis table for a head half of %d", half)
+			return nil
+		}
+		tab := make([]uint32, half)
+		for d := range tab {
+			tab[d] = uint32(ax[d])
+			switch prefillDefectForTest {
+			case 12:
+				tab[d] = uint32(ax[(d+1)%half])
+			case 14:
+				tab[d] = []uint32{0, 2, 1}[ax[d]]
+			}
+		}
+		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(tab), Usage: wgpu.BufferUsageStorage})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
+		keepBuf(b)
+		axisBufs[half] = b
+		return b
+	}
+	if mrope != nil {
+		flat := make([]uint32, 0, 3*M)
+		for r := range mrope {
+			src := mrope[r]
+			if prefillDefectForTest == 13 {
+				src = mrope[(r+1)%M]
+			}
+			flat = append(flat, uint32(src[0]), uint32(src[1]), uint32(src[2]))
+		}
+		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(flat), Usage: wgpu.BufferUsageStorage})
+		if e != nil {
+			return nil, e
+		}
+		keepBuf(b)
+		mposBuf = b
+	}
 	ropeB := func(vecPacked, invFreq *wgpu.Buffer, heads, lhd int) {
 		half := lhd / 2
 		rpos := positions[0]
@@ -903,6 +964,10 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, hid
 			rpos++
 		}
 		p := uni([]uint32{uint32(heads), uint32(lhd), uint32(half), uint32(rpos), f32bits(1), 0, 0, 0})
+		if mposBuf != nil {
+			disp(c.ropeMRoPERows.pl, bind(c.ropeMRoPERows.layout, vecPacked, invFreq, p, mposBuf, axisFor(half)), uint32(heads*half+63)/64, uint32(M))
+			return
+		}
 		disp(c.ropeBatchedPipeline, bind(c.ropeBatchedLayout, vecPacked, invFreq, p), uint32(heads*half+63)/64, uint32(M))
 	}
 	// residualB dispatches its elementwise add as ONE call over the full M*width flattened range instead of M separate
@@ -1300,7 +1365,8 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, hid
 // scales, 4 binds each row's per-layer inputs to the next row's, 5 drops the per-layer-input branch, 6 lets a
 // sliding-window layer attend its whole prefix, 7 skips the post-attention norm, 8 skips the layer scalar, 9 uses the
 // model's feed-forward width on every layer, 10 skips the value norm on a K=V layer, 11 has a shared-K/V layer read the
-// first layer's cache.
+// first layer's cache, 12 rotates the m-RoPE axis table by one pair, 13 gives each row the next row's three positions,
+// 14 swaps height and width.
 var prefillDefectForTest int
 
 // prefillAttnPerRow makes the batched pass run decode's single-row attention kernel once a row in place of the batched
