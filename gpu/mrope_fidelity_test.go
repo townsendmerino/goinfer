@@ -50,9 +50,12 @@ func (p mropeFidelityPrompt) id() string {
 	return fmt.Sprintf("%s|%s|q%d", p.cell, p.image, p.question)
 }
 
-// mropeFidelitySet is the fixed prompt set of a mode. "pilot" sizes the gate and shares no image with it; "gate" is the
-// decision set; "more" is the set a parked verdict may be extended by, registered with the gate.
+// mropeFidelitySet is the fixed prompt set of a mode. "pilot" sizes the gate and shares no image with it; "gate" and
+// "more" are the two registered sets, and "both" is the decision set: the two pooled, "gate" first.
 func mropeFidelitySet(mode string) []mropeFidelityPrompt {
+	if mode == "both" {
+		return append(mropeFidelitySet("gate"), mropeFidelitySet("more")...)
+	}
 	var ps []mropeFidelityPrompt
 	invoices := make([]string, 15)
 	for i := range invoices {
@@ -116,14 +119,14 @@ func mropeScore(ref, arm []float32) fidelity.Position {
 	return fidelity.Position{Agree: agree, HardFlip: hard, KL: kl}
 }
 
-// TestS12MRoPEFidelity runs one mode of the gate (GOINFER_S12_FIDELITY: plan, pilot, gate or more) and writes its
+// TestS12MRoPEFidelity runs one mode of the gate (GOINFER_S12_FIDELITY: plan, pilot, gate, more or both) and writes its
 // records under GOINFER_S12_FIDELITY_OUT. "plan" loads no model: it builds the gate's prompts and prints their hash
 // and sizes. GOINFER_S12_FIDELITY_DEFECT=1 plants the pass's "each row's positions from the next row" defect in the
 // candidate, to show the verdict can go red. It grades by the verdict it prints; a run that completes exits 0.
 func TestS12MRoPEFidelity(t *testing.T) {
 	mode := os.Getenv("GOINFER_S12_FIDELITY")
 	if mode == "" {
-		t.Skip("set GOINFER_S12_FIDELITY to plan, pilot, gate or more")
+		t.Skip("set GOINFER_S12_FIDELITY to plan, pilot, gate, more or both")
 	}
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GOINFER_QWEN25VL_DIR")
@@ -208,7 +211,7 @@ func TestS12MRoPEFidelity(t *testing.T) {
 	}
 	say("mode %s: %d prompts, prompt-set hash %s; rows by cell %v", mode, len(set), fidelity.PromptSetHash(all), rows)
 	if mode == "plan" {
-		for _, extra := range []string{"pilot", "more"} {
+		for _, extra := range []string{"pilot", "more", "both"} {
 			es := mropeFidelitySet(extra)
 			ei := make([][]int, len(es))
 			er := 0
@@ -392,7 +395,8 @@ func TestS12MRoPEFidelity(t *testing.T) {
 		t.Fatal(err)
 	}
 	pf.Close()
-	crit := fidelity.Criteria{AgreeMarginPts: 1, KLMargin: 0.10, Alpha: 0.05}
+	// The registered criteria, as amended on the owner's word after the pilot: agreement within 2 points, KL within 10%.
+	crit := fidelity.Criteria{AgreeMarginPts: 2, KLMargin: 0.10, Alpha: 0.05}
 	v, err := fidelity.NonInferior(cs, crit)
 	if err != nil {
 		t.Fatal(err)
