@@ -70,7 +70,8 @@
     The default flips are not applied: they touch `decoder/` and would void v0.23.0's gate records, so the timing
     is the owner's.
   - S12.4a read 2026-10-12: with the device towers an image turn's TTFT under WebGPU is 5.3 to 22.9 s, and 2.7
-    to 14.0 s of it is left after the tower. S12.4b (image prefill on the GPU) is owed and not registered yet.
+    to 14.0 s of it is left after the tower. S12.4b is registered (2026-10-12): WebGPU has no multi-row kernel for
+    int4 weights, so the first two steps are that kernel and text prefill at the default quant.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4539,6 +4540,92 @@ test, so it runs only in a sweep) still asserted that WebGPU declines the E-mode
 updated the synthetic admission test, not this one; the v0.23.0 sweep on nobara read it as an unlisted failure. The
 test now checks that all three backends admit the shape and that a backend's feature set without the E-model feature
 declines it; it passes on nobara against the real E2B.
+
+#### S12.4b, prefill on the GPU under WebGPU: desk map and gates, registered 2026-10-12 before any code
+
+**The desk map (read from the code at `7421fff6`):**
+- **Every S12.4a cell served at int4, and WebGPU has no multi-row kernel for int4 weights.** Its batched pass,
+  `gpu/prefillrunner.go:Context.PrefillLastW8A8`, takes int8 projections only
+  (`gpu/prefillrunner.go:runModelToModelW` returns false on a `ResidentW4A8`). So at serve's default quant:
+  - a text prompt prefills one row at a time on the device, on every dense family (the banner still reads
+    "prefill path: batched", since the decline is per prompt);
+  - a Gemma 3 or Qwen image turn prefills on the CPU and uploads the K/V (the resident implements none of
+    `ResidentImagePrefill`, `ResidentMRoPEPrefill`, `ResidentMRoPEDeepstackPrefill`);
+  - a Gemma 4 E-model's rows are walked one at a time through the runner
+    (`gpu/residency.go:residentDecoder.PrefillLast`).
+- **The int8 pass is also narrower than the six families.** It declines sandwich norms and sliding-window layers
+  (Gemma 3), per-layer geometry, shared K/V and per-layer inputs (Gemma 4), a recurrent mixer (Qwen3.5), and q/k/v
+  bias anywhere but Vulkan (Qwen2.5-VL). Its rotary kernel takes a contiguous run of scalar positions, not m-RoPE's
+  three per row, and its attention kernel has no image block.
+
+**One exploratory reading taken before registering, to choose the order (by day, 08:26 PDT, load about 3, one pass,
+not quotable as a result):** `TestResidentPrefillLast_TTFT` on Qwen3-VL 2B's decoder at `int8int8`, the batched pass
+against the row-by-row walk on the same resident
+(`s12-webgpu/s12-4b/probe-w8a8-prefill-qwen3vl2b.log`):
+
+| rows | row by row (s) | batched (s) | rows a second, batched |
+|---|---|---|---|
+| 64 | 2.79 | 0.58 (the first call compiles its pipelines) | 110 |
+| 256 | 6.54 | 1.77 | 145 |
+| 1,024 | 32.57 | 7.56 | 135 |
+
+- **Measured:** on this Mac the multi-row int8 kernel is about 4 times the row-by-row walk.
+- **Inferred, not measured:** it is no faster than the CPU prefill the Qwen image turns already use. S12.4a's
+  Qwen3-VL 2B cell has 5.0 s left after the tower for about 810 rows (784 image tokens and the text), which is at
+  least 160 rows a second for the CPU prefill, the upload and the first step together. The two figures are from
+  different sessions and different quants, so this is a direction for ordering the work and nothing more.
+- **So the order is by what a multi-row kernel replaces.** Where it replaces the row-by-row walk (every text prompt
+  at int4; Gemma 4 E2B's image turn, the 14.0 s remainder) it should win by a wide margin. Where it replaces the CPU
+  prefill (Gemma 3, Qwen2.5-VL, Qwen3-VL) the Mac says roughly a wash, and a discrete card has not been read.
+
+**The steps, each gated before the next starts:**
+- **S12.4b-1, a multi-row int4 projection kernel.** Two candidates, both built:
+  - A, row-shaped: `gemvW4A8ShaderWGSL` with one accumulator per row, at most 16 rows a dispatch, each weight word
+    loaded once for all of them. The same sum in the same order, so bit-identical to the single-row kernel by
+    construction.
+  - B, tiled: `matmulRB64W8A8KernelWGSL`'s staging with the nibbles unpacked into the shared tile and one scale
+    applied per 32-wide group. The integer part is exact; the float sum over groups runs in a different order from
+    the single-row kernel's, so it is not bit-identical.
+- **S12.4b-2, the batched pass takes int4 projections,** for the class it already takes at int8 (plain dense,
+  Q/K norm, f16 K/V). This is text prefill at the default quant.
+- **S12.4b-3, the E-model's rows through the batched pass** (per-layer inputs, shared K/V, per-layer geometry,
+  sliding window), text and image turns. Its gates are written when 2 has passed, from G-S9a and G-S9b.
+- **S12.4b-4, the image prefills that replace a CPU prefill** (`PrefillImageLast`, `PrefillMRoPELast`, the
+  DeepStack form). **Parked until a reading says the GPU pass beats the CPU prefill on some box**: step 2's rows a
+  second against the CPU prefill's, same session, on the Mac and on nobara's card through Vulkan. Not built on the
+  Mac's direction alone, and not dropped on it either.
+- Qwen3.5 (recurrent) and GLM-OCR (decodes staged) are outside all four.
+
+**Gates for S12.4b-1 and S12.4b-2:**
+- **G-S12.4b-1a, the kernels against the single-row kernel** (quick; `go test` in `gpu`, seconds). Random int4
+  matrices with random f16 group scales, K and N both aligned and ragged, rows 1, 5, 16, 17 and 300, each row
+  against `gemvW4A8ShaderWGSL` on the same quantized row.
+  - Candidate A: equal bit for bit (`Float32bits`).
+  - Candidate B: max |diff| at most 1e-5 of the row's largest |output|. A bit-identical B is not required.
+  - Planted defects, each red: a group's scale taken from the next group; the nibbles of a byte swapped; a row's
+    activation scale taken from another row; (B only) a tile's last partial column block skipped.
+- **G-S12.4b-1b, which candidate** (day; an in-process A/B, interleaved in one process, TE5(b)). Whole prefill
+  through step 2's pass on a real plain dense int4 checkpoint, at 256 and 1,024 rows, five pairs after a discarded
+  pass of each. B is chosen if its median ratio to A is at most 0.90; otherwise A, for exactness. The row-by-row
+  walk is the third arm.
+- **G-S12.4b-2a, parity on the tiny fixtures** (quick). `TestPrefillLastW8A8_parity`'s procedure at int4: the last
+  row's logits and the next 8 decode steps from the prefilled cache against the row-by-row walk, on the plain,
+  Q/K-norm and f16-K/V fixtures, below and above a 16-row block.
+  - With A: bit-identical.
+  - With B: every step's argmax equal or a near-tie (the reference's second choice at least half its first), and
+    cosine at least 0.99999.
+  - Planted defects through the pass, each red: rows one position late; one row's K/V written to the next row's
+    slot; a projection's scales from another projection.
+- **G-S12.4b-2b, a real checkpoint** (day, minutes; heavy). The same reading on a real plain dense int4 model at 64
+  and 300 rows. Same bar as 2a.
+- **G-S12.4b-2c, speed** (day in process for direction; night served for the claim). In process: the pass against the
+  row-by-row walk at 256 and 1,024 rows, five interleaved pairs. **Ships on at a median ratio of at most 0.98, parks
+  at 0.98 to 1.00, off above 1.00.** The served claim is a night gate, two arms (`goinfer,goinfer_old`), registered
+  with its cell list when the in-process direction is known.
+- **Predictions, written now:** A is bit-identical (0.9). B passes its tolerance (0.8). B beats A by more than 10%
+  at 1,024 rows (0.7). The chosen pass is at least 2.5x the row-by-row walk at 1,024 rows on the Mac (0.7): int4
+  stages half the weight bytes of int8 but pays the nibble unpack. G-S12.4b-2a passes first run (0.5); the likeliest
+  first failure is the group-scale index on a ragged K.
 
 ### S13 — Against the peers
 
