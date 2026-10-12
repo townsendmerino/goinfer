@@ -67,8 +67,10 @@ type parityRun struct {
 // row would otherwise cover less than it says.
 func parityQualifyingPaths(manifest []byte) ([]string, error) {
 	var m struct {
-		SharedSets map[string][]string  `json:"shared_sets"`
-		Families   [][2]json.RawMessage `json:"families"`
+		SharedSets map[string][]string `json:"shared_sets"`
+		Families   map[string]struct {
+			Own []string `json:"own"`
+		} `json:"families"`
 	}
 	if err := json.Unmarshal(manifest, &m); err != nil {
 		return nil, fmt.Errorf("%s: %v", parityManifestPath, err)
@@ -94,13 +96,7 @@ func parityQualifyingPaths(manifest []byte) ([]string, error) {
 		add(files)
 	}
 	for _, fam := range m.Families {
-		var row struct {
-			Own []string `json:"own"`
-		}
-		if err := json.Unmarshal(fam[1], &row); err != nil {
-			return nil, fmt.Errorf("%s: a family row: %v", parityManifestPath, err)
-		}
-		add(row.Own)
+		add(fam.Own)
 	}
 	if hashed == 0 {
 		return nil, fmt.Errorf("%s hashes no file", parityManifestPath)
