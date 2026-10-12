@@ -1,0 +1,19 @@
+Mon Oct 12 10:37:26 PDT 2026
+3f5904ed gpu: the batched prefill pass takes the Gemma shape, bit for bit the row-by-row walk (S12.4b-3)
+=== RUN   TestPrefillInt4_speed
+[  13s] 300 rows, discarded pass, rows: 12.52 s
+[  22s] 300 rows, discarded pass, tiled: 9.01 s
+[  37s] 300 rows, discarded pass, walk: 15.23 s
+[  37s] 300 rows, round 1 of 5: rows 12.49 s tiled 9.00 s walk 15.22 s
+[  74s] 300 rows, round 2 of 5: rows 12.55 s tiled 9.00 s walk 15.26 s
+[ 111s] 300 rows, round 3 of 5: rows 12.54 s tiled 9.03 s walk 15.21 s
+[ 148s] 300 rows, round 4 of 5: rows 12.55 s tiled 9.03 s walk 15.08 s
+[ 184s] 300 rows, round 5 of 5: rows 12.56 s tiled 9.03 s walk 15.16 s
+RESULT 300 rows, tiled over rows: ratios [0.721 0.717 0.720 0.720 0.719], median 0.720
+RESULT 300 rows, rows over walk: ratios [0.820 0.822 0.824 0.832 0.829], median 0.824
+RESULT 300 rows, tiled over walk: ratios [0.591 0.590 0.594 0.599 0.596], median 0.594
+--- PASS: TestPrefillInt4_speed (225.09s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	225.685s
+exit 0
+Mon Oct 12 10:41:15 PDT 2026

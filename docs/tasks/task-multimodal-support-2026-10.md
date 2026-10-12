@@ -72,8 +72,10 @@
   - S12.4a read 2026-10-12: with the device towers an image turn's TTFT under WebGPU is 5.3 to 22.9 s, and 2.7
     to 14.0 s of it is left after the tower. S12.4b (registered 2026-10-12): steps 1 and 2 are built, a text
     prompt at int4 now prefills in the batched pass, bit for bit the row-by-row walk, about 3 times faster on the
-    Mac and 7 on nobara's card in process. Owed: its served gate, the E-model's rows, and the image prefills on
-    Vulkan (on the Mac the CPU route is faster and stays).
+    Mac and 7 on nobara's card in process. Step 3 is built too: Gemma 3, dense Gemma 4 and the E-models (text and
+    image rows) take the pass, bit for bit, about 1.7 times the walk on the Mac and 2.2 on nobara. Owed: the served
+    gates (queued for tonight on both boxes) and the image prefills that replace a CPU prefill, on Vulkan (on the
+    Mac the CPU route is faster and stays).
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4795,6 +4797,82 @@ against the row-by-row walk on the same resident
   as the quantizers were). On the Mac the pass is at 0.5 or under of the walk on E2B at 300 rows (0.6): the
   per-row attention dispatches and the wide heads cost more than a plain model's. All eight defects are red (0.7;
   the layer scalar is the likeliest to hide if the fixture's scalar is near 1).
+
+#### S12.4b-3, built and read 2026-10-12: the Gemma shape runs in the batched pass, bit for bit the walk
+
+**The code** (`gpu/prefillrunner.go:Context.prefillLastRows`, `gpu/prefillrunner.go:runModelToPrefill`,
+`gpu/residency.go:residentDecoder.PrefillLast`): the pass's layer now takes a geometry of its own, a query-only
+shared-K/V layer, the value norm, sandwich norms (the batched float RMSNorm, restored), a feed-forward width of its
+own, the per-layer-input branch and the layer scalar. Attention on a sliding-window layer or a wide head runs
+decode's own kernel once a row. The resident tries the pass for an E-model and walks its rows only on a decline.
+
+**The gates as read:**
+- **G-S12.4b-3a: PASS first run**, bit for bit on every fixture and row count registered
+  (`gpu`'s `TestPrefillGemma_matchesWalk`), the E-model's image rows included. One thing the first run turned up
+  was mine and not a difference: the tiny E-model's 32-wide per-layer inputs made a layer's range start off a
+  binding boundary at 7 rows, and the pass declined; each layer's range is now padded to a boundary.
+- **G-S12.4b-3b: PASS, all eight defects red** (`TestPrefillGemma_plantedDefects`). **Amendment to (7):** a shared
+  layer has no cache of its own to read (its cache fields are its source's), so the defect as run is "a shared-K/V
+  layer reading the first layer's cache".
+- **G-S12.4b-3c: PASS**, bit for bit under both kernels:
+  - Mac (Metal): Gemma 4 E2B and Gemma 3 4B at 64 and 300 rows, and past each model's own window (E2B at 600
+    rows, Gemma 3 4B at 1,100) (`s12-4b/g-s12-4b-3c-day.log`, `g-s12-4b-3c-window-day.log`).
+  - nobara (Vulkan): the tiny gates, and E2B and Gemma 3 4B from their GGUFs at 64 and 300 rows
+    (`s12-4b/nobara/g-s12-4b-3-vulkan-day.log`). Not read past the window on nobara.
+- **G-S12.4b-3d, in process, 300 rows** (five alternating rounds after a discarded pass of each; seconds are round
+  5's, ratios are medians of five; each box's arms are one session):
+
+| box, model at int4 | row-shaped | tiled | walk | CPU prefill and upload | tiled / walk | tiled / CPU route |
+|---|---|---|---|---|---|---|
+| Mac (Metal), Gemma 4 E2B | 12.56 | 9.03 | 15.16 | (146 s a round; see below) | 0.594 | not read |
+| Mac (Metal), Gemma 3 4B | 14.14 | 10.18 | 17.41 | 4.77 | 0.585 | 2.135 |
+| nobara (Vulkan), Gemma 4 E2B | 3.45 | 2.65 | 5.77 | 22.72 | 0.459 | 0.121 |
+| nobara (Vulkan), Gemma 3 4B | 3.74 | 2.60 | 5.91 | 8.18 | 0.439 | 0.319 |
+
+  (`s12-4b/g-s12-4b-3d-day.log`, `g-s12-4b-3d-e2b-day.log`, `s12-4b/nobara/g-s12-4b-3-vulkan-day.log`.)
+  - **Ships on:** every pair on both boxes has the pass faster than the walk, about 1.7 times on the Mac and 2.2
+    on nobara. Its output is the walk's bits. The served claim is owed (the cells added to tonight's gate, below).
+  - **The Mac's first E2B run was stopped by me after two rounds:** its CPU arm took 146 s a round (the CPU's
+    prefill of an E-model's text prompt is about 2 rows a second there), which says only that the CPU route is no
+    alternative for an E-model. The E2B row above is the re-run without that arm.
+- **Predictions scored.** "3a passes on the window fixtures first run (0.5)": yes. "On the E-model first run
+  (0.3)": yes; the kernel pairs held. "The pass at 0.5 or under of the walk on E2B at 300 rows on the Mac (0.6)":
+  **no, 0.594.** "All eight defects red (0.7)": yes.
+
+**Why the Gemma shape gains less than a plain model, as far as it was read:**
+- **Measured (exploratory, two runs back to back, `s12-4b/probe-attn-per-row-day.log`):** running decode's
+  attention kernel once a row on a plain model (Qwen3-VL 2B's decoder, 300 rows, 28 layers) takes the pass from
+  2.36 s to 3.00 s, about 76 microseconds a dispatch. On E2B's 35 layers that is under a second of its 9.
+- **Inferred, not measured:** the rest is attention itself on a wide head. Gemma's 256-wide heads take the
+  one-lane-a-dimension kernel, whose cost per row grows with the keys and is the same in the walk and in the pass,
+  so the pass cannot shrink it. By the projections' size alone Gemma 3 4B's pass would be about 18 ms a row; it
+  reads 34. A profile of the pass by category (`gpu/prefill_prof.go`) is what would turn this into a measurement.
+- **The lever this points at:** a key-split attention kernel for wide heads, which would help decode as much as
+  the pass. Not started.
+
+**What this step means for an image turn:**
+- **Gemma 4 E2B under WebGPU:** the 14.0 s left after the tower in S12.4a's cell was the walk; in process the same
+  300 rows now take about 9 s on the Mac. The served reading is tonight's.
+- **Gemma 3 under WebGPU:** unchanged here. Its image block attends both ways, so its image turn still prefills on
+  the CPU (S12.4b-4). A Gemma 3 text prompt takes the pass. On the Mac the CPU route would be twice as fast again
+  (4.8 s against 10.2 s), but it is not the walk's bits.
+
+**G-S12.4b-3e, the served cells for S12.4b-3: registered 2026-10-12 before they run (night, both boxes).** Further
+cells of tonight's gate, same bars (the median new/old TTFT ratio at 0.98 or under ships, to 1.00 parks, above it
+the pass comes out for that shape and backend), **new** built at this step's head and **old** at `4d5cf269`
+(S12.4b-2, without this step):
+- **A Gemma 3 4B text prompt** (`served_text_ttft.py --words 400,1600`, a fixed paragraph repeated to that many
+  words, the server's own `prompt_tokens` recorded; five rounds, alternating; replies must be equal in every
+  round).
+- **A Gemma 4 E2B image turn** (`vision_ttft.py`, the 896x896 image, a fresh copy a request, `-vision-device gpu`
+  on both arms; four rounds of one warm-up and two timed requests an arm, rotated; the ratio is the median over
+  rounds of the round's two medians). A fresh image a request means the two arms' replies cannot be compared, and
+  the identity of an E-model's image rows rests on G-S12.4b-3a and 3c.
+- **Cost basis:** from the in-process readings and S12.4a's cells: about 12 minutes on the Mac, 8 on nobara.
+  Queued at 30 and 20.
+- **Predictions:** the Mac's E2B image turn at 0.75 or under (0.7; the tower and the first decode step are common
+  to both arms); its Gemma 3 text prompt at 0.65 or under at 1,600 words (0.7); nobara's both at 0.6 or under
+  (0.6).
 
 ### S13 — Against the peers
 

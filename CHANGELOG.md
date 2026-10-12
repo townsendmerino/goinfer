@@ -38,8 +38,13 @@ blocks of 512 tokens), and it gives the same logits as the token-by-token loop, 
 q/k/v bias is covered at `int4`. Read in process, not through the server yet
 ([the record](docs/tasks/task-multimodal-support-2026-10.md), "S12.4b-1 and S12.4b-2"): on an M1 Pro a 1,024-token prompt on a
 2B model prefilled in 8.2 s against 24.8 s, and on an RTX 2070 SUPER through Vulkan a 1.5B took 1.4 s against 10.9 s. It applies
-on Apple GPUs and on Vulkan; on any other WebGPU backend the token-by-token loop still runs. Models the pass does not cover are
-unchanged: Gemma 3 and Gemma 4, the mixture-of-experts families and the recurrent ones. `GOINFER_BATCHED_PREFILL=0` turns it off.
+on Apple GPUs and on Vulkan; on any other WebGPU backend the token-by-token loop still runs. `GOINFER_BATCHED_PREFILL=0` turns
+it off.
+
+**Gemma 3 and Gemma 4 take the pass too**, the small Gemma 4 models (E2B, E4B) with their image turns, again with the same
+logits bit for bit. They gain less, because their wide attention heads cost the same either way: 300 tokens on Gemma 4 E2B
+prefilled in 9.0 s against 15.2 s on the M1 Pro and in 2.7 s against 5.8 s on the RTX 2070 SUPER (in process). Not covered,
+and unchanged: the mixture-of-experts families, the recurrent ones, and Gemma 3's image turn, which still prefills on the CPU.
 
 ### Fixed — under `--backend webgpu`, the 8-bit batched prefill drifted from the token-by-token result on longer prompts
 

@@ -306,8 +306,9 @@ func TestPrefillInt4_real(t *testing.T) {
 // G-S12.4b-1b and G-S12.4b-2c, in process: the batched pass under each multi-row int4 kernel, the row-by-row walk (the
 // production loop: no logits read until the last row), and the route an image turn takes today, the CPU's batched
 // prefill of the same tokens uploaded to the resident. At 256 and 1,024 rows: one discarded pass of each arm, then
-// five rounds in alternating order (GOINFER_PREFILL_ROWS overrides the row counts). It reports the per-round ratios and
-// their medians and grades nothing.
+// five rounds in alternating order (GOINFER_PREFILL_ROWS overrides the row counts; GOINFER_PREFILL_NO_CPU=1 drops the
+// CPU arm, which takes minutes a round on a Gemma 4 E-model). It reports the per-round ratios and their medians and
+// grades nothing.
 func TestPrefillInt4_speed(t *testing.T) {
 	path := prefillInt4RealPath(t)
 	m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int4"})
@@ -321,6 +322,10 @@ func TestPrefillInt4_speed(t *testing.T) {
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(3))
+	if os.Getenv("GOINFER_PREFILL_ATTN_PER_ROW") == "1" { // a probe of what the once-a-row attention dispatches cost
+		prefillAttnPerRow = true
+		defer func() { prefillAttnPerRow = false }()
+	}
 	var ids []int // the tokens rows embed, for the CPU arm
 	pass := func(kind w4MultiKind) func([][]float32) error {
 		return func(rows [][]float32) error {
@@ -370,6 +375,9 @@ func TestPrefillInt4_speed(t *testing.T) {
 		}
 		on := make([]bool, len(arms)) // an arm the model has no route for is dropped at its discarded pass
 		for a := range arms {
+			if arms[a].name == "cpu+upload" && os.Getenv("GOINFER_PREFILL_NO_CPU") == "1" {
+				continue
+			}
 			sec, err := timeArm(a)
 			if err != nil {
 				if arms[a].name != "cpu+upload" {

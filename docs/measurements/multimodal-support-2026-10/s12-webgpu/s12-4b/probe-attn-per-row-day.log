@@ -1,0 +1,38 @@
+Mon Oct 12 10:41:34 PDT 2026
+ATTN_PER_ROW=0
+=== RUN   TestPrefillInt4_speed
+decoder: .giw context capped at 29282 (model allows 262144) so that KV+scratch fits: needs ~6.51 GB of 7.51 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[   4s] 300 rows, discarded pass, rows: 4.37 s
+[   7s] 300 rows, discarded pass, tiled: 2.36 s
+[  13s] 300 rows, discarded pass, walk: 5.90 s
+[  13s] 300 rows, round 1 of 5: rows 4.16 s tiled 2.36 s walk 5.93 s
+[  25s] 300 rows, round 2 of 5: rows 4.15 s tiled 2.36 s walk 5.83 s
+[  37s] 300 rows, round 3 of 5: rows 4.16 s tiled 2.36 s walk 5.87 s
+[  50s] 300 rows, round 4 of 5: rows 4.81 s tiled 2.36 s walk 5.90 s
+[  63s] 300 rows, round 5 of 5: rows 4.44 s tiled 2.36 s walk 5.93 s
+RESULT 300 rows, tiled over rows: ratios [0.568 0.569 0.568 0.490 0.532], median 0.568
+RESULT 300 rows, rows over walk: ratios [0.700 0.712 0.708 0.815 0.749], median 0.712
+RESULT 300 rows, tiled over walk: ratios [0.398 0.405 0.403 0.400 0.398], median 0.400
+--- PASS: TestPrefillInt4_speed (79.28s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	79.854s
+exit 0
+ATTN_PER_ROW=1
+=== RUN   TestPrefillInt4_speed
+decoder: .giw context capped at 31093 (model allows 262144) so that KV+scratch fits: needs ~6.89 GB of 7.89 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[   5s] 300 rows, discarded pass, rows: 5.13 s
+[   8s] 300 rows, discarded pass, tiled: 3.11 s
+[  14s] 300 rows, discarded pass, walk: 6.11 s
+[  14s] 300 rows, round 1 of 5: rows 4.79 s tiled 3.01 s walk 5.91 s
+[  28s] 300 rows, round 2 of 5: rows 4.78 s tiled 3.01 s walk 5.84 s
+[  42s] 300 rows, round 3 of 5: rows 4.78 s tiled 3.00 s walk 5.94 s
+[  55s] 300 rows, round 4 of 5: rows 4.76 s tiled 3.02 s walk 5.84 s
+[  69s] 300 rows, round 5 of 5: rows 4.76 s tiled 3.00 s walk 5.89 s
+RESULT 300 rows, tiled over rows: ratios [0.628 0.630 0.628 0.634 0.631], median 0.630
+RESULT 300 rows, rows over walk: ratios [0.811 0.818 0.804 0.816 0.809], median 0.811
+RESULT 300 rows, tiled over walk: ratios [0.509 0.515 0.505 0.517 0.510], median 0.510
+--- PASS: TestPrefillInt4_speed (84.25s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	84.827s
+exit 0
+Mon Oct 12 10:44:21 PDT 2026
