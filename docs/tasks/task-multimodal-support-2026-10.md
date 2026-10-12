@@ -4362,6 +4362,46 @@ The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/qwe
 - **Not measured:** the tower on a discrete GPU; Qwen2.5-VL 7B's tower (the same code); a multi-image request at
   real size; where the first forward's extra seconds go.
 
+#### S12.3, what is left: Gemma 4's audio tower, not built (2026-10-11)
+
+Five of the six towers S12.3 named are built (S12.3a, d, e, f). The sixth, Gemma 4's audio tower, is not. Its twelve
+conformer blocks take 0.24 to 0.70 s on the CPU for the clips S5 measured (G-S5d), so the most a device tower can
+save is about half a second a clip, and at that size a WebGPU forward's per-kernel submits are a large share of its
+time (S12.3e's 48-patch reading). **For the owner:** build it anyway, or drop it from S12. It stays owed until one
+of those is said; the work moved on to S12.2.
+
+#### S12.2, the 26B's parallel dense and MoE feed-forward on WebGPU: gates registered 2026-10-11 before any code
+
+**What:** a Gemma 4 layer with `enable_moe_block` (`decoder/forward_gemma4_moe.go:gemma4MoEFFN`) in the WebGPU decode
+runner, from the bundle CUDA and Metal build from (`Gemma4MoEResidentLayer`): the router on the raw residual (a
+weightless RMSNorm, the float32 projection with its learned scale folded in, softmax over every expert, the top k,
+renormalised, times the per-expert scale); the dense branch (`pre_ffn_norm`, gate and up, gated GELU, down,
+`post_ffn_norm_1`); the expert branch (`pre_ffn_norm_2`, each chosen expert's fused gate‖up, gated GELU, down,
+summed by weight, `post_ffn_norm_2`); the join (`post_ffn_norm` of the sum, the residual add, the layer scalar). The
+attention half is the dense Gemma 4 layer WebGPU already runs. The runner's router top-k and indexed expert kernels
+are reused; the per-expert scale and the split of a fused gate‖up output are new steps.
+
+**No real checkpoint can run it here:** the 26B does not fit the 16 GB Mac under WebGPU and nobara's card has 8 GB.
+So this is gated on the tiny fixtures only, and the support table's 26B cell under WebGPU stays as it is until a
+box runs the real model.
+
+- **G-S12.2a, tiny parity, day.** Metal's two gates on WebGPU, int4 on both sides, on `testdata/gemma4-moe-kv-tiny`
+  (tracked), and on `gemma4-moe-tiny` and `gemma4-moe-unified-tiny` where they are present: (i) the residual after
+  each layer at position 0 at cosine >= 0.9999 against the CPU's; (ii) over the fixed ten-token prompt, the argmax
+  identical or a first difference at a near-tie under 3%, and the lowest logit cosine >= 0.995.
+- **G-S12.2b, planted defects, each alone red on G-S12.2a:** (1) the per-expert scale skipped; (2)
+  `post_ffn_norm_1` skipped; (3) the expert branch fed `pre_ffn_norm` in place of `pre_ffn_norm_2`; (4) the joint
+  `post_ffn_norm` skipped; (5) the expert sum not cleared between tokens; (6) the gate and up halves of the fused
+  expert projection exchanged; (7) the router fed the dense branch's weighted norm in place of its weightless one. A
+  defect that stays green is recorded with its mechanism, not argued.
+- **G-S12.2c, admission and prefill.** `decoder`'s feature table admits Gemma 4's MoE block on webgpu and the
+  admission tests say so; a prompt prefilled through the resident then decoded matches the same prompt walked a
+  token at a time (the runner's prefill for this family is the sequential walk).
+- **Prediction, written now:** (i) passes on the first complete build (0.5); the likeliest miss is the expert
+  accumulator or the norm offset of the weightless router norm. Defects (1) to (7) all red (0.6); (5) is the one
+  most likely to stay green on a fixture this small.
+- **Tier and cost.** Seconds; all by day.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
