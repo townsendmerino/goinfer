@@ -7,7 +7,8 @@ import (
 )
 
 // TestPlanGridTower pins where a Qwen3.5+ or GLM-OCR tower runs (S2 of docs/tasks/task-multimodal-support-2026-10.md): the device tower only under --backend metal or cuda,
-// float32 and registered for THAT backend; the CPU otherwise with the reason; and each CPU fallback a refusal under -require-backend.
+// float32 and registered for THAT backend; the CPU otherwise with the reason; and each CPU fallback a refusal under -require-backend. Under webgpu the device tower is opt-in
+// (-vision-device gpu) and the CPU tower otherwise is a choice, not a fallback.
 func TestPlanGridTower(t *testing.T) {
 	metal := []string{"metal"}
 	cases := []struct {
@@ -15,28 +16,33 @@ func TestPlanGridTower(t *testing.T) {
 		registered []string
 		int8       bool
 		backend    string
+		asked      bool // -vision-device gpu
 		require    bool
 		device     string
 		where      string
 		err        string
 	}{
-		{"cpu backend", metal, false, "cpu", false, "", "CPU", ""},
-		{"cuda backend, only a Metal tower registered", metal, false, "cuda", false, "", "CPU (no CUDA tower in this binary)", ""},
-		{"cuda backend, only a Metal tower registered, require", metal, false, "cuda", true, "", "", "no CUDA"},
-		{"cuda", []string{"cuda"}, false, "cuda", false, "cuda", "CUDA", ""},
-		{"cuda require", []string{"cuda"}, false, "cuda", true, "cuda", "CUDA", ""},
-		{"cuda int8", []string{"cuda"}, true, "cuda", false, "", "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
-		{"cuda int8 require", []string{"cuda"}, true, "cuda", true, "", "", "CUDA tower is float32"},
-		{"metal backend, only a CUDA tower registered", []string{"cuda"}, false, "metal", false, "", "CPU (no Metal tower in this binary)", ""},
-		{"webgpu", []string{"metal", "cuda"}, false, "webgpu", true, "", "CPU", ""},
-		{"metal", metal, false, "metal", false, "metal", "Metal", ""},
-		{"metal int8", metal, true, "metal", false, "", "CPU (-vision-quant int8; the Metal tower is float32)", ""},
-		{"metal int8 require", metal, true, "metal", true, "", "", "float32"},
-		{"not registered", nil, false, "metal", false, "", "CPU (no Metal tower in this binary)", ""},
-		{"not registered require", nil, false, "metal", true, "", "", "no Metal"},
+		{"cpu backend", metal, false, "cpu", false, false, "", "CPU", ""},
+		{"cuda backend, only a Metal tower registered", metal, false, "cuda", false, false, "", "CPU (no CUDA tower in this binary)", ""},
+		{"cuda backend, only a Metal tower registered, require", metal, false, "cuda", false, true, "", "", "no CUDA"},
+		{"cuda", []string{"cuda"}, false, "cuda", false, false, "cuda", "CUDA", ""},
+		{"cuda require", []string{"cuda"}, false, "cuda", false, true, "cuda", "CUDA", ""},
+		{"cuda int8", []string{"cuda"}, true, "cuda", false, false, "", "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
+		{"cuda int8 require", []string{"cuda"}, true, "cuda", false, true, "", "", "CUDA tower is float32"},
+		{"metal backend, only a CUDA tower registered", []string{"cuda"}, false, "metal", false, false, "", "CPU (no Metal tower in this binary)", ""},
+		{"webgpu, not asked: the CPU tower by choice, under -require-backend too", []string{"metal", "cuda", "webgpu"}, false, "webgpu", false, true, "", "CPU (-vision-device gpu puts it on WebGPU)", ""},
+		{"webgpu asked", []string{"webgpu"}, false, "webgpu", true, false, "webgpu", "WebGPU", ""},
+		{"webgpu asked, int8", []string{"webgpu"}, true, "webgpu", true, false, "", "CPU (-vision-quant int8; the WebGPU tower is float32)", ""},
+		{"webgpu asked, not in this binary", []string{"metal"}, false, "webgpu", true, false, "", "CPU (no WebGPU tower in this binary)", ""},
+		{"webgpu asked, not in this binary, require", []string{"metal"}, false, "webgpu", true, true, "", "", "no WebGPU"},
+		{"metal", metal, false, "metal", false, false, "metal", "Metal", ""},
+		{"metal int8", metal, true, "metal", false, false, "", "CPU (-vision-quant int8; the Metal tower is float32)", ""},
+		{"metal int8 require", metal, true, "metal", false, true, "", "", "float32"},
+		{"not registered", nil, false, "metal", false, false, "", "CPU (no Metal tower in this binary)", ""},
+		{"not registered require", nil, false, "metal", false, true, "", "", "no Metal"},
 	}
 	for _, c := range cases {
-		p, err := planGridTower("Qwen3.5", c.registered, c.int8, c.backend, c.require)
+		p, err := planGridTower("Qwen3.5", c.registered, c.int8, c.backend, c.asked, c.require)
 		if c.err != "" {
 			if err == nil || !strings.Contains(err.Error(), c.err) {
 				t.Errorf("%s: err %v, want one containing %q", c.name, err, c.err)

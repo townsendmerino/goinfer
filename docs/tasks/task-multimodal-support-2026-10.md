@@ -56,8 +56,11 @@
     int8 tower misread images this morning.
   - S12.3d: Gemma 4's vision tower on WebGPU, built and right at real size (E2B's tower, every soft token at cosine
     1.0000000 against the CPU tower on five images), opt-in with `-vision-device gpu` until its night speed gate
-    reads (about 2 s an image against the CPU's 5 s by a day smoke). Next towers: Gemma 4 audio, Qwen2.5-VL, the
-    grid towers; then S12.2 and S12.4.
+    reads (about 2 s an image against the CPU's 5 s by a day smoke).
+  - S12.3e: the Qwen3.5+, Qwen3-VL (DeepStack) and GLM-OCR towers on WebGPU, on one grid engine, right at real size
+    (lowest row 0.999987), opt-in the same way until their night speed gates read (GLM-OCR about 14 s against the
+    CPU's 40 s on a 1.1 MP image by a day smoke; slower than the CPU on a tiny image). Next towers: Qwen2.5-VL
+    (windowed attention), then Gemma 4 audio (its CPU tower takes under a second); then S12.2 and S12.4.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4200,6 +4203,91 @@ The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/g4v
   soft tokens is 9,576 patches, where a head's query rows are scored in six blocks. Lowest soft-token cosine
   1.0000000 over its 1,064 soft tokens; the CPU tower took 42.9 s and the WebGPU tower 18.4 s (a smoke).
 - **Not measured:** the tower on a discrete GPU; E4B's and the 26B's towers (the same code; E2B's was the one run).
+
+#### S12.3e, the grid towers on WebGPU (Qwen3.5+, Qwen3-VL, GLM-OCR): gates registered 2026-10-11 before any code
+
+**Order inside S12.3, and why:** the grid towers and Qwen2.5-VL before Gemma 4's audio tower. The audio tower's
+twelve blocks take 0.24 to 0.70 s on the CPU for the clips measured in S5 (G-S5d), so a device tower can save half a
+second a clip at most; GLM-OCR's CPU tower takes about 29 s at 1 MP and Qwen2.5-VL's about 22 s at a 64x64 grid.
+
+**What:** the engine Metal runs for these towers (`metal/grid_vision.go`), in float32 from aikit's exports: the patch
+embed (and Qwen3's interpolated position rows), then every block: LayerNorm with bias (Qwen3) or RMSNorm (GLM-OCR),
+the fused qkv split into three projections, GLM-OCR's per-head q and k RMSNorm, rotate-half 2-D RoPE from aikit's
+tables, attention at 1/sqrt(head_dim) within each image frame, the projection and residual, then the MLP (GELU-tanh
+for Qwen3, SiLU-gated for GLM-OCR). The tails stay aikit's `FinishHidden` on the host. Qwen3-VL's DeepStack taps are
+read between blocks (`GridTowerTapper`). On the register-blocked float32 matmul and S12.3d's kernels. It registers as
+multimodal's "webgpu" Qwen3 and GLM-OCR towers. Qwen2.5-VL, which needs windowed attention, is S12.3f.
+
+- **G-S12.3e-1, tiny, day.** Metal's G-S2b and G-S2c on WebGPU: `testdata/qwen35vl-tiny` and
+  `testdata/glm-ocr-vision-tiny`, their norms randomised; grids (1,4,4), (1,6,8), (1,10,6) and a two-image batch;
+  the WebGPU tower then aikit's tail against the CPU `Forward`, every merged token at cosine >= 0.9999. Planted
+  defects, each alone red. Qwen3: the attention scale dropped, the RoPE halves swapped, the position rows for the
+  transposed grid, the patch bias dropped. GLM-OCR: the scale dropped, the RoPE halves swapped, the q and k norms
+  skipped, the patch bias dropped.
+- **G-S12.3e-1b, tiny DeepStack, day.** Metal's G-S10e on WebGPU: `testdata/qwen3vl-vision-tiny`, grids (1,4,6) and
+  a two-image batch; the merged rows and every DeepStack set at cosine >= 0.9999 against the CPU `ForwardDeepstack`;
+  taps read one block late must be red.
+- **G-S12.3e-2, real size, day (untimed).** `qwen3.5-0.8b`'s and `glm-ocr`'s towers through serve's preprocessing and
+  caps on the four images S2 used (plus the invoice for GLM-OCR), and `qwen3-vl-2b-instruct`'s merged rows and
+  DeepStack sets on the same four: every row at cosine >= 0.9999 against the CPU tower is a PASS; a lowest row in
+  0.999-0.9999 is parked; lower, or a NaN, fails.
+- **G-S12.3e-3, wiring, day.** One image request through a WebGPU server with `-vision-device gpu` on Qwen3.5 0.8B
+  and on GLM-OCR: the load line names a WebGPU tower and the turn completes. The reply is recorded, not graded.
+- **G-S12.3e-4, speed, night.** For each of the two towers (Qwen3.5 0.8B's, GLM-OCR's), encode time on one image,
+  WebGPU over CPU, five interleaved pairs after a discarded pass of each: that tower is the default under
+  `--backend webgpu` at a median ratio of at most 0.98; 0.98-1.00 parked; above 1.00 it stays on the CPU. Until
+  its gate reads, each tower's default is the CPU and the device tower is asked for with `-vision-device gpu`.
+- **Prediction, written now:** e-1 and e-1b pass (0.7; the rotate-half RoPE and segments at a row offset are new
+  here). e-2 passes on all three towers (0.65). The day smoke: both towers under the CPU's time (0.75).
+- **Tier and cost.** e-1 and e-1b seconds; e-2 about ten minutes (GLM-OCR's CPU tower is about half a minute an
+  image); e-3 a few minutes; e-4 at night, about ten minutes.
+
+#### S12.3e read 2026-10-11: the grid towers are built and match their CPU towers at real size; opt-in until their night speed gates read
+
+The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/grid-towers/`. The times are a smoke.
+
+- **Built:** `gpu/grid_vision.go` (`gridVTower`: Qwen3 and GLM-OCR kinds, `HiddenTaps` for DeepStack) and
+  `gpu/tower_ops.go`, which now holds what the float32 towers share (the tower's Context, a kernel runner over any
+  number of buffers, the row RMSNorm, attention over a row segment in blocks); the Gemma 4 tower runs on it and its
+  tiny gate reads as before. Two new kernels: the rotate-half RoPE and the SiLU-gated activation.
+- **G-S12.3e-1: PASS** (`g-s12-3e-1.log`). Both tiny towers at cosine 1.000000000 over the four grid sets, at the
+  tower's own attention block and at blocks of 5 query rows. The planted defects, each alone. Qwen3: scale dropped
+  0.975, RoPE halves swapped 0.9967, transposed position rows 0.9949, patch bias dropped 0.9937. GLM-OCR: scale
+  dropped 0.126, RoPE halves swapped 0.698, q and k norms skipped 0.119, patch bias dropped 0.531. All eight red.
+- **G-S12.3e-1b: PASS.** The tiny DeepStack tower: merged rows and both sets at 1.000000000 on both grids; taps one
+  block late read 0.9979 and 0.9986 on the sets, red.
+- **G-S12.3e-2: PASS** (`g-s12-3e-2.log`). Lowest row cosine against the CPU tower:
+
+  | tower | images | lowest row | WebGPU / CPU tower time, the largest image (a smoke) |
+  |---|---|---|---|
+  | `qwen3.5-0.8b` | 4 (grids up to 70x58) | 0.999999256 | 2.5 s / 7.5 s |
+  | `glm-ocr` | 5 (grids up to 92x72) | 0.999986983 (the formula image; the other four 0.9999987 or better) | 20.1 s / 48.8 s |
+  | `qwen3-vl-2b-instruct`, merged and three DeepStack sets | 4 | 0.999998519 | not split (CPU and device together 28.6 s) |
+
+  Qwen3-VL's taps one block late read 0.29 to 0.66 on the sets, red. No NaN.
+- **G-S12.3e-3: PASS** (`g-s12-3e-3-wiring.log`). Served on WebGPU with `-vision-device gpu`: the load lines read
+  "tower (WebGPU)" for Qwen3.5 0.8B and "tower (f32, WebGPU)" for GLM-OCR, and both turns complete. GLM-OCR's reply
+  is identical to the CPU-tower arm's (the turn 49.1 s with the CPU tower, 26.3 s with the device tower). Qwen3.5
+  0.8B's reply, recorded and not graded, first differs at generated token 0 ('Table' for 'This'), where the
+  CPU-tower arm gave 0.593 and 0.300 to the two.
+- **Small images are slower on the device tower.** On the 6x8 grid (48 patches) GLM-OCR's device tower took 1.08 s
+  against the CPU's 0.67 s; Qwen3.5's 14x20 grid took 0.20 s against 0.22 s. Each block submits its kernels one at a
+  time (about 130 submits a block), and at that size the submits are the cost. Not measured further. It bears on
+  the default: the registered speed gate reads one large image, so a tower that ships on it would still be slower
+  than the CPU on a thumbnail. **For the owner when the gate reads:** flip the default as registered, flip it only
+  above a patch count, or batch a block's kernels into one submit first.
+- **Predictions scored:** "e-1 and e-1b pass (0.7)": passed, first run. "e-2 passes on all three towers (0.65)":
+  passed. "Both towers under the CPU's time (0.75)": true on every image of 280 patches or more, false on the
+  48-patch one for GLM-OCR.
+- **Wiring:** `planGridTower` takes the `-vision-device gpu` request as `chooseGemma4Tower` does; WebGPU's
+  declaration lists the Qwen3 and GLM-OCR towers; `DefaultTowerOnDevice` is false for every WebGPU tower, so the
+  support table's tower cells stay "CPU" there.
+- **Consequence, as registered:** **G-S12.3e-4 is queued on the Mac's night queue**
+  (`s12-webgpu/run-s12-3e-4-night.sh`, a pinned test binary at `93efea32`, the two towers on `glm_ocr/table.png`,
+  five interleaved pairs each, about eight minutes). Until it reads, each tower's default is the CPU.
+- **Not measured:** the towers on a discrete GPU; Qwen3.5+ larger than 0.8B and Qwen3-VL larger than 2B (the same
+  code at other widths); a multi-image request at real size (two segments are exercised on the tiny towers only);
+  GLM-OCR above 1.3 MP.
 
 ### S13 — Against the peers
 

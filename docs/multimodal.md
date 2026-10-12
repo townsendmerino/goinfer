@@ -16,11 +16,11 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | Tower checked on E2B (2026-10-07). |
 | Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | Validation in flight on nobara (2026-10-09); too large for a 16 GB Mac. |
 | Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |  |
-| Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | CPU / CPU | A hybrid's image turn decodes resident only where the backend builds its recurrent state (CUDA); text turns are resident where the decoder column of docs/hardware-matrix.md says (2026-10-09). |
+| Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | CPU / CPU | A hybrid's image turn decodes resident only where the backend builds its recurrent state (CUDA); text turns are resident where the decoder column of docs/hardware-matrix.md says (2026-10-09). WebGPU: `--vision-device gpu` puts the tower on the GPU (2026-10-11). |
 | Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU | Served on CUDA (S6, 2026-10-09). |
-| Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09). |
+| Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09). WebGPU: `--vision-device gpu` puts the tower on the GPU (2026-10-11). |
 | Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | Qwen3-VL-30B-A3B: too large for a 16 GB Mac or an 8 GB card at once. Decoder, tower and the full model (CPU, int8int8 and int4) checked against HF (G-S10q-a, b, c); the served check is pending (S10, 2026-10-10). |
-| GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | One image per request (2026-10-09). |
+| GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | One image per request (2026-10-09). WebGPU: `--vision-device gpu` puts the tower on the GPU (2026-10-11). |
 | LFM2.5-VL (`lfm2_vl`) | CPU / CPU | CPU / CPU | CPU / CPU | CPU / CPU | SigLIP2 NaFlex tower, CPU float32; the lfm2 decoder runs on the CPU only (no backend implements its short convolution) (S10, 2026-10-09). |
 | Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU | Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU. |
 

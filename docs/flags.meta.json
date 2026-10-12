@@ -44,7 +44,7 @@
   {
    "name": "vision-device",
    "group": "Choosing models",
-   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has one there; a device that declines, say for memory, leaves the CPU and says so), `cpu` (the model keeps its own backend) or `gpu` (as `auto`, and under `--backend webgpu` the Gemma 3 and Gemma 4 towers, which `auto` leaves on the CPU, run on the GPU in float32).",
+   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there; under `--backend webgpu` the vision towers stay on the CPU), `cpu` (the model keeps its own backend) or `gpu` (as `auto`, and under `--backend webgpu` the towers with a WebGPU form run on the GPU in float32).",
    "type": "auto | cpu | gpu"
   },
   {

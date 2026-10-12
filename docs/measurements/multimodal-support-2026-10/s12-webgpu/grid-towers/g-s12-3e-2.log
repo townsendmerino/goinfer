@@ -1,0 +1,28 @@
+=== RUN   TestGridVisionWebGPU_real
+=== RUN   TestGridVisionWebGPU_real/qwen3
+[G-S12.3e-2 qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): lowest token cosine 0.999999256; tower WebGPU 1.846s, CPU 4.805s (a smoke)
+[G-S12.3e-2 qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): lowest token cosine 1.000000000; tower WebGPU 199ms, CPU 219ms (a smoke)
+[G-S12.3e-2 qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): lowest token cosine 0.999999953; tower WebGPU 2.542s, CPU 7.503s (a smoke)
+[G-S12.3e-2 qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): lowest token cosine 0.999999993; tower WebGPU 2.394s, CPU 6.968s (a smoke)
+=== RUN   TestGridVisionWebGPU_real/glm-ocr
+[G-S12.3e-2 glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): lowest token cosine 0.999998685; tower WebGPU 10.824s, CPU 26.322s (a smoke)
+[G-S12.3e-2 glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): lowest token cosine 1.000000000; tower WebGPU 1.075s, CPU 671ms (a smoke)
+[G-S12.3e-2 glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): lowest token cosine 0.999986983; tower WebGPU 17.824s, CPU 55.592s (a smoke)
+[G-S12.3e-2 glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): lowest token cosine 0.999999901; tower WebGPU 14.189s, CPU 39.527s (a smoke)
+[G-S12.3e-2 glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): lowest token cosine 0.999999151; tower WebGPU 20.066s, CPU 48.804s (a smoke)
+--- PASS: TestGridVisionWebGPU_real (265.20s)
+    --- PASS: TestGridVisionWebGPU_real/qwen3 (27.18s)
+    --- PASS: TestGridVisionWebGPU_real/glm-ocr (238.02s)
+=== RUN   TestGridVisionWebGPU_deepstackReal
+[G-S12.3e-2 qwen3-vl] gemma3_preprocess_image.png grid [1 56 56]: merged 0.999999916, deep0 1.000000000, deep1 0.999999970, deep2 0.999999879
+[G-S12.3e-2 qwen3-vl] gemma3_preprocess_image.png: CPU and WebGPU together 20.38s (a smoke)
+[G-S12.3e-2 qwen3-vl] qwen25vl_preprocess_image.png grid [1 14 20]: merged 0.999999993, deep0 1.000000000, deep1 0.999999999, deep2 0.999999989
+[G-S12.3e-2 qwen3-vl] qwen25vl_preprocess_image.png: CPU and WebGPU together 1.29s (a smoke)
+[G-S12.3e-2 qwen3-vl] qwen25vl_preprocess_image.png, taps one block late: merged 0.999999993, deep0 0.573800496, deep1 0.293395103, deep2 0.660992043
+[G-S12.3e-2 qwen3-vl] glm_ocr/formula.png grid [1 70 58]: merged 0.999999984, deep0 1.000000000, deep1 0.999998519, deep2 0.999999665
+[G-S12.3e-2 qwen3-vl] glm_ocr/formula.png: CPU and WebGPU together 28.555s (a smoke)
+[G-S12.3e-2 qwen3-vl] glm_ocr/table.png grid [1 54 72]: merged 0.999999980, deep0 1.000000000, deep1 0.999999964, deep2 0.999999955
+[G-S12.3e-2 qwen3-vl] glm_ocr/table.png: CPU and WebGPU together 26.368s (a smoke)
+--- PASS: TestGridVisionWebGPU_deepstackReal (80.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	346.060s

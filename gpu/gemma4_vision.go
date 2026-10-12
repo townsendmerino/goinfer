@@ -26,39 +26,6 @@ func init() {
 	})
 }
 
-// g4vRMSRowsWGSL: RMSNorm over each of `rows` rows of width h, dst = src / sqrt(mean(src²) + eps) * weight. One
-// workgroup per row, rows laid out gx to a line of workgroups so a row count past the per-dimension limit still fits.
-const g4vRMSRowsWGSL = `
-struct P { rows: u32, h: u32, eps: f32, gx: u32 };
-@group(0) @binding(0) var<storage, read>       src:    array<f32>; // [rows, h]
-@group(0) @binding(1) var<storage, read>       weight: array<f32>; // [h]
-@group(0) @binding(2) var<storage, read_write> dst:    array<f32>; // [rows, h]
-@group(0) @binding(3) var<uniform>             p:      P;
-var<workgroup> sh: array<f32, 64>;
-@compute @workgroup_size(64)
-fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
-    let row = wid.y * p.gx + wid.x;
-    if (row >= p.rows) { return; }
-    let base = row * p.h;
-    let t = lid.x;
-    var s2: f32 = 0.0;
-    for (var i: u32 = t; i < p.h; i = i + 64u) { let v = src[base + i]; s2 = s2 + v * v; }
-    sh[t] = s2;
-    workgroupBarrier();
-    var stride: u32 = 32u;
-    loop {
-        if (stride == 0u) { break; }
-        if (t < stride) { sh[t] = sh[t] + sh[t + stride]; }
-        workgroupBarrier();
-        stride = stride / 2u;
-    }
-    let inv = 1.0 / sqrt(sh[0] / f32(p.h) + p.eps);
-    for (var i: u32 = t; i < p.h; i = i + 64u) {
-        dst[base + i] = src[base + i] * inv * weight[i];
-    }
-}
-`
-
 // g4vClampWGSL: a ClippableLinear's output clamp, in place.
 const g4vClampWGSL = `
 struct P { n: u32, lo: f32, hi: f32, _p: u32 };
@@ -132,11 +99,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
 }
 `
 
-type g4vPipe struct {
-	pl  *wgpu.ComputePipeline
-	lay *wgpu.BindGroupLayout
-}
-
 // g4vProj is one ClippableLinear on the device: its [out, in] weight and its bounds. An infinite bound is held as the
 // largest float32, which clamps nothing.
 type g4vProj struct {
@@ -153,28 +115,20 @@ type g4vLayer struct {
 
 // g4vTower is the tower on WebGPU, on a Context of its own. One image at a time (mu).
 type g4vTower struct {
-	mu                                   sync.Mutex
-	c                                    *Context
-	cfg                                  vision.Gemma4EncoderConfig
-	theta                                float64
-	rms, clamp, clampCopy, rope, geluMul g4vPipe
-	patchW, ones                         *DeviceBuffer // ones: v's unweighted norm
-	posX, posY                           []float32     // the position tables, added on the host side of the upload
-	layers                               []g4vLayer
+	mu sync.Mutex
+	*towerOps
+	cfg                             vision.Gemma4EncoderConfig
+	theta                           float64
+	clamp, clampCopy, rope, geluMul towerPipe
+	patchW, ones                    *DeviceBuffer // ones: v's unweighted norm
+	posX, posY                      []float32     // the position tables, added on the host side of the upload
+	layers                          []g4vLayer
 }
 
 // g4vDefectForTest plants one defect in the tower, for its gate's planted-defect arm (gpu/gemma4_vision_test.go): 1 the
 // clamps skipped, 2 the x and y position tables swapped, 3 RoPE not applied to k, 4 the v norm skipped, 5 k normed with
 // q's weight. 0, the only value outside that test, plants nothing.
 var g4vDefectForTest int
-
-// g4vBlockForTest, when positive, is the number of query rows one attention block scores at a time, in place of the
-// number that fits g4vScoreBytes. 0 outside the tower's gate.
-var g4vBlockForTest int
-
-// g4vScoreBytes bounds one attention block's score matrix [rows, patches]. The device is waited for whenever four
-// times that has been submitted, so released score matrices do not pile up behind the queue.
-const g4vScoreBytes = 64 << 20
 
 func newG4VTower(enc *vision.Gemma4Encoder) (*g4vTower, error) {
 	w, err := enc.Weights()
@@ -186,27 +140,22 @@ func newG4VTower(enc *vision.Gemma4Encoder) (*g4vTower, error) {
 		return nil, fmt.Errorf("gpu: Gemma 4 tower %d heads of %d over hidden %d: the kernels need heads*hd = hidden, hd a multiple of 4",
 			cfg.NumAttentionHeads, cfg.HeadDim, cfg.HiddenSize)
 	}
-	c, err := New()
+	ops, err := newTowerOps(float32(cfg.RMSNormEps))
 	if err != nil {
 		return nil, err
 	}
-	a := &g4vTower{c: c, cfg: cfg, theta: w.RopeTheta, posX: w.PosEmbX, posY: w.PosEmbY}
+	c := ops.c
+	a := &g4vTower{towerOps: ops, cfg: cfg, theta: w.RopeTheta, posX: w.PosEmbX, posY: w.PosEmbY}
 	fail := func(e error) (*g4vTower, error) {
 		a.Close()
 		return nil, fmt.Errorf("gpu: Gemma 4 vision tower: %w", e)
 	}
-	if err := c.ensureVision(); err != nil {
-		return fail(err)
-	}
-	for _, k := range []struct {
-		p     *g4vPipe
-		label string
-		code  string
-	}{{&a.rms, "g4vRMSRows", g4vRMSRowsWGSL}, {&a.clamp, "g4vClamp", g4vClampWGSL}, {&a.clampCopy, "g4vClampCopy", g4vClampCopyWGSL},
-		{&a.rope, "g4vRope", g4vRopeWGSL}, {&a.geluMul, "g4vGeluMul", g4vGeluMulWGSL}} {
-		if _, k.p.pl, k.p.lay, err = c.mkPipeline(k.label, k.code); err != nil {
-			return fail(err)
-		}
+	ops.pipe(&a.clamp, "g4vClamp", g4vClampWGSL)
+	ops.pipe(&a.clampCopy, "g4vClampCopy", g4vClampCopyWGSL)
+	ops.pipe(&a.rope, "g4vRope", g4vRopeWGSL)
+	ops.pipe(&a.geluMul, "g4vGeluMul", g4vGeluMulWGSL)
+	if ops.err != nil {
+		return fail(ops.err)
 	}
 	up := func(x []float32) *DeviceBuffer {
 		if err != nil {
@@ -259,93 +208,19 @@ func (a *g4vTower) Name() string { return "webgpu" }
 func (a *g4vTower) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.c == nil {
-		return nil
+	bufs := []*DeviceBuffer{a.patchW, a.ones}
+	for i := range a.layers {
+		l := &a.layers[i]
+		bufs = append(bufs, l.inNorm, l.postAttnNorm, l.preFFNorm, l.postFFNorm, l.qNorm, l.kNorm,
+			l.q.w, l.k.w, l.v.w, l.o.w, l.gate.w, l.up.w, l.down.w)
 	}
-	a.c.releaseOwned(func() {
-		bufs := []*DeviceBuffer{a.patchW, a.ones}
-		for i := range a.layers {
-			l := &a.layers[i]
-			bufs = append(bufs, l.inNorm, l.postAttnNorm, l.preFFNorm, l.postFFNorm, l.qNorm, l.kNorm,
-				l.q.w, l.k.w, l.v.w, l.o.w, l.gate.w, l.up.w, l.down.w)
-		}
-		for _, d := range bufs {
-			if d != nil {
-				_ = d.Close()
-			}
-		}
-	})
-	err := a.c.Close()
-	a.c, a.layers = nil, nil
-	return err
-}
-
-// kernelN runs pl over bufs (bindings 0 to len(bufs)-1) and a uniform holding p (the next binding), gx by gy
-// workgroups. No Poll.
-func (c *Context) kernelN(k g4vPipe, bufs []*wgpu.Buffer, p []uint32, gx, gy int) error {
-	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "kn-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
-	if err != nil {
-		return err
-	}
-	defer pbuf.Release()
-	entries := make([]wgpu.BindGroupEntry, 0, len(bufs)+1)
-	for i, b := range bufs {
-		entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()})
-	}
-	entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(len(bufs)), Buffer: pbuf, Size: pbuf.GetSize()})
-	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: k.lay, Entries: entries})
-	if err != nil {
-		return err
-	}
-	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
-	defer enc.Release()
-	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline(k.pl)
-	pass.SetBindGroup(0, bg, nil)
-	pass.DispatchWorkgroups(uint32(gx), uint32(gy), 1)
-	if err := pass.TryEnd(); err != nil {
-		pass.Release()
-		return err
-	}
-	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
-	defer cmd.Release()
-	c.queue.Submit(cmd)
-	return nil
-}
-
-// g4vScope holds the device buffers one stretch of the forward allocates, released together.
-type g4vScope struct{ bufs []*DeviceBuffer }
-
-func (s *g4vScope) add(d *DeviceBuffer, err error) (*DeviceBuffer, error) {
-	if err == nil {
-		s.bufs = append(s.bufs, d)
-	}
-	return d, err
-}
-
-func (s *g4vScope) release() {
-	for _, d := range s.bufs {
-		_ = d.Close()
-	}
-	s.bufs = nil
-}
-
-// rmsRows is RMSNorm over rows of width h into a new buffer.
-func (a *g4vTower) rmsRows(s *g4vScope, src, weight *DeviceBuffer, rows, h int) (*DeviceBuffer, error) {
-	dst, err := s.add(a.c.newDevBuf(rows * h))
-	if err != nil {
-		return nil, err
-	}
-	gx := min(rows, 32768)
-	p := []uint32{uint32(rows), uint32(h), math.Float32bits(float32(a.cfg.RMSNormEps)), uint32(gx)}
-	return dst, a.c.kernelN(a.rms, []*wgpu.Buffer{src.buf, weight.buf, dst.buf}, p, gx, (rows+gx-1)/gx)
+	a.layers = nil
+	return a.towerOps.close(bufs)
 }
 
 // proj runs one ClippableLinear over rows of x into a new buffer: the input clamp into a copy when a bound is finite,
 // the matmul, then the output clamp.
-func (a *g4vTower) proj(s *g4vScope, x *DeviceBuffer, p *g4vProj, rows int) (*DeviceBuffer, error) {
+func (a *g4vTower) proj(s *towerScope, x *DeviceBuffer, p *g4vProj, rows int) (*DeviceBuffer, error) {
 	c := a.c
 	clamps := g4vDefectForTest != 1
 	in := x
@@ -382,85 +257,6 @@ func (a *g4vTower) ropeRows(x, cs, sn *DeviceBuffer, np int) error {
 	return a.c.kernelN(a.rope, []*wgpu.Buffer{x.buf, cs.buf, sn.buf}, []uint32{uint32(n), uint32(nH), uint32(hd), 0}, maxWG((n+63)/64), 1)
 }
 
-// attention is full attention at scale 1.0 over q, k, v [np, heads, hd], one head at a time, into a new [np, hidden]
-// buffer. A head's query rows are scored in blocks, so the score matrix a block holds stays under g4vScoreBytes.
-func (a *g4vTower) attention(s *g4vScope, q, k, v *DeviceBuffer, np int, mark func(string)) (*DeviceBuffer, error) {
-	c := a.c
-	H, nH, hd := a.cfg.HiddenSize, a.cfg.NumAttentionHeads, a.cfg.HeadDim
-	ctx, err := s.add(c.newDevBuf(np * H))
-	if err != nil {
-		return nil, err
-	}
-	block := max(64, g4vScoreBytes/(4*np)/64*64)
-	if g4vBlockForTest > 0 {
-		block = g4vBlockForTest
-	}
-	block = min(block, np)
-	pending := 0
-	// rows scores B query rows from r0 of the head at off against every key and writes their context rows. Its buffers
-	// are released once their work is submitted; the device keeps them until that work is done.
-	rows := func(kh, vt *DeviceBuffer, r0, B, off int) error {
-		var bs g4vScope
-		defer bs.release()
-		rowOff := r0*H + off // the block's first row, this head, in a [np, hidden] buffer
-		qh, err := bs.add(c.newDevBuf(B * hd))
-		if err != nil {
-			return err
-		}
-		if err := c.copyHeadDevice(q.buf, qh.buf, B, hd, H, rowOff, 0); err != nil {
-			return err
-		}
-		scores, err := bs.add(c.matmulF32Device(qh.buf, kh.buf, B, hd, np)) // [B, np]
-		if err != nil {
-			return err
-		}
-		if err := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, scores.buf, []uint32{uint32(B), uint32(np), math.Float32bits(1), 0}, B); err != nil {
-			return err
-		}
-		oh, err := bs.add(c.matmulF32Device(scores.buf, vt.buf, B, np, hd)) // [B, hd]
-		if err != nil {
-			return err
-		}
-		return c.copyHeadDevice(oh.buf, ctx.buf, B, hd, H, rowOff, 1)
-	}
-	// head runs one head over every block of query rows.
-	head := func(off int) error {
-		var hs g4vScope
-		defer hs.release()
-		kh, err := hs.add(c.newDevBuf(np * hd))
-		if err != nil {
-			return err
-		}
-		if err := c.copyHeadDevice(k.buf, kh.buf, np, hd, H, off, 0); err != nil {
-			return err
-		}
-		vt, err := hs.add(c.newDevBuf(np * hd)) // [hd, np]
-		if err != nil {
-			return err
-		}
-		if err := c.copyHeadDevice(v.buf, vt.buf, np, hd, H, off, 2); err != nil {
-			return err
-		}
-		for r0 := 0; r0 < np; r0 += block {
-			if err := rows(kh, vt, r0, min(block, np-r0), off); err != nil {
-				return err
-			}
-			if pending += 4 * min(block, np-r0) * np; pending > 4*g4vScoreBytes {
-				c.device.Poll(true, nil) // lets the device free the score matrices already released
-				pending = 0
-			}
-		}
-		return nil
-	}
-	for h := range nH {
-		if err := head(h * hd); err != nil {
-			return nil, err
-		}
-	}
-	mark("attention")
-	return ctx, nil
-}
-
 // Hidden runs the patch embed and every layer (multimodal.Gemma4TowerAccelerator): the last layer's output, [np, hidden],
 // for aikit's FinishHidden. The device is waited for once per layer.
 func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
@@ -469,6 +265,7 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	if a.c == nil {
 		return nil, fmt.Errorf("gpu: the Gemma 4 vision tower is closed")
 	}
+	a.pending = 0
 	c, cfg := a.c, a.cfg
 	H, hd := cfg.HiddenSize, cfg.HeadDim
 	np, pd := len(pos), 3*cfg.PatchSize*cfg.PatchSize
@@ -505,7 +302,7 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	}
 	cosT, sinT := vision.Gemma4RopeTables(pos, hd, a.theta)
 
-	var whole g4vScope // the buffers that live for the whole forward
+	var whole towerScope // the buffers that live for the whole forward
 	defer whole.release()
 	ptD, err := whole.add(c.UploadF32(pt))
 	if err != nil {
@@ -544,7 +341,7 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 func (a *g4vTower) layer(ly *g4vLayer, x, cs, sn *DeviceBuffer, np int, mark func(string)) error {
 	c, cfg := a.c, a.cfg
 	H, I, nH, hd := cfg.HiddenSize, cfg.IntermediateSize, cfg.NumAttentionHeads, cfg.HeadDim
-	var s g4vScope
+	var s towerScope
 	defer s.release()
 	xn, err := a.rmsRows(&s, x, ly.inNorm, np, H)
 	if err != nil {
@@ -588,10 +385,14 @@ func (a *g4vTower) layer(ly *g4vLayer, x, cs, sn *DeviceBuffer, np int, mark fun
 		}
 	}
 	mark("head norms and RoPE")
-	ctx, err := a.attention(&s, q, k, v, np, mark)
+	ctx, err := s.add(c.newDevBuf(np * H))
 	if err != nil {
 		return err
 	}
+	if err := a.attention(q, k, v, ctx, 0, np, H, nH, hd, 1); err != nil {
+		return err
+	}
+	mark("attention")
 	o, err := a.proj(&s, ctx, &ly.o, np)
 	if err != nil {
 		return err
