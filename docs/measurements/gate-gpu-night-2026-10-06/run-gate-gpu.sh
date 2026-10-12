@@ -10,8 +10,9 @@
 #   GOINFER_GATE_SKIP_HEAVY=1 bash .../run-gate-gpu.sh /tmp/somewhere     # the 5-minute control of this script's own plumbing
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
-REV=${REV:-origin/main}
+REV=${REV:-origin/main}   # a release gate pins it: env REV=<sha> (the release-candidate commit); the default tests whatever origin/main is at the start
 LOG=${1:-$HOME/goinfer-logs/gate-gpu-night-$(date +%F)}
+RECORD=${RECORD:-$LOG/records}   # where the run's JSON record is written; RECORD=$SRC/docs/measurements/gpu-gate is where `gate gpu-records` reads (an untracked file to commit in the morning)
 WT=${WT:-$HOME/goinfer-bench/gate-gpu-night-wt}
 export PATH=/usr/local/go/bin:$PATH
 [ -d "$HOME/models" ] || { echo "FATAL: $HOME/models is missing"; exit 2; }
@@ -61,12 +62,12 @@ go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "heavy:    $([ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ] && echo SKIPPED || echo on)"; } | tee "$LOG/provenance.txt"
 # -record writes the run's JSON record OUTSIDE the worktree (which is removed below); commit it as docs/measurements/gpu-gate/<name>.json: `gate gpu-records` reads it.
-go run ./cmd/gate gpu -logdir "$LOG" -record "$LOG/records" 2>&1 | tee "$LOG/gate-gpu.log"
+go run ./cmd/gate gpu -logdir "$LOG" -record "$RECORD" 2>&1 | tee "$LOG/gate-gpu.log"
 rc=${PIPESTATUS[0]}
 clean=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG/gate-gpu.log")
 if ! grep -q -- "PASS — cuda on Linux" <<<"$clean"; then echo "!! the gate printed no PASS verdict (rc=$rc); see $LOG/gate-gpu.log"; rc=1; fi
-ls "$LOG"/records/*.json >/dev/null 2>&1 || { echo "!! the gate wrote no record under $LOG/records"; rc=1; }
-echo "record(s): $(ls "$LOG"/records/*.json 2>/dev/null | tr '\n' ' ')" | tee -a "$LOG/provenance.txt"
+ls "$RECORD"/*"$(git -C "$SRC" rev-parse --short=8 "$REV" 2>/dev/null)"*.json >/dev/null 2>&1 || { echo "!! the gate wrote no record for $REV under $RECORD"; rc=1; }
+echo "record(s) under $RECORD: $(ls -t "$RECORD"/*.json 2>/dev/null | head -2 | tr '\n' ' ')" | tee -a "$LOG/provenance.txt"
 echo "finished: $(date '+%F %T %Z') rc=$rc" | tee -a "$LOG/provenance.txt"
 cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null
 exit $rc
