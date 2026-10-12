@@ -5315,6 +5315,19 @@ RTX 2070 SUPER, driver 595.91.07, Vulkan, branch head `ffc64585`, 15:59 to 16:12
   gate holds (0.7)": yes for every one read.
 - **Owed:** the served re-read of G-S12.4b-3e's Gemma 3 text cells with this build against the one before it, at
   night. In process is not the served time: serve adds the tokenizer, the template and the first decode step.
+- **G-S12.4c-5, that served re-read, registered 2026-10-12 before it runs** (night, nobara; queued as
+  `s12-4c-5-served-gemma`, `s12-4b/run-g-s12-4c-5-night.sh`).
+  - **Instrument:** `served_text_ttft.py`, Gemma 3 4B under `--backend webgpu`, prompts of 400 and 1,600 words (457
+    and 1,783 tokens), five alternating rounds. New is serve at `ffc64585` (both kernels), old is serve at
+    S12.4b-3's head (the pinned `serve-webgpu-s3`, the new arm of G-S12.4b-3e).
+  - **Rule:** ships at a median new/old time to first token of 0.98 or under at both lengths; parked to 1.00; off
+    above. Fixed rounds, no early stop.
+  - **Replies are recorded, not required equal:** the decode kernel changes Gemma's logits by rounding, so a greedy
+    reply may differ. A reply that is not text of the prompt's subject fails the cell whatever its time.
+  - **Cost basis:** G-S12.4b-3e's own log: the old arm about 75 s a round at the two lengths, the new arm under 15,
+    with two loads a round: about 12 minutes; queued at 25.
+  - **Predictions:** the 1,783-token cell's new time to first token is under 8 s (0.7; in process the pass is 4.8 s
+    and the old served cell read within half a second of its in-process pass). The 457-token cell's is under 2 s (0.6).
 
 #### G-S12.4b-4a-5 read on nobara 2026-10-12: PASS; the device m-RoPE prefill is offered on Vulkan
 
