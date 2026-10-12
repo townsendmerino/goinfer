@@ -532,8 +532,11 @@ func runRelease(args []string, w io.Writer) int {
 		return 2
 	}
 	e.prev = prev
-	return reportRelease(w, e, []func(*relEnv) relRow{rowPending, rowPins, rowColdUser, rowGPU, rowHardware, rowBranches, rowChangelog, rowGofmt, rowLint, rowCI})
+	return reportRelease(w, e, releaseRows)
 }
+
+// releaseRows are the pre-flight's reads, in the order they are printed.
+var releaseRows = []func(*relEnv) relRow{rowPending, rowPins, rowColdUser, rowGPU, rowHardware, rowBranches, rowChangelog, rowGofmt, rowLint, rowCI}
 
 // reportRelease runs the rows in order, prints them and returns the exit code.
 func reportRelease(w io.Writer, e *relEnv, rows []func(*relEnv) relRow) int {
