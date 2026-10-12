@@ -1,0 +1,94 @@
+[23:45:05] round 1: gemma-3-4b-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend webgpu --addr 127.0.0.1:18640
+  up in 18 s, model 'gemma-3-4b-it'; load 3.06
+  warm-up 0: TTFT 27.238 s "Here's a description of the image"
+  timed   1: TTFT 27.146 s "Here's a description of the image"
+  timed   2: TTFT 27.464 s "Here's a description of the image"
+  timed   3: TTFT 27.772 s "Here's a description of the image"
+[23:47:19] round 1: gemma-3-4b-webgpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/gemma-3-4b-it -vision-device gpu --backend webgpu --addr 127.0.0.1:18640
+  up in 6 s, model 'gemma-3-4b-it'; load 7.38
+  warm-up 0: TTFT 16.777 s "Here's a description of the image"
+  timed   1: TTFT 14.85 s "Here's a description of the image"
+  timed   2: TTFT 15.064 s "Here's a description of the image"
+  timed   3: TTFT 15.045 s "Here's a description of the image"
+[23:48:34] round 1: gemma-4-e2b-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq --backend webgpu --addr 127.0.0.1:18640
+  up in 9 s, model 'gemma-4-E2B_q4_0-it'; load 5.56
+  warm-up 0: TTFT 18.841 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 18.725 s 'This image is an abstract gradient with a'
+  timed   2: TTFT 18.626 s 'This image is an **abstract gradient**'
+  timed   3: TTFT 18.264 s 'This image is an abstract gradient with a'
+[23:50:04] round 1: gemma-4-e2b-webgpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18640
+  up in 4 s, model 'gemma-4-E2B_q4_0-it'; load 3.31
+  warm-up 0: TTFT 15.709 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 15.621 s 'This image is an **abstract gradient background'
+  timed   2: TTFT 15.743 s 'This image is an **abstract gradient**'
+  timed   3: TTFT 15.778 s 'This image is an **abstract gradient**'
+[23:51:17] round 1: qwen2.5-vl-3b-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18640
+  up in 7 s, model 'qwen25vl-3b-instruct'; load 1.73
+  warm-up 0: TTFT 32.664 s 'This image appears to be a gradient background'
+  timed   1: TTFT 33.858 s 'The image is a gradient background with a'
+  timed   2: TTFT 33.422 s 'The image is a gradient background with a'
+  timed   3: TTFT 32.483 s 'The image is a gradient background that transitions'
+[23:53:42] round 1: qwen2.5-vl-3b-webgpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/qwen25vl-3b-instruct -vision-device gpu --backend webgpu --addr 127.0.0.1:18640
+  up in 6 s, model 'qwen25vl-3b-instruct'; load 7.08
+  warm-up 0: TTFT 25.063 s 'The image is a gradient background with a'
+  timed   1: TTFT 22.939 s 'This image is a gradient background with a'
+  timed   2: TTFT 22.87 s 'The image is a gradient background with a'
+  timed   3: TTFT 22.99 s 'This image is a gradient background with a'
+[23:55:28] round 1: qwen3.5-0.8b-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/qwen3.5-0.8b --backend webgpu --addr 127.0.0.1:18640
+  up in 3 s, model 'qwen3.5-0.8b'; load 6.06
+  warm-up 0: TTFT 8.112 s 'This image is a vibrant, abstract digital'
+  timed   1: TTFT 7.609 s 'This image is a vibrant, abstract digital'
+  timed   2: TTFT 7.687 s 'This image is a digital gradient, likely'
+  timed   3: TTFT 7.639 s 'This image is a digital gradient background,'
+[23:56:18] round 1: qwen3.5-0.8b-webgpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/qwen3.5-0.8b -vision-device gpu --backend webgpu --addr 127.0.0.1:18640
+  up in 3 s, model 'qwen3.5-0.8b'; load 5.64
+  warm-up 0: TTFT 5.594 s 'This image is a digital gradient background featuring'
+  timed   1: TTFT 5.319 s 'This image is a vibrant, abstract digital'
+  timed   2: TTFT 5.29 s 'This is a modern, abstract digital background'
+  timed   3: TTFT 5.205 s 'This image is a vibrant, abstract digital'
+[23:56:59] round 1: qwen3-vl-2b-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/qwen3-vl-2b-instruct --backend webgpu --addr 127.0.0.1:18640
+  up in 6 s, model 'qwen3-vl-2b-instruct'; load 4.45
+  warm-up 0: TTFT 19.716 s 'This image displays a smooth, radial color'
+  timed   1: TTFT 18.375 s 'This image displays a smooth, radial color'
+  timed   2: TTFT 18.569 s 'This image displays a smooth, vertical color'
+  timed   3: TTFT 18.3 s 'This image displays a smooth, vertical color'
+[23:58:25] round 1: qwen3-vl-2b-webgpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/qwen3-vl-2b-instruct -vision-device gpu --backend webgpu --addr 127.0.0.1:18640
+  up in 3 s, model 'qwen3-vl-2b-instruct'; load 5.62
+  warm-up 0: TTFT 11.293 s 'This image displays a smooth, vertical gradient'
+  timed   1: TTFT 10.429 s 'This image is a digital gradient, a'
+  timed   2: TTFT 10.47 s 'This image is a digital gradient, a'
+  timed   3: TTFT 10.459 s 'This image displays a smooth, vertical gradient'
+[23:59:16] round 1: glm-ocr-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/glm-ocr --backend webgpu --addr 127.0.0.1:18640
+  up in 1 s, model 'glm-ocr'; load 4.47
+  warm-up 0: TTFT 25.642 s 'The image is a gradient of colors that'
+  timed   1: TTFT 24.129 s 'The image is a gradient of colors that'
+  timed   2: TTFT 23.415 s 'The image is a gradient of colors that'
+  timed   3: TTFT 23.882 s 'The image is a gradient of colors that'
+[00:01:06] round 1: glm-ocr-webgpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/glm-ocr -vision-device gpu --backend webgpu --addr 127.0.0.1:18640
+  up in 1 s, model 'glm-ocr'; load 7.77
+  warm-up 0: TTFT 12.094 s 'The image is a gradient of colors that'
+  timed   1: TTFT 11.139 s 'The image is a gradient of colors that'
+  timed   2: TTFT 11.175 s 'The image is a gradient of colors that'
+  timed   3: TTFT 11.184 s 'The image is a gradient of colors that'
+[00:02:06] round 1: gemma-4-e2b-audio-cpu-tower | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq --backend webgpu --addr 127.0.0.1:18640
+  up in 5 s, model 'gemma-4-E2B_q4_0-it'; load 3.48
+  warm-up 0: TTFT 9.201 s 'Mr. Quilter is the apostle of'
+  timed   1: TTFT 7.65 s 'Mr. Quilter is the apostle of'
+  timed   2: TTFT 7.648 s 'Mr. Quilter is the apostle of'
+  timed   3: TTFT 7.644 s 'Mr. Quilter is the apostle of'
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-3-4b-cpu-tower | goinfer | 3 | 27.46 | no |
+| gemma-3-4b-webgpu-tower | goinfer | 3 | 15.04 | no |
+| gemma-4-e2b-cpu-tower | goinfer | 3 | 18.63 | no |
+| gemma-4-e2b-webgpu-tower | goinfer | 3 | 15.74 | no |
+| qwen2.5-vl-3b-cpu-tower | goinfer | 3 | 33.42 | no |
+| qwen2.5-vl-3b-webgpu-tower | goinfer | 3 | 22.94 | no |
+| qwen3.5-0.8b-cpu-tower | goinfer | 3 | 7.64 | no |
+| qwen3.5-0.8b-webgpu-tower | goinfer | 3 | 5.29 | no |
+| qwen3-vl-2b-cpu-tower | goinfer | 3 | 18.37 | no |
+| qwen3-vl-2b-webgpu-tower | goinfer | 3 | 10.46 | no |
+| glm-ocr-cpu-tower | goinfer | 3 | 23.88 | no |
+| glm-ocr-webgpu-tower | goinfer | 3 | 11.17 | no |
+| gemma-4-e2b-audio-cpu-tower | goinfer | 3 | 7.65 | no |

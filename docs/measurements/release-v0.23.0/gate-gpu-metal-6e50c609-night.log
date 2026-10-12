@@ -1,0 +1,74 @@
+rev:      6e50c60941e727cd0dd4d993029bda9390f86076
+started:  2026-10-12 00:07:51 PDT
+fixtures: 25 gitignored entries linked from /Users/francistownsend-merino/tmcode/goinfer
+tree:     0 entries in git status (0 = clean)
+go:       go version go1.27.2 darwin/arm64, GOWORK=/Users/francistownsend-merino/goinfer-bench/release-v0.23.0/wt-metal/go.work
+machine:  26.6.2 Apple M1 Pro; Now drawing from 'AC Power'
+load:      0:07  up 17 days, 14:03, 1 user, load averages: 2.49 2.92 3.95
+
+[1m== provenance ==[0m
+  repo        6e50c609
+  date (UTC)  2026-10-12T07:07:56Z
+  host        Darwin arm64
+  backend     metal
+  models      /Users/francistownsend-merino/models
+  webgpu      adapter present (backend=metal)
+  gpu         Apple M1 Pro
+
+[1m== 0. clean GPU ==[0m
+  [33mSKIP[0m  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2. Metal suite ==[0m
+   ... metal-suite: 1m0s elapsed, 114 tests finished, last: TestPrefillGemmW4 | in flight: TestGemmW8Tile_matchesReference (12s)
+   ... metal-suite: 2m0s elapsed, 213 tests finished, last: TestLayerA_vectorAddDispatch | in flight: TestMMAPrefill (6s)
+   ... metal-suite: 3m0s elapsed, 213 tests finished, last: TestLayerA_vectorAddDispatch | in flight: TestMMAPrefill (1m6s)
+  [32mPASS[0m  full metal suite
+      ok  	github.com/townsendmerino/goinfer/metal	214.312s
+
+[1m== 2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==[0m
+  [32mPASS[0m  resident parity gates (dense, gemma3, gemma4 MoE, qwen3.5, mellum, gpt-oss, paging bit-exactness)
+
+[1m== 3. cgo-free ==[0m
+  [32mPASS[0m  metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)
+
+[1m== 4. lifecycle ==[0m
+  [32mPASS[0m  Close() frees — sawtooth not staircase, and frees with a second model resident
+          close_leak_test.go:92: trajectory: base 885 MB → peak 1074 MB → end 886 MB (growth +1 MB over 4 cycles); CurrentAllocatedSize 655360 → 1703936 bytes, one resident 558104576
+          close_leak_test.go:290: A+B alive → closed A: A ledger now 0 buf/0 obj (want 0/0), B ledger 542 buf/79 obj (unchanged from 542/79); device CurrentAllocatedSize 1116733440 → 559349760 bytes; B bit-identical. RSS 2056 MB (informational)
+
+[1m== 4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN) ==[0m
+  [32mPASS[0m  prefill matches sequential decode and emits finite logits (no NaN)
+          prefill_gemma_test.go:89: gemma prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:31: moe prefill last-token argmax matches sequential ✓ (cosine 0.9999)
+          prefill_moe_parity_test.go:45: moe prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:45: moe prefill last-token argmax matches sequential ✓ (cosine 0.9994)
+          prefill_parity_test.go:75: prefill last-token argmax matches sequential ✓ (cosine 0.9980)
+          prefill_parity_test.go:96: prefill 140 tokens: sequential 864.99 ms vs PrefillLast 72.61 ms => 11.9x faster TTFT
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+  [32mPASS[0m  webgpu suite (backend=metal)
+      ok  	github.com/townsendmerino/goinfer/gpu	25.747s
+  [32mPASS[0m  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	19.187s
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  [33mSKIP[0m  21 linux-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  9 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 9 declared -> 9 reported   |   verdicts within them: 10 pass, 2 skip, 0 fail
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: 21 linux-only CI hygiene step(s) — wrong platform for this host
+
+  [32mPASS[0m — metal on Darwin @ 6e50c609 (2026-10-12T07:13:31Z)
+  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.
+
+  record: /Users/francistownsend-merino/tmcode/goinfer/docs/measurements/gpu-gate/metal-20261012T071331Z-6e50c609.json (commit it with the release; `gate gpu-records` reads it)
+record:   /Users/francistownsend-merino/tmcode/goinfer/docs/measurements/gpu-gate/metal-20261012T071331Z-6e50c609.json (untracked in the main checkout until it is committed)
+finished: 2026-10-12 00:13:31 PDT rc=0

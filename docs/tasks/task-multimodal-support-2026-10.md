@@ -66,9 +66,11 @@
     (2026-10-11): its CPU tower takes under a second.
   - S12.2: the 26B's parallel dense and MoE feed-forward is in the WebGPU decode runner and matches the CPU on the
     tiny fixtures (cosine 1.0000000, seven planted defects red). No real 26B has run on WebGPU.
-  - S12.4a: S7's cells under `--backend webgpu`, each family at the defaults and with the WebGPU towers, queued
-    for the night as a record. The image prefill on the GPU (S12.4b) is not started; it is decided from that
-    record.
+  - The five tower speed gates read 2026-10-12: all SHIP (median ratios 0.355 to 0.488 against the CPU towers).
+    The default flips are not applied: they touch `decoder/` and would void v0.23.0's gate records, so the timing
+    is the owner's.
+  - S12.4a read 2026-10-12: with the device towers an image turn's TTFT under WebGPU is 5.3 to 22.9 s, and 2.7
+    to 14.0 s of it is left after the tower. S12.4b (image prefill on the GPU) is owed and not registered yet.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4477,6 +4479,66 @@ is registered after this reads.
   arm faster than the CPU-tower arm on every family (0.7), by the least on Gemma 4 E2B.
 - **A by-day smoke of the harness (20:13 PDT, one cell, one timed request; exploratory and not quotable):** it ran
   end to end on Qwen3.5 0.8B with the device tower.
+
+#### The night of 2026-10-11 on the Mac, read 2026-10-12: all five tower speed gates SHIP; the WebGPU cells read; S12.4b is owed
+
+Queue run `2026-10-11` on the MacBook, 23:05 to 00:13 PDT, 7 of 7 jobs ok; raw in `s12-webgpu/night-2026-10-11/`.
+The runner waited its full five minutes for load 1.0 and started at 1.30; the gates are interleaved pairs.
+
+**The tower speed gates** (encode time on one image, WebGPU over CPU, five pairs in alternating order after a
+discarded pass of each; ship at a median of at most 0.98):
+
+| gate | tower, image | CPU (s) | WebGPU (s) | ratios | median | verdict |
+|---|---|---|---|---|---|---|
+| G-S12.3a-4 | Gemma 3 4B's SigLIP, 896x896 | 23.88 to 24.57 | 10.44 to 10.46 | 0.438 0.432 0.426 0.427 0.430 | **0.430** | SHIP |
+| G-S12.3d-4 | Gemma 4 E2B's, 2,394 patches | 5.08 to 5.42 | 1.90 to 1.91 | 0.368 0.369 0.352 0.376 0.375 | **0.369** | SHIP |
+| G-S12.3e-4 | Qwen3.5 0.8B's, grid 54x72 | 6.53 to 6.62 | 2.32 to 2.34 | 0.352 0.354 0.355 0.358 0.355 | **0.355** | SHIP |
+| G-S12.3e-4 | GLM-OCR's, grid 64x86 | 33.68 to 34.62 | 13.77 to 13.82 | 0.399 0.405 0.410 0.405 0.406 | **0.405** | SHIP |
+| G-S12.3f-4 | Qwen2.5-VL 3B's, grid 64x86 | 27.93 to 29.18 | 13.73 to 14.19 | 0.492 0.483 0.486 0.488 0.503 | **0.488** | SHIP |
+
+- None is marginal, so the grid towers take the owner's rule as decided: the device tower becomes the default above
+  a patch count, the CPU tower below it, the count set from a measurement that is registered before it is run.
+- **The registered consequence is not applied yet.** Each gate makes its device tower the default under `--backend
+  webgpu`. Doing that edits the support table's notes in `decoder/support_table_test.go`, and any change under
+  `decoder/` voids the v0.23.0 GPU-gate records and parity sweep for the commits after it (`gate release`, rows 4
+  and 11). **For the owner:** flip the defaults before the tag and re-run those gates, or tag v0.23.0 with the
+  towers opt-in (`-vision-device gpu`) and flip after.
+
+**S12.4a, S7's cells under `--backend webgpu`** (`cells/run.log`; the 896x896 image, a fresh copy each request, one
+warm-up and three timed; TTFT median of three; the tower's encode time from serve's own log lines):
+
+| family | CPU-tower arm TTFT (s) | device-tower arm TTFT (s) | ratio | the device tower's encode (s) | TTFT left after it (s) |
+|---|---|---|---|---|---|
+| Gemma 3 4B | 27.46 | 15.04 | 0.55 | 10.77 | 4.3 |
+| Gemma 4 E2B | 18.63 | 15.74 | 0.84 | 1.74 | 14.0 |
+| Qwen2.5-VL 3B | 33.42 | 22.94 | 0.69 | 9.84 | 13.1 |
+| Qwen3.5 0.8B | 7.64 | 5.29 | 0.69 | 1.70 | 3.6 |
+| Qwen3-VL 2B | 18.37 | 10.46 | 0.57 | 5.41 | 5.0 |
+| GLM-OCR | 23.88 | 11.17 | 0.47 | 8.52 | 2.7 |
+
+Gemma 4 E2B's audio cell, CPU tower: 7.65 s. Every cell decoded `webgpu:metal-resident` except GLM-OCR
+(`webgpu-staged`). No cell is under S7's 5 s bar; Qwen3.5 0.8B with the device tower is the nearest, at 5.29 s.
+
+- **What it decides, as registered:** the TTFT left after the tower's own time is 2.7 to 14.0 s, over the "about a
+  second" line for all six families, so **S12.4b (image prefill on the GPU for WebGPU) is owed, and is registered
+  before it is built.** The two largest remainders say where to start: Gemma 4 E2B (14.0 s: an E-model's image
+  rows are walked one at a time through the runner) and Qwen2.5-VL (13.1 s: the CPU prefill and the upload of
+  1,024 image tokens).
+- **Predictions scored.** "Two or fewer of the six device-tower image cells under 5 s (0.6)": none is. "The
+  device-tower arm faster on every family (0.7), by the least on Gemma 4 E2B": both held.
+- **Not measured:** how the remainder splits between the CPU prefill, the upload and the first decode step; any of
+  this on a discrete GPU.
+
+**The Metal device gate for v0.23.0** (`gate gpu` in a detached worktree at `6e50c609`, 00:07 to 00:13 PDT): **PASS
+— metal on Darwin**, 9 of 9 check groups reported, 10 pass, 2 skip, 0 fail, on a clean tree. Its record is
+`docs/measurements/gpu-gate/metal-20261012T071331Z-6e50c609.json` and its log
+`docs/measurements/release-v0.23.0/gate-gpu-metal-6e50c609-night.log`.
+
+**A blocker of mine in nobara's parity sweep, fixed.** `TestGemma4EModel_realDeclinesResident` (a real-checkpoint
+test, so it runs only in a sweep) still asserted that WebGPU declines the E-model. S12.1 made WebGPU run it and
+updated the synthetic admission test, not this one; the v0.23.0 sweep on nobara read it as an unlisted failure. The
+test now checks that all three backends admit the shape and that a backend's feature set without the E-model feature
+declines it; it passes on nobara against the real E2B.
 
 ### S13 — Against the peers
 

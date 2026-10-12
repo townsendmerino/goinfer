@@ -1,0 +1,6 @@
+binary /Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/gpu-3f4.test rev 26c798c7eec2dbb5a016208f30781b9c6f603206
+started 2026-10-11 23:35:39 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+23:35  up 17 days, 13:31, 1 user, load averages: 2.10 3.90 4.17
+finished 2026-10-11 23:40:04 PDT rc=0

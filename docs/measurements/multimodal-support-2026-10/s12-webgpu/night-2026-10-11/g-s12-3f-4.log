@@ -1,0 +1,11 @@
+=== RUN   TestQwen25VisionWebGPU_speedGate
+[G-S12.3f-4   46.2s] glm_ocr/table.png, grid [1 64 86]; warm-up (discarded): CPU 27.63 s, WebGPU 18.54 s
+[G-S12.3f-4   87.8s] pair 1/5 (CPU first): CPU 27.93 s, WebGPU 13.73 s, ratio 0.492
+[G-S12.3f-4  130.2s] pair 2/5 (WebGPU first): CPU 28.54 s, WebGPU 13.78 s, ratio 0.483
+[G-S12.3f-4  173.5s] pair 3/5 (CPU first): CPU 29.18 s, WebGPU 14.19 s, ratio 0.486
+[G-S12.3f-4  215.9s] pair 4/5 (WebGPU first): CPU 28.50 s, WebGPU 13.91 s, ratio 0.488
+[G-S12.3f-4  257.9s] pair 5/5 (CPU first): CPU 27.94 s, WebGPU 14.05 s, ratio 0.503
+[G-S12.3f-4  257.9s] ratios [0.492 0.483 0.486 0.488 0.503]; median 0.488 (ship at most 0.98, park 0.98-1.00, off above 1.00)
+    qwen25_vision_test.go:251: G-S12.3f-4 SHIP: median ratio 0.488
+--- PASS: TestQwen25VisionWebGPU_speedGate (264.42s)
+PASS

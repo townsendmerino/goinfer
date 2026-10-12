@@ -1,0 +1,11 @@
+=== RUN   TestVisionEncoderF32_speedGate
+[G-S12.3a-4   37.5s] warm-up (discarded): CPU 24.9 s, WebGPU 10.7 s
+[G-S12.3a-4   71.8s] pair 1/5 (CPU first): CPU 23.88 s, WebGPU float32 10.46 s, ratio 0.438
+[G-S12.3a-4  106.5s] pair 2/5 (WebGPU first): CPU 24.19 s, WebGPU float32 10.45 s, ratio 0.432
+[G-S12.3a-4  141.5s] pair 3/5 (CPU first): CPU 24.57 s, WebGPU float32 10.46 s, ratio 0.426
+[G-S12.3a-4  176.4s] pair 4/5 (WebGPU first): CPU 24.44 s, WebGPU float32 10.44 s, ratio 0.427
+[G-S12.3a-4  211.2s] pair 5/5 (CPU first): CPU 24.32 s, WebGPU float32 10.46 s, ratio 0.430
+[G-S12.3a-4  211.2s] ratios [0.438 0.432 0.426 0.427 0.430]; median 0.430 (ship at most 0.98, park 0.98-1.00, off above 1.00)
+    vision_f32_test.go:588: G-S12.3a-4 SHIP: median ratio 0.430
+--- PASS: TestVisionEncoderF32_speedGate (211.26s)
+PASS

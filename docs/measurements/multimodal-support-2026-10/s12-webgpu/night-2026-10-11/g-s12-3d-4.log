@@ -1,0 +1,11 @@
+=== RUN   TestG4VWebGPU_speedGate
+[G-S12.3d-4    7.1s] ../testdata/glm_ocr/table.png, 2394 patches; warm-up (discarded): CPU 5.19 s, WebGPU 1.94 s
+[G-S12.3d-4   14.2s] pair 1/5 (CPU first): CPU 5.17 s, WebGPU 1.90 s, ratio 0.368
+[G-S12.3d-4   21.3s] pair 2/5 (WebGPU first): CPU 5.17 s, WebGPU 1.91 s, ratio 0.369
+[G-S12.3d-4   28.6s] pair 3/5 (CPU first): CPU 5.42 s, WebGPU 1.91 s, ratio 0.352
+[G-S12.3d-4   35.6s] pair 4/5 (WebGPU first): CPU 5.08 s, WebGPU 1.91 s, ratio 0.376
+[G-S12.3d-4   42.6s] pair 5/5 (CPU first): CPU 5.08 s, WebGPU 1.90 s, ratio 0.375
+[G-S12.3d-4   42.6s] ratios [0.368 0.369 0.352 0.376 0.375]; median 0.369 (ship at most 0.98, park 0.98-1.00, off above 1.00)
+    gemma4_vision_test.go:302: G-S12.3d-4 SHIP: median ratio 0.369
+--- PASS: TestG4VWebGPU_speedGate (43.56s)
+PASS

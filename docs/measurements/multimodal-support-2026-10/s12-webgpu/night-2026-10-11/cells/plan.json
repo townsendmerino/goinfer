@@ -1,0 +1,272 @@
+{
+ "rounds": 1,
+ "per_round": 3,
+ "rotate": false,
+ "cells": [
+  {
+   "cell": "gemma-3-4b-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-3-4b-it",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "gemma-3-4b-webgpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-3-4b-it",
+    "-vision-device",
+    "gpu",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/Users/francistownsend-merino/models/gemma-4-E2B-unq",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b-webgpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/Users/francistownsend-merino/models/gemma-4-E2B-unq",
+    "-vision-device",
+    "gpu",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen2.5-vl-3b-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen25vl-3b-instruct",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen2.5-vl-3b-webgpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen25vl-3b-instruct",
+    "-vision-device",
+    "gpu",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen3.5-0.8b-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen3.5-0.8b",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen3.5-0.8b-webgpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen3.5-0.8b",
+    "-vision-device",
+    "gpu",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen3-vl-2b-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen3-vl-2b-instruct",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen3-vl-2b-webgpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/qwen3-vl-2b-instruct",
+    "-vision-device",
+    "gpu",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "glm-ocr-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/glm-ocr",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "glm-ocr-webgpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/glm-ocr",
+    "-vision-device",
+    "gpu",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b-audio-cpu-tower",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "audio",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/speech/librispeech-1272-128104-0000.wav",
+   "prompt": "Transcribe this audio.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s12-webgpu-2026-10-11/bin/serve-webgpu-s12-4",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/Users/francistownsend-merino/models/gemma-4-E2B-unq",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  }
+ ]
+}

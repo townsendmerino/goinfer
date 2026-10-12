@@ -1,0 +1,11 @@
+=== RUN   TestGridVisionWebGPU_speedGate
+[G-S12.3e-4 glm-ocr   50.4s] glm_ocr/table.png, grid [1 64 86]; warm-up (discarded): CPU 36.24 s, WebGPU 14.13 s
+[G-S12.3e-4 glm-ocr   98.8s] pair 1/5 (CPU first): CPU 34.62 s, WebGPU 13.82 s, ratio 0.399
+[G-S12.3e-4 glm-ocr  146.6s] pair 2/5 (WebGPU first): CPU 33.98 s, WebGPU 13.77 s, ratio 0.405
+[G-S12.3e-4 glm-ocr  194.0s] pair 3/5 (CPU first): CPU 33.68 s, WebGPU 13.81 s, ratio 0.410
+[G-S12.3e-4 glm-ocr  241.8s] pair 4/5 (WebGPU first): CPU 34.01 s, WebGPU 13.78 s, ratio 0.405
+[G-S12.3e-4 glm-ocr  289.5s] pair 5/5 (CPU first): CPU 33.94 s, WebGPU 13.77 s, ratio 0.406
+[G-S12.3e-4 glm-ocr  289.5s] ratios [0.399 0.405 0.410 0.405 0.406]; median 0.405 (ship at most 0.98, park 0.98-1.00, off above 1.00)
+    grid_vision_test.go:504: G-S12.3e-4 glm-ocr SHIP: median ratio 0.405
+--- PASS: TestGridVisionWebGPU_speedGate (292.14s)
+PASS

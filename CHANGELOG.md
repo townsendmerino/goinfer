@@ -122,9 +122,9 @@ a cosine of 0.30-0.36 against the float32 CPU tower to 0.87-0.985 (it is an int8
 ### Changed — under `--backend webgpu`, Gemma 3's vision tower runs on the CPU in float32 by default
 
 The WebGPU tower is now opt-in: `--vision-quant int8` for the int8 one, `--vision-device gpu` (or `--vision-quant f32`)
-for a new float32 one that matches the CPU tower to a cosine of 0.9999996 a token. The CPU tower is the exact one and
-stays the default until a timed comparison with the float32 device tower has been read; the device towers have not been
-timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
+for a new float32 one that matches the CPU tower to a cosine of 0.9999996 a token. On an M1 Pro the float32 device tower
+encodes an image in 0.43 of the CPU tower's time (10.5 s against 24.3 s, the median of five interleaved pairs, 2026-10-11).
+The CPU tower is still the default in this release; the device towers have not been timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
 
 ### Added — the Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR vision towers on WebGPU, opt-in (`--vision-device gpu`)
 
@@ -132,9 +132,11 @@ Under `--backend webgpu` these vision towers can now run on the GPU in float32: 
 without it each tower stays on the CPU as before. Each one's image features match its CPU tower's on real checkpoints:
 Gemma 4 E2B's to a cosine of 1.0000000 on every soft token of five test images, Qwen2.5-VL 3B's to 0.9999965, Qwen3.5
 0.8B's to 0.9999993, GLM-OCR's to 0.999987 and Qwen3-VL 2B's (its DeepStack sets included) to 0.9999985, the lowest row
-in each case. Whether a tower
-becomes the default is decided by a timed comparison with its CPU tower, not yet read. On a very small image (a 6 by 8
-grid of patches) the GLM-OCR device tower was slower than the CPU's
+in each case. On an M1 Pro each
+device tower encodes a large image in 0.36 to 0.49 of its CPU tower's time (medians of five interleaved pairs, 2026-10-11:
+Gemma 4 E2B 0.37, Qwen3.5 0.8B 0.36, GLM-OCR 0.41, Qwen2.5-VL 3B 0.49), and an image turn's time to first token falls to
+0.47 to 0.84 of what it is with the CPU tower. The CPU towers are still the default in this release. On a very small image
+(a 6 by 8 grid of patches) the GLM-OCR device tower was slower than the CPU's
 ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d to S12.3f).
 
 ### Added — Gemma 4 26B's feed-forward block on WebGPU (checked on tiny fixtures only)
