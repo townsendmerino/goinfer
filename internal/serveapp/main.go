@@ -338,8 +338,8 @@ type config struct {
 	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 	noSelfTest      bool          // -no-selftest: skip the startup self-tests (H2)
 	visionMaxPixels int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
-	visionQuant     string        // -vision-quant: "" (unset: f32, except Gemma 3 on cuda/webgpu, which stays int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
-	visionDevice    string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu"
+	visionQuant     string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	visionDevice    string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (also a device tower that is opt-in)
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
@@ -414,8 +414,8 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
-	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend)")
-	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere except Gemma 3 under --backend webgpu, whose only device tower is int8; on CUDA Gemma 3 is f32 since 2026-10-08, or int8 (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back, and on webgpu runs the CPU tower)")
+	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU; under --backend webgpu the Gemma 3 and Gemma 4 towers stay on the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend) | gpu (as auto, and under --backend webgpu the Gemma 3 and Gemma 4 towers run on the GPU in float32)")
+	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere; on CUDA Gemma 3 is int8 instead (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back). Under --backend webgpu Gemma 3's unset default runs the float32 tower on the CPU; f32 or int8 given explicitly puts that tower on the GPU")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
@@ -1072,8 +1072,10 @@ func (cfg config) towerBackend() string {
 // dir when it carries a vision tower (auto-discovery). A tower needs exactly one --model, so -vision with a model zoo
 // is an error. Absent a tower it is a no-op: text-only serving is unchanged.
 func (s *server) loadVisionTower(cfg config) error {
-	if cfg.visionDevice != "" && cfg.visionDevice != "auto" && cfg.visionDevice != "cpu" { // "" (a config built without flags) is auto
-		return fmt.Errorf("-vision-device %q: want auto or cpu", cfg.visionDevice)
+	switch cfg.visionDevice {
+	case "", "auto", "cpu", "gpu": // "" (a config built without flags) is auto
+	default:
+		return fmt.Errorf("-vision-device %q: want auto, cpu or gpu", cfg.visionDevice)
 	}
 	dir := cfg.visionPath
 	if dir == "" {
@@ -1139,7 +1141,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "gemma4" {
-		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
+		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.visionDevice == "gpu", cfg.requireBE)
 	}
 	if mt == "mistral3" { // Ministral 3's Pixtral tower, on the CPU in float32
 		return s.loadPixtralVisionTower(dir)
@@ -1208,12 +1210,13 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 
 // gemma3TowerBackend is where Gemma 3's SigLIP tower attaches: the tower backend, except that WebGPU's unset default
 // is the float32 tower on the CPU, by choice and not by a failed attach. An explicit -vision-quant keeps the tower on
-// WebGPU: f32 attaches its float32 device tower and int8 its int8 one. Which of the CPU and the float32 device tower is
-// the default is decided by a speed gate (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4).
+// WebGPU: f32 attaches its float32 device tower and int8 its int8 one; -vision-device gpu attaches the float32 one.
+// Which of the CPU and the float32 device tower is the default is decided by a speed gate
+// (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4).
 func gemma3TowerBackend(cfg config, int8Tower bool, note io.Writer) string {
 	be := cfg.towerBackend()
-	if be == "webgpu" && cfg.visionQuant == "" && !int8Tower {
-		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant f32 or int8 puts a tower on the GPU (the int8 one is lossy against float32)")
+	if be == "webgpu" && cfg.visionQuant == "" && !int8Tower && cfg.visionDevice != "gpu" {
+		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-device gpu (or --vision-quant f32) puts the float32 tower on the GPU, --vision-quant int8 the int8 one (lossy against float32)")
 		return "cpu"
 	}
 	return be
@@ -1320,9 +1323,9 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 // projector: Gemma4Encoder.Forward bakes in the embed_vision projection. decoder.GenerateGemma4VL implements two
 // forwards, chosen by the checkpoint's use_bidirectional_attention: unset (the E2B/E4B-class sequential/causal path)
 // and "vision" (the 26B-A4B/31B-class batched path, decoder/forward_gemma4_batched.go). Any other value is refused at
-// load rather than served with the wrong mask. Placement is chooseGemma4Tower's; aikit's Gemma4Encoder has no
-// EnableResident method.
-func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend string, require bool) error {
+// load rather than served with the wrong mask. Placement is chooseGemma4Tower's (asked: -vision-device gpu); aikit's
+// Gemma4Encoder has no EnableResident method.
+func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend string, asked, require bool) error {
 	for _, lm := range s.models {
 		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" && bd != "vision" {
 			return fmt.Errorf("gemma4 vision: %q sets use_bidirectional_attention=%q, not the supported %q value; GenerateGemma4VL only implements the E2B/E4B-class causal case (unset) and the 26B-A4B/31B-class %q blockwise case", lm.name, bd, "vision", "vision")
@@ -1336,7 +1339,7 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 	if err != nil {
 		return fmt.Errorf("gemma4 vision preprocessor config (%s): %w", dir, err)
 	}
-	tower, where, err := chooseGemma4Tower(enc, int8Tower, backend, require)
+	tower, where, err := chooseGemma4Tower(enc, int8Tower, backend, asked, require)
 	if err != nil {
 		return err
 	}
@@ -1408,12 +1411,20 @@ func hasAudioConfig(dir string) bool {
 	return json.Unmarshal(raw, &c) == nil && len(c.Audio) > 0 && string(c.Audio) != "null"
 }
 
-// chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal and this binary registers a Metal
-// tower, and says where it runs. The Metal tower is float32, so an int8 tower (-vision-quant int8) stays on the CPU; a
-// tower that fails to start falls back to the CPU with the reason, unless -require-backend asks for a refusal. Other
-// backends run it on the CPU.
-func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
+// chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal or CUDA and this binary registers
+// a tower for it, and says where it runs. The device tower is float32, so an int8 tower (-vision-quant int8) stays on
+// the CPU; a tower that fails to start falls back to the CPU with the reason, unless -require-backend asks for a
+// refusal. Under WebGPU the device tower follows the same rules only when asked for (-vision-device gpu) and the CPU
+// tower is otherwise the choice, not a fallback: which of the two is the default is decided by a speed gate
+// (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3d-4). Other backends run it on the CPU.
+func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, asked, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
 	name, ok := deviceTowerName(backend)
+	if backend == "webgpu" {
+		if !asked {
+			return nil, "CPU (-vision-device gpu puts it on WebGPU)", nil
+		}
+		name, ok = "WebGPU", true
+	}
 	if !ok {
 		return nil, "CPU", nil
 	}
