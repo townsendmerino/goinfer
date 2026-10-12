@@ -5188,6 +5188,60 @@ kernel once a row on a wide head) both take it.
 - **Predictions:** attention at 1,783 rows falls from 65.6 s to under 3 s on nobara (0.7); the 1,783-row pass ends
   under 9 s (0.6); every Gemma gate holds (0.7; the likeliest to move is a near-tie in the real E2B gate).
 
+#### S12.4c, built; the Mac read 2026-10-12; nobara not yet, so it is on its branch and not on main
+
+**The code** (branch `s12-4b-image-prefill`, `fe2e5f2e`; `gpu/attn_keys_wide.go:attnKeysWideSource`,
+`gpu/attention.go:Context.attnKernel`): the wide key-split kernel, derived from the narrow one's source.
+
+- **G-S12.4c-1: PASS on the Mac** (`gpu`'s `TestAttnKeysWide_parity`): both bars at 8 heads of 256 and at a head of
+  192, thirteen key counts and window starts, and both planted defects red. **Amendment:** the registered reading
+  "with an attention sink" was not run. No test helper feeds a sink to one attention dispatch, and no model with a
+  head over 128 has one.
+- **G-S12.4c-2: PASS** (`TestAttnKernel_choice`).
+- **G-S12.4c-3 on the Mac: PASS.** The whole `gpu` package passes with the kernel in place (every tiny Gemma gate).
+  The real E2B gate of S12.1 reads as it did: +0.74 points, 419 of 435 teacher-forced positions, 8 of 8 free runs.
+  The pass against the walk is bit for bit on E2B and Gemma 3 4B at 64 and 300 rows
+  (`s12-4b/g-s12-4c-mac-day.log`).
+- **G-S12.4c-4 on the Mac, one pair, a process an arm** (Gemma 3 4B at int4, the same log):
+
+| rows | arm | pass (s) | of which attention | the walk (s) |
+|---|---|---|---|---|
+| 457 | old kernel | 19.22 | 11.89 | 30.49 |
+| 457 | new | 10.94 | 3.67 | 22.33 |
+| 1,783 | old kernel | 173.55 | 147.90 | 221.69 |
+| 1,783 | new | 64.20 | 38.68 | 112.42 |
+
+  - The pass at 0.57 and 0.37 of the old kernel's, the walk at 0.73 and 0.51. One pair, so a direction and not yet
+    the registered reading.
+  - **The log's "last step" figures are wrong and are not used.** The walk's rows are queued without waiting, so the
+    last step's time is the whole queue's. A decode step at depth is still unmeasured.
+  - **Attention is still half the new pass at 1,783 rows.** That is the once-a-row dispatch, S12.4c-b's subject.
+- **Not read: anything on nobara.** Its lock was held by the fidelity gate when this was ready, and the guard
+  stopped me. Owed there before this merges: G-S12.4c-1 to 3 on Vulkan and the profile pair.
+
+#### S12.4c-b, the key-split kernels' rows forms in the batched pass: registered 2026-10-12 before any code
+
+The first Mac reading with the wide key-split kernel (below, when both boxes have read) left attention at half the
+pass's time at 1,783 rows. The pass runs decode's attention kernel once a row on a wide head or a window layer: 34
+dispatches a row, each over 8 workgroups, so the GPU runs one row's heads at a time.
+
+- **The change:** rows forms of the two key-split kernels (the narrow one and the wide one), derived from their
+  source as the quantizers' rows forms are: a workgroup's row comes from its y coordinate, its key count is the
+  first row's plus its row, and a window layer's first key is the row's own. One dispatch a layer for all rows.
+  The pass takes them wherever decode's choice for the layer is a key-split kernel (a float32 cache and an eligible
+  geometry); elsewhere it keeps what it does today.
+- **Gates:**
+  - **G-S12.4c-b1 (quick):** each rows form against its single-row kernel run once a row: bit for bit, for both
+    kernels, with and without a window, at key counts across a tile. Planted defects, each red: every row given
+    the first row's key count; the window ignored; a row reading the next row's query.
+  - **G-S12.4c-b2:** the pass against the walk stays bit for bit: G-S12.4b-2a, 3a and their planted defects on the
+    tiny fixtures, and 2b and 3c on the real checkpoints, on both backends.
+  - **G-S12.4c-b3, speed, in process:** the profile at 457 and 1,783 rows on Gemma 3 4B, this against the
+    once-a-row pass, on both boxes. Ships at 0.98 or under on the pass's wall time.
+- **Predictions:** b1 passes first run (0.6; the likeliest failure is the compiler evaluating the softmax
+  differently in the rows form, as nothing but identical text protects it). Attention at 1,783 rows on the Mac falls
+  from about 39 s to under 12 s (0.5).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
