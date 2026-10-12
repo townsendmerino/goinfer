@@ -753,6 +753,15 @@ plan. Where it says INFERRED, the step names the fallback and what decides it.
   - **G3c (`TestGemma4EModel_realE2BNonInferiority`, real E2B and the Qwen2.5-Coder-1.5B reference, 8 prompts x 32 tokens, both sides loading the same
     GGUF with the same options): PASS.** E2B 7/8 prompts, teacher-forced agreement 411/435 = **94.48%**; reference 7/8 prompts, 374/398 = **93.97%**;
     delta **+0.51 points** against the -2.0 margin, free-run passes equal (7 and 7). 144 s end to end. (Metal's reading of the same rule: 94.94% and 94.22%.)
+  - **G3c reference moved: the CUDA E-model margins are now -4.7 / -6.7 (owner decision 2026-10-12).** The v0.23.0 night read G3c and G-E4B-C1b
+    AMBIGUOUS: E2B 94.48% and E4B (QAT q4_0) 93.10%, both unchanged from their passing readings, against a reference that read 96.64% (8/8) instead of
+    93.97% (7/8). The cause is commit 558f99ef (a ChatML template's own default system message is now used), which changed the Qwen2.5-Coder-1.5B
+    reference's prompts and not the Gemma arms'; no `cuda/`, `decoder/` or `gpu/` change moves either E-model. Deltas became -2.16 and -3.54 against
+    -2.0 / -4.0. The reference is measured live, so the bar moved with it. Decision: keep the live reference and shift both margins by its measured move
+    (2.67 points), -2.0 -> -4.7 and -4.0 -> -6.7, which holds the registered absolute floor (about 92%) where it was. Not chosen: pinning the
+    reference arm to the old prompt (restores the comparison exactly, recommended, declined). The cost is that a real E-model loss of up to 2.7 points
+    now passes, and that the reference can move again by the same route; an absolute floor on the E-model's own agreement would not. Metal's G3
+    reading uses the same reference and keeps -2.0 until the Mac re-reads it.
     - **Run 1 was flawed and is superseded.** The CPU side of the reference loaded the CUDA `e4h` sidecar (int4 embedding/LM-head tables) while the
       CUDA side loaded the GGUF with `EmbedInt4` unset (int8 pin): the confound Metal's G3 run 1 fell into, which the plan said to avoid up front. It
       read the reference at 89.20% (355/398) and E2B at the same 94.48%, a delta of +5.29 that came entirely from a depressed reference. Caught from the
