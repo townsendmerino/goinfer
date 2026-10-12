@@ -5242,6 +5242,36 @@ dispatches a row, each over 8 workgroups, so the GPU runs one row's heads at a t
   differently in the rows form, as nothing but identical text protects it). Attention at 1,783 rows on the Mac falls
   from about 39 s to under 12 s (0.5).
 
+#### S12.4c-b, built; the Mac read 2026-10-12; nobara owed with S12.4c
+
+**The code** (branch `s12-4b-image-prefill`, `8925b038`; `gpu/attn_keys_rows.go:attnKeysRowsSource`): the two
+key-split kernels' rows forms, and the pass using one where decode's choice for a sliding-window layer or a wide
+head is a key-split kernel.
+
+- **G-S12.4c-b1: PASS on the Mac** (`gpu`'s `TestAttnKeysRows_matchSingleRow`): both rows forms equal their
+  single-row kernel bit for bit at nine key counts and windows; the three planted defects differ on both.
+- **G-S12.4c-b2 on the Mac: PASS.** The whole `gpu` package; and on the real checkpoints, where the wide rows form
+  and a real window are first exercised, the pass against the walk bit for bit: E2B at 64, 300 and 600 rows (past
+  its 512 window), Gemma 3 4B at 64, 300 and 1,100 (past its 1,024) (`s12-4b/g-s12-4c-b-mac-day.log`).
+- **G-S12.4c-b3 on the Mac, two pairs, a process an arm** (Gemma 3 4B at int4; the pass's wall time, and attention
+  from the profiled pass):
+
+| rows | once a row: pass (s), attention | rows form: pass (s), attention | ratio |
+|---|---|---|---|
+| 457 | 11.33 and 11.26; 3.58 and 3.73 | 8.15 and 8.13; 0.56 and 0.41 | 0.72 |
+| 1,783 | 66.41 and 65.94; 38.78 and 39.41 | 32.26 and 32.26; 5.07 and 5.41 | 0.49 |
+
+  Ships on the Mac's reading. Projections are now three quarters of the pass (about 31 s of 32 at 1,783 rows).
+- **Predictions scored.** "b1 passes first run (0.6)": the kernels did; the first run failed on my own inserted
+  comment, which the source check counted as a second read of the key count. "Attention at 1,783 rows on the Mac
+  from about 39 s to under 12 s (0.5)": yes, 5.1 to 5.4 s.
+- **Where the owner's cell stands on the Mac, in process, all three steps:** Gemma 3 4B at 1,783 rows was 173.6 s
+  with the per-dimension kernel, 64 to 66 s with the wide key-split kernel once a row, and is 32.3 s. The walk went
+  from 221.7 s to about 113 s; it runs the wide kernel a token and gains nothing from the rows form.
+- **A decode step at depth, now measured** (the walk's last step after the queue is drained, one reading a run):
+  206 to 245 ms at both 457 and 1,783 rows with the wide key-split kernel. It no longer grows with the context. No
+  reading with the old kernel: the earlier log's figures for it were the undrained queue's.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
