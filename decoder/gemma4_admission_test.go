@@ -37,9 +37,9 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	}
 
 	// enable_moe_block is admitted like the dense variant: the parallel dense||MoE FFN has its own cuda path (gemma4MoeMLP,
-	// routed around the generic MoE checks via HasGemma4MoEResident). CUDA ships every required feature; WebGPU lacks the Gemma
-	// kernels, so the feature gate refuses it (the same no-overclaim shape as dense). It is the PLE-free 26B-A4B shape, so no
-	// FeatGemma4EModel.
+	// routed around the generic MoE checks via HasGemma4MoEResident). Every backend in residentGemma4MoEBackends ships the
+	// block (CUDA, Metal, WebGPU); a backend outside it is refused by the feature gate (the same no-overclaim shape as dense).
+	// It is the PLE-free 26B-A4B shape, so no FeatGemma4EModel.
 	moe, _, err := resolveArchitecture(representativeConfig("gemma4_text"))
 	if err != nil {
 		t.Fatalf("resolve gemma4_text (MoE): %v", err)
@@ -50,11 +50,13 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	if !moe.decodeRunnerEligible() {
 		t.Error("gemma4_text (enable_moe_block) NOT admitted — Split B landed the resident MoE path, the gate should open")
 	}
-	if !ResidentEligible(moe, "cuda") {
-		t.Error("cuda declines gemma4_text (enable_moe_block) despite shipping the gemma4MoeMLP resident path")
+	for _, be := range []string{"cuda", "metal", "webgpu"} {
+		if !ResidentEligible(moe, be) {
+			t.Errorf("%s declines gemma4_text (enable_moe_block) despite shipping the parallel dense and MoE block", be)
+		}
 	}
-	if ResidentEligible(moe, "webgpu") {
-		t.Error("webgpu admits gemma4_text (enable_moe_block) but lacks its Gemma kernels — the feature gate must refuse it")
+	if residentGemma4MoEOK(moe, "no-such-backend") {
+		t.Error("a backend outside residentGemma4MoEBackends is taken to implement Gemma 4's MoE block")
 	}
 
 	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by every backend that declares
