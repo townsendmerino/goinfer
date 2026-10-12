@@ -5008,6 +5008,55 @@ against 0.5. Offering it on Vulkan is one line (`mropePrefillBackends`). The ins
 route is nearer the model is a fidelity gate against the float reference, at night, which nobody has registered.
 The DeepStack form (Qwen3-VL) and Gemma 3's image block were not started: both would meet the same question.
 
+#### G-S12.4b-4a-5, which prefill route is nearer the model: registered 2026-10-12 before it runs (owner: "gate first on the decision")
+
+The owner's answer to S12.4b-4a's question: the device m-RoPE prefill stays off until a gate against the float
+reference has read. This is that gate.
+
+- **Tier:** night, on nobara. Vulkan is the only backend the decision is about. The pilot that sizes it runs by
+  day: it is untimed and grades nothing.
+- **Instrument:** `gpu`'s `TestS12MRoPEFidelity`, the prefill/decode fidelity protocol (`internal/fidelity`).
+  - **Reference:** the float32 CPU forward of the same checkpoint (Qwen2.5-VL 3B) on the same prompt and the same
+    tower features.
+  - **Arms**, both decoding on the WebGPU resident at int4: **exact**, the route in use (the CPU's int4 image
+    prefill, uploaded), and **candidate**, the device's m-RoPE prefill.
+  - **Positions:** 32 a prompt: the one after the prompt, and the ones after each of the reference's own 31
+    greedy tokens, forced on all three. Each is scored against the reference: top-1 agreement, a hard flip (the 3%
+    near-tie rule), and KL(reference ‖ arm).
+  - **What it cannot see:** the reference is goinfer's own float32 path, not transformers. A defect in the CPU's
+    image path would be in the reference and in the exact arm alike.
+- **Decision set, pooled, no per-cell veto:** two cells, an image at a 448x448 pixel budget ("small", about 230
+  image rows) and at the processor's own budget ("served", about 1,450). The prompts are the model's own chat
+  shape around one image and one question: the 15 invoice images of `testdata/glm_ocr/invoices`, each with two
+  questions in the small cell and a third in the served cell, and four non-document test images in the small cell.
+  **49 prompts, `fidelity.PromptSetHash` `7dc0e317583ac499c35715f812e00f28cfd076ed5b7dfc85a47c28a027a96bcd`.**
+- **Criteria:** `fidelity.NonInferior` with `AgreeMarginPts = 1` and `KLMargin = 0.10`, one-sided alpha 0.05, and
+  hard flips under the pooled Poisson bound. Superiority is not claimed. No worst-case claim.
+- **Prompts:** N from `power.py fidelity --from-positions` on the pilot's log (8 prompts on three images the gate
+  does not use, hash `e18d8e41...`). The registry has no entry for this pair.
+  - N of 49 or under: the 49 above.
+  - N of 50 to 94: those and the 45 of the registered extension (the same invoices with other questions, hash
+    `d185fe5e...`), pooled.
+  - Over 94: this set cannot resolve the margins; recorded, and the owner decides.
+  - **A limit, stated:** prompts that share an image are not independent draws, so the bounds are narrower than 49
+    independent images would give.
+- **Stopping rule:** the fixed set, no early stop. A restarted run skips the prompts already in its log, which
+  changes nothing it reads.
+- **The bands:**
+  - **PASS:** Vulkan goes into `gpu/residency.go:mropePrefillBackends`, and G-S12.4b-4a-4 (the served cell) is
+    queued.
+  - **PARKED:** no point estimate breaches its margin but a bound does. It stays off; the owner decides whether
+    the extension is worth a night.
+  - **OFF:** a point estimate breaches its margin, or hard flips fail. It stays off, on this record.
+- **Proving it can go red:** the pilot runs a second time with a planted defect in the candidate (each row's
+  positions taken from the next row). That verdict must be OFF, or the instrument is not used.
+- **Cost basis:** from the in-process readings on nobara: a small prompt about a minute (the tower once an image, a
+  float32 prefill of about 280 rows, 31 float32 steps), a served prompt four to five (a float32 prefill of about
+  1,500 rows and the CPU's int4 one). About 100 minutes for the 49; the estimate is redone from the pilot's own
+  times before it is queued.
+- **Predictions, written now:** PARKED (0.5): two int4 readings of one model should sit about as far from it as
+  each other, and 49 prompts on 19 images are few. PASS (0.3). OFF (0.2). The planted defect reads OFF (0.9).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
