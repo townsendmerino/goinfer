@@ -65,7 +65,10 @@
     same image by a day smoke). Left in S12.3: Gemma 4's audio tower, not built (its CPU tower takes under a
     second; for the owner).
   - S12.2: the 26B's parallel dense and MoE feed-forward is in the WebGPU decode runner and matches the CPU on the
-    tiny fixtures (cosine 1.0000000, seven planted defects red). No real 26B has run on WebGPU. Next: S12.4.
+    tiny fixtures (cosine 1.0000000, seven planted defects red). No real 26B has run on WebGPU.
+  - S12.4a: S7's cells under `--backend webgpu`, each family at the defaults and with the WebGPU towers, queued
+    for the night as a record. The image prefill on the GPU (S12.4b) is not started; it is decided from that
+    record.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4441,6 +4444,33 @@ The Mac, by day; raw in `s12-webgpu/gemma4-moe/g-s12-2.log`. Tiny fixtures, int4
   fixtures only and that no real 26B has run there; the CHANGELOG says the same.
 - **Not measured:** a real 26B on WebGPU (no box); the block at int8 weights (int4 only); expert paging, which
   WebGPU does not have, so a 26B there needs every expert resident.
+
+#### S12.4a, S7's cells under WebGPU: registered 2026-10-11 before it runs (a record, at night)
+
+**Why first:** S12.4 has two parts, an image prefill on the GPU for WebGPU and the timed cells. The prefill is the
+larger piece of code, and nothing measured says the CPU prefill and upload is where a WebGPU image turn's time goes
+now that the towers can run on the device. So the cells are measured first, as they stand, and the prefill (S12.4b)
+is registered after this reads.
+
+- **The instrument:** S7's, unchanged (`vision_ttft.py`: a fresh image or clip per request, warm-up included; TTFT
+  to the first content delta; `max_tokens` 8; the 896x896 image and the LibriSpeech clip).
+- **The cells** (`s12-webgpu/run-s12-4a-cells-night.sh`, night queue `s12-4a-webgpu-cells`, estimated 55 min,
+  queued at 80): Gemma 3 4B, Gemma 4 E2B, Qwen2.5-VL 3B, Qwen3.5 0.8B, Qwen3-VL 2B and GLM-OCR on `--backend
+  webgpu`, each twice: serve's defaults (every vision tower on the CPU), and `-vision-device gpu` (the WebGPU
+  towers). Gemma 4 E2B's audio cell once, at the defaults (there is no WebGPU audio tower). One warm-up and three
+  timed requests a cell. The binary is `serve-webgpu-s12-4`, built from main at `1deedd5f`.
+- **The reading:** each cell's median TTFT of three against S7's 5 s bar, the decode path and where the tower ran
+  from serve's own log lines, and per family the device-tower arm's TTFT over the CPU-tower arm's. Reported, not
+  gated: the towers' defaults are decided by their own registered gates (G-S12.3a-4, d-4, e-4, f-4), and this
+  record is not a second vote on them.
+- **What it decides:** whether S12.4b is worth building. For each family, the TTFT left in the device-tower arm
+  after the tower's own time (from the tower gates) is the prefill and upload; if that remainder is under about a
+  second for every family, the prefill on the GPU is recorded as not worth its code and S12.4 closes on this
+  record. Otherwise S12.4b is registered for the families where it is not.
+- **Prediction, written now:** two or fewer of the six device-tower image cells under 5 s (0.6); the device-tower
+  arm faster than the CPU-tower arm on every family (0.7), by the least on Gemma 4 E2B.
+- **A by-day smoke of the harness (20:13 PDT, one cell, one timed request; exploratory and not quotable):** it ran
+  end to end on Qwen3.5 0.8B with the device tower.
 
 ### S13 — Against the peers
 
