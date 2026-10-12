@@ -448,3 +448,48 @@ func TestPrefillInt8_real(t *testing.T) {
 		}
 	}
 }
+
+// TestPrefillInt4_profile splits the batched pass's time by category (projections, attention, norms and rotary, K/V
+// write) on a real checkpoint, at GOINFER_PREFILL_ROWS row counts (default 256 and 1,024), beside the pass's own wall
+// time with profiling off. Profiling syncs at every category boundary, so the categories sum to more than that wall
+// time; their shares are what it is for. One discarded pass first: the first one compiles pipelines.
+func TestPrefillInt4_profile(t *testing.T) {
+	path := prefillInt4RealPath(t)
+	m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Fatalf("the resident is a %T", m.ResidentForwardForTest())
+	}
+	_, nLayers, nH, nKV, hd, _, vocab := m.Dims()
+	rng := rand.New(rand.NewSource(3))
+	ctx := context.Background()
+	fmt.Fprintf(os.Stderr, "PROFILE %s on %s: %d layers, %d heads of %d (%d KV heads), sliding window %d\n", filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.slidingWindow)
+	for _, n := range prefillRowCounts(t, 256, 1024) {
+		rows := make([][]float32, n)
+		for i := range rows {
+			rows[i] = m.EmbedResidentForTest(rng.Intn(vocab - 1))
+		}
+		pass := func() float64 {
+			rd.Reset()
+			t0 := time.Now()
+			if _, err := rd.prefillBlocks(ctx, rows, 0, nil); err != nil {
+				t.Fatalf("%d rows: %v", n, err)
+			}
+			return time.Since(t0).Seconds()
+		}
+		pass()
+		wall := pass()
+		rd.c.prefillProf = &prefillProf{}
+		profiled := pass()
+		p := *rd.c.prefillProf
+		rd.c.prefillProf = nil
+		sum := (p.gemm + p.attn + p.normsRope + p.kvWrite).Seconds()
+		fmt.Fprintf(os.Stderr, "PROFILE %d rows: wall %.2f s unprofiled, %.2f s profiled; projections %.2f s (%.0f%%), attention %.2f s (%.0f%%), norms and rotary %.2f s (%.0f%%), K/V write %.2f s (%.0f%%)\n",
+			n, wall, profiled, p.gemm.Seconds(), 100*p.gemm.Seconds()/sum, p.attn.Seconds(), 100*p.attn.Seconds()/sum,
+			p.normsRope.Seconds(), 100*p.normsRope.Seconds()/sum, p.kvWrite.Seconds(), 100*p.kvWrite.Seconds()/sum)
+	}
+}
