@@ -4130,6 +4130,32 @@ The Mac, by day, under the timing lock; raw in `s12-webgpu/siglip-f32/`. The tim
 - **Not measured:** either device tower on a discrete GPU; the int8 tower's projections on a register-blocked
   int8 kernel (the prefill has one).
 
+#### S12.3d, Gemma 4's vision tower on WebGPU: gates registered 2026-10-11 before any code
+
+**What:** the tower Metal runs (`metal/gemma4_vision.go`): the patch embed and its two position tables, then every
+layer in float32 (RMSNorm, the ClippableLinear clamps, per-head q/k norms and the unweighted v norm, axial 2-D RoPE,
+full attention at scale 1.0, the gated GELU MLP), from aikit's `Gemma4Encoder.Weights`; the pool and projection stay
+aikit's `FinishHidden` on the host. On the register-blocked float32 matmul from the start. It registers as
+multimodal's "webgpu" Gemma 4 tower, which E2B, E4B and the 26B's image input use.
+
+- **G-S12.3d-1, tiny, day.** Metal's gate VM1 on WebGPU: `testdata/gemma4-vision-tiny` with its position tables and
+  norm weights randomised through the export's aliasing slices; grids of 18, 54 and 135 patches, raster and
+  shuffled; the WebGPU tower then `FinishHidden` against the CPU `Forward`, every soft token at cosine >= 0.9999.
+  Planted defects, each alone red: (1) the clamps skipped; (2) the x and y position tables swapped; (3) RoPE not
+  applied to k; (4) the v norm skipped; (5) k normed with q's weight.
+- **G-S12.3d-2, real size, day (untimed).** E2B's tower on the five test images at the checkpoint's default image
+  budget: every soft token at cosine >= 0.9999 against the CPU tower is a PASS; a lowest token in 0.999-0.9999 is
+  parked; lower fails. A NaN anywhere fails.
+- **G-S12.3d-3, wiring, day.** One image request through a WebGPU server on E2B: the load line names a WebGPU tower
+  and the turn completes. No reply rule: the reply is recorded, not graded (a tower is graded on its features).
+- **G-S12.3d-4, speed, night.** E2B's tower encode time on one image, WebGPU over CPU, five interleaved pairs after
+  a discarded pass of each: the device tower is the default under `--backend webgpu` at a median ratio of at most
+  0.98; 0.98-1.00 parked; above 1.00 it stays on the CPU. A by-day smoke first, exploratory. Until the gate reads,
+  the default is the CPU tower and the device tower is asked for with `-vision-device` set to the device.
+- **Prediction, written now:** d-1 and d-2 pass (0.75; the clamps and the 2-D RoPE are new kernels here). The day
+  smoke: under the CPU's time (0.7), since this tower's work is the same matmuls the SigLIP tower's kernel sped up.
+- **Tier and cost.** d-1 seconds; d-2 a few minutes; d-3 two minutes; d-4 at night, about five minutes.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
