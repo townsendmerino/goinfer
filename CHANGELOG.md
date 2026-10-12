@@ -64,10 +64,18 @@ a cosine of 0.30-0.36 against the float32 CPU tower to 0.87-0.985 (it is an int8
 
 ### Changed — under `--backend webgpu`, Gemma 3's vision tower runs on the CPU in float32 by default
 
-The WebGPU tower is now opt-in: `--vision-quant int8` for the int8 one, `--vision-quant f32` for a new float32 one that
-matches the CPU tower to a cosine of 0.9999996 a token. On the MacBook they were measured on, neither is faster than the
-CPU tower (25 s an image; int8 33 s, float32 43 s), and the CPU tower is the exact one, so it is the default. They have
-not been timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
+The WebGPU tower is now opt-in: `--vision-quant int8` for the int8 one, `--vision-device gpu` (or `--vision-quant f32`)
+for a new float32 one that matches the CPU tower to a cosine of 0.9999996 a token. The CPU tower is the exact one and
+stays the default until a timed comparison with the float32 device tower has been read; the device towers have not been
+timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
+
+### Added — Gemma 4's vision tower on WebGPU, opt-in (`--vision-device gpu`)
+
+Under `--backend webgpu` Gemma 4's vision tower can now run on the GPU in float32: `--vision-device gpu` asks for it, and
+without it the tower stays on the CPU as before. On Gemma 4 E2B's tower its image features match the CPU tower's to a
+cosine of 1.0000000 on every soft token of five test images. Whether it becomes the default is decided by a timed
+comparison with the CPU tower, not yet read
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d).
 
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 

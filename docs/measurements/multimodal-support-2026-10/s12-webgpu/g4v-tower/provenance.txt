@@ -1,0 +1,4 @@
+binary and serve built from the working tree that became 375cd46e54b8a8adf5842fd6313628a7d79b4abf (gpu-3d4.test at that rev; serve-webgpu-s12-3d just before the commit, same sources)
+2026-10-11, MacBook (arm64, 16 GB), by day, untimed gates; times in the logs are a smoke
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+checkpoints: ~/models/gemma-4-E2B-unq (towers), ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf (served decoder)

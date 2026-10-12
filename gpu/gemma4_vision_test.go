@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -180,6 +181,21 @@ func g4vRealTower(t *testing.T, missing func(format string, a ...any)) (*vision.
 	return enc, pp.MaxSoftTokens
 }
 
+// g4vBudgetOverride is GOINFER_G4V_BUDGET, a soft-token budget (70 to 1120) that replaces the checkpoint's in the
+// real-size gate and limits it to the first image: at 1120 an image is about 10,000 patches and a head's query rows
+// are scored in several blocks, which the checkpoint's own budget never reaches. 0 when unset.
+func g4vBudgetOverride(t *testing.T) int {
+	v := os.Getenv("GOINFER_G4V_BUDGET")
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		t.Fatalf("GOINFER_G4V_BUDGET=%q: want a soft-token budget", v)
+	}
+	return n
+}
+
 // TestG4VWebGPU_realE2B is G-S12.3d-2: Gemma 4 E2B's vision tower on five images at the checkpoint's image budget, the
 // WebGPU tower against the CPU tower. Every soft token at cosine >= 0.9999 is a PASS, a lowest token in 0.999-0.9999
 // is parked, lower or a NaN fails. The times it prints are a by-day smoke, not the speed gate.
@@ -199,8 +215,13 @@ func TestG4VWebGPU_realE2B(t *testing.T) {
 	defer a.Close()
 	c := enc.Cfg
 	logf("tower loaded: %d layers, hidden %d, %d heads of %d, MLP %d; image budget %d soft tokens", c.NumHiddenLayers, c.HiddenSize, c.NumAttentionHeads, c.HeadDim, c.IntermediateSize, budget)
+	images := g4vRealImages
+	if b := g4vBudgetOverride(t); b > 0 {
+		budget, images = b, g4vRealImages[:1]
+		logf("GOINFER_G4V_BUDGET: %d soft tokens, the first image only", b)
+	}
 	worst := 1.0
-	for i, path := range g4vRealImages {
+	for i, path := range images {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Skipf("no image %s: %v", path, err)
@@ -230,9 +251,9 @@ func TestG4VWebGPU_realE2B(t *testing.T) {
 			worst = math.NaN()
 		}
 		logf("image %d/%d %s: %d patches, %d soft tokens; CPU %.2f s, WebGPU %.2f s; lowest soft-token cosine %.7f, whole-output cosine %.7f",
-			i+1, len(g4vRealImages), path, len(pos), len(want)/enc.TextHiddenSize, cpuS, devS, low, cosG(got, want))
+			i+1, len(images), path, len(pos), len(want)/enc.TextHiddenSize, cpuS, devS, low, cosG(got, want))
 	}
-	logf("lowest soft-token cosine over the five images %.7f", worst)
+	logf("lowest soft-token cosine over %d image(s) %.7f", len(images), worst)
 	switch {
 	case worst != worst || worst < 0.999:
 		t.Errorf("G-S12.3d-2 FAIL: lowest soft-token cosine %.7f", worst)

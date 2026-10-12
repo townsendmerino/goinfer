@@ -1,0 +1,21 @@
+=== RUN   TestG4VWebGPU_matchesCPU
+    gemma4_vision_test.go:122: tiny tower: hidden 32, 2 layers, 4 heads of 8, MLP 64, pool 3
+    gemma4_vision_test.go:135: block 0,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 0,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 0, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 0, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 6,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 6,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 6, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 6, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 5,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 5,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 5, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:135: block 5, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:151: planted (1) the clamps skipped: lowest soft-token cosine 0.946551440
+    gemma4_vision_test.go:151: planted (2) the x and y position tables swapped: lowest soft-token cosine 0.414320595
+    gemma4_vision_test.go:151: planted (3) RoPE not applied to k: lowest soft-token cosine 0.652461448
+    gemma4_vision_test.go:151: planted (4) the v norm skipped: lowest soft-token cosine 0.971320815
+    gemma4_vision_test.go:151: planted (5) k normed with q's weight: lowest soft-token cosine 0.740247015
+--- PASS: TestG4VWebGPU_matchesCPU (0.54s)
+PASS
