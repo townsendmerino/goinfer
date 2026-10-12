@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +28,12 @@ const w4MultiAuto = w4MultiKind(-1)
 // and the batched pass followed by those tokens through the runner. Each reading is the last row's logits and every
 // decode step's. kind pins the multi-row int4 kernel the pass runs; w4MultiAuto pins none.
 func prefillInt4Run(t *testing.T, dir string, opts decoder.Options, n int, kind w4MultiKind) (want, got [][]float32) {
+	t.Helper()
+	return prefillRowsRun(t, dir, opts, n, kind, nil)
+}
+
+// prefillRowsRun is prefillInt4Run with the rows chosen by mkRows (nil: the embeddings of random tokens).
+func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind w4MultiKind, mkRows func(m *decoder.Model, rng *rand.Rand, n int) [][]float32) (want, got [][]float32) {
 	t.Helper()
 	opts.Backend = "webgpu"
 	if opts.Quant == "" {
@@ -56,6 +64,9 @@ func prefillInt4Run(t *testing.T, dir string, opts decoder.Options, n int, kind 
 	rows := make([][]float32, n)
 	for i := range rows {
 		rows[i] = m.EmbedResidentForTest(rng.Intn(vocab - 1))
+	}
+	if mkRows != nil {
+		rows = mkRows(m, rng, n)
 	}
 	read := func(prefill func() ([]float32, error), toks []int) ([][]float32, []int) {
 		rf.Reset()
@@ -91,7 +102,13 @@ func prefillInt4Run(t *testing.T, dir string, opts decoder.Options, n int, kind 
 		}
 		return last, nil
 	}, nil)
-	got, _ = read(func() ([]float32, error) { return rd.PrefillLast(context.Background(), rows, 0) }, toks)
+	// The pass itself, not PrefillLast: PrefillLast answers a decline on an E-model with the walk, which would compare
+	// the walk with itself.
+	got, _ = read(func() ([]float32, error) {
+		l, err := rd.prefillBlocks(context.Background(), rows, 0)
+		applySoftcap(l, rd.finalSoftcap)
+		return l, err
+	}, toks)
 	return want, got
 }
 
@@ -252,14 +269,33 @@ func prefillInt4RealPath(t *testing.T) string {
 	return path
 }
 
-// G-S12.4b-2b: G-S12.4b-2a's reading on a real plain dense int4 checkpoint, at 64 and 300 rows.
+// prefillRowCounts is def, or GOINFER_PREFILL_ROWS's comma-separated counts when it is set.
+func prefillRowCounts(t *testing.T, def ...int) []int {
+	t.Helper()
+	v := os.Getenv("GOINFER_PREFILL_ROWS")
+	if v == "" {
+		return def
+	}
+	var counts []int
+	for _, f := range strings.Split(v, ",") {
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			t.Fatalf("GOINFER_PREFILL_ROWS: %v", err)
+		}
+		counts = append(counts, n)
+	}
+	return counts
+}
+
+// G-S12.4b-2b and G-S12.4b-3c: the tiny gates' reading on a real int4 checkpoint, at 64 and 300 rows (or
+// GOINFER_PREFILL_ROWS, to cross a real model's sliding window).
 func TestPrefillInt4_real(t *testing.T) {
 	path := prefillInt4RealPath(t)
-	for _, n := range []int{64, 300} {
+	for _, n := range prefillRowCounts(t, 64, 300) {
 		for _, kind := range []w4MultiKind{w4MultiRows, w4MultiTiled} {
 			want, got := prefillInt4Run(t, path, decoder.Options{}, n, kind)
 			why := prefillInt4Grade(want, got)
-			fmt.Fprintf(os.Stderr, "G-S12.4b-2b %s, %d rows, %s: %s\n", filepath.Base(path), n, kind, map[bool]string{true: "pass", false: why}[why == ""])
+			fmt.Fprintf(os.Stderr, "REAL %s, %d rows, %s: %s\n", filepath.Base(path), n, kind, map[bool]string{true: "pass", false: why}[why == ""])
 			if why != "" {
 				t.Errorf("%d rows, %s: %s", n, kind, why)
 			}
@@ -270,7 +306,9 @@ func TestPrefillInt4_real(t *testing.T) {
 // G-S12.4b-1b and G-S12.4b-2c, in process: the batched pass under each multi-row int4 kernel, the row-by-row walk (the
 // production loop: no logits read until the last row), and the route an image turn takes today, the CPU's batched
 // prefill of the same tokens uploaded to the resident. At 256 and 1,024 rows: one discarded pass of each arm, then
-// five rounds in alternating order. It reports the per-round ratios and their medians and grades nothing.
+// five rounds in alternating order (GOINFER_PREFILL_ROWS overrides the row counts; GOINFER_PREFILL_NO_CPU=1 drops the
+// CPU arm, which takes minutes a round on a Gemma 4 E-model). It reports the per-round ratios and their medians and
+// grades nothing.
 func TestPrefillInt4_speed(t *testing.T) {
 	path := prefillInt4RealPath(t)
 	m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int4"})
@@ -284,11 +322,15 @@ func TestPrefillInt4_speed(t *testing.T) {
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(3))
+	if os.Getenv("GOINFER_PREFILL_ATTN_PER_ROW") == "1" { // a probe of what the once-a-row attention dispatches cost
+		prefillAttnPerRow = true
+		defer func() { prefillAttnPerRow = false }()
+	}
 	var ids []int // the tokens rows embed, for the CPU arm
 	pass := func(kind w4MultiKind) func([][]float32) error {
 		return func(rows [][]float32) error {
 			rd.c.w4MultiPin = int(kind) + 1
-			_, err := rd.PrefillLast(context.Background(), rows, 0)
+			_, err := rd.prefillBlocks(context.Background(), rows, 0) // the pass itself: PrefillLast walks an E-model's rows on a decline
 			return err
 		}
 	}
@@ -317,7 +359,7 @@ func TestPrefillInt4_speed(t *testing.T) {
 	}
 	const rounds = 5
 	began := time.Now()
-	for _, n := range []int{256, 1024} {
+	for _, n := range prefillRowCounts(t, 256, 1024) {
 		rows := make([][]float32, n)
 		ids = make([]int, n)
 		for i := range rows {
@@ -325,26 +367,50 @@ func TestPrefillInt4_speed(t *testing.T) {
 			rows[i] = m.EmbedResidentForTest(ids[i])
 		}
 		secs := make([][]float64, len(arms))
-		timeArm := func(a int) float64 {
+		timeArm := func(a int) (float64, error) {
 			rd.Reset()
 			t0 := time.Now()
-			if err := arms[a].run(rows); err != nil {
-				t.Fatalf("%s, %d rows: %v", arms[a].name, n, err)
-			}
-			return time.Since(t0).Seconds()
+			err := arms[a].run(rows)
+			return time.Since(t0).Seconds(), err
 		}
+		on := make([]bool, len(arms)) // an arm the model has no route for is dropped at its discarded pass
 		for a := range arms {
-			fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, discarded pass, %s: %.2f s\n", time.Since(began).Seconds(), n, arms[a].name, timeArm(a))
+			if arms[a].name == "cpu+upload" && os.Getenv("GOINFER_PREFILL_NO_CPU") == "1" {
+				continue
+			}
+			sec, err := timeArm(a)
+			if err != nil {
+				if arms[a].name != "cpu+upload" {
+					t.Fatalf("%s, %d rows: %v", arms[a].name, n, err)
+				}
+				fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, %s: no such route for this model (%v)\n", time.Since(began).Seconds(), n, arms[a].name, err)
+				continue
+			}
+			on[a] = true
+			fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, discarded pass, %s: %.2f s\n", time.Since(began).Seconds(), n, arms[a].name, sec)
 		}
 		for r := range rounds {
 			order := []int{0, 1, 2, 3}
 			if r%2 == 1 {
 				order = []int{3, 2, 1, 0}
 			}
+			line := fmt.Sprintf("[%4.0fs] %d rows, round %d of %d:", time.Since(began).Seconds(), n, r+1, rounds)
 			for _, a := range order {
-				secs[a] = append(secs[a], timeArm(a))
+				if !on[a] {
+					continue
+				}
+				sec, err := timeArm(a)
+				if err != nil {
+					t.Fatalf("%s, %d rows: %v", arms[a].name, n, err)
+				}
+				secs[a] = append(secs[a], sec)
 			}
-			fmt.Fprintf(os.Stderr, "[%4.0fs] %d rows, round %d of %d: rows %.2f s, tiled %.2f s, walk %.2f s, cpu+upload %.2f s\n", time.Since(began).Seconds(), n, r+1, rounds, secs[0][r], secs[1][r], secs[2][r], secs[3][r])
+			for a := range arms {
+				if on[a] {
+					line += fmt.Sprintf(" %s %.2f s", arms[a].name, secs[a][r])
+				}
+			}
+			fmt.Fprintln(os.Stderr, line)
 		}
 		ratio := func(a, b int) (rs []float64, med float64) {
 			for r := range rounds {
@@ -355,6 +421,9 @@ func TestPrefillInt4_speed(t *testing.T) {
 			return rs, s[rounds/2]
 		}
 		for _, pr := range [][2]int{{1, 0}, {0, 2}, {1, 2}, {1, 3}} {
+			if !on[pr[0]] || !on[pr[1]] {
+				continue
+			}
 			rs, med := ratio(pr[0], pr[1])
 			fmt.Fprintf(os.Stderr, "RESULT %d rows, %s over %s: ratios %.3f, median %.3f\n", n, arms[pr[0]].name, arms[pr[1]].name, rs, med)
 		}

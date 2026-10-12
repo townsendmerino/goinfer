@@ -19,7 +19,7 @@ import (
 // (both %4==0, keys-eligible) and hd=48/kvDim=48 (kvDim not a multiple of 4, so the plain
 // kernel).
 //
-// Not bit-exact, unlike TestRoPEBatched_parity: the attention
+// Not bit-exact, unlike TestRMSNormBatched_parity and TestRoPEBatched_parity: the attention
 // kernels differ in summation order (attnKeysShaderWGSL's own comment says so), so the bar is
 // cosine/maxAbs, the standard TestAttention_parity holds every attention kernel pair to.
 //

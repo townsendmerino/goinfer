@@ -1,0 +1,34 @@
+Mon Oct 12 10:20:57 PDT 2026
+a231d508 docs: S12.4b-3 registered before any code: the Gemma shape through the batched pass (per-layer geometry, sandwich norms, sliding window, K=V, shared K/V, the E-model's per-layer inputs), every op the rows form of decode's kernel or decode's kernel once a row
+MODEL gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw
+=== RUN   TestPrefillInt4_speed
+[  13s] 300 rows, discarded pass, rows: 12.48 s
+[  22s] 300 rows, discarded pass, tiled: 8.96 s
+[  37s] 300 rows, discarded pass, walk: 15.21 s
+[ 183s] 300 rows, discarded pass, cpu+upload: 145.55 s
+[ 183s] 300 rows, round 1 of 5: rows 12.59 s tiled 8.94 s walk 15.24 s cpu+upload 146.26 s
+[ 366s] 300 rows, round 2 of 5: rows 12.52 s tiled 8.98 s walk 15.21 s cpu+upload 145.69 s
+signal: terminated
+FAIL	github.com/townsendmerino/goinfer/gpu	684.561s
+FAIL
+exit 1 (gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw)
+MODEL gemma-3-4b-it.int4.e4h.webgpu.v16.giw
+=== RUN   TestPrefillInt4_speed
+[  15s] 300 rows, discarded pass, rows: 15.29 s
+[  25s] 300 rows, discarded pass, tiled: 10.19 s
+[  43s] 300 rows, discarded pass, walk: 17.38 s
+[  49s] 300 rows, discarded pass, cpu+upload: 5.93 s
+[  49s] 300 rows, round 1 of 5: rows 15.04 s tiled 10.16 s walk 17.49 s cpu+upload 4.95 s
+[  96s] 300 rows, round 2 of 5: rows 14.21 s tiled 10.16 s walk 17.14 s cpu+upload 4.59 s
+[ 143s] 300 rows, round 3 of 5: rows 14.22 s tiled 10.19 s walk 17.72 s cpu+upload 5.01 s
+[ 190s] 300 rows, round 4 of 5: rows 14.16 s tiled 10.17 s walk 17.11 s cpu+upload 4.73 s
+[ 236s] 300 rows, round 5 of 5: rows 14.14 s tiled 10.18 s walk 17.41 s cpu+upload 4.77 s
+RESULT 300 rows, tiled over rows: ratios [0.676 0.715 0.716 0.718 0.720], median 0.716
+RESULT 300 rows, rows over walk: ratios [0.860 0.829 0.803 0.827 0.812], median 0.827
+RESULT 300 rows, tiled over walk: ratios [0.581 0.593 0.575 0.594 0.585], median 0.585
+RESULT 300 rows, tiled over cpu+upload: ratios [2.052 2.214 2.033 2.148 2.135], median 2.135
+--- PASS: TestPrefillInt4_speed (287.41s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	287.987s
+exit 0 (gemma-3-4b-it.int4.e4h.webgpu.v16.giw)
+Mon Oct 12 10:37:13 PDT 2026

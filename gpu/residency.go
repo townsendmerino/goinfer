@@ -1330,9 +1330,11 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 			return nil, rd.resetErr
 		}
 	}
-	if rd.rm.pleDim > 0 || rd.rm.g4moe {
-		// A Gemma 4 E-model's rows carry per-layer inputs and its tail layers share K/V, and a Gemma 4 MoE layer's feed-forward
-		// is its own block; the batched pass takes none of them: walk the rows in order, which is the sequential forward.
+	logits, err := rd.prefillBlocks(ctx, embeddings, startPos)
+	if err != nil && (rd.rm.pleDim > 0 || rd.rm.g4moe) && ctx.Err() == nil {
+		// A Gemma 4 E-model or a Gemma 4 MoE model that the pass declines is still prefilled here: the rows are walked in
+		// order, which is the sequential forward and overwrites whatever a declined pass stored. Their image turns count
+		// on a resident prefill (decoder's gemma4VLResidentPrefill).
 		for i, row := range embeddings[:n-1] {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -1341,27 +1343,29 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 				return nil, err
 			}
 		}
-		logits, err := rd.runner.Run(embeddings[n-1], startPos+n-1, startPos+n-1)
-		if err != nil {
-			return nil, err
-		}
-		applySoftcap(logits, rd.finalSoftcap)
-		return logits, nil
+		logits, err = rd.runner.Run(embeddings[n-1], startPos+n-1, startPos+n-1)
 	}
-	// The pass's scratch grows with its row count, so a long prompt goes through in blocks. A block attends to the K/V
-	// the blocks before it wrote, as it would in one pass, so the result is the same bits; only the last block's logits
-	// are kept.
+	if err != nil {
+		return nil, err
+	}
+	applySoftcap(logits, rd.finalSoftcap)
+	return logits, nil
+}
+
+// prefillBlocks runs the batched pass over embeddings in blocks. The pass's scratch grows with its row count, so a
+// long prompt goes through in several; a block attends to the K/V the blocks before it wrote, as it would in one pass,
+// so the result is the same bits, and only the last block's logits are kept.
+func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	var logits []float32
-	for from := 0; from < n; from += prefillBlockRows {
+	for from := 0; from < len(embeddings); from += prefillBlockRows {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		var err error
-		if logits, err = rd.prefillLast(embeddings[from:min(from+prefillBlockRows, n)], startPos+from); err != nil {
+		if logits, err = rd.prefillLast(embeddings[from:min(from+prefillBlockRows, len(embeddings))], startPos+from); err != nil {
 			return nil, err
 		}
 	}
-	applySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
 
