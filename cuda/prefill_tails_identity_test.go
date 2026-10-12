@@ -149,7 +149,7 @@ func TestPrefillTails_bitIdenticalToTheRecordedBaseline(t *testing.T) {
 		haveBase = true
 	}
 	out := tailsBaseline{Device: dev, Driver: drv, Fixture: map[string]map[string]string{},
-		Note: "Hashes of every batched-prefill tail mode's output (PrefillLast plus a greedy decode continuation, PrefillLastN, PrefillLastNArgmax, HiddenLast, ResidualAll), recorded BEFORE R-24 stopped downloading the full residual on the tails that do not read it. Device-specific: compared only on this GPU and driver."}
+		Note: "Hashes of every batched-prefill tail mode's output (PrefillLast plus a greedy decode continuation, PrefillLastN, PrefillLastNArgmax, HiddenLast, ResidualAll), recorded BEFORE R-24 stopped downloading the full residual on the tails that do not read it. Device-specific: compared only on this GPU and driver. TWO entries were re-recorded after dc338a50 (the expert-major MoE prefill rounds each expert's accumulate once, as the per-row path does): qwen3moe-tiny-k3 PrefillLastN and ResidualAll. The code before that commit reproduces the old hashes with expert-major on and the new ones with GOINFER_CUDA_MOE_EXPERT_MAJOR=0 (the per-row path); the code after it gives the new ones both ways. The other 13 entries are unchanged since 3c1a368b."}
 	if c, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output(); err == nil {
 		out.Commit = strings.TrimSpace(string(c))
 	}

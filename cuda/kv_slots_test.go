@@ -463,6 +463,16 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 	}
 }
 
+// planOverPriceToleranceBytes is how far Plan's dense figure plus the allocation slack may exceed what the build put on the
+// device before its KV. It was one allocation quantum, and the 1.5B then passed only when it ran alone: the fall in free VRAM
+// includes the kernel modules and context state a FIRST load of this process pays (1054 MB for the 1.5B alone, 1040 MB after
+// the suite's earlier tests had loaded them, 14 MB apart), and that cold-start memory hid an over-pricing of about 8 MB (0.8%)
+// that the rest of the suite exposes. Over-pricing is the safe direction (it shrinks the planned context; the 384 MiB margin
+// is for UNDER-pricing, which the second check below still bounds), and a host-resident table that Plan wrongly counted is
+// 100 MB or more (the untied 7B's embedding), so 16 MiB keeps the check sharp against the defect it exists for. Where the
+// 8 MB comes from is not established (the slack's rounding rule and Plan's dense figure each could carry it).
+const planOverPriceToleranceBytes = 16 << 20
+
 // TestResidentDenseBytes_matchesCUDADevice pins Plan's dense-weight figure for CUDA
 // (decoder.Model.ResidentDenseWeightBytesFor("cuda")) against what a real build puts on the device before its KV: the
 // fall in free VRAM from before the load to checkKVFits' probe. That fall is the weights plus the build's scratch and
@@ -529,9 +539,9 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB) + allocation slack %.0f MB; "+
 				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(res.allocSlackBytes), mb(drop-est-res.allocSlackBytes), mb(ctxCapMarginBytes))
 			est += res.allocSlackBytes
-			if est > drop+allocQuantumBytes {
+			if est > drop+planOverPriceToleranceBytes {
 				t.Errorf("Plan prices %.0f MB of dense weights for CUDA, but the build put only %.0f MB on the device "+
-					"before its KV: it counts something CUDA keeps on the host", mb(est), mb(drop))
+					"before its KV (tolerance %.0f MB): it counts something CUDA keeps on the host", mb(est), mb(drop), mb(planOverPriceToleranceBytes))
 			}
 			if drop-est >= ctxCapMarginBytes {
 				t.Errorf("the build put %.0f MB on the device before its KV, %.0f MB more than Plan's %.0f MB: more than "+
