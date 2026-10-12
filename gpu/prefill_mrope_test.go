@@ -326,6 +326,11 @@ func mropeImageReading4(t *testing.T, dir string, prompt func(m *decoder.Model) 
 			if !(cos >= low) {
 				low = cos
 			}
+			if !argOK {
+				ia, ib := argmax(a[s]), argmax(b[s])
+				t.Logf("reading %d of %d: the CPU route picks token %d, the device route %d, which the CPU route gives %.3f of its top probability (cosine %.6f)",
+					s, len(a), ia, ib, math.Exp(float64(a[s][ib]-a[s][ia])), cos)
+			}
 			ok = ok && argOK
 		}
 		return low, ok
