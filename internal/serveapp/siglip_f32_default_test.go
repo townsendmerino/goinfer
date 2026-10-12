@@ -118,8 +118,8 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 }
 
 // TestGemma3TowerBackend_webgpuDefault: under webgpu the unset default is the float32 tower on the CPU, said in one
-// note and not as a failed attach; an explicit -vision-quant keeps the tower on webgpu, and -vision-device cpu and the
-// other backends are untouched.
+// note and not as a failed attach; an explicit -vision-quant or -vision-device gpu keeps the tower on webgpu, and
+// -vision-device cpu and the other backends are untouched.
 func TestGemma3TowerBackend_webgpuDefault(t *testing.T) {
 	mk := func(backend, quant, device string) config {
 		c := config{visionQuant: quant, visionDevice: device}
@@ -135,6 +135,8 @@ func TestGemma3TowerBackend_webgpuDefault(t *testing.T) {
 		{"webgpu", "int8", "", "webgpu", false},
 		{"webgpu", "f32", "", "webgpu", false},
 		{"webgpu", "", "cpu", "cpu", false},
+		{"webgpu", "", "gpu", "webgpu", false},
+		{"metal", "", "gpu", "metal", false},
 		{"cuda", "", "", "cuda", false},
 		{"metal", "", "", "metal", false},
 		{"cpu", "", "", "cpu", false},

@@ -59,18 +59,18 @@ func TestPlanGridTower(t *testing.T) {
 	}
 }
 
-// TestTowerBackend: -vision-device cpu keeps a device tower on the CPU while the model keeps its backend; auto follows
-// the backend.
+// TestTowerBackend: -vision-device cpu keeps a device tower on the CPU while the model keeps its backend; auto and gpu
+// follow the backend; any other value is refused.
 func TestTowerBackend(t *testing.T) {
 	var c config
 	c.load.Backend = "metal"
-	for dev, want := range map[string]string{"auto": "metal", "cpu": "cpu"} {
+	for dev, want := range map[string]string{"auto": "metal", "gpu": "metal", "cpu": "cpu"} {
 		c.visionDevice = dev
 		if got := c.towerBackend(); got != want {
 			t.Errorf("-vision-device %s under metal: tower backend %q, want %q", dev, got, want)
 		}
 	}
-	c.visionDevice = "gpu"
+	c.visionDevice = "npu"
 	if err := (&server{}).loadVisionTower(c); err == nil || !strings.Contains(err.Error(), "-vision-device") {
 		t.Errorf("an unknown -vision-device must be refused, got %v", err)
 	}
@@ -84,20 +84,24 @@ func TestChooseGemma4Tower_placement(t *testing.T) {
 		name    string
 		int8    bool
 		backend string
+		asked   bool // -vision-device gpu
 		require bool
 		where   string
 		errPart string
 	}{
-		{"cpu", false, "cpu", true, "CPU", ""},
-		{"webgpu", false, "webgpu", true, "CPU", ""},
-		{"cuda int8", true, "cuda", false, "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
-		{"cuda int8 require", true, "cuda", true, "", "Gemma 4 CUDA tower is float32"},
-		{"cuda not in this binary", false, "cuda", false, "CPU (no CUDA tower in this binary)", ""},
-		{"cuda not in this binary, require", false, "cuda", true, "", "no CUDA Gemma 4 tower"},
-		{"metal int8", true, "metal", false, "CPU (-vision-quant int8; the Metal tower is float32)", ""},
+		{"cpu", false, "cpu", false, true, "CPU", ""},
+		{"webgpu, not asked: the CPU tower by choice, under -require-backend too", false, "webgpu", false, true, "CPU (-vision-device gpu puts it on WebGPU)", ""},
+		{"webgpu asked, int8", true, "webgpu", true, false, "CPU (-vision-quant int8; the WebGPU tower is float32)", ""},
+		{"webgpu asked, not in this binary", false, "webgpu", true, false, "CPU (no WebGPU tower in this binary)", ""},
+		{"webgpu asked, not in this binary, require", false, "webgpu", true, true, "", "no WebGPU Gemma 4 tower"},
+		{"cuda int8", true, "cuda", false, false, "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
+		{"cuda int8 require", true, "cuda", false, true, "", "Gemma 4 CUDA tower is float32"},
+		{"cuda not in this binary", false, "cuda", false, false, "CPU (no CUDA tower in this binary)", ""},
+		{"cuda not in this binary, require", false, "cuda", false, true, "", "no CUDA Gemma 4 tower"},
+		{"metal int8", true, "metal", false, false, "CPU (-vision-quant int8; the Metal tower is float32)", ""},
 	}
 	for _, c := range cases {
-		acc, where, err := chooseGemma4Tower(nil, c.int8, c.backend, c.require)
+		acc, where, err := chooseGemma4Tower(nil, c.int8, c.backend, c.asked, c.require)
 		if c.errPart != "" {
 			if err == nil || !strings.Contains(err.Error(), c.errPart) {
 				t.Errorf("%s: err %v, want one containing %q", c.name, err, c.errPart)

@@ -1,0 +1,9 @@
+=== RUN   TestG4VWebGPU_realE2B
+[G-S12.3d-2    0.1s] tower loaded: 16 layers, hidden 768, 12 heads of 64, MLP 3072; image budget 280 soft tokens
+[G-S12.3d-2    0.1s] GOINFER_G4V_BUDGET: 1120 soft tokens, the first image only
+[G-S12.3d-2   61.5s] image 1/1 ../testdata/glm_ocr/table.png: 9576 patches, 1064 soft tokens; CPU 42.90 s, WebGPU 18.37 s; lowest soft-token cosine 1.0000000, whole-output cosine 1.0000000
+[G-S12.3d-2   61.5s] lowest soft-token cosine over 1 image(s) 1.0000000
+    gemma4_vision_test.go:263: G-S12.3d-2 PASS: lowest soft-token cosine 1.0000000
+--- PASS: TestG4VWebGPU_realE2B (62.26s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	62.948s

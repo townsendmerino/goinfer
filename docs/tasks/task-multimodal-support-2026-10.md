@@ -54,6 +54,10 @@
   - S12.3a to S12.3c: a float32 SigLIP tower on WebGPU, right at real size, opt-in until its night speed gate reads
     (10.5 s an image on the register-blocked matmul by a day smoke, against the CPU's 25 s; 43 s on the 16x16 kernel). A tanh overflow in the WebGPU tower's GELU is fixed; it, and not int8 precision, was why the
     int8 tower misread images this morning.
+  - S12.3d: Gemma 4's vision tower on WebGPU, built and right at real size (E2B's tower, every soft token at cosine
+    1.0000000 against the CPU tower on five images), opt-in with `-vision-device gpu` until its night speed gate
+    reads (about 2 s an image against the CPU's 5 s by a day smoke). Next towers: Gemma 4 audio, Qwen2.5-VL, the
+    grid towers; then S12.2 and S12.4.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4129,6 +4133,73 @@ The Mac, by day, under the timing lock; raw in `s12-webgpu/siglip-f32/`. The tim
   reads, the default under `--backend webgpu` is still the CPU float32 tower and the device towers are opt-in.
 - **Not measured:** either device tower on a discrete GPU; the int8 tower's projections on a register-blocked
   int8 kernel (the prefill has one).
+
+#### S12.3d, Gemma 4's vision tower on WebGPU: gates registered 2026-10-11 before any code
+
+**What:** the tower Metal runs (`metal/gemma4_vision.go`): the patch embed and its two position tables, then every
+layer in float32 (RMSNorm, the ClippableLinear clamps, per-head q/k norms and the unweighted v norm, axial 2-D RoPE,
+full attention at scale 1.0, the gated GELU MLP), from aikit's `Gemma4Encoder.Weights`; the pool and projection stay
+aikit's `FinishHidden` on the host. On the register-blocked float32 matmul from the start. It registers as
+multimodal's "webgpu" Gemma 4 tower, which E2B, E4B and the 26B's image input use.
+
+- **G-S12.3d-1, tiny, day.** Metal's gate VM1 on WebGPU: `testdata/gemma4-vision-tiny` with its position tables and
+  norm weights randomised through the export's aliasing slices; grids of 18, 54 and 135 patches, raster and
+  shuffled; the WebGPU tower then `FinishHidden` against the CPU `Forward`, every soft token at cosine >= 0.9999.
+  Planted defects, each alone red: (1) the clamps skipped; (2) the x and y position tables swapped; (3) RoPE not
+  applied to k; (4) the v norm skipped; (5) k normed with q's weight.
+- **G-S12.3d-2, real size, day (untimed).** E2B's tower on the five test images at the checkpoint's default image
+  budget: every soft token at cosine >= 0.9999 against the CPU tower is a PASS; a lowest token in 0.999-0.9999 is
+  parked; lower fails. A NaN anywhere fails.
+- **G-S12.3d-3, wiring, day.** One image request through a WebGPU server on E2B: the load line names a WebGPU tower
+  and the turn completes. No reply rule: the reply is recorded, not graded (a tower is graded on its features).
+- **G-S12.3d-4, speed, night.** E2B's tower encode time on one image, WebGPU over CPU, five interleaved pairs after
+  a discarded pass of each: the device tower is the default under `--backend webgpu` at a median ratio of at most
+  0.98; 0.98-1.00 parked; above 1.00 it stays on the CPU. A by-day smoke first, exploratory. Until the gate reads,
+  the default is the CPU tower and the device tower is asked for with `-vision-device` set to the device.
+- **Prediction, written now:** d-1 and d-2 pass (0.75; the clamps and the 2-D RoPE are new kernels here). The day
+  smoke: under the CPU's time (0.7), since this tower's work is the same matmuls the SigLIP tower's kernel sped up.
+- **Tier and cost.** d-1 seconds; d-2 a few minutes; d-3 two minutes; d-4 at night, about five minutes.
+
+#### S12.3d read 2026-10-11: the Gemma 4 tower is built and matches the CPU tower at real size; opt-in until its night speed gate reads
+
+The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/g4v-tower/`. The times are a smoke.
+
+- **Built:** `gpu/gemma4_vision.go` (`g4vTower`). Five new kernels (row RMSNorm, the clamp in place and into a copy,
+  the 2-D RoPE, the gated GELU with its tanh argument clamped); the matmuls, softmax and head copies are the SigLIP
+  tower's. The position tables are summed on the host and uploaded with the patches. A head's query rows are scored
+  in blocks so one score matrix stays under 64 MB; at the default image budget (about 2,400 patches) that is one
+  block a head.
+- **G-S12.3d-1: PASS** (`g-s12-3d-1.log`). 18, 54 and 135 patches, raster and shuffled, at the tower's own block
+  and at blocks of 6 and 5 query rows: every soft token at cosine 1.000000000. The planted defects, each alone:
+  clamps skipped 0.947, position tables swapped 0.414, no RoPE on k 0.652, v norm skipped 0.971, k normed with q's
+  weight 0.740. All five red.
+- **G-S12.3d-2: PASS** (`g-s12-3d-2.log`). E2B's tower (16 layers, hidden 768, 12 heads of 64) on the five images
+  at 280 soft tokens (2,268 to 2,430 patches): lowest soft-token cosine 1.0000000, no NaN.
+- **G-S12.3d-3: PASS** (`g-s12-3d-3-wiring.log`). E2B served on WebGPU with `-vision-device gpu`: the load line
+  reads "tower on WebGPU" and the turn completes. With `-vision-device auto` it reads "tower on CPU (-vision-device
+  gpu puts it on WebGPU)" and the reply is identical to the `-vision-device cpu` arm's. The reply with the device
+  tower, recorded and not graded: it first differs from the CPU-tower arm's at generated token 21 (' FY' for ' '),
+  where the CPU-tower arm gave 0.581 and 0.401 to the two.
+- **The smoke, from the real-size gate's own timings** (one pass an image, not interleaved, not a result): the CPU
+  tower 4.4 to 5.3 s an image, the WebGPU tower 1.7 to 2.4 s. The served turn took 20.0 s with the device tower and
+  22.9 s and 22.7 s with the CPU tower.
+- **Predictions scored:** "d-1 and d-2 pass (0.75)": both passed, on the first run. "The day smoke under the CPU's
+  time (0.7)": it is.
+- **Wiring:** `-vision-device` has a third value, `gpu`: as `auto`, and under `--backend webgpu` the towers `auto`
+  leaves on the CPU go on the device (Gemma 4's, and Gemma 3's float32 one, which `-vision-quant f32` already
+  asked for). `multimodal`'s declaration for WebGPU now lists the Gemma 4 tower; the support table's cell stays
+  "CPU" for it (`DefaultTowerOnDevice`) until the speed gate reads.
+- **Consequence, as registered:** **G-S12.3d-4 is queued on the Mac's night queue**
+  (`s12-webgpu/run-s12-3d-4-night.sh`, a pinned test binary at `375cd46e`, five interleaved pairs, about two
+  minutes). Until it reads, the CPU tower is the default.
+- **Also corrected here:** `-vision-quant`'s help and `docs/flags.md` still said WebGPU's only device tower for
+  Gemma 3 is int8 and that an unset value means int8 there; both were false since the default changed this
+  morning. `docs/server.md` and the CHANGELOG quoted the float32 device tower at 43 s an image, which was the
+  16x16 kernel; they now say the timed comparison has not been read.
+- **A larger budget, a check beyond the registered gates** (`g-s12-3d-2-budget1120.log`): the first image at 1,120
+  soft tokens is 9,576 patches, where a head's query rows are scored in six blocks. Lowest soft-token cosine
+  1.0000000 over its 1,064 soft tokens; the CPU tower took 42.9 s and the WebGPU tower 18.4 s (a smoke).
+- **Not measured:** the tower on a discrete GPU; E4B's and the 26B's towers (the same code; E2B's was the one run).
 
 ### S13 — Against the peers
 

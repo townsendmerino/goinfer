@@ -1,0 +1,23 @@
+[18:27:05] gemma-4-E2B_q4_0-it.gguf: arm webgpu (--backend webgpu -vision-device cpu --embed-int4=false --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded Gemma 4 vision tower for "gemma-4-E2B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on CPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu (22.9s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year 2025 (FY2025'
+[18:27:46] gemma-4-E2B_q4_0-it.gguf: arm webgpu-towergpu (--backend webgpu -vision-device gpu --embed-int4=false --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded Gemma 4 vision tower for "gemma-4-E2B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on WebGPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towergpu (20.0s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025.\n\nIt provides a breakdown'
+[18:28:16] gemma-4-E2B_q4_0-it.gguf: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded Gemma 4 vision tower for "gemma-4-E2B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on CPU (-vision-device gpu puts it on WebGPU)) from /Users/francistownsend-merino/models/g
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (22.7s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year 2025 (FY2025'
+gemma-4-E2B_q4_0-it.gguf: reference arm webgpu
+gemma-4-E2B_q4_0-it.gguf: webgpu-towergpu against webgpu: first differing generated token 21: webgpu ' ', webgpu-towergpu ' FY'
+  webgpu top-3: ' ' 0.581, ' FY' 0.401, ' ending' 0.011
+  near-tie (p(other) >= half p(top) = 0.290): True
+gemma-4-E2B_q4_0-it.gguf: webgpu-towerauto against webgpu: IDENTICAL replies
