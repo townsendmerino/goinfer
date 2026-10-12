@@ -409,7 +409,7 @@ was available.** Per family:*
 **The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. Unset, **Gemma 3's
 tower is float32 on every backend**: on the GPU under `--backend cuda` (which falls back to its int8 device tower when the card cannot hold float32) and `--backend metal`, and on the CPU under
 `--backend webgpu`, whose device towers are opt-in. `-vision-device gpu` (or `-vision-quant f32`) asks for the float32 WebGPU tower and `-vision-quant int8` for the int8 one. Gemma 4's,
-Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers have float32 WebGPU towers too, asked for the same way (`-vision-device gpu`). Whether each becomes the default is decided by a timed comparison with the CPU tower that has not been read yet
+Qwen2.5-VL's, Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers have float32 WebGPU towers too, asked for the same way (`-vision-device gpu`). Whether each becomes the default is decided by a timed comparison with the CPU tower that has not been read yet
 (the 33 s and 43 s an image against the CPU's 25 s that this page quoted for Gemma 3 were measured on 2026-10-11 before the tower's matmul was rewritten, and no longer describe it). **Every other tower
 (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`:** until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which was not faster and was
 not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`), and GLM-OCR's int8 form is not gated

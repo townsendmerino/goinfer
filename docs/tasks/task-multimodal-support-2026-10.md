@@ -59,8 +59,11 @@
     reads (about 2 s an image against the CPU's 5 s by a day smoke).
   - S12.3e: the Qwen3.5+, Qwen3-VL (DeepStack) and GLM-OCR towers on WebGPU, on one grid engine, right at real size
     (lowest row 0.999987), opt-in the same way until their night speed gates read (GLM-OCR about 14 s against the
-    CPU's 40 s on a 1.1 MP image by a day smoke; slower than the CPU on a tiny image). Next towers: Qwen2.5-VL
-    (windowed attention), then Gemma 4 audio (its CPU tower takes under a second); then S12.2 and S12.4.
+    CPU's 40 s on a 1.1 MP image by a day smoke; slower than the CPU on a tiny image).
+  - S12.3f: Qwen2.5-VL's tower on WebGPU, with windowed attention kernels, right at real size (lowest row
+    0.9999965), opt-in the same way until its night speed gate reads (about 14 s against the CPU's 31 s on the
+    same image by a day smoke). Left in S12.3: Gemma 4's audio tower (its CPU tower takes under a second). Then
+    S12.2 and S12.4.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4323,6 +4326,41 @@ window bound (the full-attention blocks) keeps the matmul path.
   f-2 passes (0.6). The day smoke under the CPU's time at a 64x64 grid (0.7).
 - **Tier and cost.** f-1 seconds; f-2 about three minutes (the CPU tower is about 22 s at a 64x64 grid); f-3 two
   minutes; f-4 at night, about five minutes.
+
+#### S12.3f read 2026-10-11: Qwen2.5-VL's tower is built and matches the CPU tower at real size; opt-in until its night speed gate reads
+
+The Mac, by day, the untimed gates under the timing lock; raw in `s12-webgpu/qwen25-tower/`. The times are a smoke.
+
+- **Built:** `gpu/qwen25_vision.go` (`qwen25VResident`, attached through aikit's resident seam) on the grid engine,
+  which gained a third kind, per-block segments and the three windowed attention kernels (`gvWinScoresWGSL`,
+  `gvWinSoftmaxWGSL`, `gvWinValuesWGSL`). A block takes them when it has more than one segment, none longer than 256
+  rows, and its score buffer fits 128 MB; otherwise attention runs as matmuls, a segment at a time. So a multi-image
+  batch of small frames on the Qwen3 and GLM-OCR towers takes them too (their tiny two-image cases still read
+  1.000000000).
+- **G-S12.3f-1: PASS** (`g-s12-3f-1.log`). The tiny tower over the three grid sets: 1.000000000 with the windowed
+  kernels (a windowed block ran in each set) and 1.000000000 with every block on the matmul path. The planted
+  defects, each alone: scale dropped 0.522, RoPE halves swapped 0.750, every block attends its whole frame 0.848,
+  window reordering skipped 0.750, the windowed kernels' keys one row late 0.559. All five red.
+- **G-S12.3f-2: PASS** (`g-s12-3f-2.log`). `qwen25vl-3b-instruct`'s tower (32 blocks, hidden 1280) on the four
+  images, grids from 4x6 to 86x72: lowest merged token 0.999996462 (the 64x64 grid; the other three 0.9999990 or
+  better). No NaN.
+- **G-S12.3f-3: PASS** (`g-s12-3f-3-wiring.log`). Served on WebGPU with `-vision-device gpu`: the load line reads
+  "tower on WebGPU", the turn completes, and the reply is identical to the CPU-tower arm's (the turn 58.8 s with the
+  CPU tower, 44.6 s with the device tower).
+- **The smoke, from the real-size gate's own timings** (one pass an image, not interleaved, not a result): 16.5 s
+  against the CPU's 35.5 s at 86x72 and 14.4 s against 30.7 s at 64x86; 0.52 s against 0.89 s at the 4x6 grid. The
+  first image of the run, 64x64, read 20.4 s against 22.4 s; it was the process's first forward, and the two larger
+  images after it were faster, so that reading includes a one-time cost that was not separated out.
+- **Predictions scored:** "f-1 passes (0.6)": passed, first run. "f-2 passes (0.6)": passed. "The day smoke under
+  the CPU's time at a 64x64 grid (0.7)": under it, by little, on a first forward (20.4 s against 22.4 s); the gate
+  at night discards a pass first.
+- **Wiring:** `qwenTowerPlacement` takes the `-vision-device gpu` request and names WebGPU in its fallbacks;
+  WebGPU's declaration lists the tower; the support table's cell stays "CPU" until the speed gate reads.
+- **Consequence, as registered:** **G-S12.3f-4 is queued on the Mac's night queue**
+  (`s12-webgpu/run-s12-3f-4-night.sh`, a pinned test binary at `26c798c7`, five interleaved pairs on
+  `glm_ocr/table.png`, about six minutes). Until it reads, the default is the CPU tower.
+- **Not measured:** the tower on a discrete GPU; Qwen2.5-VL 7B's tower (the same code); a multi-image request at
+  real size; where the first forward's extra seconds go.
 
 ### S13 — Against the peers
 
