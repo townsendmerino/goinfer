@@ -4883,6 +4883,42 @@ the pass comes out for that shape and backend), **new** built at this step's hea
   to both arms); its Gemma 3 text prompt at 0.65 or under at 1,600 words (0.7); nobara's both at 0.6 or under
   (0.6).
 
+#### S12.4b-4a, the m-RoPE image prefill (Qwen2.5-VL) on Vulkan: registered 2026-10-12 before any code
+
+**The desk map:** a Qwen image block is causal, so its prefill is the batched pass with one change: a row's rotary
+position is three numbers (time, height, width), each frequency pair reading the one its axis names
+(`decoder/residency.go:Model.MRopeAxisResident` is that table, for both layouts). Nothing else in the pass reads a
+position. So `ResidentMRoPEPrefill` on WebGPU is a rotary kernel that takes a per-row position table, and the
+pass's blocks carrying their rows' positions.
+- **Scope:** Qwen2.5-VL (a plain dense decoder with q/k/v bias). Qwen3-VL needs the DeepStack form on top (its own
+  step, S12.4b-4b); Qwen3.5 is recurrent and GLM-OCR decodes staged, neither is in reach.
+- **Backends:** offered on Vulkan, where the pass beat the CPU route about 9 times on this decoder
+  (G-S12.4b-2c's fourth arm). **Declined on Metal**, where the CPU route is faster, so the Mac's image turn does not
+  change. The Mac still runs the identity gates below with the decline lifted for the test.
+
+**Gates:**
+- **G-S12.4b-4a-1, the rotary kernel** (quick). The per-row-position kernel against decode's single-row rotary
+  kernel run once per axis at that axis's position, each pair taken from the run its axis names: equal bit for
+  bit, on random rows and positions, for a sectioned and an interleaved axis table.
+- **G-S12.4b-4a-2, the pass on rows whose three positions are equal** (quick, and on the real checkpoint): rows at
+  rotary positions that are not their cache slots (as text after an image is), against the row-by-row walk through
+  `ForwardMRoPE`: bit for bit, the last row and 8 decode steps, on `qwen25vl-tiny` and on Qwen2.5-VL 3B.
+- **G-S12.4b-4a-3, an image prompt against the CPU's image prefill** (quick, and on the real checkpoint). The
+  walk cannot run a row whose three positions differ, so the reference is the CPU (`PrefillLogitsQwenVLForTest`),
+  which is not the resident's bits. The reading is the last row's logits and 8 teacher-forced decode steps on the
+  resident, after the GPU prefill and after the CPU prefill uploaded.
+  - **Control first:** the same reading on a text prompt of the same length, where the GPU prefill is known exact.
+    Its worst cosine is what "the two routes agree" looks like on this model.
+  - **Bar:** the image prompt's worst cosine at least the control's less 0.002, and every argmax difference a
+    near-tie (the CPU route gives the GPU route's choice at least half its own top probability).
+  - **Planted defects, each below the bar:** the axis table rotated by one pair; each row's positions taken from
+    the next row; height and width swapped.
+- **G-S12.4b-4a-4, served** (night, nobara): Qwen2.5-VL 3B's S7 image cell under `--backend webgpu`, this build
+  against the one before it, rotated rounds. Ships at a median new/old TTFT of 0.98 or under.
+- **Predictions:** 4a-1 and 4a-2 pass first run (0.7). 4a-3's control reads 0.99 or better on the tiny fixture
+  and 0.995 or better on the real one (0.5; I have no reading of how far the CPU prefill sits from the resident).
+  The served cell on nobara reads 0.6 or under (0.7; the tower is common to both arms).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
