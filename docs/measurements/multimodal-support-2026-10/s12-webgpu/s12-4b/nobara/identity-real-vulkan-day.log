@@ -1,0 +1,28 @@
+Mon Oct 12 09:16:10 PDT 2026
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+=== RUN   TestPrefillInt4_real
+    prefill_int4_test.go:260: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+G-S12.4b-2b qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, 64 rows, rows: pass
+    prefill_int4_test.go:260: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+G-S12.4b-2b qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, 64 rows, tiled: pass
+    prefill_int4_test.go:260: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+G-S12.4b-2b qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, 300 rows, rows: pass
+    prefill_int4_test.go:260: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+G-S12.4b-2b qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, 300 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (17.62s)
+=== RUN   TestPrefillInt4_speed
+    prefill_int4_test.go:321: rows, 256 rows: gpu: PrefillLast declines — the multi-row int4 kernels are not yet verified bit-exact on backend "vulkan"
+--- FAIL: TestPrefillInt4_speed (1.76s)
+=== RUN   TestPrefillInt8_real
+decoder: context capped at 173137 (model allows 262144) so that KV fits: weights 2.0 GB + KV 37.0 GB of budget 39.0 GB — pass -ctx to choose, or -stream-weights to lift
+    prefill_int4_test.go:363: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+int8int8 qwen3-vl-2b-instruct, 64 rows: pass
+decoder: context capped at 170332 (model allows 262144) so that KV fits: weights 2.0 GB + KV 36.4 GB of budget 38.4 GB — pass -ctx to choose, or -stream-weights to lift
+    prefill_int4_test.go:363: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+int8int8 qwen3-vl-2b-instruct, 300 rows: pass
+--- PASS: TestPrefillInt8_real (18.08s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	37.593s
+FAIL
+exit 1
+Mon Oct 12 09:16:48 PDT 2026

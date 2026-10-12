@@ -1,0 +1,120 @@
+=== RUN   TestW4Multi_matchesSingleRow
+--- PASS: TestW4Multi_matchesSingleRow (1.30s)
+=== RUN   TestW4Multi_plantedDefects
+    gemm_w4a8_test.go:293: rows, a group's scale taken from the next group: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 2.72))
+    gemm_w4a8_test.go:293: tiled, a group's scale taken from the next group: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 2.72))
+    gemm_w4a8_test.go:293: rows, the nibbles of a byte swapped: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 4.78))
+    gemm_w4a8_test.go:293: tiled, the nibbles of a byte swapped: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 5.36))
+    gemm_w4a8_test.go:293: rows, a row's activation scale taken from another row: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 3.14))
+    gemm_w4a8_test.go:293: tiled, a row's activation scale taken from another row: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 3.14))
+    gemm_w4a8_test.go:293: tiled, the last partial column block of a tile skipped: red (row 0: 3 of 131 outputs differ in their bits (max |diff| 3.7))
+--- PASS: TestW4Multi_plantedDefects (0.50s)
+=== RUN   TestPrefillInt4_matchesWalk
+=== RUN   TestPrefillInt4_matchesWalk/plain/7-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/plain/7-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/plain/40-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/plain/40-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/plain/70-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/plain/70-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/7-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/7-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/40-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/40-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/70-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/70-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/7-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/7-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/40-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/40-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/70-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/70-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/7-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/7-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/40-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/40-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/7-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/7-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/40-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/40-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/70-rows/rows
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/70-rows/tiled
+    prefill_int4_test.go:137: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+--- PASS: TestPrefillInt4_matchesWalk (9.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/7-rows/rows (1.55s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/7-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/40-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/40-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/70-rows/rows (0.31s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/70-rows/tiled (0.34s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/7-rows/rows (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/7-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/40-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/40-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/70-rows/rows (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/70-rows/tiled (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/7-rows/rows (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/7-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/40-rows/rows (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/40-rows/tiled (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/70-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/70-rows/tiled (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/7-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/7-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/40-rows/rows (0.30s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/40-rows/tiled (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/7-rows/rows (0.31s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/7-rows/tiled (0.30s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/40-rows/rows (0.30s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/40-rows/tiled (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/70-rows/rows (0.32s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/70-rows/tiled (0.29s)
+=== RUN   TestPrefillInt4_blocks
+    prefill_int4_test.go:155: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:155: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:155: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+--- PASS: TestPrefillInt4_blocks (1.03s)
+=== RUN   TestPrefillInt4_generate
+--- PASS: TestPrefillInt4_generate (0.65s)
+=== RUN   TestPrefillInt4_plantedDefects
+    prefill_int4_test.go:223: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:230: rows, rows one position late: red (reading 0: logit 0 is -0.20580252, the walk's is -0.20580253)
+    prefill_int4_test.go:223: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:230: tiled, rows one position late: red (reading 0: logit 0 is -0.20580252, the walk's is -0.20580253)
+    prefill_int4_test.go:223: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:230: rows, each row's K/V written one slot late: red (reading 0: logit 0 is -0.19810891, the walk's is -0.20580253)
+    prefill_int4_test.go:223: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:230: tiled, each row's K/V written one slot late: red (reading 0: logit 0 is -0.19810891, the walk's is -0.20580253)
+    prefill_int4_test.go:223: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:230: rows, the q projection's scales from the k projection: red (reading 0: logit 0 is -0.20401256, the walk's is -0.20580253)
+    prefill_int4_test.go:223: backend "vulkan" is not in w4MultiVerified; a pass here is the evidence for adding it
+    prefill_int4_test.go:230: tiled, the q projection's scales from the k projection: red (reading 0: logit 0 is -0.20401256, the walk's is -0.20580253)
+--- PASS: TestPrefillInt4_plantedDefects (1.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	14.651s

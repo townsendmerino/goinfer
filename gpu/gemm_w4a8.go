@@ -266,7 +266,7 @@ func (k w4MultiKind) String() string {
 // TestPrefillInt4_matchesWalk). Each kernel's output is a float sum in a fixed order, and a backend's shader compiler
 // may evaluate the same expression differently in two kernels, so the identity is a property of a backend, not of the
 // source. The batched pass takes an int4 model only on a backend listed here; add one after those tests pass on it.
-var w4MultiVerified = map[string]bool{"metal": true}
+var w4MultiVerified = map[string]bool{"metal": true, "vulkan": true}
 
 // w4MultiFor is the kernel for a projection over M rows: the row-shaped one while a single dispatch of it holds the
 // rows, the tiled one beyond. The tiled kernel computes whole 64-row tiles however few rows there are, so below a
