@@ -372,6 +372,9 @@ type Context struct {
 	fusedRows [fusedRowsKinds]tiledPipes
 	// attnKeysWide is the key-split attention kernel for a head of 129 to 256 (ensureAttnWide, attn_keys_wide.go).
 	attnKeysWide tiledPipes
+	// attnKeysRows are the rows forms of the key-split attention kernels, the narrow one then the wide one, for the
+	// batched pass (ensureAttnKeysRows, attn_keys_rows.go).
+	attnKeysRows [2]tiledPipes
 	// ropeMRoPERows is the batched pass's rotary kernel for rows that carry three positions (ensureMRoPERows).
 	ropeMRoPERows tiledPipes
 	// w4MultiPin, when not 0, makes the batched pass run every int4 projection with kernel w4MultiPin-1, whatever the

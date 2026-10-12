@@ -1237,7 +1237,40 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 		// All rows' K/V are now in the cache; each row attends to its causal prefix (including earlier rows of this
 		// block), the ordering DecodeTokenFusedBatched's parity gate already proves.
 		ctxv := storF(M * qRow)
-		if lp.local || lhd > attnWG || prefillAttnPerRow {
+		// A sliding-window layer or a wide head has no hand-written batched kernel. Where decode's choice for the layer is
+		// a key-split kernel, its rows form runs every row in one dispatch; otherwise decode's kernel runs once a row.
+		window := 0
+		if lp.local && prefillDefectForTest != 6 {
+			window = pp.window
+		}
+		rowsForm := -1
+		if (lp.local || lhd > attnWG) && !prefillAttnPerRow && !prefillAttnRowsOff && !attnKeysDisabled {
+			switch {
+			case attnKeysEligible(lhd, lkvDim, m.KVF16, false):
+				rowsForm = 0
+			case attnKeysWideEligible(lhd, lkvDim, m.KVF16):
+				rowsForm = 1
+			}
+		}
+		if rowsForm >= 0 {
+			if buildErr == nil {
+				buildErr = c.ensureAttnKeysRows()
+			}
+			if sinks0 == nil && buildErr == nil {
+				var e error
+				if sinks0, e = c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(make([]float32, max(nH, 4))), Usage: wgpu.BufferUsageStorage}); e != nil {
+					buildErr = e
+				} else {
+					keepBuf(sinks0)
+				}
+				hs0 = uni([]uint32{0, 0, 0, 0})
+			}
+			f := c.attnKeysRows[rowsForm]
+			rp := uni([]uint32{uint32(nH), uint32(lnKV), uint32(lhd), uint32(positions[0] + 1), 0, uint32(nH / lnKV), f32bits(scale), uint32(window)})
+			if buildErr == nil {
+				disp(f.pl, bind(f.layout, q, kCache, vCache, ctxv, sinks0, rp, hs0), uint32(nH), uint32(M))
+			}
+		} else if lp.local || lhd > attnWG || prefillAttnPerRow {
 			// Decode's own single-row attention kernel, once a row, each row's q and context bound at its offset: the
 			// batched kernels take neither a window's start nor a wide head.
 			if qRow%64 != 0 && buildErr == nil {
@@ -1256,8 +1289,8 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			for r := range M {
 				pos := positions[0] + r
 				first := 0 // a sliding-window layer attends its last window positions, as decoder.KVCache.WindowStart
-				if lp.local && pp.window > 0 && prefillDefectForTest != 6 {
-					first = max(0, pos+1-pp.window)
+				if window > 0 {
+					first = max(0, pos+1-window)
 				}
 				rp := uni([]uint32{uint32(nH), uint32(lnKV), uint32(lhd), uint32(pos + 1), uint32(first), uint32(nH / lnKV), f32bits(scale), 0})
 				disp(pl, bindOff(ly, bindEntry{buf: q, off: uint32(r * qRow), n: uint32(qRow)}, whole(kCache), whole(vCache),
@@ -1373,6 +1406,10 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 // first layer's cache, 12 rotates the m-RoPE axis table by one pair, 13 gives each row the next row's three positions,
 // 14 swaps height and width.
 var prefillDefectForTest int
+
+// prefillAttnRowsOff makes the batched pass run decode's kernel once a row where it would run a key-split kernel's rows
+// form, for the test that compares the two and the profile that times them. Tests only.
+var prefillAttnRowsOff = false
 
 // prefillAttnPerRow makes the batched pass run decode's single-row attention kernel once a row in place of the batched
 // attention kernel. Tests only. It needs a row of q (nH*hd floats) to be a multiple of 64 floats, so each row's

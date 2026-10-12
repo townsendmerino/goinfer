@@ -467,7 +467,12 @@ func TestPrefillInt4_profile(t *testing.T) {
 	_, nLayers, nH, nKV, hd, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(3))
 	ctx := context.Background()
-	fmt.Fprintf(os.Stderr, "PROFILE %s on %s: %d layers, %d heads of %d (%d KV heads), sliding window %d; key-split attention off: %v\n", filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.slidingWindow, attnKeysDisabled)
+	if os.Getenv("GOINFER_PREFILL_ATTN_ROWS") == "0" { // the once-a-row attention the rows forms replaced, for an A/B
+		prefillAttnRowsOff = true
+		defer func() { prefillAttnRowsOff = false }()
+	}
+	fmt.Fprintf(os.Stderr, "PROFILE %s on %s: %d layers, %d heads of %d (%d KV heads), sliding window %d; key-split attention off: %v; rows-form attention off: %v\n",
+		filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.slidingWindow, attnKeysDisabled, prefillAttnRowsOff)
 	for _, n := range prefillRowCounts(t, 256, 1024) {
 		rows := make([][]float32, n)
 		for i := range rows {
@@ -491,6 +496,7 @@ func TestPrefillInt4_profile(t *testing.T) {
 				t.Fatalf("walk, row %d: %v", i, err)
 			}
 		}
+		rd.c.device.Poll(true, nil) // the rows above are queued, not waited for: drain them before timing one step
 		t1 := time.Now()
 		if _, err := rd.Forward(rows[n-1], n-1); err != nil {
 			t.Fatal(err)
