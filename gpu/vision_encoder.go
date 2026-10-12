@@ -5,6 +5,7 @@ package gpu
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/vision"
@@ -33,6 +34,11 @@ type visLayer struct {
 	qw, kw, vw, ow, fc1w, fc2w *ResidentW8A8 // the int8 form's projections
 	qf, kf, vf, of, fc1f, fc2f *DeviceBuffer // the float32 form's, each [out, in]
 }
+
+// visionProfileForTest, when non-nil, makes ForwardPatches wait for the device after every step and add the time since
+// the previous step to that step's name: a per-step profile for the tower's timing test. Waiting after every step makes
+// the whole pass slower than it otherwise is, so the shares are the reading, not the total. nil outside that test.
+var visionProfileForTest map[string]time.Duration
 
 // visionDefectForTest plants one defect in the float32 forward's first layer, for the tower gate's planted-defect
 // arm (gpu/vision_f32_test.go): 1 the position table not added, 2 the q bias dropped, 3 q and k weights swapped, 4 the
@@ -213,6 +219,16 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	np, hidden, inter, hd, nH := w.NumPatches, w.Hidden, w.Inter, w.HeadDim, w.NumHeads
 	cpp := len(patches) / np
 	scale := float32(1.0 / math.Sqrt(float64(hd)))
+	last := time.Now()
+	mark := func(step string) {
+		if visionProfileForTest == nil {
+			return
+		}
+		c.device.Poll(true, nil)
+		now := time.Now()
+		visionProfileForTest[step] += now.Sub(last)
+		last = now
+	}
 
 	// Patch embed: h = patches·patchWᵀ + patchB + posEmb. h is the resident
 	// residual stream for the whole forward.
@@ -235,6 +251,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		}
 	}
 	c.device.Poll(true, nil)
+	mark("patch embed")
 	// proj is one projection in whichever form the tower was uploaded.
 	proj := func(src *DeviceBuffer, w8 *ResidentW8A8, wf, bias *DeviceBuffer, M, K, N int) (*DeviceBuffer, error) {
 		if ve.f32 {
@@ -265,6 +282,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if err != nil {
 			return nil, fail(err)
 		}
+		mark("layernorm")
 		qf, kf, qb := L.qf, L.kf, L.qb
 		if planted := ve.f32 && li == 0; planted && visionDefectForTest == 2 {
 			qb = nil
@@ -283,6 +301,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if err != nil {
 			return nil, fail(err)
 		}
+		mark("q, k, v projections")
 		att, err := add(c.newDevBuf(np * hidden))
 		if err != nil {
 			return nil, fail(err)
@@ -312,24 +331,29 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 				hrel()
 				return nil, fail(fmt.Errorf("gather: %v %v %v", e1, e2, e3))
 			}
+			mark("per head: gather q, k, v")
 			scores, e := htrack(c.matmulF32Device(qh.buf, kh.buf, np, hd, np)) // [np,np]
 			if e != nil {
 				hrel()
 				return nil, fail(e)
 			}
+			mark("per head: scores = q·kᵀ")
 			if e := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, scores.buf, []uint32{uint32(np), uint32(np), math.Float32bits(scale), 0}, np); e != nil {
 				hrel()
 				return nil, fail(e)
 			}
+			mark("per head: softmax")
 			oh, e := htrack(c.matmulF32Device(scores.buf, vt.buf, np, np, hd)) // [np,hd]
 			if e != nil {
 				hrel()
 				return nil, fail(e)
 			}
+			mark("per head: scores·v")
 			if e := c.copyHeadDevice(oh.buf, att.buf, np, hd, hidden, off, 1); e != nil { // scatter
 				hrel()
 				return nil, fail(e)
 			}
+			mark("per head: scatter")
 			hrel()
 		}
 		o, err := add(proj(att, L.ow, L.of, L.ob, np, hidden, hidden))
@@ -339,25 +363,30 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if err := c.addRowsDevice(h.buf, o.buf, np*hidden, hidden, 1); err != nil { // h += o
 			return nil, fail(err)
 		}
+		mark("o projection and residual")
 
 		// --- MLP block (pre-LN, residual): fc2(gelu(fc1(x))) ---
 		n2, err := add(ve.ln(h, L.ln2w, L.ln2b, np, hidden))
 		if err != nil {
 			return nil, fail(err)
 		}
+		mark("layernorm")
 		mid, err := add(proj(n2, L.fc1w, L.fc1f, L.fc1b, np, hidden, inter)) // [np, inter]
 		if err != nil {
 			return nil, fail(err)
 		}
+		mark("fc1")
 		if !(ve.f32 && li == 0 && visionDefectForTest == 4) {
 			if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, mid.buf, []uint32{uint32(np * inter), 0, 0, 0}, maxWG((np*inter+63)/64)); err != nil {
 				return nil, fail(err)
 			}
 		}
+		mark("gelu")
 		mlp, err := add(proj(mid, L.fc2w, L.fc2f, L.fc2b, np, inter, hidden)) // [np, hidden]
 		if err != nil {
 			return nil, fail(err)
 		}
+		mark("fc2")
 		if !(ve.f32 && li == 0 && visionDefectForTest == 5) {
 			if err := c.addRowsDevice(h.buf, mlp.buf, np*hidden, hidden, 1); err != nil { // h += mlp
 				return nil, fail(err)
@@ -365,6 +394,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		}
 
 		c.device.Poll(true, nil) // ONE sync per layer; release this layer's scratch
+		mark("mlp residual and the layer's sync")
 		for _, b := range keep {
 			b.Release()
 		}

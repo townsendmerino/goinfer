@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -330,8 +331,9 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 	}
 }
 
-// TestVisionEncoderF32_tiledSmoke is G-S12.3b-3, a by-day smoke with no bar: the real float32 and int8 towers' time for
-// one image, each on the tiled matmul and on the naive one, in one process, the first pass of each tower discarded.
+// TestVisionEncoderF32_tiledSmoke is G-S12.3b-3 and G-S12.3c-3, a by-day smoke with no bar: the real float32 and int8
+// towers' time for one image on the register-blocked matmul and on the 16x16 one, interleaved in one process, the
+// first pass of each tower discarded (GOINFER_TOWER_SMOKE_NAIVE adds a pass on the naive kernel).
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoderF32_tiledSmoke$' -v ./gpu/
 func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
@@ -358,15 +360,20 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[G-S12.3b-3 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
 	}
 	run := func(label string, ve *VisionEncoder, patches []float32) {
-		for _, naive := range []bool{false, false, true} { // tiled (warm-up), tiled, naive
-			visionNaiveMatmulForTest = naive
+		names := map[int]string{visionMatmulRB64: "register-blocked", visionMatmulTiled16: "16x16", visionMatmulNaive: "naive"}
+		kernels := []int{visionMatmulRB64, visionMatmulRB64, visionMatmulTiled16, visionMatmulRB64, visionMatmulTiled16} // the first is a warm-up
+		if os.Getenv("GOINFER_TOWER_SMOKE_NAIVE") != "" {
+			kernels = append(kernels, visionMatmulNaive)
+		}
+		for i, k := range kernels {
+			visionMatmulForTest = k
 			ts := time.Now()
 			if _, err := ve.ForwardPatches(patches); err != nil {
 				t.Fatal(err)
 			}
-			logf("%s tower, %s matmul: %.1f s", label, map[bool]string{false: "tiled", true: "naive"}[naive], time.Since(ts).Seconds())
+			logf("%s tower, pass %d, %s matmul: %.1f s", label, i, names[k], time.Since(ts).Seconds())
 		}
-		visionNaiveMatmulForTest = false
+		visionMatmulForTest = visionMatmulRB64
 	}
 	enc, err := vision.LoadEncoder(dir, false)
 	if err != nil {
@@ -400,4 +407,188 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 	}
 	defer ve8.Close()
 	run("int8", ve8, patches)
+}
+
+// TestVisionEncoder_profile is a by-day reading with no bar: where the real float32 and int8 WebGPU towers spend an
+// image's time, by step, from a pass that waits for the device after every step. The unprofiled pass beside it is the
+// time the tower actually takes.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoder_profile$' -v ./gpu/
+func TestVisionEncoder_profile(t *testing.T) {
+	requireHeavyModel(t)
+	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("no gemma-3-4b-it")
+	}
+	c, err := New()
+	if err != nil {
+		t.Skipf("no gpu: %v", err)
+	}
+	defer c.Close()
+	raw, err := os.ReadFile(siglipRealImages[0])
+	if err != nil {
+		t.Skip(err)
+	}
+	pv, err := vision.Preprocess(raw, vision.Gemma3())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := func(label string, ve *VisionEncoder, patches []float32) {
+		for range 2 { // a warm-up, then the time the tower takes
+			ts := time.Now()
+			if _, err := ve.ForwardPatches(patches); err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprintf(os.Stderr, "[profile] %s tower, unprofiled pass: %.1f s\n", label, time.Since(ts).Seconds())
+		}
+		visionProfileForTest = map[string]time.Duration{}
+		ts := time.Now()
+		if _, err := ve.ForwardPatches(patches); err != nil {
+			t.Fatal(err)
+		}
+		total := time.Since(ts)
+		prof := visionProfileForTest
+		visionProfileForTest = nil
+		type row struct {
+			step string
+			d    time.Duration
+		}
+		var rows []row
+		var sum time.Duration
+		for k, d := range prof {
+			rows = append(rows, row{k, d})
+			sum += d
+		}
+		sort.Slice(rows, func(i, j int) bool { return rows[i].d > rows[j].d })
+		fmt.Fprintf(os.Stderr, "[profile] %s tower, profiled pass: %.1f s (steps sum %.1f s)\n", label, total.Seconds(), sum.Seconds())
+		for _, r := range rows {
+			fmt.Fprintf(os.Stderr, "[profile]   %-36s %6.2f s  %5.1f%%\n", r.step, r.d.Seconds(), 100*r.d.Seconds()/sum.Seconds())
+		}
+	}
+	enc, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := enc.Weights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	patches, err := enc.GridPatches(pv.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve, err := c.NewVisionEncoderF32(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile("float32", ve, patches)
+	ve.Close()
+	enc8, err := vision.LoadEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w8, err := enc8.GPUWeights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve8, err := c.NewVisionEncoder(w8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ve8.Close()
+	profile("int8", ve8, patches)
+}
+
+// TestVisionEncoderF32_speedGate is G-S12.3a-4 (docs/tasks/task-multimodal-support-2026-10.md, S12.3a): gemma-3-4b-it's
+// tower at 896x896 on one image, the float32 WebGPU tower's encode time over the CPU float32 tower's, five pairs in
+// alternating order after one discarded pass of each. The float32 device tower becomes WebGPU's default at a median
+// ratio of at most 0.98; 0.98-1.00 is parked; above 1.00 it stays opt-in. A night gate: it runs only with
+// GOINFER_TOWER_SPEED_GATE=1, under the timing lock.
+func TestVisionEncoderF32_speedGate(t *testing.T) {
+	if os.Getenv("GOINFER_TOWER_SPEED_GATE") != "1" {
+		t.Skip("a timed gate: set GOINFER_TOWER_SPEED_GATE=1")
+	}
+	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("no gemma-3-4b-it: %v", err) // a queued gate that cannot run is a failure, not a skip
+	}
+	c, err := New()
+	if err != nil {
+		t.Fatalf("no gpu: %v", err)
+	}
+	defer c.Close()
+	raw, err := os.ReadFile(siglipRealImages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pv, err := vision.Preprocess(raw, vision.Gemma3())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now()
+	logf := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[G-S12.3a-4 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	enc, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := enc.Weights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve, err := c.NewVisionEncoderF32(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ve.Close()
+	cpu := func() float64 {
+		ts := time.Now()
+		if _, err := enc.Forward(pv.Data); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(ts).Seconds()
+	}
+	dev := func() float64 { // GridPatches and the host post-layernorm are part of the device tower's encode
+		ts := time.Now()
+		patches, err := enc.GridPatches(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := ve.ForwardPatches(patches)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := enc.FinishHidden(h); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(ts).Seconds()
+	}
+	logf("warm-up (discarded): CPU %.1f s, WebGPU %.1f s", cpu(), dev())
+	const pairs = 5
+	var ratios []float64
+	for i := range pairs {
+		var cs, ds float64
+		if i%2 == 0 {
+			cs, ds = cpu(), 0
+			ds = dev()
+		} else {
+			ds = dev()
+			cs = cpu()
+		}
+		ratios = append(ratios, ds/cs)
+		logf("pair %d/%d (%s first): CPU %.2f s, WebGPU float32 %.2f s, ratio %.3f", i+1, pairs, map[bool]string{true: "CPU", false: "WebGPU"}[i%2 == 0], cs, ds, ds/cs)
+	}
+	sorted := append([]float64(nil), ratios...)
+	sort.Float64s(sorted)
+	med := sorted[len(sorted)/2]
+	logf("ratios %.3f; median %.3f (ship at most 0.98, park 0.98-1.00, off above 1.00)", ratios, med)
+	switch {
+	case med <= 0.98:
+		t.Logf("G-S12.3a-4 SHIP: median ratio %.3f", med)
+	case med <= 1.00:
+		t.Errorf("G-S12.3a-4 PARKED (for the owner): median ratio %.3f", med)
+	default:
+		t.Errorf("G-S12.3a-4 OFF: median ratio %.3f", med)
+	}
 }
