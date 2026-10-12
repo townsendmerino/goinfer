@@ -1,0 +1,15 @@
+Mon Oct 12 11:34:45 PDT 2026
+f489e69e gpu: the image gate logs each reading where the two routes' choices are not a near-tie
+=== RUN   TestPrefillMRoPE_realImage
+REAL IMAGE first-layer K against the CPU's: lowest cosine 1.000000000 over the image rows, 1.000000000 over the text rows (bar 0.99999)
+REAL IMAGE planted defect 12: first-layer K lowest cosine over the image rows 0.999937053
+REAL IMAGE planted defect 13: first-layer K lowest cosine over the image rows 0.998395461
+REAL IMAGE planted defect 14: first-layer K lowest cosine over the image rows 0.999946081
+    prefill_mrope_test.go:331: reading 8 of 9: the CPU route picks token 323, the device route 50494, which the CPU route gives 0.358 of its top probability (cosine 0.982231)
+REAL IMAGE qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw (234 image rows, grid [1 26 36]): control (text prompt) worst cosine 0.964028612, argmax equal or near-tie: true; image prompt worst cosine 0.939637450 (bar 0.928047223), argmax equal or near-tie: false
+    prefill_mrope_test.go:560: the image prompt's device prefill sits further from the CPU's than the text control allows: 0.939637450 under 0.928047223, near-ties false
+--- FAIL: TestPrefillMRoPE_realImage (56.46s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	56.558s
+FAIL
+exit 1 (real image)
