@@ -1185,10 +1185,9 @@ func (s *server) loadVisionTower(cfg config) error {
 }
 
 // towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP defaults to float32 on every
-// backend, because the int8 tower is lossy at real size and changes what the model says about an image
-// (docs/measurements/siglip-int8-fidelity-2026-10-07.md; docs/tasks/task-multimodal-support-2026-10.md, "Gemma 3's
-// default tower on WebGPU"). WebGPU has only an int8 device tower, so its default tower runs on the CPU
-// (gemma3TowerBackend) and -vision-quant int8 asks for the device one.
+// backend, because the int8 tower is lossy at real size (docs/measurements/siglip-int8-fidelity-2026-10-07.md). Under
+// WebGPU the default tower runs on the CPU (gemma3TowerBackend), where it measured faster than either device tower;
+// -vision-quant f32 or int8 asks for a device one (docs/tasks/task-multimodal-support-2026-10.md, S12.3a).
 // Every other tower gets int8 only when asked for, whatever the backend: its device towers are float32 and its gates ran
 // float32, and forcing int8 under cuda/webgpu bought no speed (the CPU int8 tower is not faster) and cost fidelity
 // (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). A new vision model type must be added to the list below,
@@ -1198,7 +1197,6 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	case "int8":
 		return true
 	case "f32":
-		// Explicit f32. On webgpu there is no float32 device tower, so the attach declines by name and the CPU tower runs.
 		return false
 	}
 	switch modelType {
@@ -1208,13 +1206,14 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	return (backend == "webgpu" || backend == "cuda") && modelType != "gemma3" // gemma3: float32 by default everywhere
 }
 
-// gemma3TowerBackend is where Gemma 3's SigLIP tower attaches: the tower backend, except that WebGPU's unset default,
-// a float32 tower it has no device form of, is the CPU tower by choice and not by a failed attach. An explicit
-// -vision-quant keeps the tower backend: int8 attaches there, and f32 declines by name (or fails under -require-backend).
+// gemma3TowerBackend is where Gemma 3's SigLIP tower attaches: the tower backend, except that WebGPU's unset default
+// is the float32 tower on the CPU, by choice and not by a failed attach. An explicit -vision-quant keeps the tower on
+// WebGPU: f32 attaches its float32 device tower and int8 its int8 one. Which of the CPU and the float32 device tower is
+// the default is decided by a speed gate (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4).
 func gemma3TowerBackend(cfg config, int8Tower bool, note io.Writer) string {
 	be := cfg.towerBackend()
 	if be == "webgpu" && cfg.visionQuant == "" && !int8Tower {
-		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant int8 puts an int8 tower on the GPU, which reads images less accurately")
+		fmt.Fprintln(note, "note: under --backend webgpu Gemma 3's vision tower runs on the CPU in float32; --vision-quant f32 or int8 puts a tower on the GPU (the int8 one is lossy against float32)")
 		return "cpu"
 	}
 	return be

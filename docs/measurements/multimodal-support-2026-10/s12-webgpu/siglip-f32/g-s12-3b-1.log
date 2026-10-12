@@ -1,0 +1,15 @@
+=== RUN   TestMatmulTiledF32_matchesNaive
+    vision_tiled_test.go:125: M=16 K=16 N=16: tiled against naive 0.00e+00, naive against the float64 host product 1.14e-07
+    vision_tiled_test.go:125: M=17 K=31 N=19: tiled against naive 0.00e+00, naive against the float64 host product 2.22e-07
+    vision_tiled_test.go:125: M=5 K=100 N=3: tiled against naive 0.00e+00, naive against the float64 host product 3.08e-07
+    vision_tiled_test.go:125: M=64 K=72 N=64: tiled against naive 0.00e+00, naive against the float64 host product 3.89e-07
+    vision_tiled_test.go:125: M=33 K=1152 N=47: tiled against naive 0.00e+00, naive against the float64 host product 1.60e-06
+    vision_tiled_test.go:125: M=130 K=72 N=130: tiled against naive 0.00e+00, naive against the float64 host product 5.39e-07
+    vision_tiled_test.go:125: M=1 K=5 N=1: tiled against naive 0.00e+00, naive against the float64 host product 3.05e-08
+    vision_tiled_test.go:125: M=4096 K=1152 N=4304: tiled against naive 0.00e+00, naive against the float64 host product 3.83e-06
+    vision_tiled_test.go:125: M=4096 K=72 N=4096: tiled against naive 0.00e+00, naive against the float64 host product 9.43e-07
+    vision_tiled_test.go:125: M=4096 K=4096 N=72: tiled against naive 0.00e+00, naive against the float64 host product 6.12e-06
+    vision_tiled_test.go:154: planted (no zero fill past K) at K=31: relative 4.73e-01
+--- PASS: TestMatmulTiledF32_matchesNaive (6.43s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	7.090s

@@ -1,0 +1,18 @@
+=== RUN   TestZZEModelValuePath
+decoder: gemma-4-E2B_q4_0-it.int4.metal.giw is not in memory: reading its 3.8 GB once before the load
+
+== E2B (hidden 1536, V 256): norm-and-quantize: device scale 1.39714611, host 1.39714599 (relative 8.29e-08); codes differing 0 of 1536 (largest step 0)
+   value projection [256 x 1536], group 32: device against the host product of the device's own codes: cosine 1.000000000, largest difference 6.1e-05
+   v_norm over 1 heads of 256: device against the host norm of the device's V: cosine 1.000000000, largest difference 9.54e-07
+   the device's normed V against the CPU path's: cosine 1.000000000, largest difference 7.15e-07
+      KV head 0: cosine 1.000000000, largest difference 7.15e-07
+
+== E4B (hidden 2560, V 512): norm-and-quantize: device scale 2.85794044, host 2.85794037 (relative 2.42e-08); codes differing 2 of 2560 (largest step 1)
+   value projection [512 x 2560], group 32: device against the host product of the device's own codes: cosine 1.000000000, largest difference 0
+   v_norm over 2 heads of 256: device against the host norm of the device's V: cosine 1.000000000, largest difference 9.54e-07
+   the device's normed V against the CPU path's: cosine 0.999991995, largest difference 0.0136
+      KV head 0: cosine 0.999996808, largest difference 0.00678
+      KV head 1: cosine 0.999987183, largest difference 0.0136
+--- PASS: TestZZEModelValuePath (17.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	18.417s

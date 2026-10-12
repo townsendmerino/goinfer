@@ -1,0 +1,16 @@
+[17:23:02] gemma-3-4b-it: arm webgpu (--backend webgpu -vision-device cpu --embed-int4=false --vision-quant f32)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu (36.4s): 'This image shows an invoice from Harbor Light Supply Co. to Thistle & Rowan Ltd for materials and design review services, with a total due amount of £'
+[17:23:56] gemma-3-4b-it: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false --vision-quant f32)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/webgpu-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (56.8s): 'This image shows an invoice from Harbor Light Supply Co. to Thistle & Rowan Ltd for three items: binding spine strips, hardwood flooring, and a design'
+gemma-3-4b-it: reference arm webgpu
+gemma-3-4b-it: webgpu-towerauto against webgpu: first differing generated token 18: webgpu ' materials', webgpu-towerauto ' three'
+  webgpu top-3: ' materials' 0.372, ' the' 0.333, ' various' 0.164
+  near-tie (p(other) >= half p(top) = 0.186): False

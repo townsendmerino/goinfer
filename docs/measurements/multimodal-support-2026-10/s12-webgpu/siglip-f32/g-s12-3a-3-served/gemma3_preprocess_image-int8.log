@@ -1,0 +1,14 @@
+[17:21:04] gemma-3-4b-it: arm webgpu-towerauto (--backend webgpu -vision-device auto --embed-int4=false --vision-quant int8)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder int8/webgpu-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto (40.5s): 'The image shows a gradient blend of dark green, gray, and pink.'
+[17:22:01] gemma-3-4b-it: arm webgpu-towerauto2 (--backend webgpu -vision-device auto --embed-int4=false --vision-quant int8)
+  decode path: webgpu:metal-resident (int4)
+  prefill path: batched (backend reports no load-time declines; a per-prompt fallback is still possible)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder int8/webgpu-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  webgpu-towerauto2 (42.5s): 'The image shows a gradient blend of dark green, gray, and pink.'
+gemma-3-4b-it: reference arm webgpu-towerauto
+gemma-3-4b-it: webgpu-towerauto2 against webgpu-towerauto: IDENTICAL replies

@@ -389,7 +389,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 <!-- END images-and-audio support table -->
 
-Not yet: Qwen3-VL MoE images, video, and a float32 vision tower on WebGPU (its only device tower is Gemma 3's int8 one, opt-in with `--vision-quant int8`).
+Not yet: Qwen3-VL MoE images, video, and vision towers on WebGPU beyond Gemma 3's (opt-in with `--vision-quant f32` or `int8`).
 
 ## Docs
 

@@ -1,0 +1,1 @@
+The image demonstrates the Gaussian integral and its connection to the normal distribution (also known as the bell curve). It shows the integral of e^(-x^2)
