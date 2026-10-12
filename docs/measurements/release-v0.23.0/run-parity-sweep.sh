@@ -63,5 +63,14 @@ cd "$WT"
   echo "models:      $HOME/models only (no archive override); absent checkpoints skip their gates and are reported as blockers"
 } | tee "$LOG/provenance.txt"
 [ "${DRY:-0}" = 1 ] && { echo "DRY=1: stopping before the sweep"; exit 0; }
-GOWORK=off EMIT_MANIFEST=1 go run ./cmd/gate parity 2>&1 | tee "$LOG/parity-sweep.log"
+# EMIT_MANIFEST defaults to 0 here: emitting rewrites testdata/parity_manifest.json in the worktree, and the sweep's JSON record (-record) reads a modified tree as DIRTY, which
+# can never count (gate release row 11). The measured PARITY_ROW lines are in the log either way; merge them by hand in the morning (RELEASING.md §C1) or re-run with EMIT_MANIFEST=1.
+# The record lands in the main checkout's docs/measurements/parity-sweep/ as an untracked file, to commit in the morning.
+RECORD=${RECORD:-$SRC/docs/measurements/parity-sweep}
+set +e   # the sweep exits 1 on a blocker; the rest of this script still reads its record and writes the provenance
+GOWORK=off EMIT_MANIFEST=${EMIT_MANIFEST:-0} go run ./cmd/gate parity -logdir "$LOG" -record "$RECORD" 2>&1 | tee "$LOG/parity-sweep.log"
+rc=${PIPESTATUS[0]}
+ls "$RECORD"/*"$(git rev-parse --short=8 HEAD)"*.json >/dev/null 2>&1 || { echo "!! the sweep wrote no record for $REV under $RECORD"; rc=1; }
+echo "sweep rc=$rc (the sweep's own verdict line decides pass: ALL REQUIRED GATES GREEN)" | tee -a "$LOG/provenance.txt"
 echo "finished:   $(date '+%F %T %Z')" | tee -a "$LOG/provenance.txt"
+exit $rc
