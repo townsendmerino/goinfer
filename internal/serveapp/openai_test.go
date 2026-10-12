@@ -494,6 +494,20 @@ func TestContextLengthError(t *testing.T) {
 	}
 }
 
+// TestContextLengthError_namesBothNumbers: the 400 gives the prompt's size and the window that refused it, in the words
+// a harness's log can be read by ("prompt is N tokens; context window is M"), and keeps context_length_exceeded, the
+// string clients match on. When the window is the server's and not the model's, the remedy names the -ctx to pass.
+func TestContextLengthError_namesBothNumbers(t *testing.T) {
+	const want = "prompt is 11137 tokens; context window is 4096 (context_length_exceeded)"
+	if err := contextLengthError(11137, 4096); err == nil || err.Error() != want {
+		t.Errorf("contextLengthError(11137, 4096) = %v, want %q", err, want)
+	}
+	err := contextLengthErrorFor(11137, 4096, 32768)
+	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), "-ctx 11138 or more (up to 32768)") {
+		t.Errorf("contextLengthErrorFor(11137, 4096, 32768) = %v; want %q followed by the -ctx that would accept it", err, want)
+	}
+}
+
 // TestPrepare_topPAndSeed gates M-02 (top_p==0 is greedy, out-of-range rejected) and M-03 (an omitted
 // seed varies, a supplied seed is honored).
 func TestPrepare_topPAndSeed(t *testing.T) {

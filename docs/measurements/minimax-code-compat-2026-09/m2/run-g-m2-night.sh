@@ -3,7 +3,8 @@
 #   1. G-M2-speed: dense decode at depth 128 on the 1.5B and the 7B under --backend metal, the M2 build (no -ctx: the
 #      fit-by-default context) against the build before it (no -ctx: 4096), two arms, three counterbalanced quads of
 #      restarted cells (bench_peer.py phase A, BENCH_ABBA=3).
-#   2. The served read the day could not make for the 7B (its resident build did not fit the daytime memory): no -ctx,
+#   2. The real-checkpoint unit test of the fit on a 16 GB Mac's static budget (the 7B loads on the CPU: night only).
+#   3. The served read the day could not make for the 7B (its resident build did not fit the daytime memory): no -ctx,
 #      the banner's context and slots, one request of a coding agent's first-request size, swap before and after.
 # Runs with nobody watching: both serve binaries, the harness, its prompts and this directory's scripts are pinned
 # copies in $B; night.py holds the timing lock and bench_peer.py inherits it.
@@ -17,7 +18,8 @@ OLD=$B/bin/serve-metal-old
 M15=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 M7=$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf
 mkdir -p "$OUT" || exit 2
-for f in "$NEW" "$OLD"; do [ -x "$f" ] || { echo "FATAL: $f is missing"; exit 2; }; done
+FITTEST=$B/bin/decoder-realckpt.test
+for f in "$NEW" "$OLD" "$FITTEST"; do [ -x "$f" ] || { echo "FATAL: $f is missing"; exit 2; }; done
 for f in "$B/bench_peer.py" "$B/timing_lock.py" "$B/prompts.json" "$B/m2_served_check.py" "$B/grade_m2_speed.py" "$M15" "$M7"; do
   [ -e "$f" ] || { echo "FATAL: $f is missing"; exit 2; }
 done
@@ -35,6 +37,11 @@ GOINFER_SERVE_METAL=$NEW GOINFER_SERVE_METAL_OLD=$OLD \
 [ "${PIPESTATUS[0]}" = 0 ] || rc=1
 python3 "$B/grade_m2_speed.py" "$OUT/g-m2-speed.json" "$OUT/serve-logs" 2>&1 | tee "$OUT/g-m2-speed.verdict.txt"
 [ "${PIPESTATUS[0]}" = 0 ] || rc=1
+GOINFER_HEAVY_TESTS=1 "$FITTEST" -test.v -test.timeout 20m -test.run '^TestMetalFitCtx_anAgentsFirstRequestFits$' 2>&1 | tee "$OUT/fit-real.log"
+[ "${PIPESTATUS[0]}" = 0 ] || rc=1
+for mk in 1.5B 7B; do # a skip is not a pass
+  grep -q -- "--- PASS: TestMetalFitCtx_anAgentsFirstRequestFits/$mk" "$OUT/fit-real.log" || { echo "fit-real: no PASS line for $mk"; rc=1; }
+done
 python3 -u "$B/m2_served_check.py" "$NEW" "$M7" "$OUT/served-7b" 2>&1 | tee "$OUT/served-7b.log"
 [ "${PIPESTATUS[0]}" = 0 ] || rc=1
 python3 -u "$B/m2_served_check.py" "$NEW" "$M15" "$OUT/served-1.5b" 2>&1 | tee "$OUT/served-1.5b.log"

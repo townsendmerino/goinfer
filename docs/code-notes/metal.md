@@ -863,6 +863,41 @@ Read as a request it allocated KV several times the default on a tight machine a
 refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-09-30.md).
 ```
 
+Since M2 (docs/tasks/task-minimax-code-compat-2026-09.md) an unpinned load no longer gets a flat 4096: it gets
+`metalFitFor`'s answer, below. The rest of the note stands, with "the default" read as "what an unpinned load takes".
+
+## metalFitFor
+
+The fit-by-default context of an unpinned Metal load (`metal/backend.go:metalFitFor`, `metal/backend.go:metalFitNow`,
+`decoder/metal_fitctx.go:Model.MetalFitCtx`). The design, and why each piece is there:
+
+- **One function for the load and for `fit`.** `MetalFitCtx` lives in `decoder` so `internal/fitcmd/fit.go:planFor` can
+  ask it without linking Metal. Both hand it the registered `metal` memory probe (`metalMemoryCeiling`: the smaller of
+  0.70 of RAM and the live available figure) and Metal's default slot count, so they cannot name different contexts
+  for one memory figure.
+- **The candidate is 16384, not the 32768 ceiling.** It is the size of a coding agent's session (its first request is
+  about 11k tokens), CUDA's figure. Every position is allocated up front in every slot, so asking for the ceiling by
+  default would hold twice the KV for a length few sessions reach.
+- **Slots before context, down to 4096.** With more than one KV slot asked for, the context shrinks until all fit
+  (a binary search over Metal's 8-position grid; KV is linear in the context and nothing else in `Plan` grows with
+  it). At 4096 it stops, and `metalKVSlots` grants the slots that fit there.
+- **The margin (`decoder.MetalFitMarginBytes`, 384 MiB).** `BuildResident`'s guard and `metalKVSlots` read the live
+  budget again after the context is chosen. A context taken at the exact edge would fail the guard on a drift of a
+  few megabytes, and S18's `shrinkCtxToFit` would then halve it. The margin keeps the choice clear of that edge.
+- **Chosen once a build (`metalFitChoice`).** The budget is live, and `resolveMetalCtxCap` is read several times in
+  one build (the guard, the slot count, the KV sizing). `BuildResident` stores its choice for the build's duration so
+  they all see one number; the entry is deleted when the build returns.
+- **A paged-MoE load keeps 4096** (`metalPagesMoE`), for the reason CUDA's `-moe-cache-experts` does
+  (docs/code-notes/cuda.md#resolveCtxCapFit): the expert pager is sized from what is left after everything pinned,
+  so a byte given to KV is a byte its slots never see. `metalPagesMoE` reads the requests, not the resolved slot
+  count: `autoMoESlots` sizes that count from the KV this function decides, and reading it here would recurse.
+- **A guard pin is a limit.** `ResidentContextRequest() > 0` without `ResidentContextPinned()` is the load-time
+  guard's auto-pin. It goes in as `MetalFitInput.Lower`, which caps the candidate and takes the floor down with it.
+- **What the budget already counts.** By the time `BuildResident` runs, a checkpoint loaded onto the heap has
+  already lowered the live available figure by its own weights, and `Plan` then prices the weights and their host
+  copy against it. That is the guard's own conservatism and the fit inherits it: on a busy 16 GB Mac a 7B does not
+  go resident at all, at any context. A sidecar's mapped weights do not have this cost until they are touched.
+
 ## tgReduceNorm
 
 Moved from `metal/model.go` (the comment above the `tgReduceNorm`/`tgReduceAttn` constants) on 2026-10-09.

@@ -1296,7 +1296,7 @@ func prepareErrStatus(err error) int {
 // drives out-of-range RoPE and returns plausible garbage under HTTP 200. ctx <= 0 (unknown) never rejects.
 func contextLengthError(promptLen, ctx int) error {
 	if ctx > 0 && promptLen >= ctx {
-		return fmt.Errorf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, ctx)
+		return fmt.Errorf("prompt is %d tokens; context window is %d (context_length_exceeded)", promptLen, ctx)
 	}
 	return nil
 }

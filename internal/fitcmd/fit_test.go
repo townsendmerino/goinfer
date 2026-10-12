@@ -299,3 +299,60 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 		t.Errorf("the found sidecar does not load with the backend freshSidecar chose: %v", err)
 	}
 }
+
+// TestPlanFor_metalPlansAtTheLoadsOwnContext: for an unpinned Metal line `fit` plans at the context
+// decoder.Model.MetalFitCtx gives with Metal's default KV slots, the function the Metal load itself asks, so the dry run
+// and the load cannot name different contexts for one memory figure. A wide-window copy of llama-tiny makes the candidate
+// 16384; the budgets put the answer at the candidate, in the interior (two slots trading context), and at the default.
+// A pinned -ctx and the other backends go to Plan as given.
+func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "llama-tiny", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "config.json" {
+			wide := strings.Replace(string(b), `"max_position_embeddings": 128`, `"max_position_embeddings": 131072`, 1)
+			if wide == string(b) {
+				t.Fatal("llama-tiny's config no longer carries max_position_embeddings 128")
+			}
+			b = []byte(wide)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	base := m.Plan("metal", 1<<40, decoder.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true})
+	if base.Placement != decoder.PlacementResident {
+		t.Fatalf("llama-tiny does not plan resident on metal: %s", base.Reason)
+	}
+	perPos := m.ResidentKVBytes("metal", 8, false, false) / 8
+	budget := func(positions int) int64 {
+		return decoder.MetalFitMarginBytes + base.DenseBytes + base.HostCopyBytes + perPos*int64(positions)
+	}
+	for _, c := range []struct {
+		positions, want int
+	}{{80000, decoder.MetalFitDefaultCtx}, {20000, 10000}, {5000, decoder.MetalCtxDefault}} {
+		free := budget(c.positions)
+		p := planFor(m, "metal", free, decoder.PlanRequest{Ctx: defaultCtx})
+		load := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots})
+		if p.Ctx != load.Ctx || p.Ctx != c.want {
+			t.Errorf("room for %d positions: fit plans ctx %d, the load takes %d, want %d", c.positions, p.Ctx, load.Ctx, c.want)
+		}
+		if p.Placement != decoder.PlacementResident || !strings.Contains(p.Reason, fmt.Sprintf("an unpinned load takes %d positions (%s)", load.Ctx, load.Why)) {
+			t.Errorf("room for %d positions: %v, %q; want resident and the load's own reason", c.positions, p.Placement, p.Reason)
+		}
+	}
+	if p := planFor(m, "metal", budget(80000), decoder.PlanRequest{Ctx: 24000, CtxPinned: true}); p.Ctx != 24000 || strings.Contains(p.Reason, "unpinned") {
+		t.Errorf("a pinned -ctx 24000: ctx %d, %q; want it planned as asked", p.Ctx, p.Reason)
+	}
+	if p, want := planFor(m, "cpu", budget(80000), decoder.PlanRequest{Ctx: defaultCtx}), m.Plan("cpu", budget(80000), decoder.PlanRequest{Ctx: defaultCtx}); p.Ctx != want.Ctx || p.Reason != want.Reason {
+		t.Errorf("cpu: planFor changed Plan's answer (%d, %q) to (%d, %q)", want.Ctx, want.Reason, p.Ctx, p.Reason)
+	}
+}

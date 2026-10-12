@@ -1428,7 +1428,8 @@ goes from 8192 to **16384**. It is a candidate, not a grant: the planner shrinks
 So the change helps the models that have the room (small and medium ones, and bigger cards), and costs them **VRAM: +1.8 GB on the 1.5B**, because the extra
 context is allocated up front in each of 4 slots. A 7B on 8 GB is where it does not reach: an agent there still passes `-ctx 16384` (the build then grants fewer
 slots). Decode speed is unchanged: interleaved default vs `-ctx 8192` on the 1.5B, two rounds each, 272–274 tok/s in every arm (exploratory: one model, one card,
-not a result). **Metal is not changed** (4096; no Metal box here to measure, and its planner is separate). **Gates:** `TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn`
+not a result). **Metal was not changed here** (4096; no Metal box on this side to measure, and its planner is separate). **Metal followed on 2026-10-12**
+(M2, `docs/tasks/task-minimax-code-compat-2026-09.md`): an unpinned Metal load now asks for the same 16384 against the Mac's memory budget, with 2 KV slots. **Gates:** `TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn`
 (fit's default equals the planner's candidate, and both hold an agent's first request with headroom; three mutants red); the existing slot-shrink test's precondition
 ("one slot gets the whole candidate") was true only because 8192 < 4×3000 and now states the real invariant. **Benchmarks:** harness cells without `BENCH_CTX` are unpinned, so
 they now allocate more KV on a card with room; decode work at a given depth is the same (above), but a row's provenance should say its context. R19 is closed for CUDA.

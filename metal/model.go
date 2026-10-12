@@ -17,8 +17,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// metalCtxCapDefault is the resident KV capacity in positions when nothing asks for more (4096).
-// The staged/CPU path handles longer unless explicitly requested via decoder.Options.ResidentContext.
+// metalCtxCapDefault is the resident KV capacity in positions an unpinned load never goes under of its own accord (4096), and
+// what it takes when fit-by-default does not apply (metalFitFor). An explicit decoder.Options.ResidentContext asks for more.
 const metalCtxCapDefault = decoder.MetalCtxDefault
 
 // metalCtxCapMax is the ceiling on resident KV positions for this backend (32768). The decode attention
@@ -32,26 +32,21 @@ const metalCtxCapMax = decoder.MetalCtxCeiling
 // `threadgroup float sc[4096]` in kernels.go holds one score per key in the active tile.
 const attnScoreTileBound = 4096
 
-// resolveMetalCtxCap turns a request into the effective resident KV capacity, in the shape of cuda's resolveCtxCap: an
-// unpinned load (req <= 0) gets metalCtxCapDefault; an explicit request up to metalCtxCapMax is honored, clamped to
-// the model's window; a request above metalCtxCapMax is refused with the numbers.
-// A context the load-time fit guard auto-pinned (the caller did not choose it) is a ceiling, not a request: it may
-// lower the default, never raise it. Read as a request it allocated several times the default KV on a tight machine,
-// or was refused, which moved the whole forward to the CPU.
+// resolveMetalCtxCap turns a request into the effective resident KV capacity, in the shape of cuda's resolveCtxCapFit: an
+// unpinned load gets the fit-by-default context (metalFitFor: up to decoder.MetalFitDefaultCtx when memory holds it, never
+// under metalCtxCapDefault); an explicit request up to metalCtxCapMax is honored, clamped to the model's window; a request
+// above metalCtxCapMax is refused with the numbers.
+// A context the load-time fit guard auto-pinned (the caller did not choose it) is a ceiling, not a request: metalFitFor
+// takes it as a limit that lowers the choice and never raises it. Read as a request it allocated several times the
+// default KV on a tight machine, or was refused, which moved the whole forward to the CPU.
 func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	req := m.ResidentContextRequest()
-	if req <= 0 {
-		req = metalCtxCapDefault
+	if req <= 0 || !m.ResidentContextPinned() {
+		ctx := metalFitFor(m).Ctx
 		if c, ok := metalCtxCeiling.Load(m); ok {
-			req = min(req, c.(int)) // S18: lowered by BuildResident before it declines (shrinkCtxToFit)
+			ctx = min(ctx, c.(int)) // S18: lowered by BuildResident before it declines (shrinkCtxToFit)
 		}
-		return req, nil
-	}
-	if !m.ResidentContextPinned() {
-		req = min(req, metalCtxCapDefault)
-	}
-	if c, ok := metalCtxCeiling.Load(m); ok && !m.ResidentContextPinned() {
-		req = min(req, c.(int)) // S18: lowered by BuildResident before it declines (shrinkCtxToFit)
+		return ctx, nil
 	}
 	if req > metalCtxCapMax {
 		return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "+

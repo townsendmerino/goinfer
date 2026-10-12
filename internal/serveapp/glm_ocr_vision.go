@@ -140,7 +140,7 @@ func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int
 
 // imageFitsContext refuses, by name, an image whose token run (plus the text around it) cannot fit the context this
 // request will run in, BEFORE the tower runs (it is minutes on a CPU). Without it the same request would fail later and
-// less specifically in prepare ("prompt is N tokens but the model's context window is C"), after the image was resized;
+// less specifically in prepare ("prompt is N tokens; context window is C"), after the image was resized;
 // the point here is the remedy, and that an image is never silently truncated to fit.
 func (lm *loadedModel) imageFitsContext(n int, grid [3]int) error {
 	if lm.model == nil {

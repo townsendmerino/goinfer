@@ -489,8 +489,8 @@ A resident backend keeps its own cache on the device, laid out its own way:
 | | K/V precision | MLA | context when not pinned |
 |---|---|---|---|
 | CPU | f32, or int8 (`--kv i8`) | the latent | the model's maximum, unless the fit guard lowers it |
-| CUDA | f32, whatever `--kv` asks | one latent buffer | 4096, grown toward 8192 under `--fit` |
-| Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | 4096 (up to 32768) |
+| CUDA | f32, whatever `--kv` asks | one latent buffer | 4096, grown toward 16384 under `--fit` |
+| Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | 4096, grown toward 16384 under `--fit` (`-ctx` up to 32768) |
 | WebGPU | f32, f16 or int8 (`--kv`) | resident | a ceiling of 16k / 32k / 64k by precision |
 
 On sliding-window layers, CUDA and Metal allocate the full context and mask it, where the CPU keeps

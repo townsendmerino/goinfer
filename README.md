@@ -176,8 +176,8 @@ goinfer-serve -web -model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 It is embedded in the binary, uses no external assets, is off by default, and starts fine with no
 model at all. The HTTP surface (OpenAI, Anthropic, multi-model, vision, embeddings, admin) is in
 [docs/server.md](docs/server.md). Pointing a real agent (Claude Code, opencode) at it:
-[docs/integrations/](docs/integrations). A coding agent's first request is about 11,000 tokens, more than the default GPU context
-on Metal (4096) or on a CUDA model too big to hold 16384 positions in each of its 4 KV slots (the server then picks less),
+[docs/integrations/](docs/integrations). A coding agent's first request is about 11,000 tokens. The default GPU context holds it when the model leaves room for 16384 positions
+in each KV slot (4 on CUDA, 2 on Metal); on a model too big for that the server picks less and says so at startup in a `harness:` line,
 so start the server for an agent with `-ctx 16384` as those recipes do; a longer prompt gets a 400 that names `-ctx`. `serve check` and the `tools:` line of
 `goinfer-chat models` report which checkpoints hold up under a real agent's tool schema. The one measured to: Qwen2.5-7B-Instruct `q4_k_m` on a CUDA GPU with 8 GB or more. Qwen2.5-Coder-7B-Instruct on the same card did not (opencode made no edits), so run `serve check` before trusting a checkpoint for an agent ([measured table](docs/integrations/opencode.md#picking-a-model)).
 

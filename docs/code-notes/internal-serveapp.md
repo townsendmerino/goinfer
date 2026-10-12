@@ -323,7 +323,7 @@ Moved from `internal/serveapp/openai.go` (the comment above `contextLengthErrorF
 ```text
 contextLengthErrorFor is contextLengthError plus the remedy, for the case where the window that rejected the prompt is the
 server's resident KV capacity and not the model's own (ctx < modelWindow): a coding agent's first request is ~11k tokens
-(R19, docs/tasks/task-first-hour.md), the default resident capacity is 8192 on CUDA and 4096 on Metal, and the 400 used to
+(R19, docs/tasks/task-first-hour.md), the default resident capacity was then 8192 on CUDA and 4096 on Metal (both now grow toward 16384 when memory holds it), and the 400 used to
 say only "context window is 8192" — which reads as the model's limit, so the client (opencode) compacted 34 times instead of
 the operator raising -ctx. When the model's own window is the limit, -ctx cannot help and the message is unchanged.
 ```
