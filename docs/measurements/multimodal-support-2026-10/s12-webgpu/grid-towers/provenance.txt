@@ -1,0 +1,4 @@
+gpu-3e4.test built at 93efea32c9b495e5026efaadb4c0d282ee11e7f5; serve-webgpu-s12-3e and the real-size run from the same sources just before that commit
+2026-10-11, MacBook (arm64, 16 GB), by day, untimed gates under the timing lock; times in the logs are a smoke
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+checkpoints: ~/models/qwen3.5-0.8b, ~/models/glm-ocr, ~/models/qwen3-vl-2b-instruct

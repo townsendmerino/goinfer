@@ -98,13 +98,15 @@ for a new float32 one that matches the CPU tower to a cosine of 0.9999996 a toke
 stays the default until a timed comparison with the float32 device tower has been read; the device towers have not been
 timed on a discrete GPU ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3a).
 
-### Added — Gemma 4's vision tower on WebGPU, opt-in (`--vision-device gpu`)
+### Added — the Gemma 4, Qwen3.5+, Qwen3-VL and GLM-OCR vision towers on WebGPU, opt-in (`--vision-device gpu`)
 
-Under `--backend webgpu` Gemma 4's vision tower can now run on the GPU in float32: `--vision-device gpu` asks for it, and
-without it the tower stays on the CPU as before. On Gemma 4 E2B's tower its image features match the CPU tower's to a
-cosine of 1.0000000 on every soft token of five test images. Whether it becomes the default is decided by a timed
-comparison with the CPU tower, not yet read
-([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d).
+Under `--backend webgpu` these vision towers can now run on the GPU in float32: `--vision-device gpu` asks for it, and
+without it each tower stays on the CPU as before. Each one's image features match its CPU tower's on real checkpoints:
+Gemma 4 E2B's to a cosine of 1.0000000 on every soft token of five test images, Qwen3.5 0.8B's to 0.9999993, GLM-OCR's
+to 0.999987 and Qwen3-VL 2B's (its DeepStack sets included) to 0.9999985, the lowest row in each case. Whether a tower
+becomes the default is decided by a timed comparison with its CPU tower, not yet read. On a very small image (a 6 by 8
+grid of patches) the GLM-OCR device tower was slower than the CPU's
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d and S12.3e).
 
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 
