@@ -370,6 +370,8 @@ type Context struct {
 	// fusedRows holds the batched pass's rows forms of decode's fused quantizing kernels, indexed by fusedRowsKind
 	// (ensureFusedRows).
 	fusedRows [fusedRowsKinds]tiledPipes
+	// ropeMRoPERows is the batched pass's rotary kernel for rows that carry three positions (ensureMRoPERows).
+	ropeMRoPERows tiledPipes
 	// w4MultiPin, when not 0, makes the batched pass run every int4 projection with kernel w4MultiPin-1, whatever the
 	// row count. Tests only.
 	w4MultiPin int

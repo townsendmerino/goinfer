@@ -89,3 +89,33 @@ func (c *Context) ensureFusedRows() error {
 	}
 	return nil
 }
+
+// ropeMRoPERowsSource is ropeBatchedShaderWGSL with a row's position read from a table: three positions a row
+// (time, height, width), each rotary pair taking the one its axis names. The rotation itself is the batched kernel's
+// text, so a row whose three positions are equal rotates exactly as it does there.
+func ropeMRoPERowsSource() (string, error) {
+	return editSource("ropeMRoPERows", ropeBatchedShaderWGSL, []srcEdit{
+		{"@group(0) @binding(2) var<uniform>             p:       P;",
+			"@group(0) @binding(2) var<uniform>             p:       P;\n" +
+				"@group(0) @binding(3) var<storage, read>       mpos:    array<u32>;  // [M, 3] time, height, width\n" +
+				"@group(0) @binding(4) var<storage, read>       axis:    array<u32>;  // [half] the position a pair reads", 1},
+		{"let pos = p.start + row;", "let pos = mpos[row * 3u + axis[d]];", 1},
+	})
+}
+
+// ensureMRoPERows compiles the per-row-position rotary kernel.
+func (c *Context) ensureMRoPERows() error {
+	if c.ropeMRoPERows.pl != nil {
+		return nil
+	}
+	code, err := ropeMRoPERowsSource()
+	if err != nil {
+		return err
+	}
+	sh, pl, layout, err := c.mkPipeline("ropeMRoPERows", code)
+	if err != nil {
+		return err
+	}
+	c.ropeMRoPERows = tiledPipes{sh: sh, pl: pl, layout: layout}
+	return nil
+}

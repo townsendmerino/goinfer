@@ -74,8 +74,9 @@
     prompt at int4 now prefills in the batched pass, bit for bit the row-by-row walk, about 3 times faster on the
     Mac and 7 on nobara's card in process. Step 3 is built too: Gemma 3, dense Gemma 4 and the E-models (text and
     image rows) take the pass, bit for bit, about 1.7 times the walk on the Mac and 2.2 on nobara. Owed: the served
-    gates (queued for tonight on both boxes) and the image prefills that replace a CPU prefill, on Vulkan (on the
-    Mac the CPU route is faster and stays).
+    gates (queued for tonight on both boxes). The device m-RoPE image prefill (Qwen2.5-VL) is built and right in
+    its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere:
+    for the owner.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4914,6 +4915,98 @@ the pass comes out for that shape and backend), **new** built at this step's hea
 - **Predictions:** the Mac's E2B image turn at 0.75 or under (0.7; the tower and the first decode step are common
   to both arms); its Gemma 3 text prompt at 0.65 or under at 1,600 words (0.7); nobara's both at 0.6 or under
   (0.6).
+
+#### S12.4b-4a, the m-RoPE image prefill (Qwen2.5-VL) on Vulkan: registered 2026-10-12 before any code
+
+**The desk map:** a Qwen image block is causal, so its prefill is the batched pass with one change: a row's rotary
+position is three numbers (time, height, width), each frequency pair reading the one its axis names
+(`decoder/residency.go:Model.MRopeAxisResident` is that table, for both layouts). Nothing else in the pass reads a
+position. So `ResidentMRoPEPrefill` on WebGPU is a rotary kernel that takes a per-row position table, and the
+pass's blocks carrying their rows' positions.
+- **Scope:** Qwen2.5-VL (a plain dense decoder with q/k/v bias). Qwen3-VL needs the DeepStack form on top (its own
+  step, S12.4b-4b); Qwen3.5 is recurrent and GLM-OCR decodes staged, neither is in reach.
+- **Backends:** offered on Vulkan, where the pass beat the CPU route about 9 times on this decoder
+  (G-S12.4b-2c's fourth arm). **Declined on Metal**, where the CPU route is faster, so the Mac's image turn does not
+  change. The Mac still runs the identity gates below with the decline lifted for the test.
+
+**Gates:**
+- **G-S12.4b-4a-1, the rotary kernel** (quick). The per-row-position kernel against decode's single-row rotary
+  kernel run once per axis at that axis's position, each pair taken from the run its axis names: equal bit for
+  bit, on random rows and positions, for a sectioned and an interleaved axis table.
+- **G-S12.4b-4a-2, the pass on rows whose three positions are equal** (quick, and on the real checkpoint): rows at
+  rotary positions that are not their cache slots (as text after an image is), against the row-by-row walk through
+  `ForwardMRoPE`: bit for bit, the last row and 8 decode steps, on `qwen25vl-tiny` and on Qwen2.5-VL 3B.
+- **G-S12.4b-4a-3, an image prompt against the CPU's image prefill** (quick, and on the real checkpoint). The
+  walk cannot run a row whose three positions differ, so the reference is the CPU (`PrefillLogitsQwenVLForTest`),
+  which is not the resident's bits. The reading is the last row's logits and 8 teacher-forced decode steps on the
+  resident, after the GPU prefill and after the CPU prefill uploaded.
+  - **Control first:** the same reading on a text prompt of the same length, where the GPU prefill is known exact.
+    Its worst cosine is what "the two routes agree" looks like on this model.
+  - **Bar:** the image prompt's worst cosine at least the control's less 0.002, and every argmax difference a
+    near-tie (the CPU route gives the GPU route's choice at least half its own top probability).
+  - **Planted defects, each below the bar:** the axis table rotated by one pair; each row's positions taken from
+    the next row; height and width swapped.
+- **G-S12.4b-4a-4, served** (night, nobara): Qwen2.5-VL 3B's S7 image cell under `--backend webgpu`, this build
+  against the one before it, rotated rounds. Ships at a median new/old TTFT of 0.98 or under.
+- **Predictions:** 4a-1 and 4a-2 pass first run (0.7). 4a-3's control reads 0.99 or better on the tiny fixture
+  and 0.995 or better on the real one (0.5; I have no reading of how far the CPU prefill sits from the resident).
+  The served cell on nobara reads 0.6 or under (0.7; the tower is common to both arms).
+
+#### S12.4b-4a, built and read 2026-10-12: the device m-RoPE prefill is right in its positions, and its gate against the CPU route FAILS on Vulkan; it is not offered
+
+**The code** (`gpu/prefill_fused.go:ropeMRoPERowsSource`, `gpu/residency.go:residentDecoder.PrefillMRoPELast`): the
+pass with a rotary kernel that reads a row's three positions through the model's axis table.
+**`gpu/residency.go:mropePrefillBackends` is empty, so no backend offers it** and an image turn is unchanged
+everywhere. The tests lift the decline to read it.
+
+**The gates as read:**
+- **G-S12.4b-4a-1: PASS**, bit for bit for both axis layouts, on both boxes (`gpu`'s
+  `TestMRoPERows_matchesSingleRow`).
+- **G-S12.4b-4a-2: PASS**, bit for bit against the `ForwardMRoPE` walk on `qwen25vl-tiny` (7 and 40 rows) and on
+  Qwen2.5-VL 3B (64 and 300 rows), on both boxes (`TestPrefillMRoPE_equalPositionsMatchWalk`,
+  `TestPrefillMRoPE_real`).
+- **G-S12.4b-4a-3 on the tiny fixture: PASS under an amended bar.** The CPU route and the device route agree to
+  nine digits there (worst cosine 1.000000000 on the control and on the image prompt), and the three planted
+  defects move it only to 0.99986 to 0.99996, so the registered margin of 0.002 could not see them.
+  **Amendment (2026-10-12, before any real reading):** the image prompt may sit twice as far from 1 as the control
+  and 1e-5 further (`mropeImageBar`). Under it all three defects are red.
+- **G-S12.4b-4a-3 on the real checkpoint, as it went:**
+  - **A synthetic prompt (random tokens, random features) was tried and withdrawn.** It read 0.50 to 0.97 for the
+    right positions across seeds and feature scales, and a planted defect read better than the right wiring. It
+    grades nothing and is not in the test.
+  - **A real image turn** (`TestPrefillMRoPE_realImage`: `testdata/glm_ocr/table.png` at 234 image rows through
+    the CPU tower, the model's own prompt, an English text control of the same length). The first image tried was
+    the gradient test image, on which two of the three defects were invisible; a table is not.
+  - **Added reading, the one that can see a position at this size: the first layer's K, row by row, against the
+    CPU's.** Right wiring: lowest cosine 0.999999983 over the image rows on the Mac and 1.000000000 on nobara,
+    against a bar of 0.99999. The three defects: 0.999937, 0.998395, 0.999946, all under it. **So the positions
+    are right at real size, on both backends.**
+  - **The registered reading (logits after the prefill and over 8 decode steps, device route against CPU route):**
+
+| box | control: worst cosine, near-ties | image prompt: worst cosine (bar), near-ties | verdict |
+|---|---|---|---|
+| Mac (Metal, decline lifted) | 0.880, all | 0.918 (0.760), all | PASS |
+| nobara (Vulkan) | 0.964, all | 0.940 (0.928), **one reading is not** | **FAIL** |
+
+    On nobara the eighth decode step has the CPU route choosing one token and the device route another that the CPU
+    route gives 0.358 of its top probability, under the 0.5 line
+    (`s12-4b/nobara/g-s12-4b-4a-vulkan-readings-day.log`).
+- **What the control itself says:** at real size the two routes are 0.04 to 0.12 apart in cosine on plain text.
+  They quantize activations differently, so they are two int4 readings of the model and neither is the other's
+  reference. The registered gate cannot say which is nearer the model.
+- **One served request each on nobara (exploratory, not a result):** the same image through the build before this
+  step (CPU prefill) took 43.9 s and through this one, with Vulkan in the list, 19.7 s; the replies differ from the
+  first word ("This image is a gradient background with a blend of colors" against "The image is a gradient
+  background that transitions from green"). Both describe the image.
+- **Predictions scored.** "4a-1 and 4a-2 pass first run (0.7)": yes. "The control reads 0.99 or better on the tiny
+  fixture and 0.995 or better on the real one (0.5)": yes on the tiny one, **no on the real one, 0.88 and 0.96.**
+  The served cell's prediction is unscored: G-S12.4b-4a-4 is not run while the prefill is not offered.
+
+**For the owner:** the device prefill for a Qwen2.5-VL image turn is built, exact in its positions, and about
+twice as fast end to end on nobara's card in one request. Its registered gate fails there by one reading at 0.358
+against 0.5. Offering it on Vulkan is one line (`mropePrefillBackends`). The instrument that could settle which
+route is nearer the model is a fidelity gate against the float reference, at night, which nobody has registered.
+The DeepStack form (Qwen3-VL) and Gemma 3's image block were not started: both would meet the same question.
 
 ### S13 — Against the peers
 

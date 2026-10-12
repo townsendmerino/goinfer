@@ -105,7 +105,7 @@ func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind 
 	// The pass itself, not PrefillLast: PrefillLast answers a decline on an E-model with the walk, which would compare
 	// the walk with itself.
 	got, _ = read(func() ([]float32, error) {
-		l, err := rd.prefillBlocks(context.Background(), rows, 0)
+		l, err := rd.prefillBlocks(context.Background(), rows, 0, nil)
 		applySoftcap(l, rd.finalSoftcap)
 		return l, err
 	}, toks)
@@ -330,7 +330,7 @@ func TestPrefillInt4_speed(t *testing.T) {
 	pass := func(kind w4MultiKind) func([][]float32) error {
 		return func(rows [][]float32) error {
 			rd.c.w4MultiPin = int(kind) + 1
-			_, err := rd.prefillBlocks(context.Background(), rows, 0) // the pass itself: PrefillLast walks an E-model's rows on a decline
+			_, err := rd.prefillBlocks(context.Background(), rows, 0, nil) // the pass itself: PrefillLast walks an E-model's rows on a decline
 			return err
 		}
 	}

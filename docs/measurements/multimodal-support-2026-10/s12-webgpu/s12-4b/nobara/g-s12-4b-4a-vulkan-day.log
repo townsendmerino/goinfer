@@ -1,0 +1,30 @@
+Mon Oct 12 11:29:29 PDT 2026
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+fc87a1c5 gpu: the m-RoPE gate gains a real image turn: the first layer's K against the CPU's, with the planted defects read on it
+=== RUN   TestMRoPERows_matchesSingleRow
+--- PASS: TestMRoPERows_matchesSingleRow (0.76s)
+=== RUN   TestPrefillMRoPE_equalPositionsMatchWalk
+--- PASS: TestPrefillMRoPE_equalPositionsMatchWalk (1.91s)
+=== RUN   TestPrefillMRoPE_imageAgainstCPU
+    prefill_mrope_test.go:366: control (text prompt) worst cosine 1.000000000; image prompt worst cosine 1.000000000 (bar 0.999990000); argmax equal or near-tie: true
+    prefill_mrope_test.go:379: the axis table rotated by one pair: red (worst cosine 0.999947636, near-ties true)
+    prefill_mrope_test.go:379: each row's positions taken from the next row: red (worst cosine 0.999860907, near-ties true)
+    prefill_mrope_test.go:379: height and width swapped: red (worst cosine 0.999955118, near-ties true)
+--- PASS: TestPrefillMRoPE_imageAgainstCPU (1.22s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	4.008s
+exit 0 (tiny)
+=== RUN   TestPrefillMRoPE_real
+--- PASS: TestPrefillMRoPE_real (19.17s)
+=== RUN   TestPrefillMRoPE_realImage
+REAL IMAGE first-layer K against the CPU's: lowest cosine 1.000000000 over the image rows, 1.000000000 over the text rows (bar 0.99999)
+REAL IMAGE planted defect 12: first-layer K lowest cosine over the image rows 0.999937053
+REAL IMAGE planted defect 13: first-layer K lowest cosine over the image rows 0.998395461
+REAL IMAGE planted defect 14: first-layer K lowest cosine over the image rows 0.999946081
+REAL IMAGE qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw (234 image rows, grid [1 26 36]): control (text prompt) worst cosine 0.964028612; image prompt worst cosine 0.939637450 (bar 0.928047223); argmax equal or near-tie: false
+    prefill_mrope_test.go:547: the image prompt's device prefill sits further from the CPU's than the text control allows: 0.939637450 under 0.928047223, near-ties false
+--- FAIL: TestPrefillMRoPE_realImage (57.85s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	77.106s
+FAIL
+exit 1 (real)
