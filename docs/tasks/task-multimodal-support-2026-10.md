@@ -75,8 +75,10 @@
     Mac and 7 on nobara's card in process. Step 3 is built too: Gemma 3, dense Gemma 4 and the E-models (text and
     image rows) take the pass, bit for bit, about 1.7 times the walk on the Mac and 2.2 on nobara. Owed: the served
     gates (queued for tonight on both boxes). The device m-RoPE image prefill (Qwen2.5-VL) is built and right in
-    its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere:
-    for the owner.
+    its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere.
+    The owner chose a gate against the float reference first (G-S12.4b-4a-5): registered and piloted, the
+    instrument goes red on a planted defect, and its agreement margin needs about 250 prompts where 94 are
+    registered, so the design is back with the owner.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -5056,6 +5058,42 @@ reference has read. This is that gate.
   times before it is queued.
 - **Predictions, written now:** PARKED (0.5): two int4 readings of one model should sit about as far from it as
   each other, and 49 prompts on 19 images are few. PASS (0.3). OFF (0.2). The planted defect reads OFF (0.9).
+
+#### G-S12.4b-4a-5, the pilot read 2026-10-12: the instrument works and can go red; the registered set cannot resolve the agreement margin, so the gate is not run
+
+The pilot ran by day on nobara (RTX 2070 SUPER, Vulkan), 8 prompts on three images the gate does not use, then the
+same 8 with the planted defect (`s12-4b/nobara/fidelity-pilot/`, `fidelity-pilot-defect/`). It decides nothing about
+the prefill; it sizes the gate and tests the instrument.
+
+| run | agreement with the reference, candidate / exact | mean KL, candidate / exact (ratio, upper bound) | hard flips, candidate / exact | verdict |
+|---|---|---|---|---|
+| pilot | 91.80% / 94.53% (difference -2.73 points, lower bound -6.43) | 0.0812 / 0.0960 (0.846, 0.968) | 6 / 6 | not a decision |
+| pilot, planted defect | 89.84% / 94.53% (-4.69, -6.06) | 0.2730 / 0.0960 (2.844, 4.424) | 17 / 6 | OFF, on all three criteria |
+
+- **It can go red:** the planted defect fails every criterion, as registered. KL and hard flips see it plainly
+  (2.8 times the exact arm's KL, 17 flips against 6); agreement moves by two points.
+- **On 8 prompts the candidate's KL is the lower of the two** and its agreement the lower by 2.7 points, most of
+  that from one prompt (24 of 32 against 29). Neither is a finding at this size.
+- **Sizing** (`power.py fidelity --from-positions` on the pilot's log; the spreads are themselves uncertain at 8
+  prompts): the KL criterion needs **29 prompts**; the agreement criterion at its 1-point margin needs **251**
+  (a per-prompt sd of 6.3 points).
+- **The registered consequence:** over 94 prompts, "this set cannot resolve the margins; recorded, and the owner
+  decides". The gate has not run and nothing on its 49 prompts has been read.
+- **Times, for whichever design follows:** a small prompt 30 s, a served prompt 90 to 110 s and its tower 21 to
+  26 s. The 49 would take about 50 minutes.
+
+**For the owner, the three ways on, none taken:**
+1. **Keep both margins and buy the prompts.** About 250 prompts need more images than the 19 here, or the bounds
+   rest on questions about the same pictures. Crops of the invoices (each whole and in quarters) would give 75
+   image variants; three questions each is 225 small prompts and the 15 served ones, about 2.5 hours on nobara,
+   as two night jobs. The set and its hash would be registered before it runs.
+2. **Keep the 94 registered prompts and widen the agreement margin to 2 points** (about 63 prompts by the same
+   sd), leaving KL at 0.10. One night, about 1.6 hours. It is a change to a registered margin after a pilot, so it
+   needs the owner's word and is recorded as such.
+3. **Decide on KL and hard flips, with agreement reported and not gated.** The 49 registered prompts are enough
+   (29 needed). Also a change to the registered criteria.
+
+Predictions scored so far: "the planted defect reads OFF (0.9)": yes. The verdict's own predictions wait for a run.
 
 ### S13 — Against the peers
 

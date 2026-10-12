@@ -1,0 +1,6 @@
+G-S12.4b-4a-5 mode pilot, backend vulkan, planted defect false, prompt-set hash e18d8e41ff5e79fdd31a1466ce876c4a683768778abe842f03c92eec19b92e01
+criteria: agreement margin 1.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell small: 6 prompts, 192 positions; agreement candidate 90.10% exact 93.75% (difference -3.65 pts, lower bound -8.51); mean KL candidate 0.0887 exact 0.0993 (ratio 0.893, upper bound 1.046); hard flips candidate 5 exact 5; discordant positions 11
+cell served: 2 prompts, 64 positions; agreement candidate 96.88% exact 96.88% (difference +0.00 pts, lower bound +0.00); mean KL candidate 0.0589 exact 0.0860 (ratio 0.684, upper bound 0.953); hard flips candidate 1 exact 1; discordant positions 0
+pooled: 8 prompts, 256 positions; agreement candidate 91.80% exact 94.53% (difference -2.73 pts, lower bound -6.43); mean KL candidate 0.0812 exact 0.0960 (ratio 0.846, upper bound 0.968); hard flips candidate 6 exact 6; discordant positions 11
+VERDICT OFF (hard flips pass true, agreement pass false, KL pass true) agreement lower bound -6.43 pts < −1.00
