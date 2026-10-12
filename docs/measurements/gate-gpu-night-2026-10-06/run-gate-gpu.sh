@@ -60,10 +60,13 @@ go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $n entries symlinked from $SRC (untracked directories linked whole:${linkedDirs:- none})"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "heavy:    $([ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ] && echo SKIPPED || echo on)"; } | tee "$LOG/provenance.txt"
-go run ./cmd/gate gpu -logdir "$LOG" 2>&1 | tee "$LOG/gate-gpu.log"
+# -record writes the run's JSON record OUTSIDE the worktree (which is removed below); commit it as docs/measurements/gpu-gate/<name>.json: `gate gpu-records` reads it.
+go run ./cmd/gate gpu -logdir "$LOG" -record "$LOG/records" 2>&1 | tee "$LOG/gate-gpu.log"
 rc=${PIPESTATUS[0]}
 clean=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG/gate-gpu.log")
 if ! grep -q -- "PASS — cuda on Linux" <<<"$clean"; then echo "!! the gate printed no PASS verdict (rc=$rc); see $LOG/gate-gpu.log"; rc=1; fi
+ls "$LOG"/records/*.json >/dev/null 2>&1 || { echo "!! the gate wrote no record under $LOG/records"; rc=1; }
+echo "record(s): $(ls "$LOG"/records/*.json 2>/dev/null | tr '\n' ' ')" | tee -a "$LOG/provenance.txt"
 echo "finished: $(date '+%F %T %Z') rc=$rc" | tee -a "$LOG/provenance.txt"
 cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null
 exit $rc
