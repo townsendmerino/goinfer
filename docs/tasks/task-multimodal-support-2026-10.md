@@ -5112,6 +5112,33 @@ Asked which of the three ways on to take, the owner chose the second: **"Widen a
   and a pinned copy of the images. From the pilot's times: 64 small prompts at 30 s, 30 served prompts at about
   100 s, and the towers, about 95 minutes; queued at 130.
 
+#### nobara's served gates read 2026-10-12: G-S12.4b-2d and G-S12.4b-3e both SHIP on Vulkan
+
+nobara's queue was started by day (not by me), so the two jobs ran at 12:45 to 13:09 PDT instead of tonight. RTX 2070
+SUPER, Vulkan; records in `s12-webgpu/s12-4b/nobara/served-2026-10-12/`. The Mac's two jobs are still queued.
+
+| gate, cell | new TTFT (s), five rounds | old TTFT (s) | median new/old | replies equal | verdict |
+|---|---|---|---|---|---|
+| 2d, Qwen2.5-coder 1.5B, 512 tokens | 0.72 to 0.76 | 4.62 to 4.63 | **0.163** | 5 of 5 | SHIP |
+| 2d, 2,048 tokens | 3.31 to 3.44 | 31.36 to 31.37 | **0.109** | 5 of 5 | SHIP |
+| 3e, Gemma 3 4B text, 400 words (457 tokens) | 5.36 to 5.42 | 10.70 to 10.71 | **0.503** | 5 of 5 | SHIP |
+| 3e, 1,600 words (1,783 tokens) | 68.41 to 68.94 | 87.62 to 87.63 | **0.782** | 5 of 5 | SHIP |
+| 3e, Gemma 4 E2B image turn (CPU tower both arms) | 6.81 to 7.03 | 9.59 to 9.72 | **0.720** (rounds 0.720, 0.719, 0.727, 0.718) | not comparable | SHIP |
+
+- **A disturbance of my own, disclosed:** at about 13:07:50 to 13:08:20 I built a test binary and copied files on
+  nobara while the E2B cells were running. My lock check printed HELD and the batch went on. It overlapped round 3
+  (0.727, the one round a little off the other three); the round's times sit inside the other rounds' ranges, and
+  the verdict does not turn on it. The same batch pinned a stale binary for the fidelity gate; that job was
+  dropped before it could run, rebuilt at `59da4529` with the lock free, and queued again.
+- **Predictions scored.** 2d: "nobara's median at 2,048 tokens 0.25 or under (0.8)": yes. "The ratio higher at 512
+  than at 2,048 (0.7)": yes. "Replies equal in all rounds (0.9)": yes. 3e: "nobara's both at 0.6 or under (0.6)":
+  **no**, 0.720 and 0.782.
+- **What the long Gemma 3 prompt shows:** 1,783 tokens take over a minute on either build, 49 ms a token on the
+  old one where 300 rows read 20 in process. The cost grows with the keys and is in both arms, which is what the
+  wide-head attention kernel would do; that lever (S12.4b-3's note) now has a served reading behind it.
+- **Owed still:** the Mac's 2d and 3e (queued), and G-S12.4b-4a-5 on nobara (queued; nobara's runner has stopped,
+  so it runs at the queue's next start).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.

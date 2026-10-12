@@ -1,0 +1,8 @@
+started: 2026-10-12 12:49:17 PDT
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+new: d026accf7dda67f707a8bae0bc0eb554fc27b34a
+old: 4d5cf269bc0c00d6f6c130d3577f80dc0c4be5e8
+gemma 3: /home/francis/models/gemma-3-4b-it
+e2b: /home/francis/models/gemma-4-E2B_q4_0-it.gguf (vision /home/francis/models/gemma-4-E2B-unq, tower flag '')
+load:  12:49:17 up 8 days, 16:11,  4 users,  load average: 0.83, 3.13, 4.78
+finished: 2026-10-12 13:09:41 PDT rc=0
