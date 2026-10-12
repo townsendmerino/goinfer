@@ -260,9 +260,14 @@ on a CPU. Over HTTP the same request is an `image_url` part plus `response_forma
   `Err()` is `decoder.ErrClosed`. A second `Close` returns nil.
 - Do not call `Close` from inside a callback a generation runs (a `LogitProcessor`, a drafter): it
   would wait for the generation that is calling it.
-- Only the generation calls are guarded. `Embed`, `NewCache`, `Forward` and the other methods read
-  the weights directly, and the mapping is gone after `Close`: do not call them concurrently with
-  `Close` or after it.
+- The calls that read the weights for you are guarded the same way: `HiddenLast`, `PromptHidden`,
+  `PromptHiddenAll`, `PromptHiddenMany`, `PromptLogitsMany`, `ForwardCapture`,
+  `OutputEmbeddingRow`, `NewBlockSpec` and `LoadAdapter`. One running at `Close` is cancelled (or
+  waited for, when it takes no context) and one made afterward returns `decoder.ErrClosed`.
+- Not guarded: the accessors that return slices of the weights (`Weights`, `MLALayerWeights` and
+  the like) hand out views of the file mapping, which is gone after `Close`; keep them only while
+  the model is open. `Config`, `Dims`, `Quant`, `NewCache` and `NewSession` only read the config or
+  allocate, and still work afterward.
 
 ## What v1.0 will bind
 

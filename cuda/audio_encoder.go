@@ -19,7 +19,17 @@ import (
 
 func init() {
 	multimodal.RegisterWhisperDevice("cuda", func(enc *audio.WhisperEncoder) (audio.WhisperDevice, error) {
-		return newAudioTower(enc)
+		t, err := newAudioTower(enc)
+		if err == nil {
+			return t, nil
+		}
+		// The layers do not fit next to what the device already holds (a resident decoder takes most of an 8 GB card): stream them,
+		// one layer's weights at a time over the bus, rather than hand the window back to the CPU.
+		t2, err2 := newAudioTowerMode(enc, true)
+		if err2 != nil {
+			return nil, fmt.Errorf("%w (and streamed: %v)", err, err2)
+		}
+		return t2, nil
 	})
 }
 
@@ -48,14 +58,32 @@ type audioTower struct {
 	pos             []float32 // kept for the shifted-positions defect
 	posB            Buffer
 	conv1, conv2    gridProj
-	layers          []audioLayer
+	layers          []audioLayer // every layer's weights on the device; streamed: one slot, refilled per layer from host
+	host            []audio.WhisperLayerWeights
+	streamed        bool
 	lnW, lnB        Buffer
 	geluErf, im2col Pipeline
 	planted         audioDefect
 	mu              sync.Mutex
 }
 
+// Placement says where the weights live, for the one line serve prints about the encoder.
+func (t *audioTower) Placement() string {
+	if t.streamed {
+		return "layers streamed from host, one at a time"
+	}
+	return "weights resident"
+}
+
+// newAudioTower holds every layer's weights on the device.
 func newAudioTower(enc *audio.WhisperEncoder) (*audioTower, error) {
+	return newAudioTowerMode(enc, false)
+}
+
+// newAudioTowerMode is newAudioTower, or with streamed true a tower that holds one layer's buffers and refills them from the host's
+// copy before each layer of every window: the same kernels on the same bytes, so the result is bit-identical to the resident tower's,
+// for the price of the weights crossing the bus once per window.
+func newAudioTowerMode(enc *audio.WhisperEncoder, streamed bool) (*audioTower, error) {
 	w := enc.Weights()
 	c := w.Cfg
 	if len(w.Layers) != c.Layers || len(w.Pos) != c.MaxPositions*c.DModel {
@@ -65,7 +93,7 @@ func newAudioTower(enc *audio.WhisperEncoder) (*audioTower, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &audioTower{g: g, cfg: c, pos: w.Pos}
+	t := &audioTower{g: g, cfg: c, pos: w.Pos, streamed: streamed, host: w.Layers}
 	o := g.ops
 	if _, err := g.build(func() error {
 		lib, e := o.dev.CompileLibrary(audioEncoderPTX)
@@ -84,9 +112,13 @@ func newAudioTower(enc *audio.WhisperEncoder) (*audioTower, error) {
 		}
 		t.conv1, t.conv2 = p(w.Conv1W, w.Conv1B, D, c.MelBins*3), p(w.Conv2W, w.Conv2B, D, D*3)
 		t.posB = o.up(w.Pos)
-		for _, l := range w.Layers {
-			t.layers = append(t.layers, audioLayer{ln1W: o.up(l.LN1W), ln1B: o.up(l.LN1B), ln2W: o.up(l.LN2W), ln2B: o.up(l.LN2B),
-				q: p(l.QW, l.QB, D, D), k: p(l.KW, nil, D, D), v: p(l.VW, l.VB, D, D), o: p(l.OW, l.OB, D, D), fc1: p(l.FC1W, l.FC1B, c.FFN, D), fc2: p(l.FC2W, l.FC2B, D, c.FFN)})
+		if streamed {
+			t.layers = []audioLayer{t.emptyLayer()}
+		} else {
+			for _, l := range w.Layers {
+				t.layers = append(t.layers, audioLayer{ln1W: o.up(l.LN1W), ln1B: o.up(l.LN1B), ln2W: o.up(l.LN2W), ln2B: o.up(l.LN2B),
+					q: p(l.QW, l.QB, D, D), k: p(l.KW, nil, D, D), v: p(l.VW, l.VB, D, D), o: p(l.OW, l.OB, D, D), fc1: p(l.FC1W, l.FC1B, c.FFN, D), fc2: p(l.FC2W, l.FC2B, D, c.FFN)})
+			}
 		}
 		t.lnW, t.lnB = o.up(w.FinalLNW), o.up(w.FinalLNB)
 		return nil
@@ -94,6 +126,38 @@ func newAudioTower(enc *audio.WhisperEncoder) (*audioTower, error) {
 		return nil, err
 	}
 	return t, nil
+}
+
+// emptyLayer allocates the device buffers one layer's tensors fill, for streaming. Runs on the executor.
+func (t *audioTower) emptyLayer() audioLayer {
+	c, o := t.cfg, t.g.ops
+	D, F := c.DModel, c.FFN
+	buf := func(n int) Buffer { return gpu.NewBufferLenOf[float32](o.dev, n) }
+	p := func(out, in int, bias bool) gridProj {
+		r := gridProj{w: buf(out * in), out: out, in: in}
+		if bias {
+			r.b = buf(out)
+		}
+		return r
+	}
+	return audioLayer{ln1W: buf(D), ln1B: buf(D), ln2W: buf(D), ln2B: buf(D),
+		q: p(D, D, true), k: p(D, D, false), v: p(D, D, true), o: p(D, D, true), fc1: p(F, D, true), fc2: p(D, F, true)}
+}
+
+// fillLayer copies one layer's tensors from the host into the streaming slot. gpu.Upload waits for the kernels already queued before it
+// copies, so the layer being replaced has finished when its bytes are overwritten.
+func (t *audioTower) fillLayer(dst *audioLayer, h *audio.WhisperLayerWeights) error {
+	for _, u := range []struct {
+		b Buffer
+		x []float32
+	}{{dst.ln1W, h.LN1W}, {dst.ln1B, h.LN1B}, {dst.ln2W, h.LN2W}, {dst.ln2B, h.LN2B},
+		{dst.q.w, h.QW}, {dst.q.b, h.QB}, {dst.k.w, h.KW}, {dst.v.w, h.VW}, {dst.v.b, h.VB}, {dst.o.w, h.OW}, {dst.o.b, h.OB},
+		{dst.fc1.w, h.FC1W}, {dst.fc1.b, h.FC1B}, {dst.fc2.w, h.FC2W}, {dst.fc2.b, h.FC2B}} {
+		if err := gpu.Upload(u.b, u.x); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // gelu is the encoder's activation: the exact kernel, or the tanh form under the planted defect.
@@ -161,8 +225,13 @@ func (t *audioTower) Forward(feats []float32) ([]float32, error) {
 			scale = 1
 		}
 		post := t.planted == audioDefectPostNorm
-		for li := range t.layers {
-			l := &t.layers[li]
+		for li := range t.host {
+			l := &t.layers[min(li, len(t.layers)-1)]
+			if t.streamed {
+				if e := t.fillLayer(l, &t.host[li]); e != nil {
+					return e
+				}
+			}
 			src := xn
 			if post {
 				src = x

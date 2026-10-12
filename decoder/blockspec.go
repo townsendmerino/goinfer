@@ -138,6 +138,17 @@ type BlockSpec struct {
 // (ErrBlockSpecUnsupported) when the backend cannot host one, so a caller can try
 // unconditionally and fall back to plain generation.
 func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
+	_, done, err := m.enterCall(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	out, err := m.newBlockSpec(dw, taps)
+	return out, m.closeErr(context.Background(), err)
+}
+
+// newBlockSpec is NewBlockSpec without the lifecycle guard (lifecycle.go).
+func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
 	// Checked BEFORE attaching: block drafting verifies every round through the resident's batched
 	// path, so a resident whose decode and verify can disagree must never get a drafter uploaded to
 	// it. The spike is fixed at load, so refusing here covers every later GenerateStream too.

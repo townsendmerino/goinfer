@@ -30,8 +30,9 @@ serve_arm() { local arm=$1; shift
     nvidia-smi --query-gpu=memory.used --format=csv,noheader | sed "s/^/vram after $arm: /" | tee -a "$SUM"
   else echo "!! the $arm server did not come up: see $OUT/serve-$arm.log" | tee -a "$SUM"; fi
   kill $pid 2>/dev/null; wait $pid 2>/dev/null; sleep 3; }
-serve_arm f32 --quant f32
-serve_arm int4
+for arm in ${ARMS:-f32 int4}; do
+  case $arm in f32) serve_arm f32 --quant f32;; int4) serve_arm int4;; esac
+done
 python3 "$BIN/s14e4c_grade.py" "$REF/ref" "$OUT" 2>&1 | tee -a "$SUM"
 echo "finished: $(date '+%F %T %Z')" | tee -a "$OUT/provenance.txt"
 exit 0

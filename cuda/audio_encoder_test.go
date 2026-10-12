@@ -207,3 +207,55 @@ func TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed(t *testing.T) {
 	}
 	tw.planted = audioDefectNone
 }
+
+// The streamed tower (one layer slot refilled from the host before each layer) runs the same kernels on the same bytes as the resident one, so
+// its output is the resident output bit for bit; and it still holds the defect list, which share the code.
+func TestAudioEncoder_streamedIsBitIdenticalToResident(t *testing.T) {
+	enc, err := audio.LoadWhisperEncoder("../testdata/whisper-tiny-rand")
+	if err != nil {
+		t.Skipf("no tiny Whisper fixture: %v", err)
+	}
+	res, err := newAudioTowerMode(enc, false)
+	if err != nil {
+		t.Skipf("no CUDA device for the audio encoder: %v", err)
+	}
+	t.Cleanup(func() { _ = res.Close() })
+	str, err := newAudioTowerMode(enc, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = str.Close() })
+	if len(str.layers) != 1 || !str.streamed || res.streamed {
+		t.Fatalf("modes: streamed tower has %d layer slots (streamed=%v), resident streamed=%v", len(str.layers), str.streamed, res.streamed)
+	}
+	feats := audioRandFeats(enc.Cfg.MelBins, 9)
+	want, err := res.Forward(feats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for pass := 0; pass < 2; pass++ { // the second pass proves the slot is refilled, not left holding the last layer
+		got, err := str.Forward(feats)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range got {
+			if math.Float32bits(got[i]) != math.Float32bits(want[i]) {
+				t.Fatalf("pass %d: streamed output differs from resident at %d: %v vs %v", pass, i, got[i], want[i])
+			}
+		}
+	}
+	// a streamed tower with its first layer's weights left in the slot for every layer would NOT match: the check has teeth
+	str.host = append([]audio.WhisperLayerWeights(nil), str.host...)
+	str.host[1] = str.host[0]
+	bad, _ := str.Forward(feats)
+	same := true
+	for i := range bad {
+		if math.Float32bits(bad[i]) != math.Float32bits(want[i]) {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Fatal("swapping layer 1's weights for layer 0's left the output unchanged: the streamed fill is not being read")
+	}
+}

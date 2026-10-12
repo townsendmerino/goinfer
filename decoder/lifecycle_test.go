@@ -153,3 +153,72 @@ func TestClose_endsASessionGeneration(t *testing.T) {
 		t.Fatalf("session turn after Close: Err = %v, want ErrClosed", err)
 	}
 }
+
+// Every method that reads the weights for a caller, not only the Generate family, is refused after Close and is waited for by it.
+func TestClose_refusesTheWeightReadingCallsAfterClose(t *testing.T) {
+	giwPath := buildTinyGIWInt4(t, "../testdata/llama-tiny")
+	m, err := Load(giwPath, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := m.NewCache(8)
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	dst := make([]float32, m.Config().HiddenDim)
+	calls := map[string]func() error{
+		"HiddenLast":         func() error { _, e := m.HiddenLast([]int{1, 2, 3}); return e },
+		"PromptHidden":       func() error { _, e := m.PromptHidden(ctx, []int{1, 2, 3}); return e },
+		"PromptHiddenAll":    func() error { _, e := m.PromptHiddenAll(ctx, []int{1, 2, 3}); return e },
+		"PromptHiddenMany":   func() error { _, e := m.PromptHiddenMany(ctx, [][]int{{1, 2}, {3, 4}}); return e },
+		"PromptLogitsMany":   func() error { _, e := m.PromptLogitsMany(ctx, [][]int{{1, 2}}); return e },
+		"ForwardCapture":     func() error { _, _, e := m.ForwardCapture(1, cache, []int{0}); return e },
+		"OutputEmbeddingRow": func() error { return m.OutputEmbeddingRow(1, dst) },
+		"LoadAdapter":        func() error { return m.LoadAdapter("a", t.TempDir()) },
+		"NewBlockSpec":       func() error { _, e := m.NewBlockSpec(nil, nil); return e },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, ErrClosed) {
+			t.Errorf("%s after Close: %v, want ErrClosed", name, err)
+		}
+	}
+}
+
+// Prompt-state calls running back to back when Close arrives: each is cancelled or finishes, Close returns, and the loop ends with
+// ErrClosed, never a crash or another error.
+func TestClose_duringPromptStateCalls(t *testing.T) {
+	prompt := make([]int, 100)
+	for i := range prompt {
+		prompt[i] = 1 + i%50
+	}
+	for round := 0; round < 20; round++ {
+		m, err := Load("../testdata/llama-tiny", Options{Quant: "f32"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := make(chan error, 1)
+		go func() {
+			for {
+				if _, e := m.PromptHiddenAll(context.Background(), prompt); e != nil {
+					res <- e
+					return
+				}
+				if _, e := m.PromptHiddenMany(context.Background(), [][]int{prompt, prompt[:50]}); e != nil {
+					res <- e
+					return
+				}
+			}
+		}()
+		time.Sleep(time.Duration(round%5) * 200 * time.Microsecond)
+		closeWithin(t, m, 60*time.Second)
+		select {
+		case e := <-res:
+			if !errors.Is(e, ErrClosed) {
+				t.Fatalf("round %d: the loop ended with %v, want ErrClosed", round, e)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatalf("round %d: the loop did not end after Close", round)
+		}
+	}
+}

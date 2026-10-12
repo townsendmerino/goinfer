@@ -167,6 +167,18 @@ func shareGroups(prompts [][]int, minShared int) (members [][]int, prefix []int)
 // Not bit-identical to PromptHidden: splitting one batched prefill in two changes the matmuls' row blocking, and the recurrence is sequential either way. The
 // difference is bounded by TestPromptHiddenMany_matchesSeparate. ctx is checked per layer, as PromptHidden's batched path checks it.
 func (m *Model) PromptHiddenMany(ctx context.Context, prompts [][]int) ([][]float32, error) {
+	parent := ctx
+	ctx, done, err := m.enterCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	out, err := m.promptHiddenMany(ctx, prompts)
+	return out, m.closeErr(parent, err)
+}
+
+// promptHiddenMany is PromptHiddenMany without the lifecycle guard (lifecycle.go).
+func (m *Model) promptHiddenMany(ctx context.Context, prompts [][]int) ([][]float32, error) {
 	out := make([][]float32, len(prompts))
 	for i, p := range prompts {
 		if len(p) == 0 {
@@ -226,6 +238,18 @@ func (m *Model) PromptHiddenMany(ctx context.Context, prompts [][]int) ([][]floa
 // (Route A) reads these. It is only meaningful where CanSharePrefix is true; elsewhere a caller keeps its own prefill (a resident model's, which this
 // method does not use).
 func (m *Model) PromptLogitsMany(ctx context.Context, prompts [][]int) ([][]float32, error) {
+	parent := ctx
+	ctx, done, err := m.enterCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	out, err := m.promptLogitsMany(ctx, prompts)
+	return out, m.closeErr(parent, err)
+}
+
+// promptLogitsMany is PromptLogitsMany without the lifecycle guard (lifecycle.go).
+func (m *Model) promptLogitsMany(ctx context.Context, prompts [][]int) ([][]float32, error) {
 	hs, err := m.PromptHiddenMany(ctx, prompts)
 	if err != nil {
 		return nil, err

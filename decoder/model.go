@@ -784,10 +784,13 @@ func (m *Model) Config() *Config {
 // Contract: Close may be called while generations are running, from any goroutine. Each running generation is cancelled
 // and its channel closes with Generation.Err reporting ErrClosed; Close returns once they have all ended, so it can wait
 // as long as the longest uninterruptible step (one decode step, or a prefill chunk). A Generate, Session.Generate or
-// speculative call made after Close returns a closed channel at once with ErrClosed. Do not call Close from inside a
-// LogitProcessor or another callback a generation runs, which would wait on itself. Calling Close again is safe and
-// returns nil. Only the Generate family is guarded: Embed, NewCache, Forward and the other methods read the weights
-// directly and must not be called after Close (the mapping is gone).
+// speculative call made after Close returns a closed channel at once with ErrClosed. The calls that read the weights for a
+// caller are guarded the same way (HiddenLast, PromptHidden, PromptHiddenAll, PromptHiddenMany, PromptLogitsMany,
+// ForwardCapture, OutputEmbeddingRow, NewBlockSpec, LoadAdapter): one running at Close is cancelled when it takes a context
+// and waited for when it does not, and one made afterward returns ErrClosed. Do not call Close from inside a LogitProcessor
+// or another callback these run, which would wait on itself. Calling Close again is safe and returns nil. The accessors that
+// return slices of the weights (Weights, MLALayerWeights and the like) hand out views of the mapping, which is gone after
+// Close; Config, Dims, Quant, NewCache and NewSession only read the config or allocate, and keep working.
 func (m *Model) Close() error {
 	m.endGenerations()
 	if !m.lifeState().beginRelease() {
@@ -1226,6 +1229,17 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // llama4_text are not done. A family is wired only when both its loop captures and its entry says so, so a half-wired one
 // fails here loudly.
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
+	_, done, err := m.enterCall(context.Background())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer done()
+	logits, hidden, err = m.forwardCapture(id, cache, layers)
+	return logits, hidden, m.closeErr(context.Background(), err)
+}
+
+// forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
+func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
 	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own loop calls captureResidual are
 	// wired, every other own-forward family is not. A hand-written list once missed LFM2, whose loop never captures and returned

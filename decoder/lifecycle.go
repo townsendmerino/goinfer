@@ -109,3 +109,47 @@ func (l *modelLife) beginRelease() bool {
 	l.freed = true
 	return true
 }
+
+// enterCall registers a synchronous call that reads the weights (the prompt-state and capture methods) as in flight, as runGen does
+// for a generation: Close cancels the context it returns and waits for done. A closed model refuses the call with ErrClosed. A call
+// that takes no context passes context.Background and cannot be cancelled, so Close waits for it to finish.
+func (m *Model) enterCall(ctx context.Context) (context.Context, func(), error) {
+	l := m.lifeState()
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return ctx, nil, ErrClosed
+	}
+	gctx, cancel := context.WithCancel(ctx)
+	id := l.next
+	l.next++
+	if l.cancel == nil {
+		l.cancel = map[uint64]context.CancelFunc{}
+	}
+	l.cancel[id] = cancel
+	l.wg.Add(1)
+	l.mu.Unlock()
+	return gctx, func() {
+		l.mu.Lock()
+		delete(l.cancel, id)
+		l.mu.Unlock()
+		cancel()
+		l.wg.Done()
+	}, nil
+}
+
+// closeErr reports ErrClosed in place of the cancellation Close caused: err is a context.Canceled, the caller's own ctx is still live,
+// and the model is closed. Any other error, and a cancellation the caller made, pass through.
+func (m *Model) closeErr(parent context.Context, err error) error {
+	if err == nil || !errors.Is(err, context.Canceled) || parent.Err() != nil {
+		return err
+	}
+	l := m.lifeState()
+	l.mu.Lock()
+	closed := l.closed
+	l.mu.Unlock()
+	if closed {
+		return ErrClosed
+	}
+	return err
+}

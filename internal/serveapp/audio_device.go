@@ -20,5 +20,8 @@ func attachWhisperDevice(enc *audio.WhisperEncoder, backend string, warn io.Writ
 		fmt.Fprintf(warn, "audio: the %s Whisper encoder declined (%v); the encoder runs on the CPU\n", backend, err)
 		return nil, "CPU"
 	}
+	if p, ok := d.(interface{ Placement() string }); ok {
+		return d, backend + " (" + p.Placement() + ")"
+	}
 	return d, backend
 }
