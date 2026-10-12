@@ -134,9 +134,14 @@ type Context struct {
 	rmsnormShader   *wgpu.ShaderModule
 	rmsnormPipeline *wgpu.ComputePipeline
 	rmsnormLayout   *wgpu.BindGroupLayout
-	swigluShader    *wgpu.ShaderModule
-	swigluPipeline  *wgpu.ComputePipeline
-	swigluLayout    *wgpu.BindGroupLayout
+	// M-row batched RMSNorm (the batched prefill pass only, lazy via ensurePrefillBatched): one dispatch over all M rows,
+	// grid (1, M), in place of M (1,1) dispatches of rmsnormPipeline.
+	rmsnormBatchedShader   *wgpu.ShaderModule
+	rmsnormBatchedPipeline *wgpu.ComputePipeline
+	rmsnormBatchedLayout   *wgpu.BindGroupLayout
+	swigluShader           *wgpu.ShaderModule
+	swigluPipeline         *wgpu.ComputePipeline
+	swigluLayout           *wgpu.BindGroupLayout
 	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
 	// twin, plain (un-quantized-output) variant.
 	gegluShader      *wgpu.ShaderModule

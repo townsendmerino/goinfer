@@ -1,0 +1,16 @@
+Mon Oct 12 10:10:18 PDT 2026
+=== RUN   TestPrefillInt4_real
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 600 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 600 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (166.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	166.729s
+exit 0 (E2B 600 rows)
+=== RUN   TestPrefillInt4_real
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 1100 rows, rows: pass
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 1100 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (440.64s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	441.131s
+exit 0 (Gemma 3 4B 1100 rows)
+Mon Oct 12 10:20:28 PDT 2026

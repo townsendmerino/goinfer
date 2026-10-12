@@ -1,0 +1,23 @@
+Mon Oct 12 10:07:00 PDT 2026
+a231d508 docs: S12.4b-3 registered before any code: the Gemma shape through the batched pass (per-layer geometry, sandwich norms, sliding window, K=V, shared K/V, the E-model's per-layer inputs), every op the rows form of decode's kernel or decode's kernel once a row
+MODEL gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw
+=== RUN   TestPrefillInt4_real
+G-S12.4b-2b gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 64 rows, rows: pass
+G-S12.4b-2b gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 64 rows, tiled: pass
+G-S12.4b-2b gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 300 rows, rows: pass
+G-S12.4b-2b gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 300 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (76.58s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	77.013s
+exit 0 (gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw)
+MODEL gemma-3-4b-it.int4.e4h.webgpu.v16.giw
+=== RUN   TestPrefillInt4_real
+G-S12.4b-2b gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 64 rows, rows: pass
+G-S12.4b-2b gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 64 rows, tiled: pass
+G-S12.4b-2b gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 300 rows, rows: pass
+G-S12.4b-2b gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 300 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (96.65s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	97.223s
+exit 0 (gemma-3-4b-it.int4.e4h.webgpu.v16.giw)
+Mon Oct 12 10:09:56 PDT 2026
