@@ -36,7 +36,16 @@ const (
 	// of Q4_K into symmetric int4 is the int4 quality loss). Like quantInt4Mix it is a LOAD-TIME
 	// policy resolved per tensor at the GGUF load sites. GGUF only; no .giw form yet.
 	quantQ4K
+	// quantBF16 and quantF16 keep a matmul tensor as 16-bit bit patterns (linalg.WeightMat kinds "bf16" and "f16"), half of f32. The
+	// matmul widens a tile of rows and runs the f32 kernel, so over a bf16 (or f16) checkpoint the result is bit-identical to f32 and
+	// the resident weights are half the size. CPU path only: no backend uploads this kind, and a bundle cannot hold it. A source
+	// that is not already that precision is rounded to it.
+	quantBF16
+	quantF16
 )
+
+// half16 reports whether the mode stores weights as 16-bit bit patterns.
+func (q quantMode) half16() bool { return q == quantBF16 || q == quantF16 }
 
 // matmulQuant resolves a matmul tensor's resident precision under the base quant.
 // Uniform for every mode except the mixed mode (quantInt4Mix), which keeps the
@@ -162,6 +171,24 @@ func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func
 			return repackW4A8IfEligible(canon), nil
 		}
 		return repackW4A8IfEligibleSkipRow4(canon), nil
+	case quantBF16, quantF16:
+		u := make([]uint16, rows*cols)
+		for r := range rows {
+			if err := rowInto(r, scratch); err != nil {
+				return linalg.WeightMat{}, err
+			}
+			if mode == quantBF16 {
+				for k, f := range scratch {
+					u[r*cols+k] = linalg.F32ToBF16(f)
+				}
+			} else {
+				linalg.F32ToF16Slice(u[r*cols:(r+1)*cols], scratch)
+			}
+		}
+		if mode == quantBF16 {
+			return linalg.WrapBF16(u, rows, cols), nil
+		}
+		return linalg.WrapF16(u, rows, cols), nil
 	default: // quantNone — no quant target, keep the full f32
 		f32 := make([]float32, rows*cols)
 		for r := range rows {
@@ -355,6 +382,10 @@ func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.Weight
 		return linalg.QuantizeInt8(f32, w.Rows(), w.Cols(), false)
 	case quantInt8I8:
 		return linalg.QuantizeInt8(f32, w.Rows(), w.Cols(), true)
+	case quantBF16:
+		return linalg.QuantizeBF16(f32, w.Rows(), w.Cols())
+	case quantF16:
+		return linalg.QuantizeF16(f32, w.Rows(), w.Cols())
 	case quantInt4:
 		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
 			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
@@ -850,6 +881,15 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)
+		w.MatmulBTInto(ws, a, dst, M)
+		return
+	}
+	if _, _, ok := w.Half16(); ok {
+		// 16-bit weights (quantBF16, quantF16): the kind widens a tile of rows and runs the f32 kernel, so the result is the f32
+		// matmul's over the widened weights. No backend consult: no backend takes this kind.
+		ws := matmulWSPool.Get().(*linalg.Workspace)
+		defer matmulWSPool.Put(ws)
+		ws.SetThreshold(DefaultDecodeParallelThreshold)
 		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}

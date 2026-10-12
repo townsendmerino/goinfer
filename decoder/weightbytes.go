@@ -26,6 +26,9 @@ func wmBytes(w *linalg.WeightMat) int64 {
 	if raw, ok := w.Q4K(); ok {
 		n += int64(len(raw))
 	}
+	if u, _, ok := w.Half16(); ok {
+		n += 2 * int64(len(u))
+	}
 	n += int64(w.SplitHalfBytes())
 	return n
 }
