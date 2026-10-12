@@ -522,8 +522,10 @@ batching for two concurrent clients and a second conversation's prefix, and `--k
 (each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k on Metal, 448 MB at 8k in
 CUDA's f32 KV), and the banner says what it allocated. On CUDA the slots alone, before MC3 batched the generations,
 stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 4 clients: 1.25× the one-slot build,
-`measurements/concurrency-mc1-cuda-2026-09-27.md`). WebGPU does the same, where a thrash costs more because Qwen2.5
-prefills one token at a time there: 2.81× at 4 clients on an M1 Pro (`measurements/concurrency-mc1-webgpu-2026-09-27.md`).
+`measurements/concurrency-mc1-cuda-2026-09-27.md`). WebGPU does the same, where a thrash cost more because Qwen2.5
+prefilled one token at a time there when it was measured: 2.81× at 4 clients on an M1 Pro
+(`measurements/concurrency-mc1-webgpu-2026-09-27.md`). Since 2026-10-12 a 4-bit dense model prefills in one batched pass
+under WebGPU, so a thrash costs less than it did; the 2.81× has not been re-read.
 - **On WebGPU**, each slot is the full f32 KV at the resident context (~0.94 GB for Qwen2.5-1.5B at the default 16k).
   WebGPU has no free-memory query. On a Mac, slots are clamped to 70% of RAM and to what was available before the
   build, and **slots come before context there as on CUDA** (owner decision 2026-09-27): when `--ctx` is not set, the

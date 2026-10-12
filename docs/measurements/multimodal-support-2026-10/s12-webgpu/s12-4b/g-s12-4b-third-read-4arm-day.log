@@ -1,0 +1,35 @@
+Mon Oct 12 09:20:12 PDT 2026
+aa13cba3 gpu: the in-process prefill reading gains a fourth arm, the CPU's batched prefill uploaded to the resident (what an image turn does today)
+=== RUN   TestPrefillInt4_speed
+decoder: .giw context capped at 30125 (model allows 262144) so that KV+scratch fits: needs ~6.69 GB of 7.69 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[   0s] 256 rows, discarded pass, rows: 3.97 s
+[   4s] 256 rows, discarded pass, tiled: 1.97 s
+[   6s] 256 rows, discarded pass, walk: 5.01 s
+[  11s] 256 rows, discarded pass, cpu+upload: 1.62 s
+[  25s] 256 rows, round 1 of 5: rows 3.62 s, tiled 1.95 s, walk 4.99 s, cpu+upload 1.59 s
+[  37s] 256 rows, round 2 of 5: rows 3.57 s, tiled 1.95 s, walk 4.96 s, cpu+upload 1.57 s
+[  49s] 256 rows, round 3 of 5: rows 3.55 s, tiled 1.95 s, walk 5.01 s, cpu+upload 1.63 s
+[  61s] 256 rows, round 4 of 5: rows 3.56 s, tiled 1.95 s, walk 4.98 s, cpu+upload 1.62 s
+[  73s] 256 rows, round 5 of 5: rows 3.56 s, tiled 1.95 s, walk 4.99 s, cpu+upload 1.57 s
+RESULT 256 rows, tiled over rows: ratios [0.538 0.546 0.549 0.548 0.548], median 0.548
+RESULT 256 rows, rows over walk: ratios [0.726 0.721 0.709 0.714 0.713], median 0.714
+RESULT 256 rows, tiled over walk: ratios [0.390 0.394 0.389 0.391 0.391], median 0.391
+RESULT 256 rows, tiled over cpu+upload: ratios [1.227 1.241 1.195 1.200 1.238], median 1.227
+[  73s] 1024 rows, discarded pass, rows: 15.23 s
+[  88s] 1024 rows, discarded pass, tiled: 8.23 s
+[  97s] 1024 rows, discarded pass, walk: 24.75 s
+[ 121s] 1024 rows, discarded pass, cpu+upload: 6.93 s
+[ 184s] 1024 rows, round 1 of 5: rows 15.40 s, tiled 8.23 s, walk 24.71 s, cpu+upload 7.00 s
+[ 239s] 1024 rows, round 2 of 5: rows 15.35 s, tiled 8.22 s, walk 24.63 s, cpu+upload 6.93 s
+[ 294s] 1024 rows, round 3 of 5: rows 15.41 s, tiled 8.22 s, walk 24.70 s, cpu+upload 6.89 s
+[ 350s] 1024 rows, round 4 of 5: rows 15.56 s, tiled 8.23 s, walk 24.84 s, cpu+upload 7.16 s
+[ 405s] 1024 rows, round 5 of 5: rows 15.49 s, tiled 8.23 s, walk 24.75 s, cpu+upload 7.10 s
+RESULT 1024 rows, tiled over rows: ratios [0.535 0.536 0.533 0.529 0.532], median 0.533
+RESULT 1024 rows, rows over walk: ratios [0.623 0.623 0.624 0.626 0.626], median 0.624
+RESULT 1024 rows, tiled over walk: ratios [0.333 0.334 0.333 0.331 0.333], median 0.333
+RESULT 1024 rows, tiled over cpu+upload: ratios [1.175 1.186 1.193 1.149 1.159], median 1.175
+--- PASS: TestPrefillInt4_speed (408.29s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	408.802s
+exit 0
+Mon Oct 12 09:27:02 PDT 2026
