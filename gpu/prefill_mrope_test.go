@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -12,7 +13,10 @@ import (
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // ropeInPlace runs one rotary dispatch over a copy of vec and returns the rotated copy.
@@ -228,6 +232,7 @@ type mropePrompt struct {
 	NImageTokens  int       `json:"n_image_tokens"`
 	GridTHW       [][3]int  `json:"grid_thw"`
 	ImageFeatures []float32 `json:"image_features"`
+	ControlIDs    []int     `json:"-"` // the text control's tokens; nil for random ones of the prompt's length
 }
 
 // mropeGolden reads a tiny fixture's image prompt from its golden.
@@ -325,6 +330,9 @@ func mropeImageReading(t *testing.T, dir string, prompt func(m *decoder.Model) m
 		for text[i] = rng.Intn(vocab - 1); text[i] == g.ImageToken; {
 			text[i] = rng.Intn(vocab - 1)
 		}
+		if g.ControlIDs != nil {
+			text[i] = g.ControlIDs[i%len(g.ControlIDs)]
+		}
 		rows[i] = m.EmbedResidentForTest(text[i])
 	}
 	control, _ = worst(
@@ -378,4 +386,164 @@ func TestPrefillMRoPE_imageAgainstCPU(t *testing.T) {
 // reading grades nothing. A real image turn is compared through the server instead.
 func TestPrefillMRoPE_real(t *testing.T) {
 	mropeEqualPositions(t, prefillInt4RealPath(t), decoder.Options{}, 64, 300)
+}
+
+// mropeFirstLayerK is the sharpest reading of where the device's m-RoPE prefill put an image prompt's rows: the first
+// layer's rotated K, row by row, against the CPU prefill's. A first-layer K is one projection and one rotation from the
+// input, so the two routes' quantization has had no depth to drift apart in, and a wrong position turns the row. It
+// returns the lowest cosine over the image rows and over the text rows.
+func mropeFirstLayerK(t *testing.T, src string, g mropePrompt) (image, text float64) {
+	t.Helper()
+	m, err := decoder.Load(src, decoder.Options{Backend: "webgpu", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Fatalf("the resident is a %T", m.ResidentForwardForTest())
+	}
+	if b := rd.c.Backend(); !mropePrefillBackends[b] {
+		mropePrefillBackends[b] = true
+		defer delete(mropePrefillBackends, b)
+	}
+	ctx := context.Background()
+	n := len(g.InputIDs)
+	mropePos, err := decoder.MRopePositionsForTest(g.InputIDs, g.ImageToken, g.GridTHW, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := m.NewCache(n + 1)
+	if _, err := m.PrefillLogitsQwenVLForTest(ctx, g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos, cache); err != nil {
+		t.Fatal(err)
+	}
+	kCPU, _, base := cache.LayerKVForTest(0)
+	if base != 0 {
+		t.Fatalf("the CPU cache's first layer starts at %d", base)
+	}
+	if _, _, err := m.ResidentMRoPEPrefillForTest(ctx, rd, g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos); err != nil {
+		t.Fatal(err)
+	}
+	kDev, err := rd.c.readbackRaw(rd.rm.layers[0].kCache, len(kCPU))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kvDim := len(kCPU) / n
+	image, text = 1, 1
+	for r := range n {
+		var dot, na, nb float64
+		for j := range kvDim {
+			a, b := float64(kCPU[r*kvDim+j]), float64(kDev[r*kvDim+j])
+			dot, na, nb = dot+a*b, na+a*a, nb+b*b
+		}
+		cos := dot / math.Sqrt(na*nb)
+		if r >= g.ImageStart && r < g.ImageStart+g.NImageTokens {
+			if !(cos >= image) {
+				image = cos
+			}
+		} else if !(cos >= text) {
+			text = cos
+		}
+	}
+	return image, text
+}
+
+// G-S12.4b-4a-3 on a real image turn: Qwen2.5-VL's own prompt for a table image, the tower's features for it, through
+// the device's m-RoPE prefill and through the CPU's image prefill. Two readings. The first layer's K, row by row, is
+// the one that can see a position at this size, and the planted defects are read on it. The logits after the prefill
+// and over 8 decode steps, with a control of English text of the same length, are the registered reading; at this
+// size the two routes' quantization keeps them 0.1 or more apart on the control itself, so it bounds little. GOINFER_QWEN25VL_DIR names the checkpoint directory (default ~/models/qwen25vl-3b-instruct); its
+// WebGPU sidecar is loaded when it is beside it.
+func TestPrefillMRoPE_realImage(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	if _, err := New(); err != nil {
+		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	dir := os.Getenv("GOINFER_QWEN25VL_DIR")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, "models", "qwen25vl-3b-instruct")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no checkpoint at %s", dir)
+	}
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgTok, ok := tk.TokenID("<|image_pad|>")
+	if !ok {
+		t.Fatal("no <|image_pad|> token")
+	}
+	enc, err := vision.LoadQwenVisionEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp.MaxPixels = min(pp.MaxPixels, 448*448)                                         // 256 merged rows: enough to place every axis, and a few seconds of CPU tower
+	data, err := os.ReadFile(filepath.Join("..", "testdata", "glm_ocr", "table.png")) // a table: where a patch sits matters to the reply
+	if err != nil {
+		t.Fatal(err)
+	}
+	px, grid, err := multimodal.QwenPreprocess(data, pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feats, err := enc.Forward(px, [][3]int{grid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc.Close()
+	nImg := grid[0] * grid[1] * grid[2] / 4
+	pre, err := tk.Encode("<|im_start|>user\n<|vision_start|>", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post, err := tk.Encode("<|vision_end|>Transcribe this table.<|im_end|>\n<|im_start|>assistant\n", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control, err := tk.Encode("<|im_start|>user\nThe harbour was quiet in the early morning, and the boats lay still against the wall while the tide went out. A man walked along the quay with a coil of rope over his shoulder, counting the moorings as he passed them, and a dog followed him at a distance. ", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := mropePrompt{ImageToken: imgTok, ImageStart: len(pre), NImageTokens: nImg, GridTHW: [][3]int{grid}, ImageFeatures: feats, ControlIDs: control}
+	g.InputIDs = append(g.InputIDs, pre...)
+	for range nImg {
+		g.InputIDs = append(g.InputIDs, imgTok)
+	}
+	g.InputIDs = append(g.InputIDs, post...)
+	src := dir
+	if sc := dir + ".int4.e4h.webgpu.v16.giw"; func() bool { _, err := os.Stat(sc); return err == nil }() {
+		src = sc
+	}
+	// The first layer's K, the reading that can see a position: the right wiring, then each planted defect.
+	kImage, kText := mropeFirstLayerK(t, src, g)
+	const kBar = 0.99999
+	fmt.Fprintf(os.Stderr, "REAL IMAGE first-layer K against the CPU's: lowest cosine %.9f over the image rows, %.9f over the text rows (bar %.5f)\n", kImage, kText, kBar)
+	if !(kImage >= kBar) || !(kText >= kBar) {
+		t.Errorf("the device's first-layer K is not the CPU's: lowest cosine %.9f (image rows), %.9f (text rows), want %.5f", kImage, kText, kBar)
+	}
+	defer func() { prefillDefectForTest = 0 }()
+	for _, d := range []int{12, 13, 14} {
+		prefillDefectForTest = d
+		bad, _ := mropeFirstLayerK(t, src, g)
+		prefillDefectForTest = 0
+		fmt.Fprintf(os.Stderr, "REAL IMAGE planted defect %d: first-layer K lowest cosine over the image rows %.9f\n", d, bad)
+		if bad >= kBar {
+			t.Errorf("planted defect %d leaves the first-layer K at %.9f: this reading cannot see it", d, bad)
+		}
+	}
+	ctl, image, argOK := mropeImageReading(t, src, func(*decoder.Model) mropePrompt { return g })
+	bar := mropeImageBar(ctl)
+	fmt.Fprintf(os.Stderr, "REAL IMAGE %s (%d image rows, grid %v): control (text prompt) worst cosine %.9f; image prompt worst cosine %.9f (bar %.9f); argmax equal or near-tie: %v\n",
+		filepath.Base(src), nImg, grid, ctl, image, bar, argOK)
+	if !(image >= bar) || !argOK {
+		t.Errorf("the image prompt's device prefill sits further from the CPU's than the text control allows: %.9f under %.9f, near-ties %v", image, bar, argOK)
+	}
 }

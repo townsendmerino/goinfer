@@ -1,0 +1,34 @@
+Mon Oct 12 11:27:39 PDT 2026
+a1760f09 gpu: an image turn's m-RoPE prefill on the device under WebGPU, offered on Vulkan (S12.4b-4a)
+=== RUN   TestMRoPERows_matchesSingleRow
+--- PASS: TestMRoPERows_matchesSingleRow (0.18s)
+=== RUN   TestPrefillMRoPE_equalPositionsMatchWalk
+--- PASS: TestPrefillMRoPE_equalPositionsMatchWalk (1.71s)
+=== RUN   TestPrefillMRoPE_imageAgainstCPU
+    prefill_mrope_test.go:366: control (text prompt) worst cosine 1.000000000; image prompt worst cosine 1.000000000 (bar 0.999990000); argmax equal or near-tie: true
+    prefill_mrope_test.go:379: the axis table rotated by one pair: red (worst cosine 0.999947636, near-ties true)
+    prefill_mrope_test.go:379: each row's positions taken from the next row: red (worst cosine 0.999860907, near-ties true)
+    prefill_mrope_test.go:379: height and width swapped: red (worst cosine 0.999955118, near-ties true)
+--- PASS: TestPrefillMRoPE_imageAgainstCPU (0.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	2.846s
+exit 0 (tiny)
+=== RUN   TestPrefillMRoPE_real
+decoder: .giw context capped at 102913 (model allows 128000) so that KV+scratch fits: needs ~7.32 GB of 8.32 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: .giw context capped at 99135 (model allows 128000) so that KV+scratch fits: needs ~7.06 GB of 8.06 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+--- PASS: TestPrefillMRoPE_real (23.74s)
+=== RUN   TestPrefillMRoPE_realImage
+decoder: .giw context capped at 62814 (model allows 128000) so that KV+scratch fits: needs ~4.56 GB of 5.56 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+REAL IMAGE first-layer K against the CPU's: lowest cosine 0.999999983 over the image rows, 1.000000000 over the text rows (bar 0.99999)
+decoder: .giw context capped at 66815 (model allows 128000) so that KV+scratch fits: needs ~4.84 GB of 5.84 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+REAL IMAGE planted defect 12: first-layer K lowest cosine over the image rows 0.999937053
+decoder: .giw context capped at 67774 (model allows 128000) so that KV+scratch fits: needs ~4.90 GB of 5.90 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+REAL IMAGE planted defect 13: first-layer K lowest cosine over the image rows 0.998395471
+decoder: .giw context capped at 68034 (model allows 128000) so that KV+scratch fits: needs ~4.92 GB of 5.92 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+REAL IMAGE planted defect 14: first-layer K lowest cosine over the image rows 0.999946081
+decoder: .giw context capped at 64622 (model allows 128000) so that KV+scratch fits: needs ~4.69 GB of 5.69 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+REAL IMAGE qwen25vl-3b-instruct.int4.e4h.webgpu.v16.giw (234 image rows, grid [1 26 36]): control (text prompt) worst cosine 0.880031785; image prompt worst cosine 0.917653504 (bar 0.760053570); argmax equal or near-tie: true
+--- PASS: TestPrefillMRoPE_realImage (57.97s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	82.308s
+exit 0 (real)
