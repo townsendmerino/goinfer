@@ -201,6 +201,9 @@ type runLayer struct {
 	// gpt-oss (FeatAttnSink): expert-major bias tables, only populated when moeRunParams.gptoss.
 	// gateUpBias is [nE*2*inter] (gate then up per expert); downBias is [nE*hidden].
 	gateUpBias, downBias *wgpu.Buffer
+	// g4moe, when not nil, makes this layer's feed-forward Gemma 4's parallel dense and MoE block; the fields above and
+	// the dense gate/up/down are then unused.
+	g4moe *g4MoELayer
 
 	// Always-on shared expert: nil shGate ⇒ none. shGateW is the [1,hidden] sigmoid gate of the gated combine; nil ⇒ the
 	// shared expert is added ungated (plain residual).
@@ -250,6 +253,7 @@ type runModel struct {
 	kvF16         bool            // KCache/VCache are f16-packed (NewKVCacheF16) → use the f16 kernels
 	kvI8          bool            // KCache/VCache are int8-packed (NewKVCacheI8) + scales → int8 kernels
 	moe           *moeRunParams   // non-nil ⇒ the model has MoE layers (runLayer.isMoE picks which)
+	g4moe         bool            // some layer's feed-forward is Gemma 4's parallel dense and MoE block (runLayer.g4moe)
 	mla           *mlaRunParams   // non-nil ⇒ MLA latent attention replaces the q/k/v/o block
 	mamba         *mambaRunParams // non-nil ⇒ hybrid: some layers (runLayer.isMamba) are SSM mixers
 	dnet          *dnetRunParams  // non-nil ⇒ hybrid: some layers (runLayer.isDeltaNet) are DeltaNet mixers
@@ -387,6 +391,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if m.moe.gptoss { // FeatAttnSink's MoE kernels
 			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown, c.ensureMoEExpertGptOssDownW4)
 		}
+	}
+	if m.g4moe {
+		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert, c.ensureMoEExpertW4, c.ensureGemma4MoE)
 	}
 	if m.mla != nil {
 		ensures = append(ensures, c.ensureMLAStore, c.ensureMLAHeadMV, c.ensureMLAQRope, c.ensureMLAAttn)
@@ -908,6 +915,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			p := uni([]uint32{uint32(mp.nE), uint32(mp.k), boolU32(mp.sigmoid), boolU32(mp.norm), f32bits(mp.scale), boolU32(hasBias), uint32(mp.nGroup), uint32(mp.topkGroup)})
 			add(c.moeRoutePipeline, bind(c.moeRouteLayout, logits, bias, idx, wgt, p), 1, 1)
 		}
+	}
+	if m.moe != nil || m.g4moe {
 		// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq
 		// (mode 0, overwrite gate/up scratch) or dst[n] += wgt[slot]·(expert[idx[slot]]·aq)
 		// (mode 1, the down-projection combine into the running residual). The expert is
@@ -1083,6 +1092,16 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		moeZeroBias = storF(m.moe.nE)
 	}
 
+	// layerTail ends a layer: the per-layer output scalar, then the capture of the layer's output residual (decoder's
+	// captured[l], h after the MLP add).
+	layerTail := func(lw *runLayer) {
+		if lw.layerScalar != 0 && lw.layerScalar != 1.0 {
+			scaleVec(r.xd, lw.layerScalar, hidden)
+		}
+		if captureOn {
+			r.capMLP = append(r.capMLP, capStep(r.xd, hidden))
+		}
+	}
 	for i := range m.layers {
 		lw := &m.layers[i]
 		if ssmStopLayer >= 0 && i > ssmStopLayer {
@@ -1343,6 +1362,64 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if ssmSkipFFN { // GOINFER_SSM_SKIPFFN debug: isolate the mixer from the FFN
 			continue
 		}
+		if g := lw.g4moe; g != nil {
+			// Gemma 4's parallel dense and MoE block, on the post-attention residual in r.xd (decoder's gemma4MoEFFN).
+			d := g4MoEDefectForTest
+			// The router, on the raw residual: a weightless norm, the float32 projection (its learned scale folded in),
+			// softmax over every expert, the top k renormalised, times the per-expert scale.
+			rnW := g.routerNorm
+			if d == 7 {
+				rnW = g.preFFNNorm
+			}
+			rn := rmsnormF32(r.xd, rnW, hidden)
+			logits := storF(g.nE)
+			add(c.pipeline, bind(c.layout, rn, g.router, logits, uni([]uint32{1, uint32(hidden), uint32(g.nE), 0})), 1, uint32(g.nE+15)/16)
+			idx, wgt := storF(g.topK), storF(g.topK)
+			add(c.moeRoutePipeline, bind(c.moeRouteLayout, logits, g.zeroBias, idx, wgt,
+				uni([]uint32{uint32(g.nE), uint32(g.topK), 0, 1, f32bits(1), 0, 1, 0})), 1, 1)
+			if d != 1 {
+				add(c.g4RouteScalePipeline, bind(c.g4RouteScaleLayout, idx, g.perExpertScale, wgt, uni([]uint32{uint32(g.topK), 0, 0, 0})), 1, 1)
+			}
+			// The dense branch: pre_ffn_norm, gate and up, the gated GELU, down, post_ffn_norm_1.
+			mq, ms := rmsQuant(r.xd, g.preFFNNorm, hidden)
+			gate, up := gemv(mq, ms, g.gate), gemv(mq, ms, g.up)
+			dq, ds := actQuantPad(gate, up, g.denseInter, padK32(g.denseInter))
+			x1 := gemv(dq, ds, g.down)
+			if d != 2 {
+				x1 = rmsnormF32(x1, g.postFFNNorm1, hidden)
+			}
+			// The expert branch: pre_ffn_norm_2, then each chosen expert's fused gate‖up, the gated GELU and down, summed
+			// by weight into x2, which is cleared first because it is the same buffer on every token.
+			eq, es := mq, ms
+			if d != 3 {
+				eq, es = rmsQuant(r.xd, g.preFFNNorm2, hidden)
+			}
+			x2 := storF(hidden)
+			if d != 5 {
+				scaleVec(x2, 0, hidden)
+			}
+			gu, upHalf := storF(2*g.moeInter), storF(g.moeInter)
+			for j := 0; j < g.topK; j++ {
+				moeExpert(eq, es, g.expGateUp, idx, wgt, gu, j, 0)
+				add(c.g4TailCopyPipeline, bind(c.g4TailCopyLayout, gu, upHalf, uni([]uint32{uint32(g.moeInter), uint32(g.moeInter), 0, 0})), uint32(g.moeInter+63)/64, 1)
+				ga, ub := gu, upHalf // the gate is the first half of gu
+				if d == 6 {
+					ga, ub = upHalf, gu
+				}
+				xq, xs := actQuantPad(ga, ub, g.moeInter, padK32(g.moeInter))
+				moeExpert(xq, xs, g.expDown, idx, wgt, x2, j, 1)
+			}
+			x2n := rmsnormF32(x2, g.postFFNNorm2, hidden)
+			// The join: post_ffn_norm of the two branches' sum, added to the residual. The layer scalar follows below.
+			biasAdd(x1, x2n, hidden)
+			comb := x1
+			if d != 4 {
+				comb = rmsnormF32(x1, g.postFFNNorm, hidden)
+			}
+			biasAdd(r.xd, comb, hidden)
+			layerTail(lw)
+			continue
+		}
 		mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
 		if lw.isMoE {
 			// Sparse MoE FFN: router top-k on the GPU, then for each chosen slot run the
@@ -1433,12 +1510,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				biasAdd(r.xd, sub, hidden)
 			}
 		}
-		if lw.layerScalar != 0 && lw.layerScalar != 1.0 {
-			scaleVec(r.xd, lw.layerScalar, hidden)
-		}
-		if captureOn { // this layer's output residual — decoder's captured[l] / h after the MLP add
-			r.capMLP = append(r.capMLP, capStep(r.xd, hidden))
-		}
+		layerTail(lw)
 	}
 	// Distinct attention geometries the plan built; see DecodeRunner.geomVariants.
 	r.geomVariants = len(geomCache)

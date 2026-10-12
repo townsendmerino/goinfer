@@ -326,12 +326,17 @@ type Context struct {
 
 	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
 	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.
-	moeRouteShader    *wgpu.ShaderModule
-	moeRoutePipeline  *wgpu.ComputePipeline
-	moeRouteLayout    *wgpu.BindGroupLayout
-	moeExpertShader   *wgpu.ShaderModule
-	moeExpertPipeline *wgpu.ComputePipeline
-	moeExpertLayout   *wgpu.BindGroupLayout
+	moeRouteShader   *wgpu.ShaderModule
+	moeRoutePipeline *wgpu.ComputePipeline
+	moeRouteLayout   *wgpu.BindGroupLayout
+	// Gemma 4's parallel dense and MoE feed-forward (gemma4_moe.go).
+	g4RouteScalePipeline *wgpu.ComputePipeline
+	g4RouteScaleLayout   *wgpu.BindGroupLayout
+	g4TailCopyPipeline   *wgpu.ComputePipeline
+	g4TailCopyLayout     *wgpu.BindGroupLayout
+	moeExpertShader      *wgpu.ShaderModule
+	moeExpertPipeline    *wgpu.ComputePipeline
+	moeExpertLayout      *wgpu.BindGroupLayout
 	// Indexed stacked-expert GEMV at int4 (W4A8) — the int4 twin of moeExpert*.
 	moeExpertW4Shader   *wgpu.ShaderModule
 	moeExpertW4Pipeline *wgpu.ComputePipeline

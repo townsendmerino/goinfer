@@ -75,7 +75,7 @@ var supportRows = []supportRow{
 	{"Gemma 4 E2B, E4B audio", "gemma4", multimodal.TowerGemma4Audio, jsonConfig(eModelConfig),
 		"One clip per request; 16-bit WAV, any rate (2026-10-09)."},
 	{"Gemma 4 26B", "gemma4", multimodal.TowerGemma4, rep("gemma4_unified_text", bidirectional),
-		"Tower checked on E2B (2026-10-07)."},
+		"Tower checked on E2B (2026-10-07). WebGPU: the decoder is checked on tiny fixtures only; no real 26B has run there (2026-10-11)."},
 	{"Gemma 4 31B", "gemma4", multimodal.TowerGemma4, rep("gemma4", bidirectional),
 		"Validation in flight on nobara (2026-10-09); too large for a 16 GB Mac."},
 	{"Qwen2.5-VL", "qwen2_5_vl", multimodal.TowerQwen25VL, rep("qwen2_5_vl", nil),

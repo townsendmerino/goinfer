@@ -109,6 +109,14 @@ becomes the default is decided by a timed comparison with its CPU tower, not yet
 grid of patches) the GLM-OCR device tower was slower than the CPU's
 ([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.3d to S12.3f).
 
+### Added — Gemma 4 26B's feed-forward block on WebGPU (checked on tiny fixtures only)
+
+`--backend webgpu` no longer declines a Gemma 4 model whose layers carry the parallel dense and MoE feed-forward (the
+26B-A4B): the decode runner now has that block. It matches the CPU on three tiny fixtures of that shape (every layer and
+every logit vector at a cosine of 1.0000000). No real 26B has run under WebGPU: the model fits neither test machine's
+GPU memory there, so treat it as unvalidated at real size
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S12.2).
+
 ### Added — Gemma 4 E2B and E4B decode on the GPU under `--backend webgpu`
 
 The two small Gemma 4 models ran on the CPU for the whole model under WebGPU. They now decode resident on the GPU, text, image

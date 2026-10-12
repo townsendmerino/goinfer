@@ -376,7 +376,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Gemma 4 E2B, E4B audio (`gemma4`) | CPU / CPU | CPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU |
+| Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
 | Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | CPU / CPU |
