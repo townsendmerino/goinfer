@@ -94,7 +94,7 @@ aikit's `releasegate` as a sixth check ("changelog-api", `tools/releasegate/apia
 omission (`VoxtralDefectCountForTest`, a test seam, now exempt by its `ForTest` name), every other release clean, and removing
 `SetDevice` from v1.69.0's section turns the gate red.
 
-## 3. `go run ./cmd/gate release vX.Y.Z` (PLANNED)
+## 3. `go run ./cmd/gate release vX.Y.Z` (BUILT 2026-10-11)
 
 **The problem.** `RELEASING.md`'s pre-flight is eight reads, in prose, each pointing at a different place. v0.21.0 and
 v0.22.0 shipped without a recorded CUDA gate run: read 8 was prose, nothing counted it.
@@ -129,7 +129,9 @@ agreement test, the hardware matrix test) it calls that function, so the command
 that is patch-equal to main (not listed) and one that is not. The mutation proof as for item 2. **Cost.** A day and a
 half with the GPU record; two rows (1, 2) are one-line calls into existing functions.
 
+**Built, ten rows rather than eight** (row 8 of the plan became gofmt, the citation lint and CI at HEAD, each its own row, so a red one is named): `cmd/gate/release.go`. `gate release [-offline] vX.Y.Z`; refuses (exit 2) off `main`, on a dirty tree, for a malformed tag or one that exists; otherwise one line per row, `done`, `OWED` or `UNKNOWN`, with its record path, exit 0 only when every row is done. Reads and what they call: pending gates (`pendingOutlivingRelease`, moved out of a test file so the command and the test share it), the pins (go.mod of the five modules), a cold-user record whose title names the previous tag, `gate gpu-records`, the hardware matrix test plus the never-executed diff against the previous tag (printed for reading; only a stale matrix is owed), unmerged branches by `git cherry` against `origin/main` (a fix-like subject is owed, others are listed), `gate changelog`, `gofmt -l`, `scripts/queue_citation_lint.py` read by its own exit code, and the `ci` run at the full HEAD sha at run level (`gh`; offline it reads UNKNOWN, never done). Each row is tested against what it reads (a git repository built in the test, files, a canned command). **First real run, `-offline`, v0.23.0 against v0.22.0:** 7 of 10 done. Owed: **no cold-user record names v0.22.0** (they name v0.18.0 and v0.20.0), **neither GPU backend has a record** (see the first item), and CI unread offline. It also listed, for reading, a `release-prep-v0.23.0` branch (another session's CHANGELOG move) and four other unmerged branches. **Not exercised:** a green run end to end (nothing yet satisfies rows 3 and 4), and the online CI row against a real pushed HEAD.
+
 ## Order
 
-1 (done) → the GPU gate's record file (done) → 2 → 3, because 3 calls 2. Items
+1 (done) → the GPU gate's record file (done) → aikit's API-additions check (done) → 2 (done) → 3 (done), because 3 calls 2. Items
 2 and 3 change nothing a user runs; they change what a release costs the person cutting it.
