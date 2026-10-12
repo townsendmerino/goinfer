@@ -27,13 +27,13 @@
 - **In flight:**
   - S10 for Qwen3-VL MoE: G-S10q-a, b and c PASS. The served check G-S10q-d read 2026-10-10 (`gs10q-d-2`): the graded
     CPU arms PASS (identical replies twice); the paged CUDA arm, graded by amendment A2, FAIL (its two-image reply
-    first differs at a token that is not a near-tie).
+    first differs at a token that is not a near-tie). G-S10q-d3 (registered 2026-10-11) re-reads it after the expert-major rounding fix, queued for the night.
   - S18: every gate has read. G-S18g read FAIL as registered, on a rule that cannot grade a tower on Gemma 3 (the f16
     reference fails it too). The owner withdrew its consequence; G-S18g2 replaces it and read **PARKED** 2026-10-10
     (D's upper bound 0.124 nats, between 0.05 and 0.20; A passes), so the decision is the owner's.
   - S14 (speech), 2026-10-10: Qwen3-ASR's word-error-rate gate G-S14c4b failed on its re-read (2026-10-09); the partial
     forced prefix (G-S14c4d) read 2026-10-10: (a) PASS, (b) PARKED (int4 +1.04 points over float32 with it, +4.17 without),
-    serve unchanged until the owner decides. Voxtral Mini is served (`input_audio`, G-S14e4a and b PASS; `s14e4c` read: int4
+    and the owner decided the same day to ship it: serve opens a Qwen3-ASR turn with `language` (the gate's own prompt). Voxtral Mini is served (`input_audio`, G-S14e4a and b PASS; `s14e4c` read: int4
     equals float32 on both clips, and float32 on the 36 s clip is byte-equal to the reference, read by a same-day rerun after the swap guard refused it in the night run). A pure-Go Whisper is built and equal to
     transformers on whisper-small: the decoder (G-S14f1, f2), timestamps and long-form (G-S14g1 to g3), the decode policy
     (G-S14h1 to h3), and `POST /v1/audio/transcriptions` in `serve` (G-S14i1 to i3); its 73-clip WER record (G-S14f3)
@@ -3233,6 +3233,20 @@ aikit expected 0: L, as registered for S10's MoE variants.
       (CPU int4: 92.5% on the 30B) is about equal, the FAIL is the CPU arm being an unfair reference at a sensitive token; if it is
       lower, it is a CUDA-path quality gap. Owner decision whether to build it.
     - The job script's default `SRC` pointed at a worktree that has been removed; it now defaults to the repo root.
+
+  - **G-S10q-d3, registered 2026-10-11 before the run: the same served check after the expert-major rounding fix.** `gs10q-d-2`'s paged CUDA arm
+    ran on a build whose C' prompt pass (the expert-major MoE prefill, generic path, which Qwen3-VL-30B-A3B takes: no shared expert) rounded each
+    routed expert's term twice, where the per-row decode path rounds it once (`dc338a50`, 2026-10-11). The 1,004- and 1,786-token prompts went
+    through that pass, so the FAIL was read on a prefill that differed from the per-row arithmetic in the last bit. **Nothing else is
+    re-argued and no bar moves:** the job is `run-gs10q-d-night.sh` unchanged (both CPU arms as controls, then the CUDA arm under amendment
+    A2's near-tie rule), run with a serve pinned at `829fef64`, which has the fix. **Controls:** the CPU arms' replies must equal
+    `gs10q-d-2`'s on both requests (the CPU path did not change); if they do not, the reading is VOID. **Outcome mapping:** PASS or FAIL
+    is G-S10q-d's CUDA reading on the corrected build and replaces the 2026-10-10 FAIL as the current one; the 10-10 FAIL stays recorded as
+    what that build read. **A FAIL here stands and is the end of what this job can say:** the next step is then the teacher-forced
+    instrument above, which is the owner's call, not started. **Prediction (written now):** FAIL 0.55 (the 10-10 divergences were at
+    counting tokens where the CUDA int4 path and the CPU W4A8 kernel differ by 0.1 to 0.3 for reasons the prefill rounding does not
+    touch), PASS 0.30, VOID 0.15 (the paged build's cold-run OOM, as before). Cost: about 35 minutes with the sidecar present; queued
+    for the night, not run by day.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
