@@ -255,6 +255,14 @@ func mropeGolden(t *testing.T, path string) func(*decoder.Model) mropePrompt {
 // difference on the image prompt was a near-tie.
 func mropeImageReading(t *testing.T, dir string, prompt func(m *decoder.Model) mropePrompt) (control, image float64, argOK bool) {
 	t.Helper()
+	control, _, image, argOK = mropeImageReading4(t, dir, prompt)
+	return control, image, argOK
+}
+
+// mropeImageReading4 is mropeImageReading with the control's own near-tie verdict: whether the two routes' argmaxes on
+// the text prompt were equal or near-ties at every reading.
+func mropeImageReading4(t *testing.T, dir string, prompt func(m *decoder.Model) mropePrompt) (control float64, controlArgOK bool, image float64, argOK bool) {
+	t.Helper()
 	m, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +343,7 @@ func mropeImageReading(t *testing.T, dir string, prompt func(m *decoder.Model) m
 		}
 		rows[i] = m.EmbedResidentForTest(text[i])
 	}
-	control, _ = worst(
+	control, controlArgOK = worst(
 		func(cache *decoder.KVCache) ([]float32, error) { return m.PrefillLogitsForTest(ctx, text, cache) },
 		func() ([]float32, error) { return rd.PrefillLast(ctx, rows, 0) }, n)
 	image, argOK = worst(
@@ -346,7 +354,7 @@ func mropeImageReading(t *testing.T, dir string, prompt func(m *decoder.Model) m
 			l, _, err := m.ResidentMRoPEPrefillForTest(ctx, rd, g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos)
 			return l, err
 		}, mropePos[n-1][0]+1)
-	return control, image, argOK
+	return control, controlArgOK, image, argOK
 }
 
 // mropeImageBar is G-S12.4b-4a-3's bar on the image prompt's worst cosine, from the text control's: the image prompt
@@ -539,10 +547,10 @@ func TestPrefillMRoPE_realImage(t *testing.T) {
 			t.Errorf("planted defect %d leaves the first-layer K at %.9f: this reading cannot see it", d, bad)
 		}
 	}
-	ctl, image, argOK := mropeImageReading(t, src, func(*decoder.Model) mropePrompt { return g })
+	ctl, ctlArgOK, image, argOK := mropeImageReading4(t, src, func(*decoder.Model) mropePrompt { return g })
 	bar := mropeImageBar(ctl)
-	fmt.Fprintf(os.Stderr, "REAL IMAGE %s (%d image rows, grid %v): control (text prompt) worst cosine %.9f; image prompt worst cosine %.9f (bar %.9f); argmax equal or near-tie: %v\n",
-		filepath.Base(src), nImg, grid, ctl, image, bar, argOK)
+	fmt.Fprintf(os.Stderr, "REAL IMAGE %s (%d image rows, grid %v): control (text prompt) worst cosine %.9f, argmax equal or near-tie: %v; image prompt worst cosine %.9f (bar %.9f), argmax equal or near-tie: %v\n",
+		filepath.Base(src), nImg, grid, ctl, ctlArgOK, image, bar, argOK)
 	if !(image >= bar) || !argOK {
 		t.Errorf("the image prompt's device prefill sits further from the CPU's than the text control allows: %.9f under %.9f, near-ties %v", image, bar, argOK)
 	}
