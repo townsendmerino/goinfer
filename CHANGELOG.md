@@ -26,7 +26,7 @@ any surface may still change.
 - **EmbeddingGemma 2 takes images and audio** at `/v1/embeddings`, and runs on the GPU on a Mac. **Qwen3.5+ images from a GGUF `mmproj`** (`--vision mmproj.gguf`).
 - **Library:** `Model.Close` is safe during a generation (and refuses new ones with `decoder.ErrClosed`), `Tokenizer.NewStream` prints tokens without losing spaces, and `Options.Quant "bf16"` / `"f16"` holds a 16-bit checkpoint at half f32's memory, bit-identical to f32 (CPU).
 - **Sidecar names carry the format version**, so a release binary and a dev build stop rebuilding each other's.
-- **aikit v1.70.0** in all five modules.
+- **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
 ### Added — `--quant bf16` and `--quant f16`: a 16-bit checkpoint held at half f32's memory, bit-identical to f32 (CPU)
@@ -36,9 +36,12 @@ widens 32 rows at a time into the f32 kernel, so the forward is the f32 forward 
 On `qwen2.5-0.5b-instruct` through `serve --backend cpu`: 1.6 GB resident against 4.3 GB for f32, and a greedy reply byte-equal to
 f32's. It exists for the case that f32 does not fit and a lossy quant would change the answer (it was built for the Mellum2.1
 investigation, whose 24 GB bf16 model f32 would have doubled). **CPU only, safetensors directories only**: a GPU backend, a `.gguf`
-and a `.giw` refuse it by name, and it builds no sidecar. It is the exact mode, not the fast one (its speed against int4 was not measured here): an
-AVX2 widen on amd64, a scalar one on arm64 (no NEON form yet). Needs aikit v1.70.0 (`linalg.WrapBF16` and the other 16-bit
-`WeightMat` constructors).
+and a `.giw` refuse it by name, and it builds no sidecar. On an M1 Pro (aikit v1.70.1's NEON widen; by day, so exploratory,
+[`docs/measurements/bf16-neon-widen-2026-10-11.md`](docs/measurements/bf16-neon-widen-2026-10-11.md)) the same model decodes at 36.4 tok/s with
+`--quant bf16` against 12.9 for f32, **2.82 times, at 0.35 of the resident memory**, with the replies byte-equal; the widen alone is 7.76 times
+the scalar loop it replaced (served bf16 decode on v1.70.0's scalar widen: 19.5 tok/s). It is the exact mode, and its speed against int4
+was not measured. The widen is AVX2 on amd64 and NEON on arm64. Needs aikit v1.70.1 (`linalg.WrapBF16` and the other 16-bit `WeightMat`
+constructors; v1.70.0 has them with a scalar widen on arm64).
 
 ### Changed — the sidecar's file name carries the format version, so two builds on one box stop rebuilding each other's
 
