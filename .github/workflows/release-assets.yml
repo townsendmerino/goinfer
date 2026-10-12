@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with: { go-version-file: 'go.mod' }
+        with: { go-version-file: 'go.mod', cache: false }
       # A pending gate's failure reads as an item, not a blocker, so one that rides through two
       # releases unconfirmed is a required gate that could block neither (audit-2026-09-10 G-03,
       # chosen over a calendar bound 2026-09-11). RELEASING.md's pre-flight runs this before tagging;
@@ -335,7 +335,7 @@ jobs:
           fi
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: steps.gate.outputs.skip == 'false'
-        with: { go-version-file: 'go.mod' }
+        with: { go-version-file: 'go.mod', cache: false }
       - name: fetch the model + verify the pinned digest
         if: steps.gate.outputs.skip == 'false'
         run: |
