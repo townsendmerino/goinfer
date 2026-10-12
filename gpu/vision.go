@@ -141,6 +141,9 @@ func (c *Context) ensureVision() error {
 	if c.mmTiledF32Pipeline, c.mmTiledF32Layout, err = mk("matmulTiledF32", matmulTiledF32WGSL); err != nil {
 		return err
 	}
+	if c.mmRB64F32Pipeline, c.mmRB64F32Layout, err = mk("matmulRB64F32", matmulRB64F32WGSL); err != nil {
+		return err
+	}
 	if c.copyHeadPipeline, c.copyHeadLayout, err = mk("copyHead", copyHeadWGSL); err != nil {
 		return err
 	}
@@ -341,13 +344,92 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// visionNaiveMatmulForTest sends matmulF32Device to the naive kernel, for the tiled kernel's gate and its timing
-// comparison.
-var visionNaiveMatmulForTest bool
+// matmulRB64F32WGSL is the same product with each thread owning a 4×4 block of outputs: a workgroup computes a 64×64
+// block of dst, stages 16 K of 64 rows of each operand at a time, and every staged element feeds four multiply-adds
+// from registers where the 16×16 kernel's feeds one. The outputs a thread owns are strided (rows lid.y + {0,16,32,48},
+// columns lid.x + {0,16,32,48}) and the staged tiles are K-major with a padded row stride, as in the int8 kernel this
+// follows (gemm_rb.go). The sum runs over k in order.
+const matmulRB64F32WGSL = `
+struct Dims { m: u32, k: u32, n: u32, _pad: u32 };
+@group(0) @binding(0) var<storage, read>       a:    array<f32>;  // [M, K]
+@group(0) @binding(1) var<storage, read>       b:    array<f32>;  // [N, K]
+@group(0) @binding(2) var<storage, read_write> dst:  array<f32>;  // [M, N]
+@group(0) @binding(3) var<uniform>             dims: Dims;
+const BM: u32 = 64u;
+const BN: u32 = 64u;
+const BK: u32 = 16u;
+const LD: u32 = 65u;
+var<workgroup> As: array<f32, 1040>;  // [BK][LD]: As[w*LD + r] = a(rowBase + r, strip*BK + w)
+var<workgroup> Bs: array<f32, 1040>;  // [BK][LD]: Bs[w*LD + c] = b(colBase + c, strip*BK + w)
 
-// matmulF32Device runs dst[M,N] = a[M,K] · b[N,K]ᵀ on the tiled float32 kernel, output to a fresh device buffer, NO
-// Poll. Used for the tower's patch embed, its float32 projections, and the attention QKᵀ / scores·V. a,b are device
-// buffers.
+fn store4(acc: vec4<f32>, row: u32, col0: u32) {
+    if (row >= dims.m) { return; }
+    let base = row * dims.n;
+    if (col0       < dims.n) { dst[base + col0]       = acc.x; }
+    if (col0 + 16u < dims.n) { dst[base + col0 + 16u] = acc.y; }
+    if (col0 + 32u < dims.n) { dst[base + col0 + 32u] = acc.z; }
+    if (col0 + 48u < dims.n) { dst[base + col0 + 48u] = acc.w; }
+}
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let rowBase = wid.y * BM;
+    let colBase = wid.x * BN;
+    let t = lid.y * 16u + lid.x;
+    let nStrips = (dims.k + BK - 1u) / BK;
+    var acc0 = vec4<f32>(0.0);
+    var acc1 = vec4<f32>(0.0);
+    var acc2 = vec4<f32>(0.0);
+    var acc3 = vec4<f32>(0.0);
+    for (var s: u32 = 0u; s < nStrips; s = s + 1u) {
+        let w0 = s * BK;
+        for (var q: u32 = 0u; q < 4u; q = q + 1u) {
+            let idx = t + q * 256u;
+            let r = idx >> 4u;
+            let w = idx & 15u;
+            let kc = w0 + w;
+            var av: f32 = 0.0;
+            let ar = rowBase + r;
+            if (ar < dims.m && kc < dims.k) { av = a[ar * dims.k + kc]; }
+            As[w * LD + r] = av;
+            var bv: f32 = 0.0;
+            let br = colBase + r;
+            if (br < dims.n && kc < dims.k) { bv = b[br * dims.k + kc]; }
+            Bs[w * LD + r] = bv;
+        }
+        workgroupBarrier();
+        for (var w: u32 = 0u; w < BK; w = w + 1u) {
+            let ab = w * LD + lid.y;
+            let bb = w * LD + lid.x;
+            let bvec = vec4<f32>(Bs[bb], Bs[bb + 16u], Bs[bb + 32u], Bs[bb + 48u]);
+            acc0 = acc0 + As[ab] * bvec;
+            acc1 = acc1 + As[ab + 16u] * bvec;
+            acc2 = acc2 + As[ab + 32u] * bvec;
+            acc3 = acc3 + As[ab + 48u] * bvec;
+        }
+        workgroupBarrier();
+    }
+    let col0 = colBase + lid.x;
+    store4(acc0, rowBase + lid.y,       col0);
+    store4(acc1, rowBase + lid.y + 16u, col0);
+    store4(acc2, rowBase + lid.y + 32u, col0);
+    store4(acc3, rowBase + lid.y + 48u, col0);
+}
+`
+
+// The float32 matmul kernels matmulF32Device can run. visionMatmulForTest picks one for the kernels' gates and timing
+// comparisons; outside them it is the default.
+const (
+	visionMatmulRB64    = iota // matmulRB64F32WGSL, the default
+	visionMatmulTiled16        // matmulTiledF32WGSL
+	visionMatmulNaive          // the naive kernel
+)
+
+var visionMatmulForTest = visionMatmulRB64
+
+// matmulF32Device runs dst[M,N] = a[M,K] · b[N,K]ᵀ on a float32 kernel (the register-blocked one unless a test says
+// otherwise), output to a fresh device buffer, NO Poll. Used for the tower's patch embed, its float32 projections, and
+// the attention QKᵀ / scores·V. a,b are device buffers.
 func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer, error) {
 	dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
@@ -366,9 +448,12 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 		return nil, err
 	}
 	defer dims.Release()
-	// The naive kernel indexes rows by its x dimension and the tiled one by y.
-	pl, ly, gx, gy := c.mmTiledF32Pipeline, c.mmTiledF32Layout, (uint32(N)+15)/16, (uint32(M)+15)/16
-	if visionNaiveMatmulForTest || pl == nil {
+	// The naive kernel indexes rows by its x dimension and the tiled ones by y.
+	pl, ly, gx, gy := c.mmRB64F32Pipeline, c.mmRB64F32Layout, (uint32(N)+63)/64, (uint32(M)+63)/64
+	if visionMatmulForTest == visionMatmulTiled16 {
+		pl, ly, gx, gy = c.mmTiledF32Pipeline, c.mmTiledF32Layout, (uint32(N)+15)/16, (uint32(M)+15)/16
+	}
+	if visionMatmulForTest == visionMatmulNaive || pl == nil {
 		pl, ly, gx, gy = c.pipeline, c.layout, (uint32(M)+15)/16, (uint32(N)+15)/16
 	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{

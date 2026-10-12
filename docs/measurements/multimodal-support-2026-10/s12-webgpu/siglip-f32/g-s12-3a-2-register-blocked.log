@@ -1,0 +1,22 @@
+=== RUN   TestVisionEncoderF32_realGemma3
+[G-S12.3a-2    2.2s] float32 tower loaded: 27 layers, hidden 1152, 4096 patches
+[G-S12.3a-2   29.8s] image 1/5 ../testdata/glm_ocr/table.png: CPU float32 tower 27.6 s
+[G-S12.3a-2   58.6s] image 2/5 ../testdata/glm_ocr/invoice.png: CPU float32 tower 28.8 s
+[G-S12.3a-2   87.5s] image 3/5 ../testdata/glm_ocr/formula.png: CPU float32 tower 28.9 s
+[G-S12.3a-2  114.7s] image 4/5 ../testdata/gemma3_preprocess_image.png: CPU float32 tower 27.2 s
+[G-S12.3a-2  142.0s] image 5/5 ../testdata/glm_ocr/invoices/inv01.png: CPU float32 tower 27.3 s
+[G-S12.3a-2  154.6s] image 1/5: float32 WebGPU tower 12.0 s, lowest token cosine 0.9999997, whole-output cosine 1.0000000
+[G-S12.3a-2  165.8s] image 2/5: float32 WebGPU tower 11.2 s, lowest token cosine 0.9999996, whole-output cosine 1.0000000
+[G-S12.3a-2  177.1s] image 3/5: float32 WebGPU tower 11.3 s, lowest token cosine 0.9999998, whole-output cosine 1.0000000
+[G-S12.3a-2  188.1s] image 4/5: float32 WebGPU tower 10.9 s, lowest token cosine 0.9999999, whole-output cosine 1.0000000
+[G-S12.3a-2  198.8s] image 5/5: float32 WebGPU tower 10.7 s, lowest token cosine 0.9999997, whole-output cosine 1.0000000
+[G-S12.3a-2  221.8s] image 1/5: int8 WebGPU tower (record) 20.5 s, lowest token cosine 0.1285, whole-output cosine 0.9853
+[G-S12.3a-2  242.5s] image 2/5: int8 WebGPU tower (record) 20.6 s, lowest token cosine 0.0403, whole-output cosine 0.9598
+[G-S12.3a-2  263.0s] image 3/5: int8 WebGPU tower (record) 20.5 s, lowest token cosine 0.0780, whole-output cosine 0.9731
+[G-S12.3a-2  283.6s] image 4/5: int8 WebGPU tower (record) 20.5 s, lowest token cosine 0.0222, whole-output cosine 0.8731
+[G-S12.3a-2  304.1s] image 5/5: int8 WebGPU tower (record) 20.5 s, lowest token cosine 0.0542, whole-output cosine 0.9742
+[G-S12.3a-2  304.1s] float32 WebGPU tower: lowest token cosine over the five images 0.9999996
+    vision_f32_test.go:330: G-S12.3a-2 PASS: lowest token cosine 0.9999996
+--- PASS: TestVisionEncoderF32_realGemma3 (304.16s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	304.830s

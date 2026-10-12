@@ -51,8 +51,8 @@
     (the towers, a float32 SigLIP first).
   - Closed inside S12.1: WebGPU's first difference from the CPU on E4B is two rounding flips in the first layer's
     activation quantization, amplified by E4B's coarse int8 activation codes; every device kernel meets its contract.
-  - S12.3a and S12.3b: a float32 SigLIP tower on WebGPU, right at real size, opt-in (43 s an image tiled against
-    the CPU's 25 s). A tanh overflow in the WebGPU tower's GELU is fixed; it, and not int8 precision, was why the
+  - S12.3a to S12.3c: a float32 SigLIP tower on WebGPU, right at real size, opt-in until its night speed gate reads
+    (10.5 s an image on the register-blocked matmul by a day smoke, against the CPU's 25 s; 43 s on the 16x16 kernel). A tanh overflow in the WebGPU tower's GELU is fixed; it, and not int8 precision, was why the
     int8 tower misread images this morning.
 - **Not started:** S15 (video, parked), full S13.
 
@@ -4067,6 +4067,68 @@ The Mac, by day, every run under the timing lock. Times are a smoke, not a gate.
   Light Supply Co. to Northwind Printing LLC ... totaling $1140.55".
 - **Tower encode times in those served runs (a record):** CPU float32 25.0-26.3 s, WebGPU int8 32.6-33.7 s, WebGPU
   float32 43.3-43.7 s.
+
+#### S12.3c: the WebGPU tower's profile read, and a register-blocked float32 matmul registered before its code (2026-10-11; owner: "start cheap", the profile before more towers)
+
+**The profile (by day, exploratory; `siglip-f32/tower-profile.log`).** One image through the real towers on the tiled
+kernel, a pass that waits for the device after every step (46.1 s for float32 where the unprofiled pass is 42.2 s):
+
+| step | float32 tower | int8 tower |
+|---|---|---|
+| attention scores, q·kᵀ per head | 21.6% | 27.1% |
+| scores·v per head | 19.1% | 24.1% |
+| fc1 | 17.3% | 11.9% |
+| fc2 | 17.2% | 15.8% |
+| q, k, v projections | 13.8% | 10.1% |
+| o projection and residual | 4.7% | 3.3% |
+| softmax, gathers, scatter, layernorms, GELU, the per-layer sync | 6.2% | 7.7% |
+
+- **It is the matmuls, 94% of the float32 tower's time, and not the structure.** The gathers, the per-head
+  dispatches and the one sync a layer are 6% together; batching the heads would buy little.
+- **Throughput:** each matmul step runs at 52-69 billion multiply-adds a second. The CPU tower's 25 s for the same
+  2.2 trillion is about 88; Metal's 9.5 s about 230.
+
+**The lever:** a float32 form of the register-blocked kernel the int8 prefill has (`gpu/gemm_rb.go`): a 64x64 tile a
+workgroup, each thread owning a strided 4x4 block of outputs with its accumulators in registers, so each element
+staged in workgroup memory feeds four multiply-adds where the 16x16 kernel's feeds one. Same four bindings; the sum
+over K in the same ascending order, so its outputs are expected bit-equal to the naive kernel's.
+
+- **G-S12.3c-1 (day).** G-S12.3b-1's ten shapes and its planted defect, for this kernel: every output within a
+  relative 1e-5 of the naive kernel's.
+- **G-S12.3c-2 (day).** The tower's tiny gates on it (G-S12.3a-1 with its defects, the large-activation case, the
+  int8 tower's two tests).
+- **G-S12.3c-3 (day, a smoke, no bar).** The real towers' time for one image, this kernel against the 16x16 one.
+- **The decision is still G-S12.3a-4's.** If the smoke puts the float32 tower under the CPU's 25 s, G-S12.3a-4 is
+  queued for a night; if not, it is not, and the device towers stay opt-in.
+- **Prediction, written now:** c-1 and c-2 pass (0.8). c-3: the matmul steps 1.5 to 3 times the 16x16 kernel, the
+  float32 tower between 17 s and 30 s; under 25 s at about 0.5.
+- **Tier and cost.** c-1 and c-2 under a minute; c-3 about five minutes.
+
+#### S12.3c read 2026-10-11: the register-blocked kernel puts the float32 WebGPU tower at 10.5 s an image; the speed gate is queued for the night
+
+The Mac, by day, under the timing lock; raw in `s12-webgpu/siglip-f32/`. The times are a smoke.
+
+- **G-S12.3c-1: PASS.** At all ten shapes the register-blocked kernel's every output is bit-equal to the naive
+  kernel's (as the 16x16 kernel's is); the planted no-zero-fill variant reads 0.47 in each tiled kernel.
+- **G-S12.3c-2: PASS.** The tower's tiny gates, five planted defects red, the large-activation case, and the int8
+  tower's two tests, on the new default kernel.
+- **The real-size gate again, on this kernel (`g-s12-3a-2-register-blocked.log`): PASS,** lowest token cosine
+  0.9999996 over the five images, as on the naive kernel.
+- **G-S12.3c-3, the smoke** (one image, the kernels interleaved in one process, first pass discarded):
+
+  | tower | register-blocked | 16x16 | naive (earlier run) |
+  |---|---|---|---|
+  | float32 | 10.5, 10.5 s | 42.2, 42.2 s | 110.5 s |
+  | int8 | 20.5, 20.5 s | 32.7, 32.9 s | 47.8 s |
+
+  Four times the 16x16 kernel on the float32 tower. The CPU float32 tower reads 25-28 s and Metal's about 9.5 s. The
+  int8 tower gains less because its six projections a layer still run the int8 kernel.
+- **Prediction scored:** "the float32 tower between 17 s and 30 s; under 25 s at about 0.5": missed low, 10.5 s.
+- **Consequence, as registered:** the smoke is under the CPU's time, so **G-S12.3a-4 is queued on the Mac's night
+  queue** (`s12-webgpu/run-s12-3a-4-night.sh`, a pinned test binary at `9617f339`, five interleaved pairs). Until it
+  reads, the default under `--backend webgpu` is still the CPU float32 tower and the device towers are opt-in.
+- **Not measured:** either device tower on a discrete GPU; the int8 tower's projections on a register-blocked
+  int8 kernel (the prefill has one).
 
 ### S13 — Against the peers
 
