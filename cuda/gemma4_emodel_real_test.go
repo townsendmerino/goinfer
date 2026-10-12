@@ -173,9 +173,17 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 	return pass, agree, n
 }
 
+// g3PassMargin and g3FailMargin bound the E-model non-inferiority gates (G3c, G-E4B-C1, G-E4B-C1b) in points of teacher-forced agreement against the live reference.
+// They are -4.7 and -6.7, the registered -2.0 and -4.0 shifted by the reference's own move from 93.97% to 96.64% under ChatML's default system message, so the
+// absolute floor the gates were registered at (about 92%) is unchanged. Record: docs/tasks/task-multimodal-support-2026-10.md, "G3c reference moved".
+const (
+	g3PassMargin = -4.7
+	g3FailMargin = -6.7
+)
+
 // TestGemma4EModel_realE2BNonInferiority is G3c (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"; Metal's re-registered G3 rule unchanged): in one process, g3Run on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E2B.
-// PASS: E2B's teacher-forced agreement >= the reference's - 2.0 points and its free-run passes >= the reference's - 1; 2.0-4.0 points below is
-// ambiguous (parked for the owner); worse, or free-run passes 2+ short, fails.
+// PASS: E2B's teacher-forced agreement >= the reference's + g3PassMargin points and its free-run passes >= the reference's - 1; up to 2.0 points below
+// that is ambiguous (parked for the owner); worse, or free-run passes 2+ short, fails.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE2BNonInferiority$' -v ./cuda/
 func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
@@ -191,12 +199,12 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 	delta := e2bPct - refPct
 	logf("G3c non-inferiority: E2B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e2bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
 	switch {
-	case delta < -4.0 || ep <= rp-2:
+	case delta < g3FailMargin || ep <= rp-2:
 		t.Errorf("G3c FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
-	case delta < -2.0:
+	case delta < g3PassMargin:
 		t.Errorf("G3c AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
 	default:
-		t.Logf("G3c PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+		t.Logf("G3c PASS: delta %+.2f points (margin %.1f), free-run %d vs reference %d", delta, g3PassMargin, ep, rp)
 	}
 }
 
@@ -258,12 +266,12 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 	delta := e4bPct - refPct
 	logf("G-E4B-C1 non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
 	switch {
-	case delta < -4.0 || ep <= rp-2:
+	case delta < g3FailMargin || ep <= rp-2:
 		t.Errorf("G-E4B-C1 FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
-	case delta < -2.0:
+	case delta < g3PassMargin:
 		t.Errorf("G-E4B-C1 AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
 	default:
-		t.Logf("G-E4B-C1 PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+		t.Logf("G-E4B-C1 PASS: delta %+.2f points (margin %.1f), free-run %d vs reference %d", delta, g3PassMargin, ep, rp)
 	}
 }
 
@@ -462,11 +470,11 @@ func TestGemma4EModel_realE4BQATNonInferiority(t *testing.T) {
 	delta := e4bPct - refPct
 	logf("G-E4B-C1b non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
 	switch {
-	case delta < -4.0 || ep <= rp-2:
+	case delta < g3FailMargin || ep <= rp-2:
 		t.Errorf("G-E4B-C1b FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
-	case delta < -2.0:
+	case delta < g3PassMargin:
 		t.Errorf("G-E4B-C1b AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
 	default:
-		t.Logf("G-E4B-C1b PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+		t.Logf("G-E4B-C1b PASS: delta %+.2f points (margin %.1f), free-run %d vs reference %d", delta, g3PassMargin, ep, rp)
 	}
 }
