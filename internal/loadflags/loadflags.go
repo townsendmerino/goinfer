@@ -287,6 +287,9 @@ const quantHelp = "  int4      W4A8 (int4 weights, int8 activations): fastest on
 	"            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n" +
 	"            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n" +
 	"  int8      int8 weights with wider activations: between int8int8 and native.\n" +
+	"  bf16      CPU ONLY (safetensors directories only): weights held as 16-bit bfloat16 and widened a tile at a time, so\n" +
+	"            the result is bit-identical to f32 over a bf16 checkpoint at half f32's memory (qwen2.5-0.5b: 1.6 GB\n" +
+	"            resident against 4.3 GB). f16 is the same for an IEEE half checkpoint. Not for a GPU backend, a .gguf or a .giw.\n" +
 	"  \"\"        native (no quantization, f32): most accurate, largest, slowest.\n" +
 	"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n" +
 	"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant."

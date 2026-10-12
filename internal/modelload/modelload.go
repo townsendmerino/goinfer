@@ -212,10 +212,10 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 }
 
 // dirSidecarApplies reports whether a safetensors directory source takes the sidecar default (S18): not with a LoRA to
-// merge (the merge needs the safetensors base, and a plain sidecar would drop the adapter), not at q4k (no .giw form),
+// merge (the merge needs the safetensors base, and a plain sidecar would drop the adapter), not at q4k, bf16 or f16 (no .giw form),
 // and not under -stream-weights, which serve already explains is .gguf-only for a directory.
 func dirSidecarApplies(src string, opts decoder.Options) bool {
-	if opts.LoRA != "" || opts.Quant == "q4k" || opts.StreamWeights || !isDir(src) {
+	if opts.LoRA != "" || opts.Quant == "q4k" || opts.Quant == "bf16" || opts.Quant == "f16" || opts.StreamWeights || !isDir(src) {
 		return false
 	}
 	m, _ := filepath.Glob(filepath.Join(src, "*.safetensors"))

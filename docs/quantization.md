@@ -80,6 +80,14 @@ A load-time policy, not a resident precision: attention (plus embed/head/router)
 a calibration spike found the int4 loss concentrated, and the FFN bulk goes int4. GGUF load path
 only. Near-int8 quality at below-int8 RAM.
 
+### `bf16` and `f16`: the exact mode, at half f32's memory (CPU, safetensors only)
+
+`--quant bf16` (`f16` for an IEEE-half checkpoint) holds each matmul weight as 16-bit bit patterns and widens 32 rows at a time into
+the f32 kernel. Over a bf16 checkpoint the forward is the f32 forward bit for bit (`decoder/half16_test.go`), so it is the choice when
+a lossy quant would change the answer and f32 would not fit: `qwen2.5-0.5b-instruct` serves from 1.6 GB resident against f32's 4.3 GB,
+with a byte-equal greedy reply. It is not a speed mode, and its speed against int4 is not measured. A GPU backend, a `.gguf` and a `.giw`
+refuse it by name, and it builds no sidecar. A source that is not already 16-bit is rounded to it, and then it is not f32's answer.
+
 ## What we refuse, and why — each one measured, not assumed
 
 A stance is only worth stating if something is actually excluded. These were funded, measured, and

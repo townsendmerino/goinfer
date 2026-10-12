@@ -15,6 +15,31 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Highlights — a draft for the next tag (the tagger rewrites it; kept here so it cannot go stale on a branch)
+
+- **A single tool no longer traps a client in a loop.** With exactly one tool in `tools` and `tool_choice` auto or absent, the reply was constrained to that tool's call on every turn, including the turn after its result, so a model could never answer. Fixed on `/v1/chat/completions` and `/v1/responses`; `required`, a named function and `none` are unchanged.
+- **Speech to text.** `POST /v1/audio/transcriptions` from a pure-Go Whisper, and `input_audio` for Qwen3-ASR and Voxtral Mini; the encoder runs on the GPU under `--backend cuda` (13.6 times on `whisper-small`, 11.9 on Voxtral's tower).
+- **Image turns on Qwen3.5 are much faster**: on a 0.8B, time to first token for a 1024x640 image went from 37.5 s to 3.6 s on CUDA (0.3 s for a resent image) and from 38 s to 7.7 s on the CPU backend. Exploratory, one run per cell (`docs/measurements/p26*-2026-10-06/`).
+- **Qwen3-VL-30B-A3B images**, checked against Hugging Face on the CPU; its CUDA paged-experts path read FAIL on one served request and is unvalidated until its re-read.
+- **`--windowed-kv` is on by default on CUDA**, so a mixed sliding/full model fits a longer context; `--windowed-kv=false` opts out, and a long agent loop past the window re-prefills each turn.
+- **`serve -lenient-tool-calls` (off by default)** reads one fenced JSON call at the end of a reply as a tool call, for the `<tool_call>` families, with the arguments checked against the tool's schema. A demonstration that ends on one valid call looks the same as a meant call, so use it with a client that confirms before it acts.
+- **EmbeddingGemma 2 takes images and audio** at `/v1/embeddings`, and runs on the GPU on a Mac. **Qwen3.5+ images from a GGUF `mmproj`** (`--vision mmproj.gguf`).
+- **Library:** `Model.Close` is safe during a generation (and refuses new ones with `decoder.ErrClosed`), `Tokenizer.NewStream` prints tokens without losing spaces, and `Options.Quant "bf16"` / `"f16"` holds a 16-bit checkpoint at half f32's memory, bit-identical to f32 (CPU).
+- **Sidecar names carry the format version**, so a release binary and a dev build stop rebuilding each other's.
+- **aikit v1.70.0** in all five modules.
+- **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
+
+### Added — `--quant bf16` and `--quant f16`: a 16-bit checkpoint held at half f32's memory, bit-identical to f32 (CPU)
+
+A bf16 (or IEEE half) safetensors directory loaded with `--quant bf16` (`f16`) keeps each matmul weight as 16-bit bit patterns and
+widens 32 rows at a time into the f32 kernel, so the forward is the f32 forward bit for bit, at half the resident weights.
+On `qwen2.5-0.5b-instruct` through `serve --backend cpu`: 1.6 GB resident against 4.3 GB for f32, and a greedy reply byte-equal to
+f32's. It exists for the case that f32 does not fit and a lossy quant would change the answer (it was built for the Mellum2.1
+investigation, whose 24 GB bf16 model f32 would have doubled). **CPU only, safetensors directories only**: a GPU backend, a `.gguf`
+and a `.giw` refuse it by name, and it builds no sidecar. It is the exact mode, not the fast one (its speed against int4 was not measured here): an
+AVX2 widen on amd64, a scalar one on arm64 (no NEON form yet). Needs aikit v1.70.0 (`linalg.WrapBF16` and the other 16-bit
+`WeightMat` constructors).
+
 ### Changed — the sidecar's file name carries the format version, so two builds on one box stop rebuilding each other's
 
 A sidecar is now `<model>.<quant>[.e4h].<target>.v16.giw` (the number is the weights format version this build reads), where it
