@@ -204,6 +204,44 @@ only the night gate's predictions below were made blind. The results follow unde
   the buffer's size should only matter through allocation. The 7B resolves 16384 with 2 slots at night, 0.75 (it
   needs about 6.8 GB of live budget: 4.5 GB of weights, 1.9 GB of KV and the margin).
 
+**M2 results, 2026-10-12 (the day half; the branch `m2-metal-fit-ctx` is not merged until the night half reads).**
+
+- **Built** as registered: `decoder/metal_fitctx.go:Model.MetalFitCtx` (the one function the Metal load and
+  `goinfer-chat fit` ask), `metal/backend.go:metalFitFor` (chosen once a build), the banner's reason and `harness:`
+  line (`internal/serveapp/banner.go:harnessLine`), the 400's wording, `internal/fitcmd/fit.go:planFor`. The design
+  notes are in `docs/code-notes/metal.md`, "metalFitFor".
+- **Gate 1, unit tests: PASS.** `decoder`'s six `TestMetalFitCtx_*` (grow and shrink on the 8-position grid, slots
+  trade context, a limit only lowers, the three opt-outs with a control, the window, a companion's bytes);
+  `metal`'s `TestResolveMetalCtxCap_fitByDefault` (fourteen loads, with the explicit `-ctx` cases),
+  `TestResolveMetalCtxCap_autoPinIsACeiling` (re-read under a roomy and an unknown probe),
+  `TestMetalBuildResident_fitByDefault` (a real tiny build holds 16384 in 2 slots and decodes an 11,137-token
+  prompt; with room for 20,000 positions it holds 2 slots of 10,000; both are the context `fit`'s function names)
+  and `TestMetalBuildResident_pagedMoEKeepsTheDefault` (a tiny MoE grows when resident and keeps 4096 paged);
+  `internal/serveapp`'s banner and 400 tests; `internal/fitcmd`'s `TestPlanFor_metalPlansAtTheLoadsOwnContext`.
+  - **Mutations, both red:** the paged-MoE case removed from `MetalFitCtx` (`TestMetalFitCtx_optOuts`: ctx 16384,
+    want 4096), and `metalPagesMoE` made to return false (the two `-moe-cache-*` loads resolve 16384).
+- **Gate 2, real checkpoints:** the 1.5B at int4 on a 16 GB Mac's static budget resolves **16384** with 2 slots,
+  0.9 GB of KV (weights 1.81 GB and as much again in host copy, of 11.20 GB). The 7B's case loads it on the CPU and
+  is in the night job.
+- **Gate 3, the Mac by day** (M1 Pro 16 GB, the desktop open, 5.7 GB available; `m2/served-day-2026-10-12.txt`):
+  - **The 1.5B, no `-ctx`: 16384 positions, 2 slots, 0.9 GB of KV.** A request of 11,492 tokens was answered in
+    14.7 s; swap used was 4,459 MB before the load and after the answer.
+  - **The 7B did not go resident at all:** the build needs 4.65 GB at its smallest context and the live budget
+    was 3.21 GB. That is the memory guard, which this change does not touch (inferred from the code, not read on
+    main today). Its read is in the night job.
+  - **The paged 26B: not read. Its checkpoint is not on this Mac.** The opt-out rests on the unit tests, the tiny
+    paged build and the two mutations until it is.
+- **Gate 5, the Metal package's suite on the branch: PASS**, 318 tests pass and 173 skip (the heavy ones), by day
+  (`m2/metal-suite-day-2026-10-12.txt`). A first run failed three tests for fixtures the fresh worktree lacked;
+  they were cloned from the main checkout and the run repeated. The device gate (§C1-M) is a night job.
+- **The night harness, one run a cell, exploratory and not a result:** the new arm resolved 16384 and the old arm
+  4096, at 94.23 and 94.22 tok/s.
+- **Owed, queued on the Mac for tonight:** G-M2-speed, the 7B's served read and real-checkpoint case
+  (`m2/run-g-m2-night.sh`), and the Metal device gate at the branch's head. The merge waits for them.
+- **For the owner:** the brief's "f32 KV" is f16 on Metal, so 2 slots of 16384 on a 7B are about 1.9 GB and not
+  3.7. The 26B would need pulling to this Mac (about 15 GB; the disk has about 18 GB free now that the 7B's Metal
+  sidecar, 4.8 GB, is beside its checkpoint) to read gate 3's last line.
+
 ### M3 · A thinking switch
 
 **Goal.** A client can turn a family's thinking off, and a server operator can set the default.
