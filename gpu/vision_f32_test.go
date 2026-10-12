@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -400,4 +401,94 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 	}
 	defer ve8.Close()
 	run("int8", ve8, patches)
+}
+
+// TestVisionEncoder_profile is a by-day reading with no bar: where the real float32 and int8 WebGPU towers spend an
+// image's time, by step, from a pass that waits for the device after every step. The unprofiled pass beside it is the
+// time the tower actually takes.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoder_profile$' -v ./gpu/
+func TestVisionEncoder_profile(t *testing.T) {
+	requireHeavyModel(t)
+	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("no gemma-3-4b-it")
+	}
+	c, err := New()
+	if err != nil {
+		t.Skipf("no gpu: %v", err)
+	}
+	defer c.Close()
+	raw, err := os.ReadFile(siglipRealImages[0])
+	if err != nil {
+		t.Skip(err)
+	}
+	pv, err := vision.Preprocess(raw, vision.Gemma3())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := func(label string, ve *VisionEncoder, patches []float32) {
+		for range 2 { // a warm-up, then the time the tower takes
+			ts := time.Now()
+			if _, err := ve.ForwardPatches(patches); err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprintf(os.Stderr, "[profile] %s tower, unprofiled pass: %.1f s\n", label, time.Since(ts).Seconds())
+		}
+		visionProfileForTest = map[string]time.Duration{}
+		ts := time.Now()
+		if _, err := ve.ForwardPatches(patches); err != nil {
+			t.Fatal(err)
+		}
+		total := time.Since(ts)
+		prof := visionProfileForTest
+		visionProfileForTest = nil
+		type row struct {
+			step string
+			d    time.Duration
+		}
+		var rows []row
+		var sum time.Duration
+		for k, d := range prof {
+			rows = append(rows, row{k, d})
+			sum += d
+		}
+		sort.Slice(rows, func(i, j int) bool { return rows[i].d > rows[j].d })
+		fmt.Fprintf(os.Stderr, "[profile] %s tower, profiled pass: %.1f s (steps sum %.1f s)\n", label, total.Seconds(), sum.Seconds())
+		for _, r := range rows {
+			fmt.Fprintf(os.Stderr, "[profile]   %-36s %6.2f s  %5.1f%%\n", r.step, r.d.Seconds(), 100*r.d.Seconds()/sum.Seconds())
+		}
+	}
+	enc, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := enc.Weights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	patches, err := enc.GridPatches(pv.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve, err := c.NewVisionEncoderF32(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile("float32", ve, patches)
+	ve.Close()
+	enc8, err := vision.LoadEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w8, err := enc8.GPUWeights()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve8, err := c.NewVisionEncoder(w8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ve8.Close()
+	profile("int8", ve8, patches)
 }

@@ -4068,6 +4068,42 @@ The Mac, by day, every run under the timing lock. Times are a smoke, not a gate.
 - **Tower encode times in those served runs (a record):** CPU float32 25.0-26.3 s, WebGPU int8 32.6-33.7 s, WebGPU
   float32 43.3-43.7 s.
 
+#### S12.3c: the WebGPU tower's profile read, and a register-blocked float32 matmul registered before its code (2026-10-11; owner: "start cheap", the profile before more towers)
+
+**The profile (by day, exploratory; `siglip-f32/tower-profile.log`).** One image through the real towers on the tiled
+kernel, a pass that waits for the device after every step (46.1 s for float32 where the unprofiled pass is 42.2 s):
+
+| step | float32 tower | int8 tower |
+|---|---|---|
+| attention scores, q·kᵀ per head | 21.6% | 27.1% |
+| scores·v per head | 19.1% | 24.1% |
+| fc1 | 17.3% | 11.9% |
+| fc2 | 17.2% | 15.8% |
+| q, k, v projections | 13.8% | 10.1% |
+| o projection and residual | 4.7% | 3.3% |
+| softmax, gathers, scatter, layernorms, GELU, the per-layer sync | 6.2% | 7.7% |
+
+- **It is the matmuls, 94% of the float32 tower's time, and not the structure.** The gathers, the per-head
+  dispatches and the one sync a layer are 6% together; batching the heads would buy little.
+- **Throughput:** each matmul step runs at 52-69 billion multiply-adds a second. The CPU tower's 25 s for the same
+  2.2 trillion is about 88; Metal's 9.5 s about 230.
+
+**The lever:** a float32 form of the register-blocked kernel the int8 prefill has (`gpu/gemm_rb.go`): a 64x64 tile a
+workgroup, each thread owning a strided 4x4 block of outputs with its accumulators in registers, so each element
+staged in workgroup memory feeds four multiply-adds where the 16x16 kernel's feeds one. Same four bindings; the sum
+over K in the same ascending order, so its outputs are expected bit-equal to the naive kernel's.
+
+- **G-S12.3c-1 (day).** G-S12.3b-1's ten shapes and its planted defect, for this kernel: every output within a
+  relative 1e-5 of the naive kernel's.
+- **G-S12.3c-2 (day).** The tower's tiny gates on it (G-S12.3a-1 with its defects, the large-activation case, the
+  int8 tower's two tests).
+- **G-S12.3c-3 (day, a smoke, no bar).** The real towers' time for one image, this kernel against the 16x16 one.
+- **The decision is still G-S12.3a-4's.** If the smoke puts the float32 tower under the CPU's 25 s, G-S12.3a-4 is
+  queued for a night; if not, it is not, and the device towers stay opt-in.
+- **Prediction, written now:** c-1 and c-2 pass (0.8). c-3: the matmul steps 1.5 to 3 times the 16x16 kernel, the
+  float32 tower between 17 s and 30 s; under 25 s at about 0.5.
+- **Tier and cost.** c-1 and c-2 under a minute; c-3 about five minutes.
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
