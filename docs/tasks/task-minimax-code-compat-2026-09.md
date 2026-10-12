@@ -146,6 +146,64 @@ KV formula to price with), `docs/tasks/task-embed-and-harness-ux.md` mode 3.
 M0's explicit `--ctx` run on the Mac, and the dense decode rate at depth 128 is within 3% of today's
 (`TestProdThroughput`-class; a larger KV must not slow short turns).
 
+**M2 started 2026-10-12, on its own (owner's brief of that day: do it now, without waiting for M0).** This
+registration was committed before the code was, and before G-M2-speed ran. It was written after the code and after
+the day's first Mac reads (the 1.5B and the 7B under gate 3), so those two are results and carry no prediction;
+only the night gate's predictions below were made blind. The results follow under "M2 results".
+
+*What the brief changes in the plan above.*
+- The candidate is **16384** (`decoder/fitplan.go:MetalFitDefaultCtx`, CUDA's figure), not growth toward the 32768
+  ceiling item 1 names. An unpinned load asks `Plan("metal")` for it, clamped to the model's window; the answer is
+  never under 4096; a genuine `-ctx` is untouched up to 32768.
+- **The budget** is the registered `metal` memory probe (S4's live ceiling: the smaller of 0.70 of RAM and the live
+  available figure) less `decoder/metal_fitctx.go:MetalFitMarginBytes` (384 MiB, CUDA's margin). The margin is there
+  because the load-time guard reads the live figure again after the context is chosen, and a context taken at the
+  exact edge would be halved by S18's shrink on a drift of a few megabytes.
+- **KV is priced as Metal allocates it** (`decoder/residentneed.go:Model.ResidentKVBytes`): f16, or int8 with
+  `--kv i8`, for every requested slot (Metal's default is 2). The brief says "f32 KV"; Metal has no f32 KV kernels,
+  so its examples' KV sizes are twice what will be printed.
+- **Opt-outs keep 4096:** `--fit=off`; an unreadable memory probe; any load that pages MoE experts
+  (`-moe-cache-experts`, `-moe-cache-slots`, or the deprecated environment knob), for CUDA's reason: the pager lives
+  on the memory a longer context would take. A context the load-time guard pinned lowers the candidate and the
+  floor, never raises them.
+- **The decision rule above cannot be read** (it re-runs M0's task set, and M0 has not run). For this standalone M2
+  the brief's gates replace it; re-running M0's set with no `--ctx` stays owed to M0.
+
+*Gates.*
+1. Unit tests, the CUDA set's Metal twins, on tiny fixtures: an unpinned load grows to 16384 when it fits and takes
+   what fits when it does not; slots trade context, never under 4096; a guard pin only lowers; paged MoE, `--fit=off`
+   and an unknown probe keep 4096; an explicit `-ctx` is untouched; `fit` and the load name the same context for one
+   memory figure; a real tiny build holds the context it resolved and decodes an 11,137-token prompt in it. One
+   mutation shown: with the paged-MoE opt-out removed a test goes red.
+2. A real-checkpoint unit test (tag `realckpt`, heavy): on a 16 GB Mac's static budget the 1.5B and the 7B at int4
+   resolve, with two slots, a context that holds 11,137 tokens.
+3. On the Mac, no `-ctx`, by day where memory allows and otherwise in the night job: the 1.5B and the 7B at int4
+   resolve at least 16384 with 2 slots; serve answers a request of about 11k tokens with no swap growth from before
+   the load to after the answer (`docs/measurements/minimax-code-compat-2026-09/m2/m2_served_check.py`); a paged 26B
+   load still resolves 4096.
+4. **G-M2-speed**, below.
+5. The Metal suite and the Mac device gate (`RELEASING.md` §C1-M) pass on the branch.
+
+*G-M2-speed (night, the Mac).* A larger KV must not slow short turns.
+- **Tier and instrument:** night; `scripts/bench_peer.py` phase A (depth 128, greedy, 64 tokens x 8 completions x 2
+  runs a cell), `BENCH_BACKENDS=metal`, `BENCH_MODELS=1.5B,7B`, two arms `BENCH_ENGINES=goinfer,goinfer_old` (no peer
+  arm: the decision is new / old), `BENCH_ABBA=3` (three counterbalanced quads of restarted cells a model),
+  `BENCH_REQUIRE_BACKEND=1`. `goinfer` is serve built at this branch's head, `goinfer_old` serve built at main
+  `c75a283a`; neither is given `-ctx`, so the old arm holds 4096 positions and the new arm what the fit gives.
+  Script `docs/measurements/minimax-code-compat-2026-09/m2/run-g-m2-night.sh`, grader `grade_m2_speed.py` beside it.
+- **Statistic:** per model, a block's rate is the mean of its runs; the median over the six blocks of new / old.
+- **Rule:** SHIP at a median of 0.97 or more on both models (the brief's "within 3%"; a faster new arm also ships).
+  **PARKED** in [0.95, 0.97) on either: one repeat on another night before any decision. **FAIL** under 0.95 on
+  either: the default does not grow on Metal until the cost is explained.
+- **Void:** the new arm's serve log does not show a context above 4096 in every cell (nothing was compared), the old
+  arm's is not 4096, a cell errored, or a block lacks an arm. A void run is re-queued, not graded.
+- **Stopping rule:** fixed, 24 cells; no early stop. **Cost basis:** about 30 s a 1.5B cell and 90 s a 7B cell with
+  its load, 24 cells, plus the instant idle gate: about 30 min; with the served reads, a 45 min job.
+- **Predictions, written before the run:** the median is within 1% of 1 on both models, 0.75; a slowdown between 1%
+  and 3% on either, 0.15; over 3%, 0.10. At depth 128 a step reads the first 129 positions of each KV buffer, so
+  the buffer's size should only matter through allocation. The 7B resolves 16384 with 2 slots at night, 0.75 (it
+  needs about 6.8 GB of live budget: 4.5 GB of weights, 1.9 GB of KV and the margin).
+
 ### M3 · A thinking switch
 
 **Goal.** A client can turn a family's thinking off, and a server operator can set the default.
