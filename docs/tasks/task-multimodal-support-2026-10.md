@@ -4747,6 +4747,55 @@ against the row-by-row walk on the same resident
   under (0.8); the ratio is higher at 512 tokens than at 2,048 on both boxes (0.7), since a request's fixed cost is
   the same in both arms; the replies are equal in all rounds (0.9).
 
+#### S12.4b-3, the Gemma shape through the batched pass: desk map and gates, registered 2026-10-12 before any code
+
+**The desk map (decode's layer, `gpu/decoderunner.go:Context.newDecodeRunner`, against the pass as it stands):**
+- **What the pass declines today and a Gemma layer needs:** an attention geometry per layer (head size and KV
+  heads), sandwich norms (a float RMSNorm of the sublayer's output before its residual add), sliding-window
+  layers, K=V layers and `v_norm`, the per-layer output scalar, a feed-forward width per layer, shared-K/V layers
+  (a query only, read against the source layer's cache), and the E-model's per-layer inputs (the row is
+  `[hidden ‖ layers·pleDim]`).
+- **The rule that kept step 2 exact is the plan here:** every op is either the rows form of decode's own kernel
+  or decode's kernel run once a row, and only the projections go through the multi-row kernels.
+  - Rows forms: the fused norm and gated-product quantizers (they exist), the float RMSNorm, the value norm, the
+    Q/K norm, the rotary and the K/V store, the scalar multiply, the per-column add.
+  - Once a row, with the row bound at its offset: attention on a sliding-window layer or a wide head, where
+    decode's kernel takes the window start and the batched one does not. A row must then be a multiple of 64
+    floats, or the pass declines.
+- **What it would reach:** Gemma 3 and dense Gemma 4 text prompts (the row-by-row walk today), and an E-model's
+  text and image turns (`GenerateGemma4VL`'s E-model branch already builds resident rows and calls `PrefillLast`,
+  which walks them). Gemma 3's image turn is not in this step: its image block attends both ways, which is
+  S12.4b-4's.
+- **Still declined after this step:** the 26B's parallel block, int8 K/V, a rope scale other than 1, and every
+  class step 2 already declines.
+
+**Gates (from G-S9a and G-S9b, Metal's):**
+- **G-S12.4b-3a, identity on the tiny fixtures** (quick). The last row's logits and the next 8 decode steps, bit
+  for bit against the row-by-row walk, int4:
+  - `gemma3-vl-tiny` (sandwich norms, Q/K norm, sliding window) and `mistral-tiny-window` (a window on a plain
+    model), at row counts inside and past the window and on both sides of a 16-row block;
+  - `gemma4-dense-twogeom-tiny` (two geometries, K=V, `v_norm`, the layer scalar);
+  - `gemma4-emodel-tiny`: text rows, and a prompt carrying a run of image rows (random features, PAD's
+    token-identity term), built by the decoder's own row builder.
+  - f32 and f16 K/V where the walk itself runs resident.
+- **G-S12.4b-3b, planted defects through the pass, each red against 3a:** (1) each row's per-layer inputs bound to
+  the next row's; (2) the per-layer-input branch dropped; (3) a sliding-window layer attending its whole prefix;
+  (4) a post-attention norm skipped; (5) the layer scalar skipped; (6) one feed-forward width for every layer;
+  (7) a shared-K/V layer reading its own cache; (8) the value norm skipped on a K=V layer.
+- **G-S12.4b-3c, real checkpoints** (day, minutes; heavy). The same reading, bit for bit, at 64 and 300 rows on
+  Gemma 4 E2B and Gemma 3 4B at int4 on the Mac, and on what nobara's card holds, before either backend is
+  admitted.
+- **G-S12.4b-3d, speed, in process** (day; five interleaved rounds after a discarded pass of each): the pass
+  against the walk on E2B and Gemma 3 4B at 300 rows, and against the CPU prefill and upload where that route
+  exists for the prompt. **Ships on at a median of 0.98 or under against the walk; parked to 1.00; off above.**
+  The served claim joins G-S12.4b-2d's night gate as further cells (an E2B image turn, a Gemma 3 text prompt),
+  registered when the in-process direction is known.
+- **Predictions, written now:** 3a passes on `mistral-tiny-window` and `gemma3-vl-tiny` first run (0.5) and on the
+  E-model first run (0.3; the likeliest first failure is a kernel pair that is not bit-equal across its two forms,
+  as the quantizers were). On the Mac the pass is at 0.5 or under of the walk on E2B at 300 rows (0.6): the
+  per-row attention dispatches and the wide heads cost more than a plain model's. All eight defects are red (0.7;
+  the layer scalar is the likeliest to hide if the fixture's scalar is near 1).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
