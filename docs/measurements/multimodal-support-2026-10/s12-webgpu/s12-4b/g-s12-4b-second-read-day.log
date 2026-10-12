@@ -1,0 +1,46 @@
+Mon Oct 12 08:57:57 PDT 2026
+=== RUN   TestPrefillInt4_real
+decoder: .giw context capped at 34647 (model allows 262144) so that KV+scratch fits: needs ~7.65 GB of 8.65 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 64 rows, rows: pass
+decoder: .giw context capped at 35866 (model allows 262144) so that KV+scratch fits: needs ~7.91 GB of 8.91 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 64 rows, tiled: pass
+decoder: .giw context capped at 35497 (model allows 262144) so that KV+scratch fits: needs ~7.83 GB of 8.83 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 300 rows, rows: pass
+decoder: .giw context capped at 35945 (model allows 262144) so that KV+scratch fits: needs ~7.93 GB of 8.93 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 300 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (31.80s)
+=== RUN   TestPrefillInt4_speed
+decoder: .giw context capped at 36971 (model allows 262144) so that KV+scratch fits: needs ~8.15 GB of 9.15 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[   0s] 256 rows, discarded pass, rows: 3.69 s
+[   4s] 256 rows, discarded pass, tiled: 1.98 s
+[   6s] 256 rows, discarded pass, walk: 5.03 s
+[  21s] 256 rows, round 1 of 5: rows 3.61 s, tiled 1.98 s, walk 5.01 s
+[  32s] 256 rows, round 2 of 5: rows 3.70 s, tiled 1.96 s, walk 4.91 s
+[  42s] 256 rows, round 3 of 5: rows 3.58 s, tiled 1.96 s, walk 5.04 s
+[  53s] 256 rows, round 4 of 5: rows 3.56 s, tiled 1.96 s, walk 4.93 s
+[  64s] 256 rows, round 5 of 5: rows 3.59 s, tiled 2.05 s, walk 4.96 s
+RESULT 256 rows, tiled over rows: ratios [0.549 0.530 0.549 0.551 0.571], median 0.549
+RESULT 256 rows, rows over walk: ratios [0.721 0.754 0.710 0.722 0.724], median 0.722
+RESULT 256 rows, tiled over walk: ratios [0.395 0.399 0.389 0.398 0.414], median 0.398
+[  64s] 1024 rows, discarded pass, rows: 15.30 s
+[  79s] 1024 rows, discarded pass, tiled: 8.17 s
+[  87s] 1024 rows, discarded pass, walk: 25.06 s
+[ 161s] 1024 rows, round 1 of 5: rows 15.41 s, tiled 8.26 s, walk 25.47 s
+[ 210s] 1024 rows, round 2 of 5: rows 15.51 s, tiled 8.27 s, walk 25.11 s
+[ 258s] 1024 rows, round 3 of 5: rows 15.19 s, tiled 8.23 s, walk 24.93 s
+[ 307s] 1024 rows, round 4 of 5: rows 15.36 s, tiled 8.06 s, walk 24.98 s
+[ 355s] 1024 rows, round 5 of 5: rows 15.45 s, tiled 7.96 s, walk 24.93 s
+RESULT 1024 rows, tiled over rows: ratios [0.536 0.533 0.542 0.525 0.515], median 0.533
+RESULT 1024 rows, rows over walk: ratios [0.605 0.618 0.609 0.615 0.620], median 0.615
+RESULT 1024 rows, tiled over walk: ratios [0.324 0.330 0.330 0.323 0.319], median 0.324
+--- PASS: TestPrefillInt4_speed (355.81s)
+=== RUN   TestPrefillInt8_real
+decoder: context capped at 17420 (model allows 262144) so that KV fits: weights 2.0 GB + KV 3.7 GB of budget 5.7 GB — pass -ctx to choose, or -stream-weights to lift
+int8int8 qwen3-vl-2b-instruct, 64 rows: pass
+decoder: context capped at 13351 (model allows 262144) so that KV fits: weights 2.0 GB + KV 2.9 GB of budget 4.9 GB — pass -ctx to choose, or -stream-weights to lift
+int8int8 qwen3-vl-2b-instruct, 300 rows: pass
+--- PASS: TestPrefillInt8_real (29.04s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	417.342s
+exit 0
+Mon Oct 12 09:04:55 PDT 2026

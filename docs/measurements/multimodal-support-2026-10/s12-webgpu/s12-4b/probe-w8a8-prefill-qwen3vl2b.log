@@ -1,0 +1,14 @@
+=== RUN   TestResidentPrefillLast_TTFT
+decoder: context capped at 9508 (model allows 262144) so that KV fits: weights 2.0 GB + KV 2.0 GB of budget 4.0 GB — pass -ctx to choose, or -stream-weights to lift
+
+PREFILL TTFT (webgpu, int8int8) — /Users/francistownsend-merino/models/qwen3-vl-2b-instruct
+P      sequential_ms    batched_ms       speedup   
+64     2791.54          582.68           4.79      x
+    prefilllast_ttft_test.go:114: P=64 sequential=2791.54ms batched=582.68ms speedup=4.79x
+256    6540.03          1770.12          3.69      x
+    prefilllast_ttft_test.go:114: P=256 sequential=6540.03ms batched=1770.12ms speedup=3.69x
+1024   32574.87         7559.10          4.31      x
+    prefilllast_ttft_test.go:114: P=1024 sequential=32574.87ms batched=7559.10ms speedup=4.31x
+--- PASS: TestResidentPrefillLast_TTFT (61.93s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	62.704s

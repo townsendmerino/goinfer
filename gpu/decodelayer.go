@@ -510,19 +510,6 @@ type ModelW struct {
 	KVF16     bool
 }
 
-// hasBias reports whether any layer carries q/k/v bias (Qwen2) — callers that
-// need to gate bias support more conservatively than runModelToModelW's
-// architecture-only scope guard (e.g. by backend, pending further verification)
-// check this rather than re-deriving it.
-func (m ModelW) hasBias() bool {
-	for i := range m.Layers {
-		if m.Layers[i].Attn.QBias != nil {
-			return true
-		}
-	}
-	return false
-}
-
 // hasQKNorm reports whether any layer carries QK-norm weights (Qwen3/GLM).
 func (m ModelW) hasQKNorm() bool {
 	for i := range m.Layers {

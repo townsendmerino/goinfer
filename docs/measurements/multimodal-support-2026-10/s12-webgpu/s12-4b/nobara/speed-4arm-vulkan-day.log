@@ -1,0 +1,68 @@
+Mon Oct 12 09:20:13 PDT 2026
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+aa13cba3 gpu: the in-process prefill reading gains a fourth arm, the CPU's batched prefill uploaded to the resident (what an image turn does today)
+MODEL qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+=== RUN   TestPrefillInt4_speed
+[   0s] 256 rows, discarded pass, rows: 0.92 s
+[   1s] 256 rows, discarded pass, tiled: 0.32 s
+[   1s] 256 rows, discarded pass, walk: 1.87 s
+[   3s] 256 rows, discarded pass, cpu+upload: 3.46 s
+[  13s] 256 rows, round 1 of 5: rows 1.07 s, tiled 0.31 s, walk 1.87 s, cpu+upload 3.04 s
+[  19s] 256 rows, round 2 of 5: rows 0.81 s, tiled 0.31 s, walk 2.11 s, cpu+upload 3.03 s
+[  25s] 256 rows, round 3 of 5: rows 0.81 s, tiled 0.31 s, walk 1.87 s, cpu+upload 3.05 s
+[  31s] 256 rows, round 4 of 5: rows 0.82 s, tiled 0.31 s, walk 2.09 s, cpu+upload 3.02 s
+[  37s] 256 rows, round 5 of 5: rows 0.82 s, tiled 0.31 s, walk 1.87 s, cpu+upload 3.03 s
+RESULT 256 rows, tiled over rows: ratios [0.294 0.385 0.385 0.382 0.383], median 0.383
+RESULT 256 rows, rows over walk: ratios [0.569 0.385 0.434 0.391 0.437], median 0.434
+RESULT 256 rows, tiled over walk: ratios [0.168 0.149 0.167 0.149 0.167], median 0.167
+RESULT 256 rows, tiled over cpu+upload: ratios [0.103 0.103 0.102 0.103 0.103], median 0.103
+[  37s] 1024 rows, discarded pass, rows: 3.59 s
+[  41s] 1024 rows, discarded pass, tiled: 1.41 s
+[  42s] 1024 rows, discarded pass, walk: 10.85 s
+[  53s] 1024 rows, discarded pass, cpu+upload: 12.39 s
+[  94s] 1024 rows, round 1 of 5: rows 3.69 s, tiled 1.41 s, walk 10.85 s, cpu+upload 12.41 s
+[ 122s] 1024 rows, round 2 of 5: rows 3.43 s, tiled 1.41 s, walk 11.03 s, cpu+upload 12.44 s
+[ 151s] 1024 rows, round 3 of 5: rows 3.43 s, tiled 1.41 s, walk 10.85 s, cpu+upload 12.47 s
+[ 179s] 1024 rows, round 4 of 5: rows 3.43 s, tiled 1.41 s, walk 11.20 s, cpu+upload 12.43 s
+[ 207s] 1024 rows, round 5 of 5: rows 3.43 s, tiled 1.41 s, walk 10.85 s, cpu+upload 12.43 s
+RESULT 1024 rows, tiled over rows: ratios [0.383 0.410 0.411 0.409 0.411], median 0.410
+RESULT 1024 rows, rows over walk: ratios [0.340 0.311 0.316 0.306 0.316], median 0.316
+RESULT 1024 rows, tiled over walk: ratios [0.130 0.128 0.130 0.125 0.130], median 0.130
+RESULT 1024 rows, tiled over cpu+upload: ratios [0.114 0.113 0.113 0.113 0.113], median 0.113
+--- PASS: TestPrefillInt4_speed (210.44s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	210.666s
+exit 0 (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf)
+MODEL qwen25vl-3b-instruct
+=== RUN   TestPrefillInt4_speed
+[   0s] 256 rows, discarded pass, rows: 1.51 s
+[   2s] 256 rows, discarded pass, tiled: 0.56 s
+[   2s] 256 rows, discarded pass, walk: 2.98 s
+[   5s] 256 rows, discarded pass, cpu+upload: 6.34 s
+[  22s] 256 rows, round 1 of 5: rows 1.51 s, tiled 0.56 s, walk 2.97 s, cpu+upload 5.81 s
+[  33s] 256 rows, round 2 of 5: rows 1.34 s, tiled 0.56 s, walk 3.24 s, cpu+upload 5.74 s
+[  44s] 256 rows, round 3 of 5: rows 1.35 s, tiled 0.56 s, walk 2.99 s, cpu+upload 5.76 s
+[  55s] 256 rows, round 4 of 5: rows 1.34 s, tiled 0.55 s, walk 3.16 s, cpu+upload 5.77 s
+[  65s] 256 rows, round 5 of 5: rows 1.35 s, tiled 0.56 s, walk 2.99 s, cpu+upload 5.79 s
+RESULT 256 rows, tiled over rows: ratios [0.372 0.416 0.413 0.413 0.414], median 0.413
+RESULT 256 rows, rows over walk: ratios [0.507 0.414 0.453 0.425 0.451], median 0.451
+RESULT 256 rows, tiled over walk: ratios [0.189 0.173 0.187 0.176 0.187], median 0.187
+RESULT 256 rows, tiled over cpu+upload: ratios [0.097 0.097 0.097 0.096 0.096], median 0.097
+[  65s] 1024 rows, discarded pass, rows: 5.95 s
+[  71s] 1024 rows, discarded pass, tiled: 2.44 s
+[  74s] 1024 rows, discarded pass, walk: 16.28 s
+[  90s] 1024 rows, discarded pass, cpu+upload: 23.43 s
+[ 162s] 1024 rows, round 1 of 5: rows 5.87 s, tiled 2.45 s, walk 16.28 s, cpu+upload 23.57 s
+[ 210s] 1024 rows, round 2 of 5: rows 5.70 s, tiled 2.45 s, walk 16.43 s, cpu+upload 23.56 s
+[ 258s] 1024 rows, round 3 of 5: rows 5.70 s, tiled 2.44 s, walk 16.31 s, cpu+upload 23.60 s
+[ 306s] 1024 rows, round 4 of 5: rows 5.71 s, tiled 2.44 s, walk 16.48 s, cpu+upload 23.47 s
+[ 354s] 1024 rows, round 5 of 5: rows 5.71 s, tiled 2.44 s, walk 16.32 s, cpu+upload 23.54 s
+RESULT 1024 rows, tiled over rows: ratios [0.418 0.430 0.428 0.428 0.428], median 0.428
+RESULT 1024 rows, rows over walk: ratios [0.361 0.347 0.349 0.346 0.350], median 0.349
+RESULT 1024 rows, tiled over walk: ratios [0.151 0.149 0.150 0.148 0.150], median 0.150
+RESULT 1024 rows, tiled over cpu+upload: ratios [0.104 0.104 0.103 0.104 0.104], median 0.104
+--- PASS: TestPrefillInt4_speed (362.96s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	363.100s
+exit 0 (qwen25vl-3b-instruct)
+Mon Oct 12 09:29:51 PDT 2026

@@ -134,15 +134,9 @@ type Context struct {
 	rmsnormShader   *wgpu.ShaderModule
 	rmsnormPipeline *wgpu.ComputePipeline
 	rmsnormLayout   *wgpu.BindGroupLayout
-	// M-row batched RMSNorm (PrefillLastW8A8 only, lazy via ensurePrefillBatched): one dispatch over all M rows, grid (1, M),
-	// instead of M (1,1) dispatches of rmsnormPipeline. Same per-row math and reduction order, so bit-identical
-	// (TestRMSNormBatched_parity).
-	rmsnormBatchedShader   *wgpu.ShaderModule
-	rmsnormBatchedPipeline *wgpu.ComputePipeline
-	rmsnormBatchedLayout   *wgpu.BindGroupLayout
-	swigluShader           *wgpu.ShaderModule
-	swigluPipeline         *wgpu.ComputePipeline
-	swigluLayout           *wgpu.BindGroupLayout
+	swigluShader    *wgpu.ShaderModule
+	swigluPipeline  *wgpu.ComputePipeline
+	swigluLayout    *wgpu.BindGroupLayout
 	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
 	// twin, plain (un-quantized-output) variant.
 	gegluShader      *wgpu.ShaderModule
@@ -366,6 +360,17 @@ type Context struct {
 	gemvW4Shader   *wgpu.ShaderModule
 	gemvW4Pipeline *wgpu.ComputePipeline
 	gemvW4Layout   *wgpu.BindGroupLayout
+	// w4Multi holds the multi-row int4 projection kernels, indexed by w4MultiKind (ensureW4Multi).
+	w4Multi [2]tiledPipes
+	// fusedRows holds the batched pass's rows forms of decode's fused quantizing kernels, indexed by fusedRowsKind
+	// (ensureFusedRows).
+	fusedRows [fusedRowsKinds]tiledPipes
+	// w4MultiPin, when not 0, makes the batched pass run every int4 projection with kernel w4MultiPin-1, whatever the
+	// row count. Tests only.
+	w4MultiPin int
+	// The batched pass's per-column bias add for an int4 projection (prefillLastRows).
+	biasRowsPipeline *wgpu.ComputePipeline
+	biasRowsLayout   *wgpu.BindGroupLayout
 
 	// MLA absorb-path attention (Lever C4, mla.go): rank-space single-query attention
 	// over the compressed latent cache (DeepSeek/Kimi). wsum[h] = Σ_j softmax_j·cn_j.

@@ -17,6 +17,7 @@ any surface may still change.
 
 ### Highlights — a draft for the next tag (the tagger rewrites it; kept here so it cannot go stale on a branch)
 
+- **Under `--backend webgpu`, a long prompt reaches its first token sooner.** A 4-bit model now prefills its prompt in one batched pass, with the same logits as before: about 3 times faster on an M1 Pro and 7 on an RTX 2070 SUPER for a 1,024-token prompt, read in process.
 - **A single tool no longer traps a client in a loop.** With exactly one tool in `tools` and `tool_choice` auto or absent, the reply was constrained to that tool's call on every turn, including the turn after its result, so a model could never answer. Fixed on `/v1/chat/completions` and `/v1/responses`; `required`, a named function and `none` are unchanged.
 - **Speech to text.** `POST /v1/audio/transcriptions` from a pure-Go Whisper, and `input_audio` for Qwen3-ASR and Voxtral Mini; the encoder runs on the GPU under `--backend cuda` (13.6 times on `whisper-small`, 11.9 on Voxtral's tower).
 - **Image turns on Qwen3.5 are much faster**: on a 0.8B, time to first token for a 1024x640 image went from 37.5 s to 3.6 s on CUDA (0.3 s for a resent image) and from 38 s to 7.7 s on the CPU backend. Exploratory, one run per cell (`docs/measurements/p26*-2026-10-06/`).
@@ -28,6 +29,24 @@ any surface may still change.
 - **Sidecar names carry the format version**, so a release binary and a dev build stop rebuilding each other's.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
+
+### Changed — under `--backend webgpu`, a text prompt on a 4-bit model prefills in one batched pass
+
+At the default quant (`int4`) a dense model under WebGPU took its prompt one token at a time on the GPU: the batched prefill
+existed only for 8-bit weights. It now takes 4-bit weights too, so a prompt of 8 tokens or more goes through in one pass (in
+blocks of 512 tokens), and it gives the same logits as the token-by-token loop, bit for bit, so replies do not change. Qwen2.5's
+q/k/v bias is covered at `int4`. Read in process, not through the server yet
+([the record](docs/tasks/task-multimodal-support-2026-10.md), "S12.4b-1 and S12.4b-2"): on an M1 Pro a 1,024-token prompt on a
+2B model prefilled in 8.2 s against 24.8 s, and on an RTX 2070 SUPER through Vulkan a 1.5B took 1.4 s against 10.9 s. It applies
+on Apple GPUs and on Vulkan; on any other WebGPU backend the token-by-token loop still runs. Models the pass does not cover are
+unchanged: Gemma 3 and Gemma 4, the mixture-of-experts families and the recurrent ones. `GOINFER_BATCHED_PREFILL=0` turns it off.
+
+### Fixed — under `--backend webgpu`, the 8-bit batched prefill drifted from the token-by-token result on longer prompts
+
+With `--quant int8int8` the batched prefill was meant to give the token-by-token loop's logits exactly, and on a real model it
+stopped doing so somewhere past 20 tokens (cosine 0.9993 at 64 tokens on a 2B model). It stored each activation as a float and
+quantized it in a second step, where decode quantizes inside the step that computes it, and a rare value rounded the other way.
+The pass now quantizes the way decode does and matches it bit for bit at 64 and 300 tokens.
 
 ### Added — `--quant bf16` and `--quant f16`: a 16-bit checkpoint held at half f32's memory, bit-identical to f32 (CPU)
 

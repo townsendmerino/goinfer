@@ -1,0 +1,45 @@
+Mon Oct 12 08:39:24 PDT 2026
+=== RUN   TestPrefillInt4_real
+decoder: .giw context capped at 26373 (model allows 262144) so that KV+scratch fits: needs ~5.88 GB of 6.88 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 64 rows, rows: reading 0: logit 0 is 10.658844, the walk's is 10.658801
+    prefill_int4_test.go:202: 64 rows, rows: reading 0: logit 0 is 10.658844, the walk's is 10.658801
+decoder: .giw context capped at 31356 (model allows 262144) so that KV+scratch fits: needs ~6.95 GB of 7.95 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 64 rows, tiled: reading 0: cosine 0.9989759 under 0.99999
+    prefill_int4_test.go:202: 64 rows, tiled: reading 0: cosine 0.9989759 under 0.99999
+decoder: .giw context capped at 32270 (model allows 262144) so that KV+scratch fits: needs ~7.14 GB of 8.14 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 300 rows, rows: reading 0: logit 0 is 8.966258, the walk's is 8.942319
+    prefill_int4_test.go:202: 300 rows, rows: reading 0: logit 0 is 8.966258, the walk's is 8.942319
+decoder: .giw context capped at 32231 (model allows 262144) so that KV+scratch fits: needs ~7.14 GB of 8.14 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+G-S12.4b-2b qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw, 300 rows, tiled: reading 0: cosine 0.9951963 under 0.99999
+    prefill_int4_test.go:202: 300 rows, tiled: reading 0: cosine 0.9951963 under 0.99999
+--- FAIL: TestPrefillInt4_real (33.33s)
+=== RUN   TestPrefillInt4_speed
+decoder: .giw context capped at 32404 (model allows 262144) so that KV+scratch fits: needs ~7.17 GB of 8.17 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[   0s] 256 rows, discarded pass, rows: 3.64 s
+[   4s] 256 rows, discarded pass, tiled: 1.87 s
+[   6s] 256 rows, discarded pass, walk: 4.94 s
+[  21s] 256 rows, round 1 of 5: rows 3.55 s, tiled 1.86 s, walk 4.98 s
+[  31s] 256 rows, round 2 of 5: rows 3.56 s, tiled 1.86 s, walk 4.91 s
+[  42s] 256 rows, round 3 of 5: rows 3.69 s, tiled 1.87 s, walk 4.98 s
+[  52s] 256 rows, round 4 of 5: rows 3.58 s, tiled 1.86 s, walk 4.90 s
+[  63s] 256 rows, round 5 of 5: rows 3.73 s, tiled 1.87 s, walk 4.98 s
+RESULT 256 rows, tiled over rows: ratios [0.524 0.523 0.507 0.520 0.500], median 0.520
+RESULT 256 rows, rows over walk: ratios [0.714 0.726 0.742 0.731 0.749], median 0.731
+RESULT 256 rows, tiled over walk: ratios [0.374 0.380 0.376 0.380 0.375], median 0.376
+[  63s] 1024 rows, discarded pass, rows: 15.09 s
+[  78s] 1024 rows, discarded pass, tiled: 7.65 s
+[  85s] 1024 rows, discarded pass, walk: 24.82 s
+[ 157s] 1024 rows, round 1 of 5: rows 15.04 s, tiled 7.65 s, walk 24.60 s
+[ 205s] 1024 rows, round 2 of 5: rows 15.01 s, tiled 7.67 s, walk 24.61 s
+[ 252s] 1024 rows, round 3 of 5: rows 15.01 s, tiled 7.66 s, walk 24.80 s
+[ 300s] 1024 rows, round 4 of 5: rows 15.12 s, tiled 7.66 s, walk 24.62 s
+[ 348s] 1024 rows, round 5 of 5: rows 15.18 s, tiled 7.78 s, walk 25.02 s
+RESULT 1024 rows, tiled over rows: ratios [0.508 0.511 0.510 0.507 0.513], median 0.510
+RESULT 1024 rows, rows over walk: ratios [0.611 0.610 0.605 0.614 0.607], median 0.610
+RESULT 1024 rows, tiled over walk: ratios [0.311 0.311 0.309 0.311 0.311], median 0.311
+--- PASS: TestPrefillInt4_speed (348.29s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	382.202s
+FAIL
+exit 1
+Mon Oct 12 08:45:47 PDT 2026

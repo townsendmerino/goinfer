@@ -10,42 +10,6 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// rmsnormBatchedShaderWGSL is rmsnormShaderWGSL (layer.go) widened to M rows in one
-// dispatch: grid (1, M) instead of (1, 1), each workgroup owns row wid.y and reduces
-// only that row (workgroupBarrier never crosses rows), so the per-row math and
-// reduction order are identical to calling the M=1 kernel M times — bit-identical
-// by construction, gated by TestRMSNormBatched_parity.
-const rmsnormBatchedShaderWGSL = `
-struct P { h: u32, eps: f32, addone: u32, _p: u32 };
-@group(0) @binding(0) var<storage, read>       src:    array<f32>;  // [M, h]
-@group(0) @binding(1) var<storage, read>       weight: array<f32>;  // [h]
-@group(0) @binding(2) var<storage, read_write> dst:    array<f32>;  // [M, h]
-@group(0) @binding(3) var<uniform>             p:      P;
-var<workgroup> sh: array<f32, 64>;
-@compute @workgroup_size(64)
-fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
-    let t = lid.x;
-    let base = wid.y * p.h;
-    var s: f32 = 0.0;
-    for (var i: u32 = t; i < p.h; i = i + 64u) { let v = src[base + i]; s = s + v*v; }
-    sh[t] = s;
-    workgroupBarrier();
-    var stride: u32 = 32u;
-    loop {
-        if (stride == 0u) { break; }
-        if (t < stride) { sh[t] = sh[t] + sh[t + stride]; }
-        workgroupBarrier();
-        stride = stride / 2u;
-    }
-    let inv = 1.0 / sqrt(sh[0] / f32(p.h) + p.eps);
-    for (var i: u32 = t; i < p.h; i = i + 64u) {
-        var w = weight[i];
-        if (p.addone == 1u) { w = w + 1.0; }
-        dst[base + i] = src[base + i] * inv * w;
-    }
-}
-`
-
 // ropeBatchedShaderWGSL is ropeShaderWGSL (attention.go) widened to M rows in one dispatch, grid (ceil(heads*half/64), M).
 // Positions are contiguous within one PrefillLastW8A8 call, so row r's position is p.start+row. Same per-(row, head, d)
 // math as the M=1 kernel, so bit-identical (TestRoPEBatched_parity).
@@ -306,17 +270,12 @@ func (c *Context) attnBatchedKernel(hd, kvDim int, kvF16 ...bool) (*wgpu.Compute
 	return c.attnBatchedPipeline, c.attnBatchedLayout
 }
 
-// ensurePrefillBatched lazily compiles the two batched-row kernels PrefillLastW8A8 needs beyond
+// ensurePrefillBatched lazily compiles the batched-row rotary and attention kernels the batched pass needs beyond
 // its existing ensure-list. They are kept apart from ensureLayer/ensureAttn's M=1 pipelines so
 // the decode path never pays for, or risks, them. History: docs/code-notes/gpu.md#ensurePrefillBatched.
 func (c *Context) ensurePrefillBatched() error {
 	mk := c.mkPipeline
 	var err error
-	if c.rmsnormBatchedPipeline == nil {
-		if c.rmsnormBatchedShader, c.rmsnormBatchedPipeline, c.rmsnormBatchedLayout, err = mk("rmsnorm-batched", rmsnormBatchedShaderWGSL); err != nil {
-			return err
-		}
-	}
 	if c.ropeBatchedPipeline == nil {
 		if c.ropeBatchedShader, c.ropeBatchedPipeline, c.ropeBatchedLayout, err = mk("rope-batched", ropeBatchedShaderWGSL); err != nil {
 			return err
@@ -340,27 +299,127 @@ func (c *Context) ensurePrefillBatched() error {
 	return nil
 }
 
-// runModelToModelW narrows a resident runModel to the plain dense-W8A8 ModelW
-// shape PrefillLastW8A8 accepts, returning ok=false if the model uses anything
-// outside it (MoE, MLA, SSM, DeltaNet, sliding window, int8 KV, partial RoPE).
+// prefillProj is one projection of the batched pass: an int8 matrix or an int4 one, never both.
+type prefillProj struct {
+	w8 *ResidentW8A8
+	w4 *ResidentW4A8
+}
+
+func asPrefillProj(w decodeWeight) (prefillProj, bool) {
+	switch v := w.(type) {
+	case *ResidentW8A8:
+		return prefillProj{w8: v}, v != nil
+	case *ResidentW4A8:
+		return prefillProj{w4: v}, v != nil
+	}
+	return prefillProj{}, false
+}
+
+// rows, cols and kp are the projection's output width, its input width, and the input width padded as its kernel reads
+// a quantized activation row.
+func (p prefillProj) rows() int {
+	if p.w4 != nil {
+		return p.w4.rows
+	}
+	return p.w8.rows
+}
+
+func (p prefillProj) cols() int {
+	if p.w4 != nil {
+		return p.w4.cols
+	}
+	return p.w8.cols
+}
+
+func (p prefillProj) kp() int {
+	if p.w4 != nil {
+		return p.w4.kp
+	}
+	return p.w8.kp
+}
+
+// prefillLayerProj is one layer's seven projections.
+type prefillLayerProj struct {
+	q, k, v, o, gate, up, down prefillProj
+}
+
+// prefillProjs is a model's projections for the batched pass, beside the ModelW that carries everything else.
+type prefillProjs struct {
+	layers []prefillLayerProj
+	lmHead prefillProj
+}
+
+// int4 reports whether any projection is int4.
+func (pp prefillProjs) int4() bool {
+	if pp.lmHead.w4 != nil {
+		return true
+	}
+	for i := range pp.layers {
+		l := &pp.layers[i]
+		for _, p := range []prefillProj{l.q, l.k, l.v, l.o, l.gate, l.up, l.down} {
+			if p.w4 != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// int8Bias reports whether a q, k or v projection that carries a bias in m is int8.
+func (pp prefillProjs) int8Bias(m ModelW) bool {
+	for i := range pp.layers {
+		l := &pp.layers[i]
+		if m.Layers[i].Attn.QBias != nil && (l.q.w8 != nil || l.k.w8 != nil || l.v.w8 != nil) {
+			return true
+		}
+	}
+	return false
+}
+
+// modelWProjs is m's int8 projections as a prefillProjs.
+func modelWProjs(m ModelW) prefillProjs {
+	pp := prefillProjs{layers: make([]prefillLayerProj, len(m.Layers)), lmHead: prefillProj{w8: m.LMHead}}
+	for i := range m.Layers {
+		l := &m.Layers[i]
+		pp.layers[i] = prefillLayerProj{
+			q: prefillProj{w8: l.Attn.QProj}, k: prefillProj{w8: l.Attn.KProj}, v: prefillProj{w8: l.Attn.VProj}, o: prefillProj{w8: l.Attn.OProj},
+			gate: prefillProj{w8: l.Gate}, up: prefillProj{w8: l.Up}, down: prefillProj{w8: l.Down},
+		}
+	}
+	return pp
+}
+
+// runModelToModelW is runModelToPrefill for a model whose projections are all int8: the ModelW PrefillLastW8A8 takes.
+func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
+	mw, pp, ok := runModelToPrefill(rm, hd)
+	if !ok || pp.int4() {
+		return ModelW{}, false
+	}
+	return mw, true
+}
+
+// runModelToPrefill narrows a resident runModel to the plain dense shape the batched pass accepts, returning ok=false
+// if the model uses anything outside it (MoE, MLA, SSM, DeltaNet, sliding window, int8 KV, partial RoPE). Each
+// projection may be int8 or int4; the ModelW's own projection fields are set for the int8 ones only.
 //
-// q/k/v bias is accepted, but callers must also check ModelW.hasBias() against
-// the backend: bias prefill is proven bit-exact on Vulkan only and is declined
-// elsewhere until proven there. See BuildResident's prefillLast gate in
-// residency.go; history in docs/code-notes/gpu.md#runModelToModelW.
+// q/k/v bias is accepted, but callers must also check prefillProjs.int8Bias against the backend: an int8 projection's
+// fused bias epilogue is proven bit-exact on Vulkan only and is declined elsewhere until proven there. See
+// BuildResident's prefillLast gate in residency.go; history in docs/code-notes/gpu.md#runModelToModelW. An int4
+// projection adds its bias in a separate step, as decode does, on every backend.
 //
 // The result is a zero-copy view over rm's buffers; callers must not Close it.
 // hd is the head dimension, used only to tell genuine partial RoPE (declined)
 // from ropeHalf set explicitly to hd/2.
-func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
+func runModelToPrefill(rm *runModel, hd int) (ModelW, prefillProjs, bool) {
+	none := func() (ModelW, prefillProjs, bool) { return ModelW{}, prefillProjs{}, false }
 	if rm.moe != nil || rm.mla != nil || rm.mamba != nil || rm.dnet != nil ||
 		rm.kvI8 || rm.slidingWindow != 0 ||
 		(rm.ropeHalf != 0 && rm.ropeHalf != hd/2) ||
-		hd > attnWG { // ensureAttnWide is never in PrefillLastW8A8's ensure-list (attnKernel
+		hd > attnWG { // ensureAttnWide is never in the pass's ensure-list (attnKernel
 		// would otherwise dispatch a nil c.attnWidePipeline); dnet/mamba above already
 		// exclude the one real hd=256 family (Gated-DeltaNet hybrids), so this only
 		// guards a theoretical wide-head-dim dense model, not a real gap.
-		return ModelW{}, false
+		return none()
 	}
 	view := func(b *wgpu.Buffer) *DeviceBuffer {
 		if b == nil {
@@ -369,6 +428,7 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 		return &DeviceBuffer{buf: b}
 	}
 	layers := make([]LayerW, len(rm.layers))
+	pp := prefillProjs{layers: make([]prefillLayerProj, len(rm.layers))}
 	for i := range rm.layers {
 		l := &rm.layers[i]
 		if (l.qNorm == nil) != (l.kNorm == nil) ||
@@ -378,42 +438,59 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 			l.isMoE || l.shGate != nil ||
 			l.mlaQA != nil || l.mlaQB != nil || l.mlaQ != nil || l.mlaKVA != nil || l.mlaO != nil ||
 			l.isMamba || l.nemoKind != nemoNone || l.isDeltaNet {
-			return ModelW{}, false
+			return none()
 		}
-		q, qOK := l.q.(*ResidentW8A8)
-		k, kOK := l.k.(*ResidentW8A8)
-		v, vOK := l.v.(*ResidentW8A8)
-		o, oOK := l.o.(*ResidentW8A8)
-		gate, gOK := l.gate.(*ResidentW8A8)
-		up, uOK := l.up.(*ResidentW8A8)
-		down, dOK := l.down.(*ResidentW8A8)
+		q, qOK := asPrefillProj(l.q)
+		k, kOK := asPrefillProj(l.k)
+		v, vOK := asPrefillProj(l.v)
+		o, oOK := asPrefillProj(l.o)
+		gate, gOK := asPrefillProj(l.gate)
+		up, uOK := asPrefillProj(l.up)
+		down, dOK := asPrefillProj(l.down)
 		if !qOK || !kOK || !vOK || !oOK || !gOK || !uOK || !dOK {
-			return ModelW{}, false // a W4A8 (or other non-W8A8) projection — no tiled GEMM for it
+			return none() // a projection that is neither int8 nor int4: no multi-row kernel for it
 		}
+		pp.layers[i] = prefillLayerProj{q: q, k: k, v: v, o: o, gate: gate, up: up, down: down}
 		layers[i] = LayerW{
 			Attn: AttnWeights{
-				Norm: view(l.attnNorm), QProj: q, KProj: k, VProj: v, OProj: o,
+				Norm: view(l.attnNorm), QProj: q.w8, KProj: k.w8, VProj: v.w8, OProj: o.w8,
 				InvFreq: view(l.invFreq), KCache: view(l.kCache), VCache: view(l.vCache),
 				QBias: view(l.qBias), KBias: view(l.kBias), VBias: view(l.vBias),
 				QNorm: view(l.qNorm), KNorm: view(l.kNorm),
 				QGate: l.qGate,
 			},
 			MLPNorm: view(l.mlpNorm),
-			Gate:    gate, Up: up, Down: down,
+			Gate:    gate.w8, Up: up.w8, Down: down.w8,
 		}
 	}
-	lmHead, lmOK := rm.lmHead.(*ResidentW8A8)
+	lmHead, lmOK := asPrefillProj(rm.lmHead)
 	if !lmOK {
-		return ModelW{}, false
+		return none()
 	}
+	pp.lmHead = lmHead
 	return ModelW{
 		Layers:    layers,
 		FinalNorm: view(rm.finalNorm),
-		LMHead:    lmHead,
+		LMHead:    lmHead.w8,
 		GatedGELU: rm.gatedGELU,
 		KVF16:     rm.kvF16,
-	}, true
+	}, pp, true
 }
+
+// biasRowsShaderWGSL adds a per-column bias to every row of a packed [M, n] buffer: decode's standalone bias add
+// (residualShaderWGSL against the bias) for all rows in one dispatch, the same single addition per element.
+const biasRowsShaderWGSL = `
+struct P { total: u32, n: u32, stride: u32, _p: u32 };
+@group(0) @binding(0) var<storage, read_write> x:    array<f32>;  // [M, n]
+@group(0) @binding(1) var<storage, read>       bias: array<f32>;  // [n]
+@group(0) @binding(2) var<uniform>             p:    P;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * p.stride;
+    if (gid.x >= p.stride || i >= p.total) { return; }
+    x[i] = x[i] + bias[i % p.n];
+}
+`
 
 // PrefillLastW8A8 is the batched-prefill analogue of DecodeTokenFusedBatched: M prompt-token rows through the dense W8A8
 // layers with each projection as ONE tiled GEMM (the unbounded-M kernel in gemm.go, DP4A when Context.hasDP4A) and the
@@ -421,9 +498,18 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 // flushPasses handling. M is not capped at gemmRowMaxM. Only the last row's logits are computed
 // (decoder.Prefiller.PrefillLast's contract); every row's KV is written.
 //
-// Bit-equivalent to M sequential DecodeRunner.Run calls at positions start..start+M-1 (same int8 inputs, int32
-// accumulation, per-row ops and ordering); gated by TestPrefillLastW8A8_parity and TestTiledDP4A_parity.
+// Bit-equivalent to M sequential DecodeRunner.Run calls at positions start..start+M-1: the same int8 inputs (each
+// activation is quantized by decode's own fused kernel in its rows form, prefill_fused.go), int32 accumulation, per-row
+// ops and ordering; gated by TestPrefillLastW8A8_parity and TestTiledDP4A_parity.
 func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([]float32, error) {
+	return c.prefillLastRows(xs, m, modelWProjs(m), hidden, nH, nKV, hd, inter, positions, start, eps, scale, addOne)
+}
+
+// prefillLastRows is PrefillLastW8A8 with each projection int8 or int4 (pp; m's own projection fields are not read).
+// An int4 projection runs a multi-row int4 kernel (Context.w4MultiFor) and adds its q/k/v bias in a separate step, as
+// decode does. Both kernels reproduce the single-row kernel's sum, so an int4 model's pass is bit-equivalent to the
+// sequential DecodeRunner calls as the int8 pass is; gated by TestPrefillInt4_matchesWalk.
+func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([]float32, error) {
 	M := len(xs)
 	if M == 0 {
 		return nil, fmt.Errorf("gpu: PrefillLastW8A8 M=0")
@@ -431,7 +517,10 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	if len(positions) != M {
 		return nil, fmt.Errorf("gpu: PrefillLastW8A8 %d rows but %d positions", M, len(positions))
 	}
-	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias, c.ensurePrefillBatched, c.ensureQKNorm} {
+	if M > 65535 {
+		return nil, fmt.Errorf("gpu: the batched pass takes at most 65535 rows a call, got %d", M)
+	}
+	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias, c.ensurePrefillBatched, c.ensureQKNorm, c.ensureFuse, c.ensureFusedRows} {
 		if err := f(); err != nil {
 			return nil, err
 		}
@@ -442,6 +531,17 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		}
 		if err := c.ensureDeltaAttnGate(); err != nil {
 			return nil, err
+		}
+	}
+	if pp.int4() {
+		if err := c.ensureW4Multi(); err != nil {
+			return nil, err
+		}
+		if c.biasRowsPipeline == nil {
+			var err error
+			if _, c.biasRowsPipeline, c.biasRowsLayout, err = c.mkPipeline("bias-rows", biasRowsShaderWGSL); err != nil {
+				return nil, err
+			}
 		}
 	}
 	kvDim := nKV * hd
@@ -659,16 +759,17 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		}
 	}
 
-	// rmsB/ropeB/residualB/swigluB/quantPackedM/tiledProjB below all operate on PACKED
-	// [M, width] row-major buffers — ONE dispatch across all M rows, not M separate
-	// dispatches — the dispatch-count fix (ensurePrefillBatched's doc comment has the
-	// measured before/after).
+	// The op builders below all work on PACKED [M, width] row-major buffers: one dispatch across all M rows, not M
+	// separate dispatches (docs/code-notes/gpu.md#ensurePrefillBatched has the measured before and after).
 
-	rmsB := func(inPacked, w *wgpu.Buffer) *wgpu.Buffer {
-		out := storF(M * hidden)
-		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
-		disp(c.rmsnormBatchedPipeline, bind(c.rmsnormBatchedLayout, inPacked, w, out, p), 1, uint32(M))
-		return out
+	// rmsQuantB is decode's fused RMSNorm→int8 for all M rows of a packed [M, hidden] buffer, one workgroup a row,
+	// into the [M, kp/4] packed-int8 / [M] scales layout a projection reads.
+	rmsQuantB := func(inPacked, w *wgpu.Buffer, kp int) (aqC, asC *wgpu.Buffer) {
+		aqC, asC = storF(M*kp/4), storF(M)
+		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), uint32(kp)})
+		f := c.fusedRows[fusedRowsRMS]
+		disp(f.pl, bind(f.layout, inPacked, w, aqC, asC, p), uint32(M), 1)
+		return aqC, asC
 	}
 	// qkNormB normalizes ALL M rows of a packed [M, heads*hd] buffer in place with
 	// weight [hd], before RoPE (Qwen3/GLM). Each workgroup processes one head across
@@ -690,94 +791,102 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	// enough — ropeBatchedShaderWGSL recovers row r's position as start+r.
 	ropeB := func(vecPacked, invFreq *wgpu.Buffer, heads int) {
 		half := hd / 2
-		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), uint32(positions[0]), f32bits(1), 0, 0, 0})
+		rpos := positions[0]
+		if prefillDefectForTest == 1 {
+			rpos++
+		}
+		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), uint32(rpos), f32bits(1), 0, 0, 0})
 		disp(c.ropeBatchedPipeline, bind(c.ropeBatchedLayout, vecPacked, invFreq, p), uint32(heads*half+63)/64, uint32(M))
 	}
-	// residualB / swigluB dispatch their elementwise op as ONE call over the full
-	// M*width flattened range instead of M separate width-sized dispatches — both
-	// kernels already index by a flat global_invocation_id with no cross-row state
-	// (residualShaderWGSL/swigluShaderWGSL, layer.go), so [M, width] IS [M*width]
-	// to them; only the dispatch count and per-call uniform-buffer overhead drop.
+	// residualB dispatches its elementwise add as ONE call over the full M*width flattened range instead of M separate
+	// width-sized dispatches: the kernel indexes by a flat global_invocation_id with no cross-row state
+	// (residualShaderWGSL, layer.go), so [M, width] IS [M*width] to it.
 	residualB := func(xPacked, yPacked *wgpu.Buffer) *wgpu.Buffer { // x += y, in place; returns x
 		dispFlat(c.residualPipeline, c.residualLayout, M*hidden, xPacked, yPacked)
 		return xPacked
 	}
-	swigluB := func(gatePacked, upPacked *wgpu.Buffer) *wgpu.Buffer {
-		n := M * inter
-		dst := storF(n)
-		pl, ly := c.swigluPipeline, c.swigluLayout
+	// swigluQuantB is decode's fused gated product→int8 for all M rows, one workgroup a row: the [M, inter] product is
+	// never stored.
+	swigluQuantB := func(gatePacked, upPacked *wgpu.Buffer, kp int) (aqC, asC *wgpu.Buffer) {
+		aqC, asC = storF(M*kp/4), storF(M)
+		p := uni([]uint32{uint32(inter), uint32(kp), 0, 0})
+		f := c.fusedRows[fusedRowsSwiGLU]
 		if m.GatedGELU {
-			pl, ly = c.gegluPipeline, c.gegluLayout
+			f = c.fusedRows[fusedRowsGeGLU]
 		}
-		dispFlat(pl, ly, n, gatePacked, upPacked, dst)
-		return dst
-	}
-	// quantPackedM quantizes all M rows of a packed [M, K] buffer in ONE dispatch, straight into
-	// the [M, kp/4] packed-int8 / [M] scales layout tiledProjB's GEMM reads (quantizeShaderWGSL,
-	// device.go, takes M rows natively via QDims.m). No gather is needed.
-	quantPackedM := func(inPacked *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer, int) {
-		kp := padK(K)
-		kw := kp / 4
-		aqC := storF(M * kw)
-		asC := storF(M)
-		p := uni([]uint32{uint32(M), uint32(K), uint32(kp), 0})
-		disp(c.quantizePipeline, bind(c.quantizeLayout, inPacked, aqC, asC, p), uint32(M), 1)
-		return aqC, asC, kw
-	}
-	// tiledProjB runs a projection over all M rows: quantPackedM (one dispatch) → ONE unbounded-M
-	// tiled GEMM (weight streamed once, DP4A when available) → the packed [M, N] GEMM output is the
-	// return value. rowsM lets the LM head reuse it at M=1.
-	//
-	// bias (nil for every projection except Qwen2's q/k/v) selects the bias-epilogue tiled kernel
-	// instead of a separate residual-kernel add: the add has to be fused into the GEMM's expression
-	// to stay bit-exact with production's gemvBias (docs/code-notes/gpu.md#runModelToModelW).
-	//
-	// R-25 (docs/tasks/task-recompute-audit.md): it is quantB then projQB, so the projections that read the same input
-	// (q, k, v of xn; gate, up of xn2) quantize it once and share the result. Quantization is deterministic, so each GEMM
-	// reads the same bytes it did when it quantized its own copy.
-	quantB := func(xnPacked *wgpu.Buffer, rowsM, K int) (aqC, asC *wgpu.Buffer) {
-		if rowsM == M {
-			aqC, asC, _ = quantPackedM(xnPacked, K)
-			return aqC, asC
-		}
-		// the M=1 LM-head call
-		kp := padK(K)
-		aqC = storF(kp / 4)
-		asC = storF(1)
-		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
-		disp(c.quantizePipeline, bind(c.quantizeLayout, xnPacked, aqC, asC, p), 1, 1)
+		disp(f.pl, bind(f.layout, gatePacked, upPacked, aqC, asC, p), uint32(M), 1)
 		return aqC, asC
 	}
-	var projQB func(aqC, asC *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer
-	tiledProjB := func(xnPacked *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer {
-		aqC, asC := quantB(xnPacked, rowsM, rm.cols)
-		return projQB(aqC, asC, rowsM, rm, bias)
+	// quantPackedM quantizes all M rows of a packed [M, K] buffer in ONE dispatch, straight into the [M, kp/4]
+	// packed-int8 / [M] scales layout a projection reads (quantizeShaderWGSL, device.go, takes M rows natively via
+	// QDims.m). It is decode's quantizer for an activation that no fused kernel produces: the attention context.
+	quantPackedM := func(inPacked *wgpu.Buffer, K, kp int) (aqC, asC *wgpu.Buffer) {
+		aqC, asC = storF(M*kp/4), storF(M)
+		p := uni([]uint32{uint32(M), uint32(K), uint32(kp), 0})
+		disp(c.quantizePipeline, bind(c.quantizeLayout, inPacked, aqC, asC, p), uint32(M), 1)
+		return aqC, asC
 	}
-	// sharedQ returns the projections of one input x through rms, quantizing x once (R-25) when every projection has
-	// the same K, which q/k/v and gate/up always do; prefillQuantPerProj (tests only) restores a quantization each.
-	sharedQ := func(x *wgpu.Buffer, rms []*ResidentW8A8, biases []*wgpu.Buffer) []*wgpu.Buffer {
+	// projQB runs one projection over rowsM quantized rows and returns the packed [rowsM, N] output: an int8 matrix
+	// through ONE unbounded-M tiled GEMM (weight streamed once, DP4A when available), an int4 one through a multi-row
+	// int4 kernel.
+	//
+	// bias (nil for every projection except Qwen2's q/k/v) selects, for an int8 matrix, the bias-epilogue tiled kernel
+	// instead of a separate add: the add has to be fused into the GEMM's expression to stay bit-exact with production's
+	// gemvBias (docs/code-notes/gpu.md#runModelToModelW). An int4 matrix adds it in a separate dispatch, as decode does.
+	var projQB func(aqC, asC *wgpu.Buffer, rowsM int, rm prefillProj, bias *wgpu.Buffer) *wgpu.Buffer
+	// sharedQ returns the projections of one quantized input through rms. R-25 (docs/tasks/task-recompute-audit.md): the
+	// input is quantized once when every projection has the same K and reads it at the same padding, which q/k/v and
+	// gate/up of one precision always do. Quantization is deterministic, so each projection reads the bytes it would
+	// have read from its own copy; prefillQuantPerProj (tests only) restores a quantization each.
+	sharedQ := func(quantize func(kp int) (aqC, asC *wgpu.Buffer), rms []prefillProj, biases []*wgpu.Buffer) []*wgpu.Buffer {
 		out := make([]*wgpu.Buffer, len(rms))
 		same := !prefillQuantPerProj
 		for _, rm := range rms[1:] {
-			same = same && rm.cols == rms[0].cols
+			same = same && rm.cols() == rms[0].cols() && rm.kp() == rms[0].kp()
 		}
 		var aqC, asC *wgpu.Buffer
 		if same {
-			aqC, asC = quantB(x, M, rms[0].cols)
+			aqC, asC = quantize(rms[0].kp())
 			prefillSharedQuants.Add(1)
 		}
 		for i, rm := range rms {
+			if prefillDefectForTest == 3 && i == 0 && len(rms) == 3 && rm.w4 != nil && rms[1].w4 != nil {
+				wrong := *rm.w4
+				wrong.bScales = rms[1].w4.bScales
+				rm = prefillProj{w4: &wrong}
+			}
 			if same {
 				out[i] = projQB(aqC, asC, M, rm, biases[i])
 			} else {
-				out[i] = tiledProjB(x, M, rm, biases[i])
+				a, as := quantize(rm.kp())
+				out[i] = projQB(a, as, M, rm, biases[i])
 			}
 		}
 		return out
 	}
-	projQB = func(aqC, asC *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer {
-		N := rm.rows
+	projQB = func(aqC, asC *wgpu.Buffer, rowsM int, pj prefillProj, bias *wgpu.Buffer) *wgpu.Buffer {
+		N := pj.rows()
 		dstC := storF(rowsM * N)
+		if pj.w4 != nil {
+			if buildErr != nil {
+				return dstC
+			}
+			kind := c.w4MultiFor(rowsM)
+			encodeW4Multi(kind, c.w4Multi[kind], pj.w4, rowsM, aqC, asC, dstC, uni, bind, disp)
+			if bias != nil {
+				total := uint32(rowsM * N)
+				gx := (total + 63) / 64
+				gy := uint32(1)
+				if gx > 65535 {
+					gy = (gx + 65534) / 65535
+					gx = 65535
+				}
+				p := uni([]uint32{total, uint32(N), gx * 64, 0})
+				disp(c.biasRowsPipeline, bind(c.biasRowsLayout, dstC, bias, p), gx, gy)
+			}
+			return dstC
+		}
+		rm := pj.w8
 		p := uni([]uint32{uint32(rowsM), uint32(rm.kp), uint32(N), 0})
 		gx, gy := c.gemmGrid(N, rowsM)
 		if bias != nil {
@@ -817,18 +926,19 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		pt = c.prefillProfTic()
 	}
 	pt = c.prefillProfTic()
+	var sinks0, hs0 *wgpu.Buffer // prefillAttnPerRow's unused sink bindings
 	for i := range m.Layers {
 		recycle() // the previous layer's buffers back to the free list (xd is not one: it is created above, outside storF)
 		lw := &m.Layers[i]
-		xn := rmsB(xd, lw.Attn.Norm.buf)
-		profBoundary(profNormsRope)
+		attnNorm := lw.Attn.Norm.buf
 		var qBias, kBias, vBias *wgpu.Buffer
 		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — fused into the GEMM epilogue,
 			qBias, kBias, vBias = lw.Attn.QBias.buf, lw.Attn.KBias.buf, lw.Attn.VBias.buf // matching decoderunner.go's gemvBias, not a separate post-hoc add (see tiledProjB's doc comment)
 		}
 		var q *wgpu.Buffer
 		var aGate *wgpu.Buffer
-		qkv := sharedQ(xn, []*ResidentW8A8{lw.Attn.QProj, lw.Attn.KProj, lw.Attn.VProj}, []*wgpu.Buffer{qBias, kBias, vBias})
+		lp := &pp.layers[i]
+		qkv := sharedQ(func(kp int) (*wgpu.Buffer, *wgpu.Buffer) { return rmsQuantB(xd, attnNorm, kp) }, []prefillProj{lp.q, lp.k, lp.v}, []*wgpu.Buffer{qBias, kBias, vBias})
 		if lw.Attn.QGate {
 			qRaw := qkv[0]
 			qN := M * nH * hd
@@ -851,15 +961,19 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		// Bulk KV-cache write: positions are contiguous (positions[0]..positions[0]+M-1,
 		// residency.go), so k/v's packed [M, kvDim] rows land at one contiguous range of
 		// the cache — a single copy per k/v instead of M.
+		kvRow, kvRows := positions[0], M
+		if prefillDefectForTest == 2 {
+			kvRow, kvRows = positions[0]+1, M-1
+		}
 		if m.KVF16 {
-			totalElems := M * kvDim
+			totalElems := kvRows * kvDim
 			totalWords := totalElems / 2
-			p := uni([]uint32{uint32(totalElems), uint32(positions[0] * kvDim), 0, 0})
+			p := uni([]uint32{uint32(totalElems), uint32(kvRow * kvDim), 0, 0})
 			disp(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, k, lw.Attn.KCache.buf, p), uint32(totalWords+63)/64, 1)
 			disp(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, v, lw.Attn.VCache.buf, p), uint32(totalWords+63)/64, 1)
 		} else {
-			cpy(k, 0, lw.Attn.KCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
-			cpy(v, 0, lw.Attn.VCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
+			cpy(k, 0, lw.Attn.KCache.buf, uint64(kvRow*kvDim*4), uint64(kvRows*kvDim*4))
+			cpy(v, 0, lw.Attn.VCache.buf, uint64(kvRow*kvDim*4), uint64(kvRows*kvDim*4))
 		}
 		profBoundary(profKVWrite)
 		// All rows' K/V are now in the cache; each row attends to its causal prefix (including earlier rows
@@ -867,25 +981,45 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		// (nH, M), against attnBatchedKernel's chosen kernel (the same tiled-vs-plain preference as attnKernel,
 		// attention.go); q/ctxv are read and written at each row's own offset inside the shader
 		// (docs/completed/task-gpu-batched-prefill.md, Increment 1).
-		attnPl, attnLy := c.attnBatchedKernel(hd, kvDim, m.KVF16)
 		ctxv := storF(M * nH * hd)
-		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[0]), uint32(nH / nKV), f32bits(scale), uint32(M), 0})
-		disp(attnPl, bind(attnLy, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), uint32(M))
+		if prefillAttnPerRow {
+			// Decode's own single-row attention kernel, once a row, each row's q and context bound at its offset.
+			pl, ly := c.attnKernel(hd, kvDim, m.KVF16)
+			if sinks0 == nil && buildErr == nil {
+				var e error
+				if sinks0, e = c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(make([]float32, max(nH, 4))), Usage: wgpu.BufferUsageStorage}); e != nil {
+					buildErr = e
+				} else {
+					keepBuf(sinks0)
+				}
+				hs0 = uni([]uint32{0, 0, 0, 0})
+			}
+			rowElems := uint32(nH * hd)
+			for r := range M {
+				rp := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[0] + r + 1), 0, uint32(nH / nKV), f32bits(scale), 0})
+				disp(pl, bindOff(ly, bindEntry{buf: q, off: uint32(r) * rowElems, n: rowElems}, whole(lw.Attn.KCache.buf), whole(lw.Attn.VCache.buf),
+					bindEntry{buf: ctxv, off: uint32(r) * rowElems, n: rowElems}, whole(sinks0), whole(rp), whole(hs0)), uint32(nH), 1)
+			}
+		} else {
+			attnPl, attnLy := c.attnBatchedKernel(hd, kvDim, m.KVF16)
+			ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[0]), uint32(nH / nKV), f32bits(scale), uint32(M), 0})
+			disp(attnPl, bind(attnLy, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), uint32(M))
+		}
 		if aGate != nil {
 			dispFlat(c.deltaAttnGatePipeline, c.deltaAttnGateLayout, M*nH*hd, ctxv, aGate)
 		}
 		profBoundary(profAttn)
-		attnOut := tiledProjB(ctxv, M, lw.Attn.OProj, nil)
+		ctxQ, ctxS := quantPackedM(ctxv, lp.o.cols(), lp.o.kp())
+		attnOut := projQB(ctxQ, ctxS, M, lp.o, nil)
 		profBoundary(profGemm)
 		xd = residualB(xd, attnOut) // in-place: xd += attnOut
-		xn2 := rmsB(xd, lw.MLPNorm.buf)
-		profBoundary(profNormsRope)
-		gu := sharedQ(xn2, []*ResidentW8A8{lw.Gate, lw.Up}, []*wgpu.Buffer{nil, nil})
+		mlpNorm := lw.MLPNorm.buf
+		gu := sharedQ(func(kp int) (*wgpu.Buffer, *wgpu.Buffer) { return rmsQuantB(xd, mlpNorm, kp) }, []prefillProj{lp.gate, lp.up}, []*wgpu.Buffer{nil, nil})
 		gate, up := gu[0], gu[1]
 		profBoundary(profGemm)
-		mid := swigluB(gate, up)
+		midQ, midS := swigluQuantB(gate, up, lp.down.kp())
 		profBoundary(profNormsRope)
-		down := tiledProjB(mid, M, lw.Down, nil)
+		down := projQB(midQ, midS, M, lp.down, nil)
 		profBoundary(profGemm)
 		xd = residualB(xd, down) // in-place: xd += down
 		profBoundary(profNormsRope)
@@ -897,18 +1031,20 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	// tiledProjB path at rowsM=1.
 	xdLast := storF(hidden)
 	cpy(xd, uint64((M-1)*hidden*4), xdLast, 0, uint64(hidden*4))
-	xnLastP := storF(hidden)
+	// The final norm and its quantization are decode's own fused kernel on the one row.
+	headKP := pp.lmHead.kp()
+	fq, fs := storF(headKP/4), storF(1)
 	{
-		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
-		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, xdLast, m.FinalNorm.buf, xnLastP, p), 1, 1)
+		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), uint32(headKP)})
+		disp(c.rmsQuantPipeline, bind(c.rmsQuantLayout, xdLast, m.FinalNorm.buf, fq, fs, p), 1, 1)
 	}
-	logitsBuf := tiledProjB(xnLastP, 1, m.LMHead, nil)
+	logitsBuf := projQB(fq, fs, 1, pp.lmHead, nil)
 
 	if buildErr != nil {
 		return nil, buildErr
 	}
 
-	vocab := m.LMHead.rows
+	vocab := pp.lmHead.rows()
 	stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
@@ -939,6 +1075,16 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	}
 	return out, nil
 }
+
+// prefillDefectForTest plants one defect in the batched pass, for its gate's planted-defect arm (tests only): 1 rotates
+// every row one position late, 2 writes every row's K/V one slot late, 3 gives an int4 q projection the k projection's
+// scales.
+var prefillDefectForTest int
+
+// prefillAttnPerRow makes the batched pass run decode's single-row attention kernel once a row in place of the batched
+// attention kernel. Tests only. It needs a row of q (nH*hd floats) to be a multiple of 64 floats, so each row's
+// binding offset is a multiple of 256 bytes.
+var prefillAttnPerRow = false
 
 // prefillQuantPerProj restores the batched prefill's quantization per projection (R-25, sharedQ), for the test that
 // compares the two and the A/B that times them. Tests only.

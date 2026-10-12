@@ -70,7 +70,10 @@
     The default flips are not applied: they touch `decoder/` and would void v0.23.0's gate records, so the timing
     is the owner's.
   - S12.4a read 2026-10-12: with the device towers an image turn's TTFT under WebGPU is 5.3 to 22.9 s, and 2.7
-    to 14.0 s of it is left after the tower. S12.4b (image prefill on the GPU) is owed and not registered yet.
+    to 14.0 s of it is left after the tower. S12.4b (registered 2026-10-12): steps 1 and 2 are built, a text
+    prompt at int4 now prefills in the batched pass, bit for bit the row-by-row walk, about 3 times faster on the
+    Mac and 7 on nobara's card in process. Owed: its served gate, the E-model's rows, and the image prefills on
+    Vulkan (on the Mac the CPU route is faster and stays).
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -4539,6 +4542,210 @@ test, so it runs only in a sweep) still asserted that WebGPU declines the E-mode
 updated the synthetic admission test, not this one; the v0.23.0 sweep on nobara read it as an unlisted failure. The
 test now checks that all three backends admit the shape and that a backend's feature set without the E-model feature
 declines it; it passes on nobara against the real E2B.
+
+#### S12.4b, prefill on the GPU under WebGPU: desk map and gates, registered 2026-10-12 before any code
+
+**The desk map (read from the code at `7421fff6`):**
+- **Every S12.4a cell served at int4, and WebGPU has no multi-row kernel for int4 weights.** Its batched pass,
+  `gpu/prefillrunner.go:Context.PrefillLastW8A8`, takes int8 projections only
+  (`gpu/prefillrunner.go:runModelToModelW` returns false on a `ResidentW4A8`). So at serve's default quant:
+  - a text prompt prefills one row at a time on the device, on every dense family (the banner still reads
+    "prefill path: batched", since the decline is per prompt);
+  - a Gemma 3 or Qwen image turn prefills on the CPU and uploads the K/V (the resident implements none of
+    `ResidentImagePrefill`, `ResidentMRoPEPrefill`, `ResidentMRoPEDeepstackPrefill`);
+  - a Gemma 4 E-model's rows are walked one at a time through the runner
+    (`gpu/residency.go:residentDecoder.PrefillLast`).
+- **The int8 pass is also narrower than the six families.** It declines sandwich norms and sliding-window layers
+  (Gemma 3), per-layer geometry, shared K/V and per-layer inputs (Gemma 4), a recurrent mixer (Qwen3.5), and q/k/v
+  bias anywhere but Vulkan (Qwen2.5-VL). Its rotary kernel takes a contiguous run of scalar positions, not m-RoPE's
+  three per row, and its attention kernel has no image block.
+
+**One exploratory reading taken before registering, to choose the order (by day, 08:26 PDT, load about 3, one pass,
+not quotable as a result):** `TestResidentPrefillLast_TTFT` on Qwen3-VL 2B's decoder at `int8int8`, the batched pass
+against the row-by-row walk on the same resident
+(`s12-webgpu/s12-4b/probe-w8a8-prefill-qwen3vl2b.log`):
+
+| rows | row by row (s) | batched (s) | rows a second, batched |
+|---|---|---|---|
+| 64 | 2.79 | 0.58 (the first call compiles its pipelines) | 110 |
+| 256 | 6.54 | 1.77 | 145 |
+| 1,024 | 32.57 | 7.56 | 135 |
+
+- **Measured:** on this Mac the multi-row int8 kernel is about 4 times the row-by-row walk.
+- **Inferred, not measured:** it is no faster than the CPU prefill the Qwen image turns already use. S12.4a's
+  Qwen3-VL 2B cell has 5.0 s left after the tower for about 810 rows (784 image tokens and the text), which is at
+  least 160 rows a second for the CPU prefill, the upload and the first step together. The two figures are from
+  different sessions and different quants, so this is a direction for ordering the work and nothing more.
+- **So the order is by what a multi-row kernel replaces.** Where it replaces the row-by-row walk (every text prompt
+  at int4; Gemma 4 E2B's image turn, the 14.0 s remainder) it should win by a wide margin. Where it replaces the CPU
+  prefill (Gemma 3, Qwen2.5-VL, Qwen3-VL) the Mac says roughly a wash, and a discrete card has not been read.
+
+**The steps, each gated before the next starts:**
+- **S12.4b-1, a multi-row int4 projection kernel.** Two candidates, both built:
+  - A, row-shaped: `gemvW4A8ShaderWGSL` with one accumulator per row, at most 16 rows a dispatch, each weight word
+    loaded once for all of them. The same sum in the same order, so bit-identical to the single-row kernel by
+    construction.
+  - B, tiled: `matmulRB64W8A8KernelWGSL`'s staging with the nibbles unpacked into the shared tile and one scale
+    applied per 32-wide group. The integer part is exact; the float sum over groups runs in a different order from
+    the single-row kernel's, so it is not bit-identical.
+- **S12.4b-2, the batched pass takes int4 projections,** for the class it already takes at int8 (plain dense,
+  Q/K norm, f16 K/V). This is text prefill at the default quant.
+- **S12.4b-3, the E-model's rows through the batched pass** (per-layer inputs, shared K/V, per-layer geometry,
+  sliding window), text and image turns. Its gates are written when 2 has passed, from G-S9a and G-S9b.
+- **S12.4b-4, the image prefills that replace a CPU prefill** (`PrefillImageLast`, `PrefillMRoPELast`, the
+  DeepStack form). **Parked until a reading says the GPU pass beats the CPU prefill on some box**: step 2's rows a
+  second against the CPU prefill's, same session, on the Mac and on nobara's card through Vulkan. Not built on the
+  Mac's direction alone, and not dropped on it either.
+- Qwen3.5 (recurrent) and GLM-OCR (decodes staged) are outside all four.
+
+**Gates for S12.4b-1 and S12.4b-2:**
+- **G-S12.4b-1a, the kernels against the single-row kernel** (quick; `go test` in `gpu`, seconds). Random int4
+  matrices with random f16 group scales, K and N both aligned and ragged, rows 1, 5, 16, 17 and 300, each row
+  against `gemvW4A8ShaderWGSL` on the same quantized row.
+  - Candidate A: equal bit for bit (`Float32bits`).
+  - Candidate B: max |diff| at most 1e-5 of the row's largest |output|. A bit-identical B is not required.
+  - Planted defects, each red: a group's scale taken from the next group; the nibbles of a byte swapped; a row's
+    activation scale taken from another row; (B only) a tile's last partial column block skipped.
+- **G-S12.4b-1b, which candidate** (day; an in-process A/B, interleaved in one process, TE5(b)). Whole prefill
+  through step 2's pass on a real plain dense int4 checkpoint, at 256 and 1,024 rows, five pairs after a discarded
+  pass of each. B is chosen if its median ratio to A is at most 0.90; otherwise A, for exactness. The row-by-row
+  walk is the third arm.
+- **G-S12.4b-2a, parity on the tiny fixtures** (quick). `TestPrefillLastW8A8_parity`'s procedure at int4: the last
+  row's logits and the next 8 decode steps from the prefilled cache against the row-by-row walk, on the plain,
+  Q/K-norm and f16-K/V fixtures, below and above a 16-row block.
+  - With A: bit-identical.
+  - With B: every step's argmax equal or a near-tie (the reference's second choice at least half its first), and
+    cosine at least 0.99999.
+  - Planted defects through the pass, each red: rows one position late; one row's K/V written to the next row's
+    slot; a projection's scales from another projection.
+- **G-S12.4b-2b, a real checkpoint** (day, minutes; heavy). The same reading on a real plain dense int4 model at 64
+  and 300 rows. Same bar as 2a.
+- **G-S12.4b-2c, speed** (day in process for direction; night served for the claim). In process: the pass against the
+  row-by-row walk at 256 and 1,024 rows, five interleaved pairs. **Ships on at a median ratio of at most 0.98, parks
+  at 0.98 to 1.00, off above 1.00.** The served claim is a night gate, two arms (`goinfer,goinfer_old`), registered
+  with its cell list when the in-process direction is known.
+- **Predictions, written now:** A is bit-identical (0.9). B passes its tolerance (0.8). B beats A by more than 10%
+  at 1,024 rows (0.7). The chosen pass is at least 2.5x the row-by-row walk at 1,024 rows on the Mac (0.7): int4
+  stages half the weight bytes of int8 but pays the nibble unpack. G-S12.4b-2a passes first run (0.5); the likeliest
+  first failure is the group-scale index on a ragged K.
+
+#### S12.4b-1 and S12.4b-2, built and read 2026-10-12: text prefill at int4 runs in the batched pass, bit for bit the walk
+
+**The code** (`gpu/gemm_w4a8.go`, `gpu/prefill_fused.go`, `gpu/prefillrunner.go:Context.prefillLastRows`,
+`gpu/residency.go:residentDecoder.PrefillLast`):
+- **Two multi-row int4 projection kernels.** `gemmRowsW4A8ShaderWGSL` (16 rows a dispatch) and
+  `matmulTiledW4A8KernelWGSL` (a 64x64 tile). The pass takes the row-shaped one up to 16 rows (the head's one row
+  included) and the tiled one beyond (`gpu/gemm_w4a8.go:Context.w4MultiFor`).
+- **The pass takes int4 projections** for the class it took at int8, plus q/k/v bias at int4 (added in its own
+  dispatch, as decode does). A prompt goes through in blocks of 512 rows.
+- **An int4 model is admitted only on a backend where the identity below was checked**
+  (`gpu/gemm_w4a8.go:w4MultiVerified`): Metal and Vulkan. Elsewhere the pass declines and the walk runs, as before.
+
+**What the first read found, and the two changes it forced (amendments, dated 2026-10-12, each with its mechanism):**
+- **G-S12.4b-2b was RED on the first read** (`s12-4b/g-s12-4b-first-read-day.log`): on Qwen3-VL 2B's decoder
+  neither kernel gave the walk's logits (the row-shaped one differed in every logit; the tiled one read cosine
+  0.9990 at 64 rows and 0.9952 at 300), though the tiny fixtures were green.
+- **Mechanism 1, not in the new kernels: where an activation is quantized.** Decode quantizes inside the kernel that
+  computes the value (`rmsnormQuantWGSL`, `swigluQuantWGSL`, `gegluQuantWGSL`): the float is recomputed in the
+  packing loop and never stored. The pass stored the float and quantized it in a second kernel, and a rare value
+  rounded to the neighbouring int8 step.
+  - Found by comparing every layer's K/V after the walk and after the pass: identical through layer 6 at 8 rows,
+    then one whole row different at layer 7. Each path is deterministic run to run. Swapping decode's own
+    single-row attention kernel into the pass changed nothing, which ruled attention out.
+  - **This is older than S12.4b.** The shipped int8 pass read the same way on the same model: bit-identical to
+    the walk at 2, 8 and 20 rows, cosine 0.9993 at 64.
+  - **Fixed:** the pass now runs those three kernels' own source, one row a workgroup
+    (`gpu/prefill_fused.go:fusedRowsSource` derives each from the single-row source and refuses if that source
+    changes). With it the row-shaped kernel's pass equals the walk in every layer's K/V at 8, 64 and 300 rows.
+  - **Not re-examined:** the note beside the int8 bias gate in `gpu/residency.go` says the int8 bias epilogue
+    "diverges on Metal past nKeys~15 (cosine ~0.998)". That figure is the size this mechanism produces, so the bias
+    epilogue may not be the cause. The gate is left as it is until someone reads it again.
+- **Mechanism 2, the tiled kernel's own: the order of a row's float sum.** Candidate B summed a row's weight groups
+  in ascending order; the single-row kernel sums per lane and then over a tree. The integer parts are equal, and the
+  rounding difference is enough to move an int8 step somewhere in 28 layers.
+  - **Amendment to candidate B and to its bar:** B was rebuilt to visit the groups in the single-row kernel's
+    order (lanes in bit-reversed order, a seven-level stack for the pairwise sums). Its bar is now candidate A's:
+    equal bit for bit. The registered tolerance (1e-5 of a row's peak; cosine 0.99999 with near-ties) is withdrawn,
+    since no reading under it is used. Cost of the exact order, both read in process on the Mac at 1,024 rows:
+    7.96 s against 7.66 s for the ascending order.
+- **Smaller amendments.** The registered Q/K-norm fixture (`glm-tiny`) is an MoE model and the pass declines it;
+  the fixtures as run are `llama-tiny` (plain, and with f16 K/V), `qwen3asr-tiny` (Q/K norm), `qwen25vl-tiny` (q/k/v
+  bias, which the registration did not list) and `gemma1-tiny` (gated GELU). Added: a test of the block boundary,
+  and one through `Generate` that fails if the batched arm never ran the pass.
+
+**The gates as read:**
+- **G-S12.4b-1a: PASS.** Both kernels equal `gemvW4A8ShaderWGSL` bit for bit on five shapes at 1, 5, 16, 17 and 300
+  rows, and all seven planted defects are red (`gpu`'s `TestW4Multi_matchesSingleRow`, `TestW4Multi_plantedDefects`).
+- **G-S12.4b-2a: PASS**, bit for bit under both kernels on the five fixtures at 7, 40 and 70 rows, the last row and
+  8 decode steps; the three planted defects red under both (`TestPrefillInt4_matchesWalk`,
+  `TestPrefillInt4_plantedDefects`, `TestPrefillInt4_blocks`, `TestPrefillInt4_generate`).
+- **G-S12.4b-2b: PASS on the second read**, bit for bit at 64 and 300 rows under both kernels:
+  - Mac (Metal): Qwen3-VL 2B's decoder, Qwen2.5-coder 0.5B (GGUF, q/k/v bias), Qwen2.5-VL 3B's decoder
+    (`s12-4b/g-s12-4b-second-read-day.log`, `g-s12-4b-2b-bias-models-day.log`). Gemma 3 4B is declined, as it
+    should be (the last entry of that log, exit 1 by design: the test does not skip a decline).
+  - nobara (RTX 2070 SUPER, Vulkan, driver 595.91.07): the tiny gates and Qwen2.5-coder 1.5B
+    (`s12-4b/nobara/identity-tiny-vulkan-day.log`, `identity-real-vulkan-day.log`).
+  - The int8 pass, same reading at `int8int8` on Qwen3-VL 2B's decoder: bit for bit at 64 and 300 rows on both
+    boxes (`TestPrefillInt8_real`).
+- **G-S12.4b-1b and G-S12.4b-2c, in process** (`TestPrefillInt4_speed`: one discarded pass of each arm, then five
+  rounds in alternating order; seconds for the whole prefill; each box's arms are one session, and the two boxes
+  are not compared with each other):
+
+| box, model at int4 | rows | row-shaped | tiled | walk | CPU prefill and upload | tiled / walk | tiled / CPU route |
+|---|---|---|---|---|---|---|---|
+| Mac (Metal), Qwen3-VL 2B's decoder | 256 | 3.56 | 1.95 | 4.99 | 1.57 | 0.391 | 1.227 |
+| | 1,024 | 15.49 | 8.23 | 24.75 | 7.10 | 0.333 | 1.175 |
+| nobara (Vulkan), Qwen2.5-coder 1.5B | 256 | 0.82 | 0.31 | 1.87 | 3.03 | 0.167 | 0.103 |
+| | 1,024 | 3.43 | 1.41 | 10.85 | 12.43 | 0.130 | 0.113 |
+| nobara (Vulkan), Qwen2.5-VL 3B's decoder | 256 | 1.35 | 0.56 | 2.99 | 5.79 | 0.187 | 0.097 |
+| | 1,024 | 5.71 | 2.44 | 16.32 | 23.54 | 0.150 | 0.104 |
+
+  (the seconds are round 5's; the ratios are medians of five; `s12-4b/g-s12-4b-third-read-4arm-day.log`,
+  `s12-4b/nobara/speed-4arm-vulkan-day.log`.)
+  - **G-S12.4b-1b: the tiled kernel** (0.53 of the row-shaped one on the Mac, 0.41 to 0.43 on nobara, against the
+    0.90 line), and it is exact, so nothing is traded for it.
+  - **G-S12.4b-2c: ships on.** Every pair on both boxes has the pass faster than the walk: about 3 times on the
+    Mac, 6.7 to 7.7 times on nobara at 1,024 rows. Its output is the walk's bits, so validation is inherited by
+    identity. **The served claim is still owed** (a night gate, two arms); these are in-process readings and are
+    quoted as such.
+- **Predictions scored.** "A is bit-identical (0.9)": yes at the kernel, and no through the pass until mechanism 1
+  was fixed, which the prediction did not foresee. "B passes its tolerance (0.8)": yes at the kernel, no on a real
+  model. "B beats A by more than 10% at 1,024 rows (0.7)": yes. "At least 2.5x the walk at 1,024 rows on the Mac
+  (0.7)": yes, 3.0x. "G-S12.4b-2a passes first run (0.5)": yes on the fixtures the pass accepts; the first run's
+  failures were my two MoE fixtures.
+
+**What the fourth arm says about S12.4b-4, the parked step** (the image prefills that replace a CPU prefill):
+- **On the Mac the GPU pass is slower than the CPU route** (1.18 to 1.23 times, same session). So under WebGPU on
+  Metal an image turn keeps the CPU prefill and upload, and the E-model's rows (S12.4b-3) are the only image turn a
+  GPU pass can help there.
+- **On nobara's card it is about 9 times faster than the CPU route**, on Qwen2.5-VL's own decoder. That is the
+  reading the parked step was waiting for: **S12.4b-4 is unparked for Vulkan**, with its image prefills declining
+  on Metal so the Mac keeps the faster route. Its gates are written before it is built.
+- **Not measured:** a text prompt through the CPU route on the Mac would also beat the pass by this margin, but it
+  is not the walk's bits (the CPU prefill quantizes differently), so it is a fidelity question and not this step's.
+
+#### G-S12.4b-2d, the served gate for S12.4b-2: registered 2026-10-12 before it runs (night, both boxes)
+
+- **Tier and instrument:** night. `s12-webgpu/s12-4b/served_text_ttft.py`, run by
+  `s12-webgpu/s12-4b/run-g-s12-4b-2d-night.sh`: time to the first streamed content event of a chat request, timed
+  by the client from just before the request is written. Two arms, both `serve --backend webgpu -require-backend`
+  at serve's defaults (int4): **new**, built at this branch's head, and **old**, built at `862434b7` (main before
+  it). No peer arm: the decision is new over old.
+- **The cells:** `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` from `~/models`, prompts of 512 and 2,048 calibrated
+  tokens (`scripts/prompts.json`, key `1.5B`), 16 greedy tokens. Five rounds; a round starts each binary once, in
+  an order that alternates by round, sends one discarded warm-up, then one request a depth. A request's prompt
+  carries a prefix unique to its round and depth and the same for both arms.
+- **Stopping rule:** fixed, five rounds, no early stop.
+- **Bar, per box:** the median of the five new/old TTFT ratios at each depth. **Ships at 0.98 or under at both
+  depths; parked from 0.98 to 1.00; above 1.00 the pass comes out for that backend.** And the two arms' replies
+  must be equal in every round at both depths: the pass claims the walk's bits, so one differing reply is red
+  whatever the times say.
+- **Cost basis:** from the in-process readings, a round is about a minute and a half on the Mac (the old arm's
+  2,048-token prefill is most of it) and under a minute on nobara, plus two loads a round. Queued at 25 minutes on
+  the Mac and 15 on nobara.
+- **Predictions, written now:** the Mac's median at 2,048 tokens is 0.45 or under (0.8); nobara's is 0.25 or
+  under (0.8); the ratio is higher at 512 tokens than at 2,048 on both boxes (0.7), since a request's fixed cost is
+  the same in both arms; the replies are equal in all rounds (0.9).
 
 ### S13 — Against the peers
 
