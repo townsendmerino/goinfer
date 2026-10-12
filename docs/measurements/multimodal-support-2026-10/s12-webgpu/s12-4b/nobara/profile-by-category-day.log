@@ -1,0 +1,19 @@
+Mon Oct 12 14:15:47 PDT 2026
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+e19a50ad gpu: a by-category profile of the batched pass on a real checkpoint (projections, attention, norms and rotary, K/V write)
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it-Q4_K_M.gguf on vulkan: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024
+PROFILE 457 rows: wall 5.41 s unprofiled, 5.51 s profiled; projections 1.03 s (19%), attention 4.42 s (81%), norms and rotary 0.03 s (1%), K/V write 0.00 s (0%)
+PROFILE 1783 rows: wall 68.95 s unprofiled, 69.74 s profiled; projections 3.73 s (5%), attention 65.62 s (94%), norms and rotary 0.19 s (0%), K/V write 0.02 s (0%)
+--- PASS: TestPrefillInt4_profile (231.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	231.579s
+exit 0 (gemma-3-4b-it-Q4_K_M.gguf)
+=== RUN   TestPrefillInt4_profile
+PROFILE qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on vulkan: 28 layers, 12 heads of 128 (2 KV heads), sliding window 0
+PROFILE 457 rows: wall 0.63 s unprofiled, 0.67 s profiled; projections 0.59 s (89%), attention 0.05 s (8%), norms and rotary 0.02 s (3%), K/V write 0.00 s (0%)
+PROFILE 1783 rows: wall 2.78 s unprofiled, 2.96 s profiled; projections 2.11 s (72%), attention 0.73 s (25%), norms and rotary 0.08 s (3%), K/V write 0.01 s (0%)
+--- PASS: TestPrefillInt4_profile (14.35s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	14.518s
+exit 0 (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf)

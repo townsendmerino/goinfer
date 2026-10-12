@@ -5139,6 +5139,55 @@ SUPER, Vulkan; records in `s12-webgpu/s12-4b/nobara/served-2026-10-12/`. The Mac
 - **Owed still:** the Mac's 2d and 3e (queued), and G-S12.4b-4a-5 on nobara (queued; nobara's runner has stopped,
   so it runs at the queue's next start).
 
+#### S12.4c, attention on wide heads under WebGPU: the 68 s measured, and the fix registered 2026-10-12 before any code
+
+The owner's question on the served cell above (Gemma 3 4B, 1,783 tokens: 68 s new, 88 s old): where does it go.
+
+**Measured** (`gpu`'s `TestPrefillInt4_profile`, the pass's own category split, on nobara, RTX 2070 SUPER through
+Vulkan, by day; `s12-4b/nobara/profile-by-category-day.log`):
+
+| model, rows | wall (s) | projections | attention | norms and rotary | K/V write |
+|---|---|---|---|---|---|
+| Gemma 3 4B (8 heads of 256), 457 | 5.41 | 1.03 s (19%) | **4.42 s (81%)** | 0.03 s | 0.00 s |
+| Gemma 3 4B, 1,783 | 68.95 | 3.73 s (5%) | **65.62 s (94%)** | 0.19 s | 0.02 s |
+| Qwen2.5-coder 1.5B (12 heads of 128), 457 | 0.63 | 0.59 s (89%) | 0.05 s (8%) | 0.02 s | 0.00 s |
+| Qwen2.5-coder 1.5B, 1,783 | 2.78 | 2.11 s (72%) | 0.73 s (25%) | 0.08 s | 0.01 s |
+
+- **The cause is one kernel choice.** `gpu/attention.go:Context.attnKernel` gives a head of up to 128 the
+  key-split kernel (each lane owns keys and computes its own dot products; one reduction a tile of keys) and a
+  wider head `attnWideTemplateWGSL`, which puts one lane on each dimension and so pays a cross-lane reduction, about
+  ten barriers, for every key. `gpu/attention.go:attnKeysEligible` stops at 128 because the key-split kernel's last
+  step gives each of its 128 lanes one output dimension. Every Gemma 3 and Gemma 4 model has heads of 256.
+- **It is not the prefill's own cost.** The walk runs the same kernel a row, which is why the old build took 88 s.
+  It is in decode as well: a token at depth n pays for n keys on every global layer, so a Gemma reply slows as its
+  context grows. Not measured as tokens a second.
+- **This replaces the "inferred, not measured" line of S12.4b-3.**
+
+**The change:** a key-split kernel for heads of 129 to 256: the same kernel with each lane owning two output
+dimensions in its last step (`t` and `t + 128`). `attnKernel` picks it for a wide head on a float32 K/V cache;
+f16 and int8 caches keep their kernels. It is decode's kernel, so the walk and the batched pass (which runs decode's
+kernel once a row on a wide head) both take it.
+
+**Gates:**
+- **G-S12.4c-1, the kernel** (quick). `TestAttnKeys_parity`'s reading at 8 heads of 256 over 4 KV heads, and at a
+  head of 192: against the float64 reference, cosine at least 0.999999 and max |diff| at most 1e-4; against the
+  kernel it replaces, cosine at least 0.9999999 and max |diff| at most 1e-5; key counts on both sides of a tile and
+  of the lane count, with a window start, and with an attention sink. Planted defects, each red: the second
+  dimension of a lane dropped; a lane's two dimensions swapped.
+- **G-S12.4c-2, nothing else moves** (quick). The narrow key-split kernel's source is untouched (the wide one is
+  derived from it), and a head of 128 or under still gets the pipeline it got.
+- **G-S12.4c-3, the Gemma gates under WebGPU** (quick, then day on the real checkpoints). The attention kernel
+  changes Gemma's decode by rounding, so every Gemma gate that compares WebGPU with the CPU is read again and must
+  hold its own bar: the tiny resident parity gates (Gemma 3, the two-geometry dense Gemma 4, the E-model's
+  G-S12.1a with its planted defects, the 26B block's), the pass against the walk (still bit for bit, G-S12.4b-3a
+  and 3c), and the real E2B text gate of S12.1.
+- **G-S12.4c-4, speed, in process** (day, nobara and the Mac): the profile above again, and the pass and the walk at
+  457 and 1,783 rows on Gemma 3 4B with the old kernel (`GOINFER_ATTN_KEYS=0`, a second process) and the new,
+  alternating. **Ships at a ratio of 0.98 or under on the pass and on the walk; parked to 1.00; off above.** The
+  served cells follow at night.
+- **Predictions:** attention at 1,783 rows falls from 65.6 s to under 3 s on nobara (0.7); the 1,783-row pass ends
+  under 9 s (0.6); every Gemma gate holds (0.7; the likeliest to move is a near-tie in the real E2B gate).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
