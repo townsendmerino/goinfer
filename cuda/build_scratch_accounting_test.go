@@ -115,8 +115,10 @@ func TestBuildScratchAccounting(t *testing.T) {
 	requireCUDADevice(t)
 	// The first load in a process also pays the context and module cost that a serve process has paid before it plans: a warm-up, not a row.
 	measureBuild(t, accountingModels[0], false)
-	bands := map[string][2]int64{ // residual in MiB: [-8, +64] on the Qwen text models, [-8, +128] on the others
-		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": {-8, 64}, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf": {-8, 64}, "qwen2.5-7b-instruct-q4_k_m.gguf": {-8, 64},
+	// The lower bound is -16: the device figure reads 14-18 MiB lower in a process that has already built models than in a cold one (as in
+	// TestResidentDenseBytes), and a negative residual is the conservative direction (Plan priced more than the device gave up).
+	bands := map[string][2]int64{ // residual in MiB: [-16, +64] on the Qwen text models, [-8, +128] on the others
+		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": {-16, 64}, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf": {-16, 64}, "qwen2.5-7b-instruct-q4_k_m.gguf": {-16, 64},
 	}
 	for _, rel := range accountingModels {
 		t.Run(filepath.Base(rel), func(t *testing.T) {
