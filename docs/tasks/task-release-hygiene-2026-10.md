@@ -40,7 +40,7 @@ sums sidecars per model; add a "stale format" column (read the version from each
 `giw.WeightsVersionFile`) and a `goinfer-pull prune-sidecars` that deletes the unreadable ones after listing them. About
 half a day. Worth it once a second format bump has left a second copy on someone's disk.
 
-## 2. A CHANGELOG drift check (PLANNED)
+## 2. A CHANGELOG drift check (BUILT 2026-10-11, aikit's first)
 
 **The problem.** The release notes are written by hand from memory of the diff. The docs already have checks that fail
 when a table disagrees with the code (`TestFlagsDoc`, the support table, the env-var list); the CHANGELOG has none.
@@ -78,6 +78,21 @@ that removes one CHANGELOG line and expects red is the mutation proof, run throu
 over `git show`. **Risk.** A route registered through a helper the pass does not follow reads as "no routes", so the first
 step is to assert the pass finds a known count at HEAD (today's), the same guard `TestPipelineLint_boundKernelsAreLaunched`
 uses against an empty scan.
+
+**Built as planned, with these particulars.** `gate changelog [-base TAG] [-head REV] [-section S]` in `cmd/gate/changelog.go`. Routes are the
+first string literal of every `HandleFunc` or `Handle` call in the non-test files of `internal/serveapp`, found with `go/parser`
+(a commented-out route and a registration in a test file do not count; the scan refuses to run if it finds fewer than 10 routes in
+either tree, and a test asserts at least 30 at HEAD, so a refactor cannot make it read "nothing changed"). A route is covered by
+its own path, or by a new route that is a path prefix of it. Flags come from `docs/flags.meta.json` (new and removed), families
+from `docs/capability-matrix.json` (covered by the name, the display name or a model type), the pin from `go.mod`. Waivers in
+`docs/changelog-waivers.txt`, reason mandatory. **On the first real run against v0.22.0 it found four omissions in `[Unreleased]`:
+the `POST /v1/audio/transcriptions` route, `--windowed-kv` (a default flipped on for CUDA with no line), and the `qwen3_asr` and
+`qwen3_vl_moe` families.** Three CHANGELOG entries were written for them (speech to text, Qwen3-VL MoE with its unread CUDA FAIL
+stated, windowed KV with its agent-loop caveat) and the check reads clean. Backtest on v0.22.0 against v0.21.0: clean (older tags
+predate `docs/flags.meta.json`, so there is nothing to compare). **aikit first:** the same rule for exported API was built into
+aikit's `releasegate` as a sixth check ("changelog-api", `tools/releasegate/apiadditions.go`), run against v1.60.0 to v1.68.0: one real
+omission (`VoxtralDefectCountForTest`, a test seam, now exempt by its `ForTest` name), every other release clean, and removing
+`SetDevice` from v1.69.0's section turns the gate red.
 
 ## 3. `go run ./cmd/gate release vX.Y.Z` (PLANNED)
 

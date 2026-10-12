@@ -63,6 +63,7 @@ usage:
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
+  gate changelog [-base TAG] [-section S]          new routes, flags, families and the aikit pin since TAG that the CHANGELOG section does not name
   gate gpu-records [-head REV] [-dir DIR]          which backends have a record that still qualifies at REV (exit 1 if one does not)
   gate mutation <name> <file> <sed-expr> <cmd...>  prove a gate can FAIL: green -> mutate -> red -> restore -> green
   gate quick [-base REF] [-files a,b] [-count1] [-j N] [-select] [-v]
@@ -135,6 +136,10 @@ func run(argv []string, w io.Writer) int {
 	// `comments-only` takes a rev and its own flags (comments_only.go).
 	if name == "comments-only" {
 		return runCommentsOnly(rest, w)
+	}
+	// `changelog` compares the tree with a tag and lists what the CHANGELOG section does not name (changelog.go).
+	if name == "changelog" {
+		return runChangelog(rest, w)
 	}
 	// `gpu-records` reads the records `gate gpu` wrote (gpu_record.go).
 	if name == "gpu-records" {

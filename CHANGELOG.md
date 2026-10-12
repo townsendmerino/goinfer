@@ -36,6 +36,35 @@ after `Close` is refused with the same error and a closed channel; the calls tha
 [`docs/use-from-go.md`](docs/use-from-go.md#closing-a-model) and on `Model.Close`. The Metal case itself needs the Mac to
 confirm (`metal/close_during_generation_test.go`); the CUDA resident path is tested (`cuda/close_during_generation_test.go`).
 
+### Added — speech to text: `POST /v1/audio/transcriptions`, and `input_audio` for Qwen3-ASR and Voxtral Mini
+
+`serve --model <whisper checkpoint>` answers OpenAI's `POST /v1/audio/transcriptions` from a pure-Go Whisper in float32 on the CPU,
+held to transformers' own generation token for token on `whisper-small`: 73 LibriSpeech clips come out byte-equal, 6.70% WER on
+both sides. Audio longer than 30 s is transcribed window by window; the response formats are `json`, `text`, `srt`, `vtt` and
+`verbose_json`; OpenAI's decode policy (temperature ladder, compression-ratio and log-probability fallback, silence skip) runs by
+default. `prompt`, `stream` and word-level timestamps are refused by name. Chat models take `input_audio` too: **Qwen3-ASR**
+(`qwen3_asr`; serve opens the assistant turn with `language`, which took int4's WER on the 73 clips from 8.26% (33 replies led by a
+control token) to 5.13% against float32's 4.09%) and **Voxtral Mini** (float32 byte-equal to transformers on a 5.9 s and a 36 s clip,
+int4 with 0 word edits against float32 on both). Only English clips and `whisper-small` are checked
+([`docs/server.md`](docs/server.md), "Speech to text"; [`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S14).
+
+### Added — Qwen3-VL-30B-A3B (`qwen3_vl_moe`): images through a mixture-of-experts decoder, checked on the CPU
+
+The decoder, the vision tower and the whole model (CPU, int8int8 and int4) are checked against Hugging Face float32 (the 30B at int4
+agrees with the reference on 92.5% of positions). On CUDA with expert paging (`--moe-cache-experts`, the only way the 8 GB card holds
+it) the served check against the CPU arm **read FAIL** on one request (a counting token the two paths resolve differently, both replies
+fluent); a re-read after the expert-major rounding fix is queued, and until it reads, treat that path as unvalidated
+([`docs/tasks/task-multimodal-support-2026-10.md`](docs/tasks/task-multimodal-support-2026-10.md), S10, G-S10q-d).
+
+### Changed — `--windowed-kv` is on by default (CUDA only)
+
+A sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer
+context in the same VRAM. Texts were identical across two A/B passes and eight sessions; decode speed pooled at 0.987 and 0.991 of
+full KV (the registered bar was 0.98), and a 1% to 2% cost is not excluded. It engages only on the CUDA resident path for a model
+with sliding-window layers and a context above the window. **A long multi-turn agent loop past the window re-prefills the prompt each
+turn** (its correctness is gated, its speed is not): `--windowed-kv=false` is the opt-out
+([`docs/tasks/task-cuda-windowed-kv-2026-10.md`](docs/tasks/task-cuda-windowed-kv-2026-10.md), sections 12 and 13).
+
 ### Added — Whisper and Voxtral's audio encoder on the GPU under `--backend cuda`
 
 The speech route and Voxtral's `input_audio` ran their encoder on the CPU. Under `--backend cuda` it now runs on the device

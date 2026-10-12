@@ -93,6 +93,11 @@ survives to a tag unless caught here.
 8. **The GPU gate, on BOTH boxes** (§C1-M on the Mac, §C1-C on the Linux box): `go run ./cmd/gate gpu`, the same command, a different backend. Neither is run by CI. v0.21.0 and v0.22.0 had the Metal run and no
    recorded CUDA one. Queue the CUDA run at night (about 83 minutes) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `metal/`, `cuda/`, `gpu/` or `decoder/` changed since.
    Every run writes a record, `docs/measurements/gpu-gate/<backend>-<time>-<commit>.json`: **commit it** (the Mac's from the Mac, as a model transfer is). `go run ./cmd/gate gpu-records` then says, per backend, `done` or `OWED` against HEAD, by that rule: the newest record made at the same code decides, and only a PASS on a clean tree with the heavy tier run (no `GOINFER_GATE_SKIP_HEAVY`) counts. Exit 0 only when both backends are done.
+9. **The CHANGELOG names what changed**: `go run ./cmd/gate changelog -section vX.Y.Z` (or without `-section` before the `[Unreleased]` move). It compares the tree with the newest v* tag and lists each
+   new HTTP route (read from `serve`'s registrations with `go/ast`), new or removed `serve` flag (`docs/flags.meta.json`), new model family (`docs/capability-matrix.json`) and a moved aikit pin that the
+   section does not name; exit 1 means something is owed. A whole-string match (a route's `{id}` placeholders read as `{}`, a new route's sub-routes ride with it); anything that is not release-note material
+   goes in `docs/changelog-waivers.txt` as `<kind> <name> <reason>` (a route's name is its method and path), the reason mandatory. aikit has the same rule for exported API
+   (`tools/releasegate`, "changelog-api"). `-base` and `-head` run it against a past release.
 
 ## The two-step tag (post-M-19)
 
