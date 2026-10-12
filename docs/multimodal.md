@@ -10,8 +10,8 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 | family (`model_type`) | CPU | CUDA | Metal | WebGPU | notes |
 |---|---|---|---|---|---|
-| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08). WebGPU: the float32 tower on the CPU by default; `--vision-quant f32` or `int8` puts a tower on the GPU, neither faster than the CPU's on the Mac it was measured on (2026-10-11). Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08). |
-| Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | E4B validated on CUDA (2026-10-08) and on Metal (2026-10-11), on the quantization-aware checkpoint. |
+| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08). WebGPU: the float32 tower on the CPU by default; `--vision-device gpu` puts it on the GPU and `--vision-quant int8` the int8 one (2026-10-11). Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08). |
+| Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | E4B validated on CUDA (2026-10-08) and on Metal (2026-10-11), on the quantization-aware checkpoint. WebGPU: the tower on the CPU by default; `--vision-device gpu` puts it on the GPU (2026-10-11). |
 | Gemma 4 E2B, E4B audio (`gemma4`) | CPU / CPU | CPU / GPU | GPU / GPU | CPU / GPU | One clip per request; 16-bit WAV, any rate (2026-10-09). |
 | Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | Tower checked on E2B (2026-10-07). |
 | Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | Validation in flight on nobara (2026-10-09); too large for a 16 GB Mac. |
