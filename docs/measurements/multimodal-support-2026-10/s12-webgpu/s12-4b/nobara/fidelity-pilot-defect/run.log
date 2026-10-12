@@ -1,0 +1,27 @@
+=== RUN   TestS12MRoPEFidelity
+12:35:26 [    0s] mode pilot: 8 prompts, prompt-set hash e18d8e41ff5e79fdd31a1466ce876c4a683768778abe842f03c92eec19b92e01; rows by cell map[served:3094 small:1634]
+12:35:29 [    4s] loading the float32 reference (CPU) and the int4 resident (WebGPU)
+12:35:37 [   11s] backend "vulkan", decode path webgpu:vulkan-resident (int4); planted defect in the candidate: true; 0 of 8 prompts already in /home/francis/goinfer-bench/s12-4b-2026-10-12/fidelity-pilot-defect/positions-live.jsonl
+12:35:40 [   14s] tower: small|glm_ocr/formula.png at [1 34 28] in 3.3 s
+12:36:11 [   45s] prompt 1 of 8 small|glm_ocr/formula.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 31/32; mean KL exact 0.0088 candidate 0.2233
+12:36:41 [   75s] prompt 2 of 8 small|glm_ocr/formula.png|q1: 271 rows (238 image); agreement exact 29/32 candidate 27/32; mean KL exact 0.3741 candidate 0.4561
+12:36:44 [   78s] tower: small|glm_ocr/table.png at [1 26 36] in 3.2 s
+12:37:14 [  108s] prompt 3 of 8 small|glm_ocr/table.png|q0: 263 rows (234 image); agreement exact 30/32 candidate 29/32; mean KL exact 0.0513 candidate 0.2066
+12:37:44 [  138s] prompt 4 of 8 small|glm_ocr/table.png|q1: 267 rows (234 image); agreement exact 27/32 candidate 25/32; mean KL exact 0.0580 candidate 0.2101
+12:37:48 [  142s] tower: small|glm_ocr/invoice.png at [1 36 28] in 3.5 s
+12:38:19 [  173s] prompt 5 of 8 small|glm_ocr/invoice.png|q0: 281 rows (252 image); agreement exact 32/32 candidate 31/32; mean KL exact 0.0159 candidate 0.2767
+12:38:49 [  203s] prompt 6 of 8 small|glm_ocr/invoice.png|q1: 285 rows (252 image); agreement exact 30/32 candidate 29/32; mean KL exact 0.0876 candidate 0.2194
+12:39:11 [  225s] tower: served|glm_ocr/table.png at [1 64 86] in 21.5 s
+12:40:39 [  314s] prompt 7 of 8 served|glm_ocr/table.png|q0: 1405 rows (1376 image); agreement exact 30/32 candidate 29/32; mean KL exact 0.0695 candidate 0.2753
+12:41:06 [  340s] tower: served|glm_ocr/invoice.png at [1 92 72] in 26.4 s
+12:42:51 [  445s] prompt 8 of 8 served|glm_ocr/invoice.png|q1: 1689 rows (1656 image); agreement exact 32/32 candidate 29/32; mean KL exact 0.1026 candidate 0.3164
+G-S12.4b-4a-5 mode pilot, backend vulkan, planted defect true, prompt-set hash e18d8e41ff5e79fdd31a1466ce876c4a683768778abe842f03c92eec19b92e01
+criteria: agreement margin 1.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell small: 6 prompts, 192 positions; agreement candidate 89.58% exact 93.75% (difference -4.17 pts, lower bound -5.25); mean KL candidate 0.2654 exact 0.0993 (ratio 2.673, upper bound 4.582); hard flips candidate 11 exact 5; discordant positions 10
+cell served: 2 prompts, 64 positions; agreement candidate 90.62% exact 96.88% (difference -6.25 pts, lower bound -11.39); mean KL candidate 0.2958 exact 0.0860 (ratio 3.438, upper bound 4.131); hard flips candidate 6 exact 1; discordant positions 4
+pooled: 8 prompts, 256 positions; agreement candidate 89.84% exact 94.53% (difference -4.69 pts, lower bound -6.06); mean KL candidate 0.2730 exact 0.0960 (ratio 2.844, upper bound 4.424); hard flips candidate 17 exact 6; discordant positions 14
+VERDICT OFF (hard flips pass false, agreement pass false, KL pass false) hard flips 17 > exact 6 + 2√exact; agreement lower bound -6.06 pts < −1.00; KL ratio upper bound 4.424 > 1.100
+--- PASS: TestS12MRoPEFidelity (445.40s)
+PASS
+exit 0 (defect=1)
+ALLDONE

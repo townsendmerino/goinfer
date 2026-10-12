@@ -75,8 +75,10 @@
     Mac and 7 on nobara's card in process. Step 3 is built too: Gemma 3, dense Gemma 4 and the E-models (text and
     image rows) take the pass, bit for bit, about 1.7 times the walk on the Mac and 2.2 on nobara. Owed: the served
     gates (queued for tonight on both boxes). The device m-RoPE image prefill (Qwen2.5-VL) is built and right in
-    its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere:
-    for the owner.
+    its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere.
+    The owner chose a gate against the float reference first (G-S12.4b-4a-5): registered and piloted, the
+    instrument goes red on a planted defect, and its agreement margin needs about 250 prompts where 94 are
+    registered, so the design is back with the owner.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -5007,6 +5009,91 @@ twice as fast end to end on nobara's card in one request. Its registered gate fa
 against 0.5. Offering it on Vulkan is one line (`mropePrefillBackends`). The instrument that could settle which
 route is nearer the model is a fidelity gate against the float reference, at night, which nobody has registered.
 The DeepStack form (Qwen3-VL) and Gemma 3's image block were not started: both would meet the same question.
+
+#### G-S12.4b-4a-5, which prefill route is nearer the model: registered 2026-10-12 before it runs (owner: "gate first on the decision")
+
+The owner's answer to S12.4b-4a's question: the device m-RoPE prefill stays off until a gate against the float
+reference has read. This is that gate.
+
+- **Tier:** night, on nobara. Vulkan is the only backend the decision is about. The pilot that sizes it runs by
+  day: it is untimed and grades nothing.
+- **Instrument:** `gpu`'s `TestS12MRoPEFidelity`, the prefill/decode fidelity protocol (`internal/fidelity`).
+  - **Reference:** the float32 CPU forward of the same checkpoint (Qwen2.5-VL 3B) on the same prompt and the same
+    tower features.
+  - **Arms**, both decoding on the WebGPU resident at int4: **exact**, the route in use (the CPU's int4 image
+    prefill, uploaded), and **candidate**, the device's m-RoPE prefill.
+  - **Positions:** 32 a prompt: the one after the prompt, and the ones after each of the reference's own 31
+    greedy tokens, forced on all three. Each is scored against the reference: top-1 agreement, a hard flip (the 3%
+    near-tie rule), and KL(reference ‖ arm).
+  - **What it cannot see:** the reference is goinfer's own float32 path, not transformers. A defect in the CPU's
+    image path would be in the reference and in the exact arm alike.
+- **Decision set, pooled, no per-cell veto:** two cells, an image at a 448x448 pixel budget ("small", about 230
+  image rows) and at the processor's own budget ("served", about 1,450). The prompts are the model's own chat
+  shape around one image and one question: the 15 invoice images of `testdata/glm_ocr/invoices`, each with two
+  questions in the small cell and a third in the served cell, and four non-document test images in the small cell.
+  **49 prompts, `fidelity.PromptSetHash` `7dc0e317583ac499c35715f812e00f28cfd076ed5b7dfc85a47c28a027a96bcd`.**
+- **Criteria:** `fidelity.NonInferior` with `AgreeMarginPts = 1` and `KLMargin = 0.10`, one-sided alpha 0.05, and
+  hard flips under the pooled Poisson bound. Superiority is not claimed. No worst-case claim.
+- **Prompts:** N from `power.py fidelity --from-positions` on the pilot's log (8 prompts on three images the gate
+  does not use, hash `e18d8e41...`). The registry has no entry for this pair.
+  - N of 49 or under: the 49 above.
+  - N of 50 to 94: those and the 45 of the registered extension (the same invoices with other questions, hash
+    `d185fe5e...`), pooled.
+  - Over 94: this set cannot resolve the margins; recorded, and the owner decides.
+  - **A limit, stated:** prompts that share an image are not independent draws, so the bounds are narrower than 49
+    independent images would give.
+- **Stopping rule:** the fixed set, no early stop. A restarted run skips the prompts already in its log, which
+  changes nothing it reads.
+- **The bands:**
+  - **PASS:** Vulkan goes into `gpu/residency.go:mropePrefillBackends`, and G-S12.4b-4a-4 (the served cell) is
+    queued.
+  - **PARKED:** no point estimate breaches its margin but a bound does. It stays off; the owner decides whether
+    the extension is worth a night.
+  - **OFF:** a point estimate breaches its margin, or hard flips fail. It stays off, on this record.
+- **Proving it can go red:** the pilot runs a second time with a planted defect in the candidate (each row's
+  positions taken from the next row). That verdict must be OFF, or the instrument is not used.
+- **Cost basis:** from the in-process readings on nobara: a small prompt about a minute (the tower once an image, a
+  float32 prefill of about 280 rows, 31 float32 steps), a served prompt four to five (a float32 prefill of about
+  1,500 rows and the CPU's int4 one). About 100 minutes for the 49; the estimate is redone from the pilot's own
+  times before it is queued.
+- **Predictions, written now:** PARKED (0.5): two int4 readings of one model should sit about as far from it as
+  each other, and 49 prompts on 19 images are few. PASS (0.3). OFF (0.2). The planted defect reads OFF (0.9).
+
+#### G-S12.4b-4a-5, the pilot read 2026-10-12: the instrument works and can go red; the registered set cannot resolve the agreement margin, so the gate is not run
+
+The pilot ran by day on nobara (RTX 2070 SUPER, Vulkan), 8 prompts on three images the gate does not use, then the
+same 8 with the planted defect (`s12-4b/nobara/fidelity-pilot/`, `fidelity-pilot-defect/`). It decides nothing about
+the prefill; it sizes the gate and tests the instrument.
+
+| run | agreement with the reference, candidate / exact | mean KL, candidate / exact (ratio, upper bound) | hard flips, candidate / exact | verdict |
+|---|---|---|---|---|
+| pilot | 91.80% / 94.53% (difference -2.73 points, lower bound -6.43) | 0.0812 / 0.0960 (0.846, 0.968) | 6 / 6 | not a decision |
+| pilot, planted defect | 89.84% / 94.53% (-4.69, -6.06) | 0.2730 / 0.0960 (2.844, 4.424) | 17 / 6 | OFF, on all three criteria |
+
+- **It can go red:** the planted defect fails every criterion, as registered. KL and hard flips see it plainly
+  (2.8 times the exact arm's KL, 17 flips against 6); agreement moves by two points.
+- **On 8 prompts the candidate's KL is the lower of the two** and its agreement the lower by 2.7 points, most of
+  that from one prompt (24 of 32 against 29). Neither is a finding at this size.
+- **Sizing** (`power.py fidelity --from-positions` on the pilot's log; the spreads are themselves uncertain at 8
+  prompts): the KL criterion needs **29 prompts**; the agreement criterion at its 1-point margin needs **251**
+  (a per-prompt sd of 6.3 points).
+- **The registered consequence:** over 94 prompts, "this set cannot resolve the margins; recorded, and the owner
+  decides". The gate has not run and nothing on its 49 prompts has been read.
+- **Times, for whichever design follows:** a small prompt 30 s, a served prompt 90 to 110 s and its tower 21 to
+  26 s. The 49 would take about 50 minutes.
+
+**For the owner, the three ways on, none taken:**
+1. **Keep both margins and buy the prompts.** About 250 prompts need more images than the 19 here, or the bounds
+   rest on questions about the same pictures. Crops of the invoices (each whole and in quarters) would give 75
+   image variants; three questions each is 225 small prompts and the 15 served ones, about 2.5 hours on nobara,
+   as two night jobs. The set and its hash would be registered before it runs.
+2. **Keep the 94 registered prompts and widen the agreement margin to 2 points** (about 63 prompts by the same
+   sd), leaving KL at 0.10. One night, about 1.6 hours. It is a change to a registered margin after a pilot, so it
+   needs the owner's word and is recorded as such.
+3. **Decide on KL and hard flips, with agreement reported and not gated.** The 49 registered prompts are enough
+   (29 needed). Also a change to the registered criteria.
+
+Predictions scored so far: "the planted defect reads OFF (0.9)": yes. The verdict's own predictions wait for a run.
 
 ### S13 — Against the peers
 
