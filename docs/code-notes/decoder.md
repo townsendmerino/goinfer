@@ -18688,6 +18688,17 @@ Gumbel-max, ~1.3-1.8x cheaper on the CPU (1.49 -> 1.16 ms at 262k), which moved 
 5.26x while top_p itself was unchanged (6.17 -> 6.09 ms) — the same "baseline moved" hazard as above. The
 denominator is now the LEGACY chunked inverse-CDF draw, kept unchanged in sampler_chunked_ref_test.go, so
 the ratio means exactly what it meant when the 5.0x bar was set.
+
+RE-BASED 2026-10-12, 5.0x -> 6.5x, after the v0.23.0 §C1 sweep read TestSamplingThroughputGate red. The
+cause is the denominator again, but this time its VARIANCE rather than a step: the legacy chunked draw is
+parallel, so its time follows what else the box is doing (262k: 0.88-1.72 ms across logged runs), while temp+top_p
+at 262k stayed at 6.0-6.6 ms in every logged run. The healthy ratio therefore spans 3.67x-6.06x
+(decoder-eosfix 2026-10-09 3.67x, quick-gofix 2026-10-08 6.06x, four idle runs on 2026-10-12 4.47-4.75x), and a 5.0x
+bar fires on a busy box with nothing regressed. 6.5x clears the highest healthy reading. The full-vocab-sort
+signature is ~7x at the usual ~1.4 ms denominator (about 10 ms for the filtered arm), so 6.5x still catches it
+there, but a regression read against a denominator at its fast extreme (~0.9 ms) would still pass the ratio.
+That residual blind spot is the cost of a ratio gate over a parallel baseline; a gate on the filtered arm
+against a SERIAL baseline would remove it and is not built.
 ```
 
 ## benchSample

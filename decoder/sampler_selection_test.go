@@ -293,8 +293,9 @@ func TestSamplingThroughputGate(t *testing.T) {
 	// twice had to be re-anchored when the denominator got faster while the filtered path did not regress. Re-anchor with
 	// a measurement, not a guess. The synthetic logits also overstate top_p's cost (randLogits is near-Gaussian, so a
 	// 0.95 nucleus keeps a huge candidate set where real peaked logits keep a handful), so the ratio says nothing about
-	// end-to-end speed. Record: docs/code-notes/decoder.md#TestSamplingThroughputGate.bound.
-	const factor = 5.0
+	// end-to-end speed. The denominator is parallel and moves with box state while top_p's cost does not, so the bar sits
+	// above the busiest healthy reading. Record: docs/code-notes/decoder.md#TestSamplingThroughputGate.bound.
+	const factor = 6.5
 	for _, V := range []int{152064, 262144} {
 		r := rand.New(rand.NewSource(1))
 		logits := randLogits(V, r)
