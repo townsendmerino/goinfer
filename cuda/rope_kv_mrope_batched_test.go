@@ -195,8 +195,11 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 	}
 	assertEqual("q", qOutA, qOutB)
 	assertEqual("k", kOutA, kOutB)
-	assertEqual("kc", kcA, kcB)
-	assertEqual("vc", vcA, vcB)
+	// The kernels store K/V at positions startPos..startPos+M-1 only; the cache below startPos is
+	// uninitialised device memory on both sides, so comparing it measures allocator leftovers.
+	written := startPos * kvDim
+	assertEqual("kc", kcA[written:], kcB[written:])
+	assertEqual("vc", vcA[written:], vcB[written:])
 }
 
 // TestRopeKVMRoPEBatched_matchesCPUReference is the adversarial half: per-row (t,h,w) triples that
