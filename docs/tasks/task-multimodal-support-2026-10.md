@@ -74,11 +74,15 @@
     prompt at int4 now prefills in the batched pass, bit for bit the row-by-row walk, about 3 times faster on the
     Mac and 7 on nobara's card in process. Step 3 is built too: Gemma 3, dense Gemma 4 and the E-models (text and
     image rows) take the pass, bit for bit, about 1.7 times the walk on the Mac and 2.2 on nobara. Owed: the served
-    gates (queued for tonight on both boxes). The device m-RoPE image prefill (Qwen2.5-VL) is built and right in
-    its positions, but its gate against the CPU route fails on Vulkan by one reading, so it is offered nowhere.
-    The owner chose a gate against the float reference first (G-S12.4b-4a-5): registered and piloted, the
-    instrument goes red on a planted defect. Its 1-point agreement margin needed about 250 prompts where 94 are
-    registered; the owner widened it to 2 points, and the gate is queued on nobara for tonight.
+    gates on the Mac (queued; nobara's read SHIP). The device m-RoPE image prefill (Qwen2.5-VL) failed its gate
+    against the CPU route on Vulkan by one reading; the owner chose a gate against the float reference first
+    (G-S12.4b-4a-5, agreement margin widened to 2 points on the owner's word). **It read PASS on nobara on
+    2026-10-12** (94 prompts: agreement +0.23 points, KL ratio 0.993), so the prefill runs on the device under
+    Vulkan; its served cell (G-S12.4b-4a-4) is queued on nobara.
+  - S12.4c and S12.4c-b (2026-10-12): a head wider than 128 (every Gemma) now gets a key-split attention kernel,
+    and the batched pass runs it once a layer instead of once a row. Gemma 3 4B's 1,783-token prefill, in process:
+    68.5 s to 4.8 s on nobara's card and 173.6 s to 32.3 s on the Mac, bit for bit the walk; a decode step at that
+    depth 72 ms to 41 ms on nobara. The served re-read is a night job.
 - **Not started:** S15 (video, parked), full S13.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -5142,6 +5146,220 @@ SUPER, Vulkan; records in `s12-webgpu/s12-4b/nobara/served-2026-10-12/`. The Mac
   wide-head attention kernel would do; that lever (S12.4b-3's note) now has a served reading behind it.
 - **Owed still:** the Mac's 2d and 3e (queued), and G-S12.4b-4a-5 on nobara (queued; nobara's runner has stopped,
   so it runs at the queue's next start).
+
+#### S12.4c, attention on wide heads under WebGPU: the 68 s measured, and the fix registered 2026-10-12 before any code
+
+The owner's question on the served cell above (Gemma 3 4B, 1,783 tokens: 68 s new, 88 s old): where does it go.
+
+**Measured** (`gpu`'s `TestPrefillInt4_profile`, the pass's own category split, on nobara, RTX 2070 SUPER through
+Vulkan, by day; `s12-4b/nobara/profile-by-category-day.log`):
+
+| model, rows | wall (s) | projections | attention | norms and rotary | K/V write |
+|---|---|---|---|---|---|
+| Gemma 3 4B (8 heads of 256), 457 | 5.41 | 1.03 s (19%) | **4.42 s (81%)** | 0.03 s | 0.00 s |
+| Gemma 3 4B, 1,783 | 68.95 | 3.73 s (5%) | **65.62 s (94%)** | 0.19 s | 0.02 s |
+| Qwen2.5-coder 1.5B (12 heads of 128), 457 | 0.63 | 0.59 s (89%) | 0.05 s (8%) | 0.02 s | 0.00 s |
+| Qwen2.5-coder 1.5B, 1,783 | 2.78 | 2.11 s (72%) | 0.73 s (25%) | 0.08 s | 0.01 s |
+
+- **The cause is one kernel choice.** `gpu/attention.go:Context.attnKernel` gives a head of up to 128 the
+  key-split kernel (each lane owns keys and computes its own dot products; one reduction a tile of keys) and a
+  wider head `attnWideTemplateWGSL`, which puts one lane on each dimension and so pays a cross-lane reduction, about
+  ten barriers, for every key. `gpu/attention.go:attnKeysEligible` stops at 128 because the key-split kernel's last
+  step gives each of its 128 lanes one output dimension. Every Gemma 3 and Gemma 4 model has heads of 256.
+- **It is not the prefill's own cost.** The walk runs the same kernel a row, which is why the old build took 88 s.
+  It is in decode as well: a token at depth n pays for n keys on every global layer, so a Gemma reply slows as its
+  context grows. Not measured as tokens a second.
+- **This replaces the "inferred, not measured" line of S12.4b-3.**
+
+**The change:** a key-split kernel for heads of 129 to 256: the same kernel with each lane owning two output
+dimensions in its last step (`t` and `t + 128`). `attnKernel` picks it for a wide head on a float32 K/V cache;
+f16 and int8 caches keep their kernels. It is decode's kernel, so the walk and the batched pass (which runs decode's
+kernel once a row on a wide head) both take it.
+
+**Gates:**
+- **G-S12.4c-1, the kernel** (quick). `TestAttnKeys_parity`'s reading at 8 heads of 256 over 4 KV heads, and at a
+  head of 192: against the float64 reference, cosine at least 0.999999 and max |diff| at most 1e-4; against the
+  kernel it replaces, cosine at least 0.9999999 and max |diff| at most 1e-5; key counts on both sides of a tile and
+  of the lane count, with a window start, and with an attention sink. Planted defects, each red: the second
+  dimension of a lane dropped; a lane's two dimensions swapped.
+- **G-S12.4c-2, nothing else moves** (quick). The narrow key-split kernel's source is untouched (the wide one is
+  derived from it), and a head of 128 or under still gets the pipeline it got.
+- **G-S12.4c-3, the Gemma gates under WebGPU** (quick, then day on the real checkpoints). The attention kernel
+  changes Gemma's decode by rounding, so every Gemma gate that compares WebGPU with the CPU is read again and must
+  hold its own bar: the tiny resident parity gates (Gemma 3, the two-geometry dense Gemma 4, the E-model's
+  G-S12.1a with its planted defects, the 26B block's), the pass against the walk (still bit for bit, G-S12.4b-3a
+  and 3c), and the real E2B text gate of S12.1.
+- **G-S12.4c-4, speed, in process** (day, nobara and the Mac): the profile above again, and the pass and the walk at
+  457 and 1,783 rows on Gemma 3 4B with the old kernel (`GOINFER_ATTN_KEYS=0`, a second process) and the new,
+  alternating. **Ships at a ratio of 0.98 or under on the pass and on the walk; parked to 1.00; off above.** The
+  served cells follow at night.
+- **Predictions:** attention at 1,783 rows falls from 65.6 s to under 3 s on nobara (0.7); the 1,783-row pass ends
+  under 9 s (0.6); every Gemma gate holds (0.7; the likeliest to move is a near-tie in the real E2B gate).
+
+#### S12.4c, built; the Mac read 2026-10-12; nobara not yet, so it is on its branch and not on main
+
+**The code** (branch `s12-4b-image-prefill`, `fe2e5f2e`; `gpu/attn_keys_wide.go:attnKeysWideSource`,
+`gpu/attention.go:Context.attnKernel`): the wide key-split kernel, derived from the narrow one's source.
+
+- **G-S12.4c-1: PASS on the Mac** (`gpu`'s `TestAttnKeysWide_parity`): both bars at 8 heads of 256 and at a head of
+  192, thirteen key counts and window starts, and both planted defects red. **Amendment:** the registered reading
+  "with an attention sink" was not run. No test helper feeds a sink to one attention dispatch, and no model with a
+  head over 128 has one.
+- **G-S12.4c-2: PASS** (`TestAttnKernel_choice`).
+- **G-S12.4c-3 on the Mac: PASS.** The whole `gpu` package passes with the kernel in place (every tiny Gemma gate).
+  The real E2B gate of S12.1 reads as it did: +0.74 points, 419 of 435 teacher-forced positions, 8 of 8 free runs.
+  The pass against the walk is bit for bit on E2B and Gemma 3 4B at 64 and 300 rows
+  (`s12-4b/g-s12-4c-mac-day.log`).
+- **G-S12.4c-4 on the Mac, one pair, a process an arm** (Gemma 3 4B at int4, the same log):
+
+| rows | arm | pass (s) | of which attention | the walk (s) |
+|---|---|---|---|---|
+| 457 | old kernel | 19.22 | 11.89 | 30.49 |
+| 457 | new | 10.94 | 3.67 | 22.33 |
+| 1,783 | old kernel | 173.55 | 147.90 | 221.69 |
+| 1,783 | new | 64.20 | 38.68 | 112.42 |
+
+  - The pass at 0.57 and 0.37 of the old kernel's, the walk at 0.73 and 0.51. One pair, so a direction and not yet
+    the registered reading.
+  - **The log's "last step" figures are wrong and are not used.** The walk's rows are queued without waiting, so the
+    last step's time is the whole queue's. A decode step at depth is still unmeasured.
+  - **Attention is still half the new pass at 1,783 rows.** That is the once-a-row dispatch, S12.4c-b's subject.
+- **Not read: anything on nobara.** Its lock was held by the fidelity gate when this was ready, and the guard
+  stopped me. Owed there before this merges: G-S12.4c-1 to 3 on Vulkan and the profile pair.
+
+#### S12.4c-b, the key-split kernels' rows forms in the batched pass: registered 2026-10-12 before any code
+
+The first Mac reading with the wide key-split kernel (below, when both boxes have read) left attention at half the
+pass's time at 1,783 rows. The pass runs decode's attention kernel once a row on a wide head or a window layer: 34
+dispatches a row, each over 8 workgroups, so the GPU runs one row's heads at a time.
+
+- **The change:** rows forms of the two key-split kernels (the narrow one and the wide one), derived from their
+  source as the quantizers' rows forms are: a workgroup's row comes from its y coordinate, its key count is the
+  first row's plus its row, and a window layer's first key is the row's own. One dispatch a layer for all rows.
+  The pass takes them wherever decode's choice for the layer is a key-split kernel (a float32 cache and an eligible
+  geometry); elsewhere it keeps what it does today.
+- **Gates:**
+  - **G-S12.4c-b1 (quick):** each rows form against its single-row kernel run once a row: bit for bit, for both
+    kernels, with and without a window, at key counts across a tile. Planted defects, each red: every row given
+    the first row's key count; the window ignored; a row reading the next row's query.
+  - **G-S12.4c-b2:** the pass against the walk stays bit for bit: G-S12.4b-2a, 3a and their planted defects on the
+    tiny fixtures, and 2b and 3c on the real checkpoints, on both backends.
+  - **G-S12.4c-b3, speed, in process:** the profile at 457 and 1,783 rows on Gemma 3 4B, this against the
+    once-a-row pass, on both boxes. Ships at 0.98 or under on the pass's wall time.
+- **Predictions:** b1 passes first run (0.6; the likeliest failure is the compiler evaluating the softmax
+  differently in the rows form, as nothing but identical text protects it). Attention at 1,783 rows on the Mac falls
+  from about 39 s to under 12 s (0.5).
+
+#### S12.4c-b, built; the Mac read 2026-10-12; nobara owed with S12.4c
+
+**The code** (branch `s12-4b-image-prefill`, `8925b038`; `gpu/attn_keys_rows.go:attnKeysRowsSource`): the two
+key-split kernels' rows forms, and the pass using one where decode's choice for a sliding-window layer or a wide
+head is a key-split kernel.
+
+- **G-S12.4c-b1: PASS on the Mac** (`gpu`'s `TestAttnKeysRows_matchSingleRow`): both rows forms equal their
+  single-row kernel bit for bit at nine key counts and windows; the three planted defects differ on both.
+- **G-S12.4c-b2 on the Mac: PASS.** The whole `gpu` package; and on the real checkpoints, where the wide rows form
+  and a real window are first exercised, the pass against the walk bit for bit: E2B at 64, 300 and 600 rows (past
+  its 512 window), Gemma 3 4B at 64, 300 and 1,100 (past its 1,024) (`s12-4b/g-s12-4c-b-mac-day.log`).
+- **G-S12.4c-b3 on the Mac, two pairs, a process an arm** (Gemma 3 4B at int4; the pass's wall time, and attention
+  from the profiled pass):
+
+| rows | once a row: pass (s), attention | rows form: pass (s), attention | ratio |
+|---|---|---|---|
+| 457 | 11.33 and 11.26; 3.58 and 3.73 | 8.15 and 8.13; 0.56 and 0.41 | 0.72 |
+| 1,783 | 66.41 and 65.94; 38.78 and 39.41 | 32.26 and 32.26; 5.07 and 5.41 | 0.49 |
+
+  Ships on the Mac's reading. Projections are now three quarters of the pass (about 31 s of 32 at 1,783 rows).
+- **Predictions scored.** "b1 passes first run (0.6)": the kernels did; the first run failed on my own inserted
+  comment, which the source check counted as a second read of the key count. "Attention at 1,783 rows on the Mac
+  from about 39 s to under 12 s (0.5)": yes, 5.1 to 5.4 s.
+- **Where the owner's cell stands on the Mac, in process, all three steps:** Gemma 3 4B at 1,783 rows was 173.6 s
+  with the per-dimension kernel, 64 to 66 s with the wide key-split kernel once a row, and is 32.3 s. The walk went
+  from 221.7 s to about 113 s; it runs the wide kernel a token and gains nothing from the rows form.
+- **A decode step at depth, now measured** (the walk's last step after the queue is drained, one reading a run):
+  206 to 245 ms at both 457 and 1,783 rows with the wide key-split kernel. It no longer grows with the context. No
+  reading with the old kernel: the earlier log's figures for it were the undrained queue's.
+
+#### S12.4c and S12.4c-b read on nobara 2026-10-12: every gate passes on Vulkan; the long Gemma 3 prompt is 4.8 s in process
+
+RTX 2070 SUPER, driver 595.91.07, Vulkan, branch head `ffc64585`, 15:59 to 16:12 PDT under the timing lock
+(`s12-4b/nobara/g-s12-4c-vulkan-day.log`).
+
+- **G-S12.4c-1, 4c-2, 4c-b1: PASS** (`TestAttnKeysWide_parity`, `TestAttnKernel_choice`, `TestAttnKeys_parity`,
+  `TestAttnKeysRows_matchSingleRow`), with the tiny Gemma pass gates and the tiny E-model gate.
+- **G-S12.4c-3 and 4c-b2, the pass against the walk on the real checkpoints: bit for bit.** E2B at 64, 300 and
+  600 rows, Gemma 3 4B at 64, 300 and 1,100, both multi-row kernels.
+  - **Not read on nobara:** the real E2B text gate of S12.1. It matched my test pattern and skipped: its sidecar
+    inputs are the Mac's. The Mac's reading of it stands (+0.74 points); Vulkan has none with this kernel.
+- **G-S12.4c-4 and 4c-b3, speed, in process, Gemma 3 4B at int4, one process an arm, one round:**
+
+| rows | arm | pass (s) | of which attention | the walk (s) | a decode step at that depth |
+|---|---|---|---|---|---|
+| 457 | per-dimension kernel (before S12.4c) | 5.39 | 4.47 | 10.75 | 38.0 ms |
+| 457 | wide key-split, once a row (S12.4c) | 2.61 | 1.74 | 8.00 | 26.7 ms |
+| 457 | wide key-split, rows form (S12.4c-b) | **1.10** | 0.08 | 8.01 | 26.9 ms |
+| 1,783 | per-dimension kernel | 68.49 | 65.53 | 87.67 | 72.2 ms |
+| 1,783 | wide key-split, once a row | 32.38 | 29.05 | 51.29 | 41.2 ms |
+| 1,783 | wide key-split, rows form | **4.81** | 1.21 | 51.35 | 41.1 ms |
+
+  - **S12.4c ships** on its rule (0.98 or under on the pass and on the walk): the pass at 0.48 and 0.47 of the old
+    kernel's, the walk at 0.74 and 0.59.
+  - **S12.4c-b ships** on its rule (0.98 or under on the pass): 0.42 and 0.15 of the once-a-row pass.
+  - **Together, at 1,783 rows: 68.49 s to 4.81 s, 14 times.** Projections are now 3.6 of the 4.8 s.
+  - **Decode at depth is faster too:** a step at 1,783 keys goes from 72.2 ms to 41.1 ms. One reading a run.
+  - **The limit:** one round, not the alternating pairs G-S12.4c-4 registered. The effects are two to fourteen
+    times; they are a direction and a size to within a few percent, not a graded ratio.
+- **Predictions scored (S12.4c's, made for nobara).** "Attention at 1,783 rows falls from 65.6 s to under 3 s
+  (0.7)": **no** for S12.4c alone, 29.05 s; the once-a-row dispatch held it, and it took S12.4c-b to reach 1.21 s.
+  "The 1,783-row pass ends under 9 s (0.6)": **no** for S12.4c alone, 32.38 s; 4.81 s after S12.4c-b. "Every Gemma
+  gate holds (0.7)": yes for every one read.
+- **Owed:** the served re-read of G-S12.4b-3e's Gemma 3 text cells with this build against the one before it, at
+  night. In process is not the served time: serve adds the tokenizer, the template and the first decode step.
+- **G-S12.4c-5, that served re-read, registered 2026-10-12 before it runs** (night, nobara; queued as
+  `s12-4c-5-served-gemma`, `s12-4b/run-g-s12-4c-5-night.sh`).
+  - **Instrument:** `served_text_ttft.py`, Gemma 3 4B under `--backend webgpu`, prompts of 400 and 1,600 words (457
+    and 1,783 tokens), five alternating rounds. New is serve at `ffc64585` (both kernels), old is serve at
+    S12.4b-3's head (the pinned `serve-webgpu-s3`, the new arm of G-S12.4b-3e).
+  - **Rule:** ships at a median new/old time to first token of 0.98 or under at both lengths; parked to 1.00; off
+    above. Fixed rounds, no early stop.
+  - **Replies are recorded, not required equal:** the decode kernel changes Gemma's logits by rounding, so a greedy
+    reply may differ. A reply that is not text of the prompt's subject fails the cell whatever its time.
+  - **Cost basis:** G-S12.4b-3e's own log: the old arm about 75 s a round at the two lengths, the new arm under 15,
+    with two loads a round: about 12 minutes; queued at 25.
+  - **Predictions:** the 1,783-token cell's new time to first token is under 8 s (0.7; in process the pass is 4.8 s
+    and the old served cell read within half a second of its in-process pass). The 457-token cell's is under 2 s (0.6).
+
+#### G-S12.4b-4a-5 read on nobara 2026-10-12: PASS; the device m-RoPE prefill is offered on Vulkan
+
+Qwen2.5-VL 3B at int4, Vulkan, the pinned binary at `59da4529`, 14:25 to 15:50 PDT on the night queue (started by
+day, not by me). Records: `s12-4b/nobara/fidelity-gate/` (`verdict.txt`, `positions.jsonl.gz`, `run.log`).
+Criteria as amended: agreement margin 2 points, KL margin 0.10, one-sided alpha 0.05, prompt-set hash `af108322...`.
+
+| cell | prompts, positions | top-1 agreement with the float reference: candidate, exact | difference (lower bound) | mean KL: candidate, exact | ratio (upper bound) | hard flips: candidate, exact |
+|---|---|---|---|---|---|---|
+| small image | 64, 2,048 | 90.92%, 90.92% | +0.00 pts (-0.78) | 0.1308, 0.1325 | 0.988 (1.086) | 74, 85 |
+| served-size image | 30, 960 | 96.77%, 96.04% | +0.73 pts (+0.26) | 0.0306, 0.0294 | 1.039 (1.133) | 12, 13 |
+| **pooled, the decision** | 94, 3,008 | 92.79%, 92.55% | **+0.23 pts (-0.32)** | 0.0988, 0.0996 | **0.993 (1.082)** | 86, 98 |
+
+- **VERDICT PASS:** hard flips, agreement and KL all pass on the pooled set.
+- **The amendment did not decide it.** The agreement bound of -0.32 points is inside the original 1-point margin
+  as well as the amended 2.
+- **A limit, in the registration and visible here:** the decision pools the cells with no per-cell veto. The
+  served-size cell alone has a KL upper bound of 1.133, over 1.10, on 30 prompts; its agreement is the better of
+  the two arms'. Prompts that share an image are not independent, so every bound is narrower than it would be on
+  94 independent images.
+- **What it means:** against the float32 model the device prefill is not the further of the two int4 routes. They
+  still differ from each other, so a reply to one image can differ in wording from the previous build's.
+- **Done on the PASS band:** `gpu/residency.go:mropePrefillBackends` holds Vulkan (`9f57d01b`). Metal stays out:
+  the CPU route is the faster one there, and this gate was not run on it. **G-S12.4b-4a-4 is queued on nobara**
+  (`s12-4b/run-g-s12-4b-4a-4-night.sh`: this build against `ffc64585`, four rotated rounds).
+- **The `gpu` package on Vulkan with the prefill on** (16:15 to 16:20 PDT,
+  `s12-4b/nobara/g-s12-4b-4a-vulkan-enabled-day.log`): 172 tests pass, 82 skip (heavy), and one fails,
+  `TestParentSelfSkipsWhenNoSubtestRan`. That one is my run's doing: it starts `go test` in a stub module, and my
+  script had exported `GOWORK`, which that module is not in. The same test binary passes with `GOWORK` unset and
+  fails with it set; nothing in it touches the prefill.
+- **Predictions scored.** PARKED (0.5): no. **PASS (0.3): yes.** OFF (0.2): no. I expected the bounds to be too
+  wide on 94 prompts; the agreement spread over the full set was smaller than the pilot's eight prompts gave.
 
 ### S13 — Against the peers
 

@@ -1,0 +1,66 @@
+Mon Oct 12 15:04:17 PDT 2026
+8925b038 gpu: the batched pass runs a key-split attention kernel's rows form, one dispatch a layer, on a sliding-window layer or a wide head (S12.4c-b)
+== pass against walk, real checkpoints, rows-form attention
+=== RUN   TestPrefillInt4_real
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 64 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 64 rows, tiled: pass
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 300 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 300 rows, tiled: pass
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 600 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.int4.e4h.webgpu.v16.giw, 600 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (184.68s)
+PASS
+exit 0 (E2B identity)
+=== RUN   TestPrefillInt4_real
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 64 rows, rows: pass
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 64 rows, tiled: pass
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 300 rows, rows: pass
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 300 rows, tiled: pass
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 1100 rows, rows: pass
+REAL gemma-3-4b-it.int4.e4h.webgpu.v16.giw, 1100 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (310.27s)
+PASS
+exit 0 (Gemma 3 4B identity)
+== profile Gemma 3 4B: rows form, once a row, rows form, once a row
+-- GOINFER_PREFILL_ATTN_ROWS=1
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it.int4.e4h.webgpu.v16.giw on metal: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: false; rows-form attention off: false
+PROFILE 457 rows: the walk 21.65 s, its last step (a decode step at this depth) 205.7 ms
+PROFILE 457 rows: wall 8.15 s unprofiled, 10.11 s profiled; projections 8.54 s (85%), attention 0.56 s (6%), norms and rotary 0.73 s (7%), K/V write 0.25 s (2%)
+PROFILE 1783 rows: the walk 113.25 s, its last step (a decode step at this depth) 213.8 ms
+PROFILE 1783 rows: wall 32.26 s unprofiled, 40.18 s profiled; projections 30.60 s (77%), attention 5.07 s (13%), norms and rotary 1.82 s (5%), K/V write 2.24 s (6%)
+--- PASS: TestPrefillInt4_profile (274.18s)
+PASS
+exit 0 (profile rows=1)
+-- GOINFER_PREFILL_ATTN_ROWS=0
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it.int4.e4h.webgpu.v16.giw on metal: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: false; rows-form attention off: true
+PROFILE 457 rows: the walk 22.70 s, its last step (a decode step at this depth) 214.9 ms
+PROFILE 457 rows: wall 11.33 s unprofiled, 13.19 s profiled; projections 8.82 s (67%), attention 3.58 s (27%), norms and rotary 0.46 s (3%), K/V write 0.28 s (2%)
+PROFILE 1783 rows: the walk 113.39 s, its last step (a decode step at this depth) 220.1 ms
+PROFILE 1783 rows: wall 66.41 s unprofiled, 75.27 s profiled; projections 30.86 s (41%), attention 38.78 s (52%), norms and rotary 1.88 s (3%), K/V write 3.08 s (4%)
+--- PASS: TestPrefillInt4_profile (389.35s)
+PASS
+exit 0 (profile rows=0)
+-- GOINFER_PREFILL_ATTN_ROWS=1
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it.int4.e4h.webgpu.v16.giw on metal: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: false; rows-form attention off: false
+PROFILE 457 rows: the walk 21.63 s, its last step (a decode step at this depth) 224.5 ms
+PROFILE 457 rows: wall 8.13 s unprofiled, 9.18 s profiled; projections 8.18 s (89%), attention 0.41 s (5%), norms and rotary 0.41 s (4%), K/V write 0.16 s (2%)
+PROFILE 1783 rows: the walk 112.11 s, its last step (a decode step at this depth) 245.2 ms
+PROFILE 1783 rows: wall 32.26 s unprofiled, 44.84 s profiled; projections 32.53 s (73%), attention 5.41 s (12%), norms and rotary 3.03 s (7%), K/V write 3.31 s (7%)
+--- PASS: TestPrefillInt4_profile (278.09s)
+PASS
+exit 0 (profile rows=1)
+-- GOINFER_PREFILL_ATTN_ROWS=0
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it.int4.e4h.webgpu.v16.giw on metal: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: false; rows-form attention off: true
+PROFILE 457 rows: the walk 22.35 s, its last step (a decode step at this depth) 227.0 ms
+PROFILE 457 rows: wall 11.26 s unprofiled, 13.59 s profiled; projections 8.67 s (64%), attention 3.73 s (28%), norms and rotary 0.78 s (6%), K/V write 0.30 s (2%)
+PROFILE 1783 rows: the walk 112.09 s, its last step (a decode step at this depth) 236.1 ms
+PROFILE 1783 rows: wall 65.94 s unprofiled, 77.80 s profiled; projections 31.44 s (41%), attention 39.41 s (51%), norms and rotary 2.67 s (3%), K/V write 3.39 s (4%)
+--- PASS: TestPrefillInt4_profile (389.82s)
+PASS
+exit 0 (profile rows=0)
+Mon Oct 12 15:34:46 PDT 2026
+ALLDONE
