@@ -3282,6 +3282,38 @@ aikit expected 0: L, as registered for S10's MoE variants.
     counting tokens where the CUDA int4 path and the CPU W4A8 kernel differ by 0.1 to 0.3 for reasons the prefill rounding does not
     touch), PASS 0.30, VOID 0.15 (the paged build's cold-run OOM, as before). Cost: about 35 minutes with the sidecar present; queued
     for the night, not run by day.
+  - **G-S10q-d3 read FAIL (nobara, the night of 2026-10-11, job `gs10q-d3`, rc=3), and the owner chose the instrument (2026-10-12: "build the
+    teacher-forced instrument first"; no decline yet).** The CPU arms again replied identically on both requests, so the reading is not void. One-image:
+    first difference at token 7, CPU ' (' 0.363 and CUDA ' by' (CPU's 0.209), a near-tie, PASS. Two-image: first difference at token 23, CPU ' different'
+    0.383 and CUDA ' six' (CPU's 0.147), not a near-tie, FAIL. The 2026-10-10 FAIL stands as what that build read, and so does this one.
+  - **G-S10q-e, registered 2026-10-12 before the 30B run: is the paged CUDA path as close to Hugging Face float32 as the CPU int4 path is?** It
+    is the instrument the 2026-10-10 investigation above named and left unbuilt, built as `cuda/qwen3vlmoe_logits_real_test.go` (the test) and
+    `decoder.Model.QwenVLTeacherForcedLogitsForTest` (the seam: the CPU prefill, the UploadKV bridge, then the resident's m-RoPE decode, each step fed
+    the pinned continuation's next token; the route a served MoE image turn takes, with no CPU fallback allowed) and graded by
+    `scripts/q3vlmoe_cuda_grade.py`.
+    - **Inputs, all from G-S10q-c and not re-made:** its 8 pinned sequences (`b30.seqs.json`: the four F2a images x two questions, 200 positions), its
+      Hugging Face float32 logits (`b30.hf.f32`, the layer-streamed reference) and its CPU int4 logits (`b30.int4.f32`, 92.50% agreement). Only the CUDA
+      arm is new: Qwen3-VL-30B-A3B at int4, `--moe-cache-experts` (the paged build), the tower on the CPU as in G-S10q-c.
+    - **Statistic and rule:** per position, agreement (the arm's argmax equals HF's) and KL(HF || arm). The statistic is the paired difference per
+      position, CUDA minus CPU int4, in agreement points, with a cluster bootstrap over the 8 prompts (10,000 resamples, seed 20261012, 95%).
+      **PASS:** the difference is at least -5.0 points (G-S10q-c's own margin) and every logit is finite. **PARKED:** -5.0 down to -15.0.
+      **FAIL:** worse than -15.0, or any non-finite logit. **Ambiguous band is the PARKED band; no bar moves after the reading.**
+    - **Outcome mapping.** PASS: the CUDA path is as near HF as the CPU path, so G-S10q-d's FAIL is the CPU arm being an unfair reference at a sensitive
+      token, not a CUDA quality gap; serve is unchanged, both FAILs stay recorded, and the owner decides whether to re-register G-S10q-d against HF.
+      PARKED: to the owner with the numbers. FAIL: a CUDA-path quality gap; the paged CUDA arm then declines Qwen3-VL MoE image requests (the owner's
+      option 1) until it is found.
+    - **What it cannot say.** 200 positions over 8 prompts, so the interval is about +-5 points: a true gap of 3 to 5 points can read PASS. It grades
+      the decode after a CPU prefill, which is the served route here; the CUDA tower and a resident that could prefill the MoE are not on it. It does
+      not say why, only whether.
+    - **Prediction (written now):** PASS 0.65 (the 10-10 reading found the arms agree to 0.003-0.013 in probability on 7 and 23 identical-prefix positions
+      and differ by 0.1-0.3 only at counting tokens, which an HF reference does not penalise unless it sides with the CPU), PARKED 0.25, FAIL 0.10
+      (including a non-finite logit).
+    - **Smoke, by day, exploratory (not a reading):** the same instrument on the dense Qwen3-VL-2B and its G-S10q-c files: the CPU arm reproduced 90.50%
+      exactly, CUDA 88.83%, difference -1.68 points [-4.1, +1.0], every logit finite. It proves the instrument runs end to end and the baseline is the
+      registered one; the 2B is not the paged path and decides nothing about the 30B.
+    - **Tier (TE11):** night. Instrument: `TestQwen3VLMoe_cudaLogits` plus the grader. Stopping rule: the 8 pinned sequences, no early stop. Cost basis:
+      the 2B smoke took 143 s end to end for 179 positions (about 80 s of it the CPU tower and load); the 30B adds the sidecar build (87 s measured in
+      `gs10q-d3`), a CPU prefill of about 70 s per image prompt, and 200 paged steps: estimate 30 minutes. Queued as `gs10q-e`.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the

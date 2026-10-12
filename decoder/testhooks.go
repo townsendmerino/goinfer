@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
@@ -485,4 +486,58 @@ func SetStreamDirSwapForTest(on bool) func() {
 	prev := streamDirSwapForTest
 	streamDirSwapForTest = on
 	return func() { streamDirSwapForTest = prev }
+}
+
+// QwenVLTeacherForcedLogitsForTest runs one Qwen3-VL image turn along the route GenerateQwenVLDeepstackSpans takes when the
+// resident cannot prefill it (a MoE decoder): the CPU prefill, the UploadKV bridge, then the resident's m-RoPE decode, with
+// every step fed the next token of path instead of a sampled one. It returns the logits that predict each path token,
+// [len(path)][vocab] flattened: the prefill's last row for path[0], then one resident step per token after it. Any step that
+// cannot run on the resident (no m-RoPE decode, the claim lost, the upload refused) is an error, never a CPU fallback, so a
+// reading is always the resident's. The model must have been loaded on a resident backend.
+func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path []int, spans []ImageSpan, feats []float32, deep [][]float32, gridTHW [][3]int, merge, imageToken int) ([]float32, error) {
+	r, ok := m.resident.(ResidentMRoPE)
+	if !ok {
+		return nil, fmt.Errorf("decoder: no resident m-RoPE decode on this model (%s)", m.ResidentDecline())
+	}
+	if len(path) == 0 {
+		return nil, fmt.Errorf("decoder: an empty path")
+	}
+	mropePos, err := mropePositions(ids, imageToken, gridTHW, merge)
+	if err != nil {
+		return nil, err
+	}
+	delta := mropeDelta(mropePos, len(ids))
+	if err := m.checkDeepstack(deep, imageSpansTotal(spans)); err != nil {
+		return nil, err
+	}
+	cache := m.NewCache(len(ids) + len(path))
+	if deep != nil {
+		cache.deepstack = &deepstackRows{spans: spans, rows: deep}
+	}
+	logits, err := m.prefillLogitsQwenVLSpans(ctx, ids, spans, feats, mropePos, cache)
+	cache.deepstack = nil
+	if err != nil {
+		return nil, err
+	}
+	if !m.tryClaimResident() {
+		return nil, fmt.Errorf("decoder: the resident is claimed or absent")
+	}
+	defer func() {
+		m.residentForgetIDs()
+		atomic.StoreInt32(&m.resBusy, 0)
+	}()
+	if err := m.residentUploadPrefill(cache); err != nil {
+		return nil, err
+	}
+	out := append(make([]float32, 0, len(path)*len(logits)), logits...)
+	gpuPos := len(ids)
+	for _, tok := range path[:len(path)-1] {
+		l, err := r.ForwardMRoPE(m.embedResident(tok), gpuPos, gpuPos+delta)
+		if err != nil {
+			return nil, fmt.Errorf("decoder: resident step at position %d: %w", gpuPos, err)
+		}
+		gpuPos++
+		out = append(out, l...)
+	}
+	return out, nil
 }
