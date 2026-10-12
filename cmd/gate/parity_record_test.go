@@ -16,9 +16,10 @@ import (
 // at the same code reads done. "The same code" is every file the parity manifest hashes plus decoder/, cuda/, metal/ and
 // gpu/. The rule is tested against a real git repository built in the test, because it is a statement about git objects.
 
-// parityTestManifest hashes one file inside a qualifying directory and one outside every one of them.
+// parityTestManifest is the real manifest's shape (families keyed by name; TestParityRecord_readsTheCommittedManifest holds
+// the parser to the committed file itself). It hashes files inside a qualifying directory and files outside every one of them.
 const parityTestManifest = `{"shared_sets": {"core": ["decoder/a.go", "scripts/pin.py"]},
- "families": [["fam", {"uses": ["core"], "own": ["decoder/b.go", "scripts/own.py"], "deps_hash": "sha256:x"}]]}`
+ "families": {"fam": {"uses": ["core"], "own": ["decoder/b.go", "scripts/own.py"], "deps_hash": "sha256:x"}}}`
 
 // parityTestRepo is gpuTestRepo plus a parity manifest, the two scripts it hashes and one it does not.
 func parityTestRepo(t *testing.T) (dir string, commit func(file, content string) string) {
@@ -64,11 +65,50 @@ func TestParityRecord_qualifyingPaths(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("qualifying paths %v, want %v", got, want)
 	}
-	if _, err := parityQualifyingPaths([]byte(`{"families": []}`)); err == nil {
+	if _, err := parityQualifyingPaths([]byte(`{"families": {}}`)); err == nil {
 		t.Error("a manifest that hashes no file was accepted: the row would then cover nothing but the four directories without saying so")
 	}
 	if _, err := parityQualifyingPaths([]byte(`not json`)); err == nil {
 		t.Error("an unreadable manifest was accepted")
+	}
+}
+
+// The parser reads the manifest this repository commits, not only the test's own: every path it returns exists, the four
+// directories are there, and so is at least one hashed file outside them (the pin scripts). A test manifest in a shape the
+// real one does not have passed every other test here while the release row could not read the real file.
+func TestParityRecord_readsTheCommittedManifest(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, parityManifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := parityQualifyingPaths(b)
+	if err != nil {
+		t.Fatalf("the committed manifest does not parse: %v", err)
+	}
+	outside := 0
+	for _, p := range paths {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("qualifying path %s is not in the repository", p)
+		}
+		if !slices.Contains(parityQualifyingTrees, p) {
+			outside++
+		}
+	}
+	for _, d := range parityQualifyingTrees {
+		if !slices.Contains(paths, d) {
+			t.Errorf("the qualifying paths lack %s/", d)
+		}
+	}
+	if outside == 0 {
+		t.Error("no hashed file outside the four directories: the committed manifest hashes scripts, and they were lost")
+	}
+	// And the row itself, on this repository: whatever it reads, it must not be a failure to read the manifest.
+	if r := rowParity(&relEnv{root: root}); strings.Contains(strings.Join(r.Detail, " "), parityManifestPath+":") {
+		t.Errorf("the release row cannot read the committed manifest: %+v", r)
 	}
 }
 
