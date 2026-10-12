@@ -4724,6 +4724,29 @@ against the row-by-row walk on the same resident
 - **Not measured:** a text prompt through the CPU route on the Mac would also beat the pass by this margin, but it
   is not the walk's bits (the CPU prefill quantizes differently), so it is a fidelity question and not this step's.
 
+#### G-S12.4b-2d, the served gate for S12.4b-2: registered 2026-10-12 before it runs (night, both boxes)
+
+- **Tier and instrument:** night. `s12-webgpu/s12-4b/served_text_ttft.py`, run by
+  `s12-webgpu/s12-4b/run-g-s12-4b-2d-night.sh`: time to the first streamed content event of a chat request, timed
+  by the client from just before the request is written. Two arms, both `serve --backend webgpu -require-backend`
+  at serve's defaults (int4): **new**, built at this branch's head, and **old**, built at `862434b7` (main before
+  it). No peer arm: the decision is new over old.
+- **The cells:** `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` from `~/models`, prompts of 512 and 2,048 calibrated
+  tokens (`scripts/prompts.json`, key `1.5B`), 16 greedy tokens. Five rounds; a round starts each binary once, in
+  an order that alternates by round, sends one discarded warm-up, then one request a depth. A request's prompt
+  carries a prefix unique to its round and depth and the same for both arms.
+- **Stopping rule:** fixed, five rounds, no early stop.
+- **Bar, per box:** the median of the five new/old TTFT ratios at each depth. **Ships at 0.98 or under at both
+  depths; parked from 0.98 to 1.00; above 1.00 the pass comes out for that backend.** And the two arms' replies
+  must be equal in every round at both depths: the pass claims the walk's bits, so one differing reply is red
+  whatever the times say.
+- **Cost basis:** from the in-process readings, a round is about a minute and a half on the Mac (the old arm's
+  2,048-token prefill is most of it) and under a minute on nobara, plus two loads a round. Queued at 25 minutes on
+  the Mac and 15 on nobara.
+- **Predictions, written now:** the Mac's median at 2,048 tokens is 0.45 or under (0.8); nobara's is 0.25 or
+  under (0.8); the ratio is higher at 512 tokens than at 2,048 on both boxes (0.7), since a request's fixed cost is
+  the same in both arms; the replies are equal in all rounds (0.9).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
