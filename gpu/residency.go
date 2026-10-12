@@ -1380,11 +1380,12 @@ func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]flo
 }
 
 // mropePrefillBackends lists the WebGPU backends on which an image turn's m-RoPE prefill runs on the device. On every
-// other PrefillMRoPELast declines and the turn keeps the CPU's prefill and the upload. It is empty: on Metal the CPU
-// route is the faster one, and on Vulkan, where the device prefill is several times faster, its gate against the CPU
-// route read FAIL on a real image turn (one decode step outside a near-tie), which is the owner's to weigh. Do not
-// add a backend without that decision (docs/tasks/task-multimodal-support-2026-10.md, "S12.4b-4a").
-var mropePrefillBackends = map[string]bool{}
+// other PrefillMRoPELast declines and the turn keeps the CPU's prefill and the upload. Vulkan is in it on a fidelity
+// gate against the float32 reference: the device prefill and the CPU's are two int4 readings of the model, and the
+// device's is not the further one. They are not each other's reference, so a reply can differ between them. Metal is
+// out because the CPU route is the faster one there. A backend goes in on its own run of that gate
+// (docs/tasks/task-multimodal-support-2026-10.md, "G-S12.4b-4a-5").
+var mropePrefillBackends = map[string]bool{"vulkan": true}
 
 var _ decoder.ResidentMRoPEPrefill = (*residentDecoder)(nil)
 

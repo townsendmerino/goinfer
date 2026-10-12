@@ -1,0 +1,140 @@
+=== RUN   TestS12MRoPEFidelity
+14:25:33 [    2s] mode both: 94 prompts, prompt-set hash af1083227f1a5f32e7677ab68267f4e4b8bc05506af83683ea1f80b4b60423ae; rows by cell map[served:44970 small:16646]
+14:25:36 [    5s] loading the float32 reference (CPU) and the int4 resident (WebGPU)
+14:25:44 [   13s] backend "vulkan", decode path webgpu:vulkan-resident (int4); planted defect in the candidate: false; 0 of 94 prompts already in /home/francis/goinfer-bench/s12-4b-2026-10-12/fidelity-gate/positions-live.jsonl
+14:25:48 [   16s] tower: small|glm_ocr/invoices/inv01.png at [1 36 28] in 3.4 s
+14:26:19 [   47s] prompt 1 of 94 small|glm_ocr/invoices/inv01.png|q0: 281 rows (252 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0060 candidate 0.0057
+14:26:49 [   78s] prompt 2 of 94 small|glm_ocr/invoices/inv01.png|q1: 285 rows (252 image); agreement exact 27/32 candidate 30/32; mean KL exact 0.2656 candidate 0.1905
+14:27:09 [   98s] tower: served|glm_ocr/invoices/inv01.png at [1 82 64] in 20.0 s
+14:28:33 [  182s] prompt 3 of 94 served|glm_ocr/invoices/inv01.png|q2: 1341 rows (1312 image); agreement exact 29/32 candidate 29/32; mean KL exact 0.0753 candidate 0.0547
+14:28:36 [  185s] tower: small|glm_ocr/invoices/inv02.png at [1 34 28] in 3.2 s
+14:29:06 [  215s] prompt 4 of 94 small|glm_ocr/invoices/inv02.png|q0: 267 rows (238 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0995 candidate 0.1096
+14:29:36 [  244s] prompt 5 of 94 small|glm_ocr/invoices/inv02.png|q1: 271 rows (238 image); agreement exact 29/32 candidate 28/32; mean KL exact 0.1614 candidate 0.1411
+14:30:03 [  272s] tower: served|glm_ocr/invoices/inv02.png at [1 90 76] in 27.4 s
+14:31:51 [  380s] prompt 6 of 94 served|glm_ocr/invoices/inv02.png|q2: 1739 rows (1710 image); agreement exact 30/32 candidate 31/32; mean KL exact 0.0379 candidate 0.0384
+14:31:54 [  383s] tower: small|glm_ocr/invoices/inv03.png at [1 34 28] in 3.2 s
+14:32:24 [  413s] prompt 7 of 94 small|glm_ocr/invoices/inv03.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0118 candidate 0.0135
+14:32:54 [  443s] prompt 8 of 94 small|glm_ocr/invoices/inv03.png|q1: 271 rows (238 image); agreement exact 24/32 candidate 23/32; mean KL exact 0.6680 candidate 0.5360
+14:33:18 [  467s] tower: served|glm_ocr/invoices/inv03.png at [1 86 72] in 24.3 s
+14:34:56 [  565s] prompt 9 of 94 served|glm_ocr/invoices/inv03.png|q2: 1577 rows (1548 image); agreement exact 29/32 candidate 30/32; mean KL exact 0.0492 candidate 0.0514
+14:35:00 [  568s] tower: small|glm_ocr/invoices/inv04.png at [1 34 28] in 3.2 s
+14:35:29 [  598s] prompt 10 of 94 small|glm_ocr/invoices/inv04.png|q0: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0265 candidate 0.0257
+14:35:59 [  628s] prompt 11 of 94 small|glm_ocr/invoices/inv04.png|q1: 271 rows (238 image); agreement exact 26/32 candidate 26/32; mean KL exact 0.3963 candidate 0.6411
+14:36:24 [  652s] tower: served|glm_ocr/invoices/inv04.png at [1 86 72] in 24.3 s
+14:38:02 [  751s] prompt 12 of 94 served|glm_ocr/invoices/inv04.png|q2: 1577 rows (1548 image); agreement exact 29/32 candidate 30/32; mean KL exact 0.0400 candidate 0.0380
+14:38:05 [  754s] tower: small|glm_ocr/invoices/inv05.png at [1 34 28] in 3.2 s
+14:38:35 [  783s] prompt 13 of 94 small|glm_ocr/invoices/inv05.png|q0: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0352 candidate 0.0344
+14:39:05 [  814s] prompt 14 of 94 small|glm_ocr/invoices/inv05.png|q1: 271 rows (238 image); agreement exact 30/32 candidate 27/32; mean KL exact 0.1490 candidate 0.2941
+14:39:25 [  834s] tower: served|glm_ocr/invoices/inv05.png at [1 78 68] in 20.4 s
+14:40:50 [  919s] prompt 15 of 94 served|glm_ocr/invoices/inv05.png|q2: 1355 rows (1326 image); agreement exact 28/32 candidate 28/32; mean KL exact 0.0698 candidate 0.0577
+14:40:53 [  922s] tower: small|glm_ocr/invoices/inv06.png at [1 34 28] in 3.2 s
+14:41:23 [  952s] prompt 16 of 94 small|glm_ocr/invoices/inv06.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0325 candidate 0.0358
+14:41:53 [  982s] prompt 17 of 94 small|glm_ocr/invoices/inv06.png|q1: 271 rows (238 image); agreement exact 23/32 candidate 24/32; mean KL exact 0.3553 candidate 0.4499
+14:42:17 [ 1006s] tower: served|glm_ocr/invoices/inv06.png at [1 86 72] in 24.3 s
+14:43:56 [ 1104s] prompt 18 of 94 served|glm_ocr/invoices/inv06.png|q2: 1577 rows (1548 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0233 candidate 0.0412
+14:43:59 [ 1108s] tower: small|glm_ocr/invoices/inv07.png at [1 34 28] in 3.2 s
+14:44:29 [ 1138s] prompt 19 of 94 small|glm_ocr/invoices/inv07.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0079 candidate 0.0171
+14:44:59 [ 1168s] prompt 20 of 94 small|glm_ocr/invoices/inv07.png|q1: 271 rows (238 image); agreement exact 25/32 candidate 25/32; mean KL exact 0.5635 candidate 0.5311
+14:45:26 [ 1195s] tower: served|glm_ocr/invoices/inv07.png at [1 90 76] in 27.3 s
+14:47:15 [ 1303s] prompt 21 of 94 served|glm_ocr/invoices/inv07.png|q2: 1739 rows (1710 image); agreement exact 30/32 candidate 31/32; mean KL exact 0.0400 candidate 0.0494
+14:47:18 [ 1307s] tower: small|glm_ocr/invoices/inv08.png at [1 34 28] in 3.3 s
+14:47:48 [ 1336s] prompt 22 of 94 small|glm_ocr/invoices/inv08.png|q0: 267 rows (238 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0356 candidate 0.0349
+14:48:18 [ 1366s] prompt 23 of 94 small|glm_ocr/invoices/inv08.png|q1: 271 rows (238 image); agreement exact 28/32 candidate 30/32; mean KL exact 0.1259 candidate 0.0908
+14:48:38 [ 1387s] tower: served|glm_ocr/invoices/inv08.png at [1 78 68] in 20.3 s
+14:50:03 [ 1472s] prompt 24 of 94 served|glm_ocr/invoices/inv08.png|q2: 1355 rows (1326 image); agreement exact 28/32 candidate 29/32; mean KL exact 0.0351 candidate 0.0394
+14:50:06 [ 1475s] tower: small|glm_ocr/invoices/inv09.png at [1 36 28] in 3.4 s
+14:50:37 [ 1506s] prompt 25 of 94 small|glm_ocr/invoices/inv09.png|q0: 281 rows (252 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0100 candidate 0.0171
+14:51:07 [ 1536s] prompt 26 of 94 small|glm_ocr/invoices/inv09.png|q1: 285 rows (252 image); agreement exact 25/32 candidate 27/32; mean KL exact 0.5226 candidate 0.4248
+14:51:27 [ 1556s] tower: served|glm_ocr/invoices/inv09.png at [1 82 64] in 20.0 s
+14:52:51 [ 1640s] prompt 27 of 94 served|glm_ocr/invoices/inv09.png|q2: 1341 rows (1312 image); agreement exact 30/32 candidate 29/32; mean KL exact 0.0481 candidate 0.0348
+14:52:55 [ 1643s] tower: small|glm_ocr/invoices/inv10.png at [1 34 28] in 3.3 s
+14:53:25 [ 1673s] prompt 28 of 94 small|glm_ocr/invoices/inv10.png|q0: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0149 candidate 0.0099
+14:53:55 [ 1703s] prompt 29 of 94 small|glm_ocr/invoices/inv10.png|q1: 271 rows (238 image); agreement exact 27/32 candidate 25/32; mean KL exact 0.3708 candidate 0.6350
+14:54:22 [ 1731s] tower: served|glm_ocr/invoices/inv10.png at [1 90 76] in 27.3 s
+14:56:10 [ 1839s] prompt 30 of 94 served|glm_ocr/invoices/inv10.png|q2: 1739 rows (1710 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0205 candidate 0.0233
+14:56:14 [ 1842s] tower: small|glm_ocr/invoices/inv11.png at [1 34 28] in 3.2 s
+14:56:43 [ 1872s] prompt 31 of 94 small|glm_ocr/invoices/inv11.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0263 candidate 0.0368
+14:57:13 [ 1902s] prompt 32 of 94 small|glm_ocr/invoices/inv11.png|q1: 271 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0942 candidate 0.0809
+14:57:33 [ 1922s] tower: served|glm_ocr/invoices/inv11.png at [1 78 68] in 20.3 s
+14:58:59 [ 2007s] prompt 33 of 94 served|glm_ocr/invoices/inv11.png|q2: 1355 rows (1326 image); agreement exact 30/32 candidate 31/32; mean KL exact 0.0313 candidate 0.0445
+14:59:02 [ 2011s] tower: small|glm_ocr/invoices/inv12.png at [1 36 28] in 3.4 s
+14:59:32 [ 2041s] prompt 34 of 94 small|glm_ocr/invoices/inv12.png|q0: 281 rows (252 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0125 candidate 0.0133
+15:00:03 [ 2072s] prompt 35 of 94 small|glm_ocr/invoices/inv12.png|q1: 285 rows (252 image); agreement exact 25/32 candidate 27/32; mean KL exact 0.4735 candidate 0.3040
+15:00:23 [ 2092s] tower: served|glm_ocr/invoices/inv12.png at [1 82 64] in 20.0 s
+15:01:47 [ 2176s] prompt 36 of 94 served|glm_ocr/invoices/inv12.png|q2: 1341 rows (1312 image); agreement exact 29/32 candidate 29/32; mean KL exact 0.0562 candidate 0.0657
+15:01:50 [ 2179s] tower: small|glm_ocr/invoices/inv13.png at [1 34 28] in 3.2 s
+15:02:20 [ 2208s] prompt 37 of 94 small|glm_ocr/invoices/inv13.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0048 candidate 0.0057
+15:02:50 [ 2238s] prompt 38 of 94 small|glm_ocr/invoices/inv13.png|q1: 271 rows (238 image); agreement exact 27/32 candidate 26/32; mean KL exact 0.3443 candidate 0.3627
+15:03:10 [ 2259s] tower: served|glm_ocr/invoices/inv13.png at [1 78 68] in 20.3 s
+15:04:35 [ 2344s] prompt 39 of 94 served|glm_ocr/invoices/inv13.png|q2: 1355 rows (1326 image); agreement exact 29/32 candidate 30/32; mean KL exact 0.0665 candidate 0.0615
+15:04:38 [ 2347s] tower: small|glm_ocr/invoices/inv14.png at [1 34 28] in 3.2 s
+15:05:08 [ 2377s] prompt 40 of 94 small|glm_ocr/invoices/inv14.png|q0: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0261 candidate 0.0226
+15:05:38 [ 2407s] prompt 41 of 94 small|glm_ocr/invoices/inv14.png|q1: 271 rows (238 image); agreement exact 29/32 candidate 29/32; mean KL exact 0.2078 candidate 0.1689
+15:05:58 [ 2427s] tower: served|glm_ocr/invoices/inv14.png at [1 78 68] in 20.3 s
+15:07:23 [ 2512s] prompt 42 of 94 served|glm_ocr/invoices/inv14.png|q2: 1355 rows (1326 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0224 candidate 0.0225
+15:07:26 [ 2515s] tower: small|glm_ocr/invoices/inv15.png at [1 34 28] in 3.2 s
+15:07:56 [ 2545s] prompt 43 of 94 small|glm_ocr/invoices/inv15.png|q0: 267 rows (238 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0149 candidate 0.0248
+15:08:26 [ 2575s] prompt 44 of 94 small|glm_ocr/invoices/inv15.png|q1: 271 rows (238 image); agreement exact 27/32 candidate 29/32; mean KL exact 0.4303 candidate 0.3386
+15:08:53 [ 2602s] tower: served|glm_ocr/invoices/inv15.png at [1 90 76] in 27.2 s
+15:10:42 [ 2710s] prompt 45 of 94 served|glm_ocr/invoices/inv15.png|q2: 1739 rows (1710 image); agreement exact 29/32 candidate 30/32; mean KL exact 0.0595 candidate 0.0456
+15:10:45 [ 2714s] tower: small|gemma3_preprocess_image.png at [1 32 32] in 3.5 s
+15:11:16 [ 2744s] prompt 46 of 94 small|gemma3_preprocess_image.png|q4: 281 rows (256 image); agreement exact 27/32 candidate 26/32; mean KL exact 0.0686 candidate 0.0865
+15:11:16 [ 2744s] tower: small|qwen25vl_preprocess_image.png at [1 4 6] in 0.2 s
+15:11:34 [ 2763s] prompt 47 of 94 small|qwen25vl_preprocess_image.png|q4: 31 rows (6 image); agreement exact 28/32 candidate 24/32; mean KL exact 0.1165 candidate 0.1099
+15:11:34 [ 2763s] tower: small|qwen25vl_preprocess_image_resize.png at [1 6 10] in 0.3 s
+15:11:53 [ 2782s] prompt 48 of 94 small|qwen25vl_preprocess_image_resize.png|q4: 40 rows (15 image); agreement exact 28/32 candidate 25/32; mean KL exact 0.0784 candidate 0.0761
+15:11:53 [ 2782s] tower: small|qwen35vl_preprocess_image.png at [1 4 6] in 0.1 s
+15:12:12 [ 2800s] prompt 49 of 94 small|qwen35vl_preprocess_image.png|q4: 31 rows (6 image); agreement exact 25/32 candidate 25/32; mean KL exact 0.0810 candidate 0.0941
+15:12:42 [ 2831s] prompt 50 of 94 small|glm_ocr/invoices/inv01.png|q2: 281 rows (252 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0761 candidate 0.0988
+15:13:13 [ 2861s] prompt 51 of 94 small|glm_ocr/invoices/inv01.png|q3: 282 rows (252 image); agreement exact 26/32 candidate 27/32; mean KL exact 0.2731 candidate 0.1762
+15:14:36 [ 2945s] prompt 52 of 94 served|glm_ocr/invoices/inv01.png|q0: 1341 rows (1312 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0072 candidate 0.0089
+15:15:06 [ 2975s] prompt 53 of 94 small|glm_ocr/invoices/inv02.png|q2: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0535 candidate 0.0540
+15:15:35 [ 3004s] prompt 54 of 94 small|glm_ocr/invoices/inv02.png|q3: 268 rows (238 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0593 candidate 0.0591
+15:17:24 [ 3113s] prompt 55 of 94 served|glm_ocr/invoices/inv02.png|q0: 1739 rows (1710 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0146 candidate 0.0202
+15:17:54 [ 3143s] prompt 56 of 94 small|glm_ocr/invoices/inv03.png|q2: 267 rows (238 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0589 candidate 0.0559
+15:18:24 [ 3172s] prompt 57 of 94 small|glm_ocr/invoices/inv03.png|q3: 268 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0637 candidate 0.0525
+15:20:01 [ 3270s] prompt 58 of 94 served|glm_ocr/invoices/inv03.png|q0: 1577 rows (1548 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0120 candidate 0.0121
+15:20:31 [ 3300s] prompt 59 of 94 small|glm_ocr/invoices/inv04.png|q2: 267 rows (238 image); agreement exact 29/32 candidate 30/32; mean KL exact 0.0668 candidate 0.0472
+15:21:01 [ 3330s] prompt 60 of 94 small|glm_ocr/invoices/inv04.png|q3: 268 rows (238 image); agreement exact 25/32 candidate 25/32; mean KL exact 0.3562 candidate 0.2690
+15:22:39 [ 3428s] prompt 61 of 94 served|glm_ocr/invoices/inv04.png|q0: 1577 rows (1548 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0037 candidate 0.0055
+15:23:09 [ 3458s] prompt 62 of 94 small|glm_ocr/invoices/inv05.png|q2: 267 rows (238 image); agreement exact 31/32 candidate 32/32; mean KL exact 0.0608 candidate 0.0504
+15:23:38 [ 3487s] prompt 63 of 94 small|glm_ocr/invoices/inv05.png|q3: 268 rows (238 image); agreement exact 26/32 candidate 27/32; mean KL exact 0.1431 candidate 0.1122
+15:25:03 [ 3572s] prompt 64 of 94 served|glm_ocr/invoices/inv05.png|q0: 1355 rows (1326 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0116 candidate 0.0237
+15:25:33 [ 3602s] prompt 65 of 94 small|glm_ocr/invoices/inv06.png|q2: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0390 candidate 0.0448
+15:26:03 [ 3632s] prompt 66 of 94 small|glm_ocr/invoices/inv06.png|q3: 268 rows (238 image); agreement exact 28/32 candidate 26/32; mean KL exact 0.0904 candidate 0.0824
+15:27:41 [ 3730s] prompt 67 of 94 served|glm_ocr/invoices/inv06.png|q0: 1577 rows (1548 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0322 candidate 0.0308
+15:28:11 [ 3760s] prompt 68 of 94 small|glm_ocr/invoices/inv07.png|q2: 267 rows (238 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0362 candidate 0.0320
+15:28:41 [ 3789s] prompt 69 of 94 small|glm_ocr/invoices/inv07.png|q3: 268 rows (238 image); agreement exact 28/32 candidate 26/32; mean KL exact 0.2163 candidate 0.2379
+15:30:29 [ 3898s] prompt 70 of 94 served|glm_ocr/invoices/inv07.png|q0: 1739 rows (1710 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0069 candidate 0.0045
+15:30:59 [ 3928s] prompt 71 of 94 small|glm_ocr/invoices/inv08.png|q2: 267 rows (238 image); agreement exact 30/32 candidate 31/32; mean KL exact 0.0664 candidate 0.0464
+15:31:29 [ 3957s] prompt 72 of 94 small|glm_ocr/invoices/inv08.png|q3: 268 rows (238 image); agreement exact 29/32 candidate 29/32; mean KL exact 0.0587 candidate 0.0615
+15:32:53 [ 4042s] prompt 73 of 94 served|glm_ocr/invoices/inv08.png|q0: 1355 rows (1326 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0178 candidate 0.0139
+15:33:24 [ 4073s] prompt 74 of 94 small|glm_ocr/invoices/inv09.png|q2: 281 rows (252 image); agreement exact 29/32 candidate 29/32; mean KL exact 0.0591 candidate 0.0452
+15:33:54 [ 4103s] prompt 75 of 94 small|glm_ocr/invoices/inv09.png|q3: 282 rows (252 image); agreement exact 27/32 candidate 28/32; mean KL exact 0.1103 candidate 0.1045
+15:35:18 [ 4187s] prompt 76 of 94 served|glm_ocr/invoices/inv09.png|q0: 1341 rows (1312 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0180 candidate 0.0141
+15:35:48 [ 4217s] prompt 77 of 94 small|glm_ocr/invoices/inv10.png|q2: 267 rows (238 image); agreement exact 29/32 candidate 31/32; mean KL exact 0.0585 candidate 0.0495
+15:36:18 [ 4247s] prompt 78 of 94 small|glm_ocr/invoices/inv10.png|q3: 268 rows (238 image); agreement exact 29/32 candidate 31/32; mean KL exact 0.0491 candidate 0.0657
+15:38:07 [ 4355s] prompt 79 of 94 served|glm_ocr/invoices/inv10.png|q0: 1739 rows (1710 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0045 candidate 0.0052
+15:38:36 [ 4385s] prompt 80 of 94 small|glm_ocr/invoices/inv11.png|q2: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0439 candidate 0.0505
+15:39:06 [ 4415s] prompt 81 of 94 small|glm_ocr/invoices/inv11.png|q3: 268 rows (238 image); agreement exact 28/32 candidate 28/32; mean KL exact 0.0910 candidate 0.1149
+15:40:31 [ 4500s] prompt 82 of 94 served|glm_ocr/invoices/inv11.png|q0: 1355 rows (1326 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0180 candidate 0.0291
+15:41:02 [ 4530s] prompt 83 of 94 small|glm_ocr/invoices/inv12.png|q2: 281 rows (252 image); agreement exact 30/32 candidate 29/32; mean KL exact 0.0578 candidate 0.0586
+15:41:32 [ 4561s] prompt 84 of 94 small|glm_ocr/invoices/inv12.png|q3: 282 rows (252 image); agreement exact 29/32 candidate 30/32; mean KL exact 0.1073 candidate 0.0897
+15:42:56 [ 4645s] prompt 85 of 94 served|glm_ocr/invoices/inv12.png|q0: 1341 rows (1312 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0207 candidate 0.0246
+15:43:26 [ 4675s] prompt 86 of 94 small|glm_ocr/invoices/inv13.png|q2: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0478 candidate 0.0421
+15:43:56 [ 4705s] prompt 87 of 94 small|glm_ocr/invoices/inv13.png|q3: 268 rows (238 image); agreement exact 31/32 candidate 30/32; mean KL exact 0.0325 candidate 0.0427
+15:45:21 [ 4790s] prompt 88 of 94 served|glm_ocr/invoices/inv13.png|q0: 1355 rows (1326 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0072 candidate 0.0050
+15:45:51 [ 4820s] prompt 89 of 94 small|glm_ocr/invoices/inv14.png|q2: 267 rows (238 image); agreement exact 30/32 candidate 30/32; mean KL exact 0.0370 candidate 0.0294
+15:46:21 [ 4849s] prompt 90 of 94 small|glm_ocr/invoices/inv14.png|q3: 268 rows (238 image); agreement exact 28/32 candidate 27/32; mean KL exact 0.0585 candidate 0.0711
+15:47:45 [ 4934s] prompt 91 of 94 served|glm_ocr/invoices/inv14.png|q0: 1355 rows (1326 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0139 candidate 0.0277
+15:48:15 [ 4964s] prompt 92 of 94 small|glm_ocr/invoices/inv15.png|q2: 267 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0922 candidate 0.0923
+15:48:45 [ 4993s] prompt 93 of 94 small|glm_ocr/invoices/inv15.png|q3: 268 rows (238 image); agreement exact 31/32 candidate 31/32; mean KL exact 0.0770 candidate 0.0743
+15:50:33 [ 5102s] prompt 94 of 94 served|glm_ocr/invoices/inv15.png|q0: 1739 rows (1710 image); agreement exact 32/32 candidate 32/32; mean KL exact 0.0193 candidate 0.0241
+G-S12.4b-4a-5 mode both, backend vulkan, planted defect false, prompt-set hash af1083227f1a5f32e7677ab68267f4e4b8bc05506af83683ea1f80b4b60423ae
+criteria: agreement margin 2.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell small: 64 prompts, 2048 positions; agreement candidate 90.92% exact 90.92% (difference +0.00 pts, lower bound -0.78); mean KL candidate 0.1308 exact 0.1325 (ratio 0.988, upper bound 1.086); hard flips candidate 74 exact 85; discordant positions 76
+cell served: 30 prompts, 960 positions; agreement candidate 96.77% exact 96.04% (difference +0.73 pts, lower bound +0.26); mean KL candidate 0.0306 exact 0.0294 (ratio 1.039, upper bound 1.133); hard flips candidate 12 exact 13; discordant positions 11
+pooled: 94 prompts, 3008 positions; agreement candidate 92.79% exact 92.55% (difference +0.23 pts, lower bound -0.32); mean KL candidate 0.0988 exact 0.0996 (ratio 0.993, upper bound 1.082); hard flips candidate 86 exact 98; discordant positions 87
+VERDICT PASS (hard flips pass true, agreement pass true, KL pass true) 
+--- PASS: TestS12MRoPEFidelity (5102.27s)
+PASS

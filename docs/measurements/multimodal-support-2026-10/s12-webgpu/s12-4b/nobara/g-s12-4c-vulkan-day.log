@@ -1,0 +1,396 @@
+started: 2026-10-12 15:59:02 PDT
+rev: ffc64585 docs: S12.4c-b read on the Mac: one attention dispatch a layer takes Gemma 3 4B's 1,783-row pass from 66 s to 32.3 s, bit for bit the walk; nobara owed
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64; NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+load:  15:59:02 up 8 days, 19:21,  4 users,  load average: 0.18, 1.80, 5.83
+== tiny gates  [15:59:09]
+=== RUN   TestAttnKeysRows_matchSingleRow
+    attn_keys_rows_test.go:156: {nH:12 nKV:2 hd:128 wide:false}, a row reading the next row's query: red (7680 outputs differ)
+    attn_keys_rows_test.go:156: {nH:12 nKV:2 hd:128 wide:false}, every row given the first row's key count: red (6144 outputs differ)
+    attn_keys_rows_test.go:156: {nH:12 nKV:2 hd:128 wide:false}, the window ignored: red (7680 outputs differ)
+    attn_keys_rows_test.go:156: {nH:8 nKV:4 hd:256 wide:true}, every row given the first row's key count: red (8192 outputs differ)
+    attn_keys_rows_test.go:156: {nH:8 nKV:4 hd:256 wide:true}, the window ignored: red (10240 outputs differ)
+    attn_keys_rows_test.go:156: {nH:8 nKV:4 hd:256 wide:true}, a row reading the next row's query: red (10240 outputs differ)
+--- PASS: TestAttnKeysRows_matchSingleRow (0.92s)
+=== RUN   TestAttnKeys_parity
+    attn_keys_test.go:84: nKeys=    1 (1 tile(s)): cosine=1.00000000 maxAbs=0.000e+00
+    attn_keys_test.go:84: nKeys=    2 (1 tile(s)): cosine=1.00000000 maxAbs=1.192e-07
+    attn_keys_test.go:84: nKeys=   40 (1 tile(s)): cosine=1.00000000 maxAbs=1.490e-07
+    attn_keys_test.go:84: nKeys=  127 (1 tile(s)): cosine=1.00000000 maxAbs=1.043e-07
+    attn_keys_test.go:84: nKeys=  128 (1 tile(s)): cosine=1.00000000 maxAbs=8.941e-08
+    attn_keys_test.go:84: nKeys=  129 (1 tile(s)): cosine=1.00000000 maxAbs=1.043e-07
+    attn_keys_test.go:84: nKeys= 2047 (1 tile(s)): cosine=1.00000000 maxAbs=7.823e-08
+    attn_keys_test.go:84: nKeys= 2048 (1 tile(s)): cosine=1.00000000 maxAbs=9.593e-08
+    attn_keys_test.go:84: nKeys= 2049 (2 tile(s)): cosine=1.00000000 maxAbs=9.686e-08
+    attn_keys_test.go:84: nKeys= 4133 (3 tile(s)): cosine=1.00000000 maxAbs=9.313e-08
+    attn_keys_test.go:84: nKeys= 5000 (3 tile(s)): cosine=1.00000000 maxAbs=6.333e-08
+--- PASS: TestAttnKeys_parity (0.35s)
+=== RUN   TestAttnKeysWide_parity
+    attn_keys_wide_test.go:118: a lane's two dimensions swapped: red (against the float64 reference: cosine and max |diff| outside 0.999999 and 1e-4)
+    attn_keys_wide_test.go:118: a lane's second dimension dropped: red (against the float64 reference: cosine and max |diff| outside 0.999999 and 1e-4)
+--- PASS: TestAttnKeysWide_parity (0.73s)
+=== RUN   TestAttnKernel_choice
+--- PASS: TestAttnKernel_choice (0.20s)
+=== RUN   TestGemma4EModel_webgpuRealNonInferiority
+    gemma4_emodel_real_test.go:208: no sidecar /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw: stat /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw: no such file or directory
+--- SKIP: TestGemma4EModel_webgpuRealNonInferiority (0.15s)
+=== RUN   TestGemma4EModel_webgpuResidentParity
+    gemma4_emodel_test.go:159:   pos  0 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=241
+    gemma4_emodel_test.go:159:   pos  1 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=157
+    gemma4_emodel_test.go:159:   pos  2 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=114
+    gemma4_emodel_test.go:159:   pos  3 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:159:   pos  4 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=9
+    gemma4_emodel_test.go:159:   pos  5 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=16
+    gemma4_emodel_test.go:159:   pos  6 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=111
+    gemma4_emodel_test.go:159:   pos  7 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=174
+    gemma4_emodel_test.go:159:   pos  8 WebGPU-vs-CPUint4 0.999884 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:159:   pos  9 WebGPU-vs-CPUint4 0.999867 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=129
+    gemma4_emodel_test.go:159:   pos 10 WebGPU-vs-CPUint4 0.999869 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=64
+    gemma4_emodel_test.go:159:   pos 11 WebGPU-vs-CPUint4 0.999346 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=135
+    gemma4_emodel_test.go:159:   pos 12 WebGPU-vs-CPUint4 0.999881 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=254
+    gemma4_emodel_test.go:159:   pos 13 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=140
+    gemma4_emodel_test.go:159:   pos 14 WebGPU-vs-CPUint4 0.999919 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=155
+    gemma4_emodel_test.go:159:   pos 15 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:159:   pos 16 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=4
+    gemma4_emodel_test.go:159:   pos 17 WebGPU-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:159: E-model G1: exact argmax 17/18, gaps over 3%: 0, worst near-tie 0.31% | mean WebGPU-vs-CPUint4 0.999931 (min 0.999346), mean CPUint4-vs-f32 0.777674
+--- PASS: TestGemma4EModel_webgpuResidentParity (1.69s)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(1)_PLE_branch_skipped
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.577576 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=209
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.526666 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=137
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.506138 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=165
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.256713 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.456320 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=139
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.368986 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=189
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.247901 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=142
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.356545 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=130
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.346261 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=130
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.476149 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=136
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.319663 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=33
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.189141 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=208
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.347969 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=218
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 0.354146 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=162
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.469810 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=91
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.358028 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=34
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.223415 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=146
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.331713 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=243
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 1/18, gaps over 3%: 17, worst near-tie 147.07% | mean WebGPU-vs-CPUint4 0.372952 (min 0.189141), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (1) PLE branch skipped: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(2)_PLE_token-identity_term_zeroed
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.989083 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=241
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.988484 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=157
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.942506 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=95
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.981263 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.976931 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=138
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.987553 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=233
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.917319 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=198
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.950979 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=174
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.981699 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=84
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.982116 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=83
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.974228 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=202
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.977467 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=135
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.960541 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=254
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 0.937798 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=140
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.981360 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=79
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.985770 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.907543 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=4
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.969465 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 10/18, gaps over 3%: 6, worst near-tie 15.41% | mean WebGPU-vs-CPUint4 0.966228 (min 0.907543), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (2) PLE token-identity term zeroed: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(3)_shared-KV_source_one_owning_layer_off
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.894710 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=245
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.893650 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=145
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.940121 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=114
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.912939 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.934873 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=160
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.920315 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=132
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.874013 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=40
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.874867 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=221
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.926069 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=56
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.886489 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=129
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.880291 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=64
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.835746 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=152
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.895305 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=111
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 0.874704 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=140
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.893989 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=79
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.911639 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.757010 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=247
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.871947 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 7/18, gaps over 3%: 9, worst near-tie 23.84% | mean WebGPU-vs-CPUint4 0.887704 (min 0.757010), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (3) shared-KV source one owning layer off: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(4)_one_FFN_width_for_the_model
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.970805 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=241
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.970353 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=218
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.966702 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=114
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.959212 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.955309 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=9
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.958759 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=16
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.897608 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=198
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.915001 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=245
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.977957 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=86
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.966802 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=227
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.947183 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=83
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.912961 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=23
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.963804 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=139
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 0.951822 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=140
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.962790 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=155
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.970340 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.928866 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=195
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.963605 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 8/18, gaps over 3%: 6, worst near-tie 48.27% | mean WebGPU-vs-CPUint4 0.952215 (min 0.897608), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (4) one FFN width for the model: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(6)_layer_scalar_dropped
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.990894 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=245
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.991770 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=218
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.981576 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=114
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.989984 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.988808 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=9
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.989331 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=16
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.969614 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=198
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.980541 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=174
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.985455 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=215
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.953389 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=129
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.965496 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=202
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.958204 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=135
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.966450 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=208
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 0.954453 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=140
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.953863 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=106
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.954910 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.941790 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=4
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.979909 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=253
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 10/18, gaps over 3%: 6, worst near-tie 20.45% | mean WebGPU-vs-CPUint4 0.972024 (min 0.941790), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (6) layer scalar dropped: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(7)_v_norm_dropped
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.999831 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=241
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.972183 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=157
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.953150 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=114
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.972799 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=100
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.891851 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=138
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.941960 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=40
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.891130 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=198
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.877058 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=45
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.958059 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.910705 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=129
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.952508 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=64
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.914727 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=70
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.837214 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=132
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 0.861152 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=188
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.942991 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=244
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.968295 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=15
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.766989 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=137
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.953569 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=36
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 10/18, gaps over 3%: 8, worst near-tie 41.27% | mean WebGPU-vs-CPUint4 0.920343 (min 0.766989), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (7) v_norm dropped: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(8)_PLE_inputs_one_layer_off
+    gemma4_emodel_test.go:185:   pos  0 WebGPU-vs-CPUint4 0.446215 | CPUint4-vs-f32 0.938245  argmax cpu=241 webgpu=253
+    gemma4_emodel_test.go:185:   pos  1 WebGPU-vs-CPUint4 0.204492 | CPUint4-vs-f32 0.931850  argmax cpu=157 webgpu=83
+    gemma4_emodel_test.go:185:   pos  2 WebGPU-vs-CPUint4 0.162517 | CPUint4-vs-f32 0.917966  argmax cpu=114 webgpu=61
+    gemma4_emodel_test.go:185:   pos  3 WebGPU-vs-CPUint4 0.168138 | CPUint4-vs-f32 0.887119  argmax cpu=100 webgpu=112
+    gemma4_emodel_test.go:185:   pos  4 WebGPU-vs-CPUint4 0.188253 | CPUint4-vs-f32 0.807881  argmax cpu=9 webgpu=139
+    gemma4_emodel_test.go:185:   pos  5 WebGPU-vs-CPUint4 0.186254 | CPUint4-vs-f32 0.761593  argmax cpu=16 webgpu=137
+    gemma4_emodel_test.go:185:   pos  6 WebGPU-vs-CPUint4 0.077336 | CPUint4-vs-f32 0.671393  argmax cpu=111 webgpu=46
+    gemma4_emodel_test.go:185:   pos  7 WebGPU-vs-CPUint4 0.123935 | CPUint4-vs-f32 0.741180  argmax cpu=174 webgpu=63
+    gemma4_emodel_test.go:185:   pos  8 WebGPU-vs-CPUint4 0.248386 | CPUint4-vs-f32 0.702948  argmax cpu=36 webgpu=16
+    gemma4_emodel_test.go:185:   pos  9 WebGPU-vs-CPUint4 0.251026 | CPUint4-vs-f32 0.833518  argmax cpu=129 webgpu=24
+    gemma4_emodel_test.go:185:   pos 10 WebGPU-vs-CPUint4 0.250625 | CPUint4-vs-f32 0.765440  argmax cpu=64 webgpu=160
+    gemma4_emodel_test.go:185:   pos 11 WebGPU-vs-CPUint4 0.030048 | CPUint4-vs-f32 0.705251  argmax cpu=135 webgpu=70
+    gemma4_emodel_test.go:185:   pos 12 WebGPU-vs-CPUint4 0.233929 | CPUint4-vs-f32 0.737938  argmax cpu=254 webgpu=106
+    gemma4_emodel_test.go:185:   pos 13 WebGPU-vs-CPUint4 -0.008641 | CPUint4-vs-f32 0.715922  argmax cpu=140 webgpu=136
+    gemma4_emodel_test.go:185:   pos 14 WebGPU-vs-CPUint4 0.332886 | CPUint4-vs-f32 0.712079  argmax cpu=244 webgpu=9
+    gemma4_emodel_test.go:185:   pos 15 WebGPU-vs-CPUint4 0.200020 | CPUint4-vs-f32 0.829195  argmax cpu=15 webgpu=160
+    gemma4_emodel_test.go:185:   pos 16 WebGPU-vs-CPUint4 0.088995 | CPUint4-vs-f32 0.553311  argmax cpu=4 webgpu=14
+    gemma4_emodel_test.go:185:   pos 17 WebGPU-vs-CPUint4 0.055444 | CPUint4-vs-f32 0.785304  argmax cpu=36 webgpu=107
+    gemma4_emodel_test.go:185: E-model G1: exact argmax 0/18, gaps over 3%: 18, worst near-tie 154.65% | mean WebGPU-vs-CPUint4 0.179992 (min -0.008641), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:187: G-S12.1b (8) PLE inputs one layer off: G-S12.1a RED argmax diverges by more than 3% (not a near-tie)
+--- PASS: TestGemma4EModel_webgpuPlantedDefects (2.94s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(1)_PLE_branch_skipped (0.42s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(2)_PLE_token-identity_term_zeroed (0.43s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(3)_shared-KV_source_one_owning_layer_off (0.44s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(4)_one_FFN_width_for_the_model (0.41s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(6)_layer_scalar_dropped (0.43s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(7)_v_norm_dropped (0.40s)
+    --- PASS: TestGemma4EModel_webgpuPlantedDefects/(8)_PLE_inputs_one_layer_off (0.42s)
+=== RUN   TestGemma4EModel_webgpuRowLength
+--- PASS: TestGemma4EModel_webgpuRowLength (0.36s)
+=== RUN   TestGemma4EModel_webgpuPrefillAndBatch
+--- PASS: TestGemma4EModel_webgpuPrefillAndBatch (0.42s)
+=== RUN   TestPrefillGemma_matchesWalk
+=== RUN   TestPrefillGemma_matchesWalk/window/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/window/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/window/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/window-kv-f16/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/window-kv-f16/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3-kv-f16/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3-kv-f16/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-two-geometries/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-two-geometries/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-two-geometries/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model-kv-f16/40-rows
+--- PASS: TestPrefillGemma_matchesWalk (5.78s)
+    --- PASS: TestPrefillGemma_matchesWalk/window/7-rows (0.20s)
+    --- PASS: TestPrefillGemma_matchesWalk/window/20-rows (0.35s)
+    --- PASS: TestPrefillGemma_matchesWalk/window/40-rows (0.27s)
+    --- PASS: TestPrefillGemma_matchesWalk/window-kv-f16/7-rows (0.27s)
+    --- PASS: TestPrefillGemma_matchesWalk/window-kv-f16/40-rows (0.26s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3/7-rows (0.24s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3/20-rows (0.28s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3/40-rows (0.27s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3-kv-f16/7-rows (0.27s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3-kv-f16/40-rows (0.28s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-two-geometries/7-rows (0.28s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-two-geometries/20-rows (0.28s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-two-geometries/40-rows (0.32s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-e-model/7-rows (0.32s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-e-model/20-rows (0.33s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-e-model/40-rows (0.35s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/20-rows (0.33s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/40-rows (0.36s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma4-e-model-kv-f16/40-rows (0.36s)
+=== RUN   TestPrefillGemma_plantedDefects
+=== RUN   TestPrefillGemma_plantedDefects/each_row's_per-layer_inputs_bound_to_the_next_row's
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is -0.040624533, the walk's is -0.81716555)
+=== RUN   TestPrefillGemma_plantedDefects/the_per-layer-input_branch_dropped
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is -0.3027015, the walk's is 0.47107345)
+=== RUN   TestPrefillGemma_plantedDefects/a_sliding-window_layer_attending_its_whole_prefix
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is -0.03743259, the walk's is -0.14993452)
+=== RUN   TestPrefillGemma_plantedDefects/the_post-attention_norm_skipped
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is 0.088115856, the walk's is -0.14993452)
+=== RUN   TestPrefillGemma_plantedDefects/the_layer_scalar_skipped
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is 0.17709355, the walk's is 0.15366466)
+=== RUN   TestPrefillGemma_plantedDefects/one_feed-forward_width_for_every_layer
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is 0.34401944, the walk's is 0.47107345)
+=== RUN   TestPrefillGemma_plantedDefects/the_value_norm_skipped_on_a_K=V_layer
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is 0.15377739, the walk's is 0.15366466)
+=== RUN   TestPrefillGemma_plantedDefects/a_shared-K/V_layer_reading_the_first_layer's_cache
+    prefill_gemma_test.go:112: red (reading 0: logit 1 is 0.35042682, the walk's is 0.47107345)
+--- PASS: TestPrefillGemma_plantedDefects (2.64s)
+    --- PASS: TestPrefillGemma_plantedDefects/each_row's_per-layer_inputs_bound_to_the_next_row's (0.33s)
+    --- PASS: TestPrefillGemma_plantedDefects/the_per-layer-input_branch_dropped (0.32s)
+    --- PASS: TestPrefillGemma_plantedDefects/a_sliding-window_layer_attending_its_whole_prefix (0.27s)
+    --- PASS: TestPrefillGemma_plantedDefects/the_post-attention_norm_skipped (0.28s)
+    --- PASS: TestPrefillGemma_plantedDefects/the_layer_scalar_skipped (0.34s)
+    --- PASS: TestPrefillGemma_plantedDefects/one_feed-forward_width_for_every_layer (0.30s)
+    --- PASS: TestPrefillGemma_plantedDefects/the_value_norm_skipped_on_a_K=V_layer (0.30s)
+    --- PASS: TestPrefillGemma_plantedDefects/a_shared-K/V_layer_reading_the_first_layer's_cache (0.32s)
+=== RUN   TestPrefillInt4_matchesWalk
+=== RUN   TestPrefillInt4_matchesWalk/plain/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/plain/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/plain/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/plain/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/plain/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/plain/70-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/70-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/70-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/70-rows/tiled
+--- PASS: TestPrefillInt4_matchesWalk (7.99s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/7-rows/rows (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/7-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/40-rows/rows (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/40-rows/tiled (0.30s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/70-rows/rows (0.31s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/70-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/7-rows/rows (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/7-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/40-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/40-rows/tiled (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/70-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/70-rows/tiled (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/7-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/7-rows/tiled (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/40-rows/rows (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/40-rows/tiled (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/70-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/70-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/7-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/7-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/40-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/40-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/7-rows/rows (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/7-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/40-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/40-rows/tiled (0.31s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/70-rows/rows (0.30s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/70-rows/tiled (0.33s)
+PASS
+exit 0 (tiny gates)
+== identity E2B  [15:59:33]
+=== RUN   TestPrefillInt4_real
+REAL gemma-4-E2B_q4_0-it.gguf, 64 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.gguf, 64 rows, tiled: pass
+REAL gemma-4-E2B_q4_0-it.gguf, 300 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.gguf, 300 rows, tiled: pass
+REAL gemma-4-E2B_q4_0-it.gguf, 600 rows, rows: pass
+REAL gemma-4-E2B_q4_0-it.gguf, 600 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (81.99s)
+PASS
+exit 0 (identity E2B)
+== identity Gemma 3 4B  [16:00:55]
+=== RUN   TestPrefillInt4_real
+REAL gemma-3-4b-it-Q4_K_M.gguf, 64 rows, rows: pass
+REAL gemma-3-4b-it-Q4_K_M.gguf, 64 rows, tiled: pass
+REAL gemma-3-4b-it-Q4_K_M.gguf, 300 rows, rows: pass
+REAL gemma-3-4b-it-Q4_K_M.gguf, 300 rows, tiled: pass
+REAL gemma-3-4b-it-Q4_K_M.gguf, 1100 rows, rows: pass
+REAL gemma-3-4b-it-Q4_K_M.gguf, 1100 rows, tiled: pass
+--- PASS: TestPrefillInt4_real (115.86s)
+PASS
+exit 0 (identity Gemma 3 4B)
+== profile: rows form (default)  [16:02:51]
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it-Q4_K_M.gguf on vulkan: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: false; rows-form attention off: false
+PROFILE 457 rows: the walk 8.01 s, its last step (a decode step at this depth) 26.9 ms
+PROFILE 457 rows: wall 1.10 s unprofiled, 1.15 s profiled; projections 1.02 s (90%), attention 0.08 s (7%), norms and rotary 0.03 s (3%), K/V write 0.00 s (0%)
+PROFILE 1783 rows: the walk 51.35 s, its last step (a decode step at this depth) 41.1 ms
+PROFILE 1783 rows: wall 4.81 s unprofiled, 5.05 s profiled; projections 3.64 s (73%), attention 1.21 s (24%), norms and rotary 0.14 s (3%), K/V write 0.02 s (0%)
+--- PASS: TestPrefillInt4_profile (82.82s)
+PASS
+exit 0 (profile: rows form (default))
+== profile: key-split once a row  [16:04:14]
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it-Q4_K_M.gguf on vulkan: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: false; rows-form attention off: true
+PROFILE 457 rows: the walk 8.00 s, its last step (a decode step at this depth) 26.7 ms
+PROFILE 457 rows: wall 2.61 s unprofiled, 2.85 s profiled; projections 1.01 s (36%), attention 1.74 s (62%), norms and rotary 0.04 s (1%), K/V write 0.00 s (0%)
+PROFILE 1783 rows: the walk 51.29 s, its last step (a decode step at this depth) 41.2 ms
+PROFILE 1783 rows: wall 32.38 s unprofiled, 32.95 s profiled; projections 3.59 s (11%), attention 29.05 s (89%), norms and rotary 0.15 s (0%), K/V write 0.01 s (0%)
+--- PASS: TestPrefillInt4_profile (170.52s)
+PASS
+exit 0 (profile: key-split once a row)
+== profile: per-dimension kernel (before S12.4c)  [16:07:05]
+=== RUN   TestPrefillInt4_profile
+PROFILE gemma-3-4b-it-Q4_K_M.gguf on vulkan: 34 layers, 8 heads of 256 (4 KV heads), sliding window 1024; key-split attention off: true; rows-form attention off: false
+PROFILE 457 rows: the walk 10.75 s, its last step (a decode step at this depth) 38.0 ms
+PROFILE 457 rows: wall 5.39 s unprofiled, 5.60 s profiled; projections 1.04 s (19%), attention 4.47 s (80%), norms and rotary 0.04 s (1%), K/V write 0.00 s (0%)
+PROFILE 1783 rows: the walk 87.67 s, its last step (a decode step at this depth) 72.2 ms
+PROFILE 1783 rows: wall 68.49 s unprofiled, 69.63 s profiled; projections 3.72 s (5%), attention 65.53 s (94%), norms and rotary 0.17 s (0%), K/V write 0.02 s (0%)
+--- PASS: TestPrefillInt4_profile (326.89s)
+PASS
+exit 0 (profile: per-dimension kernel (before S12.4c))
+finished: 2026-10-12 16:12:32 PDT rc=0
+PASS lines: 16  SKIP lines: 1  FAIL lines: 0
