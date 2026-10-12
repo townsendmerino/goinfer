@@ -59,7 +59,7 @@ func usage() {
 usage:
   gate census [-stream FILE] [-- go-test-args…]   PASS/SKIP/FAIL census, SKIPs bucketed by reason
   gate heavy                                       the pure-Go HEAVY tier (real checkpoints)
-  gate parity                                      the release-tag parity sweep (named-gate checkset)
+  gate parity [-record DIR]                        the release-tag parity sweep (named-gate checkset); writes a JSON record
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
@@ -169,7 +169,7 @@ func run(argv []string, w io.Writer) int {
 	fs.SetOutput(os.Stderr)
 	fs.Bool("v", false, "composition: print the per-gate table as well as the counts")
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
-	recordDir := fs.String("record", gpuRecordDirDefault, "gpu: directory the run's JSON record is written to (empty: none); the release command reads it")
+	recordDir := fs.String("record", gpuRecordDirDefault, "gpu and parity: directory the run's JSON record is written to (empty: none; parity's default is "+parityRecordDirDefault+"); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
 	if err := fs.Parse(rest); err != nil {
 		return 2
@@ -192,7 +192,13 @@ func run(argv []string, w io.Writer) int {
 			fmt.Fprintf(os.Stderr, "gate: parity has no -stream mode (it must run the cells to resolve assets)\n")
 			return 2
 		}
-		return runParity(w, *logDir)
+		rec := parityRecordDirDefault // -record's default is the GPU gate's directory; the sweep has its own unless one was given
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "record" {
+				rec = *recordDir
+			}
+		})
+		return runParity(w, *logDir, rec)
 	}
 
 	var cfg *gateConfig

@@ -319,7 +319,7 @@ func ledgerClassify(name string) string {
 }
 
 // runParity is the sweep's decision. Returns the process exit code.
-func runParity(w io.Writer, logDir string) int {
+func runParity(w io.Writer, logDir, recordDir string) int {
 	realckpt := env("REALCKPT", "1") == "1"
 	emitManifest := env("EMIT_MANIFEST", "0") == "1"
 	timeout := env("TIMEOUT", "180m")
@@ -366,7 +366,9 @@ func runParity(w io.Writer, logDir string) int {
 	if realckpt {
 		checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
 	}
+	scopedBy := "" // GATE_RUN's pattern when it narrowed the checkset; the record carries it
 	if runFilter, raw := gateRunFilter(); runFilter != nil {
+		scopedBy = raw
 		scoped := scopeChecks(checks, runFilter)
 		fmt.Fprintf(w, "\n== GATE_RUN=%q: checkset narrowed from %d to %d required gate(s) — "+
 			"THIS IS A SCOPED RE-RUN, NOT A RELEASE-READY VERDICT ==\n", raw, len(checks), len(scoped))
@@ -423,6 +425,12 @@ func runParity(w io.Writer, logDir string) int {
 	fmt.Fprintf(w, "== %s: %s%s ==\n", prov.Commit, verdict, extra)
 	for _, c := range cells {
 		fmt.Fprintf(w, "full log: %s\n", c.LogPath)
+	}
+	if root, err := repoRoot(); err != nil {
+		fmt.Fprintf(w, "\n  RECORD NOT WRITTEN: %v\n", err)
+	} else {
+		writeParityRecord(w, root, recordDir, parityRun{Realckpt: realckpt, Scoped: scopedBy, Required: len(checks),
+			Blockers: blockers, Gaps: gaps, FirstRuns: firstRuns, Cells: cells})
 	}
 	if blockers > 0 {
 		return 1

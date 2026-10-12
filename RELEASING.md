@@ -65,7 +65,7 @@ survives to a tag unless caught here.
 
 ## Pre-flight (before touching versions)
 
-**`go run ./cmd/gate release vX.Y.Z` runs the reads below as rows** (pending gates, the module pins, the cold-user record, both GPU-gate records, the hardware matrix and its never-executed diff, unmerged fix branches, the CHANGELOG check, gofmt, the citation lint, CI at HEAD): each is `done`, `OWED` or `UNKNOWN`, with the record that proves it or is missing, and the exit code is 0 only when all ten are done. It refuses off `main`, on a dirty tree, or for a tag that exists. The list below is what each row reads and why; the command is the check, so read the rows, not this list, to learn what is owed. (Reads 1 and 2, the API blockers and the audit's "before the tag" set, are historical and are not rows.)
+**`go run ./cmd/gate release vX.Y.Z` runs the reads below as rows** (pending gates, the module pins, the cold-user record, both GPU-gate records, the hardware matrix and its never-executed diff, unmerged fix branches, the CHANGELOG check, gofmt, the citation lint, CI at HEAD, the §C1 parity sweep's record): each is `done`, `OWED` or `UNKNOWN`, with the record that proves it or is missing, and the exit code is 0 only when all eleven are done. It refuses off `main`, on a dirty tree, or for a tag that exists. The list below is what each row reads and why; the command is the check, so read the rows, not this list, to learn what is owed. (Reads 1 and 2, the API blockers and the audit's "before the tag" set, are historical and are not rows.)
 
 1. All §1 API blockers are in (B-08…B-14 — see `docs/completed/audit-2026-08-05.md`; B-09/B-10/B-11/B-13
    landed 2555edc; B-08/B-12 must be done first — they are breaking-to-fix-after-tag).
@@ -272,6 +272,15 @@ Also add `./cuda` and `./demo/agent` to the dev `go.work` (B-05) so local backen
 from the tree, and document that a workspace is mandatory for cross-module development.
 
 ## §C1 — parity re-validation (the ⛔ numeric gate)
+
+**The sweep leaves a record, and row 11 of `gate release` reads it.** `go run ./cmd/gate parity -logdir <durable dir>`
+(on nobara, at night; it takes hours) writes `docs/measurements/parity-sweep/parity-<time>-<commit>.json`: the commit, the
+verdict, the cells and what ran. Commit it. The row is `done` only when the newest record made at the same code is a
+complete sweep: no blocker, a clean tree, the real-checkpoint tier run (`REALCKPT=1`), not narrowed by `GATE_RUN`. "The
+same code" is every file the parity manifest hashes plus `decoder/`, `cuda/`, `metal/` and `gpu/`
+(`cmd/gate/parity_record.go:parityQualifyingPaths`); a change to any of them after the sweep makes the row `OWED`
+again and names what changed. A sweep made before the record existed (v0.21.0's, in
+`docs/measurements/release-v0.21.0/parity-sweep-2026-10-06.md`) does not count for a later tag.
 
 The pre-tag campaigns (spec tree-attention in `forwardn.go`, the Cohere `lmHeadN` logit-scale
 path, gemma4_text merges) and the audit fixes touched hashed-core files. Before the tag:
