@@ -15,7 +15,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Gemma 4 E2B, E4B audio (`gemma4`) | CPU / CPU | CPU / GPU | GPU / GPU | CPU / GPU | One clip per request; 16-bit WAV, any rate (2026-10-09). |
 | Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | Tower checked on E2B (2026-10-07). |
 | Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | Validation in flight on nobara (2026-10-09); too large for a 16 GB Mac. |
-| Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |  |
+| Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | WebGPU: `--vision-device gpu` puts the tower on the GPU (2026-10-11). |
 | Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | CPU / CPU | A hybrid's image turn decodes resident only where the backend builds its recurrent state (CUDA); text turns are resident where the decoder column of docs/hardware-matrix.md says (2026-10-09). WebGPU: `--vision-device gpu` puts the tower on the GPU (2026-10-11). |
 | Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU | Served on CUDA (S6, 2026-10-09). |
 | Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09). WebGPU: `--vision-device gpu` puts the tower on the GPU (2026-10-11). |

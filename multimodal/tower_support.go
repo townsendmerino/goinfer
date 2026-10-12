@@ -28,7 +28,7 @@ const (
 var declaredTowers = map[string][]string{
 	"metal":  {TowerSigLIP, TowerQwen25VL, TowerQwen3, TowerGlmOcr, TowerGemma4, TowerGemma4Audio, TowerEmbeddingGemma2},
 	"cuda":   {TowerSigLIP, TowerQwen25VL, TowerQwen3, TowerGlmOcr, TowerGemma4},
-	"webgpu": {TowerSigLIP, TowerGemma4, TowerQwen3, TowerGlmOcr},
+	"webgpu": {TowerSigLIP, TowerQwen25VL, TowerGemma4, TowerQwen3, TowerGlmOcr},
 }
 
 // DeclaredTowers returns the tower families backend's build declares, sorted.
@@ -46,7 +46,7 @@ func DeclaredTower(backend, family string) bool {
 // DefaultTowerOnDevice reports whether backend runs family's tower on the device when the user asks for nothing. It is
 // DeclaredTower except for WebGPU's towers, which serve leaves on the CPU unless asked (-vision-device gpu, or
 // -vision-quant for Gemma 3's SigLIP): each becomes the default when its speed gate against the CPU tower reads
-// (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4, G-S12.3d-4 and G-S12.3e-4).
+// (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4, G-S12.3d-4, G-S12.3e-4 and G-S12.3f-4).
 func DefaultTowerOnDevice(backend, family string) bool {
 	if backend == "webgpu" {
 		return false
