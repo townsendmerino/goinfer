@@ -5336,6 +5336,11 @@ Criteria as amended: agreement margin 2 points, KL margin 0.10, one-sided alpha 
 - **Done on the PASS band:** `gpu/residency.go:mropePrefillBackends` holds Vulkan (`9f57d01b`). Metal stays out:
   the CPU route is the faster one there, and this gate was not run on it. **G-S12.4b-4a-4 is queued on nobara**
   (`s12-4b/run-g-s12-4b-4a-4-night.sh`: this build against `ffc64585`, four rotated rounds).
+- **The `gpu` package on Vulkan with the prefill on** (16:15 to 16:20 PDT,
+  `s12-4b/nobara/g-s12-4b-4a-vulkan-enabled-day.log`): 172 tests pass, 82 skip (heavy), and one fails,
+  `TestParentSelfSkipsWhenNoSubtestRan`. That one is my run's doing: it starts `go test` in a stub module, and my
+  script had exported `GOWORK`, which that module is not in. The same test binary passes with `GOWORK` unset and
+  fails with it set; nothing in it touches the prefill.
 - **Predictions scored.** PARKED (0.5): no. **PASS (0.3): yes.** OFF (0.2): no. I expected the bounds to be too
   wide on 94 prompts; the agreement spread over the full set was smaller than the pilot's eight prompts gave.
 
