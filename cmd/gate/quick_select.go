@@ -167,6 +167,10 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			// CUDA surface is linux-only) while the same vet for GOOS=linux GOARCH=amd64 passes. So it is linted
 			// cross-target and its tests are NOT RUN off linux.
 			NativeGOOS: "linux", CrossTarget: "linux/amd64", Device: true,
+			// Kernel sweeps that load no model through the decoder and carry no goinfer_testhooks constraint, so gate
+			// gpu's cuda-suite runs them. Measured over the 19 recorded gate quick runs on nobara-pc: the one such
+			// test of 4 s or more (docs/measurements/integration-harness-2026-10/gate-quick-slow-cuda-2026-10-13.md).
+			Slow: `^(TestTowerBase_attention)$`,
 			Lint: []lintSpec{
 				{"build", []string{"cuda", "goinfer_testhooks"}, "linux/amd64", "affected", "cuda: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/..."},
 				{"vet", []string{"cuda", "goinfer_testhooks"}, "linux/amd64", "affected", "cuda: go vet -tags 'cuda goinfer_testhooks' ./cuda/..."},
