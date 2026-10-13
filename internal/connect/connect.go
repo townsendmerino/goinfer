@@ -58,7 +58,10 @@ var harnesses = map[string]harness{
 				// The background model is named so the session-title request does not go looking for a model the
 				// server does not serve.
 				for _, kv := range [][2]string{{"ANTHROPIC_BASE_URL", s.URL}, {"ANTHROPIC_AUTH_TOKEN", s.Key}, {"ANTHROPIC_MODEL", s.Model},
-					{"ANTHROPIC_DEFAULT_HAIKU_MODEL", s.Model}, {"CLAUDE_CODE_MAX_CONTEXT_TOKENS", strconv.Itoa(s.Window)}} {
+					{"ANTHROPIC_DEFAULT_HAIKU_MODEL", s.Model}, {"CLAUDE_CODE_MAX_CONTEXT_TOKENS", strconv.Itoa(s.Window)},
+					// Claude Code asks for 32,000 output tokens on every request and counts them against the window it
+					// is told, so at 32,768 it sees no room and tries to compact at once.
+					{"CLAUDE_CODE_MAX_OUTPUT_TOKENS", strconv.Itoa(s.Output)}} {
 					env.set(kv[0], kv[1])
 				}
 				o.set("env", env)
@@ -327,12 +330,26 @@ func Run(args []string, self string, out io.Writer) int {
 		fmt.Fprintf(out, "connect: unknown agent %q (known: %s)\n", args[0], strings.Join(names, ", "))
 		return 2
 	}
-	if err := fs.Parse(args[1:]); err != nil {
+	// Flags may follow the URL (`connect codex http://… -write`): package flag stops at the first operand, and a
+	// -write or -undo left unparsed after it would silently print the configuration instead.
+	var operands []string
+	for rest := args[1:]; ; {
+		if err := fs.Parse(rest); err != nil {
+			return 2
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		operands = append(operands, fs.Arg(0))
+		rest = fs.Args()[1:]
+	}
+	if len(operands) > 1 {
+		fmt.Fprintf(out, "connect: unexpected argument %q (one server URL at most)\n", operands[1])
 		return 2
 	}
 	url := "http://127.0.0.1:8080"
-	if fs.NArg() > 0 {
-		url = fs.Arg(0)
+	if len(operands) > 0 {
+		url = operands[0]
 	}
 	if !strings.Contains(url, "://") {
 		url = "http://" + url

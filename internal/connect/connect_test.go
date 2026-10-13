@@ -31,7 +31,7 @@ func TestPatch_claudeCodeKeepsOtherSettings(t *testing.T) {
 		t.Fatalf("the patched file is not JSON: %v\n%s", err, out)
 	}
 	want := map[string]string{"EDITOR": "vi", "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080", "ANTHROPIC_AUTH_TOKEN": "goinfer", "ANTHROPIC_MODEL": "coder",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "coder", "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "32768"}
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "coder", "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "32768", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192"}
 	if got.Theme != "dark" || len(got.Perm.Allow) != 1 || len(got.Env) != len(want) {
 		t.Errorf("other settings were not kept, or env has the wrong keys:\n%s", out)
 	}
@@ -227,6 +227,21 @@ func TestRun(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("-undo left the file it created")
+	}
+
+	// Flags after the URL are read, not dropped: -write writes and -undo restores.
+	rc, out = run("opencode", ts.URL, "-file", path, "-write")
+	if raw, _ := os.ReadFile(path); rc != 0 || !strings.Contains(string(raw), `"baseURL"`) {
+		t.Errorf("-write after the URL did not write: rc %d\n%s\n%s", rc, out, raw)
+	}
+	if rc, out = run("opencode", ts.URL, "-file", path, "-undo"); rc != 0 {
+		t.Errorf("-undo after the URL: rc %d\n%s", rc, out)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("-undo after the URL left the file it created")
+	}
+	if rc, out = run("opencode", ts.URL, "http://other"); rc != 2 || !strings.Contains(out, "unexpected argument") {
+		t.Errorf("two URLs: rc %d\n%s", rc, out)
 	}
 
 	models = `{"data":[{"id":"coder","context_window":16384}]}`
