@@ -16,7 +16,7 @@ cannot match the row an earlier arm left behind. Then it prefills, then reads ev
 
 **Fixtures.** One tiny fixture and one real checkpoint per backend.
 - CUDA: `testdata/llama-attnfa-tiny` (hd 128, 2 layers, hidden 512, int4) and Qwen2.5-Coder-1.5B-Instruct q4_k_m at int4.
-- WebGPU: `testdata/llama-tiny` (the fixture the WebGPU resident tests load) and the same 1.5B at int4.
+- WebGPU: `testdata/llama-attnfa-tiny` and the same 1.5B at int4. (Amended before the WebGPU run: `llama-tiny` allows 128 positions, too few for a 1,000-token prompt.)
 - Prompt: n = 1000 tokens. The tiny fixtures take seeded random token ids; the 1.5B takes the first 1000 tokens of this
   repository's `decoder/*.go` under the model's tokenizer.
 
