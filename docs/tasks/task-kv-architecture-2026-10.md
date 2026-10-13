@@ -779,6 +779,201 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 - **TensorRT-LLM's KV cache reuse and host offload, and LMCache's tiers:** the tiering half.
 - **Chu et al., arXiv 2508.08438 (SafeKV):** the timing side channel of shared prefix caches, and selective sharing.
 
+## 11a. What we take and what we leave (read for KV0, 2026-10-13)
+
+Everything below was read on 2026-10-13 at the revisions in the last table. The doc's §11 list was written before the reading, and
+seven of its lines changed: see "What §5 and §11 get wrong" at the end.
+
+| source | what we take | what we leave | basis |
+|---|---|---|---|
+| vLLM prefix caching (v1) | hash chain of (parent, token ids, extras); extras per block (LoRA, mm id + offset in block, salt on block 0); full blocks only; free blocks in reverse so chain tails go first; hit capped at n − 1; SHA-256 with a fixed seed | pickle/CBOR serialization; the per-process random seed (non-crypto hashes only); publishing at schedule time instead of after the device fence | READ; the key gaps are INFERRED |
+| vLLM hybrid manager | per-group hit then intersection by fixed point; full group looked up once, others only shrink; window lookup right to left; freed window blocks become null entries; sparse recurrent checkpoints plus "semantic" ones; hash granularity finer than block size | one uniform page size with padding (Case 3 and 4); one LRU shared by all groups; the doc text (it says "exactly two types"; the code does not) | READ; Mamba status READ from main and open issues |
+| SGLang RadixAttention | namespace in the child key; lock refs along the matched path; lock only the window segment for window layers; recurrent state restored by copy into the request's slot; pluggable eviction priority | the radix tree itself (token-granular hits cost splits and a second index we do not need); leaf-only eviction | READ |
+| Marconi | admit two recurrent checkpoints per sequence: the last decoded state, and branch points; utility = recency + alpha x FLOP efficiency; checkpoint at a prefill chunk boundary | speculative insertion into a radix tree (a shared prefix only pays on the 3rd occurrence); alpha auto-tuning by replay; the headline 34.4x (its baseline checkpoints every 32 tokens) | READ |
+| llama.cpp memory | cells hold a position plus a set of sequence ids, so a unified cache shares by metadata; iswa = two caches behind one interface; hybrid = attention cache + recurrent cache; recurrent state is one cell per sequence, rollback only through a bounded snapshot count; whole-state checkpoints with a minimum spacing | no hashing: reuse is longest common prefix per slot; SWA and recurrent reuse falls back to full re-processing when no checkpoint fits; RoPE-shift chunk reuse (our §5.17 excludes it) | READ |
+| Ollama (Go runner, removed) | the multi-user mode: longest prefix across all slots, then fork into the oldest free slot by sharing cells | everything else; Ollama no longer has this code | READ; behaviour of the current build INFERRED from the launch flags |
+| SafeKV | private-by-default visibility, checked on every lookup; per-user isolation keeps intra-user reuse | the three-tier sensitivity classifier and the diversity-ratio guard (they exist because tenants must share across users) | READ |
+| PagedAttention | block size is a tradeoff between kernel utilisation and fragmentation; large blocks suit swapping | their 16-token default (their sequences were short) | READ |
+| TensorRT-LLM, LMCache | priority-plus-LRU retention per token range with a duration; evicted blocks stay in the search tree on the host; pools per window size sized by a ratio | the network tier, and V1's static pool fractions | READ (docs only) |
+
+### vLLM automatic prefix caching
+
+[Design doc](https://docs.vllm.ai/en/v0.8.5/design/v1/prefix_caching.html) (v0.8.5, the one §13 links) and `docs/design/prefix_caching.md` at main;
+code `vllm/v1/core/kv_cache_utils.py`, `block_pool.py`, `kv_cache_manager.py`, `vllm/utils/hashing.py` at `ac71b175` (main, 2026-10-13).
+
+READ:
+- **What is hashed.** `hash_block_tokens` hashes `(parent_block_hash, tuple(token_ids), extra_keys)`; a missing parent becomes `NONE_HASH`.
+- **Extra keys** (`generate_block_hash_extra_keys`): `("lora", name, path)` on every block; `("mm", identifier, offset_in_block)` for each image touching the block;
+  `("cache_salt", salt)` on block 0 only; `("prompt_embeds", sha256 of the block's embeddings)`.
+- **The group id is not in the chain.** It is appended to the hash as 4 big-endian bytes to form the map key (`make_block_hash_with_group_id`), so one chain serves every group.
+- **Hash functions** (`PrefixCachingHashAlgo`): `sha256` (pickle, the default), `sha256_cbor`, `xxhash`, `xxhash_cbor`. There is no "builtin" option any more.
+  The v0.14.0 doc says SHA-256 became the default in v0.10.2 and that pickle hashes "may not be reproducible across different Python or vLLM versions"; CBOR is the reproducible one.
+- **The seed.** `NONE_HASH = hash_fn(seed)`. The seed is `PYTHONHASHSEED` if set, else the fixed string `"vllm-none-hash"` for cryptographic functions, else 32 random bytes for xxhash.
+- **Full blocks only** ("We only cache full blocks"). A partial entry now exists only for Mamba align mode (`cache_partial_block`).
+- **Free order.** `free_blocks` appends hashed blocks at the tail (LRU) and prepends unhashed ones at the head (reused first). A request's blocks are freed with `reversed(...)`,
+  so the chain tail goes first ("the last block of a request must hash more tokens and is less likely to be reused"). A hit calls `touch`, which pulls the block off the free queue.
+- **Rule 3 exists there too.** `get_computed_blocks` caps the hit at `num_tokens - 1` "to obtain logits".
+- **Publishing.** A full block is cached as soon as it is allocated, "so that the block can be reused by other requests in the same batch". For Mamba this was a bug:
+  PR #29387 (merged 2026-02-10) moves a request to the next step when it hits a block "computed in the current step", because the state "has not been computed yet".
+- **The cost claim.** The v0.8.5 doc says SHA-256 "comes with a performance impact of about 100-200ns per token (~6ms for 50k tokens)". The v0.14.0 doc says "about 75ns per token (<4ms for 50k)".
+  The main doc has no figure. All three are doc estimates for the Python path, not measurements.
+
+INFERRED:
+- The key has no model, kernel-class or precision component: one vLLM process holds one model at one precision. Our root and producer class are additions, not differences of taste.
+- vLLM does not evict orphaned chain blocks first. §5.5's rule is ours.
+- One chain per token stream (group id appended at insert) is cheaper than §5.5's `H(h_{i-1}, group, ...)`, which implies a chain per group. Worth deciding in KV1.
+- **Exploratory, one run, not a result:** a Go `crypto/sha256` chain over int32 tokens on nobara (3700X, SHA-NI, go1.26.2) took 8.6 / 4.1 / 3.2 ns per token at B = 16 / 64 / 256.
+  That is about 65 µs for a 20,000-token prompt at B = 256. The throwaway program is in the scratchpad, not the repo.
+
+### vLLM hybrid KV cache manager
+
+[Design doc](https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/) (the file says it was written at commit `458e74` and is "in its early stage");
+code `kv_cache_coordinator.py` (`HybridKVCacheCoordinator`), `single_type_kv_cache_manager.py`, `config/cache.py` at `ac71b175`.
+
+READ:
+- **Groups and pages.** One pool, blocks of one page size; a group is layers of one attention type with the same page size. Case 2 repeats a regular ratio (2 window : 1 full).
+  Case 3 (no ratio) groups by the smallest layer count: Gemma-3-27b, 52 window + 10 full, becomes groups of 10 with the last padded by 8 layers, "some memory waste and is not perfect".
+  Case 4 (Mamba) raises the attention block size until `block_size x kv_hidden >= mamba state`, which "can lead to more than 400 block_size". Case 5, KV sharing, is invisible to the manager and "patched in the model runner".
+- **Hit lookup.** The doc says the algorithm "applies to models with exactly two attention types". The code does not: `find_longest_cache_hit` loops over all attention groups (full first),
+  each either accepts the candidate length or shrinks it, any shrink restarts the loop, and it stops when a pass shrinks nothing ("converges because length monotonically decreases").
+  The full group is looked up once ("downward-closed"); a one-full-plus-one-other model breaks after one pass.
+- **Window groups.** `SlidingWindowManager.find_longest_cache_hit` scans right to left for `cdiv(window - 1, block)` contiguous cached blocks. `remove_skipped_blocks` frees blocks behind
+  `n - window + 1 - extra_retained_tokens` and puts the null block in their table slots; the freed blocks stay hashed in the LRU.
+- **Hash granularity.** `hash_block_size` (default: the GCD of the groups' block sizes) can be finer than a group's block size, so a hit need not end on a big block's edge.
+- **Where Mamba stands (read 2026-10-13).** Merged to main: align mode, PR #30877 (2026-01-23): the Mamba state is cached only at block boundaries; `mamba_cache_mode` is `none` or `align`;
+  Marconi-style admission, PR #37898 (2026-06-10): last state, plus a shared prefix detected when the attention index hits further than the Mamba index;
+  sparse retention, PR #52216 (2026-08-17): `prefix_cache_retention_interval`, default 0 = only "semantic" checkpoints (the replay boundary and shared-prefix junctions).
+  Behind a flag: `--enable-mamba-shared-prefix-checkpoint` (off; needs EAGLE/MTP). The docs say "work in progress" up to v0.14.0 and no longer do on main.
+  Open as of today: RFC #55697 (application-directed checkpoints through a `<|mamba_checkpoint|>` marker in the input, the same idea as our serve-marked preamble boundary),
+  #58303 (a dense default reverts to 0% reuse under interleaved long conversations), #60838 (`--mamba-block-size` has no effect in align mode), #55403 (block priorities).
+
+INFERRED:
+- Our option A (pools per group) avoids the Case 3 and 4 padding by construction; the price is a planner that sizes pools. TensorRT-LLM V2 took the same road for the same models (below).
+- A single LRU across groups is a consequence of one pool; under option A each pool has its own.
+- vLLM's Mamba block size above 400 is a data point that B = 256 is not outlandish for a hybrid.
+
+### SGLang RadixAttention
+
+[Paper](https://arxiv.org/abs/2312.07104) (v2, 6 Jun 2024), §3 and §6.3; code `python/sglang/srt/mem_cache/` at `e9400c5a` (2026-10-13): `radix_cache.py`, `evict_policy.py`,
+`unified_radix_cache.py`, `unified_cache/components/README.md`, `components/mamba.py`.
+
+READ:
+- **Tree.** Edges carry token sequences; KV sits "in a non-contiguous, paged layout, where the size of each page is equivalent to one token". `--page-size` defaults to 1; with a larger page, keys and matches are rounded down to the page (`RadixKey.page_aligned`).
+- **Namespace.** `RadixKey(token_ids, extra_key, cache_salt)`; both are folded into every child key, so another namespace never reaches the same nodes.
+- **Eviction and locks.** "least recently used leaf first"; each node has a reference counter and "a node is evictable if its reference counter is zero". Cache and running requests share one pool, with no preallocated cache. `inc_lock_ref` walks the matched node up to the root. The default policy is LRU; the code also has LFU, FIFO, MRU, FILO, priority, SLRU and a tail-optimised LRU.
+- **Overhead and traffic.** 0.2 s of tree management in a 74.3 s run with no reuse (< 0.3%). One month on one Chatbot Arena worker per model: 52.4% hit rate (LLaVA-Next-34B) and 74.1% (Vicuna-33B).
+- **Hybrid.** `UnifiedRadixCache` holds Full, SWA and Mamba components in one tree. A match advances only where every component's validator passes (an intersection). A window component keeps "tombstone" nodes (the node stays, its window data is gone)
+  and locks only a window-long segment. Mamba state lives on a leaf, is restored by copy-on-write into the request's own slot (`finalize_match_result_in_cache`), and is stored at Mamba-chunk-aligned positions.
+  Evicting Full cascades to SWA and Mamba; evicting Mamba cascades nowhere.
+
+INFERRED:
+- A radix tree gives token-granular hits; a fixed-block hash chain loses up to B − 1 tokens at the point where two prompts diverge, and at the end of a shared preamble. At B = 256 against a 20,000-token preamble that is about 1%, but it is a real cost.
+  KV1–KV3 copy by position, so they can index at a finer hash unit than B (vLLM's `hash_block_size`) at no storage cost. Worth a line in KV0's block-size decision.
+
+### Marconi
+
+[Paper](https://arxiv.org/abs/2411.19379) (v3, 10 Apr 2025, MLSys 2025), §4 and §5; the authors' code (github.com/ruipeterpan/marconi) was not read.
+
+READ:
+- **Admission.** SSM state "cannot be rolled back". Marconi admits at most two states per sequence: the state after the last decoded token (conversations resume from it) and the state at a branch point of the radix tree.
+  To find branch points it does a speculative insertion of the input before prefill; if that creates an intermediate node, the state at that node is saved during prefill.
+  Cost, in the paper's words: "purely input" prefixes "only benefit from reusing starting from the third occurrence".
+- **Getting the state during prefill.** For chunked-state models, save the state at the second-to-last chunk boundary (the hit may then fall a little short); otherwise a two-pass prefill.
+- **Eviction.** `S(n) = recency(n) + alpha x flop_efficiency(n)`, both normalised to [0, 1], evict the lowest. FLOP efficiency is the compute saved by the entry divided by its bytes. Alpha 0 is LRU.
+  Alpha starts at 0, then a replay grid search over the requests seen before the first eviction picks it (a few seconds).
+- **Numbers.** Against vLLM+ (a checkpoint every 32-token block): token hit rate 4.5x, 7.3x, 34.4x (LMSys, ShareGPT, SWE-Bench); P95 TTFT down 36.1–71.1% (103.3–617.0 ms).
+  Against SGLang+ (the same admission, LRU eviction) the eviction policy alone wins 45.6%, 19.0% and 219.7% at P95 hit rate. Setup: a 7B hybrid (4 attention, 24 SSM, 28 MLP layers), A100-40GB, traces replayed at varied arrival rates.
+
+INFERRED:
+- The admission rule is where the 34.4x comes from, and its baseline is a strawman for us. §5.7's rules 1 and 2 already are Marconi's two admission cases, and rule 2 reads the boundary from the rendered template, so it pays on the second conversation, not the third.
+- vLLM's PR #37898 shows a tree-free way to detect a shared prefix: the attention index hits further than the checkpoint index.
+- Rule 3 ("every N blocks under a byte budget") should start as LRU with the preamble checkpoint pinned. FLOP-aware eviction is a measured follow-up: the paper's own gain over LRU is the smaller one, and a single-user workload has far fewer entries to rank.
+- Checkpoint positions should be prefill chunk boundaries, so a checkpoint costs no extra pass. That constrains the chunk size, as B does.
+
+### llama.cpp memory module
+
+[Repository](https://github.com/ggml-org/llama.cpp) at `77c4540c` (master, 2026-10-13): `src/llama-kv-cache.cpp`, `llama-kv-cache-iswa.cpp`, `llama-memory-hybrid.cpp`, `llama-memory-recurrent.cpp`, `llama-kv-cells.h`, `tools/server/server-context.cpp`, `server-task.cpp`, `common/common.h`.
+
+READ:
+- **Names.** `llama-kv-cache-unified*` are gone: `llama_kv_cache` takes a `unified` flag. Unified means one stream, so cells are shared by every sequence; not unified means `n_stream = n_seq_max` streams, one per sequence.
+- **Sharing.** A cell has a position and a bitset of sequence ids (`llama_kv_cells`). Within a stream, `seq_cp` only adds the destination id to the cells: no data moves. Across streams it queues a buffer copy and is allowed only for a full cache.
+- **iswa.** `llama_kv_cache_iswa` owns a base cache and an SWA cache and forwards every `seq_*` call to both. The SWA cache holds `min(size_base, n_swa x (unified ? n_seq_max : 1) + n_ubatch)` cells, padded to 256; `swa_full` makes it as large as the base.
+- **Hybrid.** `llama_memory_hybrid` holds one `llama_kv_cache` and one `llama_memory_recurrent`. `seq_rm` tries the recurrent side first "since it may fail", then the attention side.
+- **Recurrent.** One cell per sequence (a `tail` id), possibly shared by several sequences. A partial removal fails unless it is a rollback within `n_rs_seq` stored snapshots, and a shared cell "cannot move back for only one of them".
+- **The server does no hashing.** No hash appears in `server-context.cpp` or `server-task.cpp`. `get_available_slot`: a slot given by id; else, if `--slot-prompt-similarity` (default 0.1) is non-zero, the idle slot with the best longest-common-prefix fraction; else the least recently used idle slot.
+  With a slot chosen, `n_past` = common prefix with that slot's tokens.
+- **Window and recurrent models.** If the slot's `pos_min` is past `pos_next - n_swa`, the server looks for a context checkpoint; with none it logs "forcing full prompt re-processing due to lack of cache data (likely due to SWA or hybrid/recurrent memory)" and sets `n_past = 0`.
+  Checkpoints are whole-state blobs per slot: `n_ctx_checkpoints` 32, `checkpoint_min_step` 8192 tokens, oldest erased, ones too close to an earlier one erased.
+- **A RAM prompt cache** (`--cache-ram`, default 8192 MiB) saves a slot's whole state when the slot is about to lose more than half of it or is taken by LRU. `server_prompt_cache::load` picks the saved prompt with the best common-prefix fraction (skipping any that keep under 25%) and removes it from the cache when it is loaded.
+- **Shifting.** `ctx_shift` is off by default. `n_cache_reuse` reuses matching chunks by shifting positions; it needs a memory that can shift, which excludes SWA and recurrent memories and multimodal prompts.
+
+INFERRED:
+- llama.cpp has our "shared lead" problem and solves it per slot (similarity threshold, saved prompts), not with immutable shared blocks. Its SWA and recurrent fallback is the failure mode §5.5's group intersection and §5.7's checkpoints exist to avoid.
+- A cell that carries a set of sequence ids is the ref count by another name. Under KV2 (slot storage, copy on hit) we need only the copy.
+
+### Ollama
+
+[Repository](https://github.com/ollama/ollama). Main is `665f9e07` (v0.40.3, 2026-10-13). The Go runners were last present at `f63eea3d` (2026-05-24).
+
+READ:
+- **The files in §11 and §13 do not exist at main.** Commit `9db4bdba` (2026-05-29, PR #16031) is "runner: Remove CGO engines, use llama-server exclusively for GGML models". `llm/llama_server.go` now starts upstream `llama-server` (pinned in `LLAMA_CPP_VERSION`) with `-np <numParallel> -c NumCtx x numParallel`, so each slot gets `NumCtx`; `--kv-unified --cache-ram 0` is used only for "decision" requests; requests send `cache_prompt: true`. `OLLAMA_NUM_PARALLEL` defaults to 1 in `envconfig/config.go`.
+- **At `f63eea3d`, `runner/ollamarunner/cache.go`:**
+  - Default (`OLLAMA_MULTIUSER_CACHE` unset): `findLongestCacheSlot`, the free slot with the longest common prefix of token ids (plus multimodal hashes); the match is reused in place and the slot's tail is cut with `Remove`.
+  - With `OLLAMA_MULTIUSER_CACHE`: `findBestCacheSlot` takes the longest prefix over all slots, busy ones included. If that slot is free and wholly a prefix of the prompt it is reused; otherwise the oldest free slot is chosen and `CopyPrefix` forks the prefix into it. In `kvcache/causal.go`, `CopyPrefix` adds the destination sequence id to the source's cells: shared, not copied.
+  - Window models: `CanResume` accepts a position only if the new window lies inside the stored window. Recurrent models: `PrepareRestore` picks a checkpoint (conv and recurrent state per position) or resets to 0.
+  - Context shift (`ShiftCacheSlot`) drops the oldest half beyond `numKeep`; if the cache cannot remove a middle range it clears the slot and returns the inputs to be reprocessed (`ErrReprocessInputs`). `llamarunner/cache.go` has the same slot logic over llama.cpp.
+
+INFERRED:
+- The doc's line is right for the default mode and understates the multi-user one, which is KV2's shape (cross-slot prefix reuse by fork) behind an off-by-default env var. It is not a description of Ollama today: with one slot by default, what a new conversation can reuse is llama-server's RAM prompt cache.
+
+### SafeKV (Chu et al.)
+
+[arXiv 2508.08438](https://arxiv.org/abs/2508.08438) v2, 9 Feb 2026, §2.3, §4, §7.
+
+READ:
+- **Threat model.** An adaptive black-box adversary with arbitrary accounts, timed and batched probes, coordinating across accounts, observing TTFT and per-token latency; it cannot read prompts, weights or KV and cannot run code on the server.
+- **Mechanism.** One radix tree across HBM, DRAM and SSD. Each node has `private_tag` and `creator_id`, checked "at each hop" of a lookup. New nodes are private; an asynchronous detector promotes a block to shareable.
+  Detector: tier 1 patterns (under 0.2 ms, flags 60–70% of private blocks), tier 2 a Llama-3.2-1B classifier (under 125 ms), tier 3 a context-aware check for under 8% of requests. A reuse-diversity ratio (distinct users over hits) demotes a shareable block whose access pattern looks like probing.
+- **Numbers.** Defence success above 94% on average; against per-user isolation, TTFT overhead cut by up to 40.58% (50.41% → 11.74% on Qwen3-235B-A22B; 118% → 34.28% on DeepSeek-R1) and throughput 1.36–2.66x. Full isolation itself inflated TTFT by about 38% in their multi-tenant setup. Per-user isolation "preserves KV-cache reuse within each user".
+
+INFERRED, for §5.15:
+- Our namespace in the chain root is the simpler form of their per-node check: a block of another namespace is unreachable, not merely refused. It is also the paper's "isolation" baseline, whose cost came from many users with nothing in common. Here the sharers are one user's agents, so the cost does not apply.
+- We should not build detection. Their classifier exists because tenants must share across users; ours do not.
+- Promotions from the host and disk tiers are timing-visible too; the namespace covers them.
+- D4's default (one namespace per server when no API keys are set) lets any LAN client probe. A safer default is `-kv-share off` for cross-namespace sharing whenever `serve` binds beyond loopback and no keys are set. This is a proposal for the owner, not a source finding.
+
+### PagedAttention, TensorRT-LLM, LMCache
+
+- **PagedAttention** ([arXiv 2309.06180](https://arxiv.org/abs/2309.06180), §7.2) READ: "If the block size is too small, vLLM may not fully utilize the GPU's parallelism"; "if too large, internal fragmentation increases and the probability of sharing decreases". On ShareGPT, 16 to 128 were best; on Alpaca (short sequences) 16 and 32 were good and larger "significantly degrade". They chose 16 as "large enough to efficiently utilize the GPU and small enough to avoid significant internal fragmentation in most workloads".
+  For swapping, small blocks give "numerous small data transfers" that limit PCIe bandwidth; recomputation does not depend on block size and "is never higher than 20% of swapping's latency" in their comparison. INFERRED: their sequences were hundreds of tokens; ours are 6,000–20,000, so the waste of at most one partial block per group at B = 256 is 1.3% of a 20,000-token sequence and 4.3% of a 6,000-token one. Their swap result favours a large B for KV7's host tier.
+- **TensorRT-LLM** ([`docs/source/features/kvcache.md`](https://github.com/NVIDIA/TensorRT-LLM/blob/main/docs/source/features/kvcache.md) at `eaefddce`, 2026-10-13) READ: blocks go into a radix search tree when filled; eviction is "prioritized LRU" with priorities 0–100 set per token range and a duration after which they revert (default 35); an evicted block is copied to host memory and "remains in the search tree"; V1 makes one pool per (window, head count) with a static memory fraction, "not optimal". The V2 manager is chosen for hybrid Mamba, GPT-OSS and Gemma models and sizes window and full pools independently (`pool_ratio`).
+  The "retention priority with expiry" is a ready form for the preamble pin in §5.7.
+- **LMCache** ([README](https://github.com/LMCache/LMCache) at `4d69cdc4`) READ: a layer that stores KV persistently and reuses it across engines, with P2P CPU-memory sharing. Not read further; it is the network tier §5.17 excludes.
+
+### What §5 and §11 get wrong (or say too weakly)
+
+- **§5.5, "vLLM … prices it at about 100–200 ns per token."** True of the v0.8.5 doc only; the v0.14.0 doc says about 75 ns; main has no figure. All are estimates for the Python path. Say "vLLM's v0.8.5 doc estimated 100–200 ns per token in Python; an exploratory Go run here measured 3–9 ns", or drop the figure.
+- **§5.5, "vLLM recommends SHA-256 for multi-tenant use."** It has been the default since v0.10.2. The options are `sha256`, `sha256_cbor`, `xxhash`, `xxhash_cbor`; the "builtin" hash of the v0.8.5 doc is gone. §5.8's disk tier needs a canonical byte encoding for the hash input; vLLM's pickle default is not reproducible across versions, which is why `sha256_cbor` exists.
+- **§5.5, "This is vLLM's intersection, extended to more than two kinds of layer."** The design doc says two; the code (`HybridKVCacheCoordinator.find_longest_cache_hit`) already iterates to a fixed point over any number of groups. Cite the code.
+- **§11, "Mamba prefix caching 'work in progress'."** Stale since the doc moved on: align mode is on main (PR #30877, 2026-01-23), Marconi-style admission since 2026-06-10 (PR #37898), with defaults still being fixed in open issues (#58303, #60838).
+- **§11 and §13, Ollama.** The two runner files were deleted on 2026-05-29 (PR #16031). The line is accurate for the default of the old code, understates its `OLLAMA_MULTIUSER_CACHE` mode (cross-slot prefix fork, KV2's shape), and does not describe Ollama today (llama-server, `-np N`, a RAM prompt cache). Re-point the §13 paths at `f63eea3d` or drop them.
+- **§11, llama.cpp file names.** `llama-kv-cache-unified.cpp` and `-unified-iswa.cpp` are now `llama-kv-cache.cpp` and `llama-kv-cache-iswa.cpp`, with `unified` a runtime flag; there are also `llama-memory-hybrid-iswa.cpp` and `-hybrid-idx.cpp`.
+- **§5.4, publish after the fence.** Supported by vLLM's own bug: it publishes at schedule time and PR #29387 had to stop same-step hits for Mamba. Cite it as the reason.
+
+### Revisions read
+
+| source | revision | date |
+|---|---|---|
+| vLLM | `ac71b175172f2c092d7141f41f0777b914788cfb` (main); docs v0.8.5, v0.12.0, v0.14.0 | 2026-10-13 |
+| SGLang | `e9400c5a8f3a0d0312a37aecef694f5edfd69341` (main) | 2026-10-13 |
+| llama.cpp | `77c4540ce4667f4577753fe034a3a8042f510b8f` (master) | 2026-10-13 |
+| Ollama | main `665f9e074c99fe5abd57f6c2c2948dd60543a637` (v0.40.3); Go runners at `f63eea3d273816ffc27fbeb0662ab44d236abc45` | 2026-10-13; 2026-05-24 |
+| TensorRT-LLM | `eaefddcecd752d9a76a7bd43536643a5d6110c1f` | 2026-10-13 |
+| LMCache | `4d69cdc43ac9bab9c0c1cd5cac380c480cb32224` (dev), README only | 2026-10-13 |
+| Papers | arXiv 2312.07104 v2, 2411.19379 v3, 2508.08438 v2, 2309.06180 (HTML and PDF text) | 2026-10-13 |
+
+Not read: Marconi's own code; the vLLM PR bodies beyond #29387, #37898 and the two issues quoted (titles and dates of the others come from GitHub search); LMCache beyond its README.
+
 ## 12. When this closes
 
 The design goes where the engine's description lives: `docs/ARCHITECTURE.md`, "The KV cache", rewritten phase by phase

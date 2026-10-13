@@ -72,7 +72,7 @@ trials (50 different windows of the text): the K/V elements of the 32 decode row
 absolute difference and the rms difference relative to the rms value, the next-token logits' cosine (min, mean) and argmax
 agreement, and the logits that differ bit for bit. Two controls per trial: A' and C, the same two runs with the floor raised
 above the prompt so every pass is exact class. **Registered prediction: A' equals C exactly** (the exact class is documented
-bit-identical to decode: `cuda/prefill.go:prefillChunked`, `useAttnFused`), and A differs from B (decode is not the fast
+bit-identical to decode: `cuda/prefill.go:cudaResident.prefillChunked`, `cuda/prefill.go:cudaResident.useAttnFused`), and A differs from B (decode is not the fast
 class). No number is predicted for the size of A against B: it is what is being measured. The 1.5B's reading is the
 reference one; the tiny fixture's random weights make its argmax meaningless and it is reported as a plumbing check.
 
