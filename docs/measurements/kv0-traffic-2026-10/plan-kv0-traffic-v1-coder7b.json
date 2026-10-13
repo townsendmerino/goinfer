@@ -1,0 +1,104 @@
+{
+ "serve": "/home/francis/goinfer-bench/kv0-2026-10/bin/serve-cuda-kv0",
+ "port": 18090,
+ "proxy_port": 18095,
+ "swap_guard_mb": 4096,
+ "configs": [
+  {
+   "name": "coder7b-20k",
+   "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+   "ctx": 20480,
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
+   "run_timeout": 900,
+   "sessions": [
+    {
+     "agent": "opencode",
+     "task": "fix",
+     "rep": 1
+    },
+    {
+     "agent": "codex",
+     "task": "fix",
+     "rep": 1
+    },
+    {
+     "agent": "opencode",
+     "task": "edit",
+     "rep": 1
+    },
+    {
+     "agent": "codex",
+     "task": "edit",
+     "rep": 1
+    },
+    {
+     "agent": "opencode",
+     "task": "fix",
+     "rep": 2
+    },
+    {
+     "agent": "codex",
+     "task": "fix",
+     "rep": 2
+    },
+    {
+     "agent": "opencode",
+     "task": "edit",
+     "rep": 2
+    },
+    {
+     "agent": "codex",
+     "task": "edit",
+     "rep": 2
+    }
+   ]
+  },
+  {
+   "name": "coder7b-32k-cc",
+   "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+   "ctx": 32768,
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
+   "run_timeout": 1500,
+   "sessions": [
+    {
+     "agent": "claude-code",
+     "task": "fix",
+     "rep": 1
+    },
+    {
+     "agent": "claude-code",
+     "task": "edit",
+     "rep": 1
+    },
+    {
+     "agent": "claude-code",
+     "task": "fix",
+     "rep": 2
+    },
+    {
+     "agent": "claude-code",
+     "task": "edit",
+     "rep": 2
+    },
+    {
+     "agent": "claude-code",
+     "task": "read",
+     "rep": 11,
+     "prompt": "Use the Task tool to start a subagent. Ask the subagent to read calc.go and report what `Add(2, 3)` returns. Meanwhile read store.go yourself and find which file defines `ErrNotFound`. Then answer with the number and the file name."
+    },
+    {
+     "agent": "claude-code",
+     "task": "read",
+     "rep": 12,
+     "prompt": "Use the Task tool to start a subagent. Ask the subagent to read calc.go and report what `Add(2, 3)` returns. Meanwhile read store.go yourself and find which file defines `ErrNotFound`. Then answer with the number and the file name."
+    }
+   ]
+  }
+ ]
+}

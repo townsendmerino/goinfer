@@ -88,7 +88,7 @@ def main():
                                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                 time.sleep(1)
                 t0 = time.time()
-                cmd = [sys.executable, os.path.join(MATRIX, "run_cell.py"), "--serve", plan["serve"], "--port", str(port), "--proxy-port", str(pport),
+                cmd = [sys.executable, os.path.join(HERE, "kv0_run_cell.py"), "--serve", plan["serve"], "--port", str(port), "--proxy-port", str(pport),
                        "--wire-log", wlog, "--out", a.out, "--agent", s["agent"], "--task", s["task"], "--rep", str(s["rep"]),
                        "--timeout", str(c.get("run_timeout", 1200)), "--label", f"config={c['name']}", "--label", f"session={sid}",
                        "--label", f"ctx={c['ctx']}", "--label", f"model={c['model']}"]
