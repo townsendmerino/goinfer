@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -31,7 +32,7 @@ func kv16PairOf(t *testing.T, model string, ctx int) (m32, m16 *decoder.Model, r
 		t.Skipf("no fixture at %s", path)
 	}
 	load := func(kv string) (*decoder.Model, *cudaResident) {
-		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentContext: ctx})
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: kv16Quant(model), ActQuantGroup: kv16ActGroup(model), KVPrecision: kv, ResidentContext: ctx})
 		if err != nil {
 			t.Fatalf("load (-kv %s): %v", kv, err)
 		}
@@ -46,6 +47,22 @@ func kv16PairOf(t *testing.T, model string, ctx int) (m32, m16 *decoder.Model, r
 	m16, r16 = load("f16")
 	t.Cleanup(func() { m32.Close(); m16.Close() })
 	return
+}
+
+// kv16Quant is the weight quant the served bench loads a model at: int4, and int8int8 for Phi-3 (its activation outliers decline the int4 resident).
+func kv16Quant(model string) string {
+	if strings.Contains(model, "hi3") {
+		return "int8int8"
+	}
+	return "int4"
+}
+
+// kv16ActGroup is the activation-scale group the served bench's Phi-3 load uses (per-32), 0 for everything else.
+func kv16ActGroup(model string) int {
+	if strings.Contains(model, "hi3") {
+		return 32
+	}
+	return 0
 }
 
 func kv16Prompt(m *decoder.Model, n int) [][]float32 {

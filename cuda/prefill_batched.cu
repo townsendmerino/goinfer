@@ -221,7 +221,22 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
     float inv = 1.f / denom; __syncthreads();
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
+#ifdef KV_F16
+        // f16 cache: sixteen loads in flight before the sixteen FMAs, which stay in ascending-s order (bit-identical to the loop below). Half-width
+        // loads put half the bytes in flight per request, so the same latency-bound walk down the keys needs twice the requests outstanding.
+        const KV_T* vp = vc + (long)kvh * hd + d;
+        int s = winStart;
+        for (; s + 16 <= nKeys; s += 16) {
+            float v[16];
+#pragma unroll
+            for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + (long)(s + j) * kvDim);
+#pragma unroll
+            for (int j = 0; j < 16; j++) acc = __fmaf_rn(sc[s + j - winStart], v[j], acc);
+        }
+        for (; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp + (long)s * kvDim), acc);
+#else
         for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + ((long)s * kvDim + kvh * hd + d)), acc);
+#endif
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
 }
