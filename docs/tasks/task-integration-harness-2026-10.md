@@ -444,7 +444,7 @@ ceiling; I7's default.
   under, 0.7 (the attention work is the same; each extra pass costs one LM-head row and its buffer setup). G-I8-6 is
   answered, 0.8 (KV 2.8 GB in two slots and about 0.55 GB a block; the risk is the 7B not going resident at 24,576).
 
-**I8 results, 2026-10-13 (day; the night gate is queued).** Code `d7a100ba` on branch
+**I8 results, 2026-10-13 (day; the night gate was dropped unread, and the branch is not merged).** Code `d7a100ba` on branch
 `integration-harness-2026-10`. Records: `docs/measurements/integration-harness-2026-10/i8-day-2026-10-13/`.
 
 | gate | read | verdict |
@@ -454,7 +454,7 @@ ceiling; I7's default.
 | G-I8-3 the price covers the pass | every run above allocated exactly the reported figure (equal to the byte, so inside the 2% band); the 1.5B is 65.5 KB a row | **PASS** |
 | G-I8-4 admission | a 20,000-token request with room for a block and not for the whole-prompt price: admitted on a blocked resident; refused with no block, with a block that does not fit, and on the CPU path | **PASS** |
 | G-I8-5 speed, in process | 1.5B, 12,288 tokens, blocked / whole by pair: 0.9972 0.9971 1.0292 1.0021 1.0238; **median 1.0021** (one pass 17.3 to 17.6 s) | **PASS** (bar 1.03) |
-| G-I8-6 the refused request | queued on the Mac's night queue as `i8-7b-refused-request` | tonight |
+| G-I8-6 the refused request | **not read:** queued as `i8-7b-refused-request`, then dropped the same day on the owner's word (a re-architecture of the KV is planned, which makes it moot) | none |
 
 - **All three planted defects turned their gates red** and were reverted: a block continued one position late
   (the decoder's fake-resident tests and the Metal dense and MoE identity tests); the price without its feed-forward
@@ -462,7 +462,7 @@ ceiling; I7's default.
 - **What a block is on these models.** The 1.5B: 8,000 rows, so a prompt under 8,008 tokens is still one pass. The 7B,
   computed from its dimensions and not loaded today: 144 KB a row, a block of 3,712 rows (0.54 GB), so last night's
   20,954-token request would be six passes and priced at about 0.59 GB with its embeddings, against the 1.77 GB of
-  room it was refused for 3.21 GB under. G-I8-6 is the measurement of that.
+  room it was refused for 3.21 GB under. That is a calculation: G-I8-6 would have measured it and was not run.
 - **Amendments to the registration, 2026-10-13.**
   - *G-I8-1's fixtures (written after the first run showed it).* The tiny MoE fixtures hold 64 to 100 positions, so
     their block is 16 rows on a prompt of 56 to 92 tokens, not 64 / 100 / 256. **No Gated-DeltaNet model is split at
@@ -475,13 +475,12 @@ ceiling; I7's default.
   - G-I8-6's script once by day: **VOID on both arms**, the 7B did not go resident (5.75 GB needed, 4.97 GB of live
     budget). So there is no daytime answer for the 7B.
 - **Predictions scored.** G-I8-2 holds at real size (0.85): yes. G-I8-5 at 1.03 or under (0.7): yes, 1.0021. G-I8-6
-  (0.8): tonight.
+  (0.8): not scored, the gate was not run.
 - **What this leaves.**
   - A model on the exact attention kernel (a head dimension over 128, or one that is not a multiple of 8), an
     E-model, a layer-major route, `--kv i8` and `--exact-prefill` are not split: their scratch still grows with the
     prompt where they take the batched pass at all, and they are priced by the old formula.
-  - The speed reading is one model and one length. A 7B-width block on a deeper prompt is read only through G-I8-6's
-    time to answer.
+  - The speed reading is one model and one length. A 7B-width block on a deeper prompt has not been read at all.
   - CUDA and WebGPU requests are still priced by the CPU's formula against host memory.
 
 ## 3. Considered and not recommended (recorded so they are not re-proposed)
