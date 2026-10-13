@@ -256,6 +256,7 @@ func anthropicToolSchemaBytes(tools []anthropicTool) int {
 // Content may be a plain string or an array of blocks; tool_use blocks (assistant
 // replay) become ToolCalls, tool_result blocks (user replay) become "tool"
 // turns, image blocks are a 400, and unknown blocks / cache_control are ignored.
+// A "system" message after the first is kept in place as user-side text.
 // Adjacent same-role user/assistant turns are merged (the spec says roles
 // alternate, but we don't enforce it).
 func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
@@ -263,13 +264,24 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 	toolNames := map[string]string{} // tool_use id → name, to label tool-result turns
 	var turns []chat.Turn
 	for mi, m := range req.Messages {
-		// The Messages API accepts exactly two roles here. Reject anything else instead of folding it into the
+		// A system message inside the conversation (the Messages API's mid-conversation system messages, which Claude
+		// Code sends on every turn). No chat template has a system turn after the first, and hoisting the text into the
+		// system prompt would change the prompt's prefix each time one is added, so it stays where it was sent, as text
+		// of the user side. It is never a new query (chat.Turn.ToolLoop). The first message cannot be one: that is the
+		// top-level field's place, and a client putting it there has the wrong API.
+		if m.Role == "system" && mi > 0 {
+			if s := anthropicText(m.Content); s != "" {
+				turns = append(turns, chat.Turn{Role: "user", Content: s, ToolLoop: true})
+			}
+			continue
+		}
+		// Otherwise the Messages API accepts exactly two roles here. Reject anything else instead of folding it into the
 		// conversation: anthropicRole maps every non-assistant role to a user turn, so a typo'd or wrong-API role
 		// ("developer", "Assistant") would silently restructure what the model saw. A client that sends legal roles
 		// loses nothing to the 400, and it is what upstream does.
 		if m.Role != "user" && m.Role != "assistant" {
 			return "", nil, badReq("message %d: role must be %q or %q, got %q "+
-				"(the system prompt is the top-level \"system\" field on this API, not a message role)",
+				"(the system prompt is the top-level \"system\" field on this API; a \"system\" message is accepted only after the first message)",
 				mi, "user", "assistant", m.Role)
 		}
 		// Plain-string content: the common case.

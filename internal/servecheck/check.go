@@ -570,6 +570,85 @@ func (c *Client) ToolsHarness(ctx context.Context, model string) Result {
 	return res
 }
 
+// ToolsHarnessMessages is ToolsHarness in the Anthropic dialect: the same dozen tools and the same prompt through
+// /v1/messages, which is what Claude Code speaks. The two rows differ only in the wire, so a model that calls under one
+// and not the other shows a route's defect and not the model's size.
+//
+// A reply whose content has no tool_use block is a SKIP, as in ToolsHarness. A tool_use block a Messages client could not use fails:
+// no id, a name that is not the tool asked for, an input that is not a JSON object (the Messages shape; a string there
+// breaks a client that reads fields from it), or a stop_reason other than "tool_use", which is what a client keys on to
+// run the tool.
+func (c *Client) ToolsHarnessMessages(ctx context.Context, model string) Result {
+	res := Result{Name: "tools, harness, Messages"}
+	tools := messagesTools(harnessScaleTools())
+	resp, err := c.do(ctx, http.MethodPost, "/v1/messages", map[string]any{
+		"model": model, "temperature": 0, "max_tokens": 96, "tools": tools,
+		"messages": []map[string]any{{"role": "user", "content": "What is the weather in Paris? Use the get_weather tool."}},
+	})
+	if err != nil {
+		res.Detail = err.Error()
+		return res
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		res.Detail = errBody(resp)
+		return res
+	}
+	var out struct {
+		Content []struct {
+			Type  string          `json:"type"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		} `json:"content"`
+		StopReason string `json:"stop_reason"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.Content == nil {
+		res.Detail = "unparseable response: no content blocks, so not a Messages reply"
+		return res
+	}
+	use := -1
+	for i, b := range out.Content {
+		if b.Type == "tool_use" {
+			use = i
+			break
+		}
+	}
+	if use < 0 {
+		res.Skip = true
+		res.Detail = fmt.Sprintf("model did not call the tool under a harness-scale (%d-tool) schema on /v1/messages "+
+			"(stop_reason=%q) — too small for tool use, or its template has no tool section", len(tools), out.StopReason)
+		return res
+	}
+	b := out.Content[use]
+	var input map[string]any
+	switch {
+	case b.ID == "":
+		res.Detail = "tool_use block has no id — a harness cannot pair the result with the call"
+	case b.Name != "get_weather":
+		res.Detail = fmt.Sprintf("called %q, not the tool the prompt asked for", b.Name)
+	case json.Unmarshal(b.Input, &input) != nil || input == nil:
+		res.Detail = fmt.Sprintf("tool_use input is not a JSON object: %s", trunc(string(b.Input), 60))
+	case out.StopReason != "tool_use":
+		res.Detail = fmt.Sprintf("a tool_use block with stop_reason %q — a Messages client runs a tool only on \"tool_use\"", out.StopReason)
+	default:
+		res.OK = true
+		res.Detail = fmt.Sprintf("call %s(%s) among %d tools", b.Name, trunc(string(b.Input), 32), len(tools))
+	}
+	return res
+}
+
+// messagesTools rewrites OpenAI-shaped function tools into the Messages shape: name, description and input_schema at the
+// top level of each tool.
+func messagesTools(openai []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(openai))
+	for i, t := range openai {
+		fn, _ := t["function"].(map[string]any)
+		out[i] = map[string]any{"name": fn["name"], "description": fn["description"], "input_schema": fn["parameters"]}
+	}
+	return out
+}
+
 // harnessScaleTools is a dozen tools shaped like a real coding-agent's — file read/write/edit,
 // shell, search, plus get_weather among them — several with nested object parameters, matching
 // what opencode's own "build" agent actually sends (the shape that broke under R11).

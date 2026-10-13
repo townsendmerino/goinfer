@@ -14,6 +14,30 @@ ANTHROPIC_MODEL=coder claude
 
 All three env vars are required. Non-loopback binds refuse to start without `-api-key`.
 
+**Claude Code 2.1.268 and later need a goinfer built after 2026-10-12, and a larger context than the line above.**
+Traced that day ([the record](../measurements/integration-harness-2026-10/claude-code-census-2026-10-12.md)):
+
+- It sends a `system` message inside the conversation on every turn. An older goinfer answers 400 to it
+  (`role must be "user" or "assistant", got "system"`), so no turn completes.
+- Its first request, with its 24 built-in tools, is **19,692 tokens**: over `-ctx 16384`. Start the server with
+  `-ctx 32768` where memory allows. `claude --bare` sends 3 tools and 1,063 tokens, and fits anywhere.
+- Set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the window the server serves (its `/v1/models` `context_window`). An
+  unrecognised model name is otherwise assumed to have 200,000 tokens (Claude Code's documentation; the variable's
+  effect on compaction is not traced here).
+- Background work (the session title) goes to `ANTHROPIC_MODEL` unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another
+  served model: with two models loaded (`-model main=... -model fast=...`), set it to the small one.
+- `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.
+
+```bash
+goinfer-serve -model coder=~/models/qwen2.5-7b-instruct-q4_k_m.gguf -quant int4 -backend cuda -ctx 32768
+
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ANTHROPIC_AUTH_TOKEN=goinfer ANTHROPIC_MODEL=coder \
+CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768 claude
+```
+
+Whether an 8 GB card holds a 7B at `-ctx 32768` is not measured here; the numbers below are the 2026-09-02 run at 16384,
+with a synthetic 25-tool turn of 2,293 tokens, not the real client's request.
+
 ## What passed, and the numbers
 
 **Model class:** Qwen2.5-**7B**-Instruct q4 → int4, CUDA-resident. A model that can hold an

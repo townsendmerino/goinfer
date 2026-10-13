@@ -174,8 +174,9 @@ func TestDeveloperRoleIsNotGeneralRoleTolerance(t *testing.T) {
 	}
 }
 
-// TestAnthropicRejectsIllegalRoles (G12, G13): the Anthropic Messages API accepts only "user" and "assistant"
-// and rejects anything else, so /v1/messages must reject any other role rather than demote it to a user turn.
+// TestAnthropicRejectsIllegalRoles (G12, G13): the Anthropic Messages API accepts "user" and "assistant", and a
+// "system" message after the first (TestAnthropicMidConversationSystem); /v1/messages must reject any other role
+// rather than demote it to a user turn, and a "system" message in first place, where the top-level field belongs.
 // The class matters more than the instance: "developer" was never special, ANY typo'd or invented role would
 // be folded into the conversation, restructuring what the model saw. Each case below is a shape that must not
 // be swallowed.
@@ -271,5 +272,53 @@ func TestAnthropicIllegalRoleIsHTTP400(t *testing.T) {
 			t.Errorf("%s: message does not name the offending role: %q", path, got.Error.Message)
 		}
 		t.Logf("%s -> %d %s: %s", path, resp.StatusCode, got.Error.Type, got.Error.Message)
+	}
+}
+
+// TestAnthropicMidConversationSystem: a "system" message after the first is accepted and kept where it was sent, as
+// user-side text that is not a new query. The request below is the shape Claude Code 2.1.268 sends on its first turn
+// (a user message, then a system message of text blocks carrying the date), followed by a later one mid-loop. The
+// top-level system prompt is untouched, so adding such a message never changes the prompt's prefix; an empty one adds
+// nothing; other roles in the same position are still a 400.
+func TestAnthropicMidConversationSystem(t *testing.T) {
+	req := &anthropicReq{
+		System: json.RawMessage(`"TOP LEVEL SYSTEM"`),
+		Messages: []anthropicMessage{
+			{Role: "user", Content: json.RawMessage(`[{"type":"text","text":"q1"}]`)},
+			{Role: "system", Content: json.RawMessage(`[{"type":"text","text":"Today's date is 2026-10-12.","cache_control":{"type":"ephemeral"}}]`)},
+			{Role: "assistant", Content: rawStr("a1")},
+			{Role: "system", Content: rawStr("A NOTE")},
+			{Role: "system", Content: rawStr("")},
+			{Role: "assistant", Content: rawStr("a2")},
+		},
+	}
+	system, turns, aerr := anthropicTurns(req)
+	if aerr != nil {
+		t.Fatalf("a system message after the first was rejected: %+v", aerr)
+	}
+	if system != "TOP LEVEL SYSTEM" {
+		t.Errorf("system = %q; a mid-conversation system message must not change the top-level prompt", system)
+	}
+	// The assistant turns on either side of the lone note are not adjacent (it sits between them), so nothing merges across it.
+	want := []chat.Turn{
+		{Role: "user", Content: "q1\nToday's date is 2026-10-12."},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "A NOTE", ToolLoop: true},
+		{Role: "assistant", Content: "a2"},
+	}
+	if len(turns) != len(want) {
+		t.Fatalf("got %d turns, want %d: %+v", len(turns), len(want), turns)
+	}
+	for i := range want {
+		if turns[i].Role != want[i].Role || turns[i].Content != want[i].Content || turns[i].ToolLoop != want[i].ToolLoop {
+			t.Errorf("turn %d = {%s %q ToolLoop:%v}, want {%s %q ToolLoop:%v}", i, turns[i].Role, turns[i].Content, turns[i].ToolLoop,
+				want[i].Role, want[i].Content, want[i].ToolLoop)
+		}
+	}
+	for _, role := range []string{"developer", "tool"} {
+		bad := &anthropicReq{Messages: []anthropicMessage{{Role: "user", Content: rawStr("q")}, {Role: role, Content: rawStr("x")}}}
+		if _, _, aerr := anthropicTurns(bad); aerr == nil || aerr.code != http.StatusBadRequest {
+			t.Errorf("role %q after the first message: %+v; want a 400", role, aerr)
+		}
 	}
 }

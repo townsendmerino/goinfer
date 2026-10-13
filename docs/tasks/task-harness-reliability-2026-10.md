@@ -3,7 +3,7 @@
 > **Status: Gate 0 DONE 2026-10-09** ([`harness-dialects-2026-10-09.md`](../measurements/harness-dialects-2026-10-09.md)):
 > three dialects, not two, and four named gaps (H-a Responses tool shape, which stops Codex outright; H-b
 > `/v1/models` context fields; H-c Anthropic overflow wording; H-d keep-alive form, unverified). Each is its own item
-> per §3. Gate 1 next; it needs nobara-pc for the 7B reproduction. Doc hygiene done (opencode.md's wording).
+> per §3. **Gate 1 DONE 2026-10-12** (below). Gate 2 next. Doc hygiene done (opencode.md's wording).
 > **Was: SCOPED 2026-10-01.** Merges two proposals made the same day: harness breadth (how many wire
 > dialects the coding-agent harnesses speak, and whether `serve check` predicts both) and tool-call reliability
 > widened past T0 (more traces, whole sessions, more families and backends). Gates run cheapest first and stop at
@@ -44,6 +44,22 @@ A `/v1/messages` twin of `tools, harness-scale`, reusing `harnessScaleTools()` t
 with the existing row's three outcomes: ok, skip when the model declines to call (not a failure), fail. Registered in
 the same change as its tests. **It is not a check until it reproduces the two known results:** ok against the 7B on
 the box that produced the 2026-09-02 numbers, and skip against a 1.5B.
+
+**Gate 1 result, 2026-10-12: it is a check.** The row is `tools, harness, Messages`
+(`internal/servecheck/check.go:Client.ToolsHarnessMessages`), with tests that make it fail on each `tool_use` block a
+Messages client could not use (no id, another tool's name, an input that is not an object, a `stop_reason` other than
+`tool_use`) and skip when the model does not call. On nobara-pc (RTX 2070 SUPER, CUDA, int4, `-ctx 16384`, serve at
+`e41add80`; `docs/measurements/integration-harness-2026-10/gate1-nobara-2026-10-12.log`):
+
+| model | `tools, harness-scale` | `tools, harness, Messages` |
+|---|---|---|
+| Qwen2.5-7B-Instruct q4_k_m | ok | **ok** |
+| Qwen2.5-Coder-1.5B q4_k_m | skip | **skip** |
+
+Both known results reproduce, and the two dialects agree on both models. On the Mac (Metal) the 1.5B also reads skip
+on both rows. One thing seen beside the gate: on CUDA the 1.5B's one-tool row (`tools, OpenAI`) failed its second turn
+by asking for the tool again, where on Metal it answered; that is the small-model loop the recipe already describes,
+on a row this gate does not own.
 
 ### Gate 2 — the model tables, both dialects
 

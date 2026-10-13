@@ -2,7 +2,9 @@
 
 <!-- citations-at: 6e50c60941e7 -->
 
-> **Status: SCOPED 2026-10-12. Nothing started.** A map across the docs that already own integration work, an order
+> **Status: STARTED 2026-10-12 (§0a).** Steps 1 and 3 are built and a gap nobody had listed is fixed: Claude Code
+> 2.1.268 could not complete a turn against goinfer (H-e). Its real first request is 19,692 tokens, not 6–10K, which
+> moves the thesis's numbers (§0a). **Was: SCOPED 2026-10-12.** A map across the docs that already own integration work, an order
 > for them, six items none of them owns (I1–I6), and amendments the 2026-10-12 research supports for four existing
 > docs (§5). It re-scopes nothing owned elsewhere. Facts about third-party harnesses are a desk read of each project's
 > own docs or source on 2026-10-12 (§Sources). Harnesses ship weekly, so each such fact is a lead until a trace
@@ -27,6 +29,43 @@
 | Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal unchanged at 4096 |
 | Per-request log | `task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
 
+## 0a. Results, 2026-10-12 (the first day)
+
+Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-10-12.md`. Branch
+`integration-harness-2026-10`.
+
+- **H-e, new, fixed: Claude Code sends a `system` message inside `messages` on every turn, and goinfer answered 400.**
+  Found by the first trace of I4. Claude Code 2.1.268 could not complete one turn. `/v1/messages` now keeps such a
+  message in place as user-side text (`internal/serveapp/anthropic.go:anthropicTurns`); a `system` message in first
+  place and every other unknown role are still a 400. The rendering is a choice: hoisting it into the system prompt
+  would change the prompt's prefix each time one is added, and no chat template has a system turn after the first.
+- **Step 1, the recipe: done**, from the trace and Claude Code's documentation (`docs/integrations/claude-code.md`).
+- **I4, Claude Code's cell: measured.** The full client's first request is **19,692 tokens** (24 tools, 66 KB of
+  schema); `--bare` sends 1,063 (3 tools). A session-title request of 761 tokens comes first.
+  - **It does not fit 16,384.** By I4's own rule Claude Code is *not viable* at the window R19 and M2 chose as the
+    harness floor; it needs 24,615 with the 25% margin, so `-ctx 32768`. Whether an 8 GB card holds a 7B there is
+    unmeasured. The other harnesses are not installed on either box (only Copilot CLI is, on the Mac).
+- **Step 3, harness-reliability Gate 1: built.** `serve check` has a `tools, harness, Messages` row
+  (`ToolsHarnessMessages` in `internal/servecheck`, newer than this doc's pin). Against the 1.5B on Metal it reads skip, as the
+  OpenAI-dialect row does. The 7B reading on nobara-pc is in that task's record.
+- **Corrections to this doc's desk read**, from the trace and from Claude Code's documentation as read on 2026-10-12:
+  - *"Without `ANTHROPIC_DEFAULT_HAIKU_MODEL` its background requests name a model goinfer does not serve"* (§2 I2):
+    **not so on 2.1.268.** The title request names `ANTHROPIC_MODEL`; the variable redirects it. Traced.
+  - *"its auto-compact window cannot be set below 100K"* (§1, §2 I2): the 100,000 floor is
+    `CLAUDE_CODE_AUTO_COMPACT_WINDOW`'s. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` sets the window Claude Code assumes, and its
+    documentation gives no minimum. Whether it then compacts at a 32K window is a trace nobody has run.
+  - *Overflow wording* (§1, I1): the documentation lists `Prompt is too long` and, since 2.1.228, a gateway token
+    `capability_rejected: prompt_too_long`; it names no HTTP status. It also says a request whose input plus
+    `max_tokens` exceeds the limit is retried with a smaller `max_tokens`. Claude Code sends `max_tokens: 32000` on
+    every request, so I1's reserved-output term must not take the request's cap at face value: against a 32K window
+    it would never fit.
+  - *The idle timeout* (§5, H-d): 180 s through a custom base URL once feature flags are fetched, 300 s before.
+    goinfer's 10 s heartbeat is inside both.
+  - *Claude Code's own position:* its documentation says routing it to non-Claude models through a gateway is not
+    supported. The recipe stands on traces, and a release can break it.
+- **A small item the trace adds:** the title request asks for JSON through `output_config.format` (a `json_schema`).
+  `/v1/messages` ignores the field. goinfer can constrain to a schema, so honouring it is cheap; unowned.
+
 ## 1. The thesis: dialects are mostly done; context is the integration problem now
 
 Gate 0 found three dialects and four gaps, and two of the four were fixed within two days. What remains in every
@@ -34,7 +73,7 @@ harness is one problem: each assumes a context window goinfer does not serve on 
 
 | harness | window assumed when not told | what it does at the limit |
 |---|---|---|
-| Claude Code | 200K for an unrecognised model id; its auto-compact window cannot be set below 100K | compacts and retries only on a 400 it recognises as "prompt is too long" |
+| Claude Code | 200K for an unrecognised model id, unless `CLAUDE_CODE_MAX_CONTEXT_TOKENS` says otherwise (§0a) | compacts and retries on an error it recognises as "prompt is too long" |
 | Codex | 272K for an unknown model slug | sees overflow only as an SSE `response.failed` with `code: "context_length_exceeded"`; a 400 body is not mapped |
 | opencode, Kilo | none: in opencode's own source, "an unknown window never triggers auto compaction" | regex-matched overflow → compact |
 | Pi | 128,000 | compacts at window − 16,384 — **at a 16K window that is every turn**; regex overflow → one compact-and-retry |
@@ -143,9 +182,10 @@ Where each harness keeps its configuration, from the desk read (pin versions in 
 | Aider | environment and `.aider.model.metadata.json` | `OPENAI_API_BASE`, `OPENAI_API_KEY`, model `openai/<id>`, `max_input_tokens` (Aider does not compact; overflow ends the turn) |
 | Copilot CLI | environment | `COPILOT_PROVIDER_TYPE=openai`, `COPILOT_PROVIDER_BASE_URL`, `COPILOT_MODEL`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` |
 
-Two Claude Code details belong in `connect`, and in its recipe now (§5). Without `ANTHROPIC_DEFAULT_HAIKU_MODEL` its
-background requests name a model goinfer does not serve. And because its auto-compact window cannot go below 100K, on
-a 16K card compaction has to come from I1's error rather than from Claude Code's own threshold. Where the box holds two
+Two Claude Code details belong in `connect`, and are in its recipe since 2026-10-12 (§0a). Its background requests go
+to the main model unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another. And `CLAUDE_CODE_MAX_CONTEXT_TOKENS` tells it
+the served window; whether its own compaction then triggers at a small window is untraced, so I1's error is still the
+path to rely on. Where the box holds two
 models, multi-model serving can give the background slot a small one (`-model main=… -model fast=…`).
 
 Start with one harness per dialect (Claude Code, opencode, Codex), then the rest of Magnitude's list.
@@ -209,8 +249,8 @@ and record the tool count. Then start a second session from a different director
 first token with the first session's. A large drop means the shared system-prompt prefix was reused, which tells a
 later decision what reusing a harness's prompt across sessions would buy. No code.
 
-Known so far: opencode 11,137 tokens (measured, R19); Codex about 8.5K and Claude Code 6–10K (secondary estimates);
-Pi under 1K (an estimate). **Viability, pre-registered:** a harness is *viable* on a (box, model, `-ctx`) when its first
+Known so far: opencode 11,137 tokens (measured, R19); **Claude Code 19,692 (measured 2026-10-12, 2.1.268; 1,063 with
+`--bare`; the earlier 6–10K was an estimate and wrong)**; Codex about 8.5K and Pi under 1K (estimates). **Viability, pre-registered:** a harness is *viable* on a (box, model, `-ctx`) when its first
 request plus 25% fits the window; *marginal* when the request fits but the margin does not; *not viable* otherwise, and
 `connect` refuses it.
 
@@ -290,9 +330,9 @@ compiles JSON-schema and struct grammars today, can express it through a transla
 
 | step | what | when |
 |---|---|---|
-| 1 | Claude Code recipe: add `ANTHROPIC_DEFAULT_HAIKU_MODEL` and the window variable (§5) | minutes, by day |
-| 2 | I4 census | by day, minutes per harness, nobara-pc |
-| 3 | harness-reliability Gate 1 (the `/v1/messages` row) | already next there; nobara-pc |
+| 1 | Claude Code recipe: add `ANTHROPIC_DEFAULT_HAIKU_MODEL` and the window variable (§5) | **done 2026-10-12** |
+| 2 | I4 census | Claude Code **done**; the others need their harness installed first (the owner's call) |
+| 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |
 | 6 | I3 screening | night queue, nobara-pc, after 3–5 |
@@ -339,7 +379,7 @@ falls (I3).
   never reports the port it bound. The admin socket already shows the unix-listener pattern A0's first item wants
   (`internal/serveapp/admin_socket.go:45`).
 
-**`docs/integrations/claude-code.md`**
+**`docs/integrations/claude-code.md`** (applied 2026-10-12, with §0a's corrections)
 - Add `ANTHROPIC_DEFAULT_HAIKU_MODEL` (background work; `ANTHROPIC_SMALL_FAST_MODEL` is deprecated) and
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` set to the served window, and say that an unrecognised model id is otherwise assumed
   to have 200K.
