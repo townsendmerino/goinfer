@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"math"
@@ -106,7 +106,7 @@ func TestSampleFromTopK_matchesFullPath(t *testing.T) {
 				if !ok {
 					continue // a top-k wider than the kernel maximum is never served; that is the contract
 				}
-				row := refTopKRow(logits, k, c.T, fast.topPActive())
+				row := refTopKRow(logits, k, c.T, fast.TopPActive())
 				// The reference order must be the host's own tie order.
 				for i, id := range topKByLogit(logits, min(k, v)) {
 					_ = i
@@ -256,7 +256,7 @@ func BenchmarkSampleFromTopK(b *testing.B) {
 	} {
 		s := NewSampler(c.p)
 		k, _ := s.TopKWidth(len(logits))
-		row := refTopKRow(logits, k, c.p.Temperature, s.topPActive())
+		row := refTopKRow(logits, k, c.p.Temperature, s.TopPActive())
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

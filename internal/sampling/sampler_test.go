@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"math"
@@ -97,7 +97,7 @@ func TestSampler_topPsupport(t *testing.T) {
 func TestSampler_distributionMatchesSoftmax(t *testing.T) {
 	logits := []float32{2.0, 1.0, 0.0, -1.0}
 	const temp = 1.3
-	want := softmaxStable(logits, temp)
+	want := SoftmaxStable(logits, temp)
 	s := NewSampler(SamplingParams{Temperature: temp, Seed: 12345})
 	const N = 200000
 	counts := make([]int, len(logits))

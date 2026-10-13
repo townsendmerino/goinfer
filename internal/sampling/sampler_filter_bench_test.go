@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"math/rand"
@@ -131,3 +131,27 @@ func benchTopFilterLogits(b *testing.B, topK int, topP, minP float64) {
 func BenchmarkTopFilterLogits_gemmaVocab_topK40(b *testing.B) { benchTopFilterLogits(b, 40, 0, 0) }
 func BenchmarkTopFilterLogits_gemmaVocab_topP(b *testing.B)   { benchTopFilterLogits(b, 0, 0.95, 0) }
 func BenchmarkTopFilterLogits_gemmaVocab_minP(b *testing.B)   { benchTopFilterLogits(b, 0, 0, 0.05) }
+
+func BenchmarkTopFilter_Vocab32k(b *testing.B) {
+	const V = 32000
+	logits := benchLogits(V, 1)
+	vocabScratch := make([]float64, V)
+	candScratch := make([]int, V)
+	ipsScratch := make([]indexedProb, V)
+
+	b.SetBytes(V * 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = topFilterLogits(logits, 0.8, 50, 0.9, 0.05, vocabScratch, candScratch, ipsScratch)
+	}
+}
+
+// benchLogits returns n deterministic standard-normal logits (decoder's benchFloatSlice, so the figures compare).
+func benchLogits(n int, seed int64) []float32 {
+	r := rand.New(rand.NewSource(seed))
+	out := make([]float32, n)
+	for i := range out {
+		out[i] = float32(r.NormFloat64())
+	}
+	return out
+}

@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 // The LEGACY temperature-only sampler: inverse CDF in vocabulary index order over a parallel chunked
 // normalisation (P2b). It was the production draw until R7b replaced it with Gumbel-max
@@ -43,7 +43,7 @@ func (s *Sampler) sampleChunked(logits []float32, temperature, r float64) int {
 	maxv, ok := parallelMax(logits)
 	if !ok {
 		// NaN present: fall back to the exact sequential path rather than reduce over NaN.
-		probs := softmaxStable(logits, temperature)
+		probs := SoftmaxStable(logits, temperature)
 		var cum float64
 		for i, p := range probs {
 			cum += p

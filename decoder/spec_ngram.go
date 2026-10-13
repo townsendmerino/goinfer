@@ -229,7 +229,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	needHist := false
 	if sampled {
 		sampler = NewSampler(sp)
-		needHist = sampler.needsHistory() // penalties / logit bias ⇒ thread per-position history
+		needHist = sampler.NeedsHistory() // penalties / logit bias ⇒ thread per-position history
 	}
 	// dist is the target's next-token sampling distribution at one position. With a
 	// history-dependent transform (penalties/bias) it is computed over `ph` (the
@@ -237,9 +237,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	// nil in greedy mode (callers use argmax there).
 	dist := func(logits []float32, ph []int) []float64 {
 		if needHist {
-			return sampler.distVectorHist(logits, ph)
+			return sampler.DistVectorHist(logits, ph)
 		}
-		return sampler.distVector(logits)
+		return sampler.DistVector(logits)
 	}
 
 	// Resident verify on the device when the target has a built GPU-resident decode path and no session cache was passed:
@@ -450,7 +450,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// from the seed distribution (sampled) — exactly what plain decode emits first.
 		cur := argmax(seedLogits)
 		if sampled {
-			cur = sampler.drawTarget(seedLogits, hist) // seed history = prompt
+			cur = sampler.DrawTarget(seedLogits, hist) // seed history = prompt
 		}
 
 		emit := func(tok int) bool {
@@ -694,7 +694,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				if sampled {
 					p := dist(logitsN[i], ph)
 					var tok int
-					tok, acc = sampler.specStep(p, draftTok[i])
+					tok, acc = sampler.SpecStep(p, draftTok[i])
 					if tr != nil {
 						tr(traceFromDist(stats.Rounds, i, matchLen, draftTok[i], p, acc))
 					}
@@ -737,7 +737,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// ph here is prompt+committed+cur+draft[:kEff] — the bonus position's
 				// history.
 				if sampled {
-					nextTok = sampler.drawTarget(logitsN[kEff], ph)
+					nextTok = sampler.DrawTarget(logitsN[kEff], ph)
 				} else {
 					if ids != nil {
 						nextTok = ids[kEff]

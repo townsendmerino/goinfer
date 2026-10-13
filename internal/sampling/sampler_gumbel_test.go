@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"math"
@@ -249,7 +249,7 @@ func TestGumbelDraw_parallelEqualsSequential(t *testing.T) {
 			for d := range 8 {
 				seed, draw := s.gseed, s.gdraw
 				got := s.gumbelDraw(logits, T)
-				_, want := gumbelArgmaxRange(logits, 0, v, float32(1/T), [2]uint32{uint32(seed), uint32(seed >> 32)}, draw)
+				_, want := GumbelArgmaxRange(logits, 0, v, float32(1/T), [2]uint32{uint32(seed), uint32(seed >> 32)}, draw)
 				if got != want {
 					t.Fatalf("v=%d T=%.1f draw %d: parallel %d != sequential %d", v, T, d, got, want)
 				}

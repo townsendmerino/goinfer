@@ -1,6 +1,6 @@
-package decoder
+package sampling
 
-// philox4x32 is Philox4x32-10 (Salmon, Moraes, Dror, Shaw, "Parallel Random Numbers: As Easy as 1, 2,
+// Philox4x32 is Philox4x32-10 (Salmon, Moraes, Dror, Shaw, "Parallel Random Numbers: As Easy as 1, 2,
 // 3", SC'11): a counter-based generator, so the k-th output is a pure function of (key, counter) with no
 // state to carry. That is what lets a GPU kernel draw one variate per vocabulary entry in parallel and a
 // host reimplementation draw the identical bits — the whole point of using it for temperature-only sampling
@@ -18,7 +18,7 @@ const (
 	philoxW1 = 0xBB67AE85 // sqrt(3) - 1
 )
 
-func philox4x32(ctr [4]uint32, key [2]uint32) [4]uint32 {
+func Philox4x32(ctr [4]uint32, key [2]uint32) [4]uint32 {
 	for r := range 10 {
 		if r > 0 { // the key is bumped between rounds, not before the first
 			key[0] += philoxW0

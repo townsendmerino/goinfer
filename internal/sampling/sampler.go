@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"fmt"
@@ -193,7 +193,7 @@ func (s *Sampler) Sample(logits []float32) (int, error) {
 	return info.ID, err
 }
 
-// ArgmaxEquivalent reports whether this sampler's pick is exactly argmax(raw logits): no logit bias, no penalties, no
+// ArgmaxEquivalent reports whether this sampler's pick is exactly Argmax(raw logits): no logit bias, no penalties, no
 // temperature or filtering, and no logprob reporting that would need the distribution. When true (and
 // SamplingParams.LogitProcessor is nil), a backend that can compute the argmax on-device may return just the id and
 // skip the full-logits readback; the emitted tokens are identical.
@@ -240,7 +240,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 
 	var info SampleInfo
 	if s.p.Temperature <= 0 {
-		info.ID = argmax(work)
+		info.ID = Argmax(work)
 	} else if s.p.TopK > 0 || s.p.TopP > 0 || s.p.MinP > 0 {
 		// Bounded selection in logit space, with no softmax over the whole vocabulary (topFilterLogits).
 		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(work)), s.candBufN(len(work)), s.ipsBufN(len(work))))
@@ -248,7 +248,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 			// Unreachable: every filter keeps at least the top token and NewSampler clamps the one input that could
 			// empty the set. If it happens, argmax is the answer: a valid id beats a -1 propagating out as a token or a
 			// panic in this goroutine.
-			info.ID = argmax(work)
+			info.ID = Argmax(work)
 		}
 	} else {
 		// Temperature-only, with or without logprobs: Gumbel-max (sampler_gumbel.go). One draw for every variant, so asking
@@ -448,7 +448,7 @@ func lastWithMass(p []float64, lo, hi int) int {
 	return hi - 1
 }
 
-func argmax(logits []float32) int {
+func Argmax(logits []float32) int {
 	if len(logits) == 0 {
 		return 0
 	}
@@ -485,7 +485,7 @@ func argmax(logits []float32) int {
 
 // softmaxStable converts logits to probabilities (numerically stable). It always allocates; softmaxStableInto is the
 // scratch-reusing sibling for per-token hot paths.
-func softmaxStable(logits []float32, temperature float64) []float64 {
+func SoftmaxStable(logits []float32, temperature float64) []float64 {
 	return softmaxStableInto(logits, temperature, nil)
 }
 

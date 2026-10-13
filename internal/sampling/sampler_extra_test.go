@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"math"
@@ -99,7 +99,7 @@ func TestSampler_logprobs(t *testing.T) {
 		t.Fatalf("greedy id = %d, want 0", info.ID)
 	}
 	// Logprob is over the full softmax at temperature 1 (greedy reports at 1).
-	want := math.Log(softmaxStable(logits, 1)[0])
+	want := math.Log(SoftmaxStable(logits, 1)[0])
 	if math.Abs(info.Logprob-want) > 1e-9 {
 		t.Errorf("logprob = %v, want %v", info.Logprob, want)
 	}
@@ -156,7 +156,7 @@ func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 			logits[i] = float32(rng.NormFloat64() * 5)
 		}
 		for _, topN := range []int{1, 3, n / 2, n, n + 5} {
-			probs := softmaxStable(logits, 1)
+			probs := SoftmaxStable(logits, 1)
 			_, got := computeLogprobs(logits, 0, 1, topN, nil)
 			want := referenceTopLogprobs(probs, topN)
 			if len(got) != len(want) {

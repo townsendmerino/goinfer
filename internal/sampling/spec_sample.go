@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import "slices"
 
@@ -15,7 +15,7 @@ import "slices"
 // apply the repetition, presence or frequency penalties, LogitBias or LogitProcessor (distVectorHist threads the
 // history-dependent ones per position; a LogitProcessor is refused on the speculative path). Greedy (temp <= 0) returns
 // the argmax as a point mass.
-func (s *Sampler) distVector(logits []float32) []float64 {
+func (s *Sampler) DistVector(logits []float32) []float64 {
 	return s.distVectorFrom(logits)
 }
 
@@ -27,7 +27,7 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 		// caller (genNgramInto's verify loop) consumes the returned vector synchronously before requesting the next.
 		v := s.distBufN(len(logits))
 		clear(v)
-		v[argmax(logits)] = 1
+		v[Argmax(logits)] = 1
 		return v
 	}
 	if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {
@@ -53,14 +53,14 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 // with penalties: it reproduces exactly the distribution the plain sampler would
 // draw from at that position (where its history is prompt + all tokens emitted so
 // far). Falls back to the cheap distVector when no such transform is configured.
-func (s *Sampler) distVectorHist(logits []float32, history []int) []float64 {
+func (s *Sampler) DistVectorHist(logits []float32, history []int) []float64 {
 	return s.distVectorFrom(s.histLogits(logits, history))
 }
 
 // histLogits returns the logits with the history-dependent transforms (bias, penalties over history) applied: the row
 // itself when none is configured, otherwise a reused scratch copy.
 func (s *Sampler) histLogits(logits []float32, history []int) []float32 {
-	if !s.needsHistory() {
+	if !s.NeedsHistory() {
 		return logits
 	}
 	work := s.specLogitsBufN(len(logits)) // reused scratch instead of a fresh clone
@@ -84,17 +84,17 @@ func (s *Sampler) gumbelServes() bool {
 // explicit distribution otherwise. The accept/reject and residual draws stay on the sampler's math/rand stream:
 // each token is still drawn from exactly the target distribution, and an independent counter-based stream for
 // some tokens does not disturb that (in-distribution lossless, TestSpecStepLossless).
-func (s *Sampler) drawTarget(logits []float32, history []int) int {
+func (s *Sampler) DrawTarget(logits []float32, history []int) int {
 	if s.gumbelServes() {
 		return s.gumbelDraw(s.histLogits(logits, history), s.p.Temperature)
 	}
-	return s.drawDist(s.distVectorHist(logits, history))
+	return s.drawDist(s.DistVectorHist(logits, history))
 }
 
 // needsHistory reports whether the sampling distribution depends on the token
 // history (penalties or logit bias) — i.e. whether the speculative path must
 // thread a per-position history rather than use the plain distVector.
-func (s *Sampler) needsHistory() bool {
+func (s *Sampler) NeedsHistory() bool {
 	return len(s.p.LogitBias) > 0 || s.penaltiesConfigured()
 }
 
@@ -103,7 +103,7 @@ func (s *Sampler) needsHistory() bool {
 // probability p[x]; otherwise return a token drawn from the residual (p with x
 // removed, renormalized). Returns (token, accepted). Consumes one rng draw to
 // accept, plus one more to draw the correction on rejection.
-func (s *Sampler) specStep(p []float64, x int) (int, bool) {
+func (s *Sampler) SpecStep(p []float64, x int) (int, bool) {
 	var px float64
 	if x >= 0 && x < len(p) {
 		px = p[x]

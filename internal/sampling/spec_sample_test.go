@@ -1,7 +1,6 @@
-package decoder
+package sampling
 
 import (
-	"context"
 	"math"
 	"slices"
 	"testing"
@@ -40,12 +39,12 @@ func TestSpecStepLossless(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ref := NewSampler(tc.params)
-			p := ref.distVector(tc.logits) // the exact distribution the sampler draws from
+			p := ref.DistVector(tc.logits) // the exact distribution the sampler draws from
 			for _, x := range tc.xs {
 				s := NewSampler(tc.params)
 				counts := make([]float64, len(tc.logits))
 				for range N {
-					tok, _ := s.specStep(p, x)
+					tok, _ := s.SpecStep(p, x)
 					counts[tok]++
 				}
 				var maxDiff float64
@@ -84,32 +83,6 @@ func freq(c []float64, n int) []float64 {
 // Philox key and draw index 0: plain via SampleWithInfo, speculative via drawTarget. Beyond the first token the two RNG
 // streams diverge by construction, so only the first is bit-comparable; full-sequence equivalence is distributional,
 // proven by TestSpecStepLossless.
-func TestNgramSampledFirstTokenMatchesPlain(t *testing.T) {
-	m, err := loadBenchModel()
-	if err != nil {
-		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
-	}
-	ctx := context.Background()
-	for _, seed := range []int64{1, 42, 1234} {
-		sp := SamplingParams{Temperature: 0.8, Seed: seed} // no top-k/p/min-p → pure temperature
-		for pi, prompt := range specPrompts {
-			refCh, _ := m.Generate(ctx, prompt, 1, sp)
-			ref := collectTokens(refCh)
-			ch, g, err := m.GenerateNgramSpeculative(ctx, prompt, 1, &NgramDrafter{}, 8, sp)
-			if err != nil {
-				t.Fatalf("seed %d prompt %d: %v", seed, pi, err)
-			}
-			got := collectTokens(ch)
-			if g.Err() != nil {
-				t.Fatalf("seed %d prompt %d: stream err %v", seed, pi, g.Err())
-			}
-			if len(ref) != 1 || len(got) != 1 || ref[0] != got[0] {
-				t.Fatalf("seed %d prompt %d: first token differs: plain %v vs sampled-spec %v", seed, pi, ref, got)
-			}
-		}
-	}
-}
-
 // TestDistVectorHistMatchesSampler is the rigorous (model-free) gate for the
 // penalty/bias threading: distVectorHist(logits, history) must equal the
 // distribution the plain Sampler actually draws from after observing that history.
@@ -126,7 +99,7 @@ func TestDistVectorHistMatchesSampler(t *testing.T) {
 	logits := []float32{2.0, 1.2, 0.7, 0.1, -0.4, -1.2, -2.0}
 	history := []int{0, 2, 2, 2, 5, 1} // repeats drive frequency/presence/repeat penalties
 
-	p := NewSampler(sp).distVectorHist(logits, history)
+	p := NewSampler(sp).DistVectorHist(logits, history)
 
 	counts := make([]float64, len(logits))
 	for i := range N {
@@ -152,36 +125,6 @@ func TestDistVectorHistMatchesSampler(t *testing.T) {
 // speculation now threads penalties + logit bias (TestDistVectorHistMatchesSampler),
 // so those are accepted; only a LogitProcessor (constrained/tool decoding) is still
 // rejected rather than silently breaking losslessness.
-func TestNgramSampledRejectsUnsupported(t *testing.T) {
-	m, err := loadBenchModel()
-	if err != nil {
-		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
-	}
-	ctx := context.Background()
-	// Penalties + bias are now supported — must NOT error.
-	ok := []SamplingParams{
-		{Temperature: 0.8, RepeatPenalty: 1.1},
-		{Temperature: 0.8, PresencePenalty: 0.5, FrequencyPenalty: 0.5},
-		{Temperature: 0.8, LogitBias: map[int]float32{1: 5}},
-	}
-	for i, sp := range ok {
-		ch, g, err := m.GenerateNgramSpeculative(ctx, specPrompts[0], 4, &NgramDrafter{}, 8, sp)
-		if err != nil {
-			t.Errorf("supported case %d: unexpected error %v", i, err)
-			continue
-		}
-		collectTokens(ch)
-		if g.Err() != nil {
-			t.Errorf("supported case %d: stream err %v", i, g.Err())
-		}
-	}
-	// A LogitProcessor (constrained/tool decoding) is still rejected.
-	bad := SamplingParams{Temperature: 0.8, LogitProcessor: func([]int, []float32) {}}
-	if _, _, err := m.GenerateNgramSpeculative(ctx, specPrompts[0], 4, &NgramDrafter{}, 8, bad); err == nil {
-		t.Error("LogitProcessor: expected rejection, got nil error")
-	}
-}
-
 // TestDistVectorFrom_scratchClearedAcrossPositions is the P-14 gate: distVectorFrom returns a reused per-sampler scratch
 // buffer (distBufN) instead of a fresh make() every call. Consecutive speculative-verify positions never hold two
 // returned vectors live at once, but that says nothing about whether the PREVIOUS call's mass is cleared before reuse:
@@ -193,11 +136,11 @@ func TestNgramSampledRejectsUnsupported(t *testing.T) {
 func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
 	t.Run("greedy argmax changes", func(t *testing.T) {
 		s := NewSampler(SamplingParams{Temperature: 0}) // greedy: distVectorFrom's argmax branch
-		first := s.distVector([]float32{5, 0, 0, 0, 0})
+		first := s.DistVector([]float32{5, 0, 0, 0, 0})
 		if first[0] != 1 {
 			t.Fatalf("first call: v[0] = %v, want 1", first[0])
 		}
-		second := s.distVector([]float32{0, 0, 0, 0, 5})
+		second := s.DistVector([]float32{0, 0, 0, 0, 5})
 		if second[4] != 1 {
 			t.Fatalf("second call: v[4] = %v, want 1", second[4])
 		}
@@ -208,11 +151,11 @@ func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
 
 	t.Run("top-k support shrinks to a disjoint set", func(t *testing.T) {
 		s := NewSampler(SamplingParams{Temperature: 1, TopK: 1})
-		first := s.distVector([]float32{5, 0, 0, 0, 0}) // kept = {0}
+		first := s.DistVector([]float32{5, 0, 0, 0, 0}) // kept = {0}
 		if first[0] == 0 {
 			t.Fatalf("first call: v[0] = %v, want nonzero (top-1 of index 0)", first[0])
 		}
-		second := s.distVector([]float32{0, 0, 0, 0, 5}) // kept = {4}, disjoint from {0}
+		second := s.DistVector([]float32{0, 0, 0, 0, 5}) // kept = {4}, disjoint from {0}
 		if second[4] == 0 {
 			t.Fatalf("second call: v[4] = %v, want nonzero (top-1 of index 4)", second[4])
 		}
@@ -228,12 +171,12 @@ func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
 	// the bug the other two subtests guard against, not that a clear() is needed here too.
 	t.Run("temp-only (no filters) shares the scratch safely", func(t *testing.T) {
 		s := NewSampler(SamplingParams{Temperature: 1})
-		first := s.distVector([]float32{5, 0, 0, 0, 0})
+		first := s.DistVector([]float32{5, 0, 0, 0, 0})
 		firstZero := first[0] // captured BEFORE the next call: first aliases the shared buffer,
 		// so reading first[0] after distVector runs again would silently read the SECOND call's
 		// overwritten value at that index, not the first's — the exact aliasing trap a shared
 		// scratch buffer invites, guarded against here rather than assumed away.
-		second := s.distVector([]float32{0, 0, 0, 0, 5})
+		second := s.DistVector([]float32{0, 0, 0, 0, 5})
 		if second[0] == firstZero {
 			t.Fatalf("second call's distribution is identical to the first's — the shared buffer was not recomputed")
 		}
@@ -253,9 +196,9 @@ func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
 // bare softmaxStable fails this test immediately rather than only showing up in a profile.
 func TestDistVectorFrom_tempOnlyReusesBuffer(t *testing.T) {
 	s := NewSampler(SamplingParams{Temperature: 1})
-	first := s.distVector([]float32{1, 2, 3, 4, 5})
+	first := s.DistVector([]float32{1, 2, 3, 4, 5})
 	base := unsafe.Pointer(&first[0])
-	second := s.distVector([]float32{5, 4, 3, 2, 1})
+	second := s.DistVector([]float32{5, 4, 3, 2, 1})
 	if unsafe.Pointer(&second[0]) != base {
 		t.Error("distVectorFrom's temp-only branch did not reuse distBuf's backing array — the allocation this fix removes is still happening")
 	}

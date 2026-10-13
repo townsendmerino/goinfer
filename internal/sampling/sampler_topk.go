@@ -1,6 +1,19 @@
-package decoder
+package sampling
 
 import "math"
+
+// TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
+// docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
+// order topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
+// row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
+// Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
+// reads the whole row for the token where K was not enough, and is valid only until the next forward.
+type TopKRow struct {
+	IDs    []int32
+	Logits []float32
+	Z      float64
+	Full   func() ([]float32, error)
+}
 
 // Sampling from a device-side top-K (R7, docs/tasks/red-october.md).
 //
@@ -51,7 +64,7 @@ func (s *Sampler) TopKEligible() bool {
 }
 
 // topPActive mirrors topFilterLogits' own predicate.
-func (s *Sampler) topPActive() bool { return s.p.TopP > 0 && s.p.TopP < 1 }
+func (s *Sampler) TopPActive() bool { return s.p.TopP > 0 && s.p.TopP < 1 }
 
 // TopKWidth returns how many candidates to request for a vocab of the given size, and false when the
 // configuration cannot be served (an explicit top-k wider than the kernel's maximum).
@@ -86,7 +99,7 @@ func (s *Sampler) SampleFromTopK(row TopKRow, vocab int) (SampleInfo, bool) {
 		return SampleInfo{}, false
 	}
 	topP, minP, topK := s.p.TopP, s.p.MinP, s.p.TopK
-	topPActive := s.topPActive()
+	topPActive := s.TopPActive()
 	if !(topK > 0 || minP > 0 || topPActive) {
 		return SampleInfo{}, false
 	}

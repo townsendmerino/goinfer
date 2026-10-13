@@ -2201,7 +2201,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					}
 				} else if topKRF != nil {
 					var row TopKRow
-					row, ferr = topKRF.ForwardTopK(emb, pos, topKWidth, sp.Temperature, sampler.topPActive())
+					row, ferr = topKRF.ForwardTopK(emb, pos, topKWidth, sp.Temperature, sampler.TopPActive())
 					if ferr == nil && mc3 != nil {
 						// Resolve the draw now, while this generation holds the resident (see topKRF). The sampler is this
 						// generation's own and nothing else draws from it before the next iteration would have, so the RNG

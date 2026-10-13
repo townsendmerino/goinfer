@@ -1,6 +1,6 @@
 //go:build !race
 
-package decoder
+package sampling
 
 // sweepSeedStride selects which seeds TestTopFilterLogits_MatchesReference exercises: stride 1 =
 // every seed in the range, the FULL 24,018-case exactness sweep. This is the normal build, and it

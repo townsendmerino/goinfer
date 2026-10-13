@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import "math"
 
@@ -36,26 +36,26 @@ func gumbelNoise(h uint32) float32 {
 	return float32(-math.Log(e))
 }
 
-// gumbelKey is one entry's score. The explicit float32 conversions are load-bearing: they forbid the
+// GumbelKey is one entry's score. The explicit float32 conversions are load-bearing: they forbid the
 // compiler fusing the multiply into the add (FMA), which would make the result depend on the CPU.
-func gumbelKey(logit, invT float32, h uint32) float32 {
+func GumbelKey(logit, invT float32, h uint32) float32 {
 	return float32(logit*invT) + gumbelNoise(h)
 }
 
-// gumbelArgmaxRange returns the best (key, index) over logits[lo:hi], -1 if none is comparable. Ties go to
+// GumbelArgmaxRange returns the best (key, index) over logits[lo:hi], -1 if none is comparable. Ties go to
 // the lowest index (strict >).
-func gumbelArgmaxRange(logits []float32, lo, hi int, invT float32, key [2]uint32, draw uint64) (float32, int) {
+func GumbelArgmaxRange(logits []float32, lo, hi int, invT float32, key [2]uint32, draw uint64) (float32, int) {
 	best := float32(math.Inf(-1))
 	idx := -1
 	d0, d1 := uint32(draw), uint32(draw>>32)
 	for b := lo >> 2; b<<2 < hi; b++ {
-		r := philox4x32([4]uint32{uint32(b), d0, d1, 0}, key)
+		r := Philox4x32([4]uint32{uint32(b), d0, d1, 0}, key)
 		for lane := range 4 {
 			i := b<<2 + lane
 			if i < lo || i >= hi {
 				continue
 			}
-			if k := gumbelKey(logits[i], invT, r[lane]); k > best {
+			if k := GumbelKey(logits[i], invT, r[lane]); k > best {
 				best, idx = k, i
 			}
 		}
@@ -80,13 +80,13 @@ func (s *Sampler) gumbelDraw(logits []float32, temperature float64) int {
 	invT := float32(1 / temperature)
 	seed, draw := s.NextDraw()
 	if math.IsInf(float64(invT), 0) { // absurdly small temperature: the argmax, as greedy
-		return argmax(logits)
+		return Argmax(logits)
 	}
 	key := [2]uint32{uint32(seed), uint32(seed >> 32)}
 	var keys [numChunks]float32
 	var idxs [numChunks]int
 	forEachChunk(len(logits), func(c, lo, hi int) {
-		keys[c], idxs[c] = gumbelArgmaxRange(logits, lo, hi, invT, key, draw)
+		keys[c], idxs[c] = GumbelArgmaxRange(logits, lo, hi, invT, key, draw)
 	})
 	best := float32(math.Inf(-1))
 	idx := -1
@@ -96,7 +96,7 @@ func (s *Sampler) gumbelDraw(logits []float32, temperature float64) int {
 		}
 	}
 	if idx < 0 {
-		return argmax(logits)
+		return Argmax(logits)
 	}
 	return idx
 }

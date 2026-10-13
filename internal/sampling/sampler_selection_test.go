@@ -1,4 +1,4 @@
-package decoder
+package sampling
 
 import (
 	"fmt"
@@ -404,7 +404,7 @@ func BenchmarkFilterNew262k(b *testing.B) { benchFilter(b, 262144, false) }
 // silently shrinks to a subset in every job, with nothing red. This reads ci.yml and fails if the step is gone; a
 // string check, not a YAML parse, because what matters is that some step runs the test without -race.
 func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
 	if err != nil {
 		t.Skipf("no ci.yml to check (%v) — this gate only applies in the repo", err)
 	}
@@ -419,7 +419,7 @@ func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
 		if !strings.HasPrefix(s, "run:") || !strings.Contains(s, "go test") {
 			continue
 		}
-		if strings.Contains(s, "-race") || !strings.Contains(s, "./decoder/") {
+		if strings.Contains(s, "-race") || !strings.Contains(s, "./internal/sampling/") {
 			continue
 		}
 		for _, name := range strided {

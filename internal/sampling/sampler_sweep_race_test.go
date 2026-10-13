@@ -1,6 +1,6 @@
 //go:build race
 
-package decoder
+package sampling
 
 // Under -race the exactness sweep runs a STRIDED SUBSET of seeds rather than all of them. TestTopFilterLogits_MatchesReference
 // is pure computation (no goroutines, shared state or channels), so the detector has nothing to find in it while costing
