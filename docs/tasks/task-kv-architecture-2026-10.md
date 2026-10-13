@@ -726,8 +726,14 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   merges and before its push.
 - **After the census (`docs/measurements/kv3-long-prompt-census-2026-10-13.md`): a tiled exact attention kernel, owner-approved 2026-10-13 (§8 Q7).** The
   dense Gemma families (head dim 256, and 512 on Gemma 4's global layers) still fall to the per-token path past 12,160 keys, at least 183 s and 276 s for a
-  20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. The kernel's identity
-  target, the facts about decode's split-KV it must match and its gates are registered in a record before any code.
+  20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. **Built 2026-10-13 on
+  `kv3-tiled-2026-10`** (record: `docs/measurements/kv3-tiled-exact-2026-10-13.md`, registered before the code, three amendments before their runs): three
+  row-batched kernels in their own module (`cuda/prefill_splitkv.cu`, decode's split-KV attention with the query row on the grid), taken by a layer whose
+  exact attention is past the bound; nothing below the bound changes. **Day gates pass:** the kernels equal `attn_batched` bit for bit in 360 cases, a forced
+  route equals `attn_batched` over a whole model pass, a batched exact pass past the bound equals the per-token path bit for bit on the tiny fixture (logits and
+  every K and V row), and admission's figure equals the pass's allocations. **Night jobs queued:** the real-model identity (Gemma-3-4B, Gemma-4-E4B at 12,400
+  tokens), the speed bar (3x or more against the per-token path; 1.5x to 3x is parked) and a no-regression TTFT pair. The branch merges after `kv3-cuda-2026-10`,
+  when those read green and the CUDA suite has run on it.
 - **Gates (sketch, registered per half in the record):**
   - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
   - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);
