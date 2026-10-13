@@ -1,0 +1,78 @@
+=== RUN   TestS12AttnKernelFidelity
+21:58:03 [    0s] mode gate: 64 prompts, prompt-set hash aa7e71cb5637b95d8fee83d6645da78d5d5ff9011917b050824255da84d14bee; rows by cell map[long:8900 medium:6150 short:4472]
+21:58:03 [    1s] loading the float32 reference (CPU) and two int4 residents (WebGPU), one a kernel
+21:58:14 [   11s] backend "vulkan", decode path webgpu:vulkan-resident (int4); planted defect in the candidate: false; 0 of 64 prompts already in /home/francis/goinfer-bench/s12-4c-6-2026-10-12/gate/positions-live.jsonl
+21:58:40 [   37s] prompt 1 of 64 gate|short|t[0]|i0: 106 rows; agreement exact 30/32 candidate 30/32; mean KL exact 0.1999 candidate 0.1455; the arms' logits differ at 32 of 32 positions
+21:59:05 [   62s] prompt 2 of 64 gate|short|t[0]|i1: 106 rows; agreement exact 28/32 candidate 27/32; mean KL exact 0.9341 candidate 0.7839; the arms' logits differ at 32 of 32 positions
+21:59:30 [   88s] prompt 3 of 64 gate|short|t[0]|i2: 112 rows; agreement exact 26/32 candidate 25/32; mean KL exact 0.3150 candidate 0.3371; the arms' logits differ at 32 of 32 positions
+21:59:55 [  113s] prompt 4 of 64 gate|short|t[0]|i3: 110 rows; agreement exact 28/32 candidate 28/32; mean KL exact 0.2293 candidate 0.1750; the arms' logits differ at 32 of 32 positions
+22:00:21 [  138s] prompt 5 of 64 gate|short|t[0]|i4: 110 rows; agreement exact 26/32 candidate 26/32; mean KL exact 0.8131 candidate 0.9118; the arms' logits differ at 32 of 32 positions
+22:00:47 [  164s] prompt 6 of 64 gate|short|t[1]|i0: 111 rows; agreement exact 30/32 candidate 30/32; mean KL exact 0.1460 candidate 0.1379; the arms' logits differ at 32 of 32 positions
+22:01:12 [  189s] prompt 7 of 64 gate|short|t[1]|i1: 111 rows; agreement exact 32/32 candidate 32/32; mean KL exact 0.0006 candidate 0.0131; the arms' logits differ at 32 of 32 positions
+22:01:37 [  215s] prompt 8 of 64 gate|short|t[1]|i2: 117 rows; agreement exact 24/32 candidate 24/32; mean KL exact 0.8145 candidate 0.7682; the arms' logits differ at 32 of 32 positions
+22:02:03 [  240s] prompt 9 of 64 gate|short|t[1]|i3: 115 rows; agreement exact 27/32 candidate 28/32; mean KL exact 0.2397 candidate 0.2534; the arms' logits differ at 32 of 32 positions
+22:02:28 [  265s] prompt 10 of 64 gate|short|t[1]|i4: 115 rows; agreement exact 26/32 candidate 27/32; mean KL exact 1.1461 candidate 1.1379; the arms' logits differ at 32 of 32 positions
+22:02:53 [  291s] prompt 11 of 64 gate|short|t[2]|i0: 104 rows; agreement exact 29/32 candidate 30/32; mean KL exact 0.2969 candidate 0.2476; the arms' logits differ at 32 of 32 positions
+22:03:18 [  316s] prompt 12 of 64 gate|short|t[2]|i1: 104 rows; agreement exact 32/32 candidate 32/32; mean KL exact 0.0021 candidate 0.0019; the arms' logits differ at 32 of 32 positions
+22:03:43 [  341s] prompt 13 of 64 gate|short|t[2]|i2: 110 rows; agreement exact 25/32 candidate 27/32; mean KL exact 0.6154 candidate 0.7517; the arms' logits differ at 32 of 32 positions
+22:04:08 [  366s] prompt 14 of 64 gate|short|t[2]|i3: 108 rows; agreement exact 28/32 candidate 28/32; mean KL exact 0.1992 candidate 0.1950; the arms' logits differ at 32 of 32 positions
+22:04:33 [  391s] prompt 15 of 64 gate|short|t[2]|i4: 108 rows; agreement exact 27/32 candidate 26/32; mean KL exact 0.7050 candidate 0.6254; the arms' logits differ at 32 of 32 positions
+22:04:59 [  416s] prompt 16 of 64 gate|short|t[3]|i0: 116 rows; agreement exact 29/32 candidate 29/32; mean KL exact 0.6447 candidate 0.4602; the arms' logits differ at 32 of 32 positions
+22:05:24 [  441s] prompt 17 of 64 gate|short|t[3]|i1: 116 rows; agreement exact 31/32 candidate 31/32; mean KL exact 0.0655 candidate 0.1869; the arms' logits differ at 32 of 32 positions
+22:05:49 [  467s] prompt 18 of 64 gate|short|t[3]|i2: 122 rows; agreement exact 28/32 candidate 29/32; mean KL exact 0.3470 candidate 0.4033; the arms' logits differ at 32 of 32 positions
+22:06:15 [  492s] prompt 19 of 64 gate|short|t[3]|i3: 120 rows; agreement exact 27/32 candidate 29/32; mean KL exact 0.3186 candidate 0.2642; the arms' logits differ at 32 of 32 positions
+22:06:40 [  517s] prompt 20 of 64 gate|short|t[3]|i4: 120 rows; agreement exact 25/32 candidate 25/32; mean KL exact 1.0759 candidate 1.0381; the arms' logits differ at 32 of 32 positions
+22:07:05 [  542s] prompt 21 of 64 gate|short|t[4]|i0: 107 rows; agreement exact 24/32 candidate 21/32; mean KL exact 0.7681 candidate 0.8030; the arms' logits differ at 32 of 32 positions
+22:07:30 [  567s] prompt 22 of 64 gate|short|t[4]|i1: 107 rows; agreement exact 31/32 candidate 30/32; mean KL exact 0.2240 candidate 0.2338; the arms' logits differ at 32 of 32 positions
+22:07:55 [  592s] prompt 23 of 64 gate|short|t[4]|i2: 113 rows; agreement exact 26/32 candidate 23/32; mean KL exact 0.5815 candidate 0.8859; the arms' logits differ at 32 of 32 positions
+22:08:20 [  617s] prompt 24 of 64 gate|short|t[4]|i3: 111 rows; agreement exact 29/32 candidate 28/32; mean KL exact 0.1649 candidate 0.2215; the arms' logits differ at 32 of 32 positions
+22:08:45 [  642s] prompt 25 of 64 gate|short|t[4]|i4: 111 rows; agreement exact 28/32 candidate 29/32; mean KL exact 0.2832 candidate 0.2666; the arms' logits differ at 32 of 32 positions
+22:09:10 [  667s] prompt 26 of 64 gate|short|t[5]|i0: 108 rows; agreement exact 30/32 candidate 28/32; mean KL exact 0.2123 candidate 0.2967; the arms' logits differ at 32 of 32 positions
+22:09:35 [  692s] prompt 27 of 64 gate|short|t[5]|i1: 108 rows; agreement exact 29/32 candidate 27/32; mean KL exact 0.3108 candidate 0.2714; the arms' logits differ at 32 of 32 positions
+22:10:00 [  717s] prompt 28 of 64 gate|short|t[5]|i2: 114 rows; agreement exact 23/32 candidate 22/32; mean KL exact 0.6107 candidate 0.4354; the arms' logits differ at 32 of 32 positions
+22:10:25 [  743s] prompt 29 of 64 gate|short|t[5]|i3: 112 rows; agreement exact 31/32 candidate 31/32; mean KL exact 0.1524 candidate 0.0932; the arms' logits differ at 32 of 32 positions
+22:10:50 [  768s] prompt 30 of 64 gate|short|t[5]|i4: 112 rows; agreement exact 28/32 candidate 24/32; mean KL exact 0.7611 candidate 1.1378; the arms' logits differ at 32 of 32 positions
+22:11:16 [  793s] prompt 31 of 64 gate|short|t[6]|i0: 117 rows; agreement exact 24/32 candidate 26/32; mean KL exact 0.6298 candidate 0.5143; the arms' logits differ at 32 of 32 positions
+22:11:41 [  818s] prompt 32 of 64 gate|short|t[6]|i1: 117 rows; agreement exact 31/32 candidate 31/32; mean KL exact 0.0060 candidate 0.0285; the arms' logits differ at 32 of 32 positions
+22:12:06 [  844s] prompt 33 of 64 gate|short|t[6]|i2: 123 rows; agreement exact 26/32 candidate 26/32; mean KL exact 0.8819 candidate 0.7040; the arms' logits differ at 32 of 32 positions
+22:12:32 [  869s] prompt 34 of 64 gate|short|t[6]|i3: 121 rows; agreement exact 26/32 candidate 26/32; mean KL exact 0.3733 candidate 0.3305; the arms' logits differ at 32 of 32 positions
+22:12:57 [  894s] prompt 35 of 64 gate|short|t[6]|i4: 121 rows; agreement exact 24/32 candidate 25/32; mean KL exact 1.1137 candidate 1.3879; the arms' logits differ at 32 of 32 positions
+22:13:22 [  919s] prompt 36 of 64 gate|short|t[7]|i0: 103 rows; agreement exact 28/32 candidate 28/32; mean KL exact 0.2537 candidate 0.3606; the arms' logits differ at 32 of 32 positions
+22:13:46 [  944s] prompt 37 of 64 gate|short|t[7]|i1: 103 rows; agreement exact 31/32 candidate 31/32; mean KL exact 0.0802 candidate 0.1388; the arms' logits differ at 32 of 32 positions
+22:14:11 [  969s] prompt 38 of 64 gate|short|t[7]|i2: 109 rows; agreement exact 28/32 candidate 27/32; mean KL exact 0.4703 candidate 0.5828; the arms' logits differ at 32 of 32 positions
+22:14:36 [  994s] prompt 39 of 64 gate|short|t[7]|i3: 107 rows; agreement exact 29/32 candidate 29/32; mean KL exact 0.3173 candidate 0.2215; the arms' logits differ at 32 of 32 positions
+22:15:01 [ 1019s] prompt 40 of 64 gate|short|t[7]|i4: 107 rows; agreement exact 25/32 candidate 28/32; mean KL exact 0.4838 candidate 0.3145; the arms' logits differ at 32 of 32 positions
+22:15:38 [ 1055s] prompt 41 of 64 gate|medium|t[0 1 2 3]|i0: 383 rows; agreement exact 24/32 candidate 26/32; mean KL exact 0.4099 candidate 0.3293; the arms' logits differ at 32 of 32 positions
+22:16:14 [ 1091s] prompt 42 of 64 gate|medium|t[1 2 3 4]|i1: 384 rows; agreement exact 31/32 candidate 30/32; mean KL exact 0.1554 candidate 0.1711; the arms' logits differ at 32 of 32 positions
+22:16:50 [ 1127s] prompt 43 of 64 gate|medium|t[2 3 4 5]|i2: 387 rows; agreement exact 22/32 candidate 22/32; mean KL exact 0.6539 candidate 0.7405; the arms' logits differ at 32 of 32 positions
+22:17:27 [ 1164s] prompt 44 of 64 gate|medium|t[3 4 5 6]|i3: 398 rows; agreement exact 27/32 candidate 28/32; mean KL exact 0.4423 candidate 0.2917; the arms' logits differ at 32 of 32 positions
+22:18:04 [ 1201s] prompt 45 of 64 gate|medium|t[4 5 6 7]|i4: 385 rows; agreement exact 26/32 candidate 25/32; mean KL exact 0.6921 candidate 0.6217; the arms' logits differ at 32 of 32 positions
+22:18:40 [ 1237s] prompt 46 of 64 gate|medium|t[5 6 7 0]|i0: 380 rows; agreement exact 28/32 candidate 27/32; mean KL exact 0.3281 candidate 0.3136; the arms' logits differ at 32 of 32 positions
+22:19:16 [ 1273s] prompt 47 of 64 gate|medium|t[6 7 0 1]|i1: 383 rows; agreement exact 29/32 candidate 30/32; mean KL exact 0.3527 candidate 0.3085; the arms' logits differ at 32 of 32 positions
+22:19:51 [ 1309s] prompt 48 of 64 gate|medium|t[7 0 1 2]|i2: 376 rows; agreement exact 29/32 candidate 26/32; mean KL exact 0.2591 candidate 0.3412; the arms' logits differ at 32 of 32 positions
+22:20:28 [ 1345s] prompt 49 of 64 gate|medium|t[0 1 2 3]|i4: 387 rows; agreement exact 29/32 candidate 28/32; mean KL exact 0.5164 candidate 0.4591; the arms' logits differ at 32 of 32 positions
+22:21:04 [ 1381s] prompt 50 of 64 gate|medium|t[1 2 3 4]|i0: 384 rows; agreement exact 28/32 candidate 30/32; mean KL exact 0.3902 candidate 0.1864; the arms' logits differ at 32 of 32 positions
+22:21:40 [ 1418s] prompt 51 of 64 gate|medium|t[2 3 4 5]|i1: 381 rows; agreement exact 29/32 candidate 30/32; mean KL exact 0.5163 candidate 0.5939; the arms' logits differ at 32 of 32 positions
+22:22:18 [ 1455s] prompt 52 of 64 gate|medium|t[3 4 5 6]|i2: 400 rows; agreement exact 18/32 candidate 15/32; mean KL exact 1.5426 candidate 1.7917; the arms' logits differ at 32 of 32 positions
+22:22:54 [ 1492s] prompt 53 of 64 gate|medium|t[4 5 6 7]|i3: 385 rows; agreement exact 29/32 candidate 30/32; mean KL exact 0.3260 candidate 0.3913; the arms' logits differ at 32 of 32 positions
+22:23:30 [ 1528s] prompt 54 of 64 gate|medium|t[5 6 7 0]|i4: 384 rows; agreement exact 26/32 candidate 26/32; mean KL exact 0.7824 candidate 0.6982; the arms' logits differ at 32 of 32 positions
+22:24:06 [ 1564s] prompt 55 of 64 gate|medium|t[6 7 0 1]|i0: 383 rows; agreement exact 26/32 candidate 25/32; mean KL exact 0.8367 candidate 0.6449; the arms' logits differ at 32 of 32 positions
+22:24:42 [ 1600s] prompt 56 of 64 gate|medium|t[7 0 1 2]|i1: 370 rows; agreement exact 27/32 candidate 25/32; mean KL exact 0.3489 candidate 0.5029; the arms' logits differ at 32 of 32 positions
+22:26:13 [ 1690s] prompt 57 of 64 gate|long|t[0 1 2 3 4 5 6 7 0 1 2 3]|i0: 1111 rows; agreement exact 27/32 candidate 28/32; mean KL exact 0.3928 candidate 0.4215; the arms' logits differ at 32 of 32 positions
+22:27:43 [ 1781s] prompt 58 of 64 gate|long|t[1 2 3 4 5 6 7 0 1 2 3 4]|i1: 1112 rows; agreement exact 27/32 candidate 28/32; mean KL exact 0.1599 candidate 0.2285; the arms' logits differ at 32 of 32 positions
+22:29:14 [ 1871s] prompt 59 of 64 gate|long|t[2 3 4 5 6 7 0 1 2 3 4 5]|i2: 1115 rows; agreement exact 21/32 candidate 20/32; mean KL exact 0.9316 candidate 0.9731; the arms' logits differ at 32 of 32 positions
+22:30:46 [ 1963s] prompt 60 of 64 gate|long|t[3 4 5 6 7 0 1 2 3 4 5 6]|i3: 1126 rows; agreement exact 29/32 candidate 29/32; mean KL exact 0.1354 candidate 0.1398; the arms' logits differ at 32 of 32 positions
+22:32:17 [ 2054s] prompt 61 of 64 gate|long|t[4 5 6 7 0 1 2 3 4 5 6 7]|i4: 1113 rows; agreement exact 28/32 candidate 28/32; mean KL exact 0.3114 candidate 0.4355; the arms' logits differ at 32 of 32 positions
+22:33:47 [ 2145s] prompt 62 of 64 gate|long|t[5 6 7 0 1 2 3 4 5 6 7 0]|i0: 1108 rows; agreement exact 25/32 candidate 26/32; mean KL exact 0.5533 candidate 0.4336; the arms' logits differ at 32 of 32 positions
+22:35:18 [ 2235s] prompt 63 of 64 gate|long|t[6 7 0 1 2 3 4 5 6 7 0 1]|i1: 1111 rows; agreement exact 28/32 candidate 30/32; mean KL exact 0.2720 candidate 0.2630; the arms' logits differ at 32 of 32 positions
+22:36:48 [ 2325s] prompt 64 of 64 gate|long|t[7 0 1 2 3 4 5 6 7 0 1 2]|i2: 1104 rows; agreement exact 28/32 candidate 28/32; mean KL exact 0.8325 candidate 0.4661; the arms' logits differ at 32 of 32 positions
+G-S12.4c-6 mode gate, backend vulkan, planted defect false, prompt-set hash aa7e71cb5637b95d8fee83d6645da78d5d5ff9011917b050824255da84d14bee
+exact: the per-dimension kernel; candidate: the key-split kernel; the arms' logits differ at 2048 of 2048 positions
+criteria: agreement margin 2.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell short: 40 prompts, 1280 positions; agreement candidate 86.17% exact 86.64% (difference -0.47 pts, lower bound -1.60); mean KL candidate 0.4517 exact 0.4447 (ratio 1.016, upper bound 1.088); hard flips candidate 73 exact 70; discordant positions 72
+cell medium: 16 prompts, 512 positions; agreement candidate 82.62% exact 83.59% (difference -0.98 pts, lower bound -3.01); mean KL candidate 0.5241 exact 0.5346 (ratio 0.980, upper bound 1.078); hard flips candidate 47 exact 41; discordant positions 45
+cell long: 8 prompts, 256 positions; agreement candidate 84.77% exact 83.20% (difference +1.56 pts, lower bound -0.12); mean KL candidate 0.4201 exact 0.4486 (ratio 0.937, upper bound 1.123); hard flips candidate 18 exact 22; discordant positions 20
+pooled: 64 prompts, 2048 positions; agreement candidate 85.11% exact 85.45% (difference -0.34 pts, lower bound -1.24); mean KL candidate 0.4658 exact 0.4677 (ratio 0.996, upper bound 1.052); hard flips candidate 138 exact 133; discordant positions 137
+VERDICT PASS (hard flips pass true, agreement pass true, KL pass true) 
+--- PASS: TestS12AttnKernelFidelity (2326.75s)
+PASS

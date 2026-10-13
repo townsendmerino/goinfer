@@ -1,0 +1,34 @@
+22:12:48 [    0s] 5 rounds x 2 arms x 2 depths ([512, 2048] tokens); model /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+22:12:48 [    0s] round 1 of 5, new: starting serve-webgpu-new (load 0.97)
+22:12:58 [    9s] round 1 of 5, new, 512 tokens (541 prompt tokens): TTFT 4.07 s
+22:13:16 [   27s] round 1 of 5, new, 2048 tokens (2076 prompt tokens): TTFT 17.25 s
+22:13:16 [   27s] round 1 of 5, old: starting serve-webgpu-old (load 0.76)
+22:13:35 [   47s] round 1 of 5, old, 512 tokens (541 prompt tokens): TTFT 12.67 s
+22:14:47 [  119s] round 1 of 5, old, 2048 tokens (2076 prompt tokens): TTFT 71.20 s
+22:14:47 [  119s] round 2 of 5, old: starting serve-webgpu-old (load 1.58)
+22:15:06 [  138s] round 2 of 5, old, 512 tokens (541 prompt tokens): TTFT 12.64 s
+22:16:18 [  209s] round 2 of 5, old, 2048 tokens (2076 prompt tokens): TTFT 70.84 s
+22:16:18 [  210s] round 2 of 5, new: starting serve-webgpu-new (load 3.47)
+22:16:26 [  218s] round 2 of 5, new, 512 tokens (541 prompt tokens): TTFT 4.07 s
+22:16:44 [  236s] round 2 of 5, new, 2048 tokens (2076 prompt tokens): TTFT 17.26 s
+22:16:44 [  236s] round 3 of 5, new: starting serve-webgpu-new (load 3.35)
+22:16:53 [  244s] round 3 of 5, new, 512 tokens (541 prompt tokens): TTFT 4.07 s
+22:17:11 [  262s] round 3 of 5, new, 2048 tokens (2076 prompt tokens): TTFT 17.24 s
+22:17:11 [  262s] round 3 of 5, old: starting serve-webgpu-old (load 2.90)
+22:17:29 [  281s] round 3 of 5, old, 512 tokens (541 prompt tokens): TTFT 12.56 s
+22:18:41 [  353s] round 3 of 5, old, 2048 tokens (2076 prompt tokens): TTFT 71.03 s
+22:18:41 [  353s] round 4 of 5, old: starting serve-webgpu-old (load 2.56)
+22:19:00 [  372s] round 4 of 5, old, 512 tokens (541 prompt tokens): TTFT 12.58 s
+22:20:12 [  444s] round 4 of 5, old, 2048 tokens (2076 prompt tokens): TTFT 71.11 s
+22:20:12 [  444s] round 4 of 5, new: starting serve-webgpu-new (load 0.90)
+22:20:20 [  452s] round 4 of 5, new, 512 tokens (541 prompt tokens): TTFT 4.07 s
+22:20:39 [  470s] round 4 of 5, new, 2048 tokens (2076 prompt tokens): TTFT 17.24 s
+22:20:39 [  470s] round 5 of 5, new: starting serve-webgpu-new (load 2.01)
+22:20:46 [  478s] round 5 of 5, new, 512 tokens (541 prompt tokens): TTFT 4.06 s
+22:21:04 [  496s] round 5 of 5, new, 2048 tokens (2076 prompt tokens): TTFT 17.24 s
+22:21:04 [  496s] round 5 of 5, old: starting serve-webgpu-old (load 2.10)
+22:21:22 [  514s] round 5 of 5, old, 512 tokens (541 prompt tokens): TTFT 12.57 s
+22:22:34 [  586s] round 5 of 5, old, 2048 tokens (2076 prompt tokens): TTFT 71.00 s
+
+RESULT 512 tokens: new 4.07 4.07 4.07 4.07 4.06 s; old 12.67 12.64 12.56 12.58 12.57 s; ratios 0.321 0.322 0.324 0.323 0.323; median 0.323 -> SHIP; replies equal in 5 of 5 rounds
+RESULT 2048 tokens: new 17.25 17.26 17.24 17.24 17.24 s; old 71.20 70.84 71.03 71.11 71.00 s; ratios 0.242 0.244 0.243 0.242 0.243; median 0.243 -> SHIP; replies equal in 5 of 5 rounds

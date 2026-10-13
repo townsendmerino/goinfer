@@ -1,0 +1,7 @@
+started: 2026-10-13 00:18:06 PDT
+host: Darwin 25.6.0 arm64
+new: d0cdee250baf60c962c2fe6f5f0d65b57cdbce98
+old: d026accf7dda67f707a8bae0bc0eb554fc27b34a
+gemma 3: /Users/francistownsend-merino/models/gemma-3-4b-it
+load:  0:18  up 18 days, 14:13, 1 user, load averages: 1.17 3.10 3.55
+finished: 2026-10-13 00:39:17 PDT rc=0

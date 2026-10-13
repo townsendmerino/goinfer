@@ -1,0 +1,8 @@
+G-S12.4c-6 mode gate, backend vulkan, planted defect false, prompt-set hash aa7e71cb5637b95d8fee83d6645da78d5d5ff9011917b050824255da84d14bee
+exact: the per-dimension kernel; candidate: the key-split kernel; the arms' logits differ at 2048 of 2048 positions
+criteria: agreement margin 2.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell short: 40 prompts, 1280 positions; agreement candidate 86.17% exact 86.64% (difference -0.47 pts, lower bound -1.60); mean KL candidate 0.4517 exact 0.4447 (ratio 1.016, upper bound 1.088); hard flips candidate 73 exact 70; discordant positions 72
+cell medium: 16 prompts, 512 positions; agreement candidate 82.62% exact 83.59% (difference -0.98 pts, lower bound -3.01); mean KL candidate 0.5241 exact 0.5346 (ratio 0.980, upper bound 1.078); hard flips candidate 47 exact 41; discordant positions 45
+cell long: 8 prompts, 256 positions; agreement candidate 84.77% exact 83.20% (difference +1.56 pts, lower bound -0.12); mean KL candidate 0.4201 exact 0.4486 (ratio 0.937, upper bound 1.123); hard flips candidate 18 exact 22; discordant positions 20
+pooled: 64 prompts, 2048 positions; agreement candidate 85.11% exact 85.45% (difference -0.34 pts, lower bound -1.24); mean KL candidate 0.4658 exact 0.4677 (ratio 0.996, upper bound 1.052); hard flips candidate 138 exact 133; discordant positions 137
+VERDICT PASS (hard flips pass true, agreement pass true, KL pass true) 
