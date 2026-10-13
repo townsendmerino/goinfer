@@ -49,6 +49,13 @@ var prefillBatchedPTX []byte
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte
 
+// prefillSplitKVPTX: the exact batched-prefill attention for a row whose scores do not fit attn_batched's shared memory
+// (splitkv_scores_rows, splitkv_softmax_rows, splitkv_vsum_rows): decode's split-KV kernels with the query row on the grid,
+// bit-identical to attn_batched row by row.
+//
+//go:embed testdata/prefill_splitkv.ptx
+var prefillSplitKVPTX []byte
+
 // deltaNetPTX: the Gated-DeltaNet decode mixer (delta_conv / delta_gates / delta_norm / delta_rule / delta_gnorm /
 // delta_qsplit / delta_attn_gate), loaded only for that family; a load failure declines the resident build. Nothing else
 // here carries recurrent state, so the conv and state plumbing are new code, not a reuse.
@@ -323,6 +330,9 @@ var prefillBatchedKV16PTX []byte
 
 //go:embed testdata/decode_splitkv_kv16.ptx
 var decodeSplitKVKV16PTX []byte
+
+//go:embed testdata/prefill_splitkv_kv16.ptx
+var prefillSplitKVKV16PTX []byte
 
 //go:embed testdata/decode_fa_kv16.ptx
 var decodeFAKV16PTX []byte

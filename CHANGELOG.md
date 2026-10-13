@@ -31,6 +31,20 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Changed — on CUDA, the exact prefill attention also runs past 12,160 attended keys (Gemma 3, Gemma 4 and any exact pass)
+
+A layer the fused attention does not serve (head dimension 256 or 512, an E-model, a pass of 15 rows or fewer) kept the exact
+kernel's shared-memory bound and sent a prompt past 12,160 keys to the per-token path. Such a layer now takes **three row-batched
+kernels** (`cuda/prefill_splitkv.cu`: decode's split-KV attention with the query row on the grid), which hold the scores in a device
+buffer and are bit-identical to the exact kernel row by row. Day readings only so far; the real-model identity and speed gates are on
+the night queue (`docs/measurements/kv3-tiled-exact-2026-10-13.md`).
+
+- **Below the bound nothing changes:** the same kernels as before, and the same digests at 300, 3,900 and 12,000 tokens.
+- **Past it, an exact pass equals the per-token path bit for bit:** logits and every K and V row at 12,400 and 16,384 tokens on the tiny
+  fixture, f32 and f16 KV.
+- **Still falling back past the bound, by name:** an image-block pass, and MLA.
+- Admission adds the pass's score scratch (at most 64 MiB) to a request's price when a layer takes these kernels.
+
 ### Changed — on CUDA, a prompt past 12,160 attended keys prefills in batched passes where the fused attention serves it
 
 A prompt longer than 12,160 tokens used to fall off the batched prefill onto the per-token path, about 66 tokens a second on a 4B model

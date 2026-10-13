@@ -1,0 +1,58 @@
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:114: all float MACs in 33 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.03s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:143: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:149: 42 embedded PTX kernels: 33 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny
+    kv3_tiled_test.go:45: KV precision f32
+[kv3-tiled] forced route kv=f32 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+    kv3_tiled_test.go:45: KV precision f16
+[kv3-tiled] forced route kv=f16 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+--- PASS: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny (2.45s)
+=== RUN   TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines
+    kv3_tiled_test.go:140: KV precision f16
+--- PASS: TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines (2.05s)
+=== RUN   TestKV3Tiled_spanScratchMatchesThePass
+    kv3_tiled_test.go:163: KV precision f16
+[kv3-tiled] scratch levers=true start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=16: 209152 B + span 4194560 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=300: 3921600 B + span 60822208 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=512: 6692864 B + span 67114096 B = the pass's allocations
+--- PASS: TestKV3Tiled_spanScratchMatchesThePass (0.39s)
+=== RUN   TestPipelineLint_boundKernelsAreLaunched
+    pipeline_lint_test.go:82: pipeline lint: 88 Pipeline fields, 0 bound-and-dead, 0 launched-but-unbound
+--- PASS: TestPipelineLint_boundKernelsAreLaunched (0.98s)
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+    prefill_splitkv_test.go:208: 180 cases bit-identical to attn_batched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+    prefill_splitkv_test.go:208: 180 cases bit-identical to attn_batched
+--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched (1.31s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32 (0.45s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16 (0.69s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	7.257s

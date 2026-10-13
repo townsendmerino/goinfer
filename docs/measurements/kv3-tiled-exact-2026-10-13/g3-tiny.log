@@ -1,0 +1,10 @@
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_tiny
+    kv3_tiled_test.go:90: KV precision f32
+[kv3-tiled] past the bound kv=f32 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 1.07 s (6 groups), per-token 6.90 s
+[kv3-tiled] past the bound kv=f32 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.77 s (36 groups), per-token 10.64 s
+    kv3_tiled_test.go:90: KV precision f16
+[kv3-tiled] past the bound kv=f16 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 0.95 s (6 groups), per-token 6.18 s
+[kv3-tiled] past the bound kv=f16 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.54 s (36 groups), per-token 10.03 s
+--- PASS: TestKV3Tiled_batchedEqualsPerToken_tiny (40.99s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	41.049s

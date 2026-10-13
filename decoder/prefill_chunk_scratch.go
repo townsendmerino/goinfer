@@ -10,6 +10,13 @@ type ResidentPrefillChunks interface {
 	PrefillScratchBytes(rows int) int64
 }
 
+// ResidentPrefillSpanScratch is the optional capability of a chunking resident whose pass allocates more when its rows attend
+// many keys: PrefillSpanScratchBytes is what a pass of rows rows whose last row attends keys keys allocates beyond
+// PrefillScratchBytes(rows). Admission adds it at the request's prompt length.
+type ResidentPrefillSpanScratch interface {
+	PrefillSpanScratchBytes(rows, keys int) int64
+}
+
 // ResidentPrefillTailMin is the optional capability of a resident whose last pass of a prefill must have a minimum number of rows
 // to run the same kernels as the pass before it (CUDA: 16, the fused attention's floor). Every loop that cuts a prompt into
 // passes reads it instead of prefillTailMin.
@@ -38,5 +45,9 @@ func (m *Model) residentChunkedScratch(promptTokens int) (bytes int64, ok bool) 
 		return 0, false
 	}
 	rows := min(promptTokens, C)
-	return sc.PrefillScratchBytes(rows) + int64(promptTokens)*4*int64(m.ResidentEmbedLen()), true
+	dev := sc.PrefillScratchBytes(rows)
+	if ss, ok := m.resident.(ResidentPrefillSpanScratch); ok {
+		dev += ss.PrefillSpanScratchBytes(rows, promptTokens)
+	}
+	return dev + int64(promptTokens)*4*int64(m.ResidentEmbedLen()), true
 }

@@ -1,0 +1,245 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+// KV3's gates for the row-batched exact attention (docs/measurements/kv3-tiled-exact-2026-10-13.md §3 and §6): G2b, G3 and G7.
+// G1 is TestPrefillSplitKV_rowsEqualAttnBatched.
+
+// kv3NoNaN fails when a snapshot or a logits row holds a NaN: the rig poisons the cache with NaN before each arm, so two arms that
+// both failed to write would otherwise compare equal.
+func kv3NoNaN(t *testing.T, name string, logits []float32, kv kv0KV) {
+	t.Helper()
+	for _, v := range logits {
+		if math.IsNaN(float64(v)) {
+			t.Fatalf("%s: NaN in the logits", name)
+		}
+	}
+	for i := range kv.t {
+		for _, v := range kv.t[i] {
+			if math.IsNaN(float64(v)) {
+				t.Fatalf("%s: NaN in KV tensor %d: a row was not written", name, i)
+			}
+		}
+	}
+}
+
+// TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny (G2b): a whole batched prefill below the shared-memory bound, with every
+// exact-attention layer forced onto the row-batched kernels, leaves the logits and every K and V row attn_batched leaves, bit for
+// bit. Two lever settings: both off (the exact class) and the tensor-core GEMM alone (exact attention beside fast projections,
+// the shape of a head-dim-256 model above the floor). The prompts span several 512-row passes, so later passes start past zero.
+func TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny(t *testing.T) {
+	const base = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, base)
+	defer func() { prefillSplitKVForceForTest = false }()
+	for _, kv := range []string{"f32", "f16"} {
+		g := kv0LoadCtx(t, base, kv, 4096, kv0RandomTokens)
+		if !g.r.prefillSplitKVReady() {
+			t.Fatal("the row-batched kernels did not load")
+		}
+		for _, gemm := range []bool{false, true} {
+			g.r.fastAttn, g.r.fastGemm = false, gemm
+			for _, n := range []int{300, 1000, 3900} {
+				name := fmt.Sprintf("kv=%s gemm=%v n=%d", kv, gemm, n)
+				e := g.embs(g.tokens(n, n))
+				arm := func(force bool) ([]float32, kv0KV, int, int) {
+					prefillSplitKVForceForTest = force
+					g.poison(n)
+					p0, m0 := g.r.psLaunches, g.r.fastGemmLaunches
+					lg := g.prefill(e, 0)
+					return lg, g.snapshot(n), g.r.psLaunches - p0, g.r.fastGemmLaunches - m0
+				}
+				want, wantKV, wantPS, wantGemm := arm(false)
+				got, gotKV, gotPS, _ := arm(true)
+				kv3NoNaN(t, name, want, wantKV)
+				if wantPS != 0 || gotPS == 0 {
+					t.Fatalf("%s: row-batched launch groups: %d unforced (want 0), %d forced (want some)", name, wantPS, gotPS)
+				}
+				if gemm && n >= 512 && wantGemm == 0 {
+					t.Fatalf("%s: the tensor-core GEMM did not run: this arm is not the mixed class it names", name)
+				}
+				ld, _ := kv0LogitsDiff(want, got)
+				kd, total := kv0CompareRows(wantKV, gotKV, 0, n)
+				fmt.Fprintf(os.Stderr, "[kv3-tiled] forced route %-26s logits differing %d of %d, KV differing %d of %d (%d row-batched groups)\n", name, ld, len(want), kd, total, gotPS)
+				if ld != 0 || kd != 0 {
+					t.Errorf("%s: the row-batched route differs from attn_batched: %d logits, %d KV elements", name, ld, kd)
+				}
+			}
+		}
+	}
+}
+
+// TestKV3Tiled_batchedEqualsPerToken_tiny (G3): past the 12,160-key bound, with the fast levers off, a prompt prefills in batched
+// passes (it declined before) and leaves the logits and the K and V rows of the per-token path, bit for bit.
+//
+//	go test -count=1 -timeout 30m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_batchedEqualsPerToken_tiny$' -v ./cuda/
+func TestKV3Tiled_batchedEqualsPerToken_tiny(t *testing.T) {
+	const base = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, base)
+	dir := kv3LongContextCopy(t, base, 32768)
+	for _, kv := range []string{"f32", "f16"} {
+		g := kv0LoadCtx(t, dir, kv, 17000, kv0RandomTokens)
+		g.r.fastAttn, g.r.fastGemm = false, false
+		for _, n := range []int{12400, 16384} {
+			name := fmt.Sprintf("kv=%s n=%d", kv, n)
+			e := g.embs(g.tokens(n, 3*n))
+			g.poison(n)
+			p0 := g.r.psLaunches
+			t0 := time.Now()
+			got := g.prefill(e, 0) // a decline is a failure here
+			tb := time.Since(t0)
+			groups := g.r.psLaunches - p0
+			gotKV := g.snapshot(n)
+			if groups == 0 || g.r.fastAttnLaunches != 0 || g.r.fastGemmLaunches != 0 {
+				t.Fatalf("%s: %d row-batched groups, %d fused attention and %d tensor-core launches: not an exact pass on the row kernels", name, groups, g.r.fastAttnLaunches, g.r.fastGemmLaunches)
+			}
+			g.poison(n)
+			t0, last := time.Now(), time.Now()
+			for i := 0; i < n-1; i++ {
+				if err := g.r.ForwardNoLogits(e[i], i); err != nil {
+					t.Fatalf("per-token row %d: %v", i, err)
+				}
+				if time.Since(last) > 30*time.Second {
+					fmt.Fprintf(os.Stderr, "[kv3-tiled] %s per-token reference: %d of %d rows, %.0f s\n", name, i+1, n, time.Since(t0).Seconds())
+					last = time.Now()
+				}
+			}
+			out, err := g.r.Forward(e[n-1], n-1)
+			if err != nil {
+				t.Fatalf("per-token last row: %v", err)
+			}
+			want := append([]float32(nil), out...)
+			tp := time.Since(t0)
+			wantKV := g.snapshot(n)
+			kv3NoNaN(t, name, want, wantKV)
+			ld, worst := kv0LogitsDiff(want, got)
+			kd, total := kv0CompareRows(wantKV, gotKV, 0, n)
+			fmt.Fprintf(os.Stderr, "[kv3-tiled] past the bound %-16s logits differing %d of %d (worst %.3g), KV differing %d of %d; batched %.2f s (%d groups), per-token %.2f s\n",
+				name, ld, len(want), worst, kd, total, tb.Seconds(), groups, tp.Seconds())
+			if ld != 0 || kd != 0 {
+				t.Errorf("%s: batched differs from the per-token path: %d logits, %d KV elements", name, ld, kd)
+			}
+		}
+	}
+}
+
+// TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines: the negative arm. With the row-batched module absent, an exact pass past
+// the bound declines by name, as it did before the module existed; with it, the same prompt prefills.
+func TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines(t *testing.T) {
+	const base = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, base)
+	g := kv0LoadCtx(t, kv3LongContextCopy(t, base, 32768), "f16", 17000, kv0RandomTokens)
+	e := g.embs(g.tokens(12400, 1))
+	g.r.fastAttn, g.r.fastGemm = false, false
+	sc, sm, vs := g.r.psScores, g.r.psSoftmax, g.r.psVsum
+	g.r.psScores, g.r.psSoftmax, g.r.psVsum = Pipeline{}, Pipeline{}, Pipeline{}
+	_, err := g.r.PrefillLast(g.ctx, e, 0)
+	if err == nil {
+		t.Fatal("a 12,400-token exact pass prefilled with no row-batched kernels: attn_batched's span bound is not being applied")
+	}
+	if !errors.Is(err, errPrefillDeclined) || !strings.Contains(err.Error(), "layer 0") {
+		t.Errorf("the decline must wrap errPrefillDeclined and name the layer: %v", err)
+	}
+	g.r.psScores, g.r.psSoftmax, g.r.psVsum = sc, sm, vs
+	if _, err := g.r.PrefillLast(g.ctx, e, 0); err != nil {
+		t.Errorf("with the row-batched kernels the same prompt must prefill: %v", err)
+	}
+}
+
+// TestKV3Tiled_spanScratchMatchesThePass (G7): the buffers a pass asks for are PrefillScratchBytes(M) plus
+// PrefillSpanScratchBytes(M, keys), exactly, for passes below and past the bound, fused-served and not. Admission adds the two.
+func TestKV3Tiled_spanScratchMatchesThePass(t *testing.T) {
+	const base = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, base)
+	g := kv0LoadCtx(t, kv3LongContextCopy(t, base, 32768), "f16", 17000, kv0RandomTokens)
+	defer func() { prefillScratchSeenForTest = nil }()
+	sawSpan := 0
+	for _, levers := range []bool{true, false} {
+		g.r.fastAttn, g.r.fastGemm = levers, levers
+		for _, start := range []int{0, 12300} {
+			for _, M := range []int{8, 16, 300, 512} {
+				var seen int64
+				prefillScratchSeenForTest = func(b int64) { seen += b + allocRoundSlack(b) }
+				if _, err := g.r.PrefillLast(g.ctx, g.embs(g.tokens(M, 5)), start); err != nil {
+					t.Fatalf("levers=%v start=%d M=%d: %v", levers, start, M, err)
+				}
+				prefillScratchSeenForTest = nil
+				base, span := g.r.PrefillScratchBytes(M), g.r.PrefillSpanScratchBytes(M, start+M)
+				if span > 0 {
+					sawSpan++
+				}
+				if want := base + span; want != seen {
+					t.Errorf("levers=%v start=%d M=%d: PrefillScratchBytes %d + PrefillSpanScratchBytes %d = %d B, the pass allocated %d B", levers, start, M, base, span, want, seen)
+				} else {
+					fmt.Fprintf(os.Stderr, "[kv3-tiled] scratch levers=%v start=%d M=%d: %d B + span %d B = the pass's allocations\n", levers, start, M, base, span)
+				}
+				// the cases that must and must not carry the score scratch
+				routes := start+M > 12160 && (!levers || M < attnFusedMinRows)
+				if (span > 0) != routes {
+					t.Errorf("levers=%v start=%d M=%d: span scratch %d B, want it present exactly when the pass is exact past the bound (%v)", levers, start, M, span, routes)
+				}
+			}
+		}
+	}
+	if sawSpan == 0 {
+		t.Fatal("no case carried the score scratch: the gate did not exercise it")
+	}
+}
+
+// TestKV3Tiled_forcedRouteOnGemma3 is a measurement and a real-weights identity reading, not a gate (KV3_TILED_SPEED=1): on
+// Gemma-3-4B (head dim 256, the family the row kernels exist for), one 512-row pass just under the shared-memory bound, with the
+// global layers' attention on attn_batched and then forced onto the row-batched kernels, interleaved. It prints each pass's wall
+// time and whether the logits and the pass's K and V rows agree bit for bit.
+//
+//	GOINFER_HEAVY_TESTS=1 KV3_TILED_SPEED=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_forcedRouteOnGemma3$' -v ./cuda/
+func TestKV3Tiled_forcedRouteOnGemma3(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("KV3_TILED_SPEED") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 and KV3_TILED_SPEED=1")
+	}
+	path := modelPath("gemma-3-4b-it-Q4_K_M.gguf")
+	requireDeviceAndFile(t, path)
+	defer func() { prefillSplitKVForceForTest = false }()
+	g := kv0LoadCtx(t, path, "f32", 13000, kv0TextTokens(t, path))
+	const lead, M = 11520, 512 // the pass's last row attends 12,032 keys: under the bound, so both routes run
+	ids := g.tokens(lead+M, 77)
+	e := g.embs(ids)
+	t0 := time.Now()
+	g.prefill(e[:lead], 0)
+	fmt.Fprintf(os.Stderr, "[kv3-tiled] gemma-3-4b: %d-token lead prefilled in %.1f s\n", lead, time.Since(t0).Seconds())
+	var ref []float32
+	var refKV kv0KV
+	for pair := 0; pair < 3; pair++ {
+		for _, force := range []bool{false, true} {
+			prefillSplitKVForceForTest = force
+			p0 := g.r.psLaunches
+			t0 := time.Now()
+			lg := g.prefill(e[lead:], lead)
+			dt := time.Since(t0)
+			kv := g.snapshot(lead + M)
+			groups := g.r.psLaunches - p0
+			if force != (groups > 0) {
+				t.Fatalf("force=%v but %d row-batched groups", force, groups)
+			}
+			if ref == nil {
+				ref, refKV = lg, kv
+				kv3NoNaN(t, "gemma-3-4b", ref, refKV)
+			}
+			ld, _ := kv0LogitsDiff(ref, lg)
+			kd, total := kv0CompareRows(refKV, kv, lead, lead+M)
+			fmt.Fprintf(os.Stderr, "[kv3-tiled] gemma-3-4b pair %d rows=%v: pass of %d rows at %d keys %.3f s (%d groups); logits differing %d of %d, KV rows differing %d of %d\n",
+				pair, force, M, lead+M, dt.Seconds(), groups, ld, len(lg), kd, total)
+			if ld != 0 || kd != 0 {
+				t.Errorf("pair %d force=%v: differs from the first attn_batched pass", pair, force)
+			}
+		}
+	}
+}

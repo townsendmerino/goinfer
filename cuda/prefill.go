@@ -511,9 +511,10 @@ func (r *cudaResident) prefillMaxGeom() (maxQDim, maxKvDim int) {
 }
 
 // checkPrefillShmem is prefillStaticDecline's prompt-dependent twin. The exact batched attention (attn_batched and its image
-// twin) sizes its dynamic shared memory as decode's does, (maxNWin+128)*4 bytes, and has no split-KV fallback, so exceeding
-// singleBlockAttnShmemLimit is not survivable and must be a named decline; otherwise the launch fails in the driver and the
-// caller silently falls to the sequential path. Checked per layer, because a sliding-window layer's maxNWin is clamped to its
+// twin) sizes its dynamic shared memory as decode's does, (maxNWin+128)*4 bytes, so a launch past singleBlockAttnShmemLimit
+// is not survivable and must be a named decline; otherwise the launch fails in the driver and the caller silently falls to
+// the sequential path. prefillCore asks it only for a pass attn_batched or its image twin would serve past the bound: an
+// ordinary pass with the row-batched exact attention loaded has none (prefillSplitKVServes). Checked per layer, because a sliding-window layer's maxNWin is clamped to its
 // window. It mirrors prefillCore's per-layer maxNWin exactly, so it neither declines a shape the launch would run nor misses
 // one it would fail.
 //
@@ -532,9 +533,9 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int, fused func(hd int) boo
 				continue
 			}
 			return fmt.Errorf("cuda prefill: layer %d attention at %d attended keys needs %d B of "+
-				"shared memory, past this device's %d B limit — the exact batched attention has no split-KV "+
-				"path and the fused attention does not serve this pass (it needs head dim 64 or 128, an ordinary "+
-				"last-row prefill, 16 rows or more, no image block), so this prompt length needs the sequential path: %w",
+				"shared memory, past this device's %d B limit — the row-batched exact attention does not serve "+
+				"this pass (an image block, or its module did not load) and neither does the fused attention (it needs head dim 64 "+
+				"or 128, an ordinary last-row prefill, 16 rows or more, no image block), so this prompt length needs the sequential path: %w",
 				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
 		}
 	}
@@ -831,6 +832,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		defer func() { r.forceExactKernels = false }()
 		r.launchErr = nil // clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
+		var psFused func(hd int) bool // the fused question of an ordinary pass, for the row-batched attention's plan below
 		if rows == nil {
 			// Inside the pass, where passPromptLen and forceExactKernels are set: the guard asks useAttnFused exactly what the launch
 			// will, so a layer the fused kernel serves is not held to the exact kernel's span bound. An image-block pass never takes it.
@@ -838,8 +840,15 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if len(blocks) == 0 {
 				fused = func(hd int) bool { _, ok := r.useAttnFused(hd, M); return ok }
 			}
-			if e := r.checkPrefillShmem(startPos, M, fused); e != nil {
-				return e
+			// The guard holds only the layers attn_batched (or its image twin) would run past its bound: with the row-batched exact
+			// attention loaded, an ordinary pass has none (prefillSplitKVServes takes them).
+			if len(blocks) > 0 || !r.prefillSplitKVReady() {
+				if e := r.checkPrefillShmem(startPos, M, fused); e != nil {
+					return e
+				}
+			}
+			if len(blocks) == 0 {
+				psFused = fused
 			}
 		}
 		if rows != nil {
@@ -884,6 +893,14 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		aqB, aScB := ai(M*hidden/4), af(M)
 		qBb, kBb, vBb := af(M*maxQDim), af(M*maxKvDim), af(M*maxKvDim)
 		cctxB := af(M * maxQDim)
+		// The row-batched exact attention's scores and inverses, for a pass with a layer past attn_batched's bound (none: no buffer).
+		var psScB, psInvB Buffer
+		psStride, psRows := 0, 0
+		if rows == nil && len(blocks) == 0 {
+			if psStride, psRows = r.prefillSplitKVPlan(M, startPos+M, psFused); psStride > 0 {
+				psScB, psInvB = af(psRows*r.nH*psStride), af(psRows*r.nH)
+			}
+		}
 		cqB, cScB := ai(M*maxQDim/4), af(M)
 		mqB, mScB := ai(M*hidden/4), af(M)
 		gOb, uOb := af(M*inter), af(M*inter)
@@ -1243,6 +1260,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 							attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
 							r.fastAttnLaunches++
 						}
+					} else if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
+						attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows)
 					} else {
 						attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
 							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)

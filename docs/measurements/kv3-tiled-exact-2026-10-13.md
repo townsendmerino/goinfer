@@ -84,3 +84,37 @@ Three facts read from the tree while preparing the build; none comes from a run 
 Any pass can route, not only a Gemma's: a suffix of 15 rows or fewer past 12,160 keys is exact class on every family (it declined to the per-token path before, a
 few tokens). The routing rule is the registered one; this is its consequence.
 
+## 7. Amendment 2 (2026-10-13, after the build, before the night jobs)
+
+1. **The module is built with this box's ambient NVRTC, 12.9.86, not 12.6.85.** §2 named the pin of the audited set (`glue`, `moe`, `gemv_fwd` and their kin). Every
+   other production module, `decode_splitkv.ptx` and `prefill_batched.ptx` among them, is built at 12.9.86, and a new module follows its siblings:
+   `./build_ptx.sh prefill_splitkv`, no other `.ptx` rebuilt. The kernels have no bare multiply-add (they are in `lintedKernels`), so the compiler version is not a
+   numerics choice, and G1 measures the result.
+2. **Head dim must be a multiple of 4**, as `attn_batched`'s float4 read of `q` already requires (a head dim of 6 faults in `attn_batched` itself). G1's smallest head dim is 20.
+3. **MLA and the image-block pass still decline by name; Gated-DeltaNet and the E-model no longer need to**, since both run `attn_batched` on their attention layers.
+   The census's inference that Qwen3.6 did not decline is still unmeasured.
+
+## 8. Day readings (2026-10-13)
+
+Branch `kv3-tiled-2026-10`. Logs: `kv3-tiled-exact-2026-10-13/` (`day-gates.log`, `g3-tiny.log`, `digest-tiled.txt`, `gemma3-forced-day.log`, the two smoke JSONs).
+
+| gate | reading | verdict |
+|---|---|---|
+| G1 | 360 cases (180 on each KV type: head dim 20, 64, 128, 256, 512; MHA and GQA; a causal past; a window opening partway; with and without a sink; groups of 1, 7 and every row), every float bit-identical to `attn_batched`. A softmax launched at block 64 turns 180 of them red. | **PASS** |
+| G2 | digests at 300, 3,900, 4,100 and 12,000 tokens on the 1.5B equal `kv3-cuda-2026-10`'s (`digest-tiled.txt` against that branch's `digest-new.txt`) | **PASS** |
+| G2b | tiny, f32 and f16 KV, levers off and tensor-core GEMM alone, 300, 1,000 and 3,900 tokens: forced route against `attn_batched`, 0 of 256 logits and 0 of up to 3,993,600 KV elements differ, 12 of 12 cells | **PASS** |
+| G3 | tiny, levers off, 12,400 and 16,384 tokens, f32 and f16 KV: batched against per-token, 0 logits and 0 of up to 16,777,216 KV elements differ, 4 of 4 cells; without the module the same pass declines by name | **PASS** |
+| G7 | the pass's allocations equal `PrefillScratchBytes(M) + PrefillSpanScratchBytes(M, keys)` in 16 of 16 cells (levers on and off, start 0 and 12,300, 8 to 512 rows); the span term is present exactly when the pass is exact past the bound | **PASS** |
+
+**Not gates (measurements and smokes, one run each, exploratory, not to be quoted as results):**
+
+- *Real weights, below the bound:* on Gemma-3-4B one 512-row pass whose last row attends 12,032 keys, `attn_batched` against the forced row kernels, three interleaved pairs:
+  0 of 262,144 logits and 0 of 35,651,584 KV elements differ in every pass; 1.25 s against 1.40 s a pass (all 34 layers forced, three pairs, the same sign each time).
+- *Served smoke, one request each:* Gemma-3-4B, 12,241 tokens: 25.8 s, no decline (the census: unfinished at 150 s). Gemma-4-E4B, 12,215 tokens: 55.9 s, no decline (the census:
+  unfinished at 150 s). G5 measures the ratio.
+
+**A harness defect found and fixed in G1 before it was read.** The first runs failed in about half the invocations, always on the reference's side: the row kernels matched a
+float64 host computation and `attn_batched` did not. The test uploads `K`, `V` and `q` and launches the reference at once on its own stream; a host-to-device copy from pageable
+memory returns once it is staged, so the reference read the tail of `q` before it landed. A context synchronize and a read-back of `q` after the uploads fixed it: 12 of 12 runs
+clean. `TestAttnBatched_bitIdentical` has the same shape with buffers small enough that it has not shown; it is not changed here.
+
