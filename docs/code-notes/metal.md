@@ -866,6 +866,28 @@ refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-
 Since M2 (docs/tasks/task-minimax-code-compat-2026-09.md) an unpinned load no longer gets a flat 4096: it gets
 `metalFitFor`'s answer, below. The rest of the note stands, with "the default" read as "what an unpinned load takes".
 
+## PrefillBlockRows
+
+How Metal bounds a long prompt's prefill memory (`metal/backend.go:metalResident.PrefillBlockRows`,
+`metal/prefill.go:resident.prefillScratchBytes`, `decoder/residency.go:Model.prefillBlockRows`). The gates and readings
+are in `docs/tasks/task-integration-harness-2026-10.md`, "I8".
+
+- **Why a block.** The batched pass allocates its scratch for every row it is handed: two residual-width buffers, the
+  q|k|v and attention outputs and three feed-forward widths, in halves. That is about 144 KB a row on a 7B, so one
+  pass over a 21k-token prompt holds 3 GB of unified memory beside the weights and the KV.
+- **Where the cut is made.** In the decoder's `residentPrefillSeed`, the one function both resident generation paths
+  call, not inside `PrefillLast`: each pass is then an ordinary continuation at a start position, which the pass
+  already supports for prefix reuse and for chunked prefill, and cancellation is checked between passes.
+- **Why it is exact.** The pass routes on the whole prompt's length and a continuation equals the whole pass
+  (`PrefillTailExact`), so a block changes no bit. The decoder asks for both before it splits.
+- **Who is not split.** A model on the exact attention kernel: its pass declines past 4,096 keys, and a split would
+  run the first blocks on the pass and the rest token by token, where today the whole prompt takes one route. Also
+  layer-major routes and E-models (not shown chunk-invariant), an int8 KV cache and `--exact-prefill` (no pass).
+- **The size.** The rows that fit 512 MiB, so the bound holds whatever the model's width; a model with narrow rows
+  keeps one pass for prompts it handled in one pass before.
+- **The price and the pass share their widths** (`prefillWidths`), and a counter at the allocations
+  (`prefillScratchSeen`) lets the tests hold the reported figure to what a pass took.
+
 ## metalFitFor
 
 The fit-by-default context of an unpinned Metal load (`metal/backend.go:metalFitFor`, `metal/backend.go:metalFitNow`,

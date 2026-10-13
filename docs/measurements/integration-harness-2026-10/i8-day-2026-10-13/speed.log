@@ -1,0 +1,13 @@
+=== RUN   TestI8_real
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.9 GB resident at quant int4 + 0.4 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.3 GB; this machine currently has 5.5 GB of memory available (budget 3.8 GB = 70% of that) (87% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+i8: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model's own block is 8000 rows (65.5 KB a row)
+i8 speed warm-up: one pass 17.91s, blocks of 2048 18.73s (ratio 1.0461), own block 8000 17.89s (ratio 0.9991); elapsed 55s
+i8 speed pair 1 of 5: one pass 17.61s, blocks of 2048 17.56s (ratio 0.9972), own block 8000 17.62s (ratio 1.0010); elapsed 107s
+i8 speed pair 2 of 5: one pass 17.59s, blocks of 2048 17.54s (ratio 0.9971), own block 8000 17.75s (ratio 1.0087); elapsed 160s
+i8 speed pair 3 of 5: one pass 17.43s, blocks of 2048 17.94s (ratio 1.0292), own block 8000 17.32s (ratio 0.9935); elapsed 213s
+i8 speed pair 4 of 5: one pass 17.54s, blocks of 2048 17.58s (ratio 1.0021), own block 8000 17.80s (ratio 1.0149); elapsed 266s
+i8 speed pair 5 of 5: one pass 17.32s, blocks of 2048 17.73s (ratio 1.0238), own block 8000 17.74s (ratio 1.0239); elapsed 319s
+i8 speed: 12288 tokens, median blocked / whole 1.0021 (pairs [0.9971474437193194 0.9971651474027753 1.0021018825750407 1.023751909559087 1.0291728424464928]); own block, not graded, 1.0087 ([0.9935439896162771 1.0010226869479535 1.008679106189405 1.0148780334186944 1.0239351350299888])
+--- PASS: TestI8_real (320.60s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	321.254s

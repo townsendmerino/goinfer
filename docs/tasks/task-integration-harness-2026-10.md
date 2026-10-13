@@ -444,6 +444,46 @@ ceiling; I7's default.
   under, 0.7 (the attention work is the same; each extra pass costs one LM-head row and its buffer setup). G-I8-6 is
   answered, 0.8 (KV 2.8 GB in two slots and about 0.55 GB a block; the risk is the 7B not going resident at 24,576).
 
+**I8 results, 2026-10-13 (day; the night gate is queued).** Code `d7a100ba` on branch
+`integration-harness-2026-10`. Records: `docs/measurements/integration-harness-2026-10/i8-day-2026-10-13/`.
+
+| gate | read | verdict |
+|---|---|---|
+| G-I8-1 identity, tiny | dense fixture, 1,000 tokens, blocks of 64, 100 and 256; four tiny MoE fixtures (one a Gated-DeltaNet hybrid), block of 16: tokens, log-probabilities and every K/V row (and the DeltaNet window and state) equal one pass | **PASS** |
+| G-I8-2 identity, real | Qwen2.5-Coder-1.5B, 6,500 tokens, passes of 2,048 / 2,048 / 2,048 / 356 rows against one: 0 of the logits differ | **PASS** |
+| G-I8-3 the price covers the pass | every run above allocated exactly the reported figure (equal to the byte, so inside the 2% band); the 1.5B is 65.5 KB a row | **PASS** |
+| G-I8-4 admission | a 20,000-token request with room for a block and not for the whole-prompt price: admitted on a blocked resident; refused with no block, with a block that does not fit, and on the CPU path | **PASS** |
+| G-I8-5 speed, in process | 1.5B, 12,288 tokens, blocked / whole by pair: 0.9972 0.9971 1.0292 1.0021 1.0238; **median 1.0021** (one pass 17.3 to 17.6 s) | **PASS** (bar 1.03) |
+| G-I8-6 the refused request | queued on the Mac's night queue as `i8-7b-refused-request` | tonight |
+
+- **All three planted defects turned their gates red** and were reverted: a block continued one position late
+  (the decoder's fake-resident tests and the Metal dense and MoE identity tests); the price without its feed-forward
+  term (the Metal scratch assertions); admission pricing the whole prompt on a blocked resident (the admission test).
+- **What a block is on these models.** The 1.5B: 8,000 rows, so a prompt under 8,008 tokens is still one pass. The 7B,
+  computed from its dimensions and not loaded today: 144 KB a row, a block of 3,712 rows (0.54 GB), so last night's
+  20,954-token request would be six passes and priced at about 0.59 GB with its embeddings, against the 1.77 GB of
+  room it was refused for 3.21 GB under. G-I8-6 is the measurement of that.
+- **Amendments to the registration, 2026-10-13.**
+  - *G-I8-1's fixtures (written after the first run showed it).* The tiny MoE fixtures hold 64 to 100 positions, so
+    their block is 16 rows on a prompt of 56 to 92 tokens, not 64 / 100 / 256. **No Gated-DeltaNet model is split at
+    real width:** Qwen3.5 0.8B has a head dimension of 256, runs the exact attention kernel, and so reports no block
+    (asserted: a forced block leaves it one pass). DeltaNet's block coverage is the tiny hybrid only.
+  - *G-I8-6 gained a do-nothing arm (before any run):* main at `e2ffb953` with the same `-ctx 24576`, expected to
+    refuse. If it answers too, the verdict says the night's memory and not the change may explain the answer.
+- **Also read, not registered and not graded:**
+  - the 1.5B's own block on the same 12,288 tokens (passes of 8,000 and 4,288): median 1.0087 of one pass;
+  - G-I8-6's script once by day: **VOID on both arms**, the 7B did not go resident (5.75 GB needed, 4.97 GB of live
+    budget). So there is no daytime answer for the 7B.
+- **Predictions scored.** G-I8-2 holds at real size (0.85): yes. G-I8-5 at 1.03 or under (0.7): yes, 1.0021. G-I8-6
+  (0.8): tonight.
+- **What this leaves.**
+  - A model on the exact attention kernel (a head dimension over 128, or one that is not a multiple of 8), an
+    E-model, a layer-major route, `--kv i8` and `--exact-prefill` are not split: their scratch still grows with the
+    prompt where they take the batched pass at all, and they are priced by the old formula.
+  - The speed reading is one model and one length. A 7B-width block on a deeper prompt is read only through G-I8-6's
+    time to answer.
+  - CUDA and WebGPU requests are still priced by the CPU's formula against host memory.
+
 ## 3. Considered and not recommended (recorded so they are not re-proposed)
 
 - **Ollama's native API (`/api/*`).** It looked like the reach play; the evidence says otherwise. Of the apps checked,

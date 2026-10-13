@@ -229,7 +229,7 @@ func TestPrefillBlockRows_needsAnExactContinuation(t *testing.T) {
 // when it reports no block, when its block does not fit, and on the CPU path.
 func TestAdmitPrefillMemory_pricesABlockedResidentByTheBlock(t *testing.T) {
 	injectHostRAM(t, 64<<30)
-	// 0.70 of 300 MiB is under prefillAttnScratchBudget alone, so the whole-prompt price cannot fit at any prompt length.
+	// The room is under prefillAttnScratchBudget alone, so the whole-prompt price cannot fit at any prompt length.
 	injectHostRAMAvailable(t, 300<<20)
 	const promptTokens, maxTokens = 20000, 4096
 
@@ -247,7 +247,7 @@ func TestAdmitPrefillMemory_pricesABlockedResidentByTheBlock(t *testing.T) {
 	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, false, 1); err == nil {
 		t.Error("the CPU path was admitted at a blocked resident's price")
 	}
-	rf.perRow = 1 << 20 // one block is now about 1 GB
+	rf.perRow = 1 << 20 // one block no longer fits the room
 	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, true, 1); err == nil {
 		t.Error("a request whose block does not fit was admitted: the resident's figure is not what is priced")
 	}

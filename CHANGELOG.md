@@ -30,6 +30,23 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Changed — on Metal, a long prompt prefills in blocks, and a request is admitted by the block
+
+Changes resource use. Metal's batched prefill allocated its scratch for the whole prompt at once: about 144 KB a token on a 7B, so a 21,000-token
+request needed 3 GB beside the weights and the KV, and was refused with a 413 on a 16 GB Mac whose context held it. A prompt longer than the
+model's block now prefills in passes of that many rows (the rows whose scratch fits 512 MiB: about 3,700 on a 7B, 8,000 on Qwen2.5-Coder-1.5B),
+and the per-request memory check prices one pass instead of the prompt.
+
+- **Replies do not change.** On Qwen2.5-Coder-1.5B a 6,500-token prompt in four passes gives the one-pass logits bit for bit, as do the tiny
+  dense, MoE and Gated-DeltaNet fixtures.
+- **Prefill time does not change** by a measurable amount: a 12,288-token prompt in six passes took 1.002 of one pass's time (17.5 s; M1 Pro,
+  in process, five alternating pairs).
+- **A long prefill can now be cancelled between passes.** One pass could not be interrupted.
+- **Not split, and priced as before:** a model on the exact attention kernel (a head dimension over 128), Gemma 4 E-models and paged MoE, `--kv i8`
+  and `--exact-prefill`. CUDA and WebGPU are unchanged.
+
+`docs/tasks/task-integration-harness-2026-10.md`, "I8".
+
 ### Changed — on Metal, the default context grows to hold a coding agent's session when memory allows
 
 Changes resource use. Without `-ctx`, a Metal load held 4096 positions in each of its 2 KV slots, and a coding agent's first request (about 11,000
