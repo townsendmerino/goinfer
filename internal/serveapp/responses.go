@@ -208,18 +208,15 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		if !ok {
 			return
 		}
-		sseEvent(ss, "response.created", map[string]any{
-			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
-		})
+		rs := newRespStream(ss, id)
+		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		var sb strings.Builder
 		// Nothing is sent between response.created and the first token, and on CPU that gap is the whole prefill: a
 		// heartbeat covers it, as it does on the tools-active branch.
 		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
-			sseEvent(ss, "response.output_text.delta", map[string]any{
-				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
-			})
+			rs.delta(t)
 		})
 		stopBeat()
 		if gerr != nil {
@@ -227,12 +224,10 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			sseDone(ss)
 			return
 		}
-		out := []any{outputMessage(id+"-msg", sb.String())}
-		sseEvent(ss, "response.completed", map[string]any{
-			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
-		})
+		out := []any{rs.closeMessage(sb.String())}
+		rs.emit("response.completed", map[string]any{"response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)})
 		if cancelReason != "" {
-			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": cancelReason})
+			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
 		sseDone(ss)
 		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
@@ -302,16 +297,13 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		if !ok {
 			return
 		}
-		sseEvent(ss, "response.created", map[string]any{
-			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
-		})
+		rs := newRespStream(ss, id)
+		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		var sb strings.Builder
 		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
 		finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
-			sseEvent(ss, "response.output_text.delta", map[string]any{
-				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
-			})
+			rs.delta(t)
 		})
 		stopBeat()
 		if gerr != nil {
@@ -319,12 +311,10 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			sseDone(ss)
 			return
 		}
-		out := []any{outputMessage(id+"-msg", sb.String())}
-		sseEvent(ss, "response.completed", map[string]any{
-			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
-		})
+		out := []any{rs.closeMessage(sb.String())}
+		rs.emit("response.completed", map[string]any{"response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)})
 		if cancelReason != "" {
-			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": cancelReason})
+			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
 		sseDone(ss)
 		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
@@ -403,13 +393,11 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	// The shared tool turn (tool_turn.go). Streaming: response.created goes out first, as on the plain-text path, and
 	// prose streams as output_text.delta while the model writes it, where the family allows.
 	var onProse func(string)
+	var rs *respStream
 	if ss != nil {
-		sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
-		onProse = func(out string) {
-			sseEvent(ss, "response.output_text.delta", map[string]any{
-				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": out,
-			})
-		}
+		rs = newRespStream(ss, id)
+		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		onProse = rs.delta
 	}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
 	if gerr != nil {
@@ -430,10 +418,10 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		// Cancelled mid-generation: a partial buffer, so no tool call is parsed out of it. Report it as a plain
 		// (partial) text message, as the "nothing parseable" fallback below does, so a client still gets a
 		// well-formed response object with real usage.
-		resp := responseObject(id, lm.name, created, respStatus(finish), []any{outputMessage(id+"-msg", t.raw)}, inTok, nComp)
 		if ss != nil {
-			sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
-			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": t.cancelReason})
+			resp := responseObject(id, lm.name, created, respStatus(finish), []any{rs.closeMessage(t.raw)}, inTok, nComp)
+			rs.emit("response.completed", map[string]any{"response": resp})
+			rs.emit("response.cancelled", map[string]any{"reason": t.cancelReason})
 			sseDone(ss)
 			return
 		}
@@ -453,30 +441,44 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	var out []any
 	var toolCalls []apiToolCall // stored for previous_response_id continuity below
 	if lead != "" {
-		out = append(out, outputMessage(id+"-msg", lead))
+		if rs != nil {
+			out = append(out, rs.closeMessage(lead))
+		} else {
+			out = append(out, outputMessage(id+"-msg", lead))
+		}
+	} else if rs != nil && rs.msg != nil { // prose streamed that the parser then trimmed to nothing: close the item it opened
+		out = append(out, rs.closeMessage(""))
 	}
 	for i, c := range calls {
 		callID := c.ID
 		if callID == "" { // model didn't emit an id; synthesize one so function_call_output can correlate (as toAPICalls/toolUseBlock do)
 			callID = "call_" + reqID()
 		}
-		out = append(out, map[string]any{
+		fc := map[string]any{
 			"type": "function_call", "id": fmt.Sprintf("%s-fc%d", id, i),
 			"call_id": callID, "name": c.Name, "arguments": string(c.Arguments), "status": "completed",
-		})
+		}
+		out = append(out, fc)
+		if rs != nil {
+			rs.functionCall(fc)
+		}
 		tc := apiToolCall{ID: callID, Type: "function"}
 		tc.Function.Name = c.Name
 		tc.Function.Arguments = string(c.Arguments)
 		toolCalls = append(toolCalls, tc)
 	}
 	if len(out) == 0 { // model produced nothing parseable → empty message
-		out = append(out, outputMessage(id+"-msg", t.raw))
+		if rs != nil {
+			out = append(out, rs.closeMessage(t.raw))
+		} else {
+			out = append(out, outputMessage(id+"-msg", t.raw))
+		}
 	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
 	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
 	if req.Stream {
-		sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
+		rs.emit("response.completed", map[string]any{"response": resp})
 		sseDone(ss)
 	} else {
 		writeJSON(w, http.StatusOK, resp)
