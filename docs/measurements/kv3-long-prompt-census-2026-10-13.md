@@ -35,7 +35,7 @@ Serve is branch `kv3-cuda-2026-10`'s CUDA binary; every run is a fresh process; 
 
 | model | resolved context, no `-ctx` | decline past 12,160 keys | batched 1.5k (ms/token) | per-token 1.5k (ms/token) | the ~12.4k prompt | projected 20,000 tokens |
 |---|---|---|---|---|---|---|
-| Qwen3-4B (control) | not read | no | 0.58 (0.86 s / 1,486) | 8.4 (12.45 s) | 12,250 tokens batched in 13.68 s | about 20 s, a projection |
+| Qwen3-4B (control) | not read | no | 0.58 (0.86 s / 1,486) | 8.4 (12.45 s) | 12,250 tokens batched in 13.68 s | at least 22 s (1.12 ms/token at 12.2k) |
 | Gemma-3-4B | **16,384** (backend default) | **yes**, at 12,241 keys, layer 5 (the first global layer) | 0.87 (1.30 s / 1,487) | 9.17 (13.63 s) | per-token; unfinished at the 150 s timeout | per-token ≥ **183 s**; batched ≥ 17 s |
 | Gemma-4-E4B | **16,384** | **yes**, at 12,215 keys, layer 5 | 2.43 (3.62 s / 1,491) | 13.78 (20.55 s) | per-token; unfinished at 150 s | per-token ≥ **276 s**; batched ≥ 49 s |
 | gpt-oss-20b (paged experts) | not read | **no**: 12,759 tokens taken batched (§3) | 9.70 (9.33 s / 962) | 11.41 (10.98 s) | 12,759 tokens in 122.1 s (9.6 ms/token) | about 190 s, from expert paging |
