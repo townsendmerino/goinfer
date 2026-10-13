@@ -182,10 +182,23 @@ func validateConfigBounds(cfg *Config) error {
 		// caps already stop a hostile config becoming an OOM at allocation time, so this is defense in depth: refuse here, before any allocation.
 		{"num_local_experts", cfg.NumLocalExperts, maxGGUFExperts},
 		{"n_routed_experts", cfg.NRoutedExperts, maxGGUFExperts},
+		// The feed-forward widths: newDecodeScratch allocates IntermediateDim-sized vectors for every family, MoE ones included.
+		{"intermediate_size", cfg.IntermediateDim, maxGGUFIntermediate},
+		{"moe_intermediate_size", cfg.MoeIntermediateSize, maxGGUFIntermediate},
+		{"shared_expert_intermediate_size", cfg.SharedExpertIntermediateSize, maxGGUFIntermediate},
+		{"moe_shared_expert_intermediate_size", cfg.MoeSharedExpertIntermediateSize, maxGGUFIntermediate},
+		{"intermediate_size_mlp", cfg.IntermediateSizeMLP, maxGGUFIntermediate},
+		{"shared_intermediate_size", cfg.SharedIntermediateSize, maxGGUFIntermediate},
 	} {
 		if d.v > d.max {
 			return fmt.Errorf("decoder: %s %d exceeds the %d ceiling — refusing before it is "+
 				"allocated from (a hostile or corrupt config, not a real model)", d.name, d.v, d.max)
+		}
+	}
+	for i, v := range cfg.FFNPerLayer {
+		if v > maxGGUFIntermediate {
+			return fmt.Errorf("decoder: per-layer feed_forward_length[%d] %d exceeds the %d ceiling — refusing before it is "+
+				"allocated from (a hostile or corrupt config, not a real model)", i, v, maxGGUFIntermediate)
 		}
 	}
 	return nil

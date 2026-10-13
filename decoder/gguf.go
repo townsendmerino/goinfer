@@ -1395,6 +1395,10 @@ const (
 	maxGGUFHeads     = 1 << 16
 	maxGGUFVocabSize = 1 << 24
 	maxGGUFExperts   = 1 << 16
+	// maxGGUFIntermediate bounds every feed-forward width. The decode scratch allocates two float32 vectors of IntermediateDim at the first
+	// cache whatever the family, so a hostile feed_forward_length makes a multi-terabyte request there (a fatal OOM) with no tensor to
+	// give it away. The widest real FFN is about 53K.
+	maxGGUFIntermediate = 1 << 20
 )
 
 // ggufLayerCount bounds a block_count before any per-layer slice is allocated or iterated. validateGGUFDims catches an

@@ -31,6 +31,24 @@ func Downmix(x []float32, ch int) []float32 {
 	return out
 }
 
+// resampleMaxRatio bounds max(up, down) after the gcd reduction. The filter has 20·max(up, down)+1 taps, built tap by tap (a sinc and a
+// Kaiser window, each a Bessel series) before the first sample is read, so a header declaring a rate coprime to 16000, such as 383999 Hz,
+// would cost millions of taps and ~60 MB for a one-sample clip. Every rate a recording is made at reduces to far less than this (44100 Hz
+// is 441/160, 352800 Hz is 441/20), so only a header written to be expensive exceeds it.
+const resampleMaxRatio = 4096
+
+// ResampleSupported reports whether Resample can convert from → to Hz at a bounded cost (see resampleMaxRatio).
+func ResampleSupported(from, to int) bool {
+	if from == to {
+		return true
+	}
+	if from <= 0 || to <= 0 {
+		return false
+	}
+	g := gcd(from, to)
+	return max(from/g, to/g) <= resampleMaxRatio
+}
+
 // Resample converts mono samples at from Hz to to Hz as scipy.signal.resample_poly(x, up, down) does with its defaults.
 // Equal rates return x itself.
 func Resample(x []float32, from, to int) []float32 {

@@ -53,6 +53,9 @@ func decodeWAV(data []byte, anyRate bool) ([]float32, error) {
 			if format != 1 || bits != 16 || c < 1 || c > wavMaxCh || r < wavMinRate || r > wavMaxRate {
 				return nil, fmt.Errorf("audio: WAV is format %d, %d-bit, %d channel(s) at %d Hz; want 16-bit PCM, 1-%d channels, %d-%d Hz", format, bits, c, r, wavMaxCh, wavMinRate, wavMaxRate)
 			}
+			if !ResampleSupported(int(r), audio.Gemma4SampleRate) {
+				return nil, fmt.Errorf("audio: a WAV at %d Hz is not supported (resampling it to %d Hz would need an impractically long filter); resample it to %d Hz first", r, audio.Gemma4SampleRate, audio.Gemma4SampleRate)
+			}
 			ch, rate, fmtOK = int(c), int(r), true
 		case "data":
 			if !fmtOK {
