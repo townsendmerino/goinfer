@@ -152,7 +152,7 @@ func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 // these, so Plan("metal") plans exactly what Metal allocates, as WebGPUCtxCeiling does for webgpu.
 const (
 	MetalCtxDefault    = 4096
-	MetalFitDefaultCtx = 16384
+	MetalFitDefaultCtx = 32768 // trial value for G-I7-speed (docs/tasks/task-integration-harness-2026-10.md I7); not for merging as is
 	MetalCtxCeiling    = 32768
 )
 
