@@ -58,6 +58,8 @@
 
 ## Lead 1 — state-checkpoint KV reuse for hybrid/recurrent models
 
+> **2026-10-13: KV0's traffic study is this lead's missing data on real sessions' prefix structure** (what share of a real agent request is a prefix an earlier request computed, per harness, and where the first divergence sits): `docs/measurements/kv0-traffic-2026-10-13.md`. It drove a dense model, so recurrent-state reuse itself is still unmeasured.
+
 **Status: goinfer already named this.** `docs/completed/qwen3_5_moe.md`'s "Hybrid cache (decision:
 correctness-first)" section states plainly, for `qwen3_5_moe`'s 30 DeltaNet layers + 10
 full-attention layers: because the recurrent state is not position-truncatable, cross-call

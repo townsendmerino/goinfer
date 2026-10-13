@@ -46,7 +46,9 @@ slot is gone; and every KV feature is built three or four times.
 **What a user gets.**
 - One conversation can use all of the KV memory, not 1/N of it.
 - Conversations and subagents share what they have in common. Claude Code's first request is 19,692–20,199 tokens, most
-  of it system prompt and tool schemas. KV0's traffic study checks how much of that stays the same across conversations.
+  of it system prompt and tool schemas. KV0's traffic study (`docs/measurements/kv0-traffic-2026-10-13.md`) found that 90% of it
+  is identical across conversations *except* for a per-conversation hash in its first line, which ends a prefix match at token
+  22 until the harness setting `CLAUDE_CODE_ATTRIBUTION_HEADER=0` (or a server-side normalisation) removes it.
 - A parked conversation resumes without a re-prefill.
 - Hybrids (Qwen3.5/3.6/3.8 and the other recurrent families) get prefix reuse and more than one conversation.
 - CUDA gets an f16 KV cache, which it has never had.
@@ -561,32 +563,55 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
   per block from Metal's own figure.
 - **This doc asks one thing of it:** the block size is a multiple of B = 64 (it already is: `PrefillBlockRows` is a multiple of 64).
 
-### KV0 — Prior art, block size, two invariance measurements, the traffic study, owner decisions (no product code)
+### KV0 — Prior art, block size, two invariance measurements, the traffic study, owner decisions (no product code) — DONE 2026-10-13
 
-1. **Read the prior art** (§11) and write a short section here: what to take, what to leave.
-2. **Tile census.** Every KV-reading kernel's contiguous key tile and alignment, per backend. Choose B, and pools per group
-   (A) or uniform pages (B).
-3. **Invariance on CUDA and WebGPU.**
-   - The twin of `TestMC5_prefillChunkInvariance`: a prompt prefilled whole and in chunks, KV compared element by
-     element, with a planted one-token control.
-   - Each backend's **class map**: for a prompt of n tokens prefilled from offset s, which kernel class writes each row.
-   - A backend that is not chunk-invariant either gets a fix, or sharing on it stays within one conversation.
-4. **The traffic study.** This is also the data FreeToken Lead 1 has waited for.
-   - Real multi-turn sessions of Claude Code, opencode and Codex against goinfer on nobara (7B, CUDA), recorded with the
-     I4 instruments extended to replies.
-   - Per request: tokens shared with the same session's previous request; tokens shared with any other session's
-     requests; non-extending edits; concurrency (title requests, subagents).
-   - The output is projected time-to-first-token saved per new conversation and per turn, on both boxes, from measured
-     prefill rates.
-   - **Unknown today, and the study answers it:** whether the per-turn date Claude Code sends as a mid-conversation
-     `system` message stays at the tail, which keeps the large preamble a stable shared prefix.
-5. **Owner decisions D1–D8** (§8), recorded here.
+Size S. Done in one session, on nobara; test files and measurement records only (the branch `kv0-2026-10`).
 
-- **Size:** S.
-- **Decision rule, registered with the study before it runs:**
-  - KV1–KV3 go ahead (they add no paged attention).
-  - KV4 goes ahead (D1 is yes) when either the capacity arithmetic or the traffic study clears the bar written before
-    the study runs.
+1. **Prior art: done.** §11a, from the sources (each fact marked read or inferred, seven lines of §5 and §11 corrected).
+2. **Tile census: done** (`docs/measurements/kv0-tile-census-2026-10-13.md`, per-kernel tables beside it).
+   - Every reader on every backend already addresses each key separately, and no kernel loads a contiguous key tile that a block
+     boundary could split except CUDA's `attn_fused*` at 64 keys (full-attention layers) and Metal's `attention_prefill_fused`
+     (8 keys, 32-key groups). **B must be a multiple of 64 and nothing more.**
+   - **B = 64** (§5.3), **option A, pools per group** (§5.2). The block arithmetic for Qwen2.5-7B, Gemma-3-4B and Qwen3.6-35B-A3B is in
+     the record: at B = 64 and f16, 3.67 MB a block and 512 blocks per 32K sequence for the 7B; Gemma's window group holds 17
+     blocks (123 MiB) beside 512 global blocks (640 MiB); Qwen3.6's 10 attention layers are 1.31 MB a block and its recurrent
+     state is a 62.8 MiB pool on top.
+   - §4's kernel counts, the Metal bind limit and the bit-identity argument of §5.3 were wrong or too strong and are corrected.
+3. **Invariance on CUDA and WebGPU: done** (`docs/measurements/kv0-invariance-2026-10-13.md`; rule and predictions registered before
+   the runs).
+   - **Chunk invariance holds on both backends** (widths 64 to 512, ragged tails, tiny fixture and the real 1.5B at int4, CUDA at f32
+     and f16): 0 of 14,336,000 K/V elements and 0 of 151,936 logits differ.
+   - **A split at a block-aligned offset is invariant on CUDA exactly when the first call was in the class the whole prompt
+     would use**: splits at 512, 768 and 984 are bit-identical; at 256 and 511 (first call under the 512-token floor) and at 985 (second
+     pass of 15 rows) they are not, starting at position 0, 0 and 985, and `chunk = 496` (an 8-row tail) from 992. The class
+     rule: fast kernels iff the pass has 16 rows or more and its prompt length is 512 or more, the length being the pass's own end
+     for a prefill in two calls. **Added to the key (§5.5, §5.6): the 16-row rule**, which `declineShortLeadReuse` does not state.
+   - **WebGPU: invariant in every arm** (13 arms, both fixtures); no kernel class depends on the prompt.
+   - **The continuation effect, measured on CUDA** (§5.6 property 3): decode-written rows differ from fast-prefill rows by 0.7% rms
+     (3.7 to 4.6 at the largest activation of 360); next-token logits cosine 0.992 to 0.999, argmax equal in 49 of 50 trials; the exact
+     class equals decode to the bit.
+   - No backend measured needs a chunk-invariance fix.
+4. **Traffic study: done, with deviations** (`docs/measurements/kv0-traffic-2026-10-13.md`). Qwen3-4B replaced the brief's models
+   (the Coder-7B gave 14 of 14 single-turn sessions; gpt-oss-20b does not resolve for a 20k first request on this card: the batched
+   prefill declines past 12,288 keys). 13 study sessions, 101 requests, token counts validated against the server's own log.
+   - Within a conversation a request strictly extends its previous request (opencode 40 of 41, Codex 26 of 26); new conversations
+     of opencode and Codex share 99.7% to 100% of their first request with an earlier conversation's.
+   - **Claude Code's per-conversation hash in its first line ends the shared prefix at token 22**; with
+     `CLAUDE_CODE_ATTRIBUTION_HEADER=0` the first requests of different conversations share 18,213 of about 20,154 tokens. Its
+     date line sits at the end of the first request's preamble, not per turn.
+   - Today's single slot loses the preamble to opencode's title request on every new conversation, and Claude Code thread
+     switches re-prefill 8,000 to 17,000 tokens each (78% of its request time).
+5. **Owner decisions D1–D8** (§8): D1 was decided before KV0; D2–D8 stay open, and KV0's findings bear on D4 and D8 (§8, "Raised by KV0").
+
+**Decision rule, read against what was registered** (`kv0-traffic-2026-10-13.md` §1 and §2.4):
+- KV1–KV3 go ahead (they add no paged attention). The traffic study supports them: the sharing is real for opencode and Codex, and
+  for Claude Code once its header is out of the way.
+- **KV4: the capacity arm clears, the sharing arm clears conditionally.** The 7B at default flags is 4 conversations × 11,784
+  positions; one conversation could have the model's 32,768 from the same memory (2.78 ×). The saving per new Claude Code
+  conversation is 0 s as shipped and 29.7 s on the Mac (4.5 s at the 1.5B's batched nobara rate) with the header off. Two cautions
+  go with the verdict: the sharing arm is delivered by KV2's copy and not by paging, and the capacity arm's headline context is
+  reachable today with `--ctx 32768 --kv-sessions 1` at the price of the other slots. The owner's call whether they change the
+  verdict.
 
 ### KV1 — The manager over today's slots (no storage change)
 
@@ -744,6 +769,17 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 | **D6** | CLI meanings before v1.0 (`-ctx`, `-kv-sessions` are Hard tier)? | Keep both: `-ctx` is a per-conversation cap, `-kv-sessions` the number of conversations kept warm and running on a resident. New flags only for sharing scope and the host-tier budget. |
 | **D7** | CUDA's default KV precision once f16 passes its gate? | f16 by default with f32 kept as the reference, Metal's precedent. |
 | **D8** | Where this sits in the queue? | KV0–KV2 soon (they pay for agents now). Where KV4 sits against the multimodal track is yours to set. |
+
+### Raised by KV0 (open; none of them is a D1–D8 decision yet)
+
+| id | question | KV0's reading |
+|---|---|---|
+| **Q1** | Remove Claude Code's per-conversation header: `connect claude-code` writing `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, a server-side strip of the `x-anthropic-billing-header` line, or leave it? | Without it Claude Code conversations share 22 tokens; with it, 18,213 of about 20,154. This is a `connect` or `serve` change (product code), outside KV0. |
+| **Q2** | The batched prefill declines past 12,288 attended keys on this card (a 49,664 B shared-memory need against 49,152 B) and the prompt falls to the per-token path at about 66 tokens a second: a Claude Code first request takes about 4.5 minutes. Fix it before KV1, inside KV3, or leave it? | It dominates Claude Code's cost on CUDA: sharing cannot help the first conversation. |
+| **Q3** | KV4's bar, as registered, mixes two things (§6, KV0's decision rule). Should the sharing arm decide KV2 and the capacity arm decide KV4? | Capacity 2.78 ×; sharing arm clears only with the header off, and KV2 delivers it. |
+| **Q4** | D4's default when `serve` binds beyond loopback with no API keys: the SafeKV reading (§11a) suggests cross-namespace sharing off by default. | A proposal from the reading, not from a source. |
+| **Q5** | Should `declineShortLeadReuse` (and the key) state the 16-row condition, and should KV1's windowed-layer tests run chunk and split arms at a start that is not a multiple of 64? | Measured for the first; INFERRED by the CUDA census for the second. |
+| **Q6** | The I3 night plan's configurations run Qwen2.5-7B-Instruct and Mellum2.1 through opencode and Codex. | In KV0's pilots Qwen2.5-7B-Instruct made 1 to 6 requests a session and passed none; the Coder-7B made 1 or 2. Expect the same stall in those cells. |
 
 ## 9. Risks, and how each is contained
 
