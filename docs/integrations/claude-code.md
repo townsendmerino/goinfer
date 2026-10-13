@@ -14,6 +14,10 @@ ANTHROPIC_MODEL=coder claude
 
 All three env vars are required. Non-loopback binds refuse to start without `-api-key`.
 
+**Or let the server write them:** with the server running, `goinfer-serve connect claude-code` prints the `env` block for
+`~/.claude/settings.json` with the window the server really serves, and says whether Claude Code's first request fits it.
+`-write` patches the file, keeping your other settings; `connect claude-code -undo` restores it byte for byte.
+
 **Claude Code 2.1.268 and later need a goinfer built after 2026-10-12, and a larger context than the line above.**
 Traced that day ([the record](../measurements/integration-harness-2026-10/claude-code-census-2026-10-12.md)):
 

@@ -43,7 +43,8 @@ comparability and requires a deliberate re-anchor, not a silent carry-forward.
 
 ## Working in the tree
 
-**Six Go modules**, not one: the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/`, and `site/` (the website generator,
+**Seven Go modules**, not one: the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/`, `sdktest/` (tests only: the
+official OpenAI and Anthropic SDKs against the in-process server; never tagged), and `site/` (the website generator,
 built by `site.yml`). `go.work` is
 gitignored and **mandatory** for cross-module work; a `GOWORK=off` build of a submodule resolves
 the root from the proxy at its last published tag, so it can fail with "method not found" on

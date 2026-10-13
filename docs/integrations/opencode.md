@@ -7,6 +7,10 @@ releases even though the README named opencode alongside Claude Code as "a real 
 the config below from outside knowledge of opencode itself. This page exists so the next person
 does not have to reconstruct it, and it now carries a real, measured success, not only failures.
 
+With the server running, `goinfer-serve connect opencode` prints this file with the window the server really serves
+(`limit.context`, without which opencode never compacts); `-write` creates or patches `./opencode.json`, and
+`connect opencode -undo` restores what was there.
+
 ```json
 {
   "provider": {

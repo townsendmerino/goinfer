@@ -635,6 +635,28 @@ jobs:
       - name: test -tags gpu
         run: go test -short -tags 'gpu goinfer_testhooks' ./gpu/...
 
+  # sdktest: the official OpenAI and Anthropic Go SDKs against the server served in process (package server), on the
+  # committed tiny model. A module of its own so the SDKs never enter the root go.mod; stitched like the others.
+  sdktest:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: sdktest/go.sum
+
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./sdktest
+
+      - name: vet
+        run: go vet ./sdktest/...
+
+      - name: test
+        run: go test -v ./sdktest/...
+
   # CUDA submodule: the opt-in cgo-free NVIDIA backend, built under -tags cuda
   # (CGO_ENABLED=0, dlopen libcuda, driver-JIT of embedded PTX). No CUDA toolkit
   # or GPU needed to BUILD — only to run; the equivalence gate (TestBackendResident-
