@@ -7,8 +7,8 @@
  "commit": "PINNED-AT-QUEUE-TIME",
  "configs": [
   {
-   "name": "q7b-16k",
-   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "name": "q3-4b-16k",
+   "model": "/home/francis/models/qwen3-4b",
    "ctx": 16384,
    "agents": [
     "opencode",
@@ -24,13 +24,17 @@
    "reps": 3,
    "run_timeout": 900,
    "label": {
-    "regime": "screening, Qwen2.5-7B-Instruct q4_k_m (int4 resident, f16 KV), -ctx 16384, default sampling of each harness"
-   }
+    "regime": "screening, Qwen3-4B int4 (safetensors), f16 KV, -ctx 16384, default sampling of each harness (was Qwen2.5-7B-Instruct, which made 1 to 6 requests a session and passed none in KV0's pilots)"
+   },
+   "serve_args": [
+    "--quant",
+    "int4"
+   ]
   },
   {
-   "name": "q7b-32k-cc",
-   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
-   "ctx": 32768,
+   "name": "q3-4b-28k-cc",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 28672,
    "agents": [
     "claude-code"
    ],
@@ -44,8 +48,12 @@
    "reps": 1,
    "run_timeout": 1800,
    "label": {
-    "regime": "screening, Qwen2.5-7B-Instruct q4_k_m (int4 resident, f16 KV), -ctx 32768 (Claude Code needs 25,249), one KV slot"
-   }
+    "regime": "screening, Qwen3-4B int4, f16 KV, -ctx 28,672 (1.42 x Claude Code's first request, 17.7k under Qwen3's template with connect's settings; 32,768 is 4.8 GB of KV on this model), one KV slot (was the 7B at 32,768)"
+   },
+   "serve_args": [
+    "--quant",
+    "int4"
+   ]
   },
   {
    "name": "mellum-16k",
@@ -95,8 +103,8 @@
    }
   },
   {
-   "name": "q7b-9k-codex-ovf",
-   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "name": "q3-4b-9k-codex-ovf",
+   "model": "/home/francis/models/qwen3-4b",
    "ctx": 9408,
    "agents": [
     "codex"
@@ -109,12 +117,16 @@
    "reps": 3,
    "run_timeout": 1200,
    "label": {
-    "regime": "I1 live gate, window 9,408 = 1.6 x Codex's first request (5,850)"
-   }
+    "regime": "I1 live gate, window 9,408 = 1.6 x Codex's first request (5,850) (was Qwen2.5-7B-Instruct)"
+   },
+   "serve_args": [
+    "--quant",
+    "int4"
+   ]
   },
   {
-   "name": "q7b-11k-opencode-ovf",
-   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "name": "q3-4b-11k-opencode-ovf",
+   "model": "/home/francis/models/qwen3-4b",
    "ctx": 11520,
    "agents": [
     "opencode"
@@ -127,12 +139,16 @@
    "reps": 3,
    "run_timeout": 1200,
    "label": {
-    "regime": "I1 live gate, window 11,520 = 1.6 x opencode's first request (7,165)"
-   }
+    "regime": "I1 live gate, window 11,520 = 1.6 x opencode's first request (7,165) (was Qwen2.5-7B-Instruct)"
+   },
+   "serve_args": [
+    "--quant",
+    "int4"
+   ]
   },
   {
-   "name": "q7b-28k-cc-ovf",
-   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "name": "q3-4b-28k-cc-ovf",
+   "model": "/home/francis/models/qwen3-4b",
    "ctx": 28672,
    "agents": [
     "claude-code"
@@ -144,8 +160,12 @@
    "reps": 1,
    "run_timeout": 2400,
    "label": {
-    "regime": "I1 live gate, window 28,672 = 1.42 x Claude Code's first request (20,199)"
-   }
+    "regime": "I1 live gate, window 28,672 = 1.42 x Claude Code's first request (20,199) (was Qwen2.5-7B-Instruct)"
+   },
+   "serve_args": [
+    "--quant",
+    "int4"
+   ]
   }
  ]
 }
