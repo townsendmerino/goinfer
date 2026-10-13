@@ -1,0 +1,49 @@
+{
+ "label": "qwen3.6-35b-a3b",
+ "model": "/home/francis/models/qwen3.6-35b-a3b-int4.giw",
+ "flags": [
+  "--moe-cache-experts",
+  "--ctx",
+  "24576"
+ ],
+ "runs": [
+  {
+   "arm": "default",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 31.91,
+    "prompt_tokens": 1488
+   },
+   "long": {
+    "status": null,
+    "seconds": 150.1,
+    "error": "TimeoutError"
+   },
+   "declined_lines": [],
+   "serve_log_tail": ""
+  },
+  {
+   "arm": "per-token",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 41.94,
+    "prompt_tokens": 1488
+   },
+   "serve_log_tail": ""
+  }
+ ]
+}

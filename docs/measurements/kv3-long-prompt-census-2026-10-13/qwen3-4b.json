@@ -1,0 +1,50 @@
+{
+ "label": "qwen3-4b",
+ "model": "/home/francis/models/qwen3-4b",
+ "flags": [
+  "--quant",
+  "int4",
+  "--ctx",
+  "24576"
+ ],
+ "runs": [
+  {
+   "arm": "default",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 0.86,
+    "prompt_tokens": 1486
+   },
+   "long": {
+    "status": 200,
+    "seconds": 13.68,
+    "prompt_tokens": 12250
+   },
+   "declined_lines": [],
+   "serve_log_tail": ""
+  },
+  {
+   "arm": "per-token",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 12.45,
+    "prompt_tokens": 1486
+   },
+   "serve_log_tail": ""
+  }
+ ]
+}
