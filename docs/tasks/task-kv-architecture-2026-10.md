@@ -5,11 +5,11 @@
 > architecture if we were writing it from scratch. how close is the current code?", then "please write the task doc for
 > the new architecture as proposed, be thorough").
 >
-> **Before any build: owner decision D1 (§8).** Paged attention is parked in `docs/roadmap.md` ("not this engine's
-> weight class") with MC5's trigger, "the owner reverses the positioning, not a benchmark result"
-> (`docs/tasks/parked/task-concurrency-2026-09.md`), and `docs/positioning.md` says goinfer has none. This doc asks for
-> a narrower reversal: paged KV as a **memory and reuse** mechanism for one user's conversations and agents. Continuous
-> batching stays parked. KV0–KV3 add no paged attention and are worth doing whichever way D1 goes (§7).
+> **D1 DECIDED 2026-10-13: paged attention is un-parked** (owner: "un park paged attention for sure"). It had been
+> parked in `docs/roadmap.md` ("not this engine's weight class") with MC5's trigger, "the owner reverses the
+> positioning, not a benchmark result" (`docs/tasks/parked/task-concurrency-2026-09.md`). The roadmap and MC5 now
+> record the decision. The scope is paged KV as a **memory and reuse** mechanism for one user's conversations and
+> agents. Continuous batching stays parked. `docs/positioning.md` keeps "no paged attention" until KV4 ships it.
 >
 > The facts about the code were read at main `e2ffb953` (2026-10-13). Nothing in this doc has been measured for it. Every
 > gate below is a sketch: whoever starts a phase registers its gates first (rule, void conditions, stopping rule, cost
@@ -61,7 +61,7 @@ slot is gone; and every KV feature is built three or four times.
 | KV1 | the manager over today's slots: logical blocks, hashed index, no storage change | CUDA, Metal, WebGPU | M | KV0 |
 | KV2 | cross-conversation reuse by device copy between slots | CUDA, Metal, WebGPU | S–M | KV1 |
 | KV3 | prefill and admission in blocks everywhere (absorbs KV-pre) | all resident | S | KV1 |
-| KV4 | paged storage and block-table kernels; f16 KV | CUDA | L | KV3, D1 |
+| KV4 | paged storage and block-table kernels; f16 KV | CUDA | L | KV3 |
 | KV5 | paged storage | Metal | L | KV4 |
 | KV6 | page or keep slots: decide, then build or record | WebGPU | M | KV5 |
 | KV7 | tiers: host and disk, parking and resume | CUDA first, then all | M–L | KV4 |
@@ -542,8 +542,8 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 
 - **Size:** S.
 - **Decision rule, registered with the study before it runs:**
-  - KV1–KV3 go ahead on D1 alone (they add no paged attention).
-  - KV4 goes ahead if D1 is yes and either the capacity arithmetic or the traffic study clears the bar written before
+  - KV1–KV3 go ahead (they add no paged attention).
+  - KV4 goes ahead (D1 is yes) when either the capacity arithmetic or the traffic study clears the bar written before
     the study runs.
 
 ### KV1 — The manager over today's slots (no storage change)
@@ -684,7 +684,7 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 ## 7. Order, and what is useful if the program stops early
 
 - **KV0 → KV1 → KV2 → KV3** deliver the agent-preamble win and fix the Metal 413, with no kernel changes and no paged
-  attention. They are worth doing even if D1 is no.
+  attention. They pay for themselves before KV4 starts.
 - **KV4** is the gate on the rest. If it parks on speed, KV2's copies and KV3's admission stay, and the doc records why.
 - **KV7 and KV8 can come before KV5** for CUDA users. **KV9 waits on D2.** **KV10 waits on KV4/KV5.**
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
@@ -693,7 +693,7 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 
 | id | question | recommendation |
 |---|---|---|
-| **D1** | Reverse the paged-attention parking narrowly, for memory and reuse within one user's conversations and agents? `positioning.md`'s "no paged attention" would change; continuous batching stays parked. | Yes. The 2026-09-26 decision already put one user's parallel agents in the niche, and this is what they need. |
+| **D1** | Reverse the paged-attention parking narrowly, for memory and reuse within one user's conversations and agents? `positioning.md`'s "no paged attention" would change; continuous batching stays parked. | **DECIDED 2026-10-13: yes** ("un park paged attention for sure"). |
 | **D2** | Does the CPU path join (KV9)? | Index and copies when KV2 lands; storage later, only on a measured memory case. |
 | **D3** | WebGPU: page it or keep slots? | Keep slots; KV6 decides with numbers. |
 | **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. |
@@ -740,7 +740,8 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
   - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid.
 - **Doc amendments when phases land:**
-  - `docs/positioning.md` and `docs/roadmap.md` (D1);
+  - `docs/roadmap.md` and MC5 record D1 (done 2026-10-13); `docs/positioning.md`'s "no paged attention" changes when
+    KV4 ships;
   - `docs/ARCHITECTURE.md` "The KV cache". It is already stale for CUDA: it says CUDA allocates the full context on
     sliding-window layers, which stopped being the default on 2026-10-10. Fix that in KV1's doc pass;
   - `docs/hardware-matrix.md` and the banner text.

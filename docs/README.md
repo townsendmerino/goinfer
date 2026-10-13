@@ -98,8 +98,8 @@ open, and the gates to register before any code.
 proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
 tables, a content-addressed prefix index and tiers, with backends reduced to block storage and recurrent state as a
 checkpointed second pool. It lists what today's per-slot design costs, what must not change, the phases and their
-gates, and the owner decisions; the first (D1) is whether to un-park paged KV for memory and reuse, with continuous
-batching still parked.
+gates, and the owner decisions. The first, D1, is decided: the owner un-parked paged KV on 2026-10-13, for memory and
+reuse, with continuous batching still parked.
 
 [`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
 2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
