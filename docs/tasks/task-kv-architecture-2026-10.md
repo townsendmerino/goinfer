@@ -652,14 +652,37 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
 
+**Started 2026-10-13 (owner decision, §8 D8): alongside KV1, ahead of KV2.** It does not depend on KV1. The CUDA half is on the branch
+`kv3-cuda-2026-10` with its record, `docs/measurements/kv3-cuda-2026-10-13.md`; the Metal half is the KV-pre session's (`metal/`).
+
 - **Build:**
   - every resident's chunk size is a multiple of B (CUDA's `prefillChunkRows` default is already 512);
   - admission is in blocks plus the chunk scratch, from each allocator's own figure, replacing the whole-prompt bound on
-    the resident paths.
-- **Gates (sketch):**
-  - the 20,199-token request answers on the Mac's 7B, which today is the I7 413;
-  - chunk invariance holds per backend;
-  - time-to-first-token at K = 512 and K = 3,900 is 0.97 or better against main.
+    the resident paths;
+  - **the 12,288-key limit on CUDA** (added 2026-10-13, KV0's biggest time-to-first-token finding): the batched prefill declined past 12,160
+    attended keys because `checkPrefillShmem` held every layer to the exact attention kernel's shared-memory bound, including the layers the
+    fused attention serves, whose shared memory does not grow with the span. The guard now asks which kernel serves the layer;
+  - **the 16-row rule in the chunker**: a prefill never ends in a pass of fewer than 16 rows (a shorter pass is exact class).
+- **CUDA half, done on the branch (day readings; see the record for the numbers):**
+  - the guard change, with identity (digests bit-identical to `main` at 300, 3,900 and 12,000 tokens; the one prompt with a short last pass
+    changed to the bits of its single-pass prefill, as registered) and fidelity (tiny fixture, 18 prompts of 12,400 to 16,384 tokens, cosine
+    0.99986 or better against the per-token path; the real 1.5B at 12,500 tokens, cosine 0.996, argmax equal); the passes now run fused;
+  - admission by the resident's own per-chunk figure (`decoder.ResidentPrefillChunks`; CUDA's `PrefillScratchBytes`, held to the pass by a test):
+    0.19 GB against 1.65 GB for a 20,954-token request on the 1.5B;
+  - **night jobs queued** (under the timing lock): the real fidelity set (six prompts to 20,000 tokens), the Claude Code first-request A/B
+    (registered band: PASS at 45 s or less, against 268.7 s before; the one exploratory reading is 25.1 s), TTFT at K = 512 and 3,900 against
+    `main` (0.97 or better), and the whole CUDA suite with the ignored fixtures linked. **The branch merges when they read green.**
+  - still declining past the bound, by name: head dimension other than 64 or 128, MLA, Gated-DeltaNet and E-model families, the all-logits,
+    embedding and residual tails, image blocks. A tiled exact kernel is the open numerics project.
+- **A request to the KV1 session (the owner's decision, §8 Q5):** the 16-row condition goes into `declineShortLeadReuse` and into the block
+  key. A prefix hit whose suffix is 15 rows or fewer, or that was written by a pass of 15 rows or fewer, is the other class (KV0's
+  `split@985`); the chunker no longer produces such a pass inside one prefill, but a reuse split and a second call still can. The decoder's
+  own loops read the resident's tail minimum (`ResidentPrefillTailMin`: CUDA 16, everything else 8), so a manager that cuts passes should too.
+- **Gates (sketch, registered per half in the record):**
+  - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
+  - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);
+  - time-to-first-token at K = 512 and K = 3,900 is 0.97 or better against main (CUDA: night job);
+  - a Claude Code-sized first request on CUDA prefills in batched passes (night job; 45 s or less on Qwen3-4B).
 - **Size:** S.
 
 ### KV4 — Paged storage on CUDA, then f16

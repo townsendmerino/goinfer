@@ -192,3 +192,11 @@ random weights make its argmax meaningless; its line in `cuda-f32-f16.log` is a 
 - **Doc consequence:** none of the three non-invariant CUDA arms is a defect; each is a case the class key must keep apart.
   **No backend measured here needs a fix for chunk invariance.** The §5.6 sentence "A non-invariant backend keeps sharing within
   one conversation until it is fixed" does not trigger for CUDA or WebGPU.
+
+### 2.5 Amendment, 2026-10-13 (KV3): the 8-row tail of `chunk = 496` no longer happens
+
+The chunker (`cuda/prefill.go:cudaResident.prefillChunked`) now never ends a multi-pass prefill in a pass of fewer than 16 rows: it moves the
+missing rows from the previous pass to the last. So the arm `chunk=496` (1,000 tokens = 496 + 496 + 8) now runs as 496 + 488 + 16, every pass
+fused, and is invariant; the non-invariant readings above (starts at position 992) are the behaviour before that change and stay as measured.
+The splits (`split@985` and the others) are two separate calls and are unchanged, which is why the 16-row condition is also asked of the
+reuse guard and the block key (`docs/measurements/kv3-cuda-2026-10-13.md` §3.2).
