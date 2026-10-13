@@ -178,6 +178,19 @@ I3: each of Claude Code, opencode and Codex driven past the window. Pre-register
 followed by at most one compaction and the session continues; **fail** on three or more consecutive compactions, or
 the session ending on the overflow. A fail with the fixed part fitting means the wording is wrong for that harness.
 
+**I1 built 2026-10-13 (the unit half of its gate; the live half is I3's).**
+- **Code:** one typed overflow error with the two readings, the fixed part measured on each chat route by rendering
+  the system text and tool definitions with one empty user turn, and a writer per dialect.
+- **Read, through the real handlers on the committed tiny chat model (a 128-token window):** on `/v1/chat/completions`
+  (with and without tools), `/v1/messages` and `/v1/responses` (streaming and not), a conversation that is too long
+  gets its dialect's curable overflow, and a system prompt or tool definition that leaves no room gets the operator
+  message with no overflow code. Both wordings are held to Pi's and opencode's pattern lists.
+- **Mutants, one per branch, both red and reverted:** the incurable reading never taken (every fixed-part case
+  failed), and taken whenever the fixed part is known (every long-conversation case failed).
+- **Not covered:** Cline's, Goose's and Hermes' matchers were not read; the tests hold the phrases the doc names for
+  them. No real agent has been driven past its window. `/v1/completions`, jobs, batches and image turns do not
+  measure a fixed part and answer with the curable wording.
+
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 
 Magnitude advertises one-click connection to eight harnesses. Read from its connectors, that is a config writer: it
