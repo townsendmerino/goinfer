@@ -5326,6 +5326,11 @@ RTX 2070 SUPER, driver 595.91.07, Vulkan, branch head `ffc64585`, 15:59 to 16:12
     reply may differ. A reply that is not text of the prompt's subject fails the cell whatever its time.
   - **Cost basis:** G-S12.4b-3e's own log: the old arm about 75 s a round at the two lengths, the new arm under 15,
     with two loads a round: about 12 minutes; queued at 25.
+  - **The Mac half, added 2026-10-12 before either runs** (queued as `s12-4c-5-served-gemma` on the Mac): the same
+    script and rule under Metal, new serve at `d0cdee25` (main with both kernels), old the Mac's pinned
+    `serve-webgpu-s3`. Cost: the old arm is about 3 minutes a round at 1,783 tokens; queued at 35 min. Predictions:
+    the new arm's 1,783-token time to first token is under 40 s (0.6; the pass is 32.3 s in process). Serve's swap
+    guard refused this model on the Mac by day; if it does at night the job fails and says so.
   - **Predictions:** the 1,783-token cell's new time to first token is under 8 s (0.7; in process the pass is 4.8 s
     and the old served cell read within half a second of its in-process pass). The 457-token cell's is under 2 s (0.6).
 
