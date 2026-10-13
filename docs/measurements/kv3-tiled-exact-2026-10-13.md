@@ -60,3 +60,27 @@ attention for head dim 256 or 512 (a larger numerics project: it is not bit-iden
 
 Build and G1 to G3 and G7 by day: one session. G4 to G6 on the night queue under the timing lock, about 40 minutes estimated (two real models, per-token sides at
 2 to 5 minutes each, interleaved with the batched side, two lengths).
+
+## 6. Amendment 1 (2026-10-13, before any code or run)
+
+Three facts read from the tree while preparing the build; none comes from a run of the new kernels.
+
+1. **No tiny fixture has head dim 256.** G3 as registered names one. G3 runs on `llama-attnfa-tiny` (head dim 128, GQA 4:2, two layers) with
+   `GOINFER_CUDA_FAST_PREFILL=0`, at a context raised past the bound: with the levers off the pass is exact class and its attention takes the row kernels
+   past 12,160 keys, so batched against per-token is still a bit-identity. Head dims 256 and 512 are held at the kernel level by G1 and on the real models by G4.
+2. **Gemma-3's batched pass is not exact class as a whole.** Above the 512-token floor its projections run the tensor-core GEMM (the fast lever); only its
+   attention is exact, because no fused attention serves head dim 256. So "batched equals per-token, bit for bit" is true for Gemma-4-E4B (an E-model forces the
+   exact kernels) and for Gemma-3 only with `GOINFER_CUDA_FAST_PREFILL=0`. **G4 becomes:** Gemma-4-E4B at 12,400 tokens, default settings, bit-identical; Gemma-3-4B at
+   12,400 tokens with the levers off, bit-identical; and Gemma-3-4B at default settings, a fidelity reading against the per-token path (last-row logits cosine
+   0.99 or better and equal argmax: the fast GEMM's own class past the bound, which the lever's existing gate covers only to 3,900 tokens). The kernel's own
+   identity at default settings is G1 plus a new **G2b (day):** on a full model pass below the bound, forcing the row kernels (a test seam) against
+   `attn_batched` with every other kernel unchanged, logits and KV bit-identical.
+3. **The score scratch depends on the attended span, and `PrefillScratchBytes(rows)` does not see it.** A pass allocates the score scratch only when a layer
+   routes to the row kernels, sized `R·nH·maxNWin` floats plus `R·nH` inverses. Admission reads it through a second optional method,
+   `PrefillSpanScratchBytes(rows, keys)`, added to the request's price with `keys` the request's prompt length; `PrefillScratchBytes` is unchanged, so its
+   existing equality test stands. **G7 becomes:** the pass's allocations equal `PrefillScratchBytes(M) + PrefillSpanScratchBytes(M, keys)` exactly, at spans
+   below and past the bound.
+
+Any pass can route, not only a Gemma's: a suffix of 15 rows or fewer past 12,160 keys is exact class on every family (it declined to the per-token path before, a
+few tokens). The routing rule is the registered one; this is its consequence.
+
