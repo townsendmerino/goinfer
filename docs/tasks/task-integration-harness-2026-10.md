@@ -44,7 +44,17 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
   schema); `--bare` sends 1,063 (3 tools). A session-title request of 761 tokens comes first.
   - **It does not fit 16,384.** By I4's own rule Claude Code is *not viable* at the window R19 and M2 chose as the
     harness floor; it needs 24,615 with the 25% margin, so `-ctx 32768`. Whether an 8 GB card holds a 7B there is
-    unmeasured. The other harnesses are not installed on either box (only Copilot CLI is, on the Mac).
+    unmeasured.
+- **I4, opencode and Codex: measured** (the owner said to install them; nobara-pc, pinned versions;
+  `docs/measurements/integration-harness-2026-10/harness-census-2026-10-12.md`). opencode 1.19.0: **7,165 tokens**,
+  10 tools. Codex 0.162.1: **5,850 tokens**, 9 tools. Claude Code 2.1.296: 20,199. Both of the first two are viable at
+  16,384 by I4's rule.
+- **H-f, new, fixed: goinfer dropped Codex's agent instructions.** Codex sends them as the first of two `developer`
+  messages and no `instructions` field; only the last system message was used, so 3,553 tokens of instructions never
+  reached the model. Every system message is now kept (`internal/serveapp/openai.go:messagesToTurns`): leading ones
+  joined in order, a later one in place as on `/v1/messages`.
+- **I6's premise does not hold on Codex 0.162.1:** its request for an unknown model carries no `apply_patch` and no
+  `custom` tool; edits would go through `exec_command`. I3's Codex cell still decides.
 - **Step 3, harness-reliability Gate 1: built.** `serve check` has a `tools, harness, Messages` row
   (`ToolsHarnessMessages` in `internal/servecheck`, newer than this doc's pin). Against the 1.5B on Metal it reads skip, as the
   OpenAI-dialect row does. The 7B reading on nobara-pc is in that task's record.
@@ -250,7 +260,8 @@ first token with the first session's. A large drop means the shared system-promp
 later decision what reusing a harness's prompt across sessions would buy. No code.
 
 Known so far: opencode 11,137 tokens (measured, R19); **Claude Code 19,692 (measured 2026-10-12, 2.1.268; 1,063 with
-`--bare`; the earlier 6–10K was an estimate and wrong)**; Codex about 8.5K and Pi under 1K (estimates). **Viability, pre-registered:** a harness is *viable* on a (box, model, `-ctx`) when its first
+`--bare`; the earlier 6–10K was an estimate and wrong)**; **opencode 1.19.0 7,165 and Codex 0.162.1 5,850
+(measured 2026-10-12)**; Pi under 1K (an estimate). **Viability, pre-registered:** a harness is *viable* on a (box, model, `-ctx`) when its first
 request plus 25% fits the window; *marginal* when the request fits but the margin does not; *not viable* otherwise, and
 `connect` refuses it.
 
@@ -331,7 +342,7 @@ compiles JSON-schema and struct grammars today, can express it through a transla
 | step | what | when |
 |---|---|---|
 | 1 | Claude Code recipe: add `ANTHROPIC_DEFAULT_HAIKU_MODEL` and the window variable (§5) | **done 2026-10-12** |
-| 2 | I4 census | Claude Code **done**; the others need their harness installed first (the owner's call) |
+| 2 | I4 census | Claude Code, opencode, Codex **done 2026-10-12**; the rest when installed |
 | 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |

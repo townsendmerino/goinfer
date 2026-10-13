@@ -1,0 +1,8 @@
+started: 2026-10-12 18:38:05 PDT; serve 1a6021cf
+  decode path: cuda-resident (int4)
+  context: 32768 tokens (model maximum) · KV f32
+claude req-1.json /v1/messages: status 200, prompt tokens 20199, tools sent 23
+codex req-1.json /v1/responses: status 200, prompt tokens 5850, tools sent 9, dropped: namespace:multi_agent_v1,web_search
+opencode req-1.json /v1/chat/completions: status 200, prompt tokens 540, tools sent 0
+opencode req-2.json /v1/chat/completions: status 200, prompt tokens 7165, tools sent 10
+finished: 2026-10-12 18:40:34 PDT

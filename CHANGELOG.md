@@ -42,6 +42,14 @@ Traced with the real client ([the record](docs/measurements/integration-harness-
 its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
 named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
 
+### Fixed — a request with several system messages lost all but the last (Codex lost its instructions)
+
+On `/v1/chat/completions` and `/v1/responses` only the last `system` or `developer` message was used. Codex sends its agent
+instructions as the first of two `developer` messages, so the model never saw them: its first request counted 2,297 tokens
+where it is 5,850. Every system message is now kept. Those before the conversation starts are joined, in order, into the
+system prompt; one sent after it has started stays where it is, as text of the user side, instead of replacing the system
+prompt. A `/v1/responses` request with both `instructions` and a `developer` item keeps both.
+
 ### Added — `serve check` tests tool calling on `/v1/messages` at a real agent's schema size
 
 A new row, `tools, harness, Messages`, sends the same dozen tools and prompt as `tools, harness-scale` through the Anthropic
