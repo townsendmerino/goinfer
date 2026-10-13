@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/sampling"
 )
 
 // isWebGPUBackend reports whether a Backend.Name() string names the webgpu backend. NOT a plain
@@ -166,8 +165,18 @@ type ResidentSampleChain interface {
 	SampleChainNext(seed, draw uint64) (int, error)
 }
 
-// TopKRow is the sampler's on-device top-K row; see sampling.TopKRow.
-type TopKRow = sampling.TopKRow
+// TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
+// docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
+// order internal/sampling's topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
+// row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
+// Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
+// reads the whole row for the token where K was not enough, and is valid only until the next forward.
+type TopKRow struct {
+	IDs    []int32
+	Logits []float32
+	Z      float64
+	Full   func() ([]float32, error)
+}
 
 // ResidentTopK is an optional ResidentForward extension: run a token's forward and return only the K
 // best logits (plus Z when wantZ), instead of the whole vocab-wide row. The decode loop uses it only
