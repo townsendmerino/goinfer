@@ -148,16 +148,24 @@ func windowedOffsetsInvariance(t *testing.T, fx string) {
 				r.arm.name, r.kv.differ, r.kv.total, r.kv.firstPos, r.kv.firstLayer, r.logits)
 		}
 	}
-	// The control: one token changed at position 300 must show from 300 on and nowhere before, or the comparison above
-	// cannot see a difference.
+	// The controls, without which a pass above could be a comparison that reads nothing. One token changed at position
+	// 300 must change K/V rows from 300 on and none before. It need not reach the last logits: where every layer is
+	// windowed, a token's influence ends a few windows later. So a second token is changed two from the end, and that
+	// one must change the logits.
 	const changed = 300
 	ids := g.tokens(windowOffsetN, 0)
 	ids[changed] = (ids[changed] + 1) % (g.vocab - 1)
 	g.poison(windowOffsetN)
-	lg := g.prefill(g.embs(ids), 0)
+	g.prefill(g.embs(ids), 0)
 	d := kv0Compare(ref, g.snapshot(windowOffsetN), changed)
-	if differ, _ := kv0LogitsDiff(whole, lg); d.before != 0 || d.firstPos != changed || d.after == 0 || differ == 0 {
-		t.Fatalf("control: a token changed at %d gives %d differing elements before it, the first at %d, %d after, %d logits: the comparison is not reading the rows", changed, d.before, d.firstPos, d.after, differ)
+	if d.before != 0 || d.firstPos != changed || d.after == 0 {
+		t.Fatalf("control: a token changed at %d gives %d differing elements before it, the first at %d, %d after: the comparison is not reading the rows", changed, d.before, d.firstPos, d.after)
+	}
+	ids = g.tokens(windowOffsetN, 0)
+	ids[windowOffsetN-2] = (ids[windowOffsetN-2] + 1) % (g.vocab - 1)
+	g.poison(windowOffsetN)
+	if differ, _ := kv0LogitsDiff(whole, g.prefill(g.embs(ids), 0)); differ == 0 {
+		t.Fatalf("control: a token changed two from the end changes no logit: the comparison is not reading the logits")
 	}
 	t.Logf("%d arms invariant over %d K/V elements; control: first difference at %d, %d elements after it", len(got), got[0].kv.total, d.firstPos, d.after)
 }
