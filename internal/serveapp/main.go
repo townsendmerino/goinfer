@@ -471,6 +471,200 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	return sf
 }
 
+// restoreSessions loads each model's saved KV sessions from -session-dir and turns on tiering when it is asked for.
+// A no-op without a session directory or with sessions off.
+func (srv *server) restoreSessions(cfg config) {
+	if cfg.sessionDir == "" || cfg.kvSessions <= 0 {
+		return
+	}
+	for _, lm := range srv.modelList() {
+		sub := sessionSubdir(cfg.sessionDir, lm.fp)
+		lm.sessions.load(sub)
+		if cfg.kvIdleDemote > 0 {
+			lm.sessions.enableTiering(sub, cfg.kvIdleDemote, cfg.kvDemotedMax)
+		}
+	}
+}
+
+// checkpointSessions saves each model's KV sessions to -session-dir at shutdown. The caller has already cancelled
+// the generations in flight; a model one of them still holds after five seconds is skipped, not waited for.
+func (srv *server) checkpointSessions(cfg config) {
+	if cfg.sessionDir == "" || cfg.kvSessions <= 0 {
+		return
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for _, lm := range srv.modelList() {
+		// A generation mid-forward, not yet at a context check, can briefly still hold lm.sessMu.
+		if !tryLockUntil(&lm.sessMu, deadline) {
+			fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
+			continue
+		}
+		_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
+		lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
+		lm.sessMu.Unlock()
+	}
+}
+
+// validate checks the settings that do not depend on how the server is reached: the session directory, the
+// speculation and tiering choices, the thinking and tool formats, and the decision-route calibration. The listener's
+// own checks (the address, the API key, TLS) stay with the caller.
+func (cfg config) validate() error {
+	if err := sessionDirOK(cfg.sessionDir); err != nil {
+		return err
+	}
+	if cfg.spec != "" && cfg.spec != "ngram" {
+		return fmt.Errorf("-spec must be \"\" or \"ngram\" (got %q)", cfg.spec)
+	}
+	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
+		return errors.New("-kv-idle-demote needs -session-dir and -kv-sessions > 0")
+	}
+	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
+		return fmt.Errorf("-thinking %q: want asis, template, on or off", cfg.thinking)
+	}
+	if _, ok := chat.ParseToolFormat(cfg.toolFormat); !ok {
+		return fmt.Errorf("-tool-format %q: want hermes or template", cfg.toolFormat)
+	}
+	if _, err := parseBudgetFlag(cfg.reasoningBudget); err != nil {
+		return fmt.Errorf("-reasoning-budget %q: %v", cfg.reasoningBudget, err)
+	}
+	if _, ok := parseReasoningFormat(cfg.reasoningFmt); !ok {
+		return fmt.Errorf("-reasoning-format %q: want deepseek, deepseek-legacy or none", cfg.reasoningFmt)
+	}
+	if cfg.decisionsTemplate != decide.TemplateChat && cfg.decisionsTemplate != decide.TemplateBare {
+		return fmt.Errorf("-decisions-template %q: want %s or %s", cfg.decisionsTemplate, decide.TemplateChat, decide.TemplateBare)
+	}
+	if cfg.decisionsCal != "" {
+		// Fail at startup, not on the first /v1/systemone request: a bad file, or one fitted under the other template.
+		cal, err := decide.LoadCalibration(cfg.decisionsCal)
+		if err == nil && cal.Template != "" && cal.Template != cfg.decisionsTemplate {
+			err = fmt.Errorf("fitted under template %q, not -decisions-template %q", cal.Template, cfg.decisionsTemplate)
+		}
+		if err != nil {
+			return fmt.Errorf("-decisions-calibration %s: %v", cfg.decisionsCal, err)
+		}
+	}
+	return nil
+}
+
+// routes builds the server's route table: every endpoint behind its auth check, halt gate, inflight cap and body cap.
+// authKey "" disables the auth check, and reqLog nil the per-request log lines. It returns the mux and the text body cap,
+// which the admin socket's routes share. The listener's own concerns (the Host guard, TLS, timeouts, signals) are the
+// caller's.
+func (srv *server) routes(cfg config, authKey string, reqLog io.Writer) (*http.ServeMux, int64) {
+	// Every POST body is size-bounded: the chat/messages endpoints carry base64 image_url data, so they get the larger
+	// vision cap; the rest a few MB. auth wraps a handler with the optional shared-secret check (no-op when authKey is "");
+	// every route below goes through it so a set key protects the whole surface.
+	auth := func(h http.HandlerFunc) http.HandlerFunc { return requireAuth(authKey, h) }
+	// inflight is the global concurrency cap over the inference POST handlers (the pre-queue stage), shared across all of
+	// them. GET/health and admin stay uncapped so an operator's health probe is always answered and never consumes a slot.
+	// Order: auth outermost (reject bad auth without taking a slot), then the inflight gate, then the body cap.
+	var inflight chan struct{}
+	if cfg.maxInflight > 0 {
+		inflight = make(chan struct{}, cfg.maxInflight)
+	}
+	inf := func(h http.HandlerFunc) http.HandlerFunc { return limitInflight(inflight, h) }
+	// Request-body caps: the largest servable text prompt is ctx tokens x the longest token's bytes, x4 for JSON
+	// structure/escaping, derived per the largest served model's context window, floored at fixed minimums so a
+	// small-context model keeps a usable body budget (the per-request tokenization guard, not this cap, protects it), and
+	// overridable with -max-body-bytes. Reported on the startup line.
+	textCap, visionCap, embedCap, fileCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
+	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
+	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
+	mux.HandleFunc("GET /health", auth(srv.handleHealth))
+	// haltGate runs AFTER auth (a bad key is still rejected during a halt) and BEFORE inf (a halt must not wait for an
+	// inflight slot). /admin/* and /health are deliberately NOT wrapped in it: an operator must always be able to resume and
+	// check status (docs/tasks/task-halt-2026-09.md).
+	// These routes are registered whether or not a model is loaded at startup: a server started with only --web,
+	// --allow-admin or --admin-socket loads its model later, and the mux is built once. Every handler resolves its model
+	// through resolveAndLock, which answers an unknown or absent model with the OpenAI-shaped 404 "model not found (served:
+	// ...)".
+	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is
+	// logged with its status too.
+	rl := func(h http.HandlerFunc) http.HandlerFunc { return logRequests(reqLog, h) }
+	mux.HandleFunc("POST /v1/chat/completions", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat))))))
+	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
+	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
+	mux.HandleFunc("POST /v1/messages", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages))))))
+	// Speech to text for a Whisper --model (speech.go). The body is audio, so it has its own cap: -max-body-bytes, else 256 MiB (over two hours of 16 kHz mono 16-bit).
+	audioCap := cfg.maxBodyBytes
+	if audioCap <= 0 {
+		audioCap = 256 << 20
+	}
+	mux.HandleFunc("POST /v1/audio/transcriptions", rl(auth(srv.haltGate(inf(maxBytes(audioCap, srv.handleTranscriptions))))))
+	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
+	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
+	// work against goinfer through their base-URL override (docs/tasks/task-constrained-confidence.md).
+	mux.HandleFunc("POST /v1/systemone", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleSystemOne)))))
+	// Submitting a job starts new admission, so POST /v1/jobs gets the same haltGate/inf/maxBytes stack as every other POST
+	// above. Polling (GET), the event stream and cancel (DELETE) are not new inference work: haltGate would 503 a client
+	// trying to learn that its job was halted, and inf's cap bounds pre-queue decode and tokenization, which these do not
+	// do. They get auth only (docs/tasks/task-work-queue-2026-09.md).
+	mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
+	mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
+	mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
+	mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
+	// The two batch APIs, over the same job store. POST /v1/files is an upload, not inference, so like /web/models/pull it
+	// gets auth + maxBytes only (haltGate and inf bound decode concurrency, not upload I/O). POST /v1/batches and POST
+	// /v1/messages/batches queue real generation work (one job per line, the /v1/jobs pipeline) and get the full stack.
+	// Every GET and every .../cancel gets auth only, as /v1/jobs' own GET/DELETE do.
+	mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
+	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
+	mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
+	mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
+	mux.HandleFunc("GET /v1/batches/{id}", auth(srv.handleGetBatch))
+	mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))
+	mux.HandleFunc("POST /v1/messages/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateMessageBatch)))))
+	mux.HandleFunc("GET /v1/messages/batches/{id}", auth(srv.handleGetMessageBatch))
+	mux.HandleFunc("GET /v1/messages/batches/{id}/results", auth(srv.handleGetMessageBatchResults))
+	mux.HandleFunc("POST /v1/messages/batches/{id}/cancel", auth(srv.handleCancelMessageBatch))
+	// Registered unconditionally: with no embedding model, handleEmbeddings returns a JSON error naming -embed-model rather
+	// than a bare 404, so an SDK sees "unconfigured", not "wrong URL".
+	mux.HandleFunc("POST /v1/embeddings", auth(srv.haltGate(inf(maxBytes(embedCap, srv.handleEmbeddings,
+		// The per-input / per-batch bounds are per-DIMENSION and multiply out past any body cap, so
+		// name all three: a client within both per-dimension limits can still exceed the total.
+		fmt.Sprintf("this route also limits each request to %d inputs of at most %d bytes each; "+
+			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
+	// /admin/* lives on EITHER the TCP listener (auth + -allow-admin) OR the admin socket when -admin-socket is set, never
+	// both, so a request against the surface that was not chosen 404s instead of being refused: a 403 would confirm the
+	// surface exists. See admin_socket.go for the socket side (docs/tasks/task-halt-2026-09.md).
+	if cfg.adminSocket == "" {
+		registerAdminRoutes(mux, srv, textCap, func(h http.HandlerFunc) http.HandlerFunc { return auth(srv.requireAdmin(h)) })
+	}
+	if cfg.web {
+		// "GET /{$}" matches the root path EXACTLY; a bare "GET /" is a catch-all that would answer every unknown GET with the
+		// UI page instead of a 404.
+		// UNAUTHENTICATED on purpose: the page embeds no secrets (handleWebUI) and is the only place a user can type the key in,
+		// so auth() here would make the key unenterable whenever -api-key is set. auth stays on the routes below, which act
+		// (docs/completed/review-2026-09-04.md, V-02).
+		mux.HandleFunc("GET /{$}", srv.handleWebUI)
+		// The page's own CSS and JS (docs/tasks/task-web-ui-2026-09.md §6.1), unauthenticated for the same reason as the page.
+		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
+		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
+		// sameOrigin: on the key-free loopback default auth() alone is a no-op, and these routes act (pull starts a caller-named
+		// multi-gigabyte download). See sameOrigin in webui.go (docs/completed/review-2026-09-04.md, V-20).
+		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
+		// Live search-as-you-type suggestions over the repo box (pull.Search): read-only, same origin/auth stack as list.
+		mux.HandleFunc("POST /web/models/search", sameOrigin(auth(maxBytes(textCap, srv.handleWebSearch))))
+		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
+		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
+		// its own (pullState), which is the bound that actually fits it.
+		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
+		// Load what the pull just downloaded. NOT the admin load, which takes any caller-named path and stays behind
+		// -allow-admin: this one is confined to regular .gguf files under the pull cache (webLoadPath) and gets the same stack
+		// as pull, since it is at least as heavy an action. Not in inf() either, for the pull's reason.
+		mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebLoad))))
+		// Unload a currently-loaded model. It needs no path policy: the only names it can act on are ones GET /v1/models already
+		// publishes, so it reuses unloadByName directly. Same stack as load.
+		mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWebUnload))))
+		// What the pull cache holds on disk, for the page's "On disk" card. Read-only, and it names only paths under the pull
+		// cache, the ones the load route above would accept anyway.
+		mux.HandleFunc("GET /web/models/cache", sameOrigin(auth(srv.handleWebCache)))
+	}
+	return mux, textCap
+}
+
 func Main() {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set. Shares one
 	// implementation with `goinfer-chat pull` (internal/pullcmd) rather than repeating the
@@ -591,48 +785,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintln(os.Stderr, "error: -tls-cert and -tls-key must be set together")
 		os.Exit(2)
 	}
-	if err := sessionDirOK(cfg.sessionDir); err != nil {
+	if err := cfg.validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
-	}
-	if cfg.spec != "" && cfg.spec != "ngram" {
-		fmt.Fprintf(os.Stderr, "error: -spec must be \"\" or \"ngram\" (got %q)\n", cfg.spec)
-		os.Exit(2)
-	}
-	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
-		fmt.Fprintln(os.Stderr, "error: -kv-idle-demote needs -session-dir and -kv-sessions > 0")
-		os.Exit(2)
-	}
-	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
-		fmt.Fprintf(os.Stderr, "error: -thinking %q: want asis, template, on or off\n", cfg.thinking)
-		os.Exit(2)
-	}
-	if _, ok := chat.ParseToolFormat(cfg.toolFormat); !ok {
-		fmt.Fprintf(os.Stderr, "error: -tool-format %q: want hermes or template\n", cfg.toolFormat)
-		os.Exit(2)
-	}
-	if _, err := parseBudgetFlag(cfg.reasoningBudget); err != nil {
-		fmt.Fprintf(os.Stderr, "error: -reasoning-budget %q: %v\n", cfg.reasoningBudget, err)
-		os.Exit(2)
-	}
-	if _, ok := parseReasoningFormat(cfg.reasoningFmt); !ok {
-		fmt.Fprintf(os.Stderr, "error: -reasoning-format %q: want deepseek, deepseek-legacy or none\n", cfg.reasoningFmt)
-		os.Exit(2)
-	}
-	if cfg.decisionsTemplate != decide.TemplateChat && cfg.decisionsTemplate != decide.TemplateBare {
-		fmt.Fprintf(os.Stderr, "error: -decisions-template %q: want %s or %s\n", cfg.decisionsTemplate, decide.TemplateChat, decide.TemplateBare)
-		os.Exit(2)
-	}
-	if cfg.decisionsCal != "" {
-		// Fail at startup, not on the first /v1/systemone request: a bad file, or one fitted under the other template.
-		cal, err := decide.LoadCalibration(cfg.decisionsCal)
-		if err == nil && cal.Template != "" && cal.Template != cfg.decisionsTemplate {
-			err = fmt.Errorf("fitted under template %q, not -decisions-template %q", cal.Template, cfg.decisionsTemplate)
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: -decisions-calibration %s: %v\n", cfg.decisionsCal, err)
-			os.Exit(2)
-		}
 	}
 
 	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr)) // Gemma 3 on CUDA: float32 if the card holds it beside the decoder, else int8, before the plan prices the tower
@@ -640,131 +795,13 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-	if cfg.sessionDir != "" && cfg.kvSessions > 0 {
-		for _, lm := range srv.modelList() {
-			sub := sessionSubdir(cfg.sessionDir, lm.fp)
-			lm.sessions.load(sub)
-			if cfg.kvIdleDemote > 0 {
-				lm.sessions.enableTiering(sub, cfg.kvIdleDemote, cfg.kvDemotedMax)
-			}
-		}
-	}
+	srv.restoreSessions(cfg)
 
-	// Every POST body is size-bounded: the chat/messages endpoints carry base64 image_url data, so they get the larger
-	// vision cap; the rest a few MB. auth wraps a handler with the optional shared-secret check (no-op when authKey is "");
-	// every route below goes through it so a set key protects the whole surface.
-	auth := func(h http.HandlerFunc) http.HandlerFunc { return requireAuth(authKey, h) }
-	// inflight is the global concurrency cap over the inference POST handlers (the pre-queue stage), shared across all of
-	// them. GET/health and admin stay uncapped so an operator's health probe is always answered and never consumes a slot.
-	// Order: auth outermost (reject bad auth without taking a slot), then the inflight gate, then the body cap.
-	var inflight chan struct{}
-	if cfg.maxInflight > 0 {
-		inflight = make(chan struct{}, cfg.maxInflight)
-	}
-	inf := func(h http.HandlerFunc) http.HandlerFunc { return limitInflight(inflight, h) }
-	// Request-body caps: the largest servable text prompt is ctx tokens x the longest token's bytes, x4 for JSON
-	// structure/escaping, derived per the largest served model's context window, floored at fixed minimums so a
-	// small-context model keeps a usable body budget (the per-request tokenization guard, not this cap, protects it), and
-	// overridable with -max-body-bytes. Reported on the startup line.
-	textCap, visionCap, embedCap, fileCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
-	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
-	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
-	mux.HandleFunc("GET /health", auth(srv.handleHealth))
-	// haltGate runs AFTER auth (a bad key is still rejected during a halt) and BEFORE inf (a halt must not wait for an
-	// inflight slot). /admin/* and /health are deliberately NOT wrapped in it: an operator must always be able to resume and
-	// check status (docs/tasks/task-halt-2026-09.md).
-	// These routes are registered whether or not a model is loaded at startup: a server started with only --web,
-	// --allow-admin or --admin-socket loads its model later, and the mux is built once. Every handler resolves its model
-	// through resolveAndLock, which answers an unknown or absent model with the OpenAI-shaped 404 "model not found (served:
-	// ...)".
-	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is
-	// logged with its status too.
 	var reqLogOut io.Writer
 	if cfg.logRequests {
 		reqLogOut = os.Stderr
 	}
-	rl := func(h http.HandlerFunc) http.HandlerFunc { return logRequests(reqLogOut, h) }
-	mux.HandleFunc("POST /v1/chat/completions", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat))))))
-	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
-	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
-	mux.HandleFunc("POST /v1/messages", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages))))))
-	// Speech to text for a Whisper --model (speech.go). The body is audio, so it has its own cap: -max-body-bytes, else 256 MiB (over two hours of 16 kHz mono 16-bit).
-	audioCap := cfg.maxBodyBytes
-	if audioCap <= 0 {
-		audioCap = 256 << 20
-	}
-	mux.HandleFunc("POST /v1/audio/transcriptions", rl(auth(srv.haltGate(inf(maxBytes(audioCap, srv.handleTranscriptions))))))
-	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
-	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
-	// work against goinfer through their base-URL override (docs/tasks/task-constrained-confidence.md).
-	mux.HandleFunc("POST /v1/systemone", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleSystemOne)))))
-	// Submitting a job starts new admission, so POST /v1/jobs gets the same haltGate/inf/maxBytes stack as every other POST
-	// above. Polling (GET), the event stream and cancel (DELETE) are not new inference work: haltGate would 503 a client
-	// trying to learn that its job was halted, and inf's cap bounds pre-queue decode and tokenization, which these do not
-	// do. They get auth only (docs/tasks/task-work-queue-2026-09.md).
-	mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
-	mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
-	mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
-	mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
-	// The two batch APIs, over the same job store. POST /v1/files is an upload, not inference, so like /web/models/pull it
-	// gets auth + maxBytes only (haltGate and inf bound decode concurrency, not upload I/O). POST /v1/batches and POST
-	// /v1/messages/batches queue real generation work (one job per line, the /v1/jobs pipeline) and get the full stack.
-	// Every GET and every .../cancel gets auth only, as /v1/jobs' own GET/DELETE do.
-	mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
-	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
-	mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
-	mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
-	mux.HandleFunc("GET /v1/batches/{id}", auth(srv.handleGetBatch))
-	mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))
-	mux.HandleFunc("POST /v1/messages/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateMessageBatch)))))
-	mux.HandleFunc("GET /v1/messages/batches/{id}", auth(srv.handleGetMessageBatch))
-	mux.HandleFunc("GET /v1/messages/batches/{id}/results", auth(srv.handleGetMessageBatchResults))
-	mux.HandleFunc("POST /v1/messages/batches/{id}/cancel", auth(srv.handleCancelMessageBatch))
-	// Registered unconditionally: with no embedding model, handleEmbeddings returns a JSON error naming -embed-model rather
-	// than a bare 404, so an SDK sees "unconfigured", not "wrong URL".
-	mux.HandleFunc("POST /v1/embeddings", auth(srv.haltGate(inf(maxBytes(embedCap, srv.handleEmbeddings,
-		// The per-input / per-batch bounds are per-DIMENSION and multiply out past any body cap, so
-		// name all three: a client within both per-dimension limits can still exceed the total.
-		fmt.Sprintf("this route also limits each request to %d inputs of at most %d bytes each; "+
-			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
-	// /admin/* lives on EITHER the TCP listener (auth + -allow-admin) OR the admin socket when -admin-socket is set, never
-	// both, so a request against the surface that was not chosen 404s instead of being refused: a 403 would confirm the
-	// surface exists. See admin_socket.go for the socket side (docs/tasks/task-halt-2026-09.md).
-	if cfg.adminSocket == "" {
-		registerAdminRoutes(mux, srv, textCap, func(h http.HandlerFunc) http.HandlerFunc { return auth(srv.requireAdmin(h)) })
-	}
-	if cfg.web {
-		// "GET /{$}" matches the root path EXACTLY; a bare "GET /" is a catch-all that would answer every unknown GET with the
-		// UI page instead of a 404.
-		// UNAUTHENTICATED on purpose: the page embeds no secrets (handleWebUI) and is the only place a user can type the key in,
-		// so auth() here would make the key unenterable whenever -api-key is set. auth stays on the routes below, which act
-		// (docs/completed/review-2026-09-04.md, V-02).
-		mux.HandleFunc("GET /{$}", srv.handleWebUI)
-		// The page's own CSS and JS (docs/tasks/task-web-ui-2026-09.md §6.1), unauthenticated for the same reason as the page.
-		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
-		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
-		// sameOrigin: on the key-free loopback default auth() alone is a no-op, and these routes act (pull starts a caller-named
-		// multi-gigabyte download). See sameOrigin in webui.go (docs/completed/review-2026-09-04.md, V-20).
-		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
-		// Live search-as-you-type suggestions over the repo box (pull.Search): read-only, same origin/auth stack as list.
-		mux.HandleFunc("POST /web/models/search", sameOrigin(auth(maxBytes(textCap, srv.handleWebSearch))))
-		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
-		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
-		// its own (pullState), which is the bound that actually fits it.
-		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
-		// Load what the pull just downloaded. NOT the admin load, which takes any caller-named path and stays behind
-		// -allow-admin: this one is confined to regular .gguf files under the pull cache (webLoadPath) and gets the same stack
-		// as pull, since it is at least as heavy an action. Not in inf() either, for the pull's reason.
-		mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebLoad))))
-		// Unload a currently-loaded model. It needs no path policy: the only names it can act on are ones GET /v1/models already
-		// publishes, so it reuses unloadByName directly. Same stack as load.
-		mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWebUnload))))
-		// What the pull cache holds on disk, for the page's "On disk" card. Read-only, and it names only paths under the pull
-		// cache, the ones the load route above would accept anyway.
-		mux.HandleFunc("GET /web/models/cache", sameOrigin(auth(srv.handleWebCache)))
-	}
+	mux, textCap := srv.routes(cfg, authKey, reqLogOut)
 
 	// The admin socket (docs/tasks/task-halt-2026-09.md). closeAdminSock is a no-op when -admin-socket is unset, so the
 	// shutdown handler below can call it unconditionally.
@@ -859,21 +896,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 					float64(st.ExclusiveNs-st.PrefillNs)/1e9)
 			}
 		}
-		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
-			deadline := time.Now().Add(5 * time.Second)
-			for _, lm := range srv.modelList() {
-				// TryLock with a deadline: srvCancel above should have freed a generation still inside sessions.acquire (one
-				// mid-forward, not yet at a ctx check, could briefly still hold lm.sessMu). Skip its checkpoint rather than deadlock the
-				// whole shutdown.
-				if !tryLockUntil(&lm.sessMu, deadline) {
-					fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
-					continue
-				}
-				_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
-				lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
-				lm.sessMu.Unlock()
-			}
-		}
+		srv.checkpointSessions(cfg)
 	}()
 
 	// SIGUSR1 halts, SIGUSR2 resumes, so a supervisor can pull this switch without a socket or an HTTP client
@@ -920,6 +943,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if cfg.maxBodyBytes > 0 {
 		capSrc = "-max-body-bytes"
 	}
+	_, visionCap, embedCap, fileCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
 	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) / %s (embeddings) / %s (batch files) [%s]\n", humanBytes(textCap), humanBytes(visionCap), humanBytes(embedCap), humanBytes(fileCap), capSrc)
 	var listenErr error
 	if useTLS {
