@@ -142,6 +142,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	// Sampling: Responses uses max_output_tokens / text.format (vs the chat API's
 	// max_tokens / response_format); map them onto the shared prepare path.
 	sm := req.sampling
+	sm.outputByWindow = true
 	if req.MaxOutputTokens != nil {
 		sm.MaxTokens = req.MaxOutputTokens
 	}

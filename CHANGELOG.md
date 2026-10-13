@@ -138,6 +138,21 @@ Traced with the real client ([the record](docs/measurements/integration-harness-
 its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
 named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
 
+### Fixed — Codex turns were cut at 512 tokens, and a thinking model's cut-off reply could show `</think>`
+
+Codex sends no `max_output_tokens`, and `/v1/responses` gave such a request the 512-token default of the other routes,
+thinking included. A reply over that was cut and marked `incomplete`. With a thinking model the reasoning budget then
+closed the think block at 384 tokens, and Mellum2.1 went on reasoning in its answer and wrote its own `</think>` there:
+Codex showed `5</think> maybe? Or just "5"? ...`.
+
+- **`/v1/responses` with no `max_output_tokens` now allows a quarter of the context window**, at least 1,024 tokens and
+  at most 8,192. That is the output limit `connect` writes for every agent, so Codex gets the limit its configuration
+  was written with. A request that names a cap keeps it, and the other routes keep their 512.
+- **An answer never carries a reasoning close tag.** One that arrives after the block has closed is dropped, on every
+  route and in `goinfer-chat`. The model's own chat template reads an assistant message as the text after its last
+  `</think>`, so a tag left in the answer was also re-read as reasoning on the next turn. `-reasoning-format
+  deepseek-legacy` and `none` still return the raw text.
+
 ### Fixed — a request with several system messages lost all but the last (Codex lost its instructions)
 
 On `/v1/chat/completions` and `/v1/responses` only the last `system` or `developer` message was used. Codex sends its agent

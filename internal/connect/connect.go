@@ -141,8 +141,10 @@ func patchJSON(old []byte, edit func(*object) error) ([]byte, error) {
 	return o.text(), nil
 }
 
-// outputLimit is the output limit told to an agent: a quarter of the window, at least 1,024 and at most 8,192.
-func outputLimit(window int) int { return min(max(window/4, 1024), 8192, max(window/2, 1)) }
+// OutputLimit is the output limit told to an agent: a quarter of the window, at least 1,024 and at most 8,192 (and never
+// more than half a small window). serve gives the same limit to a /v1/responses request that names none, so an agent
+// that sends no cap of its own gets the one its configuration was written with.
+func OutputLimit(window int) int { return min(max(window/4, 1024), 8192, max(window/2, 1)) }
 
 // fit says whether an agent's first request fits a window: "viable" with a quarter to spare, "marginal" when only the
 // request itself fits, "not viable" otherwise.
@@ -199,7 +201,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 	}
 	for _, m := range list.Data {
 		if m.ID == model && m.Window > 0 {
-			s := settings{URL: url, Key: key, Model: model, Window: m.Window, Output: outputLimit(m.Window)}
+			s := settings{URL: url, Key: key, Model: model, Window: m.Window, Output: OutputLimit(m.Window)}
 			if s.Key == "" {
 				s.Key = "goinfer" // agents refuse an empty key; a server with none accepts any
 			}
