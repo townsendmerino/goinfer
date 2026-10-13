@@ -229,8 +229,11 @@ only the night gate's predictions below were made blind. The results follow unde
   - **The 7B did not go resident at all:** the build needs 4.65 GB at its smallest context and the live budget
     was 3.21 GB. That is the memory guard, which this change does not touch (inferred from the code, not read on
     main today). Its read is in the night job.
-  - **The paged 26B: not read. Its checkpoint is not on this Mac.** The opt-out rests on the unit tests, the tiny
-    paged build and the two mutations until it is.
+  - **The paged 26B keeps 4096.** The owner had it pulled (17:00; 14.6 GB, bytes equal to the archive's). Loaded
+    under the day-use rule with `-moe-cache-experts` and no `-ctx`:
+    `context: 4096 tokens (paged MoE keeps the default; model maximum 262144 — raise with --ctx) · KV f16`. It went
+    resident with 1 of its 2 KV slots (the guard's count at 880 MB a slot), the `harness:` line priced `--ctx 16384`
+    at 3.4 GB of KV, and swap did not move. Banner only; no request was sent.
 - **Gate 5, the Metal package's suite on the branch: PASS**, 318 tests pass and 173 skip (the heavy ones), by day
   (`m2/metal-suite-day-2026-10-12.txt`). A first run failed three tests for fixtures the fresh worktree lacked;
   they were cloned from the main checkout and the run repeated. The device gate (§C1-M) is a night job.
@@ -239,8 +242,8 @@ only the night gate's predictions below were made blind. The results follow unde
 - **Owed, queued on the Mac for tonight:** G-M2-speed, the 7B's served read and real-checkpoint case
   (`m2/run-g-m2-night.sh`), and the Metal device gate at the branch's head. The merge waits for them.
 - **For the owner:** the brief's "f32 KV" is f16 on Metal, so 2 slots of 16384 on a 7B are about 1.9 GB and not
-  3.7. The 26B would need pulling to this Mac (about 15 GB; the disk has about 18 GB free now that the 7B's Metal
-  sidecar, 4.8 GB, is beside its checkpoint) to read gate 3's last line.
+  3.7. The 26B's sidecar (14.6 GB) and the 7B's Metal sidecar (4.8 GB) are now in `~/models`; the disk has about
+  6 GB free.
 
 ### M3 · A thinking switch
 

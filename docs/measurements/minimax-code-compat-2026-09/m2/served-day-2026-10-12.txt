@@ -24,3 +24,18 @@
 # The night harness's wiring, one run a cell, exploratory and not a result (16:17 to 16:24; 6.5 min of it the idle gate):
 #   goinfer      (M2 build, no -ctx): context 16384 tokens (fit: 2 slots, 0.9 GB KV), 94.23 tok/s at depth 128
 #   goinfer_old  (main c75a283a, no -ctx): context 4096 tokens (backend default), 94.22 tok/s
+
+# The paged 26B, after the owner said to pull it (models-pull, 14,589,782,875 bytes, equal to the archive's; its
+# .verified marker equal too). By day under the day-use rule: Metal, paged, the memory guard on, -require-backend.
+# 5.8 GB available before the load; banner only, no request. serve at f79f9196.
+
+[17:01:19] gemma4-26b-int4-v14st.metal.giw: swap used before the load 4533 MB
+  serve-metal-new -model bench=~/models/gemma4-26b-int4-v14st.metal.giw -backend metal -addr 127.0.0.1:18477 -require-backend -moe-cache-experts
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | metal: 1 resident KV slots of 2 requested — each costs 880 MB of KV at the resident context, and the memory guard allows 1
+  | decode path: metal-resident (int4)
+  | context: 4096 tokens (paged MoE keeps the default; model maximum 262144 — raise with --ctx) · KV f16
+  | harness: 4096 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); --ctx 16384 holds it for 3.4 GB of KV (1 slot)
+  | fit: 4096-token cap needs 0.9 GB KV (weights 13.6 GB, budget 2.1 GB, 1.2 GB left for a request's own prefill)
+  | KV plan: 1 conversation x 4096 positions (4 asked for)
+  up after 5 s; swap used 4533 MB
