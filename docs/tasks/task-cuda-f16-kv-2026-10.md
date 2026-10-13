@@ -2,7 +2,7 @@
 
 Owner request, 2026-10-12: "f16 KV by default on CUDA ... roughly doubles the context ... needs a fidelity gate, plus a paired speed check against
 today's f32." **The request assumed `-kv f16` already worked on CUDA. It does not**: CUDA's resident build allocates f32 K/V whatever `--kv` says
-(`decoder/residency.go:ResidentKVPrecision`, `decoder/residentneed.go:cudaKVBytes`, `docs/measurements/memory-accounting-cuda-2026-09-25.md`
+(`decoder/residency.go:Model.ResidentKVPrecision`, `decoder/residentneed.go:Model.cudaKVBytes`, `docs/measurements/memory-accounting-cuda-2026-09-25.md`
 finding 1), and every attention kernel reads `const float* kc`. So this is a build, then a gate, then a default. Owner decision the same day:
 **a phased project, one push at the end.** The push waits for the gates below; nothing here is on `main` until they have been read.
 
