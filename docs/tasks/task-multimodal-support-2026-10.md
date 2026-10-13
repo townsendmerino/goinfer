@@ -5361,6 +5361,34 @@ Criteria as amended: agreement margin 2 points, KL margin 0.10, one-sided alpha 
 - **Predictions scored.** PARKED (0.5): no. **PASS (0.3): yes.** OFF (0.2): no. I expected the bounds to be too
   wide on 94 prompts; the agreement spread over the full set was smaller than the pilot's eight prompts gave.
 
+#### S12.3g, the grid towers' patch-count threshold: registered 2026-10-12 before it runs
+
+The grid towers' speed gates read SHIP at one large image, and the owner's rule for them is that the device tower
+becomes the default above a patch count and the CPU tower stays below it, "the count set from a measurement that is
+registered before it is run". This is that measurement. It does not flip any default: the flips stay the owner's.
+
+- **Tier:** night, on both boxes (Metal on the Mac, Vulkan on nobara): the threshold is a property of the backend.
+- **Instrument:** `gpu`'s `TestGridTowersWebGPU_patchSweep`, one tower a run: Qwen3.5 0.8B's, GLM-OCR's, Qwen2.5-VL
+  3B's. `testdata/glm_ocr/table.png` is preprocessed under a ladder of pixel ceilings (squares of side 112, 168, 224,
+  280, 336, 448, 672 and 896, then the ceiling serve uses), which gives patch counts from about 50 to the tower's
+  served maximum. A rung is one discarded warm-up pair and three timed pairs (CPU tower, WebGPU tower) in alternating
+  order; its reading is the median of WebGPU / CPU. Script: `s12-webgpu/run-g-s12-3g-night.sh`, a pinned test binary.
+- **The whole ladder runs; there is no early stop.** A crossover is a step, and a rule that stopped at the first
+  rung under 1.00 would not see a rung above it that goes back over.
+- **The threshold, per tower and backend:** the smallest rung whose ratio is at most 0.98 with every larger rung also
+  at most 0.98. "None" if the largest rung is over 0.98; "all" if the smallest rung is already at most 0.98.
+  A rung in (0.98, 1.00] counts as CPU's, the parked band of the towers' own gates.
+- **What it licenses:** a count per tower and backend to put in front of the owner. It is read at one image's aspect
+  ratio, at int precision as loaded by the tests, and at three pairs a rung: a threshold is good to the spacing of the
+  rungs around it, not finer.
+- **Cost basis:** the towers' own gates (CPU 6.5 s, 34 s and 28 s at the served ceiling on the Mac) and the day smoke
+  below: about 15 minutes a box; queued at 25.
+- **A day smoke, exploratory, already seen** (Qwen3.5's tower on the Mac, before the 280 rung was added): over 1.00
+  at 192 patches (1.181) and under at 432 (0.731), 0.37 at the served 3,888.
+- **Predictions, written after that smoke and before any other reading:** Qwen3.5's threshold on the Mac is the 280
+  or the 336 rung (0.7). GLM-OCR's and Qwen2.5-VL's thresholds are under 1,100 patches on both boxes (0.6). Every
+  threshold on nobara is at or under the Mac's for the same tower (0.5: the card is faster, and so is the box's CPU).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
