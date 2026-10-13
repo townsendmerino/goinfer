@@ -1,0 +1,40 @@
+=== RUN   TestKV0_prefillInvariance_tiny
+    kv0_invariance_test.go:227: backend "vulkan", decode path webgpu:vulkan-resident (int4)
+[kv0] fixture loaded, N=1000 layers=2 backend=vulkan
+[kv0] block=64                     KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=128                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=256                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=512                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@512                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@984                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=496 (8-row tail)       KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] w4Multi pinned to kind 0     KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] w4Multi pinned to kind 1     KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 154112 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+--- PASS: TestKV0_prefillInvariance_tiny (2.11s)
+=== RUN   TestKV0_prefillInvariance_real1p5B
+    kv0_invariance_test.go:243: backend "vulkan", decode path webgpu:vulkan-resident (int4)
+[kv0] fixture loaded, N=1000 layers=28 backend=vulkan
+[kv0] block=64                     KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] block=128                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] block=256                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] block=512                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@512                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@984                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] block=496 (8-row tail)       KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] w4Multi pinned to kind 0     KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] w4Multi pinned to kind 1     KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 4147653 from it on (first at 700); last logits 151936 of 151936 differ
+[kv0] done in 25s
+--- PASS: TestKV0_prefillInvariance_real1p5B (26.68s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	28.921s

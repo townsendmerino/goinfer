@@ -1,0 +1,33 @@
+=== RUN   TestKV0_prefillInvariance_real1p5B
+[kv0] fixture loaded, N=1000 floor=512 layers=28
+[kv0] whole pass: 28 attn_fused, 196 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 13837756 of 14336000 elements differ (first at position 0, layer 0); last logits 151936 of 151936 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 13446456 of 14336000 elements differ; last logits 151935 of 151936 differ (max |diff| 0.972): NOT INVARIANT, starts at position 0 (layer 0)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 3670016 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 13580961 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 1.19): NOT INVARIANT, starts at position 0 (layer 0)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 7325696 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 207586 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 0.829): NOT INVARIANT, starts at position 985 (layer 0)
+[kv0] chunk=496 (8-row tail)       3 passes (2 fast): KV 110739 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 0.878): NOT INVARIANT, starts at position 992 (layer 0)
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 4147121 from it on (first at 700); last logits 151936 of 151936 differ
+[kv0] done in 5s
+--- PASS: TestKV0_prefillInvariance_real1p5B (9.94s)
+=== RUN   TestKV0_continuationEffect_real1p5B
+[kv0] continuation: 20 of 50 trials done, 31s elapsed
+[kv0] continuation: 40 of 50 trials done, 1m2s elapsed
+[kv0] continuation, 50 trials, np=600 d=32, same teacher-forced tokens:
+[kv0]   decode rows vs fast-prefill rows (A vs B): 22140567 of 22937600 elements differ; max |diff| 4.58 (largest |value| 360); rms diff / rms value mean 0.00676 worst 0.00965
+[kv0]   prompt rows [0,600) of A vs B (a 600-row pass against the first 600 rows of a 632-row pass): 0 elements differ
+[kv0]   next-token logits A vs B: cosine min 0.994165997 mean 0.997913671; argmax agrees 49 of 50; trials with bit-identical logits and rows 0; logits differing bit for bit 7596796
+[kv0]   exact class (A' vs C): decode rows differing 0; cosine min 1.000000000; argmax agrees 50 of 50; logits differing bit for bit 0
+[kv0]   B's top-1 minus top-2 logit: min 0.00876 median 2.48
+[kv0] done in 1m18s
+--- PASS: TestKV0_continuationEffect_real1p5B (80.53s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	90.547s
