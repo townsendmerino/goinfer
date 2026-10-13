@@ -27,49 +27,49 @@ type ToolCall struct {
 
 // RenderTools renders system + turns + tool declarations into the prompt, ending
 // with the generation prompt. Falls back to plain Render when the family has no
-// tool support wired or no tools are given.
+// tool support wired or no tools are given. It is the concatenation of RenderToolsSegments.
 func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string {
-	if len(tools) == 0 {
-		return t.Render(system, turns)
+	var sb strings.Builder
+	for _, s := range t.RenderToolsSegments(system, turns, tools) {
+		sb.WriteString(s.Text)
 	}
-	system = t.systemOr(system)
-	switch t.name {
-	case "chatml", "mellum2":
-		if t.usesNativeTools() {
-			return t.bos + renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
-		}
-		return t.bos + renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults) + t.thinkSuffixText()
-	case "mistral":
-		return renderMistralTools(system, turns, tools)
-	case "llama3":
-		return renderLlama3Tools(system, turns, tools)
-	case "gemma4":
-		if t.usesNativeTools() {
-			return renderGemma4NativeTools(system, turns, tools, t.gemma4Think())
-		}
-		return renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4)
-	case "harmony":
-		var b strings.Builder
-		for _, seg := range harmonySegments(t.harmonyEffort(), system, turns, tools) {
-			b.WriteString(seg.Text)
-		}
-		return b.String()
-	}
-	return t.Render(system, turns) // gemma3 etc.: no native tool template
+	return sb.String()
 }
 
-// RenderToolsSegments is RenderTools for the EncodeSegments path. With no tools it delegates to RenderSegments, so ordinary chat
-// (including tool RESULTS fed back with no new declarations) gets injection hardening. With tools declared, Harmony returns its own
-// segments; every other family returns the tool-rendered prompt as a single Special segment, identical to whole-string Encode but
-// with no hardening of its content spans.
+// RenderToolsSegments is RenderTools for the EncodeSegments path: the family's control tokens are Special spans and everything a user,
+// a tool, the system prompt or the model wrote is a non-special span, so a marker typed into a message stays literal text instead of
+// forging a turn. With no tools it delegates to RenderSegments. Mistral renders as one Special span, as its ordinary path does (see
+// Mistral for why).
 func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segment {
 	if len(tools) == 0 {
 		return t.RenderSegments(system, turns)
 	}
-	if t.name == "harmony" { // already segment-built: the markers are special, everything a user or tool wrote is hardened content
+	system = t.systemOr(system)
+	switch t.name {
+	case "chatml", "mellum2":
+		var segs []Segment
+		if t.bos != "" {
+			segs = append(segs, Segment{Text: t.bos, Special: true})
+		}
+		if t.usesNativeTools() {
+			segs = append(segs, t.renderQwen35XMLTools(system, turns, tools, t.historyKind())...)
+		} else {
+			segs = append(segs, t.renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults)...)
+		}
+		return append(segs, t.thinkSuffixSegs()...)
+	case "mistral":
+		return []Segment{{Text: renderMistralTools(system, turns, tools), Special: true}}
+	case "llama3":
+		return t.renderLlama3Tools(system, turns, tools)
+	case "gemma4":
+		if t.usesNativeTools() {
+			return t.renderGemma4NativeTools(system, turns, tools, t.gemma4Think())
+		}
+		return t.renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4)
+	case "harmony": // already segment-built: the markers are special, everything a user or tool wrote is hardened content
 		return harmonySegments(t.harmonyEffort(), system, turns, tools)
 	}
-	return []Segment{{Text: t.RenderTools(system, turns, tools), Special: true}}
+	return t.RenderSegments(system, turns) // gemma3 etc.: no native tool template
 }
 
 // SupportsTools reports whether this family has a tool-calling template.
@@ -257,20 +257,24 @@ func callObjectJSON(c ToolCall, argsKey string) string {
 
 // --- ChatML / Qwen (Hermes) ---
 
-// group is Template.groupsToolResults: consecutive tool results share one user turn, as the template writes them; otherwise each result
-// is a user turn of its own, byte for byte as before.
-func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind, group bool) string {
-	var b strings.Builder
-	b.WriteString("<|im_start|>system\n")
+// chatMLToolMarks are the control tokens of the ChatML tool dialects (Hermes JSON and Qwen3.5 XML): the turn markers, the tool-call and
+// tool-response tags, and the think tags.
+var chatMLToolMarks = []string{"<|im_start|>", "<|im_end|>", "<tool_call>", "</tool_call>", "<tool_response>", "</tool_response>", "<think>", "</think>"}
+
+// renderChatMLTools is the Hermes-style tool prompt as segments. group is Template.groupsToolResults: consecutive tool results share one
+// user turn, as the template writes them; otherwise each result is a user turn of its own, byte for byte as before.
+func (t *Template) renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind, group bool) []Segment {
+	b := t.newToolBuf(chatMLToolMarks...)
+	b.lit("<|im_start|>system\n")
 	if s := strings.TrimSpace(system); s != "" {
-		b.WriteString(s + "\n\n")
+		b.txt(s + "\n\n")
 	}
-	b.WriteString("# Tools\n\nYou may call one or more functions to assist with the user query.\n\n")
-	b.WriteString("You are provided with function signatures within <tools></tools> XML tags:\n<tools>\n")
+	b.lit("# Tools\n\nYou may call one or more functions to assist with the user query.\n\n")
+	b.lit("You are provided with function signatures within <tools></tools> XML tags:\n<tools>\n")
 	for _, tl := range tools {
-		b.WriteString(funcDefJSON(tl) + "\n")
+		b.txt(funcDefJSON(tl) + "\n")
 	}
-	b.WriteString("</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n")
+	b.lit("</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n")
 	lq := lastQueryIndex(turns)
 	for i, m := range turns {
 		switch m.Role {
@@ -280,44 +284,56 @@ func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind,
 				// between the content and a call — a newline only after content or before a later call, none before a first call
 				// that follows nothing.
 				block, reasoning, content := qwenAssistant(hist, m, i, lq, len(turns))
-				b.WriteString("<|im_start|>assistant\n")
+				b.lit("<|im_start|>assistant\n")
 				if block {
-					b.WriteString("<think>\n" + reasoning + "\n</think>\n\n")
+					b.lit("<think>")
+					b.txt("\n" + reasoning + "\n")
+					b.lit("</think>\n\n")
 				}
-				b.WriteString(content)
+				b.txt(content)
 				for ci, c := range m.ToolCalls {
 					if (ci == 0 && content != "") || ci > 0 {
-						b.WriteString("\n")
+						b.txt("\n")
 					}
-					b.WriteString("<tool_call>\n" + callObjectJSON(c, "arguments") + "\n</tool_call>")
+					b.lit("<tool_call>\n")
+					b.txt(callObjectJSON(c, "arguments"))
+					b.lit("\n</tool_call>")
 				}
-				b.WriteString("<|im_end|>\n")
+				b.lit("<|im_end|>\n")
 				continue
 			}
-			b.WriteString("<|im_start|>assistant\n")
-			b.WriteString(m.Content)
+			b.lit("<|im_start|>assistant\n")
+			b.txt(m.Content)
 			for _, c := range m.ToolCalls {
-				b.WriteString("\n<tool_call>\n" + callObjectJSON(c, "arguments") + "\n</tool_call>")
+				b.lit("\n<tool_call>\n")
+				b.txt(callObjectJSON(c, "arguments"))
+				b.lit("\n</tool_call>")
 			}
-			b.WriteString("<|im_end|>\n")
+			b.lit("<|im_end|>\n")
 		case "tool":
 			if group {
 				if i == 0 || turns[i-1].Role != "tool" {
-					b.WriteString("<|im_start|>user")
+					b.lit("<|im_start|>user")
 				}
-				b.WriteString("\n<tool_response>\n" + m.Content + "\n</tool_response>")
+				b.lit("\n<tool_response>\n")
+				b.txt(m.Content)
+				b.lit("\n</tool_response>")
 				if i == len(turns)-1 || turns[i+1].Role != "tool" {
-					b.WriteString("<|im_end|>\n")
+					b.lit("<|im_end|>\n")
 				}
 				continue
 			}
-			b.WriteString("<|im_start|>user\n<tool_response>\n" + m.Content + "\n</tool_response><|im_end|>\n")
+			b.lit("<|im_start|>user\n<tool_response>\n")
+			b.txt(m.Content)
+			b.lit("\n</tool_response><|im_end|>\n")
 		default:
-			b.WriteString("<|im_start|>user\n" + m.Content + "<|im_end|>\n")
+			b.lit("<|im_start|>user\n")
+			b.txt(m.Content)
+			b.lit("<|im_end|>\n")
 		}
 	}
-	b.WriteString("<|im_start|>assistant\n")
-	return b.String()
+	b.lit("<|im_start|>assistant\n")
+	return b.segs
 }
 
 // parseChatMLTools reads every <tool_call> block: the JSON form goinfer prompts for ({"name": …, "arguments": {…}}) and, where the body is
@@ -416,14 +432,16 @@ func parseMistralTools(out string) ([]ToolCall, string) {
 
 // --- Llama-3 ---
 
-func renderLlama3Tools(system string, turns []Turn, tools []Tool) string {
-	var b strings.Builder
-	b.WriteString("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n")
-	b.WriteString("Environment: ipython\nCutting Knowledge Date: December 2023\nToday Date: " + timeNow().Format("02 Jan 2006") + "\n\n")
+var llama3ToolMarks = []string{"<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>"}
+
+func (t *Template) renderLlama3Tools(system string, turns []Turn, tools []Tool) []Segment {
+	b := t.newToolBuf(llama3ToolMarks...)
+	b.lit("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n")
+	b.lit("Environment: ipython\nCutting Knowledge Date: December 2023\nToday Date: " + timeNow().Format("02 Jan 2006") + "\n\n")
 	if s := strings.TrimSpace(system); s != "" {
-		b.WriteString(s)
+		b.txt(s)
 	}
-	b.WriteString("<|eot_id|>")
+	b.lit("<|eot_id|>")
 	var instr strings.Builder
 	instr.WriteString("Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.Do not use variables.\n\n")
 	for i, tl := range tools {
@@ -436,24 +454,29 @@ func renderLlama3Tools(system string, turns []Turn, tools []Tool) string {
 	for _, m := range turns {
 		switch m.Role {
 		case "assistant":
-			b.WriteString("<|start_header_id|>assistant<|end_header_id|>\n\n" + m.Content)
+			b.lit("<|start_header_id|>assistant<|end_header_id|>\n\n")
+			b.txt(m.Content)
 			for _, c := range m.ToolCalls {
-				b.WriteString(callObjectJSON(c, "parameters"))
+				b.txt(callObjectJSON(c, "parameters"))
 			}
-			b.WriteString("<|eot_id|>")
+			b.lit("<|eot_id|>")
 		case "tool":
-			b.WriteString("<|start_header_id|>ipython<|end_header_id|>\n\n" + jsonStr(m.Content) + "<|eot_id|>")
+			b.lit("<|start_header_id|>ipython<|end_header_id|>\n\n")
+			b.txt(jsonStr(m.Content))
+			b.lit("<|eot_id|>")
 		default:
 			content := m.Content
 			if first { // tool instructions ride the first user turn
 				content = instr.String() + "\n\n" + content
 				first = false
 			}
-			b.WriteString("<|start_header_id|>user<|end_header_id|>\n\n" + content + "<|eot_id|>")
+			b.lit("<|start_header_id|>user<|end_header_id|>\n\n")
+			b.txt(content)
+			b.lit("<|eot_id|>")
 		}
 	}
-	b.WriteString("<|start_header_id|>assistant<|end_header_id|>\n\n")
-	return b.String()
+	b.lit("<|start_header_id|>assistant<|end_header_id|>\n\n")
+	return b.segs
 }
 
 func parseLlama3Tools(out string) ([]ToolCall, string) {

@@ -94,6 +94,11 @@ type Template struct {
 	// groupsToolResults: the template puts CONSECUTIVE tool results in one user turn (Qwen2.5, Qwen3, Qwen3.5 do), read from its text
 	// (detectGroupedToolResults). goinfer's Hermes renderer writes one user turn per result for a template that does not.
 	groupsToolResults bool
+
+	// has reports whether the checkpoint's vocabulary holds a string as a single token (Meta.HasToken, set by Detect); nil when the
+	// Template did not come from Detect. The tool renderers use it to decide which of a family's markers are control tokens
+	// (toolBuf.mark); a Template without it assumes the family's own tokens exist.
+	has func(string) bool
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
@@ -162,6 +167,14 @@ var ErrUnknownTemplate = errors.New("chat: unrecognized chat template (raw-compl
 // chat-template string; if that's empty, it falls back to the special-token
 // heuristic for bare checkpoints. Returns ErrUnknownTemplate when nothing matches.
 func Detect(meta Meta) (*Template, error) {
+	t, err := detect(meta)
+	if t != nil {
+		t.has = meta.HasToken
+	}
+	return t, err
+}
+
+func detect(meta Meta) (*Template, error) {
 	if t := meta.ChatTemplate; t != "" {
 		switch {
 		// Order matters: the more specific fingerprint is tested before its generic sibling. Harmony before Gemma 4 (both

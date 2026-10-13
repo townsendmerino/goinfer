@@ -432,16 +432,12 @@ func (t *Template) SplitThink(reply string) (reasoning, content string) {
 	return r + r2, c + c2
 }
 
-// thinkSuffixText is the ChatML family's think suffix as text, for the tool-prompt path that builds one string.
-func (t *Template) thinkSuffixText() string {
+// thinkSuffixSegs is the ChatML family's think suffix as segments, for the tool-prompt path (nil when the template has none).
+func (t *Template) thinkSuffixSegs() []Segment {
 	if t.reason == nil || t.reason.gemma4 {
-		return ""
+		return nil
 	}
-	var b strings.Builder
-	for _, s := range t.reason.suffix(t.think) {
-		b.WriteString(s.Text)
-	}
-	return b.String()
+	return t.reason.suffix(t.think)
 }
 
 // gemma4Think reports whether this Template renders Gemma 4 with thinking on.

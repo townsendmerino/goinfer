@@ -146,19 +146,20 @@ func pyStr(v jv) string {
 }
 
 // renderQwen35XMLTools renders system + turns + tool declarations the way the Qwen3.5 chat template does, ending with the generation
-// prompt's `<|im_start|>assistant\n` (the caller appends the think suffix, as for the Hermes renderer).
-func renderQwen35XMLTools(system string, turns []Turn, tools []Tool, hist histKind) string {
-	var b strings.Builder
+// prompt's `<|im_start|>assistant\n` (the caller appends the think suffix, as for the Hermes renderer), as segments.
+func (t *Template) renderQwen35XMLTools(system string, turns []Turn, tools []Tool, hist histKind) []Segment {
+	b := t.newToolBuf(chatMLToolMarks...)
 	sys := strings.TrimSpace(system)
-	b.WriteString("<|im_start|>system\n" + qwenXMLToolsPrologue)
-	for _, t := range tools {
-		b.WriteString("\n" + qwenToolJSON(t))
+	b.lit("<|im_start|>system\n" + qwenXMLToolsPrologue)
+	for _, tl := range tools {
+		b.txt("\n" + qwenToolJSON(tl))
 	}
-	b.WriteString("\n</tools>" + qwenXMLToolsEpilogue)
+	b.lit("\n</tools>" + qwenXMLToolsEpilogue)
 	if sys != "" {
-		b.WriteString("\n\n" + sys)
+		b.lit("\n\n")
+		b.txt(sys)
 	}
-	b.WriteString("<|im_end|>\n")
+	b.lit("<|im_end|>\n")
 
 	lq := lastQueryIndex(turns)
 	for i, m := range turns {
@@ -166,42 +167,54 @@ func renderQwen35XMLTools(system string, turns []Turn, tools []Tool, hist histKi
 		case "assistant":
 			block, reasoning, content := qwenAssistant(hist, m, i, lq, len(turns))
 			content = strings.TrimSpace(content)
-			b.WriteString("<|im_start|>assistant\n")
+			b.lit("<|im_start|>assistant\n")
 			if block {
-				b.WriteString("<think>\n" + reasoning + "\n</think>\n\n")
+				b.lit("<think>")
+				b.txt("\n" + reasoning + "\n")
+				b.lit("</think>\n\n")
 			}
-			b.WriteString(content)
+			b.txt(content)
 			for ci, c := range m.ToolCalls {
 				switch {
 				case ci == 0 && content != "":
-					b.WriteString("\n\n")
+					b.txt("\n\n")
 				case ci > 0:
-					b.WriteString("\n")
+					b.txt("\n")
 				}
-				b.WriteString("<tool_call>\n<function=" + c.Name + ">\n")
+				b.lit("<tool_call>\n<function=")
+				b.txt(c.Name)
+				b.lit(">\n")
 				if args, err := parseJV(c.Arguments); err == nil && args.kind == jObj {
 					for _, k := range args.keys {
-						b.WriteString("<parameter=" + k + ">\n" + pyStr(args.vals[k]) + "\n</parameter>\n")
+						b.lit("<parameter=")
+						b.txt(k)
+						b.lit(">\n")
+						b.txt(pyStr(args.vals[k]))
+						b.lit("\n</parameter>\n")
 					}
 				}
-				b.WriteString("</function>\n</tool_call>")
+				b.lit("</function>\n</tool_call>")
 			}
-			b.WriteString("<|im_end|>\n")
+			b.lit("<|im_end|>\n")
 		case "tool":
 			// Consecutive results share one user turn.
 			if i == 0 || turns[i-1].Role != "tool" {
-				b.WriteString("<|im_start|>user")
+				b.lit("<|im_start|>user")
 			}
-			b.WriteString("\n<tool_response>\n" + strings.TrimSpace(m.Content) + "\n</tool_response>")
+			b.lit("\n<tool_response>\n")
+			b.txt(strings.TrimSpace(m.Content))
+			b.lit("\n</tool_response>")
 			if i == len(turns)-1 || turns[i+1].Role != "tool" {
-				b.WriteString("<|im_end|>\n")
+				b.lit("<|im_end|>\n")
 			}
 		default:
-			b.WriteString("<|im_start|>user\n" + strings.TrimSpace(m.Content) + "<|im_end|>\n")
+			b.lit("<|im_start|>user\n")
+			b.txt(strings.TrimSpace(m.Content))
+			b.lit("<|im_end|>\n")
 		}
 	}
-	b.WriteString("<|im_start|>assistant\n")
-	return b.String()
+	b.lit("<|im_start|>assistant\n")
+	return b.segs
 }
 
 // ---- the reply ------------------------------------------------------------------------------------------------------------------

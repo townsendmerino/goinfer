@@ -22,29 +22,53 @@ import (
 
 const gq = `<|"|>` // Gemma's string-quote marker
 
-func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, old bool) string {
-	var b strings.Builder
-	b.WriteString("<bos><|turn>system\n")
+// gemmaToolMarks are Gemma 4's control tokens as the tool prompts write them; gemmaQuote is the string-quote marker inside the
+// micro-language's values.
+var gemmaToolMarks = []string{"<bos>", "<|turn>", "<turn|>", "<|think|>", "<|tool>", "<tool|>", "<|tool_call>", "<tool_call|>", "<|tool_response>", "<tool_response|>", gq, "<|channel>", "<channel|>"}
+
+var gemmaQuote = []string{gq}
+
+// gemmaSafe removes the control-token strings from a value the micro-language embeds (a schema's descriptions, names and enum values, a
+// call's argument keys and string values). The renderers mark the quote in the rendered schema and arguments as a token, so a quote a
+// value carried would close its own string; any other marker in a value stays literal text, since only the quote is marked there.
+func gemmaSafe(s string) string {
+	for _, m := range gemmaToolMarks {
+		if strings.Contains(s, m) {
+			s = strings.ReplaceAll(s, m, "")
+		}
+	}
+	return s
+}
+
+// renderGemma4Tools is Gemma 4's JSON-free tool prompt as segments (the generic rendering; renderGemma4NativeTools is the canonical template's).
+func (t *Template) renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, old bool) []Segment {
+	b := t.newToolBuf(gemmaToolMarks...)
+	b.lit("<bos><|turn>system\n")
 	if think {
-		b.WriteString("<|think|>\n")
+		b.lit("<|think|>\n")
 	}
 	// No separator between the system text and the first declaration: upstream's template renders
 	// "<|turn>system\n{system}<|tool>declaration:…".
 	if s := strings.TrimSpace(system); s != "" {
-		b.WriteString(s)
+		b.txt(s)
 	}
 	for _, tl := range tools {
-		b.WriteString("<|tool>declaration:" + tl.Name + "{description:" + gq + tl.Description + gq +
-			",parameters:" + gemmaSchema(tl.Parameters) + "}<tool|>")
+		b.lit("<|tool>declaration:")
+		b.txt(tl.Name)
+		b.lit("{description:" + gq)
+		b.txt(tl.Description)
+		b.lit(gq + ",parameters:")
+		b.litMarks(gemmaSchema(tl.Parameters), gemmaQuote)
+		b.lit("}<tool|>")
 	}
-	b.WriteString("<turn|>\n")
+	b.lit("<turn|>\n")
 	// THE TOOL RESPONSES SIT INSIDE THE MODEL TURN THAT MADE THE CALL (testdata/chat_goldens/tools_gemma4.json, `call_result`): the turn
 	// is not closed after the calls and no scaffold is re-opened after the response. So it is closed lazily: an assistant turn whose
 	// calls are answered by tool turns stays open until something that is not a tool response follows it.
 	openModelTurn := false
 	closeModelTurn := func() {
 		if openModelTurn {
-			b.WriteString("<turn|>\n")
+			b.lit("<turn|>\n")
 			openModelTurn = false
 		}
 	}
@@ -62,13 +86,11 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, o
 			// A model turn that CONTINUES an open one (calls answered by tool turns) carries no new turn marker, but its
 			// reasoning channel is still written.
 			content := m.Content
-			var channel string
+			channel := false
 			if hist {
 				content = stripChannels(content)
 				// The earlier template keeps the reasoning only of a turn that makes a call (`thinking_text and … and message.get('tool_calls')`).
-				if m.Reasoning != "" && i > lu && (!old || len(m.ToolCalls) > 0) {
-					channel = "<|channel>thought\n" + m.Reasoning + "\n<channel|>"
-				}
+				channel = m.Reasoning != "" && i > lu && (!old || len(m.ToolCalls) > 0)
 			}
 			// The managed rendering continues an open model turn the way the template does (an assistant turn after tool
 			// responses has no turn marker of its own); the generic rendering keeps closing it and opening a new one, byte for
@@ -76,13 +98,21 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, o
 			if !hist {
 				closeModelTurn()
 			}
-			if openModelTurn {
-				b.WriteString(channel + content)
-			} else {
-				b.WriteString("<|turn>model\n" + channel + content)
+			if !openModelTurn {
+				b.lit("<|turn>model\n")
 			}
+			if channel {
+				b.lit("<|channel>thought\n")
+				b.txt(m.Reasoning)
+				b.lit("\n<channel|>")
+			}
+			b.txt(content)
 			for _, c := range m.ToolCalls {
-				b.WriteString("<|tool_call>call:" + c.Name + "{" + gemmaArgs(c.Arguments) + "}<tool_call|>")
+				b.lit("<|tool_call>call:")
+				b.txt(c.Name)
+				b.lit("{")
+				b.litMarks(gemmaArgs(c.Arguments), gemmaQuote)
+				b.lit("}<tool_call|>")
 			}
 			openModelTurn = true
 		case "tool":
@@ -97,29 +127,35 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, o
 			if hist && name == "" {
 				name = "unknown"
 			}
-			b.WriteString("<|tool_response>response:" + name + "{value:" + gq + m.Content + gq + "}<tool_response|>")
+			b.lit("<|tool_response>response:")
+			b.txt(name)
+			b.lit("{value:" + gq)
+			b.txt(m.Content)
+			b.lit(gq + "}<tool_response|>")
 		default:
 			closeModelTurn()
-			b.WriteString("<|turn>user\n" + m.Content + "<turn|>\n")
+			b.lit("<|turn>user\n")
+			b.txt(m.Content)
+			b.lit("<turn|>\n")
 		}
 	}
 	// The generation prompt follows a USER turn, not a tool response — upstream's
 	// add_generation_prompt emits nothing after a tool_response, because the model is already
 	// mid-turn and simply continues.
 	if !openModelTurn {
-		b.WriteString("<|turn>model\n")
+		b.lit("<|turn>model\n")
 		if !think && !old { // thinking on leaves the channel for the model to open; the earlier template has no scaffold at all
-			b.WriteString("<|channel>thought\n<channel|>")
+			b.lit("<|channel>thought\n<channel|>")
 		}
 	} else if old && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" && len(turns[len(turns)-1].ToolCalls) == 0 {
 		// The earlier template closes a call-less assistant message even when it follows tool results, then writes the generation prompt.
-		b.WriteString("<turn|>\n<|turn>model\n")
+		b.lit("<turn|>\n<|turn>model\n")
 	} else if think && hist && !old && len(turns) > 0 && turns[len(turns)-1].Role == "tool" { // the earlier template writes nothing here
 		// The model is still in the turn that made the call. With thinking on the template reopens its thought channel for
 		// the next step, so the reply starts inside it (Template.PromptOpensThinkFor).
-		b.WriteString("<|channel>thought\n")
+		b.lit("<|channel>thought\n")
 	}
-	return b.String()
+	return b.segs
 }
 
 func parseGemma4Tools(out string) ([]ToolCall, string) {
@@ -171,9 +207,9 @@ func gemmaSchema(raw json.RawMessage) string {
 		v := s[k]
 		switch k {
 		case "type":
-			parts = append(parts, "type:"+gq+strings.ToUpper(toStr(v))+gq)
+			parts = append(parts, "type:"+gq+gemmaSafe(strings.ToUpper(toStr(v)))+gq)
 		case "description":
-			parts = append(parts, "description:"+gq+toStr(v)+gq)
+			parts = append(parts, "description:"+gq+gemmaSafe(toStr(v))+gq)
 		case "enum":
 			parts = append(parts, "enum:"+gemmaStrList(v))
 		case "required":
@@ -202,7 +238,7 @@ func gemmaProps(v any) string {
 	var parts []string
 	for _, k := range keys {
 		sub, _ := json.Marshal(m[k])
-		parts = append(parts, k+":"+gemmaSchema(sub))
+		parts = append(parts, gemmaSafe(k)+":"+gemmaSchema(sub))
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
@@ -214,7 +250,7 @@ func gemmaStrList(v any) string {
 	}
 	var parts []string
 	for _, e := range arr {
-		parts = append(parts, gq+toStr(e)+gq)
+		parts = append(parts, gq+gemmaSafe(toStr(e))+gq)
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -232,7 +268,7 @@ func gemmaArgs(raw json.RawMessage) string {
 	sort.Strings(keys)
 	var parts []string
 	for _, k := range keys {
-		parts = append(parts, k+":"+gemmaValue(m[k]))
+		parts = append(parts, gemmaSafe(k)+":"+gemmaValue(m[k]))
 	}
 	return strings.Join(parts, ",")
 }
@@ -243,7 +279,7 @@ func gemmaArgs(raw json.RawMessage) string {
 func gemmaValue(v any) string {
 	switch x := v.(type) {
 	case string:
-		return gq + x + gq
+		return gq + gemmaSafe(x) + gq
 	case bool:
 		return strconv.FormatBool(x)
 	case float64:
@@ -256,7 +292,7 @@ func gemmaValue(v any) string {
 		sort.Strings(keys) // deterministic, as gemmaArgs does
 		parts := make([]string, 0, len(keys))
 		for _, k := range keys {
-			parts = append(parts, k+":"+gemmaValue(x[k]))
+			parts = append(parts, gemmaSafe(k)+":"+gemmaValue(x[k]))
 		}
 		return "{" + strings.Join(parts, ",") + "}"
 	case []any:
@@ -385,21 +421,26 @@ func toStr(v any) string {
 //
 // The last two make a prompt that ends `…<tool_response|>text<turn|>\n` with nothing after it when an agent client replays a turn
 // that had a preamble.
-func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bool) string {
-	var b strings.Builder
-	b.WriteString("<bos>")
+func (t *Template) renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bool) []Segment {
+	b := t.newToolBuf(gemmaToolMarks...)
+	b.lit("<bos>")
 	sys := strings.TrimSpace(system)
 	if think || len(tools) > 0 || sys != "" {
-		b.WriteString("<|turn>system\n")
+		b.lit("<|turn>system\n")
 		if think {
-			b.WriteString("<|think|>\n")
+			b.lit("<|think|>\n")
 		}
-		b.WriteString(sys)
+		b.txt(sys)
 		for _, tl := range tools {
-			b.WriteString("<|tool>declaration:" + tl.Name + "{description:" + gq + tl.Description + gq +
-				",parameters:" + gemmaSchema(tl.Parameters) + "}<tool|>")
+			b.lit("<|tool>declaration:")
+			b.txt(tl.Name)
+			b.lit("{description:" + gq)
+			b.txt(tl.Description)
+			b.lit(gq + ",parameters:")
+			b.litMarks(gemmaSchema(tl.Parameters), gemmaQuote)
+			b.lit("}<tool|>")
 		}
-		b.WriteString("<turn|>\n")
+		b.lit("<turn|>\n")
 	}
 	prevMessageType := ""
 	switch {
@@ -420,13 +461,21 @@ func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bo
 			role = "model"
 		}
 		if !(role == "model" && prevNonToolRole == "assistant") { // continue_same_model_turn
-			b.WriteString("<|turn>" + role + "\n")
+			b.lit("<|turn>")
+			b.txt(role)
+			b.lit("\n")
 		}
 		if m.Reasoning != "" && i > lu { // thinking_gate (preserve_thinking is off)
-			b.WriteString("<|channel>thought\n" + m.Reasoning + "\n<channel|>")
+			b.lit("<|channel>thought\n")
+			b.txt(m.Reasoning)
+			b.lit("\n<channel|>")
 		}
 		for _, c := range m.ToolCalls {
-			b.WriteString("<|tool_call>call:" + c.Name + "{" + gemmaArgs(c.Arguments) + "}<tool_call|>")
+			b.lit("<|tool_call>call:")
+			b.txt(c.Name)
+			b.lit("{")
+			b.litMarks(gemmaArgs(c.Arguments), gemmaQuote)
+			b.lit("}<tool_call|>")
 			prevMessageType = "tool_call"
 		}
 		responded := false // ns_tr_out.flag
@@ -441,7 +490,11 @@ func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bo
 						name = c.Name
 					}
 				}
-				b.WriteString("<|tool_response>response:" + name + "{value:" + gq + turns[k].Content + gq + "}<tool_response|>")
+				b.lit("<|tool_response>response:")
+				b.txt(name)
+				b.lit("{value:" + gq)
+				b.txt(turns[k].Content)
+				b.lit(gq + "}<tool_response|>")
 				responded = true
 				prevMessageType = "tool_response"
 			}
@@ -452,7 +505,7 @@ func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bo
 		} else {
 			content = strings.TrimSpace(m.Content)
 		}
-		b.WriteString(content)
+		b.txt(content)
 		hasContent := strings.TrimSpace(content) != ""
 
 		nextRole, nextFound := "", false // the next non-tool message
@@ -467,20 +520,20 @@ func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bo
 		continuesIntoNext := role == "model" && nextRole == "assistant" && (len(m.ToolCalls) == 0 || responded)
 		switch {
 		case prevMessageType == "tool_call" && !responded:
-			b.WriteString("<|tool_response>")
+			b.lit("<|tool_response>")
 		case continuesIntoNext:
 		case !(responded && !hasContent && !nextFound):
-			b.WriteString("<turn|>\n")
+			b.lit("<turn|>\n")
 		}
 		prevNonToolRole = m.Role
 	}
 	if prevMessageType != "tool_response" && prevMessageType != "tool_call" {
-		b.WriteString("<|turn>model\n")
+		b.lit("<|turn>model\n")
 		if !think {
-			b.WriteString("<|channel>thought\n<channel|>")
+			b.lit("<|channel>thought\n<channel|>")
 		}
 	} else if prevMessageType == "tool_response" && think {
-		b.WriteString("<|channel>thought\n")
+		b.lit("<|channel>thought\n")
 	}
-	return b.String()
+	return b.segs
 }
