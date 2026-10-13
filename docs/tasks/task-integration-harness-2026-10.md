@@ -486,6 +486,10 @@ under their overflow windows, 9,408 and 11,520); Claude Code 20,199 x 1.25 = 25,
 the second-session time-to-first-token comparison of I4 (needs a model), Kilo (its first request, 15,144 tokens, is not viable at 16,384) and
 Hermes (it refuses a window under 64,000) as I3 cells (the screening scope is the three dialect leaders).
 
+**Amended 2026-10-13, before the run: the serve binary was re-pinned** at `81791568` (owner: "fix and re-pin"). Codex sends no output cap
+and was served 512 tokens a turn, thinking included; it now gets the limit `connect` wrote. Only the Codex cells change. The rules and the
+predictions stand. Record: `docs/measurements/integration-harness-2026-10/i3-repin-2026-10-13.md`.
+
 
 ### I4 — First-request census (by day, minutes per harness)
 
