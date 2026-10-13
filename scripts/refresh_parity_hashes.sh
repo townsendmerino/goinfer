@@ -4,8 +4,8 @@
 #
 # Mechanizes the ONE legitimate use of the "a deps_hash refresh is not a re-validation"
 # exception (docs/parity-coverage-policy.md): when a change to a `core` forward file is
-# provably NON-numeric (a guarded diagnostic seam, a comment, a rename), the staleness gate
-# (TestParityManifest_fresh) false-positives on the whole-file content hash and re-stales
+# provably NON-numeric (a guarded diagnostic seam, a rename), the staleness gate
+# (TestParityManifest_fresh) false-positives on the content hash and re-stales
 # every family that `uses: core`. The correct fix is to refresh deps_hash while preserving
 # validated_at — but that is ALSO the shape of the forbidden gate-silencing move, so it must
 # never be done on faith.

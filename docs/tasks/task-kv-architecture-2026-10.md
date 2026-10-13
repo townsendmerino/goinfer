@@ -465,6 +465,15 @@ at `(s, i·B)`, so KV1–KV3 run unchanged on every backend.
 **The backends are separate modules** (`cuda/`, `metal/`, `gpu/`, each requiring a tagged goinfer). A phase that changes
 the seam lands with `RELEASING.md`'s two-step tag.
 
+**The manager is its own package** (amended 2026-10-13, owner decision). Sequences, block tables, the prefix index,
+refcounts, the LRU and the slot adapter live in a package under `internal/` that imports nothing from `decoder`;
+`decoder` imports it, and its oracle property test and wrong-hit mutations live beside it. The reason is the day loop: Go
+re-runs a package's tests when anything it imports changes, so a manager inside `decoder` would re-run its property tests
+on every `decoder` edit and every `decoder` test on every manager edit. Measured on 2026-10-13, 13 tests in `decoder`
+were 143 of its 160 s, held there only by package placement (`docs/measurements/test-wait-2026-10.md` §2). KV1's
+**Build** list starts with this package; the geometry it reads from the `Architecture` comes in as a plain value, not
+the type.
+
 ### 5.14 The CPU path
 
 - **What it is today:** a `KVCache` per conversation, `sessionLRU` choosing which conversation to keep, `.giw-kv` on disk,
@@ -549,6 +558,7 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 ### KV1 — The manager over today's slots (no storage change)
 
 - **Build:**
+  - the manager's own package (§5.13, "The manager is its own package");
   - the geometry (groups, state spec) from the `Architecture`;
   - sequences, logical blocks, the hash chain and index, refcounts, LRU;
   - the slot adapter;
