@@ -1,0 +1,13 @@
+=== RUN   TestGridTowersWebGPU_patchSweep
+[G-S12.3g qwen25    2.4s] rung 1/9: ceiling 112x112 px, grid [1 6 8], 48 patches: CPU 0.213 s, WebGPU 0.256 s (medians of 3; warm-up 0.224, 0.732), ratios [1.189 1.193 1.280], median 1.193
+[G-S12.3g qwen25    4.8s] rung 2/9: ceiling 168x168 px, grid [1 10 12], 120 patches: CPU 0.453 s, WebGPU 0.149 s (medians of 3; warm-up 0.454, 0.137), ratios [0.324 0.329 0.350], median 0.329
+[G-S12.3g qwen25    8.6s] rung 3/9: ceiling 224x224 px, grid [1 12 18], 216 patches: CPU 0.775 s, WebGPU 0.183 s (medians of 3; warm-up 0.784, 0.181), ratios [0.236 0.238 0.242], median 0.238
+[G-S12.3g qwen25   14.8s] rung 4/9: ceiling 280x280 px, grid [1 16 22], 352 patches: CPU 1.219 s, WebGPU 0.271 s (medians of 3; warm-up 1.232, 0.249), ratios [0.213 0.220 0.358], median 0.220
+[G-S12.3g qwen25   24.1s] rung 5/9: ceiling 336x336 px, grid [1 20 26], 520 patches: CPU 1.822 s, WebGPU 0.525 s (medians of 3; warm-up 1.829, 0.540), ratios [0.203 0.288 0.341], median 0.288
+[G-S12.3g qwen25   40.3s] rung 6/9: ceiling 448x448 px, grid [1 26 36], 936 patches: CPU 3.292 s, WebGPU 0.827 s (medians of 3; warm-up 3.256, 0.771), ratios [0.179 0.251 0.252], median 0.251
+[G-S12.3g qwen25   77.6s] rung 7/9: ceiling 672x672 px, grid [1 40 54], 2160 patches: CPU 7.727 s, WebGPU 1.571 s (medians of 3; warm-up 7.787, 1.687), ratios [0.170 0.205 0.213], median 0.205
+[G-S12.3g qwen25  146.8s] rung 8/9: ceiling 896x896 px, grid [1 54 72], 3888 patches: CPU 14.472 s, WebGPU 2.847 s (medians of 3; warm-up 14.457, 2.858), ratios [0.179 0.196 0.204], median 0.196
+[G-S12.3g qwen25  248.7s] rung 9/9: ceiling as served, grid [1 64 86], 5504 patches: CPU 21.384 s, WebGPU 4.071 s (medians of 3; warm-up 21.544, 4.094), ratios [0.177 0.189 0.196], median 0.189
+[G-S12.3g qwen25  248.7s] THRESHOLD 120 patches (grid [1 10 12]): at most 0.98 from there up; the rung below it, 48 patches, read 1.193
+--- PASS: TestGridTowersWebGPU_patchSweep (253.84s)
+PASS

@@ -1,0 +1,45 @@
+{
+ "rounds": 4,
+ "per_round": 2,
+ "rotate": true,
+ "cells": [
+  {
+   "cell": "qwen2.5-vl-3b-image-new",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18657,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/goinfer-bench/s12-4b-2026-10-12/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-mrope",
+    "--model",
+    "/home/francis/models/qwen25vl-3b-instruct",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18657"
+   ]
+  },
+  {
+   "cell": "qwen2.5-vl-3b-image-old",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18657,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/goinfer-bench/s12-4b-2026-10-12/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-4c",
+    "--model",
+    "/home/francis/models/qwen25vl-3b-instruct",
+    "--backend",
+    "webgpu",
+    "--addr",
+    "127.0.0.1:18657"
+   ]
+  }
+ ]
+}

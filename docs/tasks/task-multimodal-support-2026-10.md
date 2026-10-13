@@ -5394,6 +5394,89 @@ registered before it is run". This is that measurement. It does not flip any def
   or the 336 rung (0.7). GLM-OCR's and Qwen2.5-VL's thresholds are under 1,100 patches on both boxes (0.6). Every
   threshold on nobara is at or under the Mac's for the same tower (0.5: the card is faster, and so is the box's CPU).
 
+#### nobara's night of 2026-10-12, graded: G-S12.4b-4a-4 SHIP, G-S12.4c-5 SHIP, G-S12.3g's Vulkan half read
+
+Graded against the registrations by the nobara session and written here on the owner's word; I read the same logs.
+RTX 2070 SUPER, driver 595.91.07, Vulkan. Records: `s12-4b/nobara/night-2026-10-12/`.
+
+- **G-S12.4b-4a-4, Qwen2.5-VL 3B's image turn, served: SHIP.** New (the device m-RoPE prefill, `9f57d01b`) against
+  old (`ffc64585`), four rotated rounds, 8 timed requests an arm: median time to first token **18.31 s against
+  39.32 s, ratio 0.466**; every round reads 0.46 to 0.47. All replies describe the image.
+  - Prediction "0.6 or under (0.7)": yes.
+  - The line I meant to show each arm's prefill route with does not tell the routes apart; the evidence that the arms
+    took different routes is the timing and the replies' wording.
+  - 18.3 s is still over S7's general 5 s bar for an image turn; that bar is not this gate's rule.
+- **G-S12.4c-5, Gemma 3 4B text, served: SHIP at both lengths.** New (`ffc64585`, both attention kernels) against old
+  (S12.4b-3's head), five alternating rounds:
+
+| prompt | new, five rounds (s) | old, five rounds (s) | median ratio |
+|---|---|---|---|
+| 457 tokens | 1.07 to 1.10 | 5.34 to 5.42 | **0.203** |
+| 1,783 tokens | 4.72 to 4.79 | 68.44 to 68.94 | **0.069** |
+
+  - Predictions: "the 1,783-token cell under 8 s (0.7)": yes. "The 457-token cell under 2 s (0.6)": yes.
+  - **The owner's 68 s prompt now reaches its first token in 4.8 s, served.**
+  - **The replies differ between the arms in all 10 pairs**, inside the first 16 tokens. All 20 are about the
+    passage, which is all the rule asked. The pass against the walk cannot see this: both sides of that identity
+    run the new kernel. Which build is nearer the model is G-S12.4c-6's question, below.
+- **G-S12.3g, the Vulkan half.** The smallest rung at 0.98 or under with every larger rung under it too:
+
+| tower | threshold | the rung below it | ratio at the served ceiling |
+|---|---|---|---|
+| Qwen3.5 0.8B | **192 patches** (grid 12x16) | 96 patches read 1.063 | 0.202 (3,888 patches) |
+| GLM-OCR | **120 patches** (grid 10x12) | 48 patches read 1.283 | 0.165 (5,504) |
+| Qwen2.5-VL 3B | **120 patches** (grid 10x12) | 48 patches read 1.193 | 0.189 (5,504) |
+
+  - Every larger rung is under 0.98 on all three towers: no rung goes back over.
+  - A threshold is good to its rung spacing: Qwen3.5's lies between 97 and 192 patches (one of its three pairs at
+    96 read 0.991, so that rung is near the line), the other two between 49 and 120.
+  - Predictions scorable so far: "GLM-OCR's and Qwen2.5-VL's under 1,100 patches on both boxes": yes on nobara. The
+    other two wait for the Mac's half.
+  - It flips no default.
+
+#### G-S12.4c-6, which attention kernel is nearer the model on Gemma 3 4B: registered 2026-10-12 before it runs
+
+G-S12.4c-5's replies differed between the builds on every prompt. The key-split kernel sums in another order than
+the per-dimension kernel it replaced, and at int4 Gemma's logits sit near ties often enough that a rounding-level
+change moves a greedy reply. That says the two builds are different readings, not which is the better one. The owner:
+"go ahead and queue it now".
+
+- **Tier:** night, nobara (Vulkan). **Instrument:** `gpu`'s `TestS12AttnKernelFidelity`, the fidelity protocol of
+  G-S12.4b-4a-5 (`internal/fidelity`).
+  - **Reference:** the float32 CPU forward of Gemma 3 4B (exact prefill) on the same prompt.
+  - **Arms**, both the WebGPU resident at int4, prefill and decode alike: **exact**, built with the per-dimension
+    kernel a head over 128 got before S12.4c; **candidate**, built with the key-split kernel it gets now. A resident
+    chooses its decode kernels when it is built, so each arm is its own resident.
+  - **Positions:** 32 a prompt, the one after the prompt and the ones after each of the reference's own 31 greedy
+    tokens, forced on both arms; each scored against the reference for top-1 agreement, a hard flip and KL.
+  - **A check that the arms differ:** the run fails if the two arms' logits are equal at every position, which would
+    mean one kernel ran twice.
+- **Decision set, pooled, no per-cell veto:** 64 text prompts in Gemma's chat shape, an instruction over passages
+  written into the test: 40 short (one passage), 16 medium (four) and 8 long (twelve, past the 1,024-position
+  sliding window). The hash is printed by the run and recorded with the verdict; a prompt's tokens come from the
+  checkpoint's own tokenizer, so the hash cannot be computed without it.
+- **Criteria:** `fidelity.NonInferior`, agreement margin 2 points, KL margin 0.10, one-sided alpha 0.05, hard flips
+  under the pooled bound: G-S12.4b-4a-5's, as amended there. No pilot sizes this pair; 64 is the count that gate's
+  spread asked for at a 2-point margin. If the bounds come out wider than the margins the verdict is PARKED and says
+  so.
+- **The bands:**
+  - **PASS:** the key-split kernel stays.
+  - **PARKED:** no point estimate breaches its margin but a bound does. It stays; the owner decides whether more
+    prompts are worth a night.
+  - **OFF:** a point estimate breaches its margin, or hard flips fail. The wide key-split kernel comes off main for
+    decode and for the batched pass until the difference is explained, and the CHANGELOG says so.
+- **Proving it can go red:** the job first runs an 8-prompt pilot (two other passages) with a planted defect in the
+  candidate, each decode step one position late. That verdict must be OFF or the gate is not run.
+- **Stopping rule:** the fixed set, no early stop; a restarted run skips finished prompts.
+- **Cost basis:** the float32 prefill and 31 float32 steps dominate: about 30 s a short prompt, a minute a medium
+  one, two and a half a long one, from G-S12.4b-4a-5's times on this box: about 55 minutes and the loads; queued at
+  100. Script `s12-4b/run-g-s12-4c-6-night.sh`.
+- **What it cannot see:** the reference is goinfer's own float32 path, not transformers; and it is one model, one
+  backend. A PASS here says nothing about Metal, where the same kernel choice shipped.
+- **Predictions:** PASS (0.6): the kernels agree with a float64 reference to a cosine of 0.999999, so the two arms
+  should sit equally far from the model. PARKED (0.3). OFF (0.1). The arms differ at more than half the positions
+  (0.7). The planted defect reads OFF (0.9).
+
 ### S13 — Against the peers
 
 Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
