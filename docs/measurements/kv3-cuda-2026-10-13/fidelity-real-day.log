@@ -1,0 +1,12 @@
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_real1p5B
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_real1p5B/f16
+    kv3_longprefill_test.go:206: KV precision f16
+[kv3] per-token reference: 5356 of 12500 rows
+[kv3] per-token reference: 8497 of 12500 rows
+[kv3] per-token reference: 10958 of 12500 rows
+[kv3] 1.5B f16 n=12500 window=0    cosine 0.996178 argmax equal true (reference margin 8.9597, near tie false), fused attention launches 700
+[kv3] 1.5B f16 n=12500 window=0    control (last 8 tokens replaced) cosine 0.704844: the comparison sees it
+--- PASS: TestKV3_batchedPrefillPastTheSpanBound_real1p5B (128.41s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_real1p5B/f16 (128.31s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	128.491s

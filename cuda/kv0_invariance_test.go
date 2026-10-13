@@ -44,14 +44,20 @@ func kv0FastPass(floor, promptLen, start, m int) bool {
 // kv0Pass is one batched pass of a prefill.
 type kv0Pass struct{ start, m, promptLen int }
 
-// kv0Passes lists the passes PrefillLast(rows [start, start+M)) makes at chunk width chunk (prefillChunked).
+// kv0Passes lists the passes PrefillLast(rows [start, start+M)) makes at chunk width chunk (prefillChunked, including its rule that
+// the last pass has at least attnFusedMinRows rows).
 func kv0Passes(start, M, chunk int) []kv0Pass {
 	if M <= chunk {
 		return []kv0Pass{{start, M, 0}}
 	}
 	var ps []kv0Pass
-	for i := 0; i < M; i += chunk {
-		ps = append(ps, kv0Pass{start + i, min(chunk, M-i), start + M})
+	for i := 0; i < M; {
+		n := min(chunk, M-i)
+		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
+			n -= attnFusedMinRows - rem // the chunker's 16-row rule: a prefill's last pass is never shorter than 16 rows
+		}
+		ps = append(ps, kv0Pass{start + i, n, start + M})
+		i += n
 	}
 	return ps
 }
@@ -148,7 +154,13 @@ type kv0Rig struct {
 
 func kv0Load(t *testing.T, path, kv string, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
 	t.Helper()
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: kv0Ctx, KVPrecision: kv})
+	return kv0LoadCtx(t, path, kv, kv0Ctx, tokens)
+}
+
+// kv0LoadCtx is kv0Load with the resident context named (KV3's prompts are longer than KV0's).
+func kv0LoadCtx(t *testing.T, path, kv string, ctxCap int, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
+	t.Helper()
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctxCap, KVPrecision: kv})
 	if err != nil {
 		t.Fatalf("load %s: %v", path, err)
 	}
@@ -493,7 +505,7 @@ func kv0Invariance(t *testing.T, g *kv0Rig) {
 	for _, s := range []int{511, N - 16, N - 15} {
 		split(s)
 	}
-	arm("chunk=496 (8-row tail)", kv0Passes(0, N, 496), func() []float32 { g.chunk("496"); return g.prefill(e, 0) })
+	arm("chunk=496 (8 left over)", kv0Passes(0, N, 496), func() []float32 { g.chunk("496"); return g.prefill(e, 0) })
 
 	// Control: one token changed at position 700, prefilled in chunks of 256. Nothing may differ before it, and everything
 	// that can must from it on.

@@ -1503,7 +1503,7 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 			// prompt's. The last pass keeps at least prefillTailMin rows. A block the pass declines leaves `from` at
 			// its first row: everything before it is written, and the rest takes the sequential loop below.
 			var perr error
-			for B := m.prefillBlockRows(len(prompt)); B > 0 && perr == nil && len(prompt)-from >= B+prefillTailMin; {
+			for B := m.prefillBlockRows(len(prompt)); B > 0 && perr == nil && len(prompt)-from >= B+m.prefillTailMinRows(); {
 				if perr = ctx.Err(); perr != nil {
 					break
 				}
@@ -1603,7 +1603,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	// prefillTailMin tokens (residentPrefillSeed sends a suffix under 8 down the sequential path, whose numerics are
 	// not the batched prefill's) and at most C + prefillTailMin - 1 — never the up-to-2C tail the first candidate
 	// left, which was its longest pass (docs/measurements/chunked-prefill-2026-09-27.md).
-	for chunk && len(prompt)-from >= C+prefillTailMin && mc3.decoding() > 0 {
+	for chunk && len(prompt)-from >= C+m.prefillTailMinRows() && mc3.decoding() > 0 {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
