@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ func TestTowerAttnKernel(t *testing.T) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibraryPrecise(eg2MSL+gvMSL, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(Eg2MSL+GvMSL, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestTowerAttnKernel(t *testing.T) {
 		}
 	}
 	for _, hd := range []string{"64", "72", "80"} { // the kernels are named by token-pasting TOWER_ATTN(hd)
-		if !strings.Contains(gvMSL, "TOWER_ATTN("+hd+")") {
+		if !strings.Contains(GvMSL, "TOWER_ATTN("+hd+")") {
 			t.Fatalf("the kernel source instantiates no tower_attn_hd%s", hd)
 		}
 	}
@@ -140,7 +140,7 @@ func testTowerGemmKernel(t *testing.T, kernel string, bar float64) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibraryPrecise(eg2MSL+gvMSL, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(Eg2MSL+GvMSL, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -161,16 +161,16 @@ func testTowerGemmKernel(t *testing.T, kernel string, bar float64) {
 		h := make([]uint16, len(w))
 		for i := range w {
 			w[i] = float32(0.02 * rng.NormFloat64())
-			h[i] = f32ToF16(w[i])
+			h[i] = F32ToF16(w[i])
 		}
 		bW, bS := NewBufferU16s(d, h), Buffer{}
 		switch kernel {
 		case "tower_gemm_w32":
 			bW = NewBufferFloats(d, w)
 		case "tower_gemm_w8":
-			q8, sc := quantG32(w, s.N, s.K)
+			q8, sc := QuantG32(w, s.N, s.K)
 			bW, bS = NewBufferInt8(d, q8), NewBufferFloats(d, sc)
-			w = dequantG32(q8, sc, s.N, s.K) // the reference is over the weights the kernel computes with
+			w = DequantG32(q8, sc, s.N, s.K) // the reference is over the weights the kernel computes with
 		}
 		for i := range b {
 			b[i] = float32(0.5 * rng.NormFloat64())

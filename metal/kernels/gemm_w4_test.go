@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"math"
@@ -88,11 +88,11 @@ func TestPrefillGemmW4(t *testing.T) {
 		for k := range row {
 			row[k] = rng.Float32()*2 - 1
 		}
-		w, s := packW4A8Row(row)
+		w, s := PackW4A8Row(row)
 		copy(words[n*(K/8):(n+1)*(K/8)], w)
 		dr := make([]float32, K)
 		for g := range K / 32 {
-			scalesH[n*(K/32)+g] = f32ToF16(s[g])
+			scalesH[n*(K/32)+g] = F32ToF16(s[g])
 			sc := f16ToF32(scalesH[n*(K/32)+g])
 			for e := range 32 {
 				k := g*32 + e
@@ -106,7 +106,7 @@ func TestPrefillGemmW4(t *testing.T) {
 	Af := make([]float32, M*K)
 	for i := range A {
 		Af[i] = af16(rng.Float32()*2 - 1)
-		A[i] = f32ToF16(Af[i])
+		A[i] = F32ToF16(Af[i])
 	}
 	ref := make([]float32, M*N)
 	for m := range M {
@@ -141,7 +141,7 @@ func TestPrefillGemmW4(t *testing.T) {
 
 	// ---- throughput at gate/up dims vs the single-token int4 GEMV loop ----
 	const K2, N2 = 1536, 17920
-	mainLib, _ := d.CompileLibrary(allKernels, MSL3_1)
+	mainLib, _ := d.CompileLibrary(AllKernels, MSL3_1)
 	pSA, _ := d.NewComputePipeline(mainLib, "gemv_w4a8_sa")
 	wq := NewBufferUint32s(d, make([]uint32, N2*(K2/8)))
 	scb := NewBufferU16s(d, make([]uint16, N2*(K2/32)))

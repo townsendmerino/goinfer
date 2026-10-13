@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"math"
@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/f16"
 )
 
 // TestMMAPrefill — the make-or-break for the prefill direction. Two questions: (1) does MSL
@@ -93,11 +95,11 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 		bf := make([]float32, K*N)
 		for i := range A {
 			af[i] = rng.Float32()*2 - 1
-			A[i] = f32ToF16(af[i])
+			A[i] = F32ToF16(af[i])
 		}
 		for i := range B {
 			bf[i] = rng.Float32()*2 - 1
-			B[i] = f32ToF16(bf[i])
+			B[i] = F32ToF16(bf[i])
 		}
 		q := d.NewCommandQueue()
 		out := d.NewBufferLen(M * N)
@@ -142,7 +144,7 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 		return best / time.Duration(reps)
 	}
 	// single-token int4 GEMV baseline (what the current prefill pays per prompt token).
-	mainLib, err := d.CompileLibrary(allKernels, MSL3_1)
+	mainLib, err := d.CompileLibrary(AllKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("main lib: %v", err)
 	}
@@ -176,24 +178,6 @@ kernel void mma_gemm_blk(device const half* A[[buffer(0)]], device const half* B
 }
 
 // af16 rounds a float32 through f16 (matches what the GPU sees for f16 inputs).
-func af16(f float32) float32 { return f16ToF32(f32ToF16(f)) }
+func af16(f float32) float32 { return f16ToF32(F32ToF16(f)) }
 
-func f16ToF32(h uint16) float32 {
-	sign := uint32(h&0x8000) << 16
-	exp := uint32(h>>10) & 0x1F
-	man := uint32(h & 0x3FF)
-	if exp == 0 {
-		if man == 0 {
-			return math.Float32frombits(sign)
-		}
-		f := float32(man) / 1024 * float32(math.Exp2(-14))
-		if sign != 0 {
-			f = -f
-		}
-		return f
-	}
-	if exp == 0x1F {
-		return math.Float32frombits(sign | 0x7F800000 | man<<13)
-	}
-	return math.Float32frombits(sign | (exp+112)<<23 | man<<13)
-}
+func f16ToF32(h uint16) float32 { return f16.ToF32(h) }

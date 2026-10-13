@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"fmt"
@@ -170,7 +170,7 @@ func TestQ4KLaneKernels(t *testing.T) {
 	}
 
 	const bar = 1e-5
-	wq, ww := check(allKernels)
+	wq, ww := check(AllKernels)
 	fmt.Printf("[G-Q1] shipped kernels: worst |err|/Σ|w·a| %.2e (q4k), %.2e (int8)\n", wq, ww)
 	if wq > bar || ww > bar {
 		t.Errorf("G-Q1 FAIL: worst error %.2e (q4k) / %.2e (int8), bar %.0e", wq, ww, bar)
@@ -183,10 +183,10 @@ func TestQ4KLaneKernels(t *testing.T) {
 		{"(4) the int8 row scale dropped", "acc = simd_sum(acc) * sc[row];", "acc = simd_sum(acc);"},
 	}
 	for _, df := range defects {
-		if !strings.Contains(allKernels, df.from) {
+		if !strings.Contains(AllKernels, df.from) {
 			t.Fatalf("planted defect %s: its source text is gone from the kernels", df.name)
 		}
-		wq, ww := check(strings.Replace(allKernels, df.from, df.to, 1))
+		wq, ww := check(strings.Replace(AllKernels, df.from, df.to, 1))
 		fmt.Printf("[G-Q1] planted %s: worst %.2e (q4k), %.2e (int8)\n", df.name, wq, ww)
 		if wq <= bar && ww <= bar {
 			t.Errorf("planted defect %s left the bar green", df.name)
@@ -205,6 +205,6 @@ func asInt8(raw []byte) []int8 {
 
 // putF16 writes v as a little-endian IEEE half.
 func putF16(b []byte, v float32) {
-	h := f32ToF16(v)
+	h := F32ToF16(v)
 	b[0], b[1] = byte(h), byte(h>>8)
 }

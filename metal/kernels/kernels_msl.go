@@ -1,8 +1,6 @@
-//go:build darwin
+package kernels
 
-package metal
-
-// allKernels is the full dense-decode-layer MSL kernel set in one library (W8A8 path; W4A8 is validated separately, so this
+// AllKernels is the full dense-decode-layer MSL kernel set in one library (W8A8 path; W4A8 is validated separately, so this
 // proves assembly, not the int4 packing again).
 //
 // Six kernels here have no production pipeline: gemv_w4a8_bias, gemv_w4a8_sa_amax, gemv_w4a8_sa_bk, gemv_w4a8_sa_qv, gemv_w8a8
@@ -10,7 +8,7 @@ package metal
 // batchk_test.go, sa_qv_fusion_test.go, gemv_test.go, rope2_kv_test.go). Do not delete one because nothing in production calls
 // it: that breaks the test that keeps its measurement or negative result honest. gemv_w4a8_sa_amax has no reference anywhere and
 // is the one genuinely dead survivor; it is kept so its history stays visible beside the others.
-const allKernels = `
+const AllKernels = `
 #include <metal_stdlib>
 using namespace metal;
 
@@ -2251,4 +2249,4 @@ kernel void copy_u32(device const uint* src [[buffer(0)]], device uint* dst [[bu
     constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i < N) dst[i] = src[i];
 }
-` + moeKernels + gemma4MoeKernels + deltaNetKernels + gumbelMSLKernels + moeBatchKernels
+` + MoeKernels + Gemma4MoeKernels + DeltaNetKernels + GumbelMSLKernels + MoeBatchKernels

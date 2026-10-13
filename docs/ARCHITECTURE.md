@@ -235,7 +235,7 @@ its banner, so a slow path is visible before the first request rather than disco
 
 ### Sampling and constraints
 
-`SamplingParams` (`decoder/sampler.go`) is the per-request policy. It covers:
+`SamplingParams` (`internal/sampling/sampler.go`) is the per-request policy. It covers:
 - temperature (0 is greedy), top-k, top-p and min-p;
 - the seed;
 - repeat, presence and frequency penalties over a window;

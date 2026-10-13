@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"runtime"
@@ -19,7 +19,7 @@ func TestBatchKAmortization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("device: %v", err)
 	}
-	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	lib, err := d.CompileLibrary(AllKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}

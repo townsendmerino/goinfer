@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"math"
@@ -20,7 +20,7 @@ func TestGemmW8Tile_matchesReference(t *testing.T) {
 	}
 	defer d.ReleaseObjects()
 	defer d.ReleaseAll()
-	lib, err := d.CompileLibrary(prefillKernels, MSL3_1)
+	lib, err := d.CompileLibrary(PrefillKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -57,17 +57,17 @@ func TestGemmW8Tile_matchesReference(t *testing.T) {
 		wd := make([]float64, N*K) // the dequantized f16 weight, as the kernel stages it
 		for n := range N {
 			for k := range K {
-				wd[n*K+k] = float64(f16ToF32(f32ToF16(float32(codes[n*K+k]) * scale[n])))
+				wd[n*K+k] = float64(f16ToF32(F32ToF16(float32(codes[n*K+k]) * scale[n])))
 			}
 		}
 		for _, rows := range []int{8, 16, 24, 40, 72} {
 			av := make([]uint16, rows*K)
 			for i := range av {
-				av[i] = f32ToF16(float32(int(rnd()%2001)-1000) * 1e-3)
+				av[i] = F32ToF16(float32(int(rnd()%2001)-1000) * 1e-3)
 			}
 			resid := make([]uint16, rows*N)
 			for i := range resid {
-				resid[i] = f32ToF16(float32(int(rnd()%2001)-1000) * 1e-2)
+				resid[i] = F32ToF16(float32(int(rnd()%2001)-1000) * 1e-2)
 			}
 			a, uM := NewBufferU16s(d, av), NewBufferU32(d, uint32(rows))
 			for mode := range uint32(3) {
