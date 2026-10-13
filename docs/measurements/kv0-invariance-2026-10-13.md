@@ -103,4 +103,92 @@ measured f32. This addendum adds the configuration `serve` ships.
 
 ## 2. Readings
 
-(filled in below after the runs)
+Logs are in `kv0-invariance-2026-10-13/` (`cuda-tiny.log`, `cuda-real1p5B.log`: the first, registered runs with the test's own
+options, f32 K/V; `cuda-f32-f16.log`: every CUDA arm again with `KVPrecision` named, one run per precision and fixture;
+`cuda-tiny-rerun-after-assertion-change.log`; `webgpu.log`). Every number below is read from those logs. Commit of the tests
+and of the run: this branch, `kv0-2026-10`.
+
+### 2.1 Verdicts under the registered rule
+
+"INV" is invariant (0 K/V elements and 0 logits differ); "NOT" is not invariant, with the lowest position where a K/V element
+differs. Every cell is the same for both fixtures and for f32 and f16 unless a second value is shown.
+
+| arm | CUDA (class map predicts) | CUDA observed | WebGPU observed |
+|---|---|---|---|
+| chunk = 64, 128, 256, 512 (tails 40, 104, 232, 488 rows) | INV | **INV** (all four, both fixtures, f32 and f16) | **INV** |
+| split @ 512, 768 | INV | **INV** | **INV** |
+| split @ 256 | NOT, from 0 | **NOT, from position 0** (tiny f16: position 1) | **INV** |
+| split @ 511 | NOT, from 0 | **NOT, from position 0** (tiny f16: position 1) | **INV** |
+| split @ 984 (second call 16 rows) | INV | **INV** | **INV** |
+| split @ 985 (second call 15 rows) | NOT, from 985 | **NOT, from position 985** | **INV** |
+| chunk = 496 (an 8-row tail) | NOT, from 992 | **NOT, from position 992** | **INV** |
+| control: token 700 changed, chunk 256 | nothing before 700, first difference at 700 | **0 differ below 700, first at 700** (1.5B f32: 4,147,121 elements from 700 on; f16: 4,124,507) | **same** (1.5B: 4,147,653 from 700 on) |
+| exact-class rows of `split@256` and `split@511` against the exact-class whole prompt | 0 differ | **0 of 3,670,016 and of 7,325,696** (1.5B f32) | n/a |
+| fast whole prompt against exact whole prompt | differ | 13,837,756 of 14,336,000 elements (1.5B f32); 13,583,400 (f16) | n/a |
+| WebGPU `w4Multi` pinned to the row kernel, then to the tiled kernel | n/a | n/a | **INV** both, both fixtures |
+
+Sizes of the non-invariant arms on the 1.5B at f32: `split@256` 13,446,456 of 14,336,000 K/V elements differ and 151,935 of
+151,936 logits (max |diff| 0.972); `split@511` 13,580,961 and all 151,936 (1.19); `split@985` 207,586 and all 151,936 (0.829);
+`chunk=496` 110,739 and all 151,936 (0.878). On the tiny fixture the logits differ in all 256 and the largest difference is 0.02.
+
+**Prediction scorecard.** Every invariance verdict matched the class map as registered, in all 44 CUDA arm results (2 fixtures × 2
+precisions × 11 arms) and all 13 WebGPU arms of both fixtures; the launch counts matched (`attn_fused` and `gemm_w4a8_mma`
+once per layer per fast pass, never in an exact pass) in every arm; the control passed everywhere. **One detail of one
+prediction was wrong:** it said the first differing position of a non-invariant arm is the first exact-class row. On the tiny f16
+fixture it is position 1 for `split@256` and `split@511` (the first exact-class row is 0). Position 0 attends only to itself,
+so its attention is the identity under either class, and an f16 store absorbed the rest of the difference at that row. The
+test asserted equality, failed on that cell (`cuda-f32-f16.log`, "FAIL: TestKV0_prefillInvariance_tiny/f16"), and the
+assertion was relaxed to what is true: no row before the first exact-class pass may differ, and the first differing row must be
+within 16 of it (`cuda-tiny-rerun-after-assertion-change.log`, pass). No invariance verdict depends on that assertion.
+
+### 2.2 The class map, as measured
+
+CUDA: the same as registered. A pass of m rows from s runs the fast kernels iff m ≥ 16 and max(promptLen, s + m) ≥ 512, with
+promptLen the whole prompt for a pass inside a multi-chunk prefill. **What decides the class is the pass's own length, not the
+prompt's**, for a prefill that arrives in two calls: `split@256` at n = 1000 wrote rows 0–255 with the exact class although the
+prompt is 1,000 tokens, because its first call was 256 tokens long; that is what `decoder/resident_reuse.go:Model.declineShortLeadReuse` guards. The
+second condition, m ≥ 16, is not part of `decoder/resident_reuse.go:Model.declineShortLeadReuse`'s rule (it compares the prompt's length with the floor): `split@985` and `chunk=496` show it makes a ≤ 15-row pass exact.
+In the manager's terms it never reaches a *published* block as such: a published block is a full block and a 15-row tail pass
+makes a full block only when it ends one, in which case the block mixes two classes (§5.5's "records both and the row where they
+meet" is the right shape and is needed).
+WebGPU: no class. Every arm was bit-identical, including pinning the row-count selector `w4MultiFor` both ways.
+Metal: `TestMC5_prefillChunkInvariance` (the registered original; not re-run here, no Mac).
+
+### 2.3 The continuation effect on CUDA (§5.6 property 3, measured)
+
+50 trials, np = 600 prompt tokens then d = 32 teacher-forced tokens, the real 1.5B, text from this repository's `decoder/*.go`.
+A = prefill 600, decode 32 rows. B = prefill all 632 in one pass. Both fast class.
+
+| | f32 K/V | f16 K/V (serve's default) |
+|---|---|---|
+| decode-written K/V elements that differ from the prefill-written ones | 22,140,567 of 22,937,600 (96.5%) | 21,711,615 of 22,937,600 (94.7%) |
+| max \|diff\| (largest \|value\| 360) | 4.58 | 3.74 |
+| rms difference ÷ rms value, mean over trials (worst) | 0.00676 (0.00965) | 0.00662 (0.00959) |
+| prompt rows [0, 600): a 600-row pass against the first 600 rows of a 632-row pass | 0 differ | 0 differ |
+| next-token logits A against B: cosine min / mean | 0.994166 / 0.997914 | 0.992742 / 0.997952 |
+| argmax of A equals argmax of B | 49 of 50 | 49 of 50 |
+| trials whose rows and logits are bit-identical | 0 of 50 | 0 of 50 |
+| B's top-1 minus top-2 logit: min / median | 0.00876 / 2.48 | 0.00876 / 2.48 |
+| **control A′ (exact class) against C (exact class, whole prefill)** | **0 elements differ, cosine 1.000000, argmax 50 of 50, 0 logits differ** | **the same** |
+
+**Reading.** A row decode writes is not the row a fast-class prefill writes: about 0.7% rms apart, with a few activations several
+units off in a layer whose values reach 360. A reply that continues a conversation from its own decode-written rows can
+therefore differ from the one a cold prefill of the same text would give: in 1 of 50 trials of this sample the argmax moved. The control pins the
+source: the exact class equals decode to the bit, so the difference is the fast prefill's own numerics (it is the cosine-gated
+lever, not a bug). The continuation effect exists today (resident reuse carries it) and is what §5.6 property 3 accepts. The f16
+store narrows the fraction of elements that differ by about two points and does not change the effect's size. The tiny fixture's
+random weights make its argmax meaningless; its line in `cuda-f32-f16.log` is a plumbing check.
+
+### 2.4 What this does and does not support
+
+- **Supports §5.6 property 2 (sharing invariance) on CUDA and WebGPU, with the producer class in the key.** Chunk invariance
+  holds on both backends for every chunk width and ragged tail tried at or above 16 rows, and a split at a block-aligned
+  offset is invariant exactly when the pass that wrote the prefix was in the same class the whole prompt would have used.
+  Sharing across conversations on CUDA is therefore safe only if a hit's rows came from a pass of the requester's own class: the
+  existing 512-token rule, plus the 16-row rule above, which no code states today.
+- **Does not measure:** a windowed layer (the gate refuses a windowed load); any model but the llama-attnfa-tiny fixture and the
+  Qwen2.5-Coder-1.5B; WebGPU on a backend other than Vulkan on this card; Metal. The CUDA census's INFERRED point that a
+  windowed fused prefill is chunk-invariant only for 64-aligned chunk starts is untested and stays a KV1 test obligation.
+- **Doc consequence:** none of the three non-invariant CUDA arms is a defect; each is a case the class key must keep apart.
+  **No backend measured here needs a fix for chunk invariance.** The §5.6 sentence "A non-invariant backend keeps sharing within
+  one conversation until it is fixed" does not trigger for CUDA or WebGPU.
