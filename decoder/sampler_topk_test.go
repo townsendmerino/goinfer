@@ -75,6 +75,7 @@ func topKTestLogits(kind string, v int, rng *rand.Rand) []float32 {
 // (falls back) and the full path draws instead, having consumed no randomness. Z is passed exactly here;
 // the device's rounded Z is exercised separately below.
 func TestSampleFromTopK_matchesFullPath(t *testing.T) {
+	slowTest(t)
 	type cfg struct {
 		name          string
 		topK          int

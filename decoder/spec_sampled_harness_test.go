@@ -17,6 +17,7 @@ import (
 //
 //	go test ./decoder -run TestNgramSampledHarness -v
 func TestNgramSampledHarness(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)

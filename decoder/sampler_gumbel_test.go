@@ -96,6 +96,7 @@ func drawCounts(t *testing.T, logits []float32, T float64, seed int64, n int) []
 
 // Rule 1.
 func TestGumbelDraw_goodnessOfFit(t *testing.T) {
+	slowTest(t)
 	const n = 1_000_000
 	rng := rand.New(rand.NewSource(1))
 	for _, T := range []float64{0.6, 1.0, 1.7} {
@@ -110,6 +111,7 @@ func TestGumbelDraw_goodnessOfFit(t *testing.T) {
 
 // Rule 2: the new draw and the legacy inverse-CDF draw sample the same distribution.
 func TestGumbelDraw_equivalentToLegacyDistribution(t *testing.T) {
+	slowTest(t)
 	const n = 1_000_000
 	rng := rand.New(rand.NewSource(2))
 	logits := gumbelTestLogits(rng, 200, 1.5)
@@ -147,6 +149,7 @@ func TestGumbelDraw_equivalentToLegacyDistribution(t *testing.T) {
 
 // Rule 3.
 func TestGumbelDraw_largeVocabTailAndHead(t *testing.T) {
+	slowTest(t)
 	const v, n = 32768, 40000
 	rng := rand.New(rand.NewSource(3))
 	logits := make([]float32, v)

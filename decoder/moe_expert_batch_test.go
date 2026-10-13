@@ -163,6 +163,7 @@ func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 //
 // So this asserts `!=` on every logit, through the real forward, with the flag on and off over the same tokens.
 func TestMoEExpertMajor_bitIdentical(t *testing.T) {
+	slowTest(t)
 	m, err := loadMoEBitIdentModel(t)
 	if err != nil {
 		t.Skipf("no MoE model (%v)", err)

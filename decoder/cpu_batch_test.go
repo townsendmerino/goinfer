@@ -60,6 +60,7 @@ func assertBatchedStepBitIdentical(t *testing.T, m *Model, depths []int, steps i
 // family the predicate wrongly admits cannot pass silently. It also requires the sweep to have covered at least a few
 // families, so a predicate that admits nothing is visible.
 func TestCPUBatch_everyEligibleFixtureBitIdentical(t *testing.T) {
+	slowTest(t)
 	dirs, err := filepath.Glob("../testdata/*/config.json")
 	if err != nil || len(dirs) == 0 {
 		t.Skipf("no fixtures: %v", err)

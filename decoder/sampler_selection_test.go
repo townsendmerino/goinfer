@@ -117,6 +117,7 @@ func randLogitsWithTies(n int, r *rand.Rand) []float32 {
 // optimized bounded selection must equal the reference bit for bit (same retained ids in the same order, same
 // renormalized probs).
 func TestTopFilterLogits_MatchesReference(t *testing.T) {
+	slowTest(t)
 	const seeds = 400
 	vocabs := []int{152064, 262144} // qwen2.5 / gemma3 — the reporter's pair
 	// Wider params on a small vocab (fast) to cover the parameter space densely, plus the
@@ -278,6 +279,7 @@ func drawFromRef(ips []indexedProb, rng *rand.Rand) int {
 // bounded factor of the TEMPERATURE-ONLY baseline (not greedy). A full-vocab sort regression shows up as ~7x; the
 // gate factor sits below that and above the real ratio.
 func TestSamplingThroughputGate(t *testing.T) {
+	slowTest(t)
 	if testing.Short() {
 		t.Skip("throughput gate: skipped under -short")
 	}

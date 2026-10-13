@@ -20,6 +20,7 @@ import (
 // a3_moe_exclusion_test.go, a3_moe_routeflip_test.go and a3_moe_tokenlevel_test.go.
 // History and the MoE numbers: docs/code-notes/decoder.md#TestA3FastAttentionDivergence.
 func TestA3FastAttentionDivergence(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)

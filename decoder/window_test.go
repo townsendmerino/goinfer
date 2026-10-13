@@ -25,6 +25,7 @@ const (
 )
 
 func TestForward_slidingWindowParity(t *testing.T) {
+	slowTest(t)
 	if testing.Short() {
 		t.Skip("slow: ~750-token prefill on the naive backend (M7 perf pending)")
 	}

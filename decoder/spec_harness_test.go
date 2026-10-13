@@ -68,6 +68,7 @@ func benchGGUFPath() string {
 //
 // Run: go test ./decoder -run TestNgramSpecHarness -v
 func TestNgramSpecHarness(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)

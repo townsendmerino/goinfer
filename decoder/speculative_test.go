@@ -27,6 +27,7 @@ var specPrompts = [][]int{
 // output must still exactly equal plain greedy for every K and prompt. K=1 also
 // degenerates to plain decode.
 func TestSpeculativeGreedyParity(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)

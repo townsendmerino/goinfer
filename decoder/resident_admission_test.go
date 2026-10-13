@@ -50,6 +50,7 @@ func loadWithNamedBackend(t *testing.T, dir, name string) (*Model, *namedResiden
 }
 
 func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
+	slowTest(t)
 	var needsMore, supported string // a fixture Metal's declared features do not cover, and one they do
 	dirs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "model.safetensors"))
 	for _, st := range dirs {

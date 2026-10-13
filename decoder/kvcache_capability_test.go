@@ -11,6 +11,7 @@ import (
 // change is behaviour-preserving: on every loadable fixture, the cache NewCache builds with int8 requested
 // has exactly the int8 and ring state the OLD lists produced (reproduced below as the reference, verbatim).
 func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
+	slowTest(t)
 	oldInt8 := func(a *Architecture) bool {
 		return a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.MoE == nil &&
 			a.lfm2 == nil && a.llama4 == nil

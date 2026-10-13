@@ -11,6 +11,7 @@ import (
 // identical to plain greedy — single-turn and across a second turn that reuses the
 // first turn's prefix (the agent/chat regime the wiring targets).
 func TestSessionNgramSpecParity(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)

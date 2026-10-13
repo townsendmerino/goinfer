@@ -13,6 +13,7 @@ import (
 // that a fact: same prompt, same cache, pool len 1 vs the budgeted count, compared float-for-float. Exact equality, not a
 // tolerance: a tolerance would silently accept the reassociation A1 exists to prevent.
 func TestPrefillAttnPoolInvariance(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
@@ -104,6 +105,7 @@ func TestPrefillAttnWorkerBudget(t *testing.T) {
 // produces plausible output — exactly the kind of defect a tolerance-based
 // comparison would wave through, so this compares float-for-float.
 func TestPrefillAttnRowTileInvariance(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)

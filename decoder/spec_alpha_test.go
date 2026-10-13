@@ -167,6 +167,7 @@ func aucByFeature(rows []SpecTrace) (auc float64, nPos, nNeg int) {
 // tokenization of the same bytes). The mean is the calibrated α̂_grammar that replaces
 // the heuristic constant. Run: GOINFER_PREQUANT_GGUF=... go test ./decoder -run GrammarAlpha -v
 func TestGrammarAlphaPredictor(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
@@ -355,6 +356,7 @@ func TestRouterOnlineCorrection(t *testing.T) {
 // generalizes; a high-ECE workload quantifies the drift the §9 online correction absorbs.
 // Run: GOINFER_PREQUANT_GGUF=... go test ./decoder -run CrossWorkload -v
 func TestNgramAlphaCrossWorkload(t *testing.T) {
+	slowTest(t)
 	m, err := loadBenchModel()
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
