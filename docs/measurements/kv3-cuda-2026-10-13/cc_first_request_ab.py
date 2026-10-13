@@ -2,7 +2,7 @@
 """KV3 speed gate (docs/measurements/kv3-cuda-2026-10-13.md §2.3): time to first token for a Claude Code-sized first request, the
 new serve binary against the old, three alternating pairs, a fresh server per run.
 
-  cc_first_request_ab.py <old serve> <new serve> <model dir> <recorded Claude Code request body> <out json> [--ctx 28672]
+  cc_first_request_ab.py <old serve> <new serve> <model dir> <recorded Claude Code request body> <out json> [--ctx 28672] [--pairs 3]
 
 The request is KV0's recorded Claude Code first request (17,755 tokens under Qwen3's template), replayed through /v1/messages with
 max_tokens 1 and no streaming, so the time to the response is the time to the first token. Each run records the server's own
@@ -14,6 +14,7 @@ import json, os, re, signal, subprocess, sys, time, urllib.request
 
 old, new, model, body_path, out = sys.argv[1:6]
 ctx = int(sys.argv[sys.argv.index("--ctx") + 1]) if "--ctx" in sys.argv else 28672
+pairs = int(sys.argv[sys.argv.index("--pairs") + 1]) if "--pairs" in sys.argv else 3
 PORT = 18192
 
 
@@ -62,7 +63,7 @@ def run(arm, binary, i):
 
 
 recs = []
-for i, order in enumerate([("old", "new"), ("new", "old"), ("old", "new")], 1):
+for i, order in enumerate([("old", "new"), ("new", "old"), ("old", "new")][:pairs], 1):
     for arm in order:
         recs.append(run(arm, old if arm == "old" else new, i))
         json.dump(recs, open(out, "w"), indent=1)
