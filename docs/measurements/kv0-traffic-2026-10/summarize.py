@@ -24,19 +24,20 @@ def main():
         for s in c["sessions"]:
             by_agent[s["agent"]].append(s)
         P(f"\n### Configuration `{cfg}`: {c['model'].split('/')[-1]}, `-ctx {c['ctx']}`\n")
-        P("| harness | session | task | requests | main-thread turns | threads | first request (tokens) | last request | strictly extends its thread's previous request | other requests | overlapping another |")
-        P("|---|---|---|---|---|---|---|---|---|---|---|")
+        P("| harness | session | task | requests | main-thread turns | threads | thread switches | first request (tokens) | last request | strictly extends its thread's previous request | other requests | overlapping another |")
+        P("|---|---|---|---|---|---|---|---|---|---|---|---|")
         for ag, sess in by_agent.items():
             for s in sess:
                 rq = [r for r in s["requests"] if "n" in r]
                 if not rq:
                     continue
                 th = collections.Counter(r["thread"] for r in rq)
-                main = th.most_common(1)[0][0]
+                main = next((r["thread"] for r in rq if (r.get("tools") or 0) > 0), rq[0]["thread"])
                 mr = [r for r in rq if r["thread"] == main]
                 follow = [r for r in mr if "extends_prev_thread" in r]
                 ext = sum(1 for r in follow if r["extends_prev_thread"])
-                P(f"| {ag} | {s['id'].split('-')[-1]} | {s['task']} | {len(rq)} | {len(mr)} | {len(th)} | {mr[0]['n']:,} | {mr[-1]['n']:,} | "
+                switches = sum(1 for a_, b_ in zip(rq, rq[1:]) if a_["thread"] != b_["thread"])
+                P(f"| {ag} | {s['id'].split('-')[-1]} | {s['task']} | {len(rq)} | {len(mr)} | {len(th)} | {switches} | {mr[0]['n']:,} | {mr[-1]['n']:,} | "
                   f"{ext} of {len(follow)} | {len(rq) - len(mr)} | {sum(1 for r in rq if r.get('overlaps_another'))} |")
         P("")
         # non-extending requests: where
@@ -66,8 +67,7 @@ def main():
                 rq = [r for r in s["requests"] if "n" in r]
                 if not rq:
                     continue
-                th = collections.Counter(r["thread"] for r in rq)
-                main = th.most_common(1)[0][0]
+                main = next((r["thread"] for r in rq if (r.get("tools") or 0) > 0), rq[0]["thread"])
                 first = next(r for r in rq if r["thread"] == main)
                 if k == 0:
                     continue
