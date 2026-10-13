@@ -34,8 +34,18 @@ BIN=$BASE/serve-cuda-$(git rev-parse --short=8 HEAD)
 export GOINFER_SERVE_CUDA=$BIN GOINFER_SERVE_CUDA_OLD=$BIN BENCH_BACKENDS=cuda BENCH_RUNS=5
 export BENCH_GOINFER_ARGS="-kv f16" BENCH_GOINFER_OLD_ARGS="-kv f32"
 rc=0
+# bench_peer.py refuses to start above a 1-minute load of 1.0, and the previous night job's own load decays slowly (the first night's run of this script died in a
+# second on 1.36 right after the gate), so wait for the box to settle before each pass; bench_peer's own refusal still stands if it does not.
+settle() {
+  for _ in $(seq 1 90); do
+    awk '{exit !($1 < 0.7)}' /proc/loadavg && return 0
+    sleep 10
+  done
+  echo "!! load still $(cut -d' ' -f1 /proc/loadavg) after 15 min; bench_peer will decide"
+}
 pass() { # pass <name> <engines> <models> <depths> [extra env...]
   local name=$1 eng=$2 models=$3 depths=$4; shift 4
+  settle
   echo "== $name: start $(date '+%T')"
   env "$@" BENCH_ENGINES=$eng BENCH_MODELS=$models BENCH_DEPTHS=$depths BENCH_SERVE_LOG_DIR="$OUT/$name-serve-logs" \
     python3 -u scripts/bench_peer.py "$OUT/$name.json" > "$OUT/$name.log" 2>&1
