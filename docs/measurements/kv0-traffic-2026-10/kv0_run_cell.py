@@ -38,5 +38,20 @@ tasks.TASKS["chain"] = dict(
     setup=make_chain, answer=lambda a: SECRET in a.lower())
 
 import run_cell  # noqa: E402
+import sandbox  # noqa: E402
+
+# Each session's fixture is a fresh git repository, whose first commit's hash goes into Claude Code's environment block ("Recent
+# commits:"). With the clock in it, two sessions of one task get two hashes and diverge there, which no real repository does between
+# conversations. Fixed dates make the hash a function of the tree alone.
+_GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00+0000", "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+0000"}
+_run = sandbox.run
+
+
+def _run_dated(*a, **k):
+    k["env"] = {**_GIT_DATES, **(k.get("env") or {})}
+    return _run(*a, **k)
+
+
+sandbox.run = _run_dated
 
 sys.exit(run_cell.main())

@@ -1,0 +1,46 @@
+
+== Qwen2.5-7B
+  f16: bytes per position per group: full 57,344 B (56.0 KiB); all groups 57,344 B
+     B | group   |  bytes/block | blocks per 32K seq |  bytes held |  avg waste | worst waste | share (avg)
+    64 | full    |    3,670,016 |                512 |   1792.0 MiB |   1.75 MiB |    3.45 MiB |  0.10%
+   128 | full    |    7,340,032 |                256 |   1792.0 MiB |   3.50 MiB |    6.95 MiB |  0.20%
+   256 | full    |   14,680,064 |                128 |   1792.0 MiB |   7.00 MiB |   13.95 MiB |  0.39%
+  f32: bytes per position per group: full 114,688 B (112.0 KiB); all groups 114,688 B
+     B | group   |  bytes/block | blocks per 32K seq |  bytes held |  avg waste | worst waste | share (avg)
+    64 | full    |    7,340,032 |                512 |   3584.0 MiB |   3.50 MiB |    6.89 MiB |  0.10%
+   128 | full    |   14,680,064 |                256 |   3584.0 MiB |   7.00 MiB |   13.89 MiB |  0.20%
+   256 | full    |   29,360,128 |                128 |   3584.0 MiB |  14.00 MiB |   27.89 MiB |  0.39%
+
+== Gemma-3-4B
+  f16: bytes per position per group: global 20,480 B (20.0 KiB), local 118,784 B (116.0 KiB); all groups 139,264 B
+     B | group   |  bytes/block | blocks per 32K seq |  bytes held |  avg waste | worst waste | share (avg)
+    64 | global  |    1,310,720 |                512 |    640.0 MiB |   0.62 MiB |    1.23 MiB |  0.10%
+    64 | local   |    7,602,176 |                 17 |    123.2 MiB |   3.62 MiB |    7.14 MiB |  2.94%
+   128 | global  |    2,621,440 |                256 |    640.0 MiB |   1.25 MiB |    2.48 MiB |  0.20%
+   128 | local   |   15,204,352 |                  9 |    130.5 MiB |   7.25 MiB |   14.39 MiB |  5.56%
+   256 | global  |    5,242,880 |                128 |    640.0 MiB |   2.50 MiB |    4.98 MiB |  0.39%
+   256 | local   |   30,408,704 |                  5 |    145.0 MiB |  14.50 MiB |   28.89 MiB | 10.00%
+  for comparison, every layer holding all 32K positions (Metal and WebGPU today): 4.25 GiB; paged, 5 global layers full + 29 local layers at 1,024 + 1 block: see rows above
+  f32: bytes per position per group: global 40,960 B (40.0 KiB), local 237,568 B (232.0 KiB); all groups 278,528 B
+     B | group   |  bytes/block | blocks per 32K seq |  bytes held |  avg waste | worst waste | share (avg)
+    64 | global  |    2,621,440 |                512 |   1280.0 MiB |   1.25 MiB |    2.46 MiB |  0.10%
+    64 | local   |   15,204,352 |                 17 |    246.5 MiB |   7.25 MiB |   14.27 MiB |  2.94%
+   128 | global  |    5,242,880 |                256 |   1280.0 MiB |   2.50 MiB |    4.96 MiB |  0.20%
+   128 | local   |   30,408,704 |                  9 |    261.0 MiB |  14.50 MiB |   28.77 MiB |  5.56%
+   256 | global  |   10,485,760 |                128 |   1280.0 MiB |   5.00 MiB |    9.96 MiB |  0.39%
+   256 | local   |   60,817,408 |                  5 |    290.0 MiB |  29.00 MiB |   57.77 MiB | 10.00%
+  option B (uniform page, 5 layers per group): the 29 local layers fill 6 groups of 5, one slot of 30 padded: 3.3% of the local group's bytes wasted
+
+== Qwen3.6-35B-A3B
+  f16: bytes per position per group: full 20,480 B (20.0 KiB); all groups 20,480 B
+     B | group   |  bytes/block | blocks per 32K seq |  bytes held |  avg waste | worst waste | share (avg)
+    64 | full    |    1,310,720 |                512 |    640.0 MiB |   0.62 MiB |    1.23 MiB |  0.10%
+   128 | full    |    2,621,440 |                256 |    640.0 MiB |   1.25 MiB |    2.48 MiB |  0.20%
+   256 | full    |    5,242,880 |                128 |    640.0 MiB |   2.50 MiB |    4.98 MiB |  0.39%
+  recurrent state pool: 62.8 MiB per running sequence, independent of B
+  f32: bytes per position per group: full 40,960 B (40.0 KiB); all groups 40,960 B
+     B | group   |  bytes/block | blocks per 32K seq |  bytes held |  avg waste | worst waste | share (avg)
+    64 | full    |    2,621,440 |                512 |   1280.0 MiB |   1.25 MiB |    2.46 MiB |  0.10%
+   128 | full    |    5,242,880 |                256 |   1280.0 MiB |   2.50 MiB |    4.96 MiB |  0.20%
+   256 | full    |   10,485,760 |                128 |   1280.0 MiB |   5.00 MiB |    9.96 MiB |  0.39%
+  recurrent state pool: 62.8 MiB per running sequence, independent of B

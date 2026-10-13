@@ -1,0 +1,10 @@
+# Claude Code 2.1.296, capture-only first requests (the I4 recorder answers 400), fixed HOME and working directory, three different
+# first prompts per arm, rendered with Qwen3's tokenizer and template by internal/serveapp/kv0_tokenize_test.go.
+header ON  (default):                         first requests 20,183 / 20,181 / 20,187 tokens; pairwise common prefix 22, 22, 22
+header OFF (CLAUDE_CODE_ATTRIBUTION_HEADER=0): first requests 20,154 / 20,152 / 20,157 tokens; pairwise common prefix 18,213, 18,213, 18,213
+What differs at token 22 (header on): the three-hex suffix of `x-anthropic-billing-header: cc_version=2.1.296.<hash>; cc_entrypoint=sdk-cli;`
+  (the same first prompt twice gives the same suffix; a different first prompt gives a different one)
+What differs at token 18,213 (header off): the user's own first message; what follows it (about 1,940 tokens: the environment block, the date) is
+  identical but cannot be shared once the user message differs.
+The date line ("Today's date is ...") sits at token 20,133 of 20,154 (header off) and 17,734 of 17,755 in the sandbox sessions; in later requests of the
+  same conversation it stays at the same absolute position.

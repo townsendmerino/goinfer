@@ -1,0 +1,31 @@
+== q7b (defaults): up, VRAM used 7511 MiB
+    cuda: resident context 12012, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+    cuda: resident context 11784, trimmed from 12012 at the build, so the 4 requested KV slots fit beside the weights (2962 MB free, less 384 MB reserved)
+    [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.29 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU p
+    [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.29 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU p
+    [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.29 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU p
+    [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.29 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU p
+    context: 11784 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+    fit: 11784-token cap needs 0.6 GB KV (weights 4.0 GB, budget 38.5 GB, 37.9 GB left for a request's own prefill)
+    KV plan: 4 conversations x 11784 positions
+== q7b --kv-sessions 1: up, VRAM used 5853 MiB
+    context: 16384 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+    fit: 16384-token cap needs 0.9 GB KV (weights 4.0 GB, budget 38.5 GB, 37.6 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions
+== q7b --kv-sessions 2: up, VRAM used 6749 MiB
+    context: 16384 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+    fit: 16384-token cap needs 0.9 GB KV (weights 4.0 GB, budget 38.5 GB, 37.6 GB left for a request's own prefill)
+    KV plan: 2 conversations x 16384 positions
+== q7b --kv-sessions 4 --ctx 32768: up, VRAM used 6751 MiB
+    context: 32768 tokens (model maximum) · KV f16
+    fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 38.5 GB, 36.7 GB left for a request's own prefill)
+    KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+== q7b --kv-sessions 1 --ctx 32768: up, VRAM used 6751 MiB
+    context: 32768 tokens (model maximum) · KV f16
+    fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 38.5 GB, 36.7 GB left for a request's own prefill)
+    KV plan: 1 conversation x 32768 positions (--ctx 32768)
+== q7b --kv-sessions 1 --ctx 32768 --kv f32: up, VRAM used 471 MiB
+    [resident] BuildResident declined (ok=false err=cuda: resident context 32768 positions needs 3.76 GB of KV (112.0 KB/position across 28 layers) but only 3.10 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — low
+    decode path: cpu (int4) — requested cuda → running on cpu: backend failed to build a resident path: cuda: resident context 32768 positions needs 3.76 GB of KV (112.0 KB/position across 28 layers) but only 3.10 GB is free on the device beside the weights (plus 
+    context: 32768 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)
+    fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 35.8 GB, 32.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window

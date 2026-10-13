@@ -1,0 +1,10 @@
+# connect claude-code writes CLAUDE_CODE_ATTRIBUTION_HEADER=0: two conversations through the KV0 proxy (2026-10-13, nobara)
+# serve built from dceaeb4e (the change), Qwen2.5-Coder-0.5B q4_k_m, -ctx 32768 --kv-sessions 1; Claude Code 2.1.296 unsandboxed, fixed HOME and cwd.
+# bodies rendered with Qwen3's tokenizer and template (internal/serveapp/kv0_tokenize_test.go).
+generated config (header var written by connect):   request sizes 17573 / 17571   common prefix 15623   (diverges at the user's own first message)
+same config, the variable removed (--control):      request sizes 17602 / 17600   common prefix 22
+# the same two conversations as run_cell sessions (a fresh git repo per session, commit date not pinned): 15564, diverging at "Recent commits:" (the commit hash)
+# the same with commit dates pinned in kv0_run_cell.py:                                                   15742 of 17686 / 17684 (sizes under the 0.5B's tokenizer), diverging at the user's text
+# bisect of the request size over Claude Code's configuration, header var off, settings-file route (Qwen3 rendering):
+#   base (no header var) 17728; header var 17699 (-29); +CLAUDE_CODE_MAX_CONTEXT_TOKENS 17673 (-26); +MAX_OUTPUT_TOKENS 17699; +HAIKU model 17699
+#   process-environment route (ANTHROPIC_API_KEY): 20189 (header on), 20158 (header off)

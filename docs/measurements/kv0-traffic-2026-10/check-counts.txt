@@ -1,0 +1,2 @@
+qwen3-4b-20k: 84 rendered 200-requests, 84 logged; rendered not in the log: 0; logged not rendered: 0
+qwen3-4b-28k-cc: 17 rendered 200-requests, 18 logged; rendered not in the log: 0; logged not rendered: 1
