@@ -150,7 +150,9 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			Name: "gpu", Dir: "gpu", Work: []string{".", "gpu"},
 			ListTags: []string{"gpu", "goinfer_testhooks"}, TestTags: []string{"gpu", "goinfer_testhooks"},
 			TestArgs: []string{"-short"}, Device: true,
-			Slow: `^(TestGumbelDeviceAgreesWithHost|TestDecodeRunnerW4A8_geometries)$`,
+			// The first two were measured on the Mac; the last two on Vulkan (150 device creations each, no model, built with
+			// the gpu tag alone, so gate gpu's webgpu-suite runs them): docs/measurements/integration-harness-2026-10/gate-quick-slow-cuda-2026-10-13.md.
+			Slow: `^(TestGumbelDeviceAgreesWithHost|TestDecodeRunnerW4A8_geometries|TestContextClose_finalizerRace|TestContextClose_lateWrapperClose)$`,
 			Lint: []lintSpec{
 				{"build", []string{"gpu", "goinfer_testhooks"}, "", "affected", "gpu-darwin: go build -tags 'gpu goinfer_testhooks' ./gpu/..."},
 				{"vet", []string{"gpu", "goinfer_testhooks"}, "", "affected", "gpu-darwin: go vet -tags 'gpu goinfer_testhooks' ./gpu/..."},
