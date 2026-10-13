@@ -68,7 +68,10 @@ type quickModule struct {
 	// processes contending for Metal is a known crash source (the fault 0x10 tail), and a red
 	// caused by the scheduler is a red nobody should have to diagnose.
 	Device bool
-	Lint   []lintSpec
+	// Slow is a -run pattern for the module's long kernel tests. They run when the diff touches the module's own
+	// directory, or under -full; a change that only reaches the module from outside defers them (deferCells).
+	Slow string
+	Lint []lintSpec
 }
 
 func (m *quickModule) native() bool { return m.NativeGOOS == "" || m.NativeGOOS == runtime.GOOS }
@@ -147,6 +150,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			Name: "gpu", Dir: "gpu", Work: []string{".", "gpu"},
 			ListTags: []string{"gpu", "goinfer_testhooks"}, TestTags: []string{"gpu", "goinfer_testhooks"},
 			TestArgs: []string{"-short"}, Device: true,
+			Slow: `^(TestGumbelDeviceAgreesWithHost|TestDecodeRunnerW4A8_geometries)$`,
 			Lint: []lintSpec{
 				{"build", []string{"gpu", "goinfer_testhooks"}, "", "affected", "gpu-darwin: go build -tags 'gpu goinfer_testhooks' ./gpu/..."},
 				{"vet", []string{"gpu", "goinfer_testhooks"}, "", "affected", "gpu-darwin: go vet -tags 'gpu goinfer_testhooks' ./gpu/..."},
@@ -173,6 +177,9 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			Name: "metal", Dir: "metal", Work: []string{".", "metal"},
 			ListTags: testhooks, TestTags: testhooks,
 			NativeGOOS: "darwin", CrossTarget: "darwin/arm64", Device: true,
+			// Kernel sweeps that load no model through the decoder. Each is untagged, so gate gpu's Metal suite runs it.
+			Slow: `^(TestMMAPrefill|TestGemmW8Tile_matchesReference|TestPrefillGemmW4|TestBatchKAmortization|` +
+				`TestWeightAlias_closeCycles|TestQ4KLaneKernels|TestTowerGemmKernel|TestProfileKernels)$`,
 			Lint: []lintSpec{
 				{"build", nil, "", "affected", "metal-darwin: go build ./metal/..."},
 				{"vet", nil, "", "affected", "metal-darwin: go vet ./metal/..."},
@@ -1331,6 +1338,11 @@ type quickCell struct {
 	// leave enough memory free.
 	Mem    bool
 	NotRun string // non-empty: cannot run on this host, and why
+	// Checkpoint: the cell is a package's real-checkpoint loaders, split out of it.
+	Checkpoint bool
+	// Deferred, when non-empty, is why the day loop leaves the cell to the pre-tag tier (deferCells). It is
+	// reported and counted like NotRun, and -full runs it.
+	Deferred string
 }
 
 // minSplitRest is how many non-walking tests a package needs before its walkers get a cell of their own.
@@ -1429,7 +1441,7 @@ func buildCells(qc *quickConfig, g *quickGraph, s *quickSelection, count1, heavy
 		restMem := false
 		if len(loaders) > 0 && len(r.tests)-len(split)-len(loaders) >= minSplitRest {
 			cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg) + " [checkpoint]", Root: r, Run: anchored(loaders),
-				Count1: force, Tier: tier, Why: why, Mem: true, NotRun: notRun})
+				Count1: force, Tier: tier, Why: why, Mem: true, NotRun: notRun, Checkpoint: true})
 			skips = append(skips, anchored(loaders))
 		} else {
 			restMem = len(loaders) > 0
@@ -1438,6 +1450,62 @@ func buildCells(qc *quickConfig, g *quickGraph, s *quickSelection, count1, heavy
 			Count1: force, Tier: tier, Why: why, Mem: restMem, NotRun: notRun})
 	}
 	return cells
+}
+
+// The reasons deferCells gives. Each names where the cell still runs.
+const (
+	deferCheckpoint = "loads a real checkpoint: pre-tag tier (gate quick -full)"
+	deferSlow       = "long kernel tests of a device module the diff does not touch: pre-tag tier (gate quick -full)"
+)
+
+// deferCells is the day loop's cut of what buildCells selected: it marks the cells left to the pre-tag tier and
+// returns the list with them marked. Two rules, and nothing else is ever deferred:
+//
+//  1. A [checkpoint] cell: the tests that load a real checkpoint because one is on this machine. CI has no
+//     checkpoints and never runs them.
+//  2. In a device module the diff reaches only from outside (no changed file under its directory), the tests its
+//     Slow pattern names, split into a [slow] cell. The cell they came from skips exactly what [slow] runs, so the
+//     two are complementary and -full, which runs both, loses nothing.
+//
+// A cache-checked cell is left whole: the test cache decides it, and replays it when nothing it reads has moved.
+func deferCells(qc *quickConfig, s *quickSelection, cells []*quickCell) []*quickCell {
+	touched := map[*quickModule]bool{}
+	for _, rel := range s.Changed {
+		touched[qc.moduleOf(rel)] = true
+	}
+	var out []*quickCell
+	for _, c := range cells {
+		m := c.Root.Mod
+		switch {
+		case c.NotRun != "":
+		case c.Checkpoint:
+			c.Deferred = deferCheckpoint
+		case m.Device && m.Slow != "" && !touched[m] && c.Tier != "cache-checked" && c.Run == "" && !c.Golden:
+			re := regexp.MustCompile(m.Slow)
+			var slow []string
+			for _, t := range c.Root.tests {
+				if re.MatchString(t) && !c.skips(t) {
+					slow = append(slow, t)
+				}
+			}
+			if len(slow) > 0 {
+				sc := *c
+				sc.Name, sc.Run, sc.Skip, sc.Deferred = c.Name+" [slow]", anchored(slow), "", deferSlow
+				out = append(out, &sc)
+				if c.Skip != "" {
+					c.Skip += "|"
+				}
+				c.Skip += anchored(slow)
+			}
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// skips reports whether the cell's -skip pattern already excludes a top-level test.
+func (c *quickCell) skips(test string) bool {
+	return c.Skip != "" && regexp.MustCompile(c.Skip).MatchString(test)
 }
 
 // shortPkg drops the root module path for display: decoder, not github.com/…/goinfer/decoder.
