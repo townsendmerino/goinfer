@@ -342,6 +342,18 @@ in-process; one smoke test each for Genkit, Eino, LangChainGo and ADK-Go (ADK-Go
 route, and so H-a's fix); a mid-stream cancel stops generation and leaves no goroutine behind; the root `go.mod` is
 unchanged.
 
+**I5, the seam, built 2026-10-13 (its SDK gate is not).**
+- **In `internal/serveapp`:** the route table and the listener-independent checks moved out of the entry point
+  unchanged, and a constructor builds a handler from the binary's own flag set, so a setting cannot mean one thing on
+  the command line and another in process. The flags that configure the listener or the process are refused by name.
+- **Public, Experimental:** package `server`, two functions (`NewHandler`, `Transport`); `docs/api-tiers.md` lists it.
+- **Read on the committed tiny chat model with `net/http`:** a chat completion answers; a stream arrives as separate
+  events and ends with `[DONE]`; `-api-key` is enforced; a stream cancelled partway leaves no goroutine; after
+  `Close` the model is gone (404). The root `go.mod` is unchanged.
+- **Still owed for I5's gate:** the separate SDK module (the official OpenAI and Anthropic Go SDKs' chat, streaming,
+  tools and structured output; one smoke test each for Genkit, Eino, LangChainGo and ADK-Go) and its CI stitching.
+  The typed `Config` the item sketched was not built: the constructor takes flags.
+
 ### I6 — Codex's `apply_patch`, honoured rather than dropped (candidate; desk check first)
 
 H-a's fix drops tool types the server cannot run and names them in `X-Goinfer-Tools-Dropped`. For Codex that includes

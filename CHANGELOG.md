@@ -30,6 +30,25 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Added — the server as a library: `server.NewHandler` and `server.Transport` (Experimental)
+
+`goinfer-serve`'s HTTP API can now be served from a handler inside your own Go program, with no listener, port or daemon. `server.NewHandler`
+takes the binary's own flags and returns an `http.Handler`; `server.Transport` turns it into an `http.RoundTripper`. Any client that accepts an
+`*http.Client` then talks to a local model in process, with everything the server does: the three API dialects, structured output, tool calling.
+
+```go
+h, closer, err := server.NewHandler("-model", "model.gguf")
+defer closer.Close()
+client := &http.Client{Transport: server.Transport(h)}   // give this to an SDK, base URL http://goinfer/v1
+```
+
+- Streams arrive event by event; cancelling the request's context stops the generation; `Close` cancels what is in flight and unloads the models.
+- The flags that configure the binary's listener and process (`-addr`, the TLS pair, `-web`, the admin surfaces, `-halt-file`) are refused.
+  `-api-key` is honoured when given; `GOINFER_API_KEY` is not read.
+- A GPU backend is linked as the binaries link it: import its module and pass `-backend`.
+- **Not yet run against the OpenAI or Anthropic Go SDKs or the agent frameworks**; tested with `net/http` on a tiny model. Outside the
+  compatibility guarantee ([docs/api-tiers.md](docs/api-tiers.md)).
+
 ### Changed — a prompt that overflows the context is refused in the words each coding agent acts on
 
 A coding agent that is told its conversation is too long compacts it and retries. That is right when the history is what overflowed, and a loop
