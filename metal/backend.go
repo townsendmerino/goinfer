@@ -773,9 +773,9 @@ func (a *metalResident) moeLayerMajor() bool {
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
 func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	// One check at entry: the pass is a single command buffer with no inner loop to interrupt, and the decoder's chunked prefill
-	// cuts a prompt only while another conversation decodes, so a lone long prompt cannot be cancelled midway. That would need
-	// chunking inside PrefillLast, as cuda's prefillChunked does (docs/audit-metal-2026-09-30.md, A-D02).
+	// One check at entry: the pass is a single command buffer with no inner loop to interrupt. The decoder calls it once a
+	// block (PrefillBlockRows) or once a chunk while another conversation decodes, so a long prompt is cancelled between
+	// those calls; a resident that reports no block runs a lone prompt as one uninterruptible pass.
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -1351,6 +1351,45 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
 func (a *metalResident) Close() error { return a.r.Close() }
+
+// prefillBlockScratch is the row-sized scratch one pass of a blocked prefill may allocate: PrefillBlockRows is the
+// number of rows that fit it. The speed reading that keeps it is docs/tasks/task-integration-harness-2026-10.md, "I8".
+const prefillBlockScratch = 512 << 20
+
+// prefillBlockRowsMin is the shortest block PrefillBlockRows reports, for a model whose rows are so wide that fewer
+// would fit prefillBlockScratch.
+const prefillBlockRowsMin = 256
+
+// prefillBlockRowsForTest replaces PrefillBlockRows' figure when positive, for a test that needs several blocks in a
+// short prompt. It does not make a resident block that otherwise would not.
+var prefillBlockRowsForTest int
+
+// PrefillBlockRows (decoder.ResidentPrefillBlocks) is the most rows the decoder hands one batched pass: as many as fit
+// prefillBlockScratch, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
+// without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split,
+// for a resident whose prompts do not take the plain batched pass at every length: a layer-major route or an E-model,
+// an int8 KV cache, fast prefill off, an arch or norm the pass does not implement, and a model on the exact attention
+// kernel, whose pass declines past prefillExactAttnMaxKeys and must go on declining the whole prompt.
+func (a *metalResident) PrefillBlockRows() int {
+	r := a.r
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
+		(r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.prefillExactAttn() {
+		return 0
+	}
+	if prefillBlockRowsForTest > 0 {
+		return prefillBlockRowsForTest
+	}
+	per := r.prefillScratchBytes(64) / 64
+	if per <= 0 {
+		return 0
+	}
+	return max(int(prefillBlockScratch/per)/64*64, prefillBlockRowsMin)
+}
+
+// PrefillScratchBytes (decoder.ResidentPrefillBlocks) is what one batched pass over rows rows allocates.
+func (a *metalResident) PrefillScratchBytes(rows int) int64 { return a.r.prefillScratchBytes(rows) }
+
+var _ decoder.ResidentPrefillBlocks = (*metalResident)(nil)
 
 // PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the cold pass
 // bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the whole prompt's length.

@@ -1476,15 +1476,33 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
 		if pf, ok := m.resident.(Prefiller); ok {
-			embs := make([][]float32, len(suffix))
-			for i, id := range suffix {
-				embs[i] = m.embedResident(id)
+			embed := func(ids []int) [][]float32 {
+				embs := make([][]float32, len(ids))
+				for i, id := range ids {
+					embs[i] = m.embedResident(id)
+				}
+				return embs
+			}
+			// A resident whose pass allocates scratch per row takes a long suffix in blocks (prefillBlockRows), each
+			// continuing the last at its position, so the scratch and the host embeddings are a block's and not the
+			// prompt's. The last pass keeps at least prefillTailMin rows. A block the pass declines leaves `from` at
+			// its first row: everything before it is written, and the rest takes the sequential loop below.
+			var perr error
+			for B := m.prefillBlockRows(len(prompt)); B > 0 && perr == nil && len(prompt)-from >= B+prefillTailMin; {
+				if perr = ctx.Err(); perr != nil {
+					break
+				}
+				if _, perr = pf.PrefillLast(ctx, embed(prompt[from:from+B]), from); perr == nil {
+					from += B
+				}
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
-			lg, perr := pf.PrefillLast(ctx, embs, from)
 			if perr == nil {
-				return lg, nil
+				var lg []float32
+				if lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from); perr == nil {
+					return lg, nil
+				}
 			}
 			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
 			// re-ingest the whole prompt the caller just abandoned — and that loop's own ctx check
@@ -1492,7 +1510,7 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 			if errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded) {
 				return nil, perr
 			}
-			warnPrefillDeclined(len(suffix), perr)
+			warnPrefillDeclined(len(prompt)-from, perr)
 		}
 	}
 	// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head

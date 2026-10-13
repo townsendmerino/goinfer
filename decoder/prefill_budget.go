@@ -95,7 +95,14 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 	if !(residentPath && m.ResidentActive()) {
 		kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)
 	}
+	// A resident that splits its prefill into blocks is priced at its own figure for one block; every other request at
+	// the batched CPU sweep's figure over the whole prompt.
 	scratch := prefillScratchBytes(cfg, promptTokens)
+	if residentPath && m.ResidentActive() {
+		if own, ok := m.residentPrefillScratch(promptTokens); ok {
+			scratch = own
+		}
+	}
 	need := kv + scratch
 	if need <= remaining {
 		return nil
