@@ -591,9 +591,9 @@ positions are inherent, not recompute.
 - **Status (2026-09-03): 3 of 3 pieces addressed; the serving hot path (`openai.go`) is fully
   fixed, the three demo CLIs remain open by deliberate scope choice.** P-13's `computeLogprobs`
   now uses `topKByLogit` plus a small deterministic tie-break sort instead of a full vocabulary
-  sort (`decoder/sampler.go`), proven against a full-sort reference on random and tied-logit
+  sort (`internal/sampling/sampler.go`), proven against a full-sort reference on random and tied-logit
   inputs. P-15's penalty path now keeps an incrementally-maintained `histCounts map[int]int`
-  through a single `recordHistory` chokepoint (`decoder/sampler.go`), rebuilt from scratch only
+  through a single `recordHistory` chokepoint (`internal/sampling/sampler.go`), rebuilt from scratch only
   when `RepeatLastN>0` forces a windowed count; mutation-checked by bypassing the chokepoint with
   a raw `append` and confirming the new counts test catches the divergence.
   **P-17's `streamTokens` (`internal/serveapp/openai.go`) is now fixed.** Two independent

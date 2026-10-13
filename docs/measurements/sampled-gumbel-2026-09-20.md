@@ -25,7 +25,7 @@ Token = `argmax_i ( l_i * invT + G_i )`, ties to the **lowest index**; `G_i = -l
 `(i>>2, draw, draw>>32, 0)`, lane `i&3`, where `draw` is the sampler's own running index of temperature-only draws
 (`Sampler.NextDraw`). By the Gumbel-max theorem that is an exact draw from `softmax(l/T)` with no normalisation, no
 cumulative sum and no dependence between tokens, so it is an argmax every GPU can do in one parallel pass with no f64.
-Reference: `decoder/sampler_gumbel.go`, `decoder/philox.go`. Devices: `cuda/gumbel.cu`, `gpu/gumbel.go` (WGSL).
+Reference: `internal/sampling/sampler_gumbel.go`, `internal/sampling/philox.go`. Devices: `cuda/gumbel.cu`, `gpu/gumbel.go` (WGSL).
 
 **Noise range.** G is bounded to [-3.13, 22.9], so a token needs a logit gap above ~26 nats to be unreachable, where
 the exact draw gives it e^-gap. The affected mass is ≲1e-6 even over a 262k vocabulary (computed, not measured — no test
@@ -69,7 +69,7 @@ and the Gumbel kernel is parallel, so greedy may carry a small avoidable cost (~
 
 ## Correctness gates
 
-Statistical rules were **pre-registered in the test header before the first run** (`decoder/sampler_gumbel_test.go`);
+Statistical rules were **pre-registered in the test header before the first run** (`internal/sampling/sampler_gumbel_test.go`);
 none was changed afterwards.
 
 | gate | result |

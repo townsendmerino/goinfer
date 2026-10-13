@@ -5430,7 +5430,7 @@ anyway, so the two probes stay line-for-line comparable.
 
 ## TestTowerGemmKernel
 
-Moved from `metal/tower_attn_test.go` (the comment above `TestTowerGemmKernel`) on 2026-10-09.
+Moved from `metal/kernels/tower_attn_test.go` (the comment above `TestTowerGemmKernel`) on 2026-10-09.
 
 ```text
 TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's

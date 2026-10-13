@@ -80,8 +80,12 @@ like a broken tool rather than an unrun gate, and exits without checking your co
 2026-08-28: a dead struct field (U1000) shipped in `decoder/mtp.go` and held CI red across **three
 pushes**, because `gofmt` and `go vet` were run and staticcheck was not.
 
-**Check CI after pushing.** `gh run list --limit 5`. Red does not announce itself, and a break rides
-along under every subsequent push until someone looks.
+**Push finished work, and read CI; do not watch it.** Owner rule, 2026-10-13: commit locally, and push only when he asks
+or when a finished body of work merges. A push to a branch takes seconds and runs no CI; a push to `main` starts a CI run
+of about 8 minutes. Do not hold a turn open on CI, poll it, or schedule wake-ups for it. Read `gh run list --limit 5` at
+the next natural point (your next push, the start of the next task, and always before a merge or a tag) and report a red
+the moment you see it: red does not announce itself, and a break rides along under every later push until someone looks.
+Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`).
 
 **No new production env reads.** `testdata/env_reads.txt` lists every `GOINFER_*` variable production code reads
 from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is not on it. A new operator choice is a
@@ -244,7 +248,8 @@ the CUDA suite twice, and most of it re-checked what the previous run had alread
 - **Do not run `go run ./cmd/gate quick`, a whole-module or whole-package `go test`, or the CUDA suite by day.** CI runs them on every push, and the night queue
   runs the heavy tier. `gate quick` is the pre-tag tier (RELEASING.md): run it when cutting a release or when the owner asks.
 - **One run of each thing a push requires, once, immediately before the push, after the last merge of `main`.** The parity refresh
-  (`scripts/refresh_parity_hashes.sh`, only when a non-test `decoder/*.go` file changed) and the citation lint are the two; `main` moving under you is a reason
+  (`scripts/refresh_parity_hashes.sh`, only when the code of a non-test `decoder/*.go` file changed: the hash reads Go files as tokens, so a
+  comment or formatting edit does not stale it) and the citation lint are the two; `main` moving under you is a reason
   to merge and re-run those two, not to re-run everything.
 - **A red CI run is fixed by the one failing test**, run by name, not by re-running the gate that was green.
 - **A change that forces a long run on the day loop is a modularity bug.** Say so in the report, with the edge that caused it (a CUDA edit that lands in
@@ -329,7 +334,7 @@ five. The release tier (`RELEASING.md`: the full parity sweep and the peer matri
 | check | tier | instrument | stopping rule | cost basis |
 |---|---|---|---|---|
 | `python3 scripts/touched.py` (gofmt, build, vet, the touched packages' tests) | day | the script: what the diff touches, a slow package by the test file beside the change | runs to completion | seconds |
-| `go vet` (tagged), `staticcheck` across a module, `go run ./cmd/gate quick` | pre-push / pre-tag: CI runs it on every push; locally only when cutting a release or when asked (see "Day loop") | `gate quick` (TE7): the tests that can observe the diff, one `go test` per package in parallel, cache-aware. It defers, and prints as `DEFERRED`, each package's real-checkpoint tests and, when no changed file is under `metal/`, `gpu/` or `cuda/`, that module's long kernel tests (`quickModule.Slow`) | runs to completion; no sampling | about 3 min for a decoder change (the `decoder` cell, cold), about 4 for one under `metal/`; an unchanged `decoder` re-run replays from the test cache in about 2 s |
+| `go vet` (tagged), `staticcheck` across a module, `go run ./cmd/gate quick` | pre-push / pre-tag: CI runs it on every push; locally only when cutting a release or when asked (see "Day loop") | `gate quick` (TE7): the tests that can observe the diff, one `go test` per package in parallel, cache-aware. It defers, and prints as `DEFERRED`, each package's real-checkpoint tests and, when no changed file is under `metal/`, `gpu/` or `cuda/`, that module's long kernel tests (`quickModule.Slow`) | runs to completion; no sampling | about 2 min for a decoder change on the Mac (2026-10-13: the `metal` and `gpu` device cells, run one at a time, are the floor; the `decoder` cell is about 30 s since the sampler moved to `internal/sampling`), about 4 for one under `metal/`; an unchanged `decoder` re-run replays from the test cache in about 2 s |
 | `go run ./cmd/gate quick -full -base <previous tag>` | night / pre-tag | the same runner with nothing deferred; writes a record under `docs/measurements/quick-full/` that `gate release` requires from each box (`RELEASING.md` step 8) | complete | about 10 min on the Mac (measured 2026-10-13: the Metal suite 4m12s, the real-checkpoint cells 3m44s) |
 | `go test -run '<yours>'` on one package; tiny-fixture goldens | quick | the test itself | fixed | seconds to minutes |
 | `scripts/refresh_parity_hashes.sh` | day | the goldens-gated refresh | completes | about 4 min |

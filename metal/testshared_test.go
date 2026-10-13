@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/f16"
 )
 
 // Shared metal test helpers that must remain available to tests NOT gated on the
@@ -85,3 +86,6 @@ func skipIfMemoryDeclined(t *testing.T, m *decoder.Model) {
 		t.Skipf("not run: the Metal memory guard declined the resident build on this machine right now (%s)", why)
 	}
 }
+
+// f16ToF32 widens an f16 bit pattern to f32 (f16.ToF32).
+func f16ToF32(h uint16) float32 { return f16.ToF32(h) }

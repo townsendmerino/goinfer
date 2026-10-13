@@ -167,7 +167,7 @@ type ResidentSampleChain interface {
 
 // TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
 // docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
-// order decoder.topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
+// order internal/sampling's topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
 // row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
 // Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
 // reads the whole row for the token where K was not enough, and is valid only until the next forward.

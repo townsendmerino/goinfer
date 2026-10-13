@@ -11,7 +11,8 @@
 # SECOND CHECK ADDED 2026-08-26, same disease. Three times in one session a decoder/ edit was pushed
 # without running the parity staleness gate, and CI went red each time: G18, G20, and a renumber
 # whose entire decoder/ diff was TWO COMMENT LINES. The staleness gate keys on a whole-file content
-# hash — deliberately, so it can never miss a numeric change — so "was this edit numeric?" is the
+# hash — deliberately, so it can never miss a numeric change (since 2026-10-13 the hash of a Go file is
+# its token stream, so comments and layout no longer count) — so "was this edit numeric?" is the
 # wrong question and asking it is how the step gets skipped. The gate runs in well under a second,
 # so the hook runs it ALWAYS rather than trying to detect whether a change "counts".
 #
@@ -75,8 +76,8 @@ if [ "$pstatus" -ne 0 ]; then
     echo "" >&2
     printf '%s\n' "$parity" | head -20 >&2
     echo "" >&2
-    echo "  A decoder/ edit re-stales every validated family — the gate hashes whole files, so a" >&2
-    echo "  COMMENT is enough. That is the gate working, not a false positive." >&2
+    echo "  A code edit to a shared decoder/ file re-stales every family that uses it. Comments and" >&2
+    echo "  layout are not hashed (goCodeTokens), so this is a code change: the gate working." >&2
     echo "  Numeric change:      re-run T3 (go run ./cmd/gate parity), then -update." >&2
     echo "  Provably non-numeric: scripts/refresh_parity_hashes.sh — it runs the forward goldens" >&2
     echo "                        as independent proof and REFUSES if any fail." >&2

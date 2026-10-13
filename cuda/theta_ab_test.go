@@ -55,7 +55,7 @@ func TestThetaAB(t *testing.T) {
 		return s
 	}
 	adaptive := read("../decoder/spec_adaptive.go")
-	sampleSrc := read("../decoder/spec_sample.go")
+	sampleSrc := read("../internal/sampling/spec_sample.go")
 	const answerSystem = "You are a concise Go expert answering questions about the Go standard library. " +
 		"Ground every claim in the search results you are given and cite them as file:line. " +
 		"If the results do not contain the answer, say so instead of guessing."

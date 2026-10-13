@@ -12,7 +12,7 @@ import os, re, subprocess, sys, time
 
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 os.chdir(ROOT)
-SLOW = {"decoder", "cuda"}               # packages whose cold `go test` takes minutes; their ten-second tests call slowTest (decoder) and are skipped by -short
+SLOW = {"decoder", "internal/sampling", "cuda"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
 TAGS = {"cuda": "cuda goinfer_testhooks", "gpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 
 
