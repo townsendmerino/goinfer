@@ -1,0 +1,39 @@
+started: 2026-10-12 18:00:32 PDT; rev e41add80 serve: /v1/messages accepts a system message after the first 
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64; NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+== qwen2.5-7b-instruct-q4_k_m.gguf  [18:00:32]
+  decode path: cuda-resident (int4)
+  context: 16384 tokens (--ctx; model maximum 32768) · KV f32
+goinfer check → http://127.0.0.1:18490
+
+models list ...............  ok    1 model · cuda-resident (int4)
+chat, streamed ............  ok    TTFT 0.11s · 85.8 tok/s · usage present
+tools, OpenAI .............  ok    call get_weather({"city": "Paris"}) → result → answer in 2 turns
+tools, harness-scale ......  ok    call get_weather({"city": "Paris"}) among 12 tools
+tools, harness, Messages ..  ok    call get_weather({"city":"Paris"}) among 12 tools
+structured output .........  ok    {"type":"integer"} → 366
+stop sequences ............  ok    not leaked · finish_reason="stop"
+count_tokens ..............  ok    44 tokens, matches usage
+vision ....................  skip  no vision tower loaded (start the server with --vision <dir> to check this row)
+long prompt (~2000 words) .  ok    TTFT 1.61s · usage present
+
+9 of 10 checks passed (1 skipped, see above)
+check exit 0
+== qwen2.5-coder-1.5b-instruct-q4_k_m.gguf  [18:01:01]
+  decode path: cuda-resident (int4)
+  context: 16384 tokens (--ctx; model maximum 32768) · KV f32
+goinfer check → http://127.0.0.1:18490
+
+models list ...............  ok    1 model · cuda-resident (int4)
+chat, streamed ............  ok    TTFT 0.05s · 115.7 tok/s · usage present
+tools, OpenAI .............  FAIL  turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)
+tools, harness-scale ......  skip  model did not call the tool under a harness-scale (12-tool) schema — model answered without calling the tool (finish_reason="stop") — too small for tool use, or its template has no tool section
+tools, harness, Messages ..  skip  model did not call the tool under a harness-scale (12-tool) schema on /v1/messages (stop_reason="end_turn") — too small for tool use, or its template has no tool section
+structured output .........  ok    {"type":"integer"} → 366
+stop sequences ............  ok    not leaked · finish_reason="stop"
+count_tokens ..............  ok    44 tokens, matches usage
+vision ....................  skip  no vision tower loaded (start the server with --vision <dir> to check this row)
+long prompt (~2000 words) .  ok    TTFT 0.43s · 150.5 tok/s · usage present
+
+1 of 10 checks FAILED
+check exit 1
+finished: 2026-10-12 18:01:10 PDT rc=0
