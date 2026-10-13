@@ -1,0 +1,48 @@
+=== RUN   TestKV0_prefillInvariance_tiny
+=== RUN   TestKV0_prefillInvariance_tiny/f32
+    kv0_invariance_test.go:343: KV precision f32
+[kv0] fixture loaded, KV f16=false, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 512401 of 1024000 elements differ (first at position 0, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 131178 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.017): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 261833 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.016): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 7685 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.02): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8-row tail)       3 passes (2 fast): KV 4101 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0189): NOT INVARIANT, starts at position 992 (layer 1)
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 154112 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+=== RUN   TestKV0_prefillInvariance_tiny/f16
+    kv0_invariance_test.go:343: KV precision f16
+[kv0] fixture loaded, KV f16=true, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 475476 of 1024000 elements differ (first at position 1, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 127303 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0186): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@256                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 245953 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0151): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@511                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 6569 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0203): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8-row tail)       3 passes (2 fast): KV 3533 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0203): NOT INVARIANT, starts at position 992 (layer 1)
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 152933 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+--- PASS: TestKV0_prefillInvariance_tiny (1.98s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f32 (1.33s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f16 (0.57s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	2.035s
