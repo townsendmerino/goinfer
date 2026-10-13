@@ -81,6 +81,26 @@ reference one; the tiny fixture's random weights make its argmax meaningless and
 trial). Run with `-v`, `-timeout 30m`, a heartbeat line at least every 30 s, one package per invocation, logs under
 `docs/measurements/kv0-invariance-2026-10-13/`. By day: nothing here exceeds ~10 minutes.
 
+
+### 1a. Addendum, registered before the f16 runs
+
+After the first CUDA runs (below, §2.1), a read of `cuda/kvpolicy.go` and commit 60222412 found that **f16 KV is the CUDA
+default** for llama, mistral, qwen2, qwen3 and phi3 since 2026-10-13 (`Options.KVPrecision` "" or "auto"), so `serve` runs the
+models of this study with f16 KV. The registered runs loaded with the test's own options and asserted f32 K/V rows, so they
+measured f32. This addendum adds the configuration `serve` ships.
+
+- Every CUDA arm and the continuation arm are repeated with `KVPrecision: "f16"`, and the f32 arms with `KVPrecision: "f32"`
+  named explicitly, from the same test version. K/V rows are read as f16 bit patterns and compared through their exact f32
+  images (a widening is injective, so equal images mean equal bits).
+- **Predictions, unchanged from §1 for the invariance arms:** the class map reads the same quantities (pass rows, prompt length,
+  tail), the f16 kernels are the same source compiled with `-DKV_F16`, and both arms of a comparison round the same values to
+  f16 on store. So chunk arms and the splits at 512, 768 and 984 are **invariant**; the splits at 256 and 511, the split at 985
+  and the 496-row chunk are **not invariant**, starting at 0, 0, 985 and 992.
+- The exact-class property of the continuation arm (A′ equals C) is predicted to hold for f16 as it did for f32. The size of the
+  f16 continuation effect is not predicted; it is expected to differ from the f32 figure in the fraction of differing elements
+  (f16 rounding can absorb a small difference), not in sign.
+- WebGPU is unchanged: its KV is f32 by default and its arms ran as registered.
+
 ## 2. Readings
 
 (filled in below after the runs)

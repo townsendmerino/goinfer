@@ -146,9 +146,9 @@ type kv0Rig struct {
 	ctx    context.Context
 }
 
-func kv0Load(t *testing.T, path string, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
+func kv0Load(t *testing.T, path, kv string, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
 	t.Helper()
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: kv0Ctx})
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: kv0Ctx, KVPrecision: kv})
 	if err != nil {
 		t.Fatalf("load %s: %v", path, err)
 	}
@@ -161,10 +161,11 @@ func kv0Load(t *testing.T, path string, tokens func(vocab int) func(n, off int) 
 		t.Fatalf("%s: windowed KV is on; this gate reads whole-context caches", path)
 	}
 	for l := range r.layers {
-		if r.layers[l].kvHalf || r.layers[l].isMLA || r.layers[l].isDeltaNet {
-			t.Fatalf("%s: layer %d has f16, latent or recurrent KV; this gate reads f32 K/V rows", path, l)
+		if r.layers[l].kvHalf != (kv == "f16") || r.layers[l].isMLA || r.layers[l].isDeltaNet {
+			t.Fatalf("%s: layer %d: KV precision asked for %q, layer holds f16=%v (or it is latent or recurrent KV)", path, l, kv, r.layers[l].kvHalf)
 		}
 	}
+	t.Logf("KV precision %s", kv)
 	_, _, _, _, _, _, vocab := m.Dims()
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	t.Cleanup(cancel)
@@ -209,12 +210,24 @@ func (g *kv0Rig) snapshot(n int) kv0KV {
 				continue
 			}
 			kd := g.r.layers[l].kvDim
-			k, v := make([]float32, n*kd), make([]float32, n*kd)
-			if e := gpu.Download(g.r.kc[l], k); e != nil {
-				return e
-			}
-			if e := gpu.Download(g.r.vc[l], v); e != nil {
-				return e
+			var k, v []float32
+			if g.r.layers[l].kvHalf {
+				kh, vh := make([]uint16, n*kd), make([]uint16, n*kd)
+				if e := gpu.Download(g.r.kc[l], kh); e != nil {
+					return e
+				}
+				if e := gpu.Download(g.r.vc[l], vh); e != nil {
+					return e
+				}
+				k, v = kv0HalfToF32(kh), kv0HalfToF32(vh)
+			} else {
+				k, v = make([]float32, n*kd), make([]float32, n*kd)
+				if e := gpu.Download(g.r.kc[l], k); e != nil {
+					return e
+				}
+				if e := gpu.Download(g.r.vc[l], v); e != nil {
+					return e
+				}
 			}
 			s.t = append(s.t, k, v)
 			s.kvDim = append(s.kvDim, kd, kd)
@@ -225,6 +238,32 @@ func (g *kv0Rig) snapshot(n int) kv0KV {
 		g.t.Fatalf("snapshot: %v", err)
 	}
 	return s
+}
+
+// kv0HalfToF32 widens f16 bit patterns exactly, so two f16 caches compare bit for bit through their f32 images (a NaN stays a NaN).
+func kv0HalfToF32(h []uint16) []float32 {
+	out := make([]float32, len(h))
+	for i, x := range h {
+		sign, exp, man := uint32(x>>15), uint32(x>>10)&0x1f, uint32(x)&0x3ff
+		var b uint32
+		switch {
+		case exp == 0 && man == 0:
+			b = sign << 31
+		case exp == 0: // subnormal: normalise
+			e := uint32(127 - 15 + 1)
+			for man&0x400 == 0 {
+				man <<= 1
+				e--
+			}
+			b = sign<<31 | e<<23 | (man&0x3ff)<<13
+		case exp == 0x1f:
+			b = sign<<31 | 0xff<<23 | man<<13
+		default:
+			b = sign<<31 | (exp+127-15)<<23 | man<<13
+		}
+		out[i] = math.Float32frombits(b)
+	}
+	return out
 }
 
 func (g *kv0Rig) prefill(e [][]float32, start int) []float32 {
@@ -300,8 +339,9 @@ func kv0TextTokens(t *testing.T, ggufPath string) func(int) func(n, off int) []i
 func TestKV0_prefillInvariance_tiny(t *testing.T) {
 	const dir = "../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, dir)
-	g := kv0Load(t, dir, kv0RandomTokens)
-	kv0Invariance(t, g)
+	for _, kv := range []string{"f32", "f16"} {
+		t.Run(kv, func(t *testing.T) { kv0Invariance(t, kv0Load(t, dir, kv, kv0RandomTokens)) })
+	}
 }
 
 func TestKV0_prefillInvariance_real1p5B(t *testing.T) {
@@ -310,8 +350,9 @@ func TestKV0_prefillInvariance_real1p5B(t *testing.T) {
 	}
 	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	requireDeviceAndFile(t, path)
-	g := kv0Load(t, path, kv0TextTokens(t, path))
-	kv0Invariance(t, g)
+	for _, kv := range []string{"f32", "f16"} {
+		t.Run(kv, func(t *testing.T) { kv0Invariance(t, kv0Load(t, path, kv, kv0TextTokens(t, path))) })
+	}
 }
 
 func requireDeviceAndFile(t *testing.T, path string) {
@@ -337,7 +378,7 @@ func kv0Invariance(t *testing.T, g *kv0Rig) {
 	}
 	ids := g.tokens(N, 0)
 	e := g.embs(ids)
-	log("fixture loaded, N=%d floor=%d layers=%d", N, floor, len(g.r.layers))
+	log("fixture loaded, KV f16=%v, N=%d floor=%d layers=%d", g.r.layers[0].kvHalf, N, floor, len(g.r.layers))
 
 	// The whole prompt in one pass: the reference, and the per-pass launch counts that prove the fast class ran.
 	g.chunk("4096")
@@ -482,7 +523,9 @@ func kv0Invariance(t *testing.T, g *kv0Rig) {
 func TestKV0_continuationEffect_tiny(t *testing.T) {
 	const dir = "../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, dir)
-	kv0Continuation(t, kv0Load(t, dir, kv0RandomTokens))
+	for _, kv := range []string{"f32", "f16"} {
+		t.Run(kv, func(t *testing.T) { kv0Continuation(t, kv0Load(t, dir, kv, kv0RandomTokens)) })
+	}
 }
 
 func TestKV0_continuationEffect_real1p5B(t *testing.T) {
@@ -491,7 +534,9 @@ func TestKV0_continuationEffect_real1p5B(t *testing.T) {
 	}
 	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	requireDeviceAndFile(t, path)
-	kv0Continuation(t, kv0Load(t, path, kv0TextTokens(t, path)))
+	for _, kv := range []string{"f32", "f16"} {
+		t.Run(kv, func(t *testing.T) { kv0Continuation(t, kv0Load(t, path, kv, kv0TextTokens(t, path))) })
+	}
 }
 
 func kv0Continuation(t *testing.T, g *kv0Rig) {
@@ -606,7 +651,7 @@ func kv0Continuation(t *testing.T, g *kv0Rig) {
 		margins = append(margins, s.marginB)
 	}
 	sort.Float64s(margins)
-	log("continuation, %d trials, np=%d d=%d, same teacher-forced tokens:", trials, np, d)
+	log("continuation, KV f16=%v, %d trials, np=%d d=%d, same teacher-forced tokens:", g.r.layers[0].kvHalf, trials, np, d)
 	log("  decode rows vs fast-prefill rows (A vs B): %d of %d elements differ; max |diff| %.3g (largest |value| %.3g); rms diff / rms value mean %.3g worst %.3g",
 		diffAB, totAB, maxAbs, maxVal, sumRel/trials, worstRel)
 	log("  prompt rows [0,%d) of A vs B (a %d-row pass against the first %d rows of a %d-row pass): %d elements differ", np, np, np, n, prefix)
