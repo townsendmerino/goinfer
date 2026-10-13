@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/tokenizer"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
 // TestKV0_tokenizeBodies turns recorded request bodies into the token ids the server would prefill, for KV0's traffic study
 // (docs/measurements/kv0-traffic-2026-10-13.md). It is a measurement tool, not a check: it skips unless KV0_BODIES is set.
 //
-//	KV0_BODIES=<dir of recorded bodies> KV0_GGUF=<the served model's .gguf> KV0_OUT=<ids.jsonl> \
+//	KV0_BODIES=<dir of recorded bodies> KV0_GGUF=<the served model: a .gguf, a .giw or a model directory> KV0_OUT=<ids.jsonl> \
 //	  go test -count=1 -run '^TestKV0_tokenizeBodies$' -v ./internal/serveapp/
 //
 // Each body is rendered by the same calls its route makes (serveChatToolsWith / serveChatText, serveResponsesWith and
@@ -29,7 +29,7 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 	if dir == "" {
 		t.Skip("set KV0_BODIES, KV0_GGUF and KV0_OUT")
 	}
-	tk, err := tokenizer.LoadGGUF(gguf)
+	tk, err := modelload.Tokenizer(gguf)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}

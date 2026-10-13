@@ -16,7 +16,9 @@ Definitions (registered in docs/measurements/kv0-traffic-2026-10-13.md §1):
   divergence       the first position where a request differs from its previous thread request; its message index and role
   overlap          two requests of one session whose [start, end] intervals intersect
   reusable(B)      min(max LCP with any earlier request of the configuration, n-1) rounded down to a multiple of B
-  today            prefill_reused_tokens the server itself reported for the request
+  today            prefill_reused_tokens the server itself reported for the request; the Responses route does not report it, and
+                   there it is ESTIMATED as the common prefix with the immediately preceding request on the server (a lower bound
+                   on what the single slot still holds: it leaves out the tokens that request generated), flagged today_estimated
   gain(B)          max(0, reusable(B) - today)
 """
 import argparse, collections, json, os, statistics, sys
@@ -76,6 +78,7 @@ def main():
     out = dict(configs={}, definitions=__doc__)
     for cfg, sess in by_cfg.items():
         earlier = []        # (sid, ids) of every earlier request in the configuration, in order
+        gprev = None        # the previous request on the server, any session
         cfg_out = dict(model=sess[0]["model"], ctx=sess[0]["ctx"], sessions=[])
         for s in sess:
             wire = []
@@ -131,9 +134,14 @@ def main():
                         best_other = max(best_other, lcp(x, ids))
                 row["lcp_best_same_session"], row["lcp_other_session"] = best_same, best_other
                 best_any = min(max(best_same, best_other), n - 1)
+                est = lcp(gprev, ids) if gprev is not None else 0
+                row["today_estimated"] = row["today_reused"] is None
+                today = est if row["today_estimated"] else row["today_reused"]
+                row["today"] = today
                 for B in blocks:
                     row[f"reusable_{B}"] = best_any // B * B
-                    row[f"gain_{B}"] = max(0, best_any // B * B - (row["today_reused"] or 0))
+                    row[f"gain_{B}"] = max(0, best_any // B * B - today)
+                gprev = ids
                 prev = ids
                 thread_last[row["thread"]] = (ids, row)
                 sess_ids.append(ids)

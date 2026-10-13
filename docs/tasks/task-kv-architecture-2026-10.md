@@ -1,6 +1,6 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV10) — 2026-10
 
-> **Status: SCOPED 2026-10-13. Not started.** Written on the owner's ask after a Cowork conversation the same day ("seems
+> **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0); KV1 is next.** Written on the owner's ask after a Cowork conversation the same day ("seems
 > like we should consider a new KV architecture, given what goinfer is like now, feature-wise, what would be the best
 > architecture if we were writing it from scratch. how close is the current code?", then "please write the task doc for
 > the new architecture as proposed, be thorough").
@@ -23,11 +23,13 @@
 > 5. one shared KV pool;
 > 6. KV in host memory.
 >
-> **Lever 3 is not in the tree.** CUDA allocates f32 K/V whatever `--kv` asks
-> (`decoder/residency.go:Model.ResidentKVPrecision`). R6 phase 3, f16 resident KV on CUDA, was parked by the owner on
-> 2026-09-26 on a *speed* case: about 1.05× on a GQA 7B at depth 3,900 (`docs/prompts/cuda-r6-flash-decode.md`). The
-> case here is *capacity*: twice the context on the same card. The parking did not weigh that, so KV4b reopens it on that
-> ground. Lever 4 is KV-pre plus KV10, lever 5 is this doc, and lever 6 is KV7.
+> **Lever 3 is in the tree as of 2026-10-13, after this doc was written (KV0 found it).** f16 K/V is now the CUDA default for
+> llama, mistral, qwen2, qwen3 and phi3 (`cuda/kvpolicy.go:cudaKVF16Decline` lists what keeps f32; owner override,
+> commit 60222412). The text below that says CUDA is f32-only (this note as first written, §1, §4, §5.9, KV4b, D7) described the
+> tree at `e2ffb953`. R6 phase 3 had been parked on 2026-09-26 on a *speed* case: about 1.05× on a GQA 7B at depth 3,900
+> (`docs/prompts/cuda-r6-flash-decode.md`); the case for it was *capacity*, and the override took it on that ground. What
+> is left for KV4b is f16 *pools* and the families still on f32. Lever 4 is KV-pre plus KV10, lever 5 is this doc, and lever
+> 6 is KV7.
 
 ## 0. Summary
 
@@ -108,7 +110,7 @@ slot is gone; and every KV feature is built three or four times.
 5. **Every backend lays KV out its own way, so every KV feature is built three or four times.** (§4 has the table.)
    - Windowed KV: CUDA uses a shifted view with compaction (`cuda/kvwindow.go`, 2026-10-10). Metal and WebGPU allocate
      the whole context and mask it.
-   - Precision: CUDA f32 only; Metal f16 or i8; WebGPU f32, f16 or i8; the CPU f32 or i8.
+   - Precision: CUDA f16 for five families and f32 for the rest, with no int8; Metal f16 or i8; WebGPU f32, f16 or i8; the CPU f32 or i8.
    - Slots: a pointer swap on CUDA, contiguous views on Metal, whole runners on WebGPU.
    - Accounting: `docs/tasks/task-memory-accounting-2026-09.md` found five KV byte formulas. Today it is one function,
      `decoder/residentneed.go:Model.ResidentKVBytes`, with a "cuda" branch.
@@ -174,7 +176,7 @@ slot is gone; and every KV feature is built three or four times.
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
 | storage | per sequence, per layer `[]float32` growing by append; a ring per window layer (`decoder/kvcache.go:KVCache`) | per slot, per layer `ctxCap × kvDim`; window layers hold window + 512 (`cuda/kvwindow.go`) | per layer, slots in one allocation (`kvContig`), padded | per slot a whole `runModel` and `DecodeRunner` with bind groups baked over its KV (`gpu/kv_slots.go:webgpuKVSlot`) |
-| precision | f32, or int8 with a scale per position and KV head | **f32 whatever `--kv` asks** (`decoder/residency.go:Model.ResidentKVPrecision`) | f16, or int8 (f32 compiled out) | f32, f16 or int8 |
+| precision | f32, or int8 with a scale per position and KV head | **f16 by default for llama, mistral, qwen2, qwen3 and phi3, f32 otherwise** (`decoder/residency.go:Model.ResidentKVPrecision`, `cuda/kvpolicy.go:cudaKVF16Decline`); no int8, no scales | f16, or int8 (f32 compiled out) | f32, f16 or int8 |
 | context when unpinned | the model's window; KV allocated per request | fit up to 16,384, floor 4,096 (`cuda/resident.go:resolveCtxCapFit`) | fit up to 16,384 (M2), floor 4,096; `-ctx` up to 32,768 (`metal/model.go:resolveMetalCtxCap`) | a ceiling by precision |
 | several conversations | sessions (`-kv-sessions 4`), MC3c workers / batched decode | MC1 slots (`cuda/resident.go:cudaResident.UseKVSlot`), MC3 (`cuda/batchstep.go:cudaResident.StepBatch`) | MC1, 2 slots by default; MC3 (`metal/batch.go:metalResident.StepBatch`) | MC1 only (clamp-only on discrete GPUs) |
 | hybrids | all four recurrent kinds | DeltaNet, one slot | DeltaNet, one slot | DeltaNet, Mamba-2, one slot |
@@ -203,13 +205,20 @@ slot is gone; and every KV feature is built three or four times.
 
 **How close is it?** The *semantics* are perhaps 70% there and well tested: which state exists, when reuse is safe, which
 layers store what, and which kernel class wrote a row. The *storage* is close to zero, and that is where the effort is.
-- **Kernels that read or write KV by absolute position**, each gaining a table lookup:
-  - **CUDA, about 30:** `kv_store`, the `rope_kv*` family, `attention`, `attn_batched`, `attn_block_full`, the five
-    `splitkv_*`, ten `attn_fused_*` variants, `attn_img_batched`, `mla_attn`, `mla_latent_store`;
-  - **Metal, about 20:** `kv_store*`, `mc3_kv_store_rows`, `rope2_kv`, `attention`, `attention_f32`, `attention_i8`,
-    `attention_fa*`, `mc3_attention_rows`, `mc3_attention_fa_combine_rows`, the four `attention_prefill*`, `g4a_attn`;
-  - **WebGPU:** its attention pipelines (`gpu/attention.go`, `gpu/attn_keys_rows.go`, `gpu/attn_keys_wide.go`,
-    `gpu/mla.go`) and the KV stores.
+- **Kernels that read or write KV by absolute position**, each gaining a table lookup (counts corrected by KV0's census,
+  `docs/measurements/kv0-tile-census-2026-10-13.md`; the first version of this list said "about 30" and "about 20"):
+  - **CUDA:** 8 writers (`kv_store`, which is only ever launched at position 0 as a contiguous copy, `rope_kv`,
+    `rope_kv_pw`, `rope_kv_batched`, `rope_kv_batched_pw`, `rope_kv_mrope_batched` and its pairwise twin, `mla_latent_store`) and
+    43 reader entry points, about 19 distinct bodies: `attention`, `attn_batched`, `attn_block_full`, `attn_img_batched`, eight
+    `attn_fused*` (the other two of the first list's ten, `attn_vit_*`, read vision-tower scratch), the three `splitkv_*` that read
+    KV (`splitkv_scores`, `splitkv_vsum`, `splitkv_vsum_partial`), the flash-decode `fa_partial*` and 24 `fa_partial_rows_*`
+    instantiations, `mla_attn`. There is no int8 KV on CUDA;
+  - **Metal:** 4 live stores (`kv_store`, `kv_store_i8`, `kv_store_f16`, `mc3_kv_store_rows`) and 14 live reader entry points
+    (`attention`, `attention_i8`, the `attention_fa*` family and its MC3 row twins, the four prefill kernels). Not KV kernels:
+    `g4a_attn`, `attention_fa_combine`, `mc3_attention_fa_combine_rows`. Compiled but never dispatched: `kv_store_f32`,
+    `attention_f32`, `rope2_kv`;
+  - **WebGPU:** its attention pipelines (`gpu/attention.go`, `gpu/attn_keys_rows.go`, `gpu/attn_keys_wide.go`, `gpu/mla.go`) and
+    the KV stores, about a dozen WGSL shaders.
 
 ## 5. The design
 
@@ -226,7 +235,7 @@ generation ends ─► references drop ─► blocks stay cached (refcount 0, LR
 ```
 
 ```
-full group (B = 256)     seq A: [ 7 | 12 |  3 | 40 | 41 ]      blocks 7, 12, 3: the shared preamble,
+full group (B = 64)      seq A: [ 7 | 12 |  3 | 40 | 41 ]      blocks 7, 12, 3: the shared preamble,
                          seq B: [ 7 | 12 |  3 | 55 ]           stored once, refcount 2
 window group (W = 1024)  seq A: [ 66 | 67 | 68 | 69 | 70 ]     only ceil(W/B) + 1 blocks are held;
                                                                older ones go back to the pool (or the cache)
@@ -245,26 +254,41 @@ window group (W = 1024)  seq A: [ 66 | 67 | 68 | 69 | 70 ]     only ceil(W/B) + 
 - **Recurrent layers** contribute a state spec (bytes per sequence), not a group.
 - **Pools are per group** (option A). The planner sizes the window and chunk groups for the running sequences' needs and
   gives the rest to the full or latent group.
-  - **Option B, decided in KV0:** one arena with a page size uniform across groups, which is vLLM's choice. It makes memory
-    fungible between groups, at the cost of padding (vLLM's own doc calls the result "some memory waste"). Option A is
-    simpler. It loses little, because a window group's need is bounded per sequence.
+  - **Option B:** one arena with a page size uniform across groups, which is vLLM's choice. It makes memory fungible between
+    groups, at the cost of padding (vLLM's own doc calls the result "some memory waste").
+  - **KV0 chose option A** (`docs/measurements/kv0-tile-census-2026-10-13.md` §3): a window group's need is bounded per sequence
+    (17 blocks for Gemma-3-4B's 1,024-token window at B = 64, 123 MiB of 763 MiB for a 32K sequence), so the fungibility buys little;
+    option B pads where layer counts do not divide (Gemma-3's 29 local layers: 3.3% of the local group) and where `kvDim` differs
+    by layer (Gemma 4); and the recurrent state is a different size class in both.
 
 ### 5.3 Blocks and block tables
 
 - **A block is B consecutive positions** of one sequence in one group, at the same block index in every layer of the
   group. Storage per layer is `[numBlocks][B][kvDim]`, plus `[numBlocks][B][nKV]` scales for int8. That is today's
   row-major `[pos][kvDim]`, cut into pieces.
-- **B is chosen in KV0. 256 is the working assumption.** The constraints:
-  - B is a multiple of every kernel's contiguous key-load tile, so no tile straddles a block. CUDA's `attn_fused`
-    loads 64 key columns per tile, and Metal's `attention_fa_blk64` loads 64.
-  - B divides the prefill chunk (CUDA's default 512; Metal's from KV-pre) and the window slack.
-  - B is coarse enough that table lookups are noise.
+- **B = 64** (chosen in KV0; the working assumption had been 256). The census
+  (`docs/measurements/kv0-tile-census-2026-10-13.md`) found that **B must be a multiple of 64 and nothing more**, and B = 64, 128
+  and 256 all satisfy every kernel:
+  - the only contiguous key tile aligned from absolute key 0 is CUDA's `attn_fused*` at 64 keys (full-attention layers); Metal's
+    `attention_prefill_fused` needs B % 8 == 0 (B % 32 == 0 to keep its 32-key group in one block); no WebGPU kernel loads a
+    multi-key tile. `attention_fa_blk64` is the head-dim-64 twin of `attention_fa_blk`; both load 32 keys a block, not 64;
+  - B divides the prefill chunk (CUDA's 512; Metal's `PrefillBlockRows`, a multiple of 64 and at least 256, so 64 needs no
+    change there and 128 or 256 would) and CUDA's 512-position window slack;
+  - small enough that a window group stays close to its window (17 blocks of 64 for a 1,024-token window, against 5 blocks of
+    256 that hold 1,280 positions) and that a shared preamble loses at most 63 tokens at its end; large enough that a lookup
+    is a shift and 512 table entries cover 32K positions. 128 is the fallback if KV1's index measures worse than the arithmetic.
 - **A table** is an int32 array of block ids per sequence per group, mirrored to the device. An MC3 step passes a
   `[rows][maxBlocks]` table.
-- **The kernel change** is one indirection: key k lives at `table[k / B]·B + k mod B`. Tiles are aligned to blocks, so each
-  kernel visits the same keys in the same order with the same arithmetic. That is the whole bit-identity argument, and the
-  KV4/KV5 gates test it rather than trust it.
-- **Waste** is at most one partial block per sequence per group.
+- **The kernel change** is one indirection: key k lives at `table[k / B]·B + k mod B`, applied **per key**. Every reader on
+  every backend already addresses each key's row separately, so no kernel changes the grouping of its arithmetic. That is the
+  bit-identity argument, and it is *not* "tiles are aligned to blocks": that holds for `attn_fused*` on full-attention layers
+  only. Sliding-window readers, flash-decode and the split-KV chunks (`lo = winStart + sp·per`, `per` moving every few tokens),
+  Metal's decode flash-attention blocks and prefill writes at an arbitrary `startPos` are unaligned by construction. What keeps
+  the bits is that **every tile, partition and thread-to-key map stays defined in absolute key units**; re-cutting one at a block
+  edge is a numerical change, and a per-tile base-pointer optimisation is bit-safe only for `attn_fused` on full layers. The
+  KV4/KV5 gates test this rather than trust it.
+- **Waste** is at most one partial block per sequence per group: B/2 positions on average, 0.10% of a 32K sequence's KV at B = 64
+  on the 7B, 0.62 MiB (`block_arithmetic.py`).
 
 ### 5.4 Sequences and their lifecycle
 
@@ -293,8 +317,10 @@ into blocks it owns.
     **producer kernel class** of the block's rows (§5.6).
   - A block written by two classes, such as the end of a prompt and the start of its reply, records both and the row
     where they meet. It matches only the same mix.
-- **H is SHA-256**, truncated for the map key. vLLM recommends SHA-256 for multi-tenant use and prices it at about
-  100–200 ns per token.
+- **H is SHA-256**, truncated for the map key. SHA-256 is vLLM's default hash since v0.10.2; its v0.8.5 doc estimated
+  100–200 ns per token for the Python path, and an exploratory Go chain here measured 3–9 ns (§11a). The hash input needs a
+  canonical byte encoding (vLLM's pickle default is not reproducible across versions, which is why `sha256_cbor` exists), which
+  the disk tier (§5.8) depends on.
 - **Only full blocks are indexed,** as in vLLM. A partial tail is private.
 - **A lookup, across groups:**
   1. Take the longest chain of hits from block 0 in the full (or latent) group: L_full.
@@ -303,7 +329,8 @@ into blocks it owns.
   3. For a hybrid, take the deepest recurrent checkpoint at or below L.
   4. Apply the caps: L ≤ ⌊(n − 1)/B⌋·B (rule 3: the last token's logits are recomputed), and L never inside an image span.
   
-  This is vLLM's intersection, extended to more than two kinds of layer.
+  This is vLLM's intersection (`HybridKVCacheCoordinator.find_longest_cache_hit` iterates to a fixed point over any number of
+  groups; its design doc says "exactly two", the code does not).
 - **Eviction** takes refcount-0 blocks in LRU order, a sequence's later blocks before its earlier ones, so a chain
   shortens from its end. A block whose parent has gone can never be reached again, and is evicted first.
 - **What it removes:**
@@ -325,8 +352,11 @@ There are three properties, and each has a gate.
        `PrefillKernelFloor` marks the same kind of boundary.
      - So a 300-token request never takes rows a 20,000-token request computed. This is
        `declineShortLeadReuse`'s rule, generalised: its 64-token margin came from the MC4 graded run's root cause.
-   - **Each backend's batched prefill is invariant to where a chunk starts.** Measured on Metal; KV0 measures CUDA and
-     WebGPU.
+   - **Each backend's batched prefill is invariant to where a chunk starts.** Measured: Metal (`TestMC5_prefillChunkInvariance`),
+     and by KV0 on CUDA and WebGPU (`docs/measurements/kv0-invariance-2026-10-13.md`): chunk widths of 64 to 512 with ragged
+     tails and splits at 512, 768 and 984 are bit-identical on both; a split whose first call is under 512 tokens, or whose
+     second pass is under 16 rows, is **not** on CUDA, which is the class rule below, not a defect. A second condition joins the
+     key: **a pass of 15 rows or fewer is exact class** whatever the prompt's length.
 3. **Continuation, as today (not bit-identical to cold).** A conversation's own decode-written rows are reused when its
    next prompt extends them, as resident reuse does now. Their class is "decode", which no cold prefill produces, so a
    match on them is accepted only as a continuation of the same chain. If both versions of the same content exist, the
@@ -382,8 +412,9 @@ is MC4's identity gate extended to shared preambles.
 
 - **Per pool:** f32, f16 or i8. An int8 pool keeps one scale per position and KV head inside the block. Precision is in
   the root key, so blocks of different precisions never match.
-- **CUDA's f16 arrives in KV4b,** behind a fidelity gate. Whether it becomes the default is D7. Metal's precedent is f16
-  by default with the reference kept elsewhere.
+- **CUDA's f16 is already the default** for llama, mistral, qwen2, qwen3 and phi3 (owner override 2026-10-13, ahead of this
+  doc's KV4b); `--kv f32` keeps the reference. D7 is therefore decided for those families. KV4b extends f16 to f16 *pools* and to
+  the families that still decline (`cuda/kvpolicy.go:cudaKVF16Decline`: windowed, MLA, MoE, pairwise RoPE, m-RoPE).
 - **Lower precision, KV10, research only:** keys and values at different precisions (K8V4), or keys quantized per channel
   (KIVI/KVQuant style).
 
@@ -417,9 +448,11 @@ is MC4's identity gate extended to shared preambles.
 
 - **Prefill runs in chunks of k·B rows,** with chunk boundaries on block boundaries. The scratch is bounded by the chunk,
   not the prompt (KV-pre, KV3).
-- **MC3's step takes a table per row.** Metal's 16-buffer bind limit stops mattering: one pool buffer per layer plus one
-  table buffer.
-- **CUDA graphs.** The table is a device buffer written before replay, so its contents change without a recapture. Windowed
+- **MC3's step takes a table per row.** Metal's bind limit is 31 in the pinned aikit (the "16" in `metal/batch_rows.go` is a
+  stale comment; `mc3_attention_fa*_rows` binds 16 today, so a table buffer fits): one pool buffer per layer plus one table
+  buffer. On CUDA there is no rows kernel to extend: `stepAttnRows` loops over rows and rebinds a slot per call, so a table per
+  row is new kernel API there.
+- **CUDA graphs.** No KV launch is captured today (graphs capture only the segments around attention), so a table pointer is a launch argument; a table the captured segments read would be a device buffer written before replay. Windowed
   models get graphs back; today graphs are declined when windowed KV engages (`task-cuda-windowed-kv-2026-10.md` §7). A
   measured bonus, not a promise.
 
@@ -526,7 +559,7 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
   3 GB at 21K tokens and 9.5 GB at 64K.
 - **The fix:** prefill one long prompt in blocks, through the chunking mechanism that already exists, and price admission
   per block from Metal's own figure.
-- **This doc asks one thing of it:** the block size is a multiple of B (and of 64 until KV0 fixes B).
+- **This doc asks one thing of it:** the block size is a multiple of B = 64 (it already is: `PrefillBlockRows` is a multiple of 64).
 
 ### KV0 — Prior art, block size, two invariance measurements, the traffic study, owner decisions (no product code)
 
@@ -760,22 +793,26 @@ vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They cam
 
 - **PagedAttention** (Kwon et al., SOSP 2023, arXiv 2309.06180): blocks and tables, the origin of the idea.
 - **vLLM's automatic prefix caching** (design doc, v1):
-  - hash = parent hash + the block's tokens + extra keys (LoRA ids, multimodal hashes);
+  - hash = parent hash + the block's tokens + extra keys (LoRA ids, multimodal hashes, a cache salt on block 0), with one chain for
+    all groups and the group id appended to the map key (§11a);
   - full blocks only;
   - a free queue in LRU order with blocks released in reverse;
-  - SHA-256 for multi-tenant use.
+  - SHA-256 by default since v0.10.2 (`sha256_cbor` is the reproducible encoding).
 - **vLLM's hybrid KV cache manager** (design doc):
   - KV cache groups with one page size;
   - sliding-window blocks freed outside the window;
   - a hit is the intersection across groups;
-  - Mamba prefix caching "work in progress";
+  - Mamba prefix caching: "work in progress" in the docs up to v0.14.0; on main since 2026-01 (align mode) and 2026-06 (Marconi-style
+    admission), with defaults still moving (§11a);
   - KV-sharing layers patched in the model runner.
 - **SGLang's RadixAttention** (Zheng et al., arXiv 2312.07104): a radix tree over token prefixes, eviction by leaves.
 - **Marconi** (MLSys 2025, arXiv 2411.19379): prefix caching for hybrid models, with checkpoint admission and eviction
   weighed by reuse and the compute saved.
-- **llama.cpp's memory module** (`llama-kv-cache-unified-iswa`, `llama-memory-hybrid`): a unified KV cache with per-cell
-  sequence ids, sliding-window and recurrent memories. Read for how sequences share cells.
-- **Ollama's Go runner:** per-slot caches matched by longest prefix, structurally like MC1 today. Confirm in KV0.
+- **llama.cpp's memory module** (`llama-kv-cache` with a `unified` flag, `llama-kv-cache-iswa`, `llama-memory-hybrid`; the
+  `-unified` file names are gone): per-cell sequence ids, sliding-window and recurrent memories. Read for how sequences share cells.
+- **Ollama's Go runner:** per-slot caches matched by longest prefix, structurally like MC1 today. **Confirmed for its default mode and
+  corrected (KV0, §11a):** the runner files were removed on 2026-05-29 (Ollama now runs `llama-server`); before that its
+  `OLLAMA_MULTIUSER_CACHE` mode already did cross-slot prefix fork by sharing cells, which is KV2's shape.
 - **TensorRT-LLM's KV cache reuse and host offload, and LMCache's tiers:** the tiering half.
 - **Chu et al., arXiv 2508.08438 (SafeKV):** the timing side channel of shared prefix caches, and selective sharing.
 
