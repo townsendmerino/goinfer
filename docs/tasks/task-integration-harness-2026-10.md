@@ -450,20 +450,32 @@ night script `matrix/run-i3-night.sh`.
 
 | config | model, window | harness | tasks x reps | est. wall |
 |---|---|---|---|---|
-| `q7b-16k` | Qwen2.5-7B-Instruct q4_k_m, 16,384, f16 KV | opencode, Codex | 5 x 3 | 15 min |
-| `q7b-32k-cc` | the same at 32,768, one KV slot | Claude Code | 5 x 1 | 45 min |
+| `q3-4b-16k` (was `q7b-16k`) | Qwen3-4B int4, 16,384, f16 KV (was Qwen2.5-7B-Instruct q4_k_m) | opencode, Codex | 5 x 3 | 15 min |
+| `q3-4b-28k-cc` (was `q7b-32k-cc`) | the same at 28,672 (was the 7B at 32,768), one KV slot | Claude Code | 5 x 1 | 45 min |
 | `mellum-16k` | Mellum2.1 int4mix, C' expert streaming (45 of 64), 16,384 | opencode, Codex | 5 x 1 | 40 min |
 | `mellum-32k-cc` | Mellum2.1 at 32,768, one KV slot | Claude Code | 5 x 1 | 45 min |
-| `q7b-9k-codex-ovf` | the 7B at 9,408 (I1 live gate) | Codex | bulk, edit, fix x 3 | 10 min |
-| `q7b-11k-opencode-ovf` | the 7B at 11,520 (I1 live gate) | opencode | bulk, edit, fix x 3 | 10 min |
-| `q7b-28k-cc-ovf` | the 7B at 28,672 (I1 live gate) | Claude Code | bulk, edit x 1 | 35 min |
+| `q3-4b-9k-codex-ovf` (was `q7b-9k-codex-ovf`) | Qwen3-4B at 9,408 (I1 live gate) | Codex | bulk, edit, fix x 3 | 10 min |
+| `q3-4b-11k-opencode-ovf` (was `q7b-11k-opencode-ovf`) | Qwen3-4B at 11,520 (I1 live gate) | opencode | bulk, edit, fix x 3 | 10 min |
+| `q3-4b-28k-cc-ovf` (was `q7b-28k-cc-ovf`) | Qwen3-4B at 28,672 (I1 live gate) | Claude Code | bulk, edit x 1 | 35 min |
+
+**Model swap, 2026-10-13 (owner decision, after KV0).** KV0's pilots (`docs/measurements/kv0-traffic-2026-10-13.md` §1a, §1b) found that
+Qwen2.5-7B-Instruct cannot drive opencode, Codex or Claude Code: 20 sessions made 1 to 6 requests each and none passed, because it
+answers in prose or writes its tool call as text, and Qwen2.5-Coder-7B made 1 or 2. Qwen3-4B made 9-request chain sessions in opencode
+and Codex and 4 to 22 requests on the repository tasks. The five cells that ran the 7B now run **Qwen3-4B int4**
+(`/home/francis/models/qwen3-4b`, `--quant int4`, f16 KV): the configurations are renamed `q3-4b-*` (the old names are in the table), and
+Claude Code's window is **28,672** (1.42 x its 17.7k first request under Qwen3's template with connect's settings), because 32,768
+positions of Qwen3-4B's KV are 4.8 GB. Mellum's cells are unchanged. The I1 live-gate windows (9,408, 11,520, 28,672) keep their sizes.
+The plan, the script header and the queue entries (A and C re-queued under the same names with the new `ONLY` lists) carry the change; the serve
+binary stays the one pinned at queue time, which declines the batched prefill past 12,160 keys, so a Claude Code first request in
+these cells takes the per-token path (about 4.5 minutes, KV0) until the fix of `docs/measurements/kv3-cuda-2026-10-13.md` is in a
+pinned binary. The estimates are the old ones.
 
 The 30 runs of the registered screening scope are all present (3 harnesses x 2 checkpoints x 5 tasks); the 7B's opencode and Codex cells
 carry two more repetitions each, and the three `-ovf` configurations are the I1 gate. The registered "one repetition" is kept as the
 reading rule: the first repetition decides the cell. The two extra repetitions of the cheap 7B cells are the registered follow-up for
 fragile cells, run in the same night because they cost minutes; they are reported beside it, not instead of it.
-- **Three queue entries**, each under "3 h or less": job A (`q7b-16k`, `q7b-32k-cc`) estimated 80 min; job B (`mellum-16k`,
-  `mellum-32k-cc`) 130 min; job C (the three `-ovf` configurations) 70 min; 255 min in all, on the one box and so one after another. The wall figures above come from pilots (below), not from the
+- **Three queue entries**, each under "3 h or less": job A (`q3-4b-16k`, `q3-4b-28k-cc`) estimated 80 min; job B (`mellum-16k`,
+  `mellum-32k-cc`) 130 min; job C (the three `-ovf` configurations, now Qwen3-4B) 70 min; 255 min in all, on the one box and so one after another. The wall figures above come from pilots (below), not from the
   1.5 h the screening scope guessed before the census.
 - **Per-run timeouts** (a hang fails loudly): 15 min for opencode and Codex, 25 min for Mellum, 30 to 40 min for Claude Code. The job has a
   deadline and starts no run past it; a run that sees a `halted` answer is voided and redone.
