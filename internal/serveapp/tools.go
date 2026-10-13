@@ -27,6 +27,10 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
 		return
 	}
+	if err := checkToolCount(len(req.Tools)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Reject an input that cannot fit the context window BEFORE the O(n) tokenize. Tools are ACTIVE on this path, so
 	// req.Tools' schema bytes are added: RenderToolsSegments below renders every one of them into the prompt.
 	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages) + toolSchemaBytes(req.Tools)); err != nil {

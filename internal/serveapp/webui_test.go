@@ -702,3 +702,33 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 			"could make this server proxy arbitrary HuggingFace searches on the key-free loopback default (V-20)")
 	}
 }
+
+// TestWebUI_previewRunsNoScripts pins the preview iframe to a static render. A script in a sandboxed, opaque-origin frame can still
+// redirect the frame itself to a URL it builds, which a model's reply (or an injected document it was shown) can use to carry
+// conversation text out; with no scripts the document can only say what it was written to say. The CSP must not re-allow them.
+func TestWebUI_previewRunsNoScripts(t *testing.T) {
+	b, err := webUIFS.ReadFile("webui/ui/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(b)
+	m := regexp.MustCompile(`setAttribute\("sandbox",\s*"([^"]*)"\)`).FindStringSubmatch(app)
+	if m == nil {
+		t.Fatal("the preview iframe's sandbox attribute is no longer set in ui/app.js: the guard is watching nothing")
+	}
+	if m[1] != "" {
+		t.Errorf("the preview iframe's sandbox is %q; it must be empty (every restriction on, no allow-scripts, no allow-same-origin)", m[1])
+	}
+	csp := regexp.MustCompile(`const csp = "([^"]*)"`).FindStringSubmatch(app)
+	if csp == nil {
+		t.Fatal("the preview document's CSP is no longer a `const csp` in ui/app.js")
+	}
+	for _, bad := range []string{"script-src", "unsafe-eval", "connect-src", "frame-src", "default-src *"} {
+		if strings.Contains(csp[1], bad) {
+			t.Errorf("the preview CSP %q mentions %q", csp[1], bad)
+		}
+	}
+	if !strings.Contains(csp[1], "default-src 'none'") {
+		t.Errorf("the preview CSP %q does not start from default-src 'none'", csp[1])
+	}
+}

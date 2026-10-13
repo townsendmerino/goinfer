@@ -1217,11 +1217,15 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 			return genRequest{}, fmt.Errorf("max_tokens %d exceeds the server ceiling of %d", *maxTok, maxOutputTokensCeiling)
 		}
 	}
+	stops := parseStop(sm.Stop)
+	if len(stops) > maxStopSequences {
+		return genRequest{}, fmt.Errorf("stop accepts at most %d sequences (got %d)", maxStopSequences, len(stops))
+	}
 	gr := genRequest{
 		promptIDs:   promptIDs,
 		sp:          sp,
 		maxTokens:   deref(maxTok, defaultMaxTokens),
-		stopStrings: parseStop(sm.Stop),
+		stopStrings: stops,
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {

@@ -19,6 +19,7 @@ func (s *server) finalizeBatch(id string) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	defer s.recoverFinalize(b) // registered after the Unlock: it runs first and sets the status while the lock is still held
 	cancelled := b.Status == "cancelling"
 	now := time.Now()
 	b.CompletedAt = &now

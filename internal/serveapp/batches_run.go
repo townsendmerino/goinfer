@@ -40,6 +40,7 @@ func setJobID(batch *batchRecord, i int, id string) {
 func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	customID := batch.CustomIDs[i]
 	defer batch.wg.Done()
+	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
 
 	if len(req.Messages) == 0 {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error",
@@ -153,6 +154,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq) {
 	customID := batch.CustomIDs[i]
 	defer batch.wg.Done()
+	defer recoverBatchLine(batch, i) // after wg.Done: runs first, so the line's result is set before the batch can finalize
 
 	if req.MaxTokens == nil || *req.MaxTokens <= 0 {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error", "max_tokens is required and must be > 0"))

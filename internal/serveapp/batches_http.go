@@ -102,6 +102,9 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "input file: "+err.Error())
 		return
 	}
+	if batchTooLarge(w, len(lines)) {
+		return
+	}
 	var customIDs []string
 	var reqs []chatReq
 	for _, l := range lines {
@@ -198,6 +201,11 @@ func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "requests must not be empty")
 		return
 	}
+	if len(req.Requests) > maxBatchLines {
+		writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "request_too_large",
+			fmt.Sprintf("a batch holds at most %d requests, this one has %d: split it", maxBatchLines, len(req.Requests)))
+		return
+	}
 	customIDs := make([]string, len(req.Requests))
 	reqs := make([]anthropicReq, len(req.Requests))
 	for i, line := range req.Requests {
@@ -235,7 +243,7 @@ func anthropicBatchObject(b *batchRecord) map[string]any {
 	switch b.Status {
 	case "cancelling":
 		status = "canceling"
-	case "completed", "cancelled":
+	case "completed", "cancelled", "failed":
 		status = "ended"
 	}
 	processing, succeeded, errored, canceled := 0, 0, 0, 0
@@ -288,7 +296,7 @@ func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Req
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.Status != "completed" && b.Status != "cancelled" {
+	if b.Status != "completed" && b.Status != "cancelled" && b.Status != "failed" {
 		writeAnthropicErr(w, http.StatusConflict, "invalid_request_error", "batch results are not ready yet")
 		return
 	}

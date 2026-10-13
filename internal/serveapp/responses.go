@@ -347,6 +347,10 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 // respondTools generates a (buffered) tool-calling response and emits
 // function_call output items (or a message when the model answered normally).
 func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loadedModel, req responseReq, messages []chatMessage, sm sampling, id string, created int64, store bool) {
+	if err := checkToolCount(len(req.Tools)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	tools := make([]chat.Tool, len(req.Tools))
 	for i, t := range req.Tools {
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}

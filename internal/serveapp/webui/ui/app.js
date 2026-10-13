@@ -700,14 +700,16 @@ $("log").addEventListener("click", async e => {
 });
 
 // --- rendered code preview (W25) --------------------------------------------------------------
-// A sandboxed iframe, or not at all. sandbox="allow-scripts" with NO allow-same-origin gives it a
-// unique, opaque origin: no access to this page's cookies, storage, or API key, and no top-level
-// navigation. The strict CSP baked into the document additionally blocks every network request the
-// sandboxed page could make (fetch, images, fonts, nested frames), so "preview of generated code"
-// cannot double as a beacon calling out to whatever URL the code names. Loaded via iframe.src on a
-// data: URI — never .srcdoc, which TestWebUI_noHTMLStringSinks bans outright as an HTML-string sink.
+// A sandboxed iframe, or not at all. sandbox="" (every restriction on, NO allow-scripts, NO allow-same-origin) gives the document
+// a unique, opaque origin and runs no script in it: it cannot read this page's cookies, storage or API key, cannot navigate this
+// page, and cannot compute a destination from anything it knows, so a previewed page is a static render. The CSP baked into the
+// document blocks every subresource request (images, fonts, frames, forms, base). It does not stop the document navigating ITSELF,
+// as a meta refresh or a link the reader clicks can: a preview shows what the model wrote, and that includes a link or a redirect
+// the model chose. An earlier version ran scripts here, and a script could redirect the frame with data it had been handed, so the
+// preview no longer runs them. Loaded via iframe.src on a data: URI — never .srcdoc, which
+// TestWebUI_noHTMLStringSinks bans outright as an HTML-string sink.
 function previewDoc(html) {
-  const csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:;";
+  const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none';";
   const doc = '<meta http-equiv="Content-Security-Policy" content="' + csp.replace(/"/g, "&quot;") + '">' + html;
   return "data:text/html;charset=utf-8;base64," + btoa(unescape(encodeURIComponent(doc)));
 }
@@ -721,7 +723,7 @@ $("log").addEventListener("click", e => {
     if (code == null) return;
     frame = document.createElement("iframe");
     frame.className = "md-preview-frame";
-    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("sandbox", ""); // no allow-scripts: see previewDoc
     frame.setAttribute("title", "Preview");
     frame.src = previewDoc(code);
     wrap.after(frame);

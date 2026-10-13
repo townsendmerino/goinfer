@@ -75,6 +75,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	log := newJobEventLog()
 	s.jobs.attach(gr.id, log)
 	defer log.markDone()
+	defer s.recoverJob(gr.id, log, created) // after markDone: runs first, so the failure events land before the stream closes
 
 	// bgCtx, not any http.Request's context: this job outlives the POST that created it. Stored
 	// before tryEnter is even attempted, so DELETE /v1/jobs/{id} can stop a still-QUEUED job, not

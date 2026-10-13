@@ -563,6 +563,12 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 
 	mode, name := anthropicToolMode(req.ToolChoice)
 	toolsActive := len(req.Tools) > 0 && mode != "none"
+	if toolsActive {
+		if err := checkToolCount(len(req.Tools)); err != nil {
+			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
 	var tools []chat.Tool
 	var gr genRequest
 	var ids []int
