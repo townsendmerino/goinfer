@@ -46,8 +46,9 @@ client := &http.Client{Transport: server.Transport(h)}   // give this to an SDK,
 - The flags that configure the binary's listener and process (`-addr`, the TLS pair, `-web`, the admin surfaces, `-halt-file`) are refused.
   `-api-key` is honoured when given; `GOINFER_API_KEY` is not read.
 - A GPU backend is linked as the binaries link it: import its module and pass `-backend`.
-- **Not yet run against the OpenAI or Anthropic Go SDKs or the agent frameworks**; tested with `net/http` on a tiny model. Outside the
-  compatibility guarantee ([docs/api-tiers.md](docs/api-tiers.md)).
+- **Run against the official OpenAI and Anthropic Go SDKs** on a tiny model (module `sdktest/`, in CI): chat, streaming, a forced tool call,
+  schema-constrained output, the Responses API, and a context overflow arriving as each SDK's typed error. Not yet run against the agent
+  frameworks (Genkit, Eino, LangChainGo, ADK-Go). Outside the compatibility guarantee ([docs/api-tiers.md](docs/api-tiers.md)).
 
 ### Changed — a prompt that overflows the context is refused in the words each coding agent acts on
 

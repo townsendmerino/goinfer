@@ -350,9 +350,18 @@ unchanged.
 - **Read on the committed tiny chat model with `net/http`:** a chat completion answers; a stream arrives as separate
   events and ends with `[DONE]`; `-api-key` is enforced; a stream cancelled partway leaves no goroutine; after
   `Close` the model is gone (404). The root `go.mod` is unchanged.
-- **Still owed for I5's gate:** the separate SDK module (the official OpenAI and Anthropic Go SDKs' chat, streaming,
-  tools and structured output; one smoke test each for Genkit, Eino, LangChainGo and ADK-Go) and its CI stitching.
-  The typed `Config` the item sketched was not built: the constructor takes flags.
+- **The SDK module, built the same day:** `sdktest/`, a module of its own (`openai-go/v3` v3.77.0,
+  `anthropic-sdk-go` v1.80.0), stitched into CI with `go work init` and listed in `gate quick`. On the committed tiny
+  model with its window set to 2,048 (a tool definition's prompt does not fit the fixture's 128):
+  - OpenAI SDK: a chat completion, a stream, a forced tool call whose arguments parse to the schema, a
+    schema-constrained reply, the Responses API, and a conversation past the window read back as `*openai.Error` with
+    code `context_length_exceeded` (I1, end to end);
+  - Anthropic SDK: a message, a stream accumulated to a stop reason, a forced `tool_use`, and the overflow as a 400
+    saying "prompt is too long:".
+  - The root `go.mod` is unchanged: two requirements.
+- **Still owed for I5's gate:** one smoke test each for Genkit, Eino, LangChainGo and ADK-Go; and the mid-stream cancel
+  through an SDK (it is read with `net/http` only). The typed `Config` the item sketched was not built: the
+  constructor takes flags.
 
 ### I6 — Codex's `apply_patch`, honoured rather than dropped (candidate; desk check first)
 

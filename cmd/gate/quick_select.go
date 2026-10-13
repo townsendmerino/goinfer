@@ -189,6 +189,13 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			},
 		},
 		{
+			Name: "sdktest", Dir: "sdktest", Work: []string{".", "sdktest"},
+			Lint: []lintSpec{
+				{"build", nil, "", "affected", "sdktest: go build ./sdktest/..."},
+				{"vet", nil, "", "affected", "sdktest: go vet ./sdktest/..."},
+			},
+		},
+		{
 			Name: "demo/agent", Dir: "demo/agent", Work: []string{".", "gpu", "demo/agent"},
 			Lint: []lintSpec{
 				{"build", nil, "", "affected", "gpu: go build ./demo/agent/..."},
