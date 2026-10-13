@@ -65,6 +65,15 @@ vectors to the store, and run attention against the whole stored set:
   that term is what Chapter 8 is about
 ```
 
+<video controls muted playsinline preload="metadata" poster="./04-anim-kv-cache.png" style="width:100%;max-width:720px" aria-label="Eight rounds of the loop in two lanes. Without the cache, every round recomputes the key and value vectors for every position so far, 36 computations over eight rounds. With the cache, each round computes them only for the new position, 8 in all, while attention still reads every stored key.">
+  <a href="./04-anim-kv-cache.mp4"><img src="./04-anim-kv-cache.png" alt="Eight rounds of the loop in two lanes. Without the cache, every round recomputes the key and value vectors for every position so far, 36 computations over eight rounds. With the cache, each round computes them only for the new position, 8 in all, while attention still reads every stored key."></a>
+</video>
+
+*The same eight rounds, animated. Without the cache the work per round grows; with it, one new position per round
+is computed and kept, and attention still reads all of them. The counts are arithmetic about eight rounds, not
+measurements
+([video](./04-anim-kv-cache.mp4), [scene source](https://github.com/townsendmerino/goinfer/blob/main/docs/book/04-anim-kv-cache.py)).*
+
 Per-token cost stops growing with the number of tokens generated so far and starts growing
 only with the *comparison* against those tokens.
 

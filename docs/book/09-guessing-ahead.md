@@ -40,6 +40,14 @@ candidates from somewhere, you could check all five in a single pass.
   4 tokens produced for roughly the price of 1 forward pass
 ```
 
+<video controls muted playsinline preload="metadata" poster="./09-anim-speculative.png" style="width:100%;max-width:720px" aria-label="One round of speculative decoding. The drafter proposes the cat sat on the. The model checks all five in one pass and would say the cat sat in a. The first three agree and are accepted, the model's in is taken at the disagreement, and the rest is discarded: four tokens for one pass of the model.">
+  <a href="./09-anim-speculative.mp4"><img src="./09-anim-speculative.png" alt="One round of speculative decoding. The drafter proposes the cat sat on the. The model checks all five in one pass and would say the cat sat in a. The first three agree and are accepted, the model's in is taken at the disagreement, and the rest is discarded: four tokens for one pass of the model."></a>
+</video>
+
+*The same round, animated. The drafter proposes; the model decides, so the output is the same either way. The
+tokens are the example above, not a recorded run
+([video](./09-anim-speculative.mp4), [scene source](https://github.com/townsendmerino/goinfer/blob/main/docs/book/09-anim-speculative.py)).*
+
 If the drafter guessed 4 of 5 correctly, you produced 4 tokens for roughly the price of 1. If
 the drafter guessed none correctly, you paid slightly more than a normal step and got one
 token — the same token you would have gotten anyway.

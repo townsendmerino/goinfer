@@ -100,6 +100,14 @@ requiring two unpack shuffles per group. In split-half, byte i holds weight i an
 the mask and shift each yield a contiguous run and both shuffles
 disappear.](./10-fig1-nibble-layout.svg)
 
+<video controls muted playsinline preload="metadata" poster="./10-anim-nibble-unpack.png" style="width:100%;max-width:720px" aria-label="Unpacking the same int4 bytes in two packings, drawn at 8 weights per group. In the obvious packing a mask gives the even weights and a shift the odd ones, and two shuffles weave them into order: four instructions. In split-half packing the mask and shift each give a run already in order: two instructions.">
+  <a href="./10-anim-nibble-unpack.mp4"><img src="./10-anim-nibble-unpack.png" alt="Unpacking the same int4 bytes in two packings, drawn at 8 weights per group. In the obvious packing a mask gives the even weights and a shift the odd ones, and two shuffles weave them into order: four instructions. In split-half packing the mask and shift each give a run already in order: two instructions."></a>
+</video>
+
+*The same unpacking, animated, at 8 weights per group rather than 32 so the nibbles are readable. The instruction
+counts are about the drawing, not a measurement
+([video](./10-anim-nibble-unpack.mp4), [scene source](https://github.com/townsendmerino/goinfer/blob/main/docs/book/10-anim-nibble-unpack.py)).*
+
 Measured on Zen 2, that is **1.12× on the dot product** — and 1.12× both hot in L1 and cold from
 memory, which is what says it is an instruction-count win rather than a cache effect.
 

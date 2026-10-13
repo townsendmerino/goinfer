@@ -177,6 +177,14 @@ The shape of the matrix multiply is the whole difference:
      weight read over → compute-bound      → memory-bound
 ```
 
+<video controls muted playsinline preload="metadata" poster="./02-anim-matmul-shape.png" style="width:100%;max-width:720px" aria-label="Decode and prefill as the same matrix multiply. An 8 by 8 weight matrix is read one column at a time. With one row of activations, each column read produces one output value: 64 weight reads, 64 multiply-adds. With six rows, each column read produces six output values: the same 64 weight reads, 384 multiply-adds.">
+  <a href="./02-anim-matmul-shape.mp4"><img src="./02-anim-matmul-shape.png" alt="Decode and prefill as the same matrix multiply. An 8 by 8 weight matrix is read one column at a time. With one row of activations, each column read produces one output value: 64 weight reads, 64 multiply-adds. With six rows, each column read produces six output values: the same 64 weight reads, 384 multiply-adds."></a>
+</video>
+
+*The same multiply, animated. Decode reads every weight to serve one row; prefill reads the same weights once and
+serves six. The counts are arithmetic about the 8 × 8 drawing, not measurements
+([video](./02-anim-matmul-shape.mp4), [scene source](https://github.com/townsendmerino/goinfer/blob/main/docs/book/02-anim-matmul-shape.py)).*
+
 The same computation, two completely different performance problems. Chapter 8 takes the two
 regimes apart properly.
 
