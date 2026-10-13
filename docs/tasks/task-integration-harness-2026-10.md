@@ -444,7 +444,8 @@ ceiling; I7's default.
   under, 0.7 (the attention work is the same; each extra pass costs one LM-head row and its buffer setup). G-I8-6 is
   answered, 0.8 (KV 2.8 GB in two slots and about 0.55 GB a block; the risk is the 7B not going resident at 24,576).
 
-**I8 results, 2026-10-13 (day; the night gate was dropped unread, and the branch is not merged).** Code `d7a100ba` on branch
+**I8 results, 2026-10-13 (day; the night gate was dropped unread). Merged to main the same day** as the "KV-pre" step
+of `docs/tasks/task-kv-architecture-2026-10.md`, whose KV3 extends blocks and block admission to every resident. Code `d7a100ba` on branch
 `integration-harness-2026-10`. Records: `docs/measurements/integration-harness-2026-10/i8-day-2026-10-13/`.
 
 | gate | read | verdict |
