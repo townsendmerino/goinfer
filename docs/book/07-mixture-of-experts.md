@@ -59,6 +59,15 @@ tells the expert pager what to fetch next.
 That is why every model discussed in Chapter 6 was a Mixture-of-Experts model. Paging does not
 rescue dense models.
 
+<video controls muted playsinline preload="metadata" poster="./07-anim-moe-routing.png" style="width:100%;max-width:720px" aria-label="A router picks 8 of 64 experts for each token. Go tokens keep choosing from the same experts, so after the first token few are fetched from disk: 8, 2, 1, 1, 0. The French word bonjour routes to different experts and 7 are fetched.">
+  <a href="./07-anim-moe-routing.mp4"><img src="./07-anim-moe-routing.png" alt="A router picks 8 of 64 experts for each token. Go tokens keep choosing from the same experts, so after the first token few are fetched from disk: 8, 2, 1, 1, 0. The French word bonjour routes to different experts and 7 are fetched."></a>
+</video>
+
+*Routing, animated. A run of Go tokens keeps reusing the experts already in memory; a French word routes elsewhere
+and the fetches come back. The routing is illustrative, not a recording of a real model, and the cache is drawn
+with no capacity limit
+([video](./07-anim-moe-routing.mp4), [scene source](https://github.com/townsendmerino/goinfer/blob/main/docs/book/07-anim-moe-routing.py)).*
+
 ---
 
 ## Where the cost goes

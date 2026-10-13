@@ -30,6 +30,13 @@ cp docs/book/*.md "$SRC"/
 if compgen -G "docs/book/*.svg" > /dev/null; then
   cp docs/book/*.svg "$SRC"/
 fi
+# Animations: a rendered .mp4 and its poster .png beside the chapter that plays it. The .py scene that
+# makes them (ManimGX, rendered by hand, never in this build) stays in the repo and is not staged.
+for ext in mp4 png; do
+  if compgen -G "docs/book/*.$ext" > /dev/null; then
+    cp docs/book/*."$ext" "$SRC"/
+  fi
+done
 # The chapter table is the front page.
 mv "$SRC"/README.md "$SRC"/index.md
 cat > "$SRC"/_config.yml <<'CFG'
