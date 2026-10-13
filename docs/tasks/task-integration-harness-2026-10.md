@@ -26,7 +26,7 @@
 | In-process facade (`llm`) | `task-embed-and-harness-ux.md` §2 | unstarted, unblocked |
 | Fill-in-the-middle and editors | `task-editor-fim-2026-09.md` | unstarted; F0 gates it |
 | Desktop sidecar prerequisites | `parked/task-bindings.md` A0 | parked |
-| Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal unchanged at 4096 |
+| Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
 | Per-request log | `task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
 
 ## 0a. Results, 2026-10-12 (the first day)
@@ -101,7 +101,8 @@ harness is one problem: each assumes a context window goinfer does not serve on 
 | Goose | `GOOSE_CONTEXT_LIMIT`, default 128K; compacts at 80% | 413, or a 400 naming context length → fallback |
 
 On an 8 GB card goinfer serves 16,384 to a 1.5B at its default, and about 5.5K to a 7B holding its four KV slots
-(R19's table; a 7B agent passes `-ctx 16384` and gets fewer slots). Metal's default is 4096. opencode's first request
+(R19's table; a 7B agent passes `-ctx 16384` and gets fewer slots). Metal's default was 4096 when this was written
+and is up to 16384 since M2. opencode's first request
 alone was 11,137 tokens (R19). So unless each harness is told the real window, **every one of them overruns
 goinfer's**, and what happens next depends entirely on how the overflow error is worded. Today:
 
@@ -364,6 +365,33 @@ fit-by-default aim for. Asked what to do about it, the owner said: "it would be 
   at depth 128 reads the first 129 positions whatever the buffer's size). The 7B resolves 32,768 with 2 slots, 0.4:
   it needs about 8.7 GB of live budget (4.5 GB of weights, 3.8 GB of KV, the margin). If it resolves less, the
   comparison is of what the new default gives on this Mac, and the record says which context that was.
+
+**G-I7-speed, the Mac half, read on the night of 2026-10-12: SHIP on speed, and a refusal that changes I7's design.**
+Records: `docs/measurements/integration-harness-2026-10/i7-night-2026-10-12/`.
+
+| model | context the trial build resolved | new (tok/s) | old (tok/s) | new / old by block | median |
+|---|---|---|---|---|---|
+| Qwen2.5-Coder-1.5B | 32,768 in every cell | 93.60 | 93.45 | 1.0045 1.0019 1.0014 1.0016 1.0017 1.0013 | **1.0017** |
+| Qwen2.5-7B | 25,736 or 32,768, by the memory free at each load | 30.70 | 30.71 | 0.9999 1.0013 1.0001 0.9980 1.0020 1.0000 | **1.0000** |
+
+- **A KV of twice M2's size does not slow a depth-128 turn on Metal** on these two models.
+- **The 20,199-token request, not graded:**
+  - the 1.5B at 32,768 answered a 20,954-token prompt in 34.2 s with no swap growth;
+  - **the 7B refused it with a 413.** It had resolved 31,328 positions in 2 slots (3.3 GB of KV), which left 2.5 GB
+    available, and the per-request admission priced the prompt's prefill at 3.21 GB
+    (`decoder/prefill_budget.go:Model.AdmitPrefillMemory`). So the larger default took the memory the request it was
+    raised for needs. The night job shows FAILED for this refusal.
+- **What that means for the code, before it is written:**
+  - **The fit must leave room for the prefill of the request the context is for**, or the bigger number is
+    decoration. On a 16 GB Mac with a 7B that probably means one slot at a harness-sized context, or two at 16,384:
+    the slots-against-context question above, now with a measurement behind it.
+  - **The admission's estimate needs checking against the resident path.**
+    `decoder/prefill_budget.go:prefillScratchBytes` prices the feed-forward scratch of one sweep over the whole
+    prompt (8 bytes x the feed-forward width x the prompt's tokens), and calls itself an upper bound. Metal's
+    prefill runs in chunks, so the real figure may be far smaller. Measure it before trusting either the refusal or
+    the room.
+- **Predictions scored.** "The median is within 1% of 1 on both models (0.7)": yes. "The 7B resolves 32,768 with 2
+  slots (0.4)": in some cells and not others; 31,328 on the served load.
 
 ## 3. Considered and not recommended (recorded so they are not re-proposed)
 
