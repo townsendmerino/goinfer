@@ -76,7 +76,8 @@ type Model struct {
 	resSlots      []residentSlot
 	resCur        int
 	resTick       uint64
-	kvF16         bool         // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvF16         bool         // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
+	kvF16Decline  string       // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
@@ -313,8 +314,10 @@ type Options struct {
 	Backend    string // "cpu" (default), "webgpu", "cuda", "metal", or "auto" (AutoBackend); a name not compiled in falls back to cpu
 	Quant      string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), "int4" (group-wise), or "bf16" / "f16" (16-bit weights widened per tile: bit-identical to f32 over a bf16 / f16 checkpoint, half the memory, CPU only)
 	LoRA       string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
-	// KVPrecision selects the GPU residency KV cache precision: "" / "f32" (default, bit-exact), "f16" (lossy, twice the
-	// context) or "i8" (lossy, four times). Ignored off the residency path. See task-gpu-f16-kv.md / task-gpu-kv-i8.md.
+	// KVPrecision selects the GPU residency KV cache precision: "" / "auto" (the default: f16 on CUDA for a family the f16 kernels cover and
+	// the gates cleared, otherwise what the backend always did: f32, or f16 on Metal), "f32" (bit-exact, on every backend), "f16" (lossy, twice
+	// the context) or "i8" (lossy, four times). Ignored off the residency path. See task-gpu-f16-kv.md / task-gpu-kv-i8.md and
+	// task-cuda-f16-kv-2026-10.md.
 	KVPrecision string
 	// MoECacheExperts streams routed MoE experts host→VRAM per token instead of holding the whole
 	// expert stack resident — the path to running a model whose experts exceed VRAM with every
@@ -458,8 +461,19 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			wm.SetActQuantGroup(opts.ActQuantGroup)
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
-		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
+	kvF16, kvDecline := opts.KVPrecision == "f16", ""
+	if be != nil && be.Name() == "cuda" {
+		// CUDA: "f16" asks for it, "auto" (the default) takes it for a cleared family, "f32" refuses it; a family or build the f16 kernels do not
+		// cover stays f32 and, when f16 was asked for by name, says why (Model.KVF16DeclineReason).
+		o := opts
+		o.Backend = "cuda"
+		kvF16 = o.kvF16For(w.arch)
+		if !kvF16 && opts.KVPrecision == "f16" {
+			kvDecline = cudaKVF16Decline(w.arch, o)
+		}
+	}
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,
+		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
@@ -732,9 +746,9 @@ func (o Options) Validate() error {
 		return fmt.Errorf("decoder: invalid ActQuantGroup %d (0 | 32)", o.ActQuantGroup)
 	}
 	switch o.KVPrecision {
-	case "", "f32", "f16", "i8":
+	case "", "auto", "f32", "f16", "i8":
 	default:
-		return fmt.Errorf("decoder: invalid -kv %q (f32 | f16 | i8)", o.KVPrecision)
+		return fmt.Errorf("decoder: invalid -kv %q (auto | f32 | f16 | i8)", o.KVPrecision)
 	}
 	switch o.KVQuant {
 	case "", "f32", "i8":

@@ -307,3 +307,36 @@ func f32tof16(f float32) uint16 {
 		return half
 	}
 }
+
+// The _kv16 twins: the same sources as the modules above, built with -DKV_F16 (kvtype.cuh), so their K/V cache pointers are __half. The resident
+// loads a twin in place of its module when the KV cache is f16 (cudaResident.kvPTX); the f32 modules above are byte-identical to what they were
+// before the twins existed. docs/tasks/task-cuda-f16-kv-2026-10.md.
+//
+//go:embed testdata/gemv_fwd_kv16.ptx
+var gemvFwdKV16PTX []byte
+
+//go:embed testdata/glue_kv16.ptx
+var glueKV16PTX []byte
+
+//go:embed testdata/prefill_batched_kv16.ptx
+var prefillBatchedKV16PTX []byte
+
+//go:embed testdata/decode_splitkv_kv16.ptx
+var decodeSplitKVKV16PTX []byte
+
+//go:embed testdata/decode_fa_kv16.ptx
+var decodeFAKV16PTX []byte
+
+//go:embed testdata/attn_fused_kv16.ptx
+var attnFusedKV16PTX []byte
+
+//go:embed testdata/attn_fused_bm_kv16.ptx
+var attnFusedBMKV16PTX []byte
+
+// kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module.
+func (r *cudaResident) kvPTX(f32, kv16 []byte) []byte {
+	if r.kvF16 {
+		return kv16
+	}
+	return f32
+}

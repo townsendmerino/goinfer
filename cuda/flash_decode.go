@@ -72,7 +72,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): no positive head dim\n")
 		return
 	}
-	mod, e := r.dev.CompileLibrary(decodeFAPTX)
+	mod, e := r.dev.CompileLibrary(r.kvPTX(decodeFAPTX, decodeFAKV16PTX))
 	if e != nil {
 		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
 		return

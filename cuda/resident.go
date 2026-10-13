@@ -161,7 +161,7 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 // would allow (docs/code-notes/cuda.md#ctxForSlots).
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
 	fits := func(ctx int) bool {
-		more := int64(slots-1) * m.ResidentKVBytes("cuda", ctx, false, false) // CUDA's KV is f32 whatever was requested
+		more := int64(slots-1) * m.ResidentKVBytes("cuda", ctx, m.KVCacheF16(), false) // the load's own KV precision (decoder/kv16_cuda.go)
 		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
 		return p.Placement != decoder.PlacementDecline
 	}
@@ -188,20 +188,24 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 }
 
 // kvBytesForCap is the device bytes the resident K+V caches occupy at a given capacity: every layer holds K and V
-// as f32[cap*kvDim]. docs/benchmarks.md derives its deep-context sizing from this formula.
+// as f32[cap*kvDim] (f16 for a kvHalf layer). docs/benchmarks.md derives its deep-context sizing from this formula.
 func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 	var perPos, windowed int64
 	for i := range layers {
 		if layers[i].kvShared {
 			continue // aliases its source's cache: no bytes of its own
 		}
+		elem := int64(4) // f32; an f16 layer (kvHalf) holds half
+		if layers[i].kvHalf {
+			elem = 2
+		}
 		if layers[i].isMLA {
 			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer holds window+slack positions however long the context (kvwindow.go), and decoder.cudaKVBytes prices the same
-			windowed += int64(layers[i].kvDim) * 2 * 4 * int64(min(cap, int(layers[i].window)+kvWindowSlack))
+			windowed += int64(layers[i].kvDim) * 2 * elem * int64(min(cap, int(layers[i].window)+kvWindowSlack))
 		} else {
-			perPos += int64(layers[i].kvDim) * 2 * 4 // K+V
+			perPos += int64(layers[i].kvDim) * 2 * elem // K+V
 		}
 	}
 	return perPos*int64(cap) + windowed
@@ -268,11 +272,11 @@ func (r *cudaResident) allocKVSlot(s, nLayers int) (b cudaKVSlot, ok bool) {
 			continue // aliased to its source's slot buffers below
 		}
 		if r.kc[l].Len() > 0 {
-			b.kc[l] = r.af(r.kc[l].Len())
+			b.kc[l] = r.akv(l, r.kc[l].Len())
 			own = append(own, b.kc[l])
 		}
 		if r.vc[l].Len() > 0 {
-			b.vc[l] = r.af(r.vc[l].Len())
+			b.vc[l] = r.akv(l, r.vc[l].Len())
 			own = append(own, b.vc[l])
 		}
 	}
@@ -392,6 +396,7 @@ type cudaLayer struct {
 	qNorm, kNorm        Buffer // per-head QK-norm weights (absent ⇒ arch has none)
 	window              int32  // sliding-window span for THIS layer; 0 = full causal
 	kvWin               bool   // this layer's K/V hold window+slack positions, not the context (kvwindow.go)
+	kvHalf              bool   // this layer's K/V cache holds f16 (the _kv16 kernel twins, docs/tasks/task-cuda-f16-kv-2026-10.md); an MLA latent never does
 	// Per-layer attention geometry. Uniform families set the model values on every layer; Gemma 4 varies them (local
 	// head_dim 16 / global 512, K=V). launchToken reads ONLY these: the model-level hd/nKV/qDim/kvDim/rhalf are
 	// deliberately absent from cudaResident so a launch site cannot bind the wrong (uniform) source.
@@ -707,6 +712,7 @@ type cudaResident struct {
 	faMinKeys     int            // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
 	faBuf         Buffer         // partials [nH][S*8][hd+4]
 	faLaunches    int            // launches of fa_partial, so a test can prove the lane ran
+	skLaunches    int            // split-KV decode attention passes, so a test can prove that path ran
 	faExactScope  atomic.Int32   // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
 	faRows        [3][9]Pipeline // fa_partial_rows_{64,128,256}_g{1..8} (multi-row verify variant); zero when not loaded
 	faCombineRows Pipeline
@@ -835,6 +841,7 @@ type cudaResident struct {
 	// slot's per-layer K/V (nil with one slot), kvSlot the bound index. kc/vc above are the BOUND slot's buffers —
 	// every kernel launch and UploadKV reads them at call time — and UseKVSlot rebinds them.
 	kvSlotsReq      int
+	kvF16           bool          // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
 	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
 	deepPlan        *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
 	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
@@ -922,6 +929,14 @@ type cudaResident struct {
 // setupErr, so BuildResident declines gracefully (staged fallback) instead of proceeding with unusable buffers.
 func (r *cudaResident) af(n int) Buffer {
 	return gpu.NewBufferLenOf[float32](r.dev, n)
+}
+
+// akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, f32 otherwise. Buffer.Len is in elements either way.
+func (r *cudaResident) akv(l, n int) Buffer {
+	if r.layers[l].kvHalf {
+		return gpu.NewBufferLenOf[uint16](r.dev, n)
+	}
+	return r.af(n)
 }
 func (r *cudaResident) ai(n int) Buffer {
 	return gpu.NewBufferLenOf[int32](r.dev, n)
@@ -2192,11 +2207,27 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			return e
 		}
 	}
-	byteOff := base * kvDim * 4 // f32 elements, matches gpu.Upload[float32]'s element width
+	elem := 4 // bytes per cached element: f32, or 2 for an f16 layer
+	if r.layers[layer].kvHalf {
+		elem = 2
+	}
+	byteOff := base * kvDim * elem // matches gpu.Upload's element width
 	if r.layers[layer].kvWin {
 		// a windowed layer keeps only the last window-1 positions, at physical slot 0 (kvwindow.go)
 		keys, vals = r.uploadKVWindowed(layer, base, keys, vals)
 		byteOff = 0
+	}
+	if r.layers[layer].kvHalf {
+		// The cache holds the nearest f16 of each value, ties to even: the rounding the _kv16 store kernels apply to what they write.
+		kh, vh := make([]uint16, len(keys)), make([]uint16, len(vals))
+		f32SliceToF16RNE(kh, keys)
+		f32SliceToF16RNE(vh, vals)
+		return r.do(func() error {
+			if e := gpu.Upload(r.kc[layer].At(byteOff), kh); e != nil {
+				return e
+			}
+			return gpu.Upload(r.vc[layer].At(byteOff), vh)
+		})
 	}
 	return r.do(func() error {
 		if e := gpu.Upload(r.kc[layer].At(byteOff), keys); e != nil {
@@ -2525,6 +2556,7 @@ func (r *cudaResident) norm(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 // (nH·⌈hd/32⌉ blocks, each thread the whole per-d fold). Writes r.cctx exactly as attn_batched would. See
 // docs/tasks/task-decode-splitkv-attention.md.
 func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
+	r.skLaunches++
 	Ly := &r.layers[l]
 	nKeys := pos + 1
 	winStart := 0

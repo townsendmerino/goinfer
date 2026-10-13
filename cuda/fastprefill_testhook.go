@@ -15,7 +15,7 @@ package cuda
 // it a pass.
 func (r *cudaResident) SetFastPrefillForTest(attn, gemm bool) error {
 	if attn && (r.bAttnFused64 == (Pipeline{}) || r.bAttnFused128 == (Pipeline{})) {
-		mod, err := r.dev.CompileLibrary(attnFusedPTX)
+		mod, err := r.dev.CompileLibrary(r.kvPTX(attnFusedPTX, attnFusedKV16PTX))
 		if err != nil {
 			return err
 		}

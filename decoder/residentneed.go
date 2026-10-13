@@ -11,8 +11,8 @@ package decoder
 //     every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
 //     models the CPU ring buffer and would under-count Metal. Metal also holds a second copy of the dense weights in
 //     unified memory (the host WeightMat and the re-packed device buffer, ResidentHostCopyBytes), which Plan must count.
-//   - CUDA allocates f32 K/V whatever KV precision was requested (it reads no KV-precision option), and an MLA layer
-//     holds one latent buffer rather than K and V (docs/measurements/memory-accounting-cuda-2026-09-25.md).
+//   - CUDA allocates f32 K/V, or f16 where kv16_cuda.go clears the model (the default for a cleared family, or -kv f16 for one the kernels
+//     cover); an MLA layer holds one f32 latent buffer rather than K and V (docs/measurements/memory-accounting-cuda-2026-09-25.md).
 //   - Other backends (webgpu, cpu) keep Plan's per-position formula.
 
 // WeightsMemFraction is the share of a memory figure the weights (and the rest of a resident build)
@@ -37,7 +37,7 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 		return 0
 	}
 	if backend == "cuda" {
-		return m.cudaKVBytes(ctx)
+		return m.cudaKVBytes(ctx, kvF16)
 	}
 	if backend != "metal" {
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
@@ -91,7 +91,11 @@ func (m *Model) residentHostCopyFor(backend string, slots int) int64 {
 // ctx*latDim on an MLA layer (the V head is reconstructed from the latent), nothing on a layer that
 // holds no attention K/V (DeltaNet and the other recurrent mixers). The requested KV precision is
 // ignored because CUDA ignores it.
-func (m *Model) cudaKVBytes(ctx int) int64 {
+func (m *Model) cudaKVBytes(ctx int, kvF16 bool) int64 {
+	elem := int64(4) // f32; an f16 cache (kv16_cuda.go) holds half
+	if kvF16 {
+		elem = 2
+	}
 	a := m.w.arch
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var perPos, windowed int64
@@ -101,16 +105,16 @@ func (m *Model) cudaKVBytes(ctx int) int64 {
 		}
 		kvDim := int64(a.kvDimAt(l)) // 0 for a no-attention-KV layer; the latent width on MLA
 		if a.mla != nil {
-			perPos += kvDim * 4 // one latent row per position
+			perPos += kvDim * 4 // one latent row per position (MLA keeps f32)
 			continue
 		}
 		if m.WindowedKVLayer(l) {
 			// A windowed layer holds window+slack positions (cuda/kvwindow.go allocates exactly this), not the context.
 			win := int64(ResidentWindowedKVCap(m.SlidingWindowResident(), ctx))
-			windowed += 2 * kvDim * 4 * win
+			windowed += 2 * kvDim * elem * win
 			continue
 		}
-		perPos += 2 * kvDim * 4 // K and V, f32
+		perPos += 2 * kvDim * elem // K and V
 	}
 	return perPos*int64(ctx) + windowed
 }

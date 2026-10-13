@@ -76,6 +76,11 @@ type drafterLayer struct {
 // against the target, not trusted: a drafter reads the target's residual stream, so a hidden-dim mismatch is the wrong
 // pairing, and the failure mode is a drafter that runs and drafts noise (docs/spec/08).
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
+	if r.kvF16 {
+		// The drafter keeps its own f32 K/V and attends over it with this resident's attention pipelines; under an f16 cache those are the
+		// _kv16 twins, which would read its f32 buffers as halves and draft noise without an error. Load the target with -kv f32.
+		return nil, fmt.Errorf("cuda drafter: the target's KV cache is f16 and the drafter's is f32 (load the target with -kv f32)")
+	}
 	if r.eModel {
 		return nil, fmt.Errorf("cuda drafter: the target is a Gemma 4 E-model, whose verify pass needs the batched prefill it declines (per-layer embeddings, shared KV, per-layer FFN width)")
 	}

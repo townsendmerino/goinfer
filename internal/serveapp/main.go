@@ -1519,6 +1519,11 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		// The drafter's own device K/V scales with whatever resident context the target ends up choosing, which is not known yet:
 		// see Options.ExtraResidentKVPerPosition for why this is a rate, not a total, and who multiplies it by what.
 		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
+		// The drafter keeps an f32 K/V of its own beside the target's attention kernels, so under the default (auto) the pair stays f32 on
+		// CUDA; an explicit -kv f16 reaches the resident's decline and says so.
+		if opts.KVPrecision == "" || opts.KVPrecision == "auto" {
+			opts.KVPrecision = "f32"
+		}
 	}
 	// A CUDA vision tower loads after this model and claims VRAM too (tower_reserve.go): price it the same way, so the KV plan leaves room for it.
 	opts.ExtraResidentBytes += towerReserve(cfg, spec.path)

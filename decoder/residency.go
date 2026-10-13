@@ -1209,7 +1209,10 @@ func (m *Model) ResidentKVPrecision() string {
 	}
 	switch {
 	case m.be.Name() == "cuda":
-		return "f32" // CUDA allocates f32 K/V whatever --kv asks (ResidentKVBytes' "cuda" branch)
+		if m.kvF16 {
+			return "f16" // kv16_cuda.go: a cleared family's cache, or one asked for by name
+		}
+		return "f32" // everything else on CUDA, whatever --kv asks (ResidentKVBytes' "cuda" branch)
 	case m.kvPrecI8:
 		return "i8"
 	case m.be.Name() == "metal", m.kvF16:

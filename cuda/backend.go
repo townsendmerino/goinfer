@@ -623,6 +623,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack)
 	r := &cudaResident{
 		knob:   m.Knob,
+		kvF16:  m.KVCacheF16(),
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
@@ -739,11 +740,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// Any change that drives the device to refusal and then keeps using the same context breaks this, silently, as zeros. A
 		// retry loop, an eviction-and-rebuild or a "just try a smaller cache" must re-load rather than reuse these handles.
 		// Evidence, path by path: docs/QUEUE.md A13; the full record: docs/code-notes/cuda.md#BuildResident: device exhaustion.
-		gmod, e := r.dev.CompileLibrary(gemvFwdPTX)
+		gmod, e := r.dev.CompileLibrary(r.kvPTX(gemvFwdPTX, gemvFwdKV16PTX))
 		if e != nil {
 			return e
 		}
-		glmod, e := r.dev.CompileLibrary(gluePTX)
+		glmod, e := r.dev.CompileLibrary(r.kvPTX(gluePTX, glueKV16PTX))
 		if e != nil {
 			return e
 		}
@@ -887,7 +888,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// Batched prefill kernels (weight-stationary M=len path): own module, prefill_batched.ptx, with the audited PTX
 		// untouched. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally; there is no gemv_w4a8_batched module.
 		{
-			if pbmod, e3 := r.dev.CompileLibrary(prefillBatchedPTX); e3 == nil {
+			if pbmod, e3 := r.dev.CompileLibrary(r.kvPTX(prefillBatchedPTX, prefillBatchedKV16PTX)); e3 == nil {
 				ok := true
 				load := func(dst *Pipeline, mod gpu.Library, name string) {
 					if p, le := r.dev.NewComputePipeline(mod, name); le == nil {
@@ -997,7 +998,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.fastAttn, r.fastGemm = false, false
 		}
 		if (r.fastAttn || r.fastGemm) && r.prefillReady {
-			if fmod, e6 := r.dev.CompileLibrary(attnFusedPTX); r.fastAttn && e6 == nil {
+			if fmod, e6 := r.dev.CompileLibrary(r.kvPTX(attnFusedPTX, attnFusedKV16PTX)); r.fastAttn && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
 						*dst = pl
@@ -1005,7 +1006,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
-				if bmod, eb := r.dev.CompileLibrary(attnFusedBMPTX); eb == nil {
+				if bmod, eb := r.dev.CompileLibrary(r.kvPTX(attnFusedBMPTX, attnFusedBMKV16PTX)); eb == nil {
 					loadF2 := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(bmod, name); pe == nil {
 							*dst = pl
@@ -1064,7 +1065,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		if r.prefillReady {
-			if skmod, e2 := r.dev.CompileLibrary(decodeSplitKVPTX); e2 == nil {
+			if skmod, e2 := r.dev.CompileLibrary(r.kvPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX)); e2 == nil {
 				skOK := true
 				loadSK := func(dst *Pipeline, name string) {
 					if p, le := r.dev.NewComputePipeline(skmod, name); le == nil {
@@ -1517,6 +1518,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+		for l := range r.layers {
+			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA && !r.layers[l].isDeltaNet && !r.layers[l].kvShared
+		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
 		// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
@@ -1546,7 +1550,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if r.layers[l].kvShared {
 				continue // aliased below, once every owning layer has its buffers
 			}
-			r.kc[l], r.vc[l] = r.af(r.kvPositions(l)*r.layers[l].kvDim), r.af(r.kvPositions(l)*r.layers[l].kvDim)
+			r.kc[l], r.vc[l] = r.akv(l, r.kvPositions(l)*r.layers[l].kvDim), r.akv(l, r.kvPositions(l)*r.layers[l].kvDim)
 		}
 		if r.kvWin {
 			r.kvAllocScratch()

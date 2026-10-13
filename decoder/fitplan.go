@@ -222,7 +222,11 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	// refuses positions past it regardless of free VRAM. hostFixed is the host copy that stays whatever the expert cache does: the dense
 	// weights' (paged experts stream and hold no host copy, so slots=1 prices exactly that). Zero off Metal.
 	hostFixed := m.residentHostCopyFor(backend, 1)
-	kvAt := func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, req.KVF16, req.KVI8) }
+	kvF16 := req.KVF16
+	if backend == "cuda" {
+		kvF16 = m.kvF16 // CUDA's precision is the load's own resolution (kv16_cuda.go), not a flag the planner is handed
+	}
+	kvAt := func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, kvF16, req.KVI8) }
 	tryCtx := func(ctx int) (kv int64, fits bool) {
 		kv = kvAt(ctx)
 		fits = p.DenseBytes+hostFixed+kv+req.ExtraBytes <= freeBytes
