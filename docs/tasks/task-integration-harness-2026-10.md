@@ -5,7 +5,7 @@
 > **Status: STARTED 2026-10-12 (§0a).** Steps 1 and 3 are built and a gap nobody had listed is fixed: Claude Code
 > 2.1.268 could not complete a turn against goinfer (H-e). Its real first request is 19,692 tokens, not 6–10K, which
 > moves the thesis's numbers (§0a). **Was: SCOPED 2026-10-12.** A map across the docs that already own integration work, an order
-> for them, six items none of them owns (I1–I6), and amendments the 2026-10-12 research supports for four existing
+> for them, six items none of them owns (I1–I6; I7 added 2026-10-12 on the owner's word), and amendments the 2026-10-12 research supports for four existing
 > docs (§5). It re-scopes nothing owned elsewhere. Facts about third-party harnesses are a desk read of each project's
 > own docs or source on 2026-10-12 (§Sources). Harnesses ship weekly, so each such fact is a lead until a trace
 > confirms it.
@@ -319,6 +319,43 @@ with the tool. Desk check first: read the grammar Codex sends for `apply_patch`,
 compiles JSON-schema and struct grammars today, can express it through a translator of modest size. If it can, honour
 `custom` tools with their grammar and emit `response.custom_tool_call_input.delta`. If not, record why and stop.
 **Decided by I3's Codex cell:** if edits complete without it, park this; if they fail, do the desk check.
+
+### I7 — Raise the default context toward 32768 when there is room (owner, 2026-10-12)
+
+The census (§0a) put Claude Code's first request at about 20,000 tokens: over the 16,384 that CUDA's and M2's
+fit-by-default aim for. Asked what to do about it, the owner said: "it would be nice to auto-raise it if there's room".
+
+- **The change:** the fit-by-default candidate goes from 16,384 to 32,768 on CUDA (`fitDefaultCtx`) and on Metal
+  (`MetalFitDefaultCtx`, once M2 is merged), with `goinfer-chat fit`'s default and the banner's harness line following.
+  Nothing else in the rule moves: the planner still shrinks to what fits beside the weights, the margin and every KV
+  slot, never under 4,096, and the opt-outs (`--fit=off`, paged MoE, an unknown memory figure, an explicit `-ctx`)
+  stay.
+- **What it costs, to say in the CHANGELOG:** KV is allocated up front in every slot, so a model with room holds up
+  to twice the KV it does at 16,384. A model without room lands where it does today.
+- **Not decided yet, for the registration that precedes the code:** whether the context should still give way to
+  slots all the way (today's rule) when the candidate is this large, or stop at a harness-sized floor first. On an
+  8 GB card with four slots that choice decides what a 1.5B gets.
+- **To build after M2 merges** (both touch the same constants and tests), with the CUDA twins on nobara-pc.
+
+**G-I7-speed, the Mac half, registered 2026-10-12 before it runs (night).** A larger KV must not slow short turns.
+- **Instrument:** G-M2-speed's, unchanged (`task-minimax-code-compat-2026-09.md`, "G-M2-speed"): `scripts/bench_peer.py`
+  phase A at depth 128, `BENCH_BACKENDS=metal`, `BENCH_MODELS=1.5B,7B`, `BENCH_ENGINES=goinfer,goinfer_old`,
+  `BENCH_ABBA=3`, `BENCH_REQUIRE_BACKEND=1`; grader `grade_m2_speed.py`. **New arm:** a trial build, M2's branch with
+  the Metal candidate set to 32,768 (branch `m2b-candidate-32768`, `af0d89ab`; a one-line change made to be timed,
+  not the change that will merge). **Old arm:** main at `c75a283a`, which holds 4,096. Neither is given `-ctx`.
+  Script: `docs/measurements/integration-harness-2026-10/run-g-i7-night.sh`.
+- **Statistic and rule:** as G-M2-speed. Per model, the median over six blocks of new / old; SHIP at 0.97 or more on
+  both models, PARKED in [0.95, 0.97) on either, FAIL below. VOID if the new arm did not resolve above 4,096 in every
+  cell, the old arm's is not 4,096, a cell errored or a block lacks an arm.
+- **What a verdict licenses:** SHIP says a 32,768 default does not slow a depth-128 turn on Metal on these two
+  models. It says nothing about CUDA (its own gate, with the code) or about memory.
+- **Also read, not graded:** one request of 20,199 tokens (Claude Code's first request) to each model on the trial
+  build, with swap before the load and after the answer.
+- **Stopping rule:** fixed, 24 cells. **Cost basis:** G-M2-speed's estimate plus two long prefills: a 45 min job.
+- **Predictions, before the run:** the median is within 1% of 1 on both models, 0.7 (G-M2-speed's reasoning: a step
+  at depth 128 reads the first 129 positions whatever the buffer's size). The 7B resolves 32,768 with 2 slots, 0.4:
+  it needs about 8.7 GB of live budget (4.5 GB of weights, 3.8 GB of KV, the margin). If it resolves less, the
+  comparison is of what the new default gives on this Mac, and the record says which context that was.
 
 ## 3. Considered and not recommended (recorded so they are not re-proposed)
 
