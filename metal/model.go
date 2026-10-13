@@ -2509,7 +2509,7 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	return r.tok.U32()
 }
 
-// argmaxF32 is decoder/sampler.go's argmax, mirrored here to avoid a package dependency for one
+// argmaxF32 is internal/sampling's Argmax, mirrored here to avoid a package dependency for one
 // function: first-max-wins (strict >), the same tie-break metal's own argmax_finish kernel uses
 // (cv>v||(cv==v&&ci<idx) — lower index wins a tie) and decoder's CPU path uses.
 func argmaxF32(v []float32) int {

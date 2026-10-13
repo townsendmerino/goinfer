@@ -282,7 +282,7 @@ batched path's own 200–270 tok/s makes it 0.75–1.0 s (R3).
 The one row where the peer is the control: on the 0.5B Ollama reads 268.7 greedy and 268.7 / 265.2
 at `temperature 1.0` / `0.8 + top_p 0.95`; goinfer 333–342 greedy, 237.7 and 227.2 sampled
 (§B5.1). That ~30% is D6's cliff ([`ollama-chase.md`](../ollama-chase.md) §D6): any nonzero
-temperature flips `Sampler.ArgmaxEquivalent()` (`decoder/sampler.go:Sampler.ArgmaxEquivalent`), forcing a V-wide logit
+temperature flips `Sampler.ArgmaxEquivalent()` (`internal/sampling/sampler.go:Sampler.ArgmaxEquivalent`), forcing a V-wide logit
 readback and a host softmax over V per token. Understood and scoped: a device-side bounded top-K
 with a host-verified nucleus and a full-readback fallback. Every Mac row on the page is greedy, so
 Metal's version is unmeasured; the counted host cost after the bounded-selection fix (~1.8 ms/token
@@ -1244,8 +1244,8 @@ too small, not that the design is wrong).
 
 **Read first.** `ollama-chase.md` §D6 in full (the two cliffs — the host sort, fixed 68×, and the
 readback branch, open; the design sketch with the host-verified nucleus; and "the second, larger
-cost", full-vocabulary normalisation on the temperature-only path), `decoder/sampler.go`
-(`ArgmaxEquivalent`, `decoder/sampler.go:Sampler.ArgmaxEquivalent`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
+cost", full-vocabulary normalisation on the temperature-only path), `internal/sampling/sampler.go`
+(`ArgmaxEquivalent`, `internal/sampling/sampler.go:Sampler.ArgmaxEquivalent`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
 (the on-device argmax the greedy path uses — the top-K reduction is its sibling), G26/G28 in
 `docs/QUEUE.md` (why the sampled cells must use a realistic prompt and why the anchor's own spread
 was half the reported delta), `benchmarks.md` Methodology (count tokens from `usage`; early EOS at
@@ -2023,7 +2023,7 @@ main (non-speculative) decode path — that's R11/R6's territory, not this brief
 
 ### R15 · CPU sampler filter scans — the max-scan component measured, parallel LOSES
 
-**Goal.** Check whether `topFilterLogits`'s (`decoder/sampler.go`) full-vocab filter-selection work
+**Goal.** Check whether `topFilterLogits`'s (`internal/sampling/sampler.go`) full-vocab filter-selection work
 (the max-scan ahead of top-k/min-p/top-p, `topKByLogit`'s heap select, the min-p linear scan) has the
 same "serial when a parallel primitive already exists" shape the softcap fix (R-adjacent, shipped
 2026-09-21) closed, found in the same 2026-09-22 cross-backend review.
@@ -2061,7 +2061,7 @@ preserving for min-p's candidate list, since downstream code may depend on ascen
 verify this before assuming a chunked-then-concatenated parallel form is a drop-in); killed if not,
 same as the max-scan sub-item.
 
-**Read first.** `decoder/sampler_chunked.go` in full (`parallelMax`, `expChunked`, `foldChunkSums`,
+**Read first.** `internal/sampling/sampler_chunked.go` in full (`parallelMax`, `expChunked`, `foldChunkSums`,
 `forEachChunk`'s `numChunks=64` compile-time-constant discipline — the machine-independence
 invariant any parallel form here MUST preserve, per that file's own extensive comment on why chunk
 count is not sized to `GOMAXPROCS`). `decoder/sampler_filter_bench_test.go` (this brief's own
@@ -2578,7 +2578,7 @@ re-runs 2026-09-15/16 and 2026-09-17 on both boxes) · `docs/legacy-benchmarks.m
 (measurement discipline) · code read for this doc: `cuda/vision_encoder.go`, `cuda/attn_img_prefill.cu`,
 `cuda/decode_splitkv.cu`, `cuda/resident.go` (the split-KV gate), `cuda/l01_cpu_offload.go`,
 `metal/kernels.go` (`attention`, the `gemv_w4a8_*` set), `metal/prefill.go`, `metal/backend.go`,
-`gpu/gemv_w4a8.go`, `gpu/prefillrunner.go`, `decoder/sampler.go`, `decoder/spec_adaptive.go`; for R13 and
+`gpu/gemv_w4a8.go`, `gpu/prefillrunner.go`, `internal/sampling/sampler.go`, `decoder/spec_adaptive.go`; for R13 and
 R6's amendment (2026-09-19): `decoder/attention.go` (`causalAttention`), `decoder/forwardn.go`
 (`attendBatchedHeads`), `decoder/scratch.go` (`headWorkerPool`), `decoder/decode_depth_bench_test.go`,
 `cuda/backend.go` and `cuda/resident.go` (the V-sum spike's loader and launch site) ·

@@ -363,20 +363,6 @@ func BenchmarkSoftmaxF32_E64(b *testing.B) {
 	}
 }
 
-func BenchmarkTopFilter_Vocab32k(b *testing.B) {
-	const V = 32000
-	logits := benchFloatSlice(V, 1)
-	vocabScratch := make([]float64, V)
-	candScratch := make([]int, V)
-	ipsScratch := make([]indexedProb, V)
-
-	b.SetBytes(V * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = topFilterLogits(logits, 0.8, 50, 0.9, 0.05, vocabScratch, candScratch, ipsScratch)
-	}
-}
-
 func BenchmarkDeltaNet_Recurrence_Heads16_Dim128(b *testing.B) {
 	const nv = 16
 	const nk = 4

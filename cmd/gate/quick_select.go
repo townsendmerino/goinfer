@@ -183,9 +183,9 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			Name: "metal", Dir: "metal", Work: []string{".", "metal"},
 			ListTags: testhooks, TestTags: testhooks,
 			NativeGOOS: "darwin", CrossTarget: "darwin/arm64", Device: true,
-			// Kernel sweeps that load no model through the decoder. Each is untagged, so gate gpu's Metal suite runs it.
-			Slow: `^(TestMMAPrefill|TestGemmW8Tile_matchesReference|TestPrefillGemmW4|TestBatchKAmortization|` +
-				`TestWeightAlias_closeCycles|TestQ4KLaneKernels|TestTowerGemmKernel|TestProfileKernels)$`,
+			// Long tests left in package metal. Each is untagged, so gate gpu's Metal suite runs it. The kernel sweeps
+			// that need nothing from decoder live in metal/kernels, where the test cache alone keeps them off a decoder diff.
+			Slow: `^(TestWeightAlias_closeCycles|TestProfileKernels)$`,
 			Lint: []lintSpec{
 				{"build", nil, "", "affected", "metal-darwin: go build ./metal/..."},
 				{"vet", nil, "", "affected", "metal-darwin: go vet ./metal/..."},

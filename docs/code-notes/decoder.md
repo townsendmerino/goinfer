@@ -8925,7 +8925,7 @@ round therefore takes busy too, as the design said it would ("each round runs in
 
 ## SamplingParams.LogitProcessorGate
 
-Moved from `decoder/sampler.go` (the comment above `SamplingParams.LogitProcessorGate`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment above `SamplingParams.LogitProcessorGate`) on 2026-10-09.
 
 ```text
 LogitProcessorGate, when set together with LogitProcessor, makes the processor LAZY: it is
@@ -8943,7 +8943,7 @@ any LogitProcessor, gated or not, and callers fall back to Generate as before.
 
 ## NewSampler.minp
 
-Moved from `decoder/sampler.go` (the comment above `NewSampler.minp`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment above `NewSampler.minp`) on 2026-10-09.
 
 ```text
 M-08: MinP > 1 asks for "keep tokens with probability ≥ 1.2× the maximum", which is
@@ -8962,7 +8962,7 @@ aspirational.
 
 ## Sampler.applyPenalties
 
-Moved from `decoder/sampler.go` (the comment above `Sampler.applyPenalties`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment above `Sampler.applyPenalties`) on 2026-10-09.
 
 ```text
 applyPenalties applies repeat/presence/frequency penalties to the logits of
@@ -8980,7 +8980,7 @@ the O(n²) shape this fixes.
 
 ## computeLogprobs
 
-Moved from `decoder/sampler.go` (the comment above `computeLogprobs`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment above `computeLogprobs`) on 2026-10-09.
 
 ```text
 computeLogprobs returns log P(chosen) and the topN highest-prob (id, logprob)
@@ -8993,7 +8993,7 @@ its buffer instead of paying a fresh full-vocab make() on every logprobs:true re
 
 ## lastWithMass
 
-Moved from `decoder/sampler.go` (the comment above `lastWithMass`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment above `lastWithMass`) on 2026-10-09.
 
 ```text
 lastWithMass is the float-rounding fall-through for a cumulative draw: the last index in
@@ -9008,7 +9008,7 @@ than a live bug, but it is the contract top-k and top-p exist to provide.
 
 ## topFilterLogits
 
-Moved from `decoder/sampler.go` (the comment above `topFilterLogits`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment above `topFilterLogits`) on 2026-10-09.
 
 ```text
 topFilterLogits applies top-k, then min-p, then top-p to a LOGIT vector,
@@ -9046,7 +9046,7 @@ immediately after return) and never retained, the same lifetime vocabScratch alr
 
 ## Sampler.scratch
 
-Moved from `decoder/sampler.go` (the comment on the scratch fields of `Sampler`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment on the scratch fields of `Sampler`) on 2026-10-09.
 
 ```text
 [vocab] scratch shared by sampleChunked's e and chunkedZ's tmp — one full-vocab
@@ -10304,7 +10304,7 @@ seqPos+delta, exactly as prefillLogitsQwenVL does.
 
 ## topFilterLogits.Z
 
-Moved from `decoder/sampler.go` (the comment in the body of `topFilterLogits`) on 2026-10-09.
+Moved from `internal/sampling/sampler.go` (the comment in the body of `topFilterLogits`) on 2026-10-09.
 
 ```text
 P2b step 3: the same fixed-chunk fold as the temperature-only path. This Z feeds the
@@ -10340,7 +10340,7 @@ can climb back out of D=0.
 
 ## Sampler.distVectorFrom.default
 
-Moved from `decoder/spec_sample.go` (the comment in the body of `distVectorFrom`) on 2026-10-09.
+Moved from `internal/sampling/spec_sample.go` (the comment in the body of `distVectorFrom`) on 2026-10-09.
 
 ```text
 P-04 (audit-2026-09-10): P-14 (09-02) reused distBufN on the greedy and filtered
@@ -10939,7 +10939,7 @@ buffer that says when it stopped.
 
 ## sampler_topk
 
-Moved from `decoder/sampler_topk.go` (the comment above `sampler_topk`) on 2026-10-09.
+Moved from `internal/sampling/sampler_topk.go` (the comment above `sampler_topk`) on 2026-10-09.
 
 ```text
 TEMPERATURE-ONLY SAMPLING IS NOT SERVED HERE, and cannot be: it draws by inverse CDF in vocabulary
@@ -10955,7 +10955,7 @@ rather than assumed.
 
 ## SampleFromTopK.nucleus
 
-Moved from `decoder/sampler_topk.go` (the comment above `SampleFromTopK.nucleus`) on 2026-10-09.
+Moved from `internal/sampling/sampler_topk.go` (the comment above `SampleFromTopK.nucleus`) on 2026-10-09.
 
 ```text
 Nucleus-only. Walk the candidates in row order — (logit desc, id asc), which is (prob desc, id
@@ -11075,7 +11075,7 @@ Moved from `decoder/doc.go` (the comment above `doc.families`) on 2026-10-09.
 
 ## sampler_gumbel
 
-Moved from `decoder/sampler_gumbel.go` (the comment above `sampler_gumbel`) on 2026-10-09.
+Moved from `internal/sampling/sampler_gumbel.go` (the comment above `sampler_gumbel`) on 2026-10-09.
 
 ```text
 Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md R7b, owner decision 2026-09-20).
@@ -11134,7 +11134,7 @@ default resident's batched f16 prefill, which --exact-prefill alone reproduces. 
 
 ## sampler_chunked
 
-Moved from `decoder/sampler_chunked.go` (the comment above `sampler_chunked`) on 2026-10-09.
+Moved from `internal/sampling/sampler_chunked.go` (the comment above `sampler_chunked`) on 2026-10-09.
 
 ```text
 P2b — deterministic parallel host normalization.
@@ -11147,7 +11147,7 @@ normalize-divide pass by drawing against unnormalized weights.
 
 ## chunkedZ
 
-Moved from `decoder/sampler_chunked.go` (the comment above `chunkedZ`) on 2026-10-09.
+Moved from `internal/sampling/sampler_chunked.go` (the comment above `chunkedZ`) on 2026-10-09.
 
 ```text
 chunkedZ is the top-p denominator (step 3), given the same fixed-chunk treatment so the nucleus
@@ -18473,7 +18473,7 @@ unexported in aikit — but a flat maximum across thousands of matmuls is unambi
 
 ## sampler_chunked_test.header
 
-Moved from `decoder/sampler_chunked_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/sampling/sampler_chunked_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 SAMPLER MICROBENCHMARKS IN THIS PACKAGE MAY NOT PRODUCE QUOTABLE FIGURES.
@@ -18493,7 +18493,7 @@ and it was earned twice in a single investigation (G26, 2026-08-27):
 
 ## benchExpChunked
 
-Moved from `decoder/sampler_chunked_test.go` (the comment above `benchExpChunked`) on 2026-10-09.
+Moved from `internal/sampling/sampler_chunked_test.go` (the comment above `benchExpChunked`) on 2026-10-09.
 
 ```text
 G26. The temp-only draw (no truncation) goes through sampleChunked, NOT topFilterLogits — so the
@@ -18792,7 +18792,7 @@ parity on every step, keeping both shapes represented.
 
 ## TestSampleFromTopK_matchesFullPath
 
-Moved from `decoder/sampler_topk_test.go` (the comment in the draw-count branch) on 2026-10-09.
+Moved from `internal/sampling/sampler_topk_test.go` (the comment in the draw-count branch) on 2026-10-09.
 
 ```text
 C8 (docs/completed/task-ci-speed-2026-09.md): under -race the DRAW axis is strided by

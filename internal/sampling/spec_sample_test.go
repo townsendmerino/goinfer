@@ -1,0 +1,205 @@
+package sampling
+
+import (
+	"math"
+	"slices"
+	"testing"
+	"unsafe"
+)
+
+// TestSpecStepLossless is the rigorous (model-free) gate for sampled speculation:
+// the rejection-sampling step must reproduce the target distribution p EXACTLY,
+// for any drafted token x — accept x w.p. p[x], else draw from the residual. We
+// verify the emitted-token frequencies match p over many draws, for x in-support
+// (high and low prob) and out-of-support (filtered out, p[x]=0 ⇒ always reject).
+func TestSpecStepLossless(t *testing.T) {
+	const N = 300000
+	const tol = 0.01
+
+	cases := []struct {
+		name   string
+		params SamplingParams
+		logits []float32
+		xs     []int
+	}{
+		{
+			name:   "pure temperature (full support)",
+			params: SamplingParams{Temperature: 1, Seed: 7},
+			logits: []float32{2.0, 1.0, 0.5, 0.0, -1.0, -2.0},
+			xs:     []int{0, 3, 5}, // top, mid, low
+		},
+		{
+			name:   "top-k filtered support",
+			params: SamplingParams{Temperature: 1, TopK: 3, Seed: 11},
+			logits: []float32{2.0, 1.0, 0.5, 0.0, -1.0, -2.0},
+			xs:     []int{0, 2, 5}, // 5 is filtered out → p[5]=0 → always reject
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ref := NewSampler(tc.params)
+			p := ref.DistVector(tc.logits) // the exact distribution the sampler draws from
+			for _, x := range tc.xs {
+				s := NewSampler(tc.params)
+				counts := make([]float64, len(tc.logits))
+				for range N {
+					tok, _ := s.SpecStep(p, x)
+					counts[tok]++
+				}
+				var maxDiff float64
+				for i := range counts {
+					d := math.Abs(counts[i]/N - p[i])
+					if d > maxDiff {
+						maxDiff = d
+					}
+				}
+				if maxDiff > tol {
+					t.Errorf("x=%d: emitted dist != p (maxDiff %.4f > %.4f)\n p=%v\n got=%v", x, maxDiff, tol, round(p), freq(counts, N))
+				}
+			}
+		})
+	}
+}
+
+func round(p []float64) []float64 {
+	out := make([]float64, len(p))
+	for i, v := range p {
+		out[i] = math.Round(v*1000) / 1000
+	}
+	return out
+}
+func freq(c []float64, n int) []float64 {
+	out := make([]float64, len(c))
+	for i, v := range c {
+		out[i] = math.Round(v/float64(n)*1000) / 1000
+	}
+	return out
+}
+
+// TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain Generate at the integration level: under
+// pure temperature (no filters, no Logprobs) with the same seed, the FIRST emitted token must be identical. Both draw
+// through the temperature-only Gumbel-max branch (R7b) over the same seed-position logits with an identically seeded
+// Philox key and draw index 0: plain via SampleWithInfo, speculative via drawTarget. Beyond the first token the two RNG
+// streams diverge by construction, so only the first is bit-comparable; full-sequence equivalence is distributional,
+// proven by TestSpecStepLossless.
+// TestDistVectorHistMatchesSampler is the rigorous (model-free) gate for the
+// penalty/bias threading: distVectorHist(logits, history) must equal the
+// distribution the plain Sampler actually draws from after observing that history.
+// If it does, the speculative path reproduces plain sampling exactly at every
+// position — losslessly — even with repetition penalties and logit bias active.
+func TestDistVectorHistMatchesSampler(t *testing.T) {
+	const N = 300000
+	const tol = 0.01
+	sp := SamplingParams{
+		Temperature: 0.9, TopK: 5,
+		RepeatPenalty: 1.4, PresencePenalty: 0.3, FrequencyPenalty: 0.6,
+		LogitBias: map[int]float32{1: 1.0, 4: -0.5},
+	}
+	logits := []float32{2.0, 1.2, 0.7, 0.1, -0.4, -1.2, -2.0}
+	history := []int{0, 2, 2, 2, 5, 1} // repeats drive frequency/presence/repeat penalties
+
+	p := NewSampler(sp).DistVectorHist(logits, history)
+
+	counts := make([]float64, len(logits))
+	for i := range N {
+		spi := sp
+		spi.Seed = int64(i) // vary only the RNG; the distribution is seed-independent
+		s := NewSampler(spi)
+		s.Observe(history...)
+		tok, _ := s.Sample(slices.Clone(logits))
+		counts[tok]++
+	}
+	var maxDiff float64
+	for i := range counts {
+		if d := math.Abs(counts[i]/N - p[i]); d > maxDiff {
+			maxDiff = d
+		}
+	}
+	if maxDiff > tol {
+		t.Errorf("distVectorHist != sampler draw distribution (maxDiff %.4f > %.4f)\n p   =%v\n draw=%v", maxDiff, tol, round(p), freq(counts, N))
+	}
+}
+
+// TestNgramSampledRejectsUnsupported guards the remaining scope boundary: sampled
+// speculation now threads penalties + logit bias (TestDistVectorHistMatchesSampler),
+// so those are accepted; only a LogitProcessor (constrained/tool decoding) is still
+// rejected rather than silently breaking losslessness.
+// TestDistVectorFrom_scratchClearedAcrossPositions is the P-14 gate: distVectorFrom returns a reused per-sampler scratch
+// buffer (distBufN) instead of a fresh make() every call. Consecutive speculative-verify positions never hold two
+// returned vectors live at once, but that says nothing about whether the PREVIOUS call's mass is cleared before reuse:
+// a missing clear() would leak a prior position's nonzero entries into a position whose support has since shrunk,
+// corrupting the distribution silently. The speculative suite (TestNgramSpeculativeGreedyParity,
+// TestNgramSampledHarness, etc.) still passes with one of the two clear() calls deleted, because its fixed logit sets
+// keep the same support shape call to call; this test constructs the adversarial case directly: two consecutive calls
+// whose kept/argmax sets are DISJOINT, and asserts every index outside the current call's support reads exactly zero.
+func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
+	t.Run("greedy argmax changes", func(t *testing.T) {
+		s := NewSampler(SamplingParams{Temperature: 0}) // greedy: distVectorFrom's argmax branch
+		first := s.DistVector([]float32{5, 0, 0, 0, 0})
+		if first[0] != 1 {
+			t.Fatalf("first call: v[0] = %v, want 1", first[0])
+		}
+		second := s.DistVector([]float32{0, 0, 0, 0, 5})
+		if second[4] != 1 {
+			t.Fatalf("second call: v[4] = %v, want 1", second[4])
+		}
+		if second[0] != 0 {
+			t.Fatalf("second call: v[0] = %v, want 0 — stale mass from the first call's argmax leaked through a missing clear()", second[0])
+		}
+	})
+
+	t.Run("top-k support shrinks to a disjoint set", func(t *testing.T) {
+		s := NewSampler(SamplingParams{Temperature: 1, TopK: 1})
+		first := s.DistVector([]float32{5, 0, 0, 0, 0}) // kept = {0}
+		if first[0] == 0 {
+			t.Fatalf("first call: v[0] = %v, want nonzero (top-1 of index 0)", first[0])
+		}
+		second := s.DistVector([]float32{0, 0, 0, 0, 5}) // kept = {4}, disjoint from {0}
+		if second[4] == 0 {
+			t.Fatalf("second call: v[4] = %v, want nonzero (top-1 of index 4)", second[4])
+		}
+		if second[0] != 0 {
+			t.Fatalf("second call: v[0] = %v, want 0 — stale mass from the first call's kept set leaked through a missing clear()", second[0])
+		}
+	})
+
+	// P-04 (audit-2026-09-10): the temperature-only, no-filter branch (server default:
+	// Temperature 1, no top_k/top_p/min_p) was NOT covered by either subtest above — it calls
+	// softmaxStable/softmaxStableInto directly, which OVERWRITES every element rather than
+	// requiring a clear() first, so this is really proving the scratch-sharing didn't introduce
+	// the bug the other two subtests guard against, not that a clear() is needed here too.
+	t.Run("temp-only (no filters) shares the scratch safely", func(t *testing.T) {
+		s := NewSampler(SamplingParams{Temperature: 1})
+		first := s.DistVector([]float32{5, 0, 0, 0, 0})
+		firstZero := first[0] // captured BEFORE the next call: first aliases the shared buffer,
+		// so reading first[0] after distVector runs again would silently read the SECOND call's
+		// overwritten value at that index, not the first's — the exact aliasing trap a shared
+		// scratch buffer invites, guarded against here rather than assumed away.
+		second := s.DistVector([]float32{0, 0, 0, 0, 5})
+		if second[0] == firstZero {
+			t.Fatalf("second call's distribution is identical to the first's — the shared buffer was not recomputed")
+		}
+		var sum float64
+		for _, p := range second {
+			sum += p
+		}
+		if math.Abs(sum-1) > 1e-9 {
+			t.Fatalf("second call: distribution sums to %v, want 1", sum)
+		}
+	})
+}
+
+// TestDistVectorFrom_tempOnlyReusesBuffer is P-04 itself: the temp-only branch must return
+// distBuf's own backing array, not a fresh make() — the specific allocation the audit named.
+// Asserted directly (backing-array identity), not inferred from GC stats, so a revert back to
+// bare softmaxStable fails this test immediately rather than only showing up in a profile.
+func TestDistVectorFrom_tempOnlyReusesBuffer(t *testing.T) {
+	s := NewSampler(SamplingParams{Temperature: 1})
+	first := s.DistVector([]float32{1, 2, 3, 4, 5})
+	base := unsafe.Pointer(&first[0])
+	second := s.DistVector([]float32{5, 4, 3, 2, 1})
+	if unsafe.Pointer(&second[0]) != base {
+		t.Error("distVectorFrom's temp-only branch did not reuse distBuf's backing array — the allocation this fix removes is still happening")
+	}
+}
