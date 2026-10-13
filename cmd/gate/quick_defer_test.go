@@ -200,3 +200,95 @@ func moduleTestSource(t *testing.T, qc *quickConfig, m *quickModule) string {
 	}
 	return b.String()
 }
+
+// A record is covered code only: a change to a test input or to Go source voids it, prose and the records do not.
+func TestQuickRecord_whatVoidsARun(t *testing.T) {
+	for path, want := range map[string]bool{
+		"decoder/model.go": true, "metal/prefill.go": true, "go.mod": true, "testdata/prefill-gate-prose-a/README.md": true,
+		"scripts/night.py": true, "CHANGELOG.md": false, "RELEASING.md": false, "docs/benchmarks.md": false,
+		"docs/measurements/quick-full/darwin-arm64-x.json": false, "site/main.go": false, ".github/workflows/ci.yml": false,
+	} {
+		if got := quickRecordVoidedBy(path); got != want {
+			t.Errorf("quickRecordVoidedBy(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+// The coverage rule: the newest record on a system at the same code decides, and only a clean -full PASS counts.
+func TestQuickRecord_coverage(t *testing.T) {
+	pass := func(os, commit, date string) quickRecord {
+		return quickRecord{Schema: 1, OS: os, Commit: commit, Date: date, Verdict: "PASS", Full: true, Pass: 10}
+	}
+	// "aaaaaaaa" and "bbbbbbbb" are the same code as HEAD; "cccccccc" predates a code change.
+	changed := func(from, to string) ([]string, error) {
+		if strings.HasPrefix(from, "cccc") {
+			return []string{"CHANGELOG.md", "decoder/model.go"}, nil
+		}
+		return []string{"CHANGELOG.md", "docs/measurements/quick-full/x.json"}, nil
+	}
+	cover := func(recs ...quickRecord) (bool, string) {
+		r, why := quickCoverage(recs, "darwin", "HEAD", changed)
+		return r != nil, why
+	}
+	if ok, why := cover(pass("darwin", "aaaaaaaa", "2026-10-13T01:00:00Z")); !ok {
+		t.Errorf("a clean -full PASS at the same code does not cover: %s", why)
+	}
+	if ok, why := cover(pass("linux", "aaaaaaaa", "2026-10-13T01:00:00Z")); ok || why != "no record" {
+		t.Errorf("another system's record covered darwin (%v, %q)", ok, why)
+	}
+	if ok, why := cover(pass("darwin", "cccccccc", "2026-10-13T01:00:00Z")); ok || !strings.Contains(why, "decoder/model.go changed since") {
+		t.Errorf("a record from before a code change covered HEAD (%v, %q)", ok, why)
+	}
+	fail := pass("darwin", "bbbbbbbb", "2026-10-13T02:00:00Z")
+	fail.Verdict = "FAIL"
+	if ok, why := cover(pass("darwin", "aaaaaaaa", "2026-10-13T01:00:00Z"), fail); ok || !strings.Contains(why, "verdict FAIL") {
+		t.Errorf("an earlier PASS hid a later FAIL at the same code (%v, %q)", ok, why)
+	}
+	for name, mut := range map[string]func(*quickRecord){
+		"deferred cells": func(r *quickRecord) { r.Full = false },
+		"dirty tree":     func(r *quickRecord) { r.Dirty = true },
+		"no test passed": func(r *quickRecord) { r.Pass = 0 },
+	} {
+		r := pass("darwin", "aaaaaaaa", "2026-10-13T01:00:00Z")
+		mut(&r)
+		if ok, _ := cover(r); ok {
+			t.Errorf("a record with %s covered HEAD", name)
+		}
+	}
+}
+
+// Through quickMain: a -full run with a record directory writes a record a release would count, a failing one writes
+// FAIL, and a day-tier run or one narrowed by -files writes none.
+func TestQuickRecord_writtenByFullRunsOnly(t *testing.T) {
+	qc := fxRepo(t)
+	run := func(o quickOpts) []quickRecord {
+		dir := t.TempDir()
+		o.Base, o.Jobs, o.Timeout, o.LogDir, o.Progress, o.RecordDir = "HEAD", 4, "5m", t.TempDir(), io.Discard, dir
+		var out bytes.Buffer
+		quickMain(qc, o, &out)
+		recs, err := loadQuickRecords(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return recs
+	}
+	if recs := run(quickOpts{Full: true}); len(recs) != 1 {
+		t.Fatalf("a -full run wrote %d records, want 1", len(recs))
+	} else if ok, why := recs[0].valid(); !ok || recs[0].OS == "" || recs[0].Cells == 0 {
+		t.Errorf("the record of a green -full run on a clean tree does not count (%s): %+v", why, recs[0])
+	}
+	if recs := run(quickOpts{}); len(recs) != 0 {
+		t.Errorf("a day-tier run wrote %d records", len(recs))
+	}
+	if recs := run(quickOpts{Full: true, Files: []string{"leaf/leaf.go"}}); len(recs) != 0 {
+		t.Errorf("a -full run narrowed by -files wrote %d records", len(recs))
+	}
+	mutate(t, qc, "leaf/leaf.go", "a + b", "a - b")
+	recs := run(quickOpts{Full: true})
+	if len(recs) != 1 || recs[0].Verdict != "FAIL" || !recs[0].Dirty {
+		t.Fatalf("a failing -full run on an edited tree: %+v, want one FAIL record marked dirty", recs)
+	}
+	if ok, _ := recs[0].valid(); ok {
+		t.Error("a FAIL record counts")
+	}
+}

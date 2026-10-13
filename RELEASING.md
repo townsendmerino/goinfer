@@ -65,7 +65,7 @@ survives to a tag unless caught here.
 
 ## Pre-flight (before touching versions)
 
-**`go run ./cmd/gate release vX.Y.Z` runs the reads below as rows** (pending gates, the module pins, the cold-user record, both GPU-gate records, the hardware matrix and its never-executed diff, unmerged fix branches, the CHANGELOG check, gofmt, the citation lint, CI at HEAD, the §C1 parity sweep's record): each is `done`, `OWED` or `UNKNOWN`, with the record that proves it or is missing, and the exit code is 0 only when all eleven are done. It refuses off `main`, on a dirty tree, or for a tag that exists. The list below is what each row reads and why; the command is the check, so read the rows, not this list, to learn what is owed. (Reads 1 and 2, the API blockers and the audit's "before the tag" set, are historical and are not rows.)
+**`go run ./cmd/gate release vX.Y.Z` runs the reads below as rows** (pending gates, the module pins, the cold-user record, both GPU-gate records, the hardware matrix and its never-executed diff, unmerged fix branches, the CHANGELOG check, gofmt, the citation lint, CI at HEAD, the §C1 parity sweep's record, the deferred tests' record from each box): each is `done`, `OWED` or `UNKNOWN`, with the record that proves it or is missing, and the exit code is 0 only when all twelve are done. It refuses off `main`, on a dirty tree, or for a tag that exists. The list below is what each row reads and why; the command is the check, so read the rows, not this list, to learn what is owed. (Reads 1 and 2, the API blockers and the audit's "before the tag" set, are historical and are not rows.)
 
 1. All §1 API blockers are in (B-08…B-14 — see `docs/completed/audit-2026-08-05.md`; B-09/B-10/B-11/B-13
    landed 2555edc; B-08/B-12 must be done first — they are breaking-to-fix-after-tag).
@@ -97,8 +97,10 @@ survives to a tag unless caught here.
    Every run writes a record, `docs/measurements/gpu-gate/<backend>-<time>-<commit>.json`: **commit it** (the Mac's from the Mac, as a model transfer is). `go run ./cmd/gate gpu-records` then says, per backend, `done` or `OWED` against HEAD, by that rule: the newest record made at the same code decides, and only a PASS on a clean tree with the heavy tier run (no `GOINFER_GATE_SKIP_HEAVY`) counts. Exit 0 only when both backends are done.
    **The tests the day loop defers, on BOTH boxes:** `go run ./cmd/gate quick -full -base <the previous tag>`. By day `gate quick` leaves out each
    package's real-checkpoint tests and, for a change that does not touch `metal/`, `gpu/` or `cuda/`, that module's long kernel tests; it prints each as
-   `DEFERRED`. `-full` runs them all against everything since the last tag. About 10 minutes on the Mac; night-queue it with the GPU gate. It writes no
-   record and `gate release` has no row for it, so it is this line that asks for it.
+   `DEFERRED`. `-full` runs them all against everything since the last tag. About 10 minutes on the Mac; night-queue it with the GPU gate. Each run writes a
+   record, `docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json`: **commit it**. `gate release` has a row for it: per box (darwin, linux),
+   the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `site/` or `.github/`,
+   or to a top-level `.md` file, does not void a run; any other change does.
 9. **The CHANGELOG names what changed**: `go run ./cmd/gate changelog -section vX.Y.Z` (or without `-section` before the `[Unreleased]` move). It compares the tree with the newest v* tag and lists each
    new HTTP route (read from `serve`'s registrations with `go/ast`), new or removed `serve` flag (`docs/flags.meta.json`), new model family (`docs/capability-matrix.json`) and a moved aikit pin that the
    section does not name; exit 1 means something is owed. A whole-string match (a route's `{id}` placeholders read as `{}`, a new route's sub-routes ride with it); anything that is not release-note material
