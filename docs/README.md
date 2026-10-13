@@ -89,6 +89,11 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
+[`task-cpu-kv-f16-2026-10.md`](tasks/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
+half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
+its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
+open, and the gates to register before any code.
+
 [`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
 2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
 - **Shipped:** per-field probabilities on schema-constrained output (C0–C2), and a TypeSafe-compatible decisions
