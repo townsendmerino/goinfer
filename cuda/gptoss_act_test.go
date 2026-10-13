@@ -291,3 +291,88 @@ func TestRouteGptOss_matchesReference(t *testing.T) {
 		t.Errorf("weights sum to %v, want 1", tot)
 	}
 }
+
+// TestRouteGptOss_neverEmitsAnOutOfRangeExpert: when no expert score beats the -1e30 floor (every score NaN, or below it), the top-k loop
+// left its best index at the -1 sentinel, wrote taken[-1], and emitted expert 0xFFFFFFFF, which the indexed expert GEMVs then used as a
+// row offset: a read about 2^32 rows past the weight buffer, and on CUDA a sticky ILLEGAL_ADDRESS that kills every resident on the context.
+// A NaN reaches the router from a crafted checkpoint's router weights, or from an activation that overflowed. Whatever the scores, every
+// emitted index must be a valid, distinct expert and every weight finite.
+func TestRouteGptOss_neverEmitsAnOutOfRangeExpert(t *testing.T) {
+	const nE, k = 32, 4
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	cx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("primary ctx: %v", err)
+	}
+	defer cx.Close()
+	bg := context.Background()
+	mod, err := cx.LoadModule(gptOssActPTX)
+	if err != nil {
+		t.Fatalf("LoadModule: %v", err)
+	}
+	fn, err := mod.Function("route_gptoss")
+	if err != nil {
+		t.Fatalf("Function(route_gptoss): %v", err)
+	}
+	stream := mustStream(t, cx)
+	nan := float32(math.NaN())
+	for name, mk := range map[string]func(i int) float32{
+		"every score NaN":             func(int) float32 { return nan },
+		"every score below the floor": func(int) float32 { return -3e30 },
+		"fewer finite scores than k": func(i int) float32 {
+			if i < 2 {
+				return float32(i)
+			}
+			return nan
+		},
+		"infinite scores": func(i int) float32 { return float32(math.Inf(-1)) },
+	} {
+		logits := make([]float32, nE)
+		for i := range logits {
+			logits[i] = mk(i)
+		}
+		dL := mustAlloc[float32](t, cx, nE)
+		dB := mustAlloc[float32](t, cx, nE)
+		dIdx := mustAlloc[uint32](t, cx, k)
+		dW := mustAlloc[float32](t, cx, k)
+		if e := gc.CopyHtoD(bg, dL, logits); e != nil {
+			t.Fatalf("H2D: %v", e)
+		}
+		if e := gc.CopyHtoD(bg, dB, make([]float32, nE)); e != nil {
+			t.Fatalf("H2D: %v", e)
+		}
+		if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
+			gc.Arg(dL), gc.Arg(dB), gc.Arg(dIdx), gc.Arg(dW), gc.ArgValue(int32(nE)), gc.ArgValue(int32(k))); e != nil {
+			t.Fatalf("%s: launch: %v", name, e)
+		}
+		if e := stream.Synchronize(bg); e != nil {
+			t.Fatalf("%s: sync: %v", name, e)
+		}
+		idx, w := make([]uint32, k), make([]float32, k)
+		if e := gc.CopyDtoH(bg, idx, dIdx); e != nil {
+			t.Fatalf("D2H: %v", e)
+		}
+		if e := gc.CopyDtoH(bg, w, dW); e != nil {
+			t.Fatalf("D2H: %v", e)
+		}
+		seen := map[uint32]bool{}
+		for j := range k {
+			if idx[j] >= nE {
+				t.Errorf("%s: slot %d routes to expert %#x (nE %d)", name, j, idx[j], nE)
+			}
+			if seen[idx[j]] {
+				t.Errorf("%s: expert %d chosen twice: %v", name, idx[j], idx)
+			}
+			seen[idx[j]] = true
+			if math.IsNaN(float64(w[j])) || math.IsInf(float64(w[j]), 0) {
+				t.Errorf("%s: slot %d weight %v is not finite", name, j, w[j])
+			}
+		}
+	}
+}

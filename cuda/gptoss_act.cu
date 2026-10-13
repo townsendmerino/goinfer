@@ -116,6 +116,14 @@ extern "C" __global__ void route_gptoss(const float* __restrict__ logits, const 
         for (int i = 0; i < nE; i++) {
             if (!taken[i] && sc[i] > bv) { bv = sc[i]; best = i; }
         }
+        if (best < 0) {
+            // No score beat the floor: every remaining one is NaN or below -1e30 (a crafted router, or an activation that overflowed).
+            // The sentinel must never leave this kernel: 0xFFFFFFFF is a row offset the indexed expert GEMVs read ~2^32 rows past the
+            // weights at. Take the lowest expert not yet chosen, with a finite floor score so the softmax weights stay finite.
+            best = 0;
+            for (int i = 0; i < nE; i++) if (!taken[i]) { best = i; break; }
+            bv = -1e30f;
+        }
         taken[best] = true;
         outIdx[j] = (unsigned int)best;
         chosen[j] = bv;
