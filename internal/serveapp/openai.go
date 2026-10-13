@@ -1368,17 +1368,32 @@ func grammarFor(rf *respFormat) (constrain.Grammar, error) {
 // turns). The system message is returned separately because families place it differently.
 //
 // "developer" is an alias for "system": OpenAI's newer APIs send the system prompt under that role for
-// reasoning-class models, and agent harnesses follow. It is an alias and nothing more: same position, same
-// last-one-wins precedence two "system" messages already have, no new concept downstream. It is not a general
-// unknown-role tolerance; every other unrecognized role keeps the default arm below, which demotes it to a user turn
-// (for "developer" that delivered a harness's entire agent scaffold as the user's first message).
+// reasoning-class models, and agent harnesses follow. It is an alias and nothing more: same position, same handling,
+// no new concept downstream. It is not a general unknown-role tolerance; every other unrecognized role keeps the
+// default arm below, which demotes it to a user turn (for "developer" that delivered a harness's entire agent
+// scaffold as the user's first message).
+//
+// Several system messages are all kept. Those before the conversation starts are joined, in order, into the system
+// prompt: a harness may send its instructions in more than one (Codex sends two), and keeping only the last dropped
+// the rest without a word. One sent after the conversation has started stays where it is, as user-side text that is
+// not a new query (chat.Turn.ToolLoop), the rule /v1/messages follows (anthropicTurns): moved into the system prompt
+// it would replace or reorder what the model was told first and change the prompt's prefix.
 func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 	var system string
 	var turns []chat.Turn
 	for _, m := range msgs {
 		switch m.Role {
 		case "system", "developer":
-			system = m.text()
+			text := m.text()
+			switch {
+			case text == "":
+			case len(turns) > 0:
+				turns = append(turns, chat.Turn{Role: "user", Content: text, ToolLoop: true})
+			case system == "":
+				system = text
+			default:
+				system += "\n\n" + text
+			}
 		case "tool":
 			turns = append(turns, chat.Turn{Role: "tool", Content: m.text(), ToolName: m.Name, ToolCallID: m.ToolCallID})
 		case "assistant":

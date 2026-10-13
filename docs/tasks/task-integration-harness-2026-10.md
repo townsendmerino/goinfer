@@ -5,7 +5,7 @@
 > **Status: STARTED 2026-10-12 (§0a).** Steps 1 and 3 are built and a gap nobody had listed is fixed: Claude Code
 > 2.1.268 could not complete a turn against goinfer (H-e). Its real first request is 19,692 tokens, not 6–10K, which
 > moves the thesis's numbers (§0a). **Was: SCOPED 2026-10-12.** A map across the docs that already own integration work, an order
-> for them, six items none of them owns (I1–I6), and amendments the 2026-10-12 research supports for four existing
+> for them, six items none of them owns (I1–I6; I7 added 2026-10-12 on the owner's word), and amendments the 2026-10-12 research supports for four existing
 > docs (§5). It re-scopes nothing owned elsewhere. Facts about third-party harnesses are a desk read of each project's
 > own docs or source on 2026-10-12 (§Sources). Harnesses ship weekly, so each such fact is a lead until a trace
 > confirms it.
@@ -26,7 +26,7 @@
 | In-process facade (`llm`) | `task-embed-and-harness-ux.md` §2 | unstarted, unblocked |
 | Fill-in-the-middle and editors | `task-editor-fim-2026-09.md` | unstarted; F0 gates it |
 | Desktop sidecar prerequisites | `parked/task-bindings.md` A0 | parked |
-| Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal unchanged at 4096 |
+| Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
 | Per-request log | `task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
 
 ## 0a. Results, 2026-10-12 (the first day)
@@ -44,7 +44,17 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
   schema); `--bare` sends 1,063 (3 tools). A session-title request of 761 tokens comes first.
   - **It does not fit 16,384.** By I4's own rule Claude Code is *not viable* at the window R19 and M2 chose as the
     harness floor; it needs 24,615 with the 25% margin, so `-ctx 32768`. Whether an 8 GB card holds a 7B there is
-    unmeasured. The other harnesses are not installed on either box (only Copilot CLI is, on the Mac).
+    unmeasured.
+- **I4, opencode and Codex: measured** (the owner said to install them; nobara-pc, pinned versions;
+  `docs/measurements/integration-harness-2026-10/harness-census-2026-10-12.md`). opencode 1.19.0: **7,165 tokens**,
+  10 tools. Codex 0.162.1: **5,850 tokens**, 9 tools. Claude Code 2.1.296: 20,199. Both of the first two are viable at
+  16,384 by I4's rule.
+- **H-f, new, fixed: goinfer dropped Codex's agent instructions.** Codex sends them as the first of two `developer`
+  messages and no `instructions` field; only the last system message was used, so 3,553 tokens of instructions never
+  reached the model. Every system message is now kept (`internal/serveapp/openai.go:messagesToTurns`): leading ones
+  joined in order, a later one in place as on `/v1/messages`.
+- **I6's premise does not hold on Codex 0.162.1:** its request for an unknown model carries no `apply_patch` and no
+  `custom` tool; edits would go through `exec_command`. I3's Codex cell still decides.
 - **Step 3, harness-reliability Gate 1: built.** `serve check` has a `tools, harness, Messages` row
   (`ToolsHarnessMessages` in `internal/servecheck`, newer than this doc's pin). Against the 1.5B on Metal it reads skip, as the
   OpenAI-dialect row does. The 7B reading on nobara-pc is in that task's record.
@@ -63,6 +73,14 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
     goinfer's 10 s heartbeat is inside both.
   - *Claude Code's own position:* its documentation says routing it to non-Claude models through a gateway is not
     supported. The recipe stands on traces, and a release can break it.
+- **I5, the first piece (owner 2026-10-12: the transport before the facade):** `internal/inproc` holds the
+  RoundTripper that serves a request with a handler in the same process. A reply streams frame by frame, closing the
+  body or cancelling the context cancels the handler, and a handler's panic is an error and not a crash; its tests
+  run under the race detector. **Not built yet:** the constructor that gives it serve's handler (the seam in serve's
+  entry point), the public Experimental package, and the SDK module of the gate.
+  - **A correction for that gate:** `testdata/tiny-qwen2-moe` is gitignored, so it is not "a committed tiny
+    checkpoint". The tracked fixtures that carry a tokenizer are the tiny GGUFs (`testdata/glm-tiny.gguf`,
+    `testdata/gemma1-tiny.gguf`); the in-process tests need one of those, or CI skips them.
 - **A small item the trace adds:** the title request asks for JSON through `output_config.format` (a `json_schema`).
   `/v1/messages` ignores the field. goinfer can constrain to a schema, so honouring it is cheap; unowned.
 
@@ -83,7 +101,8 @@ harness is one problem: each assumes a context window goinfer does not serve on 
 | Goose | `GOOSE_CONTEXT_LIMIT`, default 128K; compacts at 80% | 413, or a 400 naming context length → fallback |
 
 On an 8 GB card goinfer serves 16,384 to a 1.5B at its default, and about 5.5K to a 7B holding its four KV slots
-(R19's table; a 7B agent passes `-ctx 16384` and gets fewer slots). Metal's default is 4096. opencode's first request
+(R19's table; a 7B agent passes `-ctx 16384` and gets fewer slots). Metal's default was 4096 when this was written
+and is up to 16384 since M2. opencode's first request
 alone was 11,137 tokens (R19). So unless each harness is told the real window, **every one of them overruns
 goinfer's**, and what happens next depends entirely on how the overflow error is worded. Today:
 
@@ -250,7 +269,8 @@ first token with the first session's. A large drop means the shared system-promp
 later decision what reusing a harness's prompt across sessions would buy. No code.
 
 Known so far: opencode 11,137 tokens (measured, R19); **Claude Code 19,692 (measured 2026-10-12, 2.1.268; 1,063 with
-`--bare`; the earlier 6–10K was an estimate and wrong)**; Codex about 8.5K and Pi under 1K (estimates). **Viability, pre-registered:** a harness is *viable* on a (box, model, `-ctx`) when its first
+`--bare`; the earlier 6–10K was an estimate and wrong)**; **opencode 1.19.0 7,165 and Codex 0.162.1 5,850
+(measured 2026-10-12)**; Pi under 1K (an estimate). **Viability, pre-registered:** a harness is *viable* on a (box, model, `-ctx`) when its first
 request plus 25% fits the window; *marginal* when the request fits but the margin does not; *not viable* otherwise, and
 `connect` refuses it.
 
@@ -309,6 +329,70 @@ compiles JSON-schema and struct grammars today, can express it through a transla
 `custom` tools with their grammar and emit `response.custom_tool_call_input.delta`. If not, record why and stop.
 **Decided by I3's Codex cell:** if edits complete without it, park this; if they fail, do the desk check.
 
+### I7 — Raise the default context toward 32768 when there is room (owner, 2026-10-12)
+
+The census (§0a) put Claude Code's first request at about 20,000 tokens: over the 16,384 that CUDA's and M2's
+fit-by-default aim for. Asked what to do about it, the owner said: "it would be nice to auto-raise it if there's room".
+
+- **The change:** the fit-by-default candidate goes from 16,384 to 32,768 on CUDA (`fitDefaultCtx`) and on Metal
+  (`MetalFitDefaultCtx`, once M2 is merged), with `goinfer-chat fit`'s default and the banner's harness line following.
+  Nothing else in the rule moves: the planner still shrinks to what fits beside the weights, the margin and every KV
+  slot, never under 4,096, and the opt-outs (`--fit=off`, paged MoE, an unknown memory figure, an explicit `-ctx`)
+  stay.
+- **What it costs, to say in the CHANGELOG:** KV is allocated up front in every slot, so a model with room holds up
+  to twice the KV it does at 16,384. A model without room lands where it does today.
+- **Not decided yet, for the registration that precedes the code:** whether the context should still give way to
+  slots all the way (today's rule) when the candidate is this large, or stop at a harness-sized floor first. On an
+  8 GB card with four slots that choice decides what a 1.5B gets.
+- **To build after M2 merges** (both touch the same constants and tests), with the CUDA twins on nobara-pc.
+
+**G-I7-speed, the Mac half, registered 2026-10-12 before it runs (night).** A larger KV must not slow short turns.
+- **Instrument:** G-M2-speed's, unchanged (`task-minimax-code-compat-2026-09.md`, "G-M2-speed"): `scripts/bench_peer.py`
+  phase A at depth 128, `BENCH_BACKENDS=metal`, `BENCH_MODELS=1.5B,7B`, `BENCH_ENGINES=goinfer,goinfer_old`,
+  `BENCH_ABBA=3`, `BENCH_REQUIRE_BACKEND=1`; grader `grade_m2_speed.py`. **New arm:** a trial build, M2's branch with
+  the Metal candidate set to 32,768 (branch `m2b-candidate-32768`, `af0d89ab`; a one-line change made to be timed,
+  not the change that will merge). **Old arm:** main at `c75a283a`, which holds 4,096. Neither is given `-ctx`.
+  Script: `docs/measurements/integration-harness-2026-10/run-g-i7-night.sh`.
+- **Statistic and rule:** as G-M2-speed. Per model, the median over six blocks of new / old; SHIP at 0.97 or more on
+  both models, PARKED in [0.95, 0.97) on either, FAIL below. VOID if the new arm did not resolve above 4,096 in every
+  cell, the old arm's is not 4,096, a cell errored or a block lacks an arm.
+- **What a verdict licenses:** SHIP says a 32,768 default does not slow a depth-128 turn on Metal on these two
+  models. It says nothing about CUDA (its own gate, with the code) or about memory.
+- **Also read, not graded:** one request of 20,199 tokens (Claude Code's first request) to each model on the trial
+  build, with swap before the load and after the answer.
+- **Stopping rule:** fixed, 24 cells. **Cost basis:** G-M2-speed's estimate plus two long prefills: a 45 min job.
+- **Predictions, before the run:** the median is within 1% of 1 on both models, 0.7 (G-M2-speed's reasoning: a step
+  at depth 128 reads the first 129 positions whatever the buffer's size). The 7B resolves 32,768 with 2 slots, 0.4:
+  it needs about 8.7 GB of live budget (4.5 GB of weights, 3.8 GB of KV, the margin). If it resolves less, the
+  comparison is of what the new default gives on this Mac, and the record says which context that was.
+
+**G-I7-speed, the Mac half, read on the night of 2026-10-12: SHIP on speed, and a refusal that changes I7's design.**
+Records: `docs/measurements/integration-harness-2026-10/i7-night-2026-10-12/`.
+
+| model | context the trial build resolved | new (tok/s) | old (tok/s) | new / old by block | median |
+|---|---|---|---|---|---|
+| Qwen2.5-Coder-1.5B | 32,768 in every cell | 93.60 | 93.45 | 1.0045 1.0019 1.0014 1.0016 1.0017 1.0013 | **1.0017** |
+| Qwen2.5-7B | 25,736 or 32,768, by the memory free at each load | 30.70 | 30.71 | 0.9999 1.0013 1.0001 0.9980 1.0020 1.0000 | **1.0000** |
+
+- **A KV of twice M2's size does not slow a depth-128 turn on Metal** on these two models.
+- **The 20,199-token request, not graded:**
+  - the 1.5B at 32,768 answered a 20,954-token prompt in 34.2 s with no swap growth;
+  - **the 7B refused it with a 413.** It had resolved 31,328 positions in 2 slots (3.3 GB of KV), which left 2.5 GB
+    available, and the per-request admission priced the prompt's prefill at 3.21 GB
+    (`decoder/prefill_budget.go:Model.AdmitPrefillMemory`). So the larger default took the memory the request it was
+    raised for needs. The night job shows FAILED for this refusal.
+- **What that means for the code, before it is written:**
+  - **The fit must leave room for the prefill of the request the context is for**, or the bigger number is
+    decoration. On a 16 GB Mac with a 7B that probably means one slot at a harness-sized context, or two at 16,384:
+    the slots-against-context question above, now with a measurement behind it.
+  - **The admission's estimate needs checking against the resident path.**
+    `decoder/prefill_budget.go:prefillScratchBytes` prices the feed-forward scratch of one sweep over the whole
+    prompt (8 bytes x the feed-forward width x the prompt's tokens), and calls itself an upper bound. Metal's
+    prefill runs in chunks, so the real figure may be far smaller. Measure it before trusting either the refusal or
+    the room.
+- **Predictions scored.** "The median is within 1% of 1 on both models (0.7)": yes. "The 7B resolves 32,768 with 2
+  slots (0.4)": in some cells and not others; 31,328 on the served load.
+
 ## 3. Considered and not recommended (recorded so they are not re-proposed)
 
 - **Ollama's native API (`/api/*`).** It looked like the reach play; the evidence says otherwise. Of the apps checked,
@@ -331,7 +415,7 @@ compiles JSON-schema and struct grammars today, can express it through a transla
 | step | what | when |
 |---|---|---|
 | 1 | Claude Code recipe: add `ANTHROPIC_DEFAULT_HAIKU_MODEL` and the window variable (§5) | **done 2026-10-12** |
-| 2 | I4 census | Claude Code **done**; the others need their harness installed first (the owner's call) |
+| 2 | I4 census | Claude Code, opencode, Codex **done 2026-10-12**; the rest when installed |
 | 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |

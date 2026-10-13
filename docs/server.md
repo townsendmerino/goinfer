@@ -120,11 +120,13 @@ aborts with a message naming the swap growth and the model's priced memory terms
 sets the threshold in MB or `off` (`docs/env-vars.md`); `goinfer-chat` has the load-time half only.
 
 On the OpenAI-compatible routes, **`role: "developer"` is accepted as an alias for
-`role: "system"`** — same position, and the same last-one-wins precedence two `system`
-messages already have. OpenAI's newer APIs send the system prompt under that role for
-reasoning-class models, and agent harnesses have followed. `/v1/messages` is unaffected:
-the Anthropic API carries the system prompt in its own top-level field and has no
-developer role.
+`role: "system"`**. OpenAI's newer APIs send the system prompt under that role for
+reasoning-class models, and agent harnesses have followed. **Several system messages are all
+kept:** those before the conversation starts are joined, in order, into the system prompt
+(Codex sends two), and one sent later stays where it is, as text of the user side. Until
+2026-10-12 only the last one was used. `/v1/messages` carries the system prompt in its own
+top-level field and has no developer role; a `system` message inside its conversation is kept
+in place the same way.
 
 > **No auth by default — on loopback only.** `--addr` defaults to loopback, and there
 > that only keeps other *machines* out, not other browser *tabs* on yours: any web page
