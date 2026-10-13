@@ -42,7 +42,7 @@ the night queue (`docs/measurements/kv3-tiled-exact-2026-10-13.md`).
 - **Below the bound nothing changes:** the same kernels as before, and the same digests at 300, 3,900 and 12,000 tokens.
 - **Past it, an exact pass equals the per-token path bit for bit:** logits and every K and V row at 12,400 and 16,384 tokens on the tiny
   fixture, f32 and f16 KV.
-- **Still falling back past the bound, by name:** an image-block pass, and MLA.
+- **Still falling back past the bound, by name:** an image-block pass. (An MLA model does not batch its prefill at any length.)
 - Admission adds the pass's score scratch (at most 64 MiB) to a request's price when a layer takes these kernels.
 
 ### Changed — on CUDA, a prompt past 12,160 attended keys prefills in batched passes where the fused attention serves it

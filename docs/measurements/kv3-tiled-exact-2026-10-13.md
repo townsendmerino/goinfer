@@ -91,8 +91,9 @@ few tokens). The routing rule is the registered one; this is its consequence.
    `./build_ptx.sh prefill_splitkv`, no other `.ptx` rebuilt. The kernels have no bare multiply-add (they are in `lintedKernels`), so the compiler version is not a
    numerics choice, and G1 measures the result.
 2. **Head dim must be a multiple of 4**, as `attn_batched`'s float4 read of `q` already requires (a head dim of 6 faults in `attn_batched` itself). G1's smallest head dim is 20.
-3. **MLA and the image-block pass still decline by name; Gated-DeltaNet and the E-model no longer need to**, since both run `attn_batched` on their attention layers.
-   The census's inference that Qwen3.6 did not decline is still unmeasured.
+3. **The image-block pass still declines past the bound, by name** (an MLA model does not batch at any length, a static decline). An E-model's layers and a Gated-DeltaNet
+   hybrid's attention layers go through the same launch site as any exact layer, so they route too: the E-model is read by the Gemma-4-E4B smoke below, the hybrid is read
+   from the code only, and the census's inference that Qwen3.6 did not decline is still unmeasured.
 
 ## 8. Day readings (2026-10-13)
 
