@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -119,7 +120,11 @@ func main() {
 	mux.HandleFunc("POST /api/reset", sameOrigin(limitBody(s.handleReset)))
 
 	fmt.Fprintf(os.Stderr, "agent-web listening on http://%s\n", *addr)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
+	var handler http.Handler = mux
+	if addrIsLoopback(*addr) {
+		handler = hostGuard(mux, *addr)
+	}
+	if err := http.ListenAndServe(*addr, handler); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
@@ -267,4 +272,45 @@ func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+// addrIsLoopback reports whether addr binds only the loopback interface.
+func addrIsLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// hostGuard answers a loopback listener only under the names that reach loopback by themselves (localhost, 127.0.0.1, ::1) and the
+// host it was bound to. A page the operator has open can otherwise rebind its own name to 127.0.0.1: the browser then sends Host and
+// Origin both naming that page, sameOrigin sees them agree, and the page can read every response. The same guard, with the same
+// reasoning, is internal/serveapp's hostGuard (this module cannot import it). A request with no Host is let through.
+func hostGuard(next http.Handler, bindAddr string) http.Handler {
+	allowed := map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
+	if h, _, err := net.SplitHostPort(bindAddr); err == nil && h != "" {
+		allowed[strings.ToLower(h)] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "" && !allowed[hostOnly(r.Host)] {
+			http.Error(w, "unrecognised Host header: this server answers only the loopback names", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// hostOnly reduces a Host header to a bare lower-case host: no port (digits only, so "localhost:80@evil.example" stays unrecognised), no brackets.
+func hostOnly(h string) string {
+	h = strings.TrimSpace(h)
+	if host, port, err := net.SplitHostPort(h); err == nil && port != "" && strings.Trim(port, "0123456789") == "" {
+		h = host
+	}
+	h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
+	return strings.ToLower(strings.TrimSuffix(h, "."))
 }

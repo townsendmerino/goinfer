@@ -329,6 +329,7 @@ type config struct {
 	specAdaptive    bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
 	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	allowedHosts    string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
 	logRequests     bool          // -log-requests: one stderr line per generation request
 	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
 	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
@@ -400,6 +401,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir for a durable job journal — one JSONL line per generation state transition (pending/running/done/failed/cancelled), 0700/0600 permissions matching -session-dir. On restart, any job still 'running' at the last recorded transition is marked 'interrupted', never silently 'failed'. Off by default: every generation still gets an in-memory job record, just no durability across a restart")
 	fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model, and pull and load GGUF files or whole safetensors checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
 	fs.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
+	fs.StringVar(&cfg.allowedHosts, "allowed-hosts", "", "comma-separated Host names, beyond localhost, 127.0.0.1, [::1] and the -addr host, that a listener bound to the loopback answers (default none). A request whose Host is any other name gets 421: that is what stops a web page from reaching a loopback server by DNS rebinding. Set it when a reverse proxy on this machine forwards a public name to the loopback port. Has no effect on a listener bound beyond the loopback, which answers any Host and is protected by -api-key")
 	fs.BoolVar(&cfg.logRequests, "log-requests", false, "write one line to stderr per generation request (/v1/chat/completions, /v1/completions, /v1/responses, /v1/messages) when it finishes: route, model, status, prompt and completion tokens, time to first token and total time. Off by default; a request that failed before generating shows `-` for the model and token counts")
 	fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
 	fs.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
@@ -789,9 +791,13 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// is the remaining bound on sessMu itself.
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	defer srvCancel()
+	var handler http.Handler = mux
+	if addrIsLoopback(*addr) {
+		handler = hostGuard(mux, *addr, splitHosts(cfg.allowedHosts))
+	}
 	httpSrv := &http.Server{
 		Addr:              *addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,

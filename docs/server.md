@@ -136,6 +136,14 @@ developer role.
 > `Authorization: Bearer <key>` or `x-api-key: <key>`, and the server prints a startup
 > warning whenever it's running without one.
 >
+> **A loopback `--addr` answers only loopback names.** A page can also reach a loopback
+> server by *DNS rebinding*: its own name re-resolves to `127.0.0.1`, so the browser sends
+> `Host` and `Origin` both naming the page and can read the replies. `serve` therefore
+> answers `localhost`, `127.0.0.1`, `[::1]` and the `--addr` host, and refuses any other
+> `Host` with `421`. A reverse proxy on the same machine that forwards a public name needs
+> `--allowed-hosts name1,name2`. A listener bound beyond loopback answers any `Host` and is
+> protected by its key.
+>
 > **A non-loopback `--addr` (e.g. `0.0.0.0:8080`) requires `--api-key`** — `serve`
 > refuses to start otherwise, the same hard-fail `--allow-admin` already gets. Even
 > with a key, the connection is plaintext by default: the bearer token and every

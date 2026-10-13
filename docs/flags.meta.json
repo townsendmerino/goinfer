@@ -289,6 +289,12 @@
    "summary": "Serve a local browser UI at `/` to chat, and to pull and load GGUF files or whole safetensors checkpoints from Hugging Face. Off by default: its pull route starts multi-gigabyte downloads."
   },
   {
+   "name": "allowed-hosts",
+   "group": "Network and security",
+   "summary": "Host names, beyond `localhost`, `127.0.0.1`, `[::1]` and the `--addr` host, that a loopback-bound listener answers (default none). Any other Host gets 421, which stops a web page from reaching a loopback server by DNS rebinding. Set it when a reverse proxy on this machine forwards a public name.",
+   "see": "docs/server.md"
+  },
+  {
    "name": "allow-admin",
    "group": "Network and security",
    "summary": "Enable `/admin/*` on the TCP listener: model load and unload, cancel, halt, resume. A deliberate opt-in that requires `--api-key`. Ignored when `--admin-socket` is set.",
