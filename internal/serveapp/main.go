@@ -50,6 +50,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/clef"
+	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
@@ -679,6 +680,9 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "connect" {
+		os.Exit(connect.Run(os.Args[2:], filepath.Base(os.Args[0]), os.Stdout))
+	}
 	// `status|ls|cancel|halt|resume` are a CLIENT talking to a RUNNING server's admin socket (-admin-socket), not the
 	// server itself: the same dispatch shape as pull/check above (docs/tasks/task-halt-2026-09.md).
 	if len(os.Args) > 1 && isAdminCLICmd(os.Args[1]) {
@@ -740,7 +744,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// Every argument is a --flag, so anything flag.Parse left in flag.Args() is a typo: refuse it rather than fall through
 	// silently.
 	if args := flag.Args(); len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <ref>, check, --version. Or pass --model <file.gguf|dir|hf:owner/repo:quant>.\n",
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <ref>, check, connect <agent>, --version. Or pass --model <file.gguf|dir|hf:owner/repo:quant>.\n",
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}

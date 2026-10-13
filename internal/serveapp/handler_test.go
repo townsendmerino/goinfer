@@ -2,15 +2,19 @@ package serveapp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/inproc"
 )
 
@@ -138,5 +142,23 @@ func TestNewHandler_cancelMidStream(t *testing.T) {
 	t0 := time.Now()
 	if err := closer.Close(); err != nil || time.Since(t0) > 3*time.Second {
 		t.Errorf("Close after a cancelled stream: %v in %s", err, time.Since(t0))
+	}
+}
+
+// `connect` against the real model list: the window it writes into an agent's configuration is the one this server
+// reports, under the field name the server really uses.
+func TestConnect_readsTheServedWindow(t *testing.T) {
+	h, closer, err := NewHandler([]string{"-model", "tiny=" + tinyChatCheckpoint(t), "-backend", "cpu", "-quant", "int8int8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closer.Close()
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+	var out bytes.Buffer
+	rc := connect.Run([]string{"opencode", "-file", filepath.Join(t.TempDir(), "opencode.json"), ts.URL}, "goinfer-serve", &out)
+	if rc != 0 || !strings.Contains(out.String(), "model tiny, context window 128 tokens") || !strings.Contains(out.String(), `"context": 128`) ||
+		!strings.Contains(out.String(), "not viable in this window") {
+		t.Errorf("connect against the served model list: rc %d\n%s", rc, out.String())
 	}
 }
