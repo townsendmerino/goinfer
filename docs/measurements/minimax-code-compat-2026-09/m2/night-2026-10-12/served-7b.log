@@ -1,0 +1,11 @@
+[23:31:43] qwen2.5-7b-instruct-q4_k_m.gguf: swap used before the load 962 MB
+  /Users/francistownsend-merino/goinfer-bench/m2-2026-10-12/bin/serve-metal-new -model bench=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.068 ms, fragment 0.154 ms), gate|up at B <= 2 (0.434, 1.159); 0 = always the fragment
+  | decode path: metal-resident (int4)
+  | context: 16384 tokens (fit: 2 slots, 1.8 GB KV; model maximum 32768 — raise with --ctx) · KV f16
+  | fit: 16384-token cap needs 0.9 GB KV (weights 4.4 GB, budget 5.1 GB, 4.2 GB left for a request's own prefill)
+  | KV plan: 2 conversations x 16384 positions (4 asked for)
+  up after 1 s; swap used 962 MB
+  answered in 54.0 s: prompt_tokens 11492, completion_tokens 8, reply 'It seems you have a list of items'
+  swap used after the answer 962 MB (before the load 962 MB, growth +0 MB)

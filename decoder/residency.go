@@ -1198,6 +1198,29 @@ func (m *Model) ResidentContextCap() int {
 	return 0
 }
 
+// ResidentContextNoted is an optional ResidentForward extension: a few words on how the backend arrived at its context cap
+// ("fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"), for a load banner. "" when the caller's own -ctx set it.
+type ResidentContextNoted interface {
+	ContextNote() string
+}
+
+// ResidentContextNote is the active resident's ContextNote, or "" when there is no resident or it gives none.
+func (m *Model) ResidentContextNote() string {
+	if n, ok := m.resident.(ResidentContextNoted); ok {
+		return n.ContextNote()
+	}
+	return ""
+}
+
+// ResidentContextKVBytes is the KV one resident slot holds at ctx positions on the active resident's backend, at the precision
+// that backend allocates: the figure FitBudgetSummary reports at the resolved context. 0 when no resident is active.
+func (m *Model) ResidentContextKVBytes(ctx int) int64 {
+	if m.resident == nil || m.be == nil {
+		return 0
+	}
+	return m.ResidentKVBytes(m.be.Name(), ctx, m.kvF16, m.kvI8)
+}
+
 // ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or
 // "i8" — or "" when no resident runner is active. It reports what runs, not what was requested: Metal
 // ships f16 (or int8) KV only, its f32 KV kernels being compiled out (metal/model.go's r.kvF32), so a

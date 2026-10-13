@@ -44,9 +44,9 @@ no live free-memory probe yet — WebGPU exposes no portable query for it — so
 memory probe available... skipped" until one exists.
 `
 
-// defaultCtx is `fit`'s -ctx default: the CUDA planner's candidate context (cuda/resident.go's fitDefaultCtx), so the dry run prices what the real load
-// picks. TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn keeps the two equal.
-const defaultCtx = 16384
+// defaultCtx is `fit`'s -ctx default: the GPU planners' candidate context (cuda/resident.go's fitDefaultCtx, decoder.MetalFitDefaultCtx), so the dry
+// run prices what the real load picks. TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn keeps it equal to CUDA's.
+const defaultCtx = decoder.MetalFitDefaultCtx
 
 // Run implements `fit`. args excludes the program name and the "fit" word. Returns an exit code.
 func Run(args []string) int {
@@ -124,7 +124,7 @@ func Run(args []string) int {
 			fmt.Printf("%-6s  no memory probe available (driver/device not found) — skipped\n", backend)
 			continue
 		}
-		p := m.Plan(backend, free, req)
+		p := planFor(m, backend, free, req)
 		fmt.Printf("%-6s  %s\n        %s\n", backend, strings.ToUpper(p.Placement.String()), p.Reason)
 		if p.Placement != decoder.PlacementDecline {
 			admitted = append(admitted, backend)
@@ -143,6 +143,24 @@ func Run(args []string) int {
 		selfMeasure(path, *quant, admitted)
 	}
 	return 0
+}
+
+// planFor is the plan `fit` prints for one backend. An unpinned Metal load does not take the context Plan alone would give
+// it: it asks decoder.Model.MetalFitCtx, which also holds Metal's default KV slots and its margin, so `fit` asks the same
+// function and plans at its answer. The further slots' KV is priced as ExtraBytes when the context grew for them; at the
+// default the build grants the slots that fit, and the plan prices one as it always has.
+func planFor(m *decoder.Model, backend string, free int64, req decoder.PlanRequest) decoder.Plan {
+	if backend != "metal" || req.CtxPinned {
+		return m.Plan(backend, free, req)
+	}
+	f := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots, PagedMoE: req.Slots > 0})
+	req.Ctx, req.CtxPinned = f.Ctx, true
+	if f.Ctx > decoder.MetalCtxDefault {
+		req.ExtraBytes += f.KVBytes / int64(f.KVSlots) * int64(f.KVSlots-1)
+	}
+	p := m.Plan(backend, free, req)
+	p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (%s)", f.Ctx, f.Why)
+	return p
 }
 
 // selfMeasure is tasks/task-fit-to-hardware.md §5's "self-measure" option: after load, decode a fixed

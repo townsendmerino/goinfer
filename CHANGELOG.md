@@ -30,6 +30,30 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Changed — on Metal, the default context grows to hold a coding agent's session when memory allows
+
+Changes resource use. Without `-ctx`, a Metal load held 4096 positions in each of its 2 KV slots, and a coding agent's first request (about 11,000
+tokens) got a 400. It now asks for **16384**, as CUDA does, and takes what the Mac's memory budget holds beside the weights and both slots: never
+under 4096, and less than 16384 only when it does not fit (the context gives way before the slots do).
+
+- **What it costs.** KV is allocated up front in every slot, at f16 (or int8 with `--kv i8`). Qwen2.5-Coder-1.5B at int4 on an M1 Pro (16 GB):
+  4096 → **16384** positions, 2 slots, 0.2 → **0.9 GB** of KV; a request of 11,492 tokens that was refused is now answered, with no swap growth.
+  Qwen2.5-7B on the same Mac with nothing else running: 4096 → **16384**, 2 slots, 0.45 → **1.8 GB**; the same request answered in 54 s, no
+  swap growth. Decode at a depth of 128 is unchanged: 93.4 tok/s on the 1.5B and 30.7 on the 7B either way (new over old 1.0003 and 1.0007,
+  six interleaved blocks a model).
+- **What stays at 4096:** `--fit=off`; a load that pages MoE experts (`-moe-cache-experts`, `-moe-cache-slots`), whose pager uses the memory a
+  longer context would take; a machine whose memory cannot be read. An explicit `-ctx` is honoured exactly as before, up to 32768.
+- **The budget is the live one** (the smaller of 0.70 of RAM and the memory available now), so a busy Mac gets less: with about 3 GB available a
+  7B does not go resident at any context, as before.
+- **Startup says what it chose.** The `context:` line gives the reason in place of "backend default", for example
+  `16384 tokens (fit: 2 slots, 0.9 GB KV; ...)` or `4096 tokens (paged MoE keeps the default; ...)`. On any GPU backend a resident context under
+  16384 adds a `harness:` line: whether an agent's first request fits, and what `--ctx 16384` would cost in KV across the load's slots.
+- **The 400 reads** `prompt is N tokens; context window is M (context_length_exceeded)`, followed as before by the `-ctx` to pass when the window
+  is the server's and not the model's.
+- **`goinfer-chat fit`** plans an unpinned Metal line at the context a load takes, from the same function.
+
+`docs/tasks/task-minimax-code-compat-2026-09.md` M2.
+
 ### Fixed — Claude Code 2.1.268 could not complete a turn against `/v1/messages`
 
 Claude Code now sends a `system` message inside the conversation on every turn (the Messages API's mid-conversation system

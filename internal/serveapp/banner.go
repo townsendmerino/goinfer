@@ -46,6 +46,14 @@ type bannerFacts struct {
 	ctxWindow    int
 	maxPositions int
 
+	// ctxNote is how the resident backend arrived at its context when no -ctx set it (decoder.Model.ResidentContextNote:
+	// "fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"); "" when the backend gives none.
+	ctxNote string
+
+	// harnessKVBytes is the KV one resident slot would hold at harnessCtx positions (decoder.Model.ResidentContextKVBytes),
+	// the price harnessLine quotes; 0 off the resident path.
+	harnessKVBytes int64
+
 	// kvPrec is the KV precision the resident runner actually allocates (decoder.Model.ResidentKVPrecision),
 	// "" off the resident path — where the requested -kv is what applies.
 	kvPrec string
@@ -89,6 +97,8 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
+	f.ctxNote = lm.model.ResidentContextNote()
+	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
@@ -134,19 +144,23 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// servers. cfg.load.Ctx is the requested -ctx for this model (the caller passes the per-model ctx= override when
 	// there is one).
 	ctxLine := "context: "
+	byDefault := "backend default" // what set an unrequested context: the backend's own account of it when it gives one
+	if f.ctxNote != "" {
+		byDefault = f.ctxNote
+	}
 	switch {
 	case f.ctxWindow <= 0:
 		ctxLine += "unknown (the model declares no maximum)"
 	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions && cfg.load.Ctx > 0:
 		ctxLine += fmt.Sprintf("%d tokens (--ctx; model maximum %d)", f.ctxWindow, f.maxPositions)
 	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions:
-		ctxLine += fmt.Sprintf("%d tokens (backend default; model maximum %d — raise with --ctx)", f.ctxWindow, f.maxPositions)
+		ctxLine += fmt.Sprintf("%d tokens (%s; model maximum %d — raise with --ctx)", f.ctxWindow, byDefault, f.maxPositions)
 	case f.maxPositions == 0 && cfg.load.Ctx > 0:
 		// A config that declares no max_position_embeddings (Gemma 3's): the figure is the resident KV capacity, not
 		// a model limit.
 		ctxLine += fmt.Sprintf("%d tokens (--ctx; the model declares no maximum)", f.ctxWindow)
 	case f.maxPositions == 0:
-		ctxLine += fmt.Sprintf("%d tokens (backend default; the model declares no maximum — raise with --ctx)", f.ctxWindow)
+		ctxLine += fmt.Sprintf("%d tokens (%s; the model declares no maximum — raise with --ctx)", f.ctxWindow, byDefault)
 	case cfg.load.Ctx > f.ctxWindow:
 		ctxLine += fmt.Sprintf("%d tokens (model maximum; --ctx %d is above it)", f.ctxWindow, cfg.load.Ctx)
 	default:
@@ -178,6 +192,9 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	}
 	ctxLine += cpuNote
 	out = append(out, ctxLine)
+	if l := harnessLine(f); l != "" {
+		out = append(out, l)
+	}
 
 	// The memory this context cap actually costs, and what is left: the line a harness user needs to judge whether
 	// their own turn size fits, before finding out from swap. fitBudgetBytes is priced against currently available
@@ -328,6 +345,43 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 			"and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)", cfg.maxConcurrent)
 	}
 	return ""
+}
+
+// harnessCtx is the resident context a coding agent's session needs: its first request with room to continue, and the
+// candidate the GPU backends' fit-by-default context asks for (decoder.MetalFitDefaultCtx, cuda's fitDefaultCtx).
+const harnessCtx = 16384
+
+// harnessFirstRequest is the size in tokens of the first request a coding agent sends (system prompt and tool schemas;
+// opencode's measured 11,137).
+const harnessFirstRequest = 11137
+
+// harnessLine is the startup warning for a GPU-resident model whose context is under harnessCtx: whether an agent
+// harness's first request fits at all, and the --ctx that holds a session with what its KV costs across this load's
+// slots. "" when the context is enough, unknown, or not a resident one (the CPU path allocates KV per request).
+func harnessLine(f bannerFacts) string {
+	if !f.resident || f.ctxWindow <= 0 || f.ctxWindow >= harnessCtx {
+		return ""
+	}
+	line := fmt.Sprintf("harness: %d tokens is short for a coding agent — its first request is about 11k tokens (opencode: %d)",
+		f.ctxWindow, harnessFirstRequest)
+	if f.ctxWindow <= harnessFirstRequest {
+		line += " and will be refused (context_length_exceeded)"
+	} else {
+		line += fmt.Sprintf(", which leaves %d for the session", f.ctxWindow-harnessFirstRequest)
+	}
+	switch {
+	case f.maxPositions > 0 && f.maxPositions < harnessCtx:
+		return line + fmt.Sprintf("; the model's own maximum is %d, so --ctx cannot raise it to %d", f.maxPositions, harnessCtx)
+	case f.harnessKVBytes > 0:
+		slots := max(f.kvSlots, 1)
+		noun := "slots"
+		if slots == 1 {
+			noun = "slot"
+		}
+		return line + fmt.Sprintf("; --ctx %d holds it for %.1f GB of KV (%d %s)", harnessCtx,
+			float64(int64(slots)*f.harnessKVBytes)/(1<<30), slots, noun)
+	}
+	return line + fmt.Sprintf("; --ctx %d holds it", harnessCtx)
 }
 
 // kvPlanLine is the "KV plan" line: what the resident plan chose and, when it is less than was asked for, why. The

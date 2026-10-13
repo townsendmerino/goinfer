@@ -462,3 +462,58 @@ func TestFactsOf_headTableFollowsEmbedInt4(t *testing.T) {
 		}
 	}
 }
+
+// TestBanner_contextSaysWhyAndWarnsAHarness: when no -ctx set the context, the line gives the backend's own reason in
+// place of "backend default"; under harnessCtx on a resident model a second line says whether a coding agent's first
+// request fits and what the --ctx that holds a session costs across this load's KV slots. An explicit --ctx is still
+// warned (the operator chose it, the harness did not), a context of harnessCtx or more is not, and neither is the CPU
+// path, whose window is the model's own.
+func TestBanner_contextSaysWhyAndWarnsAHarness(t *testing.T) {
+	const gib = int64(1) << 30
+	for _, tc := range []struct {
+		name    string
+		f       bannerFacts
+		ctx     int // the requested -ctx
+		ctxWant string
+		harness []string // substrings of the harness line; nil = no such line
+	}{
+		{"grown by the fit: no warning",
+			bannerFacts{resident: true, ctxWindow: 16384, maxPositions: 32768, ctxNote: "fit: 2 slots, 1.9 GB KV", kvSlots: 2, harnessKVBytes: gib}, 0,
+			"context: 16384 tokens (fit: 2 slots, 1.9 GB KV; model maximum 32768 — raise with --ctx)", nil},
+		{"paged MoE keeps the default: the first request is refused",
+			bannerFacts{resident: true, ctxWindow: 4096, maxPositions: 131072, ctxNote: "paged MoE keeps the default", kvSlots: 2, harnessKVBytes: gib}, 0,
+			"context: 4096 tokens (paged MoE keeps the default; model maximum 131072 — raise with --ctx)",
+			[]string{"harness: 4096 tokens is short for a coding agent", "about 11k tokens (opencode: 11137)", "will be refused (context_length_exceeded)", "--ctx 16384 holds it for 2.0 GB of KV (2 slots)"}},
+		{"shrunk to 12000: fits, with little room",
+			bannerFacts{resident: true, ctxWindow: 12000, maxPositions: 32768, ctxNote: "fit: 2 slots, 1.4 GB KV", kvSlots: 1, harnessKVBytes: gib / 2}, 0,
+			"context: 12000 tokens (fit: 2 slots, 1.4 GB KV; model maximum 32768 — raise with --ctx)",
+			[]string{"which leaves 863 for the session", "--ctx 16384 holds it for 0.5 GB of KV (1 slot)"}},
+		{"no note from the backend: the old words",
+			bannerFacts{resident: true, ctxWindow: 8192, maxPositions: 40960, kvSlots: 4, harnessKVBytes: gib}, 0,
+			"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)",
+			[]string{"will be refused", "4.0 GB of KV (4 slots)"}},
+		{"an explicit --ctx 4096 is warned too",
+			bannerFacts{resident: true, ctxWindow: 4096, maxPositions: 32768, kvSlots: 2, harnessKVBytes: gib}, 4096,
+			"context: 4096 tokens (--ctx; model maximum 32768)", []string{"will be refused", "--ctx 16384 holds it"}},
+		{"the model's own window is the limit",
+			bannerFacts{resident: true, ctxWindow: 8192, maxPositions: 8192, kvSlots: 2, harnessKVBytes: gib}, 0,
+			"context: 8192 tokens (model maximum)", []string{"will be refused", "the model's own maximum is 8192, so --ctx cannot raise it to 16384"}},
+		{"the CPU path: no resident context to warn about",
+			bannerFacts{ctxWindow: 4096, maxPositions: 4096}, 0, "context: 4096 tokens (model maximum)", nil},
+	} {
+		tc.f.hasTemplate = true
+		lines := modelBannerFrom(tc.f, config{load: loadflags.Flags{Ctx: tc.ctx}})
+		if got := bannerLine(lines, "context:"); !strings.HasPrefix(got, tc.ctxWant) {
+			t.Errorf("%s: context line %q, want it to start %q", tc.name, got, tc.ctxWant)
+		}
+		got := bannerLine(lines, "harness:")
+		if (got != "") != (tc.harness != nil) {
+			t.Errorf("%s: harness line %q, want one: %v", tc.name, got, tc.harness != nil)
+		}
+		for _, want := range tc.harness {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: harness line %q missing %q", tc.name, got, want)
+			}
+		}
+	}
+}

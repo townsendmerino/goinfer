@@ -40,8 +40,8 @@
 1. **Context size.** minimax-code assumes a 200,000-token window for a custom model unless given
    `--context-limit`, and sends its system prompt (`packages/local-runtime-v2/assets/agents/_default/prompt-base-all.md`
    alone is 7.7 KB) plus the tool schemas on every turn — roughly 5–8k tokens before the first user
-   message, by estimate from the files (M0 measures it). goinfer's resident defaults are 4096 on Metal
-   (`decoder/fitplan.go:MetalCtxDefault`) and 4096→8192 fit on CUDA (`cuda/resident.go:cudaCtxCapDefault`). The first turn may not fit;
+   message, by estimate from the files (M0 measures it). goinfer's resident defaults were, when this was written, 4096 on Metal
+   (`decoder/fitplan.go:MetalCtxDefault`) and 4096→8192 fit on CUDA (`cuda/resident.go:cudaCtxCapDefault`); since M2 both grow toward 16384 when memory holds it. The first turn may not fit;
    the second almost certainly will not. It does not read goinfer's `/v1/models` `context_window`.
 2. **Thinking models answer the connection test slowly.** `--use` sends a **non-streaming** `ping` with
    `max_tokens` = the configured output limit (default 16,384) and a **10 s** timeout
@@ -67,7 +67,7 @@
 |---|---|---|---|
 | M0 | Run it for real — both boxes, a scripted task set, a pre-registered pass rule | S | gates M2–M7 |
 | M1 | `docs/integrations/minimax-code.md` + a `serve check` row shaped like its first turn | S | with M0 |
-| M2 | A context default an agent harness fits in — Metal fit-by-default, a harness warning | M | after M0 |
+| M2 | A context default an agent harness fits in — Metal fit-by-default, a harness warning | M | **done 2026-10-13** (run on its own, before M0) |
 | M3 | A thinking switch: `enable_thinking`, `chat_template_kwargs`, `reasoning_effort`, `--thinking` | M | after M0 |
 | M4 | Emit reasoning separately: `reasoning_content` deltas and Anthropic `thinking` blocks | M | after M3 |
 | M5 | Images together with tools on the vision path | L | verify-then-decide |
@@ -145,6 +145,129 @@ KV formula to price with), `docs/tasks/task-embed-and-harness-ux.md` mode 3.
 **Decision rule.** Ships when M0's task set, re-run with no `--ctx`, reaches the same completion count as
 M0's explicit `--ctx` run on the Mac, and the dense decode rate at depth 128 is within 3% of today's
 (`TestProdThroughput`-class; a larger KV must not slow short turns).
+
+**M2 started 2026-10-12, on its own (owner's brief of that day: do it now, without waiting for M0).** This
+registration was committed before the code was, and before G-M2-speed ran. It was written after the code and after
+the day's first Mac reads (the 1.5B and the 7B under gate 3), so those two are results and carry no prediction;
+only the night gate's predictions below were made blind. The results follow under "M2 results".
+
+*What the brief changes in the plan above.*
+- The candidate is **16384** (`decoder/fitplan.go:MetalFitDefaultCtx`, CUDA's figure), not growth toward the 32768
+  ceiling item 1 names. An unpinned load asks `Plan("metal")` for it, clamped to the model's window; the answer is
+  never under 4096; a genuine `-ctx` is untouched up to 32768.
+- **The budget** is the registered `metal` memory probe (S4's live ceiling: the smaller of 0.70 of RAM and the live
+  available figure) less `decoder/metal_fitctx.go:MetalFitMarginBytes` (384 MiB, CUDA's margin). The margin is there
+  because the load-time guard reads the live figure again after the context is chosen, and a context taken at the
+  exact edge would be halved by S18's shrink on a drift of a few megabytes.
+- **KV is priced as Metal allocates it** (`decoder/residentneed.go:Model.ResidentKVBytes`): f16, or int8 with
+  `--kv i8`, for every requested slot (Metal's default is 2). The brief says "f32 KV"; Metal has no f32 KV kernels,
+  so its examples' KV sizes are twice what will be printed.
+- **Opt-outs keep 4096:** `--fit=off`; an unreadable memory probe; any load that pages MoE experts
+  (`-moe-cache-experts`, `-moe-cache-slots`, or the deprecated environment knob), for CUDA's reason: the pager lives
+  on the memory a longer context would take. A context the load-time guard pinned lowers the candidate and the
+  floor, never raises them.
+- **The decision rule above cannot be read** (it re-runs M0's task set, and M0 has not run). For this standalone M2
+  the brief's gates replace it; re-running M0's set with no `--ctx` stays owed to M0.
+
+*Gates.*
+1. Unit tests, the CUDA set's Metal twins, on tiny fixtures: an unpinned load grows to 16384 when it fits and takes
+   what fits when it does not; slots trade context, never under 4096; a guard pin only lowers; paged MoE, `--fit=off`
+   and an unknown probe keep 4096; an explicit `-ctx` is untouched; `fit` and the load name the same context for one
+   memory figure; a real tiny build holds the context it resolved and decodes an 11,137-token prompt in it. One
+   mutation shown: with the paged-MoE opt-out removed a test goes red.
+2. A real-checkpoint unit test (tag `realckpt`, heavy): on a 16 GB Mac's static budget the 1.5B and the 7B at int4
+   resolve, with two slots, a context that holds 11,137 tokens.
+3. On the Mac, no `-ctx`, by day where memory allows and otherwise in the night job: the 1.5B and the 7B at int4
+   resolve at least 16384 with 2 slots; serve answers a request of about 11k tokens with no swap growth from before
+   the load to after the answer (`docs/measurements/minimax-code-compat-2026-09/m2/m2_served_check.py`); a paged 26B
+   load still resolves 4096.
+4. **G-M2-speed**, below.
+5. The Metal suite and the Mac device gate (`RELEASING.md` §C1-M) pass on the branch.
+
+*G-M2-speed (night, the Mac).* A larger KV must not slow short turns.
+- **Tier and instrument:** night; `scripts/bench_peer.py` phase A (depth 128, greedy, 64 tokens x 8 completions x 2
+  runs a cell), `BENCH_BACKENDS=metal`, `BENCH_MODELS=1.5B,7B`, two arms `BENCH_ENGINES=goinfer,goinfer_old` (no peer
+  arm: the decision is new / old), `BENCH_ABBA=3` (three counterbalanced quads of restarted cells a model),
+  `BENCH_REQUIRE_BACKEND=1`. `goinfer` is serve built at this branch's head, `goinfer_old` serve built at main
+  `c75a283a`; neither is given `-ctx`, so the old arm holds 4096 positions and the new arm what the fit gives.
+  Script `docs/measurements/minimax-code-compat-2026-09/m2/run-g-m2-night.sh`, grader `grade_m2_speed.py` beside it.
+- **Statistic:** per model, a block's rate is the mean of its runs; the median over the six blocks of new / old.
+- **Rule:** SHIP at a median of 0.97 or more on both models (the brief's "within 3%"; a faster new arm also ships).
+  **PARKED** in [0.95, 0.97) on either: one repeat on another night before any decision. **FAIL** under 0.95 on
+  either: the default does not grow on Metal until the cost is explained.
+- **Void:** the new arm's serve log does not show a context above 4096 in every cell (nothing was compared), the old
+  arm's is not 4096, a cell errored, or a block lacks an arm. A void run is re-queued, not graded.
+- **Stopping rule:** fixed, 24 cells; no early stop. **Cost basis:** about 30 s a 1.5B cell and 90 s a 7B cell with
+  its load, 24 cells, plus the instant idle gate: about 30 min; with the served reads, a 45 min job.
+- **Predictions, written before the run:** the median is within 1% of 1 on both models, 0.75; a slowdown between 1%
+  and 3% on either, 0.15; over 3%, 0.10. At depth 128 a step reads the first 129 positions of each KV buffer, so
+  the buffer's size should only matter through allocation. The 7B resolves 16384 with 2 slots at night, 0.75 (it
+  needs about 6.8 GB of live budget: 4.5 GB of weights, 1.9 GB of KV and the margin).
+
+**M2 results, 2026-10-12 (the day half; the branch `m2-metal-fit-ctx` is not merged until the night half reads).**
+
+- **Built** as registered: `decoder/metal_fitctx.go:Model.MetalFitCtx` (the one function the Metal load and
+  `goinfer-chat fit` ask), `metal/backend.go:metalFitFor` (chosen once a build), the banner's reason and `harness:`
+  line (`internal/serveapp/banner.go:harnessLine`), the 400's wording, `internal/fitcmd/fit.go:planFor`. The design
+  notes are in `docs/code-notes/metal.md`, "metalFitFor".
+- **Gate 1, unit tests: PASS.** `decoder`'s six `TestMetalFitCtx_*` (grow and shrink on the 8-position grid, slots
+  trade context, a limit only lowers, the three opt-outs with a control, the window, a companion's bytes);
+  `metal`'s `TestResolveMetalCtxCap_fitByDefault` (fourteen loads, with the explicit `-ctx` cases),
+  `TestResolveMetalCtxCap_autoPinIsACeiling` (re-read under a roomy and an unknown probe),
+  `TestMetalBuildResident_fitByDefault` (a real tiny build holds 16384 in 2 slots and decodes an 11,137-token
+  prompt; with room for 20,000 positions it holds 2 slots of 10,000; both are the context `fit`'s function names)
+  and `TestMetalBuildResident_pagedMoEKeepsTheDefault` (a tiny MoE grows when resident and keeps 4096 paged);
+  `internal/serveapp`'s banner and 400 tests; `internal/fitcmd`'s `TestPlanFor_metalPlansAtTheLoadsOwnContext`.
+  - **Mutations, both red:** the paged-MoE case removed from `MetalFitCtx` (`TestMetalFitCtx_optOuts`: ctx 16384,
+    want 4096), and `metalPagesMoE` made to return false (the two `-moe-cache-*` loads resolve 16384).
+- **Gate 2, real checkpoints:** the 1.5B at int4 on a 16 GB Mac's static budget resolves **16384** with 2 slots,
+  0.9 GB of KV (weights 1.81 GB and as much again in host copy, of 11.20 GB). The 7B's case loads it on the CPU and
+  is in the night job.
+- **Gate 3, the Mac by day** (M1 Pro 16 GB, the desktop open, 5.7 GB available; `m2/served-day-2026-10-12.txt`):
+  - **The 1.5B, no `-ctx`: 16384 positions, 2 slots, 0.9 GB of KV.** A request of 11,492 tokens was answered in
+    14.7 s; swap used was 4,459 MB before the load and after the answer.
+  - **The 7B did not go resident at all:** the build needs 4.65 GB at its smallest context and the live budget
+    was 3.21 GB. That is the memory guard, which this change does not touch (inferred from the code, not read on
+    main today). Its read is in the night job.
+  - **The paged 26B keeps 4096.** The owner had it pulled (17:00; 14.6 GB, bytes equal to the archive's). Loaded
+    under the day-use rule with `-moe-cache-experts` and no `-ctx`:
+    `context: 4096 tokens (paged MoE keeps the default; model maximum 262144 — raise with --ctx) · KV f16`. It went
+    resident with 1 of its 2 KV slots (the guard's count at 880 MB a slot), the `harness:` line priced `--ctx 16384`
+    at 3.4 GB of KV, and swap did not move. Banner only; no request was sent.
+- **Gate 5, the Metal package's suite on the branch: PASS**, 318 tests pass and 173 skip (the heavy ones), by day
+  (`m2/metal-suite-day-2026-10-12.txt`). A first run failed three tests for fixtures the fresh worktree lacked;
+  they were cloned from the main checkout and the run repeated. The device gate (§C1-M) is a night job.
+- **The night harness, one run a cell, exploratory and not a result:** the new arm resolved 16384 and the old arm
+  4096, at 94.23 and 94.22 tok/s.
+- **Owed, queued on the Mac for tonight:** G-M2-speed, the 7B's served read and real-checkpoint case
+  (`m2/run-g-m2-night.sh`), and the Metal device gate at the branch's head. The merge waits for them.
+- **For the owner:** the brief's "f32 KV" is f16 on Metal, so 2 slots of 16384 on a 7B are about 1.9 GB and not
+  3.7. The 26B's sidecar (14.6 GB) and the 7B's Metal sidecar (4.8 GB) are now in `~/models`; the disk has about
+  6 GB free.
+
+**M2 results, the night of 2026-10-12 (the Mac, nothing else running): every gate that could be read passes.**
+Records: `docs/measurements/minimax-code-compat-2026-09/m2/night-2026-10-12/`.
+
+- **G-M2-speed: SHIP.** `bench_peer.py` phase A at depth 128, six counterbalanced blocks a model; the new arm
+  resolved 16384 in every cell and the old arm 4096.
+
+| model | new (tok/s) | old (tok/s) | new / old by block | median |
+|---|---|---|---|---|
+| Qwen2.5-Coder-1.5B | 93.40 | 93.39 | 1.0004 0.9992 0.9974 1.0025 1.0002 1.0016 | **1.0003** |
+| Qwen2.5-7B | 30.70 | 30.68 | 1.0035 1.0003 0.9993 1.0011 1.0017 0.9997 | **1.0007** |
+
+- **Gate 3, the 7B: 16384 positions, 2 slots, 1.8 GB of KV.** A request of 11,492 tokens was answered in 54.0 s;
+  swap used was 962 MB before the load and after the answer. The 1.5B read the same as by day (13.6 s).
+- **Gate 5, the Metal device gate at the branch's head: PASS** (`docs/measurements/gpu-gate/`, the record for
+  `88647c7d`).
+- **Gate 2's 7B case was not read, and the night job shows FAILED for it.** My test loads the 7B's GGUF onto the
+  heap, and the load-time fit guard refused that on this Mac (12.8 GB needed, 6.4 GB available). That is the
+  guard doing its job on my instrument, not a reading of the fit. The served read above is the direct evidence
+  for the 7B: a real Metal load choosing its own context. The test now skips, with the reason, when the guard
+  refuses; the 1.5B case passed.
+- **Predictions scored.** "The median is within 1% of 1 on both models (0.75)": yes. "The 7B resolves 16384 with 2
+  slots at night (0.75)": yes.
+- **M2 is done.** Still owed to M0, not to M2: its task set re-run with no `--ctx`.
 
 ### M3 · A thinking switch
 
