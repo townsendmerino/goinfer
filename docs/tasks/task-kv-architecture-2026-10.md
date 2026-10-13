@@ -617,9 +617,9 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 
 Branch `kv1-2026-10`. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2 and G5b
 amended before their runs). **Read and passing:** identity by day on both boxes, the windowed tests at awkward offsets
-on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost. **Queued for the night of
-2026-10-13, and the merge waits for them:** the served speed gate on both boxes, the Metal device gate, and the
-fast-class windowed measurement on a real model (which measures, and does not gate KV1).
+on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost, and the fast-class
+windowed measurement (which measures, and does not gate KV1). **Queued for the night of 2026-10-13, and the merge waits
+for them:** the served speed gate on both boxes and the Metal device gate.
 
 - **Built:**
   - `internal/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
@@ -671,6 +671,10 @@ fast-class windowed measurement on a real model (which measures, and does not ga
     at n − 1 only, and the cap needs the requester's class map.
   - **CUDA's windowed layers.** A slot that is not bound must be able to say what it still holds, and a copy between
     slots must go through each slot's shifted view. Both are the backend's; KV1 copies nothing.
+  - **A windowed layer on the fast kernels is invariant only to pass starts that are multiples of 64** (measured,
+    the record's G2b). A hit from another sequence is block-aligned, so the pass after it is safe. A continuation's
+    pass starts anywhere, so on a model with a sliding window its fast rows are recorded with no producer named and
+    the index never returns them. A row with no producer named matches nothing.
   - **An image span with no content hash matches nothing in the index** (built: a lookup stops at the first block it
     touches). KV2 should keep that when it adds the copy.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.

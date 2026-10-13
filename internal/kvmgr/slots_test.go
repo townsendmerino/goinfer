@@ -205,6 +205,12 @@ func TestOracle_slots(t *testing.T) {
 							}
 						}
 					}
+					for p, c := range mo.classes { // a row with no named producer matches nothing, nor does any block after it
+						if c == ClassUnknown && p < want {
+							want = p / BlockRows * BlockRows
+							break
+						}
+					}
 					if got := a.Manager().Lookup(req.Root, probe, imgs, runs); got != want {
 						t.Fatalf("seed %d op %d: the index returns %d rows of the %d just committed, want %d", seed, op, got, len(all), want)
 					}

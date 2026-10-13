@@ -161,3 +161,70 @@ func TestWrongHit_unclaimedImage(t *testing.T) {
 		}
 	}
 }
+
+// A row whose producer is not named matches nothing: not a stored row of a named class, and not another unnamed one.
+func TestWrongHit_unknownClass(t *testing.T) {
+	const n = 4 * BlockRows
+	tokens := make([]int, n+1)
+	for i := range tokens {
+		tokens[i] = 100 + i%9
+	}
+	root := Root{Model: "m"}
+	for _, tc := range []struct {
+		name   string
+		stored []ClassRun
+		cold   []ClassRun
+		want   int
+	}{
+		{"both fast: shared", []ClassRun{{0, n + 1, ClassFast}}, []ClassRun{{0, n + 1, ClassFast}}, n},
+		{"both unnamed: nothing", nil, nil, 0},
+		{"stored unnamed from row 100: only the block before", []ClassRun{{0, 100, ClassFast}}, []ClassRun{{0, n + 1, ClassFast}}, BlockRows},
+		{"the request's rows unnamed from row 200: three blocks", []ClassRun{{0, n + 1, ClassFast}}, []ClassRun{{0, 200, ClassFast}}, 3 * BlockRows},
+		{"named unknown is unnamed", []ClassRun{{0, n + 1, ClassUnknown}}, []ClassRun{{0, n + 1, ClassUnknown}}, 0},
+	} {
+		m := New(0)
+		first, _ := m.Admit(root, nil, nil, nil)
+		first.tokens = append([]int(nil), tokens...)
+		first.classes = tc.stored
+		for i := 0; i*BlockRows < len(tokens); i++ {
+			id, _ := m.alloc(-1, int32(i))
+			first.table = append(first.table, id)
+		}
+		first.Publish()
+		if _, got := m.Admit(root, tokens, nil, tc.cold); got != tc.want {
+			t.Errorf("%s: took %d rows, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// On a model with sliding-window layers, a fast pass that starts off a block boundary writes rows no other request
+// would compute (G2b), so the commit records them with no producer and the index never returns them.
+func TestCommit_unalignedFastPassOnAWindowedModel(t *testing.T) {
+	const n = 600
+	prompt := make([]int, n)
+	for i := range prompt {
+		prompt[i] = 7 + i%11
+	}
+	root := Root{Model: "m"}
+	for _, tc := range []struct {
+		name     string
+		cm       ClassMap
+		reuse    int
+		wantTail Class
+	}{
+		{"full attention, a reuse of 100: fast", ClassMap{Floor: 512, MinRows: 16}, 100, ClassFast},
+		{"windowed, a reuse of 128 (a block boundary): fast", ClassMap{Floor: 512, MinRows: 16, Windowed: true}, 128, ClassFast},
+		{"windowed, a reuse of 100: no producer named", ClassMap{Floor: 512, MinRows: 16, Windowed: true}, 100, ClassUnknown},
+		{"windowed, a cold prefill: fast", ClassMap{Floor: 512, MinRows: 16, Windowed: true}, 0, ClassFast},
+		{"windowed, an exact-class prompt at an odd start stays exact", ClassMap{Windowed: true}, 100, ClassExact},
+	} {
+		a := NewSlots(1)
+		a.Commit(0, root, append([]int(nil), prompt[:tc.reuse]...), nil, tc.reuse, ClassMap{}) // an earlier turn, no producer named
+		a.Acquired(0, tc.reuse, prompt)
+		a.Forget(0)
+		a.Commit(0, root, append([]int(nil), prompt...), nil, n, tc.cm)
+		if got := classAt(a.Seq(0).Classes(), n-1); got != tc.wantTail {
+			t.Errorf("%s: the prefilled rows are class %d, want %d", tc.name, got, tc.wantTail)
+		}
+	}
+}

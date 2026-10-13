@@ -62,6 +62,10 @@ type ClassRun struct {
 type ClassMap struct {
 	Floor   int // the judged prompt length the fast kernels start at; 0: they are off
 	MinRows int // the fewest rows a pass needs to run them
+	// Windowed: the model has sliding-window layers. A fast pass over such a layer tiles its keys from where the pass
+	// starts, so one that does not start on a block boundary writes rows no other fast pass writes
+	// (docs/measurements/kv1-2026-10-13.md, G2b). PassAt records those as ClassUnknown.
+	Windowed bool
 }
 
 // Pass is the class a prefill pass of rows rows writes when it is judged on a prompt of judged tokens.
@@ -70,6 +74,17 @@ func (c ClassMap) Pass(rows, judged int) Class {
 		return ClassFast
 	}
 	return ClassExact
+}
+
+// PassAt is Pass for a pass that starts at position start. On a model with sliding-window layers a fast pass that starts
+// off a block boundary is ClassUnknown: its rows are valid for the sequence that wrote them and equal to no other
+// request's.
+func (c ClassMap) PassAt(start, rows, judged int) Class {
+	cls := c.Pass(rows, judged)
+	if cls == ClassFast && c.Windowed && start%BlockRows != 0 {
+		return ClassUnknown
+	}
+	return cls
 }
 
 // MinLeadReuse is the shortest reused prefix kept when the rest of the prompt would run a different class: a

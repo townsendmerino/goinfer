@@ -205,6 +205,9 @@ func (m *Manager) hitBlocks(rh Hash, tokens []int, images []ImageSpan, cold []Cl
 		if unclaimed(images, i) {
 			break // the request does not say which image this is, so no stored block can be known to hold it
 		}
+		if unknownClass(cold, i) {
+			break // a row whose producer is not named equals no stored row, whatever the stored row's class
+		}
 		h := blockHash(&m.h, prev, i, tokens, images, cold, m.parts)
 		c := m.index[h]
 		if len(c) == 0 {
@@ -235,6 +238,26 @@ func unclaimed(images []ImageSpan, i int) bool {
 		if s.Hash == 0 && s.Start < hi && s.end() > lo {
 			return true
 		}
+	}
+	return false
+}
+
+// unknownClass reports whether any row of block i is ClassUnknown in classes: named so, or covered by no run.
+func unknownClass(classes []ClassRun, i int) bool {
+	lo, hi := i*BlockRows, (i+1)*BlockRows
+	covered := lo
+	for covered < hi {
+		next := covered
+		for _, r := range classes {
+			if r.Class != ClassUnknown && r.Start <= covered && r.Start+r.Len > covered {
+				next = min(r.Start+r.Len, hi)
+				break
+			}
+		}
+		if next == covered {
+			return true
+		}
+		covered = next
 	}
 	return false
 }

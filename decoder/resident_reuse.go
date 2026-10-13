@@ -119,15 +119,18 @@ func (m *Model) kvLeadClassMap() kvmgr.ClassMap {
 }
 
 // kvClassMap is the rule for which kernel class a prefill pass of this resident writes, recorded with each committed
-// row. A ResidentPrefillKernelFloor resident judges a pass on where it ends and has no row minimum.
+// row. A ResidentPrefillKernelFloor resident judges a pass on where it ends and has no row minimum. On a model with
+// sliding-window layers a fast pass that starts off a block boundary is recorded with no producer
+// (kvmgr.ClassMap.Windowed; measured on CUDA, applied to every backend with a fast class).
 func (m *Model) kvClassMap() kvmgr.ClassMap {
+	cm := kvmgr.ClassMap{}
 	if _, ok := m.resident.(ResidentFastPrefill); ok {
-		return m.kvLeadClassMap()
+		cm = m.kvLeadClassMap()
+	} else if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
+		cm = kvmgr.ClassMap{Floor: kf.PrefillKernelFloor(), MinRows: 1}
 	}
-	if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
-		return kvmgr.ClassMap{Floor: kf.PrefillKernelFloor(), MinRows: 1}
-	}
-	return kvmgr.ClassMap{}
+	cm.Windowed = m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0
+	return cm
 }
 
 func kvSpansOfBlocks(blocks []residentImageBlock) []kvmgr.ImageSpan {

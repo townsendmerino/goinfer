@@ -138,7 +138,7 @@ func windowInvariance(t *testing.T, g *kv0Rig, n int, arms []windowArm) (whole [
 		}
 		a1, _ := g.launches()
 		differ, _ := kv0LogitsDiff(whole, lg)
-		out = append(out, windowReading{arm: arm, kv: kv0Compare(ref, g.snapshot(n), arm.split), logits: differ, fastAttn: a1 - a0})
+		out = append(out, windowReading{arm: arm, kv: kv0Compare(ref, g.snapshot(n), arm.split+arm.chunk), logits: differ, fastAttn: a1 - a0})
 	}
 	return whole, ref, out
 }
@@ -189,9 +189,11 @@ func windowedOffsetsInvariance(t *testing.T, fx string) {
 }
 
 // G2b: the same question on the fast kernels, which need a head dimension of 64 or 128. No windowed checkpoint that
-// fits the card has one, so the window is set on a full-attention model after it loads (setWindow). The test records
-// whether a windowed fused prefill is invariant to a split or a chunk width that is not a multiple of 64. It
-// measures; KV1 does not depend on the answer.
+// fits the card has one, so the window is set on a full-attention model after it loads (setWindow). What was read
+// (docs/measurements/kv1-2026-10-13.md, G2b) is pinned here: with a window, a fused prefill pass that starts on a
+// multiple of 64 writes the bits the whole prompt writes, and one that starts anywhere else does not, from its first
+// rows on; at full attention the start does not matter. The KV manager's class rule rests on it
+// (kvmgr.ClassMap.Windowed), so a kernel change that moves either half fails here.
 func TestWindowedKV_offsetsFastClass_tiny(t *testing.T) {
 	const dir = "../testdata/llama-attnfa-tiny"
 	requireDeviceAndFile(t, dir)
@@ -234,14 +236,24 @@ func windowedFastClass(t *testing.T, load func() *kv0Rig) {
 	}
 	_, _, got := windowInvariance(t, g, n, arms)
 	for _, r := range got {
+		start := r.arm.split + r.arm.chunk // where the second pass begins
+		invariant := r.kv.differ == 0 && r.logits == 0
 		verdict := "INVARIANT"
-		if r.kv.differ != 0 || r.logits != 0 {
+		if !invariant {
 			verdict = fmt.Sprintf("NOT invariant, first differing position %d (layer %d)", r.kv.firstPos, r.kv.firstLayer)
 		}
 		t.Logf("READING window %d, %s: %s; %d of %d K/V elements differ, %d logits, %d attn_fused launches",
 			window, r.arm.name, verdict, r.kv.differ, r.kv.total, r.logits, r.fastAttn)
 		if r.fastAttn == 0 {
 			t.Errorf("%s: no attn_fused launch: the arm ran the exact class and says nothing about the fused kernel", r.arm.name)
+		}
+		switch aligned := start%64 == 0; {
+		case aligned && !invariant:
+			t.Errorf("%s: a pass starting on a multiple of 64 is no longer invariant under a window (first difference at %d)", r.arm.name, r.kv.firstPos)
+		case !aligned && invariant:
+			t.Errorf("%s: a pass starting off a multiple of 64 is now invariant under a window: the class rule that records it apart (kvmgr.ClassMap.Windowed) can go", r.arm.name)
+		case !aligned && (r.kv.before != 0 || r.kv.firstPos < start || r.kv.firstPos >= start+16):
+			t.Errorf("%s: the first difference is at %d with %d elements before %d; it should begin with the pass that starts there", r.arm.name, r.kv.firstPos, r.kv.before, start)
 		}
 	}
 }

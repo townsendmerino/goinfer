@@ -183,8 +183,14 @@ func TestCacheStateGrid_managerCells(t *testing.T) {
 					m.residentForgetIDs()
 					m.residentCommitIDs(p, nil, nil, nil)
 				}
-				if got := m.kv.Manager().Lookup(m.kvRoot(nil), next, nil, nil); got != 0 {
+				// Asked with the classes the first conversation's rows were committed with, so that a zero is the index
+				// having dropped them and not a request that names no producer.
+				if got := m.kv.Manager().Lookup(m.kvRoot(nil), next, nil, classes); got != 0 {
 					t.Errorf("the first conversation's slot was reused and the index still returns %d of its rows", got)
+				}
+				last := kvSeq(n, 3)
+				if got := m.kv.Manager().Lookup(m.kvRoot(nil), append(last, 1), nil, classes); got != n/kvmgr.BlockRows*kvmgr.BlockRows {
+					t.Errorf("the index returns %d rows of the last conversation committed, want its full blocks", got)
 				}
 			},
 			hKept: func(t *testing.T, s cacheState) {

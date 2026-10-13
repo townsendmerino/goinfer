@@ -289,7 +289,7 @@ func (a *Slots) Commit(slot int, root Root, tokens []int, images []ImageSpan, pr
 		for _, r := range p.prefix {
 			s.classes = appendClass(s.classes, r)
 		}
-		s.classes = appendClass(s.classes, ClassRun{Start: p.reuse, Len: promptLen - p.reuse, Class: cm.Pass(promptLen-p.reuse, promptLen)})
+		s.classes = appendClass(s.classes, ClassRun{Start: p.reuse, Len: promptLen - p.reuse, Class: cm.PassAt(p.reuse, promptLen-p.reuse, promptLen)})
 		s.classes = appendClass(s.classes, ClassRun{Start: promptLen, Len: len(tokens) - promptLen, Class: ClassExact})
 	}
 	for i := 0; i*BlockRows < len(tokens); i++ {
