@@ -110,6 +110,11 @@ func (s *server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 	// origin as the API, so keep the browser from sniffing it into anything else.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
+	// No other page may frame this one: its Load, Unload and Pull buttons act with no key on a loopback server, so a framing page could
+	// steer a click (clickjacking). frame-ancestors is the standard; X-Frame-Options covers an older browser.
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(webUIPage)
 }

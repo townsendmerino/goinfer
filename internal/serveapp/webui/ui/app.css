@@ -1545,7 +1545,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--gi-accent);outli
    weakness, not a cosmetic one"). */
 .go{--amb-albedo:var(--gi-accent-fill);color:var(--gi-accent-ink);font-weight:600;padding:9px 18px}
 .go[disabled]{opacity:.5;cursor:default}
-#stop{padding:9px 16px}
+#stop-btn{padding:9px 16px}
 
 /* Bounded and internally scrollable (found live: an unbounded #log grew the WHOLE page as a reply
    streamed in, so the composer card below it kept sliding further down and off-screen — "losing

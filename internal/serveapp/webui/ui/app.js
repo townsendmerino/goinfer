@@ -1380,7 +1380,7 @@ async function generate() {
 // for every route. Used by a new reply and by re-attaching to a job (resumeJob).
 async function runReply(out, entry, divider, open) {
   generating = entry;
-  $("send").disabled = true; $("stop").hidden = false;
+  $("send").disabled = true; $("stop-btn").hidden = false;
   $("chat-status").textContent = "generating…";
   ac = new AbortController();
   const mine = ac;
@@ -1534,7 +1534,7 @@ async function runReply(out, entry, divider, open) {
                                                       // scroll call — this corrects the shortfall they leave.
                                                       // Skipped on detach: #log already shows a DIFFERENT
                                                       // conversation's content by the time this runs (W29).
-    ac = null; $("send").disabled = false; $("stop").hidden = true;
+    ac = null; $("send").disabled = false; $("stop-btn").hidden = true;
     syncActions();
     renderChatList();   // W9: this conversation moves to the top, and the list is usable again
   }
@@ -1940,7 +1940,7 @@ loadSampling();
   if (!(id && readChat(id, false))) id = listChats()[0]?.id;
   if (id) openChat(id); else startFresh();
 })();
-$("stop").onclick = stopReply;
+$("stop-btn").onclick = stopReply;
 // --- keyboard (W17) --------------------------------------------------------------------------
 // Ctrl/Cmd+Enter always sends. "Enter sends" is a SETTING, not a swap: off (the default, and what long
 // prompts want) Enter is a new line; on, Enter sends and Shift+Enter is the new line. It applies to the edit

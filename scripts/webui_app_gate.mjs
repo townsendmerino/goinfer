@@ -260,7 +260,12 @@ const phase1 = phase(String.raw`
   $("prompt").value = "this will be stopped";
   const running = send();
   await wait(400);
-  $("stop").click();
+  // The Stop button is the element with id stop-btn and is SHOWN while a reply streams; the stop-sequences textarea (id stop) is a
+  // separate element this does not touch. (Both once had id "stop": getElementById reached the textarea, the button stayed hidden for
+  // good, and this gate clicked and read the textarea, which had been handed the Stop handler.)
+  check("W2 Stop is shown while a reply streams, and it is the button", $("stop-btn").tagName === "BUTTON" && $("stop-btn").hidden === false, $("stop-btn").tagName + " hidden=" + $("stop-btn").hidden);
+  check("W2 the stop-sequences box is a textarea and stays visible", $("stop").tagName === "TEXTAREA" && $("stop").hidden === false, $("stop").tagName + " hidden=" + $("stop").hidden);
+  $("stop-btn").click();
   await running;
   await wait(100);
   const stopped = lastBot();
@@ -645,7 +650,7 @@ const phase9 = phase(String.raw`
   // ---- stopped mid-thought ----
   streamAnswer("<think>\na long line of reasoning that is still going ", { hang: true });
   $("prompt").value = "stop me";
-  const r2 = send(); await wait(300); $("stop").click(); await r2; await wait(100);
+  const r2 = send(); await wait(300); $("stop-btn").click(); await r2; await wait(100);
   bot = lastBot();
   check("W6 stopped mid-thought: stopped, and no 'no answer' note", /^stopped/.test(bot.querySelector(".meta")?.textContent || "") && !/No answer/.test(bot.textContent), bot.querySelector(".meta")?.textContent + " / " + bot.children[1].textContent.slice(0, 60));
   bot.querySelector(".msg-copy").click(); await wait(50);
@@ -696,7 +701,7 @@ const phase10 = phase(String.raw`
 // ---- phase 11: W7 — regenerate, edit, delete -----------------------------------------------------------
 const phase11 = phase(String.raw`
   const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   let asked = [], answer = true;
   window.confirm = m => { asked.push(m); return answer; };
   $("newchat").click();
@@ -720,7 +725,7 @@ const phase11 = phase(String.raw`
   // ---- nothing changes the conversation while a reply is generating ----
   streamAnswer("a slow reply ", { hang: true });
   visibleRegen()[0].click();
-  await until(() => !$("stop").hidden); await wait(100);
+  await until(() => !$("stop-btn").hidden); await wait(100);
   const acting = [...document.querySelectorAll("#log .msg-edit, #log .msg-regen, #log .msg-delete")];
   check("W7 edit, regenerate and delete are disabled while generating", acting.length > 0 && acting.every(b => b.disabled), acting.filter(b => !b.disabled).map(b => b.textContent));
   asked = [];
@@ -732,7 +737,7 @@ const phase11 = phase(String.raw`
   regenerate(transcript[transcript.length - 1]);
   deleteExchange(transcript[0]);
   check("W7 regenerate() and deleteExchange() refuse while generating, when called directly", JSON.stringify(transcript) === snapshot && asked.length === 0, asked.length + " asked");
-  $("stop").click(); await idle(); await wait(50);
+  $("stop-btn").click(); await idle(); await wait(50);
   const stoppedRegen = bots().at(-1).querySelector(".msg-regen");
   check("W7 a stopped reply can be regenerated", stoppedRegen && !stoppedRegen.hidden && !stoppedRegen.disabled, stoppedRegen?.outerHTML);
   streamAnswer("a3 final");
@@ -813,7 +818,7 @@ const phase12 = phase(String.raw`
   check("W7 after reload: Edit and Delete are back on every message", document.querySelectorAll("#log .msg-edit").length === 2 && document.querySelectorAll("#log .msg-delete").length === 4, document.querySelectorAll("#log .msg-edit").length + "/" + document.querySelectorAll("#log .msg-delete").length);
   streamAnswer("regenerated after reload");
   regen[0].click();
-  await until(() => $("stop").hidden && /regenerated after reload/.test(document.querySelector("#log .msg.bot:last-of-type")?.textContent || ""));
+  await until(() => $("stop-btn").hidden && /regenerated after reload/.test(document.querySelector("#log .msg.bot:last-of-type")?.textContent || ""));
   const sent = window.__lastBody.messages.filter(m => m.role !== "system").map(m => m.role[0] + ":" + m.content).join("|");
   check("W7 after reload: Regenerate sends the restored history", sent === "u:keep me|a:kept|u:second", sent);
 `);
@@ -821,7 +826,7 @@ const phase12 = phase(String.raw`
 // ---- phase 13: W8 — context meter, real token counts, the wall in words ----------------------------------
 const W8_PRELUDE = String.raw`
   const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   const MODELS = [{ id: "gate-model", context_window: 1000 }, { id: "no-window" }, { id: "big", context_window: 4000 }];
   let nextReply = { text: "ok", usage: null, status: 200, body: "" };
@@ -919,7 +924,7 @@ const phase14 = phase(W8_PRELUDE + String.raw`
 // ---- phase 15: W9 — conversations, the list, generated titles --------------------------------------------
 const W9_PRELUDE = String.raw`
   const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   let asked = [], answer = true;
   window.confirm = m => { asked.push(m); return answer; };
   const items = () => [...document.querySelectorAll("#chat-list li.chat-item")];
@@ -999,9 +1004,9 @@ const phase15 = phase(W9_PRELUDE + String.raw`
   streamAnswer("two", { hang: true });
   $("prompt").value = "second of two";
   const r2 = send();
-  await until(() => !$("stop").hidden);
+  await until(() => !$("stop-btn").hidden);
   check("W9 starting a reply cancels the title request that is out", window.__titleAborts === 1, window.__titleAborts);
-  $("stop").click(); await r2; await idle();
+  $("stop-btn").click(); await r2; await idle();
   await turn("third", "three");
   await until(() => currentTitle() === "Asked again");
   check("W9 a cancelled title is asked for again after a later reply", window.__titleBodies.length === before + 2 && currentTitle() === "Asked again", window.__titleBodies.length - before + " / " + currentTitle());
@@ -1018,10 +1023,10 @@ const phase15 = phase(W9_PRELUDE + String.raw`
   streamAnswer("slow ", { hang: true });
   $("prompt").value = "busy";
   const run = send();
-  await until(() => !$("stop").hidden); await wait(50);
+  await until(() => !$("stop-btn").hidden); await wait(50);
   // (while a JOB-backed reply runs the list stays usable and opening another chat detaches it — W29's phase
   // covers that, and the streamed route, where the list is still disabled)
-  $("stop").click(); await run; await idle();
+  $("stop-btn").click(); await run; await idle();
 
   // ---- rename ----
   const renameOrder = titles();
@@ -1113,7 +1118,7 @@ const phase17 = phase(W9_PRELUDE + String.raw`
 // ---- phase 18: W10 — sampling controls ----------------------------------------------------------------------
 const W10_PRELUDE = String.raw`
   const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   const setField = (id, v) => { $(id).value = v; $(id).dispatchEvent(new Event("input", { bubbles: true })); };
   const KEYS = ["top_p", "top_k", "seed", "frequency_penalty", "presence_penalty", "stop"];
@@ -1227,7 +1232,7 @@ const phase19 = phase(W10_PRELUDE + String.raw`
 // ---- phase 20: W11 — images for vision models ------------------------------------------------------------
 const W11_PRELUDE = String.raw`
   const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   const MODELS = [{ id: "vis", vision: true }, { id: "txt", vision: false }];
   // /v1/models is answered only while a model is picked; every chat request is set up with stream() first.
@@ -1455,10 +1460,10 @@ const phase20 = phase(W11_PRELUDE + String.raw`
   stream("slow ", { hang: true });
   $("prompt").value = "busy";
   const run = send();
-  await until(() => !$("stop").hidden);
+  await until(() => !$("stop-btn").hidden);
   viaDrop(small); await wait(200);
   check("W11 nothing can be attached while a reply is generating", pendingImage === null, String(pendingImage));
-  $("stop").click(); await run; await idle();
+  $("stop-btn").click(); await run; await idle();
   const withImage = [...document.querySelectorAll("#log .msg.you")].find(m => m.querySelector("img.uimg") && m.children[1].textContent === "");
   withImage.querySelector(".msg-edit").click();
   document.querySelector("#log textarea.edit-box").value = "";
@@ -1492,7 +1497,7 @@ const phase21 = phase(W11_PRELUDE + String.raw`
 // The HTTP errors are REAL serve responses, replayed byte for byte (scripts/webui-gate/captured-errors.json).
 const W13_PRELUDE = String.raw`
   const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   const CAPTURED = ${JSON.stringify(JSON.parse(readFileSync(resolve(here, "webui-gate", "captured-errors.json"), "utf8")))};
   const reply = c => { window.fetch = async (url, opts) => { window.__lastBody = opts?.body ? JSON.parse(opts.body) : null; window.__calls = (window.__calls || 0) + 1; return new Response(c.body, { status: c.status, headers: c.headers }); }; };
@@ -1542,7 +1547,7 @@ const phase22 = phase(W13_PRELUDE + String.raw`
   const errCount = document.querySelectorAll("#log .msg.err").length;
   streamAnswer("worked on retry");
   lastErr().querySelector(".err-retry").click();
-  await until(() => !$("stop").hidden); await idle(); await wait(30);
+  await until(() => !$("stop-btn").hidden); await idle(); await wait(30);
   check("W13 Retry removes the error and asks again with the same conversation", document.querySelectorAll("#log .msg.err").length === errCount - 1 && lastBot().children[1].textContent === "worked on retry" && window.__lastBody.messages.at(-1).content === "busy", document.querySelectorAll("#log .msg.err").length + " / " + lastBot()?.children[1].textContent);
   let modelsFetched = 0;
   reply(byCase["unknown model"]);
@@ -1689,9 +1694,9 @@ const phase24 = phase(String.raw`
   streamAnswer("slow ", { hang: true });
   $("prompt").value = "busy";
   const run = send();
-  await until(() => !$("stop").hidden);
+  await until(() => !$("stop-btn").hidden);
   check("W14 export is disabled while a reply is generating", $("export-md").disabled && $("export-json").disabled, $("export-md").disabled);
-  $("stop").click(); await run; await until(() => $("stop").hidden);
+  $("stop-btn").click(); await run; await until(() => $("stop-btn").hidden);
   check("W14 and enabled again afterwards", !$("export-md").disabled, $("export-md").disabled);
   URL.createObjectURL = realCreate; HTMLAnchorElement.prototype.click = realClick;
 `);
@@ -1851,7 +1856,7 @@ const phase30 = phase(String.raw`
 // ---- phases 31–32: W17 — Enter sends (a setting), ↑ edits last, Esc stops ------------------------------
 const W17_PRELUDE = String.raw`
   const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   // count sends by the request body streamAnswer's stub records — not by wrapping fetch again, which the
   // prelude's title wrapper (a getter/setter on window.fetch) turns into a loop through itself
@@ -1932,11 +1937,11 @@ const phase31 = phase(W17_PRELUDE + String.raw`
   streamAnswer("slow ", { hang: true });
   $("prompt").value = "to be stopped";
   const run = send();
-  await until(() => !$("stop").hidden);
+  await until(() => !$("stop-btn").hidden);
   prevented = key(document.body, "Escape");
   // with a deadline: if Esc does NOT stop it, the stream never ends, and this must fail rather than hang
   const stoppedInTime = await Promise.race([run.then(() => true), wait(5000).then(() => false)]);
-  if (!stoppedInTime) { $("stop").click(); await run; }
+  if (!stoppedInTime) { $("stop-btn").click(); await run; }
   await idle();
   check("W17 Esc stops a reply that is generating", stoppedInTime && prevented && /^stopped/.test([...document.querySelectorAll("#log .msg.bot")].at(-1).querySelector(".meta")?.textContent || ""), [...document.querySelectorAll("#log .msg.bot")].at(-1).querySelector(".meta")?.textContent);
   check("W17 Esc with nothing generating does nothing", !key(document.body, "Escape"), "");
@@ -1952,7 +1957,7 @@ const phase32 = phase(W17_PRELUDE + String.raw`
 // ---- phases 33–34: W18 — which model answered each turn --------------------------------------------------
 const W18_PRELUDE = String.raw`
   const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   const MODELS = [{ id: "alpha-4b", decode_path: "cpu (int8)" }, { id: "beta-9b", decode_path: "cuda-resident (int4)" }, { id: "gamma", }];
   const pick = async id => { window.fetch = async () => new Response(JSON.stringify({ object: "list", data: MODELS }), { status: 200 }); await loadModels(id); };
@@ -1980,7 +1985,7 @@ const phase33 = phase(W18_PRELUDE + String.raw`
   await pick("alpha-4b");
   streamAnswer("third, again");
   [...document.querySelectorAll("#log .msg-regen")].find(b => !b.hidden).click();
-  await until(() => !$("stop").hidden); await idle(); await wait(30);
+  await until(() => !$("stop-btn").hidden); await idle(); await wait(30);
   check("W18 regenerating on another model relabels the reply, and the divider follows the conversation", labels().at(-1) === "alpha-4b|cpu (int8)" && dividers().length === 0, JSON.stringify(labels()) + " " + JSON.stringify(dividers()));
 
   // a model that publishes no path
@@ -2025,7 +2030,7 @@ const phase34 = phase(W18_PRELUDE + String.raw`
 // The jobs traffic replayed here is REAL serve output (scripts/webui-gate/captured-jobs.json).
 const W27_PRELUDE = String.raw`
   const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
-  const idle = () => until(() => $("stop").hidden);
+  const idle = () => until(() => $("stop-btn").hidden);
   window.confirm = () => true;
   const CAP = ${JSON.stringify(JSON.parse(readFileSync(resolve(here, "webui-gate", "captured-jobs.json"), "utf8")))};
   const JOB = JSON.parse(CAP.submit.body).id;
@@ -2090,7 +2095,7 @@ const phase35 = phase(W27_PRELUDE + String.raw`
   check("W28 the place in line updates as the queue moves (real status: 1st of 1)", lastBotEl().querySelector(".queue-note")?.textContent === "Waiting for its turn: 1st in line (1 waiting, 1 running).", lastBotEl().children[1].textContent);
 
   // ---- W27: Stop cancels the job on the server ----
-  $("stop").click(); await settle(waitRun); await idle();
+  $("stop-btn").click(); await settle(waitRun); await idle();
   check("W27 Stop on a job-backed reply cancels the job on the server (DELETE), not just the stream", jobs[JOB].deleted === true && /^stopped/.test(lastBotEl().querySelector(".meta").textContent) && !lastBotEl().querySelector(".queue-note"), JSON.stringify(calls));
 
   // ---- a full queue at submit: the real 429 ----
@@ -2108,13 +2113,13 @@ const phase35 = phase(W27_PRELUDE + String.raw`
   streamAnswer("streamed ", { hang: true });
   $("prompt").value = "with an image";
   const imgRun = send();
-  await until(() => !$("stop").hidden); await wait(50);
+  await until(() => !$("stop-btn").hidden); await wait(50);
   check("W27 a reply carrying an image uses /v1/chat/completions, not a job", calls.length === 0 && Array.isArray(window.__lastBody.messages.at(-1).content), JSON.stringify(calls));
   check("W27/W9 during a streamed (non-job) reply the conversation list is disabled", [...document.querySelectorAll("#chat-list button")].every(b => b.disabled) && $("newchat").disabled, [...document.querySelectorAll("#chat-list button")].filter(b => !b.disabled).length);
   const streamedChat = currentChat.id;
   openChat("nonexistent");
   check("W9 openChat refuses during a streamed reply, even called directly", currentChat.id === streamedChat, currentChat.id);
-  $("stop").click(); await settle(imgRun); await idle();
+  $("stop-btn").click(); await settle(imgRun); await idle();
 
   // ---- W29: a job-backed reply carries on in the background ----
   // (a fresh conversation: one that holds an image keeps using the streaming route, since a job cannot carry it)
@@ -2593,7 +2598,7 @@ const phase40 = phase(W27_PRELUDE + String.raw`
   viaInput([textFile("busy.go", "package busy\n")]);
   await wait(50);
   check("W20 attaching while a reply is generating is refused, same as image attach", chips().length === 0, chips().length);
-  $("stop").click(); await settle(bgRun); await idle();
+  $("stop-btn").click(); await settle(bgRun); await idle();
 `);
 
 // Found live 2026-09-16, not from the task doc's W-list: an unbounded #log made a streaming reply

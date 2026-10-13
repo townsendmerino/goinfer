@@ -732,3 +732,40 @@ func TestWebUI_previewRunsNoScripts(t *testing.T) {
 		t.Errorf("the preview CSP %q does not start from default-src 'none'", csp[1])
 	}
 }
+
+// Every id in the page is unique. A duplicate is not cosmetic: getElementById returns the first, so two elements named "stop" sent the Stop
+// button's show/hide and click handler to the stop-sequences textarea that came first, and the button never appeared.
+func TestWebUI_idsAreUnique(t *testing.T) {
+	b, err := webUIFS.ReadFile("webui/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, m := range regexp.MustCompile(`\bid="([^"]+)"`).FindAllStringSubmatchIndex(string(b), -1) {
+		id := string(b)[m[2]:m[3]]
+		line := 1 + strings.Count(string(b)[:m[0]], "\n")
+		if prev, dup := seen[id]; dup {
+			t.Errorf(`index.html:%d repeats id="%s" (first at line %d): getElementById reaches only the first`, line, id, prev)
+		} else {
+			seen[id] = line
+		}
+	}
+	if len(seen) < 20 {
+		t.Fatalf("found only %d ids: the guard is watching almost nothing", len(seen))
+	}
+}
+
+// The page refuses to be framed (clickjacking of its keyless Load, Unload and Pull buttons) and sends no Referer.
+func TestWebUI_pageCannotBeFramed(t *testing.T) {
+	w := httptest.NewRecorder()
+	(&server{}).handleWebUI(w, httptest.NewRequest("GET", "/", nil))
+	if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'none'") {
+		t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", got)
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want DENY", got)
+	}
+	if got := w.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Errorf("Referrer-Policy = %q, want no-referrer", got)
+	}
+}

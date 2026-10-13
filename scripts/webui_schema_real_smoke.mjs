@@ -48,7 +48,7 @@ const out = await page.evaluate(`(async () => {
   const t0 = Date.now();
   $("prompt").value = "";           // empty: the extraction prompt is built server-side from the schema
   await send();
-  const done = await until(() => $("stop").hidden, 280000);
+  const done = await until(() => $("stop-btn").hidden, 280000);
   const secs = ((Date.now() - t0) / 1000).toFixed(0);
   check("the reply finished (" + secs + " s)", done, "still generating");
 

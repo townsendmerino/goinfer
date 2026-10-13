@@ -372,3 +372,9 @@ site/data/release.json
 # (internal/clef/pipeline_test.go). Without the exception the weights would be silently dropped by the rule above and the gate would fail on a fresh checkout.
 !internal/clef/testdata/tiny/
 !internal/clef/testdata/tiny/joint_head.safetensors
+
+# Secrets and local settings: never committed.
+.env
+.env.*
+*.pem
+*.key
