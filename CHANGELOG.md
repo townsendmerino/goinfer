@@ -45,7 +45,7 @@ fused past the bound.
 - **Below the bound nothing changes**: prompts of 300, 3,900 and 12,000 tokens give bit-identical logits and K/V to the build before
   (`docs/measurements/kv3-cuda-2026-10-13.md` §2). Past it, the batched pass agrees with the per-token path: cosine 0.9998 or better on
   18 random-token prompts of 12,400 to 16,384 tokens on the tiny fixture, and 0.996 on a 12,500-token prompt on the 1.5B.
-- **A prefill never ends in a pass of fewer than 16 rows** (it moves the missing rows from the previous pass to the last one). A shorter last
+- **A prefill never ends in a pass of fewer than 16 rows** (the pass before the last gives it 64 rows, so every pass still starts on a multiple of 64). A shorter last
   pass ran the exact kernels while every row before it ran the fused ones, so a prompt's bits depended on where its last chunk fell
   (KV0's invariance record); the 4,100-token prompt, which ended in a 4-row pass, now gives the bits of the same prompt in one pass.
 
