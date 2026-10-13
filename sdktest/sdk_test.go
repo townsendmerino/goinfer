@@ -92,6 +92,11 @@ func tinyClient(t *testing.T) *http.Client {
 	return &http.Client{Transport: server.Transport(h)}
 }
 
+// constrainedRoom is the output cap for the constrained replies. The grammar allows whitespace between JSON tokens
+// and this model's choices are noise, so a reply can spend many tokens before it closes; the requests are greedy, so
+// what it spends is the same on every run.
+const constrainedRoom = 1024
+
 // okSchema is a schema whose every value is bounded, so a constrained reply closes whatever the model would say.
 var okSchema = map[string]any{
 	"type":                 "object",
@@ -123,7 +128,7 @@ func TestOpenAISDK(t *testing.T) {
 	hi := []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")}
 
 	t.Run("chat", func(t *testing.T) {
-		resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{Model: "tiny", Messages: hi, MaxTokens: openai.Int(4)})
+		resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{Model: "tiny", Messages: hi, MaxTokens: openai.Int(4), Temperature: openai.Float(0)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -132,7 +137,7 @@ func TestOpenAISDK(t *testing.T) {
 		}
 	})
 	t.Run("stream", func(t *testing.T) {
-		stream := client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{Model: "tiny", Messages: hi, MaxTokens: openai.Int(6)})
+		stream := client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{Model: "tiny", Messages: hi, MaxTokens: openai.Int(6), Temperature: openai.Float(0)})
 		chunks, finished := 0, false
 		for stream.Next() {
 			chunks++
@@ -146,7 +151,7 @@ func TestOpenAISDK(t *testing.T) {
 	})
 	t.Run("forced tool call", func(t *testing.T) {
 		resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model: "tiny", Messages: hi, MaxTokens: openai.Int(64),
+			Model: "tiny", Messages: hi, MaxTokens: openai.Int(constrainedRoom), Temperature: openai.Float(0),
 			Tools: []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
 				Name: "pick", Description: openai.String("pick one"), Parameters: shared.FunctionParameters(okSchema)})},
 			ToolChoice: openai.ToolChoiceOptionFunctionToolChoice(openai.ChatCompletionNamedToolChoiceFunctionParam{Name: "pick"}),
@@ -162,7 +167,7 @@ func TestOpenAISDK(t *testing.T) {
 	})
 	t.Run("structured output", func(t *testing.T) {
 		resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model: "tiny", Messages: hi, MaxTokens: openai.Int(64),
+			Model: "tiny", Messages: hi, MaxTokens: openai.Int(constrainedRoom), Temperature: openai.Float(0),
 			ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
 				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{Name: "answer", Schema: okSchema, Strict: openai.Bool(true)}}},
 		})
@@ -172,7 +177,7 @@ func TestOpenAISDK(t *testing.T) {
 		wantOK(t, "the reply", resp.Choices[0].Message.Content)
 	})
 	t.Run("responses", func(t *testing.T) {
-		resp, err := client.Responses.New(ctx, responses.ResponseNewParams{Model: "tiny", MaxOutputTokens: openai.Int(4),
+		resp, err := client.Responses.New(ctx, responses.ResponseNewParams{Model: "tiny", MaxOutputTokens: openai.Int(4), Temperature: openai.Float(0),
 			Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hi")}})
 		if err != nil {
 			t.Fatal(err)
@@ -200,7 +205,7 @@ func TestAnthropicSDK(t *testing.T) {
 	hi := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock("hi"))}
 
 	t.Run("message", func(t *testing.T) {
-		resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 4, Messages: hi})
+		resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 4, Temperature: anthropic.Float(0), Messages: hi})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -209,7 +214,7 @@ func TestAnthropicSDK(t *testing.T) {
 		}
 	})
 	t.Run("stream", func(t *testing.T) {
-		stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 6, Messages: hi})
+		stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 6, Temperature: anthropic.Float(0), Messages: hi})
 		var msg anthropic.Message
 		events := 0
 		for stream.Next() {
@@ -224,7 +229,7 @@ func TestAnthropicSDK(t *testing.T) {
 	})
 	t.Run("forced tool use", func(t *testing.T) {
 		resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model: "tiny", MaxTokens: 64, Messages: hi,
+			Model: "tiny", MaxTokens: constrainedRoom, Temperature: anthropic.Float(0), Messages: hi,
 			Tools: []anthropic.ToolUnionParam{anthropic.ToolUnionParamOfTool(anthropic.ToolInputSchemaParam{
 				Properties: okSchema["properties"], Required: []string{"ok"}}, "pick")},
 			ToolChoice: anthropic.ToolChoiceParamOfTool("pick"),
