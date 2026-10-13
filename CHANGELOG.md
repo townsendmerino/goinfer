@@ -78,11 +78,14 @@ prefilled in 9.0 s against 15.2 s on the M1 Pro and in 2.7 s against 5.8 s on th
 **A long prompt on a Gemma model no longer takes a minute.** Every Gemma 3 and Gemma 4 has attention heads of 256, and a head
 wider than 128 used a kernel that pays about ten synchronisations for every key, in prefill and in decode alike. Such a head
 now gets the kernel narrow heads use (each GPU thread owns keys, one reduction a block of keys), and the batched pass runs it
-once a layer instead of once a token. On Gemma 3 4B a 1,783-token prompt prefilled in 68.5 s before and **4.8 s** now on the
-RTX 2070 SUPER, and in 173.6 s before and 32.3 s now on the M1 Pro; a decode step at that depth went from 72 ms to 41 ms on
-the RTX 2070 SUPER. Read in process, one run an arm; the pass still gives the token-by-token logits bit for bit. It applies to
-a float32 KV cache (the default); `--kv f16` and `--kv i8` keep their kernels. The decode kernel changes Gemma's logits under
-WebGPU by rounding ("S12.4c" and "S12.4c-b" in the record). Not covered,
+once a layer instead of once a token. On Gemma 3 4B a 1,783-token prompt now reaches its first token, through the server, in
+**4.8 s against 68.9 s** on the RTX 2070 SUPER and in **30.5 s against 172.4 s** on the M1 Pro (five alternating rounds each); a
+decode step at that depth went from 72 ms to 41 ms on the RTX 2070 SUPER (in process). The pass still gives the token-by-token
+logits bit for bit. It applies to a float32 KV cache (the default); `--kv f16` and `--kv i8` keep their kernels.
+
+The decode kernel sums in another order, so **Gemma's replies under WebGPU can differ in wording from the previous build's**. They
+are not further from the model: on 64 prompts against the float32 forward the new kernel agrees on 85.11% of next tokens and the
+old on 85.45%, with a KL ratio of 0.996 (RTX 2070 SUPER; "S12.4c", "S12.4c-b" and "G-S12.4c-6" in the record). Not covered,
 and unchanged: the mixture-of-experts families, the recurrent ones, and Gemma 3's image turn, which still prefills on the CPU.
 
 ### Changed — under `--backend webgpu` on Vulkan, a Qwen2.5-VL image turn prefills on the GPU

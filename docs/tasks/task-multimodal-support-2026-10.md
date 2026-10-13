@@ -5504,10 +5504,10 @@ Gemma 3 4B at int4, Vulkan, the pinned binary at `adcdbbb5`, 21:57 to 22:36 PDT.
 
 - **VERDICT PASS** on all three criteria. Against the float32 model the key-split kernel is as near as the
   per-dimension kernel it replaced.
-- **The two arms' logits differ at every one of the 2,048 positions**, as two float sums in different orders do, and
-  they disagree on the top token at 137 of them. That is why every served reply differed, and it is about as often
-  as either arm disagrees with the other's choice in the opposite direction: the differences are near ties, not a
-  bias.
+- **The two arms' logits differ at every one of the 2,048 positions**, as two float sums in different orders do. At
+  137 positions one arm picks the reference's top token and the other does not, and those split almost evenly
+  between the arms (the agreement difference is 7 positions). That is why every served reply differed, and why it
+  is not a bias: the differences fall at near ties and go both ways.
 - **What stands out is the level, not the difference:** at int4 this model agrees with its own float32 forward on
   about 85% of next tokens under either kernel. That is the model's int4 reading, on record before this change
   (Gemma is the family that quantizes worst), and it is the reason a rounding-level change moves replies.
