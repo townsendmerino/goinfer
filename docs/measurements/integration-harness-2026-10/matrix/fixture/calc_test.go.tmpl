@@ -1,0 +1,21 @@
+package fixture
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	if got := Add(2, 3); got != 5 {
+		t.Fatalf("Add(2, 3) = %d, want 5", got)
+	}
+}
+
+func TestSumOfSeveral(t *testing.T) {
+	if got := sum(1, 2, 3, 4); got != 10 {
+		t.Fatalf("sum(1, 2, 3, 4) = %d, want 10", got)
+	}
+}
+
+func TestMean(t *testing.T) {
+	if got := Mean(2, 4); got != 3 {
+		t.Fatalf("Mean(2, 4) = %v, want 3", got)
+	}
+}

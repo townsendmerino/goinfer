@@ -248,8 +248,32 @@ file byte-identical to before. Tests parse each harness's published config schem
 - **Departures from the sketch.** The output limit is a quarter of the window, between 1,024 and 8,192. Codex's
   auto-compaction limit is set to the window less that output limit, which is a reading of what the key means, not a
   measurement. Codex's settings are written at the top level, as the census ran it, not as a profile.
-- **Not done:** the live half of the gate (a headless turn on each written file); the other eight agents in the
-  table; parsing each agent's published schema; the warning from a skipped `tools, harness-scale` row.
+- **Not done:** the other eight agents in the table; parsing each agent's published schema; the warning from a skipped
+  `tools, harness-scale` row.
+
+**I2's live half, read 2026-10-13** (`docs/measurements/integration-harness-2026-10/connect_live.py`; the final binary, the 1.5B at `-ctx 32768`,
+a throwaway `HOME` and work directory per run, `-write` always given an explicit `-file` inside them, so no real config file was named; Claude
+Code 2.1.296, opencode 1.19.0, Codex 0.162.1). Each agent twice: **fresh** (no file before, so `-undo` must remove it) and **existing** (a file with
+unrelated settings, so `-undo` must return its bytes).
+
+| agent | case | `-write` | headless turn | reply read from the agent's own output | `-undo` |
+|---|---|---|---|---|---|
+| Claude Code | fresh | ok | exit 0, 91 s | `ok` | byte-identical, file removed |
+| Claude Code | existing | ok | exit 0, 91 s | `await<byte[]>` (the 1.5B at default sampling; the turn completed) | byte-identical |
+| opencode | fresh | ok | exit 0, 5 s | `ok` | byte-identical, file removed |
+| opencode | existing | ok | exit 0, 5 s | `ok` | byte-identical |
+| Codex | fresh | ok | exit 0, 2 s | `ok` | byte-identical, file removed |
+| Codex | existing | ok | exit 0, 1 s | `ok` | byte-identical |
+
+- **Verdict against its registered rule** (a headless turn succeeds, `-undo` leaves the file byte-identical or gone): **PASS, 6 of 6 on the
+  mechanics.** One reply is not `ok` (Claude Code, existing case): the turn ran to its end and the same configuration answered `ok` in
+  the fresh case, so that is the 1.5B's sampling and not the file.
+- **It passed only after three defects were fixed** (defects 1 to 3 above), one of them invisible to the first version of the script (a false pass).
+  The script now reads the reply from each agent's own output; run on the build before the stream fix it reports Codex as having no reply.
+- **Codex's two keys.** It accepts top-level `model_context_window` and `model_auto_compact_token_limit` without a warning and honours the
+  first (its log: `model_context_window: 31129`, 95% of 32,768). Whether it compacts by itself before the window is reached: **yes, by the
+  evidence of the 3c smoke** (it compacted and finished two runs at a 12,288 window), **but not when one step jumps past its headroom**, as
+  in the 32,768 probe above. The registered reading is 3c's.
 
 ### I3 — The real-harness matrix
 
@@ -298,6 +322,171 @@ publishable table.
 **Sequence:** after I1 (otherwise the matrix re-measures a known overflow failure), I2 (otherwise every cell is
 configured by hand) and Gate 1.
 
+#### What the live gates found first, 2026-10-13 (day, nobara-pc; this is what the plan below is built on)
+
+I2's live gate (`connect -write`, one headless turn, `-undo`, byte identity; script `docs/measurements/integration-harness-2026-10/connect_live.py`)
+and the work to run I3 turned up four defects and four facts. Each was found by running the real binary.
+
+- **A false pass, caught.** The first live run read "the reply contains ok" off the whole output, which also matches `"tokens"`.
+  It showed Codex passing. Codex had printed `OutputTextDelta without active item` and returned **no message at all**.
+  The script now reads each agent's own reply (Claude Code's `result`, opencode's text part, Codex's `agent_message`).
+- **Defect 1, fixed: the Responses stream carried no item lifecycle.** A `/v1/responses` stream held `response.created`,
+  `response.output_text.delta` and `response.completed` only. Codex assembles its turn from `response.output_item.done`, so through
+  goinfer it saw an empty turn, text and tool calls alike. The stream now announces and closes every item
+  (`output_item.added`, `content_part.added`, `output_text.done`, `content_part.done`, `output_item.done`,
+  `function_call_arguments.delta` and `.done`) and numbers every event with `sequence_number`. `sdktest` holds it for a message and a
+  forced function call, and reads it through the official OpenAI SDK; three planted defects (an item never closed, a frozen sequence
+  number, a function call announced already complete) each turned the gate red. After it, a headless Codex turn returns `ok`, and a
+  7B steered by Codex ran three real `exec_command` calls. **This had to be fixed before the Codex cell could mean anything.** It is
+  outside the brief's list; it is the item §5 had listed as "Responses emits neither `response.output_item.*` nor `response.failed`".
+- **Defect 2, fixed: `connect` ignored flags after the URL.** `connect codex URL -write` printed instead of writing, and
+  `connect codex URL -undo` restored nothing (package `flag` stops at the first operand). Every test put the flags first. Flags
+  may now follow the URL, and a second URL is an error.
+- **Defect 3, fixed: Claude Code at a 32,768 window compacted at once and failed.** It asks for `max_tokens: 32000` on every
+  request and counts that against the window `CLAUDE_CODE_MAX_CONTEXT_TOKENS` tells it, so it sees no room. Pilot, 7B at `-ctx 32768`,
+  the "read" task, goinfer never rejected a request: Claude Code ended after 705 s on `Prompt is too long · automatic compaction failed:
+  summarization produced empty response`. With `CLAUDE_CODE_MAX_OUTPUT_TOKENS` set to the output limit (8,192) the same task ran to
+  its end (284 s, no compaction). One run each; exploratory. `connect` now writes that variable. (This answers §0a's open "whether it then
+  compacts at a 32K window": left alone, it does, and it fails.)
+- **Fact: Codex honours the window `connect` writes.** Its own session log records `model_context_window: 31129`, which is 95% of the
+  32,768 written. **It does not recover from an overflow on a sampling request.** Probe (7B, `-ctx 32768`): the model made three parallel
+  `seq` calls whose outputs (about 6.4K tokens each, Codex's 10K-token cap) took the history from 6.0K to 25.1K in one step; the next
+  request was answered with `response.failed` (I1's curable branch: 25.1K plus the reserved quarter-window reply is over 32,768) and
+  Codex ended the turn with "ran out of room in the model's context window". Codex's own auto-compaction reads the usage the server
+  reports after a response; it had no chance to act. Whether it compacts when history grows in steps smaller than its headroom is what
+  the Codex overflow run (3c) reads. A candidate for `connect`, **not changed**: its auto-compact limit (window less the output limit)
+  leaves 8,192 tokens of headroom and one Codex tool output can be 10,000.
+- **Fact: Codex and opencode run in seconds, Claude Code in minutes, because of CUDA's batched prefill.** On the 7B a 7K-token opencode
+  request prefills in 6.8 s. Past about 12,200 attended keys the batched prefill declines (its attention keeps one score per key in
+  shared memory: 49,664 B at 12,288 keys, over the device's 49,152 B, and it has no split-KV path) and the request takes the
+  sequential path, **about 15 ms a token on the 7B**: Claude Code's 17.7K-token first request took **289 to 303 s** to its first
+  token, and a 10K-token tool output through Codex took 158 s. This is not in the plan of any doc I could find;
+  `task-kv-architecture-2026-10.md` KV3 (prefill in blocks everywhere) is the nearest item and is about bookkeeping, not this kernel
+  limit. I did not touch it. It sets the cost of every cell with a context past 12K, and it is why the overflow runs for opencode
+  and Codex use a 12,288 window.
+- **Fact: the swap guard halts a long run on this box.** `GOINFER_SWAP_GUARD` defaults to 512 MB over the swap in use when the server
+  came up, and swap here grows by that much in minutes with 48 GB free (it was 6.3 GB at the first start of the day and 9.4 GB by
+  the fourth). Mellum2.1 tripped it on its first request, twice; the 7B once. A tripped guard answers every request with a 503
+  `halted` until swap falls back, which it does not. The matrix sets it to 4,096 MB (still armed; recorded in the job's provenance),
+  voids any run that saw a `halted` answer, restarts the server and redoes the cell, up to two more times.
+- **Fact: opencode needs a `ripgrep` it downloads on first use.** In the first sandboxed pilot its `grep` and `glob` tools all failed
+  with "ripgrep execution failed", which would have scored opencode's cells as model failures. The sandbox provides the `rg` Codex
+  ships, read-only, in the place opencode looks. With it the same tasks use the tools.
+
+#### I3 run plan, registered 2026-10-13, before the run
+
+**3a. The sandbox.** Built and proved (`docs/measurements/integration-harness-2026-10/matrix/sandbox.py`). **It needs nothing from the
+owner:** unprivileged bubblewrap 0.11 and `socat` are already installed, and user namespaces are on.
+- *Design.* Every namespace is unshared (user, pid, ipc, uts, cgroup, **net**); the environment is cleared, so no host variable
+  reaches the agent; the root is a tmpfs remounted read-only, with `/usr`, the Go toolchain, a few files of `/etc` and the
+  harness install bound read-only; **the host's home directory, `.ssh`, `/run`, `/var` and its other mounts do not exist inside**.
+  Writable: the fixture copy (`/work`), a per-run `HOME`, and an in-memory `/tmp`; all are made for the run. The one way out of the
+  network namespace is a unix socket bind-mounted from the host: a `socat` inside listens on `127.0.0.1:<goinfer's port>` and
+  relays to it, a `socat` on the host relays the socket to a logging proxy (`wire_proxy.py`) in front of goinfer. A loopback with one
+  port, and nothing behind it but goinfer. `--die-with-parent --new-session`, `ulimit -u 4096 -f 2 GiB`. The mechanical checks of
+  each task (`go build`, `go test`) also run inside it: the model wrote that code.
+- *Proof, the self-test, run at the start of every job and fatal if it fails:* from inside, 32 attempts, 28 of which must fail and four of which must work: writes to `/usr`, `/etc`, `/etc/ssl`, `/usr/local/go`, `/bin`, `/`, `/proc/sys`, a path under the fixture that climbs out of it,
+  and through two symlinks planted in the fixture (one to a host directory, one to `/usr`); reads of the host's home, `.ssh` and
+  `/etc/shadow`; TCP to 1.1.1.1:443, 8.8.8.8:53, 169.254.169.254:80, `127.0.0.1:22`, the box's LAN address, **a canary listener on
+  this host's loopback and one on all addresses**, and the port beside goinfer's; DNS; the docker and session-bus sockets; a signal to
+  a host pid. The four that work: write to `/work`, `HOME` and `/tmp`, and `GET /v1/models` through the relay. After the probe
+  the host is checked for any file it may have written. All pass.
+- *The self-test can go red:* three planted weaknesses (a writable host directory where a read-only one belongs, the shared host
+  network, a writable root) are each caught, with the escape named (`write /etc/ssl/x`, `tcp 1.1.1.1:443`, `write /etc/x`). A job
+  runs these too, and runs nothing if one is missed. One planted weakness I first tried (a writable bind of `/usr`) was *not* caught,
+  because the host's own file permissions already refuse the write; it was replaced by one that does reach the host.
+- *Found by use:* the first matrix start ran the self-test before goinfer was up and refused to run, which is the intended failure.
+- *What it does not contain:* CPU, memory or disk exhaustion beyond the two `ulimit`s (a runaway is bounded by its per-run timeout);
+  the GPU, which the agent cannot address; goinfer itself, which an agent can send any request (the API has no admin route without
+  `-allow-admin`). Nothing runs unattended outside it.
+
+**3b. What Claude Code's cell is: the real client, `-ctx 32768`, not `--bare`.**
+- *The 7B can hold it now.* With CUDA f16 KV on main the 7B at `-ctx 32768` loads with **one** resident KV slot (1.8 GB of KV, 6.75 GB
+  of VRAM in use of 8.19), against about 5.5K positions in four slots in R19's table. 32,768 is over I4's 25,249 for Claude Code's
+  20,199-token first request, so by I4's rule it is *viable*. Mellum2.1 holds 32,768 too (its sliding-window layers keep 1,536 positions, so 32,768 costs 1.0 GB of KV; resident, 7.3 GB of VRAM), so Claude Code gets a Mellum cell.
+- *Why not `--bare`.* `--bare` is a different client: no hooks, memory, `CLAUDE.md` discovery or plugins, 3 tools instead of 21 to 24, a
+  1,063-token prompt. A row labelled "Claude Code" in a published table has to be what a person runs; the bare figure would be the
+  flattering one. **`--bare` is not a cell here.** It stays a measured lower bound (I4's 1,063).
+- *What it costs, so the owner can overrule the choice:* the one KV slot is shared by the main request and Claude Code's side requests
+  (title, compaction), and the batched prefill declines past 12.2K keys, so each run pays one cold prefill of about 18K tokens, **about
+  5 minutes**, and a compaction attempt pays another. Pilot runs: 284 s (a read task, no compaction). A Claude Code run is therefore
+  5 to 10 minutes and the cell 25 to 50 minutes; its per-run timeout is 30 minutes.
+- *Settings:* those `connect` writes (including `CLAUDE_CODE_MAX_OUTPUT_TOKENS` after defect 3), unmodified.
+
+**3c. I1's live gate, operationalised before it runs.** Registered in I1: pass if each overflow is followed by at most one compaction and
+the session continues; fail on three or more consecutive compactions, or the session ending on the overflow. Made measurable, after two
+exploratory smoke runs showed what the first design got wrong:
+- *Why the first design was dropped.* It read eight 9K-token files "one at a time" at a 12,288 window. The 7B asked for all eight at once,
+  so one step added 46K tokens, which no compaction can cure: the turn's own new content exceeded the window. That says nothing about
+  the wording. The same smoke showed Codex answering four overflows in a row (its compaction request, trimmed and asked again) and then
+  finishing, so "overflow answers in a row" is not "consecutive compactions" either.
+- *Windows at 1.6 x each harness's first request* (I4's census), so that ordinary task growth, a few turns of tool output, crosses them
+  step by step: Codex **9,408** (first request 5,850), opencode **11,520** (7,165), Claude Code **28,672** (20,199; 1.42 x, the 7B and Mellum
+  hold no more than 32,768). All three are viable by I4's rule. Tasks: `bulk` (eight files of about 2,500 tokens, read one after another),
+  and the matrix's own `edit` and `fix`, whose histories grow every turn. Three repetitions for opencode and Codex, one for Claude Code.
+- *Read from the wire log and the harness's own output, per run* (`matrix/gate_i1.py`): overflows (a 400 naming the prompt or the context, or
+  `response.failed`); compactions (the harness's own count, else what the wire shows: a tool-less request of 1,000 tokens or more after the first
+  request with tools, or a prompt under 60% of the largest so far); whether the session continued (exit 0 with the harness's final answer, the
+  last request not an overflow). Overflow answers in a row are reported, not graded.
+  - **PASS:** at least one overflow, compactions not above overflows and under three, session continued.
+  - **FAIL:** the session ended on the overflow or an error, or three or more compactions in the run, or more compactions than overflows.
+  - **VOID:** no overflow and no compaction (the window was never reached), or an **incurable jump**: one step added more tokens than fit beside the
+    fixed part once everything older is compacted (new content = the rejected prompt less the last one answered; room = window less the
+    session's first request less 1,000 for the summary). Either way the run says nothing about the wording.
+  - **NOTE:** no overflow, but the harness compacted by itself first: a pass for the session, no evidence about the wording.
+  - A FAIL with the fixed part fitting means the wording is wrong for that harness, per I1.
+- *Exploratory smoke of the gate itself* (7B, 12,288, two runs each, discarded; it exercised the grader and found the design flaw above):
+  opencode ended both runs on `ContextOverflowError` after 4 and 1 compactions (FAIL by this rule); Codex compacted and finished both
+  (PASS), after four consecutive overflow answers each time.
+- *Prediction, written first (these are the first reading of the smoke, so they are weak):* Codex PASSes (0.6): it compacts and
+  continues. opencode FAILs (0.55): it compacts and then meets the overflow again. Claude Code is the unknown (0.4 PASS): its pre-flight
+  check fired in the pilot before goinfer was asked, and it has now been given an output cap.
+
+**The matrix, one job in two parts.** The reading rules of I3 stand (works at 4 of 5 with no session ending on an error; fragile at 2 to 3;
+no at 0 to 1). The five tasks, the fixture and the recorded fields are I3's; the fixture is `docs/measurements/integration-harness-2026-10/matrix/fixture`
+(stored as `.tmpl`), checked mechanically inside the sandbox. **Task 1 can pass without a tool call** (`Add(2, 3)` is 5 for any
+`Add`); the registered pass rule is kept and `tool_calls` is in the record. Plan: `matrix/plan-i3.json`; runner `matrix/matrix.py`;
+night script `matrix/run-i3-night.sh`.
+
+| config | model, window | harness | tasks x reps | est. wall |
+|---|---|---|---|---|
+| `q7b-16k` | Qwen2.5-7B-Instruct q4_k_m, 16,384, f16 KV | opencode, Codex | 5 x 3 | 15 min |
+| `q7b-32k-cc` | the same at 32,768, one KV slot | Claude Code | 5 x 1 | 45 min |
+| `mellum-16k` | Mellum2.1 int4mix, C' expert streaming (45 of 64), 16,384 | opencode, Codex | 5 x 1 | 40 min |
+| `mellum-32k-cc` | Mellum2.1 at 32,768, one KV slot | Claude Code | 5 x 1 | 45 min |
+| `q7b-9k-codex-ovf` | the 7B at 9,408 (I1 live gate) | Codex | bulk, edit, fix x 3 | 10 min |
+| `q7b-11k-opencode-ovf` | the 7B at 11,520 (I1 live gate) | opencode | bulk, edit, fix x 3 | 10 min |
+| `q7b-28k-cc-ovf` | the 7B at 28,672 (I1 live gate) | Claude Code | bulk, edit x 1 | 35 min |
+
+The 30 runs of the registered screening scope are all present (3 harnesses x 2 checkpoints x 5 tasks); the 7B's opencode and Codex cells
+carry two more repetitions each, and the three `-ovf` configurations are the I1 gate. The registered "one repetition" is kept as the
+reading rule: the first repetition decides the cell. The two extra repetitions of the cheap 7B cells are the registered follow-up for
+fragile cells, run in the same night because they cost minutes; they are reported beside it, not instead of it.
+- **Three queue entries**, each under "3 h or less": job A (`q7b-16k`, `q7b-32k-cc`) estimated 80 min; job B (`mellum-16k`,
+  `mellum-32k-cc`) 130 min; job C (the three `-ovf` configurations) 70 min; 255 min in all, on the one box and so one after another. The wall figures above come from pilots (below), not from the
+  1.5 h the screening scope guessed before the census.
+- **Per-run timeouts** (a hang fails loudly): 15 min for opencode and Codex, 25 min for Mellum, 30 to 40 min for Claude Code. The job has a
+  deadline and starts no run past it; a run that sees a `halted` answer is voided and redone.
+
+*Pilots behind the estimates (exploratory, one run each unless said, never quoted as results):*
+- opencode and Codex on the 7B at 16,384, ten tasks in 2 minutes (3 to 21 s each; the 7B passed 2 of 10, mostly by giving up or by
+  narrating a tool call). In the pilot the Codex "edit" run printed a patch as prose where it had no `apply_patch`; one run decides
+  nothing about I6 (below).
+- Claude Code on the 7B at 32,768: 705 s ending on the compaction failure (defect 3); 284 s after the output cap.
+- Mellum2.1 at 16,384 with `--moe-cache-experts`, Codex and opencode, read/search/edit: 2.3 to 4 minutes a run, a 6.1K-token first request
+  takes **about 67 s** to its first token (about 90 tokens a second of prefill) and the next turn of the same session does not reuse it
+  (68 s again). Five of six passed. Two leads, not fixed: Codex's "read" answer on Mellum began `5</think> maybe? Or just "5"?`, the model's
+  reasoning in the reply text on the Responses route; and Mellum fills 7.38 GB of the card.
+- Mellum2.1 at 32,768: loads resident, 7.33 GB, KV 1.0 GB (not run beyond loading).
+
+**Viability, I4's rule, for every cell in the plan:** Codex 5,850 x 1.25 = 7,313 and opencode 7,165 x 1.25 = 8,956 are under 16,384 (and
+under their overflow windows, 9,408 and 11,520); Claude Code 20,199 x 1.25 = 25,249 is under 32,768 and 28,672. No cell is refused by `connect`.
+
+**What did not run, and why.** I3's matrix itself (it is the night job), the live Responses-compaction read for gradual growth (3c is it),
+the second-session time-to-first-token comparison of I4 (needs a model), Kilo (its first request, 15,144 tokens, is not viable at 16,384) and
+Hermes (it refuses a window under 64,000) as I3 cells (the screening scope is the three dialect leaders).
+
+
 ### I4 — First-request census (by day, minutes per harness)
 
 Everything above needs one number per harness that nobody has measured except for opencode: the size of its first
@@ -306,6 +495,29 @@ request. With `-log-requests` it is nearly free. Serve a small model on nobara-p
 and record the tool count. Then start a second session from a different directory and compare its first turn's time to
 first token with the first session's. A large drop means the shared system-prompt prefix was reused, which tells a
 later decision what reusing a harness's prompt across sessions would buy. No code.
+
+**Census of the other eight, 2026-10-13** (`docs/measurements/integration-harness-2026-10/harness-census-2026-10-13.md`; nobara-pc, each pinned under
+`~/harnesses`, first request recorded headless, Qwen2.5 tokenizer, a CPU goinfer for the counts; nothing needed a login or a paid account, so none
+was skipped; no request body is committed):
+
+| harness, version | first request | tools | viable at 16,384 (I4's rule) |
+|---|---|---|---|
+| Pi 1.2.0 | 1,330 | 4 | yes |
+| Oh My Pi 18.10.3 | 6,970 | 11 | yes |
+| Hermes 0.21.7 | 11,276 | 24 | the request fits; **Hermes exits under a 64,000 window** before sending any chat request |
+| OpenClaw 2026.10.3 | 7,166 | 11 | yes |
+| Cline 3.0.71 | 4,606 | 25 | yes |
+| Goose 1.54.0 | 4,001 (+ a 413-token title request) | 17 | yes |
+| Aider 0.86.2 | 593 empty directory (a real repo adds up to a 4,096-token map) | none | yes |
+| Kilo 7.8.8 | 15,144 | 23 | **no** (18,930 needed) |
+
+Things the census found that bear on later work: Cline asks for `max_tokens` equal to the window less its own input estimate and ignores its
+`maxTokens` setting; Pi's default compaction reserve of 16,384 equals a whole 16K window; Goose and Aider exit 0 on an error; Hermes probes
+`/api/v1/models`, `/api/tags`, `/v1/props`, `/props` and `/version` before it decides (what goinfer answers to those was not read); Cline leaves a
+detached hub daemon behind each run. For an unattended sandbox: Cline, Kilo, Oh My Pi, Aider and Goose look up other hosts (telemetry,
+catalogs, package indexes), which a network namespace with one address refuses; none needed a network to start. Install quirks (OpenClaw wants
+Node 24, Oh My Pi wants Bun, Aider wants Python under 3.13) are in the record. The agent that ran it also created `~/.hermes`, `~/.pi`, `~/.bun`,
+`~/.config/kilo` and `~/.cache/kilo` in the real home directory with early `--help` probes, and left them.
 
 Known so far: opencode 11,137 tokens (measured, R19); **Claude Code 19,692 (measured 2026-10-12, 2.1.268; 1,063 with
 `--bare`; the earlier 6–10K was an estimate and wrong)**; **opencode 1.19.0 7,165 and Codex 0.162.1 5,850
@@ -566,13 +778,13 @@ of `docs/tasks/task-kv-architecture-2026-10.md`, whose KV3 extends blocks and bl
 | step | what | when |
 |---|---|---|
 | 1 | Claude Code recipe: add `ANTHROPIC_DEFAULT_HAIKU_MODEL` and the window variable (§5) | **done 2026-10-12** |
-| 2 | I4 census | Claude Code, opencode, Codex **done 2026-10-12**; the rest when installed |
+| 2 | I4 census | Claude Code, opencode, Codex **done 2026-10-12**; the other eight **done 2026-10-13** |
 | 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |
-| 6 | I3 screening | night queue, nobara-pc, after 3–5 |
+| 6 | I3 screening | night queue, nobara-pc, after 3–5: **queued 2026-10-13** as three jobs (plan above); the sandbox and the gate's grader are built and proved |
 | 7 | I5 transport | by day, in parallel with 2–6; depends on none of them |
-| 8 | I6 | decided by I3's Codex cell |
+| 8 | I6 | decided by I3's Codex cell: **parked** until that cell reads; the pilot's one Codex edit printed a patch as prose, which is one run |
 | 9 | the FIM and sidecar amendments (§5) | when those docs are next picked up |
 
 **Not claimed:** none of this makes goinfer faster, and on an 8 GB card the window stays small. These items make the

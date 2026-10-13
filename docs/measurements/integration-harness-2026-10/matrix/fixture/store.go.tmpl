@@ -1,0 +1,24 @@
+package fixture
+
+import "errors"
+
+// ErrNotFound is returned by Get for a key that was never Put.
+var ErrNotFound = errors.New("not found")
+
+// Store is a string-to-string map.
+type Store struct{ m map[string]string }
+
+// NewStore returns an empty Store.
+func NewStore() *Store { return &Store{m: map[string]string{}} }
+
+// Put sets key to value.
+func (s *Store) Put(key, value string) { s.m[key] = value }
+
+// Get returns the value for key, or ErrNotFound.
+func (s *Store) Get(key string) (string, error) {
+	v, ok := s.m[key]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return v, nil
+}

@@ -1,0 +1,24 @@
+// Package fixture is a small module for the harness matrix's tasks.
+package fixture
+
+// Add returns a + b.
+func Add(a, b int) int { return sum(a, b) }
+
+// Sub returns a - b.
+func Sub(a, b int) int { return a - b }
+
+// Mean returns the average of xs, or 0 for none.
+func Mean(xs ...int) float64 {
+	if len(xs) == 0 {
+		return 0
+	}
+	return float64(sum(xs...)) / float64(len(xs))
+}
+
+func sum(xs ...int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}

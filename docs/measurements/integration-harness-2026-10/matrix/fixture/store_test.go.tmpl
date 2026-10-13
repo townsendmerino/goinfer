@@ -1,0 +1,17 @@
+package fixture
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestStore(t *testing.T) {
+	s := NewStore()
+	s.Put("a", "1")
+	if v, err := s.Get("a"); err != nil || v != "1" {
+		t.Fatalf("Get(a) = %q, %v", v, err)
+	}
+	if _, err := s.Get("b"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get(b) error = %v, want ErrNotFound", err)
+	}
+}

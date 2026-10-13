@@ -1,0 +1,16 @@
+aider req-1.json /v1/chat/completions: status 200, prompt tokens 593, tools sent 0
+claude req-1.json /v1/messages: status 200, prompt tokens 20196, tools sent 23
+cline req-1.json /v1/chat/completions: status 200, prompt tokens 4606, tools sent 25
+codex req-1.json /v1/responses: status 200, prompt tokens 5848, tools sent 9, dropped: namespace:multi_agent_v1,web_search
+goose req-1.json /v1/chat/completions: status 200, prompt tokens 413, tools sent 0
+goose req-2.json /v1/chat/completions: status 200, prompt tokens 4001, tools sent 17
+goose req-3.json /v1/chat/completions: identical to req-2.json, skipped
+goose req-4.json /v1/chat/completions: identical to req-1.json, skipped
+goose req-5.json /v1/chat/completions: identical to req-2.json, skipped
+goose req-6.json /v1/chat/completions: identical to req-1.json, skipped
+goose req-7.json /v1/chat/completions: identical to req-2.json, skipped
+hermes req-6.json /v1/chat/completions: status 200, prompt tokens 11276, tools sent 24
+kilo req-1.json /v1/chat/completions: status 200, prompt tokens 15144, tools sent 23
+omp req-1.json /v1/chat/completions: status 200, prompt tokens 6970, tools sent 11
+openclaw req-1.json /v1/chat/completions: status 200, prompt tokens 7166, tools sent 11
+pi req-1.json /v1/chat/completions: status 200, prompt tokens 1330, tools sent 4

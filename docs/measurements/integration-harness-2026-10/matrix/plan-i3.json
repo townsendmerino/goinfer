@@ -1,0 +1,151 @@
+{
+ "serve": "/home/francis/goinfer-bench/harness-2026-10-13/bin/serve-cuda-i3",
+ "swap_guard_mb": 4096,
+ "port": 18090,
+ "proxy_port": 18095,
+ "box": "nobara-pc (RTX 2070 SUPER 8 GB, driver 595.91.07)",
+ "commit": "PINNED-AT-QUEUE-TIME",
+ "configs": [
+  {
+   "name": "q7b-16k",
+   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "ctx": 16384,
+   "agents": [
+    "opencode",
+    "codex"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 3,
+   "run_timeout": 900,
+   "label": {
+    "regime": "screening, Qwen2.5-7B-Instruct q4_k_m (int4 resident, f16 KV), -ctx 16384, default sampling of each harness"
+   }
+  },
+  {
+   "name": "q7b-32k-cc",
+   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "ctx": 32768,
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1800,
+   "label": {
+    "regime": "screening, Qwen2.5-7B-Instruct q4_k_m (int4 resident, f16 KV), -ctx 32768 (Claude Code needs 25,249), one KV slot"
+   }
+  },
+  {
+   "name": "mellum-16k",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "opencode",
+    "codex"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "regime": "screening, Mellum2.1 int4mix, C' expert streaming (45 of 64 slots), -ctx 16384, KV f32"
+   }
+  },
+  {
+   "name": "mellum-32k-cc",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 32768,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1800,
+   "label": {
+    "regime": "screening, Mellum2.1 int4, sliding-window KV (1,536 positions in those layers), -ctx 32768, one KV slot"
+   }
+  },
+  {
+   "name": "q7b-9k-codex-ovf",
+   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "ctx": 9408,
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "bulk",
+    "edit",
+    "fix"
+   ],
+   "reps": 3,
+   "run_timeout": 1200,
+   "label": {
+    "regime": "I1 live gate, window 9,408 = 1.6 x Codex's first request (5,850)"
+   }
+  },
+  {
+   "name": "q7b-11k-opencode-ovf",
+   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "ctx": 11520,
+   "agents": [
+    "opencode"
+   ],
+   "tasks": [
+    "bulk",
+    "edit",
+    "fix"
+   ],
+   "reps": 3,
+   "run_timeout": 1200,
+   "label": {
+    "regime": "I1 live gate, window 11,520 = 1.6 x opencode's first request (7,165)"
+   }
+  },
+  {
+   "name": "q7b-28k-cc-ovf",
+   "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+   "ctx": 28672,
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "bulk",
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 2400,
+   "label": {
+    "regime": "I1 live gate, window 28,672 = 1.42 x Claude Code's first request (20,199)"
+   }
+  }
+ ]
+}
