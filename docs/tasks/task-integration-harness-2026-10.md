@@ -73,6 +73,14 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
     goinfer's 10 s heartbeat is inside both.
   - *Claude Code's own position:* its documentation says routing it to non-Claude models through a gateway is not
     supported. The recipe stands on traces, and a release can break it.
+- **I5, the first piece (owner 2026-10-12: the transport before the facade):** `internal/inproc` holds the
+  RoundTripper that serves a request with a handler in the same process. A reply streams frame by frame, closing the
+  body or cancelling the context cancels the handler, and a handler's panic is an error and not a crash; its tests
+  run under the race detector. **Not built yet:** the constructor that gives it serve's handler (the seam in serve's
+  entry point), the public Experimental package, and the SDK module of the gate.
+  - **A correction for that gate:** `testdata/tiny-qwen2-moe` is gitignored, so it is not "a committed tiny
+    checkpoint". The tracked fixtures that carry a tokenizer are the tiny GGUFs (`testdata/glm-tiny.gguf`,
+    `testdata/gemma1-tiny.gguf`); the in-process tests need one of those, or CI skips them.
 - **A small item the trace adds:** the title request asks for JSON through `output_config.format` (a `json_schema`).
   `/v1/messages` ignores the field. goinfer can constrain to a schema, so honouring it is cheap; unowned.
 
