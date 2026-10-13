@@ -58,10 +58,38 @@ both sit in packages that a `decoder` edit invalidates (`metal` imports `decoder
   (`TestGoCodeTokens_commentsOnly` checks both directions). The refresh script had recorded 307 earlier non-numeric
   refreshes.
 - **Push and CI rule in `CLAUDE.md`:** push finished work, read CI at the next natural point, never wait on it.
-- **The sampler moved to its own package, and the Metal kernel tests to a package that does not import `decoder`.**
-  The before and after timings are in §4.
+- **The sampler moved to `internal/sampling`, and the Metal kernel tests and MSL sources to `metal/kernels`**, which
+  imports only `internal/f16`. CI's decoder shards follow the sampler tests to their new package. §4 has the timings.
 - **The KV re-architecture lands its manager as its own package** (`docs/tasks/task-kv-architecture-2026-10.md` §5.13).
 
-## 4. After
+## 4. After: the same decoder edit, `gate quick` before and after (Mac, 2026-10-13)
 
-(Filled in when the package splits are measured.)
+Instrument: `go run ./cmd/gate quick -no-lint -files decoder/rope.go -overlay <file>`, run in a worktree at
+`origin/main` (e5267a7c) and one at this branch. The overlay adds a package variable and an `init` that reads it to
+`decoder/rope.go`, with a fresh value each run, so every run is a real cache miss for `decoder` and everything that
+imports it. Each tree had one earlier run to warm the cache. Both runs show the same three `metal` failures: fixtures
+that are generated locally and are absent from a fresh worktree (`TestGPT2ResidentParityMetal`,
+`TestHiddenLastResidentParityMetal`, `TestS16DeepstackPrefill_tiny`).
+
+| | `origin/main` | branch |
+|---|---:|---:|
+| `gate quick` wall | 2m57s | **2m00s** |
+| `decoder` cell | 2m43.7s (760 tests) | **30.9s** (715 tests) |
+| `internal/sampling`, `metal/kernels` | (inside `decoder`, `metal`) | replayed from the test cache |
+| `metal` cell | 1m12.5s | 1m1.1s |
+| `gpu` cell | 51s | 49.2s |
+
+- **The `decoder` cell fell by 81%, the whole gate by 32%.** It did not reach the one minute projected: `metal` and
+  `gpu` are device cells, which the gate runs one at a time, so together (about 110 s) they are now the floor.
+- **The next edge is the same kind:** both device packages import `decoder` and re-run in full on any decoder edit.
+  `gpu` is one 213-file package whose gumbel test (24 s) and WGSL sources would split the way `metal/kernels` did.
+- **A gate heuristic to know about:** `gate quick` treats a package whose source *names* a changed file's path as a
+  possible reader and, outside the module root, forces `-count=1`. The MSL comments' `decoder/rope.go`-style
+  references made `metal/kernels` re-run on edits to eight decoder files until they were reworded (commit "metal/kernels:
+  name decoder's CPU references without the decoder/<file>.go path form").
+- **A dead-code trap in the measurement itself:** an overlay that only adds an unused variable leaves the linked test
+  binary unchanged, and the test cache replays `decoder` as if nothing changed. The `init` that reads the variable is
+  what makes the edit real.
+- **Public API:** the first version aliased the public sampler types to the internal package, which hid their fields
+  from `go doc` (`TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams` went red). They are defined in `decoder` again,
+  with twins in `internal/sampling`; apidiff against v0.13.0 is clean.
