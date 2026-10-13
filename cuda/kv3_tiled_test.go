@@ -243,3 +243,105 @@ func TestKV3Tiled_forcedRouteOnGemma3(t *testing.T) {
 		}
 	}
 }
+
+// TestKV3Tiled_batchedEqualsPerToken_real (G4): on the real head-dim-256 and 512 models, past the bound, the batched prefill
+// against the per-token path. Gemma-4-E4B (an E-model: the exact kernels at every length) at default settings and Gemma-3-4B
+// with the fast levers off are exact passes and must agree bit for bit, logits and every K and V row. Gemma-3-4B at default
+// settings runs the tensor-core GEMM beside the exact attention, so it is read for fidelity: cosine 0.99 or better and equal
+// argmax. KV3_TILED_N sets the prompt length (default 12,400); KV3_TILED_FORCE=1 forces the row kernels at a shorter length, which
+// is how the plumbing is checked by day.
+//
+//	GOINFER_HEAVY_TESTS=1 KV3_TILED_REAL=1 go test -count=1 -timeout 60m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_batchedEqualsPerToken_real$' -v ./cuda/
+func TestKV3Tiled_batchedEqualsPerToken_real(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("KV3_TILED_REAL") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 and KV3_TILED_REAL=1")
+	}
+	n := 12400
+	if v := os.Getenv("KV3_TILED_N"); v != "" {
+		if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+			t.Fatalf("KV3_TILED_N=%q: %v", v, err)
+		}
+	}
+	if os.Getenv("KV3_TILED_FORCE") != "" {
+		prefillSplitKVForceForTest = true
+		defer func() { prefillSplitKVForceForTest = false }()
+	}
+	for _, mdl := range []struct {
+		name, file string
+		eModel     bool
+	}{
+		{"gemma-3-4b", "gemma-3-4b-it-Q4_K_M.gguf", false},
+		{"gemma-4-e4b", "gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf", true},
+	} {
+		t.Run(mdl.name, func(t *testing.T) {
+			path := modelPath(mdl.file)
+			requireDeviceAndFile(t, path)
+			g := kv0LoadCtx(t, path, "f32", n+600, kv0TextTokens(t, path))
+			if g.r.eModel != mdl.eModel {
+				t.Fatalf("%s: eModel=%v, the test expects %v", mdl.name, g.r.eModel, mdl.eModel)
+			}
+			e := g.embs(g.tokens(n, 4242))
+			// the per-token path, once: it does not depend on the levers
+			g.poison(n)
+			t0, last := time.Now(), time.Now()
+			for i := 0; i < n-1; i++ {
+				if err := g.r.ForwardNoLogits(e[i], i); err != nil {
+					t.Fatalf("per-token row %d: %v", i, err)
+				}
+				if time.Since(last) > 30*time.Second {
+					fmt.Fprintf(os.Stderr, "[kv3-tiled] %s per-token reference: %d of %d rows, %.0f s\n", mdl.name, i+1, n, time.Since(t0).Seconds())
+					last = time.Now()
+				}
+			}
+			out, err := g.r.Forward(e[n-1], n-1)
+			if err != nil {
+				t.Fatalf("per-token last row: %v", err)
+			}
+			want := append([]float32(nil), out...)
+			tp := time.Since(t0)
+			wantKV := g.snapshot(n)
+			kv3NoNaN(t, mdl.name+" per-token", want, wantKV)
+			fmt.Fprintf(os.Stderr, "[kv3-tiled] %s per-token reference: %d rows in %.1f s\n", mdl.name, n, tp.Seconds())
+
+			type arm struct {
+				name   string
+				levers bool
+				exact  bool // an exact pass: graded bit for bit
+			}
+			arms := []arm{{"default", true, mdl.eModel}}
+			if !mdl.eModel {
+				arms = []arm{{"levers off", false, true}, {"default", true, false}}
+			}
+			attn0, gemm0 := g.r.fastAttn, g.r.fastGemm
+			defer func() { g.r.fastAttn, g.r.fastGemm = attn0, gemm0 }()
+			for _, a := range arms {
+				g.r.fastAttn, g.r.fastGemm = attn0 && a.levers, gemm0 && a.levers
+				g.poison(n)
+				p0, m0 := g.r.psLaunches, g.r.fastGemmLaunches
+				t0 := time.Now()
+				got := g.prefill(e, 0) // a decline is a failure
+				tb := time.Since(t0)
+				groups, gemm := g.r.psLaunches-p0, g.r.fastGemmLaunches-m0
+				gotKV := g.snapshot(n)
+				if groups == 0 {
+					t.Fatalf("%s %s: no row-batched launch groups: the pass did not take the row kernels", mdl.name, a.name)
+				}
+				if a.exact && gemm != 0 {
+					t.Fatalf("%s %s: %d tensor-core launches in a pass graded as exact", mdl.name, a.name, gemm)
+				}
+				ld, worst := kv0LogitsDiff(want, got)
+				kd, total := kv0CompareRows(wantKV, gotKV, 0, n)
+				cos, same := kv0Cosine(got, want), kv0Argmax(got) == kv0Argmax(want)
+				fmt.Fprintf(os.Stderr, "[kv3-tiled] G4 %s %-10s n=%d: batched %.2f s (%d row groups, %d tensor-core launches), per-token %.1f s; logits differing %d of %d (worst %.3g), KV differing %d of %d; cosine %.6f, argmax equal %v\n",
+					mdl.name, a.name, n, tb.Seconds(), groups, gemm, tp.Seconds(), ld, len(want), worst, kd, total, cos, same)
+				if a.exact {
+					if ld != 0 || kd != 0 {
+						t.Errorf("%s %s: an exact batched pass differs from the per-token path: %d logits, %d KV elements", mdl.name, a.name, ld, kd)
+					}
+				} else if cos < 0.99 || !same {
+					t.Errorf("%s %s: fidelity against the per-token path: cosine %.6f (bar 0.99), argmax equal %v", mdl.name, a.name, cos, same)
+				}
+			}
+		})
+	}
+}
