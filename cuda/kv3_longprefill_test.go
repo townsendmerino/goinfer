@@ -294,3 +294,36 @@ func TestKV3_admissionPricesTheChunk(t *testing.T) {
 	}
 	restore()
 }
+
+// TestKV3_chunkerKeepsPassStartsOnTheGrid: at the default chunk, from a start on the 64-row grid, every pass of a prefill starts on
+// the grid and the last has at least 16 rows, whatever the prompt's length; a chunk too narrow to give up 64 rows still ends in a
+// pass of 16. kv0Passes is the chunker's plan (TestKV0_prefillInvariance holds prefillChunked to it by launch counts). Struct-only.
+func TestKV3_chunkerKeepsPassStartsOnTheGrid(t *testing.T) {
+	for _, start := range []int{0, 64, 12288} {
+		for M := 513; M <= 2200; M++ {
+			ps := kv0Passes(start, M, 512)
+			rows := 0
+			for i, p := range ps {
+				if p.start%prefillAlignRows != 0 {
+					t.Fatalf("start=%d M=%d: pass %d starts at %d, off the %d-row grid", start, M, i, p.start, prefillAlignRows)
+				}
+				if p.m < attnFusedMinRows || p.m > 512 {
+					t.Fatalf("start=%d M=%d: pass %d has %d rows", start, M, i, p.m)
+				}
+				rows += p.m
+			}
+			if rows != M {
+				t.Fatalf("start=%d M=%d: the passes cover %d rows", start, M, rows)
+			}
+		}
+	}
+	if ps := kv0Passes(0, 1030, 512); len(ps) != 3 || ps[1].m != 448 || ps[2].start != 960 || ps[2].m != 70 {
+		t.Errorf("1,030 rows at chunk 512: %+v, want 512 + 448 + 70 with the last pass at 960", ps)
+	}
+	for M := 65; M <= 400; M++ { // a chunk of 64 cannot give up a whole block
+		ps := kv0Passes(0, M, 64)
+		if last := ps[len(ps)-1]; last.m < attnFusedMinRows {
+			t.Fatalf("chunk 64, M=%d: last pass of %d rows", M, last.m)
+		}
+	}
+}

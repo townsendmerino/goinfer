@@ -703,7 +703,8 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - **the 12,288-key limit on CUDA** (added 2026-10-13, KV0's biggest time-to-first-token finding): the batched prefill declined past 12,160
     attended keys because `checkPrefillShmem` held every layer to the exact attention kernel's shared-memory bound, including the layers the
     fused attention serves, whose shared memory does not grow with the span. The guard now asks which kernel serves the layer;
-  - **the 16-row rule in the chunker**: a prefill never ends in a pass of fewer than 16 rows (a shorter pass is exact class).
+  - **the 16-row rule in the chunker**: a prefill never ends in a pass of fewer than 16 rows (a shorter pass is exact class); the pass before the last gives it
+    64 rows, so every pass still starts on a multiple of 64 (the KV1 record's G2b: a windowed fused pass is invariant only from such a start).
 - **CUDA half, done on the branch (day readings; see the record for the numbers):**
   - the guard change, with identity (digests bit-identical to `main` at 300, 3,900 and 12,000 tokens; the one prompt with a short last pass
     changed to the bits of its single-pass prefill, as registered) and fidelity (tiny fixture, 18 prompts of 12,400 to 16,384 tokens, cosine

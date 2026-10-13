@@ -54,7 +54,7 @@ func kv0Passes(start, M, chunk int) []kv0Pass {
 	for i := 0; i < M; {
 		n := min(chunk, M-i)
 		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
-			n -= attnFusedMinRows - rem // the chunker's 16-row rule: a prefill's last pass is never shorter than 16 rows
+			n -= prefillTailCut(n, rem) // the chunker's 16-row rule: a prefill's last pass is never shorter than 16 rows
 		}
 		ps = append(ps, kv0Pass{start + i, n, start + M})
 		i += n

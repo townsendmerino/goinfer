@@ -38,6 +38,20 @@ const prefillDefaultChunk = 512
 // itself.
 const prefillMinChunk = 32
 
+// prefillAlignRows is the grid a pass's start stays on: the fused attention's key tile (attnFusedBM). Under a sliding window a
+// fused pass that starts off it does not write the bits the whole prompt writes (docs/measurements/kv1-2026-10-13.md, G2b).
+const prefillAlignRows = 64
+
+// prefillTailCut is how many rows a pass of n rows gives to a last pass that would have rem rows, fewer than attnFusedMinRows.
+// It is a whole prefillAlignRows when the pass keeps attnFusedMinRows after it, so the last pass starts on the grid the passes
+// before it started on; a pass too narrow for that (a chunk under 80 rows) gives only what the last pass lacks.
+func prefillTailCut(n, rem int) int {
+	if n-prefillAlignRows >= attnFusedMinRows {
+		return prefillAlignRows
+	}
+	return attnFusedMinRows - rem
+}
+
 // prefillImageDefaultChunk is PrefillImageLast's row budget: one image's tokens plus its chat text, a bounded quantity,
 // unlike an open-ended prompt. PrefillImageLast never chunks, so M past the budget is an outright decline. A card where
 // 2048 is too wide still declines cleanly (prefillCore wraps a device OOM as errPrefillDeclined/errPrefillOOM) and the
@@ -375,9 +389,9 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		// A prefill never ends in a pass of fewer than attnFusedMinRows rows: such a pass runs the exact kernels while every row
 		// before it ran the fast ones, so the prompt would depend on where its last chunk fell (the 16-row rule, KV0's invariance
 		// record), and past singleBlockAttnShmemLimit keys the exact attention is not launchable at all. The rows come from this
-		// pass, not the last one's: a chunk is at least prefillMinChunk rows, so what is left is not empty.
+		// pass (prefillTailCut), not the last one's.
 		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
-			n -= attnFusedMinRows - rem
+			n -= prefillTailCut(n, rem)
 		}
 		last := i+n == M
 		tail := tailKVOnly
