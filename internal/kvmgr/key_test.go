@@ -129,3 +129,35 @@ func TestWrongHit(t *testing.T) {
 		})
 	}
 }
+
+// An image span with no content hash claims nothing. Two requests with the same tokens and such a span at the same
+// place may hold different images, so the second takes only the blocks before it, however alike the keys would be.
+func TestWrongHit_unclaimedImage(t *testing.T) {
+	const n = 4 * BlockRows
+	tokens := make([]int, n+1)
+	for i := range tokens {
+		tokens[i] = 100 + i%9
+	}
+	root := Root{Model: "m"}
+	fast := []ClassRun{{0, n + 1, ClassFast}}
+	for _, tc := range []struct {
+		name string
+		img  []ImageSpan
+		want int
+	}{
+		{"a claimed image is shared whole", []ImageSpan{{Start: 70, Len: 20, Hash: 7}}, n},
+		{"an unclaimed image: only the block before it", []ImageSpan{{Start: 70, Len: 20}}, BlockRows},
+		{"an unclaimed image in the first block: nothing", []ImageSpan{{Start: 3, Len: 5}}, 0},
+		{"an unclaimed image across two blocks: nothing from the first of them on", []ImageSpan{{Start: 120, Len: 20}}, BlockRows},
+	} {
+		m := New(0)
+		first, _ := m.Admit(root, tokens, tc.img, fast)
+		if err := first.Append(tokens, ClassFast, tc.img...); err != nil {
+			t.Fatal(err)
+		}
+		first.Publish()
+		if _, got := m.Admit(root, tokens, tc.img, fast); got != tc.want {
+			t.Errorf("%s: the same request again took %d rows, want %d", tc.name, got, tc.want)
+		}
+	}
+}

@@ -200,6 +200,9 @@ func TestOracle_slots(t *testing.T) {
 							if sp.Start < want && sp.Start+sp.Len > want {
 								want, moved = sp.Start/BlockRows*BlockRows, true
 							}
+							if sp.Hash == 0 && sp.Start < want { // an unclaimed image: nothing from its first block on
+								want, moved = sp.Start/BlockRows*BlockRows, true
+							}
 						}
 					}
 					if got := a.Manager().Lookup(req.Root, probe, imgs, runs); got != want {

@@ -666,6 +666,13 @@ fast-class windowed measurement on a real model (which measures, and does not ga
     leaves the answer to the backend (`ResidentReusableKV`), as today.
   - **The slot choice is still by slot** (`PickSlot`'s last-use tick). The block LRU is maintained beside it and is
     what KV2 switches to.
+  - **A hit from another sequence must leave a suffix the fast kernels will run**: at least 16 rows on CUDA when the
+    requester's cold prefill is fast class (KV0's `split@985`; the KV3 session's request). `Manager.Admit` caps a hit
+    at n − 1 only, and the cap needs the requester's class map.
+  - **CUDA's windowed layers.** A slot that is not bound must be able to say what it still holds, and a copy between
+    slots must go through each slot's shifted view. Both are the backend's; KV1 copies nothing.
+  - **An image span with no content hash matches nothing in the index** (built: a lookup stops at the first block it
+    touches). KV2 should keep that when it adds the copy.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.
 
 ### KV2 — Cross-conversation reuse by copy (still slot storage)

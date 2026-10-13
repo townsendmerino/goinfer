@@ -202,6 +202,9 @@ func (m *Manager) hitBlocks(rh Hash, tokens []int, images []ImageSpan, cold []Cl
 	var hashes []Hash
 	prev := rh
 	for i := 0; i < limit; i++ {
+		if unclaimed(images, i) {
+			break // the request does not say which image this is, so no stored block can be known to hold it
+		}
 		h := blockHash(&m.h, prev, i, tokens, images, cold, m.parts)
 		c := m.index[h]
 		if len(c) == 0 {
@@ -222,6 +225,18 @@ func (m *Manager) hitBlocks(rh Hash, tokens []int, images []ImageSpan, cold []Cl
 		}
 	}
 	return ids, hashes
+}
+
+// unclaimed reports whether block i is touched by an image span with no content hash. Such a span claims nothing: two
+// different images hash alike there, so the block matches nothing, and neither does any block after it in the chain.
+func unclaimed(images []ImageSpan, i int) bool {
+	lo, hi := i*BlockRows, (i+1)*BlockRows
+	for _, s := range images {
+		if s.Hash == 0 && s.Start < hi && s.end() > lo {
+			return true
+		}
+	}
+	return false
 }
 
 // Lookup is how many leading rows of a request are published under root, without taking them.
