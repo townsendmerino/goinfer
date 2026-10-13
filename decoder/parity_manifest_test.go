@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -233,12 +235,51 @@ func TestRootAikitVersion_readsFromGoMod(t *testing.T) {
 // freshDepsHash computes the deterministic content hash over a family's
 // dependency set: for each path (sorted) write path + NUL + file bytes + NUL,
 // then mix in the aikit_version. Returns "sha256:" + hex.
+// goCodeTokens reduces a Go source file to what the compiler reads: its token stream with
+// ordinary comments and layout dropped, so an edit to a comment or to formatting does not
+// re-stale a validated family. Directive comments (`//go:…`, `// +build`) are kept, because
+// they change what is built. A file that does not scan is an error, not a raw-bytes fallback.
+func goCodeTokens(name string, src []byte) ([]byte, error) {
+	fset := token.NewFileSet()
+	file := fset.AddFile(name, -1, len(src))
+	var s scanner.Scanner
+	var scanErr error
+	s.Init(file, src, func(pos token.Position, msg string) {
+		if scanErr == nil {
+			scanErr = fmt.Errorf("%s: %s", pos, msg)
+		}
+	}, scanner.ScanComments)
+	var out bytes.Buffer
+	for {
+		_, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok == token.COMMENT && !strings.HasPrefix(lit, "//go:") && !strings.HasPrefix(lit, "// +build") {
+			continue
+		}
+		out.WriteString(tok.String())
+		out.WriteByte(' ')
+		out.WriteString(lit)
+		out.WriteByte('\n')
+	}
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	return out.Bytes(), nil
+}
+
 func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {
 	h := sha256.New()
 	for _, p := range familyDepFiles(m, fam) {
 		b, err := os.ReadFile(repoPath(p))
 		if err != nil {
 			return "", err
+		}
+		if strings.HasSuffix(p, ".go") {
+			if b, err = goCodeTokens(p, b); err != nil {
+				return "", err
+			}
 		}
 		h.Write([]byte(p))
 		h.Write([]byte{0})
@@ -528,4 +569,45 @@ func applyParityRows(m *parityManifest, rows, sha, date, machine string) ([]stri
 		return nil, fmt.Errorf("no PARITY_ROW lines found")
 	}
 	return applied, nil
+}
+
+// TestGoCodeTokens_commentsOnly pins both directions of the comment-insensitive deps hash: a
+// comment or layout edit leaves it unchanged, while a code edit, a build-constraint edit or a
+// string-literal edit changes it.
+func TestGoCodeTokens_commentsOnly(t *testing.T) {
+	base := "//go:build !metal\n\npackage p\n\n// Doc says one thing.\nfunc f(x int) int {\n\treturn x * 2 // twice\n}\n\nconst s = \"a\"\n"
+	same := []string{
+		"//go:build !metal\n\npackage p\n\n// Doc now says something else entirely,\n// over two lines.\nfunc f(x int) int {\n\treturn x * 2\n}\n\nconst s = \"a\" /* note */\n",
+		"//go:build !metal\npackage p\nfunc f(x int) int {\n\t\treturn x*2\n}\nconst s = \"a\"\n",
+	}
+	differ := []string{
+		"//go:build !metal\n\npackage p\n\n// Doc says one thing.\nfunc f(x int) int {\n\treturn x * 3 // twice\n}\n\nconst s = \"a\"\n",
+		"//go:build metal\n\npackage p\n\n// Doc says one thing.\nfunc f(x int) int {\n\treturn x * 2 // twice\n}\n\nconst s = \"a\"\n",
+		"//go:build !metal\n\npackage p\n\n// Doc says one thing.\nfunc f(x int) int {\n\treturn x * 2 // twice\n}\n\nconst s = \"b\"\n",
+	}
+	want, err := goCodeTokens("base.go", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, src := range same {
+		got, err := goCodeTokens("same.go", []byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("same[%d]: a comment/layout-only edit changed the token stream", i)
+		}
+	}
+	for i, src := range differ {
+		got, err := goCodeTokens("differ.go", []byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(got, want) {
+			t.Errorf("differ[%d]: a code edit left the token stream unchanged", i)
+		}
+	}
+	if _, err := goCodeTokens("bad.go", []byte("package p\nconst s = \"unterminated\n")); err == nil {
+		t.Error("a file that does not scan hashed without error")
+	}
 }
