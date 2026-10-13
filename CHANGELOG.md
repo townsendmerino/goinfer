@@ -41,6 +41,7 @@ configuration: the base URL, the model, and **the context window the server real
 - **`-write` patches the agent's own file in place**, keeping every other setting and the order they were in: `~/.claude/settings.json`,
   `./opencode.json` (or the per-user file with `-global`), `~/.codex/config.toml`. It refuses a window the agent cannot fit unless `-force`.
 - **`-undo` restores the file byte for byte**, or removes it if `connect` created it, and refuses if you have edited it since.
+- **`connect claude-code` also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`.** Claude Code opens its system prompt with a hash of the conversation's first message, at token 22, so two conversations share 22 tokens instead of the roughly 18,000 of preamble that follows. With the header off, three different first prompts shared 18,213 of about 20,154 tokens (KV0, `docs/measurements/kv0-traffic-2026-10-13.md`). The server does not rewrite the line; it is the client's setting, named in `docs/integrations/claude-code.md`.
 - It never starts the agent. A JSON file with comments is not patched (the comments would be lost): the settings are printed to paste.
 - **Not yet confirmed by running each agent on a written file**; the shapes are the ones the census runs used. Codex's file is patched as text.
 

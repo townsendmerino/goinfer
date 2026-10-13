@@ -61,7 +61,11 @@ var harnesses = map[string]harness{
 					{"ANTHROPIC_DEFAULT_HAIKU_MODEL", s.Model}, {"CLAUDE_CODE_MAX_CONTEXT_TOKENS", strconv.Itoa(s.Window)},
 					// Claude Code asks for 32,000 output tokens on every request and counts them against the window it
 					// is told, so at 32,768 it sees no room and tries to compact at once.
-					{"CLAUDE_CODE_MAX_OUTPUT_TOKENS", strconv.Itoa(s.Output)}} {
+					{"CLAUDE_CODE_MAX_OUTPUT_TOKENS", strconv.Itoa(s.Output)},
+					// Claude Code opens its system prompt with a hash of the conversation's first message, at token 22, so a prefix
+					// match between two conversations ends there. Off, they share the preamble before the user's own text. The
+					// server does not rewrite the line: this is the client's setting (docs/integrations/claude-code.md).
+					{"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"}} {
 					env.set(kv[0], kv[1])
 				}
 				o.set("env", env)

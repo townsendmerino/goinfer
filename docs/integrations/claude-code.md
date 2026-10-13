@@ -18,6 +18,11 @@ All three env vars are required. Non-loopback binds refuse to start without `-ap
 `~/.claude/settings.json` with the window the server really serves, and says whether Claude Code's first request fits it.
 `-write` patches the file, keeping your other settings; `connect claude-code -undo` restores it byte for byte.
 
+**It also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, because Claude Code opens its system prompt with a per-conversation hash at
+token 22, which stops two conversations sharing their roughly 18,000-token preamble** (with it, two conversations share 22
+tokens; without it, 18,213 of about 20,154: [the measurement](../measurements/kv0-traffic-2026-10-13.md)). The server does not
+rewrite that line; whether to send it is the client's choice, and if you set the environment by hand, add the variable:
+
 **Claude Code 2.1.268 and later need a goinfer built after 2026-10-12, and a larger context than the line above.**
 Traced that day ([the record](../measurements/integration-harness-2026-10/claude-code-census-2026-10-12.md)):
 
@@ -36,7 +41,7 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
 goinfer-serve -model coder=~/models/qwen2.5-7b-instruct-q4_k_m.gguf -quant int4 -backend cuda -ctx 32768
 
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ANTHROPIC_AUTH_TOKEN=goinfer ANTHROPIC_MODEL=coder \
-CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768 claude
+CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768 CLAUDE_CODE_ATTRIBUTION_HEADER=0 claude
 ```
 
 Whether an 8 GB card holds a 7B at `-ctx 32768` is not measured here; the numbers below are the 2026-09-02 run at 16384,

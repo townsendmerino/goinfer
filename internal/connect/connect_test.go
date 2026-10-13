@@ -31,7 +31,7 @@ func TestPatch_claudeCodeKeepsOtherSettings(t *testing.T) {
 		t.Fatalf("the patched file is not JSON: %v\n%s", err, out)
 	}
 	want := map[string]string{"EDITOR": "vi", "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080", "ANTHROPIC_AUTH_TOKEN": "goinfer", "ANTHROPIC_MODEL": "coder",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "coder", "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "32768", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192"}
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "coder", "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "32768", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192", "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"}
 	if got.Theme != "dark" || len(got.Perm.Allow) != 1 || len(got.Env) != len(want) {
 		t.Errorf("other settings were not kept, or env has the wrong keys:\n%s", out)
 	}
