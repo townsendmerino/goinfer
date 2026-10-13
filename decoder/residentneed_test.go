@@ -90,6 +90,14 @@ func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
 // kv16_cuda.go), K and V on every attention layer, and ONE latent buffer on an MLA layer (which has no f16 form, so f16 prices as f32). int8 is not a CUDA
 // cache, and Plan's old per-position formula cut it to ~0.28x and doubled MLA (docs/measurements/memory-accounting-cuda-2026-09-25.md).
 func TestResidentKVBytes_cudaLayout(t *testing.T) {
+	// The CUDA backend's policy lives in the cuda package, which this binary does not link: stand in for it with the one fact the pricing reads (dense, no MLA).
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: func(f KVFacts, _ Options) string {
+		if f.MLA {
+			return "an MLA latent cache has no f16 form"
+		}
+		return ""
+	}, Auto: func() bool { return false }})
+	defer delete(kvPolicies, "cuda")
 	const ctx = 1000
 	for _, c := range []struct {
 		dir string
@@ -114,7 +122,7 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 		}
 		for _, p := range []struct{ f16, i8 bool }{{false, false}, {true, false}, {false, true}} {
 			w := want
-			if p.f16 && cudaKVF16Decline(a, Options{}) == "" {
+			if p.f16 && kvF16Decline("cuda", a, Options{Backend: "cuda"}) == "" {
 				w = want / 2
 			}
 			if got := m.ResidentKVBytes("cuda", ctx, p.f16, p.i8); got != w {

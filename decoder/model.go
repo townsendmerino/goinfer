@@ -462,14 +462,15 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		}
 	}
 	kvF16, kvDecline := opts.KVPrecision == "f16", ""
-	if be != nil && be.Name() == "cuda" {
-		// CUDA: "f16" asks for it, "auto" (the default) takes it for a cleared family, "f32" refuses it; a family or build the f16 kernels do not
-		// cover stays f32 and, when f16 was asked for by name, says why (Model.KVF16DeclineReason).
+	if be != nil {
+		// A backend with a registered KV policy resolves the precision (kvpolicy.go); an explicit "f16" it holds at f32 says why (Model.KVF16DeclineReason).
 		o := opts
-		o.Backend = "cuda"
-		kvF16 = o.kvF16For(w.arch)
-		if !kvF16 && opts.KVPrecision == "f16" {
-			kvDecline = cudaKVF16Decline(w.arch, o)
+		o.Backend = be.Name()
+		if _, ok := kvPolicies[o.Backend]; ok {
+			kvF16 = o.kvF16For(w.arch)
+			if !kvF16 && opts.KVPrecision == "f16" {
+				kvDecline = kvF16Decline(o.Backend, w.arch, o)
+			}
 		}
 	}
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,

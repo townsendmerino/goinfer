@@ -12,7 +12,7 @@ import os, re, subprocess, sys, time
 
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 os.chdir(ROOT)
-SLOW = {"decoder"}                       # packages whose cold `go test` takes minutes
+SLOW = {"decoder", "cuda"}               # packages whose cold `go test` takes minutes; their ten-second tests call slowTest (decoder) and are skipped by -short
 TAGS = {"cuda": "cuda goinfer_testhooks", "gpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 
 
@@ -78,7 +78,7 @@ def main():
                 if not sel:
                     print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
                     continue
-            runarg = ["-run", sel] if sel else []
+            runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
             bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, p))
     print("touched: " + ("RED" if bad else "green") + " (CI runs the rest on push)")
     return 1 if bad else 0

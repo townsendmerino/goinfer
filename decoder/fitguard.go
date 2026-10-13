@@ -731,8 +731,8 @@ type kvPrice struct {
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	p.pinned = opts.ResidentContext > 0
 	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
-	if cudaKVBackend(opts) {
-		// CUDA's KV is f16 only where kv16_cuda.go says so (the default included), else f32 whatever was requested.
+	if _, ok := kvPolicies[opts.Backend]; ok {
+		// A backend with a KV policy (kvpolicy.go) is f16 only where the policy says so (the default included), else f32 whatever was requested.
 		p.kvF16 = false
 		if arch, _, err := resolveArchitecture(cfg); err == nil {
 			p.kvF16 = opts.kvF16For(arch)

@@ -90,11 +90,11 @@ func (m *Model) residentHostCopyFor(backend string, slots int) int64 {
 // r.af(ctx*kvDim) (f32) for K and for V on every attention layer, a single latent buffer of
 // ctx*latDim on an MLA layer (the V head is reconstructed from the latent), nothing on a layer that
 // holds no attention K/V (DeltaNet and the other recurrent mixers). kvF16 prices an f16 cache (half the bytes), but only for an architecture
-// the f16 kernels cover (kv16_cuda.go:cudaKVF16Decline): any other asks for f16 and gets f32 on the device, so it is priced as f32. int8 is not a CUDA cache.
+// the CUDA backend's KV policy covers (kvpolicy.go): any other asks for f16 and gets f32 on the device, so it is priced as f32. int8 is not a CUDA cache.
 func (m *Model) cudaKVBytes(ctx int, kvF16 bool) int64 {
 	a := m.w.arch
 	elem := int64(4) // f32; an f16 cache holds half
-	if kvF16 && cudaKVF16Decline(a, Options{}) == "" {
+	if kvF16 && kvF16Decline("cuda", a, Options{Backend: "cuda"}) == "" {
 		elem = 2
 	}
 	_, nLayers, _, _, _, _, _ := m.Dims()

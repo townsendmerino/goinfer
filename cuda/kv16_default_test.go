@@ -9,14 +9,15 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The suite runs on the exact f32 cache unless a test asks otherwise: see decoder.SetCUDAKVF16DefaultForTest. This runs before TestMain.
-func init() { decoder.SetCUDAKVF16DefaultForTest(false) }
+// The suite runs on the exact f32 cache unless a test asks otherwise (kvpolicy.go:kvF16Auto). init runs before TestMain, and after kvpolicy.go's own.
+func init() { kvF16Auto.Store(false) }
 
 // TestKV16_theDefaultIsF16OnAClearedFamily loads with no -kv, and with "auto", the way serve's default and a library caller's zero Options do, with the default
 // ON as shipped: a cleared family (qwen2) must come up on the f16 cache and a family the f16 kernels do not cover must stay f32, with "f32" always winning.
 func TestKV16_theDefaultIsF16OnAClearedFamily(t *testing.T) {
 	requireCUDADevice(t)
-	t.Cleanup(decoder.SetCUDAKVF16DefaultForTest(true))
+	kvF16Auto.Store(true)
+	t.Cleanup(func() { kvF16Auto.Store(false) })
 	path := modelPath(kv16Model)
 	for _, tc := range []struct {
 		kv   string
