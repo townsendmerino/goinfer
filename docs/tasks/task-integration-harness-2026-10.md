@@ -156,6 +156,18 @@ Completions has system- and developer-role messages and `tools`; Responses has `
 and `tools`. Reserved output is the request's own output cap, with a floor (start at 1,024) so a request with no cap
 does not count as fitting with zero room.
 
+**Amended 2026-10-13, before the code, from the matchers' sources and the census.**
+- **Reserved output is capped at a quarter of the window** (and floored at 1,024, or a quarter of a window smaller
+  than 4,096). Claude Code sends `max_tokens: 32000` on every request (§0a), so the request's own cap would put every
+  Claude Code overflow in the first branch at any window under about 52K. The server already clamps the output to
+  the room left, so what compaction needs is room for a reply, not the cap the client asked for.
+- **Pi's and opencode's matchers were read** (`overflow.ts` and `provider-error.ts`, fetched 2026-10-13). Both hold a
+  generic `context[_ ]length[_ ]exceeded` pattern over the error text, which today's message carries: so on those two
+  a fixed part that cannot fit compacts today, R19's loop. Both also match "maximum context length is N tokens" and
+  "prompt is too long". The first branch's message must match none of their patterns; a test holds both lists.
+- **A route that does not know its fixed part** (`/v1/completions`, jobs, batches, image turns) answers with the
+  second branch's wording, as it effectively does today.
+
 **The trade, stated.** With the second branch a harness compacts against a `-ctx` the operator could have raised, and
 the operator may not notice. `-log-requests` shows every overflow, and the message can still name `-ctx` when the fit
 planner had room for more. The owner decides. This doc recommends the rule because on a small card it is the
