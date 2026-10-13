@@ -5467,6 +5467,15 @@ change moves a greedy reply. That says the two builds are different readings, no
     decode and for the batched pass until the difference is explained, and the CHANGELOG says so.
 - **Proving it can go red:** the job first runs an 8-prompt pilot (two other passages) with a planted defect in the
   candidate, each decode step one position late. That verdict must be OFF or the gate is not run.
+  - **Amended 2026-10-12, before any run on the gate's prompts: the planted defect is now "each decode step is fed
+    the token before the one it should be".** The first defect read **PARKED**, not OFF, on the pilot (candidate
+    85.94% against 85.16% agreement, KL ratio 1.092 with an upper bound of 1.295, 8 prompts;
+    `s12-4b/nobara/fidelity-attn-pilot-late1/`). The mechanism: rotary attention reads relative positions, and
+    shifting every decode step by one leaves them intact among the decode steps and off by one against the prompt,
+    which this model barely notices. It was a weak defect, not a blind instrument, but the registration requires an
+    OFF, so the defect is replaced by one that must matter and the pilot is run again. That same run showed the
+    instrument works end to end: two residents on the card, about 30 s a short prompt, and the arms' logits
+    differing at 256 of 256 positions.
 - **Stopping rule:** the fixed set, no early stop; a restarted run skips finished prompts.
 - **Cost basis:** the float32 prefill and 31 float32 steps dominate: about 30 s a short prompt, a minute a medium
   one, two and a half a long one, from G-S12.4b-4a-5's times on this box: about 55 minutes and the loads; queued at

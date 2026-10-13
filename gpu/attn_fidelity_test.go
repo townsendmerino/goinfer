@@ -131,8 +131,8 @@ type attnFidelityLine struct {
 
 // TestS12AttnKernelFidelity runs one mode of the gate (GOINFER_S12_ATTN_FIDELITY: plan, pilot or gate) and writes its
 // records under GOINFER_S12_ATTN_FIDELITY_OUT. "plan" loads no model: it builds the prompts and prints their hash and
-// sizes. GOINFER_S12_ATTN_FIDELITY_DEFECT=1 plants a defect in the candidate (each decode step one position late), to
-// show the verdict can go red. It grades by the verdict it prints; a run that completes exits 0.
+// sizes. GOINFER_S12_ATTN_FIDELITY_DEFECT=1 plants a defect in the candidate (each decode step is fed the token before
+// the one it should be), to show the verdict can go red. It grades by the verdict it prints; a run that completes exits 0.
 func TestS12AttnKernelFidelity(t *testing.T) {
 	mode := os.Getenv("GOINFER_S12_ATTN_FIDELITY")
 	if mode == "" {
@@ -283,7 +283,7 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 			ref = append(ref, append([]float32(nil), l...))
 			toks = append(toks, argmax(l))
 		}
-		arm := func(m *decoder.Model, rd *residentDecoder, disabled bool, late int) ([]fidelity.Position, [][]float32) {
+		arm := func(m *decoder.Model, rd *residentDecoder, disabled, stale bool) ([]fidelity.Position, [][]float32) {
 			attnKeysDisabled = disabled // the batched pass reads the switch when it runs
 			rd.Reset()
 			embs := make([][]float32, n)
@@ -297,7 +297,14 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 			raw := [][]float32{append([]float32(nil), l...)}
 			pos := []fidelity.Position{mropeScore(ref[0], l)}
 			for k := 1; k < attnFidelityPositions; k++ {
-				if l, err = rd.Forward(m.EmbedResidentForTest(toks[k-1]), n+k-1+late); err != nil {
+				tok := toks[k-1]
+				if stale { // the planted defect: the token one step back
+					tok = ids[n-1]
+					if k > 1 {
+						tok = toks[k-2]
+					}
+				}
+				if l, err = rd.Forward(m.EmbedResidentForTest(tok), n+k-1); err != nil {
 					t.Fatalf("%s: resident step %d (key-split off: %v): %v", p.id(), k, disabled, err)
 				}
 				raw = append(raw, append([]float32(nil), l...))
@@ -307,12 +314,8 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 		}
 		line := attnFidelityLine{ID: p.id(), Cell: p.cell, Rows: n, Tokens: toks}
 		var rawOld, rawNew [][]float32
-		line.Exact, rawOld = arm(mOld, rdOld, true, 0)
-		late := 0
-		if defect {
-			late = 1
-		}
-		line.Candidate, rawNew = arm(mNew, rdNew, false, late)
+		line.Exact, rawOld = arm(mOld, rdOld, true, false)
+		line.Candidate, rawNew = arm(mNew, rdNew, false, defect)
 		for k := range rawOld {
 			for v := range rawOld[k] {
 				if math.Float32bits(rawOld[k][v]) != math.Float32bits(rawNew[k][v]) {
