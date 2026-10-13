@@ -5476,6 +5476,10 @@ change moves a greedy reply. That says the two builds are different readings, no
     OFF, so the defect is replaced by one that must matter and the pilot is run again. That same run showed the
     instrument works end to end: two residents on the card, about 30 s a short prompt, and the arms' logits
     differing at 256 of 256 positions.
+  - **The second pilot reads OFF** (`s12-4b/nobara/fidelity-attn-pilot-defect/`): candidate 7.03% agreement against
+    the exact arm's 85.16%, KL ratio 74.6, 237 hard flips against 19. The instrument can go red; the gate is queued
+    on nobara as `s12-4c-6-attn-fidelity`. The exact arm read the same in both pilots, to the digit. The "planted
+    defect reads OFF (0.9)" prediction: no on the first defect, yes on the second.
 - **Stopping rule:** the fixed set, no early stop; a restarted run skips finished prompts.
 - **Cost basis:** the float32 prefill and 31 float32 steps dominate: about 30 s a short prompt, a minute a medium
   one, two and a half a long one, from G-S12.4b-4a-5's times on this box: about 55 minutes and the loads; queued at
