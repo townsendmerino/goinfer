@@ -51,7 +51,7 @@ slot is gone; and every KV feature is built three or four times.
   22 until the harness setting `CLAUDE_CODE_ATTRIBUTION_HEADER=0` (or a server-side normalisation) removes it.
 - A parked conversation resumes without a re-prefill.
 - Hybrids (Qwen3.5/3.6/3.8 and the other recurrent families) get prefix reuse and more than one conversation.
-- CUDA gets an f16 KV cache, which it has never had.
+- CUDA gets f16 KV pools and extends f16 to the remaining families.
 
 **How.** Eleven phases, each shippable alone. At the same KV precision, each is bit-identical to the tree before it.
 - KV1–KV3 change bookkeeping, copies and admission only. They deliver cross-conversation reuse and fix Metal's long-prompt
@@ -61,16 +61,16 @@ slot is gone; and every KV feature is built three or four times.
 | phase | what | backends | size | needs |
 |---|---|---|---|---|
 | KV-pre | long-prompt prefill in blocks, admission per block (**in flight**, not this doc's) | Metal | S | — |
-| KV0 | prior art, block size, invariance and traffic measurements, owner decisions | — | S | — |
+| KV0 | prior art, block size, invariance and traffic measurements, owner decisions (**done**) | — | S | — |
 | KV1 | the manager over today's slots: logical blocks, hashed index, no storage change | CUDA, Metal, WebGPU | M | KV0 |
 | KV2 | cross-conversation reuse by device copy between slots | CUDA, Metal, WebGPU | S–M | KV1 |
-| KV3 | prefill and admission in blocks everywhere (absorbs KV-pre) | all resident | S | KV1 |
-| KV4 | paged storage and block-table kernels; f16 KV | CUDA | L | KV3 |
+| KV3 | prefill and admission in blocks everywhere, CUDA 12,288-key fix, 16-row rule (absorbs KV-pre; **in flight** alongside KV1, D8) | all resident | S | KV0 |
+| KV4 | paged storage and block-table kernels; f16 pools | CUDA | L | KV2, KV3 |
 | KV5 | paged storage | Metal | L | KV4 |
-| KV6 | page or keep slots: decide, then build or record | WebGPU | M | KV5 |
+| KV6 | keep slots with KV2's copies (**decided**, D3) | WebGPU | — | KV2 |
 | KV7 | tiers: host and disk, parking and resume | CUDA first, then all | M–L | KV4 |
 | KV8 | recurrent state pool and checkpoints | CUDA, Metal | L | KV4 (KV5 for Metal) |
-| KV9 | the CPU path onto the manager | CPU | M–L | KV2, D2 |
+| KV9 | the CPU path onto the manager (deferred by D2: CPU joins through KV2's copies) | CPU | M–L | KV2, D2 |
 | KV10 | long context and lower-precision blocks | all | M | KV4/KV5 |
 
 ## 1. Why: what the current KV design costs
@@ -162,7 +162,7 @@ slot is gone; and every KV feature is built three or four times.
 | attention sinks | gpt-oss | all GPU | nothing (a learned logit, not KV) |
 | recurrent state | DeltaNet (Qwen3.5/3.6/3.8, Qwen3-Next), Mamba-2 (Granite-4.0-H, Nemotron-H), short conv (LFM2), KDA (Ling 3.0) | CPU all; DeltaNet on CUDA, Metal, WebGPU; Mamba-2 on WebGPU | state pool and checkpoints (§5.7) |
 | image blocks, bidirectional | Gemma 3/4 vision | CPU and the residents | spans are atomic: a hit never ends inside one |
-| m-RoPE positions | Qwen2.5-VL, Qwen3-VL, Qwen3.5 with images | CPU and the residents | the image hash is in the key; the decode delta lives in sequence metadata |
+| m-RoPE positions | Qwen2.5-VL, Qwen3-VL, Qwen3.5 with images | CPU and the residents | the image hash is in the key; the decode delta lives in sequence metadata (`SeqView.MRoPEDelta`, §5.13) |
 | deepstack rows | Qwen3-VL | transient during the image prefill | covered by the image hash |
 | LoRA at compute time | any | CPU and the residents (`ResidentAdapter`) | adapter content id in the key |
 | speculation (n-gram, EAGLE, draft model, block drafters) | any | `ForwardN` plus a positional truncate | verify rows land in the private tail; a truncate frees whole blocks |
@@ -281,14 +281,21 @@ window group (W = 1024)  seq A: [ 66 | 67 | 68 | 69 | 70 ]     only ceil(W/B) + 
     is a shift and 512 table entries cover 32K positions. 128 is the fallback if KV1's index measures worse than the arithmetic.
 - **A table** is an int32 array of block ids per sequence per group, mirrored to the device. An MC3 step passes a
   `[rows][maxBlocks]` table.
-- **The kernel change** is one indirection: key k lives at `table[k / B]·B + k mod B`, applied **per key**. Every reader on
-  every backend already addresses each key's row separately, so no kernel changes the grouping of its arithmetic. That is the
-  bit-identity argument, and it is *not* "tiles are aligned to blocks": that holds for `attn_fused*` on full-attention layers
-  only. Sliding-window readers, flash-decode and the split-KV chunks (`lo = winStart + sp·per`, `per` moving every few tokens),
-  Metal's decode flash-attention blocks and prefill writes at an arbitrary `startPos` are unaligned by construction. What keeps
-  the bits is that **every tile, partition and thread-to-key map stays defined in absolute key units**; re-cutting one at a block
-  edge is a numerical change, and a per-tile base-pointer optimisation is bit-safe only for `attn_fused` on full layers. The
-  KV4/KV5 gates test this rather than trust it.
+  - **Block 0 is a reserved, zero-filled null block** in every pool, and every released window or chunk table entry and every
+    unused tail entry points to it, never to `-1` or to a block that has been given to another sequence (vLLM's
+    `remove_skipped_blocks` puts its null block in freed window slots, §11a). Metal's `attention_prefill_fused` and
+    `attention_prefill_steel` read up to 31 and 15 keys *below* a sliding window's start and up to the next multiple of 8 past
+    the last key, and mask the scores after the load (`docs/measurements/kv0-tile-census-2026-10-13.md` §5). A masked weight of
+    0 times a NaN is NaN, so what those reads land on must be mapped and finite.
+- **The kernel change** is one indirection: key k lives at `table[k / B]·B + k mod B`, applied **per key** (with the physical row
+  offset widened to 64-bit `int64_t` / `size_t` where CUDA's `attention` and `mla_attn` compute `s * kvDim` as 32-bit `int` today,
+  so a large pool cannot overflow 2 Gi elements). Every reader on every backend already addresses each key's row separately, so no
+  kernel changes the grouping of its arithmetic. That is the bit-identity argument, and it is *not* "tiles are aligned to blocks":
+  that holds for `attn_fused*` on full-attention layers only. Sliding-window readers, flash-decode and the split-KV chunks
+  (`lo = winStart + sp·per`, `per` moving every few tokens), Metal's decode flash-attention blocks and prefill writes at an
+  arbitrary `startPos` are unaligned by construction. What keeps the bits is that **every tile, partition and thread-to-key map
+  stays defined in absolute key units**; re-cutting one at a block edge is a numerical change, and a per-tile base-pointer
+  optimisation is bit-safe only for `attn_fused` on full layers. The KV4/KV5 gates test this rather than trust it.
 - **Waste** is at most one partial block per sequence per group: B/2 positions on average, 0.10% of a 32K sequence's KV at B = 64
   on the 7B, 0.62 MiB (`block_arithmetic.py`).
 
@@ -300,8 +307,8 @@ its adapter, and its namespace.
 | operation | what happens |
 |---|---|
 | **Admit** | the longest valid hit is shared (refcount +1); private blocks are allocated for the rest of the prompt, plus one block of headroom; hybrids restore a checkpoint (§5.7) |
-| **Append** | decode and verify write into the private tail; a new private block is taken when the tail fills |
-| **Publish** | a full block becomes immutable and enters the index once the device work that wrote it has **completed** (fence), never on encode. This is rule 2's new form. A cancelled request still leaves its finished blocks reusable, because they are what those tokens produce. |
+| **Append** | decode and verify write into the private tail; a new private block is taken when the tail fills (or one block ahead for a device-chained decode, §5.13) |
+| **Publish** | a full block becomes immutable and enters the index once the device work that wrote it has **completed** (fence), never on encode (vLLM publishes at schedule time and had to patch same-step hits on uncomputed Mamba state in PR #29387, §11a). This is rule 2's new form. A cancelled request still leaves its finished blocks reusable, because they are what those tokens produce. |
 | **Truncate(p)** | speculative rollback or an edit: blocks wholly at or past p are released; the partial tail stays private |
 | **Fork** | full blocks are shared; the private tail block is copied (n > 1 sampling, a branching agent) |
 | **Release** | refcounts drop; published blocks stay cached at refcount 0 (evictable, LRU); unpublished ones are freed |
@@ -315,8 +322,13 @@ into blocks it owns.
 - **The key is a hash chain:** `h_i = H(h_{i−1}, group, tokens of block i, extras_i)`.
   - **The root** hashes the model's numerics identity (§5.8), the namespace (§5.15), the adapter's content id and scale,
     and the KV precision.
-  - **The per-block extras** are the content hash and offset of every image span that touches the block, plus the
+  - **The per-block extras** are the content hash, offset and length of every image span that touches the block, plus the
     **producer kernel class** of the block's rows (§5.6).
+  - **The m-RoPE delta needs no key part of its own.** An earlier image shifts the rotary position of every later row
+    (Qwen2.5-VL, Qwen3-VL, Qwen3.5), but the delta is a function of the earlier spans' grids, and the chain already carries
+    every earlier span's content hash, offset and length: the same link means the same images in the same places, and so the
+    same delta. A request recomputes its delta from its own prompt before any reuse decision, with no vision tower
+    (`decoder/rope.go:mropeDelta`).
   - A block written by two classes, such as the end of a prompt and the start of its reply, records both and the row
     where they meet. It matches only the same mix.
 - **H is SHA-256**, truncated for the map key. SHA-256 is vLLM's default hash since v0.10.2; its v0.8.5 doc estimated
@@ -325,11 +337,21 @@ into blocks it owns.
   the disk tier (§5.8) depends on.
 - **Only full blocks are indexed,** as in vLLM. A partial tail is private.
 - **A lookup, across groups:**
-  1. Take the longest chain of hits from block 0 in the full (or latent) group: L_full.
-  2. Take the largest block-aligned L ≤ L_full at which every window and chunk group still holds the blocks its layers
-     read at L.
-  3. For a hybrid, take the deepest recurrent checkpoint at or below L.
-  4. Apply the caps: L ≤ ⌊(n − 1)/B⌋·B (rule 3: the last token's logits are recomputed), and L never inside an image span.
+  1. Take the longest chain of hits from block 0 in the full (or latent) group: `L_full`. A model with no such group (every
+     layer windowed: Mistral, Phi-3) has nothing to walk there, and needs nothing: a link is computed from the *request's*
+     tokens, so `L_full` is the request's own block count, and step 2 does the work. No header of a released block has to be
+     kept (SGLang's tombstones exist because it walks a tree from its root; a hash chain is looked up by value).
+  2. Take the largest block-aligned `L ≤ L_full` at which every window and chunk group still holds the live blocks its layers
+     read at `L` (`[L − ceil(W/B)·B, L)` for a window W), scanning from the right, as vLLM's `SlidingWindowManager` does (§11a).
+  3. For a hybrid, take the deepest recurrent checkpoint at or below `L`.
+  4. Apply the caps:
+     - `L ≤ ⌊(n − 1)/B⌋·B` (rule 3: at least one token is recomputed for the seed logits);
+     - for a hit on another sequence's blocks, when the requester's cold prefill class is fast (`n ≥ FastPrefillFloor`):
+       **`n − L` is at least the backend's fast-pass minimum (16 rows on CUDA, so `L ≤ ⌊(n − 16)/B⌋·B`)**. Otherwise the rows
+       the requester computes itself, `[L, n)`, run the exact kernels where its cold prefill would have run the fast ones
+       (KV0's `split@985`), and the reply is not the cold one (§5.6 property 2). A sequence continuing its own rows keeps
+       today's rule (property 3);
+     - `L` never lands inside an image span.
   
   This is vLLM's intersection (`HybridKVCacheCoordinator.find_longest_cache_hit` iterates to a fixed point over any number of
   groups; its design doc says "exactly two", the code does not).
@@ -358,7 +380,9 @@ There are three properties, and each has a gate.
      and by KV0 on CUDA and WebGPU (`docs/measurements/kv0-invariance-2026-10-13.md`): chunk widths of 64 to 512 with ragged
      tails and splits at 512, 768 and 984 are bit-identical on both; a split whose first call is under 512 tokens, or whose
      second pass is under 16 rows, is **not** on CUDA, which is the class rule below, not a defect. A second condition joins the
-     key: **a pass of 15 rows or fewer is exact class** whatever the prompt's length.
+     key, the chunker (KV3: a prefill never ends in a pass shorter than the resident's own minimum, 16 rows on CUDA) and the
+     hit cap (§5.5 step 4): **a pass of 15 rows or fewer is exact class** whatever the prompt's length, so a fast-class
+     prefill never cuts such a chunk or takes a hit from another sequence that leaves such a suffix.
 3. **Continuation, as today (not bit-identical to cold).** A conversation's own decode-written rows are reused when its
    next prompt extends them, as resident reuse does now. Their class is "decode", which no cold prefill produces, so a
    match on them is accepted only as a continuation of the same chain. If both versions of the same content exist, the
@@ -403,8 +427,11 @@ is MC4's identity gate extended to shared preambles.
   - Files are owner-only (0700/0600), as `.giw-kv` blobs are today.
   - It stays opt-in, as `-session-dir` is today.
 - **The numerics identity** is today's `internal/serveapp/main.go:modelFingerprint` (name, size, mtime, quant) plus the
-  backend and a **numerics epoch** (the build's parity `deps_hash` or its version). A block written by another build is
-  never trusted, because kernels change numerics between versions.
+  embedding/head-table precision (`Model.HeadTable()`, since `--embed-int4` changes `m.w.Embed` while `m.Quant()` stays `"int4"`),
+  the backend, the GPU device and driver (for the disk tier), every operator knob that changes which kernel computes a row at
+  a given position (a class boundary needs none: a row's class is in its block key), and a **numerics epoch** (the build's
+  parity `deps_hash` or its version). A block written by another build, device or table precision is never trusted, because
+  kernels and embeddings change numerics between them.
 - **What it replaces:**
   - **at KV7:** the GPU parking gap (R-04's resident half);
   - **at KV9 (if D2 says so):** the CPU session LRU's `.giw-kv` cold tier. The v3 snapshot format stays readable for one
@@ -470,9 +497,10 @@ is MC4's identity gate extended to shared preambles.
 ```go
 // The decoder owns this metadata; backends never see hashes, refcounts or tiers.
 type SeqView struct {
-	Tables    [][]int32 // per group: block ids, logical order
-	Pos       int
-	StateSlot int       // -1: no recurrent state
+	Tables     [][]int32 // per group: block ids, logical order
+	Pos        int
+	MRoPEDelta int       // ropePos - pos past the prompt's image spans (0 for text); the caller's, from its own prompt
+	StateSlot  int       // -1: no recurrent state
 }
 
 // BlockStore is what a resident implements in place of ResidentKVSlotter.
@@ -488,14 +516,27 @@ type BlockStore interface {
 ```
 
 **What the decoder seam becomes:**
-- `ResidentForward`'s `Forward`, `ForwardN` and `PrefillLast` take a `SeqView` instead of acting on "the bound slot".
-- `UploadKV` writes through the table.
+- `ResidentForward` (`Forward`, `ForwardN`, `UploadKV`) and its extensions (`Prefiller.PrefillLast`,
+  `ResidentPrefillKV.ForwardNoLogits`, `ResidentMRoPE.ForwardMRoPE`, `ResidentGreedy.ForwardArgmax`,
+  `ResidentTopK.ForwardTopK`, `ResidentSample.ForwardSample`, `ResidentHiddenLast.HiddenLast`,
+  `ResidentResidualAll.ResidualAll`, and `ResidentBatchStepper.StepBatch`'s `ResidentBatchSeq`) take a `SeqView` (or bind it
+  for the step) instead of acting on "the bound slot".
+- **Device-chained decode** (`decoder/residency.go:ResidentGreedyChain`, `decoder/residency.go:ResidentSampleChain`): a chain
+  queues the next token's forward on the device before the host has seen the token. Under paged storage (KV4/KV5), `Append` must either keep
+  at least one uncommitted lookahead block mapped in the device's block table before `pos` reaches the last row of the current
+  block (`(pos + 1) % B == 0`), or close and re-open the chain at block boundaries so a queued lookahead forward never writes
+  past the end of the mapped table.
 - `TruncateTo` and `Reset` become manager operations, which they already nearly are: no-ops on a positional cache.
 - `ResidentCapped`'s cap comes from the manager.
 - `ResidentReusableKV`'s windowed floor becomes the window group's retention policy.
 
-**A backend not yet paged** keeps its slots behind a slot adapter. Logical block i of the sequence bound to slot s lives
-at `(s, i·B)`, so KV1–KV3 run unchanged on every backend.
+**A backend not yet paged** keeps its slots behind a slot adapter. Logical block `i` of the sequence bound to slot `s` lives
+at `(s, i·B)`, so KV1–KV3 run unchanged on every backend. **CUDA's windowed layers (`cuda/kvwindow.go`) need care in KV2,
+not in KV1.** A windowed layer of slot `s` holds only its recent rows, at a shifted view (`kvBases[s]`): a kernel still
+addresses position `p` as `p`, so the adapter's statement holds, but rows behind the base are gone. KV1 copies nothing and
+asks the bound slot what it still holds (`ResidentReusableKV`). KV2's copy from another slot has two new needs there, both
+the backend's: the same question answered for a slot that is not bound, and a copy that reads and writes through each
+slot's own base. KV4 replaces `kvwindow.go` with the window group's block pool.
 
 **The backends are separate modules** (`cuda/`, `metal/`, `gpu/`, each requiring a tagged goinfer). A phase that changes
 the seam lands with `RELEASING.md`'s two-step tag.
@@ -601,7 +642,7 @@ Size S. Done in one session, on nobara; test files and measurement records only 
      date line sits at the end of the first request's preamble, not per turn.
    - Today's single slot loses the preamble to opencode's title request on every new conversation, and Claude Code thread
      switches re-prefill 8,000 to 17,000 tokens each (78% of its request time).
-5. **Owner decisions D1–D8** (§8): D1 was decided before KV0; D2–D8 stay open, and KV0's findings bear on D4 and D8 (§8, "Raised by KV0").
+5. **Owner decisions D1–D8 and Q1–Q6** (§8): all decided and answered on 2026-10-13.
 
 **Decision rule, read against what was registered** (`kv0-traffic-2026-10-13.md` §1 and §2.4):
 - KV1–KV3 go ahead (they add no paged attention). The traffic study supports them: the sharing is real for opencode and Codex, and
@@ -688,8 +729,10 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 ### KV4 — Paged storage on CUDA, then f16
 
 - **KV4a: f32 paged, bit-identical.**
-  - pools per group; device tables;
-  - every KV kernel through the table;
+  - pools per group (with block 0 reserved and zero-filled as the null block for released window/chunk entries and tail padding,
+    §5.3); device tables;
+  - every KV kernel through the table, with 64-bit (`int64_t` / `size_t`) row-offset arithmetic in `attention` and `mla_attn`
+    (`kv0-tile-census-2026-10-13.md` §5);
   - the window and chunk groups replace `kvwindow.go`'s view and compaction;
   - the MLA latent group; KV-shared aliases;
   - MC3 tables per row; graphs for windowed models;
@@ -712,22 +755,25 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - **Never-swap** flat throughout.
 - **Kill:** if decode at depth 2,048 or more stays under 0.98 after the registered tuning budget, KV4 parks with its
   measurement and KV2's copies stay.
-- **Size:** L. **Closes:** lever 3 (CUDA f16), the slots-against-context question, and the windowed shifted view.
+- **Size:** L. **Closes:** lever 3 (CUDA f16 pools and remaining families), the slots-against-context question, and the windowed
+  shifted view.
 
 ### KV5 — Paged storage on Metal
 
-- **Build:** KV4's shape with Metal's kernels and its f16/i8 pools. Unified memory means no host tier.
+- **Build:** KV4's shape with Metal's kernels and its f16/i8 pools (including the zero-filled block 0 null block so
+  `attention_prefill_fused` and `attention_prefill_steel`'s out-of-window and tail over-reads never load `NaN`, §5.3). Unified
+  memory means no host tier.
 - **Gates:** KV4's, with Mac numbers.
 - **Closes:** the context-against-slots trade that M2 and I7 both make on Metal. I7's open question (how far context
   should give way to slots) dissolves.
 - **Size:** L.
 
-### KV6 — WebGPU: decide, then build or record
+### KV6 — WebGPU: keep slots with KV2's copies (DECIDED 2026-10-13, D3)
 
-- **The facts:** a slot is a whole runner with bind groups baked over its KV, and the ceilings are per precision.
-- **Options:** page it (pool buffers plus a table storage buffer), or keep slots with KV2's copies.
-- **Recommendation:** keep slots, unless KV4/KV5's measured cost is low and a WebGPU user case exists.
-- **Size:** M if built.
+- **The facts:** a slot is a whole runner with bind groups baked over its KV, `maxStorageBuffersPerShaderStage` is 8 (the default, which the device request does not raise; inferred from the spec,
+  not read from a device) and int8 attention already binds 7, and the ceilings are per precision (`kv0-tile-census-2026-10-13.md` §5).
+- **Decision (D3):** keep slots on WebGPU with KV2's cross-slot copies; do not page it unless a WebGPU user case appears after
+  KV4/KV5.
 
 ### KV7 — Tiers, parking and resume
 
@@ -755,13 +801,14 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - more than one sequence for hybrids on CUDA and Metal, with MC3 identity.
 - **Size:** L. **Closes:** R-01 phase 2, FreeToken Lead 1, and MC4's recurrent item.
 
-### KV9 — The CPU path (D2)
+### KV9 — The CPU path (deferred by D2, 2026-10-13)
 
-- **Option (b) of §5.14.**
-- **Gates:**
+- **Decision (D2):** the CPU path joins only through KV2's copies for now; moving CPU storage to host blocks (option (b) of §5.14)
+  waits on a measured multi-session memory case.
+- **Gates (if reopened):**
   - the parity manifest bit-identical (the CPU is the reference);
   - the memory saved with four sessions sharing a preamble, measured.
-- **Size:** M–L.
+- **Size:** M–L if reopened.
 
 ### KV10 — Long context and lower precision
 
@@ -774,10 +821,12 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 
 ## 7. Order, and what is useful if the program stops early
 
-- **KV0 → KV1 → KV2 → KV3** deliver the agent-preamble win and fix the Metal 413, with no kernel changes and no paged
-  attention. They pay for themselves before KV4 starts.
-- **KV4** is the gate on the rest. If it parks on speed, KV2's copies and KV3's admission stay, and the doc records why.
-- **KV7 and KV8 can come before KV5** for CUDA users. **KV9 waits on D2.** **KV10 waits on KV4/KV5.**
+- **KV0 → header fix + KV3 alongside KV1 → KV2** (decided in D8 and Q2) deliver the agent-preamble win, fix CUDA's 12,288-key
+  batched-prefill decline, and fix the Metal 413, with no attention-kernel paging. They pay for themselves before KV4 starts.
+- **KV4** is the gate on the rest (decided on the capacity bar, Q3). If it parks on speed, KV2's copies and KV3's admission stay,
+  and the doc records why.
+- **KV7 and KV8 can come before KV5** for CUDA users. **KV6 is closed (keep slots, D3).** **KV9 is deferred (D2).** **KV10 waits on
+  KV4/KV5.**
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
 
 ## 8. Owner decisions
@@ -878,7 +927,7 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 ## 11a. What we take and what we leave (read for KV0, 2026-10-13)
 
 Everything below was read on 2026-10-13 at the revisions in the last table. The doc's §11 list was written before the reading, and
-seven of its lines changed: see "What §5 and §11 get wrong" at the end.
+seven of its lines changed: see "What the KV0 reading corrected in §5 and §11" at the end.
 
 | source | what we take | what we leave | basis |
 |---|---|---|---|
@@ -1046,7 +1095,7 @@ INFERRED, for §5.15:
   The "retention priority with expiry" is a ready form for the preamble pin in §5.7.
 - **LMCache** ([README](https://github.com/LMCache/LMCache) at `4d69cdc4`) READ: a layer that stores KV persistently and reuses it across engines, with P2P CPU-memory sharing. Not read further; it is the network tier §5.17 excludes.
 
-### What §5 and §11 get wrong (or say too weakly)
+### What the KV0 reading corrected in §5 and §11 (applied above)
 
 - **§5.5, "vLLM … prices it at about 100–200 ns per token."** True of the v0.8.5 doc only; the v0.14.0 doc says about 75 ns; main has no figure. All are estimates for the Python path. Say "vLLM's v0.8.5 doc estimated 100–200 ns per token in Python; an exploratory Go run here measured 3–9 ns", or drop the figure.
 - **§5.5, "vLLM recommends SHA-256 for multi-tenant use."** It has been the default since v0.10.2. The options are `sha256`, `sha256_cbor`, `xxhash`, `xxhash_cbor`; the "builtin" hash of the v0.8.5 doc is gone. §5.8's disk tier needs a canonical byte encoding for the hash input; vLLM's pickle default is not reproducible across versions, which is why `sha256_cbor` exists.
