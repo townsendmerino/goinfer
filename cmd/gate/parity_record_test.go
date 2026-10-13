@@ -268,10 +268,10 @@ func TestParityRecord_writtenAndReadBack(t *testing.T) {
 	}
 }
 
-// The release command reads eleven rows, the parity sweep among them.
+// The release command reads twelve rows, the parity sweep among them.
 func TestRelease_rowsIncludeTheParitySweep(t *testing.T) {
-	if len(releaseRows) != 11 {
-		t.Errorf("gate release has %d rows, want 11", len(releaseRows))
+	if len(releaseRows) != 12 {
+		t.Errorf("gate release has %d rows, want 12", len(releaseRows))
 	}
 	found := false
 	for _, f := range releaseRows {
