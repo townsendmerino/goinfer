@@ -49,6 +49,11 @@ func TestValidateShapes_catchesArchMismatch(t *testing.T) {
 		{"router rows = NumExperts+K", func(w *Weights) { w.Layers[0].Router = f(nE+2, hidden) }, "Router"},
 		{"embed vocab wrong", func(w *Weights) { w.Embed = f(vocab+1, hidden) }, "Embed"},
 		{"lmhead vocab wrong", func(w *Weights) { w.LMHead = f(vocab*2, hidden) }, "LMHead"},
+		// The embedding lookup widens one row into a HiddenDim scratch: a table declared wider than that is a heap write.
+		{"embed cols wider than hidden", func(w *Weights) { w.Embed = f(vocab, hidden+8) }, "Embed: 16 cols"},
+		{"embed cols narrower than hidden", func(w *Weights) { w.Embed = f(vocab, hidden-1) }, "Embed: 7 cols"},
+		{"lmhead cols wrong", func(w *Weights) { w.LMHead = f(vocab, hidden*2) }, "LMHead: 16 cols"},
+		{"posembed cols wrong", func(w *Weights) { w.PosEmbed = f(16, hidden+1) }, "PosEmbed: 9 cols"},
 		{"qproj rows wrong", func(w *Weights) { w.Layers[0].QProj = f(nH*hd+1, hidden) }, "QProj"},
 		{"kproj rows wrong", func(w *Weights) { w.Layers[0].KProj = f(nKV*hd+3, hidden) }, "KProj"},
 		{"oproj rows wrong", func(w *Weights) { w.Layers[0].OProj = f(hidden+1, nH*hd) }, "OProj"},

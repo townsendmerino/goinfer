@@ -386,13 +386,33 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		return vec(name, got, want)
 	}
+	// cols checks a table's row width. The embedding lookup widens one row into a HiddenDim-sized scratch (WeightMat.Row), so a
+	// table the blob declares wider than that is refused here, by name, instead of reaching the kernel; the LM head is
+	// multiplied against a HiddenDim activation, and a gpt-2 position row is added to one.
+	cols := func(name string, got, want int) *SerializeError {
+		if got != want {
+			return &SerializeError{fmt.Sprintf("%s: %d cols, arch expects %d", name, got, want)}
+		}
+		return nil
+	}
 	if w.Embed.Rows() > 0 {
 		if e := eq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
+			return e
+		}
+		if e := cols("Embed", w.Embed.Cols(), arch.HiddenDim); e != nil {
 			return e
 		}
 	}
 	if w.LMHead.Rows() > 0 { // 0 = tied (validated via Embed above)
 		if e := eq("LMHead", w.LMHead.Rows(), arch.VocabSize); e != nil {
+			return e
+		}
+		if e := cols("LMHead", w.LMHead.Cols(), arch.HiddenDim); e != nil {
+			return e
+		}
+	}
+	if w.PosEmbed.Rows() > 0 {
+		if e := cols("PosEmbed", w.PosEmbed.Cols(), arch.HiddenDim); e != nil {
 			return e
 		}
 	}
@@ -641,6 +661,11 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		if got := w.PerLayerModelProj.Cols(); got != arch.HiddenDim {
 			return &SerializeError{fmt.Sprintf("PerLayerModelProj: %d cols, arch expects %d", got, arch.HiddenDim)}
+		}
+		// PerLayerTokenEmbed rows are pleTotal wide (gguf.go builds it as embMat(..., VocabSize, pleTotal)); the lookup widens one
+		// into a pleTotal-sized scratch.
+		if e := cols("PerLayerTokenEmbed", w.PerLayerTokenEmbed.Cols(), pleTotal); e != nil {
+			return e
 		}
 		// PerLayerProjNorm is sized HiddenSizePerLayerInput (the RMSNorm runs over one pleDim-wide row of ctxAware), not
 		// HiddenDim; gguf.go's vnorm and forward_gemma4.go's normalize agree.
