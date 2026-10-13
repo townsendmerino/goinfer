@@ -86,10 +86,9 @@ func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
 }
 
 // The "cuda" layout, pinned where CI can run it (the allocation-level check, cuda's
-// TestResidentKVBytes_matchesCUDAAllocation, needs a GPU): f32 whatever KV precision is requested —
-// CUDA reads none — K and V on every attention layer, and ONE latent buffer on an MLA layer. Plan's old
-// per-position formula halved a requested f16, cut i8 to ~0.28x, and doubled MLA
-// (docs/measurements/memory-accounting-cuda-2026-09-25.md).
+// TestResidentKVBytes_matchesCUDAAllocation, needs a GPU): f32 unless f16 is asked for AND the f16 kernels cover the family (then half,
+// kv16_cuda.go), K and V on every attention layer, and ONE latent buffer on an MLA layer (which has no f16 form, so f16 prices as f32). int8 is not a CUDA
+// cache, and Plan's old per-position formula cut it to ~0.28x and doubled MLA (docs/measurements/memory-accounting-cuda-2026-09-25.md).
 func TestResidentKVBytes_cudaLayout(t *testing.T) {
 	const ctx = 1000
 	for _, c := range []struct {
@@ -114,8 +113,12 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 			t.Fatalf("%s: fixture MLA=%v, expected %v", c.dir, a.mla != nil, c.mla)
 		}
 		for _, p := range []struct{ f16, i8 bool }{{false, false}, {true, false}, {false, true}} {
-			if got := m.ResidentKVBytes("cuda", ctx, p.f16, p.i8); got != want {
-				t.Errorf("%s (f16=%v i8=%v): ResidentKVBytes(\"cuda\") = %d, want %d (f32, %s)", c.dir, p.f16, p.i8, got, want,
+			w := want
+			if p.f16 && cudaKVF16Decline(a, Options{}) == "" {
+				w = want / 2
+			}
+			if got := m.ResidentKVBytes("cuda", ctx, p.f16, p.i8); got != w {
+				t.Errorf("%s (f16=%v i8=%v): ResidentKVBytes(\"cuda\") = %d, want %d (%s)", c.dir, p.f16, p.i8, got, w,
 					map[bool]string{true: "one latent buffer per layer", false: "K and V per layer"}[c.mla])
 			}
 		}
