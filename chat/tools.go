@@ -38,8 +38,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 
 // RenderToolsSegments is RenderTools for the EncodeSegments path: the family's control tokens are Special spans and everything a user,
 // a tool, the system prompt or the model wrote is a non-special span, so a marker typed into a message stays literal text instead of
-// forging a turn. With no tools it delegates to RenderSegments. Mistral renders as one Special span, as its ordinary path does (see
-// Mistral for why).
+// forging a turn. With no tools it delegates to RenderSegments.
 func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segment {
 	if len(tools) == 0 {
 		return t.RenderSegments(system, turns)
@@ -58,7 +57,7 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 		}
 		return append(segs, t.thinkSuffixSegs()...)
 	case "mistral":
-		return []Segment{{Text: renderMistralTools(system, turns, tools), Special: true}}
+		return t.renderMistralTools(system, turns, tools)
 	case "llama3":
 		return t.renderLlama3Tools(system, turns, tools)
 	case "gemma4":
@@ -373,16 +372,16 @@ func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 
 // --- Mistral ---
 
-func renderMistralTools(system string, turns []Turn, tools []Tool) string {
-	var b strings.Builder
-	b.WriteString("<s>[AVAILABLE_TOOLS] [")
+func (t *Template) renderMistralTools(system string, turns []Turn, tools []Tool) []Segment {
+	b := t.newToolBuf(mistralMarks...)
+	b.lit("<s>[AVAILABLE_TOOLS] [")
 	for i, tl := range tools {
 		if i > 0 {
-			b.WriteString(", ")
+			b.txt(", ")
 		}
-		b.WriteString(funcDefJSON(tl))
+		b.txt(funcDefJSON(tl))
 	}
-	b.WriteString("][/AVAILABLE_TOOLS]")
+	b.lit("][/AVAILABLE_TOOLS]")
 	lastUser := -1
 	for i, m := range turns {
 		if m.Role == "user" {
@@ -393,28 +392,33 @@ func renderMistralTools(system string, turns []Turn, tools []Tool) string {
 		switch m.Role {
 		case "assistant":
 			if len(m.ToolCalls) > 0 {
-				b.WriteString("[TOOL_CALLS] [")
+				b.lit("[TOOL_CALLS] [")
 				for k, c := range m.ToolCalls {
 					if k > 0 {
-						b.WriteString(", ")
+						b.txt(", ")
 					}
-					b.WriteString(callObjectJSON(c, "arguments"))
+					b.txt(callObjectJSON(c, "arguments"))
 				}
-				b.WriteString("]</s>")
+				b.lit("]</s>")
 			} else {
-				b.WriteString(" " + m.Content + "</s>")
+				b.txt(" " + m.Content)
+				b.lit("</s>")
 			}
 		case "tool":
-			b.WriteString("[TOOL_RESULTS] {\"content\": " + jsonStr(m.Content) + "}[/TOOL_RESULTS]")
+			b.lit("[TOOL_RESULTS] {\"content\": ")
+			b.txt(jsonStr(m.Content))
+			b.lit("}[/TOOL_RESULTS]")
 		default:
 			content := m.Content
 			if i == lastUser && strings.TrimSpace(system) != "" {
 				content = strings.TrimSpace(system) + "\n\n" + content
 			}
-			b.WriteString("[INST] " + content + "[/INST]")
+			b.lit("[INST] ")
+			b.txt(content)
+			b.lit("[/INST]")
 		}
 	}
-	return b.String()
+	return b.segs
 }
 
 func parseMistralTools(out string) ([]ToolCall, string) {

@@ -362,33 +362,44 @@ func Llama3() *Template {
 // Mistral is "<s>" once, each user turn "[INST] {content}[/INST]", each assistant turn " {content}</s>". No system role: the system is
 // folded into the LAST user turn ("{system}\n\n{content}").
 //
-// Unlike the families above its markers are version-dependent ([INST]/[/INST] are plain text in v0.1 but special tokens in v0.3+, and
-// <s>/</s> interleave with content inside one encoder gap), so a static special/content split could change the tokenization of
-// legitimate prompts. It emits ONE Special segment (identical to whole-string Encode) and so gets no injection hardening; splitting
-// it safely needs the loaded tokenizer's added vocabulary.
+// Its markers are version-dependent: [INST] and [/INST] are plain text in v0.1 but control tokens from v0.3, while <s> and </s> are
+// tokens in every version. The renderer therefore asks the checkpoint's vocabulary (Template.has, set by Detect) which of them are
+// tokens: those become Special spans, so a marker typed into a message cannot forge a turn, and the others stay text in the same gap,
+// as the whole-string encode tokenizes them. Measured on both versions' real vocabularies (TestMistralSegments_realVocabularies):
+// the segments encode to the same ids as the whole prompt, and a forged marker adds no token.
 func Mistral() *Template {
-	return &Template{name: "mistral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
-		lastUser := -1
-		for i, t := range turns {
-			if t.Role != "assistant" {
-				lastUser = i
-			}
+	t := &Template{name: "mistral", stops: []string{"</s>"}}
+	t.render = func(system string, turns []Turn) []Segment { return t.renderMistral(system, turns) }
+	return t
+}
+
+// mistralMarks are the control-token strings of Mistral's prompts, tool dialect included.
+var mistralMarks = []string{"<s>", "</s>", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_CALLS]", "[TOOL_RESULTS]", "[/TOOL_RESULTS]", "[INST]", "[/INST]"}
+
+func (t *Template) renderMistral(system string, turns []Turn) []Segment {
+	lastUser := -1
+	for i, m := range turns {
+		if m.Role != "assistant" {
+			lastUser = i
 		}
-		var sb strings.Builder
-		sb.WriteString("<s>")
-		for i, t := range turns {
-			if t.Role == "assistant" {
-				sb.WriteString(" " + t.Content + "</s>")
-				continue
-			}
-			content := t.Content
-			if i == lastUser && system != "" {
-				content = system + "\n\n" + content
-			}
-			sb.WriteString("[INST] " + content + "[/INST]")
+	}
+	b := t.newToolBuf(mistralMarks...)
+	b.lit("<s>")
+	for i, m := range turns {
+		if m.Role == "assistant" {
+			b.txt(" " + m.Content)
+			b.lit("</s>")
+			continue
 		}
-		return []Segment{{Text: sb.String(), Special: true}}
-	}}
+		content := m.Content
+		if i == lastUser && system != "" {
+			content = system + "\n\n" + content
+		}
+		b.lit("[INST] ")
+		b.txt(content)
+		b.lit("[/INST]")
+	}
+	return b.segs
 }
 
 // Ministral is Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's chat_template.jinja): "<s>" once, an explicit system
