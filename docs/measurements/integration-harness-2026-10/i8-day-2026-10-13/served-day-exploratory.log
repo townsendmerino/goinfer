@@ -1,0 +1,21 @@
+== arm new: 04:55:45
+[04:55:45] qwen2.5-7b-instruct-q4_k_m.gguf: swap used before the load 1198 MB
+  /Users/francistownsend-merino/goinfer-bench/i8-2026-10-13/bin/serve-metal-i8 -model bench=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend -ctx 24576
+  | [resident] BuildResident declined (ok=false err=resident path declined: the resident build needs 5.75 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 4.97 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling furthe
+  | decode path: cpu (int4) — requested metal → running on cpu: the resident build needs 5.75 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 4.97 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal w
+  | context: 32768 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)
+  | fit: 24576-token cap needs 2.6 GB KV (weights 4.4 GB, budget 3.5 GB, 0.9 GB left for a request's own prefill)
+  | --require-backend: model "bench" did not build a resident decode path on backend "metal": the resident build needs 5.75 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 4.97 GB (this machine's live-available memory tightened the static 70%/11.20
+  serve did not come up (exit 1) after 3 s; log /Users/francistownsend-merino/goinfer-bench/i8-2026-10-13/out-day-exploratory/served-new/qwen2.5-7b-instruct-q4_k_m.gguf.serve.log
+== arm old: 04:55:48
+[04:55:48] qwen2.5-7b-instruct-q4_k_m.gguf: swap used before the load 1198 MB
+  /Users/francistownsend-merino/goinfer-bench/i8-2026-10-13/bin/serve-metal-main -model bench=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend -ctx 24576
+  | [resident] BuildResident declined (ok=false err=resident path declined: the resident build needs 5.75 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 4.96 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling furthe
+  | decode path: cpu (int4) — requested metal → running on cpu: the resident build needs 5.75 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 4.96 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal w
+  | context: 32768 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)
+  | fit: 24576-token cap needs 2.6 GB KV (weights 4.4 GB, budget 3.5 GB, 0.8 GB left for a request's own prefill)
+  | --require-backend: model "bench" did not build a resident decode path on backend "metal": the resident build needs 5.75 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 4.96 GB (this machine's live-available memory tightened the static 70%/11.20
+  serve did not come up (exit 1) after 1 s; log /Users/francistownsend-merino/goinfer-bench/i8-2026-10-13/out-day-exploratory/served-old/qwen2.5-7b-instruct-q4_k_m.gguf.serve.log
+new arm: serve did not come up
+old arm: serve did not come up
+G-I8-6: VOID (the new arm did not load at -ctx 24576)

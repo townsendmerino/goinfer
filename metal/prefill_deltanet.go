@@ -42,6 +42,7 @@ func (r *resident) newPrefillDelta(M, Mpad int) *prefillDelta {
 		core: d.NewBufferLen(M * dp.valueDim), gated: d.NewBufferLen(M * dp.valueDim),
 		uM: NewBufferU32(d, uint32(M)), uConvDim: NewBufferU32(d, uint32(dp.convDim)), uValueDim: NewBufferU32(d, uint32(dp.valueDim)),
 	}
+	prefillScratchSeen.Add(int64(4 * M * (4*dp.nv + dp.convDim + 2*dp.keyDim + 2*dp.valueDim)))
 	s.bufs = []Buffer{s.mixedF, s.zF, s.gatedH, s.bt, s.at, s.conv, s.headP, s.qn, s.kn, s.core, s.gated, s.uM, s.uConvDim, s.uValueDim}
 	return s
 }

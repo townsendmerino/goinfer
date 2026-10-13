@@ -1,0 +1,6 @@
+=== RUN   TestI8_real
+i8: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model's own block is 8000 rows (65.5 KB a row)
+i8 identity: one pass 7.9s, 416 MB of scratch; blocks of 2048 ([2048 2048 2048 356] rows) 7.9s, 416 MB
+--- PASS: TestI8_real (18.88s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	19.333s

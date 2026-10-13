@@ -390,8 +390,99 @@ Records: `docs/measurements/integration-harness-2026-10/i7-night-2026-10-12/`.
     prompt (8 bytes x the feed-forward width x the prompt's tokens), and calls itself an upper bound. Metal's
     prefill runs in chunks, so the real figure may be far smaller. Measure it before trusting either the refusal or
     the room.
+    - **Checked 2026-10-13, in the source: the refusal was right, and "runs in chunks" was wrong.** Metal's batched
+      pass allocates its half-precision scratch for the whole prompt in one call (two residual-width buffers, the
+      q/k/v and attention outputs, and three feed-forward-width ones): about 144 KB a prompt token on Qwen2.5-7B
+      (3.0 GB at 20,954 tokens) and 67 KB on the 1.5B. The chunked prefill exists but runs only while other
+      generations are decoding. The admission's own formula is the CPU's and lands near Metal's figure by
+      coincidence. I8 below is the fix.
 - **Predictions scored.** "The median is within 1% of 1 on both models (0.7)": yes. "The 7B resolves 32,768 with 2
   slots (0.4)": in some cells and not others; 31,328 on the served load.
+
+### I8 — On Metal, prefill a long prompt in blocks and admit it by the block (owner, 2026-10-13: "do steps 1 and 2 now")
+
+**Why.** I7's night read above: a 7B with 31,328 positions refused a 20,954-token request, correctly, because the
+batched pass's scratch grows with the whole prompt. The same term is what a context past 32,768 would hit first
+(9.5 GB for a 64K prompt on a 7B). Bounding it is the precondition for I7's code and for any longer window.
+
+**The change, two parts.**
+1. **Blocks.** The function both resident generation paths share for the prompt takes a suffix longer than the
+   resident's block in passes of that many rows, each continuing the last at its position, and builds each block's
+   embeddings as it goes. A resident opts in by reporting a block size; only Metal does. Metal's block is the number
+   of rows whose scratch fits **512 MiB** (a multiple of 64, never under 256): about 3,700 rows on the 7B and 7,900
+   on the 1.5B, so a prompt under that length is one pass, as today. The last pass keeps at least 8 rows. A block the
+   pass declines sends the rest down the token-by-token path, as a declined whole pass does today.
+2. **Admission.** A request on a resident that reports its own scratch is priced at that figure for one block (or
+   for the prompt, when it is shorter), plus the block's host embeddings, in place of the CPU formula over the whole
+   prompt. CPU requests, and residents that report nothing (CUDA, WebGPU), are priced as before.
+
+**Not in this item:** image turns (their pass is one call and already stops at 4,096 keys); CUDA and WebGPU, whose
+scratch is device memory priced today by the CPU's formula against host memory (worth its own look); the 32,768
+ceiling; I7's default.
+
+**Gates, registered before the code.** All on the M1 Pro; the tests name the gate.
+
+| gate | when | instrument | rule |
+|---|---|---|---|
+| G-I8-1 identity, tiny | day | Metal tiny fixtures (dense, generic MoE, Gated-DeltaNet), through a generation and not the pass alone: the same prompt with the block forced to 64, 100 and 256 rows against one pass | seed logits, generated tokens and every K/V row equal bit for bit |
+| G-I8-2 identity, real | day | Qwen2.5-Coder-1.5B int4 on Metal, a 6,500-token prompt, block forced to 2,048 rows (four passes) against one pass | last-row logits equal bit for bit |
+| G-I8-3 the price covers the pass | day | a counter of the bytes the pass really allocates, on each tiny fixture and the 1.5B | reported figure >= allocated, and within 2% + 64 KB of it |
+| G-I8-4 admission | day | the admission through its caller's arguments, memory probe set by the test hook | a prompt whose whole-pass price exceeds the room and whose block price fits is admitted on a blocked resident, and refused when the resident reports no block |
+| G-I8-5 speed | day, in process | the 1.5B, a 12,288-token prompt, block forced to 2,048 rows (six passes, the 7B's shape at 21k) against one pass; five alternating pairs after one warm-up pair; statistic: median over pairs of blocked / whole prefill time | **PASS at 1.03 or under**; PARKED in (1.03, 1.05], owner decides; FAIL above 1.05, blocks do not become the default |
+| G-I8-6 the refused request | night | serve the 7B with `-ctx 24576`, send last night's 20,954-token request; swap read before the load and after the answer | answered, swap growth 64 MB or under |
+
+- **Planted defects, each must turn its gate red:** a block continued one position late (G-I8-1); the price without
+  its feed-forward term (G-I8-3); admission pricing the whole prompt on a blocked resident (G-I8-4).
+- **What a verdict licenses.** G-I8-1 and -2 say blocks do not change a reply on the families Metal's pass covers.
+  G-I8-5 is about the time to prefill one long prompt on one model; it is not a served TTFT and is quoted as
+  in-process. G-I8-6 says the request I7 was raised for is answered on this Mac, at night, with nothing else running.
+- **Stopping rule:** fixed as written; G-I8-5's ten timed prefills run once. **Cost basis:** each 12,288-token
+  prefill on the 1.5B is about 20 s by last night's rate, so G-I8-5 is about 5 minutes with the load; the rest are
+  seconds; G-I8-6 is a 10-minute night job.
+- **Predictions, before any run:** G-I8-2 holds at real size, 0.85 (the pass routes on the whole prompt's length and
+  the tiny chunk-invariance tests pass; the risk is a tile-shape effect only a real width shows). G-I8-5 reads 1.03 or
+  under, 0.7 (the attention work is the same; each extra pass costs one LM-head row and its buffer setup). G-I8-6 is
+  answered, 0.8 (KV 2.8 GB in two slots and about 0.55 GB a block; the risk is the 7B not going resident at 24,576).
+
+**I8 results, 2026-10-13 (day; the night gate was dropped unread). Merged to main the same day** as the "KV-pre" step
+of `docs/tasks/task-kv-architecture-2026-10.md`, whose KV3 extends blocks and block admission to every resident. Code `d7a100ba` on branch
+`integration-harness-2026-10`. Records: `docs/measurements/integration-harness-2026-10/i8-day-2026-10-13/`.
+
+| gate | read | verdict |
+|---|---|---|
+| G-I8-1 identity, tiny | dense fixture, 1,000 tokens, blocks of 64, 100 and 256; four tiny MoE fixtures (one a Gated-DeltaNet hybrid), block of 16: tokens, log-probabilities and every K/V row (and the DeltaNet window and state) equal one pass | **PASS** |
+| G-I8-2 identity, real | Qwen2.5-Coder-1.5B, 6,500 tokens, passes of 2,048 / 2,048 / 2,048 / 356 rows against one: 0 of the logits differ | **PASS** |
+| G-I8-3 the price covers the pass | every run above allocated exactly the reported figure (equal to the byte, so inside the 2% band); the 1.5B is 65.5 KB a row | **PASS** |
+| G-I8-4 admission | a 20,000-token request with room for a block and not for the whole-prompt price: admitted on a blocked resident; refused with no block, with a block that does not fit, and on the CPU path | **PASS** |
+| G-I8-5 speed, in process | 1.5B, 12,288 tokens, blocked / whole by pair: 0.9972 0.9971 1.0292 1.0021 1.0238; **median 1.0021** (one pass 17.3 to 17.6 s) | **PASS** (bar 1.03) |
+| G-I8-6 the refused request | **not read:** queued as `i8-7b-refused-request`, then dropped the same day on the owner's word (a re-architecture of the KV is planned, which makes it moot) | none |
+
+- **All three planted defects turned their gates red** and were reverted: a block continued one position late
+  (the decoder's fake-resident tests and the Metal dense and MoE identity tests); the price without its feed-forward
+  term (the Metal scratch assertions); admission pricing the whole prompt on a blocked resident (the admission test).
+- **What a block is on these models.** The 1.5B: 8,000 rows, so a prompt under 8,008 tokens is still one pass. The 7B,
+  computed from its dimensions and not loaded today: 144 KB a row, a block of 3,712 rows (0.54 GB), so last night's
+  20,954-token request would be six passes and priced at about 0.59 GB with its embeddings, against the 1.77 GB of
+  room it was refused for 3.21 GB under. That is a calculation: G-I8-6 would have measured it and was not run.
+- **Amendments to the registration, 2026-10-13.**
+  - *G-I8-1's fixtures (written after the first run showed it).* The tiny MoE fixtures hold 64 to 100 positions, so
+    their block is 16 rows on a prompt of 56 to 92 tokens, not 64 / 100 / 256. **No Gated-DeltaNet model is split at
+    real width:** Qwen3.5 0.8B has a head dimension of 256, runs the exact attention kernel, and so reports no block
+    (asserted: a forced block leaves it one pass). DeltaNet's block coverage is the tiny hybrid only.
+  - *G-I8-6 gained a do-nothing arm (before any run):* main at `e2ffb953` with the same `-ctx 24576`, expected to
+    refuse. If it answers too, the verdict says the night's memory and not the change may explain the answer.
+- **Also read, not registered and not graded:**
+  - the 1.5B's own block on the same 12,288 tokens (passes of 8,000 and 4,288): median 1.0087 of one pass;
+  - G-I8-6's script once by day: **VOID on both arms**, the 7B did not go resident (5.75 GB needed, 4.97 GB of live
+    budget). So there is no daytime answer for the 7B.
+- **Predictions scored.** G-I8-2 holds at real size (0.85): yes. G-I8-5 at 1.03 or under (0.7): yes, 1.0021. G-I8-6
+  (0.8): not scored, the gate was not run.
+- **What this leaves.**
+  - A model on the exact attention kernel (a head dimension over 128, or one that is not a multiple of 8), an
+    E-model, a layer-major route, `--kv i8` and `--exact-prefill` are not split: their scratch still grows with the
+    prompt where they take the batched pass at all, and they are priced by the old formula.
+  - The speed reading is one model and one length. A 7B-width block on a deeper prompt has not been read at all.
+  - CUDA and WebGPU requests are still priced by the CPU's formula against host memory.
 
 ## 3. Considered and not recommended (recorded so they are not re-proposed)
 
