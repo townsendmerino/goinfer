@@ -50,6 +50,9 @@ type bannerFacts struct {
 	// "" off the resident path — where the requested -kv is what applies.
 	kvPrec string
 
+	// kvF16Decline: why a CUDA load that asked for -kv f16 was held at f32 (decoder.Model.KVF16DeclineReason), "" when it was not.
+	kvF16Decline string
+
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
 
@@ -89,6 +92,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
+	f.kvF16Decline = lm.model.KVF16DeclineReason()
 	f.kvSlots = lm.model.ResidentKVSlots()
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
@@ -175,6 +179,9 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		ctxLine += " · KV " + req + " (lossy)"
 	default:
 		ctxLine += " · KV f32"
+	}
+	if f.kvF16Decline != "" {
+		ctxLine += " (-kv f16 held at f32: " + f.kvF16Decline + ")"
 	}
 	ctxLine += cpuNote
 	out = append(out, ctxLine)

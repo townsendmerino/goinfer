@@ -462,3 +462,18 @@ func TestFactsOf_headTableFollowsEmbedInt4(t *testing.T) {
 		}
 	}
 }
+
+// TestBanner_f16KVDecline: a CUDA load that asked for -kv f16 and was held at f32 says why on the context line, next to the precision that runs.
+func TestBanner_f16KVDecline(t *testing.T) {
+	lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 32768, kvPrec: "f32", kvF16Decline: "sliding-window attention (the windowed KV ring) has no f16 form"},
+		config{load: loadflags.Flags{KV: "f16"}})
+	got := bannerLine(lines, "context:")
+	for _, want := range []string{"KV f32", "-kv f16 held at f32: sliding-window attention"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("line %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "lossy") {
+		t.Errorf("line %q calls an f32 cache lossy", got)
+	}
+}
