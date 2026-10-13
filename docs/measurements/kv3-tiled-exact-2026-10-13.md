@@ -119,3 +119,18 @@ float64 host computation and `attn_batched` did not. The test uploads `K`, `V` a
 memory returns once it is staged, so the reference read the tail of `q` before it landed. A context synchronize and a read-back of `q` after the uploads fixed it: 12 of 12 runs
 clean. `TestAttnBatched_bitIdentical` has the same shape with buffers small enough that it has not shown; it is not changed here.
 
+## 9. Amendment 3 (2026-10-13, before the night jobs): G4 to G6 as they are queued
+
+- **G6 named the wrong model.** "The Qwen3-4B pair the branch already runs" is the 1.5B: `kv3-cuda-2026-10`'s TTFT job runs Qwen2.5-Coder-1.5B. G6 is K = 512 and K = 3,900 (the
+  1.5B's prompt texts) on the 1.5B and on Gemma-3-4B, this branch's serve against `kv3-cuda-2026-10`'s, three alternating pairs, 0.97 or better at both depths on both models
+  (`ttft_ab_models.py`). Both binaries carry the aligned tail rule (`kv3-cuda-2026-10-13.md` §2.5), so the pair differs only in this branch's change.
+- **G5's design:** per model, three processes in order batched, per-token (the same binary with `GOINFER_BATCHED_PREFILL=0`), batched; in each, one request of about 12,400 tokens and
+  one of about 20,000, `max_tokens` 1, a unique prompt each. The ratio at a length is per-token over the median of the two batched readings. The bars are §3's, read at 12,400 tokens
+  (`ttft_tiled.py`). A batched arm in which the server logs a decline is a FAIL whatever its time.
+- **G4** is `TestKV3Tiled_batchedEqualsPerToken_real` at 12,400 tokens. It was run by day at 1,200 tokens with the route forced, to check the plumbing only: Gemma-3-4B with the
+  levers off and Gemma-4-E4B (global layers of head dim 512) each 0 of 262,144 logits and 0 KV elements differing from the per-token path; Gemma-3-4B at default settings cosine 0.9963,
+  argmax equal. Those are not G4's readings.
+- **Not queued tonight:** the whole `./cuda/` suite on this branch. `kv3-cuda-suite` already runs it on the branch below this one, and a second hour of the same suite tonight would
+  not separate the two branches' causes; it is owed before this branch merges.
+- **Estimates** (from the census and the day smokes): G4 20 minutes, G5 45, G6 15. Jobs: `run-night.sh` with `JOB=identity`, `speed`, `ttft`.
+
