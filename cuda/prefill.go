@@ -1797,8 +1797,8 @@ func (r *cudaResident) FastPrefillFloor() int {
 }
 
 // attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus Vtsh[hd][BN+KPAD], in halves. It
-// is constant in K, unlike the exact path's (maxNWin+128)*4 scratch, which makes checkPrefillShmem decline any layer
-// attending more than 12,160 keys (singleBlockAttnShmemLimit).
+// is constant in K, unlike the exact path's (maxNWin+128)*4 scratch, so a layer it serves is not held to
+// singleBlockAttnShmemLimit's span bound (checkPrefillShmem).
 func attnFusedShmem(hd int) uint32 {
 	return uint32(2 * (attnFusedBM*(hd+attnFusedKPAD) + hd*(attnFusedBM+attnFusedKPAD)))
 }

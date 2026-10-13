@@ -302,8 +302,9 @@ const splitkvNever = 1 << 30
 // singleBlockAttnShmemLimit is the dynamic shared memory a single-block attention launch may request. The
 // glue/batched attention kernels size their scratch (nWin+128)*4 with no ceiling. 48 KB is the device's default
 // per-block limit (the 64 KB opt-in needs a per-kernel cuFuncSetAttribute, which nothing here calls), so past
-// 12,160 attended keys the launch is refused: decode fails outright at that position, and batched prefill errors
-// at layer 0 and silently falls back to the much slower sequential path. If per-kernel SetAttribute support
+// 12,160 attended keys the launch is refused: decode fails outright at that position (split-KV takes over where it
+// exists), and a batched prefill pass on the exact attention declines (checkPrefillShmem) and the prompt falls back to the
+// much slower sequential path. A pass the fused attention serves has no such bound. If per-kernel SetAttribute support
 // lands, this becomes a device query (docs/code-notes/cuda.md#singleBlockAttnShmemLimit).
 const singleBlockAttnShmemLimit = 48 * 1024
 
