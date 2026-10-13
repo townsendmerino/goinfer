@@ -67,7 +67,7 @@
 |---|---|---|---|
 | M0 | Run it for real — both boxes, a scripted task set, a pre-registered pass rule | S | gates M2–M7 |
 | M1 | `docs/integrations/minimax-code.md` + a `serve check` row shaped like its first turn | S | with M0 |
-| M2 | A context default an agent harness fits in — Metal fit-by-default, a harness warning | M | after M0 |
+| M2 | A context default an agent harness fits in — Metal fit-by-default, a harness warning | M | **done 2026-10-13** (run on its own, before M0) |
 | M3 | A thinking switch: `enable_thinking`, `chat_template_kwargs`, `reasoning_effort`, `--thinking` | M | after M0 |
 | M4 | Emit reasoning separately: `reasoning_content` deltas and Anthropic `thinking` blocks | M | after M3 |
 | M5 | Images together with tools on the vision path | L | verify-then-decide |
@@ -244,6 +244,30 @@ only the night gate's predictions below were made blind. The results follow unde
 - **For the owner:** the brief's "f32 KV" is f16 on Metal, so 2 slots of 16384 on a 7B are about 1.9 GB and not
   3.7. The 26B's sidecar (14.6 GB) and the 7B's Metal sidecar (4.8 GB) are now in `~/models`; the disk has about
   6 GB free.
+
+**M2 results, the night of 2026-10-12 (the Mac, nothing else running): every gate that could be read passes.**
+Records: `docs/measurements/minimax-code-compat-2026-09/m2/night-2026-10-12/`.
+
+- **G-M2-speed: SHIP.** `bench_peer.py` phase A at depth 128, six counterbalanced blocks a model; the new arm
+  resolved 16384 in every cell and the old arm 4096.
+
+| model | new (tok/s) | old (tok/s) | new / old by block | median |
+|---|---|---|---|---|
+| Qwen2.5-Coder-1.5B | 93.40 | 93.39 | 1.0004 0.9992 0.9974 1.0025 1.0002 1.0016 | **1.0003** |
+| Qwen2.5-7B | 30.70 | 30.68 | 1.0035 1.0003 0.9993 1.0011 1.0017 0.9997 | **1.0007** |
+
+- **Gate 3, the 7B: 16384 positions, 2 slots, 1.8 GB of KV.** A request of 11,492 tokens was answered in 54.0 s;
+  swap used was 962 MB before the load and after the answer. The 1.5B read the same as by day (13.6 s).
+- **Gate 5, the Metal device gate at the branch's head: PASS** (`docs/measurements/gpu-gate/`, the record for
+  `88647c7d`).
+- **Gate 2's 7B case was not read, and the night job shows FAILED for it.** My test loads the 7B's GGUF onto the
+  heap, and the load-time fit guard refused that on this Mac (12.8 GB needed, 6.4 GB available). That is the
+  guard doing its job on my instrument, not a reading of the fit. The served read above is the direct evidence
+  for the 7B: a real Metal load choosing its own context. The test now skips, with the reason, when the guard
+  refuses; the 1.5B case passed.
+- **Predictions scored.** "The median is within 1% of 1 on both models (0.75)": yes. "The 7B resolves 16384 with 2
+  slots at night (0.75)": yes.
+- **M2 is done.** Still owed to M0, not to M2: its task set re-run with no `--ctx`.
 
 ### M3 · A thinking switch
 

@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -11,7 +12,9 @@ import (
 // 1.5B and the 7B at int4 resolve, with Metal's two default slots, a context that holds a coding agent's first request
 // (opencode's 11,137 tokens). The checkpoints are the GGUFs, loaded onto the heap, which Metal prices with a host copy
 // of the weights: the dearer of the two ways a load arrives (a sidecar's mapped weights carry none). Real checkpoints
-// from GOINFER_MODELS_DIR (default ~/models); a subtest skips without its file.
+// from GOINFER_MODELS_DIR (default ~/models); a subtest skips without its file, and when the load-time fit guard
+// refuses to put the checkpoint on this machine's heap (the 7B on a 16 GB Mac), which is the guard's call and not a
+// reading of the fit.
 func TestMetalFitCtx_anAgentsFirstRequestFits(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the real 1.5B and 7B checkpoints)")
@@ -29,6 +32,9 @@ func TestMetalFitCtx_anAgentsFirstRequestFits(t *testing.T) {
 				t.Skipf("no checkpoint: %v", err)
 			}
 			m, err := Load(path, Options{Quant: "int4", ResidentContext: MetalCtxDefault})
+			if err != nil && strings.Contains(err.Error(), "was NOT loaded") {
+				t.Skipf("the load-time fit guard refused the checkpoint on this machine: %v", err)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,0 +1,11 @@
+[23:32:48] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: swap used before the load 962 MB
+  /Users/francistownsend-merino/goinfer-bench/m2-2026-10-12/bin/serve-metal-new -model bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.037 ms), gate|up at B <= 2 (0.110, 0.250); 0 = always the fragment
+  | decode path: metal-resident (int4)
+  | context: 16384 tokens (fit: 2 slots, 0.9 GB KV; model maximum 32768 — raise with --ctx) · KV f16
+  | fit: 16384-token cap needs 0.4 GB KV (weights 1.1 GB, budget 5.8 GB, 5.3 GB left for a request's own prefill)
+  | KV plan: 2 conversations x 16384 positions (4 asked for)
+  up after 2 s; swap used 962 MB
+  answered in 13.6 s: prompt_tokens 11492, completion_tokens 8, reply 'The given data represents a sequence of numbers'
+  swap used after the answer 962 MB (before the load 962 MB, growth +0 MB)

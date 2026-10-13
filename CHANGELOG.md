@@ -38,6 +38,9 @@ under 4096, and less than 16384 only when it does not fit (the context gives way
 
 - **What it costs.** KV is allocated up front in every slot, at f16 (or int8 with `--kv i8`). Qwen2.5-Coder-1.5B at int4 on an M1 Pro (16 GB):
   4096 → **16384** positions, 2 slots, 0.2 → **0.9 GB** of KV; a request of 11,492 tokens that was refused is now answered, with no swap growth.
+  Qwen2.5-7B on the same Mac with nothing else running: 4096 → **16384**, 2 slots, 0.45 → **1.8 GB**; the same request answered in 54 s, no
+  swap growth. Decode at a depth of 128 is unchanged: 93.4 tok/s on the 1.5B and 30.7 on the 7B either way (new over old 1.0003 and 1.0007,
+  six interleaved blocks a model).
 - **What stays at 4096:** `--fit=off`; a load that pages MoE experts (`-moe-cache-experts`, `-moe-cache-slots`), whose pager uses the memory a
   longer context would take; a machine whose memory cannot be read. An explicit `-ctx` is honoured exactly as before, up to 32768.
 - **The budget is the live one** (the smaller of 0.70 of RAM and the memory available now), so a busy Mac gets less: with about 3 GB available a
