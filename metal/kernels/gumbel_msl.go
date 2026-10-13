@@ -32,7 +32,7 @@ inline uint gb_mulhi(uint a, uint b) {
     return uint((ulong(a) * ulong(b)) >> 32u);
 }
 
-// Philox4x32-10. Must match decoder.philox4x32 (Random123 known-answer vectors, decoder/philox_test.go).
+// Philox4x32-10. Must match internal/sampling.Philox4x32 (Random123 known-answer vectors, internal/sampling/philox_test.go).
 inline void gb_philox(uint c0, uint c1, uint c2, uint c3, uint k0, uint k1, thread uint* out) {
     for (uint r = 0u; r < 10u; r++) {
         if (r > 0u) { k0 += 0x9E3779B9u; k1 += 0xBB67AE85u; }

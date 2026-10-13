@@ -12,7 +12,7 @@ const AllKernels = `
 #include <metal_stdlib>
 using namespace metal;
 
-// addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder/rmsnorm.go, which
+// addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder's rmsnorm.go, which
 // applies the weight AFTER the normalize: (v*inv) * (1+w[i]).
 kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float* w[[buffer(1)]],
     device char* aq[[buffer(2)]], device float* asc[[buffer(3)]], constant uint& H[[buffer(4)]],
@@ -103,7 +103,7 @@ kernel void rmsnorm_f32(device float* x[[buffer(0)]], device const float* w[[buf
     for (uint i=(H4<<2u)+tid; i<H; i+=tgs) { float g=addOne!=0u?(1.0f+w[i]):w[i]; x[i]=x[i]*rms*g; }
 }
 // layernorm_quant: FeatLayerNorm's fused norm+quant, mirroring rmsnorm_quant's contract but
-// mean-centered (decoder/rmsnorm.go's layerNorm): y = (x-mean)/sqrt(var+eps)*w + b, then
+// mean-centered (decoder's rmsnorm.go's layerNorm): y = (x-mean)/sqrt(var+eps)*w + b, then
 // quantized. hasBias selects GPT-2's weight+bias LayerNorm vs Cohere's bias-free variant (both
 // declare Norm==NormLayer; the CPU reference branches on a nil bias the same way). Three
 // reduction passes (mean, variance, maxabs) vs rmsnorm_quant's two — LayerNorm needs the mean
@@ -1028,10 +1028,10 @@ kernel void embed_gather_i8(device const char* q[[buffer(0)]], device const floa
 // hd), where half = rotaryDim/2 = len(invf). half<hd/2 is PARTIAL rotary (Phi): dims
 // [2*half, hd) pass through unrotated. total = nHeads*half (the rotate-pair count).
 // scale is YaRN's mscale (attention_factor), applied to cos/sin exactly like
-// decoder/rope.go's applyRoPE (c := cos(theta)*scale; s := sin(theta)*scale) — NOT to the
+// decoder's rope.go's applyRoPE (c := cos(theta)*scale; s := sin(theta)*scale) — NOT to the
 // rotated output afterward, which is a different (and wrong) place to apply it. 1.0 for
 // every family without YaRN, so this is a no-op multiply, not a new branch. FeatRopeMscale
-// (decoder/features.go) is not yet declared for Metal — nothing resident here exercises
+// (decoder's features.go) is not yet declared for Metal — nothing resident here exercises
 // scale != 1.0 end-to-end — but the kernel needs to accept it before wiring can proceed, and
 // a no-op multiply on every existing dispatch is the lowest-risk way to add the parameter.
 kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
@@ -1052,7 +1052,7 @@ kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(
 // rope otherwise (verified bit-identical to running rope twice — TestRope2_matchesTwoRope,
 // metal/rope2_test.go); rope itself is untouched and kept for its own standalone kernel tests.
 // qTempScale (buffer 9, Ministral 3 FeatAttnTemp): a post-rotation multiplier on Q ONLY, applied
-// after the pair rotation below — decoder/attention.go's sequential path does the SAME thing in
+// after the pair rotation below — decoder's attention.go's sequential path does the SAME thing in
 // the SAME order (rope first, attn-temp on top), never touching K. 1.0 (exact no-op) for every
 // family without this feature — Model.AttnTempScale's own comment has the formula.
 kernel void rope2(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
@@ -1073,7 +1073,7 @@ kernel void rope2(device float* x[[buffer(0)]], device const float* invf[[buffer
 }
 // rope_pw / rope2_pw (docs/tasks/task-metal-pairwise-rope-2026-10.md): rope / rope2 for GPT-J PAIRWISE rotation (Cohere,
 // Command-R7B, Aya, GLM-OCR), pair dd = dims (2dd, 2dd+1) at invf[dd] instead of NeoX's (dd, rhalf+dd), as
-// decoder/rope.go's applyRoPEInterleaved. Same arguments and grid, bound into the same pipeline fields when
+// decoder's rope.go's applyRoPEInterleaved. Same arguments and grid, bound into the same pipeline fields when
 // decoder.Model.PairwiseRoPEResident(); every other family keeps rope / rope2. Partial rotary rotates dims [0, 2*rhalf)
 // and leaves the tail as it is; scale and qTempScale are applied exactly where the NeoX kernels apply them.
 kernel void rope_pw(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
@@ -2033,7 +2033,7 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
 }
 // glu_act selects the gated MLP's activation. The ordinals are deliberately decoder.ActKind's
 // iota (ActGeluTanh=0, ActSiLU=1) so the host passes int(m.GatedActResident()) straight through.
-// GELU-tanh matches decoder/rmsnorm.go geluTanh; both compute in f32 where the CPU reference
+// GELU-tanh matches decoder's rmsnorm.go geluTanh; both compute in f32 where the CPU reference
 // uses f64 — the same trade the SwiGLU path already shipped, and it clears the 3% near-tie bar.
 #define ACT_GELU_TANH 0u
 #define ACT_SILU      1u
@@ -2149,10 +2149,10 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
     for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
-// Gemma 4's per-layer output scalar on a dense layer: x *= s (decoder/forward_gemma4.go; the MoE join has its own).
+// Gemma 4's per-layer output scalar on a dense layer: x *= s (decoder's forward_gemma4.go; the MoE join has its own).
 kernel void layer_scale(device float* x[[buffer(0)]], device const float* s[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]*=s[0]; }
 // Gemma 4 E-model PLE branch (S1.5): g = gelu_tanh(PLEGate·x) * this layer's per-layer input, in place over P
-// entries — decoder/forward_gemma4.go's geluTanh(px[i]) * pl[i], with glu_act's clamped tanh.
+// entries — decoder's forward_gemma4.go's geluTanh(px[i]) * pl[i], with glu_act's clamped tanh.
 kernel void ple_gelu_mul(device float* g[[buffer(0)]], device const float* ple[[buffer(1)]], constant uint& n[[buffer(2)]],
     uint i[[thread_position_in_grid]]) { if (i < n) g[i] = glu_act(g[i], ACT_GELU_TANH) * ple[i]; }
 
@@ -2163,7 +2163,7 @@ kernel void ple_gelu_mul(device float* g[[buffer(0)]], device const float* ple[[
 // up — for pure per-dispatch launch overhead no different in kind from CUDA's). x is the SAME
 // quantized activation (aq/asc) the base projection this delta rides alongside already consumed
 // — matching applyLoRA's CPU reference, which takes the identical input the base matmul does
-// (decoder/lora.go).
+// (decoder's lora.go).
 //
 // M-08 (audit-metal-2026-09-12.md): P-11's fused-into-one-threadgroup shape traded a whole
 // dispatch for making the up stage SERIAL over Out — every one of 256 threads striding across
@@ -2218,7 +2218,7 @@ kernel void lora_delta(device const char* aq[[buffer(0)]], device const float* a
 // qk_norm: per-head RMSNorm on Q and K in the fused qkv buffer, applied BEFORE RoPE (Qwen3,
 // Gemma3). ONE threadgroup per head: head < nH is a Q head (weight qn), else a K head (weight
 // kn, index head-nH). Norm over the head dim (hd, a power of 2). addOne selects Gemma's (1+w)
-// vs plain w. Matches decoder/rmsnorm.go rmsNorm(q/k, QNorm/KNorm, ..., RMSAddOne).
+// vs plain w. Matches decoder's rmsnorm.go rmsNorm(q/k, QNorm/KNorm, ..., RMSAddOne).
 kernel void qk_norm(device float* qkv[[buffer(0)]], device const float* qn[[buffer(1)]],
     device const float* kn[[buffer(2)]], constant uint& nH[[buffer(3)]], constant uint& nKV[[buffer(4)]],
     constant uint& hd[[buffer(5)]], constant uint& nHhd[[buffer(6)]], constant float& eps[[buffer(7)]],

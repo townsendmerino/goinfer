@@ -261,7 +261,7 @@ kernel void rmsnorm_quant_f16(device const half* x[[buffer(0)]], device const fl
 }
 
 // rmsnorm_f16: one threadgroup per row. out[m] = x[m]*rsqrt(mean(x[m]²)+eps)*w (w f32).
-// addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder/rmsnorm.go / the decode
+// addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder's rmsnorm.go / the decode
 // path's rmsnorm_quant (kernels.go). G8 (docs/tasks/task-gpu-paths-2026-09.md): added so this kernel
 // can serve BOTH a GEMV-input norm (Llama/Qwen, addOne=0) and Gemma's sandwich norm on a sublayer
 // OUTPUT (addOne=1) — same math either way, only the weight convention differs.
@@ -417,7 +417,7 @@ kernel void rope_mrope_f16(device half* x[[buffer(0)]], device const float* invf
 }
 
 // rope_f16_pw / rope_mrope_f16_pw (docs/tasks/task-metal-pairwise-rope-2026-10.md): rope_f16 / rope_mrope_f16 for GPT-J
-// PAIRWISE rotation, pair dd = dims (2dd, 2dd+1), as decoder/rope.go's applyRoPEInterleaved and applyMRoPEPairwise (GLM-OCR's
+// PAIRWISE rotation, pair dd = dims (2dd, 2dd+1), as decoder's rope.go's applyRoPEInterleaved and applyMRoPEPairwise (GLM-OCR's
 // contiguous m-RoPE sections come in through the same host axis table). Same arguments and grid; bound for a model whose
 // decoder.Model.PairwiseRoPEResident() is true, and nowhere else.
 kernel void rope_f16_pw(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],

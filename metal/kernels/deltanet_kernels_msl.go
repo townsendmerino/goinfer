@@ -5,7 +5,7 @@ package kernels
 // (decoder.deltaCapHook) gates each stage the same way on both backends. Metal had no recurrent-state kernel before this
 // file, so every kernel here is new code, gated from its own input via the hook's mixed slot.
 //
-// THE STATE IS STORED TRANSPOSED RELATIVE TO THE CPU, same as CUDA. decoder/deltanet.go holds S as [hk, hv] and walks it
+// THE STATE IS STORED TRANSPOSED RELATIVE TO THE CPU, same as CUDA. decoder's deltanet.go holds S as [hk, hv] and walks it
 // column-wise with stride hv, in two passes. Here S is [hv, hk], so thread (headV, vd) owns a contiguous row
 // S[headV][vd][0:hk] and reads it stride-1.
 //

@@ -391,7 +391,7 @@ template [[host_name("gemv_w4a8_moe_rows4")]] kernel decltype(gemv_w4a8_moe_rows
 template [[host_name("gemv_w4a8_moe_wacc_rows2")]] kernel decltype(gemv_w4a8_moe_wacc_rows<2>) gemv_w4a8_moe_wacc_rows<2>;
 template [[host_name("gemv_w4a8_moe_wacc_rows4")]] kernel decltype(gemv_w4a8_moe_wacc_rows<4>) gemv_w4a8_moe_wacc_rows<4>;
 // gemv_w4a8_moe_wacc_bias: gpt-oss's down-projection combine. Its bias is added INSIDE the
-// expert, before the router weight scales the result (decoder/forward_gptoss.go's
+// expert, before the router weight scales the result (decoder's forward_gptoss.go's
 // gptOssExpert: dst = Down·h + downBias; then gptOssMoE combines out += w·dst) — so the bias
 // is wgt[slot]*bias[row], NOT a plain += bias[row] the way GPT-2's o-proj/down-proj bias is
 // (those have no router weight to fold into). gemv_w4a8_moe_wacc has no bias epilogue at all,
@@ -433,7 +433,7 @@ kernel void shared_gate_combine(device float* x[[buffer(0)]], device const float
     x[i] += (1.0f/(1.0f+exp(-gl[0]))) * src[i];
 }
 // gptoss_glu: clamp(gate,max=limit)·sigmoid(alpha·clamp(gate)) · (clamp(up,[-limit,limit])+1) —
-// gpt-oss's clamped interleaved-SwiGLU, verified against decoder/forward_gptoss.go's
+// gpt-oss's clamped interleaved-SwiGLU, verified against decoder's forward_gptoss.go's
 // gptOssExpert. THE ASYMMETRY IS REAL: gate clamps only from ABOVE, up clamps BOTH sides —
 // clamping both symmetrically is the tidy-looking mistake, and it only differs from the
 // correct math where the activation saturates, which is exactly where a clamp exists to
