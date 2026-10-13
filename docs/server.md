@@ -298,6 +298,8 @@ Codex's apply_patch, `web_search`, `tool_search`, `namespace`) are left out of t
 `X-Goinfer-Tools-Dropped` response header; `/v1/chat/completions` does the same. `store` +
 `previous_response_id` continue a conversation from an in-memory ring — by
 construction a prompt-prefix extension, so it rides the warm-KV cache below.
+A request with no `max_output_tokens` may write up to a quarter of the context window, at least 1,024 tokens and at
+most 8,192: the output limit `connect` gives an agent. Codex sends no cap of its own. The other routes default to 512.
 
 **Anthropic Messages API.** `/v1/messages` and `/v1/messages/count_tokens` speak
 the second de-facto standard (the one llama.cpp, Ollama, and LM Studio also

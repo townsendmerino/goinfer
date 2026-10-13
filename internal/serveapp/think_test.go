@@ -156,6 +156,7 @@ func TestStreamTokens_thinkSplit(t *testing.T) {
 		{"truncated inside the block: reasoning only, no answer", nineB, "Okay the user asks for a very long", "Okay the user asks for a very long", "", true},
 		{"content that mentions the tag stays content", qwen3, "Use <think> tags to reason.", "", "Use <think> tags to reason.", false},
 		{"a reply ending on a partial open tag: the splitter's held text is flushed as answer", qwen3, "<thin", "", "<thin", false},
+		{"a block closed for the model, then the model's own close in the answer: the answer carries no tag", qwen3, "<think>\nr\n</think>5</think> maybe? Or just 5?", "r", "5 maybe? Or just 5?", false},
 	}
 	for _, tc := range cases {
 		for _, whole := range []bool{true, false} {

@@ -310,7 +310,10 @@ func (t *Template) renderThinking(system string, turns []Turn) []Segment {
 //	Reasoning  — emitted as reasoning up to the close delimiter; trailing newlines are held until something follows them
 //	             (Qwen's template strips them: reasoning_content.strip('\n')), and a partial close delimiter is held.
 //	AfterClose — the newlines following the close delimiter are dropped; the first other byte → Content.
-//	Content    — emitted as is. An open delimiter seen here is ordinary content: it never re-enters Reasoning.
+//	Content    — emitted as is, except that a close delimiter is dropped (a partial one at the tail is held): a model whose
+//	             block a reasoning budget closed can write its own close later, and a template reads an assistant message's
+//	             content as the text after its last close. An open delimiter here is ordinary content: it never re-enters
+//	             Reasoning.
 //
 // forcedOpen starts in Reasoning: the prompt ended inside an open block, so only the close delimiter is generated.
 // A reply that ends inside Reasoning was TRUNCATED (max_tokens, a stop): everything it produced is reasoning and the
@@ -398,8 +401,13 @@ func (s *ThinkSplitter) Push(chunk string) (reasoning, content string) {
 			s.state = stContent
 			continue
 		default: // stContent
-			c.WriteString(s.buf)
-			s.buf = ""
+			for i := strings.Index(s.buf, s.close); i >= 0; i = strings.Index(s.buf, s.close) {
+				c.WriteString(s.buf[:i])
+				s.buf = s.buf[i+len(s.close):]
+			}
+			n := StreamableLen(s.buf, s.close)
+			c.WriteString(s.buf[:n])
+			s.buf = s.buf[n:]
 			return r.String(), c.String()
 		}
 	}

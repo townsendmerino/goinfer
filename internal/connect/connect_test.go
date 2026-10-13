@@ -281,8 +281,8 @@ func TestFitAndOutputLimit(t *testing.T) {
 		}
 	}
 	for window, want := range map[int]int{32768: 8192, 16384: 4096, 4096: 1024, 2048: 1024, 1024: 512, 131072: 8192} {
-		if got := outputLimit(window); got != want {
-			t.Errorf("outputLimit(%d) = %d, want %d", window, got, want)
+		if got := OutputLimit(window); got != want {
+			t.Errorf("OutputLimit(%d) = %d, want %d", window, got, want)
 		}
 	}
 }

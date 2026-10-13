@@ -25,6 +25,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/clef"
+	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -585,6 +586,9 @@ type sampling struct {
 	// fixedTokens measures the request's fixed part (system prompt and tool definitions) in tokens, for a route that
 	// has one. prepare calls it only when the prompt overflows, to choose the refusal's wording (overflow.go).
 	fixedTokens func() int
+	// outputByWindow gives a request that names no output cap connect.OutputLimit of the window in place of
+	// defaultMaxTokens. /v1/responses sets it: that API has no default cap, and Codex sends none.
+	outputByWindow bool
 }
 
 type respFormat struct {
@@ -1234,6 +1238,9 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
+		if maxTok == nil && sm.outputByWindow && ctx > 0 {
+			gr.maxTokens = connect.OutputLimit(ctx)
+		}
 		if err := newContextOverflow(len(promptIDs), ctx, lm.modelContextWindow(), gr.maxTokens, sm.fixedTokens); err != nil {
 			return genRequest{}, err
 		}
