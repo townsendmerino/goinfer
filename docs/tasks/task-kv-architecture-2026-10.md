@@ -613,24 +613,59 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   reachable today with `--ctx 32768 --kv-sessions 1` at the price of the other slots. The owner's call whether they change the
   verdict.
 
-### KV1 — The manager over today's slots (no storage change)
+### KV1 — The manager over today's slots (no storage change) — BUILT 2026-10-13, day gates read, not merged
 
-- **Build:**
-  - the manager's own package (§5.13, "The manager is its own package");
-  - the geometry (groups, state spec) from the `Architecture`;
-  - sequences, logical blocks, the hash chain and index, refcounts, LRU;
-  - the slot adapter;
-  - `resident_reuse.go`'s bookkeeping replaced by manager calls, with the four rules and the class moved into the key;
-  - the cache-state grid extended with the new lifecycle paths.
-- **Not changed:** serve's admission and every backend kernel.
-- **Gates (sketch):**
-  - **Identity:** every existing reuse, slot, MC3 and MC4 test passes unchanged, and every parity golden passes
-    unchanged.
-  - **Oracle property test:** random sequences of admit, append, publish, truncate, fork and release against a plain
-    per-sequence array model. Refcounts, tables and published contents are checked after every operation.
-  - **Wrong-hit mutations:** drop the adapter, an image hash, the class or the precision from the key, and an
-    adversarial test must go red. Each is shown once.
-  - **Speed:** a lone request's time-to-first-token and decode within 0.99–1.01 of main.
+Branch `kv1-2026-10`. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2 and G5b
+amended before their runs). **Read and passing:** identity by day on both boxes, the windowed tests at awkward offsets
+on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost. **Queued for the night of
+2026-10-13, and the merge waits for them:** the served speed gate on both boxes, the Metal device gate, and the
+fast-class windowed measurement on a real model (which measures, and does not gate KV1).
+
+- **Built:**
+  - `internal/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
+    and KV precision; a SHA-256 chain per block over its tokens, the image spans that touch it and the class of each
+    row); blocks of 64 with reference counts, publish, the index and the LRU of blocks nobody references; sequences
+    with admit, append, publish, truncate, fork and release; and the slot adapter (`kvmgr.Slots`), where logical block
+    i of the sequence in slot s is at `(s, 64i)`.
+  - `decoder/kvgeometry.go`: `Architecture.KVGeometry` derives the groups (full, window, chunk, latent; K = V; the
+    layers that read another layer's KV) and the recurrent state from the architecture, and agrees with `kvDimAt` and
+    `kvPositionsAt` on ten family shapes. The manager's types are re-exported under `decoder.KV*` names for the backends.
+  - `decoder/resident_reuse.go` is now calls into the manager. The four rules are `kvmgr.Slots.Score`'s and the root's;
+    the slot choice is `kvmgr.PickSlot`; the short-prefix guard is `kvmgr.ClassMap.DeclineShortLead` and states the
+    16-row rule; a completed generation publishes its full blocks (`kvmgr.Slots.Commit`), and a forget takes them out of
+    the index at once.
+  - `decoder/cachestate.go`: publish, share and evict are lifecycle paths, with a declared cell for each of the 14 kinds
+    and a test that checks each cell against the reuse code.
+  - `docs/ARCHITECTURE.md`, "The KV cache": corrected (CUDA's windowed layers, the fit-by-default contexts) and extended
+    with the manager.
+- **Not changed:** serve's admission, every backend kernel and allocation, and what a request reuses.
+- **Choices made in the build** (each is in the record's §1 or §3):
+  - **The names the tests hold are kept.** `residentReuseLen`, `residentAcquire`, `residentCommitIDs`,
+    `residentForgetIDs`, `pickResidentSlot`, `declineShortLeadReuse` and the bound sequence's three fields (`resIDs`,
+    `resIDsLora`, `resImgBlocks`) remain, as calls into the manager and as its record of the bound slot, because the
+    identity gate says the existing tests pass unchanged and twelve of their sites assign those fields. The parked slots
+    (`resSlots`, `resCur`, `resTick`) are gone.
+  - **One chain for every group** (the question §11a left for KV1): the group is not hashed into the chain. Under slots
+    every group's blocks are published together; the group id joins the map key when groups get their own pools (KV4).
+  - **The adapter's id is its load identity**, as rule 4's pointer comparison was. A content hash is KV7's need.
+  - **A forget unindexes the whole slot**, as rule 2 does today. §5.4's "a cancelled request still leaves its finished
+    blocks reusable" is not adopted here: it would change what a request reuses.
+  - **A sequence is reused only by continuing it in its own slot, at token granularity.** The index is built and
+    published to, and nothing takes a hit from it yet. In production no block has a reference count above zero until
+    KV2 pins a copy's source; the counts are exercised by the oracle test through the pool API.
+- **Left for KV2, which must settle each before it takes another sequence's rows:**
+  - **The class of a row is recorded per pass the decoder sees.** CUDA cuts a long prefill into 512-row passes
+    internally, and a last pass of 15 rows or fewer is exact class (KV0's `chunk=496` arm). The decoder records the
+    whole call as one pass, so such a tail is recorded as fast. KV3 moves the 16-row rule into the chunker, which
+    removes that tail; KV2's gate should check the recorded classes against launch counts, as KV0's test does.
+  - **Rows written by a path that does not go through `residentAcquireSlot`** (the image prefills, which compute on the
+    CPU and upload) are recorded as class unknown, which matches no other request. That is safe and loses the reuse.
+  - **The namespace is in the key and nothing sets it.** D4's defaults (one per API key; off beyond loopback without
+    keys) need a namespace on the request, from serve.
+  - **Window groups.** The geometry knows which blocks a window group holds (`KVGroup.FirstBlock`), but the adapter
+    leaves the answer to the backend (`ResidentReusableKV`), as today.
+  - **The slot choice is still by slot** (`PickSlot`'s last-use tick). The block LRU is maintained beside it and is
+    what KV2 switches to.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.
 
 ### KV2 — Cross-conversation reuse by copy (still slot storage)

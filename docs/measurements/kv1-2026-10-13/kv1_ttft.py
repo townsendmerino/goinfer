@@ -100,7 +100,7 @@ def main():
     ap.add_argument("--model", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--blocks", type=int, default=12)
-    ap.add_argument("--prompt-words", type=int, default=2900)
+    ap.add_argument("--prompt-words", type=int, default=2500)
     ap.add_argument("--serve-args", default="")
     ap.add_argument("--load-timeout", type=float, default=420)
     ap.add_argument("--log-dir", default=".")
