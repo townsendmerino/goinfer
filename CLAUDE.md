@@ -231,6 +231,24 @@ Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets; `testdata/assets.json
 registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `composition`,
 `selector`, `gpu`, `mutation`).
 
+## Day loop: seconds, not minutes
+
+**Owner rule, 2026-10-13: the day loop is seconds. A 10-minute gate after every edit is the development process failing, not diligence.**
+Measured cost: on 2026-10-12/13 a CUDA-only feature ran `gate quick` twice (9–10 min each), the parity refresh three times (4 min each) and
+the CUDA suite twice, and most of it re-checked what the previous run had already shown.
+
+- **Check a change with `python3 scripts/touched.py`.** It gofmts the touched files, builds and vets the touched modules (the tagged variants they
+  need) and tests the touched packages; in a package whose cold run is over a minute (`decoder`: 310 s) it runs the tests of the test file beside each
+  touched file, or the `-run` you name. It takes seconds. It is not a gate.
+- **Do not run `go run ./cmd/gate quick`, a whole-module or whole-package `go test`, or the CUDA suite by day.** CI runs them on every push, and the night queue
+  runs the heavy tier. `gate quick` is the pre-tag tier (RELEASING.md): run it when cutting a release or when the owner asks.
+- **One run of each thing a push requires, once, immediately before the push, after the last merge of `main`.** The parity refresh
+  (`scripts/refresh_parity_hashes.sh`, only when a non-test `decoder/*.go` file changed) and the citation lint are the two; `main` moving under you is a reason
+  to merge and re-run those two, not to re-run everything.
+- **A red CI run is fixed by the one failing test**, run by name, not by re-running the gate that was green.
+- **A change that forces a long run on the day loop is a modularity bug.** Say so in the report, with the edge that caused it (a CUDA edit that lands in
+  `decoder/`, a one-line edit that stales the parity manifest), and fix the edge when it is cheap.
+
 ## Run budget: quick by day, long by night
 
 **Owner rule, 2026-09-28: he works during the day and wants quick tests; long runs happen overnight.**
@@ -246,7 +264,7 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
   (its idle gate is fighting the owner's own load, so the number is poor anyway). What fits: build, `go vet` (the
   tagged variants), `gofmt -l`, staticcheck; `go test -run '<the tests your change touches>'` on one package; the
   tiny-fixture goldens; bit-identity / logits-identity checks on the 0.5B; `scripts/refresh_parity_hashes.sh`
-  (~4 min); a one-cell smoke timing (`BENCH_RUNS=1`, one model, one engine pair) labelled **exploratory** and never
+  (~4 min, once, before a push — see "Day loop"); a one-cell smoke timing (`BENCH_RUNS=1`, one model, one engine pair) labelled **exploratory** and never
   quoted as a result.
 - **Everything else goes on the night queue:** any `bench_peer*.py` served/peer gate, A/B passes (the
   order-reversed second pass included), sweeps across models or families, `go run ./cmd/gate parity` and `gate gpu`
@@ -309,7 +327,8 @@ five. The release tier (`RELEASING.md`: the full parity sweep and the peer matri
 
 | check | tier | instrument | stopping rule | cost basis |
 |---|---|---|---|---|
-| `gofmt -l`, `go vet` (tagged), `staticcheck`, `go run ./cmd/gate quick` | quick | `gate quick` (TE7): the tests that can observe the diff, one `go test` per package in parallel, cache-aware. It defers, and prints as `DEFERRED`, each package's real-checkpoint tests and, when no changed file is under `metal/`, `gpu/` or `cuda/`, that module's long kernel tests (`quickModule.Slow`) | runs to completion; no sampling | about 3 min for a decoder change (the `decoder` cell, cold), about 4 for one under `metal/`; an unchanged `decoder` re-run replays from the test cache in about 2 s |
+| `python3 scripts/touched.py` (gofmt, build, vet, the touched packages' tests) | day | the script: what the diff touches, a slow package by the test file beside the change | runs to completion | seconds |
+| `go vet` (tagged), `staticcheck` across a module, `go run ./cmd/gate quick` | pre-push / pre-tag: CI runs it on every push; locally only when cutting a release or when asked (see "Day loop") | `gate quick` (TE7): the tests that can observe the diff, one `go test` per package in parallel, cache-aware. It defers, and prints as `DEFERRED`, each package's real-checkpoint tests and, when no changed file is under `metal/`, `gpu/` or `cuda/`, that module's long kernel tests (`quickModule.Slow`) | runs to completion; no sampling | about 3 min for a decoder change (the `decoder` cell, cold), about 4 for one under `metal/`; an unchanged `decoder` re-run replays from the test cache in about 2 s |
 | `go run ./cmd/gate quick -full -base <previous tag>` | night / pre-tag | the same runner with nothing deferred; writes a record under `docs/measurements/quick-full/` that `gate release` requires from each box (`RELEASING.md` step 8) | complete | about 10 min on the Mac (measured 2026-10-13: the Metal suite 4m12s, the real-checkpoint cells 3m44s) |
 | `go test -run '<yours>'` on one package; tiny-fixture goldens | quick | the test itself | fixed | seconds to minutes |
 | `scripts/refresh_parity_hashes.sh` | day | the goldens-gated refresh | completes | about 4 min |
