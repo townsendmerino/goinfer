@@ -55,7 +55,8 @@ A request on a CUDA resident was priced at the CPU batched sweep's whole-prompt 
 host's available memory, though the resident prefills in passes of 512 rows. The resident now reports its chunk and its per-pass
 scratch (the sum of the pass's device buffers after the allocator's rounding, held to the pass by a test), and admission prices the
 request at one chunk plus the host embeddings of the prompt: 0.19 GB against 1.65 GB for the same request on the 1.5B. This is the
-CUDA half of the Metal change under "on Metal, a long prompt prefills in blocks".
+CUDA half of the Metal change under "on Metal, a long prompt prefills in blocks". **WebGPU does the same** (0.18 GB against 1.65 GB; its figure is an upper bound
+within 6% of what the pass creates).
 
 ### Added — `goinfer-serve connect <agent>` writes a coding agent's configuration with the window the server serves
 

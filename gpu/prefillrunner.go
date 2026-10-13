@@ -678,7 +678,12 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			f()
 		}
 	}()
-	keepBuf := func(b *wgpu.Buffer) { keep = append(keep, b.Release) }
+	keepBuf := func(b *wgpu.Buffer) {
+		if prefillBufSeenForTest != nil {
+			prefillBufSeenForTest(int64(b.GetSize()))
+		}
+		keep = append(keep, b.Release)
+	}
 	keepBG := func(b *wgpu.BindGroup) { keep = append(keep, b.Release) }
 
 	enc, err := c.device.TryCreateCommandEncoder(nil)
@@ -1430,3 +1435,7 @@ var (
 	prefillBufPoison = false
 	prefillBufReused atomic.Int64
 )
+
+// prefillBufSeenForTest, when set (tests only), is told the size of every device buffer a batched pass creates (recycled ones are not
+// created again), so a test can hold PrefillScratchBytes to the pass.
+var prefillBufSeenForTest func(bytes int64)

@@ -669,6 +669,8 @@ Size S. Done in one session, on nobara; test files and measurement records only 
     0.99986 or better against the per-token path; the real 1.5B at 12,500 tokens, cosine 0.996, argmax equal); the passes now run fused;
   - admission by the resident's own per-chunk figure (`decoder.ResidentPrefillChunks`; CUDA's `PrefillScratchBytes`, held to the pass by a test):
     0.19 GB against 1.65 GB for a 20,954-token request on the 1.5B;
+  - **WebGPU's half** (branch `kv3-webgpu-2026-10`, `docs/measurements/kv3-webgpu-2026-10-13.md`): the same interface, the pass's own figure as an upper bound (1.04 to 1.06 times
+    the bytes the pass creates), 0.18 GB against 1.65 GB for a 20,954-token request; pricing only, no execution change;
   - **night jobs queued** (under the timing lock): the real fidelity set (six prompts to 20,000 tokens), the Claude Code first-request A/B
     (registered band: PASS at 45 s or less, against 268.7 s before; the one exploratory reading is 25.1 s), TTFT at K = 512 and 3,900 against
     `main` (0.97 or better), and the whole CUDA suite with the ignored fixtures linked. **The branch merges when they read green.**
