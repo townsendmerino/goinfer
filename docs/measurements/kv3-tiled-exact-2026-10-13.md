@@ -42,14 +42,14 @@ Branch `kv3-tiled-2026-10`, from `kv3-cuda-2026-10` (it needs that branch's guar
 | G1 | the row kernels equal `attn_batched` row by row: random q, K and V, head dim 64, 128, 256 and 512, MHA and GQA, sliding window, sink, `startPos` 0 and not 0, f32 and f16 KV, spans below the bound (a test seam forces the new route there) | day | every output float bit-identical |
 | G2 | no change below the bound: the existing digest runs at 300, 3,900 and 12,000 tokens against `kv3-cuda-2026-10`; the `cuda` identity suites the branch already runs | day | bit-identical |
 | G3 | batched equals per-token past the bound, on a tiny head-dim-256 fixture at 12,400 to 16,384 tokens (the fixture's context raised as `kv0LoadCtx` does), logits and every row's KV | day | bit-identical |
-| G4 | the same on the real models: Gemma-3-4B at 12,400 tokens and Gemma-4-E4B at 12,400 tokens (global layers head dim 512), batched against per-token, last-row logits and a KV digest | night (the per-token side is about 2 and 3 minutes each, the larger the 20,000-token pair) | bit-identical |
+| G4 | the same on the real models: Gemma-3-4B at 12,400 tokens and Gemma-4-E4B at 12,400 tokens (global layers head dim 512), batched against per-token, last-row logits and a KV digest | night (the per-token side is at least 2 and 3 minutes a model at 12,400 tokens) | bit-identical |
 | G5 | speed: time to first token on Gemma-3-4B and Gemma-4-E4B at 12,400 and 20,000 tokens, batched against the per-token path, same session, interleaved | night; one exploratory cell by day, never quoted | **PASS** at 3x or more at 12,400 tokens on both; **AMBIGUOUS** 1.5x to 3x (parked: tune the V-sum's occupancy, a rows axis on the dims split, then re-read once); below 1.5x the kernel is not kept |
 | G6 | no regression where it does not route: TTFT at K = 512 and 3,900 on Gemma-3-4B against `kv3-cuda-2026-10`, and the Qwen3-4B pair the branch already runs | night | 0.97 or better |
 | G7 | admission: the pass's own scratch (a test seam reports it) is within the registered 5% of `PrefillScratchBytes` at 16 and at 512 rows, tiny and real | day | within the margin, over-pricing only |
 
 **Expectation, stated so it can be wrong.** Each (row, head) reads its whole key range from the cache with no reuse across rows beyond the GQA group, so the cost is
-cache bandwidth, not the fused kernel's 64-key tiles. A 20,000-token prompt reads about 10 TB across the six global layers of Gemma-3-4B before L2 reuse: tens of
-seconds at this card's bandwidth, not the 17 s of the batched rate at 1.5k. G5 measures it; this note does not predict a number.
+cache bandwidth, not the fused kernel's 64-key tiles. A 20,000-token prompt reads about 10 TB of K and as much of V across the six global layers of Gemma-3-4B (8 heads, head dim 256, f32) before L2 reuse:
+tens of seconds at this card's bandwidth, not the 17 s of the batched rate at 1.5k. G5 measures it; this note does not predict a number.
 
 ## 4. Not in this work
 
