@@ -80,3 +80,21 @@ Nothing moves a golden or a parity row unless the gates say so.
 0. This record, committed before any gate. 1. The kernel twins and their identity tests, f32 PTX byte-identical. 2. The Go plumbing: options, buffers,
 twin loading, `UploadKV` conversion, declines, pricing, banner. 3. End-to-end tests (f16 resident vs f32 resident logits), the gate and the night scripts.
 4. The overflow survey and, at night, the two gates. 5. The default, only on a pass; docs and flags; one push.
+
+## Results (2026-10-13; the night of 2026-10-12, `76abc5bc`)
+
+Log: `docs/measurements/cuda-f16-kv-2026-10/kv16-gate-2026-10-12.log.gz`. Both cells ran to the end; every precondition held (the f16 K buffer is half the f32 one, the lane launched at every decode row, 63 of 63 decode rows differ
+on every prompt, A/A bit-identical over 64 rows on both cells, the seed row identical on 10 of 10 prompts in both).
+
+- **Overflow survey: clean.** Over the ten set-B prompts at every layer, the largest |K| is 423.3 (D7, last layer) and 360.6 (S, layer 0), and the largest |V| is 34 or less, against the 32,752 limit.
+- **D7, K=8000, the decision cell: AMBIGUOUS, PARKED.** Mean teacher-forced agreement f16 92.03% against f32 92.97% (paired difference -0.94 pt, s.e. 0.67; the bar is -1.0, and the parked band is its last 0.2); f16 >= f32 on 5 of 10 prompts
+  (the bar is half); hard flips 9 against 11 (criterion a passes); mean KL 0.053865 against 0.053184, ratio 1.0128 (criterion c passes, below the 1.05 band), paired KL delta +0.00068, s.e. 0.0015. Four of the ten prompts sit at or near
+  100% on both arms and say nothing; the other six move by one to three positions each, in both directions. One position is 1.56 points, so -0.94 pt over 640 positions is six positions.
+- **S, K=3900, the confirmation cell: PASSES** (agreement 90.94% against 91.09%, f16 >= f32 on 6 of 10, hard flips 8 against 9, KL ratio 1.0057). It cannot rescue the decision cell.
+- **Prediction scored:** both cells PASS (0.8) came out one of two; KL within 3% (0.6) yes on both; agreement within 0.5 pt (0.7) yes on S, no on D7; a family fails the survey (0.05) no.
+
+**Decision, by the rule above: the default does not flip.** `--kv auto` stays f32; `-kv f16` stays available on the five dense families and is the opt-in path. Per the registration, a re-run needs a named mechanism, not a re-roll, and there is
+none: the f16 arm's only change is the rounding of stored K and V, which the exact-input identity tests prove is the only change. Whether a PARKED decision cell is enough to turn the default on anyway is the owner's call
+(R6's flash-decode lane and R8's vision tower were each turned on by owner decision), and it would be recorded as that, not as a pass.
+
+The paired speed check did not run: its first night run was refused by `bench_peer.py` on a 1-minute load of 1.36, left by the gate before it (no cell was measured). The script now waits for the load to settle before each pass; it is queued again.
