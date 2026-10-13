@@ -1,6 +1,6 @@
 #!/bin/bash
 # KV1's night job on one box (docs/measurements/kv1-2026-10-13.md): G5b, a lone request's decode rate and time to first
-# token, this branch against main, and on nobara G2b first (a windowed real model on the fast prefill kernels). Runs with
+# token, this branch against main. Runs with
 # nobody watching: REV and BASE are commits named when it is queued, both binaries are built here from detached
 # worktrees, and this script, kv1_ttft.py and grade_kv1_speed.py are the copies beside it. night.py holds the timing
 # lock; bench_peer.py inherits it.
@@ -10,7 +10,7 @@
 #   DRY=1 ...   stops after the builds and the provenance block.
 #
 # Estimates. Mac: about 115 minutes (decode 24 cells a model at about 45 s on the 1.5B and 75 s on the 7B; time to first
-# token 24 cells a model at about 35 s and 130 s). nobara: about 85 minutes (G2b 10; decode 16 cells a model at about 40 s
+# token 24 cells a model at about 35 s and 130 s). nobara: about 75 minutes (decode 16 cells a model at about 40 s
 # and 60 s; time to first token 24 cells a model at about 25 s and 60 s). Each harness prints a line per cell.
 set -uo pipefail
 REV=${REV:?REV is required: the commit under test}
@@ -54,12 +54,6 @@ NEW=$B/bin/serve-new; OLD=$B/bin/serve-old
 } | tee "$OUT/provenance.txt"
 [ "${DRY:-0}" = 1 ] && { echo "DRY=1: stopping after the builds and the provenance block"; exit 0; }
 rc=0
-if [ "$BE" = cuda ]; then
-  echo "== G2b: started $(date '+%T'), about 10 minutes"
-  (cd "$B/wt-new/cuda" && GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' . -run 'TestWindowedKV_offsetsFastClass_mistral7B' -count=1 -v -timeout 30m) > "$OUT/g2b-mistral7b.log" 2>&1
-  echo "== G2b: exit $? at $(date '+%T')"; grep -E 'READING|^--- |^ok|^FAIL' "$OUT/g2b-mistral7b.log" | cut -c1-240
-  grep -q -- '^--- PASS: TestWindowedKV_offsetsFastClass_mistral7B' "$OUT/g2b-mistral7b.log" || { echo "!! G2b did not pass (a skip is not a pass)"; rc=1; }
-fi
 echo "== decode: started $(date '+%T')"
 BEU=$(echo "$BE" | tr a-z A-Z)
 (cd "$B/wt-new" && env BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=$BE BENCH_MODELS=1.5B,7B BENCH_DEPTHS=none BENCH_ABBA=$DECODE_QUADS \

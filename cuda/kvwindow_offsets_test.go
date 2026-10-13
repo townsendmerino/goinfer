@@ -55,8 +55,34 @@ func windowedOffsetsStorage(t *testing.T, fx string) {
 	}
 }
 
-// windowRig loads a windowed model with full-KV storage, so every layer's rows can be read back whole.
+// windowRig loads a model with full-KV storage, so every layer's rows can be read back whole, and requires it to have
+// sliding-window layers.
 func windowRig(t *testing.T, path string, ctxCap int, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
+	t.Helper()
+	g := fullKVRig(t, path, ctxCap, tokens)
+	windowed := 0
+	for l := range g.r.layers {
+		if g.r.layers[l].window > 0 {
+			windowed++
+		}
+	}
+	if windowed == 0 {
+		t.Fatalf("%s: no layer has a sliding window; the test does not exercise the path it names", path)
+	}
+	t.Logf("%d of %d layers are sliding-window; head dim %d", windowed, len(g.r.layers), g.r.layers[0].hd)
+	return g
+}
+
+// setWindow gives every layer of a loaded resident a sliding window of w positions. A layer's window is an argument of
+// each attention launch, read at launch time, so this takes effect on the next forward; it must be called before the
+// first one.
+func setWindow(g *kv0Rig, w int) {
+	for l := range g.r.layers {
+		g.r.layers[l].window = int32(w)
+	}
+}
+
+func fullKVRig(t *testing.T, path string, ctxCap int, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
 	t.Helper()
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: ctxCap})
 	if err != nil {
@@ -67,19 +93,11 @@ func windowRig(t *testing.T, path string, ctxCap int, tokens func(vocab int) fun
 	if batched, why := r.PrefillPath(); !batched {
 		t.Fatalf("%s: batched prefill declined: %s", path, why)
 	}
-	windowed := 0
 	for l := range r.layers {
 		if r.layers[l].kvWin || r.layers[l].kvHalf {
 			t.Fatalf("%s: layer %d holds windowed or f16 storage; this test reads whole f32 caches", path, l)
 		}
-		if r.layers[l].window > 0 {
-			windowed++
-		}
 	}
-	if windowed == 0 {
-		t.Fatalf("%s: no layer has a sliding window; the test does not exercise the path it names", path)
-	}
-	t.Logf("%d of %d layers are sliding-window; head dim %d", windowed, len(r.layers), r.layers[0].hd)
 	_, _, _, _, _, _, vocab := m.Dims()
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	t.Cleanup(cancel)
@@ -170,35 +188,51 @@ func windowedOffsetsInvariance(t *testing.T, fx string) {
 	t.Logf("%d arms invariant over %d K/V elements; control: first difference at %d, %d elements after it", len(got), got[0].kv.total, d.firstPos, d.after)
 }
 
-// TestWindowedKV_offsetsFastClass_mistral7B is G2b: the same question on the fast kernels, which need a head dimension
-// of 64 or 128 and so a real windowed model. It records whether a windowed fused prefill is invariant to a split or a
-// chunk width that is not a multiple of 64, past the window. It measures; KV1 does not depend on the answer.
-func TestWindowedKV_offsetsFastClass_mistral7B(t *testing.T) {
+// G2b: the same question on the fast kernels, which need a head dimension of 64 or 128. No windowed checkpoint that
+// fits the card has one, so the window is set on a full-attention model after it loads (setWindow). The test records
+// whether a windowed fused prefill is invariant to a split or a chunk width that is not a multiple of 64. It
+// measures; KV1 does not depend on the answer.
+func TestWindowedKV_offsetsFastClass_tiny(t *testing.T) {
+	const dir = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFile(t, dir)
+	windowedFastClass(t, func() *kv0Rig { return fullKVRig(t, dir, kv0Ctx, kv0RandomTokens) })
+}
+
+func TestWindowedKV_offsetsFastClass_real1p5B(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Mistral-7B-Instruct-v0.1)")
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)")
 	}
 	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, "models", "mistral-7b-instruct-v0.1.Q4_K_M.gguf")
+	path := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	requireDeviceAndFile(t, path)
-	const n = 5000
-	g := windowRig(t, path, 5120, kv0TextTokens(t, path))
-	window := int(g.r.layers[0].window)
-	if window <= 0 || window >= n-256 {
-		t.Fatalf("the model's window is %d; a %d-token prompt does not put enough rows past it", window, n)
+	windowedFastClass(t, func() *kv0Rig { return fullKVRig(t, path, kv0Ctx, kv0TextTokens(t, path)) })
+}
+
+func windowedFastClass(t *testing.T, load func() *kv0Rig) {
+	const n, window = 1000, 256
+	// The control, at full attention: a split at a start that is not a multiple of 64, both calls fast class.
+	g := load()
+	a0, _ := g.launches()
+	_, _, ctl := windowInvariance(t, g, n, []windowArm{{name: "split@600, no window", split: 600}})
+	if a1, _ := g.launches(); a1 == a0 {
+		t.Fatalf("no attn_fused launch at full attention: the fast class does not run on this model, so nothing here reads it")
 	}
+	if c := ctl[0]; c.kv.differ != 0 || c.logits != 0 {
+		t.Fatalf("control: at full attention a split at 600 is NOT invariant (%d K/V elements from position %d, %d logits); the window arms cannot be read against it", c.kv.differ, c.kv.firstPos, c.logits)
+	}
+	t.Logf("READING control, full attention, split@600: INVARIANT (%d K/V elements, %d attn_fused launches)", ctl[0].kv.total, ctl[0].fastAttn)
+
+	g = load()
+	setWindow(g, window)
 	arms := []windowArm{
-		{name: "split@4480 (a multiple of 64)", split: 4480},
-		{name: "split@4736 (a multiple of 64)", split: 4736},
-		{name: "split@4500", split: 4500},
-		{name: "split@4737", split: 4737},
+		{name: "split@576 (a multiple of 64)", split: 576},
+		{name: "split@704 (a multiple of 64)", split: 704},
+		{name: "split@600", split: 600},
+		{name: "split@777", split: 777},
 		{name: "chunk=448 (a multiple of 64)", chunk: 448},
 		{name: "chunk=500", chunk: 500},
 	}
-	a0, _ := g.launches()
 	_, _, got := windowInvariance(t, g, n, arms)
-	if a1, _ := g.launches(); a1 == a0 {
-		t.Fatalf("no attn_fused launch in any pass: the fast class did not run, so this reads nothing about it")
-	}
 	for _, r := range got {
 		verdict := "INVARIANT"
 		if r.kv.differ != 0 || r.logits != 0 {
