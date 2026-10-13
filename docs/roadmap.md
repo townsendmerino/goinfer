@@ -75,11 +75,17 @@ promoting are separate decisions with separate gates (see the last section).
    and [`task-halt-2026-09.md`](tasks/task-halt-2026-09.md) (cancel / halt / lease, K1–K9), both drafted
    this week.
 10. **The book** — `book/`, the chaptered inference primer for a Go engineer new to ML.
+11. **KV architecture** — [`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV10,
+    filed 2026-10-13): one paged, content-addressed, tiered KV store for every backend. Paged attention un-parked by
+    the owner the same day (D1).
 
 ## Decided and parked — each with its trigger
 
-- **Continuous batching / paged attention** — not this engine's weight class; unchanged since
-  v0.2 (MC5 of `tasks/parked/task-concurrency-2026-09.md`, parked with a trigger). Its small cousin got its kill-or-earn
+- **Continuous batching** — not this engine's weight class; unchanged since v0.2 (MC5 of
+  `tasks/parked/task-concurrency-2026-09.md`, parked with a trigger). **Paged attention was parked with it until
+  2026-10-13, when the owner un-parked it** ("un park paged attention for sure"): paged KV for memory and reuse within
+  one user's conversations and agents, [`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md).
+  Continuous batching's small cousin got its kill-or-earn
   measurement (MC2 earned) and shipped in 2026-09:
   - N CPU decode workers (MC3c), then batched CPU decode behind them (MC3c step 2: 2.19× the workers at 4 clients
     on the 7B);
