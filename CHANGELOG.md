@@ -30,6 +30,25 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Fixed — Claude Code 2.1.268 could not complete a turn against `/v1/messages`
+
+Claude Code now sends a `system` message inside the conversation on every turn (the Messages API's mid-conversation system
+messages). `/v1/messages` rejected any role but `user` and `assistant`, so every turn got a 400
+(`role must be "user" or "assistant", got "system"`). Such a message is now accepted after the first message and kept
+where it was sent, as text of the user side; the top-level `system` prompt is unchanged by it, so the prompt's prefix stays
+stable from turn to turn. A `system` message in first place, and every other unknown role, are still a 400.
+
+Traced with the real client ([the record](docs/measurements/integration-harness-2026-10/claude-code-census-2026-10-12.md)):
+its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
+named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
+
+### Added — `serve check` tests tool calling on `/v1/messages` at a real agent's schema size
+
+A new row, `tools, harness, Messages`, sends the same dozen tools and prompt as `tools, harness-scale` through the Anthropic
+route, which is what Claude Code speaks. A model that does not call the tool is a skip, as on the OpenAI row. A `tool_use`
+block a client could not use is a failure: no `id`, another tool's name, an `input` that is not a JSON object, or a
+`stop_reason` other than `tool_use`.
+
 ### Security — a loopback server refuses a foreign `Host`; the tool prompt no longer lets a message forge a turn; a wider embedding table is refused at load
 
 - **DNS rebinding.** A web page open in your browser could re-point its own name at `127.0.0.1` and then read every reply from a default `serve` (the browser sent `Host` and `Origin` both naming the page, which the same-origin check accepted). A listener bound to the loopback now answers only `localhost`, `127.0.0.1`, `[::1]` and the `-addr` host, and refuses any other `Host` with `421`. **If a reverse proxy on the same machine forwards a public name to the loopback port, add it with `-allowed-hosts`.** A listener bound beyond the loopback is unchanged. `demo/agent`'s `agent-web` has the same guard.

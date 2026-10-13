@@ -382,3 +382,110 @@ func TestToolsHarness_noCallIsSkipWithReason(t *testing.T) {
 		t.Errorf("the skip reason must name the harness-scale schema explicitly, got %q", res.Detail)
 	}
 }
+
+// messagesToolServer answers /v1/messages with the given content blocks and stop reason, after recording the request's
+// tools so a test can check their shape. Any other path is a 404, so a row that posts to the wrong route fails.
+func messagesToolServer(t *testing.T, content []map[string]any, stop string, tools *[]map[string]any) *Client {
+	t.Helper()
+	return newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct {
+			Tools []map[string]any `json:"tools"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if tools != nil {
+			*tools = req.Tools
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "message", "role": "assistant", "content": content, "stop_reason": stop})
+	})
+}
+
+func goodToolUse() map[string]any {
+	return map[string]any{"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": map[string]any{"city": "Paris"}}
+}
+
+// TestToolsHarnessMessages_okAndTheToolsAreMessagesShaped: a tool_use block for get_weather with an id, an object input
+// and stop_reason "tool_use" passes, after a text block as a model that thinks aloud sends. The request carried the dozen
+// harness-scale tools in the Messages shape (input_schema at the top level, no "function" wrapper): sent in the OpenAI
+// shape the row would be testing a request no Messages client makes.
+func TestToolsHarnessMessages_okAndTheToolsAreMessagesShaped(t *testing.T) {
+	var tools []map[string]any
+	content := []map[string]any{{"type": "text", "text": "I will check."}, goodToolUse()}
+	res := messagesToolServer(t, content, "tool_use", &tools).ToolsHarnessMessages(context.Background(), "m")
+	if !res.OK || res.Skip {
+		t.Fatalf("a usable tool_use block must pass: %+v", res)
+	}
+	if want := len(harnessScaleTools()); len(tools) != want || !strings.Contains(res.Detail, fmt.Sprintf("among %d tools", want)) {
+		t.Errorf("sent %d tools, detail %q; want the %d harness-scale tools", len(tools), res.Detail, want)
+	}
+	sawWeather := false
+	for _, tl := range tools {
+		schema, ok := tl["input_schema"].(map[string]any)
+		if _, wrapped := tl["function"]; wrapped || !ok || schema["type"] != "object" || tl["name"] == nil {
+			t.Fatalf("tool %v is not in the Messages shape (name, description, input_schema)", tl)
+		}
+		sawWeather = sawWeather || tl["name"] == "get_weather"
+	}
+	if !sawWeather {
+		t.Error("get_weather is not among the tools sent")
+	}
+}
+
+// A reply with no tool_use block is the model declining, a SKIP that names the route and the schema's size.
+func TestToolsHarnessMessages_noCallIsSkipWithReason(t *testing.T) {
+	content := []map[string]any{{"type": "text", "text": "I do not know."}}
+	res := messagesToolServer(t, content, "end_turn", nil).ToolsHarnessMessages(context.Background(), "m")
+	if res.OK || !res.Skip {
+		t.Fatalf("no tool_use block must SKIP, not pass or fail: %+v", res)
+	}
+	for _, want := range []string{"/v1/messages", "-tool) schema", `stop_reason="end_turn"`} {
+		if !strings.Contains(res.Detail, want) {
+			t.Errorf("skip reason %q does not carry %q", res.Detail, want)
+		}
+	}
+}
+
+// Each way a tool_use block can be unusable to a Messages client is a FAIL with its own reason, and so is a server
+// that refuses the request (its own message carried through) or answers on no such route.
+func TestToolsHarnessMessages_unusableBlocksFail(t *testing.T) {
+	with := func(k string, v any) []map[string]any {
+		b := goodToolUse()
+		if v == nil {
+			delete(b, k)
+		} else {
+			b[k] = v
+		}
+		return []map[string]any{b}
+	}
+	for _, c := range []struct {
+		name    string
+		content []map[string]any
+		stop    string
+		want    string
+	}{
+		{"no id", with("id", nil), "tool_use", "no id"},
+		{"another tool", with("name", "run_shell"), "tool_use", `called "run_shell"`},
+		{"input as a JSON string", with("input", `{"city":"Paris"}`), "tool_use", "not a JSON object"},
+		{"input missing", with("input", nil), "tool_use", "not a JSON object"},
+		{"stop_reason end_turn", []map[string]any{goodToolUse()}, "end_turn", `stop_reason "end_turn"`},
+	} {
+		res := messagesToolServer(t, c.content, c.stop, nil).ToolsHarnessMessages(context.Background(), "m")
+		if res.OK || res.Skip || !strings.Contains(res.Detail, c.want) {
+			t.Errorf("%s: %+v; want a FAIL whose reason contains %q", c.name, res, c.want)
+		}
+	}
+	refused := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"tools: unsupported shape"}}`))
+	})
+	if res := refused.ToolsHarnessMessages(context.Background(), "m"); res.OK || res.Skip || !strings.Contains(res.Detail, "unsupported shape") {
+		t.Errorf("a refused request: %+v; want a FAIL carrying the server's reason", res)
+	}
+	// toolServer speaks only the OpenAI shape: its reply has no content blocks, which is a broken route and not a model declining.
+	if res := toolServer(t, goodCall()).ToolsHarnessMessages(context.Background(), "m"); res.OK || res.Skip || !strings.Contains(res.Detail, "not a Messages reply") {
+		t.Errorf("an OpenAI-shaped reply on the Messages row: %+v; want a FAIL", res)
+	}
+}
