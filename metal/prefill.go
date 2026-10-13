@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
@@ -1322,6 +1324,59 @@ func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv flo
 // sequential path. TestPrefillExactAttnBound ties this to the kernel source.
 const prefillExactAttnMaxKeys = 4096
 
+// prefillWidths is the batched pass's scratch widths per row: the q|k|v projection, the attention output and the
+// feed-forward width, each the largest over the layers (a Gemma 4 E-model varies the attention geometry and the FFN
+// width by layer) and, for an MoE, over the expert and shared-expert widths. The pass sizes its buffers from these
+// and prefillScratchBytes prices them, so the two cannot drift apart.
+func (r *resident) prefillWidths() (qkvDim, qDim, maxI int) {
+	g0 := r.prefillGeom()
+	qDim = r.nH * g0.hd
+	qkvDim = qDim + 2*g0.kvDim
+	maxI = r.I
+	if r.moe != nil {
+		maxI = max(maxI, r.moe.inter, r.moe.sharedInter)
+	}
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil {
+			qkvDim, qDim = max(qkvDim, r.nH*g.hd+2*g.kvDim), max(qDim, r.nH*g.hd)
+		}
+		maxI = max(maxI, r.layers[l].ffnI)
+	}
+	return qkvDim, qDim, maxI
+}
+
+// prefillScratchBytes is the row-sized scratch one batched text pass over M rows allocates and frees: the half
+// residual, norm, q|k|v, attention-output and feed-forward buffers and the row positions, plus an MoE's routing and
+// expert buffers, an E-model's per-layer inputs and a Gated-DeltaNet hybrid's mixer buffers. It leaves out the
+// pass's uniforms (a few words each) and an image turn's m-RoPE triples and DeepStack sets.
+// TestPrefillScratchBytes_matchesThePass holds it to prefillScratchSeen.
+func (r *resident) prefillScratchBytes(M int) int64 {
+	if M <= 0 {
+		return 0
+	}
+	m, mp, H := int64(M), int64((M+7)/8*8), int64(r.H)
+	qkvDim, qDim, maxI := r.prefillWidths()
+	n := 2*mp*(2*H+int64(qkvDim)+int64(qDim)+3*int64(maxI)) + 4*mp
+	if e := r.moe; e != nil {
+		k := int64(e.k)
+		n += 4*m*int64(e.nE) + 8*m*k + 4*mp*H + 8*mp*k
+	}
+	if r.pleP > 0 {
+		n += 4*m*int64(r.nL*r.pleP) + 2*mp*int64(r.pleP)
+	}
+	if dp := r.dnet; dp != nil {
+		g0 := r.prefillGeom()
+		nHhd, kvDim := int64(r.nH*g0.hd), int64(g0.kvDim)
+		n += 2*mp*int64(dp.convDim+2*dp.valueDim) + 4*m*int64(4*dp.nv+dp.convDim+2*dp.keyDim+2*dp.valueDim)
+		n += 2*mp*(2*nHhd+2*kvDim) + 2*m*nHhd
+	}
+	return n
+}
+
+// prefillScratchSeen counts the bytes of row-sized scratch the batched pass has allocated, at the allocations
+// themselves, so a test can hold prefillScratchBytes to what a pass really takes.
+var prefillScratchSeen atomic.Int64
+
 // prefillAttnKernels is which attention kernel PrefillLast dispatches for this model: fused for hd%8==0 && hd<=128
 // (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that for hd 128 (R19: one threadgroup of 128
 // threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by prefillExactAttnMaxKeys.
@@ -1429,26 +1484,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	g0 := r.prefillGeom()
 	nHhd := r.nH * g0.hd
 	kvDim := g0.kvDim
-	qkvDim := nHhd + 2*kvDim
-	qDim := nHhd
-
-	maxI := I
-	if r.moe != nil {
-		if r.moe.inter > maxI {
-			maxI = r.moe.inter
-		}
-		if r.moe.sharedInter > maxI {
-			maxI = r.moe.sharedInter
-		}
-	}
-
-	// S9 step 2: a Gemma 4 E-model varies the attention geometry and the FFN width by layer; the scratch fits the largest.
-	for l := range r.layers {
-		if g := r.layers[l].geom; g != nil {
-			qkvDim, qDim = max(qkvDim, r.nH*g.hd+2*g.kvDim), max(qDim, r.nH*g.hd)
-		}
-		maxI = max(maxI, r.layers[l].ffnI)
-	}
+	qkvDim, qDim, maxI := r.prefillWidths()
 
 	// f16 activation scratch (per call, sized to the padded prompt).
 	// xF and the five prefillScratchU16 buffers below rely on Metal's zero-fill of a new buffer for their pad rows
@@ -1468,6 +1504,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		posv[m] = uint32(startPos + m)
 	}
 	posB := NewBufferUint32s(d, posv)
+	prefillScratchSeen.Add(int64(4 * Mpad))
 	var pos3B Buffer // S16: the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
 	if mrope != nil {
 		p3 := make([]uint32, Mpad*3)
@@ -1572,6 +1609,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 			copy(pv[m*LP:(m+1)*LP], src[H:H+LP])
 		}
 		pleInB, pleGF, uP, uLP = NewBufferFloats(d, pv), prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
+		prefillScratchSeen.Add(int64(4 * len(pv)))
 		scratch = append(scratch, pleInB, pleGF, uP, uLP)
 	}
 	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
@@ -2075,6 +2113,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 // this pattern must zero the buffer explicitly (Queue.ZeroAsync). TestPrefillScratch_zeroFilled pins the property on
 // this backend.
 func prefillScratchU16(d *Device, n int) Buffer {
+	prefillScratchSeen.Add(int64(2 * n))
 	if prefillScratchCopy {
 		return NewBufferU16s(d, make([]uint16, n))
 	}
@@ -2086,6 +2125,7 @@ func prefillScratchU16(d *Device, n int) Buffer {
 // rowWgtBuf), and xF, which the embeddings are converted straight into. Same zero-fill reliance and the same copy arm,
 // plus prefillR20Copy, which copies these alone so a test can time them apart from the other scratch.
 func prefillScratch[T gpu.Scalar](d *Device, n int) Buffer {
+	prefillScratchSeen.Add(int64(n) * int64(unsafe.Sizeof(*new(T))))
 	if prefillScratchCopy || prefillR20Copy {
 		return gpu.NewBufferOf(d, make([]T, n))
 	}

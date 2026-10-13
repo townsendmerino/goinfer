@@ -1,0 +1,45 @@
+[23:06:51] round 1: gemma-4-e2b-image-new | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-s3 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 4 s, model 'gemma-4-E2B_q4_0-it'; load 0.45
+  warm-up 0: TTFT 10.134 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 10.049 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 10.038 s 'This image is an **abstract gradient**'
+[23:07:31] round 1: gemma-4-e2b-image-old | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-new --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 3 s, model 'gemma-4-E2B_q4_0-it'; load 1.13
+  warm-up 0: TTFT 15.851 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 15.694 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 15.633 s 'This image is an abstract gradient with a'
+[23:08:27] round 2: gemma-4-e2b-image-old | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-new --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 4 s, model 'gemma-4-E2B_q4_0-it'; load 1.71
+  warm-up 0: TTFT 15.761 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 15.626 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 15.756 s 'This image is an **abstract gradient**'
+[23:09:23] round 2: gemma-4-e2b-image-new | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-s3 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 3 s, model 'gemma-4-E2B_q4_0-it'; load 1.13
+  warm-up 0: TTFT 10.112 s 'This image is an abstract gradient with a'
+  timed   1: TTFT 10.042 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 10.081 s 'This image is an **abstract gradient**'
+[23:10:02] round 3: gemma-4-e2b-image-new | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-s3 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 3 s, model 'gemma-4-E2B_q4_0-it'; load 1.38
+  warm-up 0: TTFT 10.111 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 10.073 s 'This image is an **abstract gradient background'
+  timed   2: TTFT 10.044 s 'This image is an **abstract gradient**'
+[23:10:41] round 3: gemma-4-e2b-image-old | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-new --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 3 s, model 'gemma-4-E2B_q4_0-it'; load 1.38
+  warm-up 0: TTFT 15.763 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 15.613 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 15.518 s 'This image is an **abstract gradient**'
+[23:11:36] round 4: gemma-4-e2b-image-old | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-new --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 4 s, model 'gemma-4-E2B_q4_0-it'; load 1.10
+  warm-up 0: TTFT 15.726 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 15.661 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 15.649 s 'This image is an **abstract gradient**'
+[23:12:32] round 4: gemma-4-e2b-image-new | goinfer: /Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-s3 --model /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /Users/francistownsend-merino/models/gemma-4-E2B-unq -vision-device gpu --backend webgpu --addr 127.0.0.1:18654
+  up in 4 s, model 'gemma-4-E2B_q4_0-it'; load 1.15
+  warm-up 0: TTFT 10.152 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 10.091 s 'This image is an **abstract gradient**'
+  timed   2: TTFT 10.158 s 'This image is an **abstract gradient**'
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-4-e2b-image-new | goinfer | 8 | 10.06 | no |
+| gemma-4-e2b-image-old | goinfer | 8 | 15.64 | no |

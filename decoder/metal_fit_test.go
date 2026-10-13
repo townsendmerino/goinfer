@@ -7,8 +7,9 @@ import (
 )
 
 // TestPlan_metalPlansWhatMetalAllocates (C-C01, docs/audit-metal-2026-09-30.md): Plan("metal") never promises a context
-// Metal will not allocate. Unpinned, Metal allocates MetalCtxDefault however much memory is free; an explicit -ctx
-// reaches past it up to MetalCtxCeiling, above which Metal refuses, so Plan declines it with the ceiling named.
+// Metal will not allocate. Unpinned, Metal allocates at most MetalFitDefaultCtx however much memory is free (MetalFitCtx);
+// an explicit -ctx reaches past it up to MetalCtxCeiling, above which Metal refuses, so Plan declines it with the ceiling
+// named.
 func TestPlan_metalPlansWhatMetalAllocates(t *testing.T) {
 	m, err := Load("../testdata/llama-tiny", Options{Quant: "f32"})
 	if err != nil {
@@ -16,8 +17,12 @@ func TestPlan_metalPlansWhatMetalAllocates(t *testing.T) {
 	}
 	defer m.Close()
 	const free = int64(64) << 30
-	if p := m.Plan("metal", free, PlanRequest{Ctx: 8192}); p.Placement == PlacementDecline || p.Ctx != MetalCtxDefault {
-		t.Errorf("unpinned 8192 on metal: %v ctx %d (%s); want resident at %d, what an unpinned Metal load allocates", p.Placement, p.Ctx, p.Reason, MetalCtxDefault)
+	if p := m.Plan("metal", free, PlanRequest{Ctx: 2 * MetalFitDefaultCtx}); p.Placement == PlacementDecline || p.Ctx != MetalFitDefaultCtx {
+		t.Errorf("unpinned %d on metal: %v ctx %d (%s); want resident at %d, the most an unpinned Metal load allocates",
+			2*MetalFitDefaultCtx, p.Placement, p.Ctx, p.Reason, MetalFitDefaultCtx)
+	}
+	if p := m.Plan("metal", free, PlanRequest{Ctx: 8192}); p.Placement == PlacementDecline || p.Ctx != 8192 {
+		t.Errorf("unpinned 8192 on metal: %v ctx %d (%s); want resident at 8192, under the unpinned ceiling", p.Placement, p.Ctx, p.Reason)
 	}
 	if p := m.Plan("metal", free, PlanRequest{Ctx: 16384, CtxPinned: true}); p.Placement == PlacementDecline || p.Ctx != 16384 {
 		t.Errorf("-ctx 16384 on metal: %v ctx %d (%s); want resident at 16384", p.Placement, p.Ctx, p.Reason)

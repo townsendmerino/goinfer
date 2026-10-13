@@ -1,0 +1,21 @@
+=== RUN   TestS12AttnKernelFidelity
+21:19:28 [    0s] mode pilot: 8 prompts, prompt-set hash 1e8fd51b74cc18723ee5931713a722319ae895c46a4f6a6f9fde21d4fad75143; rows by cell map[medium:776 short:669]
+21:19:29 [    0s] loading the float32 reference (CPU) and two int4 residents (WebGPU), one a kernel
+21:19:41 [   12s] backend "vulkan", decode path webgpu:vulkan-resident (int4); planted defect in the candidate: true; 0 of 8 prompts already in /home/francis/goinfer-bench/s12-4c-6-2026-10-12/pilot-defect/positions-live.jsonl
+21:20:07 [   39s] prompt 1 of 8 pilot|short|t[0]|i0: 106 rows; agreement exact 28/32 candidate 29/32; mean KL exact 0.2824 candidate 0.3105; the arms' logits differ at 32 of 32 positions
+21:20:33 [   64s] prompt 2 of 8 pilot|short|t[0]|i1: 106 rows; agreement exact 32/32 candidate 32/32; mean KL exact 0.0013 candidate 0.0023; the arms' logits differ at 32 of 32 positions
+21:20:59 [   90s] prompt 3 of 8 pilot|short|t[0]|i2: 112 rows; agreement exact 23/32 candidate 22/32; mean KL exact 0.8018 candidate 1.1420; the arms' logits differ at 32 of 32 positions
+21:21:25 [  116s] prompt 4 of 8 pilot|short|t[1]|i0: 113 rows; agreement exact 24/32 candidate 25/32; mean KL exact 0.4881 candidate 0.3980; the arms' logits differ at 32 of 32 positions
+21:21:50 [  142s] prompt 5 of 8 pilot|short|t[1]|i1: 113 rows; agreement exact 30/32 candidate 30/32; mean KL exact 0.2942 candidate 0.1311; the arms' logits differ at 32 of 32 positions
+21:22:16 [  168s] prompt 6 of 8 pilot|short|t[1]|i2: 119 rows; agreement exact 25/32 candidate 25/32; mean KL exact 0.7949 candidate 0.8869; the arms' logits differ at 32 of 32 positions
+21:22:53 [  205s] prompt 7 of 8 pilot|medium|t[0 1 0 1]|i3: 388 rows; agreement exact 28/32 candidate 28/32; mean KL exact 0.2438 candidate 0.2373; the arms' logits differ at 32 of 32 positions
+21:23:31 [  242s] prompt 8 of 8 pilot|medium|t[1 0 1 0]|i4: 388 rows; agreement exact 28/32 candidate 29/32; mean KL exact 0.2169 candidate 0.3020; the arms' logits differ at 32 of 32 positions
+G-S12.4c-6 mode pilot, backend vulkan, planted defect true, prompt-set hash 1e8fd51b74cc18723ee5931713a722319ae895c46a4f6a6f9fde21d4fad75143
+exact: the per-dimension kernel; candidate: the key-split kernel; the arms' logits differ at 256 of 256 positions
+criteria: agreement margin 2.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell short: 6 prompts, 192 positions; agreement candidate 84.90% exact 84.38% (difference +0.52 pts, lower bound -1.06); mean KL candidate 0.4785 exact 0.4438 (ratio 1.078, upper bound 1.321); hard flips candidate 14 exact 13; discordant positions 7
+cell medium: 2 prompts, 64 positions; agreement candidate 89.06% exact 87.50% (difference +1.56 pts, lower bound -1.01); mean KL candidate 0.2697 exact 0.2303 (ratio 1.171, upper bound 1.514); hard flips candidate 6 exact 6; discordant positions 3
+pooled: 8 prompts, 256 positions; agreement candidate 85.94% exact 85.16% (difference +0.78 pts, lower bound -0.50); mean KL candidate 0.4263 exact 0.3904 (ratio 1.092, upper bound 1.295); hard flips candidate 20 exact 19; discordant positions 10
+VERDICT PARKED (hard flips pass true, agreement pass true, KL pass false) KL ratio upper bound 1.295 > 1.100
+--- PASS: TestS12AttnKernelFidelity (243.57s)
+PASS

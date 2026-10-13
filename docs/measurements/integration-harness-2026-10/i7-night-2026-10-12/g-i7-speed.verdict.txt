@@ -1,0 +1,5 @@
+1.5B: new build's context [32768], old build's [4096]
+1.5B: new 93.60 tok/s, old 93.45 tok/s (medians over 6 blocks); new/old by block 1.0045 1.0019 1.0014 1.0016 1.0017 1.0013; median 1.0017, min 1.0013, max 1.0045
+7B: new build's context [25736, 32768], old build's [4096]
+7B: new 30.70 tok/s, old 30.71 tok/s (medians over 6 blocks); new/old by block 0.9999 1.0013 1.0001 0.9980 1.0020 1.0000; median 1.0000, min 0.9980, max 1.0020
+VERDICT SHIP (per model: SHIP, SHIP; bar: median new/old >= 0.97 on both)

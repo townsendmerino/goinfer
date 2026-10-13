@@ -1,0 +1,8 @@
+started: 2026-10-12 20:02:42 PDT
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+new: 9f57d01bc51b613ea48334c826287e72978f56a1
+old: ffc6458580e78358d340c0230ef10ab86b34175b
+model: /home/francis/models/qwen25vl-3b-instruct
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+load:  20:02:42 up 8 days, 23:25,  3 users,  load average: 0.00, 0.04, 0.50
+finished: 2026-10-12 20:15:44 PDT rc=0

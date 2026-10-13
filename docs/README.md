@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (68: 59 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (74: 65 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -88,6 +88,18 @@ where darwin allows one.
 2026-09-25) scopes goinfer as a backend for MiniMax's `mcode` coding agent: what already works by
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
+
+[`task-cpu-kv-f16-2026-10.md`](tasks/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
+half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
+its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
+open, and the gates to register before any code.
+
+[`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV10, filed 2026-10-13, not started)
+proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
+tables, a content-addressed prefix index and tiers, with backends reduced to block storage and recurrent state as a
+checkpointed second pool. It lists what today's per-slot design costs, what must not change, the phases and their
+gates, and the owner decisions. The first, D1, is decided: the owner un-parked paged KV on 2026-10-13, for memory and
+reuse, with continuous batching still parked.
 
 [`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
 2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.

@@ -863,6 +863,63 @@ Read as a request it allocated KV several times the default on a tight machine a
 refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-09-30.md).
 ```
 
+Since M2 (docs/tasks/task-minimax-code-compat-2026-09.md) an unpinned load no longer gets a flat 4096: it gets
+`metalFitFor`'s answer, below. The rest of the note stands, with "the default" read as "what an unpinned load takes".
+
+## PrefillBlockRows
+
+How Metal bounds a long prompt's prefill memory (`metal/backend.go:metalResident.PrefillBlockRows`,
+`metal/prefill.go:resident.prefillScratchBytes`, `decoder/residency.go:Model.prefillBlockRows`). The gates and readings
+are in `docs/tasks/task-integration-harness-2026-10.md`, "I8".
+
+- **Why a block.** The batched pass allocates its scratch for every row it is handed: two residual-width buffers, the
+  q|k|v and attention outputs and three feed-forward widths, in halves. That is about 144 KB a row on a 7B, so one
+  pass over a 21k-token prompt holds 3 GB of unified memory beside the weights and the KV.
+- **Where the cut is made.** In the decoder's `residentPrefillSeed`, the one function both resident generation paths
+  call, not inside `PrefillLast`: each pass is then an ordinary continuation at a start position, which the pass
+  already supports for prefix reuse and for chunked prefill, and cancellation is checked between passes.
+- **Why it is exact.** The pass routes on the whole prompt's length and a continuation equals the whole pass
+  (`PrefillTailExact`), so a block changes no bit. The decoder asks for both before it splits.
+- **Who is not split.** A model on the exact attention kernel: its pass declines past 4,096 keys, and a split would
+  run the first blocks on the pass and the rest token by token, where today the whole prompt takes one route. Also
+  layer-major routes and E-models (not shown chunk-invariant), an int8 KV cache and `--exact-prefill` (no pass).
+- **The size.** The rows that fit 512 MiB, so the bound holds whatever the model's width; a model with narrow rows
+  keeps one pass for prompts it handled in one pass before.
+- **The price and the pass share their widths** (`prefillWidths`), and a counter at the allocations
+  (`prefillScratchSeen`) lets the tests hold the reported figure to what a pass took.
+
+## metalFitFor
+
+The fit-by-default context of an unpinned Metal load (`metal/backend.go:metalFitFor`, `metal/backend.go:metalFitNow`,
+`decoder/metal_fitctx.go:Model.MetalFitCtx`). The design, and why each piece is there:
+
+- **One function for the load and for `fit`.** `MetalFitCtx` lives in `decoder` so `internal/fitcmd/fit.go:planFor` can
+  ask it without linking Metal. Both hand it the registered `metal` memory probe (`metalMemoryCeiling`: the smaller of
+  0.70 of RAM and the live available figure) and Metal's default slot count, so they cannot name different contexts
+  for one memory figure.
+- **The candidate is 16384, not the 32768 ceiling.** It is the size of a coding agent's session (its first request is
+  about 11k tokens), CUDA's figure. Every position is allocated up front in every slot, so asking for the ceiling by
+  default would hold twice the KV for a length few sessions reach.
+- **Slots before context, down to 4096.** With more than one KV slot asked for, the context shrinks until all fit
+  (a binary search over Metal's 8-position grid; KV is linear in the context and nothing else in `Plan` grows with
+  it). At 4096 it stops, and `metalKVSlots` grants the slots that fit there.
+- **The margin (`decoder.MetalFitMarginBytes`, 384 MiB).** `BuildResident`'s guard and `metalKVSlots` read the live
+  budget again after the context is chosen. A context taken at the exact edge would fail the guard on a drift of a
+  few megabytes, and S18's `shrinkCtxToFit` would then halve it. The margin keeps the choice clear of that edge.
+- **Chosen once a build (`metalFitChoice`).** The budget is live, and `resolveMetalCtxCap` is read several times in
+  one build (the guard, the slot count, the KV sizing). `BuildResident` stores its choice for the build's duration so
+  they all see one number; the entry is deleted when the build returns.
+- **A paged-MoE load keeps 4096** (`metalPagesMoE`), for the reason CUDA's `-moe-cache-experts` does
+  (docs/code-notes/cuda.md#resolveCtxCapFit): the expert pager is sized from what is left after everything pinned,
+  so a byte given to KV is a byte its slots never see. `metalPagesMoE` reads the requests, not the resolved slot
+  count: `autoMoESlots` sizes that count from the KV this function decides, and reading it here would recurse.
+- **A guard pin is a limit.** `ResidentContextRequest() > 0` without `ResidentContextPinned()` is the load-time
+  guard's auto-pin. It goes in as `MetalFitInput.Lower`, which caps the candidate and takes the floor down with it.
+- **What the budget already counts.** By the time `BuildResident` runs, a checkpoint loaded onto the heap has
+  already lowered the live available figure by its own weights, and `Plan` then prices the weights and their host
+  copy against it. That is the guard's own conservatism and the fit inherits it: on a busy 16 GB Mac a 7B does not
+  go resident at all, at any context. A sidecar's mapped weights do not have this cost until they are touched.
+
 ## tgReduceNorm
 
 Moved from `metal/model.go` (the comment above the `tgReduceNorm`/`tgReduceAttn` constants) on 2026-10-09.

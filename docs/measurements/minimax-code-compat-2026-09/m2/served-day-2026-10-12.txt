@@ -1,0 +1,41 @@
+# M2 gate 3 on the Mac by day, 2026-10-12, M1 Pro 16 GB with the owner's desktop open (5.7 GB available before the
+# loads). serve built from the M2 branch's working tree as committed at f79f9196; m2_served_check.py's console output.
+# No -ctx on either load.
+
+[16:00:07] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: swap used before the load 4459 MB
+  serve-metal -model bench=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | decode path: metal-resident (int4)
+  | context: 16384 tokens (fit: 2 slots, 0.9 GB KV; model maximum 32768 — raise with --ctx) · KV f16
+  | fit: 16384-token cap needs 0.4 GB KV (weights 1.1 GB, budget 3.7 GB, 3.2 GB left for a request's own prefill)
+  | KV plan: 2 conversations x 16384 positions (4 asked for)
+  up after 4 s; swap used 4459 MB
+  answered in 14.7 s: prompt_tokens 11492, completion_tokens 8, reply 'The given data represents a sequence of numbers'
+  swap used after the answer 4459 MB (before the load 4459 MB, growth +0 MB)
+
+[16:00:36] qwen2.5-7b-instruct-q4_k_m.gguf: swap used before the load 4459 MB
+  serve-metal -model bench=~/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend
+  | [resident] BuildResident declined: the resident build needs 4.65 GB (weights, host copy and KV), over 70% of 16.0 GB RAM
+  |   (budget 3.21 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further))
+  | --require-backend: model "bench" did not build a resident decode path on backend "metal"
+  serve did not come up (exit 1) after 14 s
+  (This load wrote the 7B's Metal sidecar, 4.77 GB, beside the checkpoint in ~/models.)
+
+# The night harness's wiring, one run a cell, exploratory and not a result (16:17 to 16:24; 6.5 min of it the idle gate):
+#   goinfer      (M2 build, no -ctx): context 16384 tokens (fit: 2 slots, 0.9 GB KV), 94.23 tok/s at depth 128
+#   goinfer_old  (main c75a283a, no -ctx): context 4096 tokens (backend default), 94.22 tok/s
+
+# The paged 26B, after the owner said to pull it (models-pull, 14,589,782,875 bytes, equal to the archive's; its
+# .verified marker equal too). By day under the day-use rule: Metal, paged, the memory guard on, -require-backend.
+# 5.8 GB available before the load; banner only, no request. serve at f79f9196.
+
+[17:01:19] gemma4-26b-int4-v14st.metal.giw: swap used before the load 4533 MB
+  serve-metal-new -model bench=~/models/gemma4-26b-int4-v14st.metal.giw -backend metal -addr 127.0.0.1:18477 -require-backend -moe-cache-experts
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | metal: 1 resident KV slots of 2 requested — each costs 880 MB of KV at the resident context, and the memory guard allows 1
+  | decode path: metal-resident (int4)
+  | context: 4096 tokens (paged MoE keeps the default; model maximum 262144 — raise with --ctx) · KV f16
+  | harness: 4096 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); --ctx 16384 holds it for 3.4 GB of KV (1 slot)
+  | fit: 4096-token cap needs 0.9 GB KV (weights 13.6 GB, budget 2.1 GB, 1.2 GB left for a request's own prefill)
+  | KV plan: 1 conversation x 4096 positions (4 asked for)
+  up after 5 s; swap used 4533 MB

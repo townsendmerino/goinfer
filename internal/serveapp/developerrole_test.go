@@ -48,22 +48,23 @@ func TestDeveloperRoleAliasesSystem(t *testing.T) {
 			wantTurnRoles: []string{"user"},
 		},
 		{
-			// Precedence is not a new concept: two "system" messages already
-			// resolve last-one-wins, and the alias inherits exactly that.
-			name:          "system then developer — last wins",
+			// Two leading system messages are both kept, joined in order, and the alias
+			// inherits exactly that.
+			name:          "system then developer — joined in order",
 			dev:           []chatMessage{{Role: "system", Content: rawStr("FIRST")}, {Role: "developer", Content: rawStr("SECOND")}, {Role: "user", Content: rawStr("hi")}},
 			sys:           []chatMessage{{Role: "system", Content: rawStr("FIRST")}, {Role: "system", Content: rawStr("SECOND")}, {Role: "user", Content: rawStr("hi")}},
-			wantSystem:    "SECOND",
+			wantSystem:    "FIRST\n\nSECOND",
 			wantTurnRoles: []string{"user"},
 		},
 		{
-			name:          "developer then system — last wins",
+			name:          "developer then system — joined in order",
 			dev:           []chatMessage{{Role: "developer", Content: rawStr("FIRST")}, {Role: "system", Content: rawStr("SECOND")}, {Role: "user", Content: rawStr("hi")}},
 			sys:           []chatMessage{{Role: "system", Content: rawStr("FIRST")}, {Role: "system", Content: rawStr("SECOND")}, {Role: "user", Content: rawStr("hi")}},
-			wantSystem:    "SECOND",
+			wantSystem:    "FIRST\n\nSECOND",
 			wantTurnRoles: []string{"user"},
 		},
 		{
+			// After the conversation has started it stays in place, as user-side text: it does not become (or replace) the system prompt.
 			name: "developer mid-conversation",
 			dev: []chatMessage{
 				{Role: "user", Content: rawStr("q1")},
@@ -77,8 +78,8 @@ func TestDeveloperRoleAliasesSystem(t *testing.T) {
 				{Role: "system", Content: rawStr("SCAFFOLD")},
 				{Role: "user", Content: rawStr("q2")},
 			},
-			wantSystem:    "SCAFFOLD",
-			wantTurnRoles: []string{"user", "assistant", "user"},
+			wantSystem:    "",
+			wantTurnRoles: []string{"user", "assistant", "user", "user"},
 		},
 		{
 			name:          "developer with array content parts",
@@ -320,5 +321,45 @@ func TestAnthropicMidConversationSystem(t *testing.T) {
 		if _, _, aerr := anthropicTurns(bad); aerr == nil || aerr.code != http.StatusBadRequest {
 			t.Errorf("role %q after the first message: %+v; want a 400", role, aerr)
 		}
+	}
+}
+
+// TestSystemMessagesAreAllKept: the request shapes that used to lose text. Codex's first request is two developer
+// messages (its agent instructions, then its skills note) followed by two user messages; keeping only the last
+// developer message dropped the instructions, and goinfer answered a prompt a third of the size. /v1/responses
+// `instructions` plus a developer item is the same loss by another door. A system message sent after the conversation
+// has started must not replace the system prompt either: it stays in place, and is not a new query.
+func TestSystemMessagesAreAllKept(t *testing.T) {
+	codex, err := responseInputToMessages(json.RawMessage(`[
+		{"type":"message","role":"developer","content":[{"type":"input_text","text":"You are a coding agent."}]},
+		{"type":"message","role":"developer","content":[{"type":"input_text","text":"<skills>"},{"type":"input_text","text":"</skills>"}]},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>"}]},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"Reply ok."}]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	system, turns := messagesToTurns(codex)
+	if system != "You are a coding agent.\n\n<skills></skills>" {
+		t.Errorf("system = %q; both developer messages must be in it, in order", system)
+	}
+	if len(turns) != 2 || turns[0].Content != "<environment_context>" || turns[1].Content != "Reply ok." {
+		t.Errorf("turns = %+v; want the two user messages", turns)
+	}
+
+	withInstructions := append([]chatMessage{{Role: "system", Content: rawStr("INSTRUCTIONS")}}, codex...)
+	if system, _ := messagesToTurns(withInstructions); !strings.HasPrefix(system, "INSTRUCTIONS\n\nYou are a coding agent.") {
+		t.Errorf("system = %q; the instructions field's text must survive a developer item", system)
+	}
+
+	late := []chatMessage{
+		{Role: "system", Content: rawStr("SCAFFOLD")}, {Role: "user", Content: rawStr("q1")}, {Role: "assistant", Content: rawStr("a1")},
+		{Role: "system", Content: rawStr("A NOTE")}, {Role: "system", Content: rawStr("")}, {Role: "user", Content: rawStr("q2")},
+	}
+	system, turns = messagesToTurns(late)
+	if system != "SCAFFOLD" {
+		t.Errorf("system = %q; a later system message must not replace or extend the system prompt", system)
+	}
+	if len(turns) != 4 || turns[2].Role != "user" || turns[2].Content != "A NOTE" || !turns[2].ToolLoop || turns[3].ToolLoop {
+		t.Errorf("turns = %+v; want the note in place as user-side text that is not a new query, and q2 a new query", turns)
 	}
 }

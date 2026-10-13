@@ -70,6 +70,12 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // Production code routes through Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
+// ResidentPrefillSeedForTest is residentPrefillSeed from position 0 with no adapter: the prompt into the resident KV
+// by the route a generation takes (blocks included), returning the last token's logits.
+func (m *Model) ResidentPrefillSeedForTest(ctx context.Context, prompt []int) ([]float32, error) {
+	return m.residentPrefillSeed(ctx, prompt, 0, false)
+}
+
 // SplitQGateForTest and QGateContextForTest are the CPU's attn_output_gate split and output gate
 // (decoder/forward_qwen35.go), so the resident kernels that mirror them can be checked against the code the CPU runs.
 func SplitQGateForTest(qg []float32, nH, hd int) (q, gate []float32) {

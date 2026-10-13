@@ -1,0 +1,8 @@
+started: 2026-10-12 22:27:35 PDT
+host: Darwin 25.6.0 arm64
+new: d026accf7dda67f707a8bae0bc0eb554fc27b34a
+old: 4d5cf269bc0c00d6f6c130d3577f80dc0c4be5e8
+gemma 3: /Users/francistownsend-merino/models/gemma-3-4b-it
+e2b: /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf (vision /Users/francistownsend-merino/models/gemma-4-E2B-unq, tower flag '-vision-device gpu')
+load: 22:27  up 18 days, 12:22, 1 user, load averages: 1.44 1.68 1.79
+finished: 2026-10-12 23:13:12 PDT rc=0

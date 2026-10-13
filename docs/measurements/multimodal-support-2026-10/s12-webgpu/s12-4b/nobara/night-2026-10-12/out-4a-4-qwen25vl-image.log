@@ -1,0 +1,45 @@
+[20:02:42] round 1: qwen2.5-vl-3b-image-new | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-mrope --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 9 s, model 'qwen25vl-3b-instruct'; load 0.64
+  warm-up 0: TTFT 18.402 s 'The image is a gradient background with a'
+  timed   1: TTFT 18.379 s 'The image is a gradient background with a'
+  timed   2: TTFT 18.28 s 'The image is a gradient background with a'
+[20:03:50] round 1: qwen2.5-vl-3b-image-old | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-4c --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 7 s, model 'qwen25vl-3b-instruct'; load 6.69
+  warm-up 0: TTFT 39.923 s 'This image is a gradient background with a'
+  timed   1: TTFT 39.257 s 'The image is a gradient background with a'
+  timed   2: TTFT 39.398 s 'The image appears to be a blurred or'
+[20:06:01] round 2: qwen2.5-vl-3b-image-old | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-4c --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 6 s, model 'qwen25vl-3b-instruct'; load 9.63
+  warm-up 0: TTFT 39.941 s 'This image appears to be a gradient background'
+  timed   1: TTFT 39.234 s 'The image is a gradient background with a'
+  timed   2: TTFT 39.284 s 'The image is a gradient background transitioning from'
+[20:08:10] round 2: qwen2.5-vl-3b-image-new | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-mrope --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 6 s, model 'qwen25vl-3b-instruct'; load 7.61
+  warm-up 0: TTFT 18.491 s 'The image is a gradient background with a'
+  timed   1: TTFT 18.348 s 'The image is a gradient background that transitions'
+  timed   2: TTFT 18.267 s 'The image is a gradient background with a'
+[20:09:16] round 3: qwen2.5-vl-3b-image-new | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-mrope --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 6 s, model 'qwen25vl-3b-instruct'; load 7.83
+  warm-up 0: TTFT 18.428 s 'The image is a gradient background with a'
+  timed   1: TTFT 18.368 s 'The image is a gradient background that transitions'
+  timed   2: TTFT 18.251 s 'The image is a gradient background with a'
+[20:10:21] round 3: qwen2.5-vl-3b-image-old | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-4c --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 5 s, model 'qwen25vl-3b-instruct'; load 8.13
+  warm-up 0: TTFT 39.987 s 'The image is a gradient background with a'
+  timed   1: TTFT 39.38 s 'This image is a gradient background with a'
+  timed   2: TTFT 39.301 s 'This image is a gradient background with a'
+[20:12:30] round 4: qwen2.5-vl-3b-image-old | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-4c --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 5 s, model 'qwen25vl-3b-instruct'; load 11.45
+  warm-up 0: TTFT 39.894 s 'The image is a gradient background with a'
+  timed   1: TTFT 39.349 s 'The image is a gradient background with a'
+  timed   2: TTFT 39.398 s 'This image appears to be a gradient background'
+[20:14:39] round 4: qwen2.5-vl-3b-image-new | goinfer: /home/francis/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-mrope --model /home/francis/models/qwen25vl-3b-instruct --backend webgpu --addr 127.0.0.1:18657
+  up in 6 s, model 'qwen25vl-3b-instruct'; load 8.28
+  warm-up 0: TTFT 18.525 s 'The image is a gradient background with a'
+  timed   1: TTFT 18.392 s 'The image is a gradient background that transitions'
+  timed   2: TTFT 18.236 s 'This image is a gradient background with a'
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| qwen2.5-vl-3b-image-new | goinfer | 8 | 18.31 | no |
+| qwen2.5-vl-3b-image-old | goinfer | 8 | 39.32 | no |

@@ -18,8 +18,9 @@
 >   ballast was compressible, so the ballast is fixed first; a unit test pins the fix).
 > - **Optional, unqueued:** item 29, the W7 run on Vulkan (reported only; WebGPU's MC1 shipped regardless).
 > - **Parked with a trigger:** Lever B (an aikit small-M kernel for batched CPU decode); MC4's MoE, recurrent and mixed-adapter
->   items; MC5's continuous batching and paged KV (the owner reverses the positioning); J6 re-run (8 or more concurrent
->   conversations on one model).
+>   items; MC5's continuous batching (the owner reverses the positioning); J6 re-run (8 or more concurrent
+>   conversations on one model). **MC5's paged KV was un-parked by the owner on 2026-10-13** and moved to
+>   [`task-kv-architecture-2026-10.md`](../task-kv-architecture-2026-10.md).
 >
 > **Current, 2026-09-28 (doc sweep):**
 > - **MC1 (resident KV slots)** shipped on Metal, CUDA and WebGPU. On discrete WebGPU GPUs it is clamp-only by design,
@@ -1599,6 +1600,10 @@ n-gram loop already prefers when present).
 
 Unchanged from `roadmap.md`: not this engine's weight class. **Trigger:** the owner reverses the
 positioning, not a benchmark result.
+
+**Paged KV un-parked by the owner, 2026-10-13** ("un park paged attention for sure"). It moves to
+[`task-kv-architecture-2026-10.md`](../task-kv-architecture-2026-10.md), scoped for memory and reuse within one
+user's conversations and agents. Continuous batching stays parked here.
 
 **Chunked prefill unparked by the owner, 2026-09-27** ("Owner decisions" above). Continuous batching and paged KV
 stay parked.

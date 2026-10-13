@@ -42,6 +42,7 @@ var (
 	_ decoder.Backend               = (*metalBackend)(nil)
 	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
 	_ decoder.ResidentForward       = (*metalResident)(nil)
+	_ decoder.ResidentContextNoted  = (*metalResident)(nil)
 	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
 	_ decoder.ResidentAdapter       = (*metalResident)(nil)
 	_ decoder.Prefiller             = (*metalResident)(nil)
@@ -93,6 +94,11 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
 		return nil, false, cerr
 	}
+	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
+	// slot count, the KV sizing) must see one number.
+	fit := metalFitNow(m)
+	metalFitChoice.Store(m, fit)
+	defer metalFitChoice.Delete(m)
 	from, _ := resolveMetalCtxCap(m)
 	if why := residentMemoryDecline(m); why != "" {
 		if !shrinkCtxToFit(m) {
@@ -108,6 +114,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		res.ctxCeilKey = m // the entry lives as long as the resident (resident.Close deletes it)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
+	b.resident.ctxNote = metalContextNote(m, fit, res.ctxCap, res.kvSlotCount())
 	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
 		_ = res.Close()
 		b.resident = nil
@@ -120,6 +127,49 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprint(os.Stderr, metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
 	}
 	return b.resident, true, nil
+}
+
+// metalFitChoice is the fit-by-default context of the BuildResident in progress, per model (metalFitFor reads it).
+var metalFitChoice sync.Map // *decoder.Model -> decoder.MetalFit
+
+// metalFitFor is the context an unpinned load takes (decoder.Model.MetalFitCtx): the choice BuildResident made for this
+// model when one is in progress, otherwise the choice it would make now. docs/code-notes/metal.md#metalFitFor.
+func metalFitFor(m *decoder.Model) decoder.MetalFit {
+	if f, ok := metalFitChoice.Load(m); ok {
+		return f.(decoder.MetalFit)
+	}
+	return metalFitNow(m)
+}
+
+// metalFitNow asks decoder.Model.MetalFitCtx with this load's facts: the memory guard's own budget (the registered "metal"
+// probe), the KV slots the build will ask for, whether it pages MoE experts, and a guard pin as the limit it is.
+func metalFitNow(m *decoder.Model) decoder.MetalFit {
+	free, known := decoder.FreeBytesFor("metal")
+	in := decoder.MetalFitInput{FreeBytes: free, FreeKnown: known, KVSlots: metalKVSlotsWanted(m), PagedMoE: metalPagesMoE(m)}
+	if req := m.ResidentContextRequest(); req > 0 && !m.ResidentContextPinned() {
+		in.Lower = req
+	}
+	return m.MetalFitCtx(in)
+}
+
+// metalPagesMoE reports whether the load asked to page its routed experts, by any of the three ways metalMoESlotsRequest
+// reads. It reads the requests and not the resolved slot count, which is sized from the KV this decides.
+func metalPagesMoE(m *decoder.Model) bool {
+	return m.MoECacheSlotsRequest() > 0 || m.MoECacheExperts() || modelKnob(m, "GOINFER_METAL_MOE_SLOTS") != ""
+}
+
+// metalContextNote is the resident's ContextNote: fit's reason, restated for what the build really holds when the guard
+// lowered the context after the choice or granted fewer slots. "" for an explicit -ctx.
+func metalContextNote(m *decoder.Model, fit decoder.MetalFit, ctx, slots int) string {
+	switch {
+	case m.ResidentContextRequest() > 0 && m.ResidentContextPinned():
+		return ""
+	case ctx < fit.Ctx:
+		return "reduced to fit this machine's memory"
+	case ctx > metalCtxCapDefault:
+		return decoder.MetalFitWhy(slots, int64(slots)*m.ResidentKVBytes("metal", ctx, false, false))
+	}
+	return fit.Why
 }
 
 // metalCtxCeiling is the context shrinkCtxToFit lowered an unpinned resident to, per model, read by resolveMetalCtxCap. A map
@@ -335,11 +385,10 @@ func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m)
 // KV, which residentMemoryDecline prices; each further one costs another residentKVBytes. The guard's own override
 // (GOINFER_NO_RESIDENT_MEM_GUARD) allocates the request as asked; an unreadable RAM size allocates one.
 func metalKVSlots(m *decoder.Model) int {
-	n := m.ResidentKVSlotsRequest()
-	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
+	n := metalKVSlotsWanted(m)
+	if asked := m.ResidentKVSlotsRequest(); n < asked {
 		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)\n",
-			metalDefaultKVSlots, n)
-		n = metalDefaultKVSlots // E-P09: the caller's default, not the operator's count
+			n, asked)
 	}
 	if n <= 1 {
 		return 1
@@ -359,12 +408,22 @@ func metalKVSlots(m *decoder.Model) int {
 	return got
 }
 
+// metalKVSlotsWanted is the slot count the build asks memory for: the model's request, or metalDefaultKVSlots when that
+// request is only the caller's default (E-P09). metalKVSlots grants as many of them as fit.
+func metalKVSlotsWanted(m *decoder.Model) int {
+	n := m.ResidentKVSlotsRequest()
+	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
+		n = metalDefaultKVSlots
+	}
+	return max(n, 1)
+}
+
 // metalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default
 // (decoder.Options.ResidentKVSlotsDefault: serve without -kv-sessions). Every slot's KV is resident from the first token, so
 // the default 4 costs memory on every load. Two keep the batched step (it needs 2 slots) and a second conversation's prefix; a
 // third and fourth concurrent client lose their own slot and their batching. -kv-sessions N still asks for N
 // (docs/audit-metal-2026-09-30.md, E-P09).
-const metalDefaultKVSlots = 2
+const metalDefaultKVSlots = decoder.MetalDefaultKVSlots
 
 // kvSlotsWithin is metalKVSlots' arithmetic: the largest slot count up to want whose resident build — base bytes for
 // the first slot (weights, host copy, one KV) plus perSlot for each further one — fits budget, and never below 1 (the
@@ -436,6 +495,8 @@ type metalResident struct {
 	// poisonPrefillLogitsForTest makes PrefillLast write a NaN into its logits before the finite check, so a test can
 	// show the check declines. False in production; only tests set it.
 	poisonPrefillLogitsForTest bool
+	// ctxNote is how the build arrived at its context (metalContextNote), for the load banner.
+	ctxNote string
 	// quant is the precision ResidentQuant reports: the model's own quant when it runs int8 weights natively (r.w8),
 	// "" otherwise, which leaves the decoder's label (an int8 model on the int4 path is re-quantized, and says so).
 	quant string
@@ -453,6 +514,9 @@ func (a *metalResident) fastPrefill() bool {
 	})
 	return a.fast
 }
+
+// ContextNote makes metalResident a decoder.ResidentContextNoted.
+func (a *metalResident) ContextNote() string { return a.ctxNote }
 
 // ctxCap is this resident's resolved KV capacity: a.r.ctxCap, or metalCtxCapDefault for a zero-value &metalResident{} (r == nil),
 // which TestMetalResidentCheckCap builds to test checkCap and ContextCap as pure logic with no Metal device.
@@ -709,9 +773,9 @@ func (a *metalResident) moeLayerMajor() bool {
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
 func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	// One check at entry: the pass is a single command buffer with no inner loop to interrupt, and the decoder's chunked prefill
-	// cuts a prompt only while another conversation decodes, so a lone long prompt cannot be cancelled midway. That would need
-	// chunking inside PrefillLast, as cuda's prefillChunked does (docs/audit-metal-2026-09-30.md, A-D02).
+	// One check at entry: the pass is a single command buffer with no inner loop to interrupt. The decoder calls it once a
+	// block (PrefillBlockRows) or once a chunk while another conversation decodes, so a long prompt is cancelled between
+	// those calls; a resident that reports no block runs a lone prompt as one uninterruptible pass.
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -1287,6 +1351,45 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
 func (a *metalResident) Close() error { return a.r.Close() }
+
+// prefillBlockScratch is the row-sized scratch one pass of a blocked prefill may allocate: PrefillBlockRows is the
+// number of rows that fit it. The speed reading that keeps it is docs/tasks/task-integration-harness-2026-10.md, "I8".
+const prefillBlockScratch = 512 << 20
+
+// prefillBlockRowsMin is the shortest block PrefillBlockRows reports, for a model whose rows are so wide that fewer
+// would fit prefillBlockScratch.
+const prefillBlockRowsMin = 256
+
+// prefillBlockRowsForTest replaces PrefillBlockRows' figure when positive, for a test that needs several blocks in a
+// short prompt. It does not make a resident block that otherwise would not.
+var prefillBlockRowsForTest int
+
+// PrefillBlockRows (decoder.ResidentPrefillBlocks) is the most rows the decoder hands one batched pass: as many as fit
+// prefillBlockScratch, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
+// without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split,
+// for a resident whose prompts do not take the plain batched pass at every length: a layer-major route or an E-model,
+// an int8 KV cache, fast prefill off, an arch or norm the pass does not implement, and a model on the exact attention
+// kernel, whose pass declines past prefillExactAttnMaxKeys and must go on declining the whole prompt.
+func (a *metalResident) PrefillBlockRows() int {
+	r := a.r
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
+		(r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.prefillExactAttn() {
+		return 0
+	}
+	if prefillBlockRowsForTest > 0 {
+		return prefillBlockRowsForTest
+	}
+	per := r.prefillScratchBytes(64) / 64
+	if per <= 0 {
+		return 0
+	}
+	return max(int(prefillBlockScratch/per)/64*64, prefillBlockRowsMin)
+}
+
+// PrefillScratchBytes (decoder.ResidentPrefillBlocks) is what one batched pass over rows rows allocates.
+func (a *metalResident) PrefillScratchBytes(rows int) int64 { return a.r.prefillScratchBytes(rows) }
+
+var _ decoder.ResidentPrefillBlocks = (*metalResident)(nil)
 
 // PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the cold pass
 // bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the whole prompt's length.

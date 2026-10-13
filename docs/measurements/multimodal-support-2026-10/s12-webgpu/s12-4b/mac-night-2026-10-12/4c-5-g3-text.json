@@ -1,0 +1,205 @@
+{
+ "schema": 1,
+ "gate": "G-S12.4b-2d",
+ "host": "macbookpro.lan",
+ "uname": "Darwin macbookpro.lan 25.6.0",
+ "started": "2026-10-13 00:18:06 PDT",
+ "model": "/Users/francistownsend-merino/models/gemma-3-4b-it",
+ "bins": {
+  "new": "/Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-4c",
+  "old": "/Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-s3"
+ },
+ "revs": {
+  "new": "d0cdee250baf60c962c2fe6f5f0d65b57cdbce98",
+  "old": "d026accf7dda67f707a8bae0bc0eb554fc27b34a"
+ },
+ "unit": "words",
+ "depths": {
+  "400": null,
+  "1600": null
+ },
+ "rounds": 5,
+ "cells": [
+  {
+   "round": 0,
+   "arm": "new",
+   "depth": 400,
+   "ttft_s": 7.831803798675537,
+   "text": "This is a fantastic example of repetition used deliberately for atmosphere and a slightly unsettling effect",
+   "load1": 1.13916015625,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 0,
+   "arm": "new",
+   "depth": 1600,
+   "ttft_s": 30.535299062728882,
+   "text": "This passage is incredibly repetitive and, frankly, quite boring. It establishes a very",
+   "load1": 0.9638671875,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 0,
+   "arm": "old",
+   "depth": 400,
+   "ttft_s": 19.310408115386963,
+   "text": "Okay, you've provided a very repetitive passage. It's clearly designed",
+   "load1": 0.7265625,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 0,
+   "arm": "old",
+   "depth": 1600,
+   "ttft_s": 172.4907751083374,
+   "text": "This is a remarkably repetitive and, frankly, quite unsettling piece of writing. It",
+   "load1": 0.759765625,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 1,
+   "arm": "old",
+   "depth": 400,
+   "ttft_s": 19.30749797821045,
+   "text": "Okay, this is a fascinatingly repetitive piece of writing! It immediately establishes a",
+   "load1": 0.97705078125,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 1,
+   "arm": "old",
+   "depth": 1600,
+   "ttft_s": 172.31153798103333,
+   "text": "This passage is incredibly repetitive and feels deliberately designed to be boring. It's",
+   "load1": 0.9814453125,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 1,
+   "arm": "new",
+   "depth": 400,
+   "ttft_s": 7.835067272186279,
+   "text": "This is a wonderfully evocative and repetitive piece of writing! It immediately establishes a very",
+   "load1": 1.15673828125,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 1,
+   "arm": "new",
+   "depth": 1600,
+   "ttft_s": 30.519629955291748,
+   "text": "This is a fascinating example of repetition! The passage is almost entirely comprised of the",
+   "load1": 1.05224609375,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 2,
+   "arm": "new",
+   "depth": 400,
+   "ttft_s": 7.829873085021973,
+   "text": "This is a fascinating example of repetition! It's clearly designed to create a",
+   "load1": 0.80712890625,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 2,
+   "arm": "new",
+   "depth": 1600,
+   "ttft_s": 30.530253887176514,
+   "text": "This passage is incredibly repetitive and, frankly, quite boring. It's a",
+   "load1": 0.6826171875,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 2,
+   "arm": "old",
+   "depth": 400,
+   "ttft_s": 19.27335500717163,
+   "text": "Okay, you've presented a very repetitive passage. It's clearly designed",
+   "load1": 0.69677734375,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 2,
+   "arm": "old",
+   "depth": 1600,
+   "ttft_s": 172.48146271705627,
+   "text": "This passage is incredibly repetitive and, frankly, quite boring. It's a",
+   "load1": 0.498046875,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 3,
+   "arm": "old",
+   "depth": 400,
+   "ttft_s": 19.319701194763184,
+   "text": "This is a fascinating example of repetition! You've provided the first three iterations",
+   "load1": 1.60546875,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 3,
+   "arm": "old",
+   "depth": 1600,
+   "ttft_s": 172.43266105651855,
+   "text": "This passage is incredibly repetitive and, frankly, a bit unsettling. The constant repetition",
+   "load1": 1.4833984375,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 3,
+   "arm": "new",
+   "depth": 400,
+   "ttft_s": 7.834173202514648,
+   "text": "This is a wonderfully evocative and repetitive piece of writing! It immediately establishes a very",
+   "load1": 0.7158203125,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 3,
+   "arm": "new",
+   "depth": 1600,
+   "ttft_s": 30.559316873550415,
+   "text": "This passage is incredibly repetitive and feels deliberately designed to be monotonous. It's",
+   "load1": 0.7587890625,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 4,
+   "arm": "new",
+   "depth": 400,
+   "ttft_s": 7.827255010604858,
+   "text": "This is a wonderfully evocative and repetitive piece of writing! It establishes a very specific",
+   "load1": 0.53759765625,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 4,
+   "arm": "new",
+   "depth": 1600,
+   "ttft_s": 30.59347915649414,
+   "text": "This is a fantastic example of *repetition* \u2013 a deliberate use of the",
+   "load1": 0.4541015625,
+   "prompt_tokens": 1783
+  },
+  {
+   "round": 4,
+   "arm": "old",
+   "depth": 400,
+   "ttft_s": 19.343071937561035,
+   "text": "This is a fascinating example of repetition! You've provided a very deliberately repetitive",
+   "load1": 0.634765625,
+   "prompt_tokens": 457
+  },
+  {
+   "round": 4,
+   "arm": "old",
+   "depth": 1600,
+   "ttft_s": 172.44275903701782,
+   "text": "This is a remarkably repetitive piece of writing. It's a classic example of",
+   "load1": 1.138671875,
+   "prompt_tokens": 1783
+  }
+ ],
+ "finished": "2026-10-13 00:39:17 PDT"
+}

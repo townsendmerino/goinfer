@@ -1,0 +1,5 @@
+binary /Users/francistownsend-merino/goinfer-bench/s12-3g-2026-10-12/bin/gpu-3g.test rev d0cdee250baf60c962c2fe6f5f0d65b57cdbce98
+started 2026-10-12 23:58:13 PDT
+Darwin 25.6.0 arm64
+23:58  up 18 days, 13:53, 1 user, load averages: 0.28 0.60 0.74
+finished 2026-10-13 00:13:06 PDT rc=0

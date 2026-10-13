@@ -26,6 +26,10 @@ import (
 // read it as data are named; every other test binary still runs, and Go's test cache — which knows
 // what each one actually read — replays the ones whose inputs did not move. quick_test.go holds the
 // equivalence proofs, and each was shown to go red when the selection was broken on purpose.
+//
+// TWO KINDS OF CELL ARE DEFERRED, BY RULE AND IN THE OPEN (deferCells): a package's real-checkpoint loaders, and a
+// device module's long kernel tests when no changed file is under that module. Each is printed as DEFERRED, counted
+// in the verdict, and run by -full, which is the pre-tag tier (RELEASING.md). Nothing else is left out.
 
 type quickOpts struct {
 	Base         string
@@ -37,13 +41,16 @@ type quickOpts struct {
 	HeavyGoldens bool
 	Overlay      string // a `go build -overlay` file; every go command gets it (the equivalence tests use it)
 	SelectOnly   bool
-	NoLint       bool
-	IgnoreLock   bool
-	Verbose      bool
-	Progress     io.Writer // heartbeat + per-job lines; nil = os.Stderr
-	TimingLock   string    // repo-relative lock script; "" = do not check
+	Full         bool // run the cells the day loop defers to the pre-tag tier (deferCells)
+	// RecordDir, with Full, is where the run's record is written (quick_record.go); "" writes none.
+	RecordDir  string
+	NoLint     bool
+	IgnoreLock bool
+	Verbose    bool
+	Progress   io.Writer // heartbeat + per-job lines; nil = os.Stderr
+	TimingLock string    // repo-relative lock script; "" = do not check
 	// Keep, when set, runs only the cells it accepts. A test hook: the real-tree equivalence
-	// tests run one cell, not the tree. The CLI never sets it — quick never drops a cell.
+	// tests run one cell, not the tree. The CLI never sets it.
 	Keep func(*quickCell) bool
 }
 
@@ -61,6 +68,8 @@ func runQuick(argv []string, w io.Writer) int {
 	fs.BoolVar(&o.HeavyGoldens, "heavy-goldens", false, "run the forward goldens with GOINFER_HEAVY_TESTS=1 (the int8 goldens join, ~70 s more)")
 	fs.StringVar(&o.Overlay, "overlay", "", "pass -overlay=FILE to every go command (test the tree as if files were edited, without editing them)")
 	fs.BoolVar(&o.SelectOnly, "select", false, "print the selection and exit")
+	fs.BoolVar(&o.Full, "full", false, "the pre-tag tier: also run what the day loop defers (real-checkpoint cells, and a device module's long kernel tests when the diff does not touch it)")
+	noRecord := fs.Bool("no-record", false, "with -full, do not write the run's record ("+quickRecordDirDefault+"), which `gate release` reads")
 	fs.BoolVar(&o.NoLint, "no-lint", false, "skip gofmt / vet / build / staticcheck")
 	fs.BoolVar(&o.IgnoreLock, "ignore-timing-lock", false, "run although a timed run holds the timing lock (it will contaminate that run)")
 	fs.BoolVar(&o.Verbose, "v", false, "print every selection reason and every skip")
@@ -85,6 +94,9 @@ func runQuick(argv []string, w io.Writer) int {
 		return 2
 	}
 	o.TimingLock = "scripts/timing_lock.py"
+	if o.Full && !*noRecord {
+		o.RecordDir = quickRecordDirDefault
+	}
 	return quickMain(qc, o, w)
 }
 
@@ -143,6 +155,17 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	}
 	sel := g.selectFor(qc, changed, golden)
 	cells := buildCells(qc, g, sel, o.Count1, o.HeavyGoldens)
+	tier := "full (-full): nothing is deferred"
+	if o.Full {
+		// A checkpoint is read from outside the module root, where the test cache does not look, so a replay could
+		// vouch for a model file that has since changed.
+		for _, c := range cells {
+			c.Count1 = c.Count1 || c.Checkpoint
+		}
+	} else {
+		cells = deferCells(qc, sel, cells)
+		tier = "day: real-checkpoint cells and an untouched device module's long kernel tests are deferred to the pre-tag tier (-full runs them)"
+	}
 
 	rundir := ""
 	if !o.SelectOnly {
@@ -161,6 +184,7 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 		{"base", baseDesc},
 		{"changed", fmt.Sprintf("%d file(s)", len(changed))},
 		{"count", count},
+		{"tier", tier},
 		{"jobs", fmt.Sprintf("%d at once (device cells one at a time; checkpoint-loading cells alone)", o.Jobs)},
 		{"timing lock", lockNote},
 		{"run dir", orDash(rundir)},
@@ -181,7 +205,7 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	if !o.NoLint {
 		jobs = append(jobs, lintJobs(qc, g, sel, o.Overlay, rundir)...)
 	}
-	var notRun []*quickCell
+	var notRun, deferred []*quickCell
 	var tests []*quickJob
 	for _, c := range cells {
 		if o.Keep != nil && !o.Keep(c) {
@@ -189,6 +213,10 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 		}
 		if c.NotRun != "" {
 			notRun = append(notRun, c)
+			continue
+		}
+		if c.Deferred != "" {
+			deferred = append(deferred, c)
 			continue
 		}
 		jb, err := testJob(qc, c, o)
@@ -217,7 +245,13 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	fmt.Fprintf(progress, "== quick: %d job(s), started %s — progress every %s ==\n", len(jobs), t0.Format("15:04:05"), beat)
 	runJobs(jobs, max(1, o.Jobs), rundir, progress, beat, t0)
 	saveDurations(qc.StateDir, hist, jobs)
-	return reportQuick(w, qc, sel, jobs, notRun, t0, o.Verbose)
+	var sum quickSummary
+	rc := reportQuick(w, qc, sel, jobs, notRun, deferred, t0, o.Verbose, &sum)
+	// A record says every cell ran. A run narrowed by -files, an overlay, -no-lint or a test's Keep did not check the tree.
+	if o.Full && o.RecordDir != "" && len(o.Files) == 0 && o.Overlay == "" && !o.NoLint && o.Keep == nil {
+		writeQuickRecord(w, qc.Root, o.RecordDir, prov.Dirty, rc, sum)
+	}
+	return rc
 }
 
 func orDash(s string) string {
@@ -489,7 +523,7 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 	} else {
 		fmt.Fprintf(w, "  forward goldens: not triggered (no parity shared-set file changed)\n")
 	}
-	var split, nr []string
+	var split, nr, dfr []string
 	for _, c := range cells {
 		if strings.HasSuffix(c.Name, "[walkers]") || strings.HasSuffix(c.Name, "[checkpoint]") {
 			n := strings.Count(c.Run, "|") + 1
@@ -503,13 +537,16 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 		if c.NotRun != "" {
 			nr = append(nr, c.Name+" — "+c.NotRun)
 		}
+		if c.Deferred != "" {
+			dfr = append(dfr, c.Name+" — "+c.Deferred)
+		}
 	}
 	if len(split) > 0 {
 		fmt.Fprintf(w, "  split cells (so the rest of the package can stay cached, or run beside others): %s\n", strings.Join(split, ", "))
 	}
 	var mem []string
 	for _, c := range cells {
-		if c.Mem && c.NotRun == "" {
+		if c.Mem && c.NotRun == "" && c.Deferred == "" {
 			mem = append(mem, c.Name)
 		}
 	}
@@ -528,6 +565,9 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 	}
 	for _, n := range nr {
 		fmt.Fprintf(w, "  %sNOT RUNNABLE HERE%s: %s\n", amber, off, n)
+	}
+	for _, n := range dfr {
+		fmt.Fprintf(w, "  %sDEFERRED%s: %s\n", amber, off, n)
 	}
 	for i, wmsg := range g.warnings {
 		if i >= 5 && !verbose {
@@ -557,7 +597,7 @@ func wrapWords(words []string, width int, indent string) string {
 	return b.String()
 }
 
-func reportQuick(w io.Writer, qc *quickConfig, s *quickSelection, jobs []*quickJob, notRun []*quickCell, t0 time.Time, verbose bool) int {
+func reportQuick(w io.Writer, qc *quickConfig, s *quickSelection, jobs []*quickJob, notRun, deferred []*quickCell, t0 time.Time, verbose bool, sum *quickSummary) int {
 	var lint, tests []*quickJob
 	for _, jb := range jobs {
 		if jb.Kind == "lint" {
@@ -644,6 +684,9 @@ func reportQuick(w io.Writer, qc *quickConfig, s *quickSelection, jobs []*quickJ
 	for _, c := range notRun {
 		fmt.Fprintf(w, "  %s%-7s%s %-34s %s\n", amber, "NOT RUN", off, c.Name, c.NotRun)
 	}
+	for _, c := range deferred {
+		fmt.Fprintf(w, "  %s%-8s%s %-33s %s\n", amber, "DEFERRED", off, c.Name, c.Deferred)
+	}
 
 	// Each failing cell: its source-located lines, or — for a failure with no per-test FAIL (a
 	// build error, a panic, a timeout) — the tail of its log, which is the only place it shows.
@@ -668,8 +711,14 @@ func reportQuick(w io.Writer, qc *quickConfig, s *quickSelection, jobs []*quickJ
 
 	fmt.Fprintf(w, "\n%s== verdict ==%s\n", bold, off)
 	fmt.Fprintf(w, "  tests    PASSED %d   SKIPPED %d   FAILED %d   (top-level tests; a skip is not a pass)\n", pass, skip, fail)
-	fmt.Fprintf(w, "  cells    %d: %d ran, %d replayed from the test cache, %d not runnable on this host\n",
-		len(tests)+len(notRun), ran, cached, len(notRun))
+	fmt.Fprintf(w, "  cells    %d: %d ran, %d replayed from the test cache, %d not runnable on this host, %d deferred to the pre-tag tier\n",
+		len(tests)+len(notRun)+len(deferred), ran, cached, len(notRun), len(deferred))
+	if sum != nil {
+		*sum = quickSummary{Pass: pass, Skip: skip, Fail: fail, Cells: len(tests) + len(notRun) + len(deferred), Ran: ran, Cached: cached}
+		for _, c := range notRun {
+			sum.NotRun = append(sum.NotRun, c.Name)
+		}
+	}
 	if len(skipBuckets) > 0 {
 		var parts []string
 		for _, b := range bucketOrder {
@@ -715,6 +764,14 @@ func reportQuick(w io.Writer, qc *quickConfig, s *quickSelection, jobs []*quickJ
 	if len(notRun) > 0 {
 		fmt.Fprintf(w, "  %sNOT COVERED on this host%s: %d cell(s) of module(s) that do not build here — run quick on a box that builds them.\n",
 			amber, off, len(notRun))
+	}
+	if len(deferred) > 0 {
+		n := 0
+		for _, c := range deferred {
+			n += strings.Count(c.Run, "|") + 1
+		}
+		fmt.Fprintf(w, "  %sDEFERRED to the pre-tag tier%s: %d cell(s), %d test(s) not run here — `go run ./cmd/gate quick -full` runs them.\n",
+			amber, off, len(deferred), n)
 	}
 	if len(vacuousAffected) > 0 {
 		fmt.Fprintf(w, "  %sUNVERIFIED%s: affected cell(s) in which every test skipped: %s\n", amber, off, strings.Join(vacuousAffected, ", "))

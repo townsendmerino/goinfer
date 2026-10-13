@@ -1,0 +1,22 @@
+[23:57:23] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: swap used before the load 954 MB
+  /Users/francistownsend-merino/goinfer-bench/m2b-2026-10-12/bin/serve-metal-new -model bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.037 ms), gate|up at B <= 2 (0.108, 0.251); 0 = always the fragment
+  | decode path: metal-resident (int4)
+  | context: 32768 tokens (model maximum) · KV f16
+  | fit: 32768-token cap needs 0.9 GB KV (weights 1.1 GB, budget 6.3 GB, 5.4 GB left for a request's own prefill)
+  | KV plan: 2 conversations x 32768 positions (4 asked for)
+  up after 2 s; swap used 954 MB
+  answered in 34.2 s: prompt_tokens 20954, completion_tokens 8, reply 'The provided data is a list of integers'
+  swap used after the answer 954 MB (before the load 954 MB, growth +0 MB)
+[23:58:02] qwen2.5-7b-instruct-q4_k_m.gguf: swap used before the load 954 MB
+  /Users/francistownsend-merino/goinfer-bench/m2b-2026-10-12/bin/serve-metal-new -model bench=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:18477 -require-backend
+  | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+  | metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.068 ms, fragment 0.154 ms), gate|up at B <= 2 (0.434, 1.159); 0 = always the fragment
+  | decode path: metal-resident (int4)
+  | context: 31328 tokens (fit: 2 slots, 3.3 GB KV; model maximum 32768 — raise with --ctx) · KV f16
+  | fit: 31328-token cap needs 1.7 GB KV (weights 4.4 GB, budget 5.6 GB, 3.9 GB left for a request's own prefill)
+  | KV plan: 2 conversations x 31328 positions (4 asked for)
+  up after 1 s; swap used 954 MB
+  REFUSED (413): {"error": {"message": "decoder: this request needs ~3.21 GB (KV 0.00 GB + prefill scratch 3.21 GB for 20954 prompt + 8 max_tokens positions) but only 1.77 GB of this machine's 2.52 GB currently-available memory would be left as a safety margin \u2014 rejected before prefill rather than paging.\n  Se
+  swap used after the answer 954 MB (before the load 954 MB, growth +0 MB)

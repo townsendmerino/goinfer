@@ -411,6 +411,51 @@ type ResidentPrefillKernelFloor interface {
 	PrefillKernelFloor() int
 }
 
+// ResidentPrefillBlocks is the optional capability of a Prefiller whose pass allocates scratch for every row it is
+// handed, so a long prompt's scratch grows with the prompt. PrefillBlockRows is the most rows one pass should take,
+// or 0 when the resident does not want its prefill split; PrefillScratchBytes is what a pass of that many rows
+// allocates beyond the resident's standing buffers. residentPrefillSeed takes a longer suffix in passes of
+// PrefillBlockRows, and AdmitPrefillMemoryShare prices a resident request at one pass instead of the whole prompt.
+// Splitting changes no bit only for a resident whose continuation equals the whole pass, so both callers also require
+// PrefillTailExact (prefillBlockRows).
+type ResidentPrefillBlocks interface {
+	PrefillBlockRows() int
+	PrefillScratchBytes(rows int) int64
+}
+
+// prefillBlockRows is the pass length residentPrefillSeed splits a prompt of promptLen tokens into, or 0 when the
+// resident's prefill is not split: it does not report a block, or its continuation is not exact. A block under the
+// resident's kernel-class floor is raised to it, as mc3Prefill raises its chunk, so the first pass runs the class the
+// whole prompt would.
+func (m *Model) prefillBlockRows(promptLen int) int {
+	pb, ok := m.resident.(ResidentPrefillBlocks)
+	if !ok {
+		return 0
+	}
+	if te, ok := m.resident.(PrefillTailExact); !ok || !te.PrefillTailExact() {
+		return 0
+	}
+	B := pb.PrefillBlockRows()
+	if f := m.prefillKernelFloor(); B > 0 && f > 0 && promptLen >= f && B < f {
+		B = f
+	}
+	return max(B, 0)
+}
+
+// residentPrefillScratch is the memory a resident request's prefill takes at its largest pass, when the resident
+// splits its prefill (prefillBlockRows): that pass's scratch by the resident's own figure, plus the host embeddings
+// built for it. The last pass is the longest, at most a block and prefillTailMin-1 rows. ok is false for a resident
+// that does not split, whose request is priced by prefillScratchBytes.
+func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) {
+	B := m.prefillBlockRows(promptTokens)
+	if B <= 0 || promptTokens <= 0 {
+		return 0, false
+	}
+	rows := min(promptTokens, B+prefillTailMin-1)
+	pb := m.resident.(ResidentPrefillBlocks)
+	return pb.PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
+}
+
 // prefillKernelFloor is the resident's kernel-class boundary for chunking: PrefillKernelFloor when the resident
 // reports it, else ResidentFastPrefill's floor (the same boundary, as CUDA reports it), else 0.
 func (m *Model) prefillKernelFloor() int {
@@ -1196,6 +1241,29 @@ func (m *Model) ResidentContextCap() int {
 		return capper.ContextCap()
 	}
 	return 0
+}
+
+// ResidentContextNoted is an optional ResidentForward extension: a few words on how the backend arrived at its context cap
+// ("fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"), for a load banner. "" when the caller's own -ctx set it.
+type ResidentContextNoted interface {
+	ContextNote() string
+}
+
+// ResidentContextNote is the active resident's ContextNote, or "" when there is no resident or it gives none.
+func (m *Model) ResidentContextNote() string {
+	if n, ok := m.resident.(ResidentContextNoted); ok {
+		return n.ContextNote()
+	}
+	return ""
+}
+
+// ResidentContextKVBytes is the KV one resident slot holds at ctx positions on the active resident's backend, at the precision
+// that backend allocates: the figure FitBudgetSummary reports at the resolved context. 0 when no resident is active.
+func (m *Model) ResidentContextKVBytes(ctx int) int64 {
+	if m.resident == nil || m.be == nil {
+		return 0
+	}
+	return m.ResidentKVBytes(m.be.Name(), ctx, m.kvF16, m.kvI8)
 }
 
 // ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or

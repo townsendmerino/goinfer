@@ -1,0 +1,15 @@
+started: 2026-10-12 23:18:12 PDT
+host: Darwin 25.6.0 arm64
+new: f79f919601f033b7d7554488ed7f8bf0f855b08a
+old: c75a283add7158830f9abc633dbaac605c25fe6e
+load: 23:18  up 18 days, 13:13, 1 user, load averages: 1.59 1.28 1.08
+swap: total = 2048.00M  used = 961.62M  free = 1086.38M  (encrypted)
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   346641.
+Pages active:                                 216182.
+Pages inactive:                               246270.
+Pages speculative:                             18275.
+Pages throttled:                                   0.
+Pages wired down:                             119881.
+Pages purgeable:                                4363.
+finished: 2026-10-12 23:33:06 PDT rc=1

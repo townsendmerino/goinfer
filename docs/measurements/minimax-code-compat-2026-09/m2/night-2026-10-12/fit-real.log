@@ -1,0 +1,13 @@
+=== RUN   TestMetalFitCtx_anAgentsFirstRequestFits
+=== RUN   TestMetalFitCtx_anAgentsFirstRequestFits/1.5B
+    metal_fitctx_real_test.go:39: 1.5B: ctx 16384 (fit: 2 slots, 0.9 GB KV); weights 1.81 GB + host copy 1.81 GB of a 11.20 GB budget
+=== RUN   TestMetalFitCtx_anAgentsFirstRequestFits/7B
+    metal_fitctx_real_test.go:33: decoder: qwen2.5-7b-instruct-q4_k_m.gguf needs ~8.0 GB resident at quant int4 + 0.4 GB KV + 4.4 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 12.8 GB; this machine currently has 6.4 GB of memory available (budget 4.5 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestMetalFitCtx_anAgentsFirstRequestFits (1.91s)
+    --- PASS: TestMetalFitCtx_anAgentsFirstRequestFits/1.5B (1.85s)
+    --- FAIL: TestMetalFitCtx_anAgentsFirstRequestFits/7B (0.06s)
+FAIL
