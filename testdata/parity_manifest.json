@@ -416,7 +416,7 @@
         "scripts/pin_laguna_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:8282917ebef10db50032e5b37e468845ca1beec2b35520f37577cb29fa5007d6",
+      "deps_hash": "sha256:82656d8e710498f7c42fbd2d7dee5bcd44df579f22e2dcae0099a3c7ea38e1b5",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -946,7 +946,7 @@
         "scripts/pin_spark2_5_tiny.py",
         "scripts/pin_spark2_5_real.py"
       ],
-      "deps_hash": "sha256:f85da9bba0cd769e5d7a4d8982a5588dabcc2917443d6381058abf57c012a41d",
+      "deps_hash": "sha256:b065e6cc3fb8e7fb2ade7563b783bdcc78712764d8c31e3c4210211e731d7297",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-06",
