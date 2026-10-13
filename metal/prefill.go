@@ -961,7 +961,8 @@ kernel void moe_route_batch(
     if (scale != 0.0f && scale != 1.0f) for (uint j=0u; j<k; j++) rowWgt[j] *= scale;
 }
 
-// route_gptoss_batch: batched router for gpt-oss MoE.
+// route_gptoss_batch: batched router for gpt-oss MoE. A slot with no score above -INFINITY takes the lowest expert not
+// yet chosen in its row, as route_gptoss does (moe.go), so no index outside [0, nE) is written.
 kernel void route_gptoss_batch(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
     device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
     constant uint& k[[buffer(5)]], constant uint& M[[buffer(6)]],
@@ -980,6 +981,11 @@ kernel void route_gptoss_batch(device const float* logits[[buffer(0)]], device c
     for (uint j=0u;j<k;j++) {
         int best=-1; float bv=-INFINITY;
         for (uint i=0u;i<nE;i++) if (!taken[i] && sc[i]>bv) { bv=sc[i]; best=int(i); }
+        if (best < 0) {
+            best = 0;
+            for (uint i=0u;i<nE;i++) if (!taken[i]) { best=int(i); break; }
+            bv = -1e30f;
+        }
         taken[uint(best)]=true;
         rowIdx[j]=uint(best);
         chosen[j]=bv;

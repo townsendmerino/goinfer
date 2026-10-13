@@ -93,6 +93,11 @@ kernel void moe_route(device const float* logits[[buffer(0)]], device const floa
 // experts win, not just a valid-looking-but-wrong softmax). Softmax-over-selected-only equals
 // softmax-over-all-then-renormalize (the shared normalizer cancels), matching HF's
 // GptOssTopKRouter exactly.
+//
+// When no remaining score is above -INFINITY (every one NaN or -INFINITY: a crafted router, or an activation that
+// overflowed) a slot takes the lowest expert not yet chosen, with a finite score so the weights stay finite. An index
+// outside [0, nE) must never leave this kernel: the indexed expert GEMVs use it as a row offset into the weights.
+// route_gptoss_sg and route_gptoss_batch (prefill.go) follow the same rule and write the same bytes.
 kernel void route_gptoss(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
     device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
     constant uint& k[[buffer(5)]],
@@ -106,6 +111,11 @@ kernel void route_gptoss(device const float* logits[[buffer(0)]], device const f
     for (uint j=0u;j<k;j++) {
         int best=-1; float bv=-INFINITY;
         for (uint i=0u;i<nE;i++) if (!taken[i] && sc[i]>bv) { bv=sc[i]; best=int(i); }
+        if (best < 0) {
+            best = 0;
+            for (uint i=0u;i<nE;i++) if (!taken[i]) { best=int(i); break; }
+            bv = -1e30f;
+        }
         taken[uint(best)]=true;
         outIdx[j]=uint(best);
         chosen[j]=bv;
@@ -125,7 +135,10 @@ kernel void route_gptoss(device const float* logits[[buffer(0)]], device const f
 // the serial order: the softmax sum and wsum run over i or j ascending, uniformly in every lane, and lane 0 does the
 // output writes, the renorm and the scale exactly as moe_route does. Top-k is exact: a lane's strict-> scan of its
 // own experts in ascending order, then simd_max of the value and simd_min of the index among the lanes holding it,
-// which is the serial scan's lowest index on ties; nothing above -INFINITY selects expert 0, as the serial scan does.
+// which is the serial scan's lowest index on ties. When nothing is above -INFINITY, moe_route_sg selects expert 0 as
+// moe_route does, and route_gptoss_sg selects the lowest expert not yet chosen as route_gptoss does: a chosen expert's
+// score is overwritten with -INFINITY, which a remaining NaN or -INFINITY score cannot be told from, so that kernel
+// also keeps the chosen set in a per-lane array that every lane updates alike.
 // Group limiting: a group's top-2 sum is order-independent, so each lane scores whole groups; keep is the serial
 // selection, run uniformly. Tested against moe_route/route_gptoss in moe_route_sg_test.go.
 static inline uint route_sg_pick(threadgroup float* sel, uint nE, uint lane, thread float& m) {
@@ -193,13 +206,21 @@ kernel void route_gptoss_sg(device const float* logits[[buffer(0)]], device cons
     uint lane[[thread_index_in_threadgroup]]) {
     threadgroup float sc[256];
     float chosen[256];
+    bool taken[256]; // the same in every lane: best is uniform
+    for (uint i=0u;i<nE;i++) taken[i]=false;
     for (uint i=lane;i<nE;i+=32u) sc[i] = logits[i] + bias[i];
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint j=0u;j<k;j++) {
-        float bv; // sc[best], or -INFINITY when none is left (best 0xFFFFFFFF, route_gptoss's uint(-1))
+        float bv; // sc[best]
         uint best = route_sg_pick(sc, nE, lane, bv);
+        if (best == 0xFFFFFFFFu) { // nothing above -INFINITY is left: route_gptoss's rule
+            best = 0u;
+            for (uint i=0u;i<nE;i++) if (!taken[i]) { best=i; break; }
+            bv = -1e30f;
+        }
+        taken[best]=true;
         if (lane == 0u) { outIdx[j]=best; chosen[j]=bv; }
-        if (best != 0xFFFFFFFFu && lane == (best & 31u)) sc[best]=-INFINITY;
+        if (lane == (best & 31u)) sc[best]=-INFINITY;
     }
     if (lane != 0u) return;
     float mx=chosen[0];
