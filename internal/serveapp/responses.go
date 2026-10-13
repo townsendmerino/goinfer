@@ -189,9 +189,10 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
 	gr.id = id                                // registers this generation for cancel-by-id
@@ -287,7 +288,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 	}
 	gr, err := lm.prepare(sm, vi.ids, false)
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
 	gr.id = id
@@ -370,9 +371,10 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
 	gr.id = id // registers this generation for cancel-by-id

@@ -156,6 +156,18 @@ Completions has system- and developer-role messages and `tools`; Responses has `
 and `tools`. Reserved output is the request's own output cap, with a floor (start at 1,024) so a request with no cap
 does not count as fitting with zero room.
 
+**Amended 2026-10-13, before the code, from the matchers' sources and the census.**
+- **Reserved output is capped at a quarter of the window** (and floored at 1,024, or a quarter of a window smaller
+  than 4,096). Claude Code sends `max_tokens: 32000` on every request (§0a), so the request's own cap would put every
+  Claude Code overflow in the first branch at any window under about 52K. The server already clamps the output to
+  the room left, so what compaction needs is room for a reply, not the cap the client asked for.
+- **Pi's and opencode's matchers were read** (`overflow.ts` and `provider-error.ts`, fetched 2026-10-13). Both hold a
+  generic `context[_ ]length[_ ]exceeded` pattern over the error text, which today's message carries: so on those two
+  a fixed part that cannot fit compacts today, R19's loop. Both also match "maximum context length is N tokens" and
+  "prompt is too long". The first branch's message must match none of their patterns; a test holds both lists.
+- **A route that does not know its fixed part** (`/v1/completions`, jobs, batches, image turns) answers with the
+  second branch's wording, as it effectively does today.
+
 **The trade, stated.** With the second branch a harness compacts against a `-ctx` the operator could have raised, and
 the operator may not notice. `-log-requests` shows every overflow, and the message can still name `-ctx` when the fit
 planner had room for more. The owner decides. This doc recommends the rule because on a small card it is the
@@ -165,6 +177,19 @@ difference between a long session that degrades and one that dies.
 I3: each of Claude Code, opencode and Codex driven past the window. Pre-registered: **pass** if each overflow is
 followed by at most one compaction and the session continues; **fail** on three or more consecutive compactions, or
 the session ending on the overflow. A fail with the fixed part fitting means the wording is wrong for that harness.
+
+**I1 built 2026-10-13 (the unit half of its gate; the live half is I3's).**
+- **Code:** one typed overflow error with the two readings, the fixed part measured on each chat route by rendering
+  the system text and tool definitions with one empty user turn, and a writer per dialect.
+- **Read, through the real handlers on the committed tiny chat model (a 128-token window):** on `/v1/chat/completions`
+  (with and without tools), `/v1/messages` and `/v1/responses` (streaming and not), a conversation that is too long
+  gets its dialect's curable overflow, and a system prompt or tool definition that leaves no room gets the operator
+  message with no overflow code. Both wordings are held to Pi's and opencode's pattern lists.
+- **Mutants, one per branch, both red and reverted:** the incurable reading never taken (every fixed-part case
+  failed), and taken whenever the fixed part is known (every long-conversation case failed).
+- **Not covered:** Cline's, Goose's and Hermes' matchers were not read; the tests hold the phrases the doc names for
+  them. No real agent has been driven past its window. `/v1/completions`, jobs, batches and image turns do not
+  measure a fixed part and answer with the curable wording.
 
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 
@@ -316,6 +341,18 @@ the official `openai-go` and `anthropic-sdk-go` examples for chat, streaming, to
 in-process; one smoke test each for Genkit, Eino, LangChainGo and ADK-Go (ADK-Go's default exercises the Responses
 route, and so H-a's fix); a mid-stream cancel stops generation and leaves no goroutine behind; the root `go.mod` is
 unchanged.
+
+**I5, the seam, built 2026-10-13 (its SDK gate is not).**
+- **In `internal/serveapp`:** the route table and the listener-independent checks moved out of the entry point
+  unchanged, and a constructor builds a handler from the binary's own flag set, so a setting cannot mean one thing on
+  the command line and another in process. The flags that configure the listener or the process are refused by name.
+- **Public, Experimental:** package `server`, two functions (`NewHandler`, `Transport`); `docs/api-tiers.md` lists it.
+- **Read on the committed tiny chat model with `net/http`:** a chat completion answers; a stream arrives as separate
+  events and ends with `[DONE]`; `-api-key` is enforced; a stream cancelled partway leaves no goroutine; after
+  `Close` the model is gone (404). The root `go.mod` is unchanged.
+- **Still owed for I5's gate:** the separate SDK module (the official OpenAI and Anthropic Go SDKs' chat, streaming,
+  tools and structured output; one smoke test each for Genkit, Eino, LangChainGo and ADK-Go) and its CI stitching.
+  The typed `Config` the item sketched was not built: the constructor takes flags.
 
 ### I6 — Codex's `apply_patch`, honoured rather than dropped (candidate; desk check first)
 

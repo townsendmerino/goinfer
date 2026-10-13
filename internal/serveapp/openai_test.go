@@ -484,9 +484,9 @@ func TestContextLengthError(t *testing.T) {
 		{"1M-token body", 1_000_000, 32768, true},
 		{"unknown ctx (0) never rejects", 1_000_000, 0, false},
 	} {
-		err := contextLengthError(tc.promptLen, tc.ctx)
+		err := newContextOverflow(tc.promptLen, tc.ctx, tc.ctx, 256, nil)
 		if (err != nil) != tc.wantErr {
-			t.Errorf("%s: contextLengthError(%d, %d) err=%v, wantErr=%v", tc.name, tc.promptLen, tc.ctx, err, tc.wantErr)
+			t.Errorf("%s: newContextOverflow(%d, %d) err=%v, wantErr=%v", tc.name, tc.promptLen, tc.ctx, err, tc.wantErr)
 		}
 		if err != nil && !strings.Contains(err.Error(), "context_length_exceeded") {
 			t.Errorf("%s: error %q should name context_length_exceeded", tc.name, err.Error())
@@ -494,17 +494,17 @@ func TestContextLengthError(t *testing.T) {
 	}
 }
 
-// TestContextLengthError_namesBothNumbers: the 400 gives the prompt's size and the window that refused it, in the words
-// a harness's log can be read by ("prompt is N tokens; context window is M"), and keeps context_length_exceeded, the
-// string clients match on. When the window is the server's and not the model's, the remedy names the -ctx to pass.
+// TestContextLengthError_namesBothNumbers: the 400 gives the prompt's size and the window that refused it and keeps
+// context_length_exceeded, the string clients match on. When the window is the server's and not the model's, the
+// remedy names the -ctx to pass.
 func TestContextLengthError_namesBothNumbers(t *testing.T) {
-	const want = "prompt is 11137 tokens; context window is 4096 (context_length_exceeded)"
-	if err := contextLengthError(11137, 4096); err == nil || err.Error() != want {
-		t.Errorf("contextLengthError(11137, 4096) = %v, want %q", err, want)
+	const want = "This model's maximum context length is 4096 tokens. However, your messages resulted in 11137 tokens (context_length_exceeded)."
+	if err := newContextOverflow(11137, 4096, 4096, 256, nil); err == nil || err.Error() != want {
+		t.Errorf("newContextOverflow(11137, 4096) = %v, want %q", err, want)
 	}
-	err := contextLengthErrorFor(11137, 4096, 32768)
+	err := newContextOverflow(11137, 4096, 32768, 256, nil)
 	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), "-ctx 11138 or more (up to 32768)") {
-		t.Errorf("contextLengthErrorFor(11137, 4096, 32768) = %v; want %q followed by the -ctx that would accept it", err, want)
+		t.Errorf("newContextOverflow(11137, 4096, 32768) = %v; want %q followed by the -ctx that would accept it", err, want)
 	}
 }
 

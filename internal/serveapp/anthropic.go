@@ -608,8 +608,10 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
 		return
 	}
-	if gr, err = lm.prepare(req.toSampling(), ids, lm.residentPath()); err != nil {
-		writeAnthropicErr(w, prepareErrStatus(err), "invalid_request_error", err.Error())
+	sm := req.toSampling()
+	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
+	if gr, err = lm.prepare(sm, ids, lm.residentPath()); err != nil {
+		writeAnthropicPrepareErr(w, err)
 		return
 	}
 	if toolsActive {

@@ -582,6 +582,9 @@ type sampling struct {
 	// and silently drop the result.
 	Confidence   bool `json:"goinfer_confidence"`
 	confidenceOK bool
+	// fixedTokens measures the request's fixed part (system prompt and tool definitions) in tokens, for a route that
+	// has one. prepare calls it only when the prompt overflows, to choose the refusal's wording (overflow.go).
+	fixedTokens func() int
 }
 
 type respFormat struct {
@@ -883,9 +886,10 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		return
 	}
 	req.sampling.confidenceOK = true // written back below
+	req.sampling.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
 	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writePrepareErr(w, err)
 		return
 	}
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
@@ -1016,7 +1020,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	req.sampling.confidenceOK = true // written back below
 	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writePrepareErr(w, err)
 		return
 	}
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
@@ -1230,7 +1234,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
-		if err := contextLengthErrorFor(len(promptIDs), ctx, lm.modelContextWindow()); err != nil {
+		if err := newContextOverflow(len(promptIDs), ctx, lm.modelContextWindow(), gr.maxTokens, sm.fixedTokens); err != nil {
 			return genRequest{}, err
 		}
 		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)
@@ -1293,29 +1297,6 @@ func prepareErrStatus(err error) int {
 		return http.StatusRequestEntityTooLarge
 	}
 	return http.StatusBadRequest
-}
-
-// contextLengthError rejects a prompt that alone fills or exceeds the model's context window. Unchecked, a multi-MiB
-// body tokenizes to ~1M ids and preallocates tens of GiB of KV, and within memory a position past the trained context
-// drives out-of-range RoPE and returns plausible garbage under HTTP 200. ctx <= 0 (unknown) never rejects.
-func contextLengthError(promptLen, ctx int) error {
-	if ctx > 0 && promptLen >= ctx {
-		return fmt.Errorf("prompt is %d tokens; context window is %d (context_length_exceeded)", promptLen, ctx)
-	}
-	return nil
-}
-
-// contextLengthErrorFor is contextLengthError plus the remedy, for when the window that rejected the prompt is the
-// server's resident KV capacity, not the model's own (ctx < modelWindow): "context window is 8192" reads as the
-// model's limit, so the client compacts instead of the operator raising -ctx. When the model's own window is the
-// limit, -ctx cannot help and the message is unchanged.
-func contextLengthErrorFor(promptLen, ctx, modelWindow int) error {
-	err := contextLengthError(promptLen, ctx)
-	if err == nil || modelWindow <= ctx {
-		return err
-	}
-	return fmt.Errorf("%w; this is the server's GPU context (-ctx), not the model's limit (%d tokens): restart goinfer-serve with -ctx %d or more (up to %d) to accept it",
-		err, modelWindow, promptLen+1, modelWindow)
 }
 
 // seedOrRandom returns the request's seed, or a fresh random seed when absent. OpenAI's contract is that an omitted

@@ -30,6 +30,45 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Added — the server as a library: `server.NewHandler` and `server.Transport` (Experimental)
+
+`goinfer-serve`'s HTTP API can now be served from a handler inside your own Go program, with no listener, port or daemon. `server.NewHandler`
+takes the binary's own flags and returns an `http.Handler`; `server.Transport` turns it into an `http.RoundTripper`. Any client that accepts an
+`*http.Client` then talks to a local model in process, with everything the server does: the three API dialects, structured output, tool calling.
+
+```go
+h, closer, err := server.NewHandler("-model", "model.gguf")
+defer closer.Close()
+client := &http.Client{Transport: server.Transport(h)}   // give this to an SDK, base URL http://goinfer/v1
+```
+
+- Streams arrive event by event; cancelling the request's context stops the generation; `Close` cancels what is in flight and unloads the models.
+- The flags that configure the binary's listener and process (`-addr`, the TLS pair, `-web`, the admin surfaces, `-halt-file`) are refused.
+  `-api-key` is honoured when given; `GOINFER_API_KEY` is not read.
+- A GPU backend is linked as the binaries link it: import its module and pass `-backend`.
+- **Not yet run against the OpenAI or Anthropic Go SDKs or the agent frameworks**; tested with `net/http` on a tiny model. Outside the
+  compatibility guarantee ([docs/api-tiers.md](docs/api-tiers.md)).
+
+### Changed — a prompt that overflows the context is refused in the words each coding agent acts on
+
+A coding agent that is told its conversation is too long compacts it and retries. That is right when the history is what overflowed, and a loop
+when the system prompt and tool definitions alone do not fit (opencode once compacted 34 times in a row against an 8,192 window). Every overflow
+used to carry the same text, which Pi and opencode both read as "compact". The server now measures the request's fixed part and answers one of
+two ways, on all three API dialects:
+
+- **The conversation is too long** (compacting would fit): the wording each dialect's agents recognise.
+  - `/v1/chat/completions`: 400 with `error.code: "context_length_exceeded"` and "This model's maximum context length is M tokens. However, your
+    messages resulted in N tokens".
+  - `/v1/messages`: 400 `invalid_request_error`, "prompt is too long: N tokens > M maximum".
+  - `/v1/responses`: the Chat Completions body, or with `stream: true` a `response.failed` event whose error code is `context_length_exceeded`.
+- **The system prompt and tools leave no room for a reply:** a 400 with no overflow code, saying so with the three sizes and, when the window is
+  the server's, the `-ctx` that would fit. It is worded to match none of Pi's or opencode's overflow patterns, so those agents stop and show it.
+
+"Room for a reply" is the request's `max_tokens`, at least 1,024 and at most a quarter of the window. Both messages still name `-ctx` when the
+limit is the server's context and not the model's. **A client that matched the old text** ("prompt is N tokens; context window is M") must match
+the new one; `context_length_exceeded` is still in the curable message. Not yet driven by a real agent past its window: that is the harness
+matrix's job (`docs/tasks/task-integration-harness-2026-10.md`, "I1" and "I3").
+
 ### Changed — on Metal, a long prompt prefills in blocks, and a request is admitted by the block
 
 Changes resource use. Metal's batched prefill allocated its scratch for the whole prompt at once: about 144 KB a token on a 7B, so a 21,000-token
@@ -65,8 +104,8 @@ under 4096, and less than 16384 only when it does not fit (the context gives way
 - **Startup says what it chose.** The `context:` line gives the reason in place of "backend default", for example
   `16384 tokens (fit: 2 slots, 0.9 GB KV; ...)` or `4096 tokens (paged MoE keeps the default; ...)`. On any GPU backend a resident context under
   16384 adds a `harness:` line: whether an agent's first request fits, and what `--ctx 16384` would cost in KV across the load's slots.
-- **The 400 reads** `prompt is N tokens; context window is M (context_length_exceeded)`, followed as before by the `-ctx` to pass when the window
-  is the server's and not the model's.
+- **The refusal of a prompt that does not fit** names both sizes and the `-ctx` to pass when the window is the server's and not the model's; its
+  wording is the entry below.
 - **`goinfer-chat fit`** plans an unpinned Metal line at the context a load takes, from the same function.
 
 `docs/tasks/task-minimax-code-compat-2026-09.md` M2.

@@ -427,7 +427,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	req.sampling.confidenceOK = true // written back below (the same two sites as the text route)
 	gr, err := lm.prepare(req.sampling, vi.ids, false)
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writePrepareErr(w, err)
 		return
 	}
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
@@ -543,7 +543,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	gr, err := lm.prepare(req.toSampling(), vi.ids, false)
 	if err != nil {
-		writeAnthropicErr(w, prepareErrStatus(err), "invalid_request_error", err.Error())
+		writeAnthropicPrepareErr(w, err)
 		return
 	}
 	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs}, s.haltState); !ok {

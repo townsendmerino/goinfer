@@ -56,9 +56,10 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	req.sampling.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
 	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
-		writeErr(w, prepareErrStatus(err), err.Error())
+		writePrepareErr(w, err)
 		return
 	}
 

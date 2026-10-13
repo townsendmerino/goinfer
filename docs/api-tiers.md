@@ -125,6 +125,9 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   move; the CACHE LAYOUT is not a promise either. **A plain path passed to `--model` is returned
   untouched and is Hard as before** — the reference form is additive, and `TestResolve_pathsAreUntouched`
   is what holds that line.
+- **The server as a library.** The `server` package — `NewHandler` and `Transport` — serves `goinfer-serve`'s HTTP
+  API from a handler in the caller's process. The HTTP API it carries is the Hard contract listed under `cmd/serve`;
+  the two Go functions, and which flags `NewHandler` refuses, are what may move.
 - **The submodules themselves** — `gpu/`, `cuda/`, `metal/`, `demo/agent` — are Experimental as
   packages regardless of their tag numbers (see Open questions on posture).
 
