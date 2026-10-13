@@ -57,7 +57,8 @@ func TestKernelFMALint(t *testing.T) {
 	// prefill_batched.cu's `1.0f + attnTempBeta * log1pf(...)` shipped in a linted kernel.
 	macExprRev := regexp.MustCompile(` [+\-] [^;/()]* \* `) // no parens between: (a - b) * c and c + f(a * b) are not MACs
 	compliant := regexp.MustCompile(`__fmaf_rn|__fmul_rn|__fadd_rn|__fma_rn|__dp4a|__shfl`)
-	arrayIndex := regexp.MustCompile(`\[[^\]]*\]`) // strip array indices (int arithmetic) before matching
+	arrayIndex := regexp.MustCompile(`\[[^\]]*\]`)        // strip array indices (int arithmetic) before matching
+	kvIndex := regexp.MustCompile(`\bKV_LD\w*\([^()]*\)`) // KV_LD / KV_LD4V / KV_LD2V (kvtype.cuh): the arguments are a pointer and an int index, like an array subscript
 	// Lines that TEXTUALLY match a MAC but are integer / pointer / index arithmetic, not a float MAC:
 	// a type/pointer declaration, a loop header, or any (long)/(int)/(unsigned) cast (int arithmetic —
 	// float MACs cast with (float) or not at all, which the compliant check already covers).
@@ -91,6 +92,7 @@ func TestKernelFMALint(t *testing.T) {
 				continue
 			}
 			code = arrayIndex.ReplaceAllString(code, "[]") // remove int index arithmetic before MAC match
+			code = kvIndex.ReplaceAllString(code, "KV_LD()")
 			if !macAccum.MatchString(code) && !macExpr.MatchString(code) && !macExprRev.MatchString(code) {
 				continue
 			}
@@ -133,7 +135,7 @@ func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
 		linted[f] = true
 	}
 	for _, m := range embedded {
-		cu := m[1] + ".cu"
+		cu := strings.TrimSuffix(m[1], "_kv16") + ".cu" // a _kv16 twin is its base source built with -DKV_F16, linted as that source
 		if linted[cu] {
 			continue
 		}

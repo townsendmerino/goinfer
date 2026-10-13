@@ -5,6 +5,7 @@ package cuda
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -79,7 +80,10 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 						continue
 					}
 					for _, b := range []Buffer{sl.kc[l], sl.vc[l]} {
-						n := int64(b.Len()) * 4 // Len is in f32 elements (r.af)
+						n := int64(b.Len()) * 4 // Len is in elements: f32 (r.af), or f16 (r.akv) on a layer whose cache is half
+						if r.layers[l].kvHalf {
+							n = int64(b.Len()) * 2
+						}
 						bytes += n
 						if alloc := (n + allocQuantumBytes - 1) / allocQuantumBytes * allocQuantumBytes; alloc-n >= allocQuantumBytes {
 							t.Errorf("slot %d layer %d: a buffer of %d B rounds to %d B — more than one allocation quantum", s, l, n, alloc)
@@ -90,12 +94,25 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 					t.Fatalf("slot %d: allocated K/V buffers hold %d B, kvBytesForCap says %d B at ctx %d — the resident's own fit figure no longer matches its allocation", s, bytes, forCap, r.ctxCap)
 				}
 			}
+			// What the pricing says against what was allocated. The resident's own precision prices exactly its allocation. Asking for the other one prices
+			// the other: f32 is twice an f16 resident's bytes, and f16 on a model the f16 kernels do not cover is still f32 on the device. int8 is not a CUDA cache.
+			f32Bytes := forCap
+			if r.kvF16 {
+				f32Bytes = 2 * forCap
+			}
+			// f16 asked of an f32 resident prices half only where the f16 kernels cover the family (decoder.cudaKVF16Decline): both answers are right for
+			// some model, and which one this model gets is the one that matches a resident that WAS f16 (r.kvF16) or the 2x-smaller dense figure.
 			for _, c := range []struct {
 				name     string
 				f16, i8b bool
-			}{{"f32", false, false}, {"f16 requested", true, false}, {"i8 requested", false, true}} {
-				if got := m.ResidentKVBytes("cuda", r.ctxCap, c.f16, c.i8b); got != forCap {
-					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, CUDA allocates %d B (%.3fx)", c.name, r.ctxCap, got, forCap, float64(got)/float64(forCap))
+				want     []int64
+			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{forCap, f32Bytes / 2}}, {"i8 requested", false, true, []int64{f32Bytes}}} {
+				got := m.ResidentKVBytes("cuda", r.ctxCap, c.f16, c.i8b)
+				if !slices.Contains(c.want, got) {
+					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)
+				}
+				if r.kvF16 && c.f16 && got != forCap {
+					t.Errorf("an f16 resident allocates %d B and ResidentKVBytes(f16) says %d B", forCap, got)
 				}
 			}
 		})

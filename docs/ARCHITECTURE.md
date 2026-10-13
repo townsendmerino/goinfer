@@ -489,7 +489,7 @@ A resident backend keeps its own cache on the device, laid out its own way:
 | | K/V precision | MLA | context when not pinned |
 |---|---|---|---|
 | CPU | f32, or int8 (`--kv i8`) | the latent | the model's maximum, unless the fit guard lowers it |
-| CUDA | f32, whatever `--kv` asks | one latent buffer | 4096, grown toward 8192 under `--fit` |
+| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | 4096, grown toward 8192 under `--fit` |
 | Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | 4096 (up to 32768) |
 | WebGPU | f32, f16 or int8 (`--kv`) | resident | a ceiling of 16k / 32k / 64k by precision |
 
@@ -668,7 +668,7 @@ The `cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
   - the SigLIP vision tower;
   - compute-time LoRA;
   - the DFlash block drafter, with its argmax on the device.
-- **KV** is f32, whatever `--kv` asks. Unless `--ctx` pins it, the context is 4096. Under `--fit`
+- **KV** is f16 by default for the dense families above (`--kv auto`), f32 for the rest or on `--kv f32`. Unless `--ctx` pins it, the context is 4096. Under `--fit`
   it grows toward 8192 when `Plan("cuda")` says it fits.
 
 ### Metal

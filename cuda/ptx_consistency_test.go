@@ -47,9 +47,11 @@ func TestPTX_matchesSourcesAndBindings(t *testing.T) {
 		for name := range entries {
 			entryMod[name] = mod
 		}
-		cu, err := os.ReadFile(mod + ".cu")
+		// A _kv16 twin is the same source built with -DKV_F16 (build_ptx.sh): it must declare exactly the kernels and parameters of its base module.
+		src := strings.TrimSuffix(mod, "_kv16")
+		cu, err := os.ReadFile(src + ".cu")
 		if err != nil {
-			t.Errorf("%s.ptx is embedded but %s.cu is missing — a shipped PTX must regenerate from its source", mod, mod)
+			t.Errorf("%s.ptx is embedded but %s.cu is missing — a shipped PTX must regenerate from its source", mod, src)
 			continue
 		}
 		globals := cuGlobals(string(cu))

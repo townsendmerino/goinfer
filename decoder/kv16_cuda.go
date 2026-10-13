@@ -1,5 +1,7 @@
 package decoder
 
+import "sync/atomic"
+
 // f16 KV on CUDA (docs/tasks/task-cuda-f16-kv-2026-10.md). CUDA's resident cache is f32 unless this file says otherwise: the attention and
 // KV-store kernels have f16 twins (cuda/kvtype.cuh, the *_kv16.ptx modules), and everything else that touches the cache (the windowed ring,
 // the MLA latent, the drafter's own cache, the VL image prefill, the pairwise-RoPE store) does not, so a build that needs any of those stays f32.
@@ -69,17 +71,19 @@ func (o Options) kvF16For(a *Architecture) bool {
 		case "f16":
 			return cudaKVF16Decline(a, o) == ""
 		case "", "auto":
-			return cudaKVF16Default && cudaKVF16Decline(a, o) == ""
+			return cudaKVF16Default.Load() && cudaKVF16Decline(a, o) == ""
 		}
 		return false
 	}
 	return o.KVPrecision == "f16"
 }
 
-// cudaKVF16Default is whether "auto" means f16 on CUDA for a cleared family. It is false until the fidelity gate, the overflow survey and the
-// paired speed check of docs/tasks/task-cuda-f16-kv-2026-10.md have been read; the commit that flips it also pins "f32" in every test that
-// needs the bit-exact cache. Until then `-kv f16` is the only way onto the f16 kernels.
-const cudaKVF16Default = false
+// cudaKVF16Default is whether "auto" means f16 on CUDA for a cleared family. It is true by OWNER DECISION of 2026-10-13, over two registered gates that
+// did not pass (docs/tasks/task-cuda-f16-kv-2026-10.md, "Owner override"): the fidelity decision cell read PARKED, and the paired speed check was stopped
+// before its deep cells ran. Tests that need the bit-exact cache pin KVPrecision "f32".
+var cudaKVF16Default atomic.Bool
+
+func init() { cudaKVF16Default.Store(true) }
 
 // KVF16DeclineReason is the reason a CUDA load asked for f16 KV (or left it on auto) is held at f32, "" when it is not held back or the load
 // is not on CUDA. serve's banner prints it, so a model that quietly stays f32 under the f16 default says why.

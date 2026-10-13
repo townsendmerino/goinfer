@@ -98,3 +98,21 @@ none: the f16 arm's only change is the rounding of stored K and V, which the exa
 (R6's flash-decode lane and R8's vision tower were each turned on by owner decision), and it would be recorded as that, not as a pass.
 
 The paired speed check did not run: its first night run was refused by `bench_peer.py` on a 1-minute load of 1.36, left by the gate before it (no cell was measured). The script now waits for the load to settle before each pass; it is queued again.
+
+## Speed read and owner override (2026-10-13)
+
+**First served read (old kernel), stopped by the owner:** pass 1 of 2 (f16 first) complete, plus the d=128 cells of pass 2; records `docs/measurements/cuda-f16-kv-2026-10/speed-partial-2026-10-13-*.json.gz`. f16 against f32:
+0.5B 1.00 / 0.94 / 1.00 / 1.02 at 128 / 512 / 2048 / 3900; 1.5B 0.96 / 0.87 / 1.02 / 1.02; phi3-mini 0.98 / 0.95 / **0.88 / 0.84**. The 1.5B d=128 cell read 0.960 and 0.959 in the two arm orders, so the slow cells were real. By the bands
+above that read was KILLED (any cell under 0.95).
+
+**Cause and fix (`9a1a0f7e`):** Phi-3 decodes through `attn_batched`, whose V-sum is a latency-bound walk down the keys; half-width loads put half the bytes in flight per request, so the f16 reader ran 231 us a call at 2048 keys
+against 161 for f32. The f16 build now keeps sixteen V loads in flight, FMAs in the same ascending order. The reader takes 133 us (f32 161), the whole phi3 token reads 1.02 / 1.06 / 1.10 times f32 at 512 / 2048 / 3900 in process, the f32
+module's PTX is byte-identical, and the exact-input identity holds (hd 64 and 128 by the tests, hd 96 by an output hash that matches across arms for all four readers). Two other attempts (a two-keys-at-once score loop, a 4-load unroll) changed
+nothing and were dropped.
+
+**Second served read (new kernel), stopped by the owner at 12 of 24 cells of pass 1:** the shallow cells only (0.5B at 128 / 512 / 2048 / 3900, 1.5B at 128, phi3-mini at 128) read 1.013, 1.002, 0.991, 1.007, 1.011, 1.006. Not measured with the new kernel:
+1.5B and phi3-mini at 512 and over, 7B at 8000, the reversed arm order. It is not a result.
+
+**Owner override.** The owner approved the default on 2026-10-13, over two registered gates that did not pass: the fidelity decision cell read PARKED, and the speed check was stopped before its deep cells and its second order ran, because
+the KV cache is about to be re-architected. `--kv auto` is now f16 on CUDA for llama, mistral, qwen2, qwen3 and phi3; `--kv f32` is the exact cache. This is recorded as an override, not as a pass. **Owed:** the paired speed check, run
+as registered, on whatever the KV re-architecture leaves; until then the deep-cell speeds of the new kernel are the in-process figures above.

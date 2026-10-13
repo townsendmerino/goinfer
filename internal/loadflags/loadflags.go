@@ -63,7 +63,7 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	fs.StringVar(&f.Backend, "backend", "auto", backendHelp)
 	fs.Var(quantFlag{f}, "quant", "decoder weight quant — the accuracy/speed/RAM tradeoff"+per("quant")+":\n"+quantHelp)
 	fs.StringVar(&f.LoRA, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load"+per("lora"))
-	fs.StringVar(&f.KV, "kv", "f32", kvHelp+per("kv"))
+	fs.StringVar(&f.KV, "kv", "auto", kvHelp+per("kv"))
 	fs.IntVar(&f.Ctx, "ctx", 0, ctxHelp(app, per("ctx")))
 	fs.BoolVar(&f.StreamWeights, "stream-weights", false, streamWeightsHelp+per("stream"))
 	fs.Float64Var(&f.WeightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)"+per("weight-cache"))
@@ -294,7 +294,7 @@ const quantHelp = "  int4      W4A8 (int4 weights, int8 activations): fastest on
 	"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n" +
 	"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant."
 
-const kvHelp = "KV cache precision, for whichever backend serves the model: f32 (bit-exact) | f16 (lossy; GPU residency only — on CUDA the dense llama, mistral, qwen2, qwen3 and phi3 families, any other model stays f32 and the banner names why; the CPU cache has no f16 form and stays f32) | i8 (lossy: the GPU residency cache, ~64k ctx on 8 GB; the CPU cache as per-head int8, ~4× smaller, argmax ~90%+, excluding MoE/gemma4/qwen3.5 which keep f32)"
+const kvHelp = "KV cache precision, for whichever backend serves the model: auto (the default: f16 on CUDA for the dense llama, mistral, qwen2, qwen3 and phi3 families, f16 on Metal, f32 elsewhere) | f32 (bit-exact) | f16 (lossy; GPU residency only — on CUDA the families above, any other model stays f32 and the banner names why; the CPU cache has no f16 form and stays f32) | i8 (lossy: the GPU residency cache, ~64k ctx on 8 GB; the CPU cache as per-head int8, ~4× smaller, argmax ~90%+, excluding MoE/gemma4/qwen3.5 which keep f32)"
 
 const streamWeightsHelp = "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)"
 
