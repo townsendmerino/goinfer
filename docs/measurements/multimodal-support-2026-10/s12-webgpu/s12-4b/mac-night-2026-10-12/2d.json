@@ -1,0 +1,205 @@
+{
+ "schema": 1,
+ "gate": "G-S12.4b-2d",
+ "host": "macbookpro.lan",
+ "uname": "Darwin macbookpro.lan 25.6.0",
+ "started": "2026-10-12 22:12:48 PDT",
+ "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+ "bins": {
+  "new": "/Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-new",
+  "old": "/Users/francistownsend-merino/goinfer-bench/s12-4b-2026-10-12/bin/serve-webgpu-old"
+ },
+ "revs": {
+  "new": "4d5cf269bc0c00d6f6c130d3577f80dc0c4be5e8",
+  "old": "862434b77d8499011269a749be2f77b228a00c5d"
+ },
+ "unit": "tokens",
+ "depths": {
+  "512": 513,
+  "2048": 2048
+ },
+ "rounds": 5,
+ "cells": [
+  {
+   "round": 0,
+   "arm": "new",
+   "depth": 512,
+   "ttft_s": 4.068397045135498,
+   "text": "The printing press is a crucial tool that has revolutionized the way we communicate and",
+   "load1": 0.97119140625,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 0,
+   "arm": "new",
+   "depth": 2048,
+   "ttft_s": 17.248707056045532,
+   "text": "The press release is a document that outlines the history of the press and its development",
+   "load1": 0.89306640625,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 0,
+   "arm": "old",
+   "depth": 512,
+   "ttft_s": 12.671340942382812,
+   "text": "The printing press is a crucial tool that has revolutionized the way we communicate and",
+   "load1": 0.9521484375,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 0,
+   "arm": "old",
+   "depth": 2048,
+   "ttft_s": 71.20429587364197,
+   "text": "The press release is a document that outlines the history of the press and its development",
+   "load1": 1.3466796875,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 1,
+   "arm": "old",
+   "depth": 512,
+   "ttft_s": 12.643857955932617,
+   "text": "The printing press is a crucial tool that has played a pivotal role in the history",
+   "load1": 1.455078125,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 1,
+   "arm": "old",
+   "depth": 2048,
+   "ttft_s": 70.83704328536987,
+   "text": "```\nThe press release is a document that outlines the history of the press and",
+   "load1": 1.23095703125,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 1,
+   "arm": "new",
+   "depth": 512,
+   "ttft_s": 4.072755813598633,
+   "text": "The printing press is a crucial tool that has played a pivotal role in the history",
+   "load1": 3.3525390625,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 1,
+   "arm": "new",
+   "depth": 2048,
+   "ttft_s": 17.260502099990845,
+   "text": "```\nThe press release is a document that outlines the history of the press and",
+   "load1": 3.3525390625,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 2,
+   "arm": "new",
+   "depth": 512,
+   "ttft_s": 4.071746110916138,
+   "text": "The printing press is a crucial tool that has revolutionized the way we communicate and",
+   "load1": 3.07861328125,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 2,
+   "arm": "new",
+   "depth": 2048,
+   "ttft_s": 17.238463878631592,
+   "text": "```\nThe press release of the press is a complex process that involves several steps",
+   "load1": 3.072265625,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 2,
+   "arm": "old",
+   "depth": 512,
+   "ttft_s": 12.556901931762695,
+   "text": "The printing press is a crucial tool that has revolutionized the way we communicate and",
+   "load1": 3.865234375,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 2,
+   "arm": "old",
+   "depth": 2048,
+   "ttft_s": 71.02786898612976,
+   "text": "```\nThe press release of the press is a complex process that involves several steps",
+   "load1": 3.37744140625,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 3,
+   "arm": "old",
+   "depth": 512,
+   "ttft_s": 12.576558113098145,
+   "text": "The printing press is a crucial tool that has had a profound impact on the history",
+   "load1": 2.47412109375,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 3,
+   "arm": "old",
+   "depth": 2048,
+   "ttft_s": 71.11125183105469,
+   "text": "```\nThe press release is a document that outlines the history of the press and",
+   "load1": 2.09326171875,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 3,
+   "arm": "new",
+   "depth": 512,
+   "ttft_s": 4.068108081817627,
+   "text": "The printing press is a crucial tool that has had a profound impact on the history",
+   "load1": 0.90283203125,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 3,
+   "arm": "new",
+   "depth": 2048,
+   "ttft_s": 17.2431218624115,
+   "text": "```\nThe press release is a document that outlines the history of the press and",
+   "load1": 0.830078125,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 4,
+   "arm": "new",
+   "depth": 512,
+   "ttft_s": 4.064582824707031,
+   "text": "The printing press is a crucial tool that has revolutionized the way we communicate and",
+   "load1": 2.0078125,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 4,
+   "arm": "new",
+   "depth": 2048,
+   "ttft_s": 17.238345861434937,
+   "text": "The press release is a document that outlines the history of the press industry in the",
+   "load1": 2.0068359375,
+   "prompt_tokens": 2076
+  },
+  {
+   "round": 4,
+   "arm": "old",
+   "depth": 512,
+   "ttft_s": 12.568921089172363,
+   "text": "The printing press is a crucial tool that has revolutionized the way we communicate and",
+   "load1": 2.328125,
+   "prompt_tokens": 541
+  },
+  {
+   "round": 4,
+   "arm": "old",
+   "depth": 2048,
+   "ttft_s": 71.00370717048645,
+   "text": "The press release is a document that outlines the history of the press industry in the",
+   "load1": 2.876953125,
+   "prompt_tokens": 2076
+  }
+ ],
+ "finished": "2026-10-12 22:22:34 PDT"
+}

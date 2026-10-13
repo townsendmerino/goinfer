@@ -1,0 +1,7 @@
+G-S12.4c-6 mode pilot, backend vulkan, planted defect true, prompt-set hash 1e8fd51b74cc18723ee5931713a722319ae895c46a4f6a6f9fde21d4fad75143
+exact: the per-dimension kernel; candidate: the key-split kernel; the arms' logits differ at 256 of 256 positions
+criteria: agreement margin 2.0 pts, KL margin 0.10, one-sided alpha 0.05
+cell short: 6 prompts, 192 positions; agreement candidate 7.29% exact 84.38% (difference -77.08 pts, lower bound -87.84); mean KL candidate 29.4332 exact 0.4438 (ratio 66.326, upper bound 103.836); hard flips candidate 177 exact 13; discordant positions 148
+cell medium: 2 prompts, 64 positions; agreement candidate 6.25% exact 87.50% (difference -81.25 pts, lower bound -81.25); mean KL candidate 28.2691 exact 0.2303 (ratio 122.722, upper bound 123.074); hard flips candidate 60 exact 6; discordant positions 52
+pooled: 8 prompts, 256 positions; agreement candidate 7.03% exact 85.16% (difference -78.12 pts, lower bound -86.08); mean KL candidate 29.1421 exact 0.3904 (ratio 74.645, upper bound 110.604); hard flips candidate 237 exact 19; discordant positions 200
+VERDICT OFF (hard flips pass false, agreement pass false, KL pass false) hard flips 237 > exact 19 + 2√exact; agreement lower bound -86.08 pts < −2.00; KL ratio upper bound 110.604 > 1.100

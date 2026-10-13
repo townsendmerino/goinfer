@@ -5326,6 +5326,11 @@ RTX 2070 SUPER, driver 595.91.07, Vulkan, branch head `ffc64585`, 15:59 to 16:12
     reply may differ. A reply that is not text of the prompt's subject fails the cell whatever its time.
   - **Cost basis:** G-S12.4b-3e's own log: the old arm about 75 s a round at the two lengths, the new arm under 15,
     with two loads a round: about 12 minutes; queued at 25.
+  - **The Mac half, added 2026-10-12 before either runs** (queued as `s12-4c-5-served-gemma` on the Mac): the same
+    script and rule under Metal, new serve at `d0cdee25` (main with both kernels), old the Mac's pinned
+    `serve-webgpu-s3`. Cost: the old arm is about 3 minutes a round at 1,783 tokens; queued at 35 min. Predictions:
+    the new arm's 1,783-token time to first token is under 40 s (0.6; the pass is 32.3 s in process). Serve's swap
+    guard refused this model on the Mac by day; if it does at night the job fails and says so.
   - **Predictions:** the 1,783-token cell's new time to first token is under 8 s (0.7; in process the pass is 4.8 s
     and the old served cell read within half a second of its in-process pass). The 457-token cell's is under 2 s (0.6).
 
@@ -5360,6 +5365,190 @@ Criteria as amended: agreement margin 2 points, KL margin 0.10, one-sided alpha 
   fails with it set; nothing in it touches the prefill.
 - **Predictions scored.** PARKED (0.5): no. **PASS (0.3): yes.** OFF (0.2): no. I expected the bounds to be too
   wide on 94 prompts; the agreement spread over the full set was smaller than the pilot's eight prompts gave.
+
+#### S12.3g, the grid towers' patch-count threshold: registered 2026-10-12 before it runs
+
+The grid towers' speed gates read SHIP at one large image, and the owner's rule for them is that the device tower
+becomes the default above a patch count and the CPU tower stays below it, "the count set from a measurement that is
+registered before it is run". This is that measurement. It does not flip any default: the flips stay the owner's.
+
+- **Tier:** night, on both boxes (Metal on the Mac, Vulkan on nobara): the threshold is a property of the backend.
+- **Instrument:** `gpu`'s `TestGridTowersWebGPU_patchSweep`, one tower a run: Qwen3.5 0.8B's, GLM-OCR's, Qwen2.5-VL
+  3B's. `testdata/glm_ocr/table.png` is preprocessed under a ladder of pixel ceilings (squares of side 112, 168, 224,
+  280, 336, 448, 672 and 896, then the ceiling serve uses), which gives patch counts from about 50 to the tower's
+  served maximum. A rung is one discarded warm-up pair and three timed pairs (CPU tower, WebGPU tower) in alternating
+  order; its reading is the median of WebGPU / CPU. Script: `s12-webgpu/run-g-s12-3g-night.sh`, a pinned test binary.
+- **The whole ladder runs; there is no early stop.** A crossover is a step, and a rule that stopped at the first
+  rung under 1.00 would not see a rung above it that goes back over.
+- **The threshold, per tower and backend:** the smallest rung whose ratio is at most 0.98 with every larger rung also
+  at most 0.98. "None" if the largest rung is over 0.98; "all" if the smallest rung is already at most 0.98.
+  A rung in (0.98, 1.00] counts as CPU's, the parked band of the towers' own gates.
+- **What it licenses:** a count per tower and backend to put in front of the owner. It is read at one image's aspect
+  ratio, at int precision as loaded by the tests, and at three pairs a rung: a threshold is good to the spacing of the
+  rungs around it, not finer.
+- **Cost basis:** the towers' own gates (CPU 6.5 s, 34 s and 28 s at the served ceiling on the Mac) and the day smoke
+  below: about 15 minutes a box; queued at 25.
+- **A day smoke, exploratory, already seen** (Qwen3.5's tower on the Mac, before the 280 rung was added): over 1.00
+  at 192 patches (1.181) and under at 432 (0.731), 0.37 at the served 3,888.
+- **Predictions, written after that smoke and before any other reading:** Qwen3.5's threshold on the Mac is the 280
+  or the 336 rung (0.7). GLM-OCR's and Qwen2.5-VL's thresholds are under 1,100 patches on both boxes (0.6). Every
+  threshold on nobara is at or under the Mac's for the same tower (0.5: the card is faster, and so is the box's CPU).
+
+#### nobara's night of 2026-10-12, graded: G-S12.4b-4a-4 SHIP, G-S12.4c-5 SHIP, G-S12.3g's Vulkan half read
+
+Graded against the registrations by the nobara session and written here on the owner's word; I read the same logs.
+RTX 2070 SUPER, driver 595.91.07, Vulkan. Records: `s12-4b/nobara/night-2026-10-12/`.
+
+- **G-S12.4b-4a-4, Qwen2.5-VL 3B's image turn, served: SHIP.** New (the device m-RoPE prefill, `9f57d01b`) against
+  old (`ffc64585`), four rotated rounds, 8 timed requests an arm: median time to first token **18.31 s against
+  39.32 s, ratio 0.466**; every round reads 0.46 to 0.47. All replies describe the image.
+  - Prediction "0.6 or under (0.7)": yes.
+  - The line I meant to show each arm's prefill route with does not tell the routes apart; the evidence that the arms
+    took different routes is the timing and the replies' wording.
+  - 18.3 s is still over S7's general 5 s bar for an image turn; that bar is not this gate's rule.
+- **G-S12.4c-5, Gemma 3 4B text, served: SHIP at both lengths.** New (`ffc64585`, both attention kernels) against old
+  (S12.4b-3's head), five alternating rounds:
+
+| prompt | new, five rounds (s) | old, five rounds (s) | median ratio |
+|---|---|---|---|
+| 457 tokens | 1.07 to 1.10 | 5.34 to 5.42 | **0.203** |
+| 1,783 tokens | 4.72 to 4.79 | 68.44 to 68.94 | **0.069** |
+
+  - Predictions: "the 1,783-token cell under 8 s (0.7)": yes. "The 457-token cell under 2 s (0.6)": yes.
+  - **The owner's 68 s prompt now reaches its first token in 4.8 s, served.**
+  - **The replies differ between the arms in all 10 pairs**, inside the first 16 tokens. All 20 are about the
+    passage, which is all the rule asked. The pass against the walk cannot see this: both sides of that identity
+    run the new kernel. Which build is nearer the model is G-S12.4c-6's question, below.
+- **G-S12.3g, the Vulkan half.** The smallest rung at 0.98 or under with every larger rung under it too:
+
+| tower | threshold | the rung below it | ratio at the served ceiling |
+|---|---|---|---|
+| Qwen3.5 0.8B | **192 patches** (grid 12x16) | 96 patches read 1.063 | 0.202 (3,888 patches) |
+| GLM-OCR | **120 patches** (grid 10x12) | 48 patches read 1.283 | 0.165 (5,504) |
+| Qwen2.5-VL 3B | **120 patches** (grid 10x12) | 48 patches read 1.193 | 0.189 (5,504) |
+
+  - Every larger rung is under 0.98 on all three towers: no rung goes back over.
+  - A threshold is good to its rung spacing: Qwen3.5's lies between 97 and 192 patches (one of its three pairs at
+    96 read 0.991, so that rung is near the line), the other two between 49 and 120.
+  - Predictions scorable so far: "GLM-OCR's and Qwen2.5-VL's under 1,100 patches on both boxes": yes on nobara. The
+    other two wait for the Mac's half.
+  - It flips no default.
+
+#### G-S12.4c-6, which attention kernel is nearer the model on Gemma 3 4B: registered 2026-10-12 before it runs
+
+G-S12.4c-5's replies differed between the builds on every prompt. The key-split kernel sums in another order than
+the per-dimension kernel it replaced, and at int4 Gemma's logits sit near ties often enough that a rounding-level
+change moves a greedy reply. That says the two builds are different readings, not which is the better one. The owner:
+"go ahead and queue it now".
+
+- **Tier:** night, nobara (Vulkan). **Instrument:** `gpu`'s `TestS12AttnKernelFidelity`, the fidelity protocol of
+  G-S12.4b-4a-5 (`internal/fidelity`).
+  - **Reference:** the float32 CPU forward of Gemma 3 4B (exact prefill) on the same prompt.
+  - **Arms**, both the WebGPU resident at int4, prefill and decode alike: **exact**, built with the per-dimension
+    kernel a head over 128 got before S12.4c; **candidate**, built with the key-split kernel it gets now. A resident
+    chooses its decode kernels when it is built, so each arm is its own resident.
+  - **Positions:** 32 a prompt, the one after the prompt and the ones after each of the reference's own 31 greedy
+    tokens, forced on both arms; each scored against the reference for top-1 agreement, a hard flip and KL.
+  - **A check that the arms differ:** the run fails if the two arms' logits are equal at every position, which would
+    mean one kernel ran twice.
+- **Decision set, pooled, no per-cell veto:** 64 text prompts in Gemma's chat shape, an instruction over passages
+  written into the test: 40 short (one passage), 16 medium (four) and 8 long (twelve, past the 1,024-position
+  sliding window). The hash is printed by the run and recorded with the verdict; a prompt's tokens come from the
+  checkpoint's own tokenizer, so the hash cannot be computed without it.
+- **Criteria:** `fidelity.NonInferior`, agreement margin 2 points, KL margin 0.10, one-sided alpha 0.05, hard flips
+  under the pooled bound: G-S12.4b-4a-5's, as amended there. No pilot sizes this pair; 64 is the count that gate's
+  spread asked for at a 2-point margin. If the bounds come out wider than the margins the verdict is PARKED and says
+  so.
+- **The bands:**
+  - **PASS:** the key-split kernel stays.
+  - **PARKED:** no point estimate breaches its margin but a bound does. It stays; the owner decides whether more
+    prompts are worth a night.
+  - **OFF:** a point estimate breaches its margin, or hard flips fail. The wide key-split kernel comes off main for
+    decode and for the batched pass until the difference is explained, and the CHANGELOG says so.
+- **Proving it can go red:** the job first runs an 8-prompt pilot (two other passages) with a planted defect in the
+  candidate, each decode step one position late. That verdict must be OFF or the gate is not run.
+  - **Amended 2026-10-12, before any run on the gate's prompts: the planted defect is now "each decode step is fed
+    the token before the one it should be".** The first defect read **PARKED**, not OFF, on the pilot (candidate
+    85.94% against 85.16% agreement, KL ratio 1.092 with an upper bound of 1.295, 8 prompts;
+    `s12-4b/nobara/fidelity-attn-pilot-late1/`). The mechanism: rotary attention reads relative positions, and
+    shifting every decode step by one leaves them intact among the decode steps and off by one against the prompt,
+    which this model barely notices. It was a weak defect, not a blind instrument, but the registration requires an
+    OFF, so the defect is replaced by one that must matter and the pilot is run again. That same run showed the
+    instrument works end to end: two residents on the card, about 30 s a short prompt, and the arms' logits
+    differing at 256 of 256 positions.
+  - **The second pilot reads OFF** (`s12-4b/nobara/fidelity-attn-pilot-defect/`): candidate 7.03% agreement against
+    the exact arm's 85.16%, KL ratio 74.6, 237 hard flips against 19. The instrument can go red; the gate is queued
+    on nobara as `s12-4c-6-attn-fidelity`. The exact arm read the same in both pilots, to the digit. The "planted
+    defect reads OFF (0.9)" prediction: no on the first defect, yes on the second.
+- **Stopping rule:** the fixed set, no early stop; a restarted run skips finished prompts.
+- **Cost basis:** the float32 prefill and 31 float32 steps dominate: about 30 s a short prompt, a minute a medium
+  one, two and a half a long one, from G-S12.4b-4a-5's times on this box: about 55 minutes and the loads; queued at
+  100. Script `s12-4b/run-g-s12-4c-6-night.sh`.
+- **What it cannot see:** the reference is goinfer's own float32 path, not transformers; and it is one model, one
+  backend. A PASS here says nothing about Metal, where the same kernel choice shipped.
+- **Predictions:** PASS (0.6): the kernels agree with a float64 reference to a cosine of 0.999999, so the two arms
+  should sit equally far from the model. PARKED (0.3). OFF (0.1). The arms differ at more than half the positions
+  (0.7). The planted defect reads OFF (0.9).
+
+#### G-S12.4c-6 read on nobara, the night of 2026-10-12: PASS; the key-split kernel stays
+
+Gemma 3 4B at int4, Vulkan, the pinned binary at `adcdbbb5`, 21:57 to 22:36 PDT. Records:
+`s12-4b/nobara/fidelity-attn-gate/`. Prompt-set hash `aa7e71cb...`; the planted-defect pilot read OFF first.
+
+| cell | prompts, positions | top-1 agreement with the float reference: candidate, exact | difference (lower bound) | mean KL: candidate, exact | ratio (upper bound) | hard flips: candidate, exact |
+|---|---|---|---|---|---|---|
+| short | 40, 1,280 | 86.17%, 86.64% | -0.47 pts (-1.60) | 0.4517, 0.4447 | 1.016 (1.088) | 73, 70 |
+| medium | 16, 512 | 82.62%, 83.59% | -0.98 pts (-3.01) | 0.5241, 0.5346 | 0.980 (1.078) | 47, 41 |
+| long, past the window | 8, 256 | 84.77%, 83.20% | +1.56 pts (-0.12) | 0.4201, 0.4486 | 0.937 (1.123) | 18, 22 |
+| **pooled, the decision** | 64, 2,048 | 85.11%, 85.45% | **-0.34 pts (-1.24)** | 0.4658, 0.4677 | **0.996 (1.052)** | 138, 133 |
+
+- **VERDICT PASS** on all three criteria. Against the float32 model the key-split kernel is as near as the
+  per-dimension kernel it replaced.
+- **The two arms' logits differ at every one of the 2,048 positions**, as two float sums in different orders do. At
+  137 positions one arm picks the reference's top token and the other does not, and those split almost evenly
+  between the arms (the agreement difference is 7 positions). That is why every served reply differed, and why it
+  is not a bias: the differences fall at near ties and go both ways.
+- **What stands out is the level, not the difference:** at int4 this model agrees with its own float32 forward on
+  about 85% of next tokens under either kernel. That is the model's int4 reading, on record before this change
+  (Gemma is the family that quantizes worst), and it is the reason a rounding-level change moves replies.
+- **Limits:** the pooled rule has no per-cell veto; the medium cell's agreement bound alone (-3.01) is outside the
+  margin on 16 prompts, and the long cell's KL bound (1.123) on 8. One model, one backend: nothing here was read on
+  Metal, where the same kernel choice shipped.
+- **Predictions scored.** PASS (0.6): yes. "The arms differ at more than half the positions (0.7)": yes, at all.
+
+#### The Mac's night of 2026-10-12, graded: G-S12.4b-2d, 3e and G-S12.4c-5 SHIP; G-S12.3g's Metal half read
+
+M1 Pro, Metal through WebGPU, nothing else running. Records: `s12-4b/mac-night-2026-10-12/`.
+
+| gate, cell | new, five rounds (s) | old, five rounds (s) | median new/old | replies equal | verdict |
+|---|---|---|---|---|---|
+| 2d, Qwen2.5-coder 1.5B, 512 tokens | 4.06 to 4.07 | 12.56 to 12.67 | **0.323** | 5 of 5 | SHIP |
+| 2d, 2,048 tokens | 17.24 to 17.26 | 70.84 to 71.20 | **0.243** | 5 of 5 | SHIP |
+| 3e, Gemma 3 4B text, 457 tokens | 19.27 to 19.36 | 29.12 to 29.28 | **0.661** | 5 of 5 | SHIP |
+| 3e, 1,783 tokens | 172.54 to 173.10 | 220.48 to 220.99 | **0.781** | 5 of 5 | SHIP |
+| 3e, Gemma 4 E2B image turn | 10.04 to 10.16 | 15.52 to 15.76 | **0.64** in every round | not comparable | SHIP |
+| 4c-5, Gemma 3 4B text, 457 tokens (both attention kernels) | 7.83 to 7.84 | 19.27 to 19.34 | **0.406** | 0 of 5 | SHIP |
+| 4c-5, 1,783 tokens | 30.52 to 30.59 | 172.31 to 172.49 | **0.177** | 1 of 5 | SHIP |
+
+- **On the Mac the long Gemma 3 prompt went from 220.5 s (the walk) to 172.5 s (the batched pass) to 30.5 s (the
+  attention kernels)**, served. The swap guard did not refuse the model at night.
+- 4c-5's prediction "the new 1,783-token time to first token under 40 s (0.6)": yes.
+- 4c-5's replies differ between the arms, as on nobara; G-S12.4c-6 above is the reading of that, on Vulkan only.
+- **G-S12.3g, the Metal half:**
+
+| tower | Metal threshold | the rung below it | Vulkan threshold (above) |
+|---|---|---|---|
+| Qwen3.5 0.8B | **280 patches** (grid 14x20) | 192 read 1.163 | 192 |
+| GLM-OCR | **216 patches** (grid 12x18) | 120 read 1.183 | 120 |
+| Qwen2.5-VL 3B | **120 patches** (grid 10x12) | 48 read 1.795 | 120 |
+
+  - Every larger rung is under 0.98 on all three; at the served ceiling the device towers read 0.36, 0.41 and 0.50
+    of the CPU's time on the Mac.
+  - **A count for the owner's rule, per tower, safe on both backends:** Qwen3.5 280, GLM-OCR 216, Qwen2.5-VL 120
+    patches (the larger of the two boxes'). Below it the CPU tower is the faster one on at least one backend.
+  - Predictions: "Qwen3.5's threshold on the Mac is the 280 or the 336 rung (0.7)": yes, 280. "GLM-OCR's and
+    Qwen2.5-VL's under 1,100 on both boxes (0.6)": yes. "Every threshold on nobara at or under the Mac's (0.5)": yes.
+  - It flips no default; the flips are still the owner's.
 
 ### S13 — Against the peers
 

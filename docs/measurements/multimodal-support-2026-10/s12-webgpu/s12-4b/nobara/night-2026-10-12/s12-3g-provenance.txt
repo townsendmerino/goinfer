@@ -1,0 +1,6 @@
+binary /home/francis/goinfer-bench/s12-3g-2026-10-12/bin/gpu-3g.test rev d0cdee250baf60c962c2fe6f5f0d65b57cdbce98
+started 2026-10-12 20:26:17 PDT
+Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+ 20:26:17 up 8 days, 23:48,  3 users,  load average: 0.33, 1.49, 3.18
+finished 2026-10-12 20:36:55 PDT rc=0
