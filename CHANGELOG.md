@@ -30,6 +30,19 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Added — `goinfer-serve connect <agent>` writes a coding agent's configuration with the window the server serves
+
+Against a running server, `connect claude-code`, `connect opencode` or `connect codex` reads the model list and prints that agent's
+configuration: the base URL, the model, and **the context window the server really holds**, which is the setting people get wrong.
+
+- **It says whether the agent fits.** Each agent's first request was measured (Claude Code 20,199 tokens, opencode 7,165, Codex 5,850): the
+  output says viable, marginal or not viable for this window, and names the `-ctx` that would fit.
+- **`-write` patches the agent's own file in place**, keeping every other setting and the order they were in: `~/.claude/settings.json`,
+  `./opencode.json` (or the per-user file with `-global`), `~/.codex/config.toml`. It refuses a window the agent cannot fit unless `-force`.
+- **`-undo` restores the file byte for byte**, or removes it if `connect` created it, and refuses if you have edited it since.
+- It never starts the agent. A JSON file with comments is not patched (the comments would be lost): the settings are printed to paste.
+- **Not yet confirmed by running each agent on a written file**; the shapes are the ones the census runs used. Codex's file is patched as text.
+
 ### Added — the server as a library: `server.NewHandler` and `server.Transport` (Experimental)
 
 `goinfer-serve`'s HTTP API can now be served from a handler inside your own Go program, with no listener, port or daemon. `server.NewHandler`

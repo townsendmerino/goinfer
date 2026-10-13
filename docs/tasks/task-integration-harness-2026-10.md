@@ -237,6 +237,20 @@ Start with one harness per dialect (Claude Code, opencode, Codex), then the rest
 **Gate.** Per harness: `connect --write`, then one headless turn (I3's smoke cell) succeeds, and `--undo` leaves the
 file byte-identical to before. Tests parse each harness's published config schema where one exists.
 
+**I2 built 2026-10-13 for Claude Code, opencode and Codex (the unit half of its gate).**
+- **`goinfer-serve connect <agent> [url]`**, package `internal/connect`: reads `/v1/models`, prints the configuration,
+  `-write` patches the agent's file with a backup and a restore record beside it, `-undo` restores it.
+- **Read by its tests:** each JSON file keeps its other settings and their order; Codex's TOML keeps every line it
+  has no business with and has its provider table replaced, not doubled; `-write` twice then `-undo` is byte for byte
+  the original for all three, and removes a file `connect` created; `-undo` refuses a file edited since; an agent
+  whose first request does not fit is refused without `-force`; the window is read from the real model list.
+  A mutant that restored one byte too many turned the byte-identity test red.
+- **Departures from the sketch.** The output limit is a quarter of the window, between 1,024 and 8,192. Codex's
+  auto-compaction limit is set to the window less that output limit, which is a reading of what the key means, not a
+  measurement. Codex's settings are written at the top level, as the census ran it, not as a profile.
+- **Not done:** the live half of the gate (a headless turn on each written file); the other eight agents in the
+  table; parsing each agent's published schema; the warning from a skipped `tools, harness-scale` row.
+
 ### I3 — The real-harness matrix
 
 `task-harness-reliability-2026-10.md` Gate 3 replays recorded traces, teacher-forced and free-running, with tool
