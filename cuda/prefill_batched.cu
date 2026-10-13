@@ -1,4 +1,5 @@
 #include <cuda_fp16.h>
+#include "kvtype.cuh"
 
 // prefill_batched.cu — the batched (M=len) counterparts of the per-token glue kernels, for the
 // weight-stationary prefill path. Each is the existing M=1 kernel with an M dimension added; the
@@ -124,7 +125,7 @@ extern "C" __global__ void qk_norm_batched(
 // without the feature: scale 1.
 __global__ void rope_kv_batched(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
-    const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
+    const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
     int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const float* __restrict__ qTempRows)
 {
@@ -153,12 +154,12 @@ __global__ void rope_kv_batched(
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[d] = r0; base[d + rhalf] = r1;
         long o = (long)pos * kvDim + (long)h * hd;
-        kc[o + d] = r0; kc[o + d + rhalf] = r1;
-        vc[o + d] = vm[h * hd + d]; vc[o + d + rhalf] = vm[h * hd + d + rhalf];
+        KV_ST(kc + (o + d), r0); KV_ST(kc + (o + d + rhalf), r1);
+        KV_ST(vc + (o + d), vm[h * hd + d]); KV_ST(vc + (o + d + rhalf), vm[h * hd + d + rhalf]);
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn; int h = j / tail, t = 2 * rhalf + (j % tail);
         long o = (long)pos * kvDim + (long)h * hd;
-        kc[o + t] = km[h * hd + t]; vc[o + t] = vm[h * hd + t];
+        KV_ST(kc + (o + t), km[h * hd + t]); KV_ST(vc + (o + t), vm[h * hd + t]);
     }
 }
 
@@ -169,8 +170,8 @@ __global__ void rope_kv_batched(
 // and the DENOMINATOR, never the numerator. NULL elsewhere, leaving the kernel bit-identical.
 // It must match splitkv_softmax exactly — a sink applied at decode but not at prefill would
 // present as drift partway through a sequence rather than as a missing term.
-__global__ void attn_batched(const float* __restrict__ q, const float* __restrict__ kc,
-                             const float* __restrict__ vc, int nH, int nKV, int hd, int startPos,
+__global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
+                             const KV_T* __restrict__ vc, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
                              const float* __restrict__ sinks) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -187,7 +188,7 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
     int t = threadIdx.x, nt = blockDim.x;
     float lm = -1e30f;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const float* ks = kc + (long)s * kvDim + kvh * hd;
+        const KV_T* ks = kc + (long)s * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read: threads split over KEYS, so a scalar ks[d] read is stride-kvDim across the
         // warp → only ~22% of each 32-byte L1TEX sector used (ncu), and this kernel is L1TEX-throughput-
@@ -196,15 +197,14 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
         // (only the load width changes, like the GEMV int2). Scalar remainder for hd not a multiple of 4.
         int d4 = hd >> 2;
         const float4* q4 = (const float4*)qh;
-        const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
-            float4 qq = q4[i], kk = k4[i];
+            float4 qq = q4[i], kk = KV_LD4V(ks, i);
             dot = __fmaf_rn(qq.x, kk.x, dot);
             dot = __fmaf_rn(qq.y, kk.y, dot);
             dot = __fmaf_rn(qq.z, kk.z, dot);
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
-        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
+        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -221,7 +221,7 @@ __global__ void attn_batched(const float* __restrict__ q, const float* __restric
     float inv = 1.f / denom; __syncthreads();
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + kvh * hd + d], acc);
+        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + ((long)s * kvDim + kvh * hd + d)), acc);
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
 }

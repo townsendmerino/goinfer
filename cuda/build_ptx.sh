@@ -75,4 +75,11 @@ for k in "${targets[@]}"; do
 	LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 		NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
 		python3 nvrtc_compile.py "$src" "$out" "$ARCH" "$CUDA_INC"
+	# A source that includes kvtype.cuh is also built with the KV cache as f16: <name>_kv16.ptx, the twin module the resident loads
+	# for an f16 KV build (docs/tasks/task-cuda-f16-kv-2026-10.md). The module above is built WITHOUT the define and must not change.
+	if grep -q 'kvtype.cuh' "$src"; then
+		LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+			NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
+			python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_kv16.ptx" "$ARCH" "$CUDA_INC" -DKV_F16
+	fi
 done

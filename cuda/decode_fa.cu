@@ -30,13 +30,14 @@
 // SCOPE. hd in {64,128,256}, GQA group nH/nKV <= 8, no attention sink (the caller declines gpt-oss). f32 KV.
 // Exponentials are __expf, as in splitkv_softmax. `#pragma` FMA: the dots use explicit __fmaf_rn, and
 // kernel_fma_lint_test.go checks no other float multiply-add pair is left to the compiler.
+#include "kvtype.cuh"
 #define FA_WARPS 8
 #define FA_NEG (-1e30f)
 #define FA_SEEN (-5e29f) // a unit with any key has m > FA_SEEN
 
 template <int HD>
 __device__ __forceinline__ void fa_partial_impl(
-    const float* __restrict__ q, const float* __restrict__ kc, const float* __restrict__ vc,
+    const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
     int nH, int nKV, int winStart, int nKeys, float scale, int nSplit, float* __restrict__ partial) {
     constexpr int VEC = (HD >= 128) ? 4 : 2;      // output dims per load per lane
     constexpr int NCH = HD / (32 * VEC);          // loads per lane per V row (1 for 64 and 128, 2 for 256)
@@ -75,10 +76,10 @@ __device__ __forceinline__ void fa_partial_impl(
 #pragma unroll
         for (int g = 0; g < 8; g++) part[g] = 0.f;
         if (valid) {
-            const float4* k4 = (const float4*)(kc + (long)key * kvDim + (long)kvh * HD);
+            const KV_T* kp = kc + (long)key * kvDim + (long)kvh * HD;
 #pragma unroll
             for (int j = 0; j < NQ; j++) {
-                const float4 kk = k4[j * 4 + sub];
+                const float4 kk = KV_LD4V(kp, j * 4 + sub);
 #pragma unroll
                 for (int g = 0; g < 8; g++) {
                     if (g < G) {
@@ -130,15 +131,15 @@ __device__ __forceinline__ void fa_partial_impl(
         }
         const int nb = min(8, hi - b0);
         for (int kk = 0; kk < nb; kk++) {
-            const float* vp = vc + (long)(b0 + kk) * kvDim + (long)kvh * HD;
+            const KV_T* vp = vc + (long)(b0 + kk) * kvDim + (long)kvh * HD;
             float v[NCH * VEC];
 #pragma unroll
             for (int c = 0; c < NCH; c++) {
                 if (VEC == 4) {
-                    const float4 t = ((const float4*)vp)[c * 32 + lane];
+                    const float4 t = KV_LD4V(vp, c * 32 + lane);
                     v[c * 4 + 0] = t.x; v[c * 4 + 1] = t.y; v[c * 4 + 2] = t.z; v[c * 4 + 3] = t.w;
                 } else {
-                    const float2 t = ((const float2*)vp)[lane];
+                    const float2 t = KV_LD2V(vp, lane);
                     v[0] = t.x; v[1] = t.y;
                 }
             }
@@ -173,15 +174,15 @@ __device__ __forceinline__ void fa_partial_impl(
     }
 }
 
-extern "C" __global__ void fa_partial_64(const float* __restrict__ q, const float* __restrict__ kc, const float* __restrict__ vc,
+extern "C" __global__ void fa_partial_64(const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
     int nH, int nKV, int winStart, int nKeys, float scale, int nSplit, float* __restrict__ partial) {
     fa_partial_impl<64>(q, kc, vc, nH, nKV, winStart, nKeys, scale, nSplit, partial);
 }
-extern "C" __global__ void fa_partial_128(const float* __restrict__ q, const float* __restrict__ kc, const float* __restrict__ vc,
+extern "C" __global__ void fa_partial_128(const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
     int nH, int nKV, int winStart, int nKeys, float scale, int nSplit, float* __restrict__ partial) {
     fa_partial_impl<128>(q, kc, vc, nH, nKV, winStart, nKeys, scale, nSplit, partial);
 }
-extern "C" __global__ void fa_partial_256(const float* __restrict__ q, const float* __restrict__ kc, const float* __restrict__ vc,
+extern "C" __global__ void fa_partial_256(const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
     int nH, int nKV, int winStart, int nKeys, float scale, int nSplit, float* __restrict__ partial) {
     fa_partial_impl<256>(q, kc, vc, nH, nKV, winStart, nKeys, scale, nSplit, partial);
 }
@@ -242,7 +243,7 @@ struct FaRows {
 
 template <int HD, int G>
 __device__ __forceinline__ void fa_partial_rows_impl(
-    const float* __restrict__ q, const float* __restrict__ kc, const float* __restrict__ vc,
+    const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
     int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit, int nRows, int row0,
     float* __restrict__ partial) {
     constexpr int R = FaRows<HD, G>::R;
@@ -302,10 +303,10 @@ __device__ __forceinline__ void fa_partial_rows_impl(
             for (int g = 0; g < G; g++) part[rr][g] = 0.f;
         }
         if (inMax) {
-            const float4* k4 = (const float4*)(kc + (long)key * kvDim + (long)kvh * HD);
+            const KV_T* kp = kc + (long)key * kvDim + (long)kvh * HD;
 #pragma unroll
             for (int j = 0; j < NQ; j++) {
-                const float4 kk = k4[j * 4 + sub];
+                const float4 kk = KV_LD4V(kp, j * 4 + sub);
 #pragma unroll
                 for (int rr = 0; rr < R; rr++) {
 #pragma unroll
@@ -356,15 +357,15 @@ __device__ __forceinline__ void fa_partial_rows_impl(
         }
         const int nb = min(8, hiMax - b0);
         for (int kk = 0; kk < nb; kk++) {
-            const float* vp = vc + (long)(b0 + kk) * kvDim + (long)kvh * HD;
+            const KV_T* vp = vc + (long)(b0 + kk) * kvDim + (long)kvh * HD;
             float v[ND];
 #pragma unroll
             for (int c = 0; c < NCH; c++) {
                 if (VEC == 4) {
-                    const float4 t = ((const float4*)vp)[c * 32 + lane];
+                    const float4 t = KV_LD4V(vp, c * 32 + lane);
                     v[c * 4 + 0] = t.x; v[c * 4 + 1] = t.y; v[c * 4 + 2] = t.z; v[c * 4 + 3] = t.w;
                 } else {
-                    const float2 t = ((const float2*)vp)[lane];
+                    const float2 t = KV_LD2V(vp, lane);
                     v[0] = t.x; v[1] = t.y;
                 }
             }
@@ -409,123 +410,123 @@ __device__ __forceinline__ void fa_partial_rows_impl(
 // The 24 entry points, SPELLED OUT (one per head dim x GQA group 1..8) rather than generated by a macro: ptx_consistency_test.go
 // matches every PTX entry against a textual __global__ declaration here, and that guard against stale PTX is worth more than the
 // brevity. Each is a one-line instantiation of fa_partial_rows_impl<HD, G>.
-extern "C" __global__ void fa_partial_rows_64_g1(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g1(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 1>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g2(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g2(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 2>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g3(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g3(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 3>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g4(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g4(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 4>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g5(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g5(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 5>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g6(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g6(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 6>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g7(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g7(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 7>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_64_g8(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_64_g8(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<64, 8>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g1(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g1(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 1>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g2(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g2(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 2>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g3(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g3(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 3>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g4(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g4(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 4>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g5(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g5(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 5>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g6(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g6(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 6>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g7(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g7(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 7>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_128_g8(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_128_g8(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<128, 8>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g1(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g1(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 1>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g2(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g2(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 2>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g3(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g3(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 3>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g4(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g4(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 4>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g5(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g5(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 5>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g6(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g6(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 6>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g7(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g7(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 7>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }
-extern "C" __global__ void fa_partial_rows_256_g8(const float* __restrict__ q, const float* __restrict__ kc,
-    const float* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
+extern "C" __global__ void fa_partial_rows_256_g8(const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const KV_T* __restrict__ vc, int nH, int nKV, int winStart, int nKeys0, int per, float scale, int nSplit,
     int nRows, int row0, float* __restrict__ partial) {
     fa_partial_rows_impl<256, 8>(q, kc, vc, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial);
 }

@@ -17,8 +17,9 @@
 //      fold Σ_s sc[s]·v[s][d] in ascending s (identical to attn_batched), then ·inv.
 
 // splitkv_scores: one thread per key. scStore is [nH][nWin]; window-index i = s - winStart.
+#include "kvtype.cuh"
 extern "C" __global__ void splitkv_scores(
-    const float* __restrict__ q, const float* __restrict__ kc,
+    const float* __restrict__ q, const KV_T* __restrict__ kc,
     int nH, int nKV, int hd, int winStart, int nKeys, float scale,
     float* __restrict__ scStore, int nWin) {
     int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
@@ -41,20 +42,19 @@ extern "C" __global__ void splitkv_scores(
     int s = winStart + i;
     if (i >= nWin || s >= nKeys) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
-    const float* ks = kc + (long)s * kvDim + (long)kvh * hd;
+    const KV_T* ks = kc + (long)s * kvDim + (long)kvh * hd;
     float dot = 0.f;
     // float4 K-read, separate adds — attn_batched's exact d-order (bit-identical; only load width).
     int d4 = hd >> 2;
     const float4* q4 = (const float4*)qs;
-    const float4* k4 = (const float4*)ks;
     for (int j = 0; j < d4; j++) {
-        float4 qq = q4[j], kk = k4[j];
+        float4 qq = q4[j], kk = KV_LD4V(ks, j);
         dot = __fmaf_rn(qq.x, kk.x, dot);
         dot = __fmaf_rn(qq.y, kk.y, dot);
         dot = __fmaf_rn(qq.z, kk.z, dot);
         dot = __fmaf_rn(qq.w, kk.w, dot);
     }
-    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], ks[d], dot);
+    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LD(ks + d), dot);
     scStore[(long)h * nWin + i] = dot * scale;
 }
 
@@ -121,7 +121,7 @@ extern "C" __global__ void splitkv_softmax(
 // 64-bit multiplies). Multiple accumulators are forbidden (they reorder the fold). So the scalar loop
 // stands; further vsum gains would need a non-bit-identical reduction. See task-decode-splitkv-attention.
 extern "C" __global__ void splitkv_vsum(
-    const float* __restrict__ scStore, const float* __restrict__ vc,
+    const float* __restrict__ scStore, const KV_T* __restrict__ vc,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int winStart, int nKeys,
     int nWin, float* __restrict__ ctx) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -131,7 +131,7 @@ extern "C" __global__ void splitkv_vsum(
     const float* sc = scStore + (long)h * nWin;
     float acc = 0.f;
     for (int s = winStart; s < nKeys; s++)
-        acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + (long)kvh * hd + d], acc);
+        acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + ((long)s * kvDim + (long)kvh * hd + d)), acc);
     ctx[(long)h * hd + d] = acc * invStore[h];
 }
 
@@ -152,7 +152,7 @@ extern "C" __global__ void splitkv_vsum(
 // new canonical tree. It is NOT bit-identical to attn_batched, so it is never selected unless
 // GOINFER_SPLITKV_VSUM_SPLIT is set, and the shipped default is untouched.
 extern "C" __global__ void splitkv_vsum_partial(
-    const float* __restrict__ scStore, const float* __restrict__ vc,
+    const float* __restrict__ scStore, const KV_T* __restrict__ vc,
     int nH, int nKV, int hd, int winStart, int nKeys, int nWin, int nSplit,
     float* __restrict__ partials) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -170,7 +170,7 @@ extern "C" __global__ void splitkv_vsum_partial(
     int hi = lo + per; if (hi > nKeys) hi = nKeys;
     float acc = 0.f;
     for (int s = lo; s < hi; s++)
-        acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + (long)kvh * hd + d], acc);
+        acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + ((long)s * kvDim + (long)kvh * hd + d)), acc);
     partials[((long)h * hd + d) * nSplit + sp] = acc;
 }
 

@@ -1,3 +1,4 @@
+#include "kvtype.cuh" // KV_T / KV_LD: the cache element type of `attention` (the _kv16 twin module)
 // glue.cu — the per-token elementwise/attention kernels the GEMV-only projection omitted,
 // so the cgo-free CUDA decode measurement is end-to-end (docs/prompts/cuda-measure-e2e-decode.md).
 // Dense Qwen2/Llama decode. Compiled to PTX offline (NVRTC compute_75), go:embed'd, driver-JIT'd.
@@ -200,8 +201,8 @@ __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
 // Scores are indexed from winStart, so shared memory is bounded by min(nKeys, window) rather
 // than nKeys — which also lifts the ~12k-key ceiling the old (nKeys+blockDim)*4 request hit
 // against the 48 KB per-block limit.
-__global__ void attention(const float* __restrict__ q, const float* __restrict__ kc,
-                          const float* __restrict__ vc, int nH, int nKV, int hd, int nKeys,
+__global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ kc,
+                          const KV_T* __restrict__ vc, int nH, int nKV, int hd, int nKeys,
                           float scale, int window, float* __restrict__ ctx) {
     extern __shared__ float sm[];       // [nWin] scores/weights + [blockDim] reduce
     int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
@@ -215,9 +216,9 @@ __global__ void attention(const float* __restrict__ q, const float* __restrict__
     // scores + local max
     float lm = -1e30f;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const float* ks = kc + s * kvDim + kvh * hd;
+        const KV_T* ks = kc + s * kvDim + kvh * hd;
         float dot = 0.f;
-        for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
+        for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -232,7 +233,7 @@ __global__ void attention(const float* __restrict__ q, const float* __restrict__
     // ctx[d] = sum_s (sc[s]*inv) * V[s,d]  over the window only
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[s * kvDim + kvh * hd + d], acc);
+        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (s * kvDim + kvh * hd + d)), acc);
         ctx[h * hd + d] = acc * inv;
     }
 }

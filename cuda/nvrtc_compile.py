@@ -5,7 +5,7 @@ CUDA kernels are built with NVRTC rather than nvcc (short version: nvcc drives a
 compiler and this box's gcc-15 libstdc++ breaks nvcc's cicc; NVRTC needs no host
 compiler at all).
 
-    python3 nvrtc_compile.py <src.cu> <out.ptx> <arch> [include-dir]
+    python3 nvrtc_compile.py <src.cu> <out.ptx> <arch> [include-dir] [-DNAME ...]
 
 The NVRTC shared object is taken from $NVRTC_SO, else the loader path.
 """
@@ -39,8 +39,11 @@ def main():
     # -default-device: NVRTC has no host pass, so free functions need an implicit
     # __device__ rather than defaulting to __host__.
     opts = [f"--gpu-architecture={arch}".encode(), b"-default-device"]
+    # the source's own directory, for the kernels' shared headers (kvtype.cuh)
+    opts.append(("--include-path=" + os.path.dirname(os.path.abspath(src_path))).encode())
     if len(sys.argv) > 4:
         opts.append(("--include-path=" + sys.argv[4]).encode())
+    opts += [a.encode() for a in sys.argv[5:] if a.startswith("-D")]
     arr = (ctypes.c_char_p * len(opts))(*opts)
     rc = lib.nvrtcCompileProgram(prog, len(opts), arr)
 
