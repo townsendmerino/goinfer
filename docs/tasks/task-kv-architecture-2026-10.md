@@ -713,12 +713,20 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - **night jobs queued** (under the timing lock): the real fidelity set (six prompts to 20,000 tokens), the Claude Code first-request A/B
     (registered band: PASS at 45 s or less, against 268.7 s before; the one exploratory reading is 25.1 s), TTFT at K = 512 and 3,900 against
     `main` (0.97 or better), and the whole CUDA suite with the ignored fixtures linked. **The branch merges when they read green.**
-  - still declining past the bound, by name: head dimension other than 64 or 128, MLA, Gated-DeltaNet and E-model families, the all-logits,
-    embedding and residual tails, image blocks. A tiled exact kernel is the open numerics project.
-- **A request to the KV1 session (the owner's decision, §8 Q5):** the 16-row condition goes into `declineShortLeadReuse` and into the block
-  key. A prefix hit whose suffix is 15 rows or fewer, or that was written by a pass of 15 rows or fewer, is the other class (KV0's
-  `split@985`); the chunker no longer produces such a pass inside one prefill, but a reuse split and a second call still can. The decoder's
+  - still declining past the bound, by name: head dimension other than 64 or 128 (Gemma 3 and 4, measured in the census), MLA, the Gated-DeltaNet
+    families (the census logged no decline for Qwen3.6-35B-A3B at 12,242 keys, which is an inference, not a measured pass), the all-logits, embedding and residual tails, image blocks. The tiled exact kernel below is the work that removes the first of these.
+- **The request to the KV1 session (§8 Q5) is met on its branch.** `kvmgr.ClassMap.DeclineShortLead` states the 16-row condition, and KV1 leaves the
+  rest to KV2 by name: a hit on another sequence's rows must leave a suffix of 16 rows or more when the requester's cold prefill is fast class (§5.5
+  step 4), and the class of a row is recorded per pass the decoder sees, so a 512-row-pass tail of 15 rows or fewer was recorded as fast. KV3's chunker
+  removes that tail, so the two branches meet there: KV2's gate checks the recorded classes against launch counts, as KV0's test does. The decoder's
   own loops read the resident's tail minimum (`ResidentPrefillTailMin`: CUDA 16, everything else 8), so a manager that cuts passes should too.
+- **Merging with KV1.** `origin/kv1-2026-10` merges into this branch with no textual conflict (checked 2026-10-13; `decoder/model.go`, the changelog and this
+  doc auto-merge). Both change non-test `decoder/*.go`, so the parity refresh (`scripts/refresh_parity_hashes.sh`) runs once, after the later of the two
+  merges and before its push.
+- **After the census (`docs/measurements/kv3-long-prompt-census-2026-10-13.md`): a tiled exact attention kernel, owner-approved 2026-10-13 (§8 Q7).** The
+  dense Gemma families (head dim 256, and 512 on Gemma 4's global layers) still fall to the per-token path past 12,160 keys, at least 183 s and 276 s for a
+  20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. The kernel's identity
+  target, the facts about decode's split-KV it must match and its gates are registered in a record before any code.
 - **Gates (sketch, registered per half in the record):**
   - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
   - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);
@@ -852,6 +860,7 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 | **Q4** | D4's default when `serve` binds beyond loopback with no API keys: the SafeKV reading (§11a) suggests cross-namespace sharing off by default. | A proposal from the reading, not from a source. **ANSWERED: yes, default it off then** (see D4). |
 | **Q5** | Should `declineShortLeadReuse` (and the key) state the 16-row condition, and should KV1's windowed-layer tests run chunk and split arms at a start that is not a multiple of 64? | Measured for the first; INFERRED by the CUDA census for the second. **ANSWERED: yes to both, and the first is a correctness rule, not tuning:** the 16-row condition goes into the short-prefix guard and the key (KV1's files), and into the chunker (KV3, here); KV1's windowed tests start at offsets that are not multiples of 64. |
 | **Q6** | The I3 night plan's configurations run Qwen2.5-7B-Instruct and Mellum2.1 through opencode and Codex. | In KV0's pilots Qwen2.5-7B-Instruct made 1 to 6 requests a session and passed none; the Coder-7B made 1 or 2. Expect the same stall in those cells. **ANSWERED: swap Qwen2.5-7B-Instruct for Qwen3-4B in the I3 night cells** (KV3 item 4; `task-integration-harness-2026-10.md`). |
+| **Q7** | After the long-prompt census: build a tiled exact attention kernel for CUDA, or only a head-dim-256 fused instantiation? | The exact kernel covers 256 and 512 and removes the 12,160 bound for any family; the fused instantiation covers Gemma 3 only. **ANSWERED 2026-10-13: the tiled exact kernel (the census's recommendation).** Registered before code, in KV3's record. |
 
 ## 9. Risks, and how each is contained
 
