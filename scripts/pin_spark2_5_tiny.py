@@ -45,6 +45,7 @@ matching library version). `python3 -m venv ~/.venv-spark25 && ~/.venv-spark25/b
 "torch>=2.2,<2.9" "transformers==4.57.1"`.
 """
 import json
+import hashlib
 import os
 import shutil
 import urllib.request
@@ -79,13 +80,27 @@ CFG = dict(
 )
 
 
+# The modeling code is EXECUTED (trust_remote_code), so it is fetched at a commit, never at `main`, and checked against the digest of the
+# file that was reviewed: a moved branch or a compromised upstream account then fails here instead of running on this machine.
+# To move to a newer revision, read the diff of both files first, then update the revision and the digests together.
+CODE_REVISION = "0bcb35678590218655dff3765b9e61c83b35e9c4"
+CODE_SHA256 = {
+    "configuration_spark.py": "02218597240490f490659b184052db940b08163ff9c3af7b7e59323f6f963722",
+    "modeling_spark.py": "9cf0d1ad2b54b9f7088792779ddd8b5cb4d4fe63bfea054da7f2dd16362bcaf4",
+}
+
+
 def fetch_code():
     os.makedirs(CODE, exist_ok=True)
     for fn in CODE_FILES:
         out = os.path.join(CODE, fn)
-        url = f"https://huggingface.co/{SRC_REPO}/resolve/main/{fn}"
-        with urllib.request.urlopen(url, timeout=60) as r, open(out, "wb") as f:
-            f.write(r.read())
+        url = f"https://huggingface.co/{SRC_REPO}/resolve/{CODE_REVISION}/{fn}"
+        with urllib.request.urlopen(url, timeout=60) as r:
+            data = r.read()
+        if hashlib.sha256(data).hexdigest() != CODE_SHA256[fn]:
+            raise SystemExit(f"{fn} from {SRC_REPO}@{CODE_REVISION[:10]} does not match its pinned sha256: not executing it")
+        with open(out, "wb") as f:
+            f.write(data)
 
 
 def main():

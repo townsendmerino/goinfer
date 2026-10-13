@@ -25,6 +25,7 @@ fixtures reproduce offline.
     -> testdata/laguna-{xs21,xs2,m1}-tiny/                   (gitignored)
 """
 import json
+import hashlib
 import os
 import shutil
 import urllib.request
@@ -100,6 +101,16 @@ VARIANTS = {
 CODE_FILES = ("configuration_laguna.py", "modeling_laguna.py")
 
 
+# The modeling code is EXECUTED (trust_remote_code), so it is fetched at a commit, never at `main`, and checked against the digest of the
+# file that was reviewed: a moved branch or a compromised upstream account then fails here instead of running on this machine.
+# To move to a newer revision, read the diff of both files first, then update the revision and the digests together.
+CODE_REVISION = {"poolside/Laguna-XS-2.1": "c5f36269bbdbd3f27fddc9a9f9dbae0cf2cf57db"}
+CODE_SHA256 = {
+    "configuration_laguna.py": "403780a055babd84007313d07c994006b900d91a5bb6d0dfeea352d18b7ec0ea",
+    "modeling_laguna.py": "b1279340f2f45952738269ce801c8ef841540eba4e04e9df966a23ad5f188650",
+}
+
+
 def fetch_code(src, dst):
     """Put this generation's own configuration/modeling .py into dst."""
     os.makedirs(dst, exist_ok=True)
@@ -108,9 +119,16 @@ def fetch_code(src, dst):
         if os.path.isdir(src):
             shutil.copyfile(os.path.join(src, fn), out)
         else:
-            url = f"https://huggingface.co/{src}/resolve/main/{fn}"
-            with urllib.request.urlopen(url, timeout=60) as r, open(out, "wb") as f:
-                f.write(r.read())
+            rev = CODE_REVISION.get(src)
+            if rev is None:
+                raise SystemExit(f"no pinned revision for {src}: add one to CODE_REVISION (after reading its code)")
+            url = f"https://huggingface.co/{src}/resolve/{rev}/{fn}"
+            with urllib.request.urlopen(url, timeout=60) as r:
+                data = r.read()
+            if hashlib.sha256(data).hexdigest() != CODE_SHA256[fn]:
+                raise SystemExit(f"{fn} from {src}@{rev[:10]} does not match its pinned sha256: not executing it")
+            with open(out, "wb") as f:
+                f.write(data)
 
 
 def build(tag, src, overrides):
