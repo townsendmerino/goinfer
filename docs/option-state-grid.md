@@ -77,78 +77,116 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 Every `KVCache` field belongs to one of these kinds, or is declared geometry, a counter or scratch (`TestKVCache_everyFieldHasAState`).
 `Snapshot` and a partial `TruncateTo` read this table.
 
-| kind | partial rewind | full reset | snapshot | session prefix reuse | speculative rollback |
-|---|---|---|---|---|---|
-| positional KV | exact | cleared | persisted | exact | exact |
-| sliding-window ring | exact unless wrapped | cleared | persisted | exact unless wrapped | refused |
-| int8 KV + scales | exact | cleared | persisted | exact | exact |
-| MLA latent | exact | cleared | refused | exact | exact |
-| DeltaNet state | inexact → cold | cleared | refused | inexact → cold | refused |
-| short-conv window | inexact → cold | cleared | refused | inexact → cold | refused |
-| Mamba-2 state | inexact → cold | cleared | refused | inexact → cold | refused |
-| KDA state | inexact → cold | cleared | refused | inexact → cold | refused |
-| image blocks | inexact → cold | cleared | refused | inexact → cold | transient |
-| m-RoPE positions | inexact → cold | cleared | refused | inexact → cold | transient |
-| deepstack rows | transient | transient | transient | transient | transient |
-| capture rows | transient | transient | transient | transient | transient |
-| tree-verify mask | transient | transient | transient | transient | transient |
-| LoRA adapter binding | kept | kept | persisted | cold on mismatch | kept |
+| kind | partial rewind | full reset | snapshot | session prefix reuse | speculative rollback | publish | share | evict |
+|---|---|---|---|---|---|---|---|---|
+| positional KV | exact | cleared | persisted | exact | exact | exact | exact | cleared |
+| sliding-window ring | exact unless wrapped | cleared | persisted | exact unless wrapped | refused | exact unless wrapped | exact unless wrapped | cleared |
+| int8 KV + scales | exact | cleared | persisted | exact | exact | exact | cold on mismatch | cleared |
+| MLA latent | exact | cleared | refused | exact | exact | exact | exact | cleared |
+| DeltaNet state | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared |
+| short-conv window | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared |
+| Mamba-2 state | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared |
+| KDA state | inexact → cold | cleared | refused | inexact → cold | refused | kept | inexact → cold | cleared |
+| image blocks | inexact → cold | cleared | refused | inexact → cold | transient | exact | cold on mismatch | cleared |
+| m-RoPE positions | inexact → cold | cleared | refused | inexact → cold | transient | caller-bound | caller-bound | cleared |
+| deepstack rows | transient | transient | transient | transient | transient | transient | transient | transient |
+| capture rows | transient | transient | transient | transient | transient | transient | transient | transient |
+| tree-verify mask | transient | transient | transient | transient | transient | transient | transient | transient |
+| LoRA adapter binding | kept | kept | persisted | cold on mismatch | kept | kept | cold on mismatch | kept |
 
 **Reasons.**
 
+- positional KV × publish: the full blocks of a completed generation become immutable and are indexed under their chain hash; the partial tail stays its sequence's own
+- positional KV × share: rows match on token ids under an equal root, and the last token is always recomputed
 - sliding-window ring × partial rewind: ring.truncate returns false for a wrapped ring rewound by more than one position (C1); TruncateTo passes it on
 - sliding-window ring × snapshot: the snapshot writes each ring's physical rows and count (C2)
 - sliding-window ring × session prefix reuse: rewindForReuse goes cold on an inexact TruncateTo
 - sliding-window ring × speculative rollback: specRollbackSafe refuses every SlidingWindow > 0 model: rollback sites do not consume an inexact rewind (audit C-04)
+- sliding-window ring × publish: a resident may keep only a window of these layers' rows; the block is published and the resident answers for what it still holds
+- sliding-window ring × share: residentReuseFloor asks the resident (ResidentReusableKV): a prefix whose window was dropped is served as 0, and the prompt is prefilled whole
+- int8 KV + scales × publish: the scales are stored with the rows they scale
+- int8 KV + scales × share: the KV element type is in the root every block is keyed under: rows of another precision match nothing
 - MLA latent × partial rewind: TruncateTo re-slices the per-layer latent by latentDim
 - MLA latent × snapshot: the snapshot format does not carry the latent store
+- MLA latent × publish: the latent is the row its group stores
+- MLA latent × share: as positional rows
 - DeltaNet state × partial rewind: mutated in place per token; no per-position history to rewind to
 - DeltaNet state × full reset: resetRecurrent (audit C-01, C-03)
 - DeltaNet state × snapshot: the snapshot format does not carry recurrent state
 - DeltaNet state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - DeltaNet state × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- DeltaNet state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
+- DeltaNet state × share: no checkpoint to restore: only a strict extension of the whole sequence continues, from exactly where the state stopped; anything else is cold
+- DeltaNet state × evict: the resident re-zeroes it at position 0 of the prefill that follows
 - short-conv window × partial rewind: mutated in place per token; no per-position history to rewind to
 - short-conv window × full reset: resetRecurrent (audit C-01, C-03)
 - short-conv window × snapshot: the snapshot format does not carry recurrent state
 - short-conv window × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - short-conv window × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- short-conv window × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
+- short-conv window × share: no checkpoint to restore: only a strict extension of the whole sequence continues, from exactly where the state stopped; anything else is cold
+- short-conv window × evict: the resident re-zeroes it at position 0 of the prefill that follows
 - Mamba-2 state × partial rewind: mutated in place per token; no per-position history to rewind to
 - Mamba-2 state × full reset: resetRecurrent (audit C-01, C-03)
 - Mamba-2 state × snapshot: the snapshot format does not carry recurrent state
 - Mamba-2 state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - Mamba-2 state × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- Mamba-2 state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
+- Mamba-2 state × share: no checkpoint to restore: only a strict extension of the whole sequence continues, from exactly where the state stopped; anything else is cold
+- Mamba-2 state × evict: the resident re-zeroes it at position 0 of the prefill that follows
 - KDA state × partial rewind: mutated in place per token; no per-position history to rewind to
 - KDA state × full reset: resetRecurrent (audit C-01, C-03)
 - KDA state × snapshot: the snapshot format does not carry recurrent state
 - KDA state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - KDA state × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- KDA state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
+- KDA state × share: no checkpoint to restore: only a strict extension of the whole sequence continues, from exactly where the state stopped; anything else is cold
+- KDA state × evict: the resident re-zeroes it at position 0 of the prefill that follows
 - image blocks × partial rewind: the blocks are position ranges with no per-position rewind; a rewind below one would let new text attend bidirectionally
 - image blocks × full reset: resetMultimodal (audit M-25)
 - image blocks × snapshot: the snapshot format does not carry image blocks
 - image blocks × session prefix reuse: follows the rewind
 - image blocks × speculative rollback: the speculative loops take text prompts; nothing they run puts an image block in their cache
+- image blocks × publish: each span's content hash, offset and length are in the key of every block it touches
+- image blocks × share: a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start
+- image blocks × evict: residentForgetIDs clears resImgBlocks with the ids, always
 - m-RoPE positions × partial rewind: positions and the decode delta are set by the image prefill and have no per-position rewind
 - m-RoPE positions × full reset: resetMultimodal (audit M-25)
 - m-RoPE positions × snapshot: the snapshot format does not carry m-RoPE positions
 - m-RoPE positions × session prefix reuse: follows the rewind
 - m-RoPE positions × speculative rollback: the speculative loops take text prompts; nothing they run sets m-RoPE positions in their cache
+- m-RoPE positions × publish: the positions of published rows are in their K rows and follow from the image spans, which are in the key; the decode delta is not stored
+- m-RoPE positions × share: GenerateQwenVL recomputes the positions and the delta from the prompt's placeholder run and image grid on every call
+- m-RoPE positions × evict: nothing of it is kept outside the rows
 - deepstack rows × partial rewind: GenerateQwenVL sets the rows for the image prefill and clears them right after (generate_vl.go)
 - deepstack rows × full reset: cleared after the prefill that set them
 - deepstack rows × snapshot: cleared after the prefill that set them
 - deepstack rows × session prefix reuse: cleared after the prefill that set them
 - deepstack rows × speculative rollback: cleared after the prefill that set them
+- deepstack rows × publish: cleared after the prefill that set them
+- deepstack rows × share: cleared after the prefill that set them
+- deepstack rows × evict: cleared after the prefill that set them
 - capture rows × partial rewind: captured rows are overwritten by every forward before anything reads them
 - capture rows × full reset: overwritten by every forward
 - capture rows × snapshot: overwritten by every forward
 - capture rows × session prefix reuse: overwritten by every forward
 - capture rows × speculative rollback: overwritten by every forward
+- capture rows × publish: overwritten by every forward; a hidden-state route never commits (it calls residentForgetIDs)
+- capture rows × share: overwritten by every forward
+- capture rows × evict: overwritten by every forward
 - tree-verify mask × partial rewind: nothing in production sets the tree fields since EAGLE tree drafting was removed (be9aeea8, 2026-09-24); only tests do, on caches they own
 - tree-verify mask × full reset: unset in production (be9aeea8)
 - tree-verify mask × snapshot: unset in production (be9aeea8)
 - tree-verify mask × session prefix reuse: unset in production (be9aeea8)
 - tree-verify mask × speculative rollback: unset in production (be9aeea8)
+- tree-verify mask × publish: unset in production (be9aeea8)
+- tree-verify mask × share: unset in production (be9aeea8)
+- tree-verify mask × evict: unset in production (be9aeea8)
 - LoRA adapter binding × partial rewind: the adapter is the stream's binding, not sequence state: positions are rewound under the same projections
 - LoRA adapter binding × full reset: a reset session keeps its adapter; serve's per-adapter session LRUs rely on it
 - LoRA adapter binding × snapshot: format v3 records the adapter name; LoadSession rebinds it, or refuses when the model has not loaded it
 - LoRA adapter binding × session prefix reuse: rewindForReuse goes cold when the bound adapter is not the one the cached prefix was built under
 - LoRA adapter binding × speculative rollback: a rollback stays under the same projections
+- LoRA adapter binding × publish: the adapter's identity is in the root every block of the sequence is keyed under
+- LoRA adapter binding × share: another adapter, or none, is another root: nothing matches (rule 4 of resident_reuse.go)
+- LoRA adapter binding × evict: the binding is the generation's, not the slot's
