@@ -186,7 +186,7 @@
   {
    "name": "windowed-kv",
    "group": "Backend, precision and context",
-   "summary": "CUDA only: each sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer context in the same VRAM. Output is meant to be identical. On by default (`--windowed-kv=false` opts out); ignored by other backends and by models with no sliding-window layers.",
+   "summary": "CUDA only: each sliding-window layer keeps `window + 1536` KV positions instead of the whole context, so a mixed sliding/full model fits a longer context in the same VRAM. Output is meant to be identical. On by default (`--windowed-kv=false` opts out); ignored by other backends and by models with no sliding-window layers.",
    "see": "docs/tasks/task-cuda-windowed-kv-2026-10.md"
   },
   {

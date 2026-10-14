@@ -45,8 +45,8 @@ func TestWindowedKV_planPrices(t *testing.T) {
 			t.Fatal("WindowedKVLayer is true with the option off")
 		}
 	}
-	if full, win := off.ResidentKVBytes("cuda", 100000, false, false), on.ResidentKVBytes("cuda", 100000, false, false); win*100 >= full {
-		t.Errorf("at ctx 100000 the windowed KV (%d) is not a small fraction of the full KV (%d)", win, full)
+	if full, win := off.ResidentKVBytes("cuda", 1000000, false, false), on.ResidentKVBytes("cuda", 1000000, false, false); win*100 >= full {
+		t.Errorf("at ctx 1000000 the windowed KV (%d) is not a small fraction of the full KV (%d)", win, full)
 	}
 }
 

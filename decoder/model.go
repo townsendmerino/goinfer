@@ -221,11 +221,17 @@ func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 // may lower to its own (Metal: 2).
 func (m *Model) ResidentKVSlotsIsDefault() bool { return m.resSlotsDef }
 
-// WindowedKVSlack is the headroom, in positions, a windowed-KV layer holds beyond its window: a layer keeps window+WindowedKVSlack
-// positions and compacts (copies its live tail to the start) once per slack positions written. It must cover the widest batch of rows
-// written in one pass: a prefill chunk (512 by default), a verify batch, an MC3 row. The CUDA allocation and decoder's pricing both use
-// it, so priced bytes equal allocated bytes.
-const WindowedKVSlack = 512
+// WindowedKVRollback is how far a request may diverge before the end of what a windowed-KV slot holds and still reuse its prefix: a
+// turn's output the client does not send back (a dropped reasoning block), or an edit near the end of the prompt. The CUDA resident
+// keeps at least this many positions behind the newest one it has written, at every point of its compaction cycle. Sized to hold
+// about 90% of measured agent-turn replies (docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md, which tables its memory per family).
+const WindowedKVRollback = 1024
+
+// WindowedKVSlack is the headroom, in positions, a windowed-KV layer holds beyond its window: the rollback plus 512 positions written
+// between compactions (a compaction copies the live tail to the start). The 512 must cover the widest batch of rows written in one
+// pass: a prefill chunk (512 by default), a verify batch, an MC3 row. The CUDA allocation and decoder's pricing both use it, so priced
+// bytes equal allocated bytes.
+const WindowedKVSlack = WindowedKVRollback + 512
 
 // ResidentWindowedKVCap is how many positions a windowed-KV layer of the given window holds at a resident context of ctx: the whole
 // context when that is no larger than the window plus its slack, else window+WindowedKVSlack.

@@ -12,15 +12,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// windowedKVTestSlack is the slack the windowed-KV tests run with: the fixture's window is 16 and its context 512, so the production slack
-// (512) would never engage the feature; 24 makes a compaction every ~24 tokens.
-const windowedKVTestSlack = 24
+// windowedKVTestSlack and windowedKVTestRollback are the slack and rollback the windowed-KV tests run with: the fixture's window is 16 and its
+// context 512, so the production figures would never engage the feature; these make a compaction every 8 tokens or so.
+const (
+	windowedKVTestSlack    = 24
+	windowedKVTestRollback = 16
+)
 
-func withWindowedKVSlack(t *testing.T, slack int) {
+func withWindowedKVSlack(t *testing.T, slack, rollback int) {
 	t.Helper()
-	old := kvWindowSlack
-	kvWindowSlack = slack
-	t.Cleanup(func() { kvWindowSlack = old })
+	oldS, oldR := kvWindowSlack, kvWindowRollback
+	kvWindowSlack, kvWindowRollback = slack, rollback
+	t.Cleanup(func() { kvWindowSlack, kvWindowRollback = oldS, oldR })
 }
 
 // windowFixtures: an all-sliding-window model, and two with global layers beside the windowed ones (gemma3's 1-in-2 and cohere2's 3-in-4), so a
@@ -36,7 +39,7 @@ func eachWindowFixture(t *testing.T, f func(t *testing.T, fixture string)) {
 func loadWindowedPair(t *testing.T, fixture string, slots int) (full, win *cudaResident, mf, mw *decoder.Model) {
 	t.Helper()
 	requireCUDADevice(t)
-	withWindowedKVSlack(t, windowedKVTestSlack)
+	withWindowedKVSlack(t, windowedKVTestSlack, windowedKVTestRollback)
 	path := filepath.Join("..", "testdata", fixture)
 	load := func(on bool) (*decoder.Model, *cudaResident) {
 		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: slots, ResidentWindowedKV: on})
@@ -562,5 +565,75 @@ func windowedAgentTurns(t *testing.T, fx string) {
 		if got[i].reused != want[i].reused {
 			t.Errorf("turn %d: a continuation reused %d windowed but %d full", i, got[i].reused, want[i].reused)
 		}
+	}
+}
+
+// TestWindowedKV_rollbackReuse is the agent-turn shape whose follow-up drops the previous turn's output (Codex sends no reasoning back): each
+// turn prefills a suffix at the previous prompt's end, decodes kvWindowRollback tokens that the next prompt never contains, and the next turn
+// must reuse the prefix up to that end whatever point of the compaction cycle the decode stopped at. Every prefill and decode is bit-identical to
+// the full-KV resident under the same schedule, and each reused prefill's logits to a cold full-KV prefill of the whole prompt. A rollback past
+// slack+1 positions has no held window and must report 0.
+func TestWindowedKV_rollbackReuse(t *testing.T) { eachWindowFixture(t, windowedRollbackReuse) }
+
+func windowedRollbackReuse(t *testing.T, fx string) {
+	full, win, _, mw := loadWindowedPair(t, fx, 1)
+	cm, err := decoder.Load(filepath.Join("..", "testdata", fx), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cm.Close() })
+	cold, ok := cm.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("cold control not CUDA-resident: %s", cm.ResidentDecline())
+	}
+	_, _, _, _, _, _, vocab := mw.Dims()
+	emb := func(lo, hi int) [][]float32 {
+		rows := make([][]float32, 0, hi-lo)
+		for i := lo; i < hi; i++ {
+			rows = append(rows, mw.EmbedResidentForTest((i*37+3)%vocab))
+		}
+		return rows
+	}
+	ctx := context.Background()
+	pos, compacted := 0, 0
+	for turn := range 10 {
+		end := pos + 9 + (turn*5)%11
+		if turn > 0 {
+			if win.kvBase > 0 {
+				compacted++
+			}
+			if got := win.ReusableKV(pos); got != pos {
+				t.Fatalf("turn %d: ReusableKV(%d) = %d after a rollback of %d positions (base %d): within the %d kept, the prefix must be reused", turn, pos, got, kvWindowRollback, win.kvBase, kvWindowRollback)
+			}
+		}
+		a, err := full.PrefillLast(ctx, emb(pos, end), pos)
+		if err != nil {
+			t.Fatalf("turn %d full prefill: %v", turn, err)
+		}
+		a = append([]float32(nil), a...)
+		b, err := win.PrefillLast(ctx, emb(pos, end), pos)
+		if err != nil {
+			t.Fatalf("turn %d windowed prefill at %d: %v", turn, pos, err)
+		}
+		b = append([]float32(nil), b...)
+		if j, ok := sameBits(a, b); !ok {
+			t.Fatalf("turn %d: reused prefill logits differ from the full-KV resident's at %d (base %d)", turn, j, win.kvBase)
+		}
+		c, err := cold.PrefillLast(ctx, emb(0, end), 0)
+		if err != nil {
+			t.Fatalf("turn %d cold prefill: %v", turn, err)
+		}
+		if j, ok := sameBits(c, b); !ok {
+			t.Fatalf("turn %d: reused prefill logits differ from a cold prefill of the whole %d-token prompt at %d", turn, end, j)
+		}
+		decodeSteps(t, full, win, mw, end, kvWindowRollback)
+		pos = end
+	}
+	if compacted < 5 {
+		t.Fatalf("only %d of 9 reuses followed a compaction: the test did not exercise the rollback a compaction keeps", compacted)
+	}
+	decodeSteps(t, full, win, mw, pos+kvWindowRollback, kvWindowSlack+2-kvWindowRollback)
+	if got := win.ReusableKV(pos); got != 0 {
+		t.Fatalf("ReusableKV(%d) = %d after a rollback of %d positions, past the slack's %d: that window cannot be held", pos, got, kvWindowSlack+2, kvWindowSlack)
 	}
 }
