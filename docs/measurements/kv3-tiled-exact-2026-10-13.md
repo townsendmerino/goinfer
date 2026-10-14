@@ -130,7 +130,7 @@ clean. `TestAttnBatched_bitIdentical` has the same shape with buffers small enou
 - **G4** is `TestKV3Tiled_batchedEqualsPerToken_real` at 12,400 tokens. It was run by day at 1,200 tokens with the route forced, to check the plumbing only: Gemma-3-4B with the
   levers off and Gemma-4-E4B (global layers of head dim 512) each 0 of 262,144 logits and 0 KV elements differing from the per-token path; Gemma-3-4B at default settings cosine 0.9963,
   argmax equal. Those are not G4's readings.
-- **Not queued tonight:** the whole `./cuda/` suite on this branch. `kv3-cuda-suite` already runs it on the branch below this one, and a second hour of the same suite tonight would
-  not separate the two branches' causes; it is owed before this branch merges.
+- **The whole `./cuda/` suite on this branch is queued too** (`JOB=suite`, 60 minutes, the owner's call on 2026-10-13), in the pinned worktree with the ignored fixtures linked from
+  the primary checkout, as `kv3-cuda-suite` does on the branch below this one. A test red in both is that branch's; one red only here is this branch's.
 - **Estimates** (from the census and the day smokes): G4 20 minutes, G5 45, G6 15. Jobs: `run-night.sh` with `JOB=identity`, `speed`, `ttft`.
 
