@@ -21,7 +21,8 @@ neither decides anything alone. The programs are below, so either can be re-run.
   - Tokenizing costs about 0.09% of that per token.
   - A longer prompt only lowers the share, because attention grows with depth and tokenizing does not.
 - **Not measured: rendering the chat template and parsing the request JSON.** Both are linear passes over the same text, so
-  neither is expected to cost more than the encode (INFERRED).
+  neither is expected to cost more than the encode (INFERRED). Not checked either: a tool-heavy agent request, whose tool
+  schemas go through `chat/tools.go:Template.RenderTools`. Per-turn timing on the wire (the task doc's RF0) would show it.
 
 The run used a throwaway module beside the tree: `GOWORK=off go build -o tokbench .`, then
 `python3 scripts/timing_lock.py run --label fwdarch-tokenizer -- ./tokbench`.
@@ -106,6 +107,9 @@ func main() {
 model can differ, because `decoder/residency.go:Model.residentAdmission` reads the model's own configuration.
 - On CUDA, a Phi-3/4 GGUF loads at `--quant q4k` (`internal/modelload/modelload.go:activationSafeQuant`) and runs resident.
 - On Metal it runs resident only at an explicit `--quant q4k`.
+- `representativeConfig("nemotron_h")` is dense (`MoE == nil`), so the matrix shows it resident on WebGPU. A Nemotron-H MoE
+  checkpoint (Nemotron 3 Nano) fails `decoder/residency.go:Architecture.decodeRunnerEligible` on CUDA and Metal, and WebGPU
+  admits it through `decoder/residency.go:Model.decodeRunnerDecline` (`docs/hardware-matrix.md`'s note).
 
 **The runner-shape lines, broken down by a second test** (its output is the second block):
 - **Llama 4 and LFM2** run their own forwards, which no GPU runner bridges.
@@ -113,6 +117,22 @@ model can differ, because `decoder/residency.go:Model.residentAdmission` reads t
 - **Laguna and Spark-X2.5 are not own forwards.** They fail `decoder/residency.go:Architecture.ropeResidentCompatible`: their
   local and global RoPE tables have different lengths. In the representative configs these are 8 and 4 for Laguna, and 16 and
   4 for Spark-X2.5.
+
+**What the runner-shape line hides** (third test, added 2026-10-13 after a review, run at `2e760f25`, which changed only docs
+since `9593bd70`). The first test prints only the runner-shape reason when that check refuses, so it hides what
+`decoder/features.go:residentGateReason` would also say. Printed separately (third block):
+- **LFM2** also needs `short-conv`, on all three backends.
+- **Granite-4.0-H** also needs `ssm` on CUDA and Metal. On WebGPU the bring-up gate is the only reason.
+- **Laguna and Spark-X2.5** also need `attn-output-gate` (Laguna's softplus gate, Spark-X2.5's sigmoid), on all three.
+- **Llama 4** has no feature reason on any backend. Only the runner shape stops it.
+- **A hazard, not a decline: Spark-X2.5's activation.**
+  - Spark-X2.5 is a gated MLP with exact-erf GELU (`ActGelu`, `gegluExact` in `decoder/mlp.go`).
+  - `residentFeatures` maps any gated non-SiLU activation to `gated-gelu`, which every backend implements as tanh-GELU.
+  - `decoder/residency.go:Model.GatedActResident` passes the activation's ordinal (3 for `ActGelu`) to a CUDA kernel that knows
+    0 (tanh-GELU) and 1 (SiLU). `decoder/arch.go`'s comment on `ActGelu`, "Only non-gated archs reach it today", predates
+    Spark-X2.5.
+  - Nothing runs wrong today: the runner shape and `attn-output-gate` decline Spark-X2.5 first. Once both are lifted, it would
+    be admitted with the wrong activation, so the feature set needs an exact-GELU entry before then (read from code, not run).
 
 ```
 bailing_hybrid   cuda    cuda does not implement [kda], which this model needs   (registry keys: bailing_hybrid)
@@ -162,6 +182,33 @@ laguna           ownForward=false() ropeCompatible=false invFreq local/global=8/
 lfm2             ownForward=true(lfm2) ropeCompatible=true invFreq local/global=8/8 moe=false
 llama4_text      ownForward=true(llama4_text) ropeCompatible=true invFreq local/global=4/4 moe=true
 spark2_5         ownForward=false() ropeCompatible=false invFreq local/global=16/4 moe=false
+```
+
+```
+granitemoehybrid cuda   runnerOK=false gate="cuda does not implement [ssm], which this model needs"
+granitemoehybrid metal  runnerOK=false gate="metal does not implement [ssm], which this model needs"
+granitemoehybrid webgpu runnerOK=false gate=""
+granitemoehybrid Act=SiLU
+laguna           cuda   runnerOK=false gate="cuda does not implement [attn-output-gate], which this model needs"
+laguna           metal  runnerOK=false gate="metal does not implement [attn-output-gate], which this model needs"
+laguna           webgpu runnerOK=false gate="webgpu does not implement [attn-output-gate], which this model needs"
+laguna           Act=SiLU
+lfm2             cuda   runnerOK=false gate="cuda does not implement [short-conv], which this model needs"
+lfm2             metal  runnerOK=false gate="metal does not implement [short-conv], which this model needs"
+lfm2             webgpu runnerOK=false gate="webgpu does not implement [short-conv], which this model needs"
+lfm2             Act=SiLU
+llama4_text      cuda   runnerOK=false gate=""
+llama4_text      metal  runnerOK=false gate=""
+llama4_text      webgpu runnerOK=false gate=""
+llama4_text      Act=SiLU
+spark2_5         cuda   runnerOK=false gate="cuda does not implement [attn-output-gate], which this model needs"
+spark2_5         metal  runnerOK=false gate="metal does not implement [attn-output-gate], which this model needs"
+spark2_5         webgpu runnerOK=false gate="webgpu does not implement [attn-output-gate], which this model needs"
+spark2_5         Act=GELU
+nemotron_h       cuda   runnerOK=true gate="cuda does not implement [non-gated-mlp ssm], which this model needs"
+nemotron_h       metal  runnerOK=true gate="metal does not implement [ssm], which this model needs"
+nemotron_h       webgpu runnerOK=true gate=""
+nemotron_h       Act=ReLU²
 ```
 
 The test file (`decoder/zz_census_tmp_test.go` in the detached worktree, deleted after the run):
@@ -240,6 +287,32 @@ func TestZZRunnerShapeDetail(t *testing.T) {
 		f, own := arch.ownForward()
 		fmt.Printf("%-16s ownForward=%v(%s) ropeCompatible=%v invFreq local/global=%d/%d moe=%v\n", mt, own, f.Name,
 			arch.ropeResidentCompatible(), len(arch.ropeInvFreqLocal), len(arch.ropeInvFreqGlobal), arch.MoE != nil)
+	}
+}
+```
+
+The third test (`decoder/zz_gem_tmp_test.go`, in a second detached worktree, deleted after the run; same command with
+`-run '^TestZZGem$'`):
+
+```go
+package decoder
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestZZGem(t *testing.T) {
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	for _, mt := range []string{"granitemoehybrid", "laguna", "lfm2", "llama4_text", "spark2_5", "nemotron_h"} {
+		a, _, err := resolveArchitecture(representativeConfig(mt))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, be := range []string{"cuda", "metal", "webgpu"} {
+			fmt.Printf("%-16s %-6s runnerOK=%v gate=%q\n", mt, be, a.decodeRunnerEligible(), residentGateReason(a, be))
+		}
+		fmt.Printf("%-16s Act=%v\n", mt, a.Act)
 	}
 }
 ```
