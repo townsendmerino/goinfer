@@ -91,6 +91,8 @@ func (r *resident) batchIneligible() string {
 		return "GPT-J pairwise rope (the step's mc3_rope2_rows is the NeoX half-split; docs/tasks/task-metal-pairwise-rope-2026-10.md)"
 	case r.q4kLane:
 		return "the q4k lane (its f32-activation kernels are decode-only; docs/tasks/task-metal-q4k-2026-10.md)"
+	case r.attnSoftcap != 0:
+		return "an attention softcap (gated on the single-token and exact prefill kernels, not the step's rows forms)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"

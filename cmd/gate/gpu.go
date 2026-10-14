@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ type gpuGate struct {
 	heavySkipped bool   // the real-model tier was skipped: the run is not the whole gate, and its record says so
 	recordDir    string // where the run's record is written (gpu_record.go); empty writes none
 	gpuName      string // the device line printed in the provenance block, for the record
+	ptxKeepDir   string // where a rebuilt .ptx that differs from its committed form is written; empty writes none
 }
 
 func (g *gpuGate) grp(name string) { g.cur = name }
@@ -919,8 +921,9 @@ func probeNVRTC(w io.Writer) map[string][2]string {
 func (g *gpuGate) cudaPTX() {
 	g.grp("ptx")
 	g.hdr("4. PTX reproduces from source, each at the NVRTC it records")
-	if st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh")); err != nil || st.Mode()&0o111 == 0 {
-		g.skip("PTX reproducibility (cuda/build_ptx.sh missing)")
+	st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh"))
+	if why := ptxScriptDecline(st, err, runtime.GOOS); why != "" {
+		g.skip("PTX reproducibility (cuda/build_ptx.sh %s)", why)
 		return
 	}
 	nvrtc := probeNVRTC(g.w)
@@ -957,8 +960,14 @@ func (g *gpuGate) cudaPTX() {
 	var unavail []string
 	for _, f := range ptxFiles {
 		base := strings.TrimSuffix(filepath.Base(f), ".ptx")
+		// kernel is what build_ptx.sh is asked for. <k>_kv16.ptx has no source of its own name: it is <k>.cu built with
+		// the KV cache as f16, which build_ptx.sh writes whenever it builds <k>.
+		kernel := base
 		if _, err := os.Stat(filepath.Join("cuda", base+".cu")); err != nil {
-			continue // no source ⇒ not ours to reproduce
+			kernel = strings.TrimSuffix(base, "_kv16")
+			if _, err := os.Stat(filepath.Join("cuda", kernel+".cu")); kernel == base || err != nil {
+				continue // no source ⇒ not ours to reproduce
+			}
 		}
 		total++
 		want := recordedNVRTC(f)
@@ -973,7 +982,7 @@ func (g *gpuGate) cudaPTX() {
 			nUnavail++
 			continue
 		}
-		cmd := exec.Command("./build_ptx.sh", base)
+		cmd := exec.Command("./build_ptx.sh", kernel)
 		cmd.Dir = "cuda"
 		cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
 		if err := cmd.Run(); err != nil {
@@ -987,6 +996,15 @@ func (g *gpuGate) cudaPTX() {
 		} else {
 			diff++
 			fmt.Fprintf(g.w, "      DIFFERS: %s.ptx (rebuilt at its recorded V%s)\n", base, want)
+			if g.ptxKeepDir != "" {
+				kerr := os.MkdirAll(g.ptxKeepDir, 0o755)
+				if kerr == nil {
+					kerr = os.WriteFile(filepath.Join(g.ptxKeepDir, base+".ptx"), now, 0o644)
+				}
+				if kerr != nil {
+					fmt.Fprintf(g.w, "      (could not keep the rebuilt file: %v)\n", kerr)
+				}
+			}
 		}
 	}
 	// Restore; this check must not mutate the tree.
@@ -1014,6 +1032,33 @@ func (g *gpuGate) cudaPTX() {
 	if len(unavail) > 0 {
 		g.skip("%d/%d PTX NOT verified on this box (toolchain absent): %s", nUnavail, total, strings.Join(unavail, " "))
 	}
+}
+
+// ptxScriptDecline says why cuda/build_ptx.sh cannot be run, "" when it can. The execute bit is checked only on an OS that
+// has one: Windows reports none for any file, so checking it there calls a script that is present "missing" and ends the
+// group before it counts the artifacts it did not verify.
+func ptxScriptDecline(st os.FileInfo, statErr error, goos string) string {
+	switch {
+	case statErr != nil:
+		return "is missing"
+	case goos != "windows" && st.Mode()&0o111 == 0:
+		return "is not executable"
+	}
+	return ""
+}
+
+// runPTX is `gate ptx`: the PTX group alone, for a machine that has NVRTC and no GPU. It is stricter than the group
+// inside `gate gpu`, where a file whose toolchain is absent is a counted skip: here every recorded toolchain is
+// installed on purpose, so a file that was not verified fails the run.
+func runPTX(w io.Writer, keepDir string) int {
+	g := &gpuGate{w: w, emitted: map[string]bool{}, ptxKeepDir: keepDir}
+	g.cudaPTX()
+	if g.fail > 0 || g.skipped > 0 || g.pass == 0 {
+		fmt.Fprintf(w, "\n%sgate ptx: RED%s  (%d failed, %d not verified)\n", red, off, g.fail, g.skipped)
+		return 1
+	}
+	fmt.Fprintf(w, "\n%sgate ptx: GREEN%s\n", green, off)
+	return 0
 }
 
 // ---- Metal groups ----

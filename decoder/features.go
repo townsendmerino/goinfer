@@ -33,7 +33,7 @@ const (
 	FeatParallelBlock     ResidentFeature = "parallel-block"      // one shared input norm; attn+MLP sum into a single residual add (Cohere, GPT-J)
 	FeatNoPE              ResidentFeature = "nope"                // per-layer NoPE: some layers skip RoPE entirely (Cohere2 global layers, Llama-4 iRoPE)
 	FeatGatedGELU         ResidentFeature = "gated-gelu"          // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
-	FeatNonGatedMLP       ResidentFeature = "non-gated-mlp"       // up→act→down, no gate (GPT-2, Nemotron relu²)
+	FeatNonGatedMLP       ResidentFeature = "non-gated-mlp"       // up→act→down, no gate (GPT-2, Nemotron relu²); the activation is whichever the backend's non-gated kernel has, except exact GELU (FeatNonGatedGELUErf)
 	FeatLearnedPos        ResidentFeature = "learned-pos"         // learned position embeddings, no RoPE (GPT-2)
 	FeatOutBias           ResidentFeature = "out-bias"            // additive bias on the attn output proj (GPT-2)
 	FeatLogitScale        ResidentFeature = "logit-scale"         // logits_scaling divisor (Granite)
@@ -83,6 +83,17 @@ const (
 	// the image-block prefill rotates each frequency by its own (t,h,w) component through the pairwise pairs, and the generic m-RoPE
 	// image-prefill kernels are NeoX. Needed in addition to FeatPairwiseRoPE, since the family's text rows and decode use the scalar kernel.
 	FeatPairwiseMRoPE ResidentFeature = "pairwise-mrope"
+	// FeatGatedGELUErf is a gated MLP whose activation is the exact erf GELU (ActGelu), not FeatGatedGELU's tanh approximation. The
+	// gated kernels select by GatedActResident's ordinal and know GELU-tanh and SiLU only, so any other ordinal runs one of those two
+	// with no error. A backend declares this only with an erf branch in every gated kernel it runs and an end-to-end gate.
+	FeatGatedGELUErf ResidentFeature = "gated-gelu-erf"
+	// FeatNonGatedGELUErf is the same activation in a non-gated MLP (a GPT-2 checkpoint declaring "gelu" rather than "gelu_new"),
+	// needed in addition to FeatNonGatedMLP. A separate feature from FeatGatedGELUErf because it is a separate kernel.
+	FeatNonGatedGELUErf ResidentFeature = "non-gated-gelu-erf"
+	// FeatGatedActUnknown is what a gated MLP derives when its activation is none of SiLU, GELU-tanh and exact GELU. It names no
+	// kernel, so no backend may declare it (TestGatedAct_onlyTanhAndSiLUAdmitted): it exists so a new ActKind declines until
+	// residentFeatures gives it a feature of its own.
+	FeatGatedActUnknown ResidentFeature = "gated-act-unknown"
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -130,10 +141,21 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	// Mean-subtracting LayerNorm (Cohere, GPT-2) is a distinct kernel from RMSNorm.
 	add(a.Norm != NormRMS, FeatLayerNorm)
 	// The MLP activation, not just the gate's presence: a glue kernel that hardcodes SwiGLU would run Gemma's gated GELU-tanh block silently
-	// wrong. Scoped to gated archs on purpose: a non-gated arch's activation (GPT-2 gelu, Nemotron relu²) is implied by FeatNonGatedMLP.
-	// Tested against SiLU rather than for GeluTanh deliberately: ActGeluTanh is ActKind's zero value, so an arch that forgets to set Act
-	// lands here and is declined (correct but slow); matching on GeluTanh would let a forgotten Act through onto a SwiGLU kernel.
-	add(!a.NonGatedMLP && a.Act != ActSiLU, FeatGatedGELU)
+	// wrong. One feature per gated activation, and the default arm is deliberate: a gated activation without a feature of its own must
+	// not derive one a backend declares, or GatedActResident hands its ordinal to a kernel that knows only GELU-tanh and SiLU. An arch
+	// that forgets to set Act reads as ActGeluTanh (ActKind's zero value) on the CPU and on a backend alike. A non-gated arch's
+	// activation is implied by FeatNonGatedMLP, except exact GELU, which no non-gated resident kernel has.
+	switch {
+	case a.NonGatedMLP:
+		add(a.Act == ActGelu, FeatNonGatedGELUErf)
+	case a.Act == ActSiLU:
+	case a.Act == ActGeluTanh:
+		add(true, FeatGatedGELU)
+	case a.Act == ActGelu:
+		add(true, FeatGatedGELUErf)
+	default:
+		add(true, FeatGatedActUnknown)
+	}
 	add(a.NonGatedMLP, FeatNonGatedMLP)
 	add(a.LearnedPosEmbed, FeatLearnedPos)
 	add(a.OutBias, FeatOutBias)
@@ -248,31 +270,64 @@ func residentGateReason(a *Architecture, backend string) string {
 // that clears ActivationQuantHazard on a backend that implements it (cuda, actgroup.cu), since the hazard is the per-vector activation
 // scale. The hardware matrix passes false (the default configuration); residentAdmission passes the model's own.
 func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string {
+	if g := residentGateReasons(a, backend, actSafe); len(g) > 0 {
+		return g[0].Reason
+	}
+	return ""
+}
+
+// residentGate is one of residentGateReasons' refusals: which gate, and the sentence the load path reports. Missing is set on the
+// feature gate only.
+type residentGate struct {
+	Kind    string // residentGateBackend, residentGateActHazard, residentGateFeatures, residentGateMoECap, residentGateGeometry or residentGateGemma4MoE
+	Reason  string
+	Missing []ResidentFeature
+}
+
+const (
+	residentGateBackend   = "backend"
+	residentGateActHazard = "activation-hazard"
+	residentGateFeatures  = "features"
+	residentGateMoECap    = "moe-capacity"
+	residentGateGeometry  = "per-layer-geometry"
+	residentGateGemma4MoE = "gemma4-moe"
+)
+
+// residentGateReasons is every gate after the runner-shape one that refuses a on backend, in the order admission applies them; empty
+// when all admit. Admission reports the first (residentGateReasonAct). The hardware matrix prints all of them, because the first
+// refusal says nothing about the rest: a family that lacks one feature may also exceed the router's capacity.
+func residentGateReasons(a *Architecture, backend string, actSafe bool) []residentGate {
 	impl, ok := residentBackendFeatures[backend]
 	if !ok {
-		return fmt.Sprintf("backend %q declares no resident feature set", backend)
+		return []residentGate{{Kind: residentGateBackend, Reason: fmt.Sprintf("backend %q declares no resident feature set", backend)}}
 	}
+	var out []residentGate
 	// No resident GPU backend has an f32-activation projection, so a family whose output int8 activations destroy runs on the CPU at
 	// weight-only precision instead of fast and wrong. Checked here rather than in decodeRunnerDecline so the generated matrix shows it.
 	if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && (backend == "cuda" || backend == "metal")) {
-		return "every resident " + backend + " projection quantizes activations to int8, and " + why
+		out = append(out, residentGate{Kind: residentGateActHazard,
+			Reason: "every resident " + backend + " projection quantizes activations to int8, and " + why})
 	}
 	if missing := missingFeatures(a.residentFeatures(), impl); len(missing) > 0 {
-		return fmt.Sprintf("%s does not implement %v, which this model needs", backend, missing)
+		out = append(out, residentGate{Kind: residentGateFeatures, Missing: missing,
+			Reason: fmt.Sprintf("%s does not implement %v, which this model needs", backend, missing)})
 	}
 	if !residentMoECapacityOK(a, backend) {
 		c := residentBackendMoECap[backend]
-		return fmt.Sprintf("MoE with %d experts / %d expert groups exceeds %s's router capacity (%d / %d)",
-			a.MoE.NumExperts, a.MoE.NGroup, backend, c.experts, c.groups)
+		out = append(out, residentGate{Kind: residentGateMoECap,
+			Reason: fmt.Sprintf("MoE with %d experts / %d expert groups exceeds %s's router capacity (%d / %d)",
+				a.MoE.NumExperts, a.MoE.NGroup, backend, c.experts, c.groups)})
 	}
 	if !residentPerLayerGeomOK(a, backend) {
-		return fmt.Sprintf("per-layer attention geometry (head_dim %d on local layers, %d on global) is not implemented on %s",
-			a.HeadDim, a.gemma4.GlobalHeadDim, backend)
+		out = append(out, residentGate{Kind: residentGateGeometry,
+			Reason: fmt.Sprintf("per-layer attention geometry (head_dim %d on local layers, %d on global) is not implemented on %s",
+				a.HeadDim, a.gemma4.GlobalHeadDim, backend)})
 	}
 	if !residentGemma4MoEOK(a, backend) {
-		return fmt.Sprintf("Gemma 4's parallel dense+MoE FFN is not implemented on %s", backend)
+		out = append(out, residentGate{Kind: residentGateGemma4MoE,
+			Reason: fmt.Sprintf("Gemma 4's parallel dense+MoE FFN is not implemented on %s", backend)})
 	}
-	return ""
+	return out
 }
 
 // residentBackendMoECap is the router-kernel capacity of each backend whose MoE scoreboard is a fixed-size array: the numeric twin of

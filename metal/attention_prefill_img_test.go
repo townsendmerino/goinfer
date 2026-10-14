@@ -117,6 +117,7 @@ func TestAttentionPrefillImg_matchesReference(t *testing.T) {
 			}
 			q.Run1D(pipe(kernel), tc.M*nH*32, 32, args...)
 			o := make([]float32, tc.M*nH*hd)
+			recordAttnDigest(t, kernel, out.U16s()[:len(o)])
 			for i, h := range out.U16s()[:len(o)] {
 				o[i] = f16ToF32(h)
 			}

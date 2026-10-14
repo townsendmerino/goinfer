@@ -184,9 +184,9 @@ func TestR17_decodeFidelityGate(t *testing.T) {
 // arm, one draw per k, for the gate's null distribution.
 func r17ExactNudge(t *testing.T, r *resident, k int) Pipeline {
 	t.Helper()
-	const line = "sc[s - winStart]=a*scale;"
+	const line = "sc[s - winStart]=attn_score(a*scale);"
 	return r17PatchedAttention(t, r, "attention_nudge", line,
-		fmt.Sprintf("sc[s - winStart]=a*(scale*%.9ef);", 1+float64(k)*math.Exp2(-23)))
+		fmt.Sprintf("sc[s - winStart]=attn_score(a*(scale*%.9ef));", 1+float64(k)*math.Exp2(-23)))
 }
 
 // r17PatchedAttention compiles allKernels plus a renamed copy of the production `attention` kernel with one exact

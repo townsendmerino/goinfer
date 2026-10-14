@@ -142,6 +142,7 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 	enc.End()
 
 	got := out.Floats()
+	recordAttnDigest(t, "attention", got[:nH*hd])
 	var dot, na, nb float64
 	for i := range ref {
 		dot += float64(got[i]) * float64(ref[i])

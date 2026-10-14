@@ -98,6 +98,7 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatPartialRotary:     true,
 	decoder.FeatSandwichNorm:      true,
 	decoder.FeatGatedGELU:         true,
+	decoder.FeatAttnLogitSoftcap:  true, // compiled into attention_prefill; a capped model takes no fused or steel kernel (prefillFusedOn). The backend does not declare it yet.
 	decoder.FeatRMSAddOne:         true,
 	decoder.FeatEmbedScale:        true,
 	decoder.FeatFinalLogitSoftcap: true,
@@ -398,6 +399,11 @@ type resident struct {
 	// metalCtxCapMax (the kernel's hard ceiling); smaller when an explicit -ctx asked for less.
 	ctxCap       int
 	finalSoftcap float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
+	// attnSoftcap is the attention-score softcap (FeatAttnLogitSoftcap), 0 ⇒ none. It is compiled into the kernel
+	// libraries (withAttnSoftcap), not passed to them. A capped model takes only the attention kernels the
+	// softcap is gated on, attention, attention_i8 and attention_prefill: canUseAttnFA, batchIneligible,
+	// prefillFusedOn and batchedPrefillImg keep it off the rest.
+	attnSoftcap float32
 	// embedScale is Gemma's sqrt(hidden) token-embedding multiplier (FeatEmbedScale); 0 or 1 means none. The
 	// id-taking entry points (Forward, ForwardArgmax) apply it right after the embedding lookup; ForwardEmb does
 	// not, because its caller has already scaled (decoder.embedResident).
@@ -1006,7 +1012,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if preciseMath {
 		compile = d.CompileLibraryPrecise
 	}
-	lib, err := compile(allKernels+mc3RowsKernels, MSL3_1) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
+	attnSoftcap := m.AttnLogitSoftcapResident()
+	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels, attnSoftcap) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
+	if err != nil {
+		return nil, err
+	}
+	lib, err := compile(libSrc, MSL3_1)
 	if err != nil {
 		return nil, err
 	}
@@ -1086,6 +1097,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.qkNorm = m.HasQKNorm()
 	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
 	r.sandwich = m.SandwichNormResident()
+	r.attnSoftcap = attnSoftcap
 	r.postOnly = m.PostOnlyNormResident() // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
 	r.pLoraDelta = pipe("lora_delta") // G3/P-11: compute-time LoRA, down+up fused into one kernel
@@ -3171,7 +3183,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 	if !r.decodeAttnFA || r.attnFAPartial == (Buffer{}) {
 		return false
 	}
-	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 {
+	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 || r.attnSoftcap != 0 {
 		return false
 	}
 	if r.loraLayers != nil {

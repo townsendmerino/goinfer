@@ -614,7 +614,8 @@ WebGPU implements it on the device for its staged path (below).
 - `UploadKV` writes K/V computed on the CPU (an image prefill, say) into the device cache.
 - `TruncateTo`, `Reset`, `Close`.
 
-About a dozen optional interfaces sit around it, found by type assertion:
+34 optional interfaces sit around it, found by type assertion on a resident (28 of them are declared in
+`decoder/residency.go`). Among them:
 - batched prefill (`Prefiller`);
 - device sampling;
 - prefill without logits;

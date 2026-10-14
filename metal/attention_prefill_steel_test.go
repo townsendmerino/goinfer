@@ -71,6 +71,7 @@ func TestAttentionPrefillSteelMatchesFloat64(t *testing.T) {
 							t.Fatalf("%s: dispatch: %v", name, err)
 						}
 						got := append([]uint16(nil), outB.U16s()[:M*qDim]...)
+						recordAttnDigest(t, "attention_prefill_steel", got)
 						d.ReleaseAll()
 
 						ref := steelRef64(qkv, kc, vc, g.nH, g.nKV, M, startPos, window, stride, float64(scale), 0)

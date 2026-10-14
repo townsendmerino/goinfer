@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -92,20 +93,21 @@ func limitInflight(sem chan struct{}, h http.HandlerFunc) http.HandlerFunc {
 
 // requireAuth wraps a handler with an optional shared-secret check. With key == "" it is a pass-through (auth
 // disabled, safe only because -addr defaults to loopback). With a key, the request must present it as `Authorization:
-// Bearer <key>` or `x-api-key: <key>`, compared in constant time so the key's length and prefix do not leak via
-// timing. A coarse gate (one shared secret, not per-user): enough to keep an exposed port from being open inference,
-// and required whenever -allow-admin is on.
+// Bearer <key>` or `x-api-key: <key>`. The two are compared as SHA-256 digests in constant time: digests are one
+// length, so the time taken says nothing about the key's length or prefix (ConstantTimeCompare on the raw strings
+// returns at once when the lengths differ). A coarse gate (one shared secret, not per-user): enough to keep an
+// exposed port from being open inference, and required whenever -allow-admin is on.
 func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
 	if key == "" {
 		return h
 	}
-	want := []byte(key)
+	want := sha256.Sum256([]byte(key))
 	return func(w http.ResponseWriter, r *http.Request) {
 		got := r.Header.Get("x-api-key")
 		if got == "" {
 			got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
-		if subtle.ConstantTimeCompare([]byte(got), want) != 1 {
+		if sum := sha256.Sum256([]byte(got)); subtle.ConstantTimeCompare(sum[:], want[:]) != 1 {
 			writeErr(w, http.StatusUnauthorized, "missing or invalid API key")
 			return
 		}

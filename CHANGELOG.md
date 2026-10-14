@@ -171,12 +171,75 @@ where it is 5,850. Every system message is now kept. Those before the conversati
 system prompt; one sent after it has started stays where it is, as text of the user side, instead of replacing the system
 prompt. A `/v1/responses` request with both `instructions` and a `developer` item keeps both.
 
+### Fixed — a model whose MLP uses the exact GELU can no longer be put on a GPU with the tanh approximation
+
+Every GPU backend's MLP kernel has two activations, tanh-GELU and SiLU, and picks one from a number the decoder hands it. The admission
+check let any other activation through as if it were tanh-GELU.
+
+- **A GPT-2 checkpoint that declares `activation_function: "gelu"` now decodes on the CPU under Metal.** It was admitted to the GPU and
+  ran `gelu_new`'s tanh approximation, which differs from the exact function by up to 4.73e-4 per activation. The released GPT-2
+  checkpoints use `gelu_new` and are unchanged. `DecodePath()` and `serve check` name the reason: `non-gated-gelu-erf`.
+- **Spark-X2.5 was never affected, and now cannot be.** Its gated MLP uses the exact GELU; two other gaps keep it on the CPU today, and
+  the activation is now a third, named `gated-gelu-erf`, so lifting the first two cannot put it on a GPU with the wrong activation.
+- **Any other activation in a gated MLP declines too** (`gated-act-unknown`), until a backend has a kernel for it.
+- Gemma, whose gated MLP uses tanh-GELU, is admitted as before.
+- **A model the GPU runner cannot express now says which shape stopped it**: `arch is not eligible for the resident decode runner: own
+  forward, not bridged`, for example, where the message ended at "runner".
+
+### Changed — `docs/hardware-matrix.md` says why each family decodes on the CPU
+
+The matrix gains a generated section, "Why a cell reads CPU". For each family and backend it lists every reason, not only the first one
+the load path reports: the runner shape, the features the backend lacks, the activation hazard, the MoE router's capacity.
+
+- It is generated from the same checks admission runs, and a test fails when a cell and its reasons disagree.
+- **It shows two reasons that a first refusal hid.** Kimi K2 on Metal lacks latent-KV attention and also has 384 experts where Metal's
+  router kernel routes 256. Spark-X2.5 lacks its activation as well as its attention output gate.
+- **Phi-3 and Phi-4 get a note.** Their row reads a configuration the loader does not pick: a GGUF loads at `--quant q4k` on CUDA and
+  runs on the GPU, and on Metal it does only with an explicit `--quant q4k`.
+
 ### Added — `serve check` tests tool calling on `/v1/messages` at a real agent's schema size
 
 A new row, `tools, harness, Messages`, sends the same dozen tools and prompt as `tools, harness-scale` through the Anthropic
 route, which is what Claude Code speaks. A model that does not call the tool is a skip, as on the OpenAI row. A `tool_use`
 block a client could not use is a failure: no `id`, another tool's name, an `input` that is not a JSON object, or a
 `stop_reason` other than `tool_use`.
+
+### Security — the web UI has a content policy and survives hostile text; Copy drops hidden characters; smaller server and build hardening
+
+The rest of the low findings from the 2026-10-12 security audit. None had a known way to be used against a default server.
+
+- **The web UI is served with a full `Content-Security-Policy`.** Scripts, styles and requests come from the server itself and
+  nowhere else; inline scripts and handlers are refused. The page already writes model output as text and never as HTML; this
+  is the browser's second check behind that. `TestWebUI_contentPolicyInBrowser` opens the page from its real handlers in
+  headless Chrome: the page does its work with no violation, and each thing the policy forbids is refused.
+- **A long line could freeze the chat.** The Markdown renderer matched table separators, headings and code fences with patterns
+  whose cost grows with the square of a line's length, on every frame of a streaming reply: a table row followed by a line of
+  80,000 spaces took 18 s. Those three are now read with index loops (1 ms), on about a million generated lines the new readers
+  agree with the old patterns, long inline text is parsed in pieces of 4,096 characters, and quotes or lists nested more than
+  64 deep are shown as text (50,000 `>` on one line overflowed the stack).
+- **Copy no longer carries characters you cannot see.** A reply could show one command and put another on the clipboard, using
+  control characters, bidirectional overrides or zero-width characters. Copy now drops them, on code blocks and on messages, and
+  what was hidden becomes visible in what is pasted. A joiner inside an emoji sequence or between Persian or Indic letters is
+  kept.
+- **A link needs two slashes.** `[x](http:v1/models)` was a live link, and a browser resolves it against the page's own address.
+  Only `http://`, `https://` and `mailto:` links are live.
+- **The HTML preview makes no request, and now a browser test says so.** A previewed page that tries a script, a redirect, a meta
+  refresh, images, styles, fonts, frames and media reaches a local listener zero times, while the same page in a frame that may
+  run scripts reaches it seventeen ways. On a browser where that second frame cannot reach the listener either, the gate
+  reports the check as not verified instead of passed. **Fixed on the way:** the first click on Preview showed nothing (the frame was created
+  hidden, so it took a second click).
+- **A web load of a path outside the pull cache gets one refusal**, whether or not the path exists, so a page cannot learn which
+  files are on the machine from the wording.
+- **The API key is compared as SHA-256 digests**, so the time a refusal takes no longer depends on the length of the key tried.
+- **`--admin-socket` is refused in a directory other users can rewrite** (group- or world-writable and not sticky; `/tmp` still
+  works), and the socket is at mode 0600 from the moment it can be reached: it is bound inside a private directory and renamed
+  into place. Before, a client that connected between the bind and the `chmod` kept its connection.
+- **Build scripts.** `cuda/build_ptx.sh` no longer looks for the CUDA compiler library under `/tmp`, where any user could plant
+  one; `scripts/bench_compare.sh` builds its binary into a `mktemp` directory.
+- **Every shipped GPU kernel is checked against its source, in CI.** `go run ./cmd/gate ptx` rebuilds each
+  `cuda/testdata/*.ptx` at the NVRTC version the file records and compares bytes; the `cuda` CI job runs it with both versions
+  installed. The check inside `gate gpu` had been skipping the seven f16-KV twin files (`*_kv16.ptx`), which have no source of
+  their own name; it now rebuilds them from the kernel they are built from.
 
 ### Security — a loopback server refuses a foreign `Host`; the tool prompt no longer lets a message forge a turn; a wider embedding table is refused at load
 

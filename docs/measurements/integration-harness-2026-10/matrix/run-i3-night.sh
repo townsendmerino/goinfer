@@ -4,9 +4,10 @@
 # harness scripts are copied into $B at queue time, so the tree may move before tonight. Every run is in the sandbox
 # (matrix/sandbox.py), whose self-test must pass first; if it does not, nothing runs. night.py holds the timing lock.
 #
-#   queued as:  ONLY=q7b-16k,q7b-32k-cc bash <this script>                                  (job A, the 7B)
+#   queued as:  ONLY=q3-4b-16k,q3-4b-28k-cc bash <this script>                              (job A, Qwen3-4B; it was the 7B until 2026-10-13)
 #               ONLY=mellum-16k,mellum-32k-cc bash <this script>                            (job B, Mellum2.1)
-#               ONLY=q7b-9k-codex-ovf,q7b-11k-opencode-ovf,q7b-28k-cc-ovf bash <this script>  (job C, I1's live gate)
+#               ONLY=q3-4b-9k-codex-ovf,q3-4b-11k-opencode-ovf,q3-4b-28k-cc-ovf bash <this script>  (job C, I1's live gate)
+#               B=$HOME/goinfer-bench/harness-2026-10-14 ONLY=mellum-16k-codex-f bash <this script>        (job D, a fragile cell's three repetitions)
 set -u
 B=${B:-$HOME/goinfer-bench/harness-2026-10-13}
 ONLY=${ONLY:?name the configurations to run}
