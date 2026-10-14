@@ -142,7 +142,8 @@ def main():
             rec["check"] = dict(rc=k[0], out=(k[1] + k[2])[-400:])
             rec["passed"] = k[0] == 0
         else:
-            rec["passed"] = bool(task["answer"](p["answer"] or so[-2000:]))
+            # The agent's own reply only: the raw stream holds ids and tool output, where "5" or "store.go" match falsely.
+            rec["passed"] = bool(task["answer"](p["answer"]))
         rec["diff"] = sandbox.run(**base, cmd=["sh", "-c", "git add -A -N && git diff --stat | tail -5"], timeout=60)[1]
     except Exception as e:
         rec["harness_error"] = f"{type(e).__name__}: {e}"

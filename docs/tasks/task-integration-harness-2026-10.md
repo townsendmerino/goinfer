@@ -191,6 +191,70 @@ the session ending on the overflow. A fail with the fixed part fitting means the
   them. No real agent has been driven past its window. `/v1/completions`, jobs, batches and image turns do not
   measure a fixed part and answer with the curable wording.
 
+#### I1 live gate, second design — DRAFT, FOR OWNER REVIEW, NOT REGISTERED (2026-10-14)
+
+Nothing below is registered, run or queued. The first design (3c in I3's run plan) read the night of 2026-10-13 as Codex VOID, opencode VOID,
+Claude Code FAIL (I3's read, below). It had two causes, and this draft answers each one. Qwen3-4B fetched every `bulk` file in one step,
+which no compaction can cure. In `edit` and `fix`, and in Claude Code's `bulk` run, each harness's **own** compaction fired before
+goinfer's limit was reached, so no overflow could be attributed to goinfer.
+
+- **Model:** Qwen3-4B int4, f16 KV, for all three. It is the one model measured to drive all three harnesses on the 8 GB card (KV0), and its
+  first requests are measured: Codex 5,669, opencode 7,200, Claude Code 17,711 tokens. *Alternative, for Claude Code only:* Qwen3-1.7B
+  (`~/models/qwen3-1.7b-bf16`) at 49,152, where its f16 KV is 5.6 GB by its config. That should fit beside int4 weights, but the fit is
+  unmeasured and so is the model as a driver, so a day pilot would have to come first.
+- **Served window `W`, sized for about 6,000 tokens of room** beside the fixed part and I1's reserved output (a quarter of the window): Codex
+  15,616, opencode 17,664. Claude Code stays at 28,672, the most Qwen3-4B holds, with its output cap written as 4,096 (a recorded deviation
+  from `connect`'s quarter). The reserve is then 4,096 and the room 6,865.
+- **The harness is told `2 x W`** (Codex `model_context_window` and its auto-compact limit, opencode `limit.context`,
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`), so its own compaction threshold sits above goinfer's. The first context event is then goinfer's
+  overflow answer, and the harness's response to that answer is what is measured. **Control arm,** one run per harness, reported and not
+  graded: the harness told the true `W`. It shows the harness's own behaviour, which the night of 2026-10-13 showed already.
+- **Task `chain`:** about 18 files of room/6 tokens each (about 1,000). Each file ends with `next: data/<name>.txt` under a name drawn per run,
+  and the last file ends with `END` and a code word. Beside them sit 40 decoy files of the same size. The prompt says to start at
+  `data/start.txt`, follow `next:` one file per tool call, and answer with the code word. A model cannot fetch the chain in one step,
+  because each name is known only from the file before it. A model that globs the directory reads the decoys, and the run is caught as
+  off-chain. The chain totals about 3 x room, so a run that follows it overflows two or three times, each curable. Success is mechanical:
+  the code word in the reply, with exit 0.
+- **Recorded:** the fixed recorder (prompt sizes on every route), plus each harness's own compaction events with their triggers (Claude
+  Code's `compact_boundary`, Codex's `compacted` session record, opencode's compaction parts), placed in time against the wire's overflow
+  answers. Also the order of the files read.
+- **Per run, void first.** A run is VOID and says nothing about the wording if any of these holds:
+  - *never reached:* no overflow;
+  - *harness first:* the harness compacted before goinfer's first overflow, so the told window did not take;
+  - *incurable step:* one step added more than the room;
+  - *off-chain:* a decoy was read, or a step read more than two chain files;
+  - *summary too large:* the first prompt after a compaction is itself over `W` less the reserve, so the harness's summary cannot fit;
+  - *box:* a `halted` answer or a 5xx.
+- **Per run, otherwise:**
+  - **PASS:** every overflow is followed by at most one compaction before the next chain file is read, the chain reaches `END`, and the
+    reply holds the code word.
+  - **FAIL:** the session ends on an overflow or an error; or three compactions follow one another with no chain file read between them
+    (I1's own word, *consecutive*, which 3c had turned into a count per run); or overflows are re-sent with no compaction until the
+    session ends.
+  - Overflow answers in a row stay reported and ungraded, because Codex trims and re-sends.
+- **Per harness:** three runs.
+  - **PASS:** at least two gradable runs, all of them PASS.
+  - **FAIL:** two or more gradable runs FAIL.
+  - **Ambiguous, parked:** otherwise (one FAIL, or fewer than two gradable runs). Three more runs follow the next night, and the same rule
+    is read over all gradable runs. If fewer than two are still gradable, the harness is VOID.
+  - A FAIL with the fixed part fitting means the wording is wrong for that harness, as I1 says.
+- **The gate can go red: a planted arm.** One run per harness is served by a measurement binary built at the same pin, with the
+  overflow writer forced to the incurable, operator-facing wording. No harness should be able to compact on that, so the expected grade is
+  FAIL (the session ends on the overflow). If a planted run grades PASS, the gate is void for that harness. This is a measurement build, not
+  a production change.
+- **Predictions:** written by the registrant before any run.
+- **Cost:**
+  - *By day:* one exploratory `chain` pilot each for Codex and opencode (about 10 min together), to confirm that Qwen3-4B follows the
+    chain and that the sizes land. Claude Code's pilot is about 30 min, so it goes to the night or needs the owner's word.
+  - *Night job one:* Codex and opencode, 3 graded runs + 1 control + 1 planted each, at about 10 min a run: about 100 min.
+  - *Night job two:* Claude Code, 3 + 1 planted (the control is optional) at 30 to 40 min a run. Cold prefills of about 17.7K tokens take
+    4.5 min on the I3 pin's per-token path. That is about 160 min.
+- **Open for the owner:**
+  - the Claude Code model (Qwen3-4B with the 4,096 cap, or Qwen3-1.7B after a pilot);
+  - whether the told `2 x W` is acceptable, given that the configuration differs from what `connect` writes and is labelled so;
+  - the binary: the I3 pin, or one that carries KV3's tiled prefill if it has merged by then (that changes Claude Code's run time, not
+    the overflow path).
+
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 
 Magnitude advertises one-click connection to eight harnesses. Read from its connectors, that is a config writer: it
@@ -450,20 +514,32 @@ night script `matrix/run-i3-night.sh`.
 
 | config | model, window | harness | tasks x reps | est. wall |
 |---|---|---|---|---|
-| `q7b-16k` | Qwen2.5-7B-Instruct q4_k_m, 16,384, f16 KV | opencode, Codex | 5 x 3 | 15 min |
-| `q7b-32k-cc` | the same at 32,768, one KV slot | Claude Code | 5 x 1 | 45 min |
+| `q3-4b-16k` (was `q7b-16k`) | Qwen3-4B int4, 16,384, f16 KV (was Qwen2.5-7B-Instruct q4_k_m) | opencode, Codex | 5 x 3 | 15 min |
+| `q3-4b-28k-cc` (was `q7b-32k-cc`) | the same at 28,672 (was the 7B at 32,768), one KV slot | Claude Code | 5 x 1 | 45 min |
 | `mellum-16k` | Mellum2.1 int4mix, C' expert streaming (45 of 64), 16,384 | opencode, Codex | 5 x 1 | 40 min |
 | `mellum-32k-cc` | Mellum2.1 at 32,768, one KV slot | Claude Code | 5 x 1 | 45 min |
-| `q7b-9k-codex-ovf` | the 7B at 9,408 (I1 live gate) | Codex | bulk, edit, fix x 3 | 10 min |
-| `q7b-11k-opencode-ovf` | the 7B at 11,520 (I1 live gate) | opencode | bulk, edit, fix x 3 | 10 min |
-| `q7b-28k-cc-ovf` | the 7B at 28,672 (I1 live gate) | Claude Code | bulk, edit x 1 | 35 min |
+| `q3-4b-9k-codex-ovf` (was `q7b-9k-codex-ovf`) | Qwen3-4B at 9,408 (I1 live gate) | Codex | bulk, edit, fix x 3 | 10 min |
+| `q3-4b-11k-opencode-ovf` (was `q7b-11k-opencode-ovf`) | Qwen3-4B at 11,520 (I1 live gate) | opencode | bulk, edit, fix x 3 | 10 min |
+| `q3-4b-28k-cc-ovf` (was `q7b-28k-cc-ovf`) | Qwen3-4B at 28,672 (I1 live gate) | Claude Code | bulk, edit x 1 | 35 min |
+
+**Model swap, 2026-10-13 (owner decision, after KV0).** KV0's pilots (`docs/measurements/kv0-traffic-2026-10-13.md` §1a, §1b) found that
+Qwen2.5-7B-Instruct cannot drive opencode, Codex or Claude Code: 20 sessions made 1 to 6 requests each and none passed, because it
+answers in prose or writes its tool call as text, and Qwen2.5-Coder-7B made 1 or 2. Qwen3-4B made 9-request chain sessions in opencode
+and Codex and 4 to 22 requests on the repository tasks. The five cells that ran the 7B now run **Qwen3-4B int4**
+(`/home/francis/models/qwen3-4b`, `--quant int4`, f16 KV): the configurations are renamed `q3-4b-*` (the old names are in the table), and
+Claude Code's window is **28,672** (1.42 x its 17.7k first request under Qwen3's template with connect's settings), because 32,768
+positions of Qwen3-4B's KV are 4.8 GB. Mellum's cells are unchanged. The I1 live-gate windows (9,408, 11,520, 28,672) keep their sizes.
+The plan, the script header and the queue entries (A and C re-queued under the same names with the new `ONLY` lists) carry the change; the serve
+binary stays the one pinned at queue time, which declines the batched prefill past 12,160 keys, so a Claude Code first request in
+these cells takes the per-token path (about 4.5 minutes, KV0) until the fix of `docs/measurements/kv3-cuda-2026-10-13.md` is in a
+pinned binary. The estimates are the old ones.
 
 The 30 runs of the registered screening scope are all present (3 harnesses x 2 checkpoints x 5 tasks); the 7B's opencode and Codex cells
 carry two more repetitions each, and the three `-ovf` configurations are the I1 gate. The registered "one repetition" is kept as the
 reading rule: the first repetition decides the cell. The two extra repetitions of the cheap 7B cells are the registered follow-up for
 fragile cells, run in the same night because they cost minutes; they are reported beside it, not instead of it.
-- **Three queue entries**, each under "3 h or less": job A (`q7b-16k`, `q7b-32k-cc`) estimated 80 min; job B (`mellum-16k`,
-  `mellum-32k-cc`) 130 min; job C (the three `-ovf` configurations) 70 min; 255 min in all, on the one box and so one after another. The wall figures above come from pilots (below), not from the
+- **Three queue entries**, each under "3 h or less": job A (`q3-4b-16k`, `q3-4b-28k-cc`) estimated 80 min; job B (`mellum-16k`,
+  `mellum-32k-cc`) 130 min; job C (the three `-ovf` configurations, now Qwen3-4B) 70 min; 255 min in all, on the one box and so one after another. The wall figures above come from pilots (below), not from the
   1.5 h the screening scope guessed before the census.
 - **Per-run timeouts** (a hang fails loudly): 15 min for opencode and Codex, 25 min for Mellum, 30 to 40 min for Claude Code. The job has a
   deadline and starts no run past it; a run that sees a `halted` answer is voided and redone.
@@ -489,6 +565,38 @@ Hermes (it refuses a window under 64,000) as I3 cells (the screening scope is th
 **Amended 2026-10-13, before the run: the serve binary was re-pinned** at `81791568` (owner: "fix and re-pin"). Codex sends no output cap
 and was served 512 tokens a turn, thinking included; it now gets the limit `connect` wrote. Only the Codex cells change. The rules and the
 predictions stand. Record: `docs/measurements/integration-harness-2026-10/i3-repin-2026-10-13.md`.
+
+#### I3 read, 2026-10-14 (the night of 2026-10-13), graded against the plan above
+
+Record and raw data: `docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md`. All three jobs are valid: the sandbox self-test
+passed and caught its planted weaknesses in each, the planned model and window were served, the record counts are the plan's (35, 15,
+20), and no run saw a `halted` answer, a 429 or a 5xx.
+
+| cell | r1 (decides) | **verdict** | beside it |
+|---|---|---|---|
+| opencode x Qwen3-4B, 16,384 | 0/5 (1/5 as recorded; `read` r1 was a false pass) | **no** | r2 3/5, r3 3/5 |
+| Codex x Qwen3-4B, 16,384 | 3/5 | **fragile** | r2 2/5, r3 3/5 (the same-night follow-up); `write`, `fix` 0 of 6 |
+| Claude Code x Qwen3-4B, 28,672 | 1/5 (two 30-minute timeouts) | **no** | both timeouts as passes would give fragile |
+| opencode x Mellum2.1, 16,384 | 4/5 | **works** | |
+| Codex x Mellum2.1, 16,384 | 2/5 | **fragile** | three repetitions queued; publication waits for them |
+| Claude Code x Mellum2.1, 32,768 | 1/5 (two timeouts) | **no** | |
+
+**I1's live gate:** Codex **VOID** (every run an incurable jump, a run that never reached the window, or a harness that compacted
+first), opencode **VOID** (the same), Claude Code **FAIL** (one run: 1 overflow, 3 compactions, the session ended on Claude Code's
+"Autocompact is thrashing"). The FAIL is curable by hand count, so it is not void (a 5,154-token step against 9,961 of room), and the
+fixed part fits. **The FAIL stands as registered (owner, 2026-10-14).** The cause observed, which does not change the verdict: Claude
+Code's own auto-compaction (`trigger: auto`), twice before goinfer had answered any overflow and then a third time, ending on its own
+"Autocompact is thrashing". The window, 28,672, was barely above its 17,711-token first request plus the 7,168 reserved for output. The
+predictions (Codex PASS, opencode FAIL, Claude Code the unknown) were not tested for the two VOID harnesses. With Qwen3-4B the gate as
+built cannot read the wording on Codex or opencode, because the model reads all eight `bulk` files in one step. A fresh registration
+is drafted in I1 (§2, "I1 live gate, second design").
+The record also notes an outside read on the box during job B, at 21:19, and shows that it moved no graded cell.
+
+**Recorder defects found by the grade, fixed in `matrix/`:** an empty reply was graded against the raw output, which produced the false
+pass; `/v1/messages` prompt sizes were never recorded, so the I1 grader's incurable-jump test skipped Claude Code without a warning.
+**Leads, not fixed:** Claude Code subagents ask for `claude-sonnet-5-5` and get a 404 (`connect` does not set that slot); Mellum2.1 on
+`/v1/responses` can spend a whole turn in reasoning and send an empty message; Mellum2.1 on `/v1/messages` writes tool calls as text with
+broken JSON.
 
 
 ### I4 — First-request census (by day, minutes per harness)
@@ -786,7 +894,7 @@ of `docs/tasks/task-kv-architecture-2026-10.md`, whose KV3 extends blocks and bl
 | 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |
-| 6 | I3 screening | night queue, nobara-pc, after 3–5: **queued 2026-10-13** as three jobs (plan above); the sandbox and the gate's grader are built and proved |
+| 6 | I3 screening | night queue, nobara-pc, after 3–5: **run 2026-10-13, read 2026-10-14** (above); Codex x Mellum2.1's three repetitions queued 2026-10-14; `docs/integrations/harness-matrix.md` after they read |
 | 7 | I5 transport | by day, in parallel with 2–6; depends on none of them |
 | 8 | I6 | decided by I3's Codex cell: **parked** until that cell reads; the pilot's one Codex edit printed a patch as prose, which is one run |
 | 9 | the FIM and sidecar amendments (§5) | when those docs are next picked up |
