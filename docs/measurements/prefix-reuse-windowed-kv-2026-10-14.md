@@ -212,3 +212,18 @@ it served.
 - **Smoke, exploratory and not graded** (2026-10-14, `SMOKE=1`, one 64-token completion per arm on Mellum2.1, into an empty directory): the
   script ran end to end, both sessions resident and windowed, texts identical across arms, 65.9 against 63.5 tokens a second (one
   completion each, which resolves nothing).
+
+**Amendment 1, 2026-10-14, before any run: N raised by a power check.** The owner asked for `scripts/power.py` on both cells at N = 6 per
+arm before the run. The answer is no. The paired unit in `power.py` is one restart per arm. The registry entry covering both cells is
+`seed-nobara-cuda-goinfer-all-S` (direct A/A, sd 0.0081 log units per restart, floor 0). There is no Mellum2.1- or 26B-specific A/A, so both
+cells fall back to it:
+`power.py served-decode nobara/cuda/<model>/d2048 --bar 0.97 --expect 0.99 --paired` needs **4 paired restarts** to resolve 0.99 against
+0.97 at power 0.80 (exact t power 0.905 at 4). One ABBA quad gives 2 a model.
+- **Changed:** per model, two quads in the order main, new, new, main, new, main, main, new (ABBA then BAAB), so 8 sessions, 4 restart pairs
+  and 12 completions an arm. `speed_guard.py`'s `ORDER` is the only code change, and the pinned copy the night job runs is the same file.
+- **Unchanged:** the cells, the workload, K = 3 completions a session, the rule (medians, PASS >= 0.99 on both, FAIL < 0.97 on either,
+  otherwise parked), the void conditions and the prediction.
+- **Disclosed:** the registry's sd was measured on restarts of 16 to 24 completions, and these sessions hold 3. Within-session spread adds
+  to it in proportion to 1/sqrt(3). Decode rate within a served session is steady, so this is taken as small, but it is not measured here,
+  so 4 pairs is a floor, not a margin.
+- **Cost:** 8 sessions x (137 s Mellum2.1 + 200 s 26B), about 45 minutes; re-queued at 50.

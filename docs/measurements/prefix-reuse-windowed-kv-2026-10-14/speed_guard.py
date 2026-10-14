@@ -7,7 +7,7 @@ Registered in docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md section 8
 
 Each session starts one arm's server, runs K completions of NGEN tokens on /v1/completions (raw text, greedy) from a
 prompt deep enough that decode crosses the window's compactions, times decode client-side from the first streamed token
-to the last, and stops the server by its PID. Sessions run in the order main, new, new, main per model. Results go to
+to the last, and stops the server by its PID. Sessions run in the order main, new, new, main, new, main, main, new per model. Results go to
 <out-dir>/results.json after every completion; <out-dir>/summary.json holds the per-model ratios and the verdict.
 """
 import json, os, signal, statistics, subprocess, sys, time, urllib.request
@@ -20,7 +20,7 @@ MODELS = [
     ("mellum", ["--model", f"{M}/mellum2.1-thinking", "--ctx", "16384", "--moe-cache-experts"]),
     ("gemma4-26b", ["--moe-cache-experts", "--model", f"{M}/gemma4-26b-int4.giw"]),
 ]
-ORDER = ["main", "new", "new", "main"]
+ORDER = ["main", "new", "new", "main", "new", "main", "main", "new"]  # two quads, ABBA then BAAB: 4 restart pairs an arm (amendment 1)
 K, NGEN, NUMBERS = 3, 640, 400  # the prompt counts 1..NUMBERS: about 1,950 tokens on Mellum2.1
 if SMOKE:
     MODELS, ORDER, K, NGEN = MODELS[:1], ["main", "new"], 1, 64
