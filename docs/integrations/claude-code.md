@@ -30,9 +30,18 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
   (`role must be "user" or "assistant", got "system"`), so no turn completes.
 - Its first request, with its 24 built-in tools, is **19,692 tokens**: over `-ctx 16384`. Start the server with
   `-ctx 32768` where memory allows. `claude --bare` sends 3 tools and 1,063 tokens, and fits anywhere.
-- Set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the window the server serves (its `/v1/models` `context_window`). An
-  unrecognised model name is otherwise assumed to have 200,000 tokens (Claude Code's documentation; the variable's
-  effect on compaction is not traced here).
+- Set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the window the server serves (its `/v1/models` `context_window`, the cap the
+  server enforces). An unrecognised model name is otherwise assumed to have 200,000 tokens. Claude Code applies the
+  variable only to a model id it cannot resolve to a Claude model and that carries no `[1m]`
+  ([Claude Code's model configuration](https://code.claude.com/docs/en/model-config#correct-the-window-for-a-gateway-or-custom-model-id)),
+  so serve the model under a name without `claude-` in it.
+- **Claude Code compacts on its own** once its context plus its output limit (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) reaches that
+  window, and nothing it documents moves that point later at a small window: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts
+  100,000 and up, and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower it. At `-ctx 28672`, with a 17,711-token first
+  request and 7,168 tokens of output limit, it compacted after every file read and stopped on "Autocompact is thrashing"
+  ([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). `connect claude-code` warns when the
+  room left beside the first request and the output limit is under a quarter of the first request, and names the `-ctx`
+  that clears it.
 - Background work (the session title) goes to `ANTHROPIC_MODEL` unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another
   served model: with two models loaded (`-model main=... -model fast=...`), set it to the small one.
 - `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.
