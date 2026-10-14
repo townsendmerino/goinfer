@@ -735,8 +735,8 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   3.31x against the per-token path at 12,400 tokens), no-regression TTFT PASS, the real-model identity PASS on both exact arms (Gemma-4-E4B, Gemma-3-4B levers off,
   bit for bit) and **FAIL on Gemma-3-4B at default settings: cosine 0.9865 against the 0.99 bar**. The difference is the tensor-core GEMM's, which already reads
   0.9901 on Gemma-3 at 12,000 tokens below the bound; the branch is the first to run it past 12,160 keys. **Open for the owner:** levers off on a pass that takes
-  the row kernels, or a registered depth-fidelity gate for that GEMM on Gemma-3. The CUDA suite timed out at 2 hours with only the four reds of the branch below;
-  its 41 unreached tests are re-queued. The branch merges after `kv3-cuda-2026-10`, once the decision is taken and the suite's remainder reads.
+  the row kernels, or a registered depth-fidelity gate for that GEMM on Gemma-3. The CUDA suite timed out at 2 hours with only the four reds of the branch below
+  (three fresh-process tests and the tail-rule defect, whose fix is merged here); the remainder is re-queued in the gate's partition. The branch merges after `kv3-cuda-2026-10`, once the decision is taken and the suite's remainder reads.
 - **Gates (sketch, registered per half in the record):**
   - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
   - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);

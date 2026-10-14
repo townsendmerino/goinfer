@@ -155,7 +155,9 @@ per-token path), so the bar stays and the arm is recorded red. The two exact arm
 **Where the 0.0135 comes from, and whether it is this branch's.** One reading by day (2026-10-14, the same test at 12,000 tokens with the row kernels forced,
 `day-2026-10-14-gemma3-12000.log`; the prompt is the 12,400-token prompt's first 12,000 tokens): levers off, 0 logits and 0 of 835,584,000 KV elements differ; default,
 **cosine 0.990073**, argmax equal, 5,712 tensor-core launches. Below the bound the forced row kernels equal `attn_batched` bit for bit with the tensor-core GEMM on (G2b,
-and the real-weights 512-row reading in §8), so 0.990073 is what the kernel set `kv3-cuda-2026-10` already ships produces at 12,000 tokens on Gemma-3. Read together:
+and the real-weights 512-row reading in §8), so 0.990073 is what the kernel set `kv3-cuda-2026-10` already ships produces at 12,000 tokens on Gemma-3. The run
+overlapped another session's process holding about 50 GB of host memory (swap grew from 8.5 to 27.7 GB), so its wall times are contaminated and not quoted; its
+difference counts and cosines are deterministic and stand. Read together:
 
 - the whole difference is the tensor-core GEMM's: both exact arms are bit-identical at both lengths, and of the two levers the arms toggle, the fused attention does
   not serve head dim 256, so the GEMM is the only kernel that differs between them;
@@ -182,6 +184,14 @@ only be the row kernels. G6 ran the base binary at `kv3-cuda-2026-10`'s tip, so 
 messages and the same figures, so none is this branch's (§9's rule): `TestResidentDrafter_extendContext` (the second resident's allocation fails out of memory),
 `TestGemma4_26B_cache_B` (the 26B's resident declines, 4.00 GB free in both), `TestP20ExpertLocality` (3.98 GB free in both) (all three print the test's own
 `ISOLATED-RUN` note: they fail in the one-process heavy tier and pass alone), and `TestGemma4EModelPrefill_batchedBitIdentical` at 18 and 96 rows (`PrefillLast chunk 5:
-cuda prefill: empty prompt` in both: a chunker tail of zero rows, at lengths nowhere near the bound, from the branch below). Every test this branch adds ran and passed
-(`TestPrefillSplitKV_rowsEqualAttnBatched` and the four tiny `TestKV3Tiled_*`). The 41 unreached tests are re-queued as their own job (`kv3-tiled-suite-rest`); the
-job's check now accepts a narrowed run, which before required the row kernels' gate to appear in its log.
+cuda prefill: empty prompt` in both: the 16-row tail rule emptied a pass at a `GOINFER_PREFILL_CHUNK` under 16, a defect of the branch below). Every test this branch
+adds ran and passed (`TestPrefillSplitKV_rowsEqualAttnBatched` and the four tiny `TestKV3Tiled_*`).
+
+**After the suite (2026-10-14, by day).** `kv3-cuda-2026-10` fixed the tail rule (`prefillTailCut` gives nothing when the pass before the last would drop under 16 rows)
+and is merged here; `TestGemma4EModelPrefill_batchedBitIdentical` (18 and 96 rows) and `TestKV3_chunkerKeepsPassStartsOnTheGrid` (chunks 1 to 79) pass on this branch
+with the fixtures present, at the merge `d05fc2da` (`suite-after-merge-day.log`). The three out-of-memory reds are `needsFreshProcess` tests, which fail in any one-process run of the package
+and pass alone; `TestResidentDrafter_extendContext` passed alone on this branch in the day check of the re-queued job's plumbing. What the suite has not read green is
+re-queued as `kv3-tiled-suite-rest` (`run-night.sh`, `JOB=suite-rest`), in `cmd/gate gpu`'s partition: the 40 unreached tests other than the fresh-process one
+(`suite-rest-main.txt`) as one process with the fresh-process tests deferred, then `TestGemma4_26B_cache_B`, `TestP20ExpertLocality`,
+`TestResidentDrafter_extendContext` and `TestSpecPagerInteraction` each as its own process, then the drain group (skipped in a one-process run), with a reconcile of
+each part. The tests this branch does not touch that the 2026-10-13 run read green are not repeated; `kv3-cuda-2026-10`'s partitioned suite reads the merged fix.
