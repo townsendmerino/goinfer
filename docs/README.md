@@ -206,7 +206,7 @@ separate sweep because this step kept being skipped at move time.
   Briefs written since are read by their own status headers. Newest:
   `prompts/nobara-mc4-spec-alone-cuda-2026-09.md` (2026-09-28), the nobara brief for MC4's
   "speculate when alone, batch under load" premise measurement.
-- `releases/` (10) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
+- `releases/` (12) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
