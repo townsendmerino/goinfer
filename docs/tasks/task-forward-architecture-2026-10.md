@@ -1,7 +1,8 @@
 # Task: one forward architecture — models as operation lists, one ragged forward pass (OP0–OP6, RF0–RF6, HL) — 2026-10
 
-> **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6, 2026-10-13), before any OP1 code. Every other phase is scoped
-> and not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
+> and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
+> the night gates are queued. OP1 on CUDA and WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -665,6 +666,30 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
    - An identity or device-gate failure reverts the step that caused it, the next morning.
    - G2-S failing reverts both steps. A second night's run, base against step 1 alone, then says which step it was.
    - G2-P "off" against our CPU removes the declaration, which is one line.
+
+**Metal's half: the day gates, 2026-10-13.** The record is `docs/measurements/op1-metal-2026-10-13/README.md`.
+
+| gate | result |
+|---|---|
+| G1-K | PASS: all 1,095 kernel digests equal base's. A planted one-ulp change turns every routed kernel's digests red, except the steel prefill kernel's, which a 1% change does |
+| G1-M, tiny | PASS for the 25 families that ran; 18 not run (Metal declines them, or the asset is not on the Mac) |
+| G1-S, by name | PASS: 140 passed, 91 skipped for want of real checkpoints |
+| G2-I, tiny | PASS: digests and the same 25 families identical; step 2 does not touch the two kernel source files |
+| G2-K | PASS: 152 cases inside the bar against float64 |
+| G2-D | PASS at kernel level: all 152 cases miss the bar with the cap dropped. The tiny fixtures fall to 0.9785 and 0.9799 |
+| **G2-T** | **FAIL as registered:** worst logit cosine 0.998997 and 0.998657, against 0.999 |
+| G2-R, G2-M | not run: they follow the declaration |
+
+- **What is on main:** the digest instrument; step 1 (`metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
+  variant of the kernel source (`metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
+  is undeclared. Gemma 2 still decodes on the CPU under Metal.
+- **G2-T's failure is the registration's, not shown to be the softcap's.** With the cap removed from the model on both sides
+  the same fixtures read 0.999116 and 0.999296: the bar was within 0.0003 of the fixture's own agreement before any softcap.
+  It was taken from Gemma 1's test without that control. The record has the diagnostics.
+- **Owner decision OP1-M1:** the bar stands and the 0.0003 is found, or G2-T is amended to be read against the fixture's
+  no-cap control. The declaration, the matrix and the Gemma 2 parity tests are on the branch `op1-metal-declare-2026-10`,
+  unmerged, and merge only after that ruling.
+- **Step 1 left one kernel out,** as amended above: `attention_fa_blk`. Routing it is owed with a re-run of the R17 grading.
 
 ## 5. Track RF — one ragged forward pass
 
