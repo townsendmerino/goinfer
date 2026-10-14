@@ -685,12 +685,13 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 - **What is on main:** the digest instrument; step 1 (`metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
   variant of the kernel source (`metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
   is undeclared. Gemma 2 still decodes on the CPU under Metal.
-- **G2-T's failure is the registration's, not shown to be the softcap's.** With the cap removed from the model on both sides
-  the same fixtures read 0.999116 and 0.999296: the bar was within 0.0003 of the fixture's own agreement before any softcap.
-  It was taken from Gemma 1's test without that control. The record has the diagnostics.
-- **Owner decision OP1-M1:** the bar stands and the 0.0003 is found, or G2-T is amended to be read against the fixture's
-  no-cap control. The declaration, the matrix and the Gemma 2 parity tests are on the branch `op1-metal-declare-2026-10`,
-  unmerged, and merge only after that ruling.
+- **G2-T: FAILED.** The 0.999 bar was copied from Gemma 1's test without first measuring this fixture's no-softcap baseline
+  at int4, which is 0.9991 to 0.9993. The softcap's own contribution is shown by the planted defect: with the cap dropped
+  from the Metal build the fixtures read 0.978 and 0.980. The record has the diagnostics.
+- **Owner decision OP1-M1 (2026-10-13): the bar stays, and it is not amended against the numbers already seen.** A new gate,
+  G2-T2, takes int4 quantization out of the measurement (below). G2-T2 and then the real Gemma 2 2B gate (G2-R) decide the
+  declaration. The declaration, the matrix and the Gemma 2 parity tests stay on the branch `op1-metal-declare-2026-10`,
+  unmerged, until both pass.
 - **Step 1 left one kernel out,** as amended above: `attention_fa_blk`. Routing it is owed with a re-run of the R17 grading.
 - **Queued on the Mac's night queue 2026-10-13, after the two KV1 jobs,** at main `c02205b8` against `d03da21f`:
   - `op1-identity-real-metal` (35 min): G1-M and G2-I on the real checkpoints in `~/models`;
@@ -702,6 +703,41 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
   depth takes the unrouted block kernel.
 - **Not queued:** G2-R (no declaration, and the checkpoint is not on the Mac) and G2-P, the peer cell (no declaration, and
   the harness has no Gemma 2 key, calibrated prompts or Ollama import yet).
+
+**G2-T2, 2026-10-13: NOT registered, because f32 is not a path Metal can run. A proposal for the owner follows.**
+
+The ruling asked for G2-T on f32 weights, so that int4 quantization noise is out of the measurement. Measured at main
+`c02205b8` with a resident built directly from `gemma2-tiny`:
+
+| quant | what Metal does |
+|---|---|
+| f32 | declines: "weights loaded at f32 (layer 0 q_proj); metal runs int4 or int8 weights" (`metal/model.go:f32Projection`). This is by design |
+| int4 | runs; the kernel library is compiled with fast math, Metal's default math mode |
+| int8int8 | runs native int8 weights (`metal/model.go:w8Weights`), with the library compiled without fast math (`metal/model.go:w8PreciseMath`) |
+
+**The nearest alternative is G2-T at int8int8 on both sides, and it is not a blind gate.**
+- **What it removes:** int4's weight quantization, and fast math.
+- **What it keeps:** the per-row int8 quantization of activations, on both sides.
+- **Its result is already known.** G2-T's diagnostics read exactly this configuration: 0.999255 and 0.999334 with the cap,
+  above 0.999. Registered now, it would be a gate chosen with its outcome in view.
+
+**Proposed, for the owner to choose; nothing runs until then.**
+1. **G2-T2 at int8int8, with that disclosure written into it:**
+   - same fixtures, metric (worst logit cosine against the CPU over 16 positions) and bar (0.999);
+   - the planted defect (the cap dropped from the Metal build) must fail it;
+   - void if the resident does not build, falls back to the CPU, is not on the native int8 path, or is compiled with fast
+     math;
+   - one run, no repeats.
+2. **Or a configuration nobody has read yet.** None of Metal's runnable paths takes activation quantization out: the q4k
+   lane has f32 activations but declines sandwich-norm models, which Gemma 2 is.
+
+**Metal's softcap tanh (a report, not graded).**
+- At int4, which is G2-T's configuration, the library is compiled with fast math, and the capped function's plain `tanh`
+  compiles as the fast variant. That is INFERRED from the math-mode rule; the compiled code was not disassembled.
+- At int8int8 the library is compiled precise.
+- An explicit `precise::tanh` at int4, from G2-T's diagnostics: `gemma2-tiny` moved from 0.998997 to 0.999044 and
+  `gemma2-hd-tiny` did not move (0.998657). So fast-math tanh accounts for very little of the hd fixture's loss to the
+  softcap on this evidence: 0.00064 against its no-cap control, where `gemma2-tiny` lost 0.00012.
 
 ## 5. Track RF — one ragged forward pass
 

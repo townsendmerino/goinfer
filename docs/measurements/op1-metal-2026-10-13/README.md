@@ -93,9 +93,14 @@ Diagnostics, taken after the failure with a scratch test that was not committed.
   fixture's control first, which is the mistake `metal/gemma_parity_test.go` warns about ("the bar is read off the
   committed control, not assumed").
 
-**For the owner to decide.** The declaration is one line and is on the branch `op1-metal-declare-2026-10`, unmerged.
-Either the bar stands and the 0.0003 has to be found, or the rule is amended to be read against the fixture's own
-no-cap control. That amendment was not made here: it would be a bar chosen after seeing the number.
+**G2-T: FAILED.** The owner's ruling (OP1-M1, 2026-10-13): the bar stays at 0.999, and it is not amended against the
+numbers above.
+- **The cause:** the 0.999 bar was copied from Gemma 1's test without first measuring this fixture's no-softcap baseline
+  at int4, which is 0.9991 to 0.9993.
+- **The softcap's own contribution** is shown by the planted defect: with the cap dropped from the Metal build the
+  fixtures read 0.978 and 0.980.
+- The declaration stays on the branch `op1-metal-declare-2026-10`, unmerged. What decides it is in the task doc's §4.6:
+  G2-T2, then the real Gemma 2 2B gate.
 
 ## Deviations from the registration
 
