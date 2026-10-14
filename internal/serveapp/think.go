@@ -235,6 +235,14 @@ func (o *thinkOut) feed(piece string) string {
 	return c
 }
 
+// reasoningText is all of the reply's reasoning so far; "" for a nil router.
+func (o *thinkOut) reasoningText() string {
+	if o == nil {
+		return ""
+	}
+	return o.reasoning.String()
+}
+
 // toolCalls is the function calls the reply made, once it is finished — only a gpt-oss (Harmony) reply has any here, because its
 // call message is routed out of the answer text (chat.ReplySplitter.ToolCalls). Every other family's calls are in the text.
 func (o *thinkOut) toolCalls() []chat.ToolCall {

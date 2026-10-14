@@ -207,7 +207,7 @@ func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
 	tc.Function.Arguments = `{"city":"nyc"}`
 
 	s.maybeStore(true, "resp_1", "m", []chatMessage{{Role: "user", Content: rawStr("weather in nyc?")}},
-		"", []apiToolCall{tc})
+		"", "", []apiToolCall{tc})
 
 	entry := s.responses.get("resp_1")
 	if entry == nil {
@@ -262,7 +262,7 @@ func TestRespondTools_callsMaybeStoreWithTheToolCalls(t *testing.T) {
 		j = len(body) - i
 	}
 	fn := body[i : i+j]
-	if !strings.Contains(fn, "s.maybeStore(store, id, lm.name, messages, lead, toolCalls)") {
+	if !strings.Contains(fn, "s.maybeStore(store, id, lm.name, messages, lead, gr.think.reasoningText(), toolCalls)") {
 		t.Error("respondTools no longer calls maybeStore with toolCalls — a tool-calling turn " +
 			"would again store no ToolCalls, breaking previous_response_id continuity (V-18)")
 	}
