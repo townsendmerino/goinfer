@@ -16,3 +16,7 @@ FAIL
 --- FAIL: TestKV2_declinedPrefillSharesNothing (0.01s)
     kv2_share_test.go:353: slot 0 rows [0, 405) recorded as class 1 after a declined prefill
     kv2_share_test.go:360: B copied 320 rows from a sequence whose prefill declined
+
+== planted: the window-group allowance dropped to one block (kvRollbackAllowance returns BlockRows)
+--- FAIL: TestKV2_windowGroupRollback (0.02s)
+    kv2_share_test.go:391: window 1024: reused 576, copied 576 (copies 1), want 600 in place
