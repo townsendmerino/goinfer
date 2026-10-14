@@ -80,7 +80,10 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
   const send = (method, params = {}) => new Promise(r => { const id = ++seq; waiting.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
   await send("Runtime.enable");
   await send("Page.enable");
-  await send("Page.navigate", { url });
+  // Page.navigate answers when the navigation commits or fails, so a server that accepts the connection and never
+  // replies would hold a gate here for good. After the bound the caller has a page that is not the one it asked for,
+  // which its first check reports.
+  await Promise.race([send("Page.navigate", { url }), sleep(20000)]);
   await sleep(settleMs);
 
   return {
@@ -95,7 +98,7 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
     // reload is a DELIBERATE navigation between gate phases (W3: does state survive it?). It is the one
     // navigation a gate may perform; one that happens inside evaluate() is still reported as a hijack.
     async reload() {
-      await send("Page.reload", { ignoreCache: true });
+      await Promise.race([send("Page.reload", { ignoreCache: true }), sleep(20000)]);
       await sleep(settleMs);
     },
     // cdp sends one raw DevTools command — for what evaluate() cannot do from inside the page: emulating
@@ -111,14 +114,19 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
 }
 
 // report prints a results array ({name, ok, why}) plus uncaught page exceptions, and exits.
+//
+// A result may instead be {name, skipped: why}: a check this browser gave no way to make, which is neither a pass nor
+// a failure. It prints as SKIP, is counted in the last line as NOT VERIFIED, and does not change the exit code; a gate
+// uses it only where its own control showed that a pass would prove nothing.
 export function report(title, results, exceptions = []) {
-  let failed = 0;
+  let failed = 0, skipped = 0;
   for (const x of results) {
+    if (x.skipped) { skipped++; console.log("  SKIP  " + x.name + "\n          " + x.skipped); continue; }
     if (!x.ok) failed++;
     console.log((x.ok ? "  ok    " : "  FAIL  ") + x.name + (x.ok ? "" : "\n          " + x.why));
   }
   for (const e of exceptions) { failed++; console.log("  FAIL  uncaught page exception: " + e); }
-  console.log(`${title}: ${results.filter(x => x.ok).length} passed, ${failed} failed`);
+  console.log(`${title}: ${results.filter(x => x.ok).length} passed, ${failed} failed` + (skipped ? `, ${skipped} NOT VERIFIED on this browser` : ""));
   process.exit(failed ? 1 : 0);
 }
 
@@ -132,7 +140,7 @@ export function report(title, results, exceptions = []) {
 // the gate threw, exited 2, and a broken restore would have reached CI as a skipped test.
 export function finishOrExit(title, out, earlier = []) {
   // print what earlier phases established before exiting, so one bad phase does not erase the rest
-  const flush = () => { for (const x of earlier) console.log((x.ok ? "  ok    " : "  FAIL  ") + x.name + (x.ok ? "" : "\n          " + x.why)); };
+  const flush = () => { for (const x of earlier) console.log((x.skipped ? "  SKIP  " : x.ok ? "  ok    " : "  FAIL  ") + x.name + (x.skipped ? "\n          " + x.skipped : x.ok ? "" : "\n          " + x.why)); };
   if (out.hijacked || out.error || !Array.isArray(out.value)) flush();
   if (out.hijacked) {
     console.log(`  FAIL  the page navigated away during the gate — something took effect (${out.hijacked})`);

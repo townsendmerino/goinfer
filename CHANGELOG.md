@@ -189,7 +189,8 @@ The rest of the low findings from the 2026-10-12 security audit. None had a know
   Only `http://`, `https://` and `mailto:` links are live.
 - **The HTML preview makes no request, and now a browser test says so.** A previewed page that tries a script, a redirect, a meta
   refresh, images, styles, fonts, frames and media reaches a local listener zero times, while the same page in a frame that may
-  run scripts reaches it sixteen ways. **Fixed on the way:** the first click on Preview showed nothing (the frame was created
+  run scripts reaches it seventeen ways. On a browser where that second frame cannot reach the listener either, the gate
+  reports the check as not verified instead of passed. **Fixed on the way:** the first click on Preview showed nothing (the frame was created
   hidden, so it took a second click).
 - **A web load of a path outside the pull cache gets one refusal**, whether or not the path exists, so a page cannot learn which
   files are on the machine from the wording.

@@ -389,6 +389,17 @@ func runBrowserGate(t *testing.T, script, what string, args ...string) {
 	switch code := cmd.ProcessState.ExitCode(); {
 	case err == nil:
 		t.Logf("%s", lastLine(out))
+		// A check the gate could not make on this browser is not a pass: name each one.
+		lines := strings.Split(string(out), "\n")
+		for i, l := range lines {
+			if strings.HasPrefix(l, "  SKIP  ") {
+				why := ""
+				if i+1 < len(lines) {
+					why = strings.TrimSpace(lines[i+1])
+				}
+				t.Logf("NOT VERIFIED by the %s gate on this browser: %s (%s)", what, strings.TrimPrefix(l, "  SKIP  "), why)
+			}
+		}
 	case code == 2:
 		t.Skipf("SKIPPED — the browser could not be driven here, so the %s gate did NOT run:\n%s", what, out)
 	default:

@@ -2879,18 +2879,19 @@ const phase44 = phase('const BEACON = "http://127.0.0.1:' + beacon.address().por
   if (clipDesc) Object.defineProperty(Navigator.prototype, "clipboard", clipDesc);
   delete navigator.clipboard;
 `);
-// The Node side of phase 44: what reached the listener.
+// The Node side of phase 44: what reached the listener. Three outcomes. A request from the preview is a failure
+// wherever it happens. No request from the preview is a pass only where the control reached the listener by the
+// means a document without scripts has (an image, a stylesheet), and by script. Where the control did not, this
+// browser sends no such request from any frame to this listener, the preview's silence says nothing, and the check
+// is reported as not verified rather than passed.
 const beaconVerdict = async () => {
   const at = tag => beaconHits.filter(u => u.startsWith("/" + tag + "/")).map(u => u.slice(tag.length + 2));
   const control = at("control"), preview = at("preview");
-  const need = ["img", "script-img", "link-css"];
-  const missing = need.filter(k => !control.includes(k));
-  all.push(missing.length === 0
-    ? { name: "preview control: the same document in a scripted frame with no policy reaches the listener (" + [...new Set(control)].sort().join(", ") + ")", ok: true }
-    : { name: "preview control: the same document in a scripted frame with no policy reaches the listener", ok: false, why: "no request for " + missing.join(", ") + "; got " + JSON.stringify(control) + " — the listener cannot see a frame's requests, so the check below proves nothing" });
-  all.push(preview.length === 0
-    ? { name: "preview: the previewed document made no request (script, redirect, refresh, image, style, font, frame, media)", ok: true }
-    : { name: "preview: the previewed document made no request", ok: false, why: "requests reached the listener: " + JSON.stringify(preview) });
+  const missing = ["img", "script-img", "link-css"].filter(k => !control.includes(k));
+  const name = "preview: the previewed document makes no request (script, redirect, refresh, image, style, font, frame, media)";
+  if (preview.length > 0) all.push({ name, ok: false, why: "requests reached the listener: " + JSON.stringify(preview) });
+  else if (missing.length === 0) all.push({ name: name + "; the control made " + new Set(control).size + " kinds: " + [...new Set(control)].sort().join(", "), ok: true });
+  else all.push({ name, skipped: "the control (the same document in a frame that may run scripts, with no policy) reached the listener with " + JSON.stringify([...new Set(control)].sort()) + " and not with " + missing.join(", ") + ", so a silent preview proves nothing here" });
   beacon.close();
 };
 

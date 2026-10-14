@@ -17,30 +17,47 @@ import { openPage, report, finishOrExit } from "./webui-gate/cdp.mjs";
 const url = process.argv[2];
 if (!url) { console.error("usage: node scripts/webui_csp_smoke.mjs <url of a serve -web>"); process.exit(2); }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// within resolves to what p does, or to { stalled: true } after ms: nothing below may wait on the browser without a bound.
+const within = (p, ms) => Promise.race([p, sleep(ms).then(() => ({ stalled: true }))]);
+
 const page = await openPage(url, { settleMs: 500 });
+// The page must have arrived before anything is asked of the browser: while a page load is pending, some of its
+// commands never answer. A browser that cannot load the page from this server could not be driven, which is exit 2 and
+// a loud skip in go test; it says nothing about the policy.
+const notDriven = why => { console.error("the browser did not load " + url + " (" + why + "): the content-policy smoke did NOT run"); page.close(); process.exit(2); };
+const arrived = async () => {
+  const where = await within(page.evaluate("location.href + ' ' + document.readyState"), 15000);
+  if (where.stalled) notDriven("no answer in 15 s");
+  if (where.error || where.hijacked || !String(where.value).startsWith(url)) notDriven(JSON.stringify(where));
+};
+await arrived();
 // Record violations from before the page's first script runs, then load the page again with the recorder in place.
-await page.cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
+const recorder = await within(page.cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
   window.__csp = [];
   document.addEventListener("securitypolicyviolation", e => window.__csp.push({
     directive: e.effectiveDirective, blocked: e.blockedURI, at: (e.sourceFile || "") + ":" + e.lineNumber, sample: e.sample }));
-` });
+` }), 15000);
+if (recorder.stalled) notDriven("the violation recorder could not be installed in 15 s");
 await page.reload();
-await new Promise(r => setTimeout(r, 2500));
+await sleep(2500);
+await arrived();
 
 // A 2x2 PNG.
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR4nGP8z8DwnwEEmBigAAAfCgIBjw0G0QAAAABJRU5ErkJggg==";
 
-const out = await page.evaluate(`(async () => {
-  const results = [];
+const program = `(async () => {
+  const results = window.__results = [];   // readable from outside if this program stalls
   const check = (name, ok, why) => results.push(ok ? { name, ok: true } : { name, ok: false, why: String(why) });
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const until = async (cond, ms) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await sleep(100); return cond(); };
+  const within = (p, ms) => Promise.race([p, sleep(ms).then(() => "stalled")]);
   const seen = () => window.__csp.map(v => v.directive + " " + v.blocked + " (" + v.at + ")");
   if (!Array.isArray(window.__csp)) return [{ name: "the violation recorder is installed", ok: false, why: "window.__csp missing" }];
 
   // ---- the policy is there ----
-  const head = await fetch("/");
-  const policy = head.headers.get("content-security-policy") || "";
+  const head = await within(fetch("/"), 10000);
+  const policy = head === "stalled" ? "(no answer in 10 s)" : head.headers.get("content-security-policy") || "";
   check("the page is served with a policy that names every source", policy.includes("default-src 'none'") && policy.includes("script-src 'self'"), JSON.stringify(policy));
 
   // ---- what the page loads ----
@@ -54,14 +71,14 @@ const out = await page.evaluate(`(async () => {
 
   // ---- an image: a data: URI, made through a blob: URL ----
   const bytes = Uint8Array.from(atob(${JSON.stringify(PNG)}), c => c.charCodeAt(0));
-  const loads = src => new Promise(ok => { const i = new Image(); i.onload = () => ok(i.naturalWidth > 0); i.onerror = () => ok(false); i.src = src; });
+  const loads = src => new Promise(ok => { const i = new Image(); i.onload = () => ok(i.naturalWidth > 0); i.onerror = () => ok(false); i.src = src; setTimeout(() => ok(false), 5000); });
   check("a data: image loads", await loads("data:image/png;base64," + ${JSON.stringify(PNG)}), "blocked or broken");
   const blobURL = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
   check("a blob: image loads", await loads(blobURL), "blocked or broken");
   URL.revokeObjectURL(blobURL);
   const vision = model !== "" && typeof visionOK === "function" && visionOK();
   if (vision) {
-    await attachFile(new File([bytes], "dot.png", { type: "image/png" }));
+    await within(attachFile(new File([bytes], "dot.png", { type: "image/png" })), 10000);
     await until(() => !$("attach-preview").hidden, 5000);
     const shown = $("attach-preview").querySelector("img");
     check("an attached image is shown in the page", !!shown && await until(() => shown.naturalWidth > 0, 5000), shown ? "naturalWidth " + shown.naturalWidth : $("attach-preview").textContent);
@@ -72,8 +89,8 @@ const out = await page.evaluate(`(async () => {
     if ($("max")) { $("max").value = "24"; $("max").dispatchEvent(new Event("input", { bubbles: true })); }
     $("prompt").value = "Say hello in three words.";
     const before = document.querySelectorAll("#log .msg.bot").length;
-    await send();
-    const done = await until(() => $("stop-btn").hidden && document.querySelectorAll("#log .msg.bot").length > before, 120000);
+    await within(send(), 60000);
+    const done = await until(() => $("stop-btn").hidden && document.querySelectorAll("#log .msg.bot").length > before, 20000);
     const bot = [...document.querySelectorAll("#log .msg.bot")].pop();
     check("a reply streamed into the page" + (vision ? " (with the image)" : ""), done && !!bot && bot.children[1].textContent.trim() !== "", bot ? bot.textContent.slice(0, 200) : "no reply");
   }
@@ -95,7 +112,7 @@ const out = await page.evaluate(`(async () => {
   const refused = async (name, directive, act, stillClean) => {
     const n = window.__csp.length;
     let threw = "";
-    try { await act(); } catch (e) { threw = String(e); }
+    try { await within(act(), 5000); } catch (e) { threw = String(e); }
     await until(() => window.__csp.slice(n).some(v => v.directive.startsWith(directive)), 3000);
     const got = window.__csp.slice(n).filter(v => v.directive.startsWith(directive));
     check("refused: " + name, got.length > 0 && stillClean(), got.length ? "it took effect anyway" : "no " + directive + " violation" + (threw ? " (threw " + threw + ")" : ""));
@@ -109,6 +126,12 @@ const out = await page.evaluate(`(async () => {
   await refused("a frame from another origin", "frame-src", () => { const f = document.createElement("iframe"); f.src = elsewhere; document.body.appendChild(f); }, () => true);
   await refused("a stylesheet from another origin", "style-src", () => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = elsewhere + "x.css"; document.head.appendChild(l); }, () => true);
   return results;
-})()`, 200000);
+})()`;
+// Under go test's three-minute limit, so a stall is reported with the checks that finished before it.
+let out = await within(page.evaluate(program, 150000), 150000);
+if (out.stalled) {
+  const partial = await within(page.evaluate("window.__results || []"), 5000);
+  out = { value: [...(Array.isArray(partial.value) ? partial.value : []), { name: "the smoke ran to its end", ok: false, why: "it stalled after the checks above" }] };
+}
 page.close();
 report("webui content-policy smoke", finishOrExit("webui content-policy smoke", out, []), page.exceptions);
