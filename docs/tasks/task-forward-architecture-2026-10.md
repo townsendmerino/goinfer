@@ -355,7 +355,8 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
 - **Two things for the phases that follow:**
   - Before OP2's SSM on Metal, the non-gated activation needs a feature per value (§4.5, item 2).
   - Before OP5, `attn-output-gate` needs splitting by activation (§4.5, item 3).
-- **Three things in backend modules were read and not fixed** (§4.5's last list). The CUDA one may be live.
+- **Backend findings are §4.5's last list.** The CUDA double softcap was confirmed and fixed; a Cohere step row's one-ulp
+  LayerNorm difference was found by that fix and is open, as are the other two.
 
 ### 4.5 Features mapped to operations (OP0, read 2026-10-13)
 
@@ -498,12 +499,23 @@ path:
 
 Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
 
-**Found while reading, in backend modules, and not fixed** (a backend change is a two-step tag; each needs its owner's call).
-All are read from the code, and none was run.
-- **CUDA: a batched-step row that returns logits appears to get the final softcap and the logit scale twice.**
-  `cuda/prefill.go:cudaResident.prefillCore` applies both inside the job for a step row, and its closing loop applies both
-  again to every row. It would touch concurrent conversations that sample on the host, on a model with a final softcap
-  (dense Gemma 4) or a logit scale (Command-R). Both transforms keep the argmax, so a greedy test cannot see it.
+**Found in backend modules** (a backend change is a two-step tag; each needs its owner's call). The first two were run; the
+rest are read from the code and not fixed.
+- **CUDA: a batched-step row that returns logits got the final softcap and the logit scale twice. Confirmed and fixed
+  2026-10-14.** `cuda/prefill.go:cudaResident.batchedHeadFull` applied both to a step row, and
+  `cuda/prefill.go:cudaResident.prefillCore`'s closing loop applied both again to every logits row; the closing loop is now
+  the only place. It touched concurrent conversations that sample on a model with a final softcap (dense Gemma 4) or a
+  logit scale (Command-R, Granite): those models always draw on the host. `TestCUDAStepBatch_matchesForward` now runs
+  `gemma4-dense-twogeom-tiny` (softcap) and `granite-dense-tiny` (logit scale) and compares a step row's logits with
+  `Forward`'s bit for bit; before the fix it read logit 1 at -0.2842141 against -0.2842226 (Gemma 4) and logit 0 at
+  -0.0024854098 against -0.014912458 (Granite, the scale of 1/6 applied twice).
+- **CUDA: a Cohere step row is not bit-identical to `Forward`, found by the fix above and not fixed.** With the double
+  transform gone, `cohere-tiny` and `cohere2-tiny` still differ from `Forward` by one ulp in a logit (cohere-tiny at its
+  third step, cohere2-tiny at its first). The batched LayerNorm, `cuda/layernorm_quant.cu`'s `layernorm_quant_batched`,
+  rounds `((x-mean)*inv)*w`, while decode's `layernorm_quant` in `cuda/glue.cu` rounds `((x-mean)*w)*inv`, so a normed value
+  can differ in its last bit and move an int8 code. The step, `PrefillLastN` and speculative verify on Cohere inherit it.
+  `cuda/prefill.go:cudaResident.bLayerNormQuantB`'s fallback, which loops decode's kernel per row, would be exact. The
+  batched kernel is shared with the SigLIP tower, so the fix is the CUDA owner's call.
 - **WebGPU: `logit-scale`**, item 2 above.
 - **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
   derives `nope`, which WebGPU does not declare. The registry's representative config is roped, so the matrix cannot show it.

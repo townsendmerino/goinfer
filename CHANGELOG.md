@@ -136,6 +136,20 @@ under 4096, and less than 16384 only when it does not fit (the context gives way
 
 `docs/tasks/task-minimax-code-compat-2026-09.md` M2.
 
+### Fixed — under `--backend cuda`, concurrent sampled conversations on a dense Gemma 4 or a logit-scaled model got the wrong distribution
+
+**Who was affected:** `--backend cuda` serving dense Gemma 4, Command-R or Granite (any model with a final-logit softcap or
+a logit scale) to two or more conversations at once, with a sampling temperature above zero. **Since:** batched
+multi-request decode on CUDA (`7a44a58e`, 2026-09-27), so v0.20.0, v0.21.0 and v0.22.0 all carry it.
+
+When several conversations decode together in one batched step, a conversation that samples (on these models every
+sampled token is drawn on the host, since the on-device draw does not apply the transforms) received logits with the
+final-logit softcap or the logit scale applied twice. That squeezed a dense Gemma 4's logits further toward the cap and,
+on a Command-R, Granite or other logit-scaled model, multiplied them by the scale a second time, which raises the
+effective temperature by its inverse (16 on Command-R, whose `logit_scale` is `0.0625`). Greedy decoding and a
+conversation decoding alone were not affected; both transforms keep the argmax. Each is now applied once, and a step row's
+logits equal the single-sequence `Forward`'s bit for bit (`TestCUDAStepBatch_matchesForward`).
+
 ### Fixed — Claude Code 2.1.268 could not complete a turn against `/v1/messages`
 
 Claude Code now sends a `system` message inside the conversation on every turn (the Messages API's mid-conversation system
