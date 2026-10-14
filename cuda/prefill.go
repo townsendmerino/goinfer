@@ -44,12 +44,17 @@ const prefillAlignRows = 64
 
 // prefillTailCut is how many rows a pass of n rows gives to a last pass that would have rem rows, fewer than attnFusedMinRows.
 // It is a whole prefillAlignRows when the pass keeps attnFusedMinRows after it, so the last pass starts on the grid the passes
-// before it started on; a pass too narrow for that (a chunk under 80 rows) gives only what the last pass lacks.
+// before it started on; a pass too narrow for that (a chunk under 80 rows) gives only what the last pass lacks. A pass that
+// would itself drop under attnFusedMinRows gives nothing (a chunk under 32 rows, set by GOINFER_PREFILL_CHUNK): both passes
+// cannot be fast class there, and the cut would empty the pass when the chunk is under 16.
 func prefillTailCut(n, rem int) int {
 	if n-prefillAlignRows >= attnFusedMinRows {
 		return prefillAlignRows
 	}
-	return attnFusedMinRows - rem
+	if cut := attnFusedMinRows - rem; n-cut >= attnFusedMinRows {
+		return cut
+	}
+	return 0
 }
 
 // prefillImageDefaultChunk is PrefillImageLast's row budget: one image's tokens plus its chat text, a bounded quantity,
@@ -389,7 +394,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		// A prefill never ends in a pass of fewer than attnFusedMinRows rows: such a pass runs the exact kernels while every row
 		// before it ran the fast ones, so the prompt would depend on where its last chunk fell (the 16-row rule, KV0's invariance
 		// record), and past singleBlockAttnShmemLimit keys the exact attention is not launchable at all. The rows come from this
-		// pass (prefillTailCut), not the last one's.
+		// pass (prefillTailCut), not the last one's; a chunk under 32 rows keeps its short last pass.
 		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
 			n -= prefillTailCut(n, rem)
 		}

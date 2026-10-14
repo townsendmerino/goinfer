@@ -48,6 +48,7 @@ fused past the bound.
 - **A prefill never ends in a pass of fewer than 16 rows** (the pass before the last gives it 64 rows, so every pass still starts on a multiple of 64). A shorter last
   pass ran the exact kernels while every row before it ran the fused ones, so a prompt's bits depended on where its last chunk fell
   (KV0's invariance record); the 4,100-token prompt, which ended in a 4-row pass, now gives the bits of the same prompt in one pass.
+  A `GOINFER_PREFILL_CHUNK` under 32 rows, too narrow to keep 16 rows on both sides, keeps its short last pass.
 
 ### Changed — on CUDA, admission prices a long prompt by one chunk of its prefill, not by the whole prompt
 

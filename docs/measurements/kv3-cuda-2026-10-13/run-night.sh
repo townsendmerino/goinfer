@@ -5,14 +5,18 @@
 #   JOB=fidelity   the real-checkpoint fidelity set past the 12,160-key bound (go test, the 1.5B; est 30 min)
 #   JOB=speed      Claude Code first request, new against old, three pairs, with the swap reading (est 30 min)
 #   JOB=ttft       K = 512 and 3,900 on the 1.5B, new against old, three pairs (est 10 min)
-#   JOB=suite      the whole ./cuda/ suite, identity (est 60 min)
+#   JOB=suite      the whole ./cuda/ suite in one process, identity (2026-10-13: timed out at 2 h, 428 of 476 tests; superseded by
+#                  suite-a and suite-b)
+#   JOB=suite-a    the gate's partition (cmd/gate gpu, cudaHeavy), part 1: the main tier for tests named Test[A-L] with
+#                  GOINFER_ISOLATE_DEFER=1, then each needsFreshProcess test as its own process, then the drainsDevice group (est 75 min)
+#   JOB=suite-b    part 2: the main tier for tests named Test[M-Z] (est 85 min)
 #
-#   queued as:  env JOB=<job> B=$HOME/goinfer-bench/kv3-2026-10 bash <this script>
+#   queued as:  env JOB=<job> B=$HOME/goinfer-bench/kv3-2026-10 [W=<pinned worktree>] bash <this script>
 set -u
 export PATH=$PATH:/usr/local/go/bin
 B=${B:-$HOME/goinfer-bench/kv3-2026-10}
 JOB=${JOB:?name the job}
-W=$B/wt-pinned
+W=${W:-$B/wt-pinned}
 OUT=${OUT:-$B/night-$(date +%F)-$JOB}
 mkdir -p "$OUT" || exit 2
 for f in "$W/go.work" "$B/bin/serve-cuda-new" "$B/bin/serve-cuda-old" "$HOME/goinfer-bench/kv0-2026-10/bodies/qwen3-4b-28k-cc-claude-code-chain-r1/0001.json" "$HOME/models/qwen3-4b/config.json"; do
@@ -20,6 +24,7 @@ for f in "$W/go.work" "$B/bin/serve-cuda-new" "$B/bin/serve-cuda-old" "$HOME/goi
 done
 {
   echo "started: $(date '+%F %T %Z')"; echo "job: $JOB"; echo "host: $(uname -srm)"; nvidia-smi --query-gpu=driver_version,name --format=csv,noheader
+  echo "tree: $W at $(git -C "$W" rev-parse HEAD)"
   echo "new: $(cat "$B/bin/serve-cuda-new.rev")"; echo "old: $(cat "$B/bin/serve-cuda-old.rev")"; echo "load: $(uptime)"
   free -m | sed -n 1,3p
 } > "$OUT/provenance.txt"
@@ -37,6 +42,29 @@ case $JOB in
     python3 -u "$HERE/ttft_ab.py" "$B/bin/serve-cuda-old" "$B/bin/serve-cuda-new" "$OUT/ttft-ab.json" 2>&1 | tee "$OUT/ttft-ab.log"; rc=${PIPESTATUS[0]} ;;
   suite)
     (cd "$W" && GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 120m -tags 'cuda goinfer_testhooks' -v ./cuda/) 2>&1 | tee "$OUT/cuda-suite.log"; rc=${PIPESTATUS[0]} ;;
+  suite-a|suite-b)
+    # The whole package in one process does not fit 2 h any more, and it runs the needsFreshProcess tests beside ~400 others,
+    # where they fail by design (cuda/isolated_marker_test.go). This is cmd/gate gpu's partition, the main tier split by name.
+    RUN='^Test[A-L]'; [ "$JOB" = suite-b ] && RUN='^Test[M-Z]'
+    (cd "$W" && GOINFER_HEAVY_TESTS=1 GOINFER_ISOLATE_DEFER=1 go test -count=1 -timeout 120m -tags 'cuda goinfer_testhooks' -run "$RUN" -v ./cuda/) 2>&1 \
+      | tee "$OUT/cuda-main.log"; rc=${PIPESTATUS[0]}
+    if [ "$JOB" = suite-a ]; then
+      # marked <call>: every top-level test in cuda/*_test.go whose body calls it (cmd/gate's markedTests)
+      marked() { awk -v m="$1" '/^func Test[A-Za-z0-9_]*\(/ { n = $2; sub(/\(.*/, "", n); next } index($0, m) && n != "" { print n; n = "" }' "$W"/cuda/*_test.go | sort -u; }
+      iso=$(marked 'needsFreshProcess(t,'); drain=$(marked 'drainsDevice(t,')
+      echo "fresh-process tests: $(echo $iso)" | tee -a "$OUT/provenance.txt"; echo "drain group: $(echo $drain)" | tee -a "$OUT/provenance.txt"
+      for name in $iso; do
+        (cd "$W" && GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'cuda goinfer_testhooks' -run "^$name\$" -v ./cuda/) 2>&1 \
+          | tee -a "$OUT/cuda-iso.log"; [ "${PIPESTATUS[0]}" = 0 ] || rc=1
+      done
+      (cd "$W" && GOINFER_HEAVY_TESTS=1 GOINFER_DRAIN_GROUP=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' \
+        -run "^($(echo $drain | tr ' ' '|'))\$" -v ./cuda/) 2>&1 | tee "$OUT/cuda-drain.log"; [ "${PIPESTATUS[0]}" = 0 ] || rc=1
+      # Reconcile both ways: each marked test ran alone exactly once, and nothing marked fell into neither half.
+      ni=$(echo $iso | wc -w); nd=$(echo $drain | wc -w)
+      ri=$(grep -c "ISOLATED-RUN" "$OUT/cuda-iso.log"); rd=$(grep -c "DRAIN-GROUP-RUN" "$OUT/cuda-drain.log")
+      echo "reconcile: fresh-process marked=$ni ran-alone=$ri; drain marked=$nd ran=$rd" | tee -a "$OUT/provenance.txt"
+      [ "$ni" -gt 0 ] && [ "$ri" = "$ni" ] && [ "$nd" -gt 0 ] && [ "$rd" = "$nd" ] || rc=1
+    fi ;;
   *) echo "unknown JOB $JOB"; exit 2 ;;
 esac
 # Assert outputs exist: a job that refused to run must not read as a success.
@@ -45,6 +73,7 @@ case $JOB in
   speed) [ -s "$OUT/cc-first-request.json" ] && grep -q SUMMARY "$OUT/cc-first-request.log" || rc=1 ;;
   ttft) grep -q SUMMARY "$OUT/ttft-ab.log" || rc=1 ;;
   suite) grep -q "^ok" "$OUT/cuda-suite.log" || rc=1 ;;
+  suite-a|suite-b) grep -q "^ok" "$OUT/cuda-main.log" || rc=1 ;;
 esac
 echo "finished: $(date '+%F %T %Z') rc=$rc" | tee -a "$OUT/provenance.txt"
 exit "$rc"
