@@ -11,3 +11,8 @@ FAIL
 FAIL
 FAIL	github.com/townsendmerino/goinfer/decoder	0.413s
 FAIL
+
+== planted: G4(a), decoder: a declined batched prefill keeps the class it was announced with
+--- FAIL: TestKV2_declinedPrefillSharesNothing (0.01s)
+    kv2_share_test.go:353: slot 0 rows [0, 405) recorded as class 1 after a declined prefill
+    kv2_share_test.go:360: B copied 320 rows from a sequence whose prefill declined
