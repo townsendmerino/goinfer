@@ -661,13 +661,13 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   reachable today with `--ctx 32768 --kv-sessions 1` at the price of the other slots. The owner's call whether they change the
   verdict.
 
-### KV1 — The manager over today's slots (no storage change) — BUILT 2026-10-13, day gates read, not merged
+### KV1 — The manager over today's slots (no storage change) — DONE 2026-10-14, merged to main (`f08b47ca`)
 
-Branch `kv1-2026-10`. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2 and G5b
-amended before their runs). **Read and passing:** identity by day on both boxes, the windowed tests at awkward offsets
-on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost, and the fast-class
-windowed measurement (which measures, and does not gate KV1). **Queued for the night of 2026-10-13, and the merge waits
-for them:** the served speed gate on both boxes and the Metal device gate.
+Branch `kv1-2026-10`, merged. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2
+and G5b amended before their runs). **Every gate read and passing:** identity by day on both boxes, the windowed tests at
+awkward offsets on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost, the
+fast-class windowed measurement (which measures, and does not gate KV1), the served speed gate on both boxes and the
+Metal device gate.
 
 - **Built:**
   - `internal/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
