@@ -57,6 +57,9 @@ func kv0Passes(start, M, chunk int) []kv0Pass {
 			n -= prefillTailCut(n, rem) // the chunker's 16-row rule: a prefill's last pass is never shorter than 16 rows
 		}
 		ps = append(ps, kv0Pass{start + i, n, start + M})
+		if n <= 0 { // prefillChunked fails such a pass ("empty prompt"); the plan ends there instead of looping
+			return ps
+		}
 		i += n
 	}
 	return ps

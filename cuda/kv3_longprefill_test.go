@@ -326,4 +326,23 @@ func TestKV3_chunkerKeepsPassStartsOnTheGrid(t *testing.T) {
 			t.Fatalf("chunk 64, M=%d: last pass of %d rows", M, last.m)
 		}
 	}
+	// A chunk under 32 cannot keep 16 rows on both sides of the cut: no pass may be empty, and from 32 up the last pass has 16.
+	for chunk := 1; chunk <= 79; chunk++ {
+		for M := chunk + 1; M <= 300; M++ {
+			ps := kv0Passes(0, M, chunk)
+			rows := 0
+			for i, p := range ps {
+				if p.m < 1 || p.m > chunk {
+					t.Fatalf("chunk %d, M=%d: pass %d has %d rows", chunk, M, i, p.m)
+				}
+				rows += p.m
+			}
+			if rows != M {
+				t.Fatalf("chunk %d, M=%d: the passes cover %d rows", chunk, M, rows)
+			}
+			if last := ps[len(ps)-1]; chunk >= 2*attnFusedMinRows && last.m < attnFusedMinRows {
+				t.Fatalf("chunk %d, M=%d: last pass of %d rows", chunk, M, last.m)
+			}
+		}
+	}
 }
