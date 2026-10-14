@@ -302,6 +302,11 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
     `python3 scripts/timing_lock.py run --label <name> -- <cmd>`.
   - A refusal means another run is measuring on this box. Wait for it (`timing_lock.py status` names it); never delete
     the lock file to get past it.
+  - **A command that touches the other box checks that box's lock in the same command, and ends if it is held:**
+    `ssh <box> 'cd <repo> && python3 scripts/timing_lock.py status' && ssh <box> '<the work>'` — one invocation, not a
+    check in one call and the work in the next. An ssh session takes no lock of its own, so nothing else stops it: on
+    2026-10-13 the Mac's session read a 2.78 GB checkpoint on nobara in the middle of a timed I3 cell
+    (`docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md`).
 - **Two arms when the decision is new ÷ old** (TE5(a)). A gate that grades a goinfer-vs-goinfer ratio runs
   `BENCH_ENGINES=goinfer,goinfer_old`, with no peer arm. The peer ratio is read once, after the lever ships, as its own
   same-session interleaved run. In the 2026-09-28 L1 gates Ollama took a quarter to a third of the cell time and
