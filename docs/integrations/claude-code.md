@@ -18,6 +18,16 @@ All three env vars are required. Non-loopback binds refuse to start without `-ap
 `~/.claude/settings.json` with the window the server really serves, and says whether Claude Code's first request fits it.
 `-write` patches the file, keeping your other settings; `connect claude-code -undo` restores it byte for byte.
 
+**It names the served model in every model slot Claude Code reads**, so a subagent, the `opus`/`sonnet`/`haiku`/`fable`
+aliases, `opusplan` and background work all reach a model the server serves. The slots are the ones Claude Code's
+[model configuration](https://code.claude.com/docs/en/model-config#environment-variables) and
+[environment variables](https://code.claude.com/docs/en/env-vars) pages list: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_MODEL`,
+`ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`,
+`ANTHROPIC_DEFAULT_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, and the deprecated `ANTHROPIC_SMALL_FAST_MODEL`. A slot left
+unset resolves to an Anthropic model id (`claude-sonnet-5-5` for a subagent that asks for `sonnet`), which the server answers
+with 404. A subagent whose definition names a full Anthropic model id still asks for that id; Claude Code's
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` overrides it, and `connect` does not set it.
+
 **It also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, because Claude Code opens its system prompt with a per-conversation hash at
 token 22, which stops two conversations sharing their roughly 18,000-token preamble** (with it, two conversations share 22
 tokens; without it, 18,213 of about 20,154: [the measurement](../measurements/kv0-traffic-2026-10-13.md)). The server does not
@@ -33,8 +43,9 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
 - Set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the window the server serves (its `/v1/models` `context_window`). An
   unrecognised model name is otherwise assumed to have 200,000 tokens (Claude Code's documentation; the variable's
   effect on compaction is not traced here).
-- Background work (the session title) goes to `ANTHROPIC_MODEL` unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another
-  served model: with two models loaded (`-model main=... -model fast=...`), set it to the small one.
+- Background work (the session title) goes to `ANTHROPIC_DEFAULT_HAIKU_MODEL`, and a subagent to the alias it asks for or
+  to `CLAUDE_CODE_SUBAGENT_MODEL`: set every slot `connect` sets (above), or those requests name a model the server does not
+  serve. With two models loaded (`-model main=... -model fast=...`), point the Haiku slot at the small one.
 - `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.
 
 ```bash

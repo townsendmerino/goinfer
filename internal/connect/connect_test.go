@@ -32,6 +32,9 @@ func TestPatch_claudeCodeKeepsOtherSettings(t *testing.T) {
 	}
 	want := map[string]string{"EDITOR": "vi", "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080", "ANTHROPIC_AUTH_TOKEN": "goinfer", "ANTHROPIC_MODEL": "coder",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "coder", "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "32768", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192", "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"}
+	for _, slot := range claudeCodeModelSlots {
+		want[slot] = "coder"
+	}
 	if got.Theme != "dark" || len(got.Perm.Allow) != 1 || len(got.Env) != len(want) {
 		t.Errorf("other settings were not kept, or env has the wrong keys:\n%s", out)
 	}
@@ -284,5 +287,45 @@ func TestFitAndOutputLimit(t *testing.T) {
 		if got := OutputLimit(window); got != want {
 			t.Errorf("OutputLimit(%d) = %d, want %d", window, got, want)
 		}
+	}
+}
+
+// Every model slot Claude Code's documentation lists (https://code.claude.com/docs/en/model-config § "Environment
+// variables" and § "Set a default model for new sessions"; https://code.claude.com/docs/en/env-vars) names the served
+// model after -write, including over a stale value, so no alias, subagent or background request names a model the
+// server does not serve. The list is written out here rather than read from the code, so a slot dropped there fails here.
+func TestWrite_claudeCodeFillsEveryModelSlot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"env": {"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := write(harnesses["claude-code"], path, testSettings); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("the written file is not JSON: %v\n%s", err, raw)
+	}
+	for _, slot := range []string{
+		"ANTHROPIC_MODEL",                // the session's model
+		"ANTHROPIC_DEFAULT_MODEL",        // the model a new session starts on
+		"ANTHROPIC_DEFAULT_FABLE_MODEL",  // fable, and best where fable is available
+		"ANTHROPIC_DEFAULT_OPUS_MODEL",   // opus, and opusplan in plan mode
+		"ANTHROPIC_DEFAULT_SONNET_MODEL", // sonnet, and opusplan outside plan mode
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL",  // haiku, and background work
+		"CLAUDE_CODE_SUBAGENT_MODEL",     // subagents, teammates and workflow agents not assigned a model
+		"ANTHROPIC_SMALL_FAST_MODEL",     // deprecated in favour of ANTHROPIC_DEFAULT_HAIKU_MODEL
+	} {
+		t.Run(slot, func(t *testing.T) {
+			if v, ok := got.Env[slot]; !ok || v != testSettings.Model {
+				t.Errorf("env[%s] = %q (set %v), want the served model %q", slot, v, ok, testSettings.Model)
+			}
+		})
 	}
 }
