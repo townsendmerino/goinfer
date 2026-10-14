@@ -389,11 +389,11 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 
 // residentShare copies into the bound slot acq.slot the longest run of prompt another slot's published blocks hold
 // (kvmgr.Slots.Hits, capped by kvmgr.ClassMap.CapHit), when that is more than acq.reuse, the rows the slot itself
-// holds. It does nothing under an Off scope, for a recurrent family, without ResidentKVCopier, or when the source's
+// holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without ResidentKVCopier, or when the source's
 // window no longer holds the rows. A decline or an error leaves acq.reuse at what the slot can still trust.
 func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
 	cp, ok := m.resident.(ResidentKVCopier)
-	if !ok || sc.Off || m.residentReuseDisabled() || m.hasRecurrentState() {
+	if !ok || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
 		return
 	}
 	a, dst, cm := m.kvSlots(), acq.slot, m.kvClassMap()

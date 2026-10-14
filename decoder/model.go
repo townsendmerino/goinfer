@@ -94,6 +94,7 @@ type Model struct {
 	windowedKV    bool         // Options.ResidentWindowedKV
 	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
+	kvShareOff    bool         // Options.KVShareOff
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
@@ -415,6 +416,10 @@ type Options struct {
 	// prefill is chunk-invariant (Metal's is: TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value
 	// (docs/measurements/chunked-prefill-2026-09-27.md).
 	ResidentPrefillChunk int
+	// KVShareOff stops a request taking KV rows another conversation computed: a resident request reuses only a
+	// continuation of a slot's own sequence (KVScope.Off for every request; docs/tasks/task-kv-architecture-2026-10.md
+	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
+	KVShareOff bool
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
 	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
 	// default) batches an eligible model with at least 2 GiB of dense weights; CPUBatchOn batches every
@@ -480,7 +485,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,

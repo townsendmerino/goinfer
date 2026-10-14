@@ -221,6 +221,11 @@
    "summary": "Cap on request-body size in bytes; a larger body is rejected with 413 before it is read. 0 derives the cap from the model's context window."
   },
   {
+   "name": "kv-share",
+   "group": "Sessions and KV cache",
+   "summary": "on|off: whether a new conversation on a GPU-resident model copies KV rows another conversation computed (a shared system prompt) instead of prefilling them. Off whatever this says when the server answers the network without -api-key."
+  },
+  {
    "name": "kv-sessions",
    "group": "Sessions and KV cache",
    "summary": "Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard. Metal keeps 2 slots unless this flag is given (each slot's KV is resident from the first token on unified memory)."
