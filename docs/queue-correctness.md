@@ -130,3 +130,57 @@ and `tools, OpenAI` turn two and `stop sequences` are unchanged, so those two ar
 **DIAGNOSED AND FIXED 2026-10-06 (`docs/measurements/g39-lone-tool-livelock-2026-10-06/`): the `tools, OpenAI` failure was goinfer's, not the model's.** A lone tool under `tool_choice` auto was forced on every turn, including after the tool result; the Instruct model
 failed the same row on this tree. Fixed so the convenience ends at the tool result (c69a6f87 pre-registration, then the fix). The `stop sequences` failure is the Coder model's own (it answers "The count is now 10." to a count prompt) and is not a goinfer defect. G39 is closed apart from
 the parser's residual risk, which is the owner's call and is behind an off-by-default flag.
+
+**G40 · CPU cold prefill: a long prompt's scratch is not bounded and is not returned to the OS, and it breaks never-swap** — `cpu`, **filed 2026-10-14**
+
+Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 3), by day on the M1 Pro 16 GB:
+
+- One cold 20,193-token prompt on Qwen2.5-Coder-0.5B (`serve -backend cpu`, int4 weights from the CPU sidecar, f32 KV)
+  took the server to a 3.1 GB footprint for 0.47 GB of KV, and grew swap by 1.27 GB.
+- At 5,778 tokens it reached 1.0 GB for 0.14 GB of KV.
+
+The rest is the batched prefill's scratch, which Go's heap keeps after the request:
+
+- the footprint did not fall in 60 s of idle;
+- later sessions' KV landed in it without moving it.
+
+That breaks the never-swap rule (`docs/tasks/task-never-swap-2026-09.md`). Serve's fit line budgets "a request's own
+prefill", but nothing bounds the prefill by that budget.
+
+**Two parts:**
+
+1. **Bound the prefill scratch per chunk.** A long prompt's batched pass allocates in proportion to its length; cap
+   it by chunking the pass.
+2. **Return memory to the OS after a long prompt,** as the GPU residency build already does
+   (`decoder/residency.go:releaseHostMemory`).
+
+**Gate:**
+
+- bit-identity of logits and KV against today's unchunked pass at the chunk boundaries;
+- the 20K cell of `kv9_mem.py` re-read with no swap growth and a footprint bounded by weights + KV + one chunk's
+  scratch.
+
+**G41 · CPU serve: interleaved conversations that share a preamble take over each other's session and lose their tails** — `cpu`, **filed 2026-10-14; revisit with KV2's first-prompt anchor**
+
+Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 1).
+
+**What happens.** `internal/serveapp/sessions.go:pickSession` gives a new conversation the only idle session that
+holds the preamble, rewound in place, whenever the prompt keeps more of that session than it discards. So:
+
+- a second conversation sharing a 5.7K preamble with a short tail took over the first's session;
+- the first, continuing, re-prefilled its own tail: 5,761 of 5,801 tokens reused, against 5,786 when it kept its
+  session.
+
+On a 32K-context model with a 20K agent preamble, every second conversation qualifies: its tail is always shorter than
+the preamble. Two agents taking turns on CPU serve therefore re-prefill each other's whole conversation past the
+preamble on every switch. That costs minutes on the CPU.
+
+**The other trade.** KV2's copy (on `kv2-2026-10`, not merged) makes it possible: a fresh session with the preamble
+copied in, keeping both tails, at one preamble's memory per conversation.
+
+Revisit when KV2 merges, together with its first-prompt anchor, which keeps a conversation's own rollback in place.
+The rule is the owner's to choose:
+
+- takeover (one preamble's memory, tails lost);
+- copy (tails kept, one preamble per conversation);
+- KV9's host blocks (both). This is the case the KV9 record names for reopening KV9.
