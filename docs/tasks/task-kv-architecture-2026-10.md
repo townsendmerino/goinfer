@@ -1,4 +1,4 @@
-# Task: one KV architecture — paged, content-addressed, tiered (KV0–KV10) — 2026-10
+# Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
 > **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0); KV1 is next.** Written on the owner's ask after a Cowork conversation the same day ("seems
 > like we should consider a new KV architecture, given what goinfer is like now, feature-wise, what would be the best
@@ -53,7 +53,7 @@ slot is gone; and every KV feature is built three or four times.
 - Hybrids (Qwen3.5/3.6/3.8 and the other recurrent families) get prefix reuse and more than one conversation.
 - CUDA gets f16 KV pools and extends f16 to the remaining families.
 
-**How.** Eleven phases, each shippable alone. At the same KV precision, each is bit-identical to the tree before it.
+**How.** Twelve phases, each shippable alone. At the same KV precision, each is bit-identical to the tree before it.
 - KV1–KV3 change bookkeeping, copies and admission only. They deliver cross-conversation reuse and fix Metal's long-prompt
   413 without touching an attention kernel.
 - KV4–KV5 are the kernel work.
@@ -72,6 +72,7 @@ slot is gone; and every KV feature is built three or four times.
 | KV8 | recurrent state pool and checkpoints | CUDA, Metal | L | KV4 (KV5 for Metal) |
 | KV9 | the CPU path onto the manager (deferred by D2: CPU joins through KV2's copies) | CPU | M–L | KV2, D2 |
 | KV10 | long context and lower-precision blocks | all | M | KV4/KV5 |
+| KV11 | one residency manager for KV blocks and MoE experts (added 2026-10-13) | CUDA, then Metal | L | KV4, KV7 |
 
 ## 1. Why: what the current KV design costs
 
@@ -456,7 +457,8 @@ is MC4's identity gate extended to shared preambles.
   - The window and chunk groups are sized for the maximum number of running sequences; the full and latent groups get
     the rest.
   - On a paged-MoE load the expert cache keeps an explicit share. Today such a load holds KV at 4,096 so the pager gets
-    the leftover, and the new rule keeps that behaviour unless a measurement says otherwise.
+    the leftover, and the new rule keeps that behaviour unless a measurement says otherwise. KV11 replaces the fixed split
+    with one budget for KV blocks and experts (§6).
 - **Admission** asks for blocks for [hit, prompt) plus one block of headroom, plus the chunk scratch, priced from the
   allocator's own figure, not `prefillScratchBytes`'s whole-prompt bound.
   - If the blocks are not free yet, the request waits in serve's existing FIFO (`internal/serveapp/admission.go:admission`).
@@ -796,6 +798,46 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - K8V4 as research.
 - **Size:** M.
 
+### KV11 — One residency manager for KV blocks and MoE experts (added 2026-10-13)
+
+Added on the owner's word the same day, from the conversation that produced `docs/tasks/task-forward-architecture-2026-10.md`
+(the compute half; this is its memory item).
+
+- **Why: two managers split one memory by a fixed rule.**
+  - A load that pages MoE experts keeps KV at 4,096 positions on CUDA and on Metal. The expert cache takes whatever is left
+    after everything pinned, so every byte given to KV is a byte the experts never see.
+    - On CUDA, growing the context there "cut its slots and decode speed sharply" (`cuda/resident.go:resolveCtxCapFit`).
+    - Metal keeps the same rule: "paged MoE keeps the default" (M2, `CHANGELOG.md`).
+  - Three expert pagers keep three budgets:
+    - CUDA's expert-slot cache, per layer (`-moe-cache-experts`, `-moe-cache-slots`);
+    - Metal's `metal/expertpool.go`, also per layer, under the same flags;
+    - the CPU's `decoder/moepaging.go:expertPager`, one cache across layers (`-moe-pager`, and `-stream-weights` with
+      `-weight-cache`).
+  - So a paged-MoE user picks context or expert hit rate at load, by flag. Neither choice fits a mixed workload: a long agent
+    prompt wants KV, and a short chat wants experts.
+- **Design.**
+  - An expert slot becomes a second kind of unit in §5.10's pool. KV blocks and experts share one budget, one allocator and
+    one pressure policy.
+  - An expert's lower tier is the mapping or host copy it is paged from (§5.8).
+  - Eviction compares expected cost per unit: a KV block's re-prefill or demotion cost, against an expert's miss cost (a
+    host-to-device copy per use, times its measured miss rate, per layer).
+  - D5's order still holds among KV blocks. An expert goes before a cached KV block only when its expected miss cost is lower.
+  - The CPU pager keeps its own cache (D2).
+- **First, measure.** The build goes ahead only if these show the fixed split costs something:
+  - per-layer expert hit rates at a fixed total budget on the real Gemma 4 26B-A4B, which is FreeToken Lead 4's first
+    step (`docs/tasks/task-freetoken-techniques.md`);
+  - the trade curve on one paged-MoE model per GPU box: decode speed, and the longest prompt that fits, against the KV share.
+- **Gates (sketch):**
+  - tokens identical to today's at the same split, since paging changes where weights live and not what is computed;
+  - a prompt that today's 4,096 cap refuses now fits, up to the fit default (16,384) where memory allows;
+  - decode at short prompts within 0.97 of today's 4,096-position load;
+  - never-swap throughout.
+- **Owner question when it starts:** do `-moe-cache-experts` and `-moe-cache-slots` keep their meanings, or become caps on
+  the shared budget? D6 covers only `-ctx` and `-kv-sessions`.
+- **Needs:** KV4 (a pool to share) and KV7 (the tiers). CUDA first, then Metal after KV5.
+- **Absorbs:** FreeToken Lead 4, pooling the CUDA expert cache across layers.
+- **Size:** L.
+
 ## 7. Order, and what is useful if the program stops early
 
 - **KV0 → header fix + KV3 alongside KV1 → KV2** (decided in D8 and Q2) deliver the agent-preamble win, fix CUDA's 12,288-key
@@ -804,6 +846,8 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   and the doc records why.
 - **KV7 and KV8 can come before KV5** for CUDA users. **KV6 is closed (keep slots, D3).** **KV9 is deferred (D2).** **KV10 waits on
   KV4/KV5.**
+- **KV11 follows KV4 and KV7,** CUDA first, and is built only if its first measurement shows the fixed split costs
+  something.
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
 
 ## 8. Owner decisions
@@ -854,19 +898,23 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - R-01 phase 2 and R-04's resident half (`docs/tasks/task-recompute-audit.md`);
   - FreeToken Lead 1 (`docs/tasks/task-freetoken-techniques.md`);
   - the reopen condition of `docs/tasks/parked/task-kv-cache-streaming.md` (its host-KV idea becomes KV7);
-  - lever 4's third step (KV10).
+  - lever 4's third step (KV10);
+  - FreeToken Lead 4, pooling the CUDA expert cache across layers (KV11).
 - **Replaces when built:**
   - `cuda/kvwindow.go`'s shifted view (KV4);
   - the per-slot bookkeeping in `decoder/resident_reuse.go` (KV1);
   - `pickResidentSlot` and serve's preamble floor (KV1–KV2);
-  - WebGPU's runner-per-slot if KV6 says so.
+  - WebGPU's runner-per-slot if KV6 says so;
+  - the fixed 4,096-position context of a paged-MoE load, and the GPU expert caches' per-layer slot counts (KV11).
 - **Interacts with:**
   - **KV-pre:** its block size;
   - **I7** (`docs/tasks/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
     so its code should stay small;
   - `docs/tasks/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
-  - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid.
+  - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid;
+  - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
+    memory planner prices through §5.10's one function.
 - **Doc amendments when phases land:**
   - `docs/roadmap.md` and MC5 record D1 (done 2026-10-13); `docs/positioning.md`'s "no paged attention" changes when
     KV4 ships;
