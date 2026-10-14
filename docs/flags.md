@@ -78,7 +78,7 @@ Which compute backend runs the model, at what precision, with how much context.
 | `--direct-load` | `bool` | off (on when `GOINFER_GGUF_DIRECT` is set) | Load a plain `.gguf` straight into memory instead of through its sidecar `.giw` cache. Also enabled by setting `GOINFER_GGUF_DIRECT`. *Also in `goinfer-chat`.* |
 | `--exact-prefill` | `bool` | `false` | Force bit-exact prompt ingestion on every backend, turning off the faster prefill paths that are not bit-identical. For diffing outputs across versions or reproducing a bug. *Also in `goinfer-chat`.* |
 | `--cpu-exact-prefill` | `bool` | `false` | The same, for the CPU backend only: the f64-accumulating attention kernel instead of the faster f32 default. *Also in `goinfer-chat`.* |
-| `--windowed-kv` | `bool` | `true` | CUDA only: each sliding-window layer keeps `window + 1536` KV positions instead of the whole context, so a mixed sliding/full model fits a longer context in the same VRAM. Output is meant to be identical. On by default (`--windowed-kv=false` opts out); ignored by other backends and by models with no sliding-window layers. [More](tasks/task-cuda-windowed-kv-2026-10.md). *Also in `goinfer-chat`.* |
+| `--windowed-kv` | `bool` | `true` | CUDA only: each sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer context in the same VRAM. Output is meant to be identical. On by default (`--windowed-kv=false` opts out); ignored by other backends and by models with no sliding-window layers. [More](tasks/task-cuda-windowed-kv-2026-10.md). *Also in `goinfer-chat`.* |
 
 ## Concurrency and queues
 

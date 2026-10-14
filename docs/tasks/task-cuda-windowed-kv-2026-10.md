@@ -208,7 +208,7 @@ The bar is [0.98, 1.02] PASS, below 0.97 FAIL, 0.97 to 0.98 parked; the job's ve
 - **Consequence, as registered: `--windowed-kv` is on by default in `serve` and `chat`** (`internal/loadflags`; `--windowed-kv=false` opts out; `Options.ResidentWindowedKV` stays false for library callers). It engages only on the CUDA resident path for a model with sliding-window layers and a context above window + slack, so no other backend, model or small context changes. `docs/flags.md` regenerated; the option-state grid is unchanged (it keys on the option, not the flag default).
 - **Not measured by this gate, and worth knowing before it matters in use:** the cost of the reuse floor. Reusing a conversation prefix whose window has been dropped re-prefills the prompt from the start (`ReusableKV`), so a long multi-turn agent loop on a windowed model past its window pays a full prefill per turn that the full-KV arm does not. Correctness of those turns is gated (`TestWindowedKV_agentTurns`); their speed is not. `--windowed-kv=false` is the opt-out for such a workload.
 
-## 14. Amendment 2026-10-14: a compaction keeps a fixed rollback
+## 14. Amendment 2026-10-14: a compaction keeps a rollback floor
 
 Sections 2 and 3 set a compaction's new base to the first row's window (`pos - window + 1`) and called a rollback of up to `slack` positions
 valid. In use the budget was not `slack`: it cycled between 0 and 512 with where the last decode stopped in the compaction cycle, and
@@ -216,9 +216,7 @@ valid. In use the budget was not `slack`: it cycled between 0 and 512 with where
 previous reply; in the I3 night 35 of its 59 requests on Mellum2.1 re-prefilled the whole prompt
 (`docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md`).
 
-Now `slack = decoder.WindowedKVRollback (1,024) + 512`, and a compaction moves the base to `rollback + window - 1` positions behind the end of
-the write (`cuda/kvwindow.go:kvWindowNextBase`), so a follow-up diverging up to 1,024 positions before the furthest position written reuses
-its prefix at any point of the cycle. Gates: `TestWindowedKV_i3Replay` (the recorded traffic: the old rule reproduces all 35 cold
-prefills, the new one keeps every in-run rollback within 1,024 warm) and `TestWindowedKV_rollbackReuse` (tiny windowed fixtures: reuse after
-a dropped reply, bit-identical to the full-KV resident and to a cold prefill of the whole prompt). The memory cost per family is tabled in
-the record.
+Now a compaction moves the base only far enough to keep `slack - step` positions behind the end of the write (`cuda/kvwindow.go:kvWindowNextBase`,
+step 64: a floor of 448 at the unchanged 512 slack, so a compaction every 65 positions), and `cudaResident.kvGrantRollback` adds up to 576
+positions from VRAM left over once the context, slots and expert cache are fixed (a rollback of up to 1,024; none for an expert-cache load).
+The plan and the price are unchanged. Gates and the night speed guard: the record above, sections 5 and 8.

@@ -768,7 +768,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	} else if e := r.checkCap(startPos, M); e != nil {
 		return nil, nil, e
 	} else if !r.kvRoomFor(startPos, M) {
-		return nil, nil, fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, kvWindowSlack, errPrefillDeclined)
+		return nil, nil, fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, r.kvSlack, errPrefillDeclined)
 	}
 	if rows == nil {
 		if e := r.checkPrefillShmem(startPos, M); e != nil {

@@ -70,9 +70,11 @@ func replayWindowedKV(t *testing.T, slack, rollback int) []replayed {
 	return out
 }
 
-// TestWindowedKV_i3Replay replays the I3 Codex x Mellum2.1 traffic through the windowed-KV arithmetic. With no rollback reserve (slack 512,
-// rollback 0) it must reproduce the cold prefills the server logged, request for request: that is the cause. With the production constants
-// every in-run follow-up whose rollback is within decoder.WindowedKVRollback must reuse its prefix.
+// TestWindowedKV_i3Replay replays the I3 Codex x Mellum2.1 traffic through the windowed-KV arithmetic. With no rollback kept (slack 512,
+// rollback 0, a compaction jumping to the first row's window) it must reproduce the cold prefills the server logged, request for request:
+// that is the cause. At the production slack and step, the floor every load keeps, every in-run follow-up rolling back no more than the
+// floor must reuse its prefix; that load was an expert-cache one, which kvGrantRollback gives no extra, so the floor is what it gets. At the
+// most the grant can give (kvWindowRollbackMax), every in-run rollback within it must be warm too.
 func TestWindowedKV_i3Replay(t *testing.T) {
 	old := replayWindowedKV(t, 512, 0)
 	nCold := 0
@@ -88,19 +90,27 @@ func TestWindowedKV_i3Replay(t *testing.T) {
 	if nCold != 35 {
 		t.Errorf("old rule: %d cold prefills, the server logged 35", nCold)
 	}
-	now := replayWindowedKV(t, decoder.WindowedKVSlack, decoder.WindowedKVRollback)
-	inRun, inRunCold := 0, 0
-	for i, r := range now {
-		if r.runStart {
-			continue
-		}
-		inRun++
-		if r.cold {
-			inRunCold++
-			if r.rollback <= decoder.WindowedKVRollback {
-				t.Errorf("request %d (prompt %d): cold after a rollback of %d positions, within the %d the slot keeps", i, i3CodexMellum[i][1], r.rollback, decoder.WindowedKVRollback)
+	check := func(name string, slack, rollback, wantInRunCold int) {
+		inRun, inRunCold := 0, 0
+		for i, r := range replayWindowedKV(t, slack, rollback) {
+			if r.runStart {
+				continue
+			}
+			inRun++
+			if r.cold {
+				inRunCold++
+				if r.rollback <= rollback {
+					t.Errorf("%s: request %d (prompt %d) cold after a rollback of %d positions, within the %d kept", name, i, i3CodexMellum[i][1], r.rollback, rollback)
+				}
 			}
 		}
+		if inRunCold != wantInRunCold {
+			t.Errorf("%s (slack %d, rollback %d): %d of %d in-run follow-ups cold, want %d", name, slack, rollback, inRunCold, inRun, wantInRunCold)
+		}
+		t.Logf("%s (slack %d, rollback %d): %d of %d in-run follow-ups cold", name, slack, rollback, inRunCold, inRun)
 	}
-	t.Logf("old rule: %d of %d cold; now: %d of %d in-run follow-ups cold (each rolls back more than %d)", nCold, len(old), inRunCold, inRun, decoder.WindowedKVRollback)
+	floor := decoder.WindowedKVSlack - kvWindowStep
+	check("floor, no extra", decoder.WindowedKVSlack, floor, 16)
+	check("the most the grant gives", kvWindowRollbackMax+kvWindowStep, kvWindowRollbackMax, 5)
+	t.Logf("old rule: %d of %d cold", nCold, len(old))
 }
