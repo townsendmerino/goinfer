@@ -1,0 +1,9 @@
+PASS   decode 1.5B depth 128: median new/main 1.0007 over 8 blocks (min 0.9979, max 1.0028; new 271.27 tok/s, main 271.35 tok/s)
+       by block: 1.0010 1.0028 0.9996 0.9999 1.0008 0.9979 1.0006 1.0009
+PASS   decode 7B depth 128: median new/main 0.9998 over 8 blocks (min 0.9992, max 1.0006; new 85.60 tok/s, main 85.60 tok/s)
+       by block: 0.9997 1.0006 0.9999 0.9999 0.9998 0.9998 0.9992 1.0004
+PASS   time to first token 1.5B, prompts of [3069, 3070] tokens: median new/main 0.9977 over 12 blocks (min 0.9904, max 1.0080; new 0.687 s, main 0.687 s)
+       by block: 0.9945 0.9935 1.0001 1.0080 0.9999 0.9989 1.0006 0.9961 0.9904 0.9946 1.0020 0.9966
+PASS   time to first token 7B, prompts of [3069, 3070] tokens: median new/main 1.0007 over 12 blocks (min 0.9981, max 1.0029; new 2.452 s, main 2.453 s)
+       by block: 1.0007 1.0021 1.0029 1.0008 0.9993 1.0016 1.0009 0.9982 1.0006 0.9981 0.9990 1.0007
+VERDICT PASS

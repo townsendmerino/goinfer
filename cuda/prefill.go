@@ -1518,11 +1518,6 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				return e
 			}
 			outs[m] = append([]float32(nil), r.logitsHost...)
-			if rows != nil {
-				// Forward's own host tail (step()): a step row must equal Forward's return, not only the device buffer.
-				applySoftcap(outs[m], r.finalSoftcap)
-				applyLogitScale(outs[m], r.logitScale)
-			}
 		}
 		return r.launchErr
 	})
@@ -1536,8 +1531,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}
 		return nil, nil, err
 	}
-	// Final-logit softcap and logit scale (Gemma), host-side, as step() does. Skipped for tailHiddenLast and
-	// tailResidualAll: outs holds hidden states there, not logits, and a logit-only transform would silently corrupt them.
+	// Final-logit softcap and logit scale, host-side, as step() does: the one place they are applied to a returned logits
+	// row, a step row included, so nothing before this point may apply them (TestCUDAStepBatch_matchesForward). Skipped for
+	// tailHiddenLast and tailResidualAll: outs holds hidden states there, not logits, and a logit-only transform would
+	// silently corrupt them.
 	if tail == tailHiddenLast || tail == tailResidualAll {
 		return outs, ids, nil
 	}
@@ -1591,9 +1588,8 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 //
 // Everything after the GEMV stays per row. A step row with an on-device draw goes through the unmodified
 // stepDraw/gumbelPick kernels, which read r.logits, so that row's slice is copied there first (gpu.CopyDevice). Every
-// other row is downloaded to the pinned host buffer (r.logitsPinned/r.logitsHost) one at a time. Softcap and logit scale
-// apply per row and only for step rows (rows != nil): a step row must equal Forward's return, not only the device
-// buffer.
+// other row is downloaded to the pinned host buffer (r.logitsPinned/r.logitsHost) one at a time. The rows it returns are
+// raw head output: prefillCore applies the softcap and logit scale to every logits row after the job.
 func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow) (outs [][]float32, ids []int, err error) {
 	if M > r.logitsBCap {
 		if r.logitsBCap > 0 {
@@ -1636,10 +1632,6 @@ func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepR
 			return nil, nil, e
 		}
 		outs[m] = append([]float32(nil), r.logitsHost...)
-		if rows != nil {
-			applySoftcap(outs[m], r.finalSoftcap)
-			applyLogitScale(outs[m], r.logitScale)
-		}
 	}
 	return outs, ids, r.launchErr
 }
