@@ -159,3 +159,19 @@ Checked against the void conditions:
 
 **The checkpoint copy did not run.** The guarded copy job found nobara's timing lock held at 00:37 and exited without
 copying, as designed.
+
+## G2-R by day, 2026-10-14: not run to a result
+
+The owner moved it to the night queue. The registration says "Tier: by day"; by day the Mac
+cannot admit the loads.
+- **Run 1, 08:49:** the fit guard refused the first load of the 2B (6.7 GB needed, 6.4 GB available with the owner's
+  apps open). Nothing was measured.
+- **Run 2, 08:50, with the fit guard bypassed on the owner's word** (`GOINFER_NO_FIT_GUARD=1`):
+  - the hook check passed: removing the softcap changes the CPU's logits;
+  - arm B at int8int8 read a min cosine of 0.982217, with argmax equal at 22 of 24 positions;
+  - Metal's resident memory guard then declined the int4 build (3.63 GB needed, a budget of 2.66 GB), and the test was
+    skipped. **The run is void, and the 0.982217 is recorded as not a result:** the registration needs B, G and P in one
+    session.
+- **Tonight, as `op1-g2r-metal`:** all three arms in one session, by
+  `docs/measurements/op1-metal-2026-10-13/run-g2r-night.sh` at the declaration branch's `78633e7f`. No guard is bypassed.
+  The gate is not timed: night only means nothing else holds memory.
