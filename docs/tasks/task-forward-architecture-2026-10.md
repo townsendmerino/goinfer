@@ -112,13 +112,16 @@
   - `decoder/registry.go:resolveArchitecture` turns a checkpoint's config into a `decoder/arch.go:Architecture`. Every
     `Architecture` passes `decoder/registry.go:Architecture.validateResolved`.
   - A family's specifics are fields: norms, attention options, position scheme, FFN kind, MoE configuration.
-  - Nine families run their own layer loop (`decoder/arch.go:ownForwardFamily`, the `ownForwards` table, and twelve files named
-    `forward_*.go` in `decoder/`). They are:
+  - Nine families run their own layer loop: the nine entries of the `ownForwards` table (`decoder/arch.go:ownForwardFamily`),
+    one `runLayers*` function each, across twelve files named `forward_*.go` in `decoder/`. They are:
     - the recurrent hybrids: Gated DeltaNet, short conv, two Mamba-2 families, and KDA with MLA;
     - MLA itself (DeepSeek);
     - three softmax families whose layers differ: Gemma 4, Llama 4 and gpt-oss.
-  - Six of the nine pass the runner-shape check through a per-family bridge; Ling 3.0 then declines on KDA. Llama 4 and LFM2
-    have no bridge, and Granite-4.0-H waits on a bring-up gate.
+  - Six of the nine pass the runner-shape check through a per-family bridge.
+    - Ling 3.0 then declines on KDA everywhere.
+    - Nemotron-H declines on SSM on CUDA and Metal and runs on WebGPU. A Nemotron 3 Nano checkpoint (MoE) also fails the
+      runner shape on CUDA and Metal.
+  - Llama 4 and LFM2 have no bridge. Granite-4.0-H waits on a bring-up gate, and on CUDA and Metal also lacks SSM.
 - **The GPU backends are uniform-layer runners.**
   - Each builds a per-layer struct from the `Architecture` and branches on its flags (`cuda/backend.go:cudaBackend.BuildResident`,
     `metal/backend.go:metalBackend.BuildResident`, `gpu/residency.go:webgpuBackend.BuildResident`).
@@ -139,34 +142,39 @@
 
 This is the census behind `docs/hardware-matrix.md`'s CPU cells. For every registry family on each GPU backend, it applies the
 runner-shape check and then `decoder/features.go:residentGateReason`, in the model-free default configuration the matrix
-reads. "—" means the family runs resident there. The program and its raw output are in the baseline record.
+reads. "—" means the family runs resident there. Where the runner-shape check refuses first, the features
+`residentGateReason` would also name are listed after it ("plus"). The programs and their raw output are in the baseline
+record.
 
 | family | CUDA | Metal | WebGPU |
 |---|---|---|---|
 | Gemma 2 | attn-logit-softcap | attn-logit-softcap | attn-logit-softcap |
 | DeepSeek-V2, DeepSeek-V3, Kimi K2 | — | mla | — |
 | Ling 3.0 | kda | kda, mla | kda |
-| Nemotron-H | non-gated-mlp, ssm | ssm | — |
+| Nemotron-H | non-gated-mlp, ssm (plus runner shape if MoE) | ssm (plus runner shape if MoE) | — |
 | GPT-2 | learned-pos, non-gated-mlp | — | layer-norm, learned-pos |
 | Command-R, Command-R7B | — | — | layer-norm, pairwise-rope, parallel-block (Command-R7B also nope) |
 | GLM-OCR | — | — | pairwise-mrope, pairwise-rope |
 | Ministral 3 | — | — | attn-temp |
 | Olmo 3, Olmo Hybrid | — | — | post-only-norm, qk-norm-whole (Olmo Hybrid also nope) |
 | SmolLM3 | — | — | nope |
-| Llama 4, LFM2.5 | runner shape: own forward, not bridged | the same | the same |
-| Laguna, Spark-X2.5 | runner shape: local and global RoPE tables of different lengths | the same | the same |
-| Granite-4.0-H | a bring-up gate (`GOINFER_SSM_RESIDENT`), not a missing kernel | the same | the same |
+| Llama 4 | runner shape: own forward, not bridged | the same | the same |
+| LFM2.5 | runner shape: own forward, not bridged, plus short-conv | the same | the same |
+| Laguna | runner shape: local/global RoPE tables differ in length, plus attn-output-gate | the same | the same |
+| Spark-X2.5 | runner shape: local/global RoPE tables differ in length, plus attn-output-gate (and the activation hazard below) | the same | the same |
+| Granite-4.0-H | bring-up gate (`GOINFER_SSM_RESIDENT`), plus ssm | the same | bring-up gate (`GOINFER_SSM_RESIDENT`) |
 | Phi-3, Phi-4 | the activation hazard: int8 activations round its outliers away | the same | the same |
 
 **Four kinds of decline:**
-- **A missing operation** on one or more backends: softcapping, MLA, SSM, KDA, and a set of small operations WebGPU lacks.
+- **A missing operation** on one or more backends: softcapping, MLA, SSM, KDA, short conv, the attention output gate
+  (Laguna's softplus, Spark-X2.5's sigmoid), and a set of small operations WebGPU lacks.
 - **Layers of different shapes.**
   - Llama 4 and LFM2.5 run their own forwards, which no GPU runner bridges.
   - Laguna and Spark-X2.5 use the generic loop, but give local and global layers RoPE tables of different lengths.
     `decoder/residency.go:Architecture.ropeResidentCompatible` refuses that.
   - No uniform-layer runner can express these, however many operations it has.
-- **A gate.** Granite-4.0-H waits on its parity bring-up. WebGPU already declares its SSM feature (`docs/hardware-matrix.md`'s
-  note).
+- **A gate.** Granite-4.0-H waits on its parity bring-up on every backend. On WebGPU that is the only reason, since WebGPU
+  already declares its SSM feature (`docs/hardware-matrix.md`'s note). CUDA and Metal also lack SSM.
 - **A numerics guard, read in one configuration.** Phi-3/4's activation outliers are rounded away by per-row int8 activation
   scales (`decoder/actquant_hazard.go:ActivationQuantHazard`). The matrix shows CPU everywhere, but the loader picks a safe
   configuration (`internal/modelload/modelload.go:activationSafeQuant`):
@@ -175,6 +183,13 @@ reads. "—" means the family runs resident there. The program and its raw outpu
   - **On Metal,** it runs resident at an explicit `--quant q4k`, a lane built 2026-10-08 (`docs/tasks/task-metal-q4k-2026-10.md`).
     The default load still picks int8int8 with per-32 scales, which declines to the CPU.
   - **WebGPU** has neither.
+
+**A hazard the matrix cannot show: Spark-X2.5's activation.** Its gated MLP uses exact-erf GELU (`ActGelu`, `gegluExact`).
+- The feature list maps every gated non-SiLU activation to `gated-gelu`, which every backend implements as tanh-GELU.
+- `decoder/residency.go:Model.GatedActResident` hands the activation's ordinal to a CUDA kernel that knows only tanh-GELU and
+  SiLU.
+- Nothing runs wrong today, because the runner shape and the output gate decline Spark-X2.5 first. Once both are lifted it
+  would be admitted with the wrong activation. OP0 closes this before then (the baseline record, third test).
 
 **How much it matters.** Pulls in Ollama's library, in millions (`docs/measurements/ollama-coverage-2026-10-09.md`):
 - **gemma2, 34.4:** Gemma 2 decodes on the CPU on every GPU backend.
@@ -253,12 +268,16 @@ reads. "—" means the family runs resident there. The program and its raw outpu
   largest single change available to a user of that family.
 - **New families get cheaper.** A family made of existing operations needs an adapter (descriptor → program) and a parity gate,
   not code in three runners.
-- **The families whose layers differ stop being special.** Each becomes a program of mostly existing kinds:
-  - **Llama 4:** chunked attention on its RoPE layers, NoPE layers, L2 QK-norm, attention temperature;
-  - **LFM2.5:** a gated short convolution on 22 of its 30 layers;
-  - **Laguna:** per-layer query heads and RoPE geometry;
-  - **Spark-X2.5:** per-layer RoPE geometry;
-  - **Granite-4.0-H:** Mamba-2 and attention layers.
+- **The families whose layers differ stop being special.** Each becomes a program of mostly existing kinds plus its own
+  missing operations:
+  - **Llama 4:** chunked attention on its RoPE layers, NoPE layers, parameter-free L2 QK-norm, attention temperature, and
+    dense/MoE layer interleaving;
+  - **LFM2.5:** a gated short convolution (`FeatShortConv`) on 22 of its 30 layers;
+  - **Laguna:** per-layer query heads, per-layer RoPE rotary width, and attention output gate (`g_proj` with softplus,
+    `FeatAttnOutputGate`);
+  - **Spark-X2.5:** per-layer RoPE rotary width, attention output gate (`g_proj` with sigmoid, `FeatAttnOutputGate`), and
+    exact-erf gated GELU (`ActGelu`, `gegluExact`);
+  - **Granite-4.0-H:** Mamba-2 (`FeatSSM`) and attention layers.
 
 ### 4.3 How close the code is
 
@@ -276,10 +295,12 @@ reads. "—" means the family runs resident there. The program and its raw outpu
 ### 4.4 Phases
 
 - **OP0 — the decline table, the operation census, prior art (S).**
-  - `docs/hardware-matrix.md` prints each declining cell's reason: the operations missing, or the gate. It is generated from
-    `residentGateReason`, as the matrix already is.
+  - `docs/hardware-matrix.md` prints each declining cell's reasons: the runner shape, the operations missing, or the gate. It
+    is generated from both checks, and a runner-shape decline does not hide the operations `residentGateReason` also names.
   - A row whose default load runs resident in another configuration says so: Phi-3/4 at `--quant q4k` on CUDA.
   - Map every `ResidentFeature` to an operation kind or parameter.
+  - Split `gated-gelu` into tanh GELU (`ActGeluTanh`, Gemma) and exact-erf GELU (`ActGelu`, Spark-X2.5), so a backend without
+    an exact-GELU kernel declines Spark-X2.5 by name (§3.2's hazard).
   - Read the prior art (§10).
 - **OP1 — attention softcapping on every GPU (M).** Worth doing before the program exists.
   - Softcapping is a parameter of every attention kernel variant per backend: decode, split-KV and flash-decode, fused and

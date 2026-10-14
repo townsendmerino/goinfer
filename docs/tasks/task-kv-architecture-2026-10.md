@@ -339,9 +339,13 @@ into blocks it owns.
 - **Only full blocks are indexed,** as in vLLM. A partial tail is private.
 - **A lookup, across groups:**
   1. Take the longest chain of hits from block 0 in the full (or latent) group: `L_full`. A model with no such group (every
-     layer windowed: Mistral, Phi-3) has nothing to walk there, and needs nothing: a link is computed from the *request's*
-     tokens, so `L_full` is the request's own block count, and step 2 does the work. No header of a released block has to be
-     kept (SGLang's tombstones exist because it walks a tree from its root; a hash chain is looked up by value).
+     layer windowed: Mistral, Phi-3) has nothing to walk there, and needs nothing kept in the pool.
+     - A cold request computes `h_0 … h_{k−1}` from its own tokens, with its cold producer class.
+     - A continuing or forked sequence cannot: its earlier blocks may carry the `decode` class or a mix at a turn boundary
+       (§5.6 property 3), which its tokens do not determine. So the sequence keeps its own hash list from block 0 (32 B a
+       block, 16 KB at 32K), and the pool keeps no tombstone for a block whose window data is released.
+     - `L_full` is then the request's own block count, and step 2 does the work. SGLang's tombstones exist because it walks a
+       tree from its root; a hash chain is looked up by value.
   2. Take the largest block-aligned `L ≤ L_full` at which every window and chunk group still holds the live blocks its layers
      read at `L` (`[L − ceil(W/B)·B, L)` for a window W), scanning from the right, as vLLM's `SlidingWindowManager` does (§11a).
   3. For a hybrid, take the deepest recurrent checkpoint at or below `L`.
@@ -818,6 +822,14 @@ Added on the owner's word the same day, from the conversation that produced `doc
 - **Design.**
   - An expert slot becomes a second kind of unit in §5.10's pool. KV blocks and experts share one budget, one allocator and
     one pressure policy.
+  - **The two units differ in size.** A KV block is 64 rows across a group's layers (§5.2, option A); an expert slot is one
+    expert's gate, up and down weights and scales in one layer. Both depend on the model and its quantization. So they share
+    memory through a common slab arena, or by trading coarse device buffers under one byte budget, not by packing experts
+    into KV blocks.
+  - **Resizing is new.** Today CUDA sizes its expert cache once, at load and after KV, to the free memory it measures
+    (`cuda/resident.go:cudaResident.allocSlots`, `cuda/resident.go:expertCache`). Any buffer a captured CUDA graph segment
+    reads must keep its address, so slot buffers are allocated at their largest size up front, or the segments that read
+    them are re-captured when they change.
   - An expert's lower tier is the mapping or host copy it is paged from (§5.8).
   - Eviction compares expected cost per unit: a KV block's re-prefill or demotion cost, against an expert's miss cost (a
     host-to-device copy per use, times its measured miss rate, per layer).
