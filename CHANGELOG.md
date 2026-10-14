@@ -41,7 +41,8 @@ only what differs. On Metal and CUDA the source can still be generating.
 - **Claude Code needs its attribution header off to share anything:** `goinfer-serve connect claude-code` sets it.
 - **A conversation no longer loses its history to another.** A request now takes another conversation's KV slot in
   place only when it keeps at least as much as it overwrites and gives up less than one 64-token block (on a model with
-  sliding-window layers, less than 448 tokens). Otherwise it copies into a free slot.
+  sliding-window layers, less than 448 tokens). Otherwise it copies into a free slot. A conversation rolling back its
+  own history (an edited or dropped reply) still continues in its own slot, whatever the size.
 - **`--kv-share off`** turns sharing off: a request reuses only its own conversation's rows. It is off whatever the
   flag says when the server answers the network without `--api-key`.
 - **Known limit:** where sharing is off, a client that already knows all but the last 63 tokens of another

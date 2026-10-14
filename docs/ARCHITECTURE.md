@@ -524,7 +524,9 @@ backends").
 - **Which slot.** A request takes another sequence's slot in place only when it keeps at least as much of it as it
   overwrites and gives up less than one block of it, or, on a model with sliding-window layers, less than the window
   group's rollback floor (448 rows, the task doc's §5.12). Otherwise it copies into an empty slot, else the least
-  recently used one; a copy counts as a use of its source.
+  recently used one; a copy counts as a use of its source. A request that keeps the slot's whole first prompt is that
+  conversation rolling back its own history, and continues in place whatever it gives up
+  (`kvmgr.Slots.FirstPrompt`, `kvmgr.PickSlotFor`).
 - **Sharing scope.** The namespace in the root keeps requests in different scopes apart. serve has one scope, and
   turns sharing off (`decoder.Options.KVShareOff`) under `--kv-share off` and when it answers the network without
   an API key; a request then reuses only its own conversation's rows. `docs/server.md` states the timing limit that
