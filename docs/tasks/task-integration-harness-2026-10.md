@@ -191,69 +191,166 @@ the session ending on the overflow. A fail with the fixed part fitting means the
   them. No real agent has been driven past its window. `/v1/completions`, jobs, batches and image turns do not
   measure a fixed part and answer with the curable wording.
 
-#### I1 live gate, second design — DRAFT, FOR OWNER REVIEW, NOT REGISTERED (2026-10-14)
+#### I1 live gate, second design (I1-v2)
 
-Nothing below is registered, run or queued. The first design (3c in I3's run plan) read the night of 2026-10-13 as Codex VOID, opencode VOID,
-Claude Code FAIL (I3's read, below). It had two causes, and this draft answers each one. Qwen3-4B fetched every `bulk` file in one step,
-which no compaction can cure. In `edit` and `fix`, and in Claude Code's `bulk` run, each harness's **own** compaction fired before
-goinfer's limit was reached, so no overflow could be attributed to goinfer.
+**Registered 2026-10-14 at `main` `5c609661`** (the predictions commit; the design was approved by the owner the same day, with the
+amendments folded in below). From this commit on, the rules, windows, arms, void classes and predictions below do not move.
+Nothing has run.
 
-- **Model:** Qwen3-4B int4, f16 KV, for all three. It is the one model measured to drive all three harnesses on the 8 GB card (KV0), and its
-  first requests are measured: Codex 5,669, opencode 7,200, Claude Code 17,711 tokens. *Alternative, for Claude Code only:* Qwen3-1.7B
-  (`~/models/qwen3-1.7b-bf16`) at 49,152, where its f16 KV is 5.6 GB by its config. That should fit beside int4 weights, but the fit is
-  unmeasured and so is the model as a driver, so a day pilot would have to come first.
-- **Served window `W`, sized for about 6,000 tokens of room** beside the fixed part and I1's reserved output (a quarter of the window): Codex
-  15,616, opencode 17,664. Claude Code stays at 28,672, the most Qwen3-4B holds, with its output cap written as 4,096 (a recorded deviation
-  from `connect`'s quarter). The reserve is then 4,096 and the room 6,865.
-- **The harness is told `2 x W`** (Codex `model_context_window` and its auto-compact limit, opencode `limit.context`,
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`), so its own compaction threshold sits above goinfer's. The first context event is then goinfer's
-  overflow answer, and the harness's response to that answer is what is measured. **Control arm,** one run per harness, reported and not
-  graded: the harness told the true `W`. It shows the harness's own behaviour, which the night of 2026-10-13 showed already.
-- **Task `chain`:** about 18 files of room/6 tokens each (about 1,000). Each file ends with `next: data/<name>.txt` under a name drawn per run,
-  and the last file ends with `END` and a code word. Beside them sit 40 decoy files of the same size. The prompt says to start at
-  `data/start.txt`, follow `next:` one file per tool call, and answer with the code word. A model cannot fetch the chain in one step,
-  because each name is known only from the file before it. A model that globs the directory reads the decoys, and the run is caught as
-  off-chain. The chain totals about 3 x room, so a run that follows it overflows two or three times, each curable. Success is mechanical:
-  the code word in the reply, with exit 0.
-- **Recorded:** the fixed recorder (prompt sizes on every route), plus each harness's own compaction events with their triggers (Claude
-  Code's `compact_boundary`, Codex's `compacted` session record, opencode's compaction parts), placed in time against the wire's overflow
-  answers. Also the order of the files read.
-- **Per run, void first.** A run is VOID and says nothing about the wording if any of these holds:
-  - *never reached:* no overflow;
-  - *harness first:* the harness compacted before goinfer's first overflow, so the told window did not take;
-  - *incurable step:* one step added more than the room;
-  - *off-chain:* a decoy was read, or a step read more than two chain files;
-  - *summary too large:* the first prompt after a compaction is itself over `W` less the reserve, so the harness's summary cannot fit;
-  - *box:* a `halted` answer or a 5xx.
-- **Per run, otherwise:**
-  - **PASS:** every overflow is followed by at most one compaction before the next chain file is read, the chain reaches `END`, and the
-    reply holds the code word.
-  - **FAIL:** the session ends on an overflow or an error; or three compactions follow one another with no chain file read between them
-    (I1's own word, *consecutive*, which 3c had turned into a count per run); or overflows are re-sent with no compaction until the
-    session ends.
-  - Overflow answers in a row stay reported and ungraded, because Codex trims and re-sends.
-- **Per harness:** three runs.
-  - **PASS:** at least two gradable runs, all of them PASS.
-  - **FAIL:** two or more gradable runs FAIL.
-  - **Ambiguous, parked:** otherwise (one FAIL, or fewer than two gradable runs). Three more runs follow the next night, and the same rule
-    is read over all gradable runs. If fewer than two are still gradable, the harness is VOID.
-  - A FAIL with the fixed part fitting means the wording is wrong for that harness, as I1 says.
-- **The gate can go red: a planted arm.** One run per harness is served by a measurement binary built at the same pin, with the
-  overflow writer forced to the incurable, operator-facing wording. No harness should be able to compact on that, so the expected grade is
-  FAIL (the session ends on the overflow). If a planted run grades PASS, the gate is void for that harness. This is a measurement build, not
-  a production change.
-- **Predictions:** written by the registrant before any run.
-- **Cost:**
-  - *By day:* one exploratory `chain` pilot each for Codex and opencode (about 10 min together), to confirm that Qwen3-4B follows the
-    chain and that the sizes land. Claude Code's pilot is about 30 min, so it goes to the night or needs the owner's word.
-  - *Night job one:* Codex and opencode, 3 graded runs + 1 control + 1 planted each, at about 10 min a run: about 100 min.
-  - *Night job two:* Claude Code, 3 + 1 planted (the control is optional) at 30 to 40 min a run. Cold prefills of about 17.7K tokens take
-    4.5 min on the I3 pin's per-token path. That is about 160 min.
-- **Open for the owner:**
-  - the Claude Code model (Qwen3-4B with the 4,096 cap, or Qwen3-1.7B after a pilot);
-  - whether the told `2 x W` is acceptable, given that the configuration differs from what `connect` writes and is labelled so;
-  - the binary: the I3 pin, or one that carries KV3's tiled prefill if it has merged by then (that changes Claude Code's run time, not
-    the overflow path).
+**Why a second design.** The first design (3c in I3's run plan) read the night of 2026-10-13 as Codex VOID, opencode VOID and Claude Code
+FAIL (I3's read, below). It failed in two ways. Qwen3-4B fetched every `bulk` file in one step, which no compaction can cure. And in
+`edit` and `fix`, as in Claude Code's `bulk` run, the agent's **own** compaction fired before goinfer's limit was reached, so no
+overflow could be attributed to goinfer.
+
+**Model and windows.**
+- **Model:** Qwen3-4B int4, f16 KV, for all three agents. It is the one model measured to drive all three on the 8 GB card (KV0), and its
+  first requests are measured in I3: Codex 5,669, opencode 7,200, Claude Code 17,711 tokens. These are the fixed parts, `F`.
+- **Served window `W`:** Codex 15,616, opencode 17,664, Claude Code 28,672, the most Qwen3-4B holds.
+  - goinfer refuses a prompt of `W` tokens or more (`newContextOverflow`), so the history room before the first overflow is `W - F`:
+    9,947, 10,464 and 10,961.
+  - The reserved output only decides which wording is used. Every cell is on the curable side: `F` plus the reserve is under `W`
+    (Codex 9,573, opencode 11,616, Claude Code 21,807).
+- **Claude Code's output cap is 4,096** (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`), written by `connect` from branch
+  `connect-cc-window-2026-10`, so goinfer's reserve for it is 4,096. Codex and opencode keep `connect`'s quarter of the window.
+
+**The told window, `2 x W`: a MEASUREMENT CONFIGURATION, not a recommended user setting.** After `connect -write`, the runner raises
+the window the agent is told to `2 x W`:
+- Codex: `model_context_window`, and `model_auto_compact_token_limit` = `2 x W` less the output limit;
+- opencode: `limit.context`;
+- Claude Code: `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
+
+The runner then reads the file back and refuses the run if any value is not what was set (Claude Code's output cap included). The
+purpose is to put the agent's own compaction threshold above goinfer's. The first context event is then goinfer's overflow answer, and
+the agent's response to that answer is what is measured. A user should run `connect`'s own values, which tell the agent the real window.
+
+**Arms per agent.**
+- **graded:** three runs.
+- **control:** one run with the true window (`connect`'s values unchanged), graded by the same rules and reported only. It shows the
+  agent's own behaviour.
+- **planted:** one run, told `2 x W`, against a measurement binary built at the same commit with one change: `helpless()` returns true.
+  Every overflow then gets the operator-facing wording with no overflow code, which no agent should compact on, so the expected grade
+  is FAIL. This proves the gate can go red. It is a measurement build, not a production change.
+
+**Task `chain`.**
+- 24 files in `data/`, each about 1,000 tokens of record lines (48 lines). Every line starts with the file's own name, so a file's
+  content identifies it.
+- Each file ends with `next: data/<name>.txt`, under a name drawn per run. The 24th ends with `END` and a code word.
+- Beside them, 40 decoy files of the same shape, chained only to one another.
+- The prompt: start at `data/start.txt`, follow `next:` one file per tool call until a file says `END`, and answer with the code word.
+- A model cannot fetch the chain in one step, because each name is known only from the file before it. One that reads the directory's
+  contents reads decoys, and is caught.
+- The chain is about 24,000 tokens, 2.2 to 2.4 times the room, so a run that follows it overflows about twice, each time curably.
+- Success is mechanical: the code word in the agent's own reply, and exit 0.
+
+**Recorded per run.** The fixed recorder, with prompt sizes on every route (a 400's size from its text, `response.failed`'s from its
+usage). Each agent's own events in their order: chain-file reads by index, and compactions (Claude Code's `compact_boundary`, Codex's
+`compacted` session record, opencode's compaction parts). Also, for each answered request, whether its reply was clamped by the window.
+
+**Per run, the void checks come first.** A run is VOID, and says nothing about the wording, on the first of these that holds:
+- *box:* a `halted` answer or a 5xx;
+- *never reached:* no overflow answer;
+- *agent first:* the wire shows the history shrinking by 500 tokens or more before goinfer's first overflow answer, or the agent reports
+  a compaction and the wire shows no overflow. This is the told window not taking;
+- *incurable step:* one step adds more than `W - F - 1,000`;
+- *off-chain:* a decoy's lines appear in the agent's output, or one step grows the prompt by more than 2.5 times the run's median step;
+- *summary too large:* an overflow answer comes straight after a shrink, and no request is answered after it;
+- *clamped end:* the session's last answered reply was clamped by the window (it ended on a cut reply, not on an overflow answer);
+- *model stopped:* exit 0, no error, the last request answered normally, and `END` never read.
+
+**Per run, otherwise:**
+- **PASS:** at most one compaction between consecutive new chain reads (each overflow followed by at most one compaction), compactions
+  no more than the overflow answers, `END` read, the code word in the reply, and exit 0.
+- **FAIL:** the session ends on an overflow answer or an error (exit not 0, an error result, or the last request an overflow); or three
+  compactions with no new chain read between them (I1's own word, *consecutive*, which 3c had turned into a count per run); or two
+  compactions between consecutive new chain reads; or more compactions than overflow answers.
+- Overflow answers in a row stay reported and ungraded, because Codex trims and re-sends. The count of clamped replies is reported.
+
+**Per agent:**
+- **PASS:** at least two gradable graded runs, all PASS, and the planted run FAIL. If the planted run is VOID, it is run once more. A
+  planted run that is VOID again parks a PASS. A planted run that PASSes voids the gate for that agent.
+- **FAIL:** two or more gradable graded runs FAIL. A FAIL with the fixed part fitting means the wording is wrong for that agent, as I1
+  says.
+- **Ambiguous, parked:** otherwise. Three more graded runs the next night (a registered repeat), then the same rule over all gradable runs.
+  If fewer than two are still gradable, the agent is VOID.
+
+**Predictions, written before registration.** Each line gives the expected verdict and the void classes expected to fire.
+- **Codex, graded: PASS (0.55).** In I3 it compacted and continued after runs of overflow answers. Expected voids: *off-chain* (0.25:
+  Qwen3-4B batched reads under Codex in I3), *clamped end* (0.1). FAIL 0.25, parked 0.2.
+- **Codex, control: VOID *agent first* (0.8),** as in I3's `edit` runs (12 to 20 of its own compactions, no overflow).
+- **Codex, planted: FAIL (0.75).** VOID *never reached* or *model stopped* (0.2).
+- **opencode, graded: FAIL (0.45).** In the 3c smoke and I3's `bulk` runs it ended on `ContextOverflowError` after one compaction. PASS
+  0.3, parked 0.25. Expected voids: *summary too large* (0.2), *model stopped* (0.15).
+- **opencode, control: VOID *agent first* (0.75).**
+- **opencode, planted: FAIL (0.85).**
+- **Claude Code, graded: PASS (0.45).** In I3 it answered goinfer's one overflow by re-sending its compaction smaller and going on. FAIL
+  0.25, parked 0.3. Expected voids: *model stopped* (0.35: Claude Code x Qwen3-4B passed 1 of 5 tasks in I3), *summary too large* (0.1).
+- **Claude Code, control: VOID *agent first* (0.85),** as in I3's `bulk` run.
+- **Claude Code, planted: FAIL (0.7).**
+
+**Pilots, one per agent: one graded-configuration `chain` run, not counted.** A pilot passes when all of these hold:
+- **the told window took effect:**
+  - the values read back from the configuration file are `2 x W` (and 4,096 for Claude Code's output cap);
+  - no agent compaction and no wire shrink comes before goinfer's first overflow answer;
+  - the largest prompt answered before that overflow is at least `W` less two files' worth (the agent grew its history to goinfer's
+    limit, not to a threshold of its own);
+  - for Codex, the session log's `model_context_window` is 95% of `2 x W`, the share it took of the window `connect` wrote in I2;
+- the chain was followed (no *off-chain*);
+- the median step is between 700 and 1,300 tokens.
+
+A pilot that passes writes `pilot-ok-<agent>` beside its record. The night script refuses an agent without it.
+
+**The pin, named at pilot time.** One serve binary, and its planted twin, built at one `main` commit that contains the merge of
+`kv3-cuda-2026-10` and the tips of `connect-cc-window-2026-10` and `connect-cc-model-slots-2026-10`. The build script refuses a commit
+that does not contain all three (`git merge-base --is-ancestor`). The commit is named in the pilot's record and used unchanged by the
+night jobs.
+
+**What runs when, and what each waits on.**
+- **Every pilot and job waits on three merges to `main`:**
+  - `kv3-cuda-2026-10`, which waits on tonight's suite-a and suite-b reading green;
+  - `connect-cc-window-2026-10`;
+  - `connect-cc-model-slots-2026-10`.
+- **Claude Code pilot:** by day, when nobara's timing lock is free; about 30 minutes.
+- **Codex and opencode pilots:** a night job, about 30 minutes for the two.
+- **Night job, Codex and opencode:** 3 graded + 1 control + 1 planted each, about 12 minutes a run, about 120 minutes. It is queued after
+  their pilots, in the same night or a later one.
+- **Night job, Claude Code:** 3 graded + 1 control + 1 planted. Re-estimated from its pilot before queueing; with KV3 CUDA's prefill the
+  17.7K first request should no longer take 4.5 minutes.
+- **Not run or queued yet:** all of the above.
+
+**The scripts, prepared 2026-10-14 after registration.** They are in `docs/measurements/integration-harness-2026-10/matrix/`, and none
+of them changes a rule above.
+- `build-i1v2-pin.sh <main commit>` builds the serve binary and its planted twin. It refuses a commit without the three merges, and
+  copies the matrix scripts at that commit into `~/goinfer-bench/i1v2-2026-10`.
+- `plan-i1v2.json` holds the configurations: three pilots, then a graded, a control and a planted configuration per agent.
+- `run-i1v2.sh` runs them. `PILOT=1` takes pilot configurations only and writes `pilot-ok-<agent>`. Otherwise the script refuses any
+  agent without that file. Either way it holds the timing lock.
+- `gate_i1v2.py` grades the runs, or the pilots with `--pilot`.
+- `tasks.py` gains `chain`. `run_cell.py` sets and reads back the told window and checks the output cap. `agents.py` records each
+  agent's own events in order.
+
+**How the scripts were checked, without a model or the GPU:**
+- `connect` from the I3 pin wrote each agent's file against a fake `/v1/models`, and the told window was set and read back. Codex
+  keeps its 3,904-token output room. Claude Code's file says 7,168 there, so until the pin carries `connect-cc-window-2026-10`'s cap
+  the runner would refuse its runs, which is intended.
+- Following `next:` through a generated chain walks the key in order.
+- The planted patch applies to `overflow.go` exactly once.
+- The grader returns the registered class on synthetic PASS, never-reached, agent-first, incurable, off-chain and both FAIL cases.
+- Event parsing on I3's recorded runs reproduces their compaction counts and reads Codex's window as 8,937 of 9,408 (95%).
+- `run-i1v2.sh` against an empty directory, and against a fake pin with no pilot, refuses before starting anything.
+- `build-i1v2-pin.sh main` refuses, because `main` does not yet contain `kv3-cuda-2026-10`.
+
+**The Claude Code pilot by day,** once the pin exists and the lock is free:
+`setsid nohup env PILOT=1 ONLY=i1v2-pilot-cc bash ~/goinfer-bench/i1v2-2026-10/matrix-pinned/run-i1v2.sh </dev/null >/dev/null 2>&1 &`.
+
+**Three things the owner should know before the pilots; none of them moves a rule:**
+- The registered order of the void checks puts *never reached* before *agent first*. A control run that compacts by itself and never
+  meets an overflow therefore reads *never reached*, not the *agent first* its prediction names. The second clause of *agent first* cannot
+  fire.
+- In I3's opencode `edit` r2 the wire shows a shrink, yet opencode's JSON output had no compaction part. If opencode's compactions do
+  not show in its output, the grader cannot count them. The pilot prints that comparison as a diagnostic, and a mismatch is for the owner
+  to rule on before opencode's night job.
+- `connect-cc-window-2026-10`'s tip, as read on 2026-10-14, adds a warning only. The 4,096 cap the registration names has to be in the
+  pinned build, or every Claude Code run refuses.
 
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 
@@ -589,7 +686,7 @@ Code's own auto-compaction (`trigger: auto`), twice before goinfer had answered 
 "Autocompact is thrashing". The window, 28,672, was barely above its 17,711-token first request plus the 7,168 reserved for output. The
 predictions (Codex PASS, opencode FAIL, Claude Code the unknown) were not tested for the two VOID harnesses. With Qwen3-4B the gate as
 built cannot read the wording on Codex or opencode, because the model reads all eight `bulk` files in one step. A fresh registration
-is drafted in I1 (§2, "I1 live gate, second design").
+is registered in I1 (§2, "I1 live gate, second design (I1-v2)").
 The record also notes an outside read on the box during job B, at 21:19, and shows that it moved no graded cell.
 
 **Recorder defects found by the grade, fixed in `matrix/`:** an empty reply was graded against the raw output, which produced the false
