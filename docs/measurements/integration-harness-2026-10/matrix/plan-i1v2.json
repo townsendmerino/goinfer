@@ -1,0 +1,313 @@
+{
+ "serve": "/home/francis/goinfer-bench/i1v2-2026-10/bin/serve-cuda-i1v2",
+ "swap_guard_mb": 4096,
+ "port": 18090,
+ "proxy_port": 18095,
+ "box": "nobara-pc (RTX 2070 SUPER 8 GB, driver 595.91.07)",
+ "commit": "PINNED-AT-PILOT-TIME",
+ "configs": [
+  {
+   "name": "i1v2-pilot-codex",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 15616,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "pilot",
+    "regime": "I1-v2 pilot, Qwen3-4B int4, f16 KV, -ctx 15616, told 31232 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "31232"
+   ]
+  },
+  {
+   "name": "i1v2-pilot-opencode",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 17664,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "opencode"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "pilot",
+    "regime": "I1-v2 pilot, Qwen3-4B int4, f16 KV, -ctx 17664, told 35328 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "35328"
+   ]
+  },
+  {
+   "name": "i1v2-pilot-cc",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 28672,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 3600,
+   "label": {
+    "arm": "pilot",
+    "regime": "I1-v2 pilot, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "57344",
+    "--expect-output-cap",
+    "4096"
+   ]
+  },
+  {
+   "name": "i1v2-codex",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 15616,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 3,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "graded",
+    "regime": "I1-v2 graded, Qwen3-4B int4, f16 KV, -ctx 15616, told 31232 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "31232"
+   ]
+  },
+  {
+   "name": "i1v2-codex-control",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 15616,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "control",
+    "regime": "I1-v2 control, Qwen3-4B int4, f16 KV, -ctx 15616, told 15616 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": []
+  },
+  {
+   "name": "i1v2-codex-planted",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 15616,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "planted",
+    "regime": "I1-v2 planted, Qwen3-4B int4, f16 KV, -ctx 15616, told 31232 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "31232"
+   ],
+   "serve": "/home/francis/goinfer-bench/i1v2-2026-10/bin/serve-cuda-i1v2-planted"
+  },
+  {
+   "name": "i1v2-opencode",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 17664,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "opencode"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 3,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "graded",
+    "regime": "I1-v2 graded, Qwen3-4B int4, f16 KV, -ctx 17664, told 35328 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "35328"
+   ]
+  },
+  {
+   "name": "i1v2-opencode-control",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 17664,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "opencode"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "control",
+    "regime": "I1-v2 control, Qwen3-4B int4, f16 KV, -ctx 17664, told 17664 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": []
+  },
+  {
+   "name": "i1v2-opencode-planted",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 17664,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "opencode"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "arm": "planted",
+    "regime": "I1-v2 planted, Qwen3-4B int4, f16 KV, -ctx 17664, told 35328 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "35328"
+   ],
+   "serve": "/home/francis/goinfer-bench/i1v2-2026-10/bin/serve-cuda-i1v2-planted"
+  },
+  {
+   "name": "i1v2-cc",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 28672,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 3,
+   "run_timeout": 3600,
+   "label": {
+    "arm": "graded",
+    "regime": "I1-v2 graded, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "57344",
+    "--expect-output-cap",
+    "4096"
+   ]
+  },
+  {
+   "name": "i1v2-cc-control",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 28672,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 3600,
+   "label": {
+    "arm": "control",
+    "regime": "I1-v2 control, Qwen3-4B int4, f16 KV, -ctx 28672, told 28672 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--expect-output-cap",
+    "4096"
+   ]
+  },
+  {
+   "name": "i1v2-cc-planted",
+   "model": "/home/francis/models/qwen3-4b",
+   "ctx": 28672,
+   "serve_args": [
+    "--quant",
+    "int4"
+   ],
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "chain"
+   ],
+   "reps": 1,
+   "run_timeout": 3600,
+   "label": {
+    "arm": "planted",
+    "regime": "I1-v2 planted, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)"
+   },
+   "cell_args": [
+    "--told-window",
+    "57344",
+    "--expect-output-cap",
+    "4096"
+   ],
+   "serve": "/home/francis/goinfer-bench/i1v2-2026-10/bin/serve-cuda-i1v2-planted"
+  }
+ ]
+}

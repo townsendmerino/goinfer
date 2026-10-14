@@ -317,6 +317,41 @@ night jobs.
   17.7K first request should no longer take 4.5 minutes.
 - **Not run or queued yet:** all of the above.
 
+**The scripts, prepared 2026-10-14 after registration.** They are in `docs/measurements/integration-harness-2026-10/matrix/`, and none
+of them changes a rule above.
+- `build-i1v2-pin.sh <main commit>` builds the serve binary and its planted twin. It refuses a commit without the three merges, and
+  copies the matrix scripts at that commit into `~/goinfer-bench/i1v2-2026-10`.
+- `plan-i1v2.json` holds the configurations: three pilots, then a graded, a control and a planted configuration per agent.
+- `run-i1v2.sh` runs them. `PILOT=1` takes pilot configurations only and writes `pilot-ok-<agent>`. Otherwise the script refuses any
+  agent without that file. Either way it holds the timing lock.
+- `gate_i1v2.py` grades the runs, or the pilots with `--pilot`.
+- `tasks.py` gains `chain`. `run_cell.py` sets and reads back the told window and checks the output cap. `agents.py` records each
+  agent's own events in order.
+
+**How the scripts were checked, without a model or the GPU:**
+- `connect` from the I3 pin wrote each agent's file against a fake `/v1/models`, and the told window was set and read back. Codex
+  keeps its 3,904-token output room. Claude Code's file says 7,168 there, so until the pin carries `connect-cc-window-2026-10`'s cap
+  the runner would refuse its runs, which is intended.
+- Following `next:` through a generated chain walks the key in order.
+- The planted patch applies to `overflow.go` exactly once.
+- The grader returns the registered class on synthetic PASS, never-reached, agent-first, incurable, off-chain and both FAIL cases.
+- Event parsing on I3's recorded runs reproduces their compaction counts and reads Codex's window as 8,937 of 9,408 (95%).
+- `run-i1v2.sh` against an empty directory, and against a fake pin with no pilot, refuses before starting anything.
+- `build-i1v2-pin.sh main` refuses, because `main` does not yet contain `kv3-cuda-2026-10`.
+
+**The Claude Code pilot by day,** once the pin exists and the lock is free:
+`setsid nohup env PILOT=1 ONLY=i1v2-pilot-cc bash ~/goinfer-bench/i1v2-2026-10/matrix-pinned/run-i1v2.sh </dev/null >/dev/null 2>&1 &`.
+
+**Three things the owner should know before the pilots; none of them moves a rule:**
+- The registered order of the void checks puts *never reached* before *agent first*. A control run that compacts by itself and never
+  meets an overflow therefore reads *never reached*, not the *agent first* its prediction names. The second clause of *agent first* cannot
+  fire.
+- In I3's opencode `edit` r2 the wire shows a shrink, yet opencode's JSON output had no compaction part. If opencode's compactions do
+  not show in its output, the grader cannot count them. The pilot prints that comparison as a diagnostic, and a mismatch is for the owner
+  to rule on before opencode's night job.
+- `connect-cc-window-2026-10`'s tip, as read on 2026-10-14, adds a warning only. The 4,096 cap the registration names has to be in the
+  pinned build, or every Claude Code run refuses.
+
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 
 Magnitude advertises one-click connection to eight harnesses. Read from its connectors, that is a config writer: it
