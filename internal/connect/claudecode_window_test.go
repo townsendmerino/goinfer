@@ -48,13 +48,14 @@ func TestClaudeCodeWindowWarning(t *testing.T) {
 		connect(&out, "claude-code", harnesses["claude-code"], filepath.Join(t.TempDir(), "settings.json"), s, false, false)
 		return strings.Contains(out.String(), "compacts on its own"), out.String()
 	}
-	// The I3 window, where Claude Code's own auto-compaction thrashed, warns; so does one under the first request.
-	for _, window := range []int{16384, 28672} {
+	// The I3 window, where Claude Code's own auto-compaction thrashed, warns; so do one under the first request and
+	// 32,768, whose 8,192 of output limit leaves less than the headroom.
+	for _, window := range []int{16384, 28672, 32768} {
 		if ok, out := warned(window); !ok {
 			t.Errorf("window %d: no warning\n%s", window, out)
 		}
 	}
-	for _, window := range []int{32768, 65536, 131072} {
+	for _, window := range []int{40960, 65536, 131072} {
 		if ok, out := warned(window); ok {
 			t.Errorf("window %d: warned\n%s", window, out)
 		}

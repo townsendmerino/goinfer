@@ -40,9 +40,9 @@ configuration: the base URL, the model, and **the context window the server real
   output says viable, marginal or not viable for this window, and names the `-ctx` that would fit.
 - **`connect claude-code` warns when Claude Code's own auto-compaction will fire almost at once.** Claude Code compacts when its context
   plus its output limit reaches the window it is told (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, which `connect` sets to the window the server
-  enforces). Below its first request (17,711 tokens, measured in the I3 run) plus that output limit plus a quarter of the request, the
-  output warns and names the `-ctx` that clears it: at 28,672 Claude Code compacted after every file read and stopped on "Autocompact is
-  thrashing". It also warns for a model id Claude Code may read as a Claude model, for which it does not apply that variable.
+  enforces). Below its first request (the 20,199 tokens `connect` already prints) plus that output limit plus a quarter of the request,
+  the output warns and names the `-ctx` that clears it, 33,440 at today's output limit: at 28,672 Claude Code compacted after every file
+  read and stopped on "Autocompact is thrashing", and 32,768 now warns too. It also warns for a model id Claude Code may read as a Claude model, for which it does not apply that variable.
   No documented Claude Code setting makes it compact later at a window this small (`CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts 100,000 and up,
   `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower the trigger), so the remedy is a larger `-ctx`.
 - **`-write` patches the agent's own file in place**, keeping every other setting and the order they were in: `~/.claude/settings.json`,

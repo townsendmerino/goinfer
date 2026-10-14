@@ -395,7 +395,7 @@ func connect(out io.Writer, name string, h harness, path string, s settings, doW
 	case "not viable":
 		fmt.Fprintf(out, "  the first request does not fit: restart goinfer-serve with -ctx %d or more\n", h.FirstRequest+h.FirstRequest/4)
 	}
-	fmt.Fprint(out, claudeCodeWarnings(name, s))
+	fmt.Fprint(out, claudeCodeWarnings(name, h, s))
 	old, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		fmt.Fprintf(out, "connect: %v\n", err)
