@@ -35,6 +35,7 @@ func TestPatch_claudeCodeKeepsOtherSettings(t *testing.T) {
 	for _, slot := range claudeCodeModelSlots {
 		want[slot] = "coder"
 	}
+	want["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"] = "1"
 	if got.Theme != "dark" || len(got.Perm.Allow) != 1 || len(got.Env) != len(want) {
 		t.Errorf("other settings were not kept, or env has the wrong keys:\n%s", out)
 	}
@@ -328,4 +329,10 @@ func TestWrite_claudeCodeFillsEveryModelSlot(t *testing.T) {
 			}
 		})
 	}
+	// A subagent definition that names its own model is overridden too (Claude Code 2.1.257 and later).
+	t.Run("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", func(t *testing.T) {
+		if v := got.Env["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"]; v != "1" {
+			t.Errorf("env[CLAUDE_CODE_SUBAGENT_MODEL_FORCE] = %q, want \"1\"", v)
+		}
+	})
 }

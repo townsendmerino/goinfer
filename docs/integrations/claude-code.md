@@ -25,8 +25,9 @@ aliases, `opusplan` and background work all reach a model the server serves. The
 `ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`,
 `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, and the deprecated `ANTHROPIC_SMALL_FAST_MODEL`. A slot left
 unset resolves to an Anthropic model id (`claude-sonnet-5-5` for a subagent that asks for `sonnet`), which the server answers
-with 404. A subagent whose definition names a full Anthropic model id still asks for that id; Claude Code's
-`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` overrides it, and `connect` does not set it.
+with 404. It also sets `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, so a subagent whose definition names a model of its own
+(a full Anthropic id, or `inherit`) runs on the served model too. **That override needs Claude Code 2.1.257 or later**; an
+older version ignores it, and such a subagent still asks for its own model and gets 404.
 
 **It also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, because Claude Code opens its system prompt with a per-conversation hash at
 token 22, which stops two conversations sharing their roughly 18,000-token preamble** (with it, two conversations share 22

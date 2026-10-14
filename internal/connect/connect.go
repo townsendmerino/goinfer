@@ -82,6 +82,8 @@ var harnesses = map[string]harness{
 				for _, slot := range claudeCodeModelSlots {
 					env.set(slot, s.Model)
 				}
+				// A subagent whose definition names a model of its own would otherwise ask for it; the server serves one.
+				env.set("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1")
 				o.set("env", env)
 				return nil
 			})
