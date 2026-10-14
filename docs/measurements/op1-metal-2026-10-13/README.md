@@ -99,8 +99,19 @@ numbers above.
   at int4, which is 0.9991 to 0.9993.
 - **The softcap's own contribution** is shown by the planted defect: with the cap dropped from the Metal build the
   fixtures read 0.978 and 0.980.
-- The declaration stays on the branch `op1-metal-declare-2026-10`, unmerged. What decides it is in the task doc's §4.6:
-  G2-T2, then the real Gemma 2 2B gate.
+- The declaration stays on the branch `op1-metal-declare-2026-10`, unmerged.
+
+**What the tiny fixtures are now (owner's ruling, 2026-10-13): diagnostics, not a deciding gate.** No G2-T2 is registered.
+Metal cannot run f32 weights, and the nearest runnable setting, int8int8, was already read above (0.999255 and 0.999334),
+so a gate on it could not fail on anything new. What the fixtures show stays recorded here:
+- the planted defect separates (0.978 and 0.980 with the cap dropped from the Metal build);
+- the int8int8 readings. That setting runs native int8 weights with the kernels compiled without fast math;
+- **the tanh:** at int4 the kernels are compiled with fast math, so the capped function's `tanh` is the fast one
+  (INFERRED from the math-mode rule, not disassembled). An explicit precise tanh moved `gemma2-tiny` by 0.00005 and
+  `gemma2-hd-tiny` by nothing.
+
+The softcap's correctness evidence is the kernel-level float64 checks: all 152 pass, and all 152 fail with the softcap
+dropped. The real Gemma 2 2B parity gate (G2-R, the task doc's §4.6) decides the declaration.
 
 ## Deviations from the registration
 
