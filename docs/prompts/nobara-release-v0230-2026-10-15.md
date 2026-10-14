@@ -1,27 +1,11 @@
 # nobara: before tomorrow's v0.23.0 release rows (written 2026-10-14 on the Mac)
 
 The five owed rows of `go run ./cmd/gate release v0.23.0` run tomorrow, 2026-10-15, on the merged release-candidate
-commit, not tonight (owner, 2026-10-14). Two of them run on nobara: the CUDA GPU gate and the §C1 parity sweep. Each
-needs one thing fixed first. The plan is `docs/releases/v0.23.0-checklist.md`.
+commit, not tonight (owner, 2026-10-14). Two of them run on nobara: the CUDA GPU gate and the §C1 parity sweep. The
+sweep needs its W4A8 assets rebuilt and its missing assets re-checked first (below). The plan is
+`docs/releases/v0.23.0-checklist.md`.
 
-## 1. The CUDA GPU gate no longer fits its 120-minute cell
-
-The main tier of `cmd/gate/gpu.go:gpuGate.cudaHeavy` (cell `cuda-heavy`, all of `./cuda/` under
-`GOINFER_HEAVY_TESTS=1` in one process) runs under `Timeout: "120m"`. The owner reports that the tier's wall is now
-past that. A process that dies at its timeout reports a hang and names whichever test was running, so the record says
-nothing useful.
-
-Before tomorrow's run, do one of the following:
-
-- **Split the tier.** Move another group into its own process, as the drain group already is: a marker read by
-  `drainsDevice()`-style derivation, with the reconciliation counting the new group in both directions.
-- **Re-register the timeout.** Measure the tier's current wall first, then set the new value with the headroom rule in
-  `docs/code-notes/cmd-gate.md` § "cudaHeavy: main-tier timeout". Do not change the number without that measurement.
-
-Either way, the change touches `cmd/gate/`. It lands before the release-candidate commit is chosen, because the
-gate's record must be read at that commit.
-
-## 2. The parity sweep's ten blockers (`parity-20261012T091615Z-6e50c609.json`), read 2026-10-14
+## The parity sweep's ten blockers (`parity-20261012T091615Z-6e50c609.json`), read 2026-10-14
 
 | blocker | still holds? | blocks v0.23.0? |
 |---|---|---|
