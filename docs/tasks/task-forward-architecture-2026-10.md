@@ -611,6 +611,9 @@ its fixture's own no-softcap agreement, which nobody had measured. This step mea
   positions from 2), at each registered quant (int8int8 and int4), with the softcap removed on BOTH sides.
   - **How it is removed:** a test hook, built only under `goinfer_testhooks`, zeroes the model's attention softcap before
     the resident is built. It is applied to the CPU model and to the Metal model alike.
+  - **The hook is checked before B uses it (added 2026-10-13, before the hook was written):** on the CPU, the 2B's logits
+    with the hook must differ from its logits without it, on the same tokens. If they do not, the hook is broken and the
+    run stops there.
   - **What is recorded:** the min cosine per quant.
 - **The stopping rule on B:** if 0.88, G2-R's bar, is within 0.001 of B's min cosine at either quant (B under 0.881), stop
   and report. The graded arm does not run and the bar is not changed.
@@ -618,10 +621,17 @@ its fixture's own no-softcap agreement, which nobody had measured. This step mea
   - **Arm G, graded:** G2-R as registered, the softcap on both sides, with its control and its band.
   - **Arm P, the planted defect:** the softcap dropped from the Metal build only, the CPU keeping it. P must FAIL G2-R's
     rule (min cosine under 0.88, or argmax equal at under half the positions) at both quants.
+  - **P also records how much the softcap acts on the gate's prompts (added 2026-10-13, before the hook was written).**
+    All three are read on the CPU, on the same tokens P feeds:
+    - the share of attention scores, over every layer, head and key, with |score| > 15 before the cap;
+    - the largest |score| before the cap;
+    - the worst per-position logit cosine between the capped and the uncapped CPU runs.
 - **The outcome:**
   - G passes and P fails: G2-R passes, and the declaration may merge.
   - G fails or is parked: stop and report, with no retuning.
-  - P passes: G2-R cannot see a dropped cap on this checkpoint, so it does not vouch for the softcap. Stop and report.
+  - **P does not fail G2-R's rule at a quant: G2-R is VOID as a softcap test at that quant, not a pass.** Report it with
+    P's three numbers. Do not declare, and do not change the bar or the prompts after the fact. The next step would be a
+    prompt set registered in advance for long contexts, where the scores are larger.
 - **Void, in addition to G2-R's own conditions:**
   - B, G and P not in one session;
   - a resident that reports a cap that is not its arm's (0 in B, the model's in G and P);
