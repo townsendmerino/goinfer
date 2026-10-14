@@ -5,8 +5,8 @@
   `docs/measurements/integration-harness-2026-10/i3-night-2026-10-13/job-b/` (`records.jsonl.gz`, `serve-mellum-16k.log.gz`). No request
   bodies were recorded; everything below is read from request sizes, the server's time to first token, Codex's own session files, and the code.
 - **Fix built on:** `origin/main` at `e9dae735`, branch `kvwindow-ring-2026-10`.
-- **Files beside this record:** `sim.py` (the replay, Python; the same replay is the Go unit test `TestWindowedKV_i3Replay`) and
-  `memtable.py` (the memory table below).
+- **Files beside this record:** `sim.py` (the replay, Python; the same replay is the Go unit test `TestWindowedKV_i3Replay`),
+  `memtable.py` (the memory table below), and the night speed guard of section 8 (`speed_guard.py`, `run-speed-guard.sh`).
 
 ## 1. The finding
 
@@ -61,92 +61,154 @@ Claude Code sends thinking back, so those divergences must be earlier in the pro
   contiguous reads (`ring.mirrored`, `ring.window`), and holding a rollback means changing its slot count and its read path on the attention
   hot path in `decoder/`. Left as a finding.
 
-## 4. The fix: a fixed rollback, kept at every point of the compaction cycle
+## 4. The fix: a rollback floor at every point of the cycle, plus what free VRAM buys
 
-**Chosen: keep a rollback reserve in the ring**, not recompute the window tail. Recomputing would start re-prefills at arbitrary positions
-and run into the kernel-class rules (starts not aligned to 64, the 16-row tail rule). Keeping the positions changes no kernel and no read.
+The owner's constraint (2026-10-14): the reuse budget must not cycle down to 0 with where the last decode landed, and the fix must not cost
+residency, context, a KV slot or an expert-cache slot. A first build (a fixed slack of 1,536 positions, commit `c3802931`) met the first
+half and failed the second, measured by loading each windowed model in real `serve` (main against that build, 2026-10-14): Mellum2.1 at
+serve's defaults fell off the GPU to the CPU path (its 4,096-token floor needed 337 MB against 253 MB free), Gemma-3-4B's context fell from
+6,722 to 4,096, and the expert cache shrank from 57 to 56 slots on Mellum2.1 at the I3 settings and from 41 to 35 on Gemma-4-26B, because
+an expert-cache load sizes its cache from what the KV leaves without asking the planner. That build is replaced by two parts.
 
-- **Rule** (`cuda/kvwindow.go:kvWindowNextBase`): a compaction moves the base to `min(first row's window start, end of the write - window + 1 -
-  rollback)`, never back. Every compaction therefore leaves `rollback` positions behind the newest one. A follow-up that diverges up to
-  `rollback` positions before the furthest position written since the last compaction reuses its prefix, wherever the last reply ended. The
-  budget lies between `rollback` and `rollback + 512` and never drops to 0.
-- **Sizes** (`decoder/model.go`): `WindowedKVRollback = 1024`, `WindowedKVSlack = WindowedKVRollback + 512`. The 512 is how far a slot writes
-  between compactions, and it bounds the rows of one pass, as before. The compaction scratch grows to `window - 1 + rollback` positions of the
-  widest windowed layer.
-- **Why 1,024.** The rollback a Codex follow-up needs is the previous reply. Over the 59 I3 replies the median is 258 tokens, the 75th
-  percentile 584, the 90th 1,328 and the largest 4,096; 53 of 59 are at most 1,024. Replayed at each budget (rollback + 512 of slack):
+**Part 1, always: a small-step compaction at the planned slack** (`cuda/kvwindow.go:kvWindowNextBase`, `kvWindowStep = 64`). The slack stays
+512, so the plan, the price (`decoder.WindowedKVSlack`, unchanged) and the allocation equal main's. A compaction now moves the base only so
+far that `slack - step` = **448 positions of rollback** stay behind the end of the write, so the budget lies between 448 and 512 whatever point
+of the cycle the last decode stopped at. The price is copying: a compaction copies the live tail (window - 1 + rollback positions of every
+windowed layer, through the scratch buffer, so twice), and it now comes every 65 positions of decode instead of every 513:
 
-  | rollback kept | in-run follow-ups cold, of 54 | rollbacks of those |
-  |---|---|---|
-  | 0, the old rule (512 slack) | 30 | (35 with the run starts: the server's figure) |
-  | 512 | 13 | 544 to 5,412 |
-  | **1,024 (chosen)** | **5** | 1,327, 1,397, 2,085 (long replies); 5,412 and 2,616 (Codex's own compactions, a new conversation) |
-  | 1,536 | 3 | 2,085, 5,412, 2,616 |
-  | 2,048 | 2 | 5,412, 2,616 |
+| model | today: 1,023 positions every 513 tokens | step 64: 1,470 positions every 65 tokens |
+|---|---|---|
+| Mellum2.1 (21 x 4,096 B a position) | 88 MB a compaction, 0.17 MB a token | 126 MB a compaction, 1.9 MB a token |
+| Gemma-4-26B (25 x 16,384 B a position) | 419 MB, 0.8 MB a token | 602 MB, 9.3 MB a token |
 
-  At 1,024 the misses left are replies of over 1,300 tokens, whose own decode (about 33 s at Mellum's 40 tokens a second) is already of
-  the same order as the re-prefill. Going to 2,048 saves three more misses in this cell and doubles the added memory, which on an 8 GB card
-  running a C′ expert cache comes out of the expert slots. One constant changes it.
-- **Memory.** The added cost is 1,024 positions per windowed layer per KV slot. Windowed layers stay f32, because `cuda/kvpolicy.go` gives
-  the sliding-window ring no f16 form. So a layer holds `2 x kvDim x 4 x min(ctx, window + slack)` bytes (`cuda/resident.go:kvBytesForCap`,
-  which `TestWindowedKV_allocation` proves equal to the bytes allocated, and which decoder's planner prices the same way, so a fitted context
-  shrinks to match). The table below is that formula at each checkpoint's real geometry, read from its `config.json` in `~/models` by
-  `memtable.py`. No real checkpoint was loaded to read the figures off a device.
+Doubled for the scratch round trip, Mellum's step-64 copying is about 3.9 MB a token, some 17 µs at this card's bandwidth against a token
+of about 25 ms. The night guard (section 8) measures it. Nothing else assumed whole-window jumps: the room check (`kvRoomFor`) holds for any
+rows that fit, CUDA graphs are already off under windowed KV, and a compaction is a plain copy, so the kernel-class rules (64-aligned
+starts, the 16-row tail) do not apply to it.
 
-| checkpoint | family | window | windowed layers with their own KV / all | kvDim | bytes per position per layer | per layer per slot, window+512 (before) | per layer per slot, window+1536 (after) | added, all windowed layers, per slot |
+**Part 2, when the card has room: extra rollback from leftover VRAM** (`cudaResident.kvGrantRollback`, called last in the build, after the
+context, the KV slots and the expert cache are fixed). Free VRAM, less what is held back (the companion and vision-tower reserve the build
+was given, the 384 MB decode margin, and two default 512-row prefill passes' activation scratch, which `prefillCore` allocates per
+request), buys whole steps of extra slack in every slot's windowed layers, up to a rollback of 1,024 (`kvWindowRollbackMax`). The windowed
+buffers are reallocated (nothing is written yet); a failed allocation keeps the planned ones. **An expert-cache load gets none:** its cache
+was sized to what was free. **So the rollback a load gets depends on the memory state at load time**, between 448 and 1,024, and the
+serve log says which: `cuda: windowed KV: N more positions from free VRAM`.
+
+Measured the same way, with each windowed model loaded in real `serve` on this card (the new build against main, 2026-10-14):
+
+| model, flags | main | this build |
+|---|---|---|
+| Mellum2.1, serve defaults | resident, ctx 4,096, 1 slot | the same; no grant (448) |
+| Mellum2.1, `--ctx 16384 --moe-cache-experts` (I3) | expert cache 57 slots | 57 slots; no grant (448) |
+| Gemma-4-26B, `--moe-cache-experts` | expert cache 41 slots, ctx 4,096 | 41 slots; no grant (448) |
+| Gemma-3-4B, defaults | ctx 6,722, 3 slots | the same; +448 granted (306 MB, beside the 2.4 GB vision-tower reserve): 896 |
+| Gemma 4 E2B, defaults | ctx 16,384, 4 slots | the same; +576 granted (55 MB): 1,024 |
+| Gemma 4 E4B, defaults | ctx 16,384, 4 slots | the same; +576 granted (181 MB): 1,024 |
+
+**What the I3 replay says** (`TestWindowedKV_i3Replay`; the I3 load was an expert-cache one, so it got the floor): of the 54 follow-ups
+inside a run, 30 were cold under the old rule, **16 at the 448 floor** (each rolling back 544 or more), and 5 at the most the grant gives
+(rollback 1,024: three replies of over 1,300 tokens and two of Codex's own compactions). Step 32 gives the same 16 as step 64.
+
+**Caveat.** A prefill pass of 448 rows or more moves the base to that pass's own window start, so until decode has written past it, a
+follow-up that diverges inside that last pass (an edit, not a dropped reply) has `rows of that pass + tokens decoded since` of budget, not
+448. A dropped reply, Codex's shape, is always covered: its divergence is the prompt's end.
+
+**Memory**, per windowed layer per KV slot. Windowed layers stay f32 (`cuda/kvpolicy.go` gives the sliding-window ring no f16 form), so a
+layer holds `2 x kvDim x 4 x min(ctx, window + slack)` bytes (`cuda/resident.go:kvBytesForCap`; `TestWindowedKV_allocation` proves it equals
+the bytes allocated before the grant). The planned figure is main's. The last column is the most the grant can take, and it takes it only
+from VRAM nothing else was given. Real geometry from each checkpoint's `config.json` in `~/models`, by `memtable.py`; the load table above is
+the measurement on the device.
+
+| checkpoint | family | window W | windowed layers (own KV) / all | kvDim | bytes per position per layer | per layer per slot, planned (W+512, as main) | per layer per slot at the most the grant gives (W+1088) | most the grant can take, all windowed layers, per slot |
 |---|---|---|---|---|---|---|---|---|
-| Mellum2.1-thinking | mellum | 1024 | 21 / 28 | 512 | 4,096 | 6.0 MiB | 10.0 MiB | +84 MiB |
-| gemma-2-2b-it | gemma2 | 4096 | 13 / 26 | 1024 | 8,192 | 36.0 MiB | 44.0 MiB | +104 MiB |
-| gemma-3-4b-it | gemma3 | 1024 | 29 / 34 | 1024 | 8,192 | 12.0 MiB | 20.0 MiB | +232 MiB |
-| Gemma 4 E2B | gemma4 | 512 | 12 / 35 | 256 | 2,048 | 2.0 MiB | 4.0 MiB | +24 MiB |
-| Gemma 4 E4B | gemma4 | 512 | 20 / 42 | 512 | 4,096 | 4.0 MiB | 8.0 MiB | +80 MiB |
-| gemma-4-26b-a4b-it | gemma4 | 1024 | 25 / 30 | 2048 | 16,384 | 24.0 MiB | 40.0 MiB | +400 MiB |
-| gemma-4-31B-it | gemma4 | 1024 | 50 / 60 | 4096 | 32,768 | 48.0 MiB | 80.0 MiB | +1,600 MiB |
-| command-r7b | cohere2 | 4096 | 24 / 32 | 1024 | 8,192 | 36.0 MiB | 44.0 MiB | +192 MiB |
-| gpt-oss-20b | gpt_oss | 128 | 12 / 24 | 512 | 4,096 | 2.5 MiB | 6.5 MiB | +48 MiB |
-| Phi-3-mini-4k | phi3 | 2047 | 32 / 32 | 3072 | 24,576 | 60.0 MiB | 84.0 MiB | +768 MiB |
-| Mistral-7B-v0.1 (8 KV heads x 128, 32 layers; no config on disk) | mistral | 4096 | 32 / 32 | 1024 | 8,192 | 36.0 MiB | 44.0 MiB | +256 MiB |
-
-  Phi-3-mini's context is 4,096, so its layers now hold 3,583 of 4,096 positions and windowing saves almost nothing on it. A context at or
-  below `window + slack` is held whole, as before.
+| Mellum2.1-thinking | mellum | 1024 | 21 / 28 | 512 | 4096 | 6.0 MiB | 8.2 MiB | 47 MiB |
+| gemma-2-2b-it | gemma2 | 4096 | 13 / 26 | 1024 | 8192 | 36.0 MiB | 40.5 MiB | 58 MiB |
+| gemma-3-4b-it | gemma3_text | 1024 | 29 / 34 | 1024 | 8192 | 12.0 MiB | 16.5 MiB | 130 MiB |
+| Gemma 4 E2B | gemma4_text | 512 | 12 / 35 | 256 | 2048 | 2.0 MiB | 3.1 MiB | 14 MiB |
+| Gemma 4 E4B | gemma4_text | 512 | 20 / 42 | 512 | 4096 | 4.0 MiB | 6.2 MiB | 45 MiB |
+| gemma-4-26b-a4b-it | gemma4_text | 1024 | 25 / 30 | 2048 | 16384 | 24.0 MiB | 33.0 MiB | 225 MiB |
+| gemma-4-31B-it | gemma4_text | 1024 | 50 / 60 | 4096 | 32768 | 48.0 MiB | 66.0 MiB | 900 MiB |
+| command-r7b | cohere2 | 4096 | 24 / 32 | 1024 | 8192 | 36.0 MiB | 40.5 MiB | 108 MiB |
+| gpt-oss-20b | gpt_oss | 128 | 12 / 24 | 512 | 4096 | 2.5 MiB | 4.8 MiB | 27 MiB |
+| Phi-3-mini-4k | phi3 | 2047 | 32 / 32 | 3072 | 24576 | 60.0 MiB | 73.5 MiB | 432 MiB |
+| Mistral-7B-v0.1 (8 KV heads x 128, 32 layers; no config on disk) | mistral | 4096 | 32 / 32 | 1024 | 8192 | 36.0 MiB | 40.5 MiB | 144 MiB |
 
 ## 5. Gates
 
-- `TestWindowedKV_i3Replay` (`cuda/kvwindow_replay_test.go`, tag `cuda`, no device): the 59 recorded requests through
-  `kvWindowNextBase` and `kvWindowReusable`. The old rule (slack 512, rollback 0) must reproduce the server's cold or warm for every request
-  and its 35 cold. Under the production constants, every in-run follow-up whose rollback is within `WindowedKVRollback` must be warm.
-  **Before the fix: FAIL**: the old-rule half matched 35 of 59 exactly, and 30 in-run follow-ups with rollbacks of 90 to 1,008 were cold.
-  **After: PASS**, with 5 of 54 in-run follow-ups cold, each rolling back more than 1,024.
-- `TestWindowedKV_rollbackReuse` (`cuda/kvwindow_test.go`, tags `cuda goinfer_testhooks`, on `mistral-tiny-window`, `gemma3-vl-tiny` and
-  `cohere2-tiny` at a test slack of 24 with a rollback of 16). Ten turns. Each prefills a suffix at the previous prompt's end, then decodes
-  `rollback` tokens that the next prompt never contains, and the next turn must find its prefix reusable. At least 5 of the 9 reuses must follow a
-  compaction. Every prefill and decode is bit-identical to the full-KV resident under the same schedule, and each reused prefill's logits are
-  bit-identical to a cold full-KV prefill of the whole prompt. A rollback of `slack + 2` must report 0. **Before: FAIL** on all three
-  fixtures (`ReusableKV(42) = 0` after a 16-position rollback, base 33). **After: PASS** on all three.
-- The existing `TestWindowedKV_*` suite (decode, prefill, verify, slots, step, upload, reuse floor, agent turns, offsets) passes unchanged
-  under the new rule. Its test knob now sets the rollback with the slack.
+Day tier, `cuda` and `cuda goinfer_testhooks` on the RTX 2070 SUPER, each read with `-v` for `--- PASS` (none skipped):
+
+- `TestWindowedKV_i3Replay` (no device): the 59 recorded requests through `kvWindowNextBase` and `kvWindowReusable`. The old rule must
+  reproduce the server's cold or warm for every request and its 35 cold; the 448 floor must leave exactly 16 of 54 in-run follow-ups cold,
+  none with a rollback within 448; the largest grant (1,024) 5, none within 1,024. It assumes no grant at the floor (the I3 load was an
+  expert-cache one) and every in-run follow-up diverging at the previous prompt's end.
+- `TestWindowedKV_rollbackReuse` (three tiny windowed fixtures, slack 24, step 8: rollback 16): reuse after a dropped reply of the rollback's
+  length, bit-identical to the full-KV resident and to a cold prefill of the whole prompt. Against main it failed (`ReusableKV(42) = 0` after
+  a 16-position rollback); it passes.
+- `TestWindowedKV_stepIdentity64` (three fixtures, step 64 on a slack of 80): 600 decode steps through 8 compactions, every step's logits and
+  every held K and V position bit-identical to the full-KV resident. A planted defect (the compaction copying one position short) fails it.
+- `TestWindowedKV_expertCacheGetsNoGrant`: an expert-cache load keeps the planned slack and the 448-equivalent floor, while the same load
+  without the expert cache is granted (so the test can go red); and the decoder still prices a 1,024-window layer at 1,536 positions, main's
+  figure the expert cache is sized beside. On the first build it could not hold: that build allocated 1,024 more positions per windowed
+  layer to every load, expert cache or not. A planted defect (the grant not skipping the expert cache) fails it.
+- `TestWindowedKV_grant`: a load with spare VRAM gets the full grant in every slot, one whose free VRAM is only the reserve gets none, the
+  context and slot count are the same either way, and decode under the grant is bit-identical to full KV with the granted rollback
+  reusable. `TestWindowedKV_grantArithmetic` pins `kvWindowGrant`.
+- The existing `TestWindowedKV_*` suite (decode, prefill, verify, slots, step, upload, reuse floor, agent turns, offsets) passes under the
+  new rule, with the grant off so the fixtures still compact.
 
 ## 6. For KV2 (passed on by the owner)
 
-KV2's design (`docs/tasks/task-kv-architecture-2026-10.md`, section 5) keeps a window group to `ceil(W/B) + 1` blocks, and plans "one block of
-slack behind the window, so a rollback inside a verify width stays valid": a 64-position rollback budget. **That budget does not serve an
-agent turn.** The rollback a follow-up needs is the previous reply: median 258 tokens, 90th percentile 1,328 in this cell. Replayed with 64 positions of slack and no rollback reserve, 53
-of 54 in-run Codex follow-ups would have prefilled cold. That is worse than the shipped rule's 30.
+KV2's design (`docs/tasks/task-kv-architecture-2026-10.md`, section 5) keeps a window group to `ceil(W/B) + 1` blocks and plans "one block of
+slack behind the window, so a rollback inside a verify width stays valid": a rollback budget of 64 positions. **That budget does not serve
+an agent turn.** The rollback a follow-up needs is the previous reply: median 258 tokens and 90th percentile 1,328 in the I3 cell. Replayed
+with 64 positions of slack and none kept, 53 of 54 in-run Codex follow-ups would have prefilled cold, against 30 under main's rule.
 
 What this record found that the KV2 design has to keep:
 
-- **A fixed rollback reserve, not a cycling one.** Keeping 1,024 positions (16 blocks of 64) behind the newest position in a window
-  group gives the same 5 of 54 as here. With blocks there is no compaction copy, so the extra 512 positions of stride CUDA holds are not
-  needed: a 1,024 + 64 replay also gives 5 of 54.
-- **Or keep released window blocks reattachable.** If a window block released behind the window stays in the prefix cache at refcount 0
-  (the design's "or the cache") and a rollback re-attaches it by hash, the reserve can be smaller. The gate is the same.
+- **A rollback floor that does not cycle.** Blocks make it cheaper than here: releasing a block costs no copy, so a window group can keep
+  `ceil((W + R) / B) + 1` blocks with a floor of R behind the newest position at no copying cost. R = 448 reproduces this build's 16 of 54;
+  R = 1,024 gives 5 of 54 (a 1,024 + 64 replay).
+- **Its memory comes from somewhere priced.** Here the floor costs nothing because it fits inside main's 512 slack, and anything above it is
+  taken only from VRAM left over after the plan, never from the context, a slot or an expert cache. KV2's planner sizes pools per group
+  (option A); the floor belongs in the window group's priced need, and any larger rollback in what is left over.
+- **Or keep released window blocks reattachable.** A block released behind the window that stays in the prefix cache at refcount 0 (the
+  design's "or the cache") can be re-attached by a rollback, which makes a smaller floor enough.
 - **A gate on recorded traffic.** `TestWindowedKV_i3Replay`'s shape (recorded sizes in, the server's warm or cold out) can be pointed at the
-  KV manager's window-group retention once it replaces `kvEnsureSlot`. Its 35-of-59 half pins the old behaviour as the reference.
-- `decoder/resident_reuse.go` and the KV manager were not touched by this fix: the floor is still `ResidentReusableKV`, answered by
-  `cuda/kvwindow.go`.
+  KV manager's window-group retention once it replaces `kvEnsureSlot`; its 35-of-59 half pins the old behaviour as the reference.
+- `decoder/resident_reuse.go` and the KV manager were not touched: the floor is still `ResidentReusableKV`, answered by `cuda/kvwindow.go`.
 
-## 7. A modularity note
+## 7. Where the constants live
 
-`WindowedKVRollback` and `WindowedKVSlack` live in `decoder/model.go`, a file every parity family's hash covers. Changing a CUDA-only
-allocation figure staled 42 families' parity hashes and needed `scripts/refresh_parity_hashes.sh` (36 goldens passed, 0 failed). Moving the
-two constants to a file outside the parity core would end that coupling.
+The step (64) and the rollback cap (1,024) live in `cuda/kvwindow.go`, and the planned slack is still `decoder.WindowedKVSlack` (512),
+unchanged. So nothing under `decoder/` changes and the parity manifest does not go stale. The first build put a new constant in
+`decoder/model.go`, a file every parity family's hash covers, and a CUDA-only figure staled 42 families; that is gone with it.
+
+## 8. Speed guard, registered 2026-10-14 before any run (night tier)
+
+**Question.** Does the small-step compaction cost decode speed? The added copying is about 0.1% of a token by arithmetic; the guard measures
+it served.
+
+- **Instrument:** `run-speed-guard.sh` beside this record (driver `speed_guard.py`), queued on nobara with `night.py`, which holds the timing
+  lock. Two goinfer arms, pinned binaries in `~/goinfer-bench/kvwindow-ring-2026-10-14/` (`serve-main` built from `e9dae735`, `serve-new`
+  from this branch; `binaries.sha256` is checked first). No peer arm (TE5(a): the decision is new / main).
+- **Cells:** Mellum2.1 (`--ctx 16384 --moe-cache-experts`, the I3 settings) and Gemma-4-26B-A4B (`gemma4-26b-int4.giw --moe-cache-experts`,
+  ctx 4,096). Both are expert-cache loads, so both arms hold the same planned KV and the new arm gets no grant: the cells isolate the step.
+- **Workload:** `/v1/completions`, greedy, a prompt that counts from 1 to 400 (about 1,950 tokens on Mellum2.1), 640 tokens generated. Decode
+  runs from about position 1,950 to 2,590, past window + slack (1,536), so the new arm compacts about 10 times a completion and main about
+  once. Decode rate = (tokens - 1) / (last token - first token), timed by the client from the first streamed token, so prefill is excluded.
+- **Design and N:** per model, four sessions in the order main, new, new, main (one ABBA quad), each a fresh server; 3 completions a session.
+  N = 6 completions per arm per model. An idle gate before each session (1-minute load under 1.0, at most 300 s).
+- **Rule:** per model, R = median(new rates) / median(main rates). **PASS** if R >= 0.99 on both models. **FAIL** if R < 0.97 on either.
+  Anything else is **AMBIGUOUS, parked**: the owner decides with the numbers. Fixed N, no early stop.
+- **Void:** a session not `cuda-resident`, a session without the windowed-KV line, or a completion under 90% of the 640 tokens.
+- **Read beside the verdict, not graded:** whether the texts are identical within each arm and across arms (the tiny-fixture identity gate
+  is the correctness gate; a difference here is investigated, not graded).
+- **Prediction:** PASS at 0.7 (the copying is about 0.1% of a token), AMBIGUOUS at 0.25 (two sessions an arm resolve about 1%), FAIL at 0.05.
+- **What each result does:** PASS, the step stays at 64. AMBIGUOUS, the owner decides; a larger step halves the copying for a smaller
+  floor (step 128: floor 384). FAIL, the step is raised or the copy goes direct (no scratch round trip), and the guard re-runs.
+- **Cost estimate:** a session is the idle gate (about 30 s, measured in the smoke), the load (Mellum2.1 20 s, Gemma-4-26B 50 s) and 3 x
+  (prefill of the prompt, about 20 s, plus 640 tokens at about 65 tokens a second on Mellum2.1 and 40 on the 26B). Mellum2.1 about 137 s a
+  session, the 26B about 200 s: 4 x 137 + 4 x 200 s, about 22 minutes; queued at 25.
+- **Smoke, exploratory and not graded** (2026-10-14, `SMOKE=1`, one 64-token completion per arm on Mellum2.1, into an empty directory): the
+  script ran end to end, both sessions resident and windowed, texts identical across arms, 65.9 against 63.5 tokens a second (one
+  completion each, which resolves nothing).

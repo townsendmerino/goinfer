@@ -1,5 +1,6 @@
 # Bytes a windowed CUDA layer holds per KV slot: 2 (K and V) x kvDim x 4 (windowed layers stay f32: cuda/kvpolicy.go) x min(ctx, window+slack)
-# positions (cuda/resident.go:kvBytesForCap). Geometry from each checkpoint's config.json in ~/models; KV-shared layers hold nothing of their own.
+# positions (cuda/resident.go:kvBytesForCap). The planned slack is 512 (unchanged from main); kvGrantRollback adds at most 576 positions,
+# and only from VRAM left over after the plan, so the last column is a ceiling on what the grant can take, never a cost to the plan. Geometry from each checkpoint's config.json in ~/models; KV-shared layers hold nothing of their own.
 import json, os
 M = os.path.expanduser('~/models')
 def text(d):
@@ -24,8 +25,8 @@ for d in ['mellum2.1-thinking', 'gemma-2-2b-it', 'gemma-3-4b-it', 'gemma-4-E2B-u
     pp = 2 * nkv * hd * 4
     rows.append((d, mt, W, nwin, L, nkv * hd, pp))
 rows.append(('Mistral-7B-v0.1 (GGUF; geometry from its header)', 'mistral', 4096, 32, 32, 1024, 2 * 1024 * 4))
-print('| checkpoint | family | window W | windowed layers (own KV) / all | kvDim | bytes per position per layer | per layer per slot, W+512 (before) | per layer per slot, W+1536 (after) | added, all windowed layers, per slot |')
+print('| checkpoint | family | window W | windowed layers (own KV) / all | kvDim | bytes per position per layer | per layer per slot, planned (W+512, as main) | per layer per slot at the most the grant gives (W+1088) | most the grant can take, all windowed layers, per slot |')
 print('|---|---|---|---|---|---|---|---|---|')
 for d, mt, W, nwin, L, kvdim, pp in rows:
-    a, b = pp * (W + 512), pp * (W + 1536)
-    print('| %s | %s | %d | %d / %d | %d | %d | %.1f MiB | %.1f MiB | +%.0f MiB |' % (d, mt, W, nwin, L, kvdim, pp, a / 2**20, b / 2**20, nwin * (b - a) / 2**20))
+    a, b = pp * (W + 512), pp * (W + 1088)
+    print('| %s | %s | %d | %d / %d | %d | %d | %.1f MiB | %.1f MiB | %.0f MiB |' % (d, mt, W, nwin, L, kvdim, pp, a / 2**20, b / 2**20, nwin * (b - a) / 2**20))
