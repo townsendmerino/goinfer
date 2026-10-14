@@ -84,7 +84,7 @@ func TestKV2_recordedClassIsTheClassThatRan(t *testing.T) {
 	// which is the batched class the record names.
 	p2 := append(append(slices.Clone(p1), reply...), 16001, 16002, 16003, 16004, 16005)
 	gen(p2, 4)
-	slot, rows = m.KVBoundClassesForTest()
+	_, rows = m.KVBoundClassesForTest()
 	from := len(p1) + len(reply)
 	expect(rows, from, len(p2), "fast")
 	floor := metalFastPrefillFloorFor(r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
