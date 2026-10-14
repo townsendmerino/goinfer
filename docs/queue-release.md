@@ -17,6 +17,18 @@ Release gates, tagging, versioning, the v1.0 criteria, capability claims, and th
 
 ## Queued
 
+**R4 · v0.23.0 from `main`, once three branches are in** — `linux`, owner decision 2026-10-14
+
+The next release is v0.23.0, cut from `main` by `RELEASING.md` (the root tag, then the two-step submodule tags, `cuda/` included).
+It waits on three merges:
+- `cuda-double-softcap-2026-10` (the double softcap and logit scale on CUDA batched step rows);
+- `kv1-2026-10` (G5b on CUDA passed 2026-10-14);
+- `kv3-cuda-2026-10` (waits on the 2026-10-14 night's `kv3-cuda-suite-a` and `-b` reading green).
+No patch release goes out from v0.22.0. The notes are in the usual tone and state the softcap fix plainly, with who it affected
+(sampled output from two or more concurrent conversations under `--backend cuda` on dense Gemma 4, Command-R or Granite, since
+`7a44a58e`, 2026-09-27: v0.20.0 to v0.22.0). There is no "what went wrong" section. The Gemma 3 exact-past-the-bound fix on
+`kv3-tiled-2026-10` rides a later release, once its split suite reads green.
+
 **R3 · `.giw` claims coverage it does not have — CLOSED 2026-08-19 by v6 (complete coverage) — one SILENT wrong-answer path, one broken artifact**
 — `linux`, **refusals landed 2026-08-19; format extension (v6) still open**
 
