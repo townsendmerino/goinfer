@@ -1535,6 +1535,11 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 				return nil, perr
 			}
 			warnPrefillDeclined(len(prompt)-from, perr)
+			// The rest runs on decode's kernels, which is not the class the KV manager was told this pass writes (and
+			// some blocks may have run batched first): its rows name no producer, so no other request takes them.
+			if m.kv != nil {
+				m.kv.Unrecorded(m.kv.Bound())
+			}
 		}
 	}
 	// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head

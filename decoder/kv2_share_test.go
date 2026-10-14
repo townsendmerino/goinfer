@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
 
 // copyFake is mc3Fake with a slot-to-slot copy (ResidentKVCopier). mc3Fake's rows are a hash of each position's input
@@ -15,8 +17,17 @@ import (
 // writes another slot than dst (a slot index mixed up), "noop" reports success and copies nothing.
 type copyFake struct {
 	*mc3Fake
-	plant  string
-	copies int
+	plant          string
+	copies         int
+	declinePrefill bool
+}
+
+// PrefillLast declines while declinePrefill is set, as a backend whose batched pass refuses a prompt at call time.
+func (f *copyFake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
+	if f.declinePrefill {
+		return nil, fmt.Errorf("copyFake: batched prefill declined")
+	}
+	return f.mc3Fake.PrefillLast(ctx, embs, startPos)
 }
 
 func (f *copyFake) CopyKV(src, dst, start, end int) error {
@@ -322,5 +333,30 @@ func TestKV2_optionOff(t *testing.T) {
 	a.turn(t, context.Background(), m, 0, maxTok)
 	if a.turns[1].reused == 0 {
 		t.Error("A's second turn reused nothing: KVShareOff must leave a continuation alone")
+	}
+}
+
+// TestKV2_declinedPrefillSharesNothing is G4(a) on the decoder: a pass whose batched prefill declined ran on decode's
+// kernels, not the class the manager was told, so its rows name no producer and another conversation copies none of them.
+func TestKV2_declinedPrefillSharesNothing(t *testing.T) {
+	const maxTok = 8
+	m, rf := loadWithCopyFake(t, 2, "")
+	pre := kv2Preamble(m.w.arch.VocabSize)
+	a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
+	rf.declinePrefill = true
+	a.turn(t, context.Background(), m, 0, maxTok)
+	rf.declinePrefill = false
+	for s := 0; s < 2; s++ {
+		if q := m.kv.Seq(s); q != nil {
+			for _, r := range q.Classes() {
+				if r.Class != kvmgr.ClassUnknown {
+					t.Errorf("slot %d rows [%d, %d) recorded as class %d after a declined prefill", s, r.Start, r.Start+r.Len, r.Class)
+				}
+			}
+		}
+	}
+	b.turn(t, context.Background(), m, 1, maxTok)
+	if b.shared[0] != 0 || rf.copies != 0 {
+		t.Errorf("B copied %d rows from a sequence whose prefill declined", b.shared[0])
 	}
 }
