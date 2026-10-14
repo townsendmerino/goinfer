@@ -305,3 +305,22 @@ func TestKV2_scopes(t *testing.T) {
 		})
 	}
 }
+
+// TestKV2_optionOff: Options.KVShareOff (serve's -kv-share off) stops every copy on the model, whatever the request's
+// scope says, and leaves a conversation's own continuation alone.
+func TestKV2_optionOff(t *testing.T) {
+	const maxTok = 8
+	m, rf := loadWithCopyFake(t, 2, "")
+	m.kvShareOff = true // Options.KVShareOff
+	pre := kv2Preamble(m.w.arch.VocabSize)
+	a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
+	a.turn(t, context.Background(), m, 0, maxTok)
+	b.turn(t, context.Background(), m, 1, maxTok)
+	if b.turns[0].reused != 0 || rf.copies != 0 {
+		t.Errorf("B reused %d with %d copies under KVShareOff, want none", b.turns[0].reused, rf.copies)
+	}
+	a.turn(t, context.Background(), m, 0, maxTok)
+	if a.turns[1].reused == 0 {
+		t.Error("A's second turn reused nothing: KVShareOff must leave a continuation alone")
+	}
+}
