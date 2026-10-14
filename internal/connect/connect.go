@@ -27,6 +27,7 @@ type settings struct {
 	Key    string // the bearer token the agent sends; "goinfer" when the server has none
 	Model  string
 	Window int // context_window from /v1/models
+	MaxPos int // max_positions from /v1/models, the model's own maximum context; 0 when the server does not publish it
 	Output int // the output limit told to the agent
 }
 
@@ -181,6 +182,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 		Data []struct {
 			ID     string `json:"id"`
 			Window int    `json:"context_window"`
+			MaxPos int    `json:"max_positions"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &list); err != nil {
@@ -205,6 +207,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 			if s.Key == "" {
 				s.Key = "goinfer" // agents refuse an empty key; a server with none accepts any
 			}
+			s.MaxPos = m.MaxPos
 			return s, nil
 		}
 	}
@@ -386,6 +389,7 @@ func Run(args []string, self string, out io.Writer) int {
 // connect prints the configuration for s and, with doWrite, patches path. It refuses to write a configuration whose
 // agent cannot fit its first request in the window, unless force.
 func connect(out io.Writer, name string, h harness, path string, s settings, doWrite, force bool) int {
+	s = claudeCodeSettings(name, s)
 	verdict := h.fit(s.Window)
 	fmt.Fprintf(out, "%s -> %s, model %s, context window %d tokens (output limit %d)\n", h.Name, s.URL, s.Model, s.Window, s.Output)
 	fmt.Fprintf(out, "first request: %d tokens (%s %s, measured) — %s in this window\n", h.FirstRequest, h.Name, h.Version, verdict)

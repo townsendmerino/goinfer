@@ -35,13 +35,14 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
   variable only to a model id it cannot resolve to a Claude model and that carries no `[1m]`
   ([Claude Code's model configuration](https://code.claude.com/docs/en/model-config#correct-the-window-for-a-gateway-or-custom-model-id)),
   so serve the model under a name without `claude-` in it.
-- **Claude Code compacts on its own** once its context plus its output limit (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) reaches that
+- **Claude Code compacts on its own** once its context plus its output cap (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) reaches that
   window, and nothing it documents moves that point later at a small window: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts
-  100,000 and up, and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower it. At `-ctx 28672`, with 7,168 tokens of output
-  limit, it compacted after every file read and stopped on "Autocompact is thrashing"
-  ([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). `connect claude-code` warns when the
-  room left beside the first request (the 20,199 tokens it prints) and the output limit is under a quarter of the first
-  request, and names the `-ctx` that clears it: 33,440, so `-ctx 32768` warns too.
+  100,000 and up, and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower it. At `-ctx 28672`, with a 7,168-token cap, it
+  compacted after every file read and stopped on "Autocompact is thrashing"
+  ([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). So `connect claude-code` writes a
+  fixed cap of 4,096 (a longer reply is cut off; a thinking model can write one), warns below the first request (the
+  20,199 tokens it prints) plus that cap, 24,295, naming the `-ctx` to pass or saying the model's own maximum is too
+  small, and prints a one-line note below 29,344, which adds a quarter of the first request. `-ctx 32768` clears both.
 - Background work (the session title) goes to `ANTHROPIC_MODEL` unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another
   served model: with two models loaded (`-model main=... -model fast=...`), set it to the small one.
 - `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.
