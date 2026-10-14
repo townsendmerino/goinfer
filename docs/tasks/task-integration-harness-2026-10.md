@@ -191,6 +191,70 @@ the session ending on the overflow. A fail with the fixed part fitting means the
   them. No real agent has been driven past its window. `/v1/completions`, jobs, batches and image turns do not
   measure a fixed part and answer with the curable wording.
 
+#### I1 live gate, second design — DRAFT, FOR OWNER REVIEW, NOT REGISTERED (2026-10-14)
+
+Nothing below is registered, run or queued. The first design (3c in I3's run plan) read the night of 2026-10-13 as Codex VOID, opencode VOID,
+Claude Code FAIL (I3's read, below). It had two causes, and this draft answers each one. Qwen3-4B fetched every `bulk` file in one step,
+which no compaction can cure. In `edit` and `fix`, and in Claude Code's `bulk` run, each harness's **own** compaction fired before
+goinfer's limit was reached, so no overflow could be attributed to goinfer.
+
+- **Model:** Qwen3-4B int4, f16 KV, for all three. It is the one model measured to drive all three harnesses on the 8 GB card (KV0), and its
+  first requests are measured: Codex 5,669, opencode 7,200, Claude Code 17,711 tokens. *Alternative, for Claude Code only:* Qwen3-1.7B
+  (`~/models/qwen3-1.7b-bf16`) at 49,152, where its f16 KV is 5.6 GB by its config. That should fit beside int4 weights, but the fit is
+  unmeasured and so is the model as a driver, so a day pilot would have to come first.
+- **Served window `W`, sized for about 6,000 tokens of room** beside the fixed part and I1's reserved output (a quarter of the window): Codex
+  15,616, opencode 17,664. Claude Code stays at 28,672, the most Qwen3-4B holds, with its output cap written as 4,096 (a recorded deviation
+  from `connect`'s quarter). The reserve is then 4,096 and the room 6,865.
+- **The harness is told `2 x W`** (Codex `model_context_window` and its auto-compact limit, opencode `limit.context`,
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`), so its own compaction threshold sits above goinfer's. The first context event is then goinfer's
+  overflow answer, and the harness's response to that answer is what is measured. **Control arm,** one run per harness, reported and not
+  graded: the harness told the true `W`. It shows the harness's own behaviour, which the night of 2026-10-13 showed already.
+- **Task `chain`:** about 18 files of room/6 tokens each (about 1,000). Each file ends with `next: data/<name>.txt` under a name drawn per run,
+  and the last file ends with `END` and a code word. Beside them sit 40 decoy files of the same size. The prompt says to start at
+  `data/start.txt`, follow `next:` one file per tool call, and answer with the code word. A model cannot fetch the chain in one step,
+  because each name is known only from the file before it. A model that globs the directory reads the decoys, and the run is caught as
+  off-chain. The chain totals about 3 x room, so a run that follows it overflows two or three times, each curable. Success is mechanical:
+  the code word in the reply, with exit 0.
+- **Recorded:** the fixed recorder (prompt sizes on every route), plus each harness's own compaction events with their triggers (Claude
+  Code's `compact_boundary`, Codex's `compacted` session record, opencode's compaction parts), placed in time against the wire's overflow
+  answers. Also the order of the files read.
+- **Per run, void first.** A run is VOID and says nothing about the wording if any of these holds:
+  - *never reached:* no overflow;
+  - *harness first:* the harness compacted before goinfer's first overflow, so the told window did not take;
+  - *incurable step:* one step added more than the room;
+  - *off-chain:* a decoy was read, or a step read more than two chain files;
+  - *summary too large:* the first prompt after a compaction is itself over `W` less the reserve, so the harness's summary cannot fit;
+  - *box:* a `halted` answer or a 5xx.
+- **Per run, otherwise:**
+  - **PASS:** every overflow is followed by at most one compaction before the next chain file is read, the chain reaches `END`, and the
+    reply holds the code word.
+  - **FAIL:** the session ends on an overflow or an error; or three compactions follow one another with no chain file read between them
+    (I1's own word, *consecutive*, which 3c had turned into a count per run); or overflows are re-sent with no compaction until the
+    session ends.
+  - Overflow answers in a row stay reported and ungraded, because Codex trims and re-sends.
+- **Per harness:** three runs.
+  - **PASS:** at least two gradable runs, all of them PASS.
+  - **FAIL:** two or more gradable runs FAIL.
+  - **Ambiguous, parked:** otherwise (one FAIL, or fewer than two gradable runs). Three more runs follow the next night, and the same rule
+    is read over all gradable runs. If fewer than two are still gradable, the harness is VOID.
+  - A FAIL with the fixed part fitting means the wording is wrong for that harness, as I1 says.
+- **The gate can go red: a planted arm.** One run per harness is served by a measurement binary built at the same pin, with the
+  overflow writer forced to the incurable, operator-facing wording. No harness should be able to compact on that, so the expected grade is
+  FAIL (the session ends on the overflow). If a planted run grades PASS, the gate is void for that harness. This is a measurement build, not
+  a production change.
+- **Predictions:** written by the registrant before any run.
+- **Cost:**
+  - *By day:* one exploratory `chain` pilot each for Codex and opencode (about 10 min together), to confirm that Qwen3-4B follows the
+    chain and that the sizes land. Claude Code's pilot is about 30 min, so it goes to the night or needs the owner's word.
+  - *Night job one:* Codex and opencode, 3 graded runs + 1 control + 1 planted each, at about 10 min a run: about 100 min.
+  - *Night job two:* Claude Code, 3 + 1 planted (the control is optional) at 30 to 40 min a run. Cold prefills of about 17.7K tokens take
+    4.5 min on the I3 pin's per-token path. That is about 160 min.
+- **Open for the owner:**
+  - the Claude Code model (Qwen3-4B with the 4,096 cap, or Qwen3-1.7B after a pilot);
+  - whether the told `2 x W` is acceptable, given that the configuration differs from what `connect` writes and is labelled so;
+  - the binary: the I3 pin, or one that carries KV3's tiled prefill if it has merged by then (that changes Claude Code's run time, not
+    the overflow path).
+
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 
 Magnitude advertises one-click connection to eight harnesses. Read from its connectors, that is a config writer: it
@@ -520,11 +584,13 @@ passed and caught its planted weaknesses in each, the planned model and window w
 **I1's live gate:** Codex **VOID** (every run an incurable jump, a run that never reached the window, or a harness that compacted
 first), opencode **VOID** (the same), Claude Code **FAIL** (one run: 1 overflow, 3 compactions, the session ended on Claude Code's
 "Autocompact is thrashing"). The FAIL is curable by hand count, so it is not void (a 5,154-token step against 9,961 of room), and the
-fixed part fits. By I1's reading, then, the wording is wrong for Claude Code. The run also shows that all three compactions were Claude
-Code's own (`trigger: auto`), two of them before goinfer had answered any overflow. That is recorded beside the verdict, not instead of
-it; the owner decides which reading stands. The predictions (Codex PASS, opencode FAIL, Claude Code the unknown) were not tested for
-the two VOID harnesses. With Qwen3-4B the gate as built cannot read the wording on Codex or opencode, because the model reads all eight
-`bulk` files in one step. A redesign is a new registration.
+fixed part fits. **The FAIL stands as registered (owner, 2026-10-14).** The cause observed, which does not change the verdict: Claude
+Code's own auto-compaction (`trigger: auto`), twice before goinfer had answered any overflow and then a third time, ending on its own
+"Autocompact is thrashing". The window, 28,672, was barely above its 17,711-token first request plus the 7,168 reserved for output. The
+predictions (Codex PASS, opencode FAIL, Claude Code the unknown) were not tested for the two VOID harnesses. With Qwen3-4B the gate as
+built cannot read the wording on Codex or opencode, because the model reads all eight `bulk` files in one step. A fresh registration
+is drafted in I1 (§2, "I1 live gate, second design").
+The record also notes an outside read on the box during job B, at 21:19, and shows that it moved no graded cell.
 
 **Recorder defects found by the grade, fixed in `matrix/`:** an empty reply was graded against the raw output, which produced the false
 pass; `/v1/messages` prompt sizes were never recorded, so the I1 grader's incurable-jump test skipped Claude Code without a warning.
