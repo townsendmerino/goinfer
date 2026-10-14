@@ -342,6 +342,178 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
   - A batched prefill for the q4k kinds, on CUDA and Metal.
   - Per-32 activations or a q4k lane on WebGPU.
 
+**OP0, done 2026-10-13.** What it changed, and what it found:
+- **The matrix says why.** `docs/hardware-matrix.md` has a generated section, "Why a cell reads CPU", built from
+  `decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`. It lists every gate
+  that refuses, and the generator fails if a cell and its reasons disagree. A note covers Phi-3/4's other configurations.
+- **Its reasons are the baseline record's, with two additions:** Spark-X2.5's activation, and Kimi K2's router capacity on
+  Metal, which the missing `mla` had hidden. §3.2's table and OP2's line are corrected for it.
+- **The activation hazard is closed** (§3.2): `gated-gelu-erf`, `non-gated-gelu-erf` and `gated-act-unknown`, declared by no
+  backend. The non-gated case was live on Metal, and the baseline record's §3 has the run before and after.
+- **A runner-shape decline now names the shape** in `DecodePath()` and `serve check`.
+- **The census is §4.5.** Its seven numbered findings are where the operation boundary does not hold, and it sizes OP1.
+- **The prior art is §10a,** with §10's lines corrected in place.
+- **Two things for the phases that follow:**
+  - Before OP2's SSM on Metal, the non-gated activation needs a feature per value (§4.5, item 2).
+  - Before OP5, `attn-output-gate` needs splitting by activation (§4.5, item 3).
+- **Three things in backend modules were read and not fixed** (§4.5's last list). The CUDA one may be live.
+
+### 4.5 Features mapped to operations (OP0, read 2026-10-13)
+
+Every `ResidentFeature`, the operation it would become, and what implements it on each backend today.
+
+- **Basis.** Read on branch `op0-2026-10` (main `bf62dd71` plus OP0's own changes). Nothing here was run.
+  - "Declared" is read from `decoder/features.go:ResidentBackendFeatures`' source map. "—" means the backend does not declare
+    the feature.
+  - The kernels were read in three passes, one per backend module. Every kernel name below was then checked to occur in the
+    file named. A statement that was not read in the code is marked INFERRED.
+- **Kernel files.** CUDA kernels are `.cu` files in `cuda/`. Metal's are Go string constants: `metal/kernels/kernels_msl.go` (decode), `metal/kernels/prefill_msl.go` (the f16
+  prefill), `metal/kernels/moe_msl.go` and `metal/kernels/deltanet_kernels_msl.go`. WebGPU's are WGSL constants in `gpu/`.
+- **What "operation" means here.** §4.1's kinds: `norm`, `proj`, `qk-norm`, `rope`, `attention`, `out-gate`, `ffn` (gated,
+  non-gated or MoE), the recurrent mixers, and the embedding and head stages. A feature is an operation kind, a parameter of
+  one, a property of the layer list, or a bundle of several.
+
+**Norms**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `rms-add-one` | parameter of `norm(rms)`: the (1+w) offset | `addOne` of every RMS kernel: `rmsnorm_quant`, `rmsnorm_f32` (`cuda/glue.cu`), `fused_rms_qkv`, `fused_rms_gu`, `qk_norm` (`cuda/fused_qkv.cu`), their batched twins (`cuda/prefill_batched.cu`) | `addOne` of `rmsnorm_quant`, `rmsnorm_f32`, `qk_norm`; `rmsnorm_f16`, `qk_norm_f16` in the prefill | `addone` of `rmsnormQuantWGSL` (`gpu/decodefuse.go`), `rmsnormShaderWGSL` (`gpu/layer.go`), `qkNormWGSL` (`gpu/qknorm.go`) |
+| `layer-norm` | a second `norm` kind, with a bias parameter | `layernorm_quant` (`cuda/glue.cu`), bias-free; `layernorm_quant_batched` (`cuda/layernorm_quant.cu`) | `layernorm_quant` with `hasBias`; the prefill's `layernorm_f16` is bias-free | — |
+| `qk-norm` | `qk-norm`, per head | `qk_norm` (`cuda/fused_qkv.cu`), `qk_norm_batched` (`cuda/prefill_batched.cu`) | `qk_norm`; `qk_norm_f16` | `qkNormWGSL` (`gpu/qknorm.go`) |
+| `qk-norm-whole` | parameter of `qk-norm`: one group over all heads | the same kernels launched as one head; declines unless nH = nKV | the same; declines unless nH = nKV | — |
+| `sandwich-norm` | the layer list: a `norm` after each sublayer | no new kernel: `rmsnorm_f32`, and the o and down projections lose their fused residual add | `rmsnorm_f32`; `rmsnorm_f16` in the prefill | reuses `rmsnormShaderWGSL` and `residualShaderWGSL` (`gpu/layer.go`) |
+| `post-only-norm` | the layer list: no pre-norm | no new kernel: `quant_vec` (`cuda/glue.cu`) replaces the pre-norm | no new kernel: `quant_vec` | — |
+| `parallel-block` | the layer list: one `norm` feeds attention and FFN, one residual add | no kernel; the attention input is reused | no kernel; the same | — |
+
+**Positions**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `partial-rotary` | parameter of `rope`: the rotary width | `rhalf` of `rope_kv` (`cuda/gemv_fwd.cu`), `rope_kv_batched` (`cuda/prefill_batched.cu`) | `rhalf` of `rope2`; `rope_f16` | `half` in the rope shaders (`gpu/attention.go`); the batched prefill declines it |
+| `yarn-mscale` | parameter of `rope`: a scale | `mscale` of the same kernels | `scale` of `rope2`; `rope_f16` | `scale` in the rope shaders; the batched prefill declines it |
+| `per-layer-rope` | the layer list: `rope`'s table differs by layer | a buffer bound per layer | a buffer bound per layer | a buffer bound per layer |
+| `nope` | the layer list: a layer with no `rope` | no kernel: the decoder hands the layer an all-zero table | the same | — (the table mechanism is there; not declared) |
+| `pairwise-rope` | parameter of `rope`: the pairing; its own kernels | `rope_kv_pw`, `rope_kv_batched_pw` (`cuda/rope_pairwise.cu`) | `rope_pw`, `rope2_pw`; `rope_f16_pw` | — |
+| `pairwise-mrope` | pairing × a (t, h, w) position; prefill only | `rope_kv_mrope_batched_pw` (`cuda/rope_pairwise.cu`) | `rope_mrope_f16_pw` | — |
+| `learned-pos` | an embedding-stage operation; no `rope` | — | host add (`metal/model.go:resident.addLearnedPosTo`) | — |
+
+**Attention**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `sliding-window` | parameter of `attention`, and a KV property | `window` of `attention` (`cuda/glue.cu`), `attn_batched`, `attn_fused_hd64` and the tiled kernels; a host-computed start for `splitkv_scores` and `fa_partial` | `window` of `attention`, `attention_i8`, `attention_prefill`; the batched step declines it | `start` in every decode attention shader's uniform (`gpu/attention.go`) |
+| `attn-logit-softcap` | parameter of `attention` | — | — | — |
+| `attn-temp` | parameter of `attention` (a query scale), implemented in the rope kernel | `qTempScale` of `rope_kv`; a per-row table for `rope_kv_batched` | `qTempScale` of `rope2`; not in the f16 prefill | — |
+| `attn-sink` | **bundle of four** (below) | `sinks` of `splitkv_softmax` (`cuda/decode_splitkv.cu`), `attn_batched`, `attn_fused_hd64`; `glu_quant_gptoss`, `route_gptoss` (`cuda/gptoss_act.cu`); `gemv_w4a8_moe_wacc_bias` (`cuda/moe.cu`) | `sinks` of `attention`, `attention_i8`; `swiglu_quant_gptoss`, `route_gptoss_sg`, `gemv_w4a8_moe_wacc_bias` | `sinks` in the nine decode attention pipelines (`gpu/attention.go`); `routeGptOssWGSL`, `gptossGluQuantWGSL`, `moeExpertGptOssDownGEMVWGSL` (`gpu/moe.go`) |
+| `attn-output-gate` | `out-gate`, with two activations under one name, plus a per-layer query-head count | — | — | — |
+| `mla` | a second `attention` kind, with its own projections and rope | `mla_latent_store`, `mla_head_matvec`, `mla_q_rope`, `mla_attn` (`cuda/mla.cu`); decode only | — | `mlaLatentStoreWGSL`, `mlaHeadMatvecWGSL`, `mlaQRopeWGSL`, `mlaAttnWGSL` (`gpu/mla.go`) |
+| `out-bias` | parameter of `proj(o)`: a bias | the bias argument of the GEMVs | `gemv_w4a8_sa_bias_resid` | no new shader: a bare GEMV, then two adds |
+
+**Feed-forward**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `gated-gelu` | parameter of `ffn(gated)`: tanh-GELU | `act` of `glu_quant` (`cuda/glue.cu`), `glu_quant_batched` (`cuda/prefill_batched.cu`), `glu_quant_g32` (`cuda/actgroup.cu`) | `act` of `swiglu_quant`, `swiglu_f32`; `swiglu_f16` | its own shader, `gegluQuantWGSL` (`gpu/decodefuse.go`), chosen by one model-level flag |
+| `gated-gelu-erf` | parameter of `ffn(gated)`: exact GELU | — | — | — |
+| `gated-act-unknown` | none: the catch-all for any other gated activation | — | — | — |
+| `non-gated-mlp` | `ffn(non-gated)`; **the activation is not named** | — | `act_quant`: tanh-GELU or SiLU, with biased up and down GEMVs | `relu2QuantWGSL` (`gpu/relu2.go`): squared ReLU, reached only through Nemotron's block kinds |
+| `non-gated-gelu-erf` | parameter of `ffn(non-gated)`: exact GELU | — | — | — |
+| `moe` | `ffn(moe)`: a router, routed experts, an ungated shared expert | `moe_route`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc`, `shared_gate_combine` (`cuda/moe.cu`) | `moe_route_sg`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc` | `moeRouteWGSL`, `moeExpertGEMVWGSL` (`gpu/moe.go`) |
+| `moe-gated-shared` | parameter of `ffn(moe)`: a sigmoid gate on the shared expert | the `ungated` argument of `shared_gate_combine` | `shared_gate_combine` | `sharedGateWGSL` (`gpu/moe.go`) |
+
+**Recurrent mixers**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `ssm` | `mamba2`, for two families with different block layouts | — | — | `mambaConvShaderWGSL`, `mambaSSMShaderWGSL`, `mambaGNormShaderWGSL` (`gpu/mamba.go`) |
+| `deltanet` | **bundle of two**: the `deltanet` mixer, and a fused output gate on the family's softmax layers | `delta_conv`, `delta_gates`, `delta_norm`, `delta_rule`, `delta_gnorm`; `delta_qsplit`, `delta_attn_gate` (`cuda/deltanet.cu`) | the same seven names | `deltaRuleShaderWGSL`, `deltaNormShaderWGSL`, `deltaGatesShaderWGSL`, `deltaGNormShaderWGSL`; `deltaQSplitShaderWGSL`, `deltaAttnGateShaderWGSL` (`gpu/deltanet.go`) |
+| `kda` | `kda` | — | — | — |
+| `short-conv` | `short-conv` | — | — | — |
+
+**Embedding and head**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `embed-scale` | parameter of the embedding stage | host, in the decoder for every backend (`decoder/residency.go:Model.embedResidentInto`) | the same | the same |
+| `final-logit-softcap` | head post-processing, on the host | `cuda/softcap.go:applySoftcap` | `metal/model.go:softcapParallel` | `gpu/softcap.go:applySoftcap` |
+| `logit-scale` | head post-processing | host multiply (`cuda/softcap.go:applyLogitScale`) | host multiply (`metal/model.go:resident.finalizeLogits`) | folded into the head's weight scale at build, **for the Granite hybrid only** |
+| `gemma4-e-model` | **bundle of three**: a per-layer embedding operation, cross-layer shared KV, a per-layer FFN width | no new kernel | `ple_gelu_mul`, plus existing kernels (`metal/model.go:resident.encodePLE`) | no new shader |
+
+**What does not map cleanly.** These are the places the operation boundary of §4.1 does not hold today.
+
+1. **Four features are bundles.** A backend declares all of a bundle or none, so a model that needs one part waits for the rest.
+   - `attn-sink` is gpt-oss's four changes: the sink (an `attention` parameter), a router whose bias reaches the mixing weight,
+     a clamped SwiGLU expert with a bias, and a biased weighted down-projection.
+   - `deltanet` is the mixer plus an output gate on the softmax layers, fused into a double-width query projection.
+   - `gemma4-e-model` is one operation, one KV-layer property and one property of the layer list.
+   - `moe` covers every routing flavour as kernel parameters, and each backend's build then declines some shapes by hand: on
+     CUDA, a non-SiLU expert, MoE with sandwich norms, and widths that are not multiples of 32
+     (`cuda/backend.go:cudaBackend.BuildResident`).
+2. **One name, a different operation per backend.**
+   - `non-gated-mlp` is tanh-GELU or SiLU on Metal and squared ReLU on WebGPU. OP0 named exact GELU; the rest is open.
+     - A non-gated squared-ReLU model derives nothing for its activation, and Metal's `act_quant` would run tanh-GELU for it.
+       Today only Nemotron-H is that shape, and `ssm` declines it on Metal first. **OP2's "SSM on Metal" lifts that**, so the
+       non-gated activation needs a feature per value before then.
+     - WebGPU reaches its kernel only through Nemotron's block kinds. INFERRED: another non-gated family that passed the
+       gates would fail the build with a projection error, not a decline.
+   - `logit-scale` is a host multiply for any family on CUDA and Metal. On WebGPU it is a fold into the head that only the
+     Granite hybrid's build performs (`gpu/residency.go:webgpuBackend.BuildResident`). Another family with a logit scale would
+     be admitted there and left unscaled. No released checkpoint reaches it: dense Granite 4.2 ships a scale of 1.0, and
+     Command-R declines on WebGPU for other features (both read from this repo's notes, not from the checkpoints).
+   - `layer-norm` is biased on Metal's decode kernel, and bias-free on CUDA's decode kernel and in Metal's prefill. GPT-2's
+     biased norm is not on CUDA; `learned-pos` and `non-gated-mlp` decline it there first.
+3. **One name, two parameter values: the class OP0's activation fix belongs to.** `attn-output-gate` is softplus for Laguna and
+   sigmoid for Spark-X2.5, and also carries Laguna's per-layer query-head count. A backend that builds one gate and declares
+   the feature admits the other. Split it before OP5.
+4. **Five features are not operations.** `sandwich-norm`, `post-only-norm`, `parallel-block`, `nope` and `per-layer-rope`
+   say which operations a layer has, in what order, and with which table. In a layer program they are the list itself.
+   - They still cost code, because fusions assume one order. Sandwich and post-only norms give up the residual add fused into
+     the o and down projections. On CUDA, post-only norms and the parallel block turn the fused norm-plus-QKV kernel off.
+   - This is the argument for §4.1's explicit fusion tables: the kernels already know which sequences they claim.
+5. **Where the math lives is not where the code lives.** `attn-temp` scales the query, so it is an `attention` parameter, and
+   both backends implement it inside the rope kernel. It is missing from Metal's f16 prefill rope and from CUDA's m-RoPE and
+   MLA kernels.
+6. **A second admission system sits beside the features.** These decide admission and are not features:
+   - in the decoder: the runner shape, the activation hazard and the activation group, the router's capacity, per-layer
+     attention geometry, and Gemma 4's parallel dense and MoE block (`decoder/features.go:residentGateReasons`);
+   - in each backend's build: hand-written declines. Metal's include widths that are not multiples of 8 and the q4k lane's
+     shape (`metal/model.go:buildResident`). WebGPU's include a head dimension above its kernel's and a KV
+     precision per family.
+   - OP4's "admission by operation" must take these in, or it replaces one of two systems.
+7. **The feature sets describe decode. Every other request shape keeps its own, smaller list.**
+   - Metal: `metal/model.go:prefillFeatures` for the f16 prefill, and `metal/batch.go:resident.batchIneligible` for the batched
+     step, which declines eleven model-level variants.
+   - WebGPU: `gpu/prefillrunner.go:runModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
+   - CUDA: `cuda/prefill.go:cudaResident.prefillStaticDecline` and `cuda/batchstep.go:cudaResident.BatchStepRange`. MLA runs
+     in decode only (its prefill and verify fall back to sequential: INFERRED from the code, not run).
+   - So an operation table needs a request-shape column until RF removes the shapes. This is §3.3's cost, counted per feature.
+
+**What OP1 has to touch.** Softcapping is one `attention` parameter, and the score is formed in this many places on the text
+path:
+
+| backend | hand-written score implementations | derived or twin forms |
+|---|---|---|
+| CUDA | 10, in 9 `.cu` files; 8 without MLA and the block drafter | f16-KV builds of six of those modules |
+| Metal | 10: 6 decode and 4 prefill | 4 batched-step forms, derived as text (`metal/batch_rows.go`) |
+| WebGPU | 10: 6 decode, 1 MLA and 3 prefill | 3 derived as text; 14 pipeline slots in all |
+
+Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
+
+**Found while reading, in backend modules, and not fixed** (a backend change is a two-step tag; each needs its owner's call).
+All are read from the code, and none was run.
+- **CUDA: a batched-step row that returns logits appears to get the final softcap and the logit scale twice.**
+  `cuda/prefill.go:cudaResident.prefillCore` applies both inside the job for a step row, and its closing loop applies both
+  again to every row. It would touch concurrent conversations that sample on the host, on a model with a final softcap
+  (dense Gemma 4) or a logit scale (Command-R). Both transforms keep the argmax, so a greedy test cannot see it.
+- **WebGPU: `logit-scale`**, item 2 above.
+- **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
+  derives `nope`, which WebGPU does not declare. The registry's representative config is roped, so the matrix cannot show it.
+  If so, lifting the bring-up gate is not the only step left for the released tiny checkpoint, which the registry says ships
+  NoPE.
+- **Comments in `decoder/features.go`'s declared sets that the code has moved past:** CUDA's "per-layer rotary width is not
+  implemented" (the layer struct carries one); CUDA's attention temperature "recomputed per row device-side" (a host-built
+  table); Metal's "the f16 prefill declines" the E-model (it has a batched route); and several kernel file names.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
@@ -506,10 +678,10 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
 - **`docs/tasks/parked/task-concurrency-2026-09.md`:** "spec inside a batch" becomes RF6. MC5's continuous batching stays
   parked (E6).
 - **`docs/tasks/task-recompute-audit.md` §5:** its class becomes a planner property (OP4).
-- **`docs/hardware-matrix.md`:** decline reasons and the Phi-3/4 configuration note (OP0).
+- **`docs/hardware-matrix.md`:** decline reasons and the Phi-3/4 configuration note (OP0, done).
 - **`docs/ARCHITECTURE.md`:** §1 ("One decoder, read from a descriptor") and §3 ("Registration and the runner seam",
-  "Admission: which models run resident") are rewritten as phases land. §3 says "About a dozen optional interfaces" where the
-  decoder asserts 34; fix that in OP0's doc pass.
+  "Admission: which models run resident") are rewritten as phases land. §3's count of the optional interfaces was corrected to 34
+  in OP0's doc pass.
 
 ## 12. When this closes
 
