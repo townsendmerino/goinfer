@@ -1,11 +1,10 @@
 # Task: f16 KV on the CPU as the command-line default, with f32 kept as the reference (2026-10)
 
-> **Status: SCOPED 2026-10-12. Not started, and not scheduled.** The owner asked for it that day ("can we keep f32
-> as an option for kv on cpu, but make default f16? f32 would be important for our reference") and then: "we'll work
-> on it at some future point, not sure when". Nothing here is measured. The facts about the code were read at main
-> `88665dbe` and re-read at `9f4ecdc3` on 2026-10-13, after a review pass whose claims were each checked against the
-> tree (§2 and §4 changed most: decode does not run the path the first draft named). The gates are sketched, not
-> registered. Whoever starts it registers them first.
+> **Status: GATES REGISTERED 2026-10-14 (§5); not started.** The owner asked for it on 2026-10-12 ("can we keep f32
+> as an option for kv on cpu, but make default f16? f32 would be important for our reference"). On 2026-10-14 the owner
+> asked for a recommendation on the two open decisions (§1, answered in §1a) and for the gates, with building to follow
+> G40 by day if approved. Nothing here is measured yet. The facts about the code were read at main `88665dbe`, re-read
+> at `9f4ecdc3` on 2026-10-13 after a review pass, and spot-checked at `afd83410` for §5.
 
 ## 1. What is asked, and what is still open
 
@@ -21,6 +20,40 @@
      calls `decoder.Load` keeps running at f32 untouched, and `--kv f32` is the command line's reference setting.
      Moving the library default as well would shift every CPU record the project has.
   2. **Its place in the order.** Unscheduled.
+
+## 1a. Recommendation on the two decisions (2026-10-14, for the owner)
+
+**Decision 1, which default moves: the command lines, not the library.** This is §1's recommendation, with two
+refinements.
+
+- **The library's zero value stays f32.** Every test, golden, parity record and fidelity reference that calls
+  `decoder.Load` keeps running at f32 without being touched. The reference is the reason f32 exists at all, and a
+  library default that moved it would shift every CPU record at once.
+- **On the command lines, `--kv auto` becomes f16 only once the gates have read, in a second step.**
+  - First, `--kv f16` works on a CPU load: a real f16 cache, priced and printed as f16.
+  - Then `auto` flips in its own commit, only if gates F2, F3 and F4 read as registered.
+  - That is the shape the CUDA f16 default had (`docs/tasks/task-cuda-f16-kv-2026-10.md`, "Decision"). A PARKED read
+    leaves `--kv f16` available and `auto` at f32. The owner's override stays the owner's.
+- **The families start as `Architecture.kvInt8OK`'s set,** the generic loop with no MoE. Every other family keeps
+  f32, and the banner says which and why. MoE and the own-forward families are each checked separately later, not
+  assumed.
+
+**Decision 2, the order: after G40, the next day if you approve; independent of KV2's merge.**
+
+- **G40 first, because it changes what f16 is worth.**
+  - Today the KV is a minority of a long CPU prompt's footprint. At 20K tokens on the 0.5B it is 0.47 GiB of 3.1 GiB
+    (`docs/tasks/task-cpu-prefill-memory-2026-10.md` §1); the rest is prefill scratch and garbage that G40 removes.
+  - Once G40 lands, the KV is the largest term. f16 halves it: 0.24 GiB saved of a predicted ~1.1 GiB on that cell, and
+    0.55 GiB of the 1.5B's 1.10 GiB of KV at the same length.
+  - Before G40, f16 would be measured against a footprint it cannot move much.
+- **G40 and f16 both touch `decoder/kvcache.go` and `decoder/forwardn.go`,** in different places: G40 the reserve
+  and the chunk loop, f16 the storage and the widening. Building them one after the other avoids two branches in the
+  same functions.
+- **KV2 (`kv2-2026-10`) adds one more "int8, else f32" site:** its CPU copy between sessions
+  (`KVCache.copyPrefixFrom`, on that branch only). Whichever of KV2 and f16 merges second
+  handles the third storage form there. Gate F1 includes that copy once KV2 is on `main`.
+- **int8 stays the choice for the most context per gigabyte.** KV9 step 0 noted that `--kv i8` already holds four
+  sessions' KV in about one f32 session's bytes. f16 is for a default nobody chooses, int8 for the user who does.
 
 ## 2. What is true today
 
@@ -161,30 +194,137 @@ every axis; skip it"). Read it before designing anything. Its reasons, and which
 - **Not in scope:** MoE families and the others the int8 cache excludes need checking one by one, not assuming;
   a GPU resident's precision does not change; int8's own default does not change.
 
-## 5. Gates to register before the code
+## 5. Gates (registered 2026-10-14, before any code)
 
-Sketched here so their cost is visible. The numbers and bands are the registrant's to set.
+These replace the sketch this section held. The fidelity criteria are the CUDA f16 gate's, unchanged
+(`docs/tasks/task-cuda-f16-kv-2026-10.md`, "The gates"), so the two backends' defaults are judged by the same rule.
+Tiers are CLAUDE.md's ("Gate tiers").
 
-1. **Exactness, by day.** With every stored row rounded to f16 and back by hand, the f32 path's logits equal the f16
-   path's bit for bit, on tiny fixtures across families (a sliding window, shared K/V, m-RoPE, an image block),
-   through decode, batched prefill, rewind and a snapshot round trip. This isolates "the storage is f16" from "the
-   arithmetic changed". The hand rounding uses the cache's own narrowing function (§2, the rounding rule).
-   - **Prefill equals decode.** A batched forward over N tokens against a batched forward over N-1 and one decode
-     step, on a global layer and on a sliding-window layer. This is what catches new prefill rows attended at f32.
-   - Planted defects: a row narrowed twice, a new prefill row left at f32 while it is attended, a ring read at the
-     wrong offset.
-2. **Fidelity, at night.** f16 against f32 KV, both scored against the float32 forward with f32 KV, on two or three
-   real models, by the non-inferiority protocol in `internal/fidelity`. Include Gemma 3 4B, the family that moves most
-   under a small change. The reference arm must be loaded with f32 KV explicitly, which is the reason f32 has to stay.
-3. **Speed, by day and then at night.** A whole-token in-process A/B on both machines, at a short depth and a deep
-   one (128 and several thousand positions), since the widening costs most where the history is long and the saving
-   is bandwidth at that same place. Then a served gate with two arms. The bar is "not slower": this change is for
-   memory. The owner's standing rule for speed bars applies to anything claimed as a gain.
-4. **Memory.** The heap at a fixed context before and after, read from the process, against the priced figure.
-   Measured for a cache built with a capacity hint, which is the ordinary case: this is where the unused f32
-   reservation of §2 would show. If it does, the cache releases it when it changes storage.
-5. **The reference is unmoved.** Every existing golden and parity record passes unchanged with the library default
-   at f32, and the fidelity gates' references are shown to be loading f32 KV (an assertion, not an assumption).
+### F1. Exactness (day, tiny fixtures; seconds)
+
+**The comparison.** In the f32 path, every stored K and V row is rounded to f16 and back by hand, with the cache's
+own narrowing function (§2, the rounding rule). That path's logits must equal the f16 path's bit for bit.
+
+**Fixtures:** `llama-tiny` (dense), `gemma2-tiny` (a sliding window, so the ring) and `qwen25vl-tiny` (m-RoPE and an
+image block). `mixtral-tiny` asserts the opposite: an excluded family keeps an f32 cache and the banner names it.
+
+**Paths:**
+
+- decode, and batched prefill at under and over 512 rows (the exact path and the fast gather);
+- rewind (`KVCache.TruncateTo`);
+- a snapshot round trip (`Session.Snapshot`, `Model.LoadSession`);
+- the GPU-upload bridge (`KVCache.LayerKV`);
+- KV2's session copy, once that is on `main`.
+
+**Prefill equals decode:** a batched forward over N tokens against a batched forward over N − 1 and one decode step,
+on a global layer and on a ring layer.
+
+**Plants, each of which must go red:**
+
+- a row narrowed twice;
+- a new prefill row attended at f32;
+- a ring read at the wrong offset;
+- the snapshot's storage byte left at f32's value.
+
+**PASS:** zero differing bits in every cell. There is no tolerance.
+
+### F2. Fidelity (night; nobara for the 7B, either box for the rest)
+
+**Instrument.** The CUDA gate's protocol, run on the CPU:
+
+- arms `--kv f32` and `--kv f16`, in one binary and one session;
+- teacher-forced on the reference tokens;
+- against the CPU f32/f64 reference rows of held-out prompt set B (`testdata/prefill-gate-prose-b/`, the rows in
+  `~/goinfer-logs/prefill-ref-b`), ten prompts of 64 positions.
+
+The f16 cache has no tunable parameter, so set B was not fitted to it.
+
+**Cells:**
+
+- **Decision cells:** Qwen2.5-7B-Instruct q4_k_m at K = 8,000, and Gemma 3 4B at K = 3,900. Gemma 3 is included
+  because it moves most under a small numeric change (§6, near ties).
+- **Confirmation cell:** Qwen2.5-Coder-1.5B at K = 3,900. It cannot rescue a failed decision cell.
+
+**Criteria, all three per cell:**
+
+- (a) hard flips: f16 ≤ f32 + 2·√f32.
+- (b) mean teacher-forced agreement: f16 ≥ f32 − 1.0 pt, AND f16 ≥ f32 on at least half the prompts.
+- (c) mean continuation KL: f16 ≤ 1.10 × f32.
+
+**Ambiguous is parked:** (b) within its last 0.2 pt, or (c) in 1.05 to 1.10×. A re-run needs a named mechanism; it is
+never a re-roll.
+
+**Preconditions (a failed one voids the cell; it is not a fail):**
+
+- the f16 arm's cache holds half the f32 arm's KV bytes, read from the cache;
+- its rows differ from f32's at one position or more in every prompt;
+- an A/A of two f16 runs is bit-identical on the first prompt;
+- the reference arm's cache is asserted to be f32 (`cache.quant`), not assumed;
+- **an overflow survey before any gate is read:** max|K| and max|V| at every layer on the gate prompts must be under
+  65504 / 2. A family within 2× of f16's range is refused f16 by the default, whatever the gate says, and the survey
+  is a table in the record.
+
+**Prediction (written now):** the 7B and 1.5B cells PASS (0.8); Gemma 3 4B PASSES (0.55); every cell's KL ratio is
+under 1.03 (0.6).
+
+### F3. Speed (in process by day; served at night)
+
+**First, by day:** a whole-token in-process A/B of decode, f16 against f32, interleaved (TE5(b)), on the 0.5B and
+1.5B at depths 128 and 4,096, on the Mac. A resolved direction may be acted on; an unresolved one goes to the night.
+
+**Then, at night, served on both boxes:**
+
+- the two-arm form of `bench_peer.py` (`BENCH_ENGINES=goinfer,goinfer_old`; arms `--kv f32` and `--kv f16`, same
+  binary, fresh serve per arm, alternating order);
+- at 128, 512, 2,048 and 3,900 on the 0.5B and 1.5B, and 8,000 on the 7B (nobara only);
+- the do-nothing arm is `--kv f32`.
+
+**The quantity:** median decode rate, f16 ÷ f32.
+
+**Bars.**
+
+- **Ships, as the default:** ≥ 0.98 at every cell. This change is for memory; the bar only forbids a regression.
+- **Parked:** the worst cell in [0.95, 0.98).
+- **Killed:** any cell under 0.95.
+
+Way B (§4) is built only if way A is parked or killed by this gate.
+
+**Prediction:** the 128-key cells within ±2% of 1.00 (0.7); a deep cell under 0.98 under way A, from the widening
+pass (0.35).
+
+### F4. Memory (night, Mac; with G40-2's harness)
+
+- **The cache's bytes,** read from the cache at 16,384 positions on the 1.5B: f16 holds f32's ÷ 2, exactly (to the
+  byte, for the rows written).
+- **The process footprint** at that context, f16 against f32: f16 ≤ f32 − 0.8 × (f32 KV bytes ÷ 2). That is at
+  least 80% of the halving, seen by the process.
+- **The unused f32 reservation (§2):** an f16 cache built with a capacity hint has a footprint within 32 MiB of the
+  same cache built without one. If not, the cache releases the reservation when it changes storage, and this is
+  re-read.
+
+### F5. The reference is unmoved (day, then as part of the next sweep)
+
+- Every forward golden and parity record passes unchanged with the library default at f32
+  (`scripts/refresh_parity_hashes.sh`, and the next `gate parity`).
+- F2's reference arm asserts f32 KV.
+- One new test asserts that `decoder.Load` with zero options builds an f32 CPU cache. That is the guard against the
+  library default ever following the command lines.
+
+### The decision
+
+**`--kv auto` becomes f16 on CPU loads only if all of these hold:**
+
+- F1 passes;
+- every F2 decision cell passes;
+- F3 ships;
+- F4 and F5 pass.
+
+**Otherwise:**
+
+- a PARKED read leaves `--kv f16` built and available, with `auto` at f32;
+- a FAIL on F2 leaves it opt-in, with the reason recorded.
+
+The owner may override, as on CUDA. The override is recorded with the gates that did not pass.
 
 ## 6. Risks
 

@@ -91,8 +91,8 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 
 [`task-cpu-kv-f16-2026-10.md`](tasks/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
-its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
-open, and the gates to register before any code.
+its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
+decisions (2026-10-14), and its gates, registered that day before any code.
 
 [`task-cpu-prefill-memory-2026-10.md`](tasks/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
 CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
