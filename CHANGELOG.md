@@ -168,6 +168,42 @@ route, which is what Claude Code speaks. A model that does not call the tool is 
 block a client could not use is a failure: no `id`, another tool's name, an `input` that is not a JSON object, or a
 `stop_reason` other than `tool_use`.
 
+### Security — the web UI has a content policy and survives hostile text; Copy drops hidden characters; smaller server and build hardening
+
+The rest of the low findings from the 2026-10-12 security audit. None had a known way to be used against a default server.
+
+- **The web UI is served with a full `Content-Security-Policy`.** Scripts, styles and requests come from the server itself and
+  nowhere else; inline scripts and handlers are refused. The page already writes model output as text and never as HTML; this
+  is the browser's second check behind that. `TestWebUI_contentPolicyInBrowser` opens the page from its real handlers in
+  headless Chrome: the page does its work with no violation, and each thing the policy forbids is refused.
+- **A long line could freeze the chat.** The Markdown renderer matched table separators, headings and code fences with patterns
+  whose cost grows with the square of a line's length, on every frame of a streaming reply: a table row followed by a line of
+  80,000 spaces took 18 s. Those three are now read with index loops (1 ms), on about a million generated lines the new readers
+  agree with the old patterns, long inline text is parsed in pieces of 4,096 characters, and quotes or lists nested more than
+  64 deep are shown as text (50,000 `>` on one line overflowed the stack).
+- **Copy no longer carries characters you cannot see.** A reply could show one command and put another on the clipboard, using
+  control characters, bidirectional overrides or zero-width characters. Copy now drops them, on code blocks and on messages, and
+  what was hidden becomes visible in what is pasted. A joiner inside an emoji sequence or between Persian or Indic letters is
+  kept.
+- **A link needs two slashes.** `[x](http:v1/models)` was a live link, and a browser resolves it against the page's own address.
+  Only `http://`, `https://` and `mailto:` links are live.
+- **The HTML preview makes no request, and now a browser test says so.** A previewed page that tries a script, a redirect, a meta
+  refresh, images, styles, fonts, frames and media reaches a local listener zero times, while the same page in a frame that may
+  run scripts reaches it sixteen ways. **Fixed on the way:** the first click on Preview showed nothing (the frame was created
+  hidden, so it took a second click).
+- **A web load of a path outside the pull cache gets one refusal**, whether or not the path exists, so a page cannot learn which
+  files are on the machine from the wording.
+- **The API key is compared as SHA-256 digests**, so the time a refusal takes no longer depends on the length of the key tried.
+- **`--admin-socket` is refused in a directory other users can rewrite** (group- or world-writable and not sticky; `/tmp` still
+  works), and the socket is at mode 0600 from the moment it can be reached: it is bound inside a private directory and renamed
+  into place. Before, a client that connected between the bind and the `chmod` kept its connection.
+- **Build scripts.** `cuda/build_ptx.sh` no longer looks for the CUDA compiler library under `/tmp`, where any user could plant
+  one; `scripts/bench_compare.sh` builds its binary into a `mktemp` directory.
+- **Every shipped GPU kernel is checked against its source, in CI.** `go run ./cmd/gate ptx` rebuilds each
+  `cuda/testdata/*.ptx` at the NVRTC version the file records and compares bytes; the `cuda` CI job runs it with both versions
+  installed. The check inside `gate gpu` had been skipping the seven f16-KV twin files (`*_kv16.ptx`), which have no source of
+  their own name; it now rebuilds them from the kernel they are built from.
+
 ### Security — a loopback server refuses a foreign `Host`; the tool prompt no longer lets a message forge a turn; a wider embedding table is refused at load
 
 - **DNS rebinding.** A web page open in your browser could re-point its own name at `127.0.0.1` and then read every reply from a default `serve` (the browser sent `Host` and `Origin` both naming the page, which the same-origin check accepted). A listener bound to the loopback now answers only `localhost`, `127.0.0.1`, `[::1]` and the `-addr` host, and refuses any other `Host` with `421`. **If a reverse proxy on the same machine forwards a public name to the loopback port, add it with `-allowed-hosts`.** A listener bound beyond the loopback is unchanged. `demo/agent`'s `agent-web` has the same guard.
