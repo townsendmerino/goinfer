@@ -502,6 +502,36 @@ Hermes (it refuses a window under 64,000) as I3 cells (the screening scope is th
 and was served 512 tokens a turn, thinking included; it now gets the limit `connect` wrote. Only the Codex cells change. The rules and the
 predictions stand. Record: `docs/measurements/integration-harness-2026-10/i3-repin-2026-10-13.md`.
 
+#### I3 read, 2026-10-14 (the night of 2026-10-13), graded against the plan above
+
+Record and raw data: `docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md`. All three jobs are valid: the sandbox self-test
+passed and caught its planted weaknesses in each, the planned model and window were served, the record counts are the plan's (35, 15,
+20), and no run saw a `halted` answer, a 429 or a 5xx.
+
+| cell | r1 (decides) | **verdict** | beside it |
+|---|---|---|---|
+| opencode x Qwen3-4B, 16,384 | 0/5 (1/5 as recorded; `read` r1 was a false pass) | **no** | r2 3/5, r3 3/5 |
+| Codex x Qwen3-4B, 16,384 | 3/5 | **fragile** | r2 2/5, r3 3/5 (the same-night follow-up); `write`, `fix` 0 of 6 |
+| Claude Code x Qwen3-4B, 28,672 | 1/5 (two 30-minute timeouts) | **no** | both timeouts as passes would give fragile |
+| opencode x Mellum2.1, 16,384 | 4/5 | **works** | |
+| Codex x Mellum2.1, 16,384 | 2/5 | **fragile** | three repetitions queued; publication waits for them |
+| Claude Code x Mellum2.1, 32,768 | 1/5 (two timeouts) | **no** | |
+
+**I1's live gate:** Codex **VOID** (every run an incurable jump, a run that never reached the window, or a harness that compacted
+first), opencode **VOID** (the same), Claude Code **FAIL** (one run: 1 overflow, 3 compactions, the session ended on Claude Code's
+"Autocompact is thrashing"). The FAIL is curable by hand count, so it is not void (a 5,154-token step against 9,961 of room), and the
+fixed part fits. By I1's reading, then, the wording is wrong for Claude Code. The run also shows that all three compactions were Claude
+Code's own (`trigger: auto`), two of them before goinfer had answered any overflow. That is recorded beside the verdict, not instead of
+it; the owner decides which reading stands. The predictions (Codex PASS, opencode FAIL, Claude Code the unknown) were not tested for
+the two VOID harnesses. With Qwen3-4B the gate as built cannot read the wording on Codex or opencode, because the model reads all eight
+`bulk` files in one step. A redesign is a new registration.
+
+**Recorder defects found by the grade, fixed in `matrix/`:** an empty reply was graded against the raw output, which produced the false
+pass; `/v1/messages` prompt sizes were never recorded, so the I1 grader's incurable-jump test skipped Claude Code without a warning.
+**Leads, not fixed:** Claude Code subagents ask for `claude-sonnet-5-5` and get a 404 (`connect` does not set that slot); Mellum2.1 on
+`/v1/responses` can spend a whole turn in reasoning and send an empty message; Mellum2.1 on `/v1/messages` writes tool calls as text with
+broken JSON.
+
 
 ### I4 — First-request census (by day, minutes per harness)
 
@@ -798,7 +828,7 @@ of `docs/tasks/task-kv-architecture-2026-10.md`, whose KV3 extends blocks and bl
 | 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |
-| 6 | I3 screening | night queue, nobara-pc, after 3–5: **queued 2026-10-13** as three jobs (plan above); the sandbox and the gate's grader are built and proved |
+| 6 | I3 screening | night queue, nobara-pc, after 3–5: **run 2026-10-13, read 2026-10-14** (above); Codex x Mellum2.1's three repetitions queued 2026-10-14; `docs/integrations/harness-matrix.md` after they read |
 | 7 | I5 transport | by day, in parallel with 2–6; depends on none of them |
 | 8 | I6 | decided by I3's Codex cell: **parked** until that cell reads; the pilot's one Codex edit printed a patch as prose, which is one run |
 | 9 | the FIM and sidecar amendments (§5) | when those docs are next picked up |

@@ -73,7 +73,7 @@ class H(BaseHTTPRequestHandler):
         if chunked:
             self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
-        tail, events, first, n = "", {}, None, 0
+        head, tail, events, first, n = "", "", {}, None, 0
         try:
             while True:
                 b = r.read1(65536)
@@ -83,6 +83,8 @@ class H(BaseHTTPRequestHandler):
                     first = time.time() - t0
                 n += len(b)
                 txt = b.decode("utf-8", "replace")
+                if len(head) < 6000:
+                    head = (head + txt)[:6000]
                 tail = (tail + txt)[-6000:]
                 for m in re.finditer(r"^event: (\S+)", txt, re.M):
                     events[m.group(1)] = events.get(m.group(1), 0) + 1
@@ -100,9 +102,10 @@ class H(BaseHTTPRequestHandler):
             rec["client_gone"] = True
         finally:
             c.close()
+        # The tail holds the final usage on every route but Messages streaming, whose input_tokens is only in message_start.
         usage = {}
         for key in ("prompt_tokens", "input_tokens", "completion_tokens", "output_tokens"):
-            m = re.findall(r'"%s":\s*(\d+)' % key, tail)
+            m = re.findall(r'"%s":\s*(\d+)' % key, tail) or re.findall(r'"%s":\s*(\d+)' % key, head)
             if m:
                 usage[key] = int(m[-1])
         rec.update(ttfb=round(first, 3) if first is not None else None, t_end=round(time.time() - t0, 3), resp_bytes=n, events=events, usage=usage)
