@@ -92,12 +92,13 @@ Each gate's rule, void conditions and planted defects are in the registration. A
 
 **At night, queued on nobara, one job per item:**
 - **G5:** the sharing gate's three arms and three scripts, on the 1.5B at `-ctx 24576 -kv-sessions 2`, 6 blocks.
-  Use the registration's `kv2_share.py` and grader, once the Mac commits them on `kv2-2026-10`. Estimate it from one
-  cold 20K prefill on this box, by day, with the lock free. The control and void rules apply as written.
-- **G6:** KV1's four CUDA cells, unchanged: 8 blocks for decode and 12 for time to first token. KV1 measured 31
-  minutes; queue with `--est 45`.
-- Both jobs use pinned binaries built from the commits named in the job script, in the
-  `docs/measurements/kv1-2026-10-13/run-kv1-night.sh` shape.
+  - Queue `JOB=share` of `docs/measurements/kv2-2026-10-14/run-kv2-night.sh`, which runs `kv2_share.py` and its grader
+    beside it. It builds the CUDA serve from `REV` and `BASE` itself.
+  - Estimate it from one cold 20K prefill on this box, by day, with the lock free.
+  - The control and void rules apply as written.
+- **G6:** KV1's four CUDA cells, unchanged: 8 blocks for decode and 12 for time to first token. Queue `JOB=speed` of
+  the same script, graded by `grade_kv2_speed.py` (G6's interval rule). KV1 measured 31 minutes; queue with `--est 45`.
+- `REV` is your branch's head, merged with the Mac's, and `BASE` is `main` at `kv2-2026-10`'s branch point (`1cc385ef`).
 
 ## 4. Report
 
