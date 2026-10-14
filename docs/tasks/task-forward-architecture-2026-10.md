@@ -685,12 +685,13 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 - **What is on main:** the digest instrument; step 1 (`metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
   variant of the kernel source (`metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
   is undeclared. Gemma 2 still decodes on the CPU under Metal.
-- **G2-T's failure is the registration's, not shown to be the softcap's.** With the cap removed from the model on both sides
-  the same fixtures read 0.999116 and 0.999296: the bar was within 0.0003 of the fixture's own agreement before any softcap.
-  It was taken from Gemma 1's test without that control. The record has the diagnostics.
-- **Owner decision OP1-M1:** the bar stands and the 0.0003 is found, or G2-T is amended to be read against the fixture's
-  no-cap control. The declaration, the matrix and the Gemma 2 parity tests are on the branch `op1-metal-declare-2026-10`,
-  unmerged, and merge only after that ruling.
+- **G2-T: FAILED.** The 0.999 bar was copied from Gemma 1's test without first measuring this fixture's no-softcap baseline
+  at int4, which is 0.9991 to 0.9993. The softcap's own contribution is shown by the planted defect: with the cap dropped
+  from the Metal build the fixtures read 0.978 and 0.980. The record has the diagnostics.
+- **Owner decision OP1-M1 (2026-10-13): the bar stays, and it is not amended against the numbers already seen.** A new gate,
+  G2-T2, takes int4 quantization out of the measurement (below). G2-T2 and then the real Gemma 2 2B gate (G2-R) decide the
+  declaration. The declaration, the matrix and the Gemma 2 parity tests stay on the branch `op1-metal-declare-2026-10`,
+  unmerged, until both pass.
 - **Step 1 left one kernel out,** as amended above: `attention_fa_blk`. Routing it is owed with a re-run of the R17 grading.
 - **Queued on the Mac's night queue 2026-10-13, after the two KV1 jobs,** at main `c02205b8` against `d03da21f`:
   - `op1-identity-real-metal` (35 min): G1-M and G2-I on the real checkpoints in `~/models`;
