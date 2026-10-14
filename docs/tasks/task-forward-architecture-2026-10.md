@@ -534,6 +534,16 @@ starts, in a commit of their own; after that a change to a rule is a deviation a
 So the function takes the score as the kernel has it, and each kernel keeps its own order of multiplies. Where a constant is
 folded into the scale, step 2 folds the cap's constants the same way (FlashInfer's form, §10a).
 
+**Amended 2026-10-13, before any Metal OP1 code: one Metal kernel stays out of step 1.**
+- `attention_fa_blk` (head dimension 128) is pinned to the source that was graded: `TestAttnFABlkIsTheGradedKernel` hashes its
+  text, and its rule is that an edit needs the R17 grading re-run (fidelity, kernel accuracy, speed).
+- Routing its score through a function edits that text. A byte-identity digest is evidence about the inputs it ran, and it is
+  not the grading the pin asks for, so step 1 does not touch this kernel and does not move the pin.
+- Nothing is lost for OP1: a capped layer never takes this kernel (the rule below), and Gemma 2's head dimension is 256.
+- **Owed, and not in OP1:** route it together with a re-run of the R17 grading, on the night queue.
+- G1-K still records this kernel's digests, so the record shows it did not move.
+- `attention_fa_blk64`, its head-dimension-64 twin, has no source pin and is routed in step 1.
+
 **Metal's mechanism, registered because the gates lean on it: the softcap is a compile-time variant.**
 - A model with a cap compiles its kernel library with the cap defined. A model without one compiles step 1's source.
 - **Why not a run-time parameter:**
