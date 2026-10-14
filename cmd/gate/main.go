@@ -63,7 +63,7 @@ usage:
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
-  gate ptx                                         every cuda/testdata/*.ptx rebuilt from its .cu at the NVRTC it records, compared
+  gate ptx [-keep DIR]                             every cuda/testdata/*.ptx rebuilt from its .cu at the NVRTC it records, compared
                                                    byte for byte; needs NVRTC, no GPU (GOINFER_NVRTC_DIRS names the installs)
   gate release [-offline] vX.Y.Z                   the pre-flight as rows: done / OWED / UNKNOWN each, with its record; exit 0 only when all are done
   gate changelog [-base TAG] [-section S]          new routes, flags, families and the aikit pin since TAG that the CHANGELOG section does not name
@@ -173,6 +173,7 @@ func run(argv []string, w io.Writer) int {
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
 	recordDir := fs.String("record", gpuRecordDirDefault, "gpu and parity: directory the run's JSON record is written to (empty: none; parity's default is "+parityRecordDirDefault+"); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
+	keep := fs.String("keep", "", "ptx: directory each rebuilt .ptx that differs from its committed form is written to (empty: none)")
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
@@ -184,7 +185,7 @@ func run(argv []string, w io.Writer) int {
 		return runGPU(w, *logDir, *recordDir)
 	}
 	if name == "ptx" {
-		return runPTX(w)
+		return runPTX(w, *keep)
 	}
 	if name == "selector" {
 		return selectorCoverage(w)

@@ -479,7 +479,7 @@ func TestGatePTX_nothingVerifiedIsRed(t *testing.T) {
 	}
 	t.Setenv("GOINFER_NVRTC_DIRS", t.TempDir())
 	var out bytes.Buffer
-	if rc := runPTX(&out); rc != 1 {
+	if rc := runPTX(&out, ""); rc != 1 {
 		t.Errorf("gate ptx with no NVRTC exited %d, want 1\n%s", rc, out.String())
 	}
 	all, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))

@@ -58,6 +58,7 @@ type gpuGate struct {
 	heavySkipped bool   // the real-model tier was skipped: the run is not the whole gate, and its record says so
 	recordDir    string // where the run's record is written (gpu_record.go); empty writes none
 	gpuName      string // the device line printed in the provenance block, for the record
+	ptxKeepDir   string // where a rebuilt .ptx that differs from its committed form is written; empty writes none
 }
 
 func (g *gpuGate) grp(name string) { g.cur = name }
@@ -993,6 +994,15 @@ func (g *gpuGate) cudaPTX() {
 		} else {
 			diff++
 			fmt.Fprintf(g.w, "      DIFFERS: %s.ptx (rebuilt at its recorded V%s)\n", base, want)
+			if g.ptxKeepDir != "" {
+				kerr := os.MkdirAll(g.ptxKeepDir, 0o755)
+				if kerr == nil {
+					kerr = os.WriteFile(filepath.Join(g.ptxKeepDir, base+".ptx"), now, 0o644)
+				}
+				if kerr != nil {
+					fmt.Fprintf(g.w, "      (could not keep the rebuilt file: %v)\n", kerr)
+				}
+			}
 		}
 	}
 	// Restore; this check must not mutate the tree.
@@ -1025,8 +1035,8 @@ func (g *gpuGate) cudaPTX() {
 // runPTX is `gate ptx`: the PTX group alone, for a machine that has NVRTC and no GPU. It is stricter than the group
 // inside `gate gpu`, where a file whose toolchain is absent is a counted skip: here every recorded toolchain is
 // installed on purpose, so a file that was not verified fails the run.
-func runPTX(w io.Writer) int {
-	g := &gpuGate{w: w, emitted: map[string]bool{}}
+func runPTX(w io.Writer, keepDir string) int {
+	g := &gpuGate{w: w, emitted: map[string]bool{}, ptxKeepDir: keepDir}
 	g.cudaPTX()
 	if g.fail > 0 || g.skipped > 0 || g.pass == 0 {
 		fmt.Fprintf(w, "\n%sgate ptx: RED%s  (%d failed, %d not verified)\n", red, off, g.fail, g.skipped)
