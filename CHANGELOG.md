@@ -138,6 +138,17 @@ Traced with the real client ([the record](docs/measurements/integration-harness-
 its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
 named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
 
+### Added — `/v1/responses` returns the reasoning as a reasoning item and reads it back, so a Codex turn stays warm
+
+A thinking model's reasoning is now a `reasoning` output item (in `content` and, unchanged, in `encrypted_content`). A
+reasoning item sent back in `input` is rendered as that turn's replayed reasoning, where the model's own template
+puts it. Before, the route dropped the reasoning. Codex resent each assistant turn without the reasoning still held in
+the KV, so every turn rolled back to the end of the previous prompt, and on CUDA windowed-KV models (Mellum2.1) it
+re-prefilled from cold. Live, Codex 0.162.1 x Mellum2.1 on an RTX 2070 SUPER: the turns after the first reused
+6,504 of 6,554 and 6,873 of 6,949 prompt tokens, with time to first token 0.6 s and 0.9 s against 65 s for the cold first
+turn (docs/measurements/integration-harness-2026-10/reasoning-items-live-2026-10-14.md). The reused count is reported in
+`usage.input_tokens_details.cached_tokens`.
+
 ### Fixed — a thinking model's tool call written inside its reasoning was lost, and an empty answer gave no reason
 
 A thinking model can write its tool call inside its reasoning block and end its turn there. The splitter routed the call

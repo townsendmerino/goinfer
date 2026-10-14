@@ -168,6 +168,8 @@ type loadedModel struct {
 	// scripted is a test seam: when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
 	// slice is the model's end of turn) instead of running model. Production never sets it.
 	scripted []int
+	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
+	onScripted func(promptIDs []int)
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -1501,6 +1503,9 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	var gen *decoder.Generation
 
 	if lm.scripted != nil {
+		if lm.onScripted != nil {
+			lm.onScripted(gr.promptIDs)
+		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, scriptedStream(lm.scripted, gr.maxTokens), gr, nil, onText)
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
