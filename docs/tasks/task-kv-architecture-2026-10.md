@@ -501,7 +501,7 @@ is MC4's identity gate extended to shared preambles.
     512-token jumps. So the budget for rolling back into a slot cycled between 0 and 512 tokens, depending on where the
     last decode landed, and any larger rollback went cold. Replaying that arithmetic predicted warm or cold for 59 of 59
     Codex requests from the I3 night. 35 of the 59 went cold, about 2,430 s of re-prefill.
-  - **The rule chosen for CUDA (the ring fix, being built 2026-10-14; this line changes to "built" when it merges):**
+  - **The rule chosen for CUDA (the ring fix, built 2026-10-14; `kvwindow-ring-2026-10`, speed guard PASS):**
     - The base compacts in 64-token steps, so the budget never drops below 448. It costs no VRAM; the extra copying is
       about 0.1% of a token's time on Mellum2.1.
     - Extra rollback, up to 1,024, comes only from VRAM left after planning. It never costs residency, context, a slot

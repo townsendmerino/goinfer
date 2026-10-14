@@ -1,0 +1,27 @@
+{
+ "registered": "docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md section 8",
+ "smoke": false,
+ "models": {
+  "mellum": {
+   "median_main": 67.10121673906642,
+   "median_new": 66.9043466997634,
+   "ratio": 0.9970660734801787,
+   "verdict": "PASS",
+   "void": [],
+   "texts_within_main": 1,
+   "texts_within_new": 1,
+   "texts_identical_across_arms": true
+  },
+  "gemma4-26b": {
+   "median_main": 37.24682730306007,
+   "median_new": 37.13428971785939,
+   "ratio": 0.9969785994311672,
+   "verdict": "PASS",
+   "void": [],
+   "texts_within_main": 1,
+   "texts_within_new": 1,
+   "texts_identical_across_arms": true
+  }
+ },
+ "verdict": "PASS"
+}

@@ -853,6 +853,7 @@ type cudaResident struct {
 	// of slot s's windowed layers, kvBase the bound slot's, kvScratch the compaction's staging buffer.
 	kvWin     bool
 	kvWindow  int
+	kvSlack   int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
 	kvBase    int
 	kvBases   []int
 	kvScratch Buffer
