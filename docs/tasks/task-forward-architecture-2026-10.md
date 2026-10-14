@@ -898,6 +898,56 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
     chain gave plain turns.
 - **Size:** S–M.
 
+### 6.1 HL on Metal: registered 2026-10-14, before any HL code
+
+**Scope.** The greedy chain on Metal (`ResidentGreedyChain`) under a gated processor
+(`SamplingParams.LogitProcessorGate`), greedy and `top_k=1` turns only. Out of this step:
+
+- the sampled chain: its device draws assume one `Sampler.NextDraw` per token, and an open step draws on the host;
+- an ungated processor, which needs every row;
+- CUDA's chain.
+
+Each of these is its own later step.
+
+**Mechanism.** A new optional capability, `ResidentGreedyChainRow`:
+
+- **`GreedyChainNextRow`** is `GreedyChainNext` plus the full logits row of the forward whose token it returns.
+  - The row is that forward's own head, recomputed: `Forward`'s head dispatch, on the activations that forward left.
+  - It is committed before the chain queues the next forward, and finalized as `Forward`'s row is (softcap, logit
+    scale).
+  - It is therefore `Forward`'s row at that position, bit for bit.
+- **`GreedyChainRedo(id, pos)`** replaces the input of the forward the chain queued at `pos`:
+  - it waits that forward out;
+  - then it queues it again with `id`, at the same position, over the K/V the discarded one wrote.
+
+The decode loop runs the chain whether the gate is open or closed:
+
+- a closed step takes `GreedyChainNext`, as a turn with no processor does;
+- an open step takes `GreedyChainNextRow`, applies the processor to the row and samples it;
+- when the host's pick differs from the device's, the next call is preceded by `GreedyChainRedo`.
+
+**Cost.**
+
+- A closed step costs what a chained step costs today.
+- An open step adds one head dispatch and the row readback; today's open step reads the same row back after a whole
+  `Forward`.
+- Each open step whose masked pick differs from the unmasked argmax wastes one forward.
+
+§6's "at most one wasted forward per opening" holds only when one step per opening differs. The registered cost is
+one wasted forward per differing step.
+
+**Gates.** Each must pass before the next is read.
+
+| id | tier | instrument | passes when |
+|---|---|---|---|
+| **HL-G1** | day, identity | the resident on the MC3 fixture (tied and untied heads) | `GreedyChainNextRow`'s row equals `ForwardEmbPipe`'s logits at the same position bit for bit, at every step of an 80-token run that crosses the chain's pool drain. After a redo, every later token and every K/V element equals the reference path's. |
+| **HL-G2** | day, identity | a fake chain resident in `decoder`, whose logits depend on the token at every earlier position, so a forward that ran the wrong token changes every later step | through `Generate` (the caller, not the unit), a gate that opens and closes twice, a mask that agrees at some open steps and bans the argmax at others: tokens equal the same turn with the chain unavailable; a redo exactly at each differing step and nowhere else. |
+| **HL-G3** | day, identity | `Generate` on Metal, chain on against `greedyChainOff` (today's path: `ForwardArgmax` while closed, `Forward` while open) | the MC3 fixture, Qwen2.5-0.5B and Qwen2.5-Coder-1.5B, each with the HL-G2 gate and mask shapes: tokens identical. The chain served every closed step. At least one redo ran, or the cell is void. |
+| **HL-G4** | night, speed (later; not queued with this registration) | in-process interleaved A/B, the C-B01 grade's shape (`metal/cb01_grade_test.go:TestCB01ChainAB`), 9 reps after a discarded warm-up, Metal 1.5B and 7B | Two quantities: (a) the decode rate of a gated turn whose gate stays closed (the prose part of a tool turn), HL ÷ today; (b) a whole turn whose gate opens once for a tool call, HL ÷ today. **Ship:** median (a) ≥ 1.02 and median (b) ≥ 1.00. **Park:** (a) in [1.00, 1.02). **Off:** (a) < 1.00, or (b) < 1.00. |
+
+**Done** for this step: HL-G1 to HL-G3 pass and HL-G4's cell is written and queued for a night. HL-G4's verdict
+decides whether HL stays on by default.
+
 ## 7. Order, and what each step is worth alone
 
 - **Now, independent of everything:** OP0, OP1 (Gemma 2 on every GPU), RF0, HL, and OP6's Metal default (E5).
