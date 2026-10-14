@@ -24,7 +24,7 @@ not run.
 | G2-K, the capped kernels against float64 | **PASS**: 112 decode cases and 40 exact-prefill cases inside cosine 0.9999 and max abs 1e-2 | `TestAttnSoftcap_decodeKernels`, `TestAttnSoftcap_prefillKernel` |
 | G2-D, a dropped cap is seen | **PASS** at kernel level: every one of the 152 cases misses the bar with the cap dropped. At model level the tiny fixtures fall to 0.9785 and 0.9799 | below |
 | **G2-T, Gemma 2 tiny against the CPU** | **FAIL as registered**: worst logit cosine 0.998997 and 0.998657 against a bar of 0.999 | below |
-| G2-R, Gemma 2 real | not run: it needs the declaration G2-T withholds | |
+| G2-R, Gemma 2 real | not run: it needs the declaration G2-T withholds, and the checkpoint is not on the Mac or in the archive (it is in nobara's local models only) | |
 | G2-M, the matrix | not done: Gemma 2 still reads CPU on Metal | |
 
 ## G1-K: what the digest instrument covers, and how sensitive it is
