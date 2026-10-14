@@ -835,7 +835,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		// Qwen3-VL's DeepStack prefill: the levers have no fidelity evidence on image rows carrying DeepStack sets (the first
 		// real reading was clearly worse with them on), so such a pass runs the exact kernels, as the E-model does, until they
 		// have.
-		r.deepPlan != nil
+		r.deepPlan != nil ||
+		// a prompt with a layer on the row-batched attention past its bound (prefillPastBoundExact)
+		r.prefillPastBoundExact(r.passPromptLen)
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 	if r.eModel {

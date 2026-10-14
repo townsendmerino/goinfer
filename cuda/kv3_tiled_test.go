@@ -132,6 +132,44 @@ func TestKV3Tiled_batchedEqualsPerToken_tiny(t *testing.T) {
 	}
 }
 
+// TestKV3Tiled_pastBoundPromptRunsExact_tiny: with the tensor-core GEMM on and no fused attention (the shape of a head-dim-256 model
+// above the floor), a prompt whose attention takes the row-batched kernels past the bound runs no tensor-core launch and leaves the
+// bits of the levers-off pass (the per-token bits, TestKV3Tiled_batchedEqualsPerToken_tiny); below the bound the GEMM still runs.
+func TestKV3Tiled_pastBoundPromptRunsExact_tiny(t *testing.T) {
+	const base = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, base)
+	dir := kv3LongContextCopy(t, base, 32768)
+	g := kv0LoadCtx(t, dir, "f32", 13000, kv0RandomTokens)
+	if !g.r.prefillSplitKVReady() {
+		t.Fatal("the row-batched kernels did not load")
+	}
+	pass := func(n int, gemm bool) ([]float32, kv0KV, int, int) {
+		g.r.fastAttn, g.r.fastGemm = false, gemm
+		e := g.embs(g.tokens(n, 3*n))
+		g.poison(n)
+		p0, m0 := g.r.psLaunches, g.r.fastGemmLaunches
+		lg := g.prefill(e, 0)
+		return lg, g.snapshot(n), g.r.psLaunches - p0, g.r.fastGemmLaunches - m0
+	}
+	if _, _, ps, mma := pass(3900, true); ps != 0 || mma == 0 {
+		t.Fatalf("below the bound: %d row-batched groups (want 0), %d tensor-core launches (want some)", ps, mma)
+	}
+	const n = 12400
+	want, wantKV, _, _ := pass(n, false)
+	got, gotKV, ps, mma := pass(n, true)
+	kv3NoNaN(t, "past the bound", got, gotKV)
+	ld, _ := kv0LogitsDiff(want, got)
+	kd, total := kv0CompareRows(wantKV, gotKV, 0, n)
+	fmt.Fprintf(os.Stderr, "[kv3-tiled] past the bound, GEMM lever on: %d row-batched groups, %d tensor-core launches; logits differing %d of %d, KV differing %d of %d\n",
+		ps, mma, ld, len(want), kd, total)
+	if ps == 0 || mma != 0 {
+		t.Fatalf("past the bound: %d row-batched groups (want some), %d tensor-core launches (want 0)", ps, mma)
+	}
+	if ld != 0 || kd != 0 {
+		t.Errorf("past the bound: differs from the levers-off pass: %d logits, %d KV elements", ld, kd)
+	}
+}
+
 // TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines: the negative arm. With the row-batched module absent, an exact pass past
 // the bound declines by name, as it did before the module existed; with it, the same prompt prefills.
 func TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines(t *testing.T) {
@@ -245,11 +283,10 @@ func TestKV3Tiled_forcedRouteOnGemma3(t *testing.T) {
 }
 
 // TestKV3Tiled_batchedEqualsPerToken_real (G4): on the real head-dim-256 and 512 models, past the bound, the batched prefill
-// against the per-token path. Gemma-4-E4B (an E-model: the exact kernels at every length) at default settings and Gemma-3-4B
-// with the fast levers off are exact passes and must agree bit for bit, logits and every K and V row. Gemma-3-4B at default
-// settings runs the tensor-core GEMM beside the exact attention, so it is read for fidelity: cosine 0.99 or better and equal
-// argmax. KV3_TILED_N sets the prompt length (default 12,400); KV3_TILED_FORCE=1 forces the row kernels at a shorter length, which
-// is how the plumbing is checked by day.
+// against the per-token path, bit for bit, logits and every K and V row: Gemma-4-E4B at default settings, and Gemma-3-4B with the
+// fast levers off and at default settings (a prompt past the bound runs the exact kernels, prefillPastBoundExact). KV3_TILED_N
+// sets the prompt length (default 12,400); KV3_TILED_FORCE=1 forces the row kernels at a shorter length, which is how the plumbing
+// is checked by day: there Gemma-3's default arm runs the tensor-core GEMM and is read for fidelity, cosine 0.99 and equal argmax.
 //
 //	GOINFER_HEAVY_TESTS=1 KV3_TILED_REAL=1 go test -count=1 -timeout 60m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_batchedEqualsPerToken_real$' -v ./cuda/
 func TestKV3Tiled_batchedEqualsPerToken_real(t *testing.T) {
@@ -310,7 +347,7 @@ func TestKV3Tiled_batchedEqualsPerToken_real(t *testing.T) {
 			}
 			arms := []arm{{"default", true, mdl.eModel}}
 			if !mdl.eModel {
-				arms = []arm{{"levers off", false, true}, {"default", true, false}}
+				arms = []arm{{"levers off", false, true}, {"default", true, splitKVRequired(n)}}
 			}
 			attn0, gemm0 := g.r.fastAttn, g.r.fastGemm
 			defer func() { g.r.fastAttn, g.r.fastGemm = attn0, gemm0 }()

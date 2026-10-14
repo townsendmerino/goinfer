@@ -42,6 +42,31 @@ func (r *cudaResident) prefillSplitKVServes(maxNWin int) bool {
 	return r.prefillSplitKVReady() && (splitKVRequired(maxNWin) || prefillSplitKVForceForTest)
 }
 
+// prefillPastBoundExact reports whether a prompt whose last row attends keys keys has a layer that takes the row-batched kernels:
+// past attn_batched's shared-memory bound (window-clamped), with no fused attention serving its head dim. prefillCore runs every
+// pass of such a prompt on the exact kernels, so it is bit-identical to the per-token path. The tensor-core GEMM beside the row
+// kernels missed its fidelity bar there; enabling it past the bound needs a fidelity gate of its own first
+// (docs/measurements/kv3-tiled-exact-2026-10-13.md §11). The test hook that forces the route below the bound does not count.
+func (r *cudaResident) prefillPastBoundExact(keys int) bool {
+	if !r.prefillSplitKVReady() {
+		return false
+	}
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		maxNWin := keys
+		if Ly.window > 0 && int(Ly.window) < maxNWin {
+			maxNWin = int(Ly.window)
+		}
+		if !splitKVRequired(maxNWin) {
+			continue
+		}
+		if p, _ := r.attnFusedFor(Ly.hd); !r.fastAttn || p == (Pipeline{}) {
+			return true
+		}
+	}
+	return false
+}
+
 // prefillSplitKVPlan sizes the score scratch of an ordinary pass of M rows whose last row attends keys keys: stride is the widest
 // row over the layers that route to the row-batched kernels (0 when none does), and rows the rows one launch group takes. fused
 // says whether the fused attention serves a head dim in this pass, as checkPrefillShmem's argument does.
@@ -72,7 +97,7 @@ func (r *cudaResident) PrefillSpanScratchBytes(rows, keys int) int64 {
 		return 0
 	}
 	fused := func(hd int) bool {
-		if r.dnet != nil || r.eModel || r.deepPlan != nil || !r.fastAttn || rows < attnFusedMinRows ||
+		if r.dnet != nil || r.eModel || r.deepPlan != nil || !r.fastAttn || rows < attnFusedMinRows || r.prefillPastBoundExact(keys) ||
 			keys < fastPrefillFloorFor(r.knobValue("GOINFER_CUDA_FAST_PREFILL_FLOOR")) {
 			return false
 		}
