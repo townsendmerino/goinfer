@@ -123,6 +123,17 @@ class TimingLockTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("free", r.stdout)
 
+    def test_status_under_the_holder_is_free_and_under_another_is_held(self):
+        # gate quick asks `status` before it runs; under its own night job it must not refuse its own parent.
+        r = subprocess.run([sys.executable, TL, "run", "--label", "outer", "--", sys.executable, TL, "status"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("inherited", r.stdout)
+        self.holder()
+        env = dict(self.env, **{timing_lock.TOKEN_ENV: "not-the-holders-token"})
+        r = subprocess.run([sys.executable, TL, "status"], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1, r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
