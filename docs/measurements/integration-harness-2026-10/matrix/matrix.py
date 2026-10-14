@@ -5,7 +5,8 @@ one record per run (records.jsonl) and a progress line every 30 s (count and ela
   matrix.py <plan.json> <out dir> [--only <config>[,<config>]] [--deadline-minutes N]
 
 plan.json: {"serve": path, "port": N, "proxy_port": N, "box": "...", "commit": "...", "configs": [{"name", "model", "ctx",
-"serve_args": [...], "agents": [...], "tasks": [...], "reps": 1, "label": {...}, "run_timeout": seconds}]}.
+"serve_args": [...], "agents": [...], "tasks": [...], "reps": 1, "label": {...}, "run_timeout": seconds,
+"serve": path (optional, replaces the plan's for this configuration), "cell_args": [...] (optional, passed to run_cell.py)}]}.
 Resumable: a (config, agent, task, rep) already in records.jsonl is skipped. Nothing here needs a person or a Claude session.
 """
 import argparse, json, os, signal, subprocess, sys, threading, time, urllib.request
@@ -75,7 +76,8 @@ def main():
     for c in cfgs:
         STATE["phase"] = f"serve {c['name']}"
         logdir = os.path.join(a.out, "logs"); os.makedirs(logdir, exist_ok=True)
-        argv = [plan["serve"], "--model", c["model"], "--backend", "cuda", "--ctx", str(c["ctx"]), "--addr", f"127.0.0.1:{port}", "--log-requests"] + c.get("serve_args", [])
+        serve = c.get("serve", plan["serve"])
+        argv = [serve, "--model", c["model"], "--backend", "cuda", "--ctx", str(c["ctx"]), "--addr", f"127.0.0.1:{port}", "--log-requests"] + c.get("serve_args", [])
         wirelog = os.path.join(a.out, f"wire-{c['name']}.jsonl")
         procs = []
 
@@ -133,12 +135,13 @@ def main():
                             say(f"deadline: not run: {c['name']} {agent} {task} r{rep}")
                             STATE["done"] += 1
                             continue
-                        cmd = [sys.executable, os.path.join(HERE, "run_cell.py"), "--serve", plan["serve"], "--port", str(port), "--proxy-port", str(pport),
+                        cmd = [sys.executable, os.path.join(HERE, "run_cell.py"), "--serve", serve, "--port", str(port), "--proxy-port", str(pport),
                                "--wire-log", os.path.join(a.out, f"wire-{c['name']}.jsonl"), "--out", a.out, "--agent", agent, "--task", task, "--rep", str(rep),
                                "--timeout", str(c.get("run_timeout", 1500)), "--label", f"config={c['name']}", "--label", f"ctx={c['ctx']}",
                                "--label", f"box={plan.get('box')}", "--label", f"goinfer={plan.get('commit')}", "--label", f"model={c['model']}"]
                         for k, v in (c.get("label") or {}).items():
                             cmd += ["--label", f"{k}={v}"]
+                        cmd += c.get("cell_args", [])
                         for attempt in range(3):
                             r = subprocess.run(cmd, capture_output=True, text=True)
                             say(f"{c['name']} {agent} {task} r{rep}: {r.stdout.strip()[-300:] or r.stderr.strip()[-300:]}")

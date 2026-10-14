@@ -90,6 +90,10 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `ResidentFeature`, `ResidentEligible`, `ResidentBackendFeatures`, and **every `*Resident*`
   method on `Model`**. This is the seam the `gpu/`, `cuda/` and `metal/` submodules bind to; it
   moves whenever a family is ported.
+- **The KV geometry.** `decoder.KVGeometry`, `KVGroup`, `KVState`, `KVRetention` and its values,
+  `KVClass`, `KVClassMap`, `KVBlockRows`, `KVSlotRow`, and `Architecture.KVGeometry` /
+  `Model.KVGeometry`. They are the KV manager's types under decoder names, for the backends
+  (`docs/tasks/task-kv-architecture-2026-10.md`), and they move with that program.
 - **Family descriptors and weights.** `decoder.Architecture`, `Weights`, `LayerWeights`,
   `MoEConfig`, `ActKind`, `NormKind`, `NormPlacement`, and the `qwen35Params`-class internals they
   carry. A new family routinely adds fields here.

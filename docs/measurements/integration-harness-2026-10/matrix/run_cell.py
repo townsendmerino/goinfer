@@ -88,6 +88,21 @@ def summarize_wire(recs):
                           overflow_tokens=overflow_tokens(r)) for r in main])
 
 
+def chain_trace(key, events, stdout):
+    """What the agent did with I1-v2's chain, in its own order: ["read", i] for a tool call naming chain file i (0 is start),
+    ["decoy"] for one naming a decoy, ["compact"]; and whether any decoy's lines reached the agent's output."""
+    idx = {n: i for i, n in enumerate(key["chain"])}
+    decoys = set(key["decoys"])
+    seq = []
+    for e in events:
+        if e[0] == "compact":
+            seq.append(["compact"])
+            continue
+        for n in re.findall(r"data/([0-9a-f]{6}|start)\.txt", e[1]):
+            seq.append(["read", idx[n]] if n in idx else ["decoy"] if n in decoys else ["other"])
+    return dict(seq=seq, last=len(key["chain"]) - 1, decoy_content=any(f"{d} record " in stdout for d in decoys))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--serve", required=True); ap.add_argument("--port", type=int, required=True)
@@ -98,6 +113,8 @@ def main():
     ap.add_argument("--prompt", help="override the task's prompt (overflow runs); the task's check still applies when it has one")
     ap.add_argument("--env", action="append", default=[], help="K=V added to the harness's environment (a deviation, recorded in the labels)")
     ap.add_argument("--keep", action="store_true", help="keep the run directory (always kept next to the record)")
+    ap.add_argument("--told-window", type=int, default=0, help="I1-v2's measurement configuration: tell the agent this window instead of the one connect wrote")
+    ap.add_argument("--expect-output-cap", type=int, default=0, help="refuse the run unless the configuration's output cap, read back, is this")
     a = ap.parse_args()
     agent, task = AGENTS[a.agent], tasks.TASKS[a.task]
     rid = f"{a.agent}-{a.task}-r{a.rep}-{time.strftime('%H%M%S')}"
@@ -121,6 +138,13 @@ def main():
         if c.returncode != 0:
             raise RuntimeError("connect: " + c.stdout + c.stderr)
         rec["connect"] = c.stdout.splitlines()[:2]
+        told = agent.tell_window(cfg, a.told_window) if a.told_window else agent.tell_window(cfg, int(rec["labels"].get("ctx") or 0)) if a.expect_output_cap else None
+        if told is not None:
+            rec["told"] = told
+            if a.told_window and told["window"] != a.told_window:
+                raise RuntimeError(f"told window: the file says {told['window']}, not {a.told_window}")
+            if a.expect_output_cap and told["output_cap"] != a.expect_output_cap:
+                raise RuntimeError(f"output cap: the file says {told['output_cap']}, not {a.expect_output_cap}")
         model = next((l.split("model ")[1].split(",")[0] for l in c.stdout.splitlines() if "model " in l), "")
         argv = agent.argv(a.prompt or task["prompt"]) if a.agent != "opencode" else agent.argv(a.prompt or task["prompt"], f"goinfer/{model}")
         vram = Vram(); vram.start()
@@ -137,7 +161,12 @@ def main():
         # goinfer's swap guard refused requests (503 halted): the run measured the box, not the harness, so it is voided and redone
         rec["void_halted"] = rec["wire"]["n_halted"] > 0 or None
         # the mechanical check, in the sandbox, on what the model left
-        if "check" in task:
+        if task.get("keyed"):
+            key = json.load(open(os.path.join(run, "chain-key.json")))
+            rec["chain"] = chain_trace(key, p.get("events", []), so)
+            rec["context_window_seen"] = p.get("context_window_seen")
+            rec["passed"] = key["code"] in (p["answer"] or "")
+        elif "check" in task:
             k = sandbox.run(**base, cmd=["sh", "-c", task["check"]], timeout=300)
             rec["check"] = dict(rc=k[0], out=(k[1] + k[2])[-400:])
             rec["passed"] = k[0] == 0

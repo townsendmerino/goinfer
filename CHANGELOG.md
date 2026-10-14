@@ -38,9 +38,19 @@ configuration: the base URL, the model, and **the context window the server real
 
 - **It says whether the agent fits.** Each agent's first request was measured (Claude Code 20,199 tokens, opencode 7,165, Codex 5,850): the
   output says viable, marginal or not viable for this window, and names the `-ctx` that would fit.
+- **`connect claude-code` sizes Claude Code's output cap to the window and warns when it comes out small.** Claude Code compacts when its
+  context plus its output cap reaches the window it is told (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, which `connect` sets to the window the server
+  enforces). `connect` now writes `CLAUDE_CODE_MAX_OUTPUT_TOKENS` as what the window leaves beside its first request (20,199 tokens) and a
+  2,048-token margin, at most 8,192: 6,425 at 28,672, 8,192 from 30,439 up. Under 4,096 it warns and names `-ctx 26343`, or says the model
+  cannot hold the first request when its own maximum (`max_positions`, below) is smaller. At 28,672 with a 7,168-token cap Claude Code
+  compacted after every file read and stopped on "Autocompact is thrashing". A model id Claude Code may read as a Claude model, for which it
+  does not apply that variable, is warned about too. No documented Claude Code setting makes it compact later at a window this small
+  (`CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts 100,000 and up, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower the trigger).
+- **`/v1/models` publishes `max_positions`**, the model's own maximum context, beside `context_window`.
 - **`-write` patches the agent's own file in place**, keeping every other setting and the order they were in: `~/.claude/settings.json`,
   `./opencode.json` (or the per-user file with `-global`), `~/.codex/config.toml`. It refuses a window the agent cannot fit unless `-force`.
 - **`-undo` restores the file byte for byte**, or removes it if `connect` created it, and refuses if you have edited it since.
+- **`connect claude-code` names the served model in every model slot Claude Code reads**: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_MODEL`, `ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` and the deprecated `ANTHROPIC_SMALL_FAST_MODEL` (the list in Claude Code's own documentation, https://code.claude.com/docs/en/model-config), and sets `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` so a subagent whose definition names its own model runs on the served one too (Claude Code 2.1.257 and later). It set only the main and Haiku slots before, so a subagent that asked for `sonnet` went out as `claude-sonnet-5-5` and the server answered 404.
 - **`connect claude-code` also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`.** Claude Code opens its system prompt with a hash of the conversation's first message, at token 22, so two conversations share 22 tokens instead of the roughly 18,000 of preamble that follows. With the header off, three different first prompts shared 18,213 of about 20,154 tokens (KV0, `docs/measurements/kv0-traffic-2026-10-13.md`). The server does not rewrite the line; it is the client's setting, named in `docs/integrations/claude-code.md`.
 - It never starts the agent. A JSON file with comments is not patched (the comments would be lost): the settings are printed to paste.
 - **Not yet confirmed by running each agent on a written file**; the shapes are the ones the census runs used. Codex's file is patched as text.
@@ -126,6 +136,20 @@ under 4096, and less than 16384 only when it does not fit (the context gives way
 
 `docs/tasks/task-minimax-code-compat-2026-09.md` M2.
 
+### Fixed — under `--backend cuda`, concurrent sampled conversations on a dense Gemma 4 or a logit-scaled model got the wrong distribution
+
+**Who was affected:** `--backend cuda` serving dense Gemma 4, Command-R or Granite (any model with a final-logit softcap or
+a logit scale) to two or more conversations at once, with a sampling temperature above zero. **Since:** batched
+multi-request decode on CUDA (`7a44a58e`, 2026-09-27), so v0.20.0, v0.21.0 and v0.22.0 all carry it.
+
+When several conversations decode together in one batched step, a conversation that samples (on these models every
+sampled token is drawn on the host, since the on-device draw does not apply the transforms) received logits with the
+final-logit softcap or the logit scale applied twice. That squeezed a dense Gemma 4's logits further toward the cap and,
+on a Command-R, Granite or other logit-scaled model, multiplied them by the scale a second time, which raises the
+effective temperature by its inverse (16 on Command-R, whose `logit_scale` is `0.0625`). Greedy decoding and a
+conversation decoding alone were not affected; both transforms keep the argmax. Each is now applied once, and a step row's
+logits equal the single-sequence `Forward`'s bit for bit (`TestCUDAStepBatch_matchesForward`).
+
 ### Fixed — Claude Code 2.1.268 could not complete a turn against `/v1/messages`
 
 Claude Code now sends a `system` message inside the conversation on every turn (the Messages API's mid-conversation system
@@ -154,6 +178,16 @@ to the reasoning and the call parser reads only the answer, so the turn came bac
   `message_delta` event). The reason is `ended_in_reasoning`, `reasoning_only`, `stop_sequence` or `no_output`. A reply
   cut off by its token limit keeps the reason it already had (`length`, `max_output_tokens`, `max_tokens`). Both fields
   are an **Experimental** vendor extension (docs/server.md, "Empty answers say why"): the set of values may change.
+
+### Changed — resident prefix reuse is kept by one KV manager (no change in what a request gets)
+
+The record of what each GPU KV slot holds, the choice of a slot for a prompt and the length it may skip moved from
+`decoder` into one package, `internal/kvmgr`, the first step of `docs/tasks/task-kv-architecture-2026-10.md`. Nothing a
+kernel computes or a backend allocates changes, and replies are the same: the new code is walked against the old at
+random in the test suite. One rule is now stated where it was implied: a prompt of 15 tokens or fewer never runs CUDA's
+fast prefill kernels, so it keeps a short reused prefix (with the default 512-token floor this changes nothing).
+Library, Experimental: `decoder.Architecture.KVGeometry` and `decoder.Model.KVGeometry` (a model's KV layer groups and
+recurrent state), their types, `decoder.KVBlockRows` and `decoder.KVSlotRow`.
 
 ### Fixed — Codex turns were cut at 512 tokens, and a thinking model's cut-off reply could show `</think>`
 

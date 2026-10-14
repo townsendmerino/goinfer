@@ -542,6 +542,11 @@ func (s *server) pathFields(name string) map[string]any {
 		f["context_length"] = ctx
 		f["max_model_len"] = ctx
 	}
+	// max_positions is the model's own maximum context, which -ctx cannot exceed, so a client told the window is too
+	// small can tell a larger -ctx from a model that cannot hold the request at all.
+	if mp := lm.model.Config().MaxPositions; mp > 0 {
+		f["max_positions"] = mp
+	}
 	// vision reports whether image content parts are accepted, by the same visionCapable the vision path checks, so a
 	// client can hide image input on a model that would refuse it.
 	f["vision"] = lm.visionCapable()

@@ -1,0 +1,425 @@
+{
+ "args": {
+  "out": "/Users/francistownsend-merino/goinfer-logs/kv1-2026-10-13/night-2026-10-13/ttft-metal-1.5B.json",
+  "backend": "metal",
+  "new": "/Users/francistownsend-merino/goinfer-bench/kv1-2026-10/bin/serve-new",
+  "old": "/Users/francistownsend-merino/goinfer-bench/kv1-2026-10/bin/serve-old",
+  "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "name": "1.5B",
+  "blocks": 12,
+  "prompt_words": 2500,
+  "serve_args": "",
+  "load_timeout": 420,
+  "log_dir": "/Users/francistownsend-merino/goinfer-logs/kv1-2026-10-13/night-2026-10-13/serve-logs"
+ },
+ "cells": [
+  {
+   "ttft_s": [
+    3.189,
+    3.2025,
+    3.1729
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 0,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:29:16"
+  },
+  {
+   "ttft_s": [
+    3.2066,
+    3.1769,
+    3.1734
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 0,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:29:29"
+  },
+  {
+   "ttft_s": [
+    3.182,
+    3.176,
+    3.1962
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 1,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:29:43"
+  },
+  {
+   "ttft_s": [
+    3.1829,
+    3.1968,
+    3.174
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 1,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:29:56"
+  },
+  {
+   "ttft_s": [
+    3.2071,
+    3.1757,
+    3.1778
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 2,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:30:09"
+  },
+  {
+   "ttft_s": [
+    3.1869,
+    3.1748,
+    3.1891
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 2,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:30:22"
+  },
+  {
+   "ttft_s": [
+    3.1841,
+    3.1892,
+    3.1735
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 3,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:30:35"
+  },
+  {
+   "ttft_s": [
+    3.196,
+    3.1772,
+    3.1719
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 3,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:30:48"
+  },
+  {
+   "ttft_s": [
+    3.1871,
+    3.1754,
+    3.1855
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 4,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:31:02"
+  },
+  {
+   "ttft_s": [
+    3.1811,
+    3.1833,
+    3.1737
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 4,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:31:15"
+  },
+  {
+   "ttft_s": [
+    3.1868,
+    3.1738,
+    3.1709
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 5,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:31:28"
+  },
+  {
+   "ttft_s": [
+    3.1805,
+    3.1758,
+    3.1783
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 5,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:31:41"
+  },
+  {
+   "ttft_s": [
+    3.1846,
+    3.1733,
+    3.1746
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 6,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:31:54"
+  },
+  {
+   "ttft_s": [
+    3.1859,
+    3.214,
+    3.174
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 6,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:32:07"
+  },
+  {
+   "ttft_s": [
+    3.2205,
+    3.1792,
+    3.1735
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 7,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:32:21"
+  },
+  {
+   "ttft_s": [
+    3.1806,
+    3.1753,
+    3.2086
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 7,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:32:34"
+  },
+  {
+   "ttft_s": [
+    3.1849,
+    3.2106,
+    3.1729
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 8,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:32:47"
+  },
+  {
+   "ttft_s": [
+    3.2181,
+    3.1763,
+    3.1729
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 8,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:33:00"
+  },
+  {
+   "ttft_s": [
+    3.1866,
+    3.1752,
+    3.2029
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 9,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:33:13"
+  },
+  {
+   "ttft_s": [
+    3.1871,
+    3.2037,
+    3.172
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 9,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:33:26"
+  },
+  {
+   "ttft_s": [
+    3.2105,
+    3.1775,
+    3.173
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "new",
+   "block": 10,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:33:40"
+  },
+  {
+   "ttft_s": [
+    3.1781,
+    3.1767,
+    3.1931
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "old",
+   "block": 10,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:33:52"
+  },
+  {
+   "ttft_s": [
+    3.1767,
+    3.196,
+    3.1762
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "old",
+   "block": 11,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:34:06"
+  },
+  {
+   "ttft_s": [
+    3.2026,
+    3.1748,
+    3.1723
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "new",
+   "block": 11,
+   "model": "1.5B",
+   "backend": "metal",
+   "at": "23:34:19"
+  }
+ ]
+}

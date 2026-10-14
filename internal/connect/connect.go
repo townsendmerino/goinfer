@@ -27,6 +27,7 @@ type settings struct {
 	Key    string // the bearer token the agent sends; "goinfer" when the server has none
 	Model  string
 	Window int // context_window from /v1/models
+	MaxPos int // max_positions from /v1/models, the model's own maximum context; 0 when the server does not publish it
 	Output int // the output limit told to the agent
 }
 
@@ -43,6 +44,17 @@ type harness struct {
 	patch func(old []byte, s settings) ([]byte, error)
 	// after is what the person still has to do: the environment to set, the command to run.
 	after func(s settings) string
+}
+
+// claudeCodeModelSlots is every variable Claude Code reads a model name from, as its documentation lists them
+// (https://code.claude.com/docs/en/model-config, https://code.claude.com/docs/en/env-vars). connect sets each to the
+// served model: a slot left unset resolves to an Anthropic model id, which the server answers with 404, so an alias,
+// a subagent or a background request that reads it fails. ANTHROPIC_SMALL_FAST_MODEL is deprecated in favour of
+// ANTHROPIC_DEFAULT_HAIKU_MODEL and set as well, for a version that still reads it.
+var claudeCodeModelSlots = []string{
+	"ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL",
+	"ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"CLAUDE_CODE_SUBAGENT_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
 }
 
 var harnesses = map[string]harness{
@@ -68,6 +80,11 @@ var harnesses = map[string]harness{
 					{"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"}} {
 					env.set(kv[0], kv[1])
 				}
+				for _, slot := range claudeCodeModelSlots {
+					env.set(slot, s.Model)
+				}
+				// A subagent whose definition names a model of its own would otherwise ask for it; the server serves one.
+				env.set("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1")
 				o.set("env", env)
 				return nil
 			})
@@ -181,6 +198,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 		Data []struct {
 			ID     string `json:"id"`
 			Window int    `json:"context_window"`
+			MaxPos int    `json:"max_positions"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &list); err != nil {
@@ -205,6 +223,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 			if s.Key == "" {
 				s.Key = "goinfer" // agents refuse an empty key; a server with none accepts any
 			}
+			s.MaxPos = m.MaxPos
 			return s, nil
 		}
 	}
@@ -386,6 +405,7 @@ func Run(args []string, self string, out io.Writer) int {
 // connect prints the configuration for s and, with doWrite, patches path. It refuses to write a configuration whose
 // agent cannot fit its first request in the window, unless force.
 func connect(out io.Writer, name string, h harness, path string, s settings, doWrite, force bool) int {
+	s = claudeCodeSettings(name, h, s)
 	verdict := h.fit(s.Window)
 	fmt.Fprintf(out, "%s -> %s, model %s, context window %d tokens (output limit %d)\n", h.Name, s.URL, s.Model, s.Window, s.Output)
 	fmt.Fprintf(out, "first request: %d tokens (%s %s, measured) — %s in this window\n", h.FirstRequest, h.Name, h.Version, verdict)
@@ -395,6 +415,7 @@ func connect(out io.Writer, name string, h harness, path string, s settings, doW
 	case "not viable":
 		fmt.Fprintf(out, "  the first request does not fit: restart goinfer-serve with -ctx %d or more\n", h.FirstRequest+h.FirstRequest/4)
 	}
+	fmt.Fprint(out, claudeCodeWarnings(name, h, s))
 	old, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		fmt.Fprintf(out, "connect: %v\n", err)
