@@ -14,3 +14,15 @@
         kv2_copy_test.go:147: CopyKV{1 2 256 1024}: dst buffer 0 row 256 is not src's
     --- FAIL: TestKV2_copyKVExact/i8 (2.28s)
 
+== planted: G3 on the device: CopyKV reports success and copies nothing
+    kv2_schedule_test.go:94: conversation 1 turn 0 (reused 960, copied 960, own history false): [314 7219 14092 7369 2733 3979 5296 635 17337 5824 19147 17916 15502 15459 17341 2146], reference [4622 15751 2333 19129 336
+    kv2_schedule_test.go:94: conversation 1 turn 1 (reused 1000, copied 0, own history false): [9665 14243 11596 9278 16250 15011 9283 9023 16348 2388 6883 13882 9412 17415 10807 9228], reference [2423 4542 15967 12820 1
+    kv2_schedule_test.go:94: conversation 2 turn 0 (reused 1000, copied 0, own history false): [958 10978 17671 9160 2333 10788 12068 5162 13705 7328 11951 6559 10955 15707 2800 2032], reference [16220 1261 3678 10675 24
+    kv2_schedule_test.go:94: conversation 1 turn 0 (reused 960, copied 960, own history false): [314 7219 14092 7369 2733 3979 5296 635 17337 5824 19147 17916 15502 15459 17341 2146], reference [4622 15751 2333 19129 336
+    kv2_schedule_test.go:94: conversation 1 turn 1 (reused 1000, copied 0, own history false): [9665 14243 11596 9278 16250 15011 9283 9023 16348 2388 6883 13882 9412 17415 10807 9228], reference [2423 4542 15967 12820 1
+    kv2_schedule_test.go:94: conversation 0 turn 0 (reused 1000, copied 0, own history false): [13618 11415 8302 1774 5054 9081 13991 20326 11337 1942 19946 6473 4739 1374 10049 4483], reference [5455 13079 13557 11057 7
+    kv2_schedule_test.go:94: conversation 1 turn 0 (reused 960, copied 960, own history false): [314 7219 14092 7369 2733 3979 5296 635 17337 5824 19147 17916 15502 15459 17341 2146], reference [4622 15751 2333 19129 336
+    kv2_schedule_test.go:94: conversation 2 turn 0 (reused 1000, copied 0, own history false): [958 10978 17671 9160 2333 10788 12068 5162 13705 7328 11951 6559 10955 15707 2800 2032], reference [16220 1261 3678 10675 24
+    kv2_schedule_test.go:94: conversation 2 turn 1 (reused 1086, copied 0, own history true): [18792 14548 9991 17848 11920 13806 2713 14307 11907 16696 8854 9029 14393 990 11817 14570], reference [13914 11167 15782 9646
+    kv2_schedule_test.go:145: the edit: [7243 699 7230 2576 8397 7471 18105 2583 13407 442 2126 1966 8237 4722 10077 7674], cold [6887 1824 4739 13128 9272 17328 5837 3764 18861 3013 10679 1629 1693 17083 2637 13360] (co
+
