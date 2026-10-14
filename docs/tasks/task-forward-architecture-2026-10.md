@@ -603,6 +603,34 @@ folded into the scale, step 2 folds the cap's constants the same way (FlashInfer
 - **Parked, for the owner:** Gemma 2 clears 0.88 but its min cosine is more than 0.03 under Gemma 3's from the same session.
   The feature is not declared while parked.
 
+**G2-R's baseline step, added 2026-10-13 on the owner's ruling, before any G2-R run.** G2-T's bar sat within 0.0003 of
+its fixture's own no-softcap agreement, which nobody had measured. This step measures G2-R's before its graded arm runs.
+- **The checkpoint:** `gemma-2-2b-it-Q8_0.gguf`, sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe`, in
+  the Mac's `~/models`.
+- **Arm B, the baseline.** G2-R's harness and metric (greedy lockstep off the CPU, 24 steps, the min logit cosine over
+  positions from 2), at each registered quant (int8int8 and int4), with the softcap removed on BOTH sides.
+  - **How it is removed:** a test hook, built only under `goinfer_testhooks`, zeroes the model's attention softcap before
+    the resident is built. It is applied to the CPU model and to the Metal model alike.
+  - **What is recorded:** the min cosine per quant.
+- **The stopping rule on B:** if 0.88, G2-R's bar, is within 0.001 of B's min cosine at either quant (B under 0.881), stop
+  and report. The graded arm does not run and the bar is not changed.
+- **Otherwise, two arms, once each, in this order, in B's session:**
+  - **Arm G, graded:** G2-R as registered, the softcap on both sides, with its control and its band.
+  - **Arm P, the planted defect:** the softcap dropped from the Metal build only, the CPU keeping it. P must FAIL G2-R's
+    rule (min cosine under 0.88, or argmax equal at under half the positions) at both quants.
+- **The outcome:**
+  - G passes and P fails: G2-R passes, and the declaration may merge.
+  - G fails or is parked: stop and report, with no retuning.
+  - P passes: G2-R cannot see a dropped cap on this checkpoint, so it does not vouch for the softcap. Stop and report.
+- **Void, in addition to G2-R's own conditions:**
+  - B, G and P not in one session;
+  - a resident that reports a cap that is not its arm's (0 in B, the model's in G and P);
+  - the Gemma 3 control's checkpoint missing. The test reads `~/models/gemma-3-4b-it-Q4_K_M.gguf`, and on the Mac the file
+    is in `~/models/gemma-3-4b-it-gguf/`. The run links it to the path the test reads for the session, and removes the
+    link after.
+- **Tier: by day.** The 2B loads twice per arm and quant, and Gemma 3 4B and the 1.5B once each; about 15 minutes in all
+  (INFERRED from the tiny runs and the load sizes, not measured). Under the timing lock, with no night job running.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
