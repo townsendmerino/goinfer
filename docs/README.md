@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (76: 67 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (77: 68 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -93,6 +93,11 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
 open, and the gates to register before any code.
+
+[`task-cpu-prefill-memory-2026-10.md`](tasks/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
+CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
+keeping the freed heap. It registers the fix (2,048-row chunks with the suffix's fast-attention decision, the KV reserved
+once, memory returned after a long prompt) and its parity, memory and speed gates.
 
 [`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV11, filed 2026-10-13; KV0 done the same day)
 proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
@@ -182,7 +187,7 @@ asks how many wire dialects the coding-agent harnesses speak and how often a too
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (269)
+## Evidence — `measurements/` (270)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
