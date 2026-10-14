@@ -468,7 +468,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
-			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()})
 		sseDone(ss)
 		return
 	}
@@ -494,7 +494,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			"message":       vmsg,
 			"finish_reason": finish,
 		}},
-		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()},
 	}
 	if e := emptyAnswerOf(gr, finish, stopHit, 0, nComp); e != nil {
 		vresp["choices"].([]any)[0].(map[string]any)["goinfer_empty_answer"] = e
@@ -609,7 +609,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		}
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false, gr.timing)
 		return
 	}
 	var sb, rb strings.Builder

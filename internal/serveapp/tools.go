@@ -128,7 +128,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		if ss != nil {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": t.cancelReason}})
 			sendUsage(ss, req.StreamOptions, id, created, lm.name,
-				usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+				usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()})
 			sseDone(ss)
 			return
 		}
@@ -158,7 +158,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	if t.fromReasoning && len(t.calls) > 0 {
 		choice[fromReasoningField] = true
 	}
-	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
+	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()}
 
 	if req.Stream {
 		// Whatever prose already left as deltas is not sent twice: only t.rest, the part of the parsed prose still held back.

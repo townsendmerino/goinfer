@@ -31,6 +31,15 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Added — each turn says where its time went: `usage.goinfer_timings` (Experimental)
+
+Every completed turn on `/v1/chat/completions`, `/v1/messages` and `/v1/responses`, buffered or streamed, now reports
+its time in the queue, prefill (with the prompt tokens computed and reused), time to first token, decode, and the host
+gap: the part of decode spent outside the model's forward passes. The times are measured inside the server, so they
+exclude the network. A field the turn did not measure is absent, never zero. Image turns and speculative decoding report
+only the queue and first-token times today. Measuring the host gap reads the clock twice per decoded token; a paired
+check that this costs no measurable decode speed is queued as its own night cell. `docs/server.md` has the fields.
+
 ### Added — `goinfer-serve connect <agent>` writes a coding agent's configuration with the window the server serves
 
 Against a running server, `connect claude-code`, `connect opencode` or `connect codex` reads the model list and prints that agent's

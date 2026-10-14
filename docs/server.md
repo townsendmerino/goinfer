@@ -697,6 +697,24 @@ to ignore.**
   thinking control, or to a model whose tokenizer has no single token for the block's delimiters. A reply that ends inside its
   block anyway (one of those cases) has empty `content`, `reasoning_content` holding what was written, and `finish_reason:
   length` (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`).
+- **Each turn says where its time went (Experimental vendor extension).** `usage.goinfer_timings` on
+  `/v1/chat/completions` (streamed: in the final usage chunk, with `stream_options.include_usage`), `/v1/messages`
+  (streamed: on the `message_delta` event) and `/v1/responses` (streamed: in `response.completed`). Times are
+  milliseconds, measured inside the server, so they exclude the network:
+
+  | field | what it is |
+  |---|---|
+  | `queue_ms` | from the request being parsed and tokenized to its generation starting (the wait for its turn) |
+  | `prefill_ms` | from the generation starting to the prompt's last logits; on a GPU it includes choosing a KV slot |
+  | `prefill_tokens`, `prefill_reused_tokens` | the prompt tokens computed, and those taken from an earlier turn's KV |
+  | `ttft_ms` | from the generation starting to its first token |
+  | `decode_ms`, `decode_tokens` | from the first token to the end, and the tokens decoded |
+  | `host_gap_ms` | the part of `decode_ms` the server spent outside the model's forward passes (sampling, streaming) |
+  | `decode_overlapped` | `true` when each next forward was queued before that work, so the gap ran beside the device |
+
+  A field the turn did not measure is absent, never zero: image turns and speculative, drafter and grammar-fused decoding
+  report only `queue_ms` and `ttft_ms` today, and a turn that ended in an error or was cancelled reports no decoder
+  timings. The names may still change. Design: `docs/tasks/task-turn-telemetry-2026-09.md`, "X1".
 - **Empty answers say why, and a call read from the reasoning is marked (Experimental vendor extension).** A turn that
   ends (not cut off) with no answer text and no tool call is never returned as a clean one, and on a tool request a turn
   with no answer text whose reasoning holds a tool call returns that call: a thinking model sometimes writes its call

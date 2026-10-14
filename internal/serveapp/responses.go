@@ -229,7 +229,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		out := withReasoning(rs, gr.think, id, []any{rs.closeMessage(sb.String())})
-		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused)})
+		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused, gr.timing)})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
@@ -249,7 +249,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	out := withReasoning(nil, gr.think, id, []any{outputMessage(id+"-msg", sb.String())})
-	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused))
+	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused, gr.timing))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 }
 
@@ -484,7 +484,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	out = withReasoning(rs, gr.think, id, out)
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
-	resp := withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused)
+	resp := withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused, gr.timing)
 	if t.fromReasoning && len(calls) > 0 {
 		resp[fromReasoningField] = true
 	}
@@ -719,9 +719,10 @@ func responseObject(id, model string, created int64, status string, output []any
 }
 
 // withCachedTokens reports the prompt tokens whose prefill a prior turn's KV made unnecessary, in OpenAI's own field for
-// them (usage.input_tokens_details.cached_tokens; Codex reads it as cached_input_tokens).
-func withCachedTokens(resp map[string]any, reused int) map[string]any {
+// them (usage.input_tokens_details.cached_tokens; Codex reads it as cached_input_tokens), and the turn's goinfer_timings.
+func withCachedTokens(resp map[string]any, reused int, tm *turnTiming) map[string]any {
 	resp["usage"].(map[string]any)["input_tokens_details"] = map[string]any{"cached_tokens": reused}
+	tm.addTo(resp["usage"].(map[string]any))
 	return resp
 }
 

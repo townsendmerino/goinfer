@@ -710,6 +710,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
 	}
+	gr.timing.addTo(msg["usage"].(map[string]any))
 	if e := emptyAnswerOf(gr, finish, stopSeq, len(calls), nComp); e != nil {
 		msg["goinfer_empty_answer"] = e
 	}

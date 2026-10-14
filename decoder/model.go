@@ -1667,6 +1667,7 @@ func (m *Model) tryClaimResident() bool {
 // consumer observes the close. commit, if non-nil, is called with each id once its forward has committed that position to
 // the cache, the seam Session uses to track exactly what the cache holds. Terminal status lands on g.err.
 func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, newCache func() *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
+	start := time.Now()
 	if len(prompt) == 0 {
 		g.err = fmt.Errorf("decoder.Generate: empty prompt")
 		return
@@ -1799,6 +1800,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			g.err = err
 			return
 		}
+	}
+	prefilled, reused := time.Now(), prefillFrom
+	if useGPU {
+		reused = g.PrefillReused
 	}
 	// Greedy fast path: when the resident can pick the argmax on-device AND the sampler's choice is exactly argmax(raw logits)
 	// with nothing else reading them, skip the full-logits readback. Emitted tokens are identical; GOINFER_NO_GREEDY_FASTPATH
@@ -1933,6 +1938,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 
 	// Decode loop.
 	var generated []int
+	// firstSent and fwdWait are X1's decode timings (TurnTiming): when the first token went out, and the time each
+	// token after it spent from its commit to the next logits. Two clock reads a token; nothing else per token.
+	var firstSent time.Time
+	var fwdWait time.Duration
 	var tProc, tSample, tEmbed, tFwd time.Duration
 	var nFwd int
 	// embScratch is reused across iterations: each token's embedding is consumed synchronously by Forward/ForwardArgmax before the
@@ -2121,7 +2130,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		case out <- next:
 		}
 	sent:
+		if len(generated) == 0 {
+			firstSent = time.Now()
+		}
 		generated = append(generated, next)
+		fwd0 := time.Now()
 		if gated {
 			needFull = sp.LogitProcessorGate(generated)
 		}
@@ -2285,6 +2298,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		} else {
 			logits, err = m.forward(next, cache)
 		}
+		fwdWait += time.Since(fwd0)
 		if decodeTiming {
 			tFwd += time.Since(t0)
 			nFwd++
@@ -2301,6 +2315,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.
 	if useGPU {
 		commitResident()
+	}
+	g.Timing = &TurnTiming{Prefill: prefilled.Sub(start), PrefillTokens: len(prompt) - reused, PrefillReused: reused,
+		DecodeTokens: len(generated), ForwardWait: fwdWait, Overlapped: useChain || optFwd || sChainRF != nil}
+	if len(generated) > 0 {
+		g.Timing.Decode = time.Since(firstSent)
 	}
 	if decodeTiming && nFwd > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }
@@ -2339,6 +2358,10 @@ type Generation struct {
 	// agent loop's per-turn prefill cost visible without timing it. GenerateVL/GenerateQwenVL set it only on the full-image-reuse
 	// fast path (docs/multimodal.md): 0 there means the turn's image (or everything before it) was not fully reused.
 	PrefillReused int
+	// Timing is the turn's stage timings (docs/tasks/task-turn-telemetry-2026-09.md, X1), set when a generation through
+	// Generate or Session.Generate ran to completion; nil on an error, a cancellation, and the paths that do not measure
+	// them (images, speculative and grammar-fused decoding).
+	Timing *TurnTiming
 	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a
@@ -2380,3 +2403,15 @@ type Generation struct {
 // Err returns the error that ended the stream, or nil if it ended cleanly
 // (EOS / stop / maxTokens). Read it after the channel closes.
 func (g *Generation) Err() error { return g.err }
+
+// TurnTiming is one completed generation's stage timings. Prefill runs from the generation's start (after the caller's
+// admission) to the prompt's last logits; Decode from the first token emitted to the end. ForwardWait is the part of
+// Decode spent from each token's commit to the next logits (its embedding lookup included), so Decode - ForwardWait is
+// the host's per-token work. Overlapped says the next forward was queued before that work (a run-ahead chain or the
+// optimistic forward), so it ran beside the device rather than idling it.
+type TurnTiming struct {
+	Prefill, Decode, ForwardWait time.Duration
+	PrefillTokens, PrefillReused int
+	DecodeTokens                 int
+	Overlapped                   bool
+}

@@ -778,6 +778,9 @@ type usage struct {
 	// prefill, on a path that does not track reuse, or when nothing was reused; the number alone cannot tell those
 	// apart. An unrecognised JSON key, so any standard OpenAI client ignores it.
 	PrefillReusedTokens int `json:"prefill_reused_tokens"`
+	// Timings is goinfer_timings (timings.go): the turn's queue, prefill, first-token, decode and host-gap timings, an
+	// Experimental vendor extension, absent when the turn measured none.
+	Timings *timingsJSON `json:"goinfer_timings,omitempty"`
 }
 
 // handleModels reports the served model(s) — the decoder and/or the embedding
@@ -951,7 +954,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
-			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()})
 		sseDone(ss)
 		return
 	}
@@ -985,7 +988,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	resp := map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice},
-		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()},
 	}
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
@@ -1073,7 +1076,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
-			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()})
 		sseDone(ss)
 		return
 	}
@@ -1090,7 +1093,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	resp := map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
-		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused, Timings: gr.timing.json()},
 	}
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
@@ -1119,6 +1122,8 @@ type genRequest struct {
 	think *thinkOut
 	// outcome receives what streamTokens saw of the answer (emptyAnswerOf reads it). Set by prepare.
 	outcome *turnOutcome
+	// timing is the turn's X1 timings (timings.go), reported as usage's goinfer_timings. Set by prepare.
+	timing *turnTiming
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1251,6 +1256,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: stops,
 		outcome:     &turnOutcome{},
+		timing:      newTurnTiming(),
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
@@ -1460,6 +1466,7 @@ func genErr(err error) error {
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
 func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+	gr.timing.begin()
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// The admin cancel must land on parent itself, not on ctx below (drive's stop-string-derived child):
@@ -1635,6 +1642,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
 func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+	gr.timing.begin()
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// See drive's identical block for why this must wrap parent, not the ctx derived below.
@@ -1795,6 +1803,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	}
 	tr := traceFrom(parent) // -log-requests (reqlog.go); nil when it is off
 	for id := range stream {
+		gr.timing.firstToken()
 		if stopping {
 			continue // drain so the generation goroutine exits cleanly
 		}
@@ -1812,6 +1821,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		sb.WriteString(piece)
 		step()
 	}
+	gr.timing.finish(gen) // the stream has closed, so the generation's timings are final
 	if th != nil {
 		// The splitter may still hold text (a partial tag, or whitespace that turned out to be answer): it goes through the
 		// stop logic like any other answer text. After a stop hit only the reasoning side is flushed.
