@@ -187,7 +187,9 @@ func (l *sessionLRU) donorFor(prompt []int) (*decoder.Session, int) {
 		if l.busy[d] {
 			continue
 		}
-		if h := d.SharedHit(prompt); h > best {
+		// >=: among equal hits the least recently used wins, which is the session fresh would evict, so taking it in
+		// place saves the copy and keeps the more recent one
+		if h := d.SharedHit(prompt); h > 0 && h >= best {
 			donor, best = d, h
 		}
 	}
