@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -920,8 +921,9 @@ func probeNVRTC(w io.Writer) map[string][2]string {
 func (g *gpuGate) cudaPTX() {
 	g.grp("ptx")
 	g.hdr("4. PTX reproduces from source, each at the NVRTC it records")
-	if st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh")); err != nil || st.Mode()&0o111 == 0 {
-		g.skip("PTX reproducibility (cuda/build_ptx.sh missing)")
+	st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh"))
+	if why := ptxScriptDecline(st, err, runtime.GOOS); why != "" {
+		g.skip("PTX reproducibility (cuda/build_ptx.sh %s)", why)
 		return
 	}
 	nvrtc := probeNVRTC(g.w)
@@ -1030,6 +1032,19 @@ func (g *gpuGate) cudaPTX() {
 	if len(unavail) > 0 {
 		g.skip("%d/%d PTX NOT verified on this box (toolchain absent): %s", nUnavail, total, strings.Join(unavail, " "))
 	}
+}
+
+// ptxScriptDecline says why cuda/build_ptx.sh cannot be run, "" when it can. The execute bit is checked only on an OS that
+// has one: Windows reports none for any file, so checking it there calls a script that is present "missing" and ends the
+// group before it counts the artifacts it did not verify.
+func ptxScriptDecline(st os.FileInfo, statErr error, goos string) string {
+	switch {
+	case statErr != nil:
+		return "is missing"
+	case goos != "windows" && st.Mode()&0o111 == 0:
+		return "is not executable"
+	}
+	return ""
 }
 
 // runPTX is `gate ptx`: the PTX group alone, for a machine that has NVRTC and no GPU. It is stricter than the group

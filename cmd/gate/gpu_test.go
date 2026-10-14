@@ -469,6 +469,41 @@ func TestGPU_withGoBinPrependsGOPATHBin(t *testing.T) {
 	}
 }
 
+// The build script's execute bit is read only where the OS has one. On Windows every file's mode has none, and a check there
+// ended the PTX group with "missing" before it reached the count that says nothing was verified.
+func TestPTXScriptDecline_executeBitOnlyWhereTheOSHasOne(t *testing.T) {
+	st, err := os.Stat(filepath.Join("..", "..", "cuda", "build_ptx.sh"))
+	if err != nil {
+		t.Fatalf("cuda/build_ptx.sh: %v", err)
+	}
+	noExec := modeInfo{FileInfo: st, mode: 0o666}
+	for _, tc := range []struct {
+		name    string
+		st      os.FileInfo
+		statErr error
+		goos    string
+		want    string
+	}{
+		{"windows, a present script with no execute bit", noExec, nil, "windows", ""},
+		{"linux, the same mode", noExec, nil, "linux", "is not executable"},
+		{"linux, executable", modeInfo{FileInfo: st, mode: 0o755}, nil, "linux", ""},
+		{"absent, on either", nil, os.ErrNotExist, "windows", "is missing"},
+		{"absent, on linux", nil, os.ErrNotExist, "linux", "is missing"},
+	} {
+		if got := ptxScriptDecline(tc.st, tc.statErr, tc.goos); got != tc.want {
+			t.Errorf("%s: ptxScriptDecline = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// modeInfo is a FileInfo with its mode replaced, so a test can state the mode an OS would report.
+type modeInfo struct {
+	os.FileInfo
+	mode os.FileMode
+}
+
+func (m modeInfo) Mode() os.FileMode { return m.mode }
+
 // `gate ptx` with no NVRTC verifies nothing, and that is red: a run that could not rebuild a file must not read as one
 // that found it identical. GOINFER_NVRTC_DIRS is an override, so an empty directory makes "no toolchain" reachable on a
 // box that has one.
