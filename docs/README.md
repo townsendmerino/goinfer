@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~535 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~675 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (74: 65 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (76: 67 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -94,12 +94,25 @@ half-precision KV cache on the CPU as the command lines' default, with f32 kept 
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
 open, and the gates to register before any code.
 
-[`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV10, filed 2026-10-13, not started)
+[`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV11, filed 2026-10-13; KV0 done the same day)
 proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
 tables, a content-addressed prefix index and tiers, with backends reduced to block storage and recurrent state as a
 checkpointed second pool. It lists what today's per-slot design costs, what must not change, the phases and their
 gates, and the owner decisions. The first, D1, is decided: the owner un-parked paged KV on 2026-10-13, for memory and
-reuse, with continuous batching still parked.
+reuse, with continuous batching still parked. KV11, added the same day, puts KV blocks and paged MoE experts under one
+memory budget in place of today's fixed split.
+
+[`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
+2026-10-13, not started) is the compute half of the same redesign.
+- **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
+  rather than families.
+- **Track RF** replaces the resident's one entry point per request shape with one ragged forward call, which carries decode,
+  verify, prefill and image rows from any number of conversations.
+- **It starts from where a query's time goes** and from why each CPU-only family declines; its baseline record,
+  [`measurements/forward-arch-baseline-2026-10-13.md`](measurements/forward-arch-baseline-2026-10-13.md), has both
+  readings.
+- **Its first steps stand alone:** attention softcapping so Gemma 2 runs on every GPU, per-turn timing on the wire, and
+  run-ahead decode under tool and thinking-budget processors.
 
 [`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
 2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
@@ -169,13 +182,13 @@ asks how many wire dialects the coding-agent harnesses speak and how often a too
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (244)
+## Evidence — `measurements/` (268)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (132)
+## Archive — `completed/` (136)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
@@ -187,7 +200,7 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (12) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (14) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered, and the 4
   left then were each still open (drafted-by-decision, blocked, or unshipped, per their own status).
   Briefs written since are read by their own status headers. Newest:
