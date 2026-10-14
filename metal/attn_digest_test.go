@@ -103,7 +103,8 @@ func TestAttnDigest_coversEveryKernel(t *testing.T) {
 		t.Fatalf("found only %d attention kernels in the sources (%v): the patterns no longer match them", len(names), names)
 	}
 	if *attnDigestCheck == "" {
-		t.Skipf("no -attn-digest-check file; the sources have %d attention kernels: %s", len(names), strings.Join(names, " "))
+		t.Skipf("no -attn-digest-check file. Record one with -run '%s' -attn-digest=FILE; the sources have %d attention kernels: %s",
+			attnDigestRun, len(names), strings.Join(names, " "))
 	}
 	raw, err := os.ReadFile(*attnDigestCheck)
 	if err != nil {
