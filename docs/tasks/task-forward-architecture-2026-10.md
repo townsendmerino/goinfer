@@ -2,7 +2,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it; three night gates are queued on the Mac. OP1 on CUDA and WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA and WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -576,7 +576,8 @@ folded into the scale, step 2 folds the cap's constants the same way (FlashInfer
 - **Real 2B:** `gemma-2-2b-it`, the Q8_0 GGUF the CPU's real gate reads (`TestGemma12Real_gate`).
   - **Corrected 2026-10-13, a fact and not a rule:** this line said the file comes from the archive with `models-pull`. It is
     not in the archive. It is in nobara's `~/models` only (listed 2026-10-13), and `models-pull` on the Mac found nothing.
-    The Mac's G2-R needs a `models-push` of it from nobara first, or a fresh download.
+  - **Copied 2026-10-14 08:16** from nobara's `~/models` to the Mac's `~/models`, with nobara's timing lock free, and verified:
+    sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe` on both boxes.
 - **Real 9B:** not in the archive or on either box today. It runs where a box has the disk and the memory for it, and
   otherwise the record says "9B not run" by name. The Mac does not have the disk today.
 - **The peer cell's file** is the GGUF Ollama ships for `gemma2:2b`, copied to `~/models` and loaded by both engines, with
@@ -740,6 +741,10 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
   depth takes the unrouted block kernel.
 - **Not queued:** G2-R (no declaration, and the checkpoint is not on the Mac) and G2-P, the peer cell (no declaration, and
   the harness has no Gemma 2 key, calibrated prompts or Ollama import yet).
+- **Graded 2026-10-14: all three PASS.**
+  - G1-M and G2-I on real checkpoints: byte-identical on the three cells that ran (Qwen2.5-Coder 0.5B and 1.5B, Qwen3 0.6B).
+  - The Metal device gate: 8 pass, 0 fail.
+  - G2-S: every registered cell's interval clears 0.97; the lowest bound is 0.9919.
 
 **What decides the declaration (owner's ruling, 2026-10-13): no G2-T2. The tiny fixtures are diagnostics, not a gate.**
 - **Why not G2-T2.** Metal cannot run f32 weights: a resident build declines them by design
