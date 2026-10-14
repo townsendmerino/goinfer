@@ -3,6 +3,8 @@
 
     python3 scripts/touched.py            # the diff against the merge-base with origin/main, committed or not
     python3 scripts/touched.py -run 'TestX|TestY' decoder    # force -run for a package (needed for a slow package with no test file beside the change)
+    python3 scripts/touched.py --wait 600                   # wait up to 600 s for a timed run to release the timing lock
+    python3 scripts/touched.py --ignore-timing-lock         # run beside a timed run anyway (emergencies; it contaminates that run)
 
 For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs); per touched package: go test. A package whose
 cold test run is over a minute (SLOW) runs only the tests declared in the touched test files and in the test file beside each touched source file (foo.go -> foo_test.go),
@@ -12,6 +14,8 @@ import os, re, subprocess, sys, time
 
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+import timing_lock  # noqa: E402  (a build and test run loads the box, so it must not run under a timed one: TE9)
 SLOW = {"decoder", "internal/sampling", "cuda"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
 TAGS = {"cuda": "cuda goinfer_testhooks", "gpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 
@@ -30,7 +34,14 @@ def step(name, fn):
 
 
 def main():
-    args, run_for = sys.argv[1:], {}
+    args, run_for, wait, ignore = sys.argv[1:], {}, 0.0, False
+    while args and args[0] in ("--wait", "--ignore-timing-lock"):
+        if args[0] == "--wait":
+            wait, args = float(args[1]), args[2:]
+        else:
+            ignore, args = True, args[1:]
+    if (rc := timing_lock.day_check("touched.py", wait_s=wait, ignore=ignore)) != 0:
+        return rc
     while args and args[0] == "-run":
         run_for[args[2]] = args[1]
         args = args[3:]

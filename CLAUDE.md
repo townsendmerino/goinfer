@@ -302,6 +302,11 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
     `python3 scripts/timing_lock.py run --label <name> -- <cmd>`.
   - A refusal means another run is measuring on this box. Wait for it (`timing_lock.py status` names it); never delete
     the lock file to get past it.
+  - **The day tools check it too.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` refuse while a timed run holds
+    the lock, naming the holder: a build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
+    itself. `--wait SECONDS` waits for the holder, and `--ignore-timing-lock` overrides, for emergencies only, and the
+    overlap then goes in that run's record. Any other build or test you run by hand checks first:
+    `python3 scripts/timing_lock.py check --tool <what>`.
   - **A command that touches the other box checks that box's lock in the same command, and ends if it is held:**
     `ssh <box> 'cd <repo> && python3 scripts/timing_lock.py status' && ssh <box> '<the work>'` — one invocation, not a
     check in one call and the work in the next. An ssh session takes no lock of its own, so nothing else stops it: on
