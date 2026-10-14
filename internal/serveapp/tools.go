@@ -155,6 +155,9 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	if empty != nil {
 		choice["goinfer_empty_answer"] = empty
 	}
+	if t.fromReasoning && len(t.calls) > 0 {
+		choice[fromReasoningField] = true
+	}
 	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
 	if req.Stream {
@@ -171,7 +174,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		}
 		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})
-		sseSend(ss, finishChunk(id, created, lm.name, finish, empty))
+		sseSend(ss, finishChunk(id, created, lm.name, finish, empty, t.fromReasoning && len(t.calls) > 0))
 		sendUsage(ss, req.StreamOptions, id, created, lm.name, usagev)
 		sseDone(ss)
 		return

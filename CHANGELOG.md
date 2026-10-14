@@ -145,13 +145,15 @@ to the reasoning and the call parser reads only the answer, so the turn came bac
 `/v1/responses`, which returns no reasoning, an empty message marked `completed`. Seen in the I3 night of 2026-10-13
 (Codex x Mellum2.1 `read`, and opencode x Qwen3-4B `read` on `/v1/chat/completions`, whose reasoning ended on the call).
 
-- **A turn with no answer text takes its tool call from its reasoning**, on all three routes. A call drafted in the
-  reasoning of a turn that went on to answer in prose is still not taken.
+- **A turn with no answer text takes its tool call from its reasoning**, on all three routes, and says so with
+  `goinfer_tool_calls_from_reasoning: true`. A call drafted in the reasoning of a turn that went on to answer in prose is
+  still not taken.
 - **An empty answer always says why.** A turn that ends with no answer text and no tool call is `status: "incomplete"`
   with `incomplete_details: {"reason", "detail"}` on `/v1/responses`, and carries `goinfer_empty_answer: {"reason",
   "detail"}` on `/v1/chat/completions` (in the choice, or the finish chunk) and `/v1/messages` (in the message, or the
   `message_delta` event). The reason is `ended_in_reasoning`, `reasoning_only`, `stop_sequence` or `no_output`. A reply
-  cut off by its token limit keeps the reason it already had (`length`, `max_output_tokens`, `max_tokens`).
+  cut off by its token limit keeps the reason it already had (`length`, `max_output_tokens`, `max_tokens`). Both fields
+  are an **Experimental** vendor extension (docs/server.md, "Empty answers say why"): the set of values may change.
 
 ### Fixed — Codex turns were cut at 512 tokens, and a thinking model's cut-off reply could show `</think>`
 

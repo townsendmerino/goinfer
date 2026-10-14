@@ -266,31 +266,31 @@ func TestSettleCalls_harmony(t *testing.T) {
 	if raw != "" {
 		t.Fatalf("setup: the call leaked into the buffered text: %q", raw)
 	}
-	calls, lead := settleCalls(chat.Harmony(), raw, tools, th)
+	calls, lead, _ := settleCalls(chat.Harmony(), raw, tools, th)
 	if len(calls) != 1 || calls[0].Name != "get_weather" || string(calls[0].Arguments) != `{"city":"Paris"}` || lead != "" {
 		t.Errorf("router path: calls=%+v lead=%q", calls, lead)
 	}
 
 	// A preamble before the call is the prose, trimmed as every parser trims it.
 	raw, th = feed("<|channel|>commentary<|message|>Let me check.\n<|end|><|start|>assistant"+call, ts)
-	if calls, lead = settleCalls(chat.Harmony(), raw, tools, th); len(calls) != 1 || lead != "Let me check." {
+	if calls, lead, _ = settleCalls(chat.Harmony(), raw, tools, th); len(calls) != 1 || lead != "Let me check." {
 		t.Errorf("preamble path: calls=%+v lead=%q", calls, lead)
 	}
 
 	// No router (-reasoning-format none): the buffer is the raw reply and the template's own parser reads the call out of it.
-	if calls, lead = settleCalls(chat.Harmony(), reply, tools, nil); len(calls) != 1 || calls[0].Name != "get_weather" {
+	if calls, lead, _ = settleCalls(chat.Harmony(), reply, tools, nil); len(calls) != 1 || calls[0].Name != "get_weather" {
 		t.Errorf("raw path: calls=%+v lead=%q", calls, lead)
 	}
 
 	// A prose answer: no calls, the text as it is.
 	raw, th = feed("<|channel|>analysis<|message|>t<|end|><|start|>assistant<|channel|>final<|message|>It is 18C.", ts)
-	if calls, lead = settleCalls(chat.Harmony(), raw, tools, th); len(calls) != 0 || lead != "It is 18C." {
+	if calls, lead, _ = settleCalls(chat.Harmony(), raw, tools, th); len(calls) != 0 || lead != "It is 18C." {
 		t.Errorf("prose path: calls=%+v lead=%q", calls, lead)
 	}
 
 	// Another family is untouched: its call is in the buffer, and a router (or none) changes nothing.
 	chatml := "Sure.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>"
-	if calls, lead = settleCalls(chat.ChatML(), chatml, tools, nil); len(calls) != 1 || calls[0].Name != "get_weather" || lead != "Sure." {
+	if calls, lead, _ = settleCalls(chat.ChatML(), chatml, tools, nil); len(calls) != 1 || calls[0].Name != "get_weather" || lead != "Sure." {
 		t.Errorf("chatml: calls=%+v lead=%q", calls, lead)
 	}
 	if (*thinkOut)(nil).toolCalls() != nil {

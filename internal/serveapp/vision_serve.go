@@ -460,7 +460,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
+		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp), false))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
@@ -609,7 +609,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		}
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp))
+		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 		return
 	}
 	var sb, rb strings.Builder

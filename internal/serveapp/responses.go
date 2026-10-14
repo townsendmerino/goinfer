@@ -478,6 +478,9 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
 	resp := markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp))
+	if t.fromReasoning && len(calls) > 0 {
+		resp[fromReasoningField] = true
+	}
 	if req.Stream {
 		rs.emit("response.completed", map[string]any{"response": resp})
 		sseDone(ss)

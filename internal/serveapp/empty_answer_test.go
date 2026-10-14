@@ -73,15 +73,15 @@ func TestSettleCalls_callWrittenInsideReasoning(t *testing.T) {
 		if strings.TrimSpace(answer) != "" {
 			t.Fatalf("%s: the splitter gave answer %q; the case needs the call inside the reasoning", name, answer)
 		}
-		calls, lead := settleCalls(tm, answer, []chat.Tool{execTool}, th)
-		if len(calls) != 1 || calls[0].Name != "exec_command" || !strings.Contains(string(calls[0].Arguments), "cat calc.go") {
-			t.Errorf("%s: calls %+v (lead %q); want the exec_command call the model wrote in its reasoning", name, calls, lead)
+		calls, lead, fromReasoning := settleCalls(tm, answer, []chat.Tool{execTool}, th)
+		if len(calls) != 1 || calls[0].Name != "exec_command" || !strings.Contains(string(calls[0].Arguments), "cat calc.go") || !fromReasoning {
+			t.Errorf("%s: calls %+v (lead %q, fromReasoning %v); want the exec_command call the model wrote in its reasoning, marked", name, calls, lead, fromReasoning)
 		}
 	}
 	// A call drafted in the reasoning is not taken when the model went on to answer in prose: the answer is the turn.
 	th := newThinkOut(tm, nil, thinkSettings{format: rfSplit}, nil)
 	answer := th.feed(callInReasoning+"\nActually I know it.\n</think>\n\nIt returns 5.") + th.finish()
-	if calls, _ := settleCalls(tm, answer, []chat.Tool{execTool}, th); len(calls) != 0 {
+	if calls, _, _ := settleCalls(tm, answer, []chat.Tool{execTool}, th); len(calls) != 0 {
 		t.Errorf("a prose answer after a call drafted in the reasoning: calls %+v, want none", calls)
 	}
 }
@@ -212,9 +212,9 @@ func requestFor(route string, tools, stream bool) map[string]any {
 	}
 }
 
-// emptyReasonOf finds the reason a route's reply gives for having no answer, and whether the reply carried a tool call.
-// "" means no reason was given.
-func emptyReasonOf(t *testing.T, route string, objs []map[string]any) (reason string, called bool) {
+// emptyReasonOf finds the reason a route's reply gives for having no answer ("" for none), whether the reply carried a
+// tool call, and whether it marked that call as read from the reasoning.
+func emptyReasonOf(t *testing.T, route string, objs []map[string]any) (reason string, called, fromReasoning bool) {
 	t.Helper()
 	asMap := func(v any) map[string]any { m, _ := v.(map[string]any); return m }
 	for _, o := range objs {
@@ -235,6 +235,9 @@ func emptyReasonOf(t *testing.T, route string, objs []map[string]any) (reason st
 			if r["status"] == "incomplete" {
 				reason, _ = asMap(r["incomplete_details"])["reason"].(string)
 			}
+			if r[fromReasoningField] == true {
+				fromReasoning = true
+			}
 		case "/v1/chat/completions":
 			for _, c := range o["choices"].([]any) {
 				ch := asMap(c)
@@ -246,6 +249,9 @@ func emptyReasonOf(t *testing.T, route string, objs []map[string]any) (reason st
 				}
 				if e := asMap(ch["goinfer_empty_answer"]); e != nil {
 					reason, _ = e["reason"].(string)
+				}
+				if ch[fromReasoningField] == true {
+					fromReasoning = true
 				}
 			}
 		default:
@@ -262,23 +268,34 @@ func emptyReasonOf(t *testing.T, route string, objs []map[string]any) (reason st
 			if e := asMap(o["goinfer_empty_answer"]); e != nil {
 				reason, _ = e["reason"].(string)
 			}
+			if o[fromReasoningField] == true {
+				fromReasoning = true
+			}
 		}
 	}
-	return reason, called
+	return reason, called, fromReasoning
 }
 
 var allRoutes = []string{"/v1/responses", "/v1/chat/completions", "/v1/messages"}
 
 // A call written inside the reasoning reaches the client as a call on every route, streamed or not, with no empty-answer
-// reason.
+// reason and marked goinfer_tool_calls_from_reasoning; the same call written as the answer carries no mark.
 func TestToolTurn_callInsideReasoningIsReturned(t *testing.T) {
-	for name, reply := range map[string]string{"open": callInReasoning, "closed": callInReasoning + "\n</think>\n\n"} {
-		ts := scriptedServer(t, reply)
+	const call = "<tool_call>\n{\"name\": \"exec_command\", \"arguments\": {\"cmd\": \"cat calc.go\"}}\n</tool_call>"
+	for _, c := range []struct {
+		name, reply string
+		marked      bool
+	}{
+		{"block open", callInReasoning, true},
+		{"block closed after the call", callInReasoning + "\n</think>\n\n", true},
+		{"call in the answer", "<think>\nI will read calc.go.\n</think>\n\n" + call, false},
+	} {
+		ts := scriptedServer(t, c.reply)
 		for _, route := range allRoutes {
 			for _, stream := range []bool{false, true} {
-				reason, called := emptyReasonOf(t, route, postScripted(t, ts.URL+route, requestFor(route, true, stream)))
-				if !called || reason != "" {
-					t.Errorf("block %s, %s stream=%v: called=%v reason=%q; want the call and no empty-answer reason", name, route, stream, called, reason)
+				reason, called, marked := emptyReasonOf(t, route, postScripted(t, ts.URL+route, requestFor(route, true, stream)))
+				if !called || reason != "" || marked != c.marked {
+					t.Errorf("%s, %s stream=%v: called=%v reason=%q marked=%v; want the call, no empty-answer reason, marked=%v", c.name, route, stream, called, reason, marked, c.marked)
 				}
 			}
 		}
@@ -299,7 +316,7 @@ func TestEmptyAnswer_alwaysCarriesAReason(t *testing.T) {
 		for _, route := range allRoutes {
 			for _, tools := range []bool{false, true} {
 				for _, stream := range []bool{false, true} {
-					reason, called := emptyReasonOf(t, route, postScripted(t, ts.URL+route, requestFor(route, tools, stream)))
+					reason, called, _ := emptyReasonOf(t, route, postScripted(t, ts.URL+route, requestFor(route, tools, stream)))
 					if called || reason != c.want {
 						t.Errorf("%s: %s tools=%v stream=%v: reason %q (called %v), want %q", c.name, route, tools, stream, reason, called, c.want)
 					}

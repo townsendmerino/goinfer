@@ -3,7 +3,7 @@ package serveapp
 import "fmt"
 
 // emptyAnswer is why a finished turn carries no answer: no answer text and no tool call. Every chat route says so rather
-// than return an empty reply that looks like a clean one (docs/server.md, "Empty answers say why"): /v1/responses as status
+// than return an empty reply that looks like a clean one (docs/server.md, "Empty answers say why", an Experimental vendor extension): /v1/responses as status
 // "incomplete" with incomplete_details, /v1/chat/completions and /v1/messages in a goinfer_empty_answer object.
 type emptyAnswer struct {
 	Reason string `json:"reason"` // ended_in_reasoning | reasoning_only | stop_sequence | no_output
@@ -44,11 +44,20 @@ func markEmptyResponse(resp map[string]any, e *emptyAnswer) map[string]any {
 	return resp
 }
 
-// finishChunk is a chat stream's finish_reason chunk, carrying e as goinfer_empty_answer when the turn has no answer.
-func finishChunk(id string, created int64, model, finish string, e *emptyAnswer) map[string]any {
+// finishChunk is a chat stream's finish_reason chunk, carrying e as goinfer_empty_answer when the turn has no answer, and
+// the from-reasoning mark when its calls were read from the reasoning.
+func finishChunk(id string, created int64, model, finish string, e *emptyAnswer, fromReasoning bool) map[string]any {
 	c := chatChunk(id, created, model, delta{}, &finish)
+	ch := c["choices"].([]any)[0].(map[string]any)
 	if e != nil {
-		c["choices"].([]any)[0].(map[string]any)["goinfer_empty_answer"] = e
+		ch["goinfer_empty_answer"] = e
+	}
+	if fromReasoning {
+		ch[fromReasoningField] = true
 	}
 	return c
 }
+
+// fromReasoningField is the extension field that marks a turn whose tool calls were read from the reasoning block
+// (settleCalls), on every route: the response object, the chat choice or finish chunk, the message or message_delta.
+const fromReasoningField = "goinfer_tool_calls_from_reasoning"

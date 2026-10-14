@@ -19,6 +19,9 @@ type toolTurn struct {
 	rest                          string
 	finish, stopSeq, cancelReason string
 	nComp, reused                 int
+	// fromReasoning: calls were read from the reasoning block, not the answer (settleCalls). Every route marks such a turn
+	// with goinfer_tool_calls_from_reasoning.
+	fromReasoning bool
 }
 
 // errProseDiverged: bytes already streamed as prose are not a prefix of the prose the parser settled
@@ -83,7 +86,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 		return turn, nil
 	}
 	var parsedLead string
-	turn.calls, parsedLead = settleCalls(lm.tmpl, turn.raw, tools, gr.think)
+	turn.calls, parsedLead, turn.fromReasoning = settleCalls(lm.tmpl, turn.raw, tools, gr.think)
 	var err error
 	turn.lead, turn.rest, err = reconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
 	return turn, err
@@ -123,18 +126,18 @@ func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lea
 //
 // A turn with no answer at all is read from its reasoning: a thinking model can write its call inside the block and end
 // its turn there, or close the block after the call, and the call is then the turn. A call drafted in the reasoning of a
-// turn that went on to answer in prose is not taken.
-func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) ([]chat.ToolCall, string) {
-	calls, lead := tmpl.ParseToolCallsFor(raw, tools)
+// turn that went on to answer in prose is not taken. fromReasoning reports a call read that way.
+func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) (calls []chat.ToolCall, lead string, fromReasoning bool) {
+	calls, lead = tmpl.ParseToolCallsFor(raw, tools)
 	if len(calls) == 0 && th != nil {
 		if routed := th.toolCalls(); len(routed) > 0 {
-			return routed, strings.TrimSpace(raw)
+			return routed, strings.TrimSpace(raw), false
 		}
 		if strings.TrimSpace(raw) == "" && th.reasoning.Len() > 0 {
 			if inBlock, _ := tmpl.ParseToolCallsFor(th.reasoning.String(), tools); len(inBlock) > 0 {
-				return inBlock, ""
+				return inBlock, "", true
 			}
 		}
 	}
-	return calls, lead
+	return calls, lead, false
 }

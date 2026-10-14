@@ -934,7 +934,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
+		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp), false))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
