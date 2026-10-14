@@ -205,8 +205,7 @@ func oldPickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
 			best = i
 		}
 	}
-	// KV2's choice 3 (docs/measurements/kv2-2026-10-14.md, G1's exception): in place only when less than a block is given up.
-	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < 64 {
+	if best >= 0 && scores[best] >= lens[best]-scores[best] {
 		return best
 	}
 	for i, l := range lens {
@@ -271,6 +270,10 @@ func (r *equivResident) ReusableKV(prefix int) int {
 }
 
 func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
+	// KV2's choice 3 (docs/measurements/kv2-2026-10-14.md, G1's exception) is off here: this walk compares the rest of
+	// the slot choice with KV1's bookkeeping; choice 3 has tests of its own.
+	defer func(old int) { kvAllowanceOverride = old }(kvAllowanceOverride)
+	kvAllowanceOverride = 1 << 30
 	loras := []*loraRuntime{nil, {name: "a"}, {name: "b"}}
 	steps, binds, reused := 0, 0, 0
 	for seed := int64(1); seed <= 24; seed++ {

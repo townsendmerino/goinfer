@@ -129,7 +129,10 @@ func TestKV2_scheduleIndependenceMetal(t *testing.T) {
 	// (f) B is an edit of A: after A's second turn (70 tokens of its own), B is A1, A's first reply and a different
 	// second turn, so it gives up more than a block of A's slot and copies. Metal's decode rows are not the cold
 	// class, so the copy must stop before A's reply.
-	t.Run("(f) B edits A", func(t *testing.T) {
+	// (f) An edit: after A's second turn, A's first prompt, its first reply and a different second turn. It keeps A's
+	// whole first prompt, so it is A's own rollback (§1, choice 3 as amended): it continues A's slot in place, copies
+	// nothing, and replies as A does continuing alone into the edited turn.
+	t.Run("(f) A edits its second turn", func(t *testing.T) {
 		m := load(2)
 		a1 := gen(m, first(0))
 		a2p := append(slices.Clone(a1.prompt), a1.ids...)
@@ -137,15 +140,16 @@ func TestKV2_scheduleIndependenceMetal(t *testing.T) {
 			a2p = append(a2p, 17500+i)
 		}
 		gen(m, a2p)
-		b := gen(m, append(append(slices.Clone(a1.prompt), a1.ids...), 18000, 18001))
-		if b.shared > len(a1.prompt) {
-			t.Errorf("the edit copied %d rows, past A's prompt (%d): it took rows A's decode wrote", b.shared, len(a1.prompt))
+		edit := append(append(slices.Clone(a1.prompt), a1.ids...), 18000, 18001)
+		b := gen(m, edit)
+		ref := load(1)
+		gen(ref, first(0))
+		want := gen(ref, edit)
+		if b.shared != 0 || b.reused < len(a1.prompt)+len(a1.ids)-1 {
+			t.Errorf("the edit reused %d and copied %d: it should continue A's slot in place", b.reused, b.shared)
 		}
-		if !slices.Equal(b.ids, cold(b.prompt)) {
-			t.Errorf("the edit: %v, cold %v (copied %d)", b.ids, cold(b.prompt), b.shared)
-		}
-		if b.shared == 0 {
-			t.Error("the edit copied nothing")
+		if !slices.Equal(b.ids, want.ids) {
+			t.Errorf("the edit: %v, A continuing alone %v", b.ids, want.ids)
 		}
 	})
 	// (d) B arrives while A decodes; (e) A and B start together. Both under MC3.

@@ -464,9 +464,16 @@ func (m *Model) residentBind(slot int) error {
 	return nil
 }
 
+// kvAllowanceOverride, when positive, replaces kvRollbackAllowance. Set only by in-package tests: a large value
+// switches the in-place limit off, so a test can compare the rest of the slot choice with the bookkeeping KV1 replaced.
+var kvAllowanceOverride int
+
 // kvRollbackAllowance is how many rows a request may give up of a slot it takes in place (kvmgr.PickSlotWithin): one
 // block, or for a model with sliding-window layers the window group's rollback floor (the task doc's §5.12).
 func (m *Model) kvRollbackAllowance() int {
+	if kvAllowanceOverride > 0 {
+		return kvAllowanceOverride
+	}
 	if m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0 {
 		return kvmgr.RollbackFloor
 	}
