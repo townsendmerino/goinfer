@@ -576,7 +576,8 @@ folded into the scale, step 2 folds the cap's constants the same way (FlashInfer
 - **Real 2B:** `gemma-2-2b-it`, the Q8_0 GGUF the CPU's real gate reads (`TestGemma12Real_gate`).
   - **Corrected 2026-10-13, a fact and not a rule:** this line said the file comes from the archive with `models-pull`. It is
     not in the archive. It is in nobara's `~/models` only (listed 2026-10-13), and `models-pull` on the Mac found nothing.
-    The Mac's G2-R needs a `models-push` of it from nobara first, or a fresh download.
+  - **Copied 2026-10-14 08:16** from nobara's `~/models` to the Mac's `~/models`, with nobara's timing lock free, and verified:
+    sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe` on both boxes.
 - **Real 9B:** not in the archive or on either box today. It runs where a box has the disk and the memory for it, and
   otherwise the record says "9B not run" by name. The Mac does not have the disk today.
 - **The peer cell's file** is the GGUF Ollama ships for `gemma2:2b`, copied to `~/models` and loaded by both engines, with
