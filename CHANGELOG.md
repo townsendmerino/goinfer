@@ -36,14 +36,18 @@ any surface may still change.
 A layer the fused attention does not serve (head dimension 256 or 512, an E-model, a pass of 15 rows or fewer) kept the exact
 kernel's shared-memory bound and sent a prompt past 12,160 keys to the per-token path. Such a layer now takes **three row-batched
 kernels** (`cuda/prefill_splitkv.cu`: decode's split-KV attention with the query row on the grid), which hold the scores in a device
-buffer and are bit-identical to the exact kernel row by row. Day readings only so far; the real-model identity and speed gates are on
-the night queue (`docs/measurements/kv3-tiled-exact-2026-10-13.md`).
+buffer and are bit-identical to the exact kernel row by row. At 12,400 tokens Gemma-4-E4B reaches its first token 3.31 times sooner than on
+the per-token path, bit-identical to it (`docs/measurements/kv3-tiled-exact-2026-10-13.md`); Gemma-3-4B's reading is below.
 
 - **Below the bound nothing changes:** the same kernels as before, and the same digests at 300, 3,900 and 12,000 tokens.
 - **Past it, an exact pass equals the per-token path bit for bit:** logits and every K and V row at 12,400 and 16,384 tokens on the tiny
   fixture, f32 and f16 KV.
 - **Still falling back past the bound, by name:** an image-block pass. (An MLA model does not batch its prefill at any length.)
 - Admission adds the pass's score scratch (at most 64 MiB) to a request's price when a layer takes these kernels.
+- **A prompt that takes these kernels runs every pass on the exact kernels**, the 4-bit tensor-core GEMM included, so it equals the
+  per-token path bit for bit. With that GEMM on, Gemma-3-4B at 12,400 tokens read cosine 0.9865 against the per-token path, under the
+  0.99 bar; the owner chose exactness. It costs speed: 31.9 s against 23.2 s for that prompt in the test rig. Gemma-3-4B's first token came
+  5.68 times sooner than on the per-token path with the GEMM on; the exact pass is being re-read. Below 12,160 keys, and where the fused attention serves a layer, the fast kernels run as before.
 
 ### Changed — on CUDA, a prompt past 12,160 attended keys prefills in batched passes where the fused attention serves it
 

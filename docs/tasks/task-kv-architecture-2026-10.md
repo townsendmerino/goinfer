@@ -734,9 +734,18 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   every K and V row), and admission's figure equals the pass's allocations. **Night readings (2026-10-14, record §10):** speed PASS (Gemma-3-4B 5.68x, Gemma-4-E4B
   3.31x against the per-token path at 12,400 tokens), no-regression TTFT PASS, the real-model identity PASS on both exact arms (Gemma-4-E4B, Gemma-3-4B levers off,
   bit for bit) and **FAIL on Gemma-3-4B at default settings: cosine 0.9865 against the 0.99 bar**. The difference is the tensor-core GEMM's, which already reads
-  0.9901 on Gemma-3 at 12,000 tokens below the bound; the branch is the first to run it past 12,160 keys. **Open for the owner:** levers off on a pass that takes
-  the row kernels, or a registered depth-fidelity gate for that GEMM on Gemma-3. The CUDA suite timed out at 2 hours with only the four reds of the branch below
+  0.9901 on Gemma-3 at 12,000 tokens below the bound; the branch is the first to run it past 12,160 keys. **Owner decision 2026-10-14: exact** (record §11): a prompt that takes the
+  row kernels runs every pass on the exact kernels; G4's Gemma-3 cells and a Gemma-3 G5 re-read are on the night queue. The CUDA suite timed out at 2 hours with only the four reds of the branch below
   (three fresh-process tests and the tail-rule defect, whose fix is merged here); the remainder is re-queued in the gate's partition. The branch merges after `kv3-cuda-2026-10`, once the decision is taken and the suite's remainder reads.
+- **Not started: a fidelity gate for the CUDA tensor-core GEMM at depth on Gemma-3 (option (b) of the tiled record's §10; not chosen 2026-10-14).**
+  Why it is owed even with the exact rule: on one prompt Gemma-3-4B's default batched prefill read cosine 0.9963 at 1,200 tokens, 0.9901 at 12,000 and 0.9865 at
+  12,400 against the per-token path, so `main`'s Gemma-3 prefill between 3,900 and 12,160 keys is unmeasured and may already sit under the 0.99 bar the KV3 work
+  uses. The lever's own gate (`docs/completed/task-prefill-gap.md`, L2/L3) was graded on the Qwen models to K = 3,900, never on Gemma-3. What it would register:
+  Gemma-3-4B (and Gemma-2 / dense Gemma-4 if their checkpoints are local), prompts at about 2,000, 4,000, 8,000 and 12,000 tokens, at least eight realistic prompts
+  per depth from a hashed set; default batched prefill against the per-token path; last-token logits cosine and argmax with the near-tie rule (3% of |top-1|), and
+  per-layer KV cosine to name where it diverges; a bar per depth (cosine 0.99 on every prompt and argmax equal outside near ties), a parked band 0.985 to 0.99, and
+  what each outcome triggers (pass: the GEMM may return past the bound under a new registration; fail below the bound: the floor for Gemma-3 moves or the lever goes off
+  for the family). Cost: the per-token side is about 90 rows a second, so about 40 minutes for the four depths on one model (eight prompts each); a night job. Owner to decide whether and when.
 - **Gates (sketch, registered per half in the record):**
   - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
   - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);

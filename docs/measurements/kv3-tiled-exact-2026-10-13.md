@@ -195,3 +195,35 @@ re-queued as `kv3-tiled-suite-rest` (`run-night.sh`, `JOB=suite-rest`), in `cmd/
 (`suite-rest-main.txt`) as one process with the fresh-process tests deferred, then `TestGemma4_26B_cache_B`, `TestP20ExpertLocality`,
 `TestResidentDrafter_extendContext` and `TestSpecPagerInteraction` each as its own process, then the drain group (skipped in a one-process run), with a reconcile of
 each part. The tests this branch does not touch that the 2026-10-13 run read green are not repeated; `kv3-cuda-2026-10`'s partitioned suite reads the merged fix.
+
+## 11. Owner decision on G4's Gemma-3 default arm (2026-10-14): the exact kernels past the bound
+
+**Decision (the owner, 2026-10-14, option (a) of §10):** a prompt whose attention takes the row-batched kernels runs every pass on the exact kernels, the
+tensor-core GEMM included, so it is bit-identical to the per-token path. The 0.99 bar is not moved; G4's default arm stays recorded as FAILED for the build it read.
+
+**The rule as built** (`cuda/prefill_splitkv.go:cudaResident.prefillPastBoundExact`, read by prefillCore's `forceExactKernels` and by `PrefillSpanScratchBytes`): a prompt has a layer
+past `attn_batched`'s shared-memory bound (its window-clamped span over 12,160 keys) that no fused attention serves (head dim other than 64 and 128, or the fused lever
+off). It is judged on the whole prompt's length, so every chunk of such a prompt is exact, not only the passes past the bound. Below the bound, and on a prompt whose
+past-bound layers the fused attention serves (the 1.5B and the other head-dim-64/128 families: `kv3-cuda-2026-10-13.md` §2.3's fidelity class), nothing changes. The
+test hook that forces the route below the bound does not trigger it, so G2b's mixed-class cells still run the GEMM. Families it reaches beyond Gemma-3: Gemma 2 and dense
+Gemma 4 (head dim 256 and 512), Phi-3 (96), and any family run with the fused attention off and the GEMM on; Gemma-4 E-models were exact already.
+
+**A limit stated, not fixed:** a request that reuses a cached prefix computed by an earlier request below the bound (the fast kernels) keeps those rows, so its output is
+exact only from the reused length on. Fresh prompts, which G4 grades, are exact.
+
+**Its cost.** In the test rig at 12,400 tokens, G4's levers-off arm (what the default now runs) took 31.9 s against the default's 23.2 s, per-token 138.4 s (night of
+2026-10-13). G5's Gemma-3-4B 5.68x was read with the GEMM on; it is re-read below. The day readings: the new `TestKV3Tiled_pastBoundPromptRunsExact_tiny` (the tiny
+fixture with the fused attention off and the GEMM on, the shape of a head-dim-256 model) failed before the change, 350 tensor-core launches past the bound and 256 of 256
+logits differing from the levers-off pass (`exact-past-bound-red-before.log`), and passes after it, 0 tensor-core launches and 0 logits and 0 of 12,697,600 KV elements
+differing, with the GEMM still running at 3,900 tokens; the other tiled tests pass unchanged (`exact-past-bound-green-after.log`).
+
+**Re-registered for the night, before the run (same bars as §3 and amendment 1, nothing else changes):**
+
+- **G4, Gemma-3-4B at 12,400 tokens, both arms graded bit for bit** (the test's default arm is graded exact when the prompt is past the bound): logits and every K and
+  V row equal the per-token path, 0 tensor-core launches. PASS or FAIL; there is no fidelity band.
+- **G5 re-read, Gemma-3-4B only**, the serve binary built at the pinned commit, the §9 design (batched, per-token, batched; 12,400 and 20,000 tokens). **PASS** at 3x
+  or more at 12,400 tokens; **AMBIGUOUS** 1.5x to 3x (parked as §3 says); below 1.5x the route is not kept as the default for this family. Gemma-4-E4B's 3.31x stands:
+  the change does not touch an E-model.
+- Job `kv3-tiled-exact` (`run-night.sh`, `JOB=exact`), about 20 minutes.
+
+**Not taken: option (b)**, a fidelity gate for the tensor-core GEMM at depth on Gemma-3, is filed as its own item in `docs/tasks/task-kv-architecture-2026-10.md`.

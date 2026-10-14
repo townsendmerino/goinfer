@@ -11,6 +11,9 @@
 #                  (suite-rest-main.txt) as one process with GOINFER_ISOLATE_DEFER=1, then each needsFreshProcess test that failed
 #                  in one process or was not reached as its own process, then the drainsDevice group (est 100 min)
 #
+#   JOB=exact      after the owner's decision (§11): G4's Gemma-3-4B arms past the bound, now both graded bit for bit, and G5 re-read on
+#                  Gemma-3-4B with serve-cuda-exact, built at the pinned worktree's commit (est 20 min)
+#
 #   queued as:  env JOB=<job> bash <this script>          (B and OUT may be set; the KV3_TILED_* variables pass through to the job)
 set -u
 export PATH=$PATH:/usr/local/go/bin
@@ -58,6 +61,14 @@ case $JOB in
       -run "^($(echo $drain | tr ' ' '|'))\$" -v ./cuda/) 2>&1 | tee "$OUT/cuda-drain.log"; [ "${PIPESTATUS[0]}" = 0 ] || rc=1
     { for f in cuda-main cuda-iso cuda-drain; do echo "$f PASS $(grep -c '^--- PASS' "$OUT/$f.log") FAIL $(grep -c '^--- FAIL' "$OUT/$f.log") SKIP $(grep -c '^--- SKIP' "$OUT/$f.log")"; done
       grep -h '^--- SKIP\|^--- FAIL' "$OUT"/cuda-main.log "$OUT"/cuda-iso.log "$OUT"/cuda-drain.log; } > "$OUT/cuda-suite-counts.txt" ;;
+  exact)
+    [ -x "$B/bin/serve-cuda-exact" ] && [ "$(cat "$B/bin/serve-cuda-exact.rev")" = "$(git -C "$W" rev-parse HEAD)" ] \
+      || { echo "FATAL: serve-cuda-exact is missing or not built at the pinned worktree's commit" | tee "$OUT/FATAL.txt"; exit 2; }
+    echo "exact: $(cat "$B/bin/serve-cuda-exact.rev")" >> "$OUT/provenance.txt"
+    (cd "$W" && GOINFER_HEAVY_TESTS=1 KV3_TILED_REAL=1 go test -count=1 -timeout 30m -tags 'cuda goinfer_testhooks' \
+      -run '^TestKV3Tiled_batchedEqualsPerToken_real$/^gemma-3-4b$' -v ./cuda/) 2>&1 | tee "$OUT/identity-gemma3.log"; rc=${PIPESTATUS[0]}
+    KV3_TILED_MODELS=gemma-3-4b python3 -u "$HERE/ttft_tiled.py" "$B/bin/serve-cuda-exact" "$OUT/speed-gemma3.json" 2>&1 | tee "$OUT/speed-gemma3.log"
+    [ "${PIPESTATUS[0]}" = 0 ] || rc=1 ;;
   *) echo "unknown JOB $JOB"; exit 2 ;;
 esac
 # Assert outputs exist: a job that refused to run, or a test that skipped, must not read as a success.
@@ -67,6 +78,10 @@ case $JOB in
       grep -q "^    --- PASS: TestKV3Tiled_batchedEqualsPerToken_real/$sub " "$OUT/identity-real.log" || rc=1
     done
     [ "$(grep -c '\[kv3-tiled\] G4 ' "$OUT/identity-real.log")" -ge 3 ] || rc=1 ;;
+  exact)
+    grep -q "^    --- PASS: TestKV3Tiled_batchedEqualsPerToken_real/gemma-3-4b " "$OUT/identity-gemma3.log" \
+      && [ "$(grep -c '\[kv3-tiled\] G4 gemma-3-4b ' "$OUT/identity-gemma3.log")" = 2 ] \
+      && [ -s "$OUT/speed-gemma3.json" ] && grep -q "^SUMMARY" "$OUT/speed-gemma3.log" || rc=1 ;;
   speed) [ -s "$OUT/speed.json" ] && grep -q "^SUMMARY" "$OUT/speed.log" || rc=1 ;;
   ttft) [ -s "$OUT/ttft-ab.json" ] && grep -q "^SUMMARY" "$OUT/ttft-ab.log" || rc=1 ;;
   # a narrowed run must still have run something; the whole suite must have run the row kernels' own gate
