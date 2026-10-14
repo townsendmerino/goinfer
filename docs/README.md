@@ -103,7 +103,7 @@ reuse, with continuous batching still parked. KV11, added the same day, puts KV 
 memory budget in place of today's fixed split.
 
 [`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
-2026-10-13, not started) is the compute half of the same redesign.
+2026-10-13; OP0 done the same day, the rest not started) is the compute half of the same redesign.
 - **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
   rather than families.
 - **Track RF** replaces the resident's one entry point per request shape with one ragged forward call, which carries decode,

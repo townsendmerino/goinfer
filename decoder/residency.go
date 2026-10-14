@@ -518,7 +518,7 @@ func (m *Model) decodeRunnerDecline() string {
 		eligible = true
 	}
 	if !eligible {
-		return "arch is not eligible for the resident decode runner"
+		return "arch is not eligible for the resident decode runner: " + a.runnerShapeDecline()
 	}
 	// Nemotron-H resident is default-on at int4 only: its int4 disagreements with f32 are all at near-tied
 	// positions (docs/completed/nemotron-resident.md). int8 stays OPT-IN behind GOINFER_SSM_RESIDENT.
@@ -594,7 +594,21 @@ func (m *Model) residentProjsInt4() bool {
 // decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
-func (a *Architecture) decodeRunnerEligible() bool {
+func (a *Architecture) decodeRunnerEligible() bool { return a.runnerShapeDecline() == "" }
+
+// Runner-shape decline reasons. The hardware matrix prints them, so they are short and name no backend.
+const (
+	runnerShapeOwnForward = "own forward, not bridged"
+	runnerShapeBringUp    = "bring-up gate (GOINFER_SSM_RESIDENT unset)"
+	runnerShapeNemoMoE    = "Nemotron MoE block"
+	runnerShapeMoE        = "MoE shape"
+	runnerShapeRoPE       = "local and global RoPE tables differ in length"
+)
+
+// runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
+// the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
+// reports why a model is not resident reads residentGateReasons as well.
+func (a *Architecture) runnerShapeDecline() string {
 	// Own-forward families (their non-uniform forward the uniform-layer runners can't express).
 	// Only Gemma 4 (dense, env-gated) is bridged so far; the rest keep the staged path. A
 	// bridged family does NOT early-return true — it FALLS THROUGH to the common feature/shape
@@ -619,7 +633,7 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// the feature gate, and falling through is what keeps the checks below composing. The MoE siblings also need FeatMoE,
 		// from the ordinary MoE checks.
 	case a.llama4 != nil:
-		return false // own forward, not yet bridged
+		return runnerShapeOwnForward
 	case a.lfm2 != nil:
 		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only via FeatShortConv is
 		// deliberate: decodeRunnerEligible is an ARCH-SHAPE predicate, and 22 of 30 layers run a gated short
@@ -627,13 +641,16 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// rather than of any backend's kernels. It also keeps the capability matrix honest: its GPU-resident
 		// column is generated from this predicate, and without this case LFM2 would fall through to
 		// ropeResidentCompatible and read "yes".
-		return false
+		return runnerShapeOwnForward
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Guarded during the
 	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
 	if a.granite != nil {
-		return a.knobs.get(knobSSMResident) != ""
+		if a.knobs.get(knobSSMResident) == "" {
+			return runnerShapeBringUp
+		}
+		return ""
 	}
 	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP,
 	// reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in precision gate is applied
@@ -644,10 +661,13 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// crash-or-garbage risk, not a clean decline. Decline here, at the one predicate every backend's admission
 	// funnels through; decodeRunnerDecline overrides it for webgpu, which implements the block.
 	if a.nemotron != nil {
-		return a.MoE == nil
+		if a.MoE != nil {
+			return runnerShapeNemoMoE
+		}
+		return ""
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
-		return false
+		return runnerShapeMoE
 	}
 	// FFN / norm / head constraints common to both attention paths (sandwich norms, logit softcap, NonGatedMLP,
 	// LearnedPosEmbed, OutBias) are all representable, and a backend that lacks one declines via the feature gate
@@ -657,14 +677,17 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// MLA (DeepSeek/Kimi) runs its own latent-attention path (gpu/mla.go), so the GQA/RoPE/QK-norm/sliding-window checks
 	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
 	if a.mla != nil {
-		return true
+		return ""
 	}
 	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
 	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
 	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5), sliding window (Lever C6), and
 	// per-layer-type RoPE (Mellum YaRN-on-global vs default-local invFreq + mscale, Lever
 	// C7). The last gate is ropeResidentCompatible below.
-	return a.ropeResidentCompatible()
+	if !a.ropeResidentCompatible() {
+		return runnerShapeRoPE
+	}
+	return ""
 }
 
 // ropeResidentCompatible is a coarse ARCH-level screen on the GENERIC (finalizeRoPE) local/global inv-freq tables:
@@ -1593,8 +1616,10 @@ func (m *Model) LogitScaleResident() (inv float32, ok bool) {
 	return float32(1 / m.w.arch.LogitScale), true
 }
 
-// GatedActResident returns the gated-MLP activation as its ActKind ordinal, for backends that
-// pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
+// GatedActResident returns the MLP activation as its ActKind ordinal, for backends that pass it straight to a kernel
+// that knows 0 (GELU-tanh) and 1 (SiLU). A gated model past admission returns only those two: residentFeatures gives
+// every other gated activation a feature no backend declares. For a non-gated arch it is the arch's ordinal unchecked,
+// and the backend's FeatNonGatedMLP declaration is what vouches for its kernel.
 func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }
 
 // GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident backend and whether this model

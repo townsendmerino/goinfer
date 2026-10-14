@@ -2,7 +2,8 @@
 
 **Status: exploratory.** Two readings taken for `docs/tasks/task-forward-architecture-2026-10.md` (§1 and §3.2), at main
 `9593bd70`, on the MacBook (Apple M1 Pro, 16 GB, go1.27.0 darwin/arm64). Neither was registered, neither is a gate, and
-neither decides anything alone. The programs are below, so either can be re-run.
+neither decides anything alone. The programs are below, so either can be re-run. §3 was added the same day by OP0: a
+correctness check on Metal, before and after OP0's activation fix.
 
 ## 1. The tokenizer on an agent-sized prompt
 
@@ -314,5 +315,136 @@ func TestZZGem(t *testing.T) {
 		}
 		fmt.Printf("%-16s Act=%v\n", mt, a.Act)
 	}
+}
+```
+
+## 3. OP0 follow-up: a non-gated exact-GELU model on Metal, before and after the fix
+
+**Status: a correctness check, not a timing.** Run once on the MacBook (Apple M1 Pro, 16 GB) on 2026-10-13, with no timed
+job holding the lock. It was taken while doing OP0, after reading the code showed the gated hazard of §2 had a non-gated
+twin that nothing masked.
+
+**Result:**
+- **Before the fix** (main `bf62dd71`), Metal built a resident for a GPT-2 checkpoint that declares the exact `"gelu"`, and
+  ran the tanh approximation: its logits were bit-identical to the `"gelu_new"` config's. The CPU's logits for the two
+  configs differed.
+- **After the fix** (branch `op0-2026-10`), the same load declines by name and decodes on the CPU.
+
+**What ran:** a temporary test in package `metal`, not committed, built with `-tags goinfer_testhooks`.
+- The two checkpoints are the real GPT-2 (the gitignored fixture Metal's GPT-2 parity test loads) and a copy whose `config.json` says
+  `"activation_function": "gelu"`, with the weights symlinked. Only the declared activation differs.
+- Each loads at `--quant int8int8` on Metal and on the CPU, and runs the same 8 tokens.
+- The comparison is exact equality of the logits. Two configs that run the same kernel give identical bits, so no
+  tolerance is needed.
+- The command, from each tree: `go test -tags goinfer_testhooks ./metal -run '^TestZZGeluErfScratch$' -count=1 -v`.
+
+Before, at `bf62dd71`:
+
+```
+metal gelu_new: metal-resident (int8int8)
+metal gelu:     metal-resident (int8int8)
+metal gelu vs metal gelu_new: maxAbs=0 bit-identical=true
+cpu   gelu vs cpu   gelu_new: maxAbs=5.26986 bit-identical=false
+```
+
+After, on `op0-2026-10` (the `-1` is the program's "no resident to compare"):
+
+```
+metal gelu_new: metal-resident (int8int8)
+metal gelu:     NOT RESIDENT: cpu (int8int8) — requested metal → running on cpu: metal does not implement [non-gated-gelu-erf], which this model needs, and metal has no staged decode path | decline: metal does not implement [non-gated-gelu-erf], which this model needs
+metal gelu vs metal gelu_new: maxAbs=-1 bit-identical=false
+cpu   gelu vs cpu   gelu_new: maxAbs=5.26986 bit-identical=false
+```
+
+**What it does not show:**
+- **How wrong the output was.** The CPU's two configs differ by up to 5.27 in a logit over these 8 tokens, at int8int8 on
+  weights trained for `gelu_new`. That is the size of the difference between the two activations in this configuration, not a
+  measured error against a reference for a checkpoint trained with the exact function. None was at hand.
+- **The gated case.** Spark-X2.5 never reaches a GPU, so its hazard is read from the code and pinned by the decoder's tests
+  (`TestGatedAct_onlyTanhAndSiLUAdmitted`, `TestGatedGELUErf_sparkNamesIt`), not run on a device.
+
+The test file (`metal/zz_gelu_erf_scratch_test.go`, deleted after each run):
+
+```go
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// Scratch (not committed): does Metal build a resident for a GPT-2 checkpoint declaring the exact "gelu", and which
+// activation does it run? Resident logits bit-identical across the "gelu" and "gelu_new" configs while the CPU's differ
+// means the resident ran the same (tanh) activation for both.
+func TestZZGeluErfScratch(t *testing.T) {
+	const tanhDir = "/Users/francistownsend-merino/tmcode/goinfer/testdata/gpt2"
+	const erfDir = "<scratch>/gpt2-erf"
+	run := func(dir, backend string) ([][]float32, string) {
+		m, err := decoder.Load(dir, decoder.Options{Backend: backend, Quant: "int8int8"})
+		if err != nil {
+			t.Fatalf("load %s %s: %v", backend, dir, err)
+		}
+		defer m.Close()
+		_, _, _, _, _, _, vocab := m.Dims()
+		var out [][]float32
+		if backend == "cpu" {
+			cache := m.NewCache(9)
+			for i := range 8 {
+				l, err := m.ForwardForTest((i*131+7)%vocab, cache)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, append([]float32(nil), l...))
+			}
+			return out, m.DecodePath()
+		}
+		rf := m.ResidentForwardForTest()
+		if rf == nil {
+			return nil, "NOT RESIDENT: " + m.DecodePath() + " | decline: " + m.ResidentDecline()
+		}
+		rf.Reset()
+		for i := range 8 {
+			l, err := rf.Forward(m.EmbedResidentForTest((i*131+7)%vocab), i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), l...))
+		}
+		return out, m.DecodePath()
+	}
+	maxDiff := func(a, b [][]float32) (float64, bool) {
+		if a == nil || b == nil {
+			return -1, false
+		}
+		md, same := 0.0, true
+		for i := range a {
+			for j := range a[i] {
+				d := float64(a[i][j] - b[i][j])
+				if d < 0 {
+					d = -d
+				}
+				if d > md {
+					md = d
+				}
+				if a[i][j] != b[i][j] {
+					same = false
+				}
+			}
+		}
+		return md, same
+	}
+	mt, pt := run(tanhDir, "metal")
+	me, pe := run(erfDir, "metal")
+	ct, _ := run(tanhDir, "cpu")
+	ce, _ := run(erfDir, "cpu")
+	fmt.Printf("metal gelu_new: %s\nmetal gelu:     %s\n", pt, pe)
+	d, same := maxDiff(mt, me)
+	fmt.Printf("metal gelu vs metal gelu_new: maxAbs=%.6g bit-identical=%v\n", d, same)
+	d, same = maxDiff(ct, ce)
+	fmt.Printf("cpu   gelu vs cpu   gelu_new: maxAbs=%.6g bit-identical=%v\n", d, same)
 }
 ```

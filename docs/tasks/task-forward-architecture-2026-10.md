@@ -1,6 +1,7 @@
 # Task: one forward architecture — models as operation lists, one ragged forward pass (OP0–OP6, RF0–RF6, HL) — 2026-10
 
-> **Status: SCOPED 2026-10-13. Not started.** Written on the owner's ask after a Cowork conversation the same day ("we have
+> **Status: OP0 DONE 2026-10-13; every other phase is scoped and not started.** OP0's summary is under §4.4, its feature census
+> is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -48,7 +49,7 @@
 
 | phase | what | backends | size | needs |
 |---|---|---|---|---|
-| OP0 | decline reasons in the hardware matrix; features mapped to operations; prior art | — | S | — |
+| OP0 | decline reasons in the hardware matrix; features mapped to operations; prior art. **Done 2026-10-13** | — | S | — |
 | OP1 | attention softcapping: Gemma 2 on every GPU | CUDA, Metal, WebGPU | M | — |
 | OP2 | the next missing operations by demand: MLA on Metal, SSM on CUDA and Metal, KDA | per operation | M–L each | OP0 |
 | OP3 | the layer program, built from the `Architecture`; the CPU executes it bit for bit | CPU | L | OP0 |
@@ -142,14 +143,18 @@
 
 This is the census behind `docs/hardware-matrix.md`'s CPU cells. For every registry family on each GPU backend, it applies the
 runner-shape check and then `decoder/features.go:residentGateReason`, in the model-free default configuration the matrix
-reads. "—" means the family runs resident there. Where the runner-shape check refuses first, the features
-`residentGateReason` would also name are listed after it ("plus"). The programs and their raw output are in the baseline
-record.
+reads. "—" means the family runs resident there. Where an earlier check refuses first, what the later ones would also name is
+listed after it ("plus"). The programs and their raw output are in the baseline record.
+
+**Since OP0 the matrix generates this table itself** (`docs/hardware-matrix.md`, "Why a cell reads CPU"), from every gate and
+not only the first. The table below is kept as the reading the design started from, with two rows corrected by what the
+generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a router capacity the missing `mla` hid).
 
 | family | CUDA | Metal | WebGPU |
 |---|---|---|---|
 | Gemma 2 | attn-logit-softcap | attn-logit-softcap | attn-logit-softcap |
-| DeepSeek-V2, DeepSeek-V3, Kimi K2 | — | mla | — |
+| DeepSeek-V2, DeepSeek-V3 | — | mla | — |
+| Kimi K2 | — | mla, plus the router's capacity (384 experts; Metal's kernel routes 256) | — |
 | Ling 3.0 | kda | kda, mla | kda |
 | Nemotron-H | non-gated-mlp, ssm (plus runner shape if MoE) | ssm (plus runner shape if MoE) | — |
 | GPT-2 | learned-pos, non-gated-mlp | — | layer-norm, learned-pos |
@@ -161,7 +166,7 @@ record.
 | Llama 4 | runner shape: own forward, not bridged | the same | the same |
 | LFM2.5 | runner shape: own forward, not bridged, plus short-conv | the same | the same |
 | Laguna | runner shape: local/global RoPE tables differ in length, plus attn-output-gate | the same | the same |
-| Spark-X2.5 | runner shape: local/global RoPE tables differ in length, plus attn-output-gate (and the activation hazard below) | the same | the same |
+| Spark-X2.5 | runner shape: local/global RoPE tables differ in length, plus attn-output-gate, gated-gelu-erf | the same | the same |
 | Granite-4.0-H | bring-up gate (`GOINFER_SSM_RESIDENT`), plus ssm | the same | bring-up gate (`GOINFER_SSM_RESIDENT`) |
 | Phi-3, Phi-4 | the activation hazard: int8 activations round its outliers away | the same | the same |
 
@@ -184,12 +189,19 @@ record.
     The default load still picks int8int8 with per-32 scales, which declines to the CPU.
   - **WebGPU** has neither.
 
-**A hazard the matrix cannot show: Spark-X2.5's activation.** Its gated MLP uses exact-erf GELU (`ActGelu`, `gegluExact`).
-- The feature list maps every gated non-SiLU activation to `gated-gelu`, which every backend implements as tanh-GELU.
-- `decoder/residency.go:Model.GatedActResident` hands the activation's ordinal to a CUDA kernel that knows only tanh-GELU and
-  SiLU.
-- Nothing runs wrong today, because the runner shape and the output gate decline Spark-X2.5 first. Once both are lifted it
-  would be admitted with the wrong activation. OP0 closes this before then (the baseline record, third test).
+**The activation hazard, closed by OP0.** Every resident MLP kernel picks its activation from the ordinal
+`decoder/residency.go:Model.GatedActResident` returns, and knows two: tanh-GELU and SiLU.
+- **Gated, exact-erf GELU (Spark-X2.5; `ActGelu`, `gegluExact`).** The feature list mapped every gated non-SiLU activation to
+  `gated-gelu`, which every backend declares. Nothing ran wrong, because the runner shape and the output gate decline
+  Spark-X2.5 first; once both were lifted it would have been admitted with the wrong activation.
+- **Non-gated, exact-erf GELU: this one was live.** A GPT-2 checkpoint that declares `activation_function: "gelu"` passed every
+  feature Metal declares, and Metal's non-gated kernel ran tanh-GELU for it. Measured on the pre-fix tree: Metal's logits were
+  bit-identical between the `gelu` and `gelu_new` configs of the real GPT-2, while the CPU's differed (the baseline record, §3).
+  The released GPT-2 checkpoints use `gelu_new`.
+- **Now:** `gated-gelu` is tanh-GELU only. `gated-gelu-erf` and `non-gated-gelu-erf` are features no backend declares, and
+  `gated-act-unknown` catches any other gated activation, so a gated model past admission hands a kernel only the two ordinals
+  it knows (`decoder/features.go:Architecture.residentFeatures`).
+- **What is left** is in §4.5: `non-gated-mlp` still means a different activation on Metal and on WebGPU.
 
 **How much it matters.** Pulls in Ollama's library, in millions (`docs/measurements/ollama-coverage-2026-10-09.md`):
 - **gemma2, 34.4:** Gemma 2 decodes on the CPU on every GPU backend.
@@ -263,7 +275,8 @@ record.
 
 - **Coverage per operation, not per family.** An operation built once per backend lights up every family that uses it.
   - Softcapping puts Gemma 2 on all three GPUs.
-  - MLA on Metal brings DeepSeek-V2, DeepSeek-V3 and Kimi K2 there.
+  - MLA on Metal brings DeepSeek-V2 and DeepSeek-V3 there. Kimi K2 also needs Metal's router to route its 384 experts; the
+    kernel routes 256 (`decoder/features.go:ResidentBackendMoECap`).
 - **Performance where it matters most.** A family leaving the CPU fallback gets roughly the 15× decode difference. That is the
   largest single change available to a user of that family.
 - **New families get cheaper.** A family made of existing operations needs an adapter (descriptor → program) and a parity gate,
@@ -294,7 +307,7 @@ record.
 
 ### 4.4 Phases
 
-- **OP0 — the decline table, the operation census, prior art (S).**
+- **OP0 — the decline table, the operation census, prior art (S). DONE 2026-10-13; the summary follows this list.**
   - `docs/hardware-matrix.md` prints each declining cell's reasons: the runner shape, the operations missing, or the gate. It
     is generated from both checks, and a runner-shape decline does not hide the operations `residentGateReason` also names.
   - A row whose default load runs resident in another configuration says so: Phi-3/4 at `--quant q4k` on CUDA.
@@ -310,7 +323,7 @@ record.
     - Gemma 2 parity against the CPU (the tiny fixture plus the real 2B and 9B);
     - a decode peer cell against Ollama on each GPU box.
 - **OP2 — the next operations, in order of demand (M–L each).** Each has its own gates, as OP1 does.
-  - MLA on Metal: DeepSeek-V2/V3, Kimi K2.
+  - MLA on Metal: DeepSeek-V2/V3. Kimi K2 needs it and a router that routes 384 experts (Metal's routes 256).
   - SSM on CUDA and Metal: Nemotron-H, and Granite-4.0-H once its gate lifts.
   - Then KDA.
 - **OP3 — the layer program, on the CPU (L).**
@@ -328,6 +341,178 @@ record.
   - Metal's default load becomes `--quant q4k`, where the loader now picks int8int8, once the lane's peer cell is read.
   - A batched prefill for the q4k kinds, on CUDA and Metal.
   - Per-32 activations or a q4k lane on WebGPU.
+
+**OP0, done 2026-10-13.** What it changed, and what it found:
+- **The matrix says why.** `docs/hardware-matrix.md` has a generated section, "Why a cell reads CPU", built from
+  `decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`. It lists every gate
+  that refuses, and the generator fails if a cell and its reasons disagree. A note covers Phi-3/4's other configurations.
+- **Its reasons are the baseline record's, with two additions:** Spark-X2.5's activation, and Kimi K2's router capacity on
+  Metal, which the missing `mla` had hidden. §3.2's table and OP2's line are corrected for it.
+- **The activation hazard is closed** (§3.2): `gated-gelu-erf`, `non-gated-gelu-erf` and `gated-act-unknown`, declared by no
+  backend. The non-gated case was live on Metal, and the baseline record's §3 has the run before and after.
+- **A runner-shape decline now names the shape** in `DecodePath()` and `serve check`.
+- **The census is §4.5.** Its seven numbered findings are where the operation boundary does not hold, and it sizes OP1.
+- **The prior art is §10a,** with §10's lines corrected in place.
+- **Two things for the phases that follow:**
+  - Before OP2's SSM on Metal, the non-gated activation needs a feature per value (§4.5, item 2).
+  - Before OP5, `attn-output-gate` needs splitting by activation (§4.5, item 3).
+- **Three things in backend modules were read and not fixed** (§4.5's last list). The CUDA one may be live.
+
+### 4.5 Features mapped to operations (OP0, read 2026-10-13)
+
+Every `ResidentFeature`, the operation it would become, and what implements it on each backend today.
+
+- **Basis.** Read on branch `op0-2026-10` (main `bf62dd71` plus OP0's own changes). Nothing here was run.
+  - "Declared" is read from `decoder/features.go:ResidentBackendFeatures`' source map. "—" means the backend does not declare
+    the feature.
+  - The kernels were read in three passes, one per backend module. Every kernel name below was then checked to occur in the
+    file named. A statement that was not read in the code is marked INFERRED.
+- **Kernel files.** CUDA kernels are `.cu` files in `cuda/`. Metal's are Go string constants: `metal/kernels/kernels_msl.go` (decode), `metal/kernels/prefill_msl.go` (the f16
+  prefill), `metal/kernels/moe_msl.go` and `metal/kernels/deltanet_kernels_msl.go`. WebGPU's are WGSL constants in `gpu/`.
+- **What "operation" means here.** §4.1's kinds: `norm`, `proj`, `qk-norm`, `rope`, `attention`, `out-gate`, `ffn` (gated,
+  non-gated or MoE), the recurrent mixers, and the embedding and head stages. A feature is an operation kind, a parameter of
+  one, a property of the layer list, or a bundle of several.
+
+**Norms**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `rms-add-one` | parameter of `norm(rms)`: the (1+w) offset | `addOne` of every RMS kernel: `rmsnorm_quant`, `rmsnorm_f32` (`cuda/glue.cu`), `fused_rms_qkv`, `fused_rms_gu`, `qk_norm` (`cuda/fused_qkv.cu`), their batched twins (`cuda/prefill_batched.cu`) | `addOne` of `rmsnorm_quant`, `rmsnorm_f32`, `qk_norm`; `rmsnorm_f16`, `qk_norm_f16` in the prefill | `addone` of `rmsnormQuantWGSL` (`gpu/decodefuse.go`), `rmsnormShaderWGSL` (`gpu/layer.go`), `qkNormWGSL` (`gpu/qknorm.go`) |
+| `layer-norm` | a second `norm` kind, with a bias parameter | `layernorm_quant` (`cuda/glue.cu`), bias-free; `layernorm_quant_batched` (`cuda/layernorm_quant.cu`) | `layernorm_quant` with `hasBias`; the prefill's `layernorm_f16` is bias-free | — |
+| `qk-norm` | `qk-norm`, per head | `qk_norm` (`cuda/fused_qkv.cu`), `qk_norm_batched` (`cuda/prefill_batched.cu`) | `qk_norm`; `qk_norm_f16` | `qkNormWGSL` (`gpu/qknorm.go`) |
+| `qk-norm-whole` | parameter of `qk-norm`: one group over all heads | the same kernels launched as one head; declines unless nH = nKV | the same; declines unless nH = nKV | — |
+| `sandwich-norm` | the layer list: a `norm` after each sublayer | no new kernel: `rmsnorm_f32`, and the o and down projections lose their fused residual add | `rmsnorm_f32`; `rmsnorm_f16` in the prefill | reuses `rmsnormShaderWGSL` and `residualShaderWGSL` (`gpu/layer.go`) |
+| `post-only-norm` | the layer list: no pre-norm | no new kernel: `quant_vec` (`cuda/glue.cu`) replaces the pre-norm | no new kernel: `quant_vec` | — |
+| `parallel-block` | the layer list: one `norm` feeds attention and FFN, one residual add | no kernel; the attention input is reused | no kernel; the same | — |
+
+**Positions**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `partial-rotary` | parameter of `rope`: the rotary width | `rhalf` of `rope_kv` (`cuda/gemv_fwd.cu`), `rope_kv_batched` (`cuda/prefill_batched.cu`) | `rhalf` of `rope2`; `rope_f16` | `half` in the rope shaders (`gpu/attention.go`); the batched prefill declines it |
+| `yarn-mscale` | parameter of `rope`: a scale | `mscale` of the same kernels | `scale` of `rope2`; `rope_f16` | `scale` in the rope shaders; the batched prefill declines it |
+| `per-layer-rope` | the layer list: `rope`'s table differs by layer | a buffer bound per layer | a buffer bound per layer | a buffer bound per layer |
+| `nope` | the layer list: a layer with no `rope` | no kernel: the decoder hands the layer an all-zero table | the same | — (the table mechanism is there; not declared) |
+| `pairwise-rope` | parameter of `rope`: the pairing; its own kernels | `rope_kv_pw`, `rope_kv_batched_pw` (`cuda/rope_pairwise.cu`) | `rope_pw`, `rope2_pw`; `rope_f16_pw` | — |
+| `pairwise-mrope` | pairing × a (t, h, w) position; prefill only | `rope_kv_mrope_batched_pw` (`cuda/rope_pairwise.cu`) | `rope_mrope_f16_pw` | — |
+| `learned-pos` | an embedding-stage operation; no `rope` | — | host add (`metal/model.go:resident.addLearnedPosTo`) | — |
+
+**Attention**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `sliding-window` | parameter of `attention`, and a KV property | `window` of `attention` (`cuda/glue.cu`), `attn_batched`, `attn_fused_hd64` and the tiled kernels; a host-computed start for `splitkv_scores` and `fa_partial` | `window` of `attention`, `attention_i8`, `attention_prefill`; the batched step declines it | `start` in every decode attention shader's uniform (`gpu/attention.go`) |
+| `attn-logit-softcap` | parameter of `attention` | — | — | — |
+| `attn-temp` | parameter of `attention` (a query scale), implemented in the rope kernel | `qTempScale` of `rope_kv`; a per-row table for `rope_kv_batched` | `qTempScale` of `rope2`; not in the f16 prefill | — |
+| `attn-sink` | **bundle of four** (below) | `sinks` of `splitkv_softmax` (`cuda/decode_splitkv.cu`), `attn_batched`, `attn_fused_hd64`; `glu_quant_gptoss`, `route_gptoss` (`cuda/gptoss_act.cu`); `gemv_w4a8_moe_wacc_bias` (`cuda/moe.cu`) | `sinks` of `attention`, `attention_i8`; `swiglu_quant_gptoss`, `route_gptoss_sg`, `gemv_w4a8_moe_wacc_bias` | `sinks` in the nine decode attention pipelines (`gpu/attention.go`); `routeGptOssWGSL`, `gptossGluQuantWGSL`, `moeExpertGptOssDownGEMVWGSL` (`gpu/moe.go`) |
+| `attn-output-gate` | `out-gate`, with two activations under one name, plus a per-layer query-head count | — | — | — |
+| `mla` | a second `attention` kind, with its own projections and rope | `mla_latent_store`, `mla_head_matvec`, `mla_q_rope`, `mla_attn` (`cuda/mla.cu`); decode only | — | `mlaLatentStoreWGSL`, `mlaHeadMatvecWGSL`, `mlaQRopeWGSL`, `mlaAttnWGSL` (`gpu/mla.go`) |
+| `out-bias` | parameter of `proj(o)`: a bias | the bias argument of the GEMVs | `gemv_w4a8_sa_bias_resid` | no new shader: a bare GEMV, then two adds |
+
+**Feed-forward**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `gated-gelu` | parameter of `ffn(gated)`: tanh-GELU | `act` of `glu_quant` (`cuda/glue.cu`), `glu_quant_batched` (`cuda/prefill_batched.cu`), `glu_quant_g32` (`cuda/actgroup.cu`) | `act` of `swiglu_quant`, `swiglu_f32`; `swiglu_f16` | its own shader, `gegluQuantWGSL` (`gpu/decodefuse.go`), chosen by one model-level flag |
+| `gated-gelu-erf` | parameter of `ffn(gated)`: exact GELU | — | — | — |
+| `gated-act-unknown` | none: the catch-all for any other gated activation | — | — | — |
+| `non-gated-mlp` | `ffn(non-gated)`; **the activation is not named** | — | `act_quant`: tanh-GELU or SiLU, with biased up and down GEMVs | `relu2QuantWGSL` (`gpu/relu2.go`): squared ReLU, reached only through Nemotron's block kinds |
+| `non-gated-gelu-erf` | parameter of `ffn(non-gated)`: exact GELU | — | — | — |
+| `moe` | `ffn(moe)`: a router, routed experts, an ungated shared expert | `moe_route`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc`, `shared_gate_combine` (`cuda/moe.cu`) | `moe_route_sg`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc` | `moeRouteWGSL`, `moeExpertGEMVWGSL` (`gpu/moe.go`) |
+| `moe-gated-shared` | parameter of `ffn(moe)`: a sigmoid gate on the shared expert | the `ungated` argument of `shared_gate_combine` | `shared_gate_combine` | `sharedGateWGSL` (`gpu/moe.go`) |
+
+**Recurrent mixers**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `ssm` | `mamba2`, for two families with different block layouts | — | — | `mambaConvShaderWGSL`, `mambaSSMShaderWGSL`, `mambaGNormShaderWGSL` (`gpu/mamba.go`) |
+| `deltanet` | **bundle of two**: the `deltanet` mixer, and a fused output gate on the family's softmax layers | `delta_conv`, `delta_gates`, `delta_norm`, `delta_rule`, `delta_gnorm`; `delta_qsplit`, `delta_attn_gate` (`cuda/deltanet.cu`) | the same seven names | `deltaRuleShaderWGSL`, `deltaNormShaderWGSL`, `deltaGatesShaderWGSL`, `deltaGNormShaderWGSL`; `deltaQSplitShaderWGSL`, `deltaAttnGateShaderWGSL` (`gpu/deltanet.go`) |
+| `kda` | `kda` | — | — | — |
+| `short-conv` | `short-conv` | — | — | — |
+
+**Embedding and head**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `embed-scale` | parameter of the embedding stage | host, in the decoder for every backend (`decoder/residency.go:Model.embedResidentInto`) | the same | the same |
+| `final-logit-softcap` | head post-processing, on the host | `cuda/softcap.go:applySoftcap` | `metal/model.go:softcapParallel` | `gpu/softcap.go:applySoftcap` |
+| `logit-scale` | head post-processing | host multiply (`cuda/softcap.go:applyLogitScale`) | host multiply (`metal/model.go:resident.finalizeLogits`) | folded into the head's weight scale at build, **for the Granite hybrid only** |
+| `gemma4-e-model` | **bundle of three**: a per-layer embedding operation, cross-layer shared KV, a per-layer FFN width | no new kernel | `ple_gelu_mul`, plus existing kernels (`metal/model.go:resident.encodePLE`) | no new shader |
+
+**What does not map cleanly.** These are the places the operation boundary of §4.1 does not hold today.
+
+1. **Four features are bundles.** A backend declares all of a bundle or none, so a model that needs one part waits for the rest.
+   - `attn-sink` is gpt-oss's four changes: the sink (an `attention` parameter), a router whose bias reaches the mixing weight,
+     a clamped SwiGLU expert with a bias, and a biased weighted down-projection.
+   - `deltanet` is the mixer plus an output gate on the softmax layers, fused into a double-width query projection.
+   - `gemma4-e-model` is one operation, one KV-layer property and one property of the layer list.
+   - `moe` covers every routing flavour as kernel parameters, and each backend's build then declines some shapes by hand: on
+     CUDA, a non-SiLU expert, MoE with sandwich norms, and widths that are not multiples of 32
+     (`cuda/backend.go:cudaBackend.BuildResident`).
+2. **One name, a different operation per backend.**
+   - `non-gated-mlp` is tanh-GELU or SiLU on Metal and squared ReLU on WebGPU. OP0 named exact GELU; the rest is open.
+     - A non-gated squared-ReLU model derives nothing for its activation, and Metal's `act_quant` would run tanh-GELU for it.
+       Today only Nemotron-H is that shape, and `ssm` declines it on Metal first. **OP2's "SSM on Metal" lifts that**, so the
+       non-gated activation needs a feature per value before then.
+     - WebGPU reaches its kernel only through Nemotron's block kinds. INFERRED: another non-gated family that passed the
+       gates would fail the build with a projection error, not a decline.
+   - `logit-scale` is a host multiply for any family on CUDA and Metal. On WebGPU it is a fold into the head that only the
+     Granite hybrid's build performs (`gpu/residency.go:webgpuBackend.BuildResident`). Another family with a logit scale would
+     be admitted there and left unscaled. No released checkpoint reaches it: dense Granite 4.2 ships a scale of 1.0, and
+     Command-R declines on WebGPU for other features (both read from this repo's notes, not from the checkpoints).
+   - `layer-norm` is biased on Metal's decode kernel, and bias-free on CUDA's decode kernel and in Metal's prefill. GPT-2's
+     biased norm is not on CUDA; `learned-pos` and `non-gated-mlp` decline it there first.
+3. **One name, two parameter values: the class OP0's activation fix belongs to.** `attn-output-gate` is softplus for Laguna and
+   sigmoid for Spark-X2.5, and also carries Laguna's per-layer query-head count. A backend that builds one gate and declares
+   the feature admits the other. Split it before OP5.
+4. **Five features are not operations.** `sandwich-norm`, `post-only-norm`, `parallel-block`, `nope` and `per-layer-rope`
+   say which operations a layer has, in what order, and with which table. In a layer program they are the list itself.
+   - They still cost code, because fusions assume one order. Sandwich and post-only norms give up the residual add fused into
+     the o and down projections. On CUDA, post-only norms and the parallel block turn the fused norm-plus-QKV kernel off.
+   - This is the argument for §4.1's explicit fusion tables: the kernels already know which sequences they claim.
+5. **Where the math lives is not where the code lives.** `attn-temp` scales the query, so it is an `attention` parameter, and
+   both backends implement it inside the rope kernel. It is missing from Metal's f16 prefill rope and from CUDA's m-RoPE and
+   MLA kernels.
+6. **A second admission system sits beside the features.** These decide admission and are not features:
+   - in the decoder: the runner shape, the activation hazard and the activation group, the router's capacity, per-layer
+     attention geometry, and Gemma 4's parallel dense and MoE block (`decoder/features.go:residentGateReasons`);
+   - in each backend's build: hand-written declines. Metal's include widths that are not multiples of 8 and the q4k lane's
+     shape (`metal/model.go:buildResident`). WebGPU's include a head dimension above its kernel's and a KV
+     precision per family.
+   - OP4's "admission by operation" must take these in, or it replaces one of two systems.
+7. **The feature sets describe decode. Every other request shape keeps its own, smaller list.**
+   - Metal: `metal/model.go:prefillFeatures` for the f16 prefill, and `metal/batch.go:resident.batchIneligible` for the batched
+     step, which declines eleven model-level variants.
+   - WebGPU: `gpu/prefillrunner.go:runModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
+   - CUDA: `cuda/prefill.go:cudaResident.prefillStaticDecline` and `cuda/batchstep.go:cudaResident.BatchStepRange`. MLA runs
+     in decode only (its prefill and verify fall back to sequential: INFERRED from the code, not run).
+   - So an operation table needs a request-shape column until RF removes the shapes. This is §3.3's cost, counted per feature.
+
+**What OP1 has to touch.** Softcapping is one `attention` parameter, and the score is formed in this many places on the text
+path:
+
+| backend | hand-written score implementations | derived or twin forms |
+|---|---|---|
+| CUDA | 10, in 9 `.cu` files; 8 without MLA and the block drafter | f16-KV builds of six of those modules |
+| Metal | 10: 6 decode and 4 prefill | 4 batched-step forms, derived as text (`metal/batch_rows.go`) |
+| WebGPU | 10: 6 decode, 1 MLA and 3 prefill | 3 derived as text; 14 pipeline slots in all |
+
+Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
+
+**Found while reading, in backend modules, and not fixed** (a backend change is a two-step tag; each needs its owner's call).
+All are read from the code, and none was run.
+- **CUDA: a batched-step row that returns logits appears to get the final softcap and the logit scale twice.**
+  `cuda/prefill.go:cudaResident.prefillCore` applies both inside the job for a step row, and its closing loop applies both
+  again to every row. It would touch concurrent conversations that sample on the host, on a model with a final softcap
+  (dense Gemma 4) or a logit scale (Command-R). Both transforms keep the argmax, so a greedy test cannot see it.
+- **WebGPU: `logit-scale`**, item 2 above.
+- **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
+  derives `nope`, which WebGPU does not declare. The registry's representative config is roped, so the matrix cannot show it.
+  If so, lifting the bring-up gate is not the only step left for the released tiny checkpoint, which the registry says ships
+  NoPE.
+- **Comments in `decoder/features.go`'s declared sets that the code has moved past:** CUDA's "per-layer rotary width is not
+  implemented" (the layer struct carries one); CUDA's attention temperature "recomputed per row device-side" (a host-built
+  table); Metal's "the f16 prefill declines" the E-model (it has a batched route); and several kernel file names.
 
 ## 5. Track RF — one ragged forward pass
 
@@ -391,7 +576,7 @@ record.
 - **RF0 — measure first (S).**
   - Per-turn phase timing on the wire: `docs/tasks/task-turn-telemetry-2026-09.md`'s X1, built here.
   - A census of shape × family × backend: which combinations decline today, to what, and at what cost.
-  - Prior art (§10).
+  - Prior art: what §10a lists as not read.
 - **RF1 — the call shape, over today's entry points (M).**
   - Every caller goes through `Step(batch)`, and an adapter turns each batch into today's calls.
   - No kernel changes, so identity is unchanged by construction.
@@ -471,17 +656,244 @@ record.
 | **Scope creep** | every phase stands alone; OP1, OP2 and HL pay off without the structural phases |
 | **Test budget** | the night queue under the timing lock, per `CLAUDE.md` |
 
-## 10. Prior art, to read in OP0 and RF0
+## 10. Prior art, read in OP0
 
-- **llama.cpp and ggml:** a fixed operation set implemented per backend, with a graph builder per architecture over it.
-  `llama_batch` already is the ragged call: tokens with positions, sequence ids and a per-token output flag.
-- **Ollama's Go engine:** model definitions in Go over an `ml` backend. Confirm the shape when reading.
-- **vLLM V1's scheduler:** a step is a token budget across requests, and prefill and decode are not separate kinds of step.
-  Confirm the wording.
-- **Sarathi-Serve** (OSDI 2024): chunked prefills with stall-free batching.
-- **FlashAttention's variable-length interface and FlashInfer:** ragged and paged attention kernels.
-- **MLX and MLC:** lazy graphs and compiled IR. That is the path not taken (E1), so read them for what they cost in kernel
-  control.
+Each line was written before the reading and is corrected here by it. §10a has the reading, and what RF0 still has to read.
+
+- **llama.cpp and ggml:** a closed set of 101 operation kinds, mostly primitives, with some fused and architecture-specific ones.
+  - Each backend answers per graph node whether it supports it, and an unsupported node runs on the CPU. No model is refused.
+  - The Metal and CUDA backends carry explicit fusion tables over those primitives.
+  - One C++ builder file per architecture (160 of them) sits over shared helpers with parameter enums.
+  - `llama_batch` is ragged as an interface: a position, sequence ids and an output flag per token. It is not ragged in
+    execution: a batch is split into micro-batches, and attention is dense over a contiguous cell range with a mask.
+- **Ollama's Go engine** was model structs with an imperative `Forward` over an `ml` backend that mirrored ggml. It was removed
+  between 2026-05-29 and 2026-09-16; GGUF models now run through llama-server. What remains is a Go engine over MLX, of the same
+  shape, with hand-written kernels only for the recurrent mixers.
+- **vLLM V1's scheduler:** it has no prefill or decode phase; each step assigns tokens so that every request's computed count
+  catches up, within one token budget. It gives decode rows no priority: running requests are scheduled in list order, and an
+  optional threshold is the guard against a prefill taking the budget.
+- **Sarathi-Serve** (OSDI 2024): chunked prefills with stall-free batching. A batch takes the running decodes first, then
+  partly finished prefills, then new requests, within a budget profiled against the time-between-tokens target.
+- **FlashAttention's variable-length interface and FlashInfer:** ragged and paged attention kernels. FlashAttention marks
+  ragged rows with cumulative lengths and pages KV through a block table. FlashInfer uses a compressed-row page table, plans on
+  the CPU and runs a fixed-grid kernel, and still ships decode and prefill as separate kernels.
+- **MLX and MLC:** the path not taken (E1). MLX is a lazy graph built on every call, with compilation optional and custom
+  kernels allowed. MLC compiles a model to an IR per target, with one entry function per call shape. Both lose attention
+  softcapping from their fused attention: mlx-lm composes Gemma 2's by hand, and MLC's Gemma 2 ignores it.
+
+## 10a. What we take and what we leave (read for OP0, 2026-10-13)
+
+Everything below was read on 2026-10-13 at the revisions in the last table, from shallow clones and the papers' text. Four of
+§10's six lines were corrected and the other two gained detail: see "What the OP0 reading corrected in §10" at the end.
+
+| source | what we take | what we leave | basis |
+|---|---|---|---|
+| llama.cpp and ggml | a per-backend fusion table that the planner and the encoder both read; a probe for each fused operation, with a composed fallback; softcap, sinks and a KV bound as parameters of the one attention operation; dropping non-output rows before the last layer's FFN; the extended batch entry (token, embedding or both; a position tuple; an output flag) | per-node CPU fallback; a primitive graph that backends pattern-match to recover structure; dense attention with a mask; the equal-length micro-batch split | READ |
+| Ollama | an optional Go interface for a fused operation with a composed fallback; per-layer operator interfaces chosen at load; a kernel type with per-backend sources and a graph fallback | a ggml-mirrored tensor interface as the model-definition surface (deleted upstream); a padded (B, L) batch | READ: the Go engine at `f63eea3d`, the MLX engine at main |
+| vLLM V1 | "catch up the computed count" as the one rule; one token budget; a per-request cap so one prefill cannot take it; a flat token batch with query offsets, sequence lengths and a block table, built once per step | scheduling the running list in list order; one module per architecture; preemption | READ |
+| Sarathi-Serve | the fill order; a budget profiled once against the time-between-tokens target; chunk sizes rounded to the kernel's tile; the measured cost of chunking | its capacity multipliers (datacenter GPUs against a 2024 vLLM) | READ (arXiv v3) |
+| FlashAttention | the interface vocabulary: cumulative lengths for ragged queries, per-row cache lengths and a block table for paged KV; softcap as a compile-time flag | a rectangular block table; FlashAttention 2's page size, a multiple of 256 | READ |
+| FlashInfer | the compressed-row page table; plan on the CPU and run on the GPU with a fixed grid and fixed buffers, for CUDA-graph replay; its variant hooks as the list of places a softcap, a window and a sink touch a kernel | compiling CUDA source strings at run time; separate decode and prefill wrappers | READ (code and paper v2) |
+| MLX, MLC | MLX's custom-kernel escape inside a lazy graph | a lazy graph or a compiled IR as the unit a model is defined in | READ (docs and a few source files); TVM not read |
+
+### llama.cpp and ggml
+
+[Repository](https://github.com/ggml-org/llama.cpp) at `091b6a7f` (master, 2026-10-13): `ggml/include/ggml.h`, `ggml/src/ggml.c`, `ggml/src/ggml-backend-impl.h`,
+`ggml/src/ggml-backend.cpp`, `ggml/src/ggml-metal/ggml-metal-fusion.h`, the CUDA backend's fusion code, `src/llama-graph.h`, `src/llama-graph.cpp`,
+`src/llama-context.cpp`, `src/llama-kv-cache.cpp`, `src/models/`, `include/llama.h`, `tools/server/server-context.cpp`, `common/common.h`.
+
+READ:
+- **The operation set.** `enum ggml_op` has 101 entries (`static_assert(GGML_OP_COUNT == 101)`, counting `GGML_OP_NONE`). It mixes primitives (`MUL_MAT`, `SOFT_MAX`, `RMS_NORM`,
+  `ROPE`, `GET_ROWS`) with fused and architecture-specific kinds: `FLASH_ATTN_EXT`, `GLU`, `MUL_MAT_ID` (MoE), `SSM_CONV`, `SSM_SCAN`, `GATED_DELTA_NET`, `GATED_LINEAR_ATTN`.
+- **Attention is one operation with parameters.** `ggml_flash_attn_ext(ctx, q, k, v, mask, scale, max_bias, logit_softcap)`, plus `ggml_flash_attn_ext_add_sinks` and a setter for a KV bound.
+  `build_attn_mha` has both forms: the one fused node, or `mul_mat`, an optional scale-tanh-scale softcap, `soft_max_ext`, `mul_mat`.
+- **Support is a function per node.** `supports_op(dev, op)` in the backend interface. `ggml_backend_sched_split_graph` assigns a backend to each node in passes, splits the graph and copies tensors
+  between the pieces; the last backend is "assumed CPU".
+- **Fusion is explicit, per backend.**
+  - Metal: `ggml-metal-fusion.h` opens "single source of truth for the fusions supported by the Metal backend". Its table has 27 rows over 10 fusion ids, each an operation sequence and a check.
+  - CUDA: `ggml_cuda_try_fuse` matches fixed operation lists, among them `{MUL_MAT, MUL_MAT, GLU}`, `{RMS_NORM, MUL, ROPE}` and the softcap's `{SCALE, UNARY(tanh), SCALE}`.
+- **A fused operation is probed, not assumed.** `llama_context::resolve_fused_ops` reserves a probe graph for each fused kind. If the node did not land on its layer's device, the kind is
+  disabled and the builder emits the composed form.
+- **Builders.** `src/models/` has 160 `.cpp` files, one architecture each, over shared helpers: `build_norm`, `build_qkv`, `build_ffn`, `build_moe_ffn`, `build_attn_mha`, `build_rs`.
+  Parameters are enums: `llm_norm_type`; `llm_ffn_op_type` with ten values and an unset sentinel, among them `GEGLU`, `GEGLU_ERF`, `RELU_SQR` and `SWIGLU_OAI_MOE`; `llm_ffn_gate_type`.
+- **Layers that differ are C++ control flow.** In `lfm2.cpp`: `hparams.is_recr(il) ? build_shortconv_block(...) : build_attn_block(...)`.
+- **`llama_batch`** has `token`, `embd`, `pos`, `n_seq_id`, `seq_id`, `logits`. Its comments: "can contain input about one or many sequences"; of `logits`, "TODO: rename this to "output"".
+  A newer extended batch adds token and embedding entries in one batch and a position tuple "in order [t, y, x, z]".
+- **Execution is not ragged.** With one stream per sequence the batch is split by `split_equal`, which takes the same number of tokens from every sequence. The attention mask is filled per
+  cell as 0 or `-INFINITY` by sequence, causality and window, over a contiguous view of the cells.
+- **Output rows.** At the last layer the builder gathers only the rows that asked for output, before that layer's FFN.
+- **The server.** `update_slots` first adds each generating slot's sampled token, then walks the slots "without exceeding n_batch" to add prompt tokens. Defaults: `n_batch` 2048, `n_ubatch` 512.
+
+INFERRED:
+- **Our operation kinds sit at the level of llama.cpp's builder helpers and their enums, not at `ggml_op`.** Their FFN enum already separates `GEGLU` from `GEGLU_ERF`, the split OP0 made.
+  Its zero value is a sentinel an architecture must replace; our `ActKind`'s zero value is tanh-GELU, so a forgotten activation here is silent.
+- **Both ggml GPU backends arrived at explicit fusion tables,** as matchers over a primitive graph. A layer program that already names `[norm, proj]` needs the table and not the matcher.
+- **Admission differs in kind.** ggml moves a node to the CPU and never refuses a model. Its fused-operation probe is the nearest thing to our whole-model admission, per fused kind.
+  A per-operation CPU fallback is what OP4's "admission by operation" would make possible; this doc does not propose it.
+- **`llama_batch` is RF's row as an interface and not as a kernel.** With one stream per sequence, a 500-token prefill and three decode tokens become one micro-batch of four tokens and then
+  prefill-only ones. RF2's ragged attention is what llama.cpp does not have.
+- **The server fills decode first and does not budget it.** Prompt slots fill in slot order, so the first prefilling slot takes what is left.
+
+### Ollama
+
+[Repository](https://github.com/ollama/ollama). Main is `8718c2bd` (2026-10-13). The Go engine was read at `f63eea3d` (2026-05-24), its last complete revision.
+
+READ:
+- **At main the Go engine is gone.** `model/` holds only parsers and renderers, and `ml/` only device and path files. Commits `9db4bdba` (2026-05-29), `7b22ac96` (2026-07-02) and
+  `bef41f71` (2026-09-16) removed the runner, `ml/nn`, the model interface and `ml/backend.go`. `2e036e7c` (2026-09-16) moved the MLX engine to top-level `mlx/` and `mlxrunner/`.
+- **At `f63eea3d`, `ml/backend.go`** has `Backend`, `Context` and a `Tensor` interface with about 66 operation methods that track ggml (`Mulmat`, `MulmatID`, `RMSNorm`, `SSMConv`, `SSMScan`).
+- **Fused attention is an optional interface.** `ScaledDotProductAttention` is type-asserted by `nn.Attention`, which otherwise composes it from matmul, scale, mask, softmax and matmul.
+  The ggml implementation passes no softcap.
+- **A model definition** is a Go struct with tagged weight fields, filled by reflection, and a `Forward(ml.Context, input.Batch)` that builds a lazy graph. 24 architectures were registered.
+- **Layers that differ are Go interfaces chosen at construction:** an `MLP` interface with sparse and dense forms (qwen3); an `Operator` set to a short convolution or attention (lfm2).
+- **`input.Batch`** has `Inputs`, `Outputs` (indices of the inputs to return output for), `Positions`, `Sequences` and `Multimodal`.
+- **The MLX engine at main** keeps the shape: a model is `LoadWeights`, `NewCaches`, `Forward`, `Unembed`, with 17 architecture packages. Its batch is padded: `InputIDs` is "(B, L)".
+- **`gpuKernel`,** in `mlx/gpu_kernel.go`, is "a custom kernel with per-backend sources and a graph fallback". It is used for the gated delta rule and the Mamba-2 scan.
+
+INFERRED:
+- **§10's line described an engine that no longer exists,** and whose unit was a struct with an imperative `Forward`, never an operation list.
+- **The optional fused interface is the mechanism goinfer's resident seam already uses.** Ollama's shows the cost when the fused signature lacks a parameter, here the softcap.
+- **Hand-written kernels survive in the MLX engine only for the recurrent mixers.** Those are the operations OP2 and OP5 have to write as well.
+
+### vLLM V1's scheduler
+
+[Repository](https://github.com/vllm-project/vllm) at `a1f51a02` (main): `vllm/v1/core/sched/scheduler.py`, `vllm/v1/core/sched/output.py`, `vllm/config/scheduler.py`,
+`vllm/v1/attention/backend.py`, `vllm/v1/attention/backends/utils.py`, `vllm/model_executor/models/registry.py`.
+
+READ:
+- **The wording,** in `Scheduler.schedule()`: "There's no "decoding phase" nor "prefill phase" in the scheduler. Each request just has the num_computed_tokens and num_tokens_with_spec."
+  And: "At each step, the scheduler tries to assign tokens to the requests so that each request's num_computed_tokens can catch up its num_tokens_with_spec. This is general enough to cover
+  chunked prefills, prefix caching, speculative decoding, and the "jump decoding" optimization in the future."
+- **The budget.** `token_budget = self.max_num_scheduled_tokens`, which defaults to `max_num_batched_tokens` (2048).
+- **The order.** "First, schedule the RUNNING requests." walks `self.running`, a list in admission order, while the budget lasts. "Next, schedule the WAITING requests." runs only if nothing was preempted.
+- **The guard.** `long_prefill_token_threshold` (default 0, off) "exists to stop a long prefill from starving other requests of the token budget". `enable_chunked_prefill` is on by default.
+- **One forward.** The scheduler's output is a token count per request. The attention metadata is `query_start_loc`, `seq_lens`, a block table and a slot mapping.
+  The rows whose logits are read are `query_start_loc[1:] - 1`.
+- **Kernel dispatch still splits.** `reorder_batch_to_split_decodes_and_prefills` reorders a batch into decode, extend and prefill regions, and the FlashInfer backend keeps separate
+  prefill and decode wrappers.
+- **Coverage.** `vllm/model_executor/models/` has 284 Python files, and the registry has 401 names. It is one module per architecture over shared layers.
+
+INFERRED:
+- **§10's claim holds on the point that matters for RF:** prefill and decode are not kinds of step.
+- **vLLM does not put decode first.** With the threshold off, a prefill early in the running list can take the whole budget. RF3's "decode rows first" is Sarathi-Serve's rule, not vLLM's.
+- **Even with one scheduler, the kernels are split by row kind.** RF's one call need not mean one attention kernel.
+
+### Sarathi-Serve
+
+[arXiv 2403.02310](https://arxiv.org/abs/2403.02310) v3, 17 Jun 2024 (OSDI 2024): the abstract, §4.2, §4.3 and §5.4.1.
+
+READ:
+- **The two ideas,** from the abstract: "chunked-prefills which splits a prefill request into near equal sized chunks and creates stall-free schedules that adds new requests in a batch
+  without pausing ongoing decodes."
+- **The fill order** (§4.2): "we first pack all the running decodes in the next batch … After that, we include any partially completed prefill … Only after all the running requests have been
+  accommodated, we admit new requests."
+- **The budget** (§4.3) comes from "a one-time profiling of batches with different number of tokens and setting the token budget to maximum number of tokens that can be packed in a batch
+  without violating TBT SLO".
+- **The cost of chunking** (§4.3): "if a prefill sequence is split into N chunks, then the first chunk's KV-cache is loaded N − 1 times". And: "using chunk size of 257 can increase prefill
+  time by 32% compared to that with chunk size 256".
+- **Measured** (§5.4.1, Yi-34B): "even with the smallest chunk size of 512, we observe a moderate overhead of at most ∼25%. Whereas with the larger token budget of 2048, chunked prefills
+  have almost negligible overhead."
+- **Headline:** 2.6× the serving capacity of vLLM on Mistral-7B with one A100, and up to 3.7× on Yi-34B with two.
+
+INFERRED:
+- **RF3's scheduler is Sarathi-Serve's with one tier merged:** Sarathi separates partly finished prefills from new requests. RF3 should keep the tier, so a prefill in progress finishes
+  before another starts.
+- **A "fill what is left" chunk must be rounded to the kernel's tile,** as the 257-against-256 result shows. §5.1 does not say so yet.
+- **The capacity multipliers do not transfer.** They are for many users on datacenter cards. The stall figure RF3 is gated on is ours (§5.4).
+
+### FlashAttention
+
+[Repository](https://github.com/Dao-AILab/flash-attention) at `1fc02211` (2026-10-12, package 2.8.4): `flash_attn/flash_attn_interface.py`, `csrc/flash_attn/flash_api.cpp`, `hopper/flash_attn_interface.py`.
+
+READ:
+- **Ragged rows.** `flash_attn_varlen_func` takes `q` as "(total_q, nheads, headdim)" and `cu_seqlens_q` as "(batch_size + 1,), dtype torch.int32. The cumulative sequence lengths".
+  It also takes `softcap=0.0`, a window, and `block_table`.
+- **Paged KV in version 2.** The table is rectangular, batch × the most blocks per sequence, and "Paged KV cache block size must be divisible by 256".
+- **`flash_attn_with_kvcache`** appends the new K and V in place at `cache_seqlens` and applies RoPE in the kernel.
+- **Version 3** (`hopper/`) adds a page table of any block size and ragged queries to that call, with a scheduler-metadata step computed ahead.
+- **Softcap** is a template flag in version 3, and it is an input to the choice of tile size.
+
+INFERRED:
+- **Version 3's cache call, not version 2's varlen call, is the shape of RF2's kernel:** ragged queries over paged KV, with the append.
+- **A softcap is one tanh, and still a separately compiled kernel variant that can change the tiling.** OP1 should expect a variant per kernel and not a run-time branch.
+- **Version 2's kernels could not be taken as they are:** its page size must be a multiple of 256, and the KV doc's block is 64. Version 3 lifts the limit.
+
+### FlashInfer
+
+[Repository](https://github.com/flashinfer-ai/flashinfer) at `53e3168a` (main): `flashinfer/decode.py`, `flashinfer/prefill.py`, `flashinfer/pod.py`, `docs/tutorials/kv_layout.rst`,
+`include/flashinfer/attention/scheduler.cuh`, `variant_helper.cuh`, `variants.cuh`, `flashinfer/jit/attention/variants.py`. Paper: [arXiv 2501.01005](https://arxiv.org/abs/2501.01005) v2, §3.1, §3.2.3, §3.3, appendix D.
+
+READ:
+- **The page table is a compressed-row sparse matrix:** `indptr`, `indices` and `last_page_len`. A sequence's length is `page_size * (pages - 1) + last_page_len`.
+- **Plan, then run.** `plan(...)` runs on the CPU once per step; `run(q, kv_cache)` runs per layer, and the plan "can be reused across multiple batch decode attention calls (e.g. different
+  Transformer layers)".
+- **Decode and prefill are separate wrappers,** and a third (`flashinfer/pod.py`, arXiv 2410.18038) exists for mixed batches.
+- **CUDA graphs.** With `use_cuda_graph`, "The `batch_size` cannot change during the lifecycle of this wrapper", and queries per row are "part of the frozen shape (like the batch size)".
+  The grid is padded to a fixed size with a validity mask. From the paper: "plan function is not captured by CUDAGraph because it's on CPU".
+- **Determinism.** A fixed split size gives "batch-size invariant outputs", but "compatibility with CUDA graph is NOT guaranteed".
+- **Variants are hooks:** a query transform, a key transform, a logits transform, a logits mask, an update of the running softmax state, and an output transform.
+  - A softcap is the logits transform with two constants refolded: the kernel computes `tanh(logits * sm_scale / cap)`.
+  - A sliding window is the mask predicate.
+  - An attention sink uses the softmax-state update and the output transform, and has a second implementation for the FlashAttention 3 template.
+- **The paper on variants** (§3.2.3): "we specialize the kernel for each variant for maximum performance, and the number of variants is growing rapidly".
+
+INFERRED:
+- **Ragged queries over paged KV are one data model and still three kernels.** RF2's kill rule, which keeps the old decode call, has precedent.
+- **For CUDA's graph replay (HL, RF2):** the batch size and the queries per row are fixed per captured graph, lengths travel in buffers at fixed addresses, and the grid is padded.
+  The plan on the host and a fixed-shape kernel is the split our decode graphs need.
+- **FlashInfer does not promise batch-invariant output and graph replay together.** RF's one kernel-class rule (§5.1) asks for both on CUDA, so RF2 has to measure it.
+- **The six hooks are OP1's checklist** for each hand-written kernel in §4.5's count: where the softcap goes, and that it must compose with the window and the sink already there.
+
+### MLX and MLC
+
+MLX at `243bdf09`, mlx-lm at `ba8a08fd`, MLC-LLM at `8978ea9a`. Docs and a few source files; TVM itself was not read.
+
+READ:
+- **MLX is lazy and does not compile by default.** Its docs: "no computation actually happens. Instead a compute graph is recorded", and "Currently, MLX does not compile and rerun compute
+  graphs. They are all generated dynamically." `mx.compile` is opt-in.
+- **MLX owns the fused kernels** (`rms_norm`, `rope`, `scaled_dot_product_attention` with a mask and sinks) and offers `metal_kernel` and `cuda_kernel` for a custom one.
+  Its fused attention has no softcap parameter.
+- **mlx-lm** has one Python file per architecture (136 files in its models directory). Its Gemma 2 writes attention by hand: `scores = mx.tanh(scores / self.attn_logit_softcapping)`.
+- **MLC** defines a model as a Relax module (44 architecture directories) that exports one entry function per call shape: `embed`, `prefill`, `decode`, `batch_prefill`, `batch_decode`,
+  `batch_verify`. Attention is a call into the paged KV cache's runtime.
+- **MLC's Gemma 2** says: "NOTE: We ignore attn_logit_softcapping in the gemma2 implementation for now."
+
+INFERRED:
+- **The cost E1 asks about shows on the exact feature OP1 adds.** A framework-owned attention kernel without a softcap parameter leaves two choices: compose attention from primitives and
+  lose the fused kernel (mlx-lm), or drop the feature (MLC).
+- **MLC is the opposite of RF:** it compiles one function per call shape, which is the seam RF removes.
+
+### What the OP0 reading corrected in §10 (applied above)
+
+- **llama.cpp, "a fixed operation set implemented per backend".** The set is closed, but at primitive granularity; support is per node with a CPU fallback, not per model; and the
+  backends fuse through explicit tables. "`llama_batch` already is the ragged call" is true of the interface and false of the execution.
+- **Ollama, "model definitions in Go over an `ml` backend. Confirm the shape".** The shape was right and the engine is deleted. Ollama today is llama-server plus a Go engine over MLX.
+- **vLLM, "a step is a token budget across requests".** The wording about phases is confirmed, with the quote. The budget does not favour decode: the order is list order.
+- **Sarathi-Serve.** Confirmed. Added: three tiers in the fill order, and the measured cost of chunking.
+- **FlashAttention and FlashInfer.** Confirmed. Added: the paged ragged call is FlashAttention 3's; FlashInfer keeps decode and prefill kernels apart; a softcap is a compile-time variant.
+- **MLX and MLC, "lazy graphs and compiled IR".** MLX is a lazy graph that is not compiled by default, and it allows custom kernels. MLC is compiled, one function per call shape.
+
+### Revisions read
+
+| source | revision | date |
+|---|---|---|
+| llama.cpp | `091b6a7fc561b78da90a0ed2d524ec995458c657` (master) | 2026-10-13 |
+| Ollama | main `8718c2bd2363c3f9f422d82bbad322bc2b791d60`; Go engine at `f63eea3d273816ffc27fbeb0662ab44d236abc45` | 2026-10-13; 2026-05-24 |
+| vLLM | `a1f51a0226a8f5e97a5ed340e091a447c8b35911` (main) | 2026-10-13 |
+| FlashAttention | `1fc0221183e799363001394a12dd9e78e15f5dda` | 2026-10-12 |
+| FlashInfer | `53e3168a630bc9ca55f0321fb3cee50242770b1c` (main) | 2026-10-13 |
+| MLX; mlx-lm; MLC-LLM | `243bdf09c0cccbb85ca6a686dab3cc0102cf1f7e`; `ba8a08fd2ed72bbc53de84f89933f91fe4743e4a`; `8978ea9aec626d64096aaa92fbc89bda2e3ea802` | 2026-10-13; 2026-10-10; 2026-10-07 |
+| Papers | arXiv 2403.02310 v3 (Sarathi-Serve); arXiv 2501.01005 v2 (FlashInfer) | read 2026-10-13 |
+
+The llama.cpp, Ollama and vLLM mains had moved since the KV doc's reading the same day (`77c4540c`, `665f9e07`, `ac71b175`); those revisions were not re-read. The vLLM and FlashInfer
+commits are dated 2026-10-14 in their own time zones.
+
+**How it was read.** A delegated reading pass made the clones and reported each fact as read or inferred. Eleven of its facts were then checked against the clones by search, and all eleven matched:
+the operation count, the Metal fusion header, the `logits` comment, the softcap parameter, the builder count, the FFN enum, the vLLM scheduler comment and its two ordering comments, both
+Gemma 2 softcap lines, FlashInfer's softcap constant and FlashAttention's 256 check. The rest stands on the pass's own reading.
+
+**Not read, and left for RF0:** TVM and Relax, so MLC's attention kernels are unverified; FlashInfer's and FlashAttention's kernel bodies and the mixed-batch (POD) internals; vLLM's model
+runner beyond the logits rows, and its waiting-queue loop; llama.cpp's Vulkan fusion code and its hybrid and recurrent memories; the Ollama MLX runner's scheduler; the Sarathi-Serve code.
 
 ## 11. What this absorbs and changes elsewhere
 
@@ -493,10 +905,10 @@ record.
 - **`docs/tasks/parked/task-concurrency-2026-09.md`:** "spec inside a batch" becomes RF6. MC5's continuous batching stays
   parked (E6).
 - **`docs/tasks/task-recompute-audit.md` §5:** its class becomes a planner property (OP4).
-- **`docs/hardware-matrix.md`:** decline reasons and the Phi-3/4 configuration note (OP0).
+- **`docs/hardware-matrix.md`:** decline reasons and the Phi-3/4 configuration note (OP0, done).
 - **`docs/ARCHITECTURE.md`:** §1 ("One decoder, read from a descriptor") and §3 ("Registration and the runner seam",
-  "Admission: which models run resident") are rewritten as phases land. §3 says "About a dozen optional interfaces" where the
-  decoder asserts 34; fix that in OP0's doc pass.
+  "Admission: which models run resident") are rewritten as phases land. §3's count of the optional interfaces was corrected to 34
+  in OP0's doc pass.
 
 ## 12. When this closes
 
@@ -514,6 +926,8 @@ Code, read at `9593bd70`:
     `decoder/residency.go:DeclineResident`;
   - `decoder/features.go:ResidentEligible`, `decoder/features.go:residentGateReason`,
     `decoder/features.go:ResidentBackendFeatures`;
+  - added by OP0: `decoder/residency.go:Architecture.runnerShapeDecline`, `decoder/features.go:residentGateReasons`,
+    `decoder/features.go:Architecture.residentFeatures`, `decoder/residency.go:Model.GatedActResident`;
   - `decoder/actquant_hazard.go:ActivationQuantHazard`, `internal/modelload/modelload.go:activationSafeQuant`.
 - **The seam and the decode loop:** `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentGreedyChain`,
   `decoder/residency.go:ResidentSampleChain`, `decoder/model.go:Model.generateInto`.
