@@ -39,10 +39,11 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
   window, and nothing it documents moves that point later at a small window: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts
   100,000 and up, and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower it. At `-ctx 28672`, with a 7,168-token cap, it
   compacted after every file read and stopped on "Autocompact is thrashing"
-  ([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). So `connect claude-code` writes a
-  fixed cap of 4,096 (a longer reply is cut off; a thinking model can write one), warns below the first request (the
-  20,199 tokens it prints) plus that cap, 24,295, naming the `-ctx` to pass or saying the model's own maximum is too
-  small, and prints a one-line note below 29,344, which adds a quarter of the first request. `-ctx 32768` clears both.
+  ([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). So `connect claude-code` writes
+  the cap as what the window leaves beside the first request (the 20,199 tokens it prints) and a 2,048-token margin, at
+  most 8,192: 6,425 at `-ctx 28672`, 8,192 at `-ctx 32768`. A longer reply is cut off at the cap. When the cap comes out
+  under 4,096 it warns and names `-ctx 26343`, or says the model cannot hold the first request when its own maximum
+  context (`/v1/models` `max_positions`) is smaller.
 - Background work (the session title) goes to `ANTHROPIC_MODEL` unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another
   served model: with two models loaded (`-model main=... -model fast=...`), set it to the small one.
 - `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.

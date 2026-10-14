@@ -13,9 +13,9 @@ import (
 )
 
 // The cap the server enforces, as /v1/models publishes it, is what -write gives Claude Code as its window, and the
-// output cap it writes is claudeCodeOutput at every window: it does not scale with the window.
+// output cap it writes is claudeCodeCap of that window.
 func TestRun_claudeCodeWindowFromServedCap(t *testing.T) {
-	for _, window := range []int{28672, 40960, 131072} {
+	for window, cap := range map[int]int{28672: 6425, 40960: 8192, 131072: 8192} {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(`{"data":[{"id":"coder","context_window":` + strconv.Itoa(window) + `}]}`))
 		}))
@@ -32,86 +32,69 @@ func TestRun_claudeCodeWindowFromServedCap(t *testing.T) {
 		if err := json.Unmarshal(raw, &got); err != nil {
 			t.Fatal(err)
 		}
-		if got.Env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != strconv.Itoa(window) || got.Env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] != "4096" {
-			t.Errorf("window %d: wrote %v, want the window and an output cap of 4096", window, got.Env)
+		if got.Env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != strconv.Itoa(window) || got.Env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] != strconv.Itoa(cap) {
+			t.Errorf("window %d: wrote %v, want the window and an output cap of %d", window, got.Env, cap)
 		}
-		if !strings.Contains(out.String(), "(output limit 4096)") {
+		if !strings.Contains(out.String(), "(output limit "+strconv.Itoa(cap)+")") {
 			t.Errorf("window %d: the printout does not give the cap it writes:\n%s", window, out.String())
 		}
 	}
 }
 
-// The threshold is the first request, the written output cap and the margin, and none of them moves with the window,
-// so a quarter-of-the-window reserve cannot come back unnoticed.
-func TestClaudeCodeThreshold(t *testing.T) {
+// The cap is what the window leaves beside the first request and the margin, up to 8,192: exact values, so neither a
+// fixed cap nor a quarter-of-the-window reserve can come back unnoticed.
+func TestClaudeCodeCap(t *testing.T) {
 	h := harnesses["claude-code"]
-	if claudeCodeOutput != 4096 {
-		t.Errorf("claudeCodeOutput = %d, want 4096", claudeCodeOutput)
-	}
-	if got, want := h.claudeCodeThreshold(), h.FirstRequest+claudeCodeOutput+h.FirstRequest/4; got != want || got != 29344 {
-		t.Errorf("threshold = %d, want first request %d + output cap %d + margin %d = %d (29344)", got, h.FirstRequest, claudeCodeOutput, h.FirstRequest/4, want)
-	}
-	for _, window := range []int{8192, 32768, 131072, 1 << 20} {
-		s := claudeCodeSettings("claude-code", settings{Window: window, Output: OutputLimit(window)})
-		if s.Output != claudeCodeOutput {
-			t.Errorf("window %d: output %d, want %d whatever the window", window, s.Output, claudeCodeOutput)
+	for window, want := range map[int]int{26000: 3753, 26343: 4096, 28672: 6425, 30439: 8192, 32768: 8192, 65536: 8192, 131072: 8192} {
+		if got := h.claudeCodeCap(window); got != want {
+			t.Errorf("claudeCodeCap(%d) = %d, want %d", window, got, want)
+		}
+		if s := claudeCodeSettings("claude-code", h, settings{Window: window, Output: OutputLimit(window)}); s.Output != want {
+			t.Errorf("window %d: output %d, want %d", window, s.Output, want)
 		}
 	}
-	if s := claudeCodeSettings("codex", settings{Window: 32768, Output: 8192}); s.Output != 8192 {
+	if got := h.claudeCodeCap(16384); got < 1024 {
+		t.Errorf("claudeCodeCap(16384) = %d: a window under the first request still needs a positive cap", got)
+	}
+	if s := claudeCodeSettings("codex", h, settings{Window: 32768, Output: 8192}); s.Output != 8192 {
 		t.Errorf("codex's output limit was changed to %d", s.Output)
 	}
 }
 
-// Below the first request plus the output cap, a warning that names the -ctx; between that and the threshold, a note;
-// above, nothing. A model whose own maximum cannot reach the first request plus the cap is told so instead of a -ctx.
-func TestClaudeCodeWindowLevels(t *testing.T) {
-	level := func(window, max int) (string, string) {
-		var out bytes.Buffer
-		s := testSettings
-		s.Window, s.Output, s.MaxPos = window, OutputLimit(window), max
-		connect(&out, "claude-code", harnesses["claude-code"], filepath.Join(t.TempDir(), "settings.json"), s, false, false)
-		switch o := out.String(); {
-		case strings.Contains(o, "warning: Claude Code's first request"):
-			return "warning", o
-		case strings.Contains(o, "note: Claude Code"):
-			return "note", o
-		default:
-			return "", o
-		}
-	}
+// One rule: a cap under 4,096 is warned about, naming -ctx 26343 (the first request, the margin and 4,096), or saying
+// the model cannot hold the request when its own maximum is smaller; any other window gets nothing.
+func TestClaudeCodeWindowWarning(t *testing.T) {
 	for _, c := range []struct {
 		window, max int
-		want        string
+		want        string // "" no warning, "ctx" one naming -ctx 26343, "cannot" the model cannot hold it
 	}{
-		{16384, 0, "warning"}, {24294, 0, "warning"}, {24295, 0, "note"}, {28672, 0, "note"}, {29343, 0, "note"},
-		{29344, 0, ""}, {32768, 0, ""}, {33440, 0, ""}, {131072, 0, ""},
-		{28672, 32768, "note"}, {32768, 32768, ""},
+		{28672, 0, ""}, {32768, 0, ""}, {26343, 0, ""}, {28672, 28672, ""},
+		{26342, 0, "ctx"}, {26000, 0, "ctx"}, {16384, 0, "ctx"}, {16384, 32768, "ctx"},
+		{16384, 16384, "cannot"}, {26000, 26000, "cannot"},
 	} {
-		if got, out := level(c.window, c.max); got != c.want {
-			t.Errorf("window %d (model max %d): level %q, want %q\n%s", c.window, c.max, got, c.want, out)
-		}
-	}
-	if _, out := level(16384, 0); !strings.Contains(out, "-ctx 29344 or more") {
-		t.Errorf("the warning does not name -ctx 29344:\n%s", out)
-	}
-	warnLine := func(out string) string {
-		for _, ln := range strings.Split(out, "\n") {
-			if strings.Contains(ln, "warning: Claude Code's first request") {
-				return ln
+		var out bytes.Buffer
+		s := testSettings
+		s.Window, s.Output, s.MaxPos = c.window, OutputLimit(c.window), c.max
+		connect(&out, "claude-code", harnesses["claude-code"], filepath.Join(t.TempDir(), "settings.json"), s, false, false)
+		line := ""
+		for _, ln := range strings.Split(out.String(), "\n") {
+			if strings.Contains(ln, "warning: Claude Code's output cap") {
+				line = ln
 			}
 		}
-		return ""
+		got := ""
+		switch {
+		case strings.Contains(line, "cannot hold") && !strings.Contains(line, "-ctx"):
+			got = "cannot"
+		case strings.Contains(line, "-ctx 26343 or more"):
+			got = "ctx"
+		case line != "":
+			got = "other: " + line
+		}
+		if got != c.want || strings.Contains(out.String(), "note:") {
+			t.Errorf("window %d (model max %d): %q, want %q\n%s", c.window, c.max, got, c.want, out.String())
+		}
 	}
-	if _, out := level(16384, 16384); !strings.Contains(warnLine(out), "cannot hold") || strings.Contains(warnLine(out), "-ctx") {
-		t.Errorf("a model whose own maximum is 16384 was given a -ctx to pass:\n%s", out)
-	}
-	if _, out := level(16384, 26000); !strings.Contains(out, "-ctx 26000 or more") {
-		t.Errorf("a model whose own maximum is 26000 was not pointed at it:\n%s", out)
-	}
-	if strings.Count(func() string { _, o := level(28672, 0); return o }(), "\n  note:") != 1 {
-		t.Errorf("the note is not one line")
-	}
-	// The warnings are Claude Code's alone.
 	var other bytes.Buffer
 	s := testSettings
 	s.Window, s.Output = 8192, OutputLimit(8192)

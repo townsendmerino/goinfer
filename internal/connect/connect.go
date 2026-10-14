@@ -389,7 +389,7 @@ func Run(args []string, self string, out io.Writer) int {
 // connect prints the configuration for s and, with doWrite, patches path. It refuses to write a configuration whose
 // agent cannot fit its first request in the window, unless force.
 func connect(out io.Writer, name string, h harness, path string, s settings, doWrite, force bool) int {
-	s = claudeCodeSettings(name, s)
+	s = claudeCodeSettings(name, h, s)
 	verdict := h.fit(s.Window)
 	fmt.Fprintf(out, "%s -> %s, model %s, context window %d tokens (output limit %d)\n", h.Name, s.URL, s.Model, s.Window, s.Output)
 	fmt.Fprintf(out, "first request: %d tokens (%s %s, measured) — %s in this window\n", h.FirstRequest, h.Name, h.Version, verdict)

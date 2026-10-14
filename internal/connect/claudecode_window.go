@@ -5,51 +5,51 @@ import (
 	"strings"
 )
 
-// claudeCodeOutput is the output cap connect writes for Claude Code (CLAUDE_CODE_MAX_OUTPUT_TOKENS) at every window.
-// Claude Code counts the cap against the window before it auto-compacts, so a cap that grew with the window would
-// spend the room it is given; a reply longer than the cap is cut off at it.
-const claudeCodeOutput = 4096
+const (
+	// claudeCodeMargin is kept free beside Claude Code's first request and its output cap, because Claude Code compacts
+	// somewhat before its context plus the cap reaches the window
+	// (docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md, "I1's live gate").
+	claudeCodeMargin = 2048
+	// claudeCodeMaxOutput is the most connect writes; claudeCodeMinOutput is the least it writes without a warning.
+	claudeCodeMaxOutput = 8192
+	claudeCodeMinOutput = 4096
+	// claudeCodeFloor keeps the cap Claude Code is given positive in a window too small for its first request (a
+	// -force write), at the least Claude Code's thinking budget takes (its env-vars reference, MAX_THINKING_TOKENS).
+	claudeCodeFloor = 1024
+)
 
-// claudeCodeSettings gives Claude Code its fixed output cap in place of the window-scaled limit other agents get.
-func claudeCodeSettings(name string, s settings) settings {
+// claudeCodeCap is the output cap connect writes for Claude Code (CLAUDE_CODE_MAX_OUTPUT_TOKENS): what the window
+// leaves beside the first request and the margin, at most claudeCodeMaxOutput. Claude Code counts the cap against the
+// window before it auto-compacts, so a cap the window cannot spare makes it compact at once.
+func (h harness) claudeCodeCap(window int) int {
+	return max(min(claudeCodeMaxOutput, window-h.FirstRequest-claudeCodeMargin), claudeCodeFloor)
+}
+
+// claudeCodeSettings gives Claude Code claudeCodeCap in place of the window-scaled limit other agents get.
+func claudeCodeSettings(name string, h harness, s settings) settings {
 	if name == "claude-code" {
-		s.Output = claudeCodeOutput
+		s.Output = h.claudeCodeCap(s.Window)
 	}
 	return s
 }
 
-// claudeCodeNeeds is the window Claude Code's first request and its output cap fill on their own.
-func (h harness) claudeCodeNeeds() int { return h.FirstRequest + claudeCodeOutput }
-
-// claudeCodeThreshold is the window above which connect says nothing about Claude Code's own compaction. The margin
-// beyond claudeCodeNeeds is a quarter of the first request, the margin fit calls viable, because Claude Code compacts
-// some way before its context plus the cap reaches the window and the rest has to hold at least one tool result
-// (docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md, "I1's live gate").
-func (h harness) claudeCodeThreshold() int { return h.claudeCodeNeeds() + h.FirstRequest/4 }
-
-// claudeCodeWarnings is what connect adds for Claude Code about the window it is given: a warning when the first
-// request and the output cap do not fit it, a one-line note when they fit with less than the margin, and a warning for
-// a model id to which Claude Code does not apply CLAUDE_CODE_MAX_CONTEXT_TOKENS. Empty for every other agent.
+// claudeCodeWarnings is what connect adds for Claude Code: a warning when its output cap comes out under
+// claudeCodeMinOutput, and one for a model id to which Claude Code does not apply CLAUDE_CODE_MAX_CONTEXT_TOKENS.
+// Empty for every other agent.
 func claudeCodeWarnings(name string, h harness, s settings) string {
 	if name != "claude-code" {
 		return ""
 	}
 	var b strings.Builder
-	switch needs, want := h.claudeCodeNeeds(), h.claudeCodeThreshold(); {
-	case s.Window < needs && s.MaxPos > 0 && s.MaxPos < needs:
-		fmt.Fprintf(&b, "  warning: Claude Code's first request (%d tokens) and its output cap (%d) need %d, and this model cannot hold "+
-			"them: its own maximum context is %d\n", h.FirstRequest, claudeCodeOutput, needs, s.MaxPos)
-	case s.Window < needs:
-		ctx := want
-		if s.MaxPos > 0 {
-			ctx = min(ctx, s.MaxPos)
+	if c := h.claudeCodeCap(s.Window); c < claudeCodeMinOutput {
+		need := h.FirstRequest + claudeCodeMargin + claudeCodeMinOutput
+		if s.MaxPos > 0 && s.MaxPos < need {
+			fmt.Fprintf(&b, "  warning: Claude Code's output cap is %d; this model cannot hold Claude Code's first request (%d tokens) with "+
+				"room to answer: its own maximum context is %d, under the %d needed\n", c, h.FirstRequest, s.MaxPos, need)
+		} else {
+			fmt.Fprintf(&b, "  warning: Claude Code's output cap is %d, under %d, and it will compact almost at once: restart goinfer-serve "+
+				"with -ctx %d or more\n", c, claudeCodeMinOutput, need)
 		}
-		fmt.Fprintf(&b, "  warning: Claude Code's first request (%d tokens) and its output cap (%d) need %d, more than this window: "+
-			"restart goinfer-serve with -ctx %d or more (if this box cannot hold that, it cannot run Claude Code on this model)\n",
-			h.FirstRequest, claudeCodeOutput, needs, ctx)
-	case s.Window < want:
-		fmt.Fprintf(&b, "  note: Claude Code will auto-compact often: %d tokens beside its first request and output cap (-ctx %d leaves %d)\n",
-			s.Window-needs, want, want-needs)
 	}
 	// Claude Code applies CLAUDE_CODE_MAX_CONTEXT_TOKENS directly only to an id it cannot resolve to a Claude model, and
 	// not to a [1m] variant (code.claude.com/docs/en/model-config, "Correct the window for a gateway or custom model ID").
