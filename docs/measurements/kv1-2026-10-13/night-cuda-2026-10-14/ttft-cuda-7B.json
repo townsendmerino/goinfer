@@ -1,0 +1,425 @@
+{
+ "args": {
+  "out": "/home/francis/goinfer-logs/kv1-2026-10-13/night-2026-10-14/ttft-cuda-7B.json",
+  "backend": "cuda",
+  "new": "/home/francis/goinfer-bench/kv1-2026-10/bin/serve-new",
+  "old": "/home/francis/goinfer-bench/kv1-2026-10/bin/serve-old",
+  "model": "/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "name": "7B",
+  "blocks": 12,
+  "prompt_words": 2500,
+  "serve_args": "",
+  "load_timeout": 420,
+  "log_dir": "/home/francis/goinfer-logs/kv1-2026-10-13/night-2026-10-14/serve-logs"
+ },
+ "cells": [
+  {
+   "ttft_s": [
+    2.465,
+    2.4508,
+    2.4416
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 0,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:31:04"
+  },
+  {
+   "ttft_s": [
+    2.454,
+    2.4559,
+    2.4528
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 0,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:31:24"
+  },
+  {
+   "ttft_s": [
+    2.4587,
+    2.4429,
+    2.4525
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 1,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:31:45"
+  },
+  {
+   "ttft_s": [
+    2.4475,
+    2.4508,
+    2.4402
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 1,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:32:06"
+  },
+  {
+   "ttft_s": [
+    2.4435,
+    2.4497,
+    2.4453
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 2,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:32:26"
+  },
+  {
+   "ttft_s": [
+    2.4549,
+    2.4535,
+    2.4515
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 2,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:32:47"
+  },
+  {
+   "ttft_s": [
+    2.4535,
+    2.4546,
+    2.4527
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 3,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:33:07"
+  },
+  {
+   "ttft_s": [
+    2.4463,
+    2.4515,
+    2.457
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 3,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:33:27"
+  },
+  {
+   "ttft_s": [
+    2.4509,
+    2.4539,
+    2.46
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 4,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:33:48"
+  },
+  {
+   "ttft_s": [
+    2.4489,
+    2.4521,
+    2.4583
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 4,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:34:08"
+  },
+  {
+   "ttft_s": [
+    2.4482,
+    2.4542,
+    2.4578
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 5,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:34:29"
+  },
+  {
+   "ttft_s": [
+    2.4461,
+    2.4496,
+    2.453
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 5,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:34:50"
+  },
+  {
+   "ttft_s": [
+    2.4423,
+    2.4526,
+    2.4536
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 6,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:35:10"
+  },
+  {
+   "ttft_s": [
+    2.4498,
+    2.4497,
+    2.4553
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 6,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:35:31"
+  },
+  {
+   "ttft_s": [
+    2.452,
+    2.4459,
+    2.4558
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 7,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:35:51"
+  },
+  {
+   "ttft_s": [
+    2.4613,
+    2.4529,
+    2.453
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 7,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:36:12"
+  },
+  {
+   "ttft_s": [
+    2.4529,
+    2.4444,
+    2.4566
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 8,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:36:33"
+  },
+  {
+   "ttft_s": [
+    2.461,
+    2.4489,
+    2.4484
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 8,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:36:53"
+  },
+  {
+   "ttft_s": [
+    2.4527,
+    2.4463,
+    2.4521
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "old",
+   "block": 9,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:37:14"
+  },
+  {
+   "ttft_s": [
+    2.4616,
+    2.4549,
+    2.4486
+   ],
+   "prompt_tokens": [
+    3069,
+    3069,
+    3069
+   ],
+   "arm": "new",
+   "block": 9,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:37:34"
+  },
+  {
+   "ttft_s": [
+    2.451,
+    2.4549,
+    2.4574
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "new",
+   "block": 10,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:37:55"
+  },
+  {
+   "ttft_s": [
+    2.4484,
+    2.449,
+    2.4588
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "old",
+   "block": 10,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:38:15"
+  },
+  {
+   "ttft_s": [
+    2.4556,
+    2.4524,
+    2.4529
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "old",
+   "block": 11,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:38:36"
+  },
+  {
+   "ttft_s": [
+    2.4478,
+    2.4535,
+    2.4541
+   ],
+   "prompt_tokens": [
+    3070,
+    3070,
+    3070
+   ],
+   "arm": "new",
+   "block": 11,
+   "model": "7B",
+   "backend": "cuda",
+   "at": "02:38:56"
+  }
+ ]
+}
