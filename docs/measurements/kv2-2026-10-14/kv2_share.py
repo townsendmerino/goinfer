@@ -16,6 +16,17 @@ tokens after it. The server's own token counts are recorded; the preamble's word
 import argparse, json, os, re, signal, socket, subprocess, sys, threading, time, urllib.request
 
 PORT = 8098
+CURRENT = []  # the server the harness has running, so a kill of the harness takes it down too
+
+
+def stop_server(*_):
+    for proc in CURRENT:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except Exception:
+            pass
+    if _:
+        sys.exit(143)
 WORDS_PER_TOKEN = 2500 / 3070  # KV1's 2,500-word prompts were 3,069-3,070 tokens on Qwen2.5's tokenizer
 SECTIONS = ["tool use", "file edits", "shell commands", "git workflow", "tests", "code review", "planning", "memory",
             "permissions", "output style", "subagents", "hooks", "settings", "MCP servers", "notebooks", "web fetch"]
@@ -143,6 +154,7 @@ def cell(a, arm, script, block, log):
         sink.flush()
         start = os.path.getsize(log)
         proc = subprocess.Popen(argv, stdout=sink, stderr=sink, preexec_fn=os.setsid)
+        CURRENT[:] = [proc]
         try:
             if not wait_port(proc, a.load_timeout):
                 return {"error": "the server did not come up"}
@@ -183,6 +195,10 @@ def main():
     ap.add_argument("--quant", default="int4")
     a = ap.parse_args()
     SIZE["pre"], SIZE["tail"] = a.preamble_tokens, a.tail_tokens
+    # the server runs in its own session (a clean kill of its process group per cell), so a stop of this harness
+    # (night.py stop --now) must take it down explicitly
+    signal.signal(signal.SIGTERM, stop_server)
+    signal.signal(signal.SIGINT, stop_server)
     arms, scripts = a.arms.split(","), a.scripts.split(",")
     cells, t_start, total = [], time.time(), a.blocks * len(arms) * len(scripts)
     for b in range(a.blocks):
