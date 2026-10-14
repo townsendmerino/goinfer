@@ -161,6 +161,32 @@ where it is 5,850. Every system message is now kept. Those before the conversati
 system prompt; one sent after it has started stays where it is, as text of the user side, instead of replacing the system
 prompt. A `/v1/responses` request with both `instructions` and a `developer` item keeps both.
 
+### Fixed — a model whose MLP uses the exact GELU can no longer be put on a GPU with the tanh approximation
+
+Every GPU backend's MLP kernel has two activations, tanh-GELU and SiLU, and picks one from a number the decoder hands it. The admission
+check let any other activation through as if it were tanh-GELU.
+
+- **A GPT-2 checkpoint that declares `activation_function: "gelu"` now decodes on the CPU under Metal.** It was admitted to the GPU and
+  ran `gelu_new`'s tanh approximation, which differs from the exact function by up to 4.73e-4 per activation. The released GPT-2
+  checkpoints use `gelu_new` and are unchanged. `DecodePath()` and `serve check` name the reason: `non-gated-gelu-erf`.
+- **Spark-X2.5 was never affected, and now cannot be.** Its gated MLP uses the exact GELU; two other gaps keep it on the CPU today, and
+  the activation is now a third, named `gated-gelu-erf`, so lifting the first two cannot put it on a GPU with the wrong activation.
+- **Any other activation in a gated MLP declines too** (`gated-act-unknown`), until a backend has a kernel for it.
+- Gemma, whose gated MLP uses tanh-GELU, is admitted as before.
+- **A model the GPU runner cannot express now says which shape stopped it**: `arch is not eligible for the resident decode runner: own
+  forward, not bridged`, for example, where the message ended at "runner".
+
+### Changed — `docs/hardware-matrix.md` says why each family decodes on the CPU
+
+The matrix gains a generated section, "Why a cell reads CPU". For each family and backend it lists every reason, not only the first one
+the load path reports: the runner shape, the features the backend lacks, the activation hazard, the MoE router's capacity.
+
+- It is generated from the same checks admission runs, and a test fails when a cell and its reasons disagree.
+- **It shows two reasons that a first refusal hid.** Kimi K2 on Metal lacks latent-KV attention and also has 384 experts where Metal's
+  router kernel routes 256. Spark-X2.5 lacks its activation as well as its attention output gate.
+- **Phi-3 and Phi-4 get a note.** Their row reads a configuration the loader does not pick: a GGUF loads at `--quant q4k` on CUDA and
+  runs on the GPU, and on Metal it does only with an explicit `--quant q4k`.
+
 ### Added — `serve check` tests tool calling on `/v1/messages` at a real agent's schema size
 
 A new row, `tools, harness, Messages`, sends the same dozen tools and prompt as `tools, harness-scale` through the Anthropic

@@ -1,6 +1,7 @@
 # Task: one forward architecture — models as operation lists, one ragged forward pass (OP0–OP6, RF0–RF6, HL) — 2026-10
 
-> **Status: SCOPED 2026-10-13. Not started.** Written on the owner's ask after a Cowork conversation the same day ("we have
+> **Status: OP0 DONE 2026-10-13; every other phase is scoped and not started.** OP0's summary is under §4.4, its feature census
+> is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -48,7 +49,7 @@
 
 | phase | what | backends | size | needs |
 |---|---|---|---|---|
-| OP0 | decline reasons in the hardware matrix; features mapped to operations; prior art | — | S | — |
+| OP0 | decline reasons in the hardware matrix; features mapped to operations; prior art. **Done 2026-10-13** | — | S | — |
 | OP1 | attention softcapping: Gemma 2 on every GPU | CUDA, Metal, WebGPU | M | — |
 | OP2 | the next missing operations by demand: MLA on Metal, SSM on CUDA and Metal, KDA | per operation | M–L each | OP0 |
 | OP3 | the layer program, built from the `Architecture`; the CPU executes it bit for bit | CPU | L | OP0 |
@@ -142,14 +143,18 @@
 
 This is the census behind `docs/hardware-matrix.md`'s CPU cells. For every registry family on each GPU backend, it applies the
 runner-shape check and then `decoder/features.go:residentGateReason`, in the model-free default configuration the matrix
-reads. "—" means the family runs resident there. Where the runner-shape check refuses first, the features
-`residentGateReason` would also name are listed after it ("plus"). The programs and their raw output are in the baseline
-record.
+reads. "—" means the family runs resident there. Where an earlier check refuses first, what the later ones would also name is
+listed after it ("plus"). The programs and their raw output are in the baseline record.
+
+**Since OP0 the matrix generates this table itself** (`docs/hardware-matrix.md`, "Why a cell reads CPU"), from every gate and
+not only the first. The table below is kept as the reading the design started from, with two rows corrected by what the
+generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a router capacity the missing `mla` hid).
 
 | family | CUDA | Metal | WebGPU |
 |---|---|---|---|
 | Gemma 2 | attn-logit-softcap | attn-logit-softcap | attn-logit-softcap |
-| DeepSeek-V2, DeepSeek-V3, Kimi K2 | — | mla | — |
+| DeepSeek-V2, DeepSeek-V3 | — | mla | — |
+| Kimi K2 | — | mla, plus the router's capacity (384 experts; Metal's kernel routes 256) | — |
 | Ling 3.0 | kda | kda, mla | kda |
 | Nemotron-H | non-gated-mlp, ssm (plus runner shape if MoE) | ssm (plus runner shape if MoE) | — |
 | GPT-2 | learned-pos, non-gated-mlp | — | layer-norm, learned-pos |
@@ -161,7 +166,7 @@ record.
 | Llama 4 | runner shape: own forward, not bridged | the same | the same |
 | LFM2.5 | runner shape: own forward, not bridged, plus short-conv | the same | the same |
 | Laguna | runner shape: local/global RoPE tables differ in length, plus attn-output-gate | the same | the same |
-| Spark-X2.5 | runner shape: local/global RoPE tables differ in length, plus attn-output-gate (and the activation hazard below) | the same | the same |
+| Spark-X2.5 | runner shape: local/global RoPE tables differ in length, plus attn-output-gate, gated-gelu-erf | the same | the same |
 | Granite-4.0-H | bring-up gate (`GOINFER_SSM_RESIDENT`), plus ssm | the same | bring-up gate (`GOINFER_SSM_RESIDENT`) |
 | Phi-3, Phi-4 | the activation hazard: int8 activations round its outliers away | the same | the same |
 
@@ -184,12 +189,19 @@ record.
     The default load still picks int8int8 with per-32 scales, which declines to the CPU.
   - **WebGPU** has neither.
 
-**A hazard the matrix cannot show: Spark-X2.5's activation.** Its gated MLP uses exact-erf GELU (`ActGelu`, `gegluExact`).
-- The feature list maps every gated non-SiLU activation to `gated-gelu`, which every backend implements as tanh-GELU.
-- `decoder/residency.go:Model.GatedActResident` hands the activation's ordinal to a CUDA kernel that knows only tanh-GELU and
-  SiLU.
-- Nothing runs wrong today, because the runner shape and the output gate decline Spark-X2.5 first. Once both are lifted it
-  would be admitted with the wrong activation. OP0 closes this before then (the baseline record, third test).
+**The activation hazard, closed by OP0.** Every resident MLP kernel picks its activation from the ordinal
+`decoder/residency.go:Model.GatedActResident` returns, and knows two: tanh-GELU and SiLU.
+- **Gated, exact-erf GELU (Spark-X2.5; `ActGelu`, `gegluExact`).** The feature list mapped every gated non-SiLU activation to
+  `gated-gelu`, which every backend declares. Nothing ran wrong, because the runner shape and the output gate decline
+  Spark-X2.5 first; once both were lifted it would have been admitted with the wrong activation.
+- **Non-gated, exact-erf GELU: this one was live.** A GPT-2 checkpoint that declares `activation_function: "gelu"` passed every
+  feature Metal declares, and Metal's non-gated kernel ran tanh-GELU for it. Measured on the pre-fix tree: Metal's logits were
+  bit-identical between the `gelu` and `gelu_new` configs of the real GPT-2, while the CPU's differed (the baseline record, §3).
+  The released GPT-2 checkpoints use `gelu_new`.
+- **Now:** `gated-gelu` is tanh-GELU only. `gated-gelu-erf` and `non-gated-gelu-erf` are features no backend declares, and
+  `gated-act-unknown` catches any other gated activation, so a gated model past admission hands a kernel only the two ordinals
+  it knows (`decoder/features.go:Architecture.residentFeatures`).
+- **What is left** is in §4.5: `non-gated-mlp` still means a different activation on Metal and on WebGPU.
 
 **How much it matters.** Pulls in Ollama's library, in millions (`docs/measurements/ollama-coverage-2026-10-09.md`):
 - **gemma2, 34.4:** Gemma 2 decodes on the CPU on every GPU backend.
@@ -263,7 +275,8 @@ record.
 
 - **Coverage per operation, not per family.** An operation built once per backend lights up every family that uses it.
   - Softcapping puts Gemma 2 on all three GPUs.
-  - MLA on Metal brings DeepSeek-V2, DeepSeek-V3 and Kimi K2 there.
+  - MLA on Metal brings DeepSeek-V2 and DeepSeek-V3 there. Kimi K2 also needs Metal's router to route its 384 experts; the
+    kernel routes 256 (`decoder/features.go:ResidentBackendMoECap`).
 - **Performance where it matters most.** A family leaving the CPU fallback gets roughly the 15× decode difference. That is the
   largest single change available to a user of that family.
 - **New families get cheaper.** A family made of existing operations needs an adapter (descriptor → program) and a parity gate,
@@ -294,7 +307,7 @@ record.
 
 ### 4.4 Phases
 
-- **OP0 — the decline table, the operation census, prior art (S).**
+- **OP0 — the decline table, the operation census, prior art (S). DONE 2026-10-13; the summary follows this list.**
   - `docs/hardware-matrix.md` prints each declining cell's reasons: the runner shape, the operations missing, or the gate. It
     is generated from both checks, and a runner-shape decline does not hide the operations `residentGateReason` also names.
   - A row whose default load runs resident in another configuration says so: Phi-3/4 at `--quant q4k` on CUDA.
@@ -310,7 +323,7 @@ record.
     - Gemma 2 parity against the CPU (the tiny fixture plus the real 2B and 9B);
     - a decode peer cell against Ollama on each GPU box.
 - **OP2 — the next operations, in order of demand (M–L each).** Each has its own gates, as OP1 does.
-  - MLA on Metal: DeepSeek-V2/V3, Kimi K2.
+  - MLA on Metal: DeepSeek-V2/V3. Kimi K2 needs it and a router that routes 384 experts (Metal's routes 256).
   - SSM on CUDA and Metal: Nemotron-H, and Granite-4.0-H once its gate lifts.
   - Then KDA.
 - **OP3 — the layer program, on the CPU (L).**
