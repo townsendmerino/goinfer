@@ -306,6 +306,8 @@ type resident struct {
 	chainSets    [2]posUniforms
 	chainTok     [2]Buffer
 	chainServed  int // tokens chainNext has returned since the build (tests read it)
+	chainRows    int // of those, tokens chainNextRow returned with their row (tests read it)
+	chainRedos   int // forwards chainRedo queued again (tests read it)
 	// The untied head's gather table (C-B01): the int8 embedding table on the device, made the first time a chain is
 	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.
 	// chainEmbBase is the memory guard's price of this build (weights, host copy, every KV slot), which the table is

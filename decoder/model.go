@@ -1826,19 +1826,22 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. Only with no processor at all (a gated one would need the full row mid-chain), no adapter, and where the
-	// embedding lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this
-	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
-	// fastGreedy stays the path for those.
+	// has seen this one. Only with no processor, or a gated one where the chain can return a step's full row
+	// (ResidentGreedyChainRow), no adapter, and where the embedding lookup is a plain table row, which the resident's gather
+	// reproduces. Under MC3 it runs only on the tokens this generation decodes alone, with the resident held across them
+	// (holdSolo); every other token takes the batcher as before, so fastGreedy stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	rowRF, hasRow := m.resident.(ResidentGreedyChainRow)
+	useChain := useGPU && hasChain && (sp.LogitProcessor == nil || (gated && hasRow)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
 		fastGreedy = false
 	}
 	chainTok := mc3 == nil // this token may run the chain: always unbatched, under MC3 only on a held token
-	chainOpen, chainPos := false, 0
+	// chainIn is the token the chain fed the forward it queued at chainPos: the device's pick, until the host picks
+	// otherwise from a processed row and redoes that forward.
+	chainOpen, chainPos, chainIn := false, 0, 0
 	stopChain := func() {
 		if chainOpen {
 			chainRF.GreedyChainStop()
@@ -2156,23 +2159,34 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			viaForward := false // residentCall returned Forward's logits, the resident's shared host buffer
 			residentCall := func() error {
 				var ferr error
-				if needFull {
+				if needFull && !(useChain && chainTok) {
 					// The gated processor needs this position's full logits (it is about to mask them).
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
 				} else if useChain && chainTok {
-					// The chain fed itself this token: it is the argmax of the chain's previous forward. The first token
-					// (from the prompt's seed logits) opens it.
+					// The chain fed itself this token: it is the argmax of the chain's previous forward, unless the host
+					// picked another from a processed row, and then that forward is redone. The first token (from the
+					// prompt's seed logits) opens it. A step the gate opens takes the forward's full row as well.
 					if !chainOpen {
 						if ferr = chainRF.GreedyChainStart(next, pos); ferr == nil {
-							chainOpen, chainPos = true, pos
+							chainOpen, chainPos, chainIn = true, pos, next
 						}
 					}
 					if ferr == nil && pos != chainPos {
 						ferr = fmt.Errorf("decoder: greedy chain is at position %d, the decode loop at %d", chainPos, pos)
 					}
+					if ferr == nil && next != chainIn {
+						ferr = rowRF.GreedyChainRedo(next, pos)
+						chainIn = next
+					}
 					if ferr == nil {
-						fastNext, ferr = chainRF.GreedyChainNext()
+						if needFull {
+							chainIn, logits, ferr = rowRF.GreedyChainNextRow()
+							viaForward = true
+						} else {
+							fastNext, ferr = chainRF.GreedyChainNext()
+							chainIn = fastNext
+						}
 						chainPos++
 					}
 				} else if sChainRF != nil && chainTok {
@@ -2248,7 +2262,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				// Alone on the batcher, a chainable token runs the chain with the resident held across tokens; the
 				// first token anyone else wants the resident, the chain stops and this token takes the batcher.
 				held := false
-				if (useChain || sChainRF != nil) && !needFull {
+				if useChain || (sChainRF != nil && !needFull) {
 					chainTok = true
 					held, err = mc3.holdSolo(solo, stopChain)
 					chainTok = false

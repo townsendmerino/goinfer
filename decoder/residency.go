@@ -144,12 +144,24 @@ type ResidentGreedy interface {
 // that forward's successor's input; GreedyChainStop closes it, waiting out any forward queued past the last token
 // taken. Between Start and Stop the caller makes no other call on the resident. The decode loop uses it under the
 // same conditions as ResidentGreedy, and only where its own embedding lookup is a plain table row (embedIsTableRow),
-// with no MC3 concurrency, adapter or processor; the tokens are those of the full-logits path.
+// with no MC3 concurrency, adapter or processor (a gated one only through ResidentGreedyChainRow); the tokens are
+// those of the full-logits path.
 type ResidentGreedyChain interface {
 	GreedyChainAvailable() bool
 	GreedyChainStart(id, pos int) error
 	GreedyChainNext() (int, error)
 	GreedyChainStop()
+}
+
+// ResidentGreedyChainRow is an optional capability on a ResidentGreedyChain: the chain under a gated processor
+// (docs/tasks/task-forward-architecture-2026-10.md §6.1). GreedyChainNextRow is GreedyChainNext plus the full logits
+// row of the forward whose token it returns, equal to Forward's at that position; the row is the resident's shared
+// host buffer, valid until the next call on the resident. GreedyChainRedo replaces the input of the forward the chain
+// queued at pos, the position after the last token taken: it waits that forward out and queues it again with id, at
+// the same position. The decode loop calls it when the host's pick from a processed row differs from the device's.
+type ResidentGreedyChainRow interface {
+	GreedyChainNextRow() (int, []float32, error)
+	GreedyChainRedo(id, pos int) error
 }
 
 // ResidentSampleChain is ResidentGreedyChain's temperature-only sibling (C-P02): the chained forward ends with the

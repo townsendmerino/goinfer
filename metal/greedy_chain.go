@@ -38,18 +38,21 @@ const chainDrainEvery = 64
 const (
 	chainOpStart = iota
 	chainOpNext
+	chainOpRedo
 	chainOpStop
 )
 
 type chainReq struct {
 	op, id, pos int
 	sampled     bool    // a temperature-only chain (chainStartSampled), or a sampled chainNext
+	row         bool    // next: also return the forward's full logits row (chainNextRow)
 	invT        float32 // start, sampled: 1/temperature
 	seed, draw  uint64  // start: the first forward's draw; next: the decoder's draw for the forward it asks for
 }
 
 type chainResp struct {
 	id  int
+	row []float32
 	err error
 }
 
@@ -203,6 +206,36 @@ func (r *resident) chainNextSampled(seed, draw uint64) (int, error) {
 	return r.chainAsk(chainReq{op: chainOpNext, sampled: true, seed: seed, draw: draw})
 }
 
+// chainNextRow is chainNext plus the oldest forward's full logits row, Forward's row at that position
+// (decoder.ResidentGreedyChainRow): the head alone on the activations that forward left, committed before the next
+// forward is, then finalized as forwardLogits does. The row is r.logitsHost.
+func (r *resident) chainNextRow() (int, []float32, error) {
+	if r.chainReq == nil {
+		return 0, nil, fmt.Errorf("metal: greedy chain not open")
+	}
+	r.chainReq <- chainReq{op: chainOpNext, row: true}
+	a := <-r.chainResp
+	if a.err == nil {
+		r.chainServed++
+		r.chainRows++
+	}
+	return a.id, a.row, a.err
+}
+
+// chainRedo waits out the forward queued at pos, the position after the last token taken, and queues it again with
+// id as its input, over the K/V the discarded one wrote.
+func (r *resident) chainRedo(id, pos int) error {
+	if r.chainReq == nil {
+		return fmt.Errorf("metal: greedy chain not open")
+	}
+	r.chainReq <- chainReq{op: chainOpRedo, id: id, pos: pos}
+	a := <-r.chainResp
+	if a.err == nil {
+		r.chainRedos++
+	}
+	return a.err
+}
+
 func (r *resident) chainAsk(q chainReq) (int, error) {
 	if r.chainReq == nil {
 		return 0, fmt.Errorf("metal: greedy chain not open")
@@ -286,6 +319,25 @@ func (r *resident) chainLoop() {
 	var fifo []inflight
 	next, sinceDrain := 0, 0
 	sampled, pos0, draw0 := false, 0, uint64(0)
+	taken := 0 // the position of the forward whose token was returned last; the next to return is taken+1
+	// head commits forwardLogits' head on the activations in r.aq/r.aSc. Committed while the oldest forward is the newest
+	// in flight, it reads that forward's: the buffers are hazard-tracked and the queue serial, so it runs after that
+	// forward writes them and before the next forward, committed after it, overwrites them.
+	head := func() *Encoder {
+		e := r.q.BeginNP()
+		e.Dispatch(r.pGemvW8, r.V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+		e.FinishEncoding()
+		e.Commit()
+		return e
+	}
+	rowOf := func(h *Encoder) ([]float32, error) {
+		h.WaitDone()
+		if err := h.Err(); err != nil {
+			return nil, err
+		}
+		r.finalizeLogits()
+		return r.logitsHost, nil
+	}
 	commit := func() {
 		if next >= r.ctxCap { // nothing to speculate into: the next position is past the resident KV
 			return
@@ -352,6 +404,21 @@ func (r *resident) chainLoop() {
 			if r.attnFANKV > 0 {
 				r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 			}
+			taken = q.pos - 1
+			commit()
+			r.chainResp <- chainResp{}
+		case chainOpRedo:
+			if sampled {
+				r.chainResp <- chainResp{err: fmt.Errorf("metal: sampled chain: no redo (a greedy chain's only)")}
+				continue
+			}
+			if q.pos != taken+1 {
+				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: a redo at position %d, the chain's next is %d", q.pos, taken+1)}
+				continue
+			}
+			drain() // the forward queued at q.pos, the only one in flight
+			r.chainTok[(q.pos+1)&1].SetU32(uint32(q.id))
+			next = q.pos
 			commit()
 			r.chainResp <- chainResp{}
 		case chainOpNext:
@@ -359,8 +426,8 @@ func (r *resident) chainLoop() {
 				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: no forward in flight")}
 				continue
 			}
-			if q.sampled != sampled {
-				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: a sampled request on a greedy chain, or the reverse")}
+			if q.sampled != sampled || (q.row && sampled) {
+				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: a sampled request on a greedy chain, or the reverse, or a row from a sampled chain")}
 				continue
 			}
 			if want := draw0 + uint64(fifo[0].pos-pos0); sampled && (q.seed != draw0Seed(r) || q.draw != want) {
@@ -372,22 +439,36 @@ func (r *resident) chainLoop() {
 				f, err := oldest()
 				drain()
 				id := 0
+				var row []float32
+				if err == nil && q.row {
+					row, err = rowOf(head())
+				}
 				if err == nil {
-					id = pick(f)
+					id, taken = pick(f), f.pos
 					if len(fifo) == 0 {
 						commit()
 					}
 				}
-				r.chainResp <- chainResp{id: id, err: err}
+				r.chainResp <- chainResp{id: id, row: row, err: err}
 				continue
+			}
+			var h *Encoder
+			if q.row {
+				h = head()
 			}
 			commit() // the token after the newest, queued before the host waits
 			f, err := oldest()
 			id := 0
+			var row []float32
 			if err == nil {
-				id = pick(f)
+				id, taken = pick(f), f.pos
 			}
-			r.chainResp <- chainResp{id: id, err: err}
+			if h != nil {
+				if rw, herr := rowOf(h); err == nil {
+					row, err = rw, herr
+				}
+			}
+			r.chainResp <- chainResp{id: id, row: row, err: err}
 		case chainOpStop:
 			drain()
 			r.chainResp <- chainResp{}

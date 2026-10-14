@@ -1330,6 +1330,14 @@ func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() 
 // GreedyChainStop closes the chain.
 func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
 
+var _ decoder.ResidentGreedyChainRow = (*metalResident)(nil)
+
+// GreedyChainNextRow (decoder.ResidentGreedyChainRow) returns the next greedy token and Forward's row for it.
+func (a *metalResident) GreedyChainNextRow() (int, []float32, error) { return a.r.chainNextRow() }
+
+// GreedyChainRedo queues the forward at pos again with id as its input.
+func (a *metalResident) GreedyChainRedo(id, pos int) error { return a.r.chainRedo(id, pos) }
+
 var _ decoder.ResidentSampleChain = (*metalResident)(nil)
 
 // SampleChainAvailable (decoder.ResidentSampleChain, C-P02): the chain is available and so is the device draw.
