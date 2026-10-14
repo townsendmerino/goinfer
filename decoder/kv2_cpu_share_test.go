@@ -64,7 +64,6 @@ func TestKV2_cpuSessionShare(t *testing.T) {
 			hit := a.SharedHit(pb)
 			if hit != tc.wantHit {
 				t.Errorf("exact %v, %d own tokens: SharedHit = %d, want %d", exact, tc.ownLen, hit, tc.wantHit)
-				continue
 			}
 			b := m.NewSession(0)
 			if err := b.CopyPrefixFrom(a, hit); err != nil {
