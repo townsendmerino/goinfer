@@ -580,6 +580,12 @@ the type.
   - the root key carries a **namespace**;
   - by default (D4) a server has one namespace, and one per API key when keys are configured;
   - `-kv-share off` turns cross-sequence sharing off and keeps per-conversation continuation.
+- **Known limit, stated and accepted (owner, 2026-10-14).** A continuation is a request that extends a slot's whole
+  sequence, giving up less than one block. So under `-kv-share off`, or across namespaces, a request still takes a
+  slot's rows when its prompt matches everything the slot holds except up to 63 trailing tokens. A client that
+  already knows all but the last 63 tokens of another conversation can therefore learn from its time to first token
+  how far its guess matched. It learns nothing about a conversation it cannot already reproduce up to that tail.
+  `docs/server.md` states the same limit.
 
 ### 5.16 Observability
 
