@@ -342,15 +342,51 @@ of them changes a rule above.
 **The Claude Code pilot by day,** once the pin exists and the lock is free:
 `setsid nohup env PILOT=1 ONLY=i1v2-pilot-cc bash ~/goinfer-bench/i1v2-2026-10/matrix-pinned/run-i1v2.sh </dev/null >/dev/null 2>&1 &`.
 
-**Three things the owner should know before the pilots; none of them moves a rule:**
-- The registered order of the void checks puts *never reached* before *agent first*. A control run that compacts by itself and never
-  meets an overflow therefore reads *never reached*, not the *agent first* its prediction names. The second clause of *agent first* cannot
-  fire.
-- In I3's opencode `edit` r2 the wire shows a shrink, yet opencode's JSON output had no compaction part. If opencode's compactions do
-  not show in its output, the grader cannot count them. The pilot prints that comparison as a diagnostic, and a mismatch is for the owner
-  to rule on before opencode's night job.
-- `connect-cc-window-2026-10`'s tip, as read on 2026-10-14, adds a warning only. The 4,096 cap the registration names has to be in the
-  pinned build, or every Claude Code run refuses.
+**Three things the owner was told before the pilots** (2026-10-14): the void-check order would read a self-compacting control as *never
+reached*; opencode's JSON output showed no compaction where the wire showed one; and `connect-cc-window-2026-10` did not yet write the
+cap. The owner ruled on all three, in amendment 1.
+
+#### I1-v2 amendment 1, 2026-10-14, before any run (owner decisions; amends the registration of `6947a759`)
+
+Nothing had run when this was written. The predictions stand unchanged.
+
+1. **Control runs are reported, not voided.**
+   - The void checks apply to graded and planted runs only.
+   - A control run reports what came first, in one of three readings:
+     - *agent first:* a wire compaction (by the detector in 2) before goinfer's first overflow answer, or an agent compaction with no
+       overflow answer at all;
+     - *goinfer overflow first;*
+     - *neither.*
+   - A control that compacts by itself and never meets an overflow therefore reports *agent first*, which is what its prediction names.
+2. **A wire-side compaction detector, registered now.**
+   - *Definition:* a compaction is a drop, between consecutive main-agent requests, of more than **25% of the history above the fixed
+     part**. Main-agent requests are those carrying the session's first tool count; side, summarisation and subagent requests are
+     skipped. The history above the fixed part is the prompt less the first main-agent prompt. A drop explained by a `/compact` call
+     does not count; the runner sends none, so no drop is exempted.
+   - *Why 25%:* in I3's recorded opencode series, the largest drop that left the history in place was 3.2% (`q3-4b-11k-opencode-ovf`
+     `fix` r1, across a session-summary request). The smallest that reset it to near the fixed part was 52% (`fix` r2). 25% is eight
+     times the first and half the second.
+   - *As the fallback.* An agent falls back when its pilot shows the wire finding compactions and the agent's own output none; the
+     pilot writes this into `pilot-ok-<agent>`.
+     - The wire's count then feeds the PASS/FAIL rules, and so does the wire's own order: a request growing by at least half the median
+       step stands for a new read.
+     - `END` and the code word are still read from the agent.
+   - *As a cross-check, otherwise.*
+     - Each run is graded on the agent's own count, with the wire's beside it.
+     - **If grading on the other count would turn PASS into FAIL, or back, the run is contested**, and an agent with a contested deciding
+       run is parked (three more graded runs, as the registered park).
+     - A count that disagrees without flipping the verdict is reported and not graded. The wire undercounts an agent that compacts a
+       small history into a summary of nearly the same size (Codex at 9,408 in I3: 17 of its own, 1 on the wire), and it would overcount
+       a shrink that is not a compaction.
+   - *Tested on I3's records:* `test_gate_i1v2.py` finds 11 wire compactions in the 29 recorded opencode runs, each where the history
+     reset, and none elsewhere. opencode itself reported none.
+3. **Claude Code's output cap, re-derived.** `connect`'s cap is changing to min(8,192, `W` - 20,199 - 2,048)
+   (`connect-cc-window-2026-10`, in progress). At `W` = 28,672 that is **6,425**, not the registered 4,096.
+   - *Unchanged:* the windows (15,616, 17,664, 28,672); the room before the first overflow (10,961 for Claude Code, since goinfer refuses
+     at `W`, not at `W` less the reserve); and the told `2 x W` (57,344). None of these depends on the cap.
+   - *Changed:* goinfer's reserve for Claude Code becomes 6,425, so its curable-side sum is 24,136 of 28,672, still curable. The cap the
+     runner and the pilot read back becomes 6,425 (`plan-i1v2.json`).
+   - At the told 57,344 less 6,425, Claude Code's own threshold stays far above 28,672.
 
 ### I2 — `connect`: write each harness's configuration with the window goinfer actually serves
 

@@ -74,13 +74,14 @@
    "run_timeout": 3600,
    "label": {
     "arm": "pilot",
-    "regime": "I1-v2 pilot, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)"
+    "regime": "I1-v2 pilot, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)",
+    "expect_output_cap": "6425"
    },
    "cell_args": [
     "--told-window",
     "57344",
     "--expect-output-cap",
-    "4096"
+    "6425"
    ]
   },
   {
@@ -247,13 +248,14 @@
    "run_timeout": 3600,
    "label": {
     "arm": "graded",
-    "regime": "I1-v2 graded, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)"
+    "regime": "I1-v2 graded, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)",
+    "expect_output_cap": "6425"
    },
    "cell_args": [
     "--told-window",
     "57344",
     "--expect-output-cap",
-    "4096"
+    "6425"
    ]
   },
   {
@@ -274,11 +276,12 @@
    "run_timeout": 3600,
    "label": {
     "arm": "control",
-    "regime": "I1-v2 control, Qwen3-4B int4, f16 KV, -ctx 28672, told 28672 (a measurement configuration, not a user setting)"
+    "regime": "I1-v2 control, Qwen3-4B int4, f16 KV, -ctx 28672, told 28672 (a measurement configuration, not a user setting)",
+    "expect_output_cap": "6425"
    },
    "cell_args": [
     "--expect-output-cap",
-    "4096"
+    "6425"
    ]
   },
   {
@@ -299,13 +302,14 @@
    "run_timeout": 3600,
    "label": {
     "arm": "planted",
-    "regime": "I1-v2 planted, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)"
+    "regime": "I1-v2 planted, Qwen3-4B int4, f16 KV, -ctx 28672, told 57344 (a measurement configuration, not a user setting)",
+    "expect_output_cap": "6425"
    },
    "cell_args": [
     "--told-window",
     "57344",
     "--expect-output-cap",
-    "4096"
+    "6425"
    ],
    "serve": "/home/francis/goinfer-bench/i1v2-2026-10/bin/serve-cuda-i1v2-planted"
   }

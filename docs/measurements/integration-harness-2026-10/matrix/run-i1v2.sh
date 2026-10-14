@@ -55,7 +55,9 @@ rc=${PIPESTATUS[0]}
 if [ "$PILOT" = 1 ]; then
   python3 gate_i1v2.py --pilot "$B" "$OUT/records.jsonl" > "$OUT/pilot.txt" 2>&1
 else
-  python3 gate_i1v2.py "$OUT/records.jsonl" > "$OUT/gate-i1v2.txt" 2>&1
+  # amendment 1: an agent whose pilot showed its own compactions invisible is graded on the wire detector
+  FB=$(python3 -c 'import json,sys; print(",".join(a for a in sys.argv[2:] if json.load(open(f"{sys.argv[1]}/pilot-ok-{a}")).get("fallback")))' "$B" $AGENTS)
+  python3 gate_i1v2.py --fallback "$FB" "$OUT/records.jsonl" > "$OUT/gate-i1v2.txt" 2>&1
 fi
 echo "finished: $(date '+%F %T %Z') (matrix.py exit $rc)" | tee -a "$OUT/job.log"
 exit "$rc"
