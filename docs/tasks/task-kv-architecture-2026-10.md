@@ -731,9 +731,12 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   row-batched kernels in their own module (`cuda/prefill_splitkv.cu`, decode's split-KV attention with the query row on the grid), taken by a layer whose
   exact attention is past the bound; nothing below the bound changes. **Day gates pass:** the kernels equal `attn_batched` bit for bit in 360 cases, a forced
   route equals `attn_batched` over a whole model pass, a batched exact pass past the bound equals the per-token path bit for bit on the tiny fixture (logits and
-  every K and V row), and admission's figure equals the pass's allocations. **Night jobs queued:** the real-model identity (Gemma-3-4B, Gemma-4-E4B at 12,400
-  tokens), the speed bar (3x or more against the per-token path; 1.5x to 3x is parked) and a no-regression TTFT pair. The branch merges after `kv3-cuda-2026-10`,
-  when those read green and the CUDA suite has run on it.
+  every K and V row), and admission's figure equals the pass's allocations. **Night readings (2026-10-14, record §10):** speed PASS (Gemma-3-4B 5.68x, Gemma-4-E4B
+  3.31x against the per-token path at 12,400 tokens), no-regression TTFT PASS, the real-model identity PASS on both exact arms (Gemma-4-E4B, Gemma-3-4B levers off,
+  bit for bit) and **FAIL on Gemma-3-4B at default settings: cosine 0.9865 against the 0.99 bar**. The difference is the tensor-core GEMM's, which already reads
+  0.9901 on Gemma-3 at 12,000 tokens below the bound; the branch is the first to run it past 12,160 keys. **Open for the owner:** levers off on a pass that takes
+  the row kernels, or a registered depth-fidelity gate for that GEMM on Gemma-3. The CUDA suite timed out at 2 hours with only the four reds of the branch below;
+  its 41 unreached tests are re-queued. The branch merges after `kv3-cuda-2026-10`, once the decision is taken and the suite's remainder reads.
 - **Gates (sketch, registered per half in the record):**
   - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
   - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);

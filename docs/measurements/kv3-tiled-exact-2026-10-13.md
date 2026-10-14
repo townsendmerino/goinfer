@@ -134,3 +134,54 @@ clean. `TestAttnBatched_bitIdentical` has the same shape with buffers small enou
   the primary checkout, as `kv3-cuda-suite` does on the branch below this one. A test red in both is that branch's; one red only here is this branch's.
 - **Estimates** (from the census and the day smokes): G4 20 minutes, G5 45, G6 15. Jobs: `run-night.sh` with `JOB=identity`, `speed`, `ttft`.
 
+
+## 10. Night readings (2026-10-14, graded as registered)
+
+The jobs ran on the night of 2026-10-13 from the pinned worktree at `a0ce6e40` (code identical to the serve binary's `12d9d8fb`: the two commits between them change
+docs and `run-night.sh` only); the base binary is `kv3-cuda-2026-10` at `5282df9a`. Driver 595.91.07, RTX 2070 SUPER, the timing lock held by the runner. Logs and
+provenance: `kv3-tiled-exact-2026-10-13/night-2026-10-14/` (the suite log as `cuda-suite.log.gz`).
+
+| gate | reading | verdict |
+|---|---|---|
+| G4, Gemma-4-E4B, default, 12,400 tokens | 0 of 262,144 logits and 0 of 355,532,800 KV elements differ from the per-token path; 35 row groups, 0 tensor-core launches | **PASS** |
+| G4, Gemma-3-4B, levers off, 12,400 tokens | 0 of 262,144 logits and 0 of 863,436,800 KV elements differ; 25 row groups, 0 tensor-core launches | **PASS** |
+| G4, Gemma-3-4B, default, 12,400 tokens (amendment 1: cosine 0.99 or better and equal argmax) | **cosine 0.986525**, argmax equal; 25 row groups, 5,950 tensor-core launches; every logit differs (worst 6.12) | **FAIL** |
+| G5, time to first token at 12,400 tokens, per-token over the median batched | Gemma-3-4B **5.68x** (130.39 s against 22.92 and 23.02 s); Gemma-4-E4B **3.31x** (186.32 s against 56.43 and 56.28 s); no decline logged in any batched arm | **PASS** |
+| G6, old over new, median of three pairs | 1.5B: 1.006 at K = 512, 1.000 at 3,900; Gemma-3-4B: 0.994 at 512, 0.999 at 3,900 (lowest single pair 0.991) | **PASS** |
+
+**G4 is FAILED as registered.** The test asserts what amendment 1 registered for the Gemma-3 default arm (cosine 0.99 and equal argmax, last-row logits, against the
+per-token path), so the bar stays and the arm is recorded red. The two exact arms are bit-identical, so the row kernels themselves are not in question.
+
+**Where the 0.0135 comes from, and whether it is this branch's.** One reading by day (2026-10-14, the same test at 12,000 tokens with the row kernels forced,
+`day-2026-10-14-gemma3-12000.log`; the prompt is the 12,400-token prompt's first 12,000 tokens): levers off, 0 logits and 0 of 835,584,000 KV elements differ; default,
+**cosine 0.990073**, argmax equal, 5,712 tensor-core launches. Below the bound the forced row kernels equal `attn_batched` bit for bit with the tensor-core GEMM on (G2b,
+and the real-weights 512-row reading in §8), so 0.990073 is what the kernel set `kv3-cuda-2026-10` already ships produces at 12,000 tokens on Gemma-3. Read together:
+
+- the whole difference is the tensor-core GEMM's: both exact arms are bit-identical at both lengths, and of the two levers the arms toggle, the fused attention does
+  not serve head dim 256, so the GEMM is the only kernel that differs between them;
+- the fast lever's distance from the per-token path grows with depth on Gemma-3 (0.9963 at 1,200 tokens by day in §9, 0.9901 at 12,000, 0.9865 at 12,400; one prompt
+  each, a prefix of the same text), and it is already within 0.0001 of the bar below the bound, where nothing in this branch changes a bit;
+- on `kv3-cuda-2026-10` and on `main` a Gemma-3 prompt past 12,160 keys declines to the per-token path, so the default arm's 0.9865 is not reachable there. This branch
+  is the first to run the lever at that depth: the cause is pre-existing levers behaviour, the exposure is this branch's.
+
+The fast lever's own gate (the L2/L3 CUDA gate, `docs/completed/task-prefill-gap.md`) was graded on the Qwen models to K = 3,900 by agreement, hard flips and mean KL,
+not by a last-row cosine against the per-token path, and never on Gemma-3. Amendment 1's 0.99 is the KV3 fidelity bar carried over from `kv3-cuda-2026-10-13.md` §2.3.
+**An owner decision is open; the bar is not moved here.** The routes the evidence leaves: (a) a Gemma-3 pass that routes to the row kernels runs with the levers off
+(exact, G4's levers-off arm; that arm took 31.9 s at 12,400 tokens in the test rig against the default's 23.2 s and the per-token 138.4 s, a test-rig figure, not a
+G5 reading); (b) register a fidelity gate for the tensor-core GEMM at depth on Gemma-3 (several prompts, the near-tie rule, a parked band) and decide by it; one prompt
+already sits on 0.99 at 12,000, below the bound, so that gate also reads `main`'s Gemma-3 prefill between 3,900 and 12,160 tokens. Either way G5's Gemma-3 ratio was
+read at default settings and would need re-reading under (a).
+
+**Vacuity.** G4 asserts at least one row-batched launch group in every arm (25 and 35) and no tensor-core launch in an arm graded exact. G5's batched arms logged no
+`batched prefill declined` line (the string the decoder writes on a decline, which the script matches), the serve banner reads `prefill path: batched` and the
+per-token arm's reads `sequential — GOINFER_BATCHED_PREFILL=0`; Gemma-3's attention at head dim 256 has no fused kernel, so a batched Gemma-3 pass past 12,160 keys can
+only be the row kernels. G6 ran the base binary at `kv3-cuda-2026-10`'s tip, so the pair differs only in this branch.
+
+**The whole `./cuda/` suite: TIMEOUT, not graded.** It reached the job's 2-hour limit while `TestSpecPagerInteraction` was loading its 20 GB checkpoint: 394 PASS,
+4 FAIL, 47 SKIP; 41 of the package's 486 tests were not reached. The four failures are the four of `kv3-cuda-2026-10`'s suite of the same night, with the same
+messages and the same figures, so none is this branch's (§9's rule): `TestResidentDrafter_extendContext` (the second resident's allocation fails out of memory),
+`TestGemma4_26B_cache_B` (the 26B's resident declines, 4.00 GB free in both), `TestP20ExpertLocality` (3.98 GB free in both) (all three print the test's own
+`ISOLATED-RUN` note: they fail in the one-process heavy tier and pass alone), and `TestGemma4EModelPrefill_batchedBitIdentical` at 18 and 96 rows (`PrefillLast chunk 5:
+cuda prefill: empty prompt` in both: a chunker tail of zero rows, at lengths nowhere near the bound, from the branch below). Every test this branch adds ran and passed
+(`TestPrefillSplitKV_rowsEqualAttnBatched` and the four tiny `TestKV3Tiled_*`). The 41 unreached tests are re-queued as their own job (`kv3-tiled-suite-rest`); the
+job's check now accepts a narrowed run, which before required the row kernels' gate to appear in its log.

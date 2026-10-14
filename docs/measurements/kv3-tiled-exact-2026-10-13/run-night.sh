@@ -50,7 +50,9 @@ case $JOB in
     [ "$(grep -c '\[kv3-tiled\] G4 ' "$OUT/identity-real.log")" -ge 3 ] || rc=1 ;;
   speed) [ -s "$OUT/speed.json" ] && grep -q "^SUMMARY" "$OUT/speed.log" || rc=1 ;;
   ttft) [ -s "$OUT/ttft-ab.json" ] && grep -q "^SUMMARY" "$OUT/ttft-ab.log" || rc=1 ;;
-  suite) grep -q "^ok" "$OUT/cuda-suite.log" && ! grep -q "^--- FAIL\|^FAIL" "$OUT/cuda-suite.log" && grep -q "^--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched" "$OUT/cuda-suite.log" || rc=1 ;;
+  # a narrowed run must still have run something; the whole suite must have run the row kernels' own gate
+  suite) grep -q "^ok" "$OUT/cuda-suite.log" && ! grep -q "^--- FAIL\|^FAIL" "$OUT/cuda-suite.log" && grep -q "^--- PASS" "$OUT/cuda-suite.log" \
+           && { [ -n "${KV3_TILED_SUITE_RUN:-}" ] || grep -q "^--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched" "$OUT/cuda-suite.log"; } || rc=1 ;;
 esac
 echo "finished: $(date '+%F %T %Z') rc=$rc" | tee -a "$OUT/provenance.txt"
 exit "$rc"
