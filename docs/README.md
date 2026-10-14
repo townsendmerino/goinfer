@@ -91,8 +91,8 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 
 [`task-cpu-kv-f16-2026-10.md`](tasks/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
-its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
-open, and the gates to register before any code.
+its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
+decisions (2026-10-14), and its gates, registered that day before any code.
 
 [`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV11, filed 2026-10-13; KV0 done the same day)
 proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
@@ -182,7 +182,7 @@ asks how many wire dialects the coding-agent harnesses speak and how often a too
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (269)
+## Evidence — `measurements/` (270)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
