@@ -303,3 +303,20 @@ func TestOracle_share(t *testing.T) {
 		}
 	}
 }
+
+// TestHits_windowedUnalignedFastRows is G4(e) through the copy path: on a model with sliding-window layers, rows a fast
+// pass wrote from a start off a block boundary match no other request, so a hit stops at the first block holding one.
+func TestHits_windowedUnalignedFastRows(t *testing.T) {
+	root := Root{Model: "m", Precision: "f16"}
+	cm := ClassMap{Floor: 64, MinRows: 1, Windowed: true}
+	toks := seqOf(320, 8)
+	a := NewSlots(2)
+	commitPrompt(a, 0, root, toks[:100], nil, cm) // rows 0..99: one fast pass from 0
+	a.Acquired(0, 100, toks[:300])                // a continuation: a fast pass from row 100
+	a.Forget(0)
+	a.Commit(0, root, toks[:300], nil, 300, cm)
+	b := toks[:310]
+	if got := a.Hits(Request{Root: root, Tokens: b}, cm.ColdClasses(len(b))); got[0] != 64 {
+		t.Errorf("Hits = %v, want 64: block 1 holds rows 100.. from a pass that started off a block boundary", got)
+	}
+}
