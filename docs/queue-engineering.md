@@ -454,6 +454,29 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B21 · `gate gpu`'s heavy main tier no longer fits its 120 m timeout** — `linux`, filed 2026-10-14 (owner: file, not fix
+today)
+
+`gate gpu`'s `cuda-heavy` main group runs `./cuda/` in one process under `Timeout: "120m"`. The KV3 CUDA suite, run as one
+process on 2026-10-13, spent 6,507 s on the first 421 of the 469 main-tier tests, after removing the 684 s of fresh-process
+tests the gate defers. The remaining 48 tests had not started, so the group's wall is now at or past its timeout. A timeout that
+close to the wall reports a dead process and names whichever test was running (the comment above the cell says so). Two fixes are
+open, and the owner picks one. (a) Split the main group by test name, the shape `docs/measurements/kv3-cuda-2026-10-13/` uses
+for its `suite-a` and `suite-b` night jobs (`Test[A-L]` and `Test[M-Z]`, each with its own timeout). (b) Re-measure the
+tier's wall and re-register the timeout with headroom, per `docs/code-notes/cmd-gate.md`, "cudaHeavy: main-tier timeout".
+Evidence: `docs/measurements/kv3-cuda-2026-10-13.md` §5.
+
+**B22 · a hand mutation check on the KV3 chunker looped to ~50 GB of RAM** — `linux`, filed 2026-10-14 (owner: file, not
+fix today)
+
+While proving the chunker test red against the old 16-row tail rule on `kv3-cuda-2026-10` (2026-10-14, 08:18–08:21 PDT), a
+hand-run mutation check grew to about 50 GB of resident memory before it was stopped, and swap went from 8.5 to 27.7 GB. It
+overlapped another session's real-checkpoint run, which is why that run's wall time is not citable. The growth mechanism was not
+recorded. Find it first: whether the mutated chunker can emit an empty pass and a loop that never advances keeps appending, and
+whether production code can reach that loop. Then give the check, and any loop it can drive, an iteration or memory cap that
+fails loudly. If the loop is reachable from production, that part belongs in the correctness queue. Run hand mutation checks
+under a memory limit (`systemd-run --user --scope -p MemoryMax=…` or `ulimit -v`) until then.
+
 **H2 · Phi-3-mini's quantized output is junk past ~16 prompt tokens: per-row int8 ACTIVATION scales
 cannot hold its activation outliers** — `linux` (found and reproduced on nobara-pc), **filed 2026-09-25,
 diagnosed the same day. GUARD SHIPPED; per-group activation scales are the chosen fix (owner decision

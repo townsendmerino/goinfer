@@ -2,7 +2,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the night gates are queued. OP1 on CUDA and WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA and WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -573,8 +573,11 @@ folded into the scale, step 2 folds the cap's constants the same way (FlashInfer
 
 **Checkpoints.**
 - **Tiny:** `testdata/gemma2-tiny` and `testdata/gemma2-hd-tiny`.
-- **Real 2B:** `gemma-2-2b-it`, from the archive to `~/models` with `models-pull`: the Q8_0 GGUF the CPU's real gate reads
-  (`TestGemma12Real_gate`).
+- **Real 2B:** `gemma-2-2b-it`, the Q8_0 GGUF the CPU's real gate reads (`TestGemma12Real_gate`).
+  - **Corrected 2026-10-13, a fact and not a rule:** this line said the file comes from the archive with `models-pull`. It is
+    not in the archive. It is in nobara's `~/models` only (listed 2026-10-13), and `models-pull` on the Mac found nothing.
+  - **Copied 2026-10-14 08:16** from nobara's `~/models` to the Mac's `~/models`, with nobara's timing lock free, and verified:
+    sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe` on both boxes.
 - **Real 9B:** not in the archive or on either box today. It runs where a box has the disk and the memory for it, and
   otherwise the record says "9B not run" by name. The Mac does not have the disk today.
 - **The peer cell's file** is the GGUF Ollama ships for `gemma2:2b`, copied to `~/models` and loaded by both engines, with
@@ -600,6 +603,44 @@ folded into the scale, step 2 folds the cap's constants the same way (FlashInfer
 - The control failing voids the session.
 - **Parked, for the owner:** Gemma 2 clears 0.88 but its min cosine is more than 0.03 under Gemma 3's from the same session.
   The feature is not declared while parked.
+
+**G2-R's baseline step, added 2026-10-13 on the owner's ruling, before any G2-R run.** G2-T's bar sat within 0.0003 of
+its fixture's own no-softcap agreement, which nobody had measured. This step measures G2-R's before its graded arm runs.
+- **The checkpoint:** `gemma-2-2b-it-Q8_0.gguf`, sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe`, in
+  the Mac's `~/models`.
+- **Arm B, the baseline.** G2-R's harness and metric (greedy lockstep off the CPU, 24 steps, the min logit cosine over
+  positions from 2), at each registered quant (int8int8 and int4), with the softcap removed on BOTH sides.
+  - **How it is removed:** a test hook, built only under `goinfer_testhooks`, zeroes the model's attention softcap before
+    the resident is built. It is applied to the CPU model and to the Metal model alike.
+  - **The hook is checked before B uses it (added 2026-10-13, before the hook was written):** on the CPU, the 2B's logits
+    with the hook must differ from its logits without it, on the same tokens. If they do not, the hook is broken and the
+    run stops there.
+  - **What is recorded:** the min cosine per quant.
+- **The stopping rule on B:** if 0.88, G2-R's bar, is within 0.001 of B's min cosine at either quant (B under 0.881), stop
+  and report. The graded arm does not run and the bar is not changed.
+- **Otherwise, two arms, once each, in this order, in B's session:**
+  - **Arm G, graded:** G2-R as registered, the softcap on both sides, with its control and its band.
+  - **Arm P, the planted defect:** the softcap dropped from the Metal build only, the CPU keeping it. P must FAIL G2-R's
+    rule (min cosine under 0.88, or argmax equal at under half the positions) at both quants.
+  - **P also records how much the softcap acts on the gate's prompts (added 2026-10-13, before the hook was written).**
+    All three are read on the CPU, on the same tokens P feeds:
+    - the share of attention scores, over every layer, head and key, with |score| > 15 before the cap;
+    - the largest |score| before the cap;
+    - the worst per-position logit cosine between the capped and the uncapped CPU runs.
+- **The outcome:**
+  - G passes and P fails: G2-R passes, and the declaration may merge.
+  - G fails or is parked: stop and report, with no retuning.
+  - **P does not fail G2-R's rule at a quant: G2-R is VOID as a softcap test at that quant, not a pass.** Report it with
+    P's three numbers. Do not declare, and do not change the bar or the prompts after the fact. The next step would be a
+    prompt set registered in advance for long contexts, where the scores are larger.
+- **Void, in addition to G2-R's own conditions:**
+  - B, G and P not in one session;
+  - a resident that reports a cap that is not its arm's (0 in B, the model's in G and P);
+  - the Gemma 3 control's checkpoint missing. The test reads `~/models/gemma-3-4b-it-Q4_K_M.gguf`, and on the Mac the file
+    is in `~/models/gemma-3-4b-it-gguf/`. The run links it to the path the test reads for the session, and removes the
+    link after.
+- **Tier: by day.** The 2B loads twice per arm and quant, and Gemma 3 4B and the 1.5B once each; about 15 minutes in all
+  (INFERRED from the tiny runs and the load sizes, not measured). Under the timing lock, with no night job running.
 
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
@@ -683,13 +724,42 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 - **What is on main:** the digest instrument; step 1 (`metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
   variant of the kernel source (`metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
   is undeclared. Gemma 2 still decodes on the CPU under Metal.
-- **G2-T's failure is the registration's, not shown to be the softcap's.** With the cap removed from the model on both sides
-  the same fixtures read 0.999116 and 0.999296: the bar was within 0.0003 of the fixture's own agreement before any softcap.
-  It was taken from Gemma 1's test without that control. The record has the diagnostics.
-- **Owner decision OP1-M1:** the bar stands and the 0.0003 is found, or G2-T is amended to be read against the fixture's
-  no-cap control. The declaration, the matrix and the Gemma 2 parity tests are on the branch `op1-metal-declare-2026-10`,
-  unmerged, and merge only after that ruling.
+- **G2-T: FAILED.** The 0.999 bar was copied from Gemma 1's test without first measuring this fixture's no-softcap baseline
+  at int4, which is 0.9991 to 0.9993. The softcap's own contribution is shown by the planted defect: with the cap dropped
+  from the Metal build the fixtures read 0.978 and 0.980. The record has the diagnostics.
+- **Owner decision OP1-M1 (2026-10-13): the bar stays, and it is not amended against the numbers already seen.** The tiny
+  fixtures are now diagnostics, and the real Gemma 2 2B gate (G2-R) decides the declaration (below). The declaration, the
+  matrix and the Gemma 2 parity tests stay on the branch `op1-metal-declare-2026-10`, unmerged, until G2-R passes.
 - **Step 1 left one kernel out,** as amended above: `attention_fa_blk`. Routing it is owed with a re-run of the R17 grading.
+- **Queued on the Mac's night queue 2026-10-13, after the two KV1 jobs,** at main `c02205b8` against `d03da21f`:
+  - `op1-identity-real-metal` (35 min): G1-M and G2-I on the real checkpoints in `~/models`;
+  - `op1-gate-gpu-metal` (25 min): the Metal device gate at the merge;
+  - `op1-speed-metal` (75 min): G2-S, by `docs/measurements/op1-metal-2026-10-13/run-op1-night.sh`.
+  - The queue is 4 h 35 min. A job that would end after 06:30 is not started and carries to the next night.
+- **G2-S runs two cells the registration did not have,** reported and not gating: decode on the 0.5B at depth 128 and 3900.
+  At depth 3900 the 0.5B takes `attention_fa_blk64`, the one split-KV kernel step 1 routed; the registered 1.5B cell at that
+  depth takes the unrouted block kernel.
+- **Not queued:** G2-R (no declaration, and the checkpoint is not on the Mac) and G2-P, the peer cell (no declaration, and
+  the harness has no Gemma 2 key, calibrated prompts or Ollama import yet).
+- **Graded 2026-10-14: all three PASS.**
+  - G1-M and G2-I on real checkpoints: byte-identical on the three cells that ran (Qwen2.5-Coder 0.5B and 1.5B, Qwen3 0.6B).
+  - The Metal device gate: 8 pass, 0 fail.
+  - G2-S: every registered cell's interval clears 0.97; the lowest bound is 0.9919.
+
+**What decides the declaration (owner's ruling, 2026-10-13): no G2-T2. The tiny fixtures are diagnostics, not a gate.**
+- **Why not G2-T2.** Metal cannot run f32 weights: a resident build declines them by design
+  (`metal/model.go:f32Projection`). The nearest runnable setting, int8int8, was already read in G2-T's diagnostics
+  (0.999255 and 0.999334), so a gate on it could not fail on anything new.
+- **What the tiny fixtures show, kept as a record:**
+  - the planted defect separates: with the cap dropped from the Metal build the fixtures read 0.978 and 0.980;
+  - the int8int8 readings are 0.999255 and 0.999334. That setting runs native int8 weights
+    (`metal/model.go:w8Weights`) with the library compiled without fast math (`metal/model.go:w8PreciseMath`);
+  - **the tanh:** at int4 the library is compiled with fast math, so the capped function's plain `tanh` is the fast one
+    (INFERRED from the math-mode rule; the compiled code was not disassembled). An explicit `precise::tanh` moved
+    `gemma2-tiny` by 0.00005 and `gemma2-hd-tiny` by nothing.
+- **The softcap's correctness evidence is the kernel-level float64 checks:** all 152 cases pass, and all 152 fail with
+  the softcap dropped (G2-K, G2-D).
+- **The real Gemma 2 2B parity gate, G2-R, decides the declaration.** Its baseline step is below.
 
 ## 5. Track RF — one ragged forward pass
 
