@@ -12,6 +12,7 @@ type Slots struct {
 	seqs []*Seq
 	uses []uint64
 	pend []pending
+	live []bool
 	cur  int
 	tick uint64
 }
@@ -28,7 +29,7 @@ type pending struct {
 // NewSlots returns the adapter for n slots (at least one).
 func NewSlots(n int) *Slots {
 	n = max(n, 1)
-	return &Slots{m: New(0), seqs: make([]*Seq, n), uses: make([]uint64, n), pend: make([]pending, n)}
+	return &Slots{m: New(0), seqs: make([]*Seq, n), uses: make([]uint64, n), pend: make([]pending, n), live: make([]bool, n)}
 }
 
 // Manager is the block manager under the adapter.
@@ -44,14 +45,14 @@ func (a *Slots) Resize(n int) {
 	if n == len(a.seqs) {
 		return
 	}
-	keep, kept := a.seqs[a.cur], a.pend[a.cur]
+	keep, kept, live := a.seqs[a.cur], a.pend[a.cur], a.live[a.cur]
 	for i := range a.seqs {
 		if i != a.cur {
 			a.drop(i)
 		}
 	}
-	a.seqs, a.uses, a.pend, a.cur = make([]*Seq, n), make([]uint64, n), make([]pending, n), 0
-	a.seqs[0], a.pend[0] = keep, kept
+	a.seqs, a.uses, a.pend, a.live, a.cur = make([]*Seq, n), make([]uint64, n), make([]pending, n), make([]bool, n), 0
+	a.seqs[0], a.pend[0], a.live[0] = keep, kept, live
 	if keep != nil {
 		keep.slot = 0
 		for i, id := range keep.table {
@@ -200,10 +201,10 @@ func claimAt(images []ImageSpan, pos int) (ImageSpan, bool) {
 
 // PickSlot chooses a slot for a prompt from each slot's score (tokens of the prompt it holds), its length and its
 // last-use tick. The best-scoring slot wins when reusing it keeps at least as much of it as the new suffix will
-// overwrite: a continuation of that slot's conversation. A match shorter than what it would discard is a shared lead
-// (a chat template's preamble), and taking it would cut another conversation's history to save a few tokens; such a
-// prompt takes an empty slot, else the least recently used one. busy (nil: none) marks slots another running
-// generation holds; they are never picked. -1 when every slot is busy.
+// overwrite and gives up less than one block of it: a continuation of that slot's conversation. Anything else would
+// cut another conversation's history (a shared lead such as a chat template's preamble, or a shared preamble the
+// prompt can take by copy instead, Hits), so the prompt takes an empty slot, else the least recently used one. busy
+// (nil: none) marks slots another running generation holds; they are never picked. -1 when every slot is busy.
 func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
 	free := func(i int) bool { return i >= len(busy) || !busy[i] }
 	best := -1
@@ -212,7 +213,7 @@ func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
 			best = i
 		}
 	}
-	if best >= 0 && scores[best] >= lens[best]-scores[best] {
+	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < BlockRows {
 		return best
 	}
 	for i, l := range lens {
@@ -257,6 +258,7 @@ func fingerprint(tokens []int) uint64 {
 func (a *Slots) Forget(slot int) { a.drop(slot) }
 
 func (a *Slots) drop(slot int) {
+	a.live[slot] = false
 	s := a.seqs[slot]
 	if s == nil {
 		return
@@ -278,6 +280,10 @@ func (a *Slots) drop(slot int) {
 // classes Acquired read, and decode's rows are ClassExact. Without a matching Acquired the rows are ClassUnknown.
 // tokens and images become the sequence's and must not be modified afterwards.
 func (a *Slots) Commit(slot int, root Root, tokens []int, images []ImageSpan, promptLen int, cm ClassMap) {
+	a.commit(slot, root, tokens, images, promptLen, cm)
+}
+
+func (a *Slots) commit(slot int, root Root, tokens []int, images []ImageSpan, promptLen int, cm ClassMap) {
 	p := a.pend[slot]
 	a.pend[slot] = pending{}
 	a.drop(slot)
