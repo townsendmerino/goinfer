@@ -5,10 +5,13 @@ package metal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"os"
 	"runtime/debug"
 	"slices"
 	"testing"
+	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -251,4 +254,32 @@ func TestKV2_copyThenSuffixEqualsWhole(t *testing.T) {
 	if b, p := kv2RowsEqual(kv2Slot(t, r, 1, 1000), want, kv2RowBytes(r), 0, 1000); b < 0 || p != 500 {
 		t.Errorf("control: first difference at buffer %d row %d, want row 500", b, p)
 	}
+}
+
+// TestKV2_copyCost is G7's in-process copy cost on Metal (reported, not graded): CopyKV of 18,176 rows (a header-off
+// Claude Code preamble's whole blocks) between two slots of a real checkpoint, five times, the median printed. The
+// checkpoint is GOINFER_METAL_MC3_MODEL (default the 1.5B).
+//
+//	GOINFER_METAL_MC3=1 go test -run TestKV2_copyCost -v ./metal/
+func TestKV2_copyCost(t *testing.T) {
+	_, r := mc3LoadCheckpoint(t, 2, 18432)
+	if len(r.kvSlotBufs) < 2 {
+		t.Skip("one slot")
+	}
+	a := &metalResident{r: r, hidden: r.H}
+	const rows = 18176
+	var ms []float64
+	for range 5 {
+		t0 := time.Now()
+		if err := a.CopyKV(0, 1, 0, rows); err != nil {
+			t.Fatal(err)
+		}
+		ms = append(ms, float64(time.Since(t0).Microseconds())/1000)
+	}
+	slices.Sort(ms)
+	var bytes int
+	for _, b := range kv2RowBytes(r) {
+		bytes += b * rows
+	}
+	fmt.Fprintf(os.Stderr, "[kv2-g7 metal] CopyKV of %d rows (%.0f MB): median %.2f ms of %v\n", rows, float64(bytes)/1e6, ms[2], ms)
 }
