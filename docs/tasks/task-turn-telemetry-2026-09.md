@@ -65,6 +65,48 @@ A `timings` object beside `usage`: `queue_wait_ms`, `prefill_ms`, `decode_ms`, `
 - This is what lets W34 show a prefill *duration* at all; until it exists the UI is under
   instruction to show a token count and no rate.
 
+#### X1, registered 2026-10-14, before any code (RF0 part 1, `docs/tasks/task-forward-architecture-2026-10.md` §5.4)
+
+The owner's brief adds the host gap to X1's four, and names three routes. This is what "done" means.
+
+- **Where it appears.** `goinfer_timings`, an object inside `usage`, Experimental, on:
+  - `/v1/chat/completions`: buffered, and the final usage chunk when streamed with `include_usage`;
+  - `/v1/messages`: the message's `usage`, and the `message_delta` usage when streamed;
+  - `/v1/responses`: the response's `usage`, which the streamed `response.completed` event carries too.
+- **The fields.** Durations are milliseconds, as numbers rounded to 0.001; counts are integers.
+
+  | field | from | to | measured in |
+  |---|---|---|---|
+  | `queue_ms` | the request prepared (tokenized, sampling parsed) | the generation started (admission granted) | serve |
+  | `prefill_ms` | the generation started | the prompt's last logits ready (slot choice and any KV copy included) | decoder |
+  | `prefill_tokens`, `prefill_reused_tokens` | tokens computed and tokens reused | — | decoder |
+  | `ttft_ms` | the generation started | the first token reached serve (no queue, no network) | serve |
+  | `decode_ms` | the first token emitted | the generation ended | decoder |
+  | `decode_tokens` | tokens decode emitted | — | decoder |
+  | `host_gap_ms` | `decode_ms` minus the time decode spent waiting for forwards | — | decoder |
+  | `decode_overlapped` | — | — | decoder |
+
+  - A forward is counted from a token's commit to the next logits, including that token's embedding lookup. So
+    `host_gap_ms` is the host's own per-token work on the decode path: sampling, a processor, streaming.
+  - `decode_overlapped` is true when the next forward was queued before that work (the greedy or sampled chain, the
+    optimistic forward). The gap then ran beside the device instead of idling it.
+- **Absent, not zero.**
+  - The decoder's fields are absent on a path that does not measure them: image turns, speculative, drafter and
+    grammar-fused decoding, block-spec, and any generation that ended in an error or a cancellation.
+  - `queue_ms` and `ttft_ms` are present whenever the turn ran through serve's generation path.
+- **Cost.** A clock at each stage boundary, plus two monotonic clock reads per decode token for the forward wait.
+  - That per-token read departs from ground rule 3: the host gap cannot be read at stage boundaries, and the owner asked
+    for it.
+  - X6's overhead gate decides it, as a later night cell: decode tok/s against the same build without the per-token
+    read, paired. If that is not within noise, the per-token read goes and `host_gap_ms` with it.
+- **Done when:**
+  - serveapp unit tests on the CPU tiny model show the fields on all three routes, buffered and streamed;
+  - they assert absent-not-zero on an unmeasured path;
+  - they hold the values consistent: `0 <= prefill_ms <= ttft_ms`, `0 <= host_gap_ms <= decode_ms`,
+    `prefill_tokens + prefill_reused_tokens` = the prompt's tokens, `decode_tokens` >= the completion's tokens;
+  - `docs/server.md` documents the fields;
+  - no timed run.
+
 ### X2 — make the prefill split unambiguous
 `prefill_reused_tokens` stays; add `prefill_computed_tokens` and make **both absent** on a path
 that does not track reuse. A caller can then tell "nothing was reused" from "nobody counted",
