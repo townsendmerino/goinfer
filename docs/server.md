@@ -63,7 +63,8 @@ other route**, so a liveness probe must send the API key when one is configured 
 entry also carries goinfer-only fields: the resolved `decode_path`/`prefill_path`, and `context_window`,
 the exact token limit a text request is held to (the resident KV cap on a GPU backend when that is lower than
 the model's own maximum), from the same function that enforces it, repeated as `context_length` and
-`max_model_len` (the names Hermes and Oh My Pi read); and `vision`, whether the model
+`max_model_len` (the names Hermes and Oh My Pi read); `max_positions`, the model's own maximum context, which no `-ctx`
+goes past; and `vision`, whether the model
 accepts image content parts (from the same check that refuses them otherwise);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 `frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**

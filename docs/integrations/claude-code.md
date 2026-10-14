@@ -59,6 +59,20 @@ CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768 CLAUDE_CODE_ATTRIBUTION_HEADER=0 claude
 Whether an 8 GB card holds a 7B at `-ctx 32768` is not measured here; the numbers below are the 2026-09-02 run at 16384,
 with a synthetic 25-tool turn of 2,293 tokens, not the real client's request.
 
+**Claude Code compacts on its own, and `connect` sizes its output cap for that.** Claude Code applies
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` only to a model id it cannot resolve to a Claude model and that carries no `[1m]`
+([Claude Code's model configuration](https://code.claude.com/docs/en/model-config#correct-the-window-for-a-gateway-or-custom-model-id)),
+so serve the model under a name without `claude-` in it; `connect` warns about one that has it. Claude Code then compacts
+once its context plus its output cap (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) reaches that window, and nothing it documents
+moves that point later at a small window: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts 100,000 and up, and
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower it. At `-ctx 28672`, with a 7,168-token cap, it compacted after every
+file read and stopped on "Autocompact is thrashing"
+([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). So `connect claude-code` writes the
+cap as what the window leaves beside the first request (the 20,199 tokens it prints) and a 2,048-token margin, at most
+8,192: 6,425 at `-ctx 28672`, 8,192 at `-ctx 32768`. A longer reply is cut off at the cap. When the cap comes out under
+4,096 it warns and names `-ctx 26343`, or says the model cannot hold the first request when its own maximum context
+(`/v1/models` `max_positions`) is smaller.
+
 ## What passed, and the numbers
 
 **Model class:** Qwen2.5-**7B**-Instruct q4 → int4, CUDA-resident. A model that can hold an

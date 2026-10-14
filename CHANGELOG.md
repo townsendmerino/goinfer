@@ -38,6 +38,15 @@ configuration: the base URL, the model, and **the context window the server real
 
 - **It says whether the agent fits.** Each agent's first request was measured (Claude Code 20,199 tokens, opencode 7,165, Codex 5,850): the
   output says viable, marginal or not viable for this window, and names the `-ctx` that would fit.
+- **`connect claude-code` sizes Claude Code's output cap to the window and warns when it comes out small.** Claude Code compacts when its
+  context plus its output cap reaches the window it is told (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, which `connect` sets to the window the server
+  enforces). `connect` now writes `CLAUDE_CODE_MAX_OUTPUT_TOKENS` as what the window leaves beside its first request (20,199 tokens) and a
+  2,048-token margin, at most 8,192: 6,425 at 28,672, 8,192 from 30,439 up. Under 4,096 it warns and names `-ctx 26343`, or says the model
+  cannot hold the first request when its own maximum (`max_positions`, below) is smaller. At 28,672 with a 7,168-token cap Claude Code
+  compacted after every file read and stopped on "Autocompact is thrashing". A model id Claude Code may read as a Claude model, for which it
+  does not apply that variable, is warned about too. No documented Claude Code setting makes it compact later at a window this small
+  (`CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts 100,000 and up, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower the trigger).
+- **`/v1/models` publishes `max_positions`**, the model's own maximum context, beside `context_window`.
 - **`-write` patches the agent's own file in place**, keeping every other setting and the order they were in: `~/.claude/settings.json`,
   `./opencode.json` (or the per-user file with `-global`), `~/.codex/config.toml`. It refuses a window the agent cannot fit unless `-force`.
 - **`-undo` restores the file byte for byte**, or removes it if `connect` created it, and refuses if you have edited it since.
