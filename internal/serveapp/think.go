@@ -198,9 +198,12 @@ type thinkOut struct {
 	// keeps drive's progress accounting honest while the model reasons.
 	onReasoning func(string)
 	raw         bool // deepseek-legacy: content is the raw text, tags included; reasoning is ALSO reported
-	// endedInReasoning is set when the reply ended inside an unclosed block: truncated while thinking, so there is no
-	// answer — content is empty and finish_reason is "length".
+	// endedInReasoning is set when the reply ended inside an unclosed block: truncated while thinking, or a model that ended
+	// its turn without closing the block. Either way there is no answer.
 	endedInReasoning bool
+	// reasoning is all of the reply's reasoning, whatever the route does with it: a call written inside the block is read
+	// from it (settleCalls), and an empty answer says whether there was any (emptyAnswerOf).
+	reasoning strings.Builder
 }
 
 // newThinkOut builds the router for a request rendered with tmpl from turns, or nil when nothing should be split.
@@ -223,6 +226,7 @@ func newThinkOut(tmpl *chat.Template, turns []chat.Turn, ts thinkSettings, onRea
 func (o *thinkOut) feed(piece string) string {
 	r, c := o.rs.Push(piece)
 	if r != "" {
+		o.reasoning.WriteString(r)
 		o.onReasoning(r)
 	}
 	if o.raw {
@@ -246,6 +250,7 @@ func (o *thinkOut) finish() string {
 	r, c, truncated := o.rs.Finish()
 	o.endedInReasoning = truncated
 	if r != "" {
+		o.reasoning.WriteString(r)
 		o.onReasoning(r)
 	}
 	if o.raw {

@@ -215,7 +215,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		// Nothing is sent between response.created and the first token, and on CPU that gap is the whole prefill: a
 		// heartbeat covers it, as it does on the tools-active branch.
 		stopBeat := sseHeartbeat(ss)
-		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
 		})
@@ -226,7 +226,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		out := []any{rs.closeMessage(sb.String())}
-		rs.emit("response.completed", map[string]any{"response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)})
+		rs.emit("response.completed", map[string]any{"response": markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp))})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
@@ -236,7 +236,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 
 	var sb strings.Builder
-	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopHit, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -246,7 +246,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
+	writeJSON(w, http.StatusOK, markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
 }
 
@@ -302,7 +302,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		var sb strings.Builder
 		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
-		finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
 		})
@@ -313,7 +313,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			return
 		}
 		out := []any{rs.closeMessage(sb.String())}
-		rs.emit("response.completed", map[string]any{"response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)})
+		rs.emit("response.completed", map[string]any{"response": markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp))})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
@@ -322,7 +322,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopHit, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -332,7 +332,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
+	writeJSON(w, http.StatusOK, markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
 }
 
@@ -477,7 +477,10 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
-	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
+	resp := markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp))
+	if t.fromReasoning && len(calls) > 0 {
+		resp[fromReasoningField] = true
+	}
 	if req.Stream {
 		rs.emit("response.completed", map[string]any{"response": resp})
 		sseDone(ss)
