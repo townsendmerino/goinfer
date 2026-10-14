@@ -227,3 +227,19 @@ cells fall back to it:
   to it in proportion to 1/sqrt(3). Decode rate within a served session is steady, so this is taken as small, but it is not measured here,
   so 4 pairs is a floor, not a margin.
 - **Cost:** 8 sessions x (137 s Mellum2.1 + 200 s 26B), about 45 minutes; re-queued at 50.
+
+**Result, 2026-10-14: PASS on both models**, graded as registered with amendment 1. It ran on nobara under the night runner, started by
+the owner at 11:20 PDT, 11:34 to 12:34. The binaries were checked against `binaries.sha256` first (both OK), on driver 595.91.07 with
+the GPU idle at the start. All 8 sessions per model ran, with 12 completions per arm, each 640 of 640 tokens. Every session was
+resident and windowed, so none was void.
+
+| model | median main (tok/s) | median new (tok/s) | R = new / main | range main | range new | verdict |
+|---|---|---|---|---|---|---|
+| Mellum2.1 (`--ctx 16384 --moe-cache-experts`) | 67.10 | 66.90 | **0.9971** | 66.70–67.76 | 66.68–67.26 | PASS |
+| Gemma-4-26B-A4B (`--moe-cache-experts`) | 37.25 | 37.13 | **0.9970** | 36.95–37.54 | 36.56–37.46 | PASS |
+
+Read beside the verdict and not graded: the per-restart-pair ratios (mean new over mean main within each adjacent main/new pair) were
+1.0031, 0.9995, 0.9897 and 0.9979 on Mellum2.1, and 0.9965, 0.9883, 0.9989 and 0.9962 on the 26B. The texts are identical within each
+arm and across arms. The prediction (PASS 0.7) holds. The step stays at 64. Files: `speed-guard-2026-10-14/` beside this record
+(`summary.json`, `results.json`, `provenance.txt`, `binaries-check.txt`); the server logs are in the run directory under
+`~/goinfer-logs/kvwindow-ring-2026-10-14/`.
