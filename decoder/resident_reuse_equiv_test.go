@@ -205,7 +205,8 @@ func oldPickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
 			best = i
 		}
 	}
-	if best >= 0 && scores[best] >= lens[best]-scores[best] {
+	// KV2's choice 3 (docs/measurements/kv2-2026-10-14.md, G1's exception): in place only when less than a block is given up.
+	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < 64 {
 		return best
 	}
 	for i, l := range lens {

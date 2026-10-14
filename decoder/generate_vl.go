@@ -116,13 +116,13 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 			// below would die mid-prefill with no CPU fallback (its error just sets g.err and returns). Decline the fast path up
 			// front when it would overrun the cap, falling through to the "not fully reused" path (release resBusy, tower + CPU
 			// prefill + re-claim).
-			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= lastEnd {
+			if reuseFrom := m.residentReuseLenIn(ids, claim, nil, kvScopeOf(ctx)); reuseFrom >= lastEnd {
 				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
 					// FULL reuse: the image, and everything before it, is already resident.
 					// Stay inside THIS claim (no release/reclaim) — reseed via the ordinary
 					// ResidentForward.Forward path (no CPU prefill, no tower call at all).
 					g.PrefillReused = reuseFrom                                      // observable proof the fast path actually fired
-					m.residentForgetIDs()                                            // forget first: from here the cache is mid-write
+					m.residentForgetIDsIn(kvScopeOf(ctx))                            // forget first: from here the cache is mid-write
 					logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here yet
 					if err != nil {
 						atomic.StoreInt32(&m.resBusy, 0)
@@ -147,7 +147,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 					if g.err == nil {
 						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 					} else {
-						m.residentForgetIDs()
+						m.residentForgetIDsIn(kvScopeOf(ctx))
 					}
 					atomic.StoreInt32(&m.resBusy, 0)
 					return
@@ -193,7 +193,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 				committed := false
 				defer func() {
 					if !committed {
-						m.residentForgetIDs()
+						m.residentForgetIDsIn(kvScopeOf(ctx))
 					}
 					atomic.StoreInt32(&m.resBusy, 0)
 				}()
@@ -230,7 +230,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 			// record.
 			defer func() {
 				if !committed {
-					m.residentForgetIDs()
+					m.residentForgetIDsIn(kvScopeOf(ctx))
 				}
 				atomic.StoreInt32(&m.resBusy, 0)
 			}()
@@ -327,10 +327,10 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 			// Same cap decline as GenerateVL's reuse site: a prompt in (ResidentContextCap, MaxPositions) already passed prepare's
 			// MaxPositions check, so residentPrefillSeedMRoPE below would die mid-prefill with no CPU fallback. Decline up front
 			// and fall through to the "not fully reused" release and re-claim path.
-			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= lastEnd {
+			if reuseFrom := m.residentReuseLenIn(ids, claim, nil, kvScopeOf(ctx)); reuseFrom >= lastEnd {
 				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
 					g.PrefillReused = reuseFrom // observable proof the fast path actually fired
-					m.residentForgetIDs()
+					m.residentForgetIDsIn(kvScopeOf(ctx))
 					logits, err := m.residentPrefillSeedMRoPE(ctx, r, ids, reuseFrom, mropeDelta)
 					if err != nil {
 						atomic.StoreInt32(&m.resBusy, 0)
@@ -356,7 +356,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 					if g.err == nil {
 						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 					} else {
-						m.residentForgetIDs()
+						m.residentForgetIDsIn(kvScopeOf(ctx))
 					}
 					atomic.StoreInt32(&m.resBusy, 0)
 					return
@@ -395,7 +395,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) && (deep == nil || deepOK) {
 			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
 				if recurrent {
-					m.residentForgetIDs()
+					m.residentForgetIDsIn(kvScopeOf(ctx))
 				}
 				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, rmp, ids, feats, spans, mropePos, deep); ferr == nil {
 					g.ImgPrefillResident = true
@@ -411,7 +411,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 					committed := false
 					defer func() {
 						if !committed {
-							m.residentForgetIDs()
+							m.residentForgetIDsIn(kvScopeOf(ctx))
 						}
 						atomic.StoreInt32(&m.resBusy, 0)
 					}()
@@ -455,7 +455,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
 			defer func() {
 				if !committed {
-					m.residentForgetIDs() // see GenerateVL's identical comment
+					m.residentForgetIDsIn(kvScopeOf(ctx)) // see GenerateVL's identical comment
 				}
 				atomic.StoreInt32(&m.resBusy, 0)
 			}()

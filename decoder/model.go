@@ -75,9 +75,11 @@ type Model struct {
 	// kv is the KV manager over the resident's slots (internal/kvmgr, resident_reuse.go): one sequence per slot, the
 	// slot a prompt takes, what it may reuse, and the index of published blocks. nil until first used. The bound
 	// slot's record is mirrored in the resIDs fields above. kvLora is the adapter runtime each slot's sequence was
-	// built under, by slot (the manager keys on the adapter's identity, not the runtime).
+	// built under, by slot (the manager keys on the adapter's identity, not the runtime); kvNS is the sharing namespace
+	// of the request that took each slot (KVScope).
 	kv            *kvmgr.Slots
 	kvLora        []*loraRuntime
+	kvNS          []string
 	kvF16         bool         // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
 	kvF16Decline  string       // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
@@ -1700,6 +1702,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
 	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
 	mc3Slot := -1
+	mc3Committed := false // the generation committed its slot (commitResident); else its published prompt is forgotten
 	if useGPU {
 		// The resident path drives the model's one shared positional KV; two concurrent generations would interleave writes at
 		// overlapping positions and corrupt it. Claim it non-blockingly: a loser falls back to the staged CPU path, which uses this
@@ -1761,12 +1764,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
-		var reuseFrom int
+		var acq kvAcquired
+		scope := kvScopeOf(ctx)
 		if mc3 != nil {
 			// MC3: choose a slot no other running generation holds, and prefill into it, with the resident to
 			// ourselves (between the other generations' steps).
 			mc3.exclusive(func() {
-				reuseFrom, mc3Slot = m.residentAcquireSlot(prompt, nil, lora, mc3.busySlots())
+				acq = m.residentAcquireIn(prompt, nil, lora, mc3.busySlots(), scope)
+				mc3Slot = acq.slot
 				if mc3Slot < 0 {
 					err = fmt.Errorf("decoder: no free resident KV slot for a concurrent generation")
 					return
@@ -1778,21 +1783,30 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
 			}
 			if err == nil {
-				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, reuseFrom)
+				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, acq.reuse)
 			}
 			if err != nil {
 				g.err = err
 				return
 			}
+			// The prompt's rows are final: publish them for a request that arrives while this one decodes. A generation
+			// that ends without its commit forgets them, as it would anything it wrote (before markSlot frees the slot).
+			mc3.exclusive(func() { m.residentPublishPrompt(mc3Slot, prompt, lora) })
+			defer func() {
+				if !mc3Committed {
+					mc3.exclusive(func() { m.kvSlots().Forget(mc3Slot) })
+				}
+			}()
 		} else {
-			reuseFrom = m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt will use
+			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
-			if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
+			if logits, err = m.residentPrefillSeed(ctx, prompt, acq.reuse, lora != nil); err != nil {
 				g.err = err
 				return
 			}
 		}
-		g.PrefillReused = reuseFrom
+		g.PrefillReused = acq.reuse
+		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
 		gpuPos = len(prompt)
 	} else {
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
@@ -1959,6 +1973,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		mc3.exclusive(func() {
 			if m.residentBind(mc3Slot) == nil {
 				m.residentCommitIDs(prompt, generated, nil, lora)
+				mc3Committed = true
 			}
 		})
 	}
@@ -2339,6 +2354,12 @@ type Generation struct {
 	// agent loop's per-turn prefill cost visible without timing it. GenerateVL/GenerateQwenVL set it only on the full-image-reuse
 	// fast path (docs/multimodal.md): 0 there means the turn's image (or everything before it) was not fully reused.
 	PrefillReused int
+	// PrefillShared is how many of the PrefillReused rows were copied from another conversation's KV slot
+	// (ResidentKVCopier); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
+	// made ("" when none was declined). Diagnostics for the sharing gate (docs/measurements/kv2-2026-10-14.md).
+	PrefillShared  int
+	KVCopy         time.Duration
+	KVCopyDeclined string
 	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a
