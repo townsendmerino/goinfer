@@ -1,0 +1,13 @@
+PASS     decode gemma3-4b depth 128: new/base 0.9990, 95% interval [0.9938, 1.0041] over 4 blocks (new 37.05 tok/s, base 37.09 tok/s)
+         by block: 0.9990 0.9996 0.9947 1.0026
+(PASS, reported, not gating) decode 0.5B depth 128: new/base 0.9993, 95% interval [0.9927, 1.0060] over 4 blocks (new 205.11 tok/s, base 205.50 tok/s)
+         by block: 1.0055 0.9963 0.9973 0.9982
+(PASS, reported, not gating) decode 0.5B depth 3900: new/base 0.9990, 95% interval [0.9934, 1.0046] over 4 blocks (new 145.79 tok/s, base 145.65 tok/s)
+         by block: 0.9949 0.9977 1.0004 1.0031
+PASS     decode 1.5B depth 128: new/base 1.0008, 95% interval [0.9919, 1.0098] over 4 blocks (new 94.36 tok/s, base 94.33 tok/s)
+         by block: 1.0041 0.9958 1.0070 0.9963
+PASS     decode 1.5B depth 3900: new/base 1.0022, 95% interval [0.9999, 1.0045] over 4 blocks (new 80.54 tok/s, base 80.41 tok/s)
+         by block: 1.0034 1.0012 1.0007 1.0034
+PASS     time to first token, 1.5B: new/base 1.0006, 95% interval [0.9977, 1.0035] over 4 blocks (new 3.143 s, base 3.144 s)
+         by block: 1.0028 0.9998 1.0012 0.9985
+VERDICT PASS (bar 0.97: every registered cell's interval must clear it)

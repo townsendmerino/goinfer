@@ -118,3 +118,44 @@ dropped. The real Gemma 2 2B parity gate (G2-R, the task doc's §4.6) decides th
 - **`attention_fa_blk` is not routed** in step 1. Registered as an amendment before any Metal code (`d03da21f`).
 - **G1-S** needed two gitignored fixtures linked into the worktree (above).
 - **G2-T's diagnostics** used a scratch test and config-edited copies of the fixture in a temporary directory.
+
+## The night gates (2026-10-14, graded the same morning)
+
+Run by the Mac's night queue at main `c02205b8` against base `d03da21f`, after the two KV1 jobs. The runner's
+summary: started 22:49, ended 00:37. The files are in `night-2026-10-14/`.
+
+| gate | result | what ran |
+|---|---|---|
+| G1-M and G2-I, real checkpoints | **PASS for the 3 cells that ran**; 41 families not run | `identity-real.log`: Qwen2.5-Coder 0.5B and 1.5B and Qwen3 0.6B, int4, byte-identical |
+| G1-S, the Metal device gate | **PASS**: 8 pass, 3 skip, 0 fail | `docs/measurements/gpu-gate/metal-20261014T071402Z-c02205b8.json` |
+| G2-S, the speed guard | **PASS**: every registered cell's 95% interval clears 0.97 | `night-2026-10-14/verdict.txt` |
+
+**G2-S, by cell** (new / base, 4 paired blocks each):
+
+| cell | new / base | 95% interval | rates |
+|---|---|---|---|
+| decode, 1.5B, depth 128 | 1.0008 | [0.9919, 1.0098] | 94.36 / 94.33 tok/s |
+| decode, 1.5B, depth 3900 | 1.0022 | [0.9999, 1.0045] | 80.54 / 80.41 tok/s |
+| decode, Gemma 3 4B, depth 128 | 0.9990 | [0.9938, 1.0041] | 37.05 / 37.09 tok/s |
+| time to first token, 1.5B, about 2,400 words | 1.0006 | [0.9977, 1.0035] | 3.143 / 3.144 s |
+| *added, not gating:* decode, 0.5B, depth 128 | 0.9993 | [0.9927, 1.0060] | 205.11 / 205.50 tok/s |
+| *added, not gating:* decode, 0.5B, depth 3900 | 0.9990 | [0.9934, 1.0046] | 145.79 / 145.65 tok/s |
+
+Checked against the void conditions:
+- every decode cell ran resident on Metal on both arms (`metal-resident (int4)`), 64 of 64 tokens, with no swap growth;
+- the instant idle gate waited a few seconds before three cells and never gave up;
+- the eight time-to-first-token servers all decoded resident on Metal;
+- the Gemma 3 sidecar the first load wrote was removed at the end.
+
+**What the passes do not cover.**
+- **The real identity run is thin.** The tool's real-asset table has a checkpoint on this Mac for only a few families,
+  and of those:
+  - the 7B was refused by the load-time memory guard (about 8 GB resident plus 4.4 GB reading);
+  - InternLM2's tokenizer file is missing;
+  - LFM2 and Spark-X2.5 decline on Metal.
+  The kernels themselves are covered by G1-K's digests; the real-model coverage is three small Qwen cells.
+- **G2-S at 0.97 cannot see a regression under 3%.** The intervals above are inside ±1%, which is narrower than the bar.
+- The device gate's skips: no WebGPU adapter, the clean-GPU check (no nvidia-smi on a Mac), and the Linux-only CI steps.
+
+**The checkpoint copy did not run.** The guarded copy job found nobara's timing lock held at 00:37 and exited without
+copying, as designed.

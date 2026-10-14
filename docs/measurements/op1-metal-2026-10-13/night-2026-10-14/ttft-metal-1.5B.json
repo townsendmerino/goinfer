@@ -1,0 +1,307 @@
+{
+ "header": {
+  "utc": "2026-10-14T07:37:56Z",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "goinfer_commit": "c02205b8",
+  "goinfer_dirty": false,
+  "goinfer_serve_mtime": "Oct 14 00:19:10 2026",
+  "llama_server_version": "version: 0.3.0 (build 10621, commit c1d0e7a00)",
+  "uptime": "0:37  up 19 days, 14:33, 1 user, load averages: 0.98 1.07 1.23"
+ },
+ "args": {
+  "out": "/Users/francistownsend-merino/goinfer-logs/op1-metal-2026-10-13/night-2026-10-14/ttft-metal-1.5B.json",
+  "key": "old_4",
+  "decoders": 0,
+  "newcomers": 3,
+  "prompt_words": 2400,
+  "decode_tokens": 400,
+  "newcomer_tokens": 16,
+  "warmup": 2.0,
+  "gap": 0.5,
+  "serve_args": "",
+  "server_log": "/Users/francistownsend-merino/goinfer-logs/op1-metal-2026-10-13/night-2026-10-14/serve-logs/ttft-servers.log"
+ },
+ "results": {
+  "old_1": {
+   "wall_s": 13.526,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.161,
+    3.133,
+    3.153
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.014134499942884,
+     5.174937332980335
+    ],
+    [
+     5.8610533331520855,
+     8.99376441608183
+    ],
+    [
+     9.683611165964976,
+     12.836421125102788
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "new_1": {
+   "wall_s": 13.485,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.155,
+    3.135,
+    3.131
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.013234124984592,
+     5.167844124836847
+    ],
+    [
+     5.852013750001788,
+     8.987225874792784
+    ],
+    [
+     9.671246041776612,
+     12.801939249970019
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "new_2": {
+   "wall_s": 13.528,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.15,
+    3.128,
+    3.161
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.015272208955139,
+     5.165352625073865
+    ],
+    [
+     5.8571922921109945,
+     8.985155750066042
+    ],
+    [
+     9.677371416939422,
+     12.8383612500038
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "old_2": {
+   "wall_s": 13.517,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.142,
+    3.161,
+    3.134
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.016488708090037,
+     5.158292666077614
+    ],
+    [
+     5.844108707970008,
+     9.00505325011909
+    ],
+    [
+     9.69910404109396,
+     12.832768457941711
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "old_3": {
+   "wall_s": 13.48,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.147,
+    3.122,
+    3.152
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.008089207811281,
+     5.155179583001882
+    ],
+    [
+     5.833919874858111,
+     8.955680207815021
+    ],
+    [
+     9.646857582964003,
+     12.798800374846905
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "new_3": {
+   "wall_s": 13.485,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.141,
+    3.148,
+    3.121
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.0163406669162214,
+     5.157278874889016
+    ],
+    [
+     5.835318208904937,
+     8.983514749910682
+    ],
+    [
+     9.678791124839336,
+     12.799481624970213
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "new_4": {
+   "wall_s": 13.521,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.158,
+    3.137,
+    3.148
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.014679624931887,
+     5.173000042093918
+    ],
+    [
+     5.862833708990365,
+     8.999773292103782
+    ],
+    [
+     9.691582709085196,
+     12.83989829197526
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  },
+  "old_4": {
+   "wall_s": 13.509,
+   "decoder_tokens": 0,
+   "decoder_gap_ms": {
+    "p50": null,
+    "p99": null,
+    "max": null
+   },
+   "newcomer_ttft_s": [
+    3.144,
+    3.158,
+    3.127
+   ],
+   "decoder_times": [],
+   "newcomer_windows": [
+    [
+     2.011921916157007,
+     5.155479000182822
+    ],
+    [
+     5.8452440411783755,
+     9.002885041059926
+    ],
+    [
+     9.697537416126579,
+     12.82423491613008
+    ]
+   ],
+   "decoder_sha": [],
+   "newcomer_sha": [
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe",
+    "35a43c1cfc0b47fe"
+   ]
+  }
+ }
+}
