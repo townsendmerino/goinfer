@@ -200,7 +200,7 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (14) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (15) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered, and the 4
   left then were each still open (drafted-by-decision, blocked, or unshipped, per their own status).
   Briefs written since are read by their own status headers. Newest:
