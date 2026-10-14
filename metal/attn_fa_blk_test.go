@@ -169,6 +169,7 @@ func TestAttnFABlkMatchesFloat64(t *testing.T) {
 			for _, peaked := range []bool{false, true} {
 				q, kh, vh := blkInputs(int64(nKeys*10+gc.G), gc.G, gc.nKV, nKeys, peaked)
 				got := blkRun(t, d, cq, pipe, comb, gc.G, gc.nKV, nKeys, attnFABlkSplit, q, kh, vh)
+				recordAttnDigest(t, fmt.Sprintf("attention_fa_blk_g%d,attention_fa_combine", gc.G), got)
 				ref := blkRef(gc.G, gc.nKV, nKeys, q, kh, vh)
 				for h := 0; h < gc.G*gc.nKV; h++ {
 					var num, den float64

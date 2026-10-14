@@ -147,6 +147,7 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 	)
 
 	got := outBuf.Floats()
+	recordAttnDigest(t, "attention_i8", got)
 
 	// CPU reference:
 	ref := make([]float32, nH*hd)
@@ -252,6 +253,7 @@ func TestMetalKVI8_DeepContext(t *testing.T) {
 	)
 
 	got := outBuf.Floats()
+	recordAttnDigest(t, "attention_i8", got)
 	for i, v := range got {
 		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
 			t.Fatalf("got[%d] = %v (NaN or Inf)", i, v)
