@@ -138,6 +138,16 @@ Traced with the real client ([the record](docs/measurements/integration-harness-
 its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
 named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
 
+### Changed — resident prefix reuse is kept by one KV manager (no change in what a request gets)
+
+The record of what each GPU KV slot holds, the choice of a slot for a prompt and the length it may skip moved from
+`decoder` into one package, `internal/kvmgr`, the first step of `docs/tasks/task-kv-architecture-2026-10.md`. Nothing a
+kernel computes or a backend allocates changes, and replies are the same: the new code is walked against the old at
+random in the test suite. One rule is now stated where it was implied: a prompt of 15 tokens or fewer never runs CUDA's
+fast prefill kernels, so it keeps a short reused prefix (with the default 512-token floor this changes nothing).
+Library, Experimental: `decoder.Architecture.KVGeometry` and `decoder.Model.KVGeometry` (a model's KV layer groups and
+recurrent state), their types, `decoder.KVBlockRows` and `decoder.KVSlotRow`.
+
 ### Fixed — Codex turns were cut at 512 tokens, and a thinking model's cut-off reply could show `</think>`
 
 Codex sends no `max_output_tokens`, and `/v1/responses` gave such a request the 512-token default of the other routes,

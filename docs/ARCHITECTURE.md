@@ -484,17 +484,37 @@ kernels are bit-identical, so a matmul gives the same answer in decode and in pr
   only for generic-loop, non-MoE families.
 - A sliding-window layer keeps a ring the size of its window.
 
-A resident backend keeps its own cache on the device, laid out its own way:
+A resident backend keeps its own cache on the device, one fixed reservation per KV slot
+(`--kv-sessions`), laid out its own way:
 
-| | K/V precision | MLA | context when not pinned |
-|---|---|---|---|
-| CPU | f32, or int8 (`--kv i8`) | the latent | the model's maximum, unless the fit guard lowers it |
-| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | 4096, grown toward 16384 under `--fit` |
-| Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | 4096, grown toward 16384 under `--fit` (`-ctx` up to 32768) |
-| WebGPU | f32, f16 or int8 (`--kv`) | resident | a ceiling of 16k / 32k / 64k by precision |
+| | K/V precision | MLA | sliding-window layers | context when not pinned |
+|---|---|---|---|---|
+| CPU | f32, or int8 (`--kv i8`) | the latent | a ring the size of the window | the model's maximum, unless the fit guard lowers it; allocated per request |
+| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | the window plus 512 positions, compacted as the sequence grows (`cuda/kvwindow.go`; `--windowed-kv=false` for the whole context) | the largest that fits, up to 16384 and never under 4096 |
+| Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | the whole context, masked | the largest that fits beside the weights and its slots, up to 16384 and never under 4096 (`-ctx` up to 32768) |
+| WebGPU | f32, f16 or int8 (`--kv`) | resident | the whole context, masked | a ceiling of 16k / 32k / 64k by precision |
 
-On sliding-window layers, CUDA and Metal allocate the full context and mask it, where the CPU keeps
-a ring. `--ctx` pins the resident context.
+`--ctx` pins the resident context, and `--fit=off` keeps the flat 4096. A paged-MoE load keeps
+4096 on Metal, so that the expert cache gets the memory.
+
+**The KV manager** (`internal/kvmgr`, wired in `decoder/resident_reuse.go`) owns what the resident
+slots hold; the backends own the bytes. Per slot it keeps one sequence: its token ids, its image
+spans, the adapter and KV precision it was built under, and which kernel class wrote each row. It
+decides which slot a prompt takes and how many leading tokens it may skip (below, "Across the
+backends").
+
+- **Blocks.** A sequence is cut into logical blocks of 64 positions. While a backend stores KV per
+  slot, block *i* of the sequence in slot *s* is rows *64i* to *64i + 63* of slot *s*
+  (`decoder.KVSlotRow`), so nothing in a kernel or an allocation knows about blocks yet.
+- **The index.** When a generation completes, the sequence's full blocks are published: each gets a
+  SHA-256 hash chained from the block before it and from a root (model, namespace, adapter, KV
+  precision), and covering its tokens, any image span that touches it, and the class of its rows.
+  A block of a generation that did not complete is never published.
+- **What it does not do yet.** A request reuses rows only by continuing a sequence in its own slot.
+  Taking another sequence's published blocks needs a copy between slots, which is the next step of
+  [tasks/task-kv-architecture-2026-10.md](tasks/task-kv-architecture-2026-10.md), as are paged
+  storage and the geometry's use (`decoder.Architecture.KVGeometry`: the layer groups by row width
+  and retention, and the recurrent state).
 
 ### Fitting to the machine
 
@@ -509,7 +529,7 @@ In either case it pins the context to what fits, or returns a `*FitDeclineError`
 `GOINFER_NO_FIT_GUARD` turns it off.
 
 **`--fit`** (on by default) lets two things you left unpinned grow to the machine:
-- CUDA's context, from 4096 toward 8192;
+- the resident context on CUDA and Metal, from 4096 toward 16384;
 - modelload's automatic streaming retry.
 
 `--fit=off` keeps the flat defaults.
@@ -669,8 +689,8 @@ The `cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
   - the SigLIP vision tower;
   - compute-time LoRA;
   - the DFlash block drafter, with its argmax on the device.
-- **KV** is f16 by default for the dense families above (`--kv auto`), f32 for the rest or on `--kv f32`. Unless `--ctx` pins it, the context is 4096. Under `--fit`
-  it grows toward 8192 when `Plan("cuda")` says it fits.
+- **KV** is f16 by default for the dense families above (`--kv auto`), f32 for the rest or on `--kv f32`. Unless `--ctx` pins it, the context is the largest `Plan("cuda")` says fits, up to 16384
+  and never under 4096 (4096 flat with `--fit=off`). Sliding-window layers hold their window plus 512 positions.
 
 ### Metal
 
@@ -692,8 +712,9 @@ The `metal/` module, darwin only, with no build tag.
   - For a `.giw` load the host side is the mapping itself, so there is no host-copy term.
   - S6 goes further and wraps the mapped pages as the device buffers too, without a copy. It has
     been the default since 2026-09-24; `GOINFER_METAL_ALIAS=0` turns it off.
-- **KV** is f16, or int8 with `--kv i8`, padded to 8 positions. The context is 4096 unless pinned,
-  up to 32768.
+- **KV** is f16, or int8 with `--kv i8`, padded to 8 positions. Unless pinned, the context is the
+  largest that fits beside the weights and the KV slots, up to 16384 and never under 4096; `-ctx`
+  pins it, up to 32768.
 
 ### WebGPU
 
@@ -715,14 +736,19 @@ The `gpu/` module, built with `-tags gpu`, and cgo.
 
 ### Across the backends
 
-- **Resident prefix reuse.** The device cache remembers which token ids are committed to it: one
-  conversation, the most recent. A request that shares a prefix with them prefills only the rest
-  (`residentReuseLen`, then `residentPrefillSeed` from the reuse point), so a continuing agent loop
-  pays for its new suffix only.
-  - The match is on token ids, never text.
-  - It is forgotten on any generation that does not complete.
+- **Resident prefix reuse.** The KV manager (§2, "The KV cache") remembers which token ids each KV
+  slot holds: one conversation per slot. A request that shares a prefix with a slot's sequence
+  prefills only the rest (`residentAcquireSlot`, then `residentPrefillSeed` from the reuse point), so
+  a continuing agent loop pays for its new suffix only.
+  - The match is on token ids, never text, and the last token is always recomputed.
+  - A slot is forgotten on any generation that does not complete.
   - It is adapter-aware, and it survives image turns through the image hash.
-  - On the recurrent families it covers only an exact extension of what is cached.
+  - On the recurrent families it covers only an exact extension of what the slot holds.
+  - A continuation keeps its slot. A prompt that shares only a short lead with a slot (a chat
+    template's preamble) takes an empty slot, or the least recently used one.
+  - Where a backend's long prompts run kernels that are not bit-identical to its short ones (CUDA
+    from 512 tokens, in passes of 16 rows or more), a reused lead shorter than 64 tokens is dropped
+    and the prompt is prefilled whole, so that one class of kernel writes it.
 - **Context caps** differ per backend (the KV table in §2). `ResidentCapped` lets generation refuse
   or clamp a request before it starts, instead of failing after N tokens.
 - **Performance numbers** (kernels, time to first token, decode) are in
@@ -971,6 +997,7 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 | `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) | `goinfer/decoder` |
 | `internal/modelload` | the one load path (§2) | `goinfer/decoder`, `goinfer/pull`, `goinfer/tokenizer`, `internal/giw`, `internal/prequant`, `internal/swapguard` |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame | |
+| `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's | — |
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries | the packages above; serve adds `aikit/encoder` and `aikit/vision` |
 | `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire | |
 | `gpu` (`-tags gpu`) | the WebGPU backend | `oliverbestmann/webgpu` (cgo), `aikit/encoder`, `aikit/linalg`, `aikit/vision`, `goinfer/decoder` |
