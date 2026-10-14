@@ -370,7 +370,7 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 		}
 		lens[i], uses[i] = a.Len(i), a.Use(i)
 	}
-	pick := pickResidentSlot(scores, lens, uses, busy)
+	pick := kvmgr.PickSlotWithin(scores, lens, uses, busy, m.kvRollbackAllowance())
 	if pick < 0 {
 		return kvAcquired{slot: -1, src: -1}
 	}
@@ -462,6 +462,15 @@ func (m *Model) residentBind(slot int) error {
 	}
 	m.resDrafterSynced = nil
 	return nil
+}
+
+// kvRollbackAllowance is how many rows a request may give up of a slot it takes in place (kvmgr.PickSlotWithin): one
+// block, or for a model with sliding-window layers the window group's rollback floor (the task doc's §5.12).
+func (m *Model) kvRollbackAllowance() int {
+	if m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0 {
+		return kvmgr.RollbackFloor
+	}
+	return kvmgr.BlockRows
 }
 
 // pickResidentSlot chooses a slot for a prompt from each slot's reuse score, its committed length and its last-use

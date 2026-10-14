@@ -340,3 +340,18 @@ func TestHits_unclaimedImageMatchesNothing(t *testing.T) {
 		t.Errorf("Hits = %v, want 192 from slot 1: the same named image at the same place matches", got)
 	}
 }
+
+// TestPickSlotWithin_windowGroups: a model with window groups takes a slot in place when it gives up less than the
+// rollback floor, so a client that drops or edits its last reply stays warm; a model without keeps one block.
+func TestPickSlotWithin_windowGroups(t *testing.T) {
+	scores, lens, uses := []int{2000, 0}, []int{2400, 0}, []uint64{1, 0} // a 400-row rollback
+	if got := PickSlotWithin(scores, lens, uses, nil, RollbackFloor); got != 0 {
+		t.Errorf("window groups, 400 rows given up: PickSlotWithin = %d, want 0 (in place)", got)
+	}
+	if got := PickSlot(scores, lens, uses, nil); got != 1 {
+		t.Errorf("no window groups, 400 rows given up: PickSlot = %d, want 1 (the empty slot)", got)
+	}
+	if got := PickSlotWithin([]int{2000, 0}, []int{2448, 0}, uses, nil, RollbackFloor); got != 1 {
+		t.Errorf("window groups, 448 rows given up: PickSlotWithin = %d, want 1", got)
+	}
+}

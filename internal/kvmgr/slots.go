@@ -199,13 +199,24 @@ func claimAt(images []ImageSpan, pos int) (ImageSpan, bool) {
 	return ImageSpan{}, false
 }
 
-// PickSlot chooses a slot for a prompt from each slot's score (tokens of the prompt it holds), its length and its
-// last-use tick. The best-scoring slot wins when reusing it keeps at least as much of it as the new suffix will
-// overwrite and gives up less than one block of it: a continuation of that slot's conversation. Anything else would
-// cut another conversation's history (a shared lead such as a chat template's preamble, or a shared preamble the
-// prompt can take by copy instead, Hits), so the prompt takes an empty slot, else the least recently used one. busy
-// (nil: none) marks slots another running generation holds; they are never picked. -1 when every slot is busy.
+// PickSlot is PickSlotWithin with an allowance of one block, for a model without window groups.
 func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
+	return PickSlotWithin(scores, lens, uses, busy, BlockRows)
+}
+
+// RollbackFloor is the least a window group's rollback budget can be: its base compacts in 64-token steps, so it keeps
+// at least this much behind the window (docs/tasks/task-kv-architecture-2026-10.md §5.12).
+const RollbackFloor = 448
+
+// PickSlotWithin chooses a slot for a prompt from each slot's score (tokens of the prompt it holds), its length and
+// its last-use tick. The best-scoring slot wins when reusing it keeps at least as much of it as the new suffix will
+// overwrite and gives up fewer than allowance rows of it: a continuation of that slot's conversation, rolled back no
+// further than the slot can serve (one block; for window groups the rollback budget, RollbackFloor or more). Anything
+// else would cut another conversation's history (a shared lead such as a chat template's preamble, or a shared
+// preamble the prompt can take by copy instead, Hits), so the prompt takes an empty slot, else the least recently used
+// one. busy (nil: none) marks slots another running generation holds; they are never picked. -1 when every slot is
+// busy.
+func PickSlotWithin(scores, lens []int, uses []uint64, busy []bool, allowance int) int {
 	free := func(i int) bool { return i >= len(busy) || !busy[i] }
 	best := -1
 	for i, s := range scores {
@@ -213,7 +224,7 @@ func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
 			best = i
 		}
 	}
-	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < BlockRows {
+	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < allowance {
 		return best
 	}
 	for i, l := range lens {

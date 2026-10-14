@@ -360,3 +360,38 @@ func TestKV2_declinedPrefillSharesNothing(t *testing.T) {
 		t.Errorf("B copied %d rows from a sequence whose prefill declined", b.shared[0])
 	}
 }
+
+// TestKV2_windowGroupRollback: on a model with sliding-window layers a request that rolls a slot back by 400 rows (a
+// client dropping or editing its last reply) takes the slot in place, within the rollback floor (the task doc's §5.12);
+// without window groups the same request gives up more than a block, so it copies into the other slot instead.
+func TestKV2_windowGroupRollback(t *testing.T) {
+	for _, window := range []int{0, 1024} {
+		m, rf := loadWithCopyFake(t, 2, "")
+		m.w.arch.SlidingWindow = window
+		vocab := m.w.arch.VocabSize
+		first := make([]int, 1000)
+		for i := range first {
+			first[i] = (i*37 + 11) % vocab
+		}
+		ch, g := m.Generate(context.Background(), first, 8, SamplingParams{})
+		for range ch {
+		}
+		if g.Err() != nil {
+			t.Fatal(g.Err())
+		}
+		edit := append(slices.Clone(first[:600]), 7, 8, 9)
+		ch, g = m.Generate(context.Background(), edit, 4, SamplingParams{})
+		for range ch {
+		}
+		if g.Err() != nil {
+			t.Fatal(g.Err())
+		}
+		inPlace := g.PrefillReused == 600 && g.PrefillShared == 0
+		if window > 0 && !inPlace {
+			t.Errorf("window %d: reused %d, copied %d (copies %d), want 600 in place", window, g.PrefillReused, g.PrefillShared, rf.copies)
+		}
+		if window == 0 && (inPlace || g.PrefillShared != 576) {
+			t.Errorf("no window: reused %d, copied %d, want a copy of 576 into the other slot", g.PrefillReused, g.PrefillShared)
+		}
+	}
+}
