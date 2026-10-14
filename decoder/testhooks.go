@@ -14,6 +14,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -547,4 +548,28 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 		out = append(out, l...)
 	}
 	return out, nil
+}
+
+// KVBoundClassesForTest is the bound resident KV slot and the kernel class the KV manager recorded for each row of its
+// sequence: "fast", "exact" or "unknown" (nil when the slot holds nothing known).
+func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
+	a := m.kvSlots()
+	slot = a.Bound()
+	s := a.Seq(slot)
+	if s == nil {
+		return slot, nil
+	}
+	rows = make([]string, s.Len())
+	for i := range rows {
+		rows[i] = "unknown"
+	}
+	for _, r := range s.Classes() {
+		name := map[KVClass]string{kvmgr.ClassFast: "fast", kvmgr.ClassExact: "exact"}[r.Class]
+		for p := r.Start; p < r.Start+r.Len && p < len(rows); p++ {
+			if name != "" {
+				rows[p] = name
+			}
+		}
+	}
+	return slot, rows
 }
