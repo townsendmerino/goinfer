@@ -98,7 +98,7 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatPartialRotary:     true,
 	decoder.FeatSandwichNorm:      true,
 	decoder.FeatGatedGELU:         true,
-	decoder.FeatAttnLogitSoftcap:  true, // compiled into attention_prefill; a capped model takes no fused or steel kernel (prefillFusedOn). The backend does not declare it yet.
+	decoder.FeatAttnLogitSoftcap:  true, // compiled into attention_prefill; a capped model takes no fused or steel kernel (prefillFusedOn)
 	decoder.FeatRMSAddOne:         true,
 	decoder.FeatEmbedScale:        true,
 	decoder.FeatFinalLogitSoftcap: true,

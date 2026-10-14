@@ -198,7 +198,7 @@ var admissionGolden = map[string][]string{
 	// feature-admitted: it intentionally tracks the feature-only model, as with the MoE-cap precedent (deepseek_v2/kimi_k2
 	// below, admitted by feature but capped elsewhere).
 	"gemma":               {"cuda", "metal", "webgpu"},
-	"gemma2":              {},
+	"gemma2":              {"metal"}, // the attention-score softcap: Metal since OP1; cuda and webgpu do not declare it
 	"gemma3":              {"cuda", "metal", "webgpu"},
 	"gemma3_text":         {"cuda", "metal", "webgpu"},
 	"gemma4":              {"cuda", "metal", "webgpu"},
@@ -377,6 +377,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatGemma4EModel,
 			// GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw; docs/tasks/task-metal-pairwise-rope-2026-10.md).
 			FeatPairwiseRoPE, FeatPairwiseMRoPE,
+			// The attention-score softcap, compiled into the three kernels a capped layer takes (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+			FeatAttnLogitSoftcap,
 		},
 	}
 	for be, exp := range want {

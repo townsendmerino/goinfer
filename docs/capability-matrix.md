@@ -122,7 +122,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | GLM-OCR | `glm_ocr`, `glm_ocr_text` | dense | none | no | m-RoPE | RMSNorm, sandwich | SwiGLU | no | safetensors | text (+ vision tower, CPU) | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma | `gemma` | dense | none | no | full | RMSNorm, pre-norm | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| Gemma 2 | `gemma2` | dense | interleave | no | full | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | full-oracle 100.0%/1.00000 |
+| Gemma 2 | `gemma2` | dense | interleave | no | full | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision tower) | yes | full-oracle 100.0%/0.98972 |
 | Granite 4.2 | `granite` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
