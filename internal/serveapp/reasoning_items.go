@@ -3,7 +3,9 @@ package serveapp
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Reasoning items on /v1/responses (docs/server.md, "Reasoning items on /v1/responses").
@@ -30,13 +32,17 @@ func reasoningItem(id, text string) map[string]any {
 }
 
 // reasoningItemText is the reasoning a client's reasoning input item carries: this server's encrypted_content, else the
-// reasoning_text content, else the summary text. "" when it carries none (an encrypted_content from another server is
-// not readable here and is ignored).
-func reasoningItemText(encrypted string, content, summary json.RawMessage) string {
+// reasoning_text content, else the summary text. encrypted_content wins when it and content disagree: it is the bytes the
+// model generated, and content may have been edited. "" when the item carries none (an encrypted_content from another
+// server is not readable here and is ignored). An encrypted_content with this server's prefix that does not decode is an
+// error, so the request is refused rather than rendered without the reasoning it claims to carry.
+func reasoningItemText(encrypted string, content, summary json.RawMessage) (string, error) {
 	if b64, ok := strings.CutPrefix(encrypted, reasoningBlobPrefix); ok {
-		if b, err := base64.StdEncoding.DecodeString(b64); err == nil {
-			return string(b)
+		b, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil || !utf8.Valid(b) {
+			return "", fmt.Errorf("a reasoning item's encrypted_content is not one this server wrote (%s… does not decode); send it back unchanged", reasoningBlobPrefix)
 		}
+		return string(b), nil
 	}
 	var parts []struct {
 		Type string `json:"type"`
@@ -56,9 +62,9 @@ func reasoningItemText(encrypted string, content, summary json.RawMessage) strin
 		return b.String()
 	}
 	if t := join(content, "reasoning_text"); t != "" {
-		return t
+		return t, nil
 	}
-	return join(summary, "summary_text")
+	return join(summary, "summary_text"), nil
 }
 
 // withReasoning puts the reply's reasoning item ahead of items: the item the stream opened (rs non-nil), else one built

@@ -556,7 +556,11 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 	for _, it := range items {
 		switch it.Type {
 		case "reasoning":
-			pending += reasoningItemText(it.EncryptedContent, it.Content, it.Summary)
+			text, err := reasoningItemText(it.EncryptedContent, it.Content, it.Summary)
+			if err != nil {
+				return nil, err
+			}
+			pending += text
 			continue
 		case "function_call":
 			// The model's own call, replayed. Becomes the assistant turn that carries it, which is

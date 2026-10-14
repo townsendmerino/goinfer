@@ -731,8 +731,10 @@ to ignore.**
   where it appears, as for `reasoning_content` on the chat route ("Replayed reasoning (history)" below). For Qwen3,
   Qwen3.5 and Mellum2.1, the turns of the tool loop in progress keep their reasoning and earlier turns drop it, which is
   what their Hugging Face templates render. A template with no history rule ignores it. The text is read from serve's own
-  `encrypted_content` first, then from `reasoning_text` content, then from the `summary_text`. An `encrypted_content` from
-  another server is ignored, and a reasoning item with no assistant turn after it is dropped.
+  `encrypted_content` first, then from `reasoning_text` content, then from the `summary_text`. An item may carry either
+  form or both, and **`encrypted_content` wins when they disagree**, since it is the bytes the model generated. An
+  `encrypted_content` from another server is ignored. One with serve's prefix that does not decode is a 400, not a
+  silent drop. A reasoning item with no assistant turn after it is dropped.
   **Why render:** the reasoning is in the KV the reply left behind. A client that resends the turn without it (Codex
   before this change) makes the next prompt leave the KV where the reasoning began. The turn then re-prefills from there,
   in full on CUDA windowed-KV models, where a rollback past the window's slack forces a cold prefill. Sent back, the
