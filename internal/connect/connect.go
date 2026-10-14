@@ -45,6 +45,17 @@ type harness struct {
 	after func(s settings) string
 }
 
+// claudeCodeModelSlots is every variable Claude Code reads a model name from, as its documentation lists them
+// (https://code.claude.com/docs/en/model-config, https://code.claude.com/docs/en/env-vars). connect sets each to the
+// served model: a slot left unset resolves to an Anthropic model id, which the server answers with 404, so an alias,
+// a subagent or a background request that reads it fails. ANTHROPIC_SMALL_FAST_MODEL is deprecated in favour of
+// ANTHROPIC_DEFAULT_HAIKU_MODEL and set as well, for a version that still reads it.
+var claudeCodeModelSlots = []string{
+	"ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL",
+	"ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"CLAUDE_CODE_SUBAGENT_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+}
+
 var harnesses = map[string]harness{
 	"claude-code": {
 		Name: "Claude Code", FirstRequest: 20199, Version: "2.1.296",
@@ -68,6 +79,11 @@ var harnesses = map[string]harness{
 					{"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"}} {
 					env.set(kv[0], kv[1])
 				}
+				for _, slot := range claudeCodeModelSlots {
+					env.set(slot, s.Model)
+				}
+				// A subagent whose definition names a model of its own would otherwise ask for it; the server serves one.
+				env.set("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1")
 				o.set("env", env)
 				return nil
 			})
