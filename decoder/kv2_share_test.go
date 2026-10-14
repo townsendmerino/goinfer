@@ -395,3 +395,47 @@ func TestKV2_windowGroupRollback(t *testing.T) {
 		}
 	}
 }
+
+// TestKV2_ownRollbackStaysInPlace: a conversation that edits a later turn (giving up more than a block of its own
+// slot) continues in that slot, reusing its history, decode rows included; a new conversation that shares only part
+// of its first prompt still copies instead of cutting it.
+func TestKV2_ownRollbackStaysInPlace(t *testing.T) {
+	m, rf := loadWithCopyFake(t, 2, "")
+	vocab := m.w.arch.VocabSize
+	run := func(p []int, maxTok int) ([]int, *Generation) {
+		ch, g := m.Generate(context.Background(), p, maxTok, SamplingParams{})
+		var ids []int
+		for id := range ch {
+			ids = append(ids, id)
+		}
+		if g.Err() != nil {
+			t.Fatal(g.Err())
+		}
+		return ids, g
+	}
+	p1 := make([]int, 1000)
+	for i := range p1 {
+		p1[i] = (i*37 + 11) % vocab
+	}
+	r1, _ := run(p1, 8)
+	turn := func(seed int) []int {
+		out := make([]int, 70)
+		for i := range out {
+			out[i] = (seed*13 + i*7) % vocab
+		}
+		return out
+	}
+	p2 := append(append(slices.Clone(p1), r1...), turn(1)...)
+	run(p2, 8)
+	edit := append(append(slices.Clone(p1), r1...), turn(2)...) // gives up turn 1's 70 tokens and its reply
+	_, g := run(edit, 4)
+	if g.PrefillReused != len(p1)+len(r1) || g.PrefillShared != 0 {
+		t.Errorf("own rollback: reused %d, copied %d, want %d in place", g.PrefillReused, g.PrefillShared, len(p1)+len(r1))
+	}
+	copies := rf.copies
+	other := append(slices.Clone(p1[:900]), turn(3)...)
+	_, g = run(other, 4)
+	if g.PrefillShared == 0 || rf.copies == copies {
+		t.Errorf("a new conversation sharing 900 tokens of the first prompt: reused %d, copied %d, want a copy", g.PrefillReused, g.PrefillShared)
+	}
+}

@@ -359,7 +359,7 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 	if n <= 1 {
 		return kvAcquired{reuse: m.boundReuseLen(prompt, imgs, lora, sc.Namespace), src: -1}
 	}
-	scores, lens, uses := make([]int, n), make([]int, n), make([]uint64, n)
+	scores, lens, firsts, uses := make([]int, n), make([]int, n), make([]int, n), make([]uint64, n)
 	bound := a.Bound()
 	if bound >= len(busy) || !busy[bound] { // a busy slot is never picked, and its record is another generation's
 		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace) // adopts the bound record first, and asks its window
@@ -368,9 +368,9 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 		if i != bound {
 			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace)
 		}
-		lens[i], uses[i] = a.Len(i), a.Use(i)
+		lens[i], firsts[i], uses[i] = a.Len(i), a.FirstPrompt(i), a.Use(i)
 	}
-	pick := kvmgr.PickSlotWithin(scores, lens, uses, busy, m.kvRollbackAllowance())
+	pick := kvmgr.PickSlotFor(scores, lens, firsts, uses, busy, m.kvRollbackAllowance())
 	if pick < 0 {
 		return kvAcquired{slot: -1, src: -1}
 	}

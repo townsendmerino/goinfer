@@ -24,6 +24,7 @@ type pending struct {
 	promptLen int
 	sum       uint64     // a fingerprint of the prompt, so a Commit of another prompt does not take these classes
 	prefix    []ClassRun // the classes of the reused rows, read before the slot was forgotten
+	first     int        // the reused sequence's first prompt length (Seq.first), 0 when none was reused
 }
 
 // NewSlots returns the adapter for n slots (at least one).
@@ -204,6 +205,31 @@ func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
 	return PickSlotWithin(scores, lens, uses, busy, BlockRows)
 }
 
+// FirstPrompt is the length of the first prompt of the conversation slot holds (0: none known). A request that keeps
+// all of it but its last token is that conversation rolling back its own history (PickSlotFor).
+func (a *Slots) FirstPrompt(slot int) int {
+	if s := a.seqs[slot]; s != nil {
+		return s.first
+	}
+	return 0
+}
+
+// PickSlotFor is PickSlotWithin that tells a conversation's own rollback from another conversation's request:
+// firsts[i] is slot i's FirstPrompt. A request whose score reaches firsts[i] - 1 keeps that conversation's whole first
+// prompt, so it is the same conversation rolling back, and it takes the slot in place however much it gives up (on the
+// keep-at-least-as-much-as-it-overwrites rule alone). Only a request that diverges inside the first prompt, such as a
+// new conversation sharing a preamble, is held to allowance.
+func PickSlotFor(scores, lens, firsts []int, uses []uint64, busy []bool, allowance int) int {
+	own := make([]int, len(scores))
+	for i := range scores {
+		own[i] = allowance
+		if i < len(firsts) && firsts[i] > 0 && scores[i] >= firsts[i]-1 {
+			own[i] = lens[i] + 1 // no limit: the slot's own conversation
+		}
+	}
+	return pickSlot(scores, lens, uses, busy, own)
+}
+
 // RollbackFloor is the least a window group's rollback budget can be: its base compacts in 64-token steps, so it keeps
 // at least this much behind the window (docs/tasks/task-kv-architecture-2026-10.md §5.12).
 const RollbackFloor = 448
@@ -217,6 +243,14 @@ const RollbackFloor = 448
 // one. busy (nil: none) marks slots another running generation holds; they are never picked. -1 when every slot is
 // busy.
 func PickSlotWithin(scores, lens []int, uses []uint64, busy []bool, allowance int) int {
+	all := make([]int, len(scores))
+	for i := range all {
+		all[i] = allowance
+	}
+	return pickSlot(scores, lens, uses, busy, all)
+}
+
+func pickSlot(scores, lens []int, uses []uint64, busy []bool, allowance []int) int {
 	free := func(i int) bool { return i >= len(busy) || !busy[i] }
 	best := -1
 	for i, s := range scores {
@@ -224,7 +258,7 @@ func PickSlotWithin(scores, lens []int, uses []uint64, busy []bool, allowance in
 			best = i
 		}
 	}
-	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < allowance {
+	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < allowance[best] {
 		return best
 	}
 	for i, l := range lens {
@@ -248,6 +282,7 @@ func (a *Slots) Acquired(slot, reuse int, prompt []int) {
 	p := pending{ok: true, reuse: reuse, promptLen: len(prompt), sum: fingerprint(prompt)}
 	if s := a.seqs[slot]; s != nil && reuse > 0 {
 		p.prefix = clipClasses(s.classes, reuse)
+		p.first = s.first
 	}
 	a.pend[slot] = p
 }
@@ -301,7 +336,10 @@ func (a *Slots) commit(slot int, root Root, tokens []int, images []ImageSpan, pr
 	if len(tokens) == 0 {
 		return
 	}
-	s := &Seq{m: a.m, root: root, rootHash: rootHash(root, a.m.parts), slot: int32(slot), tokens: tokens, images: images}
+	s := &Seq{m: a.m, root: root, rootHash: rootHash(root, a.m.parts), slot: int32(slot), tokens: tokens, images: images, first: promptLen}
+	if p.ok && p.first > 0 && p.reuse >= p.first-1 {
+		s.first = p.first // a continuation of the same conversation: it kept that conversation's first prompt
+	}
 	if p.ok && p.promptLen == promptLen && promptLen <= len(tokens) && p.reuse < promptLen && p.sum == fingerprint(tokens[:promptLen]) {
 		for _, r := range p.prefix {
 			s.classes = appendClass(s.classes, r)

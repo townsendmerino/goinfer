@@ -355,3 +355,46 @@ func TestPickSlotWithin_windowGroups(t *testing.T) {
 		t.Errorf("window groups, 448 rows given up: PickSlotWithin = %d, want 1", got)
 	}
 }
+
+// TestPickSlotFor_ownRollback: a request that keeps its slot's whole first prompt is that conversation rolling back,
+// and takes the slot in place however much it gives up; one that diverges inside the first prompt is held to the
+// allowance.
+func TestPickSlotFor_ownRollback(t *testing.T) {
+	lens, firsts, uses := []int{3000, 0}, []int{1000, 0}, []uint64{1, 0}
+	if got := PickSlotFor([]int{1600, 0}, lens, firsts, uses, nil, BlockRows); got != 0 {
+		t.Errorf("own rollback of 1,400 rows: PickSlotFor = %d, want 0 (in place)", got)
+	}
+	if got := PickSlotFor([]int{999, 0}, []int{1008, 0}, firsts, uses, nil, BlockRows); got != 0 {
+		t.Errorf("a regenerate (the first prompt again): PickSlotFor = %d, want 0", got)
+	}
+	if got := PickSlotFor([]int{900, 0}, []int{1080, 0}, firsts, uses, nil, BlockRows); got != 1 {
+		t.Errorf("a request that diverges inside the first prompt, 180 rows given up: PickSlotFor = %d, want 1", got)
+	}
+	if got := PickSlotFor([]int{1400, 0}, lens, firsts, uses, nil, BlockRows); got != 1 {
+		t.Errorf("own rollback that keeps less than it overwrites: PickSlotFor = %d, want 1 (main's rule stands)", got)
+	}
+}
+
+// TestSlots_firstPrompt: a continuation keeps the conversation's first prompt length; a request that diverged inside
+// it starts a new one.
+func TestSlots_firstPrompt(t *testing.T) {
+	root := Root{Model: "m", Precision: "f16"}
+	a := NewSlots(1)
+	p1 := seqOf(1000, 1)
+	commitPrompt(a, 0, root, p1, seqOf(8, 2), metalClasses)
+	all := a.Seq(0).Tokens()
+	p2 := append(slices.Clone(all), seqOf(70, 3)...)
+	a.Acquired(0, len(all), p2)
+	a.Forget(0)
+	a.Commit(0, root, append(p2, seqOf(8, 4)...), nil, len(p2), metalClasses)
+	if got := a.FirstPrompt(0); got != 1000 {
+		t.Errorf("after a continuation: FirstPrompt = %d, want 1000", got)
+	}
+	p3 := append(slices.Clone(p1[:900]), seqOf(50, 5)...)
+	a.Acquired(0, 900, p3)
+	a.Forget(0)
+	a.Commit(0, root, p3, nil, len(p3), metalClasses)
+	if got := a.FirstPrompt(0); got != len(p3) {
+		t.Errorf("after a request that diverged inside the first prompt: FirstPrompt = %d, want %d", got, len(p3))
+	}
+}
