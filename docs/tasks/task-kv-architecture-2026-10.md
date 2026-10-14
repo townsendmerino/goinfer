@@ -762,6 +762,13 @@ KV2 merges when every arm on both boxes is read.
   - G6: a lone request at 0.99 against `main`, on Metal and CUDA.
   - G7: copy and admission cost, reported.
 - **Size:** S–M. **Closes:** most of §1.2, without kernel work, on CUDA, Metal and WebGPU.
+- **Follow-up, after KV2 merges (owner, 2026-10-14; not started).** With the first-prompt anchor
+  (`kvmgr.Slots.FirstPrompt`), an own rollback that gives up more than it keeps could truncate in place instead of
+  re-prefilling.
+  - Main's keep-at-least-as-much-as-it-overwrites rule (`kvmgr.PickSlot`; on the CPU, `pickSession`) exists only
+    because main could not tell a conversation's own request from another's.
+  - The item: drop that rule for a request that keeps the slot's whole first prompt, on the GPU and the CPU.
+  - Gate it like G3: same reply in every schedule, and replies unchanged against KV2's merge.
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
 
