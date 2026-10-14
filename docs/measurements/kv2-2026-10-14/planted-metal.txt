@@ -1,0 +1,16 @@
+== planted: G2: a copy one block short
+--- FAIL: TestKV2_copyKVExact (2.07s)
+    --- FAIL: TestKV2_copyKVExact/f16 (0.25s)
+        kv2_copy_test.go:147: CopyKV{0 1 0 64}: dst buffer 0 row 0 is not src's
+        kv2_copy_test.go:147: CopyKV{0 1 0 1024}: dst buffer 0 row 960 is not src's
+        kv2_copy_test.go:147: CopyKV{1 2 256 1024}: dst buffer 0 row 960 is not src's
+    --- FAIL: TestKV2_copyKVExact/i8 (1.83s)
+
+== planted: G2: the K copy reads the next layer's buffer (layer stride off by one)
+--- FAIL: TestKV2_copyKVExact (2.55s)
+    --- FAIL: TestKV2_copyKVExact/f16 (0.26s)
+        kv2_copy_test.go:147: CopyKV{0 1 0 64}: dst buffer 0 row 0 is not src's
+        kv2_copy_test.go:147: CopyKV{0 1 0 1024}: dst buffer 0 row 0 is not src's
+        kv2_copy_test.go:147: CopyKV{1 2 256 1024}: dst buffer 0 row 256 is not src's
+    --- FAIL: TestKV2_copyKVExact/i8 (2.28s)
+
