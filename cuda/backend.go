@@ -1696,6 +1696,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if e := r.allocSlots(); e != nil {
 			return e
 		}
+		r.kvGrantRollback() // last: everything it must not cost is allocated
 		return r.setupErr
 	})
 	if setupErr != nil {

@@ -23,7 +23,7 @@ any surface may still change.
 - **Image turns on Qwen3.5 are much faster**: on a 0.8B, time to first token for a 1024x640 image went from 37.5 s to 3.6 s on CUDA (0.3 s for a resent image) and from 38 s to 7.7 s on the CPU backend. Exploratory, one run per cell (`docs/measurements/p26*-2026-10-06/`).
 - **Qwen3-VL-30B-A3B images**, checked against Hugging Face on the CPU; its CUDA paged-experts path read FAIL on one served request and is unvalidated until its re-read.
 - **CUDA keeps the KV cache in f16 by default** for the dense llama, mistral, qwen2, qwen3 and phi3 families, so the same card holds about twice the context. Metal already did; `--kv f32` is the exact cache and the choice for any other family is unchanged. An owner decision over a fidelity cell that read parked (agreement 92.0% against 92.97% on a 7B at 8,000 keys) and a speed check stopped before its deep cells, recorded in `docs/tasks/task-cuda-f16-kv-2026-10.md`.
-- **`--windowed-kv` is on by default on CUDA**, so a mixed sliding/full model fits a longer context; `--windowed-kv=false` opts out, and a long agent loop past the window re-prefills each turn.
+- **`--windowed-kv` is on by default on CUDA**, so a mixed sliding/full model fits a longer context; `--windowed-kv=false` opts out. A follow-up turn reuses its prefix when it drops up to 448 tokens of the last reply (up to 1,024 when the card has VRAM to spare), where it used to re-prefill the whole prompt on most turns.
 - **`serve -lenient-tool-calls` (off by default)** reads one fenced JSON call at the end of a reply as a tool call, for the `<tool_call>` families, with the arguments checked against the tool's schema. A demonstration that ends on one valid call looks the same as a meant call, so use it with a client that confirms before it acts.
 - **EmbeddingGemma 2 takes images and audio** at `/v1/embeddings`, and runs on the GPU on a Mac. **Qwen3.5+ images from a GGUF `mmproj`** (`--vision mmproj.gguf`).
 - **Library:** `Model.Close` is safe during a generation (and refuses new ones with `decoder.ErrClosed`), `Tokenizer.NewStream` prints tokens without losing spaces, and `Options.Quant "bf16"` / `"f16"` holds a 16-bit checkpoint at half f32's memory, bit-identical to f32 (CPU).
@@ -149,6 +149,30 @@ on a Command-R, Granite or other logit-scaled model, multiplied them by the scal
 effective temperature by its inverse (16 on Command-R, whose `logit_scale` is `0.0625`). Greedy decoding and a
 conversation decoding alone were not affected; both transforms keep the argmax. Each is now applied once, and a step row's
 logits equal the single-sequence `Forward`'s bit for bit (`TestCUDAStepBatch_matchesForward`).
+
+### Fixed — under `--backend cuda` with windowed KV, a follow-up turn that dropped the last reply re-prefilled the whole prompt
+
+**Who was affected:** `--backend cuda` serving a model with sliding-window layers (Mellum, Gemma 2, 3 and 4, Mistral, Command-R7B,
+gpt-oss, Phi-3) past its window, to a multi-turn client whose next request does not contain the previous reply as generated: Codex,
+which sends no reasoning back, or any client that edits near the end of the prompt. **Since:** `--windowed-kv` became the default
+(unreleased).
+
+A windowed layer keeps 512 positions beyond its window, and the compaction that makes room moved its start as far forward as it could,
+so how far back a follow-up could still reuse the cache cycled between 0 and 512 positions depending on where the last reply happened to
+end. A follow-up that diverged further back prefilled the whole prompt. In the 2026-10-13 I3 night, 35 of Codex's 59 requests on
+Mellum2.1 (16K context) did that, about 65 s each: some 2,430 s, three quarters of that cell's wall time.
+
+A compaction now moves the start only far enough to keep 448 positions behind the newest one, so a follow-up that diverges up to 448
+tokens before the end of what the cache holds reuses its prefix wherever the last reply ended. The planned memory is unchanged: the
+context, the KV slots and the expert cache each model gets are the same as before. When VRAM is left over after all of those (and after
+the vision-tower, decode and prefill reserves), the load also gets up to 576 more positions, a rollback of up to 1,024, and the serve log
+says so; an expert-cache load never does. So whether a long reply's follow-up is warm can depend on the memory state at load. Replayed on
+the I3 requests, the follow-ups inside a run that re-prefilled drop from 30 of 54 to 16 at 448, and to 5 at 1,024. Output is unchanged
+(the reused and cold prefills, and decode across the more frequent compactions, are bit-identical: `TestWindowedKV_rollbackReuse`,
+`TestWindowedKV_stepIdentity64`). Compacting every 64 positions instead of every 512 copies more per token (about 0.1% of a token by
+arithmetic on Mellum2.1; a decode-speed guard is registered). Details:
+[`docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md`](docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md). The CPU backend's
+window rings keep no rollback at all and are not changed (same record).
 
 ### Fixed — Claude Code 2.1.268 could not complete a turn against `/v1/messages`
 
@@ -409,8 +433,8 @@ fluent); a re-read after the expert-major rounding fix is queued, and until it r
 A sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer
 context in the same VRAM. Texts were identical across two A/B passes and eight sessions; decode speed pooled at 0.987 and 0.991 of
 full KV (the registered bar was 0.98), and a 1% to 2% cost is not excluded. It engages only on the CUDA resident path for a model
-with sliding-window layers and a context above the window. **A long multi-turn agent loop past the window re-prefills the prompt each
-turn** (its correctness is gated, its speed is not): `--windowed-kv=false` is the opt-out
+with sliding-window layers and a context above the window. **A turn that diverges more than 448 tokens before the end of what the cache
+holds (up to 1,024 with VRAM to spare) re-prefills the whole prompt** (see the Fixed entry on reuse after a dropped reply): `--windowed-kv=false` is the opt-out
 ([`docs/tasks/task-cuda-windowed-kv-2026-10.md`](docs/tasks/task-cuda-windowed-kv-2026-10.md), sections 12 and 13).
 
 ### Added — Whisper and Voxtral's audio encoder on the GPU under `--backend cuda`
