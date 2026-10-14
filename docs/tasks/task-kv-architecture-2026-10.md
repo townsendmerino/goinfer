@@ -1,7 +1,7 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
 > **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0). KV1 DONE 2026-10-14: every gate read PASS
-> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2 is next.** Written on the owner's ask after a Cowork conversation the same day ("seems
+> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2: gates registered 2026-10-14 (`docs/measurements/kv2-2026-10-14.md`), no code yet.** Written on the owner's ask after a Cowork conversation the same day ("seems
 > like we should consider a new KV architecture, given what goinfer is like now, feature-wise, what would be the best
 > architecture if we were writing it from scratch. how close is the current code?", then "please write the task doc for
 > the new architecture as proposed, be thorough").
@@ -727,21 +727,34 @@ Metal device gate.
     touches). KV2 should keep that when it adds the copy.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.
 
-### KV2 — Cross-conversation reuse by copy (still slot storage)
+### KV2 — Cross-conversation reuse by copy (still slot storage) — gates REGISTERED 2026-10-14, no code yet
+
+Branch `kv2-2026-10`. Gates, and the choices made before the code: `docs/measurements/kv2-2026-10-14.md`. The Mac
+builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/prompts/nobara-kv2-cuda-2026-10.md`.
+KV2 merges when every arm on both boxes is read.
 
 - **Build:**
-  - a hit that lives in another slot is copied into the bound slot (`CopyDevice` / `CopyDeviceBatch`) and the rest is
-    prefilled;
-  - slots are reassigned by block LRU instead of slot LRU.
+  - one optional resident interface copies rows `[start, end)` of every layer from one slot to another; a backend that
+    cannot returns a named decline and the rows are prefilled;
+  - a hit that lives in another slot is copied into the request's slot and the rest is prefilled;
+  - a prompt's blocks are published when its prefill ends, so a conversation arriving while another generates can
+    take its preamble;
+  - a request no longer takes another conversation's slot in place when it would cut a block or more of it;
+  - the namespace comes from serve (D4), and `-kv-share off` is added;
+  - slots are reassigned by block LRU instead of slot LRU;
+  - the CPU's sessions copy last (D2).
   - The copy is small next to the prefill it saves. A 19,692-token preamble on the 7B at f32 (112 KB a position) is about
     2.2 GB of device copy, around 10 ms on the 8 GB card, against seconds of prefill.
-- **Gates (sketch):**
-  - **Schedule independence (hard):** N conversations sharing a preamble, in every schedule the MC4 harness runs; every
-    reply equals that conversation's reply alone.
-  - **Time-to-first-token** for a new conversation sharing a preamble of 16K tokens or more: a band registered from
-    KV0's projection, on both boxes.
-  - **A lone request** at 0.99 or better.
-  - **The copy cost** reported.
+- **Gates (registered):**
+  - G0: split invariance on the Mac's backends.
+  - G1: identity.
+  - G2: the copy exact, per backend.
+  - G3: schedule independence (hard).
+  - G4: KV1's carry-overs, each with a planted defect.
+  - G5: the sharing gate, which decides KV2 (Q3). The busy-source case is graded against KV0's projection, and the
+    idle case against `main`.
+  - G6: a lone request at 0.99 against `main`, on Metal and CUDA.
+  - G7: copy and admission cost, reported.
 - **Size:** S–M. **Closes:** most of §1.2, without kernel work, on CUDA, Metal and WebGPU.
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
