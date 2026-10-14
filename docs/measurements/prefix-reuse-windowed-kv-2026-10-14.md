@@ -243,3 +243,12 @@ Read beside the verdict and not graded: the per-restart-pair ratios (mean new ov
 arm and across arms. The prediction (PASS 0.7) holds. The step stays at 64. Files: `speed-guard-2026-10-14/` beside this record
 (`summary.json`, `results.json`, `provenance.txt`, `binaries-check.txt`); the server logs are in the run directory under
 `~/goinfer-logs/kvwindow-ring-2026-10-14/`.
+
+**When it ran, and on what box.** 2026-10-14, 11:34:42 to 12:34:23 PDT, the second job of a queue the owner started by day at 11:20.
+- **The lock:** `night.py` takes the timing lock before each job and holds it to the end. A job that cannot get it is skipped with
+  "could not start", and this one started and ended `ok`, so it held the lock throughout. The same mechanism showed the next job,
+  `i3-d-mellum-codex-f`, as the holder when checked at 14:35.
+- **Idle:** before each of the 16 sessions the idle gate waited for the 1-minute load to fall under 1.0. It read 0.88 to 1.00 as
+  rounded, after waits of 0 to 90 s. The GPU read 459 MiB in use at the start, its idle baseline.
+- **Nothing else built or tested on the box in that hour:** the Go build cache has no file written between 11:34:42 and 12:34:23.
+  The day session's own builds came at 14:11 to 14:17, after it.
