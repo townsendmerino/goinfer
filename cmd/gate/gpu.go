@@ -957,8 +957,14 @@ func (g *gpuGate) cudaPTX() {
 	var unavail []string
 	for _, f := range ptxFiles {
 		base := strings.TrimSuffix(filepath.Base(f), ".ptx")
+		// kernel is what build_ptx.sh is asked for. <k>_kv16.ptx has no source of its own name: it is <k>.cu built with
+		// the KV cache as f16, which build_ptx.sh writes whenever it builds <k>.
+		kernel := base
 		if _, err := os.Stat(filepath.Join("cuda", base+".cu")); err != nil {
-			continue // no source ⇒ not ours to reproduce
+			kernel = strings.TrimSuffix(base, "_kv16")
+			if _, err := os.Stat(filepath.Join("cuda", kernel+".cu")); kernel == base || err != nil {
+				continue // no source ⇒ not ours to reproduce
+			}
 		}
 		total++
 		want := recordedNVRTC(f)
@@ -973,7 +979,7 @@ func (g *gpuGate) cudaPTX() {
 			nUnavail++
 			continue
 		}
-		cmd := exec.Command("./build_ptx.sh", base)
+		cmd := exec.Command("./build_ptx.sh", kernel)
 		cmd.Dir = "cuda"
 		cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
 		if err := cmd.Run(); err != nil {
@@ -1014,6 +1020,20 @@ func (g *gpuGate) cudaPTX() {
 	if len(unavail) > 0 {
 		g.skip("%d/%d PTX NOT verified on this box (toolchain absent): %s", nUnavail, total, strings.Join(unavail, " "))
 	}
+}
+
+// runPTX is `gate ptx`: the PTX group alone, for a machine that has NVRTC and no GPU. It is stricter than the group
+// inside `gate gpu`, where a file whose toolchain is absent is a counted skip: here every recorded toolchain is
+// installed on purpose, so a file that was not verified fails the run.
+func runPTX(w io.Writer) int {
+	g := &gpuGate{w: w, emitted: map[string]bool{}}
+	g.cudaPTX()
+	if g.fail > 0 || g.skipped > 0 || g.pass == 0 {
+		fmt.Fprintf(w, "\n%sgate ptx: RED%s  (%d failed, %d not verified)\n", red, off, g.fail, g.skipped)
+		return 1
+	}
+	fmt.Fprintf(w, "\n%sgate ptx: GREEN%s\n", green, off)
+	return 0
 }
 
 // ---- Metal groups ----

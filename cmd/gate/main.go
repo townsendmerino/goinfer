@@ -63,6 +63,8 @@ usage:
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
+  gate ptx                                         every cuda/testdata/*.ptx rebuilt from its .cu at the NVRTC it records, compared
+                                                   byte for byte; needs NVRTC, no GPU (GOINFER_NVRTC_DIRS names the installs)
   gate release [-offline] vX.Y.Z                   the pre-flight as rows: done / OWED / UNKNOWN each, with its record; exit 0 only when all are done
   gate changelog [-base TAG] [-section S]          new routes, flags, families and the aikit pin since TAG that the CHANGELOG section does not name
   gate gpu-records [-head REV] [-dir DIR]          which backends have a record that still qualifies at REV (exit 1 if one does not)
@@ -180,6 +182,9 @@ func run(argv []string, w io.Writer) int {
 	// rather than pretending to be a gateConfig with an unusual report.
 	if name == "gpu" {
 		return runGPU(w, *logDir, *recordDir)
+	}
+	if name == "ptx" {
+		return runPTX(w)
 	}
 	if name == "selector" {
 		return selectorCoverage(w)

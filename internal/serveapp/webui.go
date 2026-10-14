@@ -104,6 +104,22 @@ func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// webUICSP is the page's content policy: everything it loads comes from this server, so that markup which somehow reached
+// the DOM could not run a script or reach another host. The page writes model output as text nodes and has no HTML sink
+// (TestWebUI_noHTMLStringSinks); this is the second line behind that. What each directive is for:
+//
+//	script-src 'self'   ui/markdown.js and ui/app.js; no inline script, no eval
+//	style-src           ui/app.css, and the style attributes index.html carries ('unsafe-inline' covers attributes only
+//	                    in effect: there is no inline <style> and no way for output to add one)
+//	img-src             an attached image is a data: URI, resized through a blob: URL; the stylesheet's grain is data:
+//	connect-src 'self'  fetch to this server's own routes
+//	frame-src data:     the HTML preview, a sandboxed data: document with a policy of its own (previewDoc in ui/app.js)
+//	frame-ancestors     nobody may frame the page
+//
+// TestWebUI_contentPolicyAllowsWhatThePageLoads reads the page's own files against it.
+const webUICSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+	"connect-src 'self'; frame-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
 func (s *server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// The page is generated per build and embeds no secrets, but it is served from the same
@@ -112,7 +128,7 @@ func (s *server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	// No other page may frame this one: its Load, Unload and Pull buttons act with no key on a loopback server, so a framing page could
 	// steer a click (clickjacking). frame-ancestors is the standard; X-Frame-Options covers an older browser.
-	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", webUICSP)
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
@@ -515,6 +531,10 @@ type webLoadReq struct {
 // checked on the resolved name too, which also refuses an in-progress download (Download writes "<name>.part" and renames only
 // after the digest verifies).
 //
+// A path that does not resolve, and a path that resolves outside the cache, get the SAME refusal: the route takes any absolute
+// path from a page, and two answers would tell that page which files exist on this machine. What the cache itself holds is
+// not a secret from the page (it lists it), so refusals of paths inside the cache say what is wrong.
+//
 // Not defended: someone who can already write into the user's cache directory can swap a file between this check and the load.
 // That is the user's own account, which could run anything anyway.
 func webLoadPath(p string) (string, error) {
@@ -532,13 +552,14 @@ func webLoadPath(p string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("the pull cache %s is not readable: %w", root, err)
 	}
+	notInCache := fmt.Errorf("the web UI loads only models pulled into %s, and that path is not one; start the server with --model, or use -allow-admin, for anything else", root)
 	resolved, err := filepath.EvalSymlinks(filepath.Clean(p))
 	if err != nil {
-		return "", fmt.Errorf("no such model file: %s", p)
+		return "", notInCache
 	}
 	rel, err := filepath.Rel(realRoot, resolved)
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("the web UI loads only models pulled into %s; start the server with --model, or use -allow-admin, for anything else", root)
+		return "", notInCache
 	}
 	if fi, err := os.Stat(resolved); err == nil && fi.IsDir() {
 		// A staging directory carries its marker for the instant between pull writing it and the rename: refused by

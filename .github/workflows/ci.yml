@@ -717,6 +717,26 @@ jobs:
       - name: test -tags cuda
         run: CGO_ENABLED=0 go test -short -tags 'cuda goinfer_testhooks' ./cuda/...
 
+      # The shipped kernels are the committed cuda/testdata/*.ptx, embedded as they are. Each must rebuild byte for byte
+      # from its .cu at the NVRTC version the file records, or a .ptx that does not match its source would ship. NVRTC
+      # needs no GPU and no host compiler. The tree carries two versions; a kernel built at a third needs its pair added
+      # here, and until then `gate ptx` fails naming the version it lacks. Each pair is nvrtc + the runtime headers
+      # (cuda_fp16.h) that nobara's `gate gpu` rebuilds with.
+      - name: install the pinned NVRTCs (12.6.85, 12.9.86)
+        run: |
+          dirs=""
+          for pair in "12.6.85 12.6.77" "12.9.86 12.9.79"; do
+            set -- $pair
+            root="$RUNNER_TEMP/nvrtc-$1"
+            python3 -m pip install --quiet --target "$root" "nvidia-cuda-nvrtc-cu12==$1" "nvidia-cuda-runtime-cu12==$2"
+            test -e "$root/nvidia/cuda_nvrtc/lib/libnvrtc.so.12" || { echo "no libnvrtc.so.12 under $root"; ls -R "$root" | head -50; exit 1; }
+            test -e "$root/nvidia/cuda_runtime/include/cuda_fp16.h" || { echo "no cuda_fp16.h under $root"; ls -R "$root" | head -50; exit 1; }
+            dirs="$dirs${dirs:+:}$root/nvidia"
+          done
+          echo "GOINFER_NVRTC_DIRS=$dirs" >> "$GITHUB_ENV"
+      - name: PTX rebuilds byte for byte from source
+        run: go run ./cmd/gate ptx
+
   # Root module on darwin/arm64. The Linux jobs above can't catch
   # platform-specific build breaks — e.g. a syscall the darwin syscall package
   # lacks under a too-broad `//go:build unix` (see decoder/madvise_*.go). This

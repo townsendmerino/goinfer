@@ -10,7 +10,7 @@
 //   1. HOSTILE INPUT. Every payload is rendered into a node ATTACHED to the document, so a payload
 //      that did create a live <img onerror> or <script> would actually fire. Then it asserts:
 //        - every element is in the renderer's allow-list, with only allow-listed attributes;
-//        - every href is http:, https: or mailto:, and every class is one the renderer emits;
+//        - every href is http://, https:// or mailto:, and every class is one the renderer emits;
 //        - no payload ran: window.__pwned is still 0 after the page has had time to load anything.
 //   2. PATHOLOGICAL INPUT. Inputs built to trigger regex backtracking must each render within a time
 //      budget — the renderer runs on every streamed chunk, so a slow case freezes the page.
@@ -47,7 +47,7 @@ const program = String.raw`(async () => {
       const allowed = ATTRS[tag] || new Set(["class"]);
       for (const at of e.attributes) {
         if (!allowed.has(at.name)) bad.push("attribute " + at.name + " on <" + tag + ">");
-        if (at.name === "href" && !/^(https?:|mailto:)/i.test(e.getAttribute("href"))) bad.push("href " + JSON.stringify(e.getAttribute("href")));
+        if (at.name === "href" && !/^(https?:\/\/|mailto:)/i.test(e.getAttribute("href"))) bad.push("href " + JSON.stringify(e.getAttribute("href")));
         if (at.name === "class") for (const c of at.value.split(/\s+/).filter(Boolean)) if (!CLASS_OK.test(c)) bad.push("class " + JSON.stringify(c));
       }
     }
@@ -62,6 +62,7 @@ const program = String.raw`(async () => {
     "iframe in table cell": "| a |\n|---|\n| <iframe src=\"javascript:window.__pwned=1\"></iframe> |",
     "html anchor with javascript": '<a href="javascript:window.__pwned=1">x</a>',
     "md link javascript": "[click](javascript:window.__pwned=1)",
+    "md link, scheme with no slashes": "[click](http:v1/admin/unload) and [again](HTTPS:/v1/models)",
     "md link mixed-case scheme": "[click](JaVaScRiPt:window.__pwned=1)",
     "md link leading space": "[click]( javascript:window.__pwned=1)",
     "md link data url": "[click](data:text/html,<script>window.__pwned=1<\/script>)",
@@ -118,6 +119,28 @@ const program = String.raw`(async () => {
     "5k-row table": "| a | b |\n|---|---|\n" + "| 1 | 2 |\n".repeat(5000),
     "long line of pipes": "|".repeat(50000),
     "escaped chars": "\\*".repeat(20000),
+    // One long line under each block opener (audit 2026-10-12): a heading, a fence and a table separator used to be
+    // matched by patterns that tried every split of a run of spaces.
+    "heading then 80k spaces": "# " + " ".repeat(80000) + "x",
+    "heading with 20k closing runs": "# a" + " #".repeat(20000) + " b",
+    "fence then 80k spaces then a backtick": "\x60\x60\x60" + " ".repeat(80000) + "\x60",
+    "tilde fence then 80k spaces": "~~~" + " ".repeat(80000) + "x\ncode\n~~~",
+    "table head then 80k spaces as the separator": "a|b\n" + " ".repeat(80000) + "x",
+    "table separator of 40k columns": "a|b\n" + "|-".repeat(40000) + "x",
+    "rule then 80k spaces": "-" + " ".repeat(80000) + "x",
+    "list item then 80k spaces": "- " + " ".repeat(80000) + "x",
+    "quote of 80k spaces": "> " + " ".repeat(80000) + "x",
+    "5k long lines, each a near-heading": ("#".repeat(7) + " ".repeat(40) + "\n").repeat(5000),
+    "heading, 80k spaces, then a hash and text": "# a" + " ".repeat(80000) + "#x",
+    "fence then 80k letters then a backtick": "\x60\x60\x60" + "x".repeat(80000) + "\x60",
+    "table separator, then 80k spaces": "a|b\n-|-" + " ".repeat(80000) + "x",
+    // Inline text far past what one paragraph holds: an opener that never closes is searched for to the end of the
+    // text from every opener, so the renderer parses long text in pieces.
+    "unclosed strong x50000": "**a ".repeat(50000),
+    "200k open brackets": "[".repeat(200000),
+    "unclosed strikethrough x50000": "~~a ".repeat(50000),
+    "unclosed code spans x50000": "\x60\x60a \x60 ".repeat(50000),
+    "50k nested quotes": ">".repeat(50000) + " x",
   };
   for (const [name, src] of Object.entries(slow)) {
     const box = document.createElement("div");
@@ -158,6 +181,12 @@ const program = String.raw`(async () => {
     ["see [docs](https://example.com)", 'p("see ",a("docs"))'],
     ["visit https://example.com.", 'p("visit ",a("https://example.com"),".")'],
     ["[bad](javascript:x)", 'p("bad (javascript:x)")'],
+    // A scheme with no "//" is a relative reference: the browser resolves it against the page's own address.
+    ["[own](http:v1/models)", 'p("own (http:v1/models)")'],
+    ["[own](https:/v1/models)", 'p("own (https:/v1/models)")'],
+    ["[mail](mailto:a@example.com)", 'p(a("mail"))'],
+    // Long text is parsed in pieces; formatting inside each piece still renders.
+    ["**b** " + "word ".repeat(2000) + "**c**", 'p(strong("b")," ' + "word ".repeat(2000) + '",strong("c"))'],
     ["| a | b |\n|:--|--:|\n| 1 | 2 |", 'table.md-table(thead(tr(th.al-left("a"),th.al-right("b"))),tbody(tr(td.al-left("1"),td.al-right("2"))))'],
     ["para\n\n\x60\x60\x60\ncode\n\x60\x60\x60\n\nafter", 'p("para"),div.md-code(div.md-code-head(button.md-copy("Copy")),pre(code("code"))),p("after")'],
     ["<b>not bold</b>", 'p("<b>not bold</b>")'],
