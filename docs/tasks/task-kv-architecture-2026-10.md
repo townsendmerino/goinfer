@@ -854,6 +854,10 @@ for them:** the served speed gate on both boxes and the Metal device gate.
 - **Gates (if reopened):**
   - the parity manifest bit-identical (the CPU is the reference);
   - the memory saved with four sessions sharing a preamble, measured.
+- **Step 0, measured 2026-10-14 (exploratory):** `docs/measurements/kv9-2026-10/README.md`.
+  - **Recommendation:** close KV9 with KV2's copies as enough. Owner's call.
+  - At 6K on the 0.5B, host blocks would save 405 MiB of a measured 2,159 MiB four-session footprint.
+  - The CPU cold prefill's retained high-water is the larger term.
 - **Size:** M–L if reopened.
 
 ### KV10 — Long context and lower precision
