@@ -89,6 +89,58 @@ features). Two load-time notes the taxonomy does not encode:
   twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it
   has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
 
+## Why a cell reads CPU
+
+Every reason the default configuration declines, for each CPU cell above. The runner-shape check comes first, and
+every later gate that also refuses is listed after it: the features the backend does not implement, an activation
+hazard, the MoE router's capacity. A family is resident on a backend only when nothing is listed for it, so lifting
+the first reason is not enough while another remains. Generated from
+`decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`, the checks
+admission runs.
+
+| Family | CPU on | Why |
+|---|---|---|
+| Command-R | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
+| Command-R7B | WebGPU | missing: `layer-norm`, `nope`, `pairwise-rope`, `parallel-block` |
+| DeepSeek-V2 | Metal | missing: `mla` |
+| DeepSeek-V3 | Metal | missing: `mla` |
+| GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
+| GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos` |
+| GPT-2 | CUDA | missing: `learned-pos`, `non-gated-mlp` |
+| Gemma 2 | WebGPU, CUDA, Metal | missing: `attn-logit-softcap` |
+| Granite-4.0-H | WebGPU | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
+| Granite-4.0-H | CUDA, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); missing: `ssm` |
+| Kimi K2 | Metal | missing: `mla`; router capacity: 384 experts, the kernel routes 256 |
+| LFM2.5 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged; missing: `short-conv` |
+| Laguna | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate` |
+| Ling 3.0 | WebGPU, CUDA | missing: `kda` |
+| Ling 3.0 | Metal | missing: `kda`, `mla` |
+| Llama 4 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged |
+| Ministral 3 | WebGPU | missing: `attn-temp` |
+| Nemotron-H | CUDA | missing: `non-gated-mlp`, `ssm` |
+| Nemotron-H | Metal | missing: `ssm` |
+| Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
+| Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
+| Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
+| SmolLM3 | WebGPU | missing: `nope` |
+| Spark-X2.5 | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate`, `gated-gelu-erf` |
+
+The runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no
+GPU runner reproduces. **Local and global RoPE tables differ in length** is
+`decoder/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a
+different number of dimensions. **Bring-up gate** is Granite-4.0-H's parity bring-up, described in the notes above.
+
+**Phi-3 / Phi-4: the table reads one configuration, and a default load picks another.** The activation
+hazard is the per-row int8 activation scale (`decoder/actquant_hazard.go:ActivationQuantHazard`), and the table reads
+the configuration that has it. The loader picks one that does not
+(`internal/modelload/modelload.go:activationSafeQuant`):
+
+- **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with
+  per-32 activation scales, which CUDA's residency also implements.
+- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation
+  scales, which Metal's resident projections do not implement, so it runs on the CPU.
+- **WebGPU:** neither; the CPU.
+
 ## Verified on: what has actually run
 
 The table above is what each backend IMPLEMENTS. This section is what has actually EXECUTED, generated from the hardware census (`docs/hardware-coverage.json`), which records for each

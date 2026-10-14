@@ -602,6 +602,7 @@ const (
 	runnerShapeBringUp    = "bring-up gate (GOINFER_SSM_RESIDENT unset)"
 	runnerShapeNemoMoE    = "Nemotron MoE block"
 	runnerShapeMoE        = "MoE shape"
+	runnerShapeRoPE       = "local and global RoPE tables differ in length"
 )
 
 // runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
@@ -684,7 +685,7 @@ func (a *Architecture) runnerShapeDecline() string {
 	// per-layer-type RoPE (Mellum YaRN-on-global vs default-local invFreq + mscale, Lever
 	// C7). The last gate is ropeResidentCompatible below.
 	if !a.ropeResidentCompatible() {
-		return fmt.Sprintf("local and global RoPE tables differ in length (%d and %d)", len(a.ropeInvFreqLocal), len(a.ropeInvFreqGlobal))
+		return runnerShapeRoPE
 	}
 	return ""
 }
