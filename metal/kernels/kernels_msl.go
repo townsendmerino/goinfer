@@ -11,7 +11,7 @@ package kernels
 const AllKernels = `
 #include <metal_stdlib>
 using namespace metal;
-
+` + AttnScoreMSL + `
 // addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder's rmsnorm.go, which
 // applies the weight AFTER the normalize: (v*inv) * (1+w[i]).
 kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float* w[[buffer(1)]],
@@ -1219,7 +1219,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
             // accumulation order ⇒ bit-identical; guarded on hd%4==0 for alignment, scalar tail otherwise.
             if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
             for (; d<hd; d++) a += qr[d]*float(k[d]);
-            sc[s - winStart]=a*scale;
+            sc[s - winStart]=attn_score(a*scale);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
@@ -1293,7 +1293,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
                 a += qr[d+3u]*float(k4.w);
             }
             for (; d < hd; d++) a += qr[d]*float(k[d]);
-            sc[s - tileBase] = a * scale;
+            sc[s - tileBase] = attn_score(a * scale);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -1435,7 +1435,7 @@ kernel void attention_fa(
             float part = qslice[g][0]*float(k4.x) + qslice[g][1]*float(k4.y)
                        + qslice[g][2]*float(k4.z) + qslice[g][3]*float(k4.w);
             float dot = simd_sum(part);
-            float score = dot * scale;
+            float score = attn_score(dot * scale);
             float m_new = max(m[g], score);
             float alpha = (m[g] == -INFINITY) ? 0.0f : exp(m[g] - m_new);
             float p = exp(score - m_new);
@@ -1688,7 +1688,7 @@ kernel void attention_fa_blk64(
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
                 float2 k2 = float2(*((device const half2*)(kb + (b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
-                    float d = simd_sum(dot(qs[g], k2));
+                    float d = attn_score(simd_sum(dot(qs[g], k2)));
                     s[g] = (lane == j) ? d : s[g];
                 }
             }
@@ -1696,7 +1696,7 @@ kernel void attention_fa_blk64(
             for (uint j = 0; j < nb; j++) {
                 float2 k2 = float2(*((device const half2*)(kb + (b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
-                    float d = simd_sum(dot(qs[g], k2));
+                    float d = attn_score(simd_sum(dot(qs[g], k2)));
                     s[g] = (lane == j) ? d : s[g];
                 }
             }
@@ -1782,7 +1782,7 @@ kernel void attention_f32(device const float* q[[buffer(0)]], device const float
             // float4 vectorized K-read (same coalescing fix as attention, f32 KV). Bit-identical.
             if ((hd&3u)==0u) for (; d<hd; d+=4u){ float4 k4=*((device const float4*)(k+d)); a+=qr[d]*k4.x; a+=qr[d+1u]*k4.y; a+=qr[d+2u]*k4.z; a+=qr[d+3u]*k4.w; }
             for (; d<hd; d++) a += qr[d]*k[d];
-            sc[s - winStart]=a*scale;
+            sc[s - winStart]=attn_score(a*scale);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
@@ -1816,7 +1816,7 @@ kernel void attention_f32(device const float* q[[buffer(0)]], device const float
                 a += qr[d+3u]*k4.w;
             }
             for (; d < hd; d++) a += qr[d]*k[d];
-            sc[s - tileBase] = a * scale;
+            sc[s - tileBase] = attn_score(a * scale);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -1897,7 +1897,7 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
             float k_scale = ks[s*nKV + kvh];
             if ((hd&3u)==0u) for (; d<hd; d+=4u){ char4 k4=*((device const char4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
             for (; d<hd; d++) a += qr[d]*float(k[d]);
-            sc[s - winStart]=(a * k_scale)*scale;
+            sc[s - winStart]=attn_score((a * k_scale)*scale);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
@@ -1960,7 +1960,7 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
                 a += qr[d+3u]*float(k4.w);
             }
             for (; d < hd; d++) a += qr[d]*float(k[d]);
-            sc[s - tileBase] = (a * k_scale) * scale;
+            sc[s - tileBase] = attn_score((a * k_scale) * scale);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
 

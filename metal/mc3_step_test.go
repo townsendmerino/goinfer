@@ -222,7 +222,16 @@ func mc3IdentityWith(t *testing.T, depths []int, ctx int, setup func(r *resident
 			ref[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
 		}
 		got := mc3Step(t, r, seqs)
+		rowsLabel := attnDigestRowsLabel
+		if rowsLabel == "" {
+			rowsLabel = "mc3_attention_rows"
+			if strings.Contains(t.Name(), "faRows") { // the fixture's G = 6 takes the block kernel and its rows form past the depth floor
+				rowsLabel = "mc3_attention_rows,mc3_attention_fa_blk_rows_g6,mc3_attention_fa_combine_rows"
+			}
+		}
 		for m := range B {
+			recordAttnDigest(t, rowsLabel, got[m])
+			recordAttnDigest(t, "model-decode", ref[m])
 			diff, worst := 0, 0.0
 			for i := range got[m] {
 				if math.Float32bits(got[m][i]) != math.Float32bits(ref[m][i]) {

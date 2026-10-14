@@ -1107,6 +1107,11 @@ func (m *Model) NormEps() float32 {
 // softcap·tanh(logits/softcap) host-side after readback, mirroring logitsFromHidden.
 func (m *Model) FinalLogitSoftcapResident() float32 { return float32(m.w.arch.FinalLogitSoftcap) }
 
+// AttnLogitSoftcapResident is the attention-score softcap (FeatAttnLogitSoftcap), 0 when the model has none. A
+// resident backend that declares the feature computes cap·tanh(score/cap) on each scaled score before the mask and the
+// softmax, as softcapScore does, in every attention kernel a capped layer can take.
+func (m *Model) AttnLogitSoftcapResident() float32 { return float32(m.w.arch.AttnLogitSoftcap) }
+
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.

@@ -159,6 +159,7 @@ func runAttnFACase(t *testing.T, d *Device, pFA, pCombine Pipeline, nH, nKV, hd,
 	enc.End()
 
 	got := out.Floats()
+	recordAttnDigest(t, "attention_fa,attention_fa_combine", got[:nH*hd])
 	var dot, na, nb float64
 	for i := range ref {
 		dot += float64(got[i]) * float64(ref[i])

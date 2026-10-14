@@ -113,6 +113,10 @@ MODELS = {
     # identical, and its template closes turns with <|end|>, where p3m used </s>.
     "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m-local"),
     "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
+    # gemma3-4b added 2026-10-13 for OP1's Metal speed guard (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-S):
+    # head dimension 256 on the exact attention kernel, new against base (BENCH_ENGINES=goinfer,goinfer_old). The peer
+    # tag is a placeholder: no peer row is taken for it.
+    "gemma3-4b":  (os.path.expanduser("~/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"), "g34b-none"),
     # M35/M26 added 2026-09-04 (docs/tasks/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
     # what ollama and llama-server load -- Q4_K_M, same quant family as every other row. Neither
     # checkpoint had a Q4_K_M GGUF on this box: the archive only carried M35 as Q8_0 and M26 as a
