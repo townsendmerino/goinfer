@@ -495,8 +495,24 @@ is MC4's identity gate extended to shared preambles.
 ### 5.12 Speculation and drafters
 
 - **Verify rows go into the private tail.** A rollback is `Truncate`.
-- **Window and chunk groups keep one block of slack** behind the window, so a rollback inside a verify width stays valid.
-  This is the windowed doc's slack rule in block form.
+- **Window and chunk groups keep rollback slack behind the window, sized for a client's rollback, not for a verify
+  width.** One block (64 tokens) covers a speculative verify but not a conversation that drops or edits its last reply.
+  - **The measurement (2026-10-14).** On CUDA's windowed KV (1,024 window + 512 slack), the base moved in full
+    512-token jumps. So the budget for rolling back into a slot cycled between 0 and 512 tokens, depending on where the
+    last decode landed, and any larger rollback went cold. Replaying that arithmetic predicted warm or cold for 59 of 59
+    Codex requests from the I3 night. 35 of the 59 went cold, about 2,430 s of re-prefill.
+  - **The rule chosen for CUDA (the ring fix, being built 2026-10-14; this line changes to "built" when it merges):**
+    - The base compacts in 64-token steps, so the budget never drops below 448. It costs no VRAM; the extra copying is
+      about 0.1% of a token's time on Mellum2.1.
+    - Extra rollback, up to 1,024, comes only from VRAM left after planning. It never costs residency, context, a slot
+      or an expert slot, and an expert-cache load gets none.
+    - Limit: right after a prefill pass of 448 rows or more, an edit inside that pass has less than 448 until decode
+      catches up. Dropping the last reply is always covered.
+  - **The paged design keeps the same guarantee.** A window group retains at least the rollback budget behind the
+    window, not one block. KV2's registration (`kv2-2026-10`) is amended to match, and KV4 sizes window groups with it.
+  - **What removes most rollback in the first place** is the client sending its reasoning back. `/v1/responses` returns
+    reasoning items and accepts them back (PR #12). The ring rule covers every other client that edits late in its
+    prompt.
 - **Drafters' own caches stay outside the pool** in this doc: `cuda/drafter.go`, EAGLE, and the block drafters.
 
 ### 5.13 The backend contract (sketch; names provisional)
@@ -916,7 +932,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
 | **D1** | Reverse the paged-attention parking narrowly, for memory and reuse within one user's conversations and agents? `positioning.md`'s "no paged attention" would change; continuous batching stays parked. | **DECIDED 2026-10-13: yes** ("un park paged attention for sure"). |
 | **D2** | Does the CPU path join (KV9)? | Index and copies when KV2 lands; storage later, only on a measured memory case. **DECIDED 2026-10-13: no, not now; the CPU joins only through KV2's copies.** |
 | **D3** | WebGPU: page it or keep slots? | Keep slots; KV6 decides with numbers. **DECIDED 2026-10-13: keep slots on WebGPU**, as the census supports. |
-| **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. **DECIDED 2026-10-13: one namespace on loopback, one per API key, and no sharing between namespaces (off) when `serve` binds beyond loopback without API keys.** The conservative choice; it costs a single local user nothing. |
+| **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. **DECIDED 2026-10-13: one namespace on loopback, one per API key, and no sharing between namespaces (off) when `serve` binds beyond loopback without API keys.** The conservative choice; it costs a single local user nothing. **As built in KV2 (2026-10-14), against serve as it is:** serve has one shared API key, so "one namespace per key" is one namespace, and its holders are one trust domain. Serve refuses to start beyond loopback without a key, so that case cannot arise. The network-facing case that remains, a loopback server answering an `-allowed-hosts` name without a key, shares nothing. `--kv-share off` turns sharing off for any server. |
 | **D5** | Policy under pressure? | Evict idle → demote → preempt the newest by release (§5.10). **DECIDED 2026-10-13: as proposed.** |
 | **D6** | CLI meanings before v1.0 (`-ctx`, `-kv-sessions` are Hard tier)? | Keep both: `-ctx` is a per-conversation cap, `-kv-sessions` the number of conversations kept warm and running on a resident. New flags only for sharing scope and the host-tier budget. **DECIDED 2026-10-13: keep the meanings of `-ctx` and `-kv-sessions`.** |
 | **D7** | CUDA's default KV precision once f16 passes its gate? | f16 by default with f32 kept as the reference, Metal's precedent. **DECIDED 2026-10-13: extend f16 to the remaining families as each clears its fidelity gate** (it is already the default for llama, mistral, qwen2, qwen3 and phi3). |

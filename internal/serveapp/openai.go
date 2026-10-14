@@ -164,6 +164,12 @@ type loadedModel struct {
 	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
 	gemma4AudioDevice string
 	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
+
+	// scripted is a test seam: when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
+	// slice is the model's end of turn) instead of running model. Production never sets it.
+	scripted []int
+	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
+	onScripted func(promptIDs []int)
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -926,7 +932,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -935,7 +941,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp), false))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
@@ -952,7 +958,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -969,6 +975,9 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		"index":         0,
 		"message":       msg,
 		"finish_reason": finish,
+	}
+	if e := emptyAnswerOf(gr, finish, stopHit, 0, nComp); e != nil {
+		choice["goinfer_empty_answer"] = e
 	}
 	if req.Logprobs {
 		choice["logprobs"] = lm.logprobs(lps)
@@ -1108,6 +1117,8 @@ type genRequest struct {
 	// think, when set, routes the decoded text through a reasoning splitter (think.go): content goes to drive's onText,
 	// reasoning to think.onReasoning. nil = pass text through untouched.
 	think *thinkOut
+	// outcome receives what streamTokens saw of the answer (emptyAnswerOf reads it). Set by prepare.
+	outcome *turnOutcome
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1239,6 +1250,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		sp:          sp,
 		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: stops,
+		outcome:     &turnOutcome{},
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
@@ -1495,6 +1507,14 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	var stream <-chan int
 	var gen *decoder.Generation
 
+	if lm.scripted != nil {
+		if lm.onScripted != nil {
+			lm.onScripted(gr.promptIDs)
+		}
+		finish, n, stopHit := lm.streamTokens(parent, cancel, scriptedStream(lm.scripted, gr.maxTokens), gr, nil, onText)
+		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
+	}
+
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
 	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
 	// prefix-reuse cache is CPU-side, so the two cannot both be the source of truth, and going through a session
@@ -1721,6 +1741,15 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	// thinkOut): the reasoning goes to its own callback, and what the stop logic watches, holds back and emits is the
 	// answer text. With no splitter (th == nil) the stop logic watches everything the model wrote.
 	th := gr.think
+	if o := gr.outcome; o != nil {
+		emit := onText
+		onText = func(s string) {
+			if !o.answered && strings.TrimSpace(s) != "" {
+				o.answered = true
+			}
+			emit(s)
+		}
+	}
 	var ids []int
 	// sb accumulates the decoded text incrementally instead of re-decoding the whole ids sequence every token, which
 	// is O(n^2) in output length. Decode's per-token loop (tokenizer/sentencepiece.go) has no state that depends on
@@ -1872,3 +1901,16 @@ func jsonLogprob(x float64) float64 {
 }
 
 func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(id)) }
+
+// scriptedStream is loadedModel.scripted as drive's token channel: at most maxTokens of ids, then closed.
+func scriptedStream(ids []int, maxTokens int) <-chan int {
+	if len(ids) > maxTokens {
+		ids = ids[:maxTokens]
+	}
+	ch := make(chan int, len(ids))
+	for _, id := range ids {
+		ch <- id
+	}
+	close(ch)
+	return ch
+}

@@ -454,8 +454,9 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**B21 · `gate gpu`'s heavy main tier no longer fits its 120 m timeout** — `linux`, filed 2026-10-14 (owner: file, not fix
-today)
+**B21 · `gate gpu`'s heavy main tier no longer fits its 120 m timeout** — `linux`, filed 2026-10-14. **FIXED 2026-10-14 by
+option (a), the split** (owner: on v0.23.0's path): `cudaHeavy` runs the main group as two processes by test name, reconciled both
+ways; basis and expected duration in `docs/code-notes/cmd-gate.md`, "cudaHeavy: main-tier timeout".
 
 `gate gpu`'s `cuda-heavy` main group runs `./cuda/` in one process under `Timeout: "120m"`. The KV3 CUDA suite, run as one
 process on 2026-10-13, spent 6,507 s on the first 421 of the 469 main-tier tests, after removing the 684 s of fresh-process

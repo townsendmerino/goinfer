@@ -653,12 +653,14 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		finish, stopSeq, cancelReason string
 		nComp                         int
 		gerr                          error
+		fromReasoning                 bool
 	)
 	if toolsActive {
 		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
 		var t toolTurn
 		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
 		text, calls, lead, finish, stopSeq, cancelReason, nComp = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp
+		fromReasoning = t.fromReasoning && len(t.calls) > 0
 	} else {
 		var sb strings.Builder
 		finish, nComp, _, stopSeq, _, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
@@ -698,7 +700,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		reason, seq = anthropicStopReason(finish, stopSeq)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	msg := map[string]any{
 		"id":            id,
 		"type":          "message",
 		"role":          "assistant",
@@ -707,7 +709,14 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		"stop_reason":   reason,
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
-	})
+	}
+	if e := emptyAnswerOf(gr, finish, stopSeq, len(calls), nComp); e != nil {
+		msg["goinfer_empty_answer"] = e
+	}
+	if fromReasoning {
+		msg[fromReasoningField] = true
+	}
+	writeJSON(w, http.StatusOK, msg)
 }
 
 // handleCountTokens renders the prompt exactly as /v1/messages would (system +

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # The CUDA half of the pre-tag GPU gate (`go run ./cmd/gate gpu`, RELEASING.md §C1-M names the Metal half) as an unattended night job. It tests REV (default
-# origin/main, fetched at start) in its own detached worktree, so whatever is half-edited in the main checkout is not what runs. About 83 minutes: the part outside
-# the heavy real-model tier took 4 min 54 s on 2026-10-06 (docs/measurements/gate-gpu-noheavy-2026-10-06/) and the heavy tier measured 78 min on 2026-09-28.
+# origin/main, fetched at start) in its own detached worktree, so whatever is half-edited in the main checkout is not what runs. About 2 h 20 min: the part outside
+# the heavy real-model tier took 4 min 54 s on 2026-10-06 (docs/measurements/gate-gpu-noheavy-2026-10-06/); the heavy tier's basis is in
+# docs/code-notes/cmd-gate.md, "cudaHeavy: main-tier timeout".
 #
 # Needs: an IDLE GPU (the gate checks), the timing lock (night.py takes it), the models under ~/models, and a go.work (gitignored, so the worktree gets one:
 # the cuda module builds against THIS tree's root, not the last published tag). The gitignored fixtures are symlinked in from the main checkout, as the sweep does.
 # A gate that did not print its own PASS verdict is a failure of this job, whatever the exit code: a skip is not a pass.
-#   python3 scripts/night.py add gate-gpu-cuda --est 90 --by "<who>, R1" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh
+#   python3 scripts/night.py add gate-gpu-cuda --est 150 --by "<who>, R1" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh
 #   GOINFER_GATE_SKIP_HEAVY=1 bash .../run-gate-gpu.sh /tmp/somewhere     # the 5-minute control of this script's own plumbing
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)

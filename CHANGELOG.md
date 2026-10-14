@@ -186,6 +186,34 @@ Traced with the real client ([the record](docs/measurements/integration-harness-
 its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
 named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
 
+### Added — `/v1/responses` returns the reasoning as a reasoning item and reads it back, so a Codex turn stays warm
+
+A thinking model's reasoning is now a `reasoning` output item (in `content` and, unchanged, in `encrypted_content`). A
+reasoning item sent back in `input` is rendered as that turn's replayed reasoning, where the model's own template
+puts it. Before, the route dropped the reasoning. Codex resent each assistant turn without the reasoning still held in
+the KV, so every turn rolled back to the end of the previous prompt, and on CUDA windowed-KV models (Mellum2.1) it
+re-prefilled from cold. Live, Codex 0.162.1 x Mellum2.1 on an RTX 2070 SUPER: the turns after the first reused
+6,504 of 6,554 and 6,873 of 6,949 prompt tokens, with time to first token 0.6 s and 0.9 s against 65 s for the cold first
+turn (docs/measurements/integration-harness-2026-10/reasoning-items-live-2026-10-14.md). The reused count is reported in
+`usage.input_tokens_details.cached_tokens`.
+
+### Fixed — a thinking model's tool call written inside its reasoning was lost, and an empty answer gave no reason
+
+A thinking model can write its tool call inside its reasoning block and end its turn there. The splitter routed the call
+to the reasoning and the call parser reads only the answer, so the turn came back with no call and no answer: on
+`/v1/responses`, which returns no reasoning, an empty message marked `completed`. Seen in the I3 night of 2026-10-13
+(Codex x Mellum2.1 `read`, and opencode x Qwen3-4B `read` on `/v1/chat/completions`, whose reasoning ended on the call).
+
+- **A turn with no answer text takes its tool call from its reasoning**, on all three routes, and says so with
+  `goinfer_tool_calls_from_reasoning: true`. A call drafted in the reasoning of a turn that went on to answer in prose is
+  still not taken.
+- **An empty answer always says why.** A turn that ends with no answer text and no tool call is `status: "incomplete"`
+  with `incomplete_details: {"reason", "detail"}` on `/v1/responses`, and carries `goinfer_empty_answer: {"reason",
+  "detail"}` on `/v1/chat/completions` (in the choice, or the finish chunk) and `/v1/messages` (in the message, or the
+  `message_delta` event). The reason is `ended_in_reasoning`, `reasoning_only`, `stop_sequence` or `no_output`. A reply
+  cut off by its token limit keeps the reason it already had (`length`, `max_output_tokens`, `max_tokens`). Both fields
+  are an **Experimental** vendor extension (docs/server.md, "Empty answers say why"): the set of values may change.
+
 ### Changed — resident prefix reuse is kept by one KV manager (no change in what a request gets)
 
 The record of what each GPU KV slot holds, the choice of a slot for a prompt and the length it may skip moved from
