@@ -698,7 +698,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		reason, seq = anthropicStopReason(finish, stopSeq)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	msg := map[string]any{
 		"id":            id,
 		"type":          "message",
 		"role":          "assistant",
@@ -707,7 +707,11 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		"stop_reason":   reason,
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
-	})
+	}
+	if e := emptyAnswerOf(gr, finish, stopSeq, len(calls), nComp); e != nil {
+		msg["goinfer_empty_answer"] = e
+	}
+	writeJSON(w, http.StatusOK, msg)
 }
 
 // handleCountTokens renders the prompt exactly as /v1/messages would (system +

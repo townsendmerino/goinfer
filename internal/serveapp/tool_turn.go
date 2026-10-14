@@ -120,11 +120,20 @@ func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lea
 // and the answer, so the buffered text never contains it: with a router attached the calls are read from the router.
 // (With -reasoning-format none there is no router and the buffer holds the raw reply, markers included, which the
 // template's parser reads itself.) The prose is trimmed, as the parsers return it.
+//
+// A turn with no answer at all is read from its reasoning: a thinking model can write its call inside the block and end
+// its turn there, or close the block after the call, and the call is then the turn. A call drafted in the reasoning of a
+// turn that went on to answer in prose is not taken.
 func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) ([]chat.ToolCall, string) {
 	calls, lead := tmpl.ParseToolCallsFor(raw, tools)
 	if len(calls) == 0 && th != nil {
 		if routed := th.toolCalls(); len(routed) > 0 {
 			return routed, strings.TrimSpace(raw)
+		}
+		if strings.TrimSpace(raw) == "" && th.reasoning.Len() > 0 {
+			if inBlock, _ := tmpl.ParseToolCallsFor(th.reasoning.String(), tools); len(inBlock) > 0 {
+				return inBlock, ""
+			}
 		}
 	}
 	return calls, lead

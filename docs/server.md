@@ -674,7 +674,7 @@ to ignore.**
 | Clients that parse `<think>` tags themselves | `reasoning_format: "none"` (or `-reasoning-format none`) | the raw text, tags and all, in `content` — exactly what serve sent before |
 | Both at once | `reasoning_format: "deepseek-legacy"` | `reasoning_content` filled and the tags kept in `content` |
 | Anthropic `/v1/messages` | `thinking: {"type": "enabled"\|"adaptive"\|"disabled"}` | a `thinking` block first, then `text` (and `tool_use`); with no `thinking` field, text only — reasoning is dropped |
-| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`; reasoning items are not returned |
+| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`; reasoning items are not returned (a turn that was all reasoning is `incomplete`, see "Empty answers" below) |
 
 - **Defaults.** `-thinking template` (the default) renders what each checkpoint's own chat template renders when thinking
   is unspecified, so serve behaves as the model's card says: Qwen3.5-0.8B and Gemma 4 do not think; Qwen3.5-9B and Qwen3 do.
@@ -696,6 +696,14 @@ to ignore.**
   thinking control, or to a model whose tokenizer has no single token for the block's delimiters. A reply that ends inside its
   block anyway (one of those cases) has empty `content`, `reasoning_content` holding what was written, and `finish_reason:
   length` (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`).
+- **Empty answers say why.** A turn that ends (not cut off) with no answer text and no tool call is never returned as a clean
+  one. `/v1/responses` marks it `status: "incomplete"` with `incomplete_details: {"reason": …, "detail": …}`;
+  `/v1/chat/completions` adds `goinfer_empty_answer: {"reason": …, "detail": …}` to the choice (streamed: to the chunk that
+  carries `finish_reason`), and `/v1/messages` adds it to the message (streamed: to the `message_delta` event). The reasons:
+  `ended_in_reasoning` (the model ended its turn inside an unclosed reasoning block), `reasoning_only` (it closed the block
+  and wrote nothing after it), `stop_sequence` (a stop string matched before any answer text) and `no_output`. A turn cut off
+  by its token limit keeps its usual reason. On a tool request, a turn with no answer text whose reasoning holds a tool call
+  returns that call: a thinking model sometimes writes its call inside the block and ends its turn there.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

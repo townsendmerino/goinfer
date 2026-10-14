@@ -451,7 +451,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		finish, nComp, _, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -460,7 +460,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
@@ -474,7 +474,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	}
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, lps, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, stopHit, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -495,6 +495,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			"finish_reason": finish,
 		}},
 		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+	}
+	if e := emptyAnswerOf(gr, finish, stopHit, 0, nComp); e != nil {
+		vresp["choices"].([]any)[0].(map[string]any)["goinfer_empty_answer"] = e
 	}
 	if req.Logprobs {
 		vresp["choices"].([]any)[0].(map[string]any)["logprobs"] = lm.logprobs(lps)
@@ -579,7 +582,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		th := &anthropicThink{ss: ss, want: req.wantsThinking()}
 		s.routeThink(lm, &gr, tm, turns, ts, th.push)
 		if th.want {
-			streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
+			streamMessagesThinking(ss, th, gr, func(onText func(string)) (string, int, string, string, error) {
 				finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
 				return finish, nComp, stopSeq, cancelReason, gerr
 			})
@@ -606,7 +609,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		}
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
+		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp))
 		return
 	}
 	var sb, rb strings.Builder
@@ -628,13 +631,17 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			vcontent = vcontent[:1]
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	vmsg := map[string]any{
 		"id": id, "type": "message", "role": "assistant", "model": lm.name,
 		"content":       vcontent,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
-	})
+	}
+	if e := emptyAnswerOf(gr, finish, stopSeq, 0, nComp); e != nil {
+		vmsg["goinfer_empty_answer"] = e
+	}
+	writeJSON(w, http.StatusOK, vmsg)
 }
 
 // qwenASRMaxSeconds is the longest clip a request may carry. The model has no 30 s window (its encoder attends within 8 s blocks), so this is a cost bound, not the model's limit: a
