@@ -320,3 +320,23 @@ func TestHits_windowedUnalignedFastRows(t *testing.T) {
 		t.Errorf("Hits = %v, want 64: block 1 holds rows 100.. from a pass that started off a block boundary", got)
 	}
 }
+
+// TestHits_unclaimedImageMatchesNothing is G4(d) through the copy path: two different images with no content hash at
+// the same place have the same placeholder ids, so the block holding one must never be taken for the other.
+func TestHits_unclaimedImageMatchesNothing(t *testing.T) {
+	root := Root{Model: "m", Precision: "f16"}
+	toks := seqOf(260, 9)
+	img := []ImageSpan{{Start: 70, Len: 10}} // no content hash
+	a := NewSlots(2)
+	a.Acquired(0, 0, toks[:250])
+	a.Commit(0, root, toks[:250], img, 250, metalClasses)
+	if got := a.Hits(Request{Root: root, Tokens: toks, Images: img}, metalClasses.ColdClasses(len(toks))); got[0] != 64 {
+		t.Errorf("Hits = %v, want 64: block 1 holds an image neither side names", got)
+	}
+	named := []ImageSpan{{Start: 70, Len: 10, Hash: 7}}
+	a.Acquired(1, 0, toks[:250])
+	a.Commit(1, root, toks[:250], named, 250, metalClasses)
+	if got := a.Hits(Request{Root: root, Tokens: toks, Images: named}, metalClasses.ColdClasses(len(toks))); got[1] != 192 {
+		t.Errorf("Hits = %v, want 192 from slot 1: the same named image at the same place matches", got)
+	}
+}
