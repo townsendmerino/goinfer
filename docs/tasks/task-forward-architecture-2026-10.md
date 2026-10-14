@@ -1,7 +1,7 @@
 # Task: one forward architecture — models as operation lists, one ragged forward pass (OP0–OP6, RF0–RF6, HL) — 2026-10
 
-> **Status: OP0 DONE 2026-10-13; every other phase is scoped and not started.** OP0's summary is under §4.4, its feature census
-> is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6, 2026-10-13), before any OP1 code. Every other phase is scoped
+> and not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -318,10 +318,8 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
 - **OP1 — attention softcapping on every GPU (M).** Worth doing before the program exists.
   - Softcapping is a parameter of every attention kernel variant per backend: decode, split-KV and flash-decode, fused and
     exact prefill, and the MC3 rows.
-  - **Gates:**
-    - identity on every family without softcap;
-    - Gemma 2 parity against the CPU (the tiny fixture plus the real 2B and 9B);
-    - a decode peer cell against Ollama on each GPU box.
+  - It is two steps per backend: route every kernel's score through one function, then put the softcap in that function.
+  - **Its gates are registered in §4.6.**
 - **OP2 — the next operations, in order of demand (M–L each).** Each has its own gates, as OP1 does.
   - MLA on Metal: DeepSeek-V2/V3. Kimi K2 needs it and a router that routes 384 experts (Metal's routes 256).
   - SSM on CUDA and Metal: Nemotron-H, and Granite-4.0-H once its gate lifts.
@@ -513,6 +511,150 @@ All are read from the code, and none was run.
 - **Comments in `decoder/features.go`'s declared sets that the code has moved past:** CUDA's "per-layer rotary width is not
   implemented" (the layer struct carries one); CUDA's attention temperature "recomputed per row device-side" (a host-built
   table); Metal's "the f16 prefill declines" the E-model (it has a batched route); and several kernel file names.
+
+### 4.6 OP1: the registered gates (2026-10-13, before any OP1 code)
+
+Registered at main `0fb622ff`. Nothing below has been run. A backend's rows may be amended only before that backend's OP1 code
+starts, in a commit of their own; after that a change to a rule is a deviation and is reported as one.
+
+**The two steps, per backend.**
+- **Step 1 is a refactor.** §4.5 counts about 10 hand-written places per backend where an attention score is formed. Each is
+  routed through one score function per backend. The function returns what the kernel computes today, so nothing changes.
+- **Step 2 puts the softcap in that function:** `cap · tanh(score / cap)` on the scaled score, before the mask and the softmax,
+  which is what the CPU computes (`decoder/attention.go:softcapScore`).
+
+**What the function has to respect** (Metal, read 2026-10-13 in `metal/kernels/kernels_msl.go` and
+`metal/kernels/prefill_msl.go`). The kernels do not form the score the same way:
+- `attention`, `attention_f32`, `attention_fa`, `attention_prefill`, `attention_prefill_img` and `attention_prefill_fused`
+  multiply the dot product by the scale;
+- `attention_i8` multiplies by the key's scale first, then by the scale;
+- `attention_fa_blk` and `attention_fa_blk64` multiply the scale into the query before the dot product;
+- `attention_prefill_steel` folds log2(e) into the scale and uses a base-2 exponential.
+
+So the function takes the score as the kernel has it, and each kernel keeps its own order of multiplies. Where a constant is
+folded into the scale, step 2 folds the cap's constants the same way (FlashInfer's form, §10a).
+
+**Metal's mechanism, registered because the gates lean on it: the softcap is a compile-time variant.**
+- A model with a cap compiles its kernel library with the cap defined. A model without one compiles step 1's source.
+- **Why not a run-time parameter:**
+  - a branch per score sits in the hottest loop of every model;
+  - Metal's output has moved with code shape before, so "the cap = 0 path is identical" would rest on the compiler;
+  - the batched step's split-KV rows kernel already binds all 16 buffers it can.
+- **What this buys the identity gate:** for a model without a cap, step 2's kernel source is step 1's, byte for byte. G2-I
+  checks that as text, and then checks the bits.
+- CUDA and WebGPU choose their mechanism on nobara and write it here before their code. CUDA's kernels are prebuilt PTX, so a
+  compile-time variant there means more PTX files, as its f16-KV twins are.
+
+**Which kernels a capped model may run.**
+- Gemma 2 is the only family with a cap. INFERRED from Metal's lane selectors, to be confirmed by step 2's tests: its layers
+  (sandwich norms, head dimension 256) take `attention`, `attention_i8` under `--kv i8`, and `attention_prefill`.
+- **The rule:** every kernel that can be compiled with the cap is covered by G2-K, and a lane selector keeps a capped layer
+  off any kernel that is not. End-to-end evidence (G2-T, G2-R) exists only for the kernels Gemma 2 reaches, and the record
+  lists which those are.
+
+**Boxes.**
+
+| backend | box | notes |
+|---|---|---|
+| Metal | the MacBook: M1 Pro, 16 GB | 9.0 GB of disk free on 2026-10-13 |
+| CUDA | nobara-pc: RTX 2070 SUPER, 8 GB, the pinned driver | |
+| WebGPU | nobara-pc, over Vulkan | |
+
+**Checkpoints.**
+- **Tiny:** `testdata/gemma2-tiny` and `testdata/gemma2-hd-tiny`.
+- **Real 2B:** `gemma-2-2b-it`, from the archive to `~/models` with `models-pull`: the Q8_0 GGUF the CPU's real gate reads
+  (`TestGemma12Real_gate`).
+- **Real 9B:** not in the archive or on either box today. It runs where a box has the disk and the memory for it, and
+  otherwise the record says "9B not run" by name. The Mac does not have the disk today.
+- **The peer cell's file** is the GGUF Ollama ships for `gemma2:2b`, copied to `~/models` and loaded by both engines, with
+  `scripts/gguf_same_weights.py` reporting every tensor identical.
+
+**The gates.** "Base" is the commit before the backend's OP1 code. Identity gates have no ambiguous band: equal or not.
+
+| id | step | gate | tier | instrument | rule |
+|---|---|---|---|---|---|
+| G1-K | 1 | every attention kernel's output bytes are unchanged | day | a kernel digest test, built at base before the refactor: each text-path attention kernel driven on fixed inputs, its output hashed. Shapes: the head dimensions each kernel serves (64, 128, 256, 512); key counts on both sides of each kernel's tile bound; windowed and not; with and without a sink | every digest at the candidate equals base's. The test fails if the source has an attention kernel it does not drive |
+| G1-M | 1 | every family's logits are unchanged | day (tiny), night (real) | `go run ./cmd/gate identity <base> <candidate> -backend <b>`, `-assets tiny` then `-assets real`. The tool has no CUDA backend today; CUDA's half names its instrument before its code | bytes equal for every family, every step |
+| G1-S | 1 | the backend's own suites still pass | day (the tests the change touches), night (the device gate) | the attention kernel tests and the batched step's bit-identity tests by name; then `go run ./cmd/gate gpu` | green, with no test that passed at base skipped |
+| G2-I | 2 | a model without a cap is untouched | day (tiny), night (real) | G1-K and G1-M again, base against the step-2 tree; on Metal also a test that the library source built without the cap equals step 1's | equal |
+| G2-K | 2 | each capped kernel computes the softcap | day | each kernel that can be compiled with the cap, against an f64 reference, with scores on both sides of ±cap and peaked attention | cosine ≥ 0.9999 and max abs error ≤ 1e-2, `TestAttention_ShippedKernelShapes`' bar |
+| G2-T | 2 | Gemma 2 tiny, resident against the CPU | day | `TestGemma1ResidentParityMetal`'s shape on both tiny fixtures: 16 positions, both sides int4. The batched prefill against the token-by-token one, as `TestPrefillParityGemma` does | worst logit cosine ≥ 0.999. `TestGemma2DeclinesResidentMetal` is replaced by this |
+| G2-R | 2 | Gemma 2 real, resident against the CPU | day if estimated under 10 min, else night | the real-checkpoint harness (`TestGemma3ResidentParity`'s: greedy lockstep off the CPU, 24 steps, positions from 2), at int8int8 and at int4, both sides the same | min logit cosine ≥ 0.88, argmax equal at ≥ 50% of positions, no NaN: the Gemma 3 gate's bar |
+| G2-D | 2 | the gates can see a dropped cap | day | the cap removed from the build (a planted defect), then G2-K, G2-T, G2-R | G2-K must go red. For G2-T and G2-R the result is recorded: one that stays green does not vouch for the cap, only for the rest of Gemma 2's path |
+| G2-M | 2 | the matrix | day | `go test ./decoder -run HardwareMatrix -update` | Gemma 2 reads resident on the backend, and only after G2-I, G2-K, G2-T, G2-R pass there |
+| G2-S | 1+2 | no model got slower | night | two arms, new against base (below) | below |
+| G2-P | 2 | Gemma 2's decode against Ollama and against our CPU | night | `scripts/bench_peer.py`, one timed run per box (below) | below |
+
+**G2-R's band.** `TestDenseResidentParity` (the control, bar 0.95) and `TestGemma3ResidentParity` run in the same session.
+- The control failing voids the session.
+- **Parked, for the owner:** Gemma 2 clears 0.88 but its min cosine is more than 0.03 under Gemma 3's from the same session.
+  The feature is not declared while parked.
+
+**G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
+`cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
+can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
+the cap.
+
+**G2-S, the speed guard** (`docs/measurements/noise-registry.md` §8's template):
+```
+Tier: night.
+Instrument: served, two arms (new, base), no peer arm: scripts/bench_peer.py for decode, scripts/bench_prefill_stall.py's
+  solo arm for time to first token. A refactor has no in-process A/B: the two builds cannot share a process.
+Cells (Metal): decode on the 1.5B at depth 128 and 3900 (the exact kernel, then the split-KV ones), and on Gemma 3 4B at
+  depth 128 (head dimension 256, the kernel Gemma 2 shares); time to first token on the 1.5B at K = 3900.
+Noise: decode sd 0.0129 (metal-r17-e2e-control-crossbuild, a cross-build A/A, n = 2); time to first token sd 0.0112
+  (the chunked-prefill solo arm).
+power.py N: `power.py served-decode mac/metal/1.5B/d128 --bar 0.97 --expect 1.0 --paired` -> N = 4 blocks (power 0.87);
+  `power.py served-ttft mac/metal/1.5B/k3900 --bar 0.97 --expect 1.0 --paired` -> N = 4 blocks (power 0.94).
+  A bar of 0.99 cannot be resolved: power.py wants N = 13 against a feasible 12.
+Stopping rule: fixed N = 4 blocks per cell, no early stop.
+Rule: PASS if every cell's interval clears 0.97. FAIL if any cell's interval lies under 0.97.
+Ambiguous band: an interval that straddles 0.97. Parked for the owner; the refactor stays, and the cell is re-read.
+Speed bar: this is a no-regression guard, not a ship bar. The refactor is expected to read 1.00.
+Cost: 4 cells x 4 blocks x 2 arms, about 2 min an arm-cell: about 65 min. Queued after the KV1 jobs.
+```
+- What 0.97 leaves open: a regression under 3% is not seen by this gate. The argument that there is none is G2-I's: without a
+  cap the compiled source is unchanged by step 2, and step 1 changes it only by one inlined function.
+- CUDA and WebGPU register their own cells and N from nobara's registry entries before their code.
+
+**G2-P, the peer cell** (the same template):
+```
+Tier: night. One timed run per box, under the timing lock.
+Instrument: scripts/bench_peer.py, same-session interleaved, greedy, server restart between cells. Three arms: goinfer on
+  the GPU backend, goinfer on the CPU backend (the do-nothing arm: where Gemma 2 decoded before OP1), and Ollama.
+Model: gemma-2-2b-it, the GGUF Ollama ships as gemma2:2b, loaded by both engines; 4-bit both sides.
+Cells: decode at depth 128 and 2048.
+Noise: for the peer ratio, served-decode-peer-arm sd 0.0099 (seed-mac-metal-peer-all-P, n = 2); a cross-session ratio is
+  not a ratio.
+power.py N: not a bar to resolve for the peer ratio, which is a read. For GPU against CPU the expected ratio is several
+  times 1, so the harness default (3 runs x 8) resolves the bands below at N = 1 block.
+Stopping rule: one pass at the harness defaults. No second pass unless the first is void.
+Rule, GPU against our CPU (this one gates): ship >= 1.02x at both depths; park 1.00-1.02x; off < 1.00x. "Off" means the
+  softcap is not declared on that backend, because Gemma 2 would get slower by default.
+Rule, against Ollama (this one is a read, and never gates): reported as the ratio with its provenance. It enters
+  docs/benchmarks.md under that file's own rules.
+Ambiguous band: 1.00-1.02x against our CPU, for the owner.
+Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits: about 25 min. Queued after G2-S.
+```
+
+**Void conditions, for every gate above.**
+- A model path under `/srv/models` or `/Volumes/`.
+- A resident arm whose `DecodePath()` is not the backend's resident path (a silent CPU fallback passes every parity bar).
+- A skipped test counted as a pass. Each gate's record names what ran, by `--- PASS`.
+- The two sides of an identity gate run on different boxes, OS builds or drivers.
+- For G2-R: the two sides at different quants.
+- For the timed gates: an idle-gate or load deviation, a timed run without the lock, weights that are not the same on both
+  engines, or a stop before the fixed token count on either engine.
+
+**Order, and what a failure does.**
+1. Build G1-K's digest test at base and record base's digests. It is the first OP1 commit on a backend.
+2. Step 1, then G1-K, G1-M (tiny), G1-S (by name). Any failure: step 1 is not merged.
+3. Step 2, then G2-I (tiny), G2-K, G2-D, G2-T, G2-R. Any failure, or G2-R parked: the feature is not declared.
+4. Declare `attn-logit-softcap` on the backend, regenerate the matrix (G2-M), merge.
+5. Night: G1-M and G2-I on real checkpoints, the device gate, G2-S, G2-P.
+   - An identity or device-gate failure reverts the step that caused it, the next morning.
+   - G2-S failing reverts both steps. A second night's run, base against step 1 alone, then says which step it was.
+   - G2-P "off" against our CPU removes the declaration, which is one line.
 
 ## 5. Track RF — one ragged forward pass
 
