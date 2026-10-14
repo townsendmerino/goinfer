@@ -193,8 +193,9 @@ the session ending on the overflow. A fail with the fixed part fitting means the
 
 #### I1 live gate, second design (I1-v2)
 
-**Status: DRAFT, FOR OWNER REVIEW, NOT REGISTERED.** The owner approved the design on 2026-10-14, with the amendments folded in below.
-This commit adds the predictions. Registration is the next commit, and nothing runs before both.
+**Registered 2026-10-14 at `main` `5c609661`** (the predictions commit; the design was approved by the owner the same day, with the
+amendments folded in below). From this commit on, the rules, windows, arms, void classes and predictions below do not move.
+Nothing has run.
 
 **Why a second design.** The first design (3c in I3's run plan) read the night of 2026-10-13 as Codex VOID, opencode VOID and Claude Code
 FAIL (I3's read, below). It failed in two ways. Qwen3-4B fetched every `bulk` file in one step, which no compaction can cure. And in
@@ -650,7 +651,7 @@ Code's own auto-compaction (`trigger: auto`), twice before goinfer had answered 
 "Autocompact is thrashing". The window, 28,672, was barely above its 17,711-token first request plus the 7,168 reserved for output. The
 predictions (Codex PASS, opencode FAIL, Claude Code the unknown) were not tested for the two VOID harnesses. With Qwen3-4B the gate as
 built cannot read the wording on Codex or opencode, because the model reads all eight `bulk` files in one step. A fresh registration
-is drafted in I1 (§2, "I1 live gate, second design").
+is registered in I1 (§2, "I1 live gate, second design (I1-v2)").
 The record also notes an outside read on the box during job B, at 21:19, and shows that it moved no graded cell.
 
 **Recorder defects found by the grade, fixed in `matrix/`:** an empty reply was graded against the raw output, which produced the false
