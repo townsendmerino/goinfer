@@ -920,6 +920,11 @@ func f32Projection(m *decoder.Model) string {
 	return ""
 }
 
+// attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted
+// defect OP1's Gemma 2 gates must catch (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-D and G2-R's arm P).
+// Tests in this package set it directly.
+var attnSoftcapDropForTest bool
+
 // w8PreciseMath compiles the library of a model headed for the native int8 path without fast math: at int8int8 any
 // difference from the CPU is amplified by the activation quantization, and fast math was a large part of gate F3's gap
 // (docs/tasks/task-metal-int8-2026-10.md). It is decided before the build from the model alone, so a model that passes
@@ -1013,6 +1018,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		compile = d.CompileLibraryPrecise
 	}
 	attnSoftcap := m.AttnLogitSoftcapResident()
+	if attnSoftcapDropForTest {
+		attnSoftcap = 0
+	}
 	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels, attnSoftcap) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
 	if err != nil {
 		return nil, err

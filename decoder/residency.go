@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -1115,7 +1116,16 @@ func (m *Model) AttnLogitSoftcapResident() float32 { return float32(m.w.arch.Att
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
+// attnSoftcapOffForTest removes the attention-score softcap from every model loaded while it is set, on the CPU and on
+// a resident alike, before the resident is built: OP1's real Gemma 2 gate measures its own baseline with it
+// (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-R's arm B). Set only through SetAttnSoftcapOffForTest
+// (goinfer_testhooks).
+var attnSoftcapOffForTest atomic.Bool
+
 func (m *Model) withResidency() *Model {
+	if attnSoftcapOffForTest.Load() {
+		m.w.arch.AttnLogitSoftcap = 0
+	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
 		return m // force the per-matmul staged path (decision-matrix measurement)
 	}
