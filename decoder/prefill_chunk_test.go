@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // G40-1 (docs/tasks/task-cpu-prefill-memory-2026-10.md §4): a text prefill run in chunks equals the single pass bit for
@@ -106,6 +107,7 @@ func prefillChunkCell(t *testing.T, m *Model, C int) {
 	if 2*C+17 < fastAttnMinPrompt {
 		t.Fatalf("C = %d: 2C+17 is under the fast-attention floor, so no case has a short last chunk inside a fast suffix", C)
 	}
+	t0, done, total := time.Now(), 0, 4*len(lengths)
 	for _, exact := range []bool{false, true} {
 		m.exactPrefill = exact
 		for _, warm := range []bool{false, true} {
@@ -133,6 +135,8 @@ func prefillChunkCell(t *testing.T, m *Model, C int) {
 				if ld := logitDiff(lw, lc); ld != 0 || kd != 0 {
 					t.Errorf("exact %v, warm %v, suffix %d, C %d: %d logits and %d K/V elements differ (first: %s)", exact, warm, n, C, ld, kd, first)
 				}
+				done++
+				fmt.Fprintf(os.Stderr, "[g40-1 %5.0fs] %d/%d cases: exact %v, warm %v, suffix %d done\n", time.Since(t0).Seconds(), done, total, exact, warm, n)
 			}
 		}
 	}
