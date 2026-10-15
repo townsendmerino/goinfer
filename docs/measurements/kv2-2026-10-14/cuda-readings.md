@@ -24,6 +24,16 @@ first slot with the longest hit. If that slot's window has moved on, the copy is
 holds the rows: A1 B1 A2 C1 left B's slot based at 241 and C was served cold. Choosing among sources by
 `ReusableKVSlot` would recover the copy. This costs time, never a wrong row.
 
-## Night
+## Night, 2026-10-15 (REV `fe87a89b`, BASE `e77c721f`; graded in the registration's §7)
 
-Not yet queued (`run-kv2-cuda-night.sh`, beside the registration).
+| gate | verdict | deciding numbers |
+|---|---|---|
+| G5-C T-busy | **DELIVERS** | median saving ÷ projection 0.926 over 6 blocks; saving 10.25 s (B1 12.29 s on main, 2.05 s on kv2); hit 18,112 every block |
+| G5-C T-idle | **PASS** | (B1 + A2) main ÷ kv2, median 1.926 |
+| G5-C controls | hold | off ÷ main 0.999; header on 1.000 with 0 reused; identity 18 of 18; no void condition met |
+| G5-C diagnostic | — | declines: 0; of them, with another slot that could serve: 0 |
+| G6-C | **PASS**, all four | medians 0.9982, 0.9997, 0.9959, 0.9999; every 95% interval above ln(0.99) |
+| G1-C heavy | **PASS** | 122 pass, 0 fail; 8 skips, all named opt-ins |
+| G7-C | reported | 18,176 rows: 1.5B 2.83 ms at f16 and 5.57 ms at f32; 7B 5.64 ms at f16; served 2.89 ms, 0.03% of the saving |
+| GV-C(a) 26B | **SAME** | 1 KV slot, 41 expert slots a layer, on both arms; the instrument's blanking was fixed and the banners re-read |
+| GV-C(c) | share and speed **PASS** (−74, −23 MB); heavy **FAIL** (+511 MB) | parked for the owner: not attributed to KV2; a BASE control is the way to settle it |

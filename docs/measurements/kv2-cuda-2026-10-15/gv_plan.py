@@ -15,7 +15,7 @@ DROP = re.compile(r"is not in memory: reading|^swap guard")
 NOISE = [
     (re.compile(r"budget [\d.]+ GB, [\d.]+ GB left"), "budget <host>"),
     (re.compile(r"\d+(\.\d+)? ?(MB|MiB|GB|GiB) (of [\d.]+ ?(MB|MiB|GB|GiB) )?free"), "<free>"),
-    (re.compile(r"free[^,;)]*?\d+(\.\d+)? ?(MB|MiB|GB|GiB)"), "free <n>"),
+    (re.compile(r"free:? \d+(\.\d+)? ?(MB|MiB|GB|GiB)"), "free <n>"),
     (re.compile(r"\d+(\.\d+)? ?(ms|s)\b"), "<t>"),
     (re.compile(r"127\.0\.0\.1:\d+"), "<addr>"),
 ]
