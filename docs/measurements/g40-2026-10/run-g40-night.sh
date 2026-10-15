@@ -20,6 +20,7 @@ SRC=$HOME/tmcode/goinfer
 B=$HOME/goinfer-bench/g40-2026-10
 OUT=$HOME/goinfer-logs/g40-2026-10/night-$(date +%F)-$JOB
 command -v go >/dev/null 2>&1 || export PATH=/usr/local/go/bin:/opt/homebrew/bin:$PATH
+unset GOWORK # an inherited workspace file would make each worktree's `go work init` write to it instead
 mkdir -p "$B/bin" "$OUT" || exit 2
 cd "$SRC" || exit 2
 git fetch -q origin || echo "warning: fetch failed; using what $SRC has"
