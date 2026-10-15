@@ -1,0 +1,341 @@
+//go:build cuda
+
+package serveapp
+
+// Throwaway measurement harness for id-roundtrip-step0-2026-10-15.md. Not committed here: its source is archived beside the
+// record as idstep0_test.go.txt. Copy it into internal/serveapp/ and run:
+//
+//	render only (CPU, tokenizer and template):
+//	  IDS_MODE=render IDS_REQ=<requests.jsonl> IDS_MODEL=<model path> IDS_OUT=<render.jsonl> \
+//	    go test -tags cuda -count=1 -run '^TestIDStep0$' -v ./internal/serveapp/
+//	replay (GPU, serve's own handler on the loaded model):
+//	  IDS_MODE=run IDS_REQ=... IDS_SELECT=<ids file, one per line, in run order> IDS_ARGS='<serve flags>' IDS_OUT=<run.jsonl> \
+//	    IDS_BUDGET=<seconds> go test -tags cuda -count=1 -timeout 40m -run '^TestIDStep0$' -v ./internal/serveapp/
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+	"unsafe"
+
+	_ "github.com/townsendmerino/goinfer/cuda"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/modelload"
+)
+
+type idsReq struct {
+	ID       string            `json:"id"`
+	Run      string            `json:"run"`
+	N        int               `json:"n"`
+	Body     map[string]any    `json:"body"`
+	Follow   []json.RawMessage `json:"follow"`
+	Recorded map[string]int    `json:"recorded"`
+	Archived []map[string]any  `json:"archived_reply"`
+}
+
+func idsLoad(t *testing.T, path string) (map[string]*idsReq, []string) {
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	m, order := map[string]*idsReq{}, []string{}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<28)
+	for sc.Scan() {
+		var r idsReq
+		if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
+			t.Fatal(err)
+		}
+		m[r.ID] = &r
+		order = append(order, r.ID)
+	}
+	return m, order
+}
+
+func idsResIDs(m *decoder.Model) []int {
+	v := reflect.ValueOf(m).Elem().FieldByName("resIDs")
+	return append([]int(nil), reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem().Interface().([]int)...)
+}
+
+func idsLCP(a, b []int) int {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return n
+}
+
+func TestIDStep0(t *testing.T) {
+	mode := os.Getenv("IDS_MODE")
+	if mode == "" {
+		t.Skip("set IDS_MODE")
+	}
+	reqs, order := idsLoad(t, os.Getenv("IDS_REQ"))
+	of, err := os.Create(os.Getenv("IDS_OUT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer of.Close()
+	enc := json.NewEncoder(of)
+
+	if mode == "render" {
+		tk, err := modelload.Tokenizer(os.Getenv("IDS_MODEL"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+		sf := registerFlags(fs)
+		if err := fs.Parse(strings.Fields(os.Getenv("IDS_ARGS"))); err != nil {
+			t.Fatal(err)
+		}
+		s := &server{cfg: sf.cfg}
+		lm := &loadedModel{tk: tk, name: "ids"}
+		lm.tmpl = s.cfg.tuneTemplate(tmpl)
+		for _, id := range order {
+			r := reqs[id]
+			body, _ := json.Marshal(r.Body)
+			ids, err := kv0Render(s, lm, "/v1/responses", body)
+			line := map[string]any{"id": id, "recorded": r.Recorded["input"]}
+			if err != nil {
+				line["error"] = err.Error()
+			} else {
+				line["n"] = len(ids)
+			}
+			_ = enc.Encode(line)
+		}
+		return
+	}
+
+	// run: the server exactly as Main builds it, from IDS_ARGS.
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	sf := registerFlags(fs)
+	if err := fs.Parse(strings.Fields(os.Getenv("IDS_ARGS"))); err != nil {
+		t.Fatal(err)
+	}
+	markGivenFlags(fs, &sf.cfg)
+	cfg := sf.cfg
+	cfg.load = *sf.lf
+	if err := cfg.load.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux, _ := srv.routes(cfg, "", os.Stderr)
+	var lm *loadedModel
+	for _, v := range srv.models {
+		lm = v
+	}
+	special := map[int]bool{}
+	{
+		var tj struct {
+			Added []struct {
+				ID int `json:"id"`
+			} `json:"added_tokens"`
+		}
+		raw, err := os.ReadFile(filepath.Join(os.Getenv("IDS_TOKDIR"), "tokenizer.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &tj); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range tj.Added {
+			special[a.ID] = true
+		}
+	}
+	var sel []string
+	raw, err := os.ReadFile(os.Getenv("IDS_SELECT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			sel = append(sel, l)
+		}
+	}
+	budget, _ := strconv.Atoi(os.Getenv("IDS_BUDGET"))
+	start := time.Now()
+	pieces := func(ids []int) []string {
+		out := make([]string, len(ids))
+		for i, id := range ids {
+			out[i] = string(lm.tk.TokenText(id))
+		}
+		return out
+	}
+	for k, id := range sel {
+		if budget > 0 && time.Since(start) > time.Duration(budget)*time.Second {
+			fmt.Fprintf(os.Stderr, "IDS budget of %d s reached after %d of %d jobs; stopping\n", budget, k, len(sel))
+			break
+		}
+		r := reqs[id]
+		if r == nil {
+			t.Fatalf("no request %s", id)
+		}
+		body := map[string]any{}
+		for kk, v := range r.Body {
+			body[kk] = v
+		}
+		body["temperature"] = 0
+		body["max_output_tokens"] = 4096
+		body["stream"] = true
+		bb, _ := json.Marshal(body)
+		before := idsResIDs(lm.model)
+		t0 := time.Now()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(bb)))
+		wall := time.Since(t0)
+		if rec.Code != 200 {
+			t.Fatalf("%s: status %d: %s", id, rec.Code, rec.Body.String())
+		}
+		var items []map[string]any
+		var usage map[string]any
+		for _, blk := range strings.Split(rec.Body.String(), "\n\n") {
+			for _, ln := range strings.Split(blk, "\n") {
+				d, ok := strings.CutPrefix(ln, "data: ")
+				if !ok {
+					continue
+				}
+				var ev map[string]any
+				if json.Unmarshal([]byte(d), &ev) != nil {
+					continue
+				}
+				switch ev["type"] {
+				case "response.output_item.done":
+					items = append(items, ev["item"].(map[string]any))
+				case "response.completed", "response.incomplete":
+					usage, _ = ev["response"].(map[string]any)["usage"].(map[string]any)
+				}
+			}
+		}
+		slot := idsResIDs(lm.model)
+		inTok := int(usage["input_tokens"].(float64))
+		outTok := int(usage["output_tokens"].(float64))
+		cached := 0
+		if d, ok := usage["input_tokens_details"].(map[string]any); ok {
+			cached = int(d["cached_tokens"].(float64))
+		}
+		// the prompt as the route renders it, and the check that the slot starts with it
+		pIDs, err := kv0Render(srv, lm, "/v1/responses", bb)
+		if err != nil {
+			t.Fatalf("%s: render: %v", id, err)
+		}
+		P := len(pIDs)
+		gen := []int{}
+		if len(slot) >= P {
+			gen = slot[P:]
+		}
+		// the echo: each item as Codex sends it back (less `status`), the archived follow-up items with their call ids
+		// moved onto this reply's calls in order
+		var echo []any
+		var myCalls []string
+		for _, it := range items {
+			e := map[string]any{}
+			for kk, v := range it {
+				if kk != "status" {
+					e[kk] = v
+				}
+			}
+			if it["type"] == "function_call" {
+				myCalls = append(myCalls, it["call_id"].(string))
+			}
+			echo = append(echo, e)
+		}
+		var arcCalls []string
+		for _, it := range r.Archived {
+			if it["type"] == "function_call" {
+				arcCalls = append(arcCalls, it["call_id"].(string))
+			}
+		}
+		callMap := map[string]string{}
+		for i := range arcCalls {
+			if i < len(myCalls) {
+				callMap[arcCalls[i]] = myCalls[i]
+			}
+		}
+		next := map[string]any{}
+		for kk, v := range body {
+			next[kk] = v
+		}
+		input := append([]any{}, r.Body["input"].([]any)...)
+		input = append(input, echo...)
+		for _, f := range r.Follow {
+			var it map[string]any
+			_ = json.Unmarshal(f, &it)
+			if c, ok := it["call_id"].(string); ok && callMap[c] != "" {
+				it["call_id"] = callMap[c]
+			}
+			input = append(input, it)
+		}
+		next["input"] = input
+		nb, _ := json.Marshal(next)
+		R, rerr := kv0Render(srv, lm, "/v1/responses", nb)
+		line := map[string]any{
+			"id": id, "wall_ms": wall.Milliseconds(), "recorded": r.Recorded,
+			"usage": map[string]int{"input": inTok, "output": outTok, "cached": cached},
+			"slot_before_len": len(before), "slot_len": len(slot), "P": P,
+			"prompt_matches_slot": len(slot) >= P && idsLCP(pIDs, slot) == P,
+			"gen": gen, "gen_pieces": pieces(gen), "items": items, "follow_none": r.Follow == nil,
+		}
+		if txt, err := lm.tk.Decode(gen); err == nil {
+			line["gen_text"] = txt
+		}
+		// per run of non-special generated ids: the model's ids against the canonical BPE of their own text
+		var runs []map[string]any
+		for i := 0; i < len(gen); {
+			if special[gen[i]] {
+				runs = append(runs, map[string]any{"at": i, "special": gen[i]})
+				i++
+				continue
+			}
+			j := i
+			for j < len(gen) && !special[gen[j]] {
+				j++
+			}
+			txt, _ := lm.tk.Decode(gen[i:j])
+			canon, _ := lm.tk.Encode(txt, false)
+			c := idsLCP(gen[i:j], canon)
+			runs = append(runs, map[string]any{"at": i, "len": j - i, "canon_len": len(canon), "canonical": c == j-i && len(canon) == j-i, "first_diff": c, "canon_pieces_near": pieces(canon[c:min(len(canon), c+6)])})
+			i = j
+		}
+		line["runs"] = runs
+		l := -1
+		if rerr != nil {
+			line["next_error"] = rerr.Error()
+		} else {
+			l = idsLCP(R, slot)
+			line["lcp"] = l
+			line["next_len"] = len(R)
+			line["next_tail"] = R[P:min(len(R), len(slot)+40)]
+			line["next_tail_pieces"] = pieces(R[P:min(len(R), len(slot)+40)])
+			if rt, err := lm.tk.Decode(R[P:min(len(R), len(slot)+40)]); err == nil {
+				line["next_tail_text"] = rt
+			}
+		}
+		_ = enc.Encode(line)
+		fmt.Fprintf(os.Stderr, "IDS %d/%d %s: %.1fs wall, prompt %d (night %d), cached %d, gen %d, lcp-P %v of %d, elapsed %.0fs\n",
+			k+1, len(sel), id, wall.Seconds(), inTok, r.Recorded["input"], cached, outTok, l-P, len(gen), time.Since(start).Seconds())
+	}
+}
