@@ -6,7 +6,8 @@ one record per run (records.jsonl) and a progress line every 30 s (count and ela
 
 plan.json: {"serve": path, "port": N, "proxy_port": N, "box": "...", "commit": "...", "configs": [{"name", "model", "ctx",
 "serve_args": [...], "agents": [...], "tasks": [...], "reps": 1, "label": {...}, "run_timeout": seconds,
-"serve": path (optional, replaces the plan's for this configuration), "cell_args": [...] (optional, passed to run_cell.py)}]}.
+"serve": path (optional, replaces the plan's for this configuration), "cell_args": [...] (optional, passed to run_cell.py),
+"bodies": true (optional, wire_proxy.py keeps every body), "token_ids": true (optional, serve --log-token-ids)}]}.
 Resumable: a (config, agent, task, rep) already in records.jsonl is skipped. Nothing here needs a person or a Claude session.
 """
 import argparse, json, os, signal, subprocess, sys, threading, time, urllib.request
@@ -78,6 +79,9 @@ def main():
         logdir = os.path.join(a.out, "logs"); os.makedirs(logdir, exist_ok=True)
         serve = c.get("serve", plan["serve"])
         argv = [serve, "--model", c["model"], "--backend", "cuda", "--ctx", str(c["ctx"]), "--addr", f"127.0.0.1:{port}", "--log-requests"] + c.get("serve_args", [])
+        # "token_ids": true has serve log every generation's ids (--log-token-ids) beside its log, for the id round trip's grade.
+        if c.get("token_ids"):
+            argv += ["--log-token-ids", os.path.join(a.out, "logs", f"token-ids-{c['name']}.jsonl")]
         wirelog = os.path.join(a.out, f"wire-{c['name']}.jsonl")
         procs = []
 

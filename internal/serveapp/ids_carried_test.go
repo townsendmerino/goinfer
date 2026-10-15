@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -511,3 +512,30 @@ func lastOutput(t *testing.T, evs []map[string]any, stream bool) []any {
 }
 
 func fmtString(v any) string { s, _ := v.(string); return s }
+
+// --carry-ids defaults on (a server built from a zero config carries ids too); --carry-ids=false leaves the server with no key,
+// so replies carry the v1 text blob and no echoed turn uses ids.
+func TestIDsCarried_flag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		off  bool
+	}{{nil, false}, {[]string{"--carry-ids=false"}, true}, {[]string{"--carry-ids"}, false}} {
+		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+		sf := registerFlags(fs)
+		if err := fs.Parse(tc.args); err != nil {
+			t.Fatal(err)
+		}
+		if sf.cfg.noCarryIDs != tc.off {
+			t.Errorf("%v: noCarryIDs %v", tc.args, sf.cfg.noCarryIDs)
+		}
+	}
+	for _, off := range []bool{false, true} {
+		srv, err := newServer(config{noCarryIDs: off})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (srv.idsKey == nil) != off {
+			t.Errorf("noCarryIDs=%v: key %v", off, srv.idsKey != nil)
+		}
+	}
+}

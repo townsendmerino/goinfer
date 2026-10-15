@@ -382,6 +382,13 @@
    "summary": "For measurement runs: append one JSON line per generation to this file, with the prompt's length and SHA-256, the reused and slot positions, and the generated token ids. Off by default."
   },
   {
+   "name": "carry-ids",
+   "group": "Other",
+   "type": "bool",
+   "default": "true",
+   "summary": "Carry a `/v1/responses` reply's token ids back in its reasoning item, signed, so an echoed reply re-tokenizes to the ids the model generated. On by default; `false` re-tokenizes every echoed turn."
+  },
+  {
    "name": "ids-key-file",
    "group": "Other",
    "summary": "A file (32 bytes or more, mode 0600) holding the key that signs the token ids a `/v1/responses` reply carries back in its reasoning item. Default: a random key per start, so after a restart older replies re-tokenize their text instead."
