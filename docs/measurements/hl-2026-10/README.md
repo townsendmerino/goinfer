@@ -33,9 +33,33 @@ Each defect was planted after a commit and removed with `git checkout`. Each mad
 - **The head committed after the run-ahead forward instead of before:** HL-G1 fails. The row then holds the next
   forward's activations.
 
-## HL-G4: speed, not run
+## HL-G4: speed, graded OFF (the night of 2026-10-14)
 
-`run-hl-g4.sh` (this directory) runs `TestHLChainAB` from a binary pinned at `e757d54c`: the 1.5B and 7B, the closed
-and toolcall shapes, 9 reps each, about 25 minutes. It has not been queued, and the registration's ship, park and off
-bands decide on its METRIC lines. Its harness was checked once on the tiny fixture, 2 reps per shape. Identity held,
-and the toolcall shape ran 49 rows and 6 redos per turn. That check's rates are not a measurement and are not recorded.
+`run-hl-g4.sh` ran from the binary pinned at `e757d54c`, on 2026-10-14 from 18:00:36 to 18:08:56 PDT. The run held the
+timing lock, with load 0.91 at its start and no thermal warning. The results and provenance are in
+`g4-night-2026-10-14/`. Identity held in every rep of every cell: HL's tokens were today's.
+
+| model | (a) closed: the prose part | (b) toolcall: the gate open for the last 48 tokens, 6 redos a turn |
+|---|---|---|
+| Qwen2.5-Coder-1.5B | **1.0350** (1.0260 to 1.0371; 9 of 9 pairs above 1) | **0.9859** (0.9768 to 0.9879; 0 of 9 above 1) |
+| Qwen2.5-7B | **1.0103** (1.0052 to 1.0107; 9 of 9 above 1) | **0.9728** (0.9721 to 0.9745; 0 of 9 above 1) |
+
+**Verdict: OFF.** The registered rule says "Off: (a) < 1.00, or (b) < 1.00", and (b) is under 1.00 on both models
+with every pair below 1. On (a) alone the 1.5B would ship (≥ 1.02) and the 7B would park.
+
+The chain wins on the prose part of a tool turn, as C-B01 found for plain turns. The open steps cost more than it
+saves there:
+
+- every open step adds a head dispatch and a row readback;
+- each redo throws away one queued forward.
+
+At 48 open steps and 6 redos a turn, that is 1.4% of the 1.5B's turn and 2.7% of the 7B's.
+
+**What this leaves:**
+
+- The branch is not merged with HL on by default.
+- The bar is not moved: the toolcall shape was fixed before any timed run. Its redo rate (one ban every 8 open
+  steps) is the registered shape. It is not a measured rate of real tool calls.
+- A re-run needs a named mechanism. Two would change the open-step cost:
+  1. run open steps without the chain, as today's path does, and keep the chain only while the gate is closed;
+  2. measure how often a real tool call's mask disagrees with the argmax.
