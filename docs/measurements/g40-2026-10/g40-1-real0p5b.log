@@ -1,0 +1,25 @@
+=== RUN   TestPrefillChunked_bitIdenticalReal0p5B
+decoder: fit is tight — qwen2.5-coder-0.5b-instruct-q4_k_m.gguf needs ~0.7 GB resident at quant int4 + 0.8 GB KV + 0.5 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 1.9 GB; this machine currently has 3.4 GB of memory available (budget 2.4 GB = 70% of that) (78% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[g40-1    11s] 1/20 cases: exact false, warm false, suffix 2047 done
+[g40-1    22s] 2/20 cases: exact false, warm false, suffix 2048 done
+[g40-1    32s] 3/20 cases: exact false, warm false, suffix 2049 done
+[g40-1    62s] 4/20 cases: exact false, warm false, suffix 4113 done
+[g40-1   133s] 5/20 cases: exact false, warm false, suffix 6744 done
+[g40-1   145s] 6/20 cases: exact false, warm true, suffix 2047 done
+[g40-1   157s] 7/20 cases: exact false, warm true, suffix 2048 done
+[g40-1   169s] 8/20 cases: exact false, warm true, suffix 2049 done
+[g40-1   203s] 9/20 cases: exact false, warm true, suffix 4113 done
+[g40-1   276s] 10/20 cases: exact false, warm true, suffix 6744 done
+[g40-1   293s] 11/20 cases: exact true, warm false, suffix 2047 done
+[g40-1   310s] 12/20 cases: exact true, warm false, suffix 2048 done
+[g40-1   327s] 13/20 cases: exact true, warm false, suffix 2049 done
+[g40-1   392s] 14/20 cases: exact true, warm false, suffix 4113 done
+[g40-1   538s] 15/20 cases: exact true, warm false, suffix 6744 done
+[g40-1   556s] 16/20 cases: exact true, warm true, suffix 2047 done
+[g40-1   575s] 17/20 cases: exact true, warm true, suffix 2048 done
+[g40-1   594s] 18/20 cases: exact true, warm true, suffix 2049 done
+[g40-1   652s] 19/20 cases: exact true, warm true, suffix 4113 done
+[g40-1   787s] 20/20 cases: exact true, warm true, suffix 6744 done
+--- PASS: TestPrefillChunked_bitIdenticalReal0p5B (788.08s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	788.704s
