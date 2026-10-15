@@ -35,7 +35,7 @@ swap_mb() { awk '/^SwapTotal/{t=$2} /^SwapFree/{f=$2} END{print int((t-f)/1024)}
   echo "job: $JOB (kv2-cuda)"; echo "started: $(date '+%F %T %Z')"; echo "host: $(uname -srm)"
   echo "new (REV): $(git rev-parse "$REV")"; echo "old (BASE, main as merged into REV): $(git rev-parse "$BASE")"
   echo "driver: $(nvidia-smi --query-gpu=driver_version,name --format=csv,noheader)"
-  echo "aikit: $(git -C "$HOME/mycode/aikit/aikit" describe --tags)"
+  echo "aikit (go.mod, new / old): $(git show "$REV:go.mod" | awk '$1=="github.com/townsendmerino/aikit"{print $2}') / $(git show "$BASE:go.mod" | awk '$1=="github.com/townsendmerino/aikit"{print $2}')"
   echo "load: $(uptime)"
   echo "VRAM used before: $(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)"
 } | tee "$OUT/provenance.txt"
@@ -45,7 +45,8 @@ worktree() { # worktree <dir> <commit>: a detached worktree with this box's go.w
   [ -d "$1" ] && git worktree remove --force "$1"
   git worktree prune
   git worktree add -q --detach "$1" "$2" || { echo "FATAL: cannot check out $2"; exit 2; }
-  printf 'go 1.27.0\n\ntoolchain go1.27.2\n\nuse (\n\t.\n\t./cuda\n\t./gpu\n\t%s\n)\n' "$HOME/mycode/aikit/aikit" > "$1/go.work"
+  # aikit is NOT in the workspace: it builds at the version go.mod pins, as a release does, not at a local checkout.
+  printf 'go 1.27.0\n\ntoolchain go1.27.2\n\nuse (\n\t.\n\t./cuda\n\t./gpu\n)\n' > "$1/go.work"
 }
 rc=0
 case "$JOB" in
