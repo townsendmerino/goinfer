@@ -480,6 +480,50 @@ amended.
 - **The fix, not made:** reserve the prompt plus the request's generation budget, not the prompt alone.
 - **A tier 0 gate it would need:** decode rows up to the budget do not move the KV.
 
+### The KV reserve fix (owner-approved 2026-10-15), its tier 0 gates and readings
+
+**What changed** (`2312effe`, `51d5704b`):
+
+- **The plan.** `generateInto` plans the CPU cache for the prompt plus `max_tokens` (`KVCache.planRequest`).
+  - The plan is capped at the context size: the pinned or requested context, else the model's maximum positions.
+  - A ceiling the prompt already exceeds is not being enforced on that cache, so it is ignored.
+- **The reserve.** The prefill reserves to the plan after its first chunk, or after a one-pass prefill.
+- **Growth past the plan** (a later turn), in `KVCache.regrowLayer`:
+  - The growth policy: grow by a quarter of the rows held, at least 256 rows, capped at the context size.
+  - The old arrays are dropped.
+  - Memory goes back to the OS (`releaseHostMemory`) once 64 MiB or more of old KV was dropped within one position
+    (`kvRegrowReleaseBytes`).
+- **A counter,** `kvRegrows`, counts every growth.
+
+**Gates, as the owner set them. All three pass; the logs are in `~/goinfer-logs/g40-2026-10/`.**
+
+- **(a) Decoding up to the budget never re-allocates the KV.**
+  - The test is `TestG40KV_decodeWithinBudgetNeverRegrows`: `llama-tiny` through `Session.Generate` (serve's route, a cache
+    that starts with no capacity), at f32 and int8. The prompt is 1,000 tokens in chunks of 256, with a budget of 300.
+  - It asserts a chunked prefill and at least 100 decoded tokens, past any rounding slack.
+  - **Result: PASS, 300 tokens decoded and 0 growths during decode, at both precisions.**
+- **(b) A forced growth leaves the live heap and the footprint within bound.**
+  - The test is `TestG40KV_forcedRegrowReleases`, on the 0.5B's KV geometry with no forward pass. A cache planned for 20,189
+    rows is filled to its capacity, then takes one row more.
+  - **Result: PASS.** Every layer grew once, to 591.8 MiB. The live heap over base is 591.8 MiB (bound +16), and the
+    footprint went from 10 to 602 MiB (bound base + KV + 64).
+  - **Checked once, beyond what was asked:** with the release removed, the footprint read 1,005 MiB against a bound of
+    688. It went red.
+- **(c) The planted defect: a reserve of the prompt alone.** **Gate (a) went red:** 4 growths during decode, at both
+  precisions.
+- **The tests near the change** (the G40 tests, the KV-cache, session, ring and snapshot tests), with `-v`: 48 PASS, 6 SKIP,
+  0 FAIL. The 0.5B bit-identity cell was not re-run: the change moves capacity only.
+
+**Tier 1, next:** G40-2's memory run, the after arm only, the bounds unchanged.
+
+- **Two sizes per model:**
+  - **20,189 tokens:** the size that failed. After the plan (prompt + 8), the reserve's rounding leaves 11 spare rows on
+    the 0.5B and 3 on the 1.5B.
+  - **20,184 tokens:** the plan is 20,192 rows, an exact multiple of the 8 KiB page on both models, so **0 spare rows**.
+    The preamble is cut at 71,985 characters (`--chars`). The cut was found with goinfer's tokenizer against serve's own
+    count of the full text, and a cell that serve counts otherwise is VOID (`--want-tokens`).
+- **The rule:** merge on a pass; stop and report on a miss.
+
 ### The 0.5B 6K speed cell (2026-10-15, 15:13 to 15:18): SHIPS
 
 `TestG40Speed` restricted to `GOINFER_G40_SPEED_CELLS=0.5B:6000`, one pass of 5 ABBA pairs, from a test binary built at
