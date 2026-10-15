@@ -178,11 +178,12 @@ def warm(binary, port, logs):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--before", required=True)
+    ap.add_argument("--before", default="")
     ap.add_argument("--after", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--repo", required=True)
     ap.add_argument("--interval", type=float, default=0.25)
+    ap.add_argument("--arms", default="after,before", help="which arms run; an unchanged arm's last readings are reused instead (CLAUDE.md, \"Testing tiers\")")
     a = ap.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(SystemExit(143)))
     os.makedirs(a.out, exist_ok=True)
@@ -191,6 +192,8 @@ def main():
     recs = []
     port = 18531
     for arm, binary in (("after", a.after), ("before", a.before)):
+        if arm not in a.arms.split(","):
+            continue
         for name in ("0.5b", "1.5b"):
             port += 1
             r = cell(arm, binary, name, text, port, a.out, a.interval)

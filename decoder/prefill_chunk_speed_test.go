@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -39,6 +40,9 @@ func TestG40Speed(t *testing.T) {
 		}
 		_, _, _, _, _, _, vocab := m.Dims()
 		for _, cell := range []struct{ n, pairs int }{{6000, 5}, {20000, 3}} {
+			if only := os.Getenv("GOINFER_G40_SPEED_CELLS"); only != "" && !strings.Contains(","+only+",", fmt.Sprintf(",%s:%d,", c.model, cell.n)) {
+				continue // a cell filter, for a tier 1 re-run of one cell
+			}
 			floor := int64(4 << 30)
 			if c.model == "1.5B" && cell.n == 20000 {
 				floor = 7 << 30
