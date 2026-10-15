@@ -6,8 +6,8 @@
 # Why at night: by day the fit guard refuses the heavy resident-parity loads with the owner's apps open (measured
 # 2026-09-30), and the gate wants an idle GPU.
 # Why a worktree: the gate runs REV, not whatever the main checkout holds, and its verdict is INCONCLUSIVE on a dirty
-# tree. The gitignored fixtures the tests read are linked in from the main checkout (a directory as a real directory
-# of symlinks, so directory ignore rules still match and the tree stays clean), and the worktree gets its own go.work.
+# tree. The gitignored fixtures the tests read are placed from the main checkout by scripts/worktree_fixtures.sh (every
+# real fixture cloned as real files, symlinks into ~/models kept as links; its header has the rule), and the worktree gets its own go.work.
 #
 # The record: -record points at the MAIN checkout's docs/measurements/gpu-gate, where `gate gpu-records` and row 4 of
 # `gate release` read it. It is written by the gate from the worktree, so it names REV and REV's trees. Commit it.
@@ -35,21 +35,8 @@ FULL=$(git rev-parse --verify "$REV^{commit}" 2>/dev/null) || { echo "FATAL: $RE
 [ -d "$WT" ] && git worktree remove --force "$WT"
 git worktree prune
 git worktree add -q --detach "$WT" "$FULL" || { echo "FATAL: cannot check out $FULL"; exit 2; }
-n=0
-link() { # $1: a path relative to the repo root that is gitignored in the main checkout
-  local p=${1%/}
-  [ -e "$WT/$p" ] && return 0
-  if [ -d "$SRC/$p" ]; then
-    mkdir -p "$WT/$p"
-    for c in "$SRC/$p"/* "$SRC/$p"/.[!.]*; do [ -e "$c" ] && ln -s "$c" "$WT/$p/"; done
-  else
-    mkdir -p "$(dirname "$WT/$p")"
-    ln -s "$SRC/$p" "$WT/$p"
-  fi
-  n=$((n + 1))
-}
-while IFS= read -r p; do link "$p"; done < <(git ls-files --others --ignored --exclude-standard --directory -- testdata decoder/testdata)
-[ -e "$SRC/demo/chat/model.gguf" ] && link demo/chat/model.gguf
+fixtures=$(bash "$SRC/scripts/worktree_fixtures.sh" "$SRC" "$WT") || { echo "FATAL: placing the fixtures: $fixtures"; exit 2; }
+[ -e "$SRC/demo/chat/model.gguf" ] && [ ! -e "$WT/demo/chat/model.gguf" ] && mkdir -p "$WT/demo/chat" && ln -s "$SRC/demo/chat/model.gguf" "$WT/demo/chat/model.gguf"
 # An untracked fixture directory that is NOT ignored cannot be linked without making the worktree dirty; say so instead.
 stray=$(git ls-files --others --exclude-standard --directory -- testdata decoder/testdata | tr '\n' ' ')
 
@@ -58,7 +45,7 @@ go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"
 export GOWORK=$WT/go.work
 finish() { cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null; }
 if [ "${DRYRUN:-0}" = 1 ]; then
-  echo "rev $FULL; linked $n; git status entries in the worktree: $(git status --porcelain | wc -l | tr -d ' ')"; git status --porcelain | head -3
+  echo "rev $FULL; $fixtures; git status entries in the worktree: $(git status --porcelain | wc -l | tr -d ' ')"; git status --porcelain | head -3
   go build ./... && go vet -tags goinfer_testhooks ./metal/ && go build -o /dev/null ./cmd/gate && echo "build + vet ok"
   rc=$?
   finish && echo "worktree removed"
@@ -68,7 +55,7 @@ OUT=$LOG/gate-gpu-metal-${FULL:0:8}-night.log
 {
   echo "rev:      $FULL"
   echo "started:  $(date '+%F %T %Z')"
-  echo "fixtures: $n gitignored entries linked from $SRC${stray:+; untracked and not linked: $stray}"
+  echo "fixtures: $fixtures${stray:+; untracked and not placed: $stray}"
   echo "tree:     $(git status --porcelain | wc -l | tr -d ' ') entries in git status (0 = clean)"
   echo "go:       $(go version), GOWORK=$GOWORK"
   echo "machine:  $(sw_vers -productVersion) $(sysctl -n machdep.cpu.brand_string); $(pmset -g batt | head -1)"
