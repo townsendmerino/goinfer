@@ -454,6 +454,22 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B23 · main's CUDA resident suite peaks near 38 GB and can swap whenever the desktop or page cache grows** — `linux`,
+filed 2026-10-15 (owner)
+
+The test process of 33 of `./cuda/`'s resident tests (`Reuse|Slot|MC3|MC4|Lead|Resident…`, run with `GOINFER_HEAVY_TESTS=1`)
+has a peak resident set (`VmHWM`) of about 37–38 GB, on main and on KV2's tree alike. That is close to `user-1000.slice`'s
+`memory.high` of 53,248 MiB, against which the test, the page cache and a logged-in desktop all count. When the slice reaches
+it, reclaim swaps the test's own pages out. On 2026-10-15 it did so in 3 of 5 sampled runs, on both arms; in one run the
+process's own `VmSwap` peaked at 5,345 MB. Nothing is wrong with the results; the swapping only moves timing and system-wide
+swap readings. Read in `docs/measurements/kv2-cuda-2026-10-15.md` §7 (the bisection and the ABBA), with the instrument
+`docs/measurements/kv2-cuda-2026-10-15/swap_sampler.py`.
+- **For gates:** a night "never swap" gate judges on the test process's own `VmHWM` and peak `VmSwap`, and reports system
+  swap in use as context only (CLAUDE.md, "Testing tiers"). A system-wide reading on this box moves by hundreds of MB that no
+  test owns: KV2's CUDA heavy job read +511 MB that bisection put on main's suite near the slice's ceiling, not on KV2.
+- **Open, not started:** whether the suite should hold that much at once (it loads several real checkpoints in one process),
+  or the night runs should raise the slice's `memory.high` or run with the desktop logged out. That is for the owner.
+
 **B21 · `gate gpu`'s heavy main tier no longer fits its 120 m timeout** — `linux`, filed 2026-10-14. **FIXED 2026-10-14 by
 option (a), the split** (owner: on v0.23.0's path): `cudaHeavy` runs the main group as two processes by test name, reconciled both
 ways; basis and expected duration in `docs/code-notes/cmd-gate.md`, "cudaHeavy: main-tier timeout".
