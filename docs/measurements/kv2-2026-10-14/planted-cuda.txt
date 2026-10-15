@@ -1,0 +1,120 @@
+# KV2 CUDA plants, G2-C and GV-C(b) (docs/measurements/kv2-cuda-2026-10-15.md). nobara-pc, 2026-10-15, tree = branch kv2-cuda-2026-10 at 75a06bab plus the uncommitted kvcopy.go and tests of the next commit.
+# Produced by kv2-cuda-2026-10-15/plant.py; the 'short' plant was re-run after its edit was changed from end-start-64 (a zero-row launch error at [0, 64)) to max(1, end-start-64), so the data check, not a launch error, is what goes red.
+
+== short (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:281: held 0: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 0: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:281: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+== layer-stride (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:281: held 0: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 0: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:281: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+== f16-as-f32 (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination changed outside the range
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination changed outside the range
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination changed outside the range
+        kv2_copy_test.go:241: [0, 64): layer 1 V: the destination changed outside the range
+        kv2_copy_test.go:241: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:281: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+    --- FAIL: TestKV2_copyExact_tiny (1.49s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.560s
+    FAIL
+== window-base-not-set (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:380: [0, 256): destination base 275, want 241
+        kv2_copy_test.go:384: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 241 but this slot holds only from 275 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+        kv2_copy_test.go:380: [0, 256): destination base 275, want 241
+        kv2_copy_test.go:384: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 241 but this slot holds only from 275 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+        kv2_copy_test.go:380: [0, 256): destination base 275, want 249
+        kv2_copy_test.go:384: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 249 but this slot holds only from 275 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+    --- FAIL: TestKV2_copyWindowed (2.74s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	2.799s
+    FAIL
+== window-unshifted-read (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:380: [0, 256): layer 0 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 0 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:388: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 0)
+        kv2_copy_test.go:380: [0, 256): layer 0 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 0 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:388: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 1)
+        kv2_copy_test.go:380: [0, 256): layer 0 K (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 0 V (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 K (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 V (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 K (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 V (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:388: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 1)
+    --- FAIL: TestKV2_copyWindowed (3.84s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	3.902s
+    FAIL
+== window-check-removed (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:409: CopyKV from a source based at 325: got <nil>, want a KVCopyDecline
+        kv2_copy_test.go:409: CopyKV from a source based at 325: got <nil>, want a KVCopyDecline
+        kv2_copy_test.go:409: CopyKV from a source based at 325: got <nil>, want a KVCopyDecline
+    --- FAIL: TestKV2_copyWindowed (7.24s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	7.293s
+    FAIL
+== staging-buffer-kept (cuda/kvcopy.go; ^TestKV2_copyAllocatesNothing_tiny$): RED
+        kv2_cost_test.go:51: 20 copies allocated 40 device buffers, 20971520 bytes; a copy must allocate nothing
+    --- FAIL: TestKV2_copyAllocatesNothing_tiny (1.10s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.156s
+    FAIL

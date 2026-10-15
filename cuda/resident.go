@@ -928,21 +928,35 @@ type cudaResident struct {
 // BuildResident's own defer (a different goroutine, which cannot reach an executor-thread panic), turns it into
 // setupErr, so BuildResident declines gracefully (staged fallback) instead of proceeding with unusable buffers.
 func (r *cudaResident) af(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[float32](r.dev, n)
 }
 
 // akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, f32 otherwise. Buffer.Len is in elements either way.
 func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
+		allocSeen(n * 2)
 		return gpu.NewBufferLenOf[uint16](r.dev, n)
 	}
 	return r.af(n)
 }
 func (r *cudaResident) ai(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[int32](r.dev, n)
 }
 func (r *cudaResident) au32(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[uint32](r.dev, n)
+}
+
+// allocSeenForTest, when set, is told the size in bytes of every buffer af, akv, ai and au32 allocate. A test seam, nil in
+// production; it is called on whichever goroutine allocates (the executor), so a test reads what it gathered after r.do returns.
+var allocSeenForTest func(bytes int)
+
+func allocSeen(bytes int) {
+	if allocSeenForTest != nil {
+		allocSeenForTest(bytes)
+	}
 }
 
 // recordUpload captures the FIRST alloc/upload error hit during BuildResident's setup job into r.setupErr. The
