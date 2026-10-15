@@ -255,6 +255,24 @@ registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `co
 - **Before queueing any night job, fit-check every load it will make, by day.** That takes seconds. Do not queue a job
   whose load would be refused.
 
+**Never-swap gates read the test process, not only the system** (owner, 2026-10-15). The rule is on the process's own
+peak resident memory and swap: `VmHWM` and the peak of `VmSwap` from `/proc/<pid>/status`, sampled until it exits. Run the
+test binary directly (`go test -c`), because `go test` runs it as a child. System-wide swap in use is reported as context
+only. A box already gigabytes into swap moves by hundreds of MB for reasons no test owns: KV2's CUDA heavy job read +511 MB system
+swap on 2026-10-15, which only a per-process reading could attribute.
+
+**On the CUDA box (nobara, 8 GB):**
+- **A fit check is the server's own plan, not arithmetic.** Start the binary the job will run with its flags, and read the
+  `fit:` and `KV plan:` banner, or the refusal. One `gv_plan.py` start is seconds to a minute; the 26B's expert cache and KV
+  are sized against free VRAM at load.
+- **Count a desktop compositor's CUDA context.** While anyone is logged in to the desktop, `kwin_wayland` holds one (about
+  16 MiB). Plans move by that much, and the drain-group tests skip. Note it in the record; a GPU gate that needs the drain group
+  runs with the desktop stopped.
+- **Tier 1 GPU runs hold the timing lock** (`timing_lock.py run`), so two sessions' GPU checks do not share the card, and
+  nothing else runs beside a timed job.
+- **Count allocations as the driver does:** `cuMemAlloc` rounds a buffer of 2 MiB or more up to 2 MiB, so a byte counter
+  checks the requested bytes and the plan prices the rounded ones.
+
 Measured cost of not having this rule: on 2026-10-14/15 the G2-R night job was refused by the fit guard on two nights
 running, and G40's memory and speed gates spent a night on sizes a tier 0 counter could have answered.
 
