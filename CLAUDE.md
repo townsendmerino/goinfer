@@ -236,6 +236,28 @@ Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets; `testdata/assets.json
 registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `composition`,
 `selector`, `gpu`, `mutation`).
 
+## Testing tiers: the smallest test that answers (owner rule, 2026-10-15)
+
+**Every gate is registered at the lowest tier that can answer it.** Pre-registration applies at every tier.
+
+- **Tier 0, seconds, the default for every change.** Test the mechanism with deterministic counters
+  (`testing.AllocsPerRun`, bytes reserved or allocated, pass counts, KV rows written) and bit-identity on tiny
+  fixtures.
+- **Tier 1, by day, 10 minutes or less.** One small real model at the smallest size that exercises the mechanism.
+- **Tier 2, night.** Only for a number that will be published, or for a decision that hinges on a small effect. The
+  registration says why tiers 0 and 1 cannot answer it, and gives a wall-clock budget.
+
+**Three rules apply at every tier:**
+
+- **Never re-measure an unchanged arm.** Reuse its last readings and cite them (record and commit).
+- **Stop as soon as the answer is clear.** Run a larger size only for a stated reason why the mechanism changes with
+  scale.
+- **Before queueing any night job, fit-check every load it will make, by day.** That takes seconds. Do not queue a job
+  whose load would be refused.
+
+Measured cost of not having this rule: on 2026-10-14/15 the G2-R night job was refused by the fit guard on two nights
+running, and G40's memory and speed gates spent a night on sizes a tier 0 counter could have answered.
+
 ## Day loop: seconds, not minutes
 
 **Owner rule, 2026-10-13: the day loop is seconds. A 10-minute gate after every edit is the development process failing, not diligence.**

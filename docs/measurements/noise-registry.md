@@ -253,6 +253,9 @@ Every pre-registration of a gate or a graded run states these, before the run (t
 
 ```
 Tier: quick | day | night | release  (CLAUDE.md, "Gate tiers").
+Testing tier: 0 (counters and bit-identity on tiny fixtures, seconds) | 1 (one small real model, <=10 min, by day) | 2 (night). For tier 2: why tiers 0 and 1 cannot answer it, and a wall-clock budget (CLAUDE.md, "Testing tiers").
+Reused readings: <each unchanged arm's last readings, with record and commit>; that arm is not re-run.
+Fit check: <every load the job will make, checked by day, and the result>; a job whose load would be refused is not queued.
 Instrument: <which>, and why it is the cheapest one that resolves the bar (an in-process whole-token A/B first for a kernel question; two arms for a new/old ratio, the peer read once per lever, after it ships).
 Noise: the registry's noise for the cell is sd <sd> / floor <floor> (<entry id>, <provenance>, n=<n>), source <record:line or commit>.
 power.py N: `power.py <instrument> <cell> --bar <bar> [--expect <r>] --paired` -> N = <N> blocks (power <p>), or "cannot resolve" -> <the instrument chosen instead>.
