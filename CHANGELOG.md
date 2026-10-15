@@ -15,6 +15,20 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — on the CPU, `--kv i8` on a family that keeps an f32 cache was priced as int8, and the banner named the request
+
+**Who was affected:** a CPU load given `--kv i8` (or serve's `--kv-quant i8`) for a family whose cache cannot be int8: any
+mixture-of-experts model, and the families with their own forward (Gemma 4, gpt-oss, Qwen3.5 and others). **Since:** the int8
+CPU cache.
+
+- **The cache stayed f32,** as it should, but the load-time fit guard and the per-request memory check priced it at int8,
+  about a quarter of what it holds. A load or a request that did not fit could be admitted.
+- **Both now price the precision the cache really has.**
+- **The banner said "KV i8 (lossy)" over that f32 cache,** and "KV f16 (lossy)" for a CPU load given `--kv f16`, which the
+  CPU cache has no form of. It now prints what runs and why: `KV f32 (-kv i8 held at f32: this model family keeps an f32
+  cache)`, or `KV f32 (-kv f16 held at f32: the CPU cache has no f16 form)`.
+- Nothing a request computes changes.
+
 - **aikit v1.70.2** in all five modules: `DequantizeRowInt8` and `WeightMat.Row` check the destination length in every build and panic on a short one (no goinfer caller passes one: `docs/measurements/aikit-v1702-bump-2026-10-15.md`), and the encoder behind `/v1/embeddings` shares one scratch slab between attention and MLP, about half the scratch, bit-identical.
 
 ## [v0.23.0] — 2026-10-15
