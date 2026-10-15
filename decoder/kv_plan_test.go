@@ -66,19 +66,11 @@ func TestG40KV_decodeWithinBudgetNeverRegrows(t *testing.T) {
 	}
 }
 
-// TestG40KV_forcedRegrowReleases is G40's KV gate (b): on the 0.5B's KV geometry (24 layers, 2 KV heads of 64, f32), a
-// cache planned for 20,189 rows and filled to its capacity takes one row more. Every layer grows by the policy, the old arrays are dropped,
-// and memory returns to the OS: afterwards the live heap and the process footprint are within the grown KV plus a margin
-// (16 MiB live, 64 MiB footprint) over their readings before the cache existed. No forward pass runs.
-func TestG40KV_forcedRegrowReleases(t *testing.T) {
-	const layers, nKV, hd, rows = 24, 2, 64, 20189
-	live := func() int64 {
-		runtime.GC()
-		var s runtime.MemStats
-		runtime.ReadMemStats(&s)
-		return int64(s.HeapAlloc)
-	}
-	fp := func() int64 {
+// processMemory is the process's resident memory as the OS counts it: footprint(1)'s phys_footprint on macOS, VmRSS on
+// Linux, and -1 where neither is available.
+func processMemory() int64 {
+	switch runtime.GOOS {
+	case "darwin":
 		o, err := exec.Command("footprint", "-p", strconv.Itoa(os.Getpid())).Output()
 		if err != nil {
 			return -1
@@ -89,7 +81,35 @@ func TestG40KV_forcedRegrowReleases(t *testing.T) {
 		}
 		v, _ := strconv.ParseFloat(string(mm[1]), 64)
 		return int64(v * map[string]float64{"KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30}[string(mm[2])])
+	case "linux":
+		b, err := os.ReadFile("/proc/self/status")
+		if err != nil {
+			return -1
+		}
+		mm := regexp.MustCompile(`VmRSS:\s+(\d+) kB`).FindSubmatch(b)
+		if mm == nil {
+			return -1
+		}
+		v, _ := strconv.ParseInt(string(mm[1]), 10, 64)
+		return v << 10
 	}
+	return -1
+}
+
+// TestG40KV_forcedRegrowReleases is G40's KV gate (b): on the 0.5B's KV geometry (24 layers, 2 KV heads of 64, f32), a
+// cache planned for 20,189 rows and filled to its capacity takes one row more. Every layer grows by the policy, the old arrays are dropped,
+// and memory returns to the OS: afterwards the live heap and the process's memory (processMemory) are within the grown KV
+// plus a margin (16 MiB live, 64 MiB process) over their readings before the cache existed. No forward pass runs. Where the
+// OS gives no reading (Windows), only the live-heap bound is read.
+func TestG40KV_forcedRegrowReleases(t *testing.T) {
+	const layers, nKV, hd, rows = 24, 2, 64, 20189
+	live := func() int64 {
+		runtime.GC()
+		var s runtime.MemStats
+		runtime.ReadMemStats(&s)
+		return int64(s.HeapAlloc)
+	}
+	fp := processMemory
 	releaseHostMemory()
 	liveBase, fpBase := live(), fp()
 	c := NewKVCache(layers, nKV, hd, 0, 0, nil)
@@ -124,7 +144,11 @@ func TestG40KV_forcedRegrowReleases(t *testing.T) {
 		t.Errorf("live heap %d bytes over its base after the regrow; the grown KV is %d: the old arrays are still referenced", liveAfter, capBytes)
 	}
 	if fpBase < 0 || fpAfter < 0 {
-		t.Fatalf("footprint unreadable: the gate cannot read its second bound")
+		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+			t.Fatalf("the process's memory is unreadable on %s: the gate cannot read its second bound", runtime.GOOS)
+		}
+		t.Logf("no process-memory reading on %s: the footprint bound is not read here; the live-heap bound above holds", runtime.GOOS)
+		return
 	}
 	if fpAfter > fpBase+capBytes+64*MiB {
 		t.Errorf("footprint %d bytes after the regrow, over base %d + KV %d + 64 MiB: the old arrays' memory was not returned", fpAfter, fpBase, capBytes)
