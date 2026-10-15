@@ -42,7 +42,7 @@ worktree() { # worktree <name> <commit>: a detached worktree with this box's go.
   if [ "$BE" = metal ]; then
     (cd "$wt" && go work init . ./gpu ./metal)
   else
-    printf 'go 1.27.0\n\ntoolchain go1.27.2\n\nuse (\n\t.\n\t./cuda\n\t./gpu\n\t%s\n)\n' "$HOME/mycode/aikit/aikit" > "$wt/go.work"
+    printf 'go 1.27.0\n\ntoolchain go1.27.2\n\nuse (\n\t.\n\t./cuda\n\t./gpu\n)\n' > "$wt/go.work"  # aikit at go.mod's version
   fi
   echo "$rev" > "$wt.rev"
 }
@@ -60,7 +60,7 @@ build() { # build <name> <commit>: serve for this box's backend (and, on the Mac
 {
   echo "job: $JOB"; echo "started: $(date '+%F %T %Z')"; echo "host: $(uname -srm)"; echo "backend: $BE"
   echo "new (REV): $(git rev-parse "$REV")"; echo "old (BASE, main at the branch point): $(git rev-parse "$BASE")"
-  [ "$BE" = cuda ] && { echo "driver: $(nvidia-smi --query-gpu=driver_version,name --format=csv,noheader)"; echo "aikit: $(git -C "$HOME/mycode/aikit/aikit" describe --tags)"; }
+  [ "$BE" = cuda ] && { echo "driver: $(nvidia-smi --query-gpu=driver_version,name --format=csv,noheader)"; echo "aikit (go.mod): $(git show "$REV:go.mod" | awk '$1=="github.com/townsendmerino/aikit"{print $2}')"; }
   echo "load: $(uptime)"
 } | tee "$OUT/provenance.txt"
 rc=0
