@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -26,12 +27,15 @@ var kvCopyF16 = true
 //
 //   - A full-attention or MLA latent layer copies rows [start, end) of each buffer it has.
 //   - A layer that reads another layer's KV copies nothing: it aliases its source.
-//   - A windowed layer copies what dst attends to from end, src's rows [end-(window-1), end), through src's shifted view,
-//     to dst's physical slot 0, and dst's base becomes that first row. Rows below start that dst already held are rewritten
-//     with src's bytes of the same published blocks.
+//   - A windowed layer copies the rows dst attends to from end and, behind them, as much of the rollback (kvRollback) as
+//     src still holds: src's rows [max(src's base, end-(window-1)-rollback), end), through src's shifted view, to dst's
+//     physical slot 0, and dst's base becomes that first row. dst then holds what a slot that wrote the rows itself holds
+//     after a compaction. Rows below start that dst already held are rewritten with src's bytes of the same published
+//     blocks.
 //
 // A *decoder.KVCopyDecline, before anything is written, refuses a range the copy cannot serve; its check of src's base runs
-// inside the job, so a compaction of a running source cannot fall between the check and the read.
+// inside the job, so a compaction of a running source cannot fall between the check and the read. Each copy and each
+// windowed decline is logged with the slots' bases and the rollback budget, so a served decline can be traced to it.
 func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 	n := r.KVSlots()
 	switch {
@@ -56,10 +60,11 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
-		lo = max(0, end-(r.kvWindow-1))
-		if !kvBaseHolds(r.kvBases[src], end, r.kvWindow) {
-			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d", src, r.kvBases[src], end, lo)}
+		if !kvWindowReusable(r.kvBases[src], end, r.kvWindow) {
+			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s",
+				src, r.kvBases[src], end, end-(r.kvWindow-1), r.kvBudgetText())}
 		}
+		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
 		for l := range r.layers {
 			if Ly := &r.layers[l]; Ly.kvWin && Ly.kvHalf {
 				return &decoder.KVCopyDecline{Reason: fmt.Sprintf("layer %d is windowed and f16, which the shifted view does not address", l)}
@@ -96,7 +101,21 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 			r.kvBase = lo
 		}
 	}
-	return r.stream.Sync()
+	if err := r.stream.Sync(); err != nil {
+		return err
+	}
+	if r.kvWin {
+		fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d -> %d, rows [%d, %d); windowed layers: slot %d's base %d, slot %d's base %d after the copy; %s\n",
+			src, dst, start, end, src, r.kvBases[src], dst, lo, r.kvBudgetText())
+	}
+	return nil
+}
+
+// kvBudgetText states the windowed rollback budget: the planned figure and what kvGrantRollback added from free VRAM. It
+// has no parentheses, so it survives inside the decline reason serve prints in parentheses.
+func (r *cudaResident) kvBudgetText() string {
+	planned := kvWindowSlack - kvWindowStep
+	return fmt.Sprintf("rollback budget %d = %d planned + %d from free VRAM", r.kvRollback(), planned, r.kvRollback()-planned)
 }
 
 // ReusableKVSlot implements decoder.ResidentReusableKVSlot: ReusableKV's answer for any slot, bound or not.
@@ -110,8 +129,10 @@ func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 	out := prefix
 	// the bases are executor state: read them where they are written
 	if err := r.do(func() error {
-		if !kvBaseHolds(r.kvBases[slot], prefix, r.kvWindow) {
+		if !kvWindowReusable(r.kvBases[slot], prefix, r.kvWindow) {
 			out = 0
+			fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s\n",
+				slot, r.kvBases[slot], prefix, prefix-(r.kvWindow-1), r.kvBudgetText())
 		}
 		return nil
 	}); err != nil {
@@ -119,7 +140,3 @@ func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 	}
 	return out
 }
-
-// kvBaseHolds reports whether a windowed layer whose physical slot 0 holds position base still holds the history a forward
-// continuing at position prefix attends to.
-func kvBaseHolds(base, prefix, window int) bool { return base == 0 || prefix-(window-1) >= base }

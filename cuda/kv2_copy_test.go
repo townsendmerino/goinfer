@@ -186,7 +186,7 @@ func (g *kv2Rig) kv2CheckCopy(start, end int, srcB, dstB, byB, srcA, dstA, byA [
 	}
 	lo := 0
 	if g.r.kvWin {
-		lo = max(0, end-(g.r.kvWindow-1))
+		lo = max(0, srcBase, end-(g.r.kvWindow-1)-g.r.kvRollback())
 		if dstBaseA != lo {
 			g.t.Errorf("[%d, %d): destination base %d, want %d", start, end, dstBaseA, lo)
 		}
@@ -357,7 +357,7 @@ func TestKV2_copyWindowed(t *testing.T) { eachWindowFixture(t, kv2CopyWindowed) 
 
 func kv2CopyWindowed(t *testing.T, fx string) {
 	requireCUDADevice(t)
-	withWindowedKVSlack(t, windowedKVTestSlack)
+	withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
 	g := kv2Load(t, filepath.Join("..", "testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
 	if !g.r.kvWin {
 		t.Fatalf("windowed KV did not engage (ctxCap %d, window %d, slack %d)", g.r.ctxCap, g.r.kvWindow, kvWindowSlack)

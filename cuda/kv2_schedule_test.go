@@ -316,7 +316,7 @@ func kv2ScheduleWindowedDecline(t *testing.T, fx string) {
 	// A's own part is longer than the 448-row allowance a windowed model gives up in place, so B copies rather than taking
 	// A's slot; the fixture's context is widened to hold it. The slack holds A's first turn without a compaction and not
 	// its second, so A's base moves past the preamble then.
-	withWindowedKVSlack(t, 800)
+	withWindowedKV(t, 800, windowedKVTestStep, 800-windowedKVTestStep)
 	s := &kv2Sched{t: t, path: kv2WideFixture(t, filepath.Join("..", "testdata", fx), 4096),
 		opts: decoder.Options{ResidentWindowedKV: true, ResidentContext: 4096}, maxTok: 16, pre: kv2Preamble(256), own: 460}
 	s.colds = map[string]kv2Turn{}
@@ -329,7 +329,7 @@ func kv2ScheduleWindowedDecline(t *testing.T, fx string) {
 	moveA := func(g *kv2Rig, a1 kv2Turn) {
 		t.Helper()
 		a2p := s.next(a1, 0)
-		for i := range 120 {
+		for i := range 600 {
 			a2p = append(a2p, s.tok(3600+i*3))
 		}
 		s.gen(g, a2p)

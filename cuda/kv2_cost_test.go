@@ -5,6 +5,7 @@ package cuda
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -74,4 +75,28 @@ func TestKV2_copyCost_real(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestKV2_inertOnExpertCaching is GV-C(d) by day: a load with expert caching keeps one KV slot, so the slot plan the
+// expert cache was sized beside is unchanged and a second conversation sharing the first's preamble copies nothing.
+func TestKV2_inertOnExpertCaching(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load(filepath.Join("..", "testdata", "mistral-tiny-window"), decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	r := mustResident(t, m)
+	_, _, _, _, _, _, vocab := m.Dims()
+	g := &kv2Rig{t: t, m: m, r: r, vocab: vocab}
+	if !r.cacheExperts || r.KVSlots() != 1 {
+		t.Fatalf("expert caching %v with %d KV slots of 2 asked: the case needs the paged-experts build, which keeps one", r.cacheExperts, r.KVSlots())
+	}
+	pre := g.toks(200, 61)
+	kv2Generate(t, g.m, append(slices.Clone(pre), g.toks(80, 62)...), 4)
+	_, gb := kv2Generate(t, g.m, append(slices.Clone(pre), g.toks(80, 63)...), 4)
+	if gb.PrefillShared != 0 {
+		t.Errorf("a one-slot load copied %d rows", gb.PrefillShared)
+	}
+	t.Logf("second conversation: reused %d, copied %d", gb.PrefillReused, gb.PrefillShared)
 }
