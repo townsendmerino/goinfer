@@ -172,3 +172,23 @@
         kv2_schedule_test.go:254: B reused 0, copied 0
     --- FAIL: TestKV2_scheduleIndependence_tiny (11.28s)
     FAIL
+
+# G4-C plants, 2026-10-15 11:13, plant.py cap-at-n-1 passat-ignores-windowed.
+== cap-at-n-1 (internal/kvmgr/share.go; ^TestKV2_hitCap_tiny$): RED
+        kv2_classes_test.go:154: B copied 960 rows (reused 960), want the hit capped to 896
+        kv2_classes_test.go:164: B's K/V rows after the capped copy differ from the cold run's
+        kv2_classes_test.go:154: B copied 960 rows (reused 960), want the hit capped to 896
+        kv2_classes_test.go:164: B's K/V rows after the capped copy differ from the cold run's
+    --- FAIL: TestKV2_hitCap_tiny (1.78s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.848s
+    FAIL
+== passat-ignores-windowed (internal/kvmgr/key.go; ^TestKV2_windowedUnalignedNotShared$): RED
+        kv2_classes_test.go:233: A's recorded classes: fast[0,1800) exact[1800,1804) 
+        kv2_classes_test.go:238: B reused 1216, copied 1216, declined ""
+        kv2_classes_test.go:241: B copied 1216 rows, want 640: the blocks of A's aligned first pass and none of the unaligned one
+        kv2_classes_test.go:246: B: [157 151 101 101 218 101 101 101], cold [157 151 101 101 101 101 101 101] (K/V equal false)
+    --- FAIL: TestKV2_windowedUnalignedNotShared (1.32s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.380s
+    FAIL

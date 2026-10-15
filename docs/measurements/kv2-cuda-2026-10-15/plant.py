@@ -29,6 +29,10 @@ PLANTS = [
      "\treturn nil", "^TestKV2_scheduleIndependence_tiny$"),
     ("hit-one-block-long", "decoder/resident_reuse.go", "err := cp.CopyKV(src, dst, start, hit)",
      "hit = min(hit+64, len(prompt)-16)\n\terr := cp.CopyKV(src, dst, start, hit)", "^TestKV2_scheduleIndependence_tiny$"),
+    ("cap-at-n-1", "internal/kvmgr/share.go", "\tcold := c.Pass(n, n)\n", "\treturn hit\n\tcold := c.Pass(n, n)\n",
+     "^TestKV2_hitCap_tiny$"),
+    ("passat-ignores-windowed", "internal/kvmgr/key.go", "if cls == ClassFast && c.Windowed && start%BlockRows != 0 {",
+     "if false && cls == ClassFast && c.Windowed && start%BlockRows != 0 {", "^TestKV2_windowedUnalignedNotShared$"),
     ("staging-buffer-kept", COPY, "\t\tfor _, p := range [2][2]Buffer{",
      "\t\t_ = r.af(rows * row / 4)\n\t\tfor _, p := range [2][2]Buffer{", "^TestKV2_copyAllocatesNothing_tiny$"),
 ]
