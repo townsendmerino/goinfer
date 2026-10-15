@@ -795,7 +795,7 @@ FAIL. A refused load measures nothing, so that label was wrong: it was VOID.
 declared.**
 
 - **The run:**
-  - Declaration branch `ecf58621`, the script at main `a84c955c`, under the timing lock, 15:20 to 15:21.
+  - Declaration branch `ecf58621`, the script at main `205e3b0d`, under the timing lock, 15:20 to 15:21.
   - The CPU process passed, with amendment 2's precondition holding at both quants. The Metal process passed amendment 3's
     precondition and every load.
   - The logs are in `~/goinfer-logs/op1-metal-2026-10-13/g2r-split-night-2026-10-15/`.
@@ -803,7 +803,7 @@ declared.**
   - The Metal `.gguf` load was refused by the fit guard. That run was labelled FAIL by the old grading.
   - The Metal precondition's `.giw` route read `seed[0]` with no seed and panicked. That was a harness bug, fixed in
     `ecf58621`.
-  - After the second attempt, the grading was tightened (`a84c955c`): FAIL comes only from G2-R's own verdict lines, and
+  - After the second attempt, the grading was tightened (`205e3b0d`): FAIL comes only from G2-R's own verdict lines, and
     anything else that ends the run reads VOID.
 
 | arm | int8int8: min cosine, argmax | int4: min cosine, argmax |
@@ -952,7 +952,7 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 ### 4.7 The remaining plan for OP2–OP6 (proposed 2026-10-15; docs only, nothing built)
 
 Written on the owner's ask, after G40 stopped on its tier 1 memory run and G2-R was queued for the night of 2026-10-15. Read at
-main `7030f1b3`. **A proposal for the owner, not a decision.** Sizes are §0's. Gates are in the tiered form
+main `ee80cf2e`. **A proposal for the owner, not a decision.** Sizes are §0's. Gates are in the tiered form
 (`CLAUDE.md`, "Testing tiers"): each is registered at the lowest tier that can answer it, and a night run states why the day
 tiers cannot. The day sizes and the fit notes below are INFERRED from checkpoint sizes, not fit-checked. Every night load is
 fit-checked by day before it is queued.
