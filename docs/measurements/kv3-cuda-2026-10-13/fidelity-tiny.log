@@ -1,0 +1,46 @@
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny/f32
+    kv3_longprefill_test.go:168: KV precision f32
+[kv3] tiny f32 n=12400 seed=0      cosine 0.999861 argmax equal true (reference margin 0.1151, near tie false), fused attention launches 50
+[kv3] tiny f32 n=12400 seed=0      control (last 8 tokens replaced) cosine 0.823451: the comparison sees it
+[kv3] tiny f32 n=12400 seed=1      cosine 0.999872 argmax equal true (reference margin 0.1346, near tie false), fused attention launches 50
+[kv3] tiny f32 n=12400 seed=1      control (last 8 tokens replaced) cosine 0.807009: the comparison sees it
+[kv3] tiny f32 n=12400 seed=2      cosine 0.999898 argmax equal true (reference margin 0.1159, near tie false), fused attention launches 50
+[kv3] tiny f32 n=12400 seed=2      control (last 8 tokens replaced) cosine 0.767123: the comparison sees it
+[kv3] tiny f32 n=14000 seed=0      cosine 0.999903 argmax equal true (reference margin 0.2392, near tie false), fused attention launches 56
+[kv3] tiny f32 n=14000 seed=0      control (last 8 tokens replaced) cosine 0.810080: the comparison sees it
+[kv3] tiny f32 n=14000 seed=1      cosine 0.999906 argmax equal true (reference margin 0.4077, near tie false), fused attention launches 56
+[kv3] tiny f32 n=14000 seed=1      control (last 8 tokens replaced) cosine 0.810191: the comparison sees it
+[kv3] tiny f32 n=14000 seed=2      cosine 0.999877 argmax equal true (reference margin 0.3411, near tie false), fused attention launches 56
+[kv3] tiny f32 n=14000 seed=2      control (last 8 tokens replaced) cosine 0.724037: the comparison sees it
+[kv3] tiny f32 n=16384 seed=0      cosine 0.999917 argmax equal true (reference margin 0.1554, near tie false), fused attention launches 64
+[kv3] tiny f32 n=16384 seed=0      control (last 8 tokens replaced) cosine 0.810550: the comparison sees it
+[kv3] tiny f32 n=16384 seed=1      cosine 0.999916 argmax equal true (reference margin 0.1743, near tie false), fused attention launches 64
+[kv3] tiny f32 n=16384 seed=1      control (last 8 tokens replaced) cosine 0.782905: the comparison sees it
+[kv3] tiny f32 n=16384 seed=2      cosine 0.999894 argmax equal true (reference margin 0.1322, near tie false), fused attention launches 64
+[kv3] tiny f32 n=16384 seed=2      control (last 8 tokens replaced) cosine 0.759240: the comparison sees it
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny/f16
+    kv3_longprefill_test.go:168: KV precision f16
+[kv3] tiny f16 n=12400 seed=0      cosine 0.999911 argmax equal true (reference margin 0.1353, near tie false), fused attention launches 50
+[kv3] tiny f16 n=12400 seed=0      control (last 8 tokens replaced) cosine 0.822103: the comparison sees it
+[kv3] tiny f16 n=12400 seed=1      cosine 0.999911 argmax equal true (reference margin 0.1234, near tie false), fused attention launches 50
+[kv3] tiny f16 n=12400 seed=1      control (last 8 tokens replaced) cosine 0.805493: the comparison sees it
+[kv3] tiny f16 n=12400 seed=2      cosine 0.999911 argmax equal true (reference margin 0.1115, near tie false), fused attention launches 50
+[kv3] tiny f16 n=12400 seed=2      control (last 8 tokens replaced) cosine 0.767733: the comparison sees it
+[kv3] tiny f16 n=14000 seed=0      cosine 0.999888 argmax equal true (reference margin 0.2416, near tie false), fused attention launches 56
+[kv3] tiny f16 n=14000 seed=0      control (last 8 tokens replaced) cosine 0.809480: the comparison sees it
+[kv3] tiny f16 n=14000 seed=1      cosine 0.999904 argmax equal true (reference margin 0.4105, near tie false), fused attention launches 56
+[kv3] tiny f16 n=14000 seed=1      control (last 8 tokens replaced) cosine 0.809644: the comparison sees it
+[kv3] tiny f16 n=14000 seed=2      cosine 0.999891 argmax equal true (reference margin 0.3438, near tie false), fused attention launches 56
+[kv3] tiny f16 n=14000 seed=2      control (last 8 tokens replaced) cosine 0.723619: the comparison sees it
+[kv3] tiny f16 n=16384 seed=0      cosine 0.999927 argmax equal true (reference margin 0.1508, near tie false), fused attention launches 64
+[kv3] tiny f16 n=16384 seed=0      control (last 8 tokens replaced) cosine 0.810331: the comparison sees it
+[kv3] tiny f16 n=16384 seed=1      cosine 0.999961 argmax equal true (reference margin 0.1674, near tie false), fused attention launches 64
+[kv3] tiny f16 n=16384 seed=1      control (last 8 tokens replaced) cosine 0.782679: the comparison sees it
+[kv3] tiny f16 n=16384 seed=2      cosine 0.999954 argmax equal true (reference margin 0.1191, near tie false), fused attention launches 64
+[kv3] tiny f16 n=16384 seed=2      control (last 8 tokens replaced) cosine 0.760013: the comparison sees it
+--- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny (157.56s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 (79.28s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f16 (78.20s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	157.610s

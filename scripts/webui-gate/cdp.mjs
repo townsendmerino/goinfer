@@ -70,9 +70,14 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
   let seq = 0;
   const waiting = new Map();
   const exceptions = [];
+  // Page.navigate and Page.reload answer before the page has loaded, so a fixed sleep after them races the page's own
+  // scripts on a loaded box. nextLoad resolves on the next load event; register it BEFORE sending the navigation.
+  const loadWaiters = [];
+  const nextLoad = () => new Promise(r => loadWaiters.push(r));
   ws.addEventListener("message", ev => {
     const m = JSON.parse(ev.data);
     if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); return; }
+    if (m.method === "Page.loadEventFired") { for (const r of loadWaiters.splice(0)) r(); return; }
     if (m.method === "Runtime.exceptionThrown") {
       exceptions.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
     }
@@ -83,7 +88,9 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
   // Page.navigate answers when the navigation commits or fails, so a server that accepts the connection and never
   // replies would hold a gate here for good. After the bound the caller has a page that is not the one it asked for,
   // which its first check reports.
+  const navLoaded = nextLoad();
   await Promise.race([send("Page.navigate", { url }), sleep(20000)]);
+  await Promise.race([navLoaded, sleep(20000)]);
   await sleep(settleMs);
 
   return {
@@ -98,7 +105,9 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
     // reload is a DELIBERATE navigation between gate phases (W3: does state survive it?). It is the one
     // navigation a gate may perform; one that happens inside evaluate() is still reported as a hijack.
     async reload() {
+      const loaded = nextLoad();
       await Promise.race([send("Page.reload", { ignoreCache: true }), sleep(20000)]);
+      await Promise.race([loaded, sleep(20000)]);
       await sleep(settleMs);
     },
     // cdp sends one raw DevTools command — for what evaluate() cannot do from inside the page: emulating

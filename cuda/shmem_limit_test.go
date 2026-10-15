@@ -69,10 +69,10 @@ func TestAttnShmemLimit_matchesDevice(t *testing.T) {
 // geometry (hd=4, so attnShmemBytes(startPos+M) is what's under test, no window clamp).
 func TestCheckPrefillShmem_declinesPastTheLimit(t *testing.T) {
 	r := declineFixture(2, "int4")
-	if err := r.checkPrefillShmem(0, 12160); err != nil {
+	if err := r.checkPrefillShmem(0, 12160, nil); err != nil {
 		t.Errorf("12160 attended keys is AT the limit and must not decline: %v", err)
 	}
-	err := r.checkPrefillShmem(0, 12161)
+	err := r.checkPrefillShmem(0, 12161, nil)
 	if err == nil {
 		t.Fatal("12161 attended keys is past the limit — checkPrefillShmem must decline")
 	}
@@ -91,13 +91,13 @@ func TestCheckPrefillShmem_declinesPastTheLimit(t *testing.T) {
 func TestCheckPrefillShmem_slidingWindowClampsPerLayer(t *testing.T) {
 	r := declineFixture(2, "int4")
 	r.layers[1].window = 4096 // well under the 12160-key boundary
-	if err := r.checkPrefillShmem(0, 12161); err == nil {
+	if err := r.checkPrefillShmem(0, 12161, nil); err == nil {
 		t.Fatal("layer 0 (no window) is past the limit at 12161 keys — must decline")
 	}
 	// Isolate layer 1: alone, its window clamp keeps it under the limit at any startPos+M.
 	r2 := declineFixture(1, "int4")
 	r2.layers[0].window = 4096
-	if err := r2.checkPrefillShmem(0, 100000); err != nil {
+	if err := r2.checkPrefillShmem(0, 100000, nil); err != nil {
 		t.Errorf("a single sliding-window(4096) layer must not decline regardless of prompt "+
 			"length — its own window clamps maxNWin: %v", err)
 	}

@@ -1,0 +1,15 @@
+started: 2026-10-14 14:49:23 PDT
+job: suite-a
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+tree: /home/francis/goinfer-bench/kv3-2026-10/wt-6d3b40cb at 6d3b40cbffc4b00509a74e3daa2b7c5113dc5beb
+new: 5282df9a76349d56b56b16eede71ea3ba18b33bb
+old: 5dc1b574a4c3c167c94580bc736b1a8a29af79a1
+load:  14:49:23 up 10 days, 18:11,  7 users,  load average: 0.78, 3.06, 3.90
+               total        used        free      shared  buff/cache   available
+Mem:           64238        8240       23935          83       32768       55997
+Swap:          78863        9099       69764
+fresh-process tests: TestGemma4_26B_cache_B TestP20ExpertLocality TestPrefillLongPrompt TestR14DrafterArgmaxAB TestR14DrafterArgmaxProfile TestResidentDrafter_extendContext TestSpecPagerInteraction
+drain group: TestA10FloorIsPerProcessOrPerDevice TestA10ReportingGap TestAllocFloor TestMoERouteDemandThreshold
+reconcile: fresh-process marked=7 ran-alone=7; drain marked=4 ran=4
+finished: 2026-10-14 16:00:41 PDT rc=0

@@ -38,6 +38,25 @@ const prefillDefaultChunk = 512
 // itself.
 const prefillMinChunk = 32
 
+// prefillAlignRows is the grid a pass's start stays on: the fused attention's key tile (attnFusedBM). Under a sliding window a
+// fused pass that starts off it does not write the bits the whole prompt writes (docs/measurements/kv1-2026-10-13.md, G2b).
+const prefillAlignRows = 64
+
+// prefillTailCut is how many rows a pass of n rows gives to a last pass that would have rem rows, fewer than attnFusedMinRows.
+// It is a whole prefillAlignRows when the pass keeps attnFusedMinRows after it, so the last pass starts on the grid the passes
+// before it started on; a pass too narrow for that (a chunk under 80 rows) gives only what the last pass lacks. A pass that
+// would itself drop under attnFusedMinRows gives nothing (a chunk under 32 rows, set by GOINFER_PREFILL_CHUNK): both passes
+// cannot be fast class there, and the cut would empty the pass when the chunk is under 16.
+func prefillTailCut(n, rem int) int {
+	if n-prefillAlignRows >= attnFusedMinRows {
+		return prefillAlignRows
+	}
+	if cut := attnFusedMinRows - rem; n-cut >= attnFusedMinRows {
+		return cut
+	}
+	return 0
+}
+
 // prefillImageDefaultChunk is PrefillImageLast's row budget: one image's tokens plus its chat text, a bounded quantity,
 // unlike an open-ended prompt. PrefillImageLast never chunks, so M past the budget is an outright decline. A card where
 // 2048 is too wide still declines cleanly (prefillCore wraps a device OOM as errPrefillDeclined/errPrefillOOM) and the
@@ -348,13 +367,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK"))
-	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
-		chunk = learned // a previous prompt already found the default too wide for this card
-	}
-	if r.kvWin {
-		chunk = min(chunk, kvWindowSlack+1) // a windowed layer's slack bounds the rows one pass can add (kvRoomFor)
-	}
+	chunk := r.prefillPassRows()
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, e
 	}
@@ -377,6 +390,13 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		n := chunk
 		if i+n > M {
 			n = M - i
+		}
+		// A prefill never ends in a pass of fewer than attnFusedMinRows rows: such a pass runs the exact kernels while every row
+		// before it ran the fast ones, so the prompt would depend on where its last chunk fell (the 16-row rule, KV0's invariance
+		// record), and past singleBlockAttnShmemLimit keys the exact attention is not launchable at all. The rows come from this
+		// pass (prefillTailCut), not the last one's; a chunk under 32 rows keeps its short last pass.
+		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
+			n -= prefillTailCut(n, rem)
 		}
 		last := i+n == M
 		tail := tailKVOnly
@@ -509,13 +529,17 @@ func (r *cudaResident) prefillMaxGeom() (maxQDim, maxKvDim int) {
 	return maxQDim, maxKvDim
 }
 
-// checkPrefillShmem is prefillStaticDecline's prompt-dependent twin. Batched-prefill attention sizes its dynamic shared
-// memory as decode's does, (maxNWin+128)*4 bytes, but has no split-KV fallback, so exceeding singleBlockAttnShmemLimit
-// is not survivable and must be a named decline; otherwise the launch fails in the driver and the caller silently falls
-// to the sequential path. Checked per layer, because a sliding-window layer's maxNWin is clamped to its window. It
-// mirrors prefillCore's per-layer maxNWin exactly, so it neither declines a shape the launch would run nor misses one it
-// would fail.
-func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
+// checkPrefillShmem is prefillStaticDecline's prompt-dependent twin. The exact batched attention (attn_batched and its image
+// twin) sizes its dynamic shared memory as decode's does, (maxNWin+128)*4 bytes, and has no split-KV fallback, so exceeding
+// singleBlockAttnShmemLimit is not survivable and must be a named decline; otherwise the launch fails in the driver and the
+// caller silently falls to the sequential path. Checked per layer, because a sliding-window layer's maxNWin is clamped to its
+// window. It mirrors prefillCore's per-layer maxNWin exactly, so it neither declines a shape the launch would run nor misses
+// one it would fail.
+//
+// fused says, for a layer's head dimension, whether the fused attention (attn_fused*) serves it in this pass: that kernel
+// stages 64 keys at a time and its shared memory does not grow with the span, so such a layer needs nothing of it. nil means
+// no layer is fused-served, the exact kernel's bound on every layer.
+func (r *cudaResident) checkPrefillShmem(startPos, M int, fused func(hd int) bool) error {
 	for l := range r.layers {
 		Ly := &r.layers[l]
 		maxNWin := startPos + M
@@ -523,9 +547,13 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
 			maxNWin = int(Ly.window)
 		}
 		if splitKVRequired(maxNWin) {
+			if fused != nil && fused(Ly.hd) {
+				continue
+			}
 			return fmt.Errorf("cuda prefill: layer %d attention at %d attended keys needs %d B of "+
-				"shared memory, past this device's %d B limit — batched prefill has no split-KV "+
-				"path, so this prompt length needs the sequential path: %w",
+				"shared memory, past this device's %d B limit — the exact batched attention has no split-KV "+
+				"path and the fused attention does not serve this pass (it needs head dim 64 or 128, an ordinary "+
+				"last-row prefill, 16 rows or more, no image block), so this prompt length needs the sequential path: %w",
 				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
 		}
 	}
@@ -770,11 +798,6 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	} else if !r.kvRoomFor(startPos, M) {
 		return nil, nil, fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, r.kvSlack, errPrefillDeclined)
 	}
-	if rows == nil {
-		if e := r.checkPrefillShmem(startPos, M); e != nil {
-			return nil, nil, e
-		}
-	}
 	// Image-block prefill (decoder.ResidentImagePrefill); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
 	// a separate call from checkPrefillShmem above, not a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards pins
 	// prefillCore's call to checkPrefillShmem by name (see the header of cuda/attn_img_prefill.cu).
@@ -827,6 +850,17 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		defer func() { r.forceExactKernels = false }()
 		r.launchErr = nil // clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
+		if rows == nil {
+			// Inside the pass, where passPromptLen and forceExactKernels are set: the guard asks useAttnFused exactly what the launch
+			// will, so a layer the fused kernel serves is not held to the exact kernel's span bound. An image-block pass never takes it.
+			var fused func(hd int) bool
+			if len(blocks) == 0 {
+				fused = func(hd int) bool { _, ok := r.useAttnFused(hd, M); return ok }
+			}
+			if e := r.checkPrefillShmem(startPos, M, fused); e != nil {
+				return e
+			}
+		}
 		if rows != nil {
 			for _, rw := range rows {
 				if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
@@ -848,8 +882,22 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}()
 		// At least one element: a pure-MoE family (qwen3_5_moe's intermediate_size=0) has no dense FFN, so its
 		// gate/up/down scratch is zero-sized and unused — and a zero-length device allocation is refused.
-		af := func(n int) Buffer { b := r.af(max(n, 1)); scratch = append(scratch, b); return b }
-		ai := func(n int) Buffer { b := r.ai(max(n, 1)); scratch = append(scratch, b); return b }
+		af := func(n int) Buffer {
+			if prefillScratchSeenForTest != nil {
+				prefillScratchSeenForTest(int64(max(n, 1)) * 4)
+			}
+			b := r.af(max(n, 1))
+			scratch = append(scratch, b)
+			return b
+		}
+		ai := func(n int) Buffer {
+			if prefillScratchSeenForTest != nil {
+				prefillScratchSeenForTest(int64(max(n, 1)) * 4)
+			}
+			b := r.ai(max(n, 1))
+			scratch = append(scratch, b)
+			return b
+		}
 
 		xB := af(M * hidden)
 		aqB, aScB := ai(M*hidden/4), af(M)
@@ -1760,8 +1808,8 @@ func (r *cudaResident) FastPrefillFloor() int {
 }
 
 // attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus Vtsh[hd][BN+KPAD], in halves. It
-// is constant in K, unlike the exact path's (maxNWin+128)*4 scratch, which makes checkPrefillShmem decline any layer
-// attending more than 12,160 keys (singleBlockAttnShmemLimit).
+// is constant in K, unlike the exact path's (maxNWin+128)*4 scratch, so a layer it serves is not held to
+// singleBlockAttnShmemLimit's span bound (checkPrefillShmem).
 func attnFusedShmem(hd int) uint32 {
 	return uint32(2 * (attnFusedBM*(hd+attnFusedKPAD) + hd*(attnFusedBM+attnFusedKPAD)))
 }

@@ -645,6 +645,8 @@ jobs:
           version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck -tags gpu
         run: staticcheck -tags 'gpu goinfer_testhooks' ./gpu/...
+      - name: staticcheck demo/agent
+        run: staticcheck ./demo/agent/...
 
       # GPU tests skip cleanly with no adapter (headless runner); this confirms
       # they compile and the resident-matmul path is exercised where possible.
@@ -702,6 +704,11 @@ jobs:
 
       - name: vet -tags cuda
         run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+
+      # The module must also vet with no tag: gopls, go doc and an untagged `go vet ./...` read it that way, and a file
+      # missing its //go:build cuda line breaks them while every tagged step above stays green.
+      - name: vet, untagged
+        run: go vet ./cuda/...
 
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this
