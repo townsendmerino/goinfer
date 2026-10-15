@@ -284,6 +284,9 @@ share three definitions:
 
 **Registration commit: `dd04f022`** (the gates above, as committed there; the design they test is `96fe0edd`).
 
+**Results:** the build, tier 0 and tier 1 (PASS), and tier 2's prepared night jobs are in `ids-carried-2026-10-15.md`, beside this
+record, with the readings of these gates the build needed.
+
 ### (c) Amendment 1, before any code (2026-10-15): the gates in the tiered form
 
 The owner's tiered testing rule (2026-10-15) applies to new gates: tier 0 (seconds: deterministic counters and bit-identity on
