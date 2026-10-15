@@ -948,6 +948,33 @@ one wasted forward per differing step.
 **Done** for this step: HL-G1 to HL-G3 pass and HL-G4's cell is written and queued for a night. HL-G4's verdict
 decides whether HL stays on by default.
 
+### 6.2 HL-R: the chain while the gate is closed only (filed 2026-10-14; register before any code)
+
+**Why.** HL-G4 read OFF (`docs/measurements/hl-2026-10/README.md`, "HL-G4"):
+
+- the prose part of a tool turn ran faster: 1.035 on the 1.5B, 1.010 on the 7B;
+- the whole tool-call turn ran slower: 0.986 and 0.973, with every pair below 1.
+
+The open steps' extra head and readback, and their redos, cost more than the chain saved. HL stays unmerged.
+
+**The mechanism to re-run.**
+
+- The chain runs only while the gate is closed.
+- At the step the gate opens, the decode loop takes the plain path from there: it stops the chain, and runs
+  `Forward` for the full row on every open step, as today's path does. That needs no `GreedyChainNextRow` and no
+  redo.
+- The chain reopens when the gate closes again.
+- The one step it cannot avoid paying is the forward the chain queued past the opening. Today's single-forward
+  `GreedyChainStop` waits it out, and the plain path then rewrites that position.
+
+**Registration owed before code:**
+
+- identity gates in HL-G1 to HL-G3's shape (tokens equal to `greedyChainOff`);
+- a speed cell in HL-G4's two shapes, with the same bands;
+- the cost of one wasted forward per opening, stated beside them.
+
+The rows-and-redo capability stays on the branch, unused, until HL-R reads.
+
 ## 7. Order, and what each step is worth alone
 
 - **Now, independent of everything:** OP0, OP1 (Gemma 2 on every GPU), RF0, HL, and OP6's Metal default (E5).
