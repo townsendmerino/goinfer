@@ -78,9 +78,11 @@ func g2rMetalRun(t *testing.T, load, quant string, seed, inputs []int, steps int
 	}
 	var fed []int
 	var out [][]float32
-	tok := seed[0]
+	var tok int
 	if inputs != nil {
 		tok = inputs[0]
+	} else {
+		tok = seed[0]
 	}
 	for i := range steps {
 		l, err := rf.Forward(m.EmbedResidentForTest(tok), i)
