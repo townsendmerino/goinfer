@@ -1,0 +1,3 @@
+swap in use before: 10775 MB
+swap in use after: 10752 MB; growth -23 MB: PASS (64 MB or less passes)
+VRAM used after: 445 MiB, 8192 MiB

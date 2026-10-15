@@ -1,0 +1,16 @@
+== planted: G2: a copy one block short
+--- FAIL: TestKV2_copyKVExact (4.27s)
+    --- FAIL: TestKV2_copyKVExact/llama-tiny_f32_KV (1.69s)
+        kv2_copy_test.go:122: CopyKV{0 1 0 64}: dst buffer 0 row 0 is not src's
+        kv2_copy_test.go:122: CopyKV{0 1 0 128}: dst buffer 0 row 64 is not src's
+        kv2_copy_test.go:122: CopyKV{1 2 64 128}: dst buffer 0 row 64 is not src's
+    --- FAIL: TestKV2_copyKVExact/llama-tiny_f16_KV (0.28s)
+
+== planted: G2: each layer's buffers come from the next layer (layer index off by one)
+--- FAIL: TestKV2_copyKVExact (4.32s)
+    --- FAIL: TestKV2_copyKVExact/llama-tiny_f32_KV (1.75s)
+        kv2_copy_test.go:122: CopyKV{0 1 0 64}: dst buffer 0 row 0 is not src's
+        kv2_copy_test.go:122: CopyKV{0 1 0 128}: dst buffer 0 row 0 is not src's
+        kv2_copy_test.go:122: CopyKV{1 2 64 128}: dst buffer 0 row 64 is not src's
+    --- FAIL: TestKV2_copyKVExact/llama-tiny_f16_KV (0.29s)
+

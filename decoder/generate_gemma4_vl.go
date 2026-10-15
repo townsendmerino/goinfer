@@ -157,7 +157,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			// engaging) forgets unconditionally, as in GenerateVL's upload bridge.
 			defer func() {
 				if !committed {
-					m.residentForgetIDs()
+					m.residentForgetIDsIn(kvScopeOf(ctx))
 				}
 				atomic.StoreInt32(&m.resBusy, 0)
 			}()
@@ -213,7 +213,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		atomic.StoreInt32(&m.resBusy, 0)
 		return false
 	}
-	m.residentForgetIDs() // the prefill overwrites the resident cache from position 0
+	m.residentForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
 	logits, err := pf.PrefillLast(ctx, rows, 0)
 	if err != nil {
 		atomic.StoreInt32(&m.resBusy, 0)
@@ -242,7 +242,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 	if g.err == nil {
 		m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 	} else {
-		m.residentForgetIDs()
+		m.residentForgetIDsIn(kvScopeOf(ctx))
 	}
 	atomic.StoreInt32(&m.resBusy, 0)
 	return true

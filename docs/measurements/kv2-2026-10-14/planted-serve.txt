@@ -1,0 +1,27 @@
+== planted: G4(c), serve: the -kv-share answer never reaches decoder.Options (modelSpec.options drops it)
+--- FAIL: TestKVShare_reachesTheModel (0.00s)
+    kv_share_test.go:32: kvShareOff true: decoder.Options.KVShareOff = false
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.460s
+FAIL
+
+== planted: G4(c), decoder: residentShare ignores Options.KVShareOff
+--- FAIL: TestKV2_optionOff (0.01s)
+    kv2_share_test.go:320: B reused 320 with 1 copies under KVShareOff, want none
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.413s
+FAIL
+
+== planted: G4(a), decoder: a declined batched prefill keeps the class it was announced with
+--- FAIL: TestKV2_declinedPrefillSharesNothing (0.01s)
+    kv2_share_test.go:353: slot 0 rows [0, 405) recorded as class 1 after a declined prefill
+    kv2_share_test.go:360: B copied 320 rows from a sequence whose prefill declined
+
+== planted: the window-group allowance dropped to one block (kvRollbackAllowance returns BlockRows)
+--- FAIL: TestKV2_windowGroupRollback (0.02s)
+    kv2_share_test.go:391: window 1024: reused 576, copied 576 (copies 1), want 600 in place
+
+== planted: the own-rollback exemption dropped (PickSlotFor holds every request to the allowance)
+--- FAIL: TestKV2_ownRollbackStaysInPlace (0.01s)
+    kv2_share_test.go:433: own rollback: reused 960, copied 960, want 1008 in place
+    kv2_share_test.go:439: a new conversation sharing 900 tokens of the first prompt: reused 900, copied 0, want a copy

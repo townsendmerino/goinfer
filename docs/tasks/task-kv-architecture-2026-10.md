@@ -1,7 +1,7 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
 > **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0). KV1 DONE 2026-10-14: every gate read PASS
-> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2 is next.** Written on the owner's ask after a Cowork conversation the same day ("seems
+> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2: gates registered 2026-10-14 (`docs/measurements/kv2-2026-10-14.md`), no code yet.** Written on the owner's ask after a Cowork conversation the same day ("seems
 > like we should consider a new KV architecture, given what goinfer is like now, feature-wise, what would be the best
 > architecture if we were writing it from scratch. how close is the current code?", then "please write the task doc for
 > the new architecture as proposed, be thorough").
@@ -596,6 +596,12 @@ the type.
   - the root key carries a **namespace**;
   - by default (D4) a server has one namespace, and one per API key when keys are configured;
   - `-kv-share off` turns cross-sequence sharing off and keeps per-conversation continuation.
+- **Known limit, stated and accepted (owner, 2026-10-14).** A continuation is a request that extends a slot's whole
+  sequence, giving up less than one block. So under `-kv-share off`, or across namespaces, a request still takes a
+  slot's rows when its prompt matches everything the slot holds except up to 63 trailing tokens. A client that
+  already knows all but the last 63 tokens of another conversation can therefore learn from its time to first token
+  how far its guess matched. It learns nothing about a conversation it cannot already reproduce up to that tail.
+  `docs/server.md` states the same limit.
 
 ### 5.16 Observability
 
@@ -677,13 +683,13 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   reachable today with `--ctx 32768 --kv-sessions 1` at the price of the other slots. The owner's call whether they change the
   verdict.
 
-### KV1 — The manager over today's slots (no storage change) — BUILT 2026-10-13, day gates read, not merged
+### KV1 — The manager over today's slots (no storage change) — DONE 2026-10-14, merged to main (`f08b47ca`)
 
-Branch `kv1-2026-10`. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2 and G5b
-amended before their runs). **Read and passing:** identity by day on both boxes, the windowed tests at awkward offsets
-on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost, and the fast-class
-windowed measurement (which measures, and does not gate KV1). **Queued for the night of 2026-10-13, and the merge waits
-for them:** the served speed gate on both boxes and the Metal device gate.
+Branch `kv1-2026-10`, merged. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2
+and G5b amended before their runs). **Every gate read and passing:** identity by day on both boxes, the windowed tests at
+awkward offsets on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost, the
+fast-class windowed measurement (which measures, and does not gate KV1), the served speed gate on both boxes and the
+Metal device gate.
 
 - **Built:**
   - `internal/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
@@ -743,22 +749,55 @@ for them:** the served speed gate on both boxes and the Metal device gate.
     touches). KV2 should keep that when it adds the copy.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.
 
-### KV2 — Cross-conversation reuse by copy (still slot storage)
+### KV2 — Cross-conversation reuse by copy (still slot storage) — gates REGISTERED 2026-10-14, no code yet
+
+Branch `kv2-2026-10`. Gates, and the choices made before the code: `docs/measurements/kv2-2026-10-14.md`. The Mac
+builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/prompts/nobara-kv2-cuda-2026-10.md`.
+KV2 merges when every arm on both boxes is read.
 
 - **Build:**
-  - a hit that lives in another slot is copied into the bound slot (`CopyDevice` / `CopyDeviceBatch`) and the rest is
-    prefilled;
-  - slots are reassigned by block LRU instead of slot LRU.
+  - one optional resident interface copies rows `[start, end)` of every layer from one slot to another; a backend that
+    cannot returns a named decline and the rows are prefilled;
+  - a hit that lives in another slot is copied into the request's slot and the rest is prefilled;
+  - a prompt's blocks are published when its prefill ends, so a conversation arriving while another generates can
+    take its preamble;
+  - a request no longer takes another conversation's slot in place when it would cut a block or more of it;
+  - the namespace comes from serve (D4), and `-kv-share off` is added;
+  - slots are reassigned by block LRU instead of slot LRU;
+  - the CPU's sessions copy last (D2).
   - The copy is small next to the prefill it saves. A 19,692-token preamble on the 7B at f32 (112 KB a position) is about
     2.2 GB of device copy, around 10 ms on the 8 GB card, against seconds of prefill.
-- **Gates (sketch):**
-  - **Schedule independence (hard):** N conversations sharing a preamble, in every schedule the MC4 harness runs; every
-    reply equals that conversation's reply alone.
-  - **Time-to-first-token** for a new conversation sharing a preamble of 16K tokens or more: a band registered from
-    KV0's projection, on both boxes.
-  - **A lone request** at 0.99 or better.
-  - **The copy cost** reported.
+- **Sharing keys on token ids, so equal text with different ids does not share (owner, 2026-10-15: accepted).** The
+  block key chains the token ids (§2, rule 1: ids, never text). Under the id round trip's proposal 2, a reply's generated
+  ids come back in a signed opaque field (Responses' `encrypted_content`, Anthropic's `thinking.signature`) and are used
+  in place of re-tokenizing the echoed text (PR #24's step-0 record, `id-roundtrip-step0-2026-10-15.md` on branch
+  `id-roundtrip-step0-2026-10`). Two conversations whose prompts carry the same text but different ids (one carries a
+  reply's non-canonical generated ids, the other re-tokenizes the same text canonically, or carries ids from a different
+  generation) hash differently from the first differing id, so a copy stops at the block before it. That is acceptable:
+  - what crosses conversations is the prefill-class preamble (system prompt, tools, environment), which no carried id
+    touches and which both tokenize identically;
+  - a reply's rows are decode class, which property 3 (§5.6) never shares across conversations whatever the ids;
+  - matching on text would need the two tokenizations to give the same KV, which they do not (different ids are
+    different inputs), so it would break sharing invariance (§5.6, property 2).
+  KV2's gates need no change for it: the CUDA registration (`docs/measurements/kv2-cuda-2026-10-15.md` §3) states it.
+- **Gates (registered):**
+  - G0: split invariance on the Mac's backends.
+  - G1: identity.
+  - G2: the copy exact, per backend.
+  - G3: schedule independence (hard).
+  - G4: KV1's carry-overs, each with a planted defect.
+  - G5: the sharing gate, which decides KV2 (Q3). The busy-source case is graded against KV0's projection, and the
+    idle case against `main`.
+  - G6: a lone request at 0.99 against `main`, on Metal and CUDA.
+  - G7: copy and admission cost, reported.
 - **Size:** S–M. **Closes:** most of §1.2, without kernel work, on CUDA, Metal and WebGPU.
+- **Follow-up, after KV2 merges (owner, 2026-10-14; not started).** With the first-prompt anchor
+  (`kvmgr.Slots.FirstPrompt`), an own rollback that gives up more than it keeps could truncate in place instead of
+  re-prefilling.
+  - Main's keep-at-least-as-much-as-it-overwrites rule (`kvmgr.PickSlot`; on the CPU, `pickSession`) exists only
+    because main could not tell a conversation's own request from another's.
+  - The item: drop that rule for a request that keeps the slot's whole first prompt, on the GPU and the CPU.
+  - Gate it like G3: same reply in every schedule, and replies unchanged against KV2's merge.
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
 

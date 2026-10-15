@@ -1,0 +1,6 @@
+[kv2-g0 metal] split@512: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 20480 differ
+[kv2-g0 metal] split@768: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 20480 differ
+[kv2-g0 metal] split@984: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 20480 differ
+[kv2-g0 metal] chunk=64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 20480 differ
+[kv2-g0 metal] chunk=448: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 20480 differ
+[kv2-g0 metal] decode token by token against the batched pass: first KV difference buffer 0 row 0 (-1: none)

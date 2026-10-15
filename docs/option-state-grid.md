@@ -19,6 +19,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision` | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | tested: `TestOptionPathMetal_kvPrecision` | tested: `TestOptionPathMetal_kvPrecision` |
 | `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
+| `KVShareOff` | n/a | n/a | n/a | n/a | tested: `TestKV2_optionKVShareOff_resident` | n/a | tested: `TestSessionLRU_sharesAPreamble` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
 | `MoECacheSlots` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
@@ -43,6 +44,9 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 - `ExactPrefill`: selects prefill numerics; a session's reuse rules do not depend on them
 - `KVPrecision`: "Ignored off the residency path"
 - `KVQuant`: the CPU KV cache's precision ("selects the CPU KV cache storage precision"); a resident uses KVPrecision
+- `KVShareOff`: sharing chooses the rows a request starts from as it takes its session; the forward that follows is unchanged
+- `KVShareOff`: a copy happens once, as a request takes its slot and before its prompt is prefilled; decode extends the slot's own rows
+- `KVShareOff`: sharing acts as a request takes its slot, before any speculative step
 - `Knobs`: routes per-model operator knobs by name to the code that reads each (knobs.go); each knob is an environment read listed in testdata/env_reads.txt and owned there
 - `MoECacheExperts`: "CUDA and Metal residency; the CPU's expert paging is StreamWeights"
 - `MoECacheSlots`: "Only meaningful with MoECacheExperts", a residency option

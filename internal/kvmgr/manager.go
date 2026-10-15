@@ -61,6 +61,7 @@ type Seq struct {
 	pinned   bool
 	slot     int32
 	released bool
+	first    int // the length of the first prompt of the conversation the sequence holds (slots only; Slots.FirstPrompt)
 }
 
 // Len is the number of positions the sequence holds.

@@ -1,0 +1,9 @@
+PASS   decode 1.5B depth 128: median new/main 0.9997 over 12 blocks, 95% interval [0.9964, 1.0024] (KV1's reading: median in [0.99, 1.01]; min 0.9898, max 1.0092; new 93.65 tok/s, main 93.70 tok/s)
+       by block: 1.0010 0.9966 0.9960 1.0019 0.9995 0.9898 1.0020 0.9999 1.0015 1.0092 0.9958 0.9995
+PASS   decode 7B depth 128: median new/main 1.0002 over 12 blocks, 95% interval [0.9985, 1.0022] (KV1's reading: median in [0.99, 1.01]; min 0.9968, max 1.0079; new 30.73 tok/s, main 30.73 tok/s)
+       by block: 0.9978 0.9968 1.0015 1.0079 1.0001 0.9984 0.9996 1.0003 1.0013 1.0004 1.0023 0.9980
+PASS   time to first token 1.5B, prompts of [3069, 3070] tokens: median new/main 1.0002 over 12 blocks, 95% interval [0.9997, 1.0004] (KV1's reading: median in [0.99, 1.01]; min 0.9985, max 1.0007; new 3.184 s, main 3.185 s)
+       by block: 0.9985 1.0002 1.0007 1.0002 1.0002 1.0001 1.0001 1.0003 1.0004 0.9995 1.0000 1.0006
+PASS   time to first token 7B, prompts of [3069, 3070] tokens: median new/main 1.0006 over 12 blocks, 95% interval [0.9993, 1.0012] (KV1's reading: median in [0.99, 1.01]; min 0.9979, max 1.0032; new 14.505 s, main 14.509 s)
+       by block: 0.9979 1.0012 0.9986 0.9990 1.0002 1.0014 1.0011 0.9991 0.9991 1.0011 1.0032 1.0011
+VERDICT PASS
