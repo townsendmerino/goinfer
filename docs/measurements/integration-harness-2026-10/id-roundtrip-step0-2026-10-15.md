@@ -192,49 +192,95 @@ in the requester's own request.
 - **Schedule independence (KV2's gate) holds under this design.** The ids come from the request, not from shared state that
   other conversations could change.
 
-## (c) Gates — DRAFT, not registered
+## (c) Gates — REGISTERED 2026-10-15, for the proposal-2 build (the design in (a))
 
-**G-ids-0, day, CPU, seconds (unit, through the route).** Render the next request for every reply of this replay (`run.jsonl.gz`)
-with the feature on.
+Registered in a commit of its own, before any of the feature is built. The commit is named at the end of this section. The
+fixtures are this replay's: `run.jsonl.gz`, the requests `prep.py` rebuilds, the order `select.txt`, and the echo rule of the
+method below. "Today's tokenization" means the next request rendered with the carrier removed, on the same build. All four gates
+share three definitions:
+- a **fallback** re-tokenizes exactly as today;
+- every fallback is **counted** with its reason in `ids_fallback` and the `status` totals, per condition b;
+- a missing count fails the gate.
+
+**G-ids-0. Day, CPU, through the route's renderer: tokenizer and template, no weights.**
+- **Rule (all of it, no tolerance):**
+  1. **Carried and untouched.** For each of the 45 replies, the next request carries the reply's items as emitted, with a v2
+     blob signed by the test key. Its prompt ids start with the slot's id record (the prompt, then every generated id), and the
+     line reads `ids=1/1` with no fallback. That includes the 4 non-canonical replies, which give 41 of 45 today.
+  2. **Planted defects, each applied to every reply it fits.** Each must give today's tokenization exactly, the named reason,
+     and no error:
+
+     | defect | expected reason |
+     |---|---|
+     | (a) one character of the reasoning text inside the blob changed | `decode` |
+     | (b) one character of a call's `arguments` changed | `decode` |
+     | (c) an escape edited in `arguments` (`\\t` to `\t`), where one occurs | `decode` |
+     | (d) one character of the final answer changed (the one reply with a message) | `decode` |
+     | (e) **forged:** ids that decode exactly to the echoed text, in a non-canonical split chosen by the client, with no MAC | `mac` |
+     | (f) **forged:** the same ids with a MAC from the wrong computation (random bytes) | `mac` |
+     | (g) the reply's own ids, signed by a **different key** | `key` |
+     | (h) a blob signed with the right key whose ids put a special id inside a content run while decoding to the same text | `special` |
+     | (i) the right ids and key, minted for another namespace | `ns` |
+     | (j) the right ids and key, minted for another model or tokenizer identity | `model` |
+     | (k) a v1 blob (text, no ids) | `v1` |
+     | (l) a truncated or garbled blob | `parse` |
+     | (m) the reasoning item dropped | no carrier, so `ids=0/0` and today's tokenization; the reasoning is not rendered, as today |
+
+  3. **Edits to the visible text only.** An edit to the reasoning item's visible `content`, with the blob untouched, renders
+     the blob's text and uses the ids, as serve reads `encrypted_content` first today.
+- **Void:** the fixture fails its own validity (a slot that does not start with the route's rendered prompt), or a planted edit
+  leaves the rendered text unchanged (the defect did not plant).
+- **Stopping rule:** every case once.
+- **Cost basis:** the render check in the method ran 129 prompts in 2.6 s. This is 45 x 15 renders, about 15 s.
+
+**G-ids-1. Day, GPU: the step-0 replay with the feature on.**
+- **Rule:** in every completed reply, the next request re-renders to the generated ids. Today that is 41 of 45, and the 4
+  misses must now hold. The archived history in each generation prompt carries the night's v1 blobs, so `v1` fallbacks there
+  are expected and reported. There are zero fallbacks of any other reason.
+- **Void:** the prompt-count offset is not the constant -18; any render error; the slot-prefix validity fails; the flags are not
+  this run's (`--ctx 16384 --moe-cache-experts --windowed-kv=false`, KV f32).
+- **Stopping rule:** this run's: the fixed order in `select.txt`, and no request starts after 600 s of replay wall.
+- **Cost basis:** this run, 613 s of replay plus about 60 s of load, under the timing lock.
+
+**G-ids-2. Night, GPU: a fallback is the cold path, and prompt ids do not depend on the KV.**
+- **Arms.** Each of the 4 misses (`write` r2 #4 and #5, `fix` r3 #1 and #9) is run in its next request under these arms, in this
+  order:
+
+  | arm | what the next request carries | how it is run |
+  |---|---|---|
+  | A-warm | the valid carried blob | right after its reply |
+  | A-cold | the valid carried blob | cold |
+  | B | the forged blob of G-ids-0 (e) | cold |
+  | C | the different-key blob of G-ids-0 (g) | cold |
+  | D | the carrier removed | cold, twice (D1, D2) |
+
+  "Cold" means the slot last held another session's first request, so only the shared preamble can be reused.
 - **Rule:**
-  - every reply whose echo equals the emitted items gives exactly the slot's ids;
-  - every **planted defect** gives today's tokenization (the id path rejected) with no error:
-    - (1) one character of the reasoning changed;
-    - (2) one character of a call's `arguments` changed, including a backslash-escape edit (`\\t` to `\t`);
-    - (3) one character of a final answer changed;
-    - (4) the reasoning item dropped;
-    - (5) a blob whose ids decode to the same text but put a special id (`<|im_end|>`, `<tool_call>`) inside content;
-    - (6) a blob or store entry written under another namespace.
-- **Void:** the replay's own validity fails (a slot that does not start with the route's rendered prompt), or a planted defect
-  fails to change the rendered text.
-- **Stopping rule:** all cases, once.
-- **Cost:** seconds; no model weights, tokenizer and template only.
+  - B and C: counted with `mac` and `key`; their prompt ids identical to D's; their generated output byte-identical to D's.
+  - A-cold: its prompt ids equal to A-warm's (hard), and different from D's at the non-canonical split.
+  - The outputs of A-warm against A-cold are reported, not barred: §5.6 property 3 allows a continuation to differ from cold.
+- **Void:**
+  - D1 and D2 differ (the cold path is not reproducible, so no output comparison counts);
+  - an arm is not cold or not warm as stated, by its `cached_tokens` (cold: at most the preamble it shares with the previous
+    prompt; warm: the whole previous prompt plus the reply);
+  - a server restart inside the gate (it changes the default key).
+- **Stopping rule:** 4 replies x 6 arms = 24 requests, once.
+- **Cost basis:** each cold arm prefills 1K to 6K tokens past the shared preamble, at this load's 100 tokens/s (the night's
+  median cold rate), plus the reply. That is about 20 cold arms x 35 s, plus 4 warm, so about 15 minutes with the load.
 
-**G-ids-1, day, GPU, about 11 minutes (this replay, feature on).**
-- **Rule:** the round trip holds in 45 of 45, against today's 41 of 45. Each of the 4 mismatches above must now hold, and no
-  reply may regress.
-- **Void:** a prompt-count mismatch other than the constant 18; the windowed-KV setting other than `--windowed-kv=false`; a
-  render error.
-- **Stopping rule:** the same 600 s budget and order (`select.txt`).
-- **Cost:** this run, 613 s plus the load.
-
-**G-ids-2, day, GPU, about 5 minutes (prompt-id identity, cold against warm).**
-- **Rule:** for the 4 non-canonical replies, the next request's prompt ids are identical when it runs warm (after its reply) and
-  cold (after a server restart, blob form; after a cleared KV with the store kept, store form).
-- **Report beside it, not a bar:** the outputs, compared byte for byte. They may differ under §5.6 property 3. If the owner
-  chooses byte identity, the gate becomes byte identity with the reply's rows re-prefilled.
-- **Void:** either arm not cold or not warm as stated (its `cached_tokens`).
-- **Stopping rule:** 4 pairs.
-- **Cost:** 8 requests at 60 to 120 s cold.
-
-**G-ids-3, night (live).**
-- **Arms:** `mellum-16k-codex-f`, 5 tasks x 3, two arms (feature off, the do-nothing arm; feature on), interleaved by task in one
-  session.
-- **Rule:** the feature-on arm's cold plain continuations are at most 1 against the off arm's count, and both are reported.
-  Compactions and the pooled pass rate are reported beside, with an ambiguous → parked band for the owner to set.
-- **Void:** a deadline skip, a sandbox self-test failure, the expert-cache cap differing between arms.
-- **Stopping rule:** fixed N.
-- **Cost:** about 2 x 2.5 h. Over the 3-hour job cap, so two jobs on two nights, or 5 tasks x 2.
+**G-ids-3. Night, live.**
+- **Arms:** `mellum-16k-codex-f`, 5 tasks x 3, feature off (the do-nothing arm) and on, interleaved by task in one session, with
+  `"bodies": true` (and `"token_ids": true` once (e)'s flag exists).
+- **Rule:**
+  - the on arm's cold plain continuations are at most 1, and at most the off arm's;
+  - the on arm has zero `mac`, `key`, `model` and `ns` fallbacks (one server, one key: any of them means the carrier or the MAC
+    is broken);
+  - `decode` fallbacks are reported, each attributed from the bodies (a client edit or a defect);
+  - compactions and the pooled pass rate are reported beside, with an ambiguous → parked band for the owner to set.
+- **Void:** a deadline skip; a sandbox self-test failure; the expert-cache cap differing between the arms; a server restart
+  inside an arm.
+- **Stopping rule:** fixed N, 15 runs an arm.
+- **Cost basis:** the after run, 2 h 28 min for 15 runs, so about 2.5 h an arm. That is two night jobs under the 3-hour cap.
 
 ## (e) Logging generated ids in night runs (APPROVED 2026-10-15): the mechanism
 
