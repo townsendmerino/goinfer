@@ -23,7 +23,7 @@ git fetch -q origin || echo "warning: git fetch failed; testing the local $REV"
 [ -d "$WT" ] && git worktree remove --force "$WT"
 git worktree add -q --detach "$WT" "$REV" || { echo "FATAL: cannot check out $REV"; exit 2; }
 # The gitignored fixtures are placed by scripts/worktree_fixtures.sh (its header has the rule): small fixtures COPIED as real files, since tests that
-# copy a fixture directory keep only regular files and drop a symlinked one; model-sized entries and symlinks into ~/models linked. Untracked,
+# copy a fixture directory keep only regular files and drop a symlinked one; larger ones cloned, symlinks into ~/models kept as links. Untracked,
 # NOT-ignored fixture directories (testdata/gemma4-emodel-tiny: only its *.safetensors is gitignored) are placed whole, and first: placing just the
 # ignored files made a directory holding model.safetensors and no config.json, which a dir-only existence check takes for a fixture (the 2026-10-07
 # night run: 13 E-model tests failed on it). They would make the gate call the worktree DIRTY (its verdict then reads INCONCLUSIVE), so they are

@@ -6,8 +6,8 @@
 # Why at night: by day the fit guard refuses the heavy resident-parity loads with the owner's apps open (measured
 # 2026-09-30), and the gate wants an idle GPU.
 # Why a worktree: the gate runs REV, not whatever the main checkout holds, and its verdict is INCONCLUSIVE on a dirty
-# tree. The gitignored fixtures the tests read are placed from the main checkout by scripts/worktree_fixtures.sh (small
-# fixtures cloned as real files, model-sized entries linked; its header has the rule), and the worktree gets its own go.work.
+# tree. The gitignored fixtures the tests read are placed from the main checkout by scripts/worktree_fixtures.sh (every
+# real fixture cloned as real files, symlinks into ~/models kept as links; its header has the rule), and the worktree gets its own go.work.
 #
 # The record: -record points at the MAIN checkout's docs/measurements/gpu-gate, where `gate gpu-records` and row 4 of
 # `gate release` read it. It is written by the gate from the worktree, so it names REV and REV's trees. Commit it.

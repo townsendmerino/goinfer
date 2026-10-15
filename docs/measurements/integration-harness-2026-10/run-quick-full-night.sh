@@ -22,7 +22,7 @@ git fetch -q origin || echo "warning: git fetch failed; using the local $REV"
 git worktree add -q --detach "$WT" "$REV" || { echo "FATAL: cannot check out $REV"; exit 2; }
 # -full exists to RUN the deferred tests, and a fresh worktree has none of the gitignored fixtures this box has. scripts/worktree_fixtures.sh
 # places them (its header has the rule): small fixtures COPIED as real files, since tests that copy a fixture directory keep only regular files
-# and drop a symlinked one; model-sized entries and symlinks into ~/models linked. Untracked, not-ignored fixture directories are placed too and
+# and drop a symlinked one; larger ones cloned, symlinks into ~/models kept as links. Untracked, not-ignored fixture directories are placed too and
 # listed in $EXC: they would make the gate record the tree as dirty, and a dirty record does not count, so this process alone ignores them.
 EXC="$LOG/untracked-fixtures.exclude"
 fixtures=$(bash "$SRC/scripts/worktree_fixtures.sh" "$SRC" "$WT" "$EXC") || { echo "FATAL: placing the fixtures: $fixtures"; exit 2; }

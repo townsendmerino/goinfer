@@ -10,7 +10,7 @@
 #
 # A fresh worktree has none of the main checkout's gitignored fixtures (~70 GB under testdata/ and decoder/testdata/), and without them most tiny-fixture gates skip.
 # scripts/worktree_fixtures.sh places each ignored entry (its header has the rule): small fixtures COPIED as real files, since tests that copy a fixture
-# directory keep only regular files and drop a symlinked one; model-sized entries and symlinks into ~/models linked, never copied.
+# directory keep only regular files and drop a symlinked one; larger ones cloned (reflinks), symlinks into ~/models kept as links.
 #
 # Estimate 160 minutes: the v0.21.0 sweep ran 2026-10-05 20:05 to 22:42 (157 min) with its realckpt cell cut off at its 120-minute timeout; v0.20.0's same cell took about
 # 1h46. Loading from NVMe instead of the archive's SMR disk is faster, and four absent checkpoints skip their gates, so this should come in under that; 160 is the upper bound
