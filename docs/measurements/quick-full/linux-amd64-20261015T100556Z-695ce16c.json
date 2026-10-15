@@ -1,0 +1,20 @@
+{
+ "schema": 1,
+ "os": "linux",
+ "arch": "amd64",
+ "commit": "695ce16c131877e742652937111520cea558f785",
+ "date": "2026-10-15T10:05:56Z",
+ "verdict": "FAIL",
+ "dirty": false,
+ "full": true,
+ "pass": 2434,
+ "skip": 460,
+ "fail": 4,
+ "cells": 62,
+ "ran": 52,
+ "cached": 8,
+ "not_run": [
+  "metal",
+  "metal/kernels"
+ ]
+}
