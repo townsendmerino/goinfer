@@ -144,7 +144,7 @@ func g2rCPULogits(t *testing.T, path, quant string, toks []int, softcapOff bool)
 func g2rRun(t *testing.T, path, quant string, seed []int, steps int, softcapOff bool, toks []int) [][]float32 {
 	t.Helper()
 	was := decoder.SetAttnSoftcapOffForTest(softcapOff)
-	m, err := decoder.Load(path, decoder.Options{Quant: quant})
+	m, err := decoder.Load(g2rCPUPath(t, path, quant), decoder.Options{Quant: quant}) // amendment 2: the CPU loads .giw
 	decoder.SetAttnSoftcapOffForTest(was)
 	if err != nil {
 		t.Fatalf("load (cpu): %v", err)

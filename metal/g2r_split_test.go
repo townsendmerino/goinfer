@@ -7,7 +7,10 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"io"
+	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -36,7 +39,8 @@ type g2rPStats struct {
 
 type g2rRef struct {
 	Commit      string
-	SHA256      map[string]string
+	SHA256      map[string]string // the .gguf checkpoints, which the Metal process loads too
+	GIW         map[string]string // the CPU .giw bundles the CPU process loaded, by path
 	HookChanged bool
 	Arms        map[string]g2rArm // "B/<quant>", "G/<quant>", "control", "gemma3"
 	PStats      map[string]g2rPStats
@@ -67,6 +71,22 @@ func g2rHashes(t *testing.T, paths ...string) map[string]string {
 	return out
 }
 
+// g2rCPUPath is the CPU .giw the CPU process loads for a checkpoint at a quant (amendment 2): $GOINFER_G2R_GIW_DIR holds
+// <checkpoint base>.<quant>.cpu.giw, built from that .gguf by the night job. A missing bundle voids the run.
+func g2rCPUPath(t *testing.T, gguf, quant string) string {
+	t.Helper()
+	dir := os.Getenv("GOINFER_G2R_GIW_DIR")
+	if dir == "" {
+		t.Fatalf("VOID: GOINFER_G2R_GIW_DIR is not set: the CPU arms load .giw bundles (amendment 2)")
+	}
+	base := filepath.Base(gguf)
+	p := filepath.Join(dir, strings.TrimSuffix(base, ".gguf")+"."+quant+".cpu.giw")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("VOID: the CPU bundle for %s at %s is missing: %v", base, quant, err)
+	}
+	return p
+}
+
 func g2rRefEnv(t *testing.T) (path, commit string) {
 	t.Helper()
 	path, commit = os.Getenv("GOINFER_G2R_REF"), os.Getenv("GOINFER_G2R_COMMIT")
@@ -80,8 +100,14 @@ func g2rRefEnv(t *testing.T) (path, commit string) {
 // wantCap checks the model carries the attention softcap the arm expects (Gemma 2 only).
 func g2rCPUArm(t *testing.T, path, quant string, seed []int, steps int, softcapOff, wantCap bool) g2rArm {
 	t.Helper()
+	return g2rCPUArmFrom(t, g2rCPUPath(t, path, quant), quant, seed, steps, softcapOff, wantCap)
+}
+
+// g2rCPUArmFrom is g2rCPUArm loading exactly load (a .giw, or the .gguf itself for the identity precondition).
+func g2rCPUArmFrom(t *testing.T, load, quant string, seed []int, steps int, softcapOff, wantCap bool) g2rArm {
+	t.Helper()
 	was := decoder.SetAttnSoftcapOffForTest(softcapOff)
-	m, err := decoder.Load(path, decoder.Options{Quant: quant})
+	m, err := decoder.Load(load, decoder.Options{Quant: quant})
 	decoder.SetAttnSoftcapOffForTest(was)
 	if err != nil {
 		t.Fatalf("load (cpu): %v", err)
@@ -116,6 +142,24 @@ func TestG2R_cpuReference(t *testing.T) {
 	out, commit := g2rRefEnv(t)
 	g2, g3, dense := g2rPaths()
 	ref := g2rRef{Commit: commit, SHA256: g2rHashes(t, g2, g3, dense), Arms: map[string]g2rArm{}, PStats: map[string]g2rPStats{}}
+	ref.GIW = g2rHashes(t, g2rCPUPath(t, g2, "int8int8"), g2rCPUPath(t, g2, "int4"), g2rCPUPath(t, g3, "int8int8"),
+		g2rCPUPath(t, dense, "int8int8"), g2rCPUPath(t, dense, "int4"))
+
+	// The precondition (amendment 2): the .giw route is the direct .gguf route, bit for bit, on the dense 1.5B (whose
+	// .gguf the fit guard admits directly), at both quants, on the gate's prompt and 24 steps. A difference voids the run.
+	dseed := seedPrompt(t, dense, probeText)
+	for _, q := range []string{"int8int8", "int4"} {
+		direct := g2rCPUArmFrom(t, dense, q, dseed, 24, false, false)
+		viaGIW := g2rCPUArmFrom(t, g2rCPUPath(t, dense, q), q, dseed, 24, false, false)
+		for i := range direct.Logits {
+			for j := range direct.Logits[i] {
+				if math.Float32bits(direct.Logits[i][j]) != math.Float32bits(viaGIW.Logits[i][j]) {
+					t.Fatalf("VOID (amendment 2's precondition): the dense 1.5B at %s through its .giw differs from its direct .gguf load at step %d, logit %d", q, i, j)
+				}
+			}
+		}
+		t.Logf("precondition: the dense 1.5B at %s gives the same logits through its .giw and its .gguf, every step, bit for bit", q)
+	}
 	seed := seedPrompt(t, g2, probeText)
 
 	tokens := g2rTokens(t, g2, "int8int8", seed, 24, false)
