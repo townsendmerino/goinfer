@@ -35,7 +35,7 @@ wt() { # <name> <rev>: a detached worktree with its own go.work
   echo "swap: $(sysctl -n vm.swapusage)"; } | tee "$OUT/provenance.txt"
 case "$JOB" in
 mem)
-  BASE=${BASE:?BASE is main at the branch's merge base}
+  BASE=${BASE:?BASE is main at the merge base of the branch}
   for side in after:$REV before:$BASE; do
     name=${side%%:*}; w=$(wt "$name" "${side#*:}") || exit 2
     (cd "$w" && GOWORK=$w/go.work CGO_ENABLED=0 go build -o "$B/bin/serve-$name" ./cmd/serve) || { echo "FATAL: the $name build failed"; exit 2; }
