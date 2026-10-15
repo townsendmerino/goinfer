@@ -284,6 +284,59 @@ share three definitions:
 
 **Registration commit: `dd04f022`** (the gates above, as committed there; the design they test is `96fe0edd`).
 
+### (c) Amendment 1, before any code (2026-10-15): the gates in the tiered form
+
+The owner's tiered testing rule (2026-10-15) applies to new gates: tier 0 (seconds: deterministic counters and bit-identity on
+tiny fixtures) is the default; tier 1 (10 minutes or less, by day, one small real model at the smallest size that exercises
+the mechanism); tier 2 (night) only for a published number or a decision on a small effect, with the reason tiers 0 and 1
+cannot answer it and a wall-clock budget. An unchanged arm is not re-measured: its last readings are cited. Each check stops
+when its answer is clear. The gates above are regrouped as follows. Every rule, void condition and planted defect above keeps
+its wording unless this amendment changes it.
+
+**Tier 0 (seconds, CPU, every change).**
+- **G-ids-0, unchanged:** 45 renders x 15 cases, about 15 s.
+- **G-ids-2's fallback half, moved here from the night:** arms B (forged, G-ids-0 (e)), C (different key, (g)) and D (no
+  carrier, run twice), on a tiny fixture model whose greedy output is deterministic, with a reply whose tokenization is made
+  non-canonical by construction (a planted split the BPE would not produce). Rule: B and C counted `mac` and `key`, their
+  prompt ids equal to D's, and their generated output byte-identical to D's. Void: D1 and D2 differ. Counters read: the fallback
+  counts by reason, the ids actually prefilled, and the rows the slot reused.
+- **Prompt ids do not depend on the KV (G-ids-2's A-arms), on the tiny fixture:** the same request with the valid blob, sent
+  right after its reply (warm) and after another session has taken the slot (cold), gives identical prompt ids; the cold
+  arm's rows-reused counter shows the slot really was cold.
+
+**Tier 1 (by day, under the timing lock, 10 minutes or less): G-ids-1, trimmed, which also takes G-ids-2's real-model
+check.** Mellum2.1 is the smallest model on this box that produced the non-canonical splits; the mechanism needs a real model's
+generation, which no tiny fixture reproduces.
+- **Cells:** the 4 misses (`write` r2 #4 and #5, `fix` r3 #1 and #9), and 8 controls drawn from the 41 that held, in `select.txt`'s
+  order: 2 each from JSON escapes, `./...` and code; the 1 non-ASCII reply that held; and 1 from none of the four.
+- **Rule:** all 12 re-render to their generated ids with the feature on, with zero fallbacks except `v1` on archived history.
+  For the 4 misses, the next request's prompt ids are equal warm (right after the reply) and cold (after another session's
+  request), and differ from the no-carrier arm's at the non-canonical split.
+- **Void:** G-ids-1's void conditions, and an arm whose `cached_tokens` contradicts its stated warm or cold state.
+- **Stopping rule:** every cell once.
+- **Cost basis:** step 0's 13.6 s a request, so 12 replays plus 8 next requests is about 4.5 minutes, plus about 60 s of
+  load: under 6 minutes.
+- G-ids-1's full 45-request replay (about 11 minutes, over the tier-1 cap) and G-ids-2's 24-request night job are withdrawn.
+  The tier-0 checks above cover their deterministic part, and the trimmed replay covers the real-model part.
+
+**Tier 2 (night, one job): G-ids-3, for the reuse rate on real Codex traffic only.**
+- **Why tiers 0 and 1 cannot answer it:** the number is how often a live Codex session's follow-ups stay warm. That depends on
+  Codex's own echoing, compaction and turn structure, which a replay of recorded prompts does not reproduce; a by-day replay of
+  all 285 recorded follow-ups would take about 65 minutes and still not include Codex's behaviour. It is also a number the
+  release notes may quote.
+- **The off arm is not re-run.** It is the after run of 2026-10-15 (serve at `695ce16c`; 55 of 285 follow-ups cold), cited
+  from `i3-night-2026-10-13.md`. That holds only if nothing on the reuse path (the windowed-KV ring, prefix reuse, the
+  Responses render of reasoning items, the slot choice) has landed between `695ce16c` and the commit under test. If something
+  has, for example KV2's merge, the off arm is re-run in the same job, interleaved by task, and the budget doubles.
+- **Rule:** G-ids-3's rule above, read against the cited (or re-run) off arm.
+- **Stopping rule:** fixed N, 15 runs. If the first 5 runs show no cold plain continuation and no fallback other than `decode`,
+  the answer is clear and the job stops there; that is a reading of "stop as soon as the answer is clear", registered here
+  before any run.
+- **Budget:** the on arm alone, about 2 h 30 min (the after run's 2 h 28 min for 15 runs), or about 50 minutes if it stops
+  at 5; with a re-run off arm, about 5 hours, so two night jobs.
+- **Fit guard, by day before queueing:** Mellum2.1 at `--ctx 16384 --moe-cache-experts` on this card. Its last successful
+  load is the after run (62 expert slots).
+
 ## (e) Logging generated ids in night runs (APPROVED 2026-10-15): the mechanism
 
 **What exists:**
