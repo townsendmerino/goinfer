@@ -1,0 +1,9 @@
+metal 1.5B
+DELIVERS: busy, median saving / projection 0.949 over 6 blocks; median saving 32.46 s; hits [18112]; by block 0.949 0.949 0.949 0.949 0.955 0.954
+       B1 time to first token: main median 37.90 s, kv2 median 5.54 s
+control off / main (busy): median 1.000
+control header on, kv2 / main: median 0.999
+PASS: idle, (B1 + A2) main / kv2 median 1.902; by block 1.903 1.901 1.902 1.866 1.916 1.865
+       idle B1 alone, kv2 / main: median 1.034 (the copy replaces an in-place take)
+copy cost (G7, reported): median 75.75 ms over 12 copies of [18112] rows
+VERDICT busy DELIVERS / idle PASS
