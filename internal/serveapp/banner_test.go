@@ -112,8 +112,11 @@ func TestBanner_contextAndKV(t *testing.T) {
 		{"no -ctx, resident cap below the model maximum", 8192, 40960, 0, "", []string{"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)", "KV f32"}, []string{"backend default ·"}, ""},
 		{"no -ctx, model maximum binds", 32768, 32768, 0, "", []string{"context: 32768 tokens (model maximum)"}, []string{"backend default"}, ""},
 		{"-ctx below the model maximum", 4096, 40960, 4096, "f32", []string{"context: 4096 tokens (--ctx; model maximum 40960)", "KV f32"}, nil, ""},
-		{"-ctx above the model maximum", 8192, 8192, 100000, "f16", []string{"context: 8192 tokens (model maximum; --ctx 100000 is above it)", "KV f16", "lossy"}, []string{"100000 tokens"}, ""},
-		{"-ctx equal to the model maximum", 65536, 65536, 65536, "i8", []string{"context: 65536 tokens (model maximum)", "KV i8", "lossy"}, nil, ""},
+		// Off the resident path the CPU cache runs, and it has no f16 form: the request is held at f32, and said so.
+		{"-ctx above the model maximum, -kv f16 on the CPU", 8192, 8192, 100000, "f16", []string{"context: 8192 tokens (model maximum; --ctx 100000 is above it)", "KV f32 (-kv f16 held at f32: the CPU cache has no f16 form)"}, []string{"100000 tokens", "KV f16", "lossy"}, ""},
+		{"-ctx equal to the model maximum, -kv i8 on a family that takes it", 65536, 65536, 65536, "i8", []string{"context: 65536 tokens (model maximum)", "KV i8", "lossy"}, nil, ""},
+		// An MoE (or own-forward) family keeps an f32 cache under -kv i8: the banner says what runs, and why.
+		{"-kv i8 on a family that keeps an f32 cache", 32768, 32768, 0, "i8", []string{"KV f32 (-kv i8 held at f32: this model family keeps an f32 cache)"}, []string{"KV i8", "lossy"}, ""},
 		{"unknown", 0, 0, 0, "", []string{"context: unknown"}, nil, ""},
 		// -kv auto is the flag's default, not a request: off the resident path the cache is f32, and it is not lossy.
 		{"no resident, the default -kv auto", 32768, 32768, 0, "auto", []string{"KV f32"}, []string{"KV auto", "lossy"}, ""},
@@ -122,7 +125,11 @@ func TestBanner_contextAndKV(t *testing.T) {
 		{"metal resident, -kv f32 requested", 4096, 32768, 0, "f32", []string{"KV f16"}, []string{"KV f32"}, "f16"},
 		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8", "lossy"}, nil, "i8"},
 	} {
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
+		cpuKV := map[string]string{"-ctx equal to the model maximum, -kv i8 on a family that takes it": "i8"}[tc.name] // the CPU cache the model allocates
+		if cpuKV == "" {
+			cpuKV = "f32"
+		}
+		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV, cpuKV: cpuKV}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
 		got := bannerLine(lines, "context:")
 		for _, want := range tc.want {
 			if !strings.Contains(got, want) {

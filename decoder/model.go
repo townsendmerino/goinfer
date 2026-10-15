@@ -875,6 +875,21 @@ func (m *Model) Close() error {
 // prefillEnters counts every call, so a test can observe that a request AdmitPrefillMemory refused never reached here: a
 // check placed one line too late produces the same error text and the same swap storm (the discipline fitguard.go's
 // weightAllocs applies to loadWeights).
+// cpuKVInt8 reports whether this model's CPU KV cache is int8: asked for (Options.KVQuant "i8") and allowed by the family
+// (Architecture.kvInt8OK). NewCache allocates by it, and every price of the CPU cache reads it, so a family that keeps an
+// f32 cache under "i8" is priced at f32.
+func (m *Model) cpuKVInt8() bool {
+	return m.kvI8 && m.w != nil && m.w.arch != nil && m.w.arch.kvInt8OK()
+}
+
+// CPUKVPrecision is the precision of the KV cache this model's CPU path allocates: "i8" or "f32".
+func (m *Model) CPUKVPrecision() string {
+	if m.cpuKVInt8() {
+		return "i8"
+	}
+	return "f32"
+}
+
 func (m *Model) NewCache(capHint int) *KVCache {
 	prefillEnters.Add(1)
 	a := m.w.arch
@@ -892,7 +907,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	c.scr = newDecodeScratch(a)
 	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see ownForwardFamily.KVInt8 for why a family's
 	// own loop must opt in. Must precede enableRings so local layers inherit the mode.
-	if m.kvI8 && a.kvInt8OK() {
+	if m.cpuKVInt8() {
 		c.setQuant(kvI8, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query

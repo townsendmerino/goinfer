@@ -60,6 +60,9 @@ type bannerFacts struct {
 
 	// kvF16Decline: why a CUDA load that asked for -kv f16 was held at f32 (decoder.Model.KVF16DeclineReason), "" when it was not.
 	kvF16Decline string
+	// cpuKV is the precision the CPU path's KV cache allocates (decoder.Model.CPUKVPrecision): "i8" only where the family
+	// allows it, never f16.
+	cpuKV string
 
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
@@ -101,6 +104,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
 	f.kvF16Decline = lm.model.KVF16DeclineReason()
+	f.cpuKV = lm.model.CPUKVPrecision()
 	f.ctxNote = lm.model.ResidentContextNote()
 	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
@@ -181,19 +185,25 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
 		}
 	}
-	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
-	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32. "auto", the
-	// flag's default, is not a choice: off the resident path it is f32.
+	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv says); off it, the
+	// CPU cache's own (int8 only where the family allows it, never f16), with the reason when a request was held at f32.
+	// "(lossy)" marks a precision the operator chose below f32.
 	switch req := cfg.load.KV; {
 	case f.kvPrec != "":
 		ctxLine += " · KV " + f.kvPrec
 		if f.kvPrec != "f32" && f.kvPrec == req {
 			ctxLine += " (lossy)"
 		}
-	case req != "" && req != "f32" && req != "auto":
-		ctxLine += " · KV " + req + " (lossy)"
+	case f.cpuKV == "i8":
+		ctxLine += " · KV i8 (lossy)"
 	default:
 		ctxLine += " · KV f32"
+		switch req {
+		case "f16":
+			ctxLine += " (-kv f16 held at f32: the CPU cache has no f16 form)"
+		case "i8":
+			ctxLine += " (-kv i8 held at f32: this model family keeps an f32 cache)"
+		}
 	}
 	if f.kvF16Decline != "" {
 		ctxLine += " (-kv f16 held at f32: " + f.kvF16Decline + ")"

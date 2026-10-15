@@ -93,7 +93,7 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 	// lazily, only on the CPU fallback. Pricing it anyway could reject a request an 8 GB CUDA box would have served entirely in VRAM.
 	var kv int64
 	if !(residentPath && m.ResidentActive()) {
-		kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)
+		kv = estimateKVBytes(cfg, positions, m.kvF16, m.cpuKVInt8())
 	}
 	// A resident that splits its prefill into blocks is priced at its own figure for one block; every other request at
 	// the batched CPU sweep's figure over the whole prompt.
@@ -151,7 +151,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		}
 		ctx = cfg.MaxPositions
 	}
-	kvBytes = estimateKVBytes(cfg, ctx, m.kvF16, m.kvI8)
+	kvBytes = estimateKVBytes(cfg, ctx, m.kvF16, m.cpuKVInt8())
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }
 

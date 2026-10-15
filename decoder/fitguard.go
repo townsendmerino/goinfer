@@ -730,7 +730,14 @@ type kvPrice struct {
 // ok is false when nothing is pinned and the model's own maximum is unknown: nothing to price.
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	p.pinned = opts.ResidentContext > 0
-	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
+	p.kvF16 = opts.KVPrecision == "f16"
+	// The CPU cache is int8 only where the family allows it (Architecture.kvInt8OK); a family that keeps f32 under "i8"
+	// is priced at f32. An architecture that does not resolve is priced at f32, the larger.
+	if opts.KVQuant == "i8" {
+		if arch, _, err := resolveArchitecture(cfg); err == nil {
+			p.kvI8 = arch.kvInt8OK()
+		}
+	}
 	if _, ok := kvPolicies[opts.Backend]; ok {
 		// A backend with a KV policy (kvpolicy.go) is f16 only where the policy says so (the default included), else f32 whatever was requested.
 		p.kvF16 = false
