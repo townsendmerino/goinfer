@@ -3,13 +3,16 @@
 # §4.6, "G2-R amendment, 2026-10-15"): TestG2R_cpuReference loads only CPU models and writes the CPU side of every arm to
 # a file; TestG2R_registered then loads only Metal models and grades against it. Same arms, prompts, bars and voids as
 # run-g2r-night.sh; each process's loads meet the fit guard and Metal's memory guard alone. No guard is bypassed.
+# Amendment 2: the CPU process loads CPU .giw bundles of the same .gguf files; any that are missing are built here first, at
+# REV, by cmd/prequant (about 10.6 GB for the five; the build refuses under 14 GB free).
 #
 #   python3 scripts/night.py add op1-g2r-metal --est 30 --by "<who>, OP1 Metal (G2-R, split)" --doc docs/tasks/task-forward-architecture-2026-10.md \
 #     -- env REV=<declaration branch commit> bash docs/measurements/op1-metal-2026-10-13/run-g2r-split-night.sh
 #
 # Exit: 0 when G2-R PASSES; 1 when it FAILS; 2 when it is VOID or SKIPPED (a skip is not a pass), the CPU process did not
-# write its reference, or the setup failed. Estimate: a cold build, the CPU process (about 14 CPU loads and 3 sha256 reads
-# of 6.4 GB), then the Metal process (about 11 Metal loads): about 25 minutes; queue at 30.
+# write its reference, or the setup failed. Estimate: the bundles on a first run (five prequant builds, about 10 minutes),
+# a cold build, the CPU process (about 18 CPU loads and the sha256 reads), then the Metal process (about 11 Metal loads):
+# about 40 minutes on a first run, 25 after; queue at 45.
 set -uo pipefail
 REV=${REV:?REV is required: the declaration branch commit with TestG2R_cpuReference}
 SRC=$HOME/tmcode/goinfer
@@ -32,11 +35,33 @@ git worktree add -q --detach "$WT" "$rev" || { echo "FATAL: cannot check out $re
 # The Gemma 3 control reads the checkpoint at the top of ~/models; link it there for this session only (registered).
 made_link=0
 if [ ! -e "$LINK" ]; then ln -s "$G3" "$LINK" && made_link=1; fi
+{ echo "started: $(date '+%F %T %Z')"; echo "rev: $rev"; echo "load: $(uptime)"; echo "disk free: $(df -h "$HOME" | tail -1 | awk '{print $4}')"; } | tee "$OUT/provenance.txt"
 REF=$OUT/g2r-cpu-ref.gob
 rm -f "$REF"
-{ echo "started: $(date '+%F %T %Z')"; echo "rev: $rev"; echo "load: $(uptime)"; echo "disk free: $(df -h "$HOME" | tail -1 | awk '{print $4}')"; } | tee "$OUT/provenance.txt"
+GIW=$B/giw
+mkdir -p "$GIW"
+G2=$HOME/models/gemma-2-2b-it-Q8_0.gguf
+DENSE=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+missing=()
+for spec in "$G2:int8int8" "$G2:int4" "$LINK:int8int8" "$DENSE:int8int8" "$DENSE:int4"; do
+  src=${spec%:*}; q=${spec##*:}; dst=$GIW/$(basename "${src%.gguf}").$q.cpu.giw
+  [ -s "$dst" ] || missing+=("$src:$q:$dst")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  free_kb=$(df -k "$HOME" | tail -1 | awk '{print $4}')
+  if [ "$free_kb" -lt $((14 * 1024 * 1024)) ]; then
+    echo "VOID: ${#missing[@]} CPU bundle(s) to build and only $((free_kb / 1024 / 1024)) GB free (14 needed)" | tee -a "$OUT/provenance.txt"
+    [ "$made_link" = 1 ] && rm -f "$LINK"; cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null; exit 2
+  fi
+  for m in "${missing[@]}"; do
+    src=${m%%:*}; rest=${m#*:}; q=${rest%%:*}; dst=${rest#*:}
+    echo "== building $(basename "$dst"): $(date '+%T')" | tee -a "$OUT/provenance.txt"
+    (cd "$WT" && go run ./cmd/prequant -quant "$q" -o "$dst.tmp" "$src" && mv "$dst.tmp" "$dst") 2>&1 | tail -3 | tee -a "$OUT/provenance.txt"
+    [ -s "$dst" ] || { echo "VOID: building $dst failed" | tee -a "$OUT/provenance.txt"; [ "$made_link" = 1 ] && rm -f "$LINK"; cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null; exit 2; }
+  done
+fi
 run() { # <test> <log>
-  (cd "$WT" && env GOINFER_HEAVY_TESTS=1 GOINFER_G2R_REF="$REF" GOINFER_G2R_COMMIT="$rev" caffeinate -i \
+  (cd "$WT" && env GOINFER_HEAVY_TESTS=1 GOINFER_G2R_REF="$REF" GOINFER_G2R_COMMIT="$rev" GOINFER_G2R_GIW_DIR="$GIW" caffeinate -i \
     go test -tags goinfer_testhooks ./metal -run "^$1\$" -count=1 -v -timeout 60m) 2>&1 | tee "$OUT/$2"
 }
 echo "== process 1, the CPU reference: $(date '+%T')" | tee -a "$OUT/provenance.txt"
