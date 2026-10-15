@@ -5,6 +5,7 @@
 
 Reads, per sample, /proc/<pid>/status of the command and of every descendant (VmRSS, VmHWM, VmSwap), the system's swap in
 use (SwapTotal - SwapFree), and this session's user slice (memory.current, memory.swap.current) when cgroup v2 exposes it.
+The slice's peak is the maximum of the sampled memory.current: its memory.peak is a lifetime figure and a user cannot reset it.
 Writes SUMMARY (key: value lines) and prints it. The command's stdout and stderr pass through. Exits with its status.
 
 VmHWM is the last sample's value (the kernel keeps the high-water mark); VmSwap and VmRSS are maxima over samples. A
@@ -89,6 +90,7 @@ def main():
     sl = slice_dir()
     s0 = swap_mb()
     sl_swap0 = read_int(f"{sl}/memory.swap.current") if sl else None
+    sl_cur0 = read_int(f"{sl}/memory.current") if sl else None
     t0 = time.time()
     p = subprocess.Popen(cmd)
     hwm = rss_max = swp_max = 0
@@ -135,6 +137,7 @@ def main():
     if sl:
         lines += [
             f"user_slice: {sl} (memory.high {open(sl + '/memory.high').read().strip()})",
+            f"user_slice_memory_current_before_mb: {sl_cur0 // 2**20}",
             f"user_slice_memory_current_peak_mb: {sl_cur_max // 2**20}",
             f"user_slice_swap_before_mb: {sl_swap0 // 2**20}",
             f"user_slice_swap_after_mb: {sl_swap1 // 2**20}",
