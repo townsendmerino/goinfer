@@ -138,6 +138,18 @@ The greedy replies differ from step 0's (other lengths in 11 of 12): a different
 cell. Archived: `ids-carried-tier1/run.jsonl.gz` (per cell, no text), `token-ids.jsonl.gz` (the `--log-token-ids` file: the
 prompts' hashes and the generated ids, the content class of step 0's committed `run.jsonl.gz`), `run.log`.
 
+## Owner decisions (2026-10-15), before G-ids-3 runs
+
+- **`history` is accepted as a disclosed amendment, as a label only.** For grading, a `history` fallback counts exactly like
+  any other non-`v1` fallback: G-ids-3's rule reads it as a fallback, and nothing in any gate is excused because a fallback is
+  labelled `history`. The label says why the ids were not used; it does not change what the gate counts.
+- **G-ids-3 is queued tonight**, pinned at `2a0d11bb`, three jobs with the early stop as registered. It is tier 2 because its
+  outcome (cold continuations and compactions in real Codex runs) cannot be measured by day.
+- **PR #31 merges only after G-ids-3 is graded**, by hand on green CI. No code is pushed to the branch before then.
+- **Out of scope, unchanged:** streamed plain answers, tool calls echoed back as separate turns, Chat Completions and
+  `/v1/messages`. **When G-ids-3 is graded, every cold continuation it shows is attributed**, and the report says how many come
+  from those uncovered cases, against the rest.
+
 ## Tier 2 (night): G-ids-3, prepared, NOT queued
 
 **The off arm is re-run.** Amendment 1 cites the 2026-10-15 after run (serve at 695ce16c) as the off arm only if nothing on the
