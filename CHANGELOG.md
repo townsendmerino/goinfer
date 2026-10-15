@@ -31,6 +31,33 @@ any surface may still change.
 - **aikit v1.70.1** in all five modules.
 - **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
+### Changed — on CUDA, a prompt past 12,160 attended keys prefills in batched passes where the fused attention serves it
+
+A prompt longer than 12,160 tokens used to fall off the batched prefill onto the per-token path, about 66 tokens a second on a 4B model
+(a Claude Code first request of 17,755 tokens: 268.7 s to the first token). The guard behind it, `checkPrefillShmem`, held every layer
+to the exact attention kernel's shared-memory bound (one score per attended key, 48 KiB), including the layers the **fused prefill
+attention** serves, whose shared memory does not grow with the span. It now asks which kernel serves the layer, and the pass runs
+fused past the bound.
+
+- **Where it applies:** an ordinary last-row prefill of at least 16 rows on a layer with head dimension 64 or 128 (Qwen2.5 and Qwen3, Llama,
+  Mistral, gpt-oss; f32 or f16 KV). Passes the fused kernel does not serve keep the bound and still fall back, by name: head dimension 256
+  or 96 (Gemma, Phi-3), MLA, Gated-DeltaNet and E-model families, the all-logits and embedding tails, an image block.
+- **Below the bound nothing changes**: prompts of 300, 3,900 and 12,000 tokens give bit-identical logits and K/V to the build before
+  (`docs/measurements/kv3-cuda-2026-10-13.md` §2). Past it, the batched pass agrees with the per-token path: cosine 0.9998 or better on
+  18 random-token prompts of 12,400 to 16,384 tokens on the tiny fixture, and 0.996 on a 12,500-token prompt on the 1.5B.
+- **A prefill never ends in a pass of fewer than 16 rows** (the pass before the last gives it 64 rows, so every pass still starts on a multiple of 64). A shorter last
+  pass ran the exact kernels while every row before it ran the fused ones, so a prompt's bits depended on where its last chunk fell
+  (KV0's invariance record); the 4,100-token prompt, which ended in a 4-row pass, now gives the bits of the same prompt in one pass.
+  A `GOINFER_PREFILL_CHUNK` under 32 rows, too narrow to keep 16 rows on both sides, keeps its short last pass.
+
+### Changed — on CUDA, admission prices a long prompt by one chunk of its prefill, not by the whole prompt
+
+A request on a CUDA resident was priced at the CPU batched sweep's whole-prompt scratch (3.21 GB for 20,954 tokens on a 7B) against the
+host's available memory, though the resident prefills in passes of 512 rows. The resident now reports its chunk and its per-pass
+scratch (the sum of the pass's device buffers after the allocator's rounding, held to the pass by a test), and admission prices the
+request at one chunk plus the host embeddings of the prompt: 0.19 GB against 1.65 GB for the same request on the 1.5B. This is the
+CUDA half of the Metal change under "on Metal, a long prompt prefills in blocks".
+
 ### Added — `goinfer-serve connect <agent>` writes a coding agent's configuration with the window the server serves
 
 Against a running server, `connect claude-code`, `connect opencode` or `connect codex` reads the model list and prints that agent's

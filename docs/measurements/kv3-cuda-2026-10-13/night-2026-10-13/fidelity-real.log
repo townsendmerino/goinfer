@@ -1,0 +1,51 @@
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_real1p5B
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_real1p5B/f16
+    kv3_longprefill_test.go:207: KV precision f16
+[kv3] per-token reference: 5347 of 12500 rows
+[kv3] per-token reference: 8474 of 12500 rows
+[kv3] per-token reference: 10922 of 12500 rows
+[kv3] 1.5B f16 n=12500 window=0    cosine 0.996178 argmax equal true (reference margin 8.9597, near tie false), fused attention launches 700
+[kv3] 1.5B f16 n=12500 window=0    control (last 8 tokens replaced) cosine 0.704844: the comparison sees it
+[kv3] per-token reference: 5331 of 12500 rows
+[kv3] per-token reference: 8458 of 12500 rows
+[kv3] per-token reference: 10909 of 12500 rows
+[kv3] 1.5B f16 n=12500 window=1    cosine 0.997415 argmax equal true (reference margin 7.1835, near tie false), fused attention launches 700
+[kv3] 1.5B f16 n=12500 window=1    control (last 8 tokens replaced) cosine 0.781230: the comparison sees it
+[kv3] per-token reference: 5334 of 16384 rows
+[kv3] per-token reference: 8461 of 16384 rows
+[kv3] per-token reference: 10911 of 16384 rows
+[kv3] per-token reference: 12994 of 16384 rows
+[kv3] per-token reference: 14832 of 16384 rows
+[kv3] 1.5B f16 n=16384 window=0    cosine 0.998201 argmax equal true (reference margin 11.2950, near tie false), fused attention launches 896
+[kv3] 1.5B f16 n=16384 window=0    control (last 8 tokens replaced) cosine 0.766977: the comparison sees it
+[kv3] per-token reference: 5332 of 16384 rows
+[kv3] per-token reference: 8461 of 16384 rows
+[kv3] per-token reference: 10911 of 16384 rows
+[kv3] per-token reference: 12993 of 16384 rows
+[kv3] per-token reference: 14831 of 16384 rows
+[kv3] 1.5B f16 n=16384 window=1    cosine 0.998961 argmax equal true (reference margin 12.8619, near tie false), fused attention launches 896
+[kv3] 1.5B f16 n=16384 window=1    control (last 8 tokens replaced) cosine 0.747152: the comparison sees it
+[kv3] per-token reference: 5330 of 20000 rows
+[kv3] per-token reference: 8458 of 20000 rows
+[kv3] per-token reference: 10908 of 20000 rows
+[kv3] per-token reference: 12991 of 20000 rows
+[kv3] per-token reference: 14829 of 20000 rows
+[kv3] per-token reference: 16477 of 20000 rows
+[kv3] per-token reference: 17992 of 20000 rows
+[kv3] per-token reference: 19405 of 20000 rows
+[kv3] 1.5B f16 n=20000 window=0    cosine 0.992611 argmax equal true (reference margin 13.0999, near tie false), fused attention launches 1120
+[kv3] 1.5B f16 n=20000 window=0    control (last 8 tokens replaced) cosine 0.825300: the comparison sees it
+[kv3] per-token reference: 5332 of 20000 rows
+[kv3] per-token reference: 8460 of 20000 rows
+[kv3] per-token reference: 10909 of 20000 rows
+[kv3] per-token reference: 12992 of 20000 rows
+[kv3] per-token reference: 14830 of 20000 rows
+[kv3] per-token reference: 16479 of 20000 rows
+[kv3] per-token reference: 17995 of 20000 rows
+[kv3] per-token reference: 19408 of 20000 rows
+[kv3] 1.5B f16 n=20000 window=1    cosine 0.995549 argmax equal true (reference margin 9.3965, near tie false), fused attention launches 1120
+[kv3] 1.5B f16 n=20000 window=1    control (last 8 tokens replaced) cosine 0.702379: the comparison sees it
+--- PASS: TestKV3_batchedPrefillPastTheSpanBound_real1p5B (1209.77s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_real1p5B/f16 (1209.68s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	1209.836s
