@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # RELEASING.md step 8: the tests the day loop defers (`go run ./cmd/gate quick -full -base v0.22.0`) for v0.23.0, as a
 # night job on the MacBook, at a pinned commit. The worktree mechanics are run-metal-gate.sh's (this directory): a
-# detached worktree at REV, the gitignored fixtures linked in from the main checkout so the tree stays clean, its own
-# go.work.
+# detached worktree at REV with its own go.work, and the gitignored fixtures from the main checkout. Here the fixtures
+# are APFS clones (`cp -c`: real files sharing the originals' blocks), not symlinks: two tests copy a fixture directory
+# (internal/modelload TestLoad_safetensorsDirGoesThroughSidecar, internal/prequant TestDirSidecar_keepsMRopeSection), and
+# a copy of a directory of symlinks lost its files, so both failed under links on 2026-10-14 and pass under clones.
 #
 # The record: `gate quick -full` writes docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json into the tree it
 # runs in, which here is the worktree. This script copies it into the main checkout ($SRC), where row 12 of
@@ -29,16 +31,11 @@ git rev-parse --verify -q v0.22.0 >/dev/null || { echo "FATAL: the base tag v0.2
 git worktree prune
 git worktree add -q --detach "$WT" "$FULL" || { echo "FATAL: cannot check out $FULL"; exit 2; }
 n=0
-link() { # $1: a path relative to the repo root that is gitignored in the main checkout
+link() { # $1: a path relative to the repo root that is gitignored in the main checkout; cloned, not linked (above)
   local p=${1%/}
   [ -e "$WT/$p" ] && return 0
-  if [ -d "$SRC/$p" ]; then
-    mkdir -p "$WT/$p"
-    for c in "$SRC/$p"/* "$SRC/$p"/.[!.]*; do [ -e "$c" ] && ln -s "$c" "$WT/$p/"; done
-  else
-    mkdir -p "$(dirname "$WT/$p")"
-    ln -s "$SRC/$p" "$WT/$p"
-  fi
+  mkdir -p "$(dirname "$WT/$p")"
+  cp -cR "$SRC/$p" "$WT/$p" || return 1
   n=$((n + 1))
 }
 while IFS= read -r p; do link "$p"; done < <(git ls-files --others --ignored --exclude-standard --directory -- testdata decoder/testdata)
@@ -60,7 +57,7 @@ OUT=$LOG/quick-full-darwin-${FULL:0:8}-night.log
 {
   echo "rev:      $FULL"
   echo "started:  $(date '+%F %T %Z')"
-  echo "fixtures: $n gitignored entries linked from $SRC${stray:+; untracked and not linked: $stray}"
+  echo "fixtures: $n gitignored entries cloned from $SRC${stray:+; untracked and not linked: $stray}"
   echo "tree:     $(git status --porcelain | wc -l | tr -d ' ') entries in git status (0 = clean)"
   echo "go:       $(go version), GOWORK=$GOWORK"
   echo "machine:  $(sw_vers -productVersion) $(sysctl -n machdep.cpu.brand_string); $(pmset -g batt | head -1)"
