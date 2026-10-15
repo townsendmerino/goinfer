@@ -56,7 +56,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   for m in "${missing[@]}"; do
     src=${m%%:*}; rest=${m#*:}; q=${rest%%:*}; dst=${rest#*:}
     echo "== building $(basename "$dst"): $(date '+%T')" | tee -a "$OUT/provenance.txt"
-    (cd "$WT" && go run ./cmd/prequant -quant "$q" -o "$dst.tmp" "$src" && mv "$dst.tmp" "$dst") 2>&1 | tail -3 | tee -a "$OUT/provenance.txt"
+    (cd "$WT" && go run ./cmd/prequant -quant "$q" -o "$dst.tmp" "$src" && mv "$dst.tmp" "$dst" && { [ ! -e "$dst.tmp.verified" ] || mv "$dst.tmp.verified" "$dst.verified"; }) 2>&1 | tail -3 | tee -a "$OUT/provenance.txt"
     [ -s "$dst" ] || { echo "VOID: building $dst failed" | tee -a "$OUT/provenance.txt"; [ "$made_link" = 1 ] && rm -f "$LINK"; cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null; exit 2; }
   done
 fi
