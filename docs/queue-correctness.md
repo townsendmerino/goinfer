@@ -17,6 +17,22 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
+**G41 · An answer is lost inside the reasoning when a thinking model ends its turn mid-reasoning** — `any`, **filed 2026-10-15
+(owner), not started**
+
+A thinking model can end its turn while still inside its reasoning block, with the answer written there and nothing after it. Since
+PR #11 the reply is no longer silently empty: `/v1/responses` returns `incomplete` with `ended_in_reasoning`, and a tool call written
+in the reasoning is taken from it. But a prose answer written in the reasoning still never reaches the client. Seen in the I3 after
+run at `695ce16c`: Codex x Mellum2.1 `read` r3 failed on an empty final message
+(`docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md`, the after run).
+
+**Proposed mechanism (owner):** when the model ends its turn inside an open reasoning block, close the block server-side and let the
+model continue, as the thinking budget already forces a close.
+
+**Gate, registered before any code:** answers appear where there were none; turns that closed their reasoning on their own are
+unchanged, byte for byte. The rule, the prompt set and N are written before any run.
+
+
 > **ELEVEN closed entries are archived** in
 > [`docs/completed/queue-correctness.md`](completed/queue-correctness.md) — G4, G5, G6, G9, G10,
 > G11 and Q2 (2026-08-31, first pass), then **G7, G1, Q3 and Q1** (2026-08-31, second pass, when

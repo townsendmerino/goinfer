@@ -1,0 +1,6 @@
+Pinned 2026-10-14 for the Codex x Mellum2.1 AFTER run (configuration mellum-16k-codex-f, 5 tasks x 3), the after half of job D's
+before/after (docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md, "Queued" and job D's section).
+bin/serve-cuda-i3 is built at 695ce16c (the v0.23.0 release commit: reasoning items round-trip on /v1/responses, PR #12; the CUDA
+windowed-KV ring fix, PR #13), CGO_ENABLED=0 -tags cuda, from a detached worktree with its own go.work (aikit from go.mod, v1.70.1),
+vcs.modified=false; sha256 2980afffc700f525df3e59181430f01f193ab6e1a64ebc4f488be2802ae5e5b2.
+matrix-pinned/ is docs/measurements/integration-harness-2026-10/matrix at 695ce16c, with plan-i3.json's serve and commit fields edited.

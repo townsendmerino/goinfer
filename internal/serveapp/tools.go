@@ -151,6 +151,13 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		msg["reasoning_content"] = rb.String()
 	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
+	empty := emptyAnswerOf(gr, finish, t.stopSeq, len(t.calls), nComp)
+	if empty != nil {
+		choice["goinfer_empty_answer"] = empty
+	}
+	if t.fromReasoning && len(t.calls) > 0 {
+		choice[fromReasoningField] = true
+	}
 	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
 	if req.Stream {
@@ -167,9 +174,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		}
 		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})
-		fin := finish
-		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
-			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": &fin}}})
+		sseSend(ss, finishChunk(id, created, lm.name, finish, empty, t.fromReasoning && len(t.calls) > 0))
 		sendUsage(ss, req.StreamOptions, id, created, lm.name, usagev)
 		sseDone(ss)
 		return

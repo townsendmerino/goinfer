@@ -1,0 +1,12 @@
+started: 2026-10-14 16:02:11 PDT
+job: suite-b
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+tree: /home/francis/goinfer-bench/kv3-2026-10/wt-6d3b40cb at 6d3b40cbffc4b00509a74e3daa2b7c5113dc5beb
+new: 5282df9a76349d56b56b16eede71ea3ba18b33bb
+old: 5dc1b574a4c3c167c94580bc736b1a8a29af79a1
+load:  16:02:11 up 10 days, 19:24,  6 users,  load average: 0.95, 2.89, 4.57
+               total        used        free      shared  buff/cache   available
+Mem:           64238        5593       44906           2       14298       58644
+Swap:          78863        9234       69629
+finished: 2026-10-14 16:59:31 PDT rc=0

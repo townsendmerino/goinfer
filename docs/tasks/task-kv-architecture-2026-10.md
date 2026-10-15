@@ -495,8 +495,24 @@ is MC4's identity gate extended to shared preambles.
 ### 5.12 Speculation and drafters
 
 - **Verify rows go into the private tail.** A rollback is `Truncate`.
-- **Window and chunk groups keep one block of slack** behind the window, so a rollback inside a verify width stays valid.
-  This is the windowed doc's slack rule in block form.
+- **Window and chunk groups keep rollback slack behind the window, sized for a client's rollback, not for a verify
+  width.** One block (64 tokens) covers a speculative verify but not a conversation that drops or edits its last reply.
+  - **The measurement (2026-10-14).** On CUDA's windowed KV (1,024 window + 512 slack), the base moved in full
+    512-token jumps. So the budget for rolling back into a slot cycled between 0 and 512 tokens, depending on where the
+    last decode landed, and any larger rollback went cold. Replaying that arithmetic predicted warm or cold for 59 of 59
+    Codex requests from the I3 night. 35 of the 59 went cold, about 2,430 s of re-prefill.
+  - **The rule chosen for CUDA (the ring fix, built 2026-10-14; `kvwindow-ring-2026-10`, speed guard PASS):**
+    - The base compacts in 64-token steps, so the budget never drops below 448. It costs no VRAM; the extra copying is
+      about 0.1% of a token's time on Mellum2.1.
+    - Extra rollback, up to 1,024, comes only from VRAM left after planning. It never costs residency, context, a slot
+      or an expert slot, and an expert-cache load gets none.
+    - Limit: right after a prefill pass of 448 rows or more, an edit inside that pass has less than 448 until decode
+      catches up. Dropping the last reply is always covered.
+  - **The paged design keeps the same guarantee.** A window group retains at least the rollback budget behind the
+    window, not one block. KV2's registration (`kv2-2026-10`) is amended to match, and KV4 sizes window groups with it.
+  - **What removes most rollback in the first place** is the client sending its reasoning back. `/v1/responses` returns
+    reasoning items and accepts them back (PR #12). The ring rule covers every other client that edits late in its
+    prompt.
 - **Drafters' own caches stay outside the pool** in this doc: `cuda/drafter.go`, EAGLE, and the block drafters.
 
 ### 5.13 The backend contract (sketch; names provisional)
@@ -785,14 +801,46 @@ KV2 merges when every arm on both boxes is read.
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
 
+**Started 2026-10-13 (owner decision, §8 D8): alongside KV1, ahead of KV2.** It does not depend on KV1. The CUDA half is on the branch
+`kv3-cuda-2026-10` with its record, `docs/measurements/kv3-cuda-2026-10-13.md`; the Metal half is the KV-pre session's (`metal/`).
+
 - **Build:**
   - every resident's chunk size is a multiple of B (CUDA's `prefillChunkRows` default is already 512);
   - admission is in blocks plus the chunk scratch, from each allocator's own figure, replacing the whole-prompt bound on
-    the resident paths.
-- **Gates (sketch):**
-  - the 20,199-token request answers on the Mac's 7B, which today is the I7 413;
-  - chunk invariance holds per backend;
-  - time-to-first-token at K = 512 and K = 3,900 is 0.97 or better against main.
+    the resident paths;
+  - **the 12,288-key limit on CUDA** (added 2026-10-13, KV0's biggest time-to-first-token finding): the batched prefill declined past 12,160
+    attended keys because `checkPrefillShmem` held every layer to the exact attention kernel's shared-memory bound, including the layers the
+    fused attention serves, whose shared memory does not grow with the span. The guard now asks which kernel serves the layer;
+  - **the 16-row rule in the chunker**: a prefill never ends in a pass of fewer than 16 rows (a shorter pass is exact class); the pass before the last gives it
+    64 rows, so every pass still starts on a multiple of 64 (the KV1 record's G2b: a windowed fused pass is invariant only from such a start).
+- **CUDA half, done on the branch (day readings; see the record for the numbers):**
+  - the guard change, with identity (digests bit-identical to `main` at 300, 3,900 and 12,000 tokens; the one prompt with a short last pass
+    changed to the bits of its single-pass prefill, as registered) and fidelity (tiny fixture, 18 prompts of 12,400 to 16,384 tokens, cosine
+    0.99986 or better against the per-token path; the real 1.5B at 12,500 tokens, cosine 0.996, argmax equal); the passes now run fused;
+  - admission by the resident's own per-chunk figure (`decoder.ResidentPrefillChunks`; CUDA's `PrefillScratchBytes`, held to the pass by a test):
+    0.19 GB against 1.65 GB for a 20,954-token request on the 1.5B;
+  - **night jobs queued** (under the timing lock): the real fidelity set (six prompts to 20,000 tokens), the Claude Code first-request A/B
+    (registered band: PASS at 45 s or less, against 268.7 s before; the one exploratory reading is 25.1 s), TTFT at K = 512 and 3,900 against
+    `main` (0.97 or better), and the whole CUDA suite with the ignored fixtures linked. **The branch merges when they read green.**
+  - still declining past the bound, by name: head dimension other than 64 or 128 (Gemma 3 and 4, measured in the census), MLA, the Gated-DeltaNet
+    families (the census logged no decline for Qwen3.6-35B-A3B at 12,242 keys, which is an inference, not a measured pass), the all-logits, embedding and residual tails, image blocks. The tiled exact kernel below is the work that removes the first of these.
+- **The request to the KV1 session (§8 Q5) is met on its branch.** `kvmgr.ClassMap.DeclineShortLead` states the 16-row condition, and KV1 leaves the
+  rest to KV2 by name: a hit on another sequence's rows must leave a suffix of 16 rows or more when the requester's cold prefill is fast class (§5.5
+  step 4), and the class of a row is recorded per pass the decoder sees, so a 512-row-pass tail of 15 rows or fewer was recorded as fast. KV3's chunker
+  removes that tail, so the two branches meet there: KV2's gate checks the recorded classes against launch counts, as KV0's test does. The decoder's
+  own loops read the resident's tail minimum (`ResidentPrefillTailMin`: CUDA 16, everything else 8), so a manager that cuts passes should too.
+- **Merging with KV1.** `origin/kv1-2026-10` merges into this branch with no textual conflict (checked 2026-10-13; `decoder/model.go`, the changelog and this
+  doc auto-merge). Both change non-test `decoder/*.go`, so the parity refresh (`scripts/refresh_parity_hashes.sh`) runs once, after the later of the two
+  merges and before its push.
+- **After the census (`docs/measurements/kv3-long-prompt-census-2026-10-13.md`): a tiled exact attention kernel, owner-approved 2026-10-13 (§8 Q7).** The
+  dense Gemma families (head dim 256, and 512 on Gemma 4's global layers) still fall to the per-token path past 12,160 keys, at least 183 s and 276 s for a
+  20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. The kernel's identity
+  target, the facts about decode's split-KV it must match and its gates are registered in a record before any code.
+- **Gates (sketch, registered per half in the record):**
+  - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
+  - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);
+  - time-to-first-token at K = 512 and K = 3,900 is 0.97 or better against main (CUDA: night job);
+  - a Claude Code-sized first request on CUDA prefills in batched passes (night job; 45 s or less on Qwen3-4B).
 - **Size:** S.
 
 ### KV4 — Paged storage on CUDA, then f16
@@ -955,7 +1003,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
 | **D1** | Reverse the paged-attention parking narrowly, for memory and reuse within one user's conversations and agents? `positioning.md`'s "no paged attention" would change; continuous batching stays parked. | **DECIDED 2026-10-13: yes** ("un park paged attention for sure"). |
 | **D2** | Does the CPU path join (KV9)? | Index and copies when KV2 lands; storage later, only on a measured memory case. **DECIDED 2026-10-13: no, not now; the CPU joins only through KV2's copies.** |
 | **D3** | WebGPU: page it or keep slots? | Keep slots; KV6 decides with numbers. **DECIDED 2026-10-13: keep slots on WebGPU**, as the census supports. |
-| **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. **DECIDED 2026-10-13: one namespace on loopback, one per API key, and no sharing between namespaces (off) when `serve` binds beyond loopback without API keys.** The conservative choice; it costs a single local user nothing. |
+| **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. **DECIDED 2026-10-13: one namespace on loopback, one per API key, and no sharing between namespaces (off) when `serve` binds beyond loopback without API keys.** The conservative choice; it costs a single local user nothing. **As built in KV2 (2026-10-14), against serve as it is:** serve has one shared API key, so "one namespace per key" is one namespace, and its holders are one trust domain. Serve refuses to start beyond loopback without a key, so that case cannot arise. The network-facing case that remains, a loopback server answering an `-allowed-hosts` name without a key, shares nothing. `--kv-share off` turns sharing off for any server. |
 | **D5** | Policy under pressure? | Evict idle → demote → preempt the newest by release (§5.10). **DECIDED 2026-10-13: as proposed.** |
 | **D6** | CLI meanings before v1.0 (`-ctx`, `-kv-sessions` are Hard tier)? | Keep both: `-ctx` is a per-conversation cap, `-kv-sessions` the number of conversations kept warm and running on a resident. New flags only for sharing scope and the host-tier budget. **DECIDED 2026-10-13: keep the meanings of `-ctx` and `-kv-sessions`.** |
 | **D7** | CUDA's default KV precision once f16 passes its gate? | f16 by default with f32 kept as the reference, Metal's precedent. **DECIDED 2026-10-13: extend f16 to the remaining families as each clears its fidelity gate** (it is already the default for llama, mistral, qwen2, qwen3 and phi3). |
@@ -971,6 +1019,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
 | **Q4** | D4's default when `serve` binds beyond loopback with no API keys: the SafeKV reading (§11a) suggests cross-namespace sharing off by default. | A proposal from the reading, not from a source. **ANSWERED: yes, default it off then** (see D4). |
 | **Q5** | Should `declineShortLeadReuse` (and the key) state the 16-row condition, and should KV1's windowed-layer tests run chunk and split arms at a start that is not a multiple of 64? | Measured for the first; INFERRED by the CUDA census for the second. **ANSWERED: yes to both, and the first is a correctness rule, not tuning:** the 16-row condition goes into the short-prefix guard and the key (KV1's files), and into the chunker (KV3, here); KV1's windowed tests start at offsets that are not multiples of 64. |
 | **Q6** | The I3 night plan's configurations run Qwen2.5-7B-Instruct and Mellum2.1 through opencode and Codex. | In KV0's pilots Qwen2.5-7B-Instruct made 1 to 6 requests a session and passed none; the Coder-7B made 1 or 2. Expect the same stall in those cells. **ANSWERED: swap Qwen2.5-7B-Instruct for Qwen3-4B in the I3 night cells** (KV3 item 4; `task-integration-harness-2026-10.md`). |
+| **Q7** | After the long-prompt census: build a tiled exact attention kernel for CUDA, or only a head-dim-256 fused instantiation? | The exact kernel covers 256 and 512 and removes the 12,160 bound for any family; the fused instantiation covers Gemma 3 only. **ANSWERED 2026-10-13: the tiled exact kernel (the census's recommendation).** Registered before code, in KV3's record. |
 
 ## 9. Risks, and how each is contained
 

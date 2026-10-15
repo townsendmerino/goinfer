@@ -355,7 +355,8 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
 - **Two things for the phases that follow:**
   - Before OP2's SSM on Metal, the non-gated activation needs a feature per value (§4.5, item 2).
   - Before OP5, `attn-output-gate` needs splitting by activation (§4.5, item 3).
-- **Three things in backend modules were read and not fixed** (§4.5's last list). The CUDA one may be live.
+- **Backend findings are §4.5's last list.** The CUDA double softcap was confirmed and fixed; a Cohere step row's one-ulp
+  LayerNorm difference was found by that fix and is open, as are the other two.
 
 ### 4.5 Features mapped to operations (OP0, read 2026-10-13)
 
@@ -498,12 +499,23 @@ path:
 
 Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
 
-**Found while reading, in backend modules, and not fixed** (a backend change is a two-step tag; each needs its owner's call).
-All are read from the code, and none was run.
-- **CUDA: a batched-step row that returns logits appears to get the final softcap and the logit scale twice.**
-  `cuda/prefill.go:cudaResident.prefillCore` applies both inside the job for a step row, and its closing loop applies both
-  again to every row. It would touch concurrent conversations that sample on the host, on a model with a final softcap
-  (dense Gemma 4) or a logit scale (Command-R). Both transforms keep the argmax, so a greedy test cannot see it.
+**Found in backend modules** (a backend change is a two-step tag; each needs its owner's call). The first two were run; the
+rest are read from the code and not fixed.
+- **CUDA: a batched-step row that returns logits got the final softcap and the logit scale twice. Confirmed and fixed
+  2026-10-14.** `cuda/prefill.go:cudaResident.batchedHeadFull` applied both to a step row, and
+  `cuda/prefill.go:cudaResident.prefillCore`'s closing loop applied both again to every logits row; the closing loop is now
+  the only place. It touched concurrent conversations that sample on a model with a final softcap (dense Gemma 4) or a
+  logit scale (Command-R, Granite): those models always draw on the host. `TestCUDAStepBatch_matchesForward` now runs
+  `gemma4-dense-twogeom-tiny` (softcap) and `granite-dense-tiny` (logit scale) and compares a step row's logits with
+  `Forward`'s bit for bit; before the fix it read logit 1 at -0.2842141 against -0.2842226 (Gemma 4) and logit 0 at
+  -0.0024854098 against -0.014912458 (Granite, the scale of 1/6 applied twice).
+- **CUDA: a Cohere step row is not bit-identical to `Forward`, found by the fix above and not fixed.** With the double
+  transform gone, `cohere-tiny` and `cohere2-tiny` still differ from `Forward` by one ulp in a logit (cohere-tiny at its
+  third step, cohere2-tiny at its first). The batched LayerNorm, `cuda/layernorm_quant.cu`'s `layernorm_quant_batched`,
+  rounds `((x-mean)*inv)*w`, while decode's `layernorm_quant` in `cuda/glue.cu` rounds `((x-mean)*w)*inv`, so a normed value
+  can differ in its last bit and move an int8 code. The step, `PrefillLastN` and speculative verify on Cohere inherit it.
+  `cuda/prefill.go:cudaResident.bLayerNormQuantB`'s fallback, which loops decode's kernel per row, would be exact. The
+  batched kernel is shared with the SigLIP tower, so the fix is the CUDA owner's call.
 - **WebGPU: `logit-scale`**, item 2 above.
 - **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
   derives `nope`, which WebGPU does not declare. The registry's representative config is roped, so the matrix cannot show it.
@@ -655,6 +667,57 @@ cannot admit the loads.
 - **Tonight, as `op1-g2r-metal`:** all three arms in one session, by
   `docs/measurements/op1-metal-2026-10-13/run-g2r-night.sh` at the declaration branch's `78633e7f`. No guard is bypassed.
   The gate is not timed: night only means nothing else holds memory.
+
+**G2-R amendment, 2026-10-15 (owner), before any further run: the CPU reference runs in its own process.**
+
+**Why.** On the night of 2026-10-14 the fit guard refused the job's first load, the 2B on the CPU: 6.7 GB priced, with
+6.6 GB available. No guard is bypassed (owner, 2026-10-15). Within one process, `residentParityAt` holds a Metal model
+and a CPU model at once, so each load's guard sees what the other holds.
+
+**What changes.** The job runs two processes, one after the other, at the same build:
+
+1. **The CPU reference.**
+   - It loads only CPU models, one at a time, and computes everything the arms read on the CPU:
+     - the hook check's two logit sets;
+     - for each of B (softcap off), G and P (softcap on), at int8int8 and int4: the token sequence (the seed, then the
+       CPU's greedy continuation, 24 steps) and the CPU's logits at every step;
+     - P's score statistics and its capped-against-uncapped logits;
+     - the control's and Gemma 3's tokens and logits.
+   - It writes them to one file under the job's output directory, with each checkpoint's sha256 and the build's commit.
+2. **The Metal arms.**
+   - They load only Metal models, one at a time.
+   - They feed each arm the saved tokens (greedy lockstep off the CPU, as before) and compare their logits with the
+     saved CPU logits.
+   - B's stop rule is applied before G and P run, as before.
+
+**Unchanged:** the arms and their order of reading, the prompts, the 24 steps, the metric (the min logit cosine from
+position 2, and argmax), the bars (0.88; the control's 0.95; the 0.03 band), B's 0.001 stop margin, and every void rule.
+
+The CPU logits are the same computation as before (`decoder.Load` on the CPU at the arm's quant, `ForwardForTest` over
+the same tokens), saved as raw float32 bits.
+
+**Void, in addition:**
+
+- the saved file's checkpoint hashes or commit differ from the Metal process's;
+- an arm is missing from the file;
+- the file does not exist.
+
+**The memory this buys, and what it does not.**
+
+- **Before, in one process:** the largest moment was a Metal model and a CPU model held together, about 10 GB in all.
+  Metal's own guard declined the 2B's int4 build at 3.63 GB needed against a 2.66 GB budget, with the CPU model beside it.
+- **After:** the peak is the larger of the two processes, about 7 GB, and each load's guard sees only itself.
+- **The fit guard still prices the CPU process's largest loads at about 6.7 GB** (estimated from the guard's formula:
+  resident weights + KV at its fitted context + the `.gguf` mapped during the load):
+  - the 2B at int8int8: 2.5 + 1.6 + 2.6 GB;
+  - Gemma 3 4B at int8int8, which the old order never reached: about 4 + KV + 2.5 GB.
+  - The guard's budget is 70% of available memory, so these loads need about 9.6 GB available. The two nights on
+    record had 6.6 GB and 7.8 GB.
+  - Splitting the processes alone therefore does not clear the guard on such a night, and a refused load is void.
+  - What would clear it, for the owner to choose:
+    - a CPU process that loads `.giw` sidecars: no mapping term, so about 4.1 GB priced for the 2B and about 4.5 GB for
+      Gemma 3, which need roughly 6 to 6.5 GB available;
+    - or a night with 9.6 GB free.
 
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro

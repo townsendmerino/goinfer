@@ -711,7 +711,7 @@ passed and caught its planted weaknesses in each, the planned model and window w
 | Codex x Qwen3-4B, 16,384 | 3/5 | **fragile** | r2 2/5, r3 3/5 (the same-night follow-up); `write`, `fix` 0 of 6 |
 | Claude Code x Qwen3-4B, 28,672 | 1/5 (two 30-minute timeouts) | **no** | both timeouts as passes would give fragile |
 | opencode x Mellum2.1, 16,384 | 4/5 | **works** | |
-| Codex x Mellum2.1, 16,384 | 2/5 | **fragile** | three repetitions queued; publication waits for them |
+| Codex x Mellum2.1, 16,384 | 2/5 | **fragile** | the registered three (2026-10-14, the before-fix baseline): 3/5, 2/5, 3/5, stays fragile; the after run at `695ce16c` (2026-10-15): 3/5, 2/5, 2/5, fragile |
 | Claude Code x Mellum2.1, 32,768 | 1/5 (two timeouts) | **no** | |
 
 **I1's live gate:** Codex **VOID** (every run an incurable jump, a run that never reached the window, or a harness that compacted
@@ -730,6 +730,34 @@ pass; `/v1/messages` prompt sizes were never recorded, so the I1 grader's incura
 **Leads, not fixed:** Claude Code subagents ask for `claude-sonnet-5-5` and get a 404 (`connect` does not set that slot); Mellum2.1 on
 `/v1/responses` can spend a whole turn in reasoning and send an empty message; Mellum2.1 on `/v1/messages` writes tool calls as text with
 broken JSON.
+
+**Codex x Mellum2.1, the registered three repetitions (job `i3-d-mellum-codex-f`, run and read 2026-10-14):** r1 3/5 (read, search,
+fix), r2 2/5 (read, search), r3 3/5 (read, search, write; `fix` hit the 25-minute limit after the code was fixed, so its check passed,
+and it is graded a fail like every timeout in this read). Each repetition is fragile, so the cell **stays fragile** (pooled 8 of 15); the
+plan names no rule for combining three, and none is needed. Valid: self-test passed, the planned model and window served, 15 records,
+no `halted`, 429, 5xx or overflow. The day session's CPU builds (14:11 to 14:17) overlapped `fix` r1 and r2, which ended 7.2 and 17.8
+minutes inside their limit, so both verdicts stand. All six failures left the files untouched while reaching for `apply_patch`
+(a patch written as prose, or run as a shell command), which bears on I6's trigger; it is not decided here. Record:
+`docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md` § "Job D".
+**This is the BEFORE baseline for Codex** (owner, 2026-10-14): binary `81791568`, no reasoning items on `/v1/responses`, no CUDA
+windowed-KV ring fix. 81 of 123 answered requests prefilled cold (66%; every run start, and 66 of 108 follow-ups), costing 73% of the
+run wall. **The AFTER run** is the same configuration (`mellum-16k-codex-f`, 5 tasks x 3) from a pinned binary of current `main`, which
+carries both fixes (PRs #12 and #13) and everything else merged since the pin; it is read by the same rule and the same cold/warm split.
+The registered precondition for publishing this cell in `docs/integrations/harness-matrix.md` is met; which of the pair the published
+row carries is the owner's call.
+**The AFTER run, read 2026-10-15** (job `i3-after-mellum-codex-f`, serve at `695ce16c`, the v0.23.0 release commit): r1 3/5 (read,
+search, fix), r2 2/5 (read, search), r3 2/5 (search, write), so the cell **stays fragile** (pooled 7 of 15 against 8). Valid: self-test
+passed, the planned model and window served from the pinned binary, 15 records, no `halted`, 429, 5xx or overflow. The serve plan matches
+job D's except the expert cache (62 slots, not 57: more VRAM was free at load), which moves timings a few percent and the counts not at
+all. By job D's method, **cold requests fell from 81 of 123 (66%) to 70 of 300 (23%)**, follow-ups from 66 of 108 (61%) to 55 of 285 (19%);
+run starts stay 15 of 15 cold. **Cold prefills fell from 73% to 55% of run wall** (4,809 of 8,810 s). The share fell less than the count
+because warm turns let each run do more: 300 requests against 123, and 20 Codex compactions against 1. Each compaction costs two cold
+prefills, which is 40 of the 55 cold follow-ups; the other 15 are plain continuations that reused nothing (not diagnosed). **Codex sent the
+reasoning items back:** its session files hold 298 reasoning items, each with `goinfer-reasoning-v1` encrypted content, and 213 of 283
+follow-ups reused the previous prompt plus every generated token by serve's `cached_tokens`. **`apply_patch`:** 4 of the 7 edit-type
+failures still reached for it, but 5 of the 7 now changed files through the shell and left them broken, and only 2 changed no file
+(job D: all six changed nothing); edit-type tasks pass 2 of 9 in both runs. `read` r3 failed on an empty final message (the reasoning-only
+lead). Record: `docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md` § "The after run".
 
 
 ### I4 — First-request census (by day, minutes per harness)
@@ -1027,7 +1055,7 @@ of `docs/tasks/task-kv-architecture-2026-10.md`, whose KV3 extends blocks and bl
 | 3 | harness-reliability Gate 1 (the `/v1/messages` row) | **built 2026-10-12** |
 | 4 | I1 overflow rule, with per-dialect tests | by day; the live confirmation joins I3 |
 | 5 | I2 `connect` for Claude Code, opencode, Codex | by day |
-| 6 | I3 screening | night queue, nobara-pc, after 3–5: **run 2026-10-13, read 2026-10-14** (above); Codex x Mellum2.1's three repetitions queued 2026-10-14; `docs/integrations/harness-matrix.md` after they read |
+| 6 | I3 screening | night queue, nobara-pc, after 3–5: **run 2026-10-13, read 2026-10-14** (above); Codex x Mellum2.1's three repetitions **read 2026-10-14: fragile** (the before-fix baseline); the after run **read 2026-10-15: fragile**, cold requests 66% → 23%; `docs/integrations/harness-matrix.md` next |
 | 7 | I5 transport | by day, in parallel with 2–6; depends on none of them |
 | 8 | I6 | decided by I3's Codex cell: **parked** until that cell reads; the pilot's one Codex edit printed a patch as prose, which is one run |
 | 9 | the FIM and sidecar amendments (§5) | when those docs are next picked up |

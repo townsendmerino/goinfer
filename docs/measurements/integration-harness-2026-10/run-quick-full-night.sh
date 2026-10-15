@@ -20,8 +20,16 @@ cd "$SRC" || exit 2
 git fetch -q origin || echo "warning: git fetch failed; using the local $REV"
 [ -d "$WT" ] && git worktree remove --force "$WT"
 git worktree add -q --detach "$WT" "$REV" || { echo "FATAL: cannot check out $REV"; exit 2; }
+# -full exists to RUN the deferred tests, and a fresh worktree has none of the gitignored fixtures this box has. scripts/worktree_fixtures.sh
+# places them (its header has the rule): small fixtures COPIED as real files, since tests that copy a fixture directory keep only regular files
+# and drop a symlinked one; larger ones cloned, symlinks into ~/models kept as links. Untracked, not-ignored fixture directories are placed too and
+# listed in $EXC: they would make the gate record the tree as dirty, and a dirty record does not count, so this process alone ignores them.
+EXC="$LOG/untracked-fixtures.exclude"
+fixtures=$(bash "$SRC/scripts/worktree_fixtures.sh" "$SRC" "$WT" "$EXC") || { echo "FATAL: placing the fixtures: $fixtures"; exit 2; }
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0="$EXC"
 cd "$WT" || exit 2
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "base:     $BASE"; echo "started:  $(date '+%F %T %Z')"; echo "go:       $(go version)"
+  echo "fixtures: $fixtures"
   echo "driver:   $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>&1 | head -1)"; echo "load:     $(uptime)"; } | tee "$LOG/provenance.txt"
 # A fresh worktree has no go.work and no module cache entry for what a bump pulled in: fetch it before the gate, as CI does.
 go mod download 2>&1 | tail -3

@@ -182,7 +182,7 @@ asks how many wire dialects the coding-agent harnesses speak and how often a too
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (270)
+## Evidence — `measurements/` (273)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
@@ -200,13 +200,13 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (15) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (16) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered, and the 4
   left then were each still open (drafted-by-decision, blocked, or unshipped, per their own status).
   Briefs written since are read by their own status headers. Newest:
   `prompts/nobara-mc4-spec-alone-cuda-2026-09.md` (2026-09-28), the nobara brief for MC4's
   "speculate when alone, batch under load" premise measurement.
-- `releases/` (10) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
+- `releases/` (12) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
