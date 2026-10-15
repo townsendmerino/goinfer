@@ -100,7 +100,7 @@ func processMemory() int64 {
 // cache planned for 20,189 rows and filled to its capacity takes one row more. Every layer grows by the policy, the old arrays are dropped,
 // and memory returns to the OS: afterwards the live heap and the process's memory (processMemory) are within the grown KV
 // plus a margin (16 MiB live, 64 MiB process) over their readings before the cache existed. No forward pass runs. Where the
-// OS gives no reading (Windows), only the live-heap bound is read.
+// OS gives no reading (Windows), and under the race detector, only the live-heap bound is read.
 func TestG40KV_forcedRegrowReleases(t *testing.T) {
 	const layers, nKV, hd, rows = 24, 2, 64, 20189
 	live := func() int64 {
@@ -142,6 +142,10 @@ func TestG40KV_forcedRegrowReleases(t *testing.T) {
 		float64(capBytes)/MiB, cap(c.keys[0])/(nKV*hd), float64(liveAfter)/MiB, float64(fpBase)/MiB, float64(fpAfter)/MiB)
 	if liveAfter > capBytes+16*MiB {
 		t.Errorf("live heap %d bytes over its base after the regrow; the grown KV is %d: the old arrays are still referenced", liveAfter, capBytes)
+	}
+	if raceDetector {
+		t.Logf("under the race detector the process's memory carries shadow memory a release cannot return: the second bound is not read here; the live-heap bound above holds")
+		return
 	}
 	if fpBase < 0 || fpAfter < 0 {
 		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
