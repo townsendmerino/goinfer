@@ -1,0 +1,31 @@
+=== RUN   TestMoERouteFirstLaunchReservation
+    moe_route_reservation_test.go:39: CUDA_MODULE_LOADING="" (empty = driver default LAZY)
+    moe_route_reservation_test.go:46:     nvidia-smi @ start                      106954752 B (102 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after CompileLibrary       106954752 B (102 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after NewComputePipeline     106954752 B (102 MiB)
+    moe_route_reservation_test.go:73:   free at start                    7571701760 B
+    moe_route_reservation_test.go:74:   free after CompileLibrary        7571701760 B   (cost 0 B)
+    moe_route_reservation_test.go:75:   free after 5 NewComputePipeline 7571701760 B   (cost 0 B)
+    moe_route_reservation_test.go:77:   moePTX source size 81735 B
+    moe_route_reservation_test.go:80:   TOTAL moePTX device cost                  0 B  (0.0 MiB)
+    moe_route_reservation_test.go:94:   => moePTX's MODULE memory is 0 B up to this point. Not yet a verdict: it is consistent with a deferred cost and with there being no cost. The launches below separate them.
+    moe_route_reservation_test.go:46:     nvidia-smi @ before first launch        109051904 B (104 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after first launch         109051904 B (104 MiB)
+    moe_route_reservation_test.go:120:   free before first moePTX launch  7569604608 B
+    moe_route_reservation_test.go:121:   free after  first moePTX launch  7569604608 B   (cost 0 B)
+    moe_route_reservation_test.go:46:     nvidia-smi @ before moe_route           109051904 B (104 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after moe_route            247463936 B (236 MiB)
+    moe_route_reservation_test.go:157:   launch config nE=8 k=2
+    moe_route_reservation_test.go:158:   free before first moe_route      7569604608 B
+    moe_route_reservation_test.go:159:   free after  first moe_route      7431192576 B   (cost 138412032 B = 132.0 MiB)
+    moe_route_reservation_test.go:164:   local-memory reservation predicted as 4096 B/thread x maxThreads/SM x SMs; at 1024x40 that is 167772160 B (160 MiB)
+--- PASS: TestMoERouteFirstLaunchReservation (0.38s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	0.521s
+=== RUN   TestRouteGptOssGrowsPoolPastMoERoute
+    route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost   138412032 B (132.0 MiB)
+    route_gptoss_reservation_test.go:60:   route_gptoss after moe_route (the gap)       cost     8388608 B (8.0 MiB)
+    route_gptoss_reservation_test.go:60:   route_gptoss at nE=32 k=4, both forced       cost           0 B (0.0 MiB)
+--- PASS: TestRouteGptOssGrowsPoolPastMoERoute (0.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	0.309s
