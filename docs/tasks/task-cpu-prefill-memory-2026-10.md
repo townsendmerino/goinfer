@@ -350,6 +350,41 @@ Reused buffers are cleared at each chunk's start, so every chunk computes from t
 - **Speed:** the 0.5B at 6K only, one pass of 5 pairs (about 5 minutes), against G40-3's bars.
 - **No night run** unless a tier 1 result is unclear.
 
+### Tier 0 readings, and T0a amended after its first reading (2026-10-15)
+
+**First reading, by the registered limit** (at most 1 MiB, or 1% of a chunk's working set, per chunk after the first):
+
+| gate | cell | result |
+|---|---|---|
+| T0b, peak live heap | 0.5B, 4 chunks | **PASS:** 316 MiB over the post-load baseline, bound 675 |
+| T0a | fixture | PASS: 0.01 to 0.03 MiB per later chunk |
+| T0a | 0.5B | FAIL: 3.4 to 5.6 MiB per later chunk, limit 1.27 |
+| G40-1 | fixtures | PASS on the fixed code |
+
+The working buffers went from 21 to 77 MiB per later chunk to 3.4 to 5.6 MiB. The remainder was 31,000 to 54,000
+allocations of about 110 bytes each, which the profile puts in aikit's `(*Workspace).MatmulBT` (the closure it hands
+`parallelCols`).
+
+**Amendment after the data, on the owner's word (2026-10-15).** The gate targets per-chunk working buffers; those are
+gone, and the remainder is short-lived closure garbage, which T0b's live-heap reading confirms.
+
+- **Amended T0a: no allocation of 4 KiB or more after the first chunk,** counted from the runtime's
+  `/gc/heap/allocs-by-size:bytes` histogram.
+- Total bytes and the allocation count per chunk are reported beside it, not graded, so a later regression shows.
+
+**Amended T0a's reading.**
+
+- **The fixture: PASS.** 0 allocations of 4 KiB or more in each later chunk.
+- **The planted defect (reuse disabled) turns it red:** 37 per later chunk on the fixture.
+- **The 0.5B: FAIL by its letter.** It made 2, 9 and 13 allocations of 4 KiB or more in chunks 2 to 4. The profile
+  puts every one in aikit's `scaleBufPool` (`linalg/w4a8_f16.go`): a `sync.Pool` of 16 KiB buffers that garbage
+  collection empties and the W4A8 kernel then refills. That is aikit-internal scratch, like the closures, not a
+  goinfer working buffer.
+
+**Filed for aikit's next release, not blocking G40:** no allocation per call in `MatmulBT` (no closure per
+`parallelCols` call) or in the W4A8 scale-buffer path, each with an `AllocsPerRun` gate in aikit. The brief is in aikit's
+local `docs/prompts/linalg-no-per-call-allocs-2026-10.md`. goinfer re-runs T0a when it moves to that release.
+
 ### Done
 
 G40-1 and G40-2 pass and G40-3 ships. G40-2's before-and-after record goes beside KV9's, and G40 in
