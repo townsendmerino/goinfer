@@ -830,6 +830,14 @@ declared.**
 - **The registered next step:** a prompt set for long contexts, registered in advance, where the scores are larger. It is
   for the owner to commission; nothing is registered yet.
 
+**G2-R closed as void (owner, 2026-10-15).** No long-context prompt set will be registered, and no CPU comparison is added.
+
+- **The reason:** on these prompts the cap barely acts, so a dropped cap passes the model-level rule.
+- **What tests the Metal kernels instead:** G2-K. It is graded against a float64 reference, on inputs built so the scores
+  cross ±cap, and it reads 152 of 152 inside its bar, with all 152 red once the softcap is dropped (G2-D).
+- **G2-K and its plant now decide the Metal softcap declaration,** in G2-R's place in the order (§4.6, step 3) and among
+  the gates G2-M follows.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
