@@ -524,7 +524,7 @@ func TestS16DeepstackPrefill_tiny(t *testing.T) {
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
 	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
-		t.Fatalf("no fixture at %s", path)
+		t.Skipf("no fixture at %s", path)
 	}
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256,
 		Knobs: &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}})
