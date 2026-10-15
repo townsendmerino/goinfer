@@ -328,6 +328,37 @@ pass (0.35).
 
 The owner may override, as on CUDA. The override is recorded with the gates that did not pass.
 
+## 5a. Registered 2026-10-16, before the build: what f16 changes against f32, and the parity manifest (owner's ask)
+
+**What f16 changes.** One thing: each stored K and V row is rounded to f16 when it is appended (and a prefill's new rows
+are attended as stored, §4). Scores still accumulate in float64 and attention still runs on `[]float32`, so an f16 run
+equals an f32 run whose stored rows were rounded by hand. That is F1's exact check. Nothing else in the forward moves.
+
+**What it must not change: the f32 path, bit for bit.** The library's zero value stays f32 (decision 1), so every test,
+golden and parity record keeps running at f32. Two checks pin that, before any parity hash is refreshed:
+- **F0, identity (tier 0, by day, seconds to minutes):** `go run ./cmd/gate identity` between main before the change
+  and the branch, on the tiny assets, every family at f32: full logits byte-identical (TE6(b)). The f32 storage and
+  every reader of it are unchanged code paths, and F0 proves the third storage form did not leak into them.
+- **F5,** as above: the forward goldens and parity records pass unchanged, and one test asserts `decoder.Load` with zero
+  options builds an f32 CPU cache.
+
+**The parity manifest.** It records the f32 reference only; an f16 cache never enters it.
+- The decoder edits stale its deps hashes. They are refreshed by `scripts/refresh_parity_hashes.sh`, which runs the
+  forward goldens as its proof and refuses on any failure, after F0 has passed. No family is re-validated, since F0 shows
+  its f32 numerics did not move.
+- If F0 shows any family's f32 logits moved, the change is numeric for that family: stop and report, and nothing is
+  refreshed.
+
+**Tiers.**
+- **Tier 0, by day:** F0, F1, F5.
+- **Tier 1, by day:** F3's in-process A/B on the 0.5B and 1.5B.
+- **Tier 2, at night:** F2 and F4, and F3's served cells. They decide a default that will be published, F2 on a small
+  numeric effect at depths of 3,900 to 8,000 keys, and F4 at 16,384 positions. Each is estimated and fit-checked by day
+  before it is queued.
+
+**The default stays f32** on the command lines as well, until F1–F5 read as registered and the owner says so (§1a).
+The build adds `--kv f16`, a real f16 cache on a CPU load, priced and printed as f16.
+
 ## 6. Risks
 
 - **A slower default.** If the widening pass costs more than the bandwidth it saves at ordinary depths, f16 loses
