@@ -37,6 +37,7 @@ MODELS = {  # name: (gguf, layers, kv heads, head dim)
     "1.5b": (f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 28, 2, 128),
 }
 MiB = 1 << 20
+WANT_TOKENS = 0
 PAGE = 16384
 
 
@@ -146,6 +147,9 @@ def cell(arm, binary, name, text, port, logs, interval):
         rec.update(prompt_tokens=usage.get("prompt_tokens"), wall_s=round(wall, 1), load_fp=load_fp, peak_fp=peak["fp"],
                    peak_rss=peak["rss"], after_fp=after_fp, kv=kv, weight_file=wfile, swap_grown=sw_end - sw_used,
                    bound_fp=load_fp + kv + 768 * MiB, bound_rss=wfile + kv + 768 * MiB, bound_after=load_fp + kv + 256 * MiB)
+        if WANT_TOKENS and usage.get("prompt_tokens") != WANT_TOKENS:
+            rec.update(verdict="VOID", why=f"serve counted {usage.get('prompt_tokens')} prompt tokens, not the {WANT_TOKENS} the cell was cut for")
+            return rec
         checks = {"peak footprint": rec["peak_fp"] <= rec["bound_fp"], "peak RSS": rec["peak_rss"] <= rec["bound_rss"],
                   "swap": rec["swap_grown"] <= 32 * MiB, "returned": rec["after_fp"] <= rec["bound_after"]}
         near = (0 <= rec["bound_fp"] - rec["peak_fp"] < 64 * MiB) or (0 <= rec["bound_rss"] - rec["peak_rss"] < 64 * MiB)
@@ -183,11 +187,15 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--repo", required=True)
     ap.add_argument("--interval", type=float, default=0.25)
+    ap.add_argument("--chars", type=int, default=CHARS, help="the preamble's length in characters (a cut for an exact prompt size)")
+    ap.add_argument("--want-tokens", type=int, default=0, help="the prompt size the cut gives; a cell serve counts otherwise is VOID")
     ap.add_argument("--arms", default="after,before", help="which arms run; an unchanged arm's last readings are reused instead (CLAUDE.md, \"Testing tiers\")")
     a = ap.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(SystemExit(143)))
     os.makedirs(a.out, exist_ok=True)
-    text = preamble(a.repo)
+    global WANT_TOKENS
+    WANT_TOKENS = a.want_tokens
+    text = preamble(a.repo)[:a.chars]
     warm(a.after, 18520, a.out)
     recs = []
     port = 18531
