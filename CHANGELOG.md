@@ -15,21 +15,33 @@ any surface may still change.
 
 ## [Unreleased]
 
-### Highlights — a draft for the next tag (the tagger rewrites it; kept here so it cannot go stale on a branch)
+## [v0.23.0] — 2026-10-15
 
-- **Under `--backend webgpu`, a long prompt reaches its first token sooner.** A 4-bit model now prefills its prompt in one batched pass, with the same logits as before: about 3 times faster on an M1 Pro and 7 on an RTX 2070 SUPER for a 1,024-token prompt, read in process.
-- **A single tool no longer traps a client in a loop.** With exactly one tool in `tools` and `tool_choice` auto or absent, the reply was constrained to that tool's call on every turn, including the turn after its result, so a model could never answer. Fixed on `/v1/chat/completions` and `/v1/responses`; `required`, a named function and `none` are unchanged.
-- **Speech to text.** `POST /v1/audio/transcriptions` from a pure-Go Whisper, and `input_audio` for Qwen3-ASR and Voxtral Mini; the encoder runs on the GPU under `--backend cuda` (13.6 times on `whisper-small`, 11.9 on Voxtral's tower).
-- **Image turns on Qwen3.5 are much faster**: on a 0.8B, time to first token for a 1024x640 image went from 37.5 s to 3.6 s on CUDA (0.3 s for a resent image) and from 38 s to 7.7 s on the CPU backend. Exploratory, one run per cell (`docs/measurements/p26*-2026-10-06/`).
-- **Qwen3-VL-30B-A3B images**, checked against Hugging Face on the CPU; its CUDA paged-experts path read FAIL on one served request and is unvalidated until its re-read.
-- **CUDA keeps the KV cache in f16 by default** for the dense llama, mistral, qwen2, qwen3 and phi3 families, so the same card holds about twice the context. Metal already did; `--kv f32` is the exact cache and the choice for any other family is unchanged. An owner decision over a fidelity cell that read parked (agreement 92.0% against 92.97% on a 7B at 8,000 keys) and a speed check stopped before its deep cells, recorded in `docs/tasks/task-cuda-f16-kv-2026-10.md`.
-- **`--windowed-kv` is on by default on CUDA**, so a mixed sliding/full model fits a longer context; `--windowed-kv=false` opts out. A follow-up turn reuses its prefix when it drops up to 448 tokens of the last reply (up to 1,024 when the card has VRAM to spare), where it used to re-prefill the whole prompt on most turns.
-- **`serve -lenient-tool-calls` (off by default)** reads one fenced JSON call at the end of a reply as a tool call, for the `<tool_call>` families, with the arguments checked against the tool's schema. A demonstration that ends on one valid call looks the same as a meant call, so use it with a client that confirms before it acts.
-- **EmbeddingGemma 2 takes images and audio** at `/v1/embeddings`, and runs on the GPU on a Mac. **Qwen3.5+ images from a GGUF `mmproj`** (`--vision mmproj.gguf`).
-- **Library:** `Model.Close` is safe during a generation (and refuses new ones with `decoder.ErrClosed`), `Tokenizer.NewStream` prints tokens without losing spaces, and `Options.Quant "bf16"` / `"f16"` holds a 16-bit checkpoint at half f32's memory, bit-identical to f32 (CPU).
-- **Sidecar names carry the format version**, so a release binary and a dev build stop rebuilding each other's.
+### Highlights
+
+- **Coding agents against a local model.** `goinfer-serve connect claude-code | codex | opencode` writes the agent's
+  configuration against a running server, sized to the context the server really holds, and says whether the agent's
+  first request fits. For Claude Code it fills every model slot (subagents no longer 404), sizes the output cap to the
+  window, and turns off the per-conversation header that defeats prefix sharing.
+- **A long first request is fast on CUDA.** A prompt past 12,160 tokens prefills in batched passes instead of the
+  per-token path: Claude Code's 17,869-token first request reaches its first token in 25 s instead of 272 s on an
+  RTX 2070 SUPER. Shorter prompts are bit-identical to before.
+- **Codex keeps its prompt warm.** `/v1/responses` returns reasoning items and reads them back, and CUDA windowed KV keeps
+  a rollback floor, so follow-up turns reuse their prefix (cold requests 66% to 23% in a Codex x Mellum2.1 run).
+- **Fixed: concurrent sampled output on CUDA** for models with a final-logit softcap or a logit scale (dense Gemma 4,
+  Command-R, Granite): each transform was applied twice when two or more conversations decoded together, since v0.20.0.
+- **Agent turns that went wrong:** Claude Code 2.1.268 on `/v1/messages`, Codex replies cut at 512 tokens, tool calls
+  written inside the reasoning, empty answers with no reason, dropped extra system messages, and a single tool trapping
+  a client in a loop.
+- **Speech to text** (`/v1/audio/transcriptions`, pure-Go Whisper; `input_audio` for Qwen3-ASR and Voxtral Mini), much
+  faster Qwen3.5 image turns, and EmbeddingGemma 2 images and audio.
+- **Security:** DNS-rebinding refusal on a loopback server, tool-turn forgery closed, one bad request no longer crashes
+  the process, and a strict content policy for the web UI.
+- **Changes to check before upgrading:** `.giw` is format v16 only (rebuild hand-built or embedded bundles with
+  `cmd/prequant`); CUDA's KV cache is f16 by default (`--kv f32` for the exact cache); `--windowed-kv` is on by default
+  on CUDA; the Mac's default context grows toward 16,384; the context-overflow message has new wording
+  (`context_length_exceeded` unchanged); some Gemma 4 and Qwen3.5 image replies differ at temperature 0.
 - **aikit v1.70.1** in all five modules.
-- **Changes to check before upgrading** (none breaks an API except a hand-built `.giw`): `.giw` weights format v16 reads only v16 (a hand-built or embedded bundle must be rebuilt with `cmd/prequant`); a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
 
 ### Changed — on CUDA, a prompt past 12,160 attended keys prefills in batched passes where the fused attention serves it
 
