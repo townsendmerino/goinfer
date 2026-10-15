@@ -719,6 +719,36 @@ the same tokens), saved as raw float32 bits.
       Gemma 3, which need roughly 6 to 6.5 GB available;
     - or a night with 9.6 GB free.
 
+**G2-R amendment 2, 2026-10-15 (owner's choice from amendment 1's options), before any run: the CPU arms load `.giw` files.**
+
+**What changes.**
+
+- The CPU process loads each CPU model from a CPU `.giw` (`cmd/prequant -quant <q>`, this box's own target), built from
+  the same `.gguf` at each quant the arms use:
+  - the 2B at int8int8 and int4;
+  - Gemma 3 4B at int8int8;
+  - the dense 1.5B at int8int8, and at int4 for the check below.
+- The night job builds any that are missing, at the job's revision, under `~/goinfer-bench/op1-metal-2026-10/giw/`, and
+  records each one's sha256 in the reference file.
+- The Metal process still loads the `.gguf` files, and every guard stays as shipped.
+
+**Why it is the same computation.** A `.giw` holds the weights already quantized by the same quantizer a direct `.gguf`
+load runs at load time.
+
+- On record: greedy output byte-identical between the two routes (`docs/tasks/task-never-swap-2026-09.md`, S1), and
+  CPU logits through the sidecar bit-identical to the direct load's (`docs/tasks/task-multimodal-support-2026-10.md`).
+- **Checked again each run, as a precondition.** Before any arm, the CPU process loads the dense 1.5B both ways (its
+  `.gguf` fits the fit guard directly) at int8int8 and int4. It runs the gate's prompt and 24 steps, and requires the
+  logits to be equal bit for bit at every step. **A difference voids the run.** It is not a fail of G2-R.
+
+**Memory.** By the guard's formula, the CPU process's largest priced loads drop to about 4.1 GB (the 2B at int8int8)
+and about 4.5 GB (Gemma 3 4B), because there is no `.gguf` to map during the load. That needs roughly 6 to 6.5 GB
+available, where the two nights on record had 6.6 and 7.8 GB.
+
+**Disk.** The four bundles take about 10.6 GB. The job refuses to build when less than 14 GB is free.
+
+**Unchanged:** amendment 1's split, the arms, prompts, bars, voids and the order of reading.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
