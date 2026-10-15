@@ -1260,7 +1260,7 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 	for c0 := 0; c0 < len(prompt); c0 += C {
 		c1 := min(c0+C, len(prompt))
 		if c0 == C {
-			cache.reserveRows(len(prompt) - c0) // the first chunk taught the cache each layer's width
+			cache.reserveRows(max(cache.Pos()+len(prompt)-c0, cache.planRows) - cache.Pos()) // the first chunk taught the cache each layer's width
 			if prefillChunkDone != nil {
 				prefillChunkDone(-1) // the KV reserve, which a gate on working buffers reads apart from them
 			}
@@ -1274,6 +1274,7 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 			prefillChunkDone(c0 / C)
 		}
 	}
+	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
 	hidden := m.w.arch.HiddenDim
 	logits := m.lmHeadN(h[len(h)-hidden:], 1) // the LM head on the last row only
 	if len(prompt) >= prefillReleaseRows {
