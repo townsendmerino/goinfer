@@ -68,10 +68,10 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 	cudaDeepstackPrefillOn = true
 	defer func() { cudaDeepstackPrefillOn = prevDeep }()
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
-	requireCUDADevice(t) // before the fixture check: the fixture is gitignored (regenerated locally), so a deviceless CI runner has no fixture and must skip on the device, not fail on it
+	requireCUDADevice(t)
 	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
-		t.Fatalf("no fixture at %s", path)
+		t.Skipf("no fixture at %s", path) // gitignored (regenerated locally), so a checkout without it skips as its siblings do; GOINFER_REQUIRE_FIXTURES=1 turns the skip red
 	}
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 256})
 	if err != nil {

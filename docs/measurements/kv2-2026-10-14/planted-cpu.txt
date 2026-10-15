@@ -1,0 +1,24 @@
+== planted: the 512-row suffix cap dropped (SharedHit returns the uncapped hit)
+--- FAIL: TestKV2_cpuSessionShare (1.48s)
+    kv2_cpu_share_test.go:66: exact false, 300 own tokens: SharedHit = 1088, want 832
+    kv2_cpu_share_test.go:66: exact true, 300 own tokens: SharedHit = 1088, want 832
+
+== planted: a copy one block short (copyPrefixFrom copies n-64 rows of K)
+--- FAIL: TestKV2_cpuSessionShare (1.85s)
+    kv2_cpu_share_test.go:83: exact false, 600 own tokens: B's K/V differ from the cold prefill's
+    kv2_cpu_share_test.go:83: exact false, 300 own tokens: B's K/V differ from the cold prefill's
+    kv2_cpu_share_test.go:83: exact true, 600 own tokens: B's K/V differ from the cold prefill's
+
+== planted again, the test now comparing after a wrong hit: the 512-row suffix cap dropped
+--- FAIL: TestKV2_cpuSessionShare (1.87s)
+    kv2_cpu_share_test.go:66: exact false, 300 own tokens: SharedHit = 1088, want 832
+    kv2_cpu_share_test.go:82: exact false, 300 own tokens: B's K/V differ from the cold prefill's
+    kv2_cpu_share_test.go:66: exact true, 300 own tokens: SharedHit = 1088, want 832
+
+== planted: serve: a donor taken in place is not cut back to the hit
+--- FAIL: TestSessionLRU_sharesAPreamble (0.70s)
+    kv_share_lru_test.go:83: a full LRU whose victim holds the hit: B got A true (C false), holding 2406 tokens, want A cut back to 1,088
+
+== planted: serve: a busy session is read as a donor
+--- FAIL: TestSessionLRU_sharesAPreamble (1.14s)
+    kv_share_lru_test.go:94: a busy donor was read: B holds 1088 tokens

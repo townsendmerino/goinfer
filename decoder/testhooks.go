@@ -15,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -563,4 +564,34 @@ func StartAttnScoreStatsForTest() (stop func() (n, over15 int64, maxAbs float64)
 		attnScoreStatsForTest.Store(nil)
 		return st.n.Load(), st.over15.Load(), math.Float64frombits(st.maxAbsBits.Load())
 	}
+}
+
+// KVBoundClassesForTest is the bound resident KV slot and the kernel class the KV manager recorded for each row of its
+// sequence: "fast", "exact" or "unknown" (nil when the slot holds nothing known).
+func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
+	a := m.kvSlots()
+	slot = a.Bound()
+	s := a.Seq(slot)
+	if s == nil {
+		return slot, nil
+	}
+	rows = make([]string, s.Len())
+	for i := range rows {
+		rows[i] = "unknown"
+	}
+	for _, r := range s.Classes() {
+		name := map[KVClass]string{kvmgr.ClassFast: "fast", kvmgr.ClassExact: "exact"}[r.Class]
+		for p := r.Start; p < r.Start+r.Len && p < len(rows); p++ {
+			if name != "" {
+				rows[p] = name
+			}
+		}
+	}
+	return slot, rows
+}
+
+// WholePromptScratchBytesForTest is the CPU batched sweep's whole-prompt scratch figure (prefillScratchBytes) that admission
+// priced a resident request at before a resident could report its own per-pass figure: the price a test sets beside the new one.
+func (m *Model) WholePromptScratchBytesForTest(promptTokens int) int64 {
+	return prefillScratchBytes(m.Config(), promptTokens)
 }

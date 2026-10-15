@@ -7,14 +7,19 @@ import "strings"
 // opens, with sequence_number counting every event. Clients that assemble the reply from item events (Codex) see
 // nothing of a stream that carries only response.output_text.delta.
 //
-// Items are numbered in the order the final response's output array lists them: the message, if any, then each
-// function call. One message item at most; it opens on its first delta and is closed before a function call.
+// Items are numbered in the order the final response's output array lists them: the reasoning item, if the reply reasoned,
+// then the message, if any, then each function call. One message item at most; it opens on its first delta and is closed
+// before a function call.
 type respStream struct {
 	ss  *sseWriter
 	id  string
 	seq int
 	idx int      // output_index of the next item
 	msg *respMsg // the open message item, nil when none
+	// rsn is the reasoning item (reasoning_items.go): opened by the first reasoning fragment, closed before any other item
+	// opens; rsnDone is it as the final response lists it, once closed.
+	rsn     *respMsg
+	rsnDone map[string]any
 }
 
 type respMsg struct {
@@ -34,7 +39,39 @@ func (r *respStream) emit(event string, p map[string]any) {
 
 func (r *respStream) msgID() string { return r.id + "-msg" }
 
+func (r *respStream) rsnID() string { return r.id + "-rs" }
+
+// reasoningDelta sends a piece of the reply's reasoning, opening the reasoning item first when it is not open. Reasoning
+// after another item opened (a splitter never produces it) is kept out of the stream.
+func (r *respStream) reasoningDelta(t string) {
+	if r.rsnDone != nil || r.msg != nil {
+		return
+	}
+	if r.rsn == nil {
+		r.rsn = &respMsg{index: r.idx}
+		r.idx++
+		r.emit("response.output_item.added", map[string]any{"output_index": r.rsn.index, "item": map[string]any{
+			"type": "reasoning", "id": r.rsnID(), "summary": []any{}}})
+	}
+	r.rsn.text.WriteString(t)
+	r.emit("response.reasoning_text.delta", map[string]any{"item_id": r.rsnID(), "output_index": r.rsn.index, "content_index": 0, "delta": t})
+}
+
+// closeReasoning ends the reasoning item, if one is open, and returns it as the final response lists it (nil when the
+// reply did not reason). Idempotent.
+func (r *respStream) closeReasoning() map[string]any {
+	if r.rsn != nil {
+		text, idx := r.rsn.text.String(), r.rsn.index
+		r.rsn = nil
+		r.rsnDone = reasoningItem(r.rsnID(), text)
+		r.emit("response.reasoning_text.done", map[string]any{"item_id": r.rsnID(), "output_index": idx, "content_index": 0, "text": text})
+		r.emit("response.output_item.done", map[string]any{"output_index": idx, "item": r.rsnDone})
+	}
+	return r.rsnDone
+}
+
 func (r *respStream) openMessage() {
+	r.closeReasoning()
 	r.msg = &respMsg{index: r.idx}
 	r.idx++
 	r.emit("response.output_item.added", map[string]any{"output_index": r.msg.index, "item": map[string]any{
@@ -76,6 +113,7 @@ func (r *respStream) closeMessage(final string) map[string]any {
 // functionCall announces and closes one function_call item (a map as respondTools builds it). The arguments go out as
 // one delta: the call is parsed from a finished buffer.
 func (r *respStream) functionCall(item map[string]any) {
+	r.closeReasoning()
 	idx := r.idx
 	r.idx++
 	args, _ := item["arguments"].(string)

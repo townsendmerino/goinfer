@@ -93,7 +93,7 @@ survives to a tag unless caught here.
    **If this release changes which backends the startup self-test covers, or which adapters it skips,** edit its three statements by hand (the matrix test does not see them): the self-test paragraph in `docs/server.md`,
    "What it has been run on" in `README.md`, and the same section in `site/internal/site/templates/download.html`. The site's output check requires that section to exist, not what it says about coverage.
 8. **The GPU gate, on BOTH boxes** (§C1-M on the Mac, §C1-C on the Linux box): `go run ./cmd/gate gpu`, the same command, a different backend. Neither is run by CI. v0.21.0 and v0.22.0 had the Metal run and no
-   recorded CUDA one. Queue the CUDA run at night (about 83 minutes) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `metal/`, `cuda/`, `gpu/` or `decoder/` changed since.
+   recorded CUDA one. Queue the CUDA run at night (about 2 h 20 min) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `metal/`, `cuda/`, `gpu/` or `decoder/` changed since.
    Every run writes a record, `docs/measurements/gpu-gate/<backend>-<time>-<commit>.json`: **commit it** (the Mac's from the Mac, as a model transfer is). `go run ./cmd/gate gpu-records` then says, per backend, `done` or `OWED` against HEAD, by that rule: the newest record made at the same code decides, and only a PASS on a clean tree with the heavy tier run (no `GOINFER_GATE_SKIP_HEAVY`) counts. Exit 0 only when both backends are done.
    **The tests the day loop defers, on BOTH boxes:** `go run ./cmd/gate quick -full -base <the previous tag>`. By day `gate quick` leaves out each
    package's real-checkpoint tests and, for a change that does not touch `metal/`, `gpu/` or `cuda/`, that module's long kernel tests; it prints each as
@@ -434,12 +434,13 @@ go run ./cmd/gate gpu                              # auto-detects cuda
 GOINFER_GATE_BACKEND=cuda go run ./cmd/gate gpu    # explicit
 ```
 
-**As a night job** (the timing lock, an idle GPU and ~83 minutes rule out running it by day): `docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh` tests a detached worktree of `origin/main` with the
+**As a night job** (the timing lock, an idle GPU and about 2 h 20 min rule out running it by day): `docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh` tests a detached worktree of `origin/main` with the
 gitignored fixtures linked in and a `go.work` (the cuda module must build against THIS tree's root, not the last published tag), counts a missing PASS verdict as a failure, and writes `provenance.txt`
-and the log to `~/goinfer-logs/gate-gpu-night-<date>/`. Queue it with `python3 scripts/night.py add gate-gpu-cuda --est 90 --by "<who>, <release>" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh`.
+and the log to `~/goinfer-logs/gate-gpu-night-<date>/`. Queue it with `python3 scripts/night.py add gate-gpu-cuda --est 150 --by "<who>, <release>" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh`.
 
-**What it costs, measured:** everything outside the heavy real-model tier took **4 min 54 s** on 2026-10-06; the heavy tier (`GOINFER_HEAVY_TESTS=1`, set by the gate itself) measured **78 min** on 2026-09-28. The whole run is
-about 83 minutes. `GOINFER_GATE_SKIP_HEAVY=1` skips the heavy tier and is for CONTROLS of the plumbing, never for a tag.
+**What it costs, measured:** everything outside the heavy real-model tier took **4 min 54 s** on 2026-10-06; the heavy tier (`GOINFER_HEAVY_TESTS=1`, set by the gate itself) is now about 2 h 15 min. Its main group runs as two
+processes split by test name, each about an hour under its own 120 m timeout, then the fresh-process tests (about 11 min) and the drain
+group. The whole run is about 2 h 20 min (basis: `docs/code-notes/cmd-gate.md`, "cudaHeavy: main-tier timeout"). `GOINFER_GATE_SKIP_HEAVY=1` skips the heavy tier and is for CONTROLS of the plumbing, never for a tag.
 
 **What green means — all four, or it is not green:**
 

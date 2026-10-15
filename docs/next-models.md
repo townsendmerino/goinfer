@@ -6,6 +6,7 @@
 > [`docs/capability-matrix.md`](capability-matrix.md) (families, generated from the registry) and
 > [`docs/hardware-matrix.md`](hardware-matrix.md) (which backend runs each resident, generated from
 > the admission predicate) are the truth. This doc is for *which family next, and why*.
+> Last field check: 2026-10-15.
 
 ## Where the 2026-08-17 list ended up (status 2026-09-12)
 
@@ -25,6 +26,73 @@ SmolLM3, Olmo 3, Olmo Hybrid, Ling 3.0), none came from this doc's tiers — the
 `docs/completed/task-families-2026-09.md` and the G-series. That is the actual finding of the period: this doc
 stopped being where families came from once the axes were covered, which is what it predicted.
 
+## Next up — 2026-10-15 field check
+
+A sweep of open-weight releases from mid-August to 2026-10-15, filtered by the selection rule
+below. Every config fact here was read from the posted `config.json` or model card on
+2026-10-15, not from coverage. The field's headline releases this period are 300B–1T and fail
+rule 2 outright (listed under Watching). What is left is short:
+
+1. **Muse Glimmer 30B (Meta, 2026-08-10, Apache 2.0) — the one new family worth building.**
+   `model_type` `muse_glimmer`, text `muse_glimmer_text`. Dense, 52 layers, 32 query / 2 KV
+   heads, head_dim 128, vocab 202,048, untied head. `layer_types` is three
+   `sliding_attention` (window 2,048) to one `full_attention`, and `layer_rope_theta` is 0 on
+   the full layers — NoPE globals, the interleave Command-R7B and SmolLM3 already run. Also in
+   the config: `final_logit_softcapping` 20 (Gemma 2 has the softcap), `output_multiplier`
+   0.196 (a logit scale, like Command-R's), `qk_scale_factor` 3.87 and a separate
+   `post_norm_eps` (suggests sandwich norms; verify). Meta's blog describes **gated** GQA and
+   per-head QK RMSNorm, and neither appears in the config — the modeling file
+   (`modeling_muse_glimmer.py`) is the source for both before any estimate. If the gate is the
+   sigmoid head-wise output gate Spark-X2.5 already has, this is adapter composition, not new
+   kernels. Why it ranks first: GGUF and llama.cpp support from day 0, an official DFlash
+   block-diffusion drafter (block 16) that is the vendor-blessed demo
+   [`spec/08-dspark-dflash.md`](spec/08-dspark-dflash.md) wanted (Laguna's was the last), and
+   Meta positions it for local always-on agents, which is this engine's lane. **Hardware:**
+   int4 is ~15–16 GB, so not resident on the 16 GB M1 Pro; the Linux box runs it. An HF
+   reference forward at bf16 is ~60 GB against 62 GB of host RAM — plan the oracle (layer
+   streaming, or the llama.cpp route in
+   [`tasks/task-llamacpp-inproc.md`](tasks/task-llamacpp-inproc.md) I2) before estimating.
+   Text decoder first; the 2B Perception Encoder tower follows [`multimodal.md`](multimodal.md)'s
+   policy.
+
+2. **Low-bit read formats — a format bet, not a family bet.** goinfer reads 15 ggml types
+   ([`quantization.md`](quantization.md)); it does not read `IQ2_XXS`, `IQ2_XS`, `IQ3_XXS`,
+   `IQ1_S`, `IQ1_M`, `TQ1_0`, `TQ2_0`, or NVFP4. That now blocks real files, not hypothetical
+   ones: Nemotron 3.5 Bolt's official 24 GB build (experts at IQ2_XXS, Mamba layers NVFP4,
+   embeddings and head Q8_0), and Unsloth's dynamic quants, which mix the IQ types. NVFP4 was
+   already flagged as L-08 in [`completed/audit-2026-09-02.md`](completed/audit-2026-09-02.md);
+   the MXFP4 and fp8 e4m3 readers are two-thirds of it. Reading a low-bit file is policy-clean
+   here — quantization.md reads Q2_K for the GLM-4.5-Air and Llama-4-Scout gates and declines
+   only to *recommend* it. **One cheap guard first, independent of the rest:** PrismML's
+   Ternary Bonsai 2 27B (a `qwen35` GGUF — Qwen3.8-27B, an architecture goinfer already runs —
+   at 1.75 bits/weight, 5.95 GB) ships in fork-only packings `PTQ1_0` and `PQ2_0` that the GGUF
+   metadata labels `TQ1_0` and `Q2_0`, and its card warns stock llama.cpp loads the `Q2_0`-labelled
+   file silently into garbage. Check what goinfer does with those two files today, and make it a
+   named decline if it is anything else. Supporting PrismML's packings themselves means chasing
+   a fork; wait until they are upstreamed.
+
+3. **Mistral Small 4 (119B-A6.5B, Apache 2.0) — a routing guard now, an adapter later.** The
+   checkpoint's outer `model_type` is `mistral3` (`Mistral3ForConditionalGeneration`) and its
+   `text_config.model_type` is **`mistral4`**: MLA (`kv_lora_rank` 256, `q_lora_rank` 1024),
+   128 routed experts top-4, `first_k_dense_replace` 0, 36 layers. goinfer resolves the outer
+   key (`decoder/registry.go:ministral3Architecture` documents that loadConfig re-applies it
+   last), so this checkpoint is handed to the dense Ministral 3 adapter. The guard: decline a
+   `mistral3` wrapper whose text config is `mistral4`, with a message that says so. The
+   adapter is DeepSeek-V3-shaped substrate (MLA + routed MoE) — verify router scoring and
+   tensor names before calling it an alias. Int4 is ~60 GB: Linux box with expert streaming
+   only. Mistral Large 4 (2026-10-06) is likely the same text type — check its config at
+   pickup, not before.
+
+4. **Nemotron 3.5 Bolt 74B-A9B (NVIDIA, 2026-10-15, OpenMDW-1.1) — watch.** A Mamba-2 /
+   attention hybrid with **LatentMoE** (top-9) and a C-RADIO v4-H vision tower. LatentMoE is
+   the primitive this doc already deferred for Nemotron Super; the 24 GB build needs item 2's
+   formats; a BF16 checkpoint exists. Ships its own DFlash drafter. Re-rank if item 2 lands.
+
+**Already served by an existing adapter (no work, confirmed by config):** MiniCPM5-2B is a
+plain `LlamaForCausalLM`; Gemma 4 12B is `gemma4_unified_text`, registered under
+`decoder/registry.go:gemma4Architecture`; Mistral Medium 3.5 (below). Xiaomi's
+MiMo-V2.6-Distill-Qwen-9B is a Qwen3.5-9B fine-tune, so expected to be `qwen3_5` — not checked.
+
 ## Watching — current list
 
 - **Kimi K3** — reportedly ~3–4T params; *not* a K2.x point release (K2 through K2.7-Code are
@@ -32,22 +100,34 @@ stopped being where families came from once the axes were covered, which is what
   ([`completed/task-model-family-deepseek-v4-kimi-k3.md`](completed/task-model-family-deepseek-v4-kimi-k3.md))
   found MLA on only 24 of 93 layers, the other 69 a KDA mixer — which `bailing_hybrid` now
   implements — plus a latent-MoE wrapper, a new activation, and MLA-with-NoPE + output gate. Weights
-  ship `mxfp4-pack-quantized` in a `compressed-tensors` layout not yet confirmed to match
-  `decoder/mxfp4.go`'s packing. Same hardware wall as V4-Flash (1.56 TB). Re-check when weights drop.
-- **GLM-5.x** — the ~753B flagship is out of scope; wait for an Air-class size. Shares the
-  native-sparse-attention direction with V4-Flash; if the DSA path is ever built, evaluate against it.
+  ship `mxfp4-pack-quantized` in a `compressed-tensors` layout not yet confirmed to match the
+  MXFP4 packing goinfer reads (that reader moved to aikit in 7a8e38150). Same hardware wall as V4-Flash (1.56 TB). Re-check when weights drop.
+- **GLM-5.x** — still no Air-class size. GLM-5.3-Flash (weights posted, MIT) turned out to be
+  320B-A18B with a sparse + linear attention hybrid and Manifold-Constrained Hyper-Connections,
+  not the Air-class model this entry was waiting for. Shares the native-sparse-attention
+  direction with V4-Flash; if the DSA path is ever built, evaluate against it.
 - **MiniMax M3** — 428B MoE, ~22B active, natively multimodal. Too big for the niche, and the
   multimodal training makes text-only support less compelling than the size alone suggests.
-- **Qwen3.8-Flash-Next (Qwen4 architecture preview)** — 180B on disk / 6B active: Gated DeltaNet +
-  a new sparse-attention mixer (QSA) + a 4-branch gated residual + a 20M-entry n-gram embedding +
-  native MTP. Doesn't fit either rig. Scoped in
-  [`scoping-qwen38-flash-next.md`](scoping-qwen38-flash-next.md); revisit when a real Qwen4
-  checkpoint ships at a size that fits.
-- **Mistral Medium 3.5 (128B dense)** — the five-minute config check this doc asked for on
-  2026-08-17 has still not been done. Do that before writing anything else about it.
-- **Named in the 2026-08-28 field survey, unscoped:** Muse Glimmer 30B, Qwen3.8-Max. Verify the
-  weights are actually posted (not announced) before spending scoping time — the trap this doc
-  has now recorded twice.
+- **Qwen3.8-Flash-Next (Qwen4 architecture preview)** — `qwen4_exp`, 125B on disk / ~6B active:
+  Gated DeltaNet + a new sparse-attention mixer (QSA) + a 4-branch gated residual + an n-gram
+  embedding + native MTP. Doesn't fit either rig. Scoped in
+  [`scoping-qwen38-flash-next.md`](scoping-qwen38-flash-next.md). As of 2026-10-15 Alibaba says
+  Qwen 4 is "in training" with no sizes or date; no smaller carrier of the architecture exists.
+  Qwen3.8-27B remains the newest open-weight Qwen that fits.
+- **Mistral Medium 3.5 (128B dense) — config check done 2026-10-15.** Outer `mistral3`, text
+  `ministral3`: 88 layers, 96 query / 8 KV heads, head_dim 128, no sliding window, YaRN
+  (factor 64, `llama_4_scaling_beta` 0). That is exactly what
+  `decoder/registry.go:ministral3Architecture` already expresses — a config alias, no new
+  forward. Two blockers, neither architectural: the safetensors ship per-tensor static fp8
+  (`weight_block_size` null), which `decoder/fp8.go:fp8Reconstruct` does not read (it needs
+  block-wise `weight_scale_inv`), so GGUF is the load route; and 128B dense fails rule 2 except at
+  Q2_K–Q3_K (~45–55 GB) on the Linux box. Parked on hardware, not on code.
+- **Out by rule 2 (released this period, weights posted, far past both rigs):** Meta's Muse
+  Spark Open (816B-A42B, 2026-10-15; GQA + attention output gate + learned residual gate,
+  BF16 and NVFP4), DeepSeek V4.1 Flash (552B; a causal encoder-decoder, so *not* a V4-Flash
+  delta), Xiaomi MiMo-V2.6 Flash (309B-A15B) and Pro (~1T), and inclusionAI's Ling 3.1 Flash
+  (560B-A25B, MIT; architecture not checked against `bailing_hybrid`).
+- **Qwen3.8-Max** — no open-weight repo found on 2026-10-15; treat as API-only until one appears.
 - **Mamba-1 hybrids (Jamba, Falcon Mamba, Hunyuan-TurboS)** — unchanged: confirm Mamba-1 vs
   Mamba-2 before estimating; Mamba-1 is a new scan kernel + parity, not a config alias. Only on
   concrete demand.
@@ -59,7 +139,9 @@ stopped being where families came from once the axes were covered, which is what
   `decoder/forwardn.go` is in the core hashed-file set, so the edit re-stales every family's
   `deps_hash`, the same cost `docs/completed/scoping-lfm2.md` §G paid for a much smaller change.
   Watching, not queued: no single family here is worth building for yet, but the primitive
-  itself is a plumbing change one of the three could unlock.
+  itself is a plumbing change one of the three could unlock. (Muse Spark Open's learned
+  residual gate is a fourth gated-residual design; whether it is the same primitive was not
+  checked.)
 
 ## Explicitly out of scope (not "families")
 

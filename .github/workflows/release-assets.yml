@@ -437,6 +437,11 @@ jobs:
             perl -0777 -ne 'BEGIN{$t=shift @ARGV} exit(/(?<!\t)\Q$t\E/ ? 0 : 1)' "$TAG" "$f" || { echo "$f carries no -X copy of $TAG (a build-info copy does not count, G-13(d))"; fail=1; }
           done
           [ "$fail" = 0 ] || { echo "embedded-${{ matrix.tier }} version assertions FAILED"; exit 1; }
+      - name: checksum the embedded binaries inside their artifact
+        if: steps.gate.outputs.skip == 'false'
+        # publish verifies these after the download: an artifact can arrive short (on v0.23.0's first run
+        # one 1.5B binary came back truncated and two missing), and an existence check passes a truncated file.
+        run: cd demo/chat/dist && sha256sum -- goinfer-chat-${{ matrix.tier }}-* > SHA256SUMS-embedded-${{ matrix.tier }}.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.gate.outputs.skip == 'false'
         with: { name: 'embedded-${{ matrix.tier }}', path: demo/chat/dist/ }
@@ -462,8 +467,29 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
+      - name: free disk for the artifacts
+        # Headroom for the ~20 GB of artifacts; the runner had 86 GB free on v0.23.0's re-run, so this is margin, not the fix.
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { path: staged }
+      - name: verify each embedded artifact against the checksums its build job wrote
+        run: |
+          set -euo pipefail
+          df -h /
+          n=0
+          for sums in staged/embedded-*/SHA256SUMS-embedded-*.txt; do
+            [ -e "$sums" ] || continue
+            (cd "$(dirname "$sums")" && sha256sum -c --strict "$(basename "$sums")")
+            rm -- "$sums"
+            n=$((n + 1))
+          done
+          echo "verified $n embedded artifact(s) byte for byte"
+          if ls -d staged/embedded-* >/dev/null 2>&1 && [ "$n" -eq 0 ]; then
+            echo "embedded artifacts were downloaded but none carried its checksum file"; exit 1
+          fi
       - name: collect + checksum
         run: |
           set -euo pipefail

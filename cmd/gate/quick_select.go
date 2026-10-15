@@ -291,9 +291,10 @@ func (qc *quickConfig) workFile(m *quickModule) (string, error) {
 //
 //   - GOWORK is left to auto-discovery wherever the repo's own go.work (or its absence, for the root)
 //     already resolves the module the way its CI job does. An explicit GOWORK is inherited by every `go` a
-//     test spawns, which fails tests that run `go test` in a scratch module (gpu's
-//     TestParentSelfSkipsWhenNoSubtestRan) or `go doc` (decoder's
-//     TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams, which under GOWORK=off hits a stale vendor/).
+//     test spawns, which fails a test that runs `go doc` (decoder's
+//     TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams, which under GOWORK=off hits a stale vendor/) or
+//     `go test` in a scratch module without scrubbing it. A module with no repo go.work gets the explicit
+//     GOWORK all the same, so a test that spawns `go` in a scratch module sets GOWORK=off itself.
 //     The harness must not be what turns red a test that passes by hand.
 //   - GOINFER_HEAVY_TESTS is removed: a shell that exported it would turn the day loop into the heavy tier.
 func (qc *quickConfig) cmdEnv(m *quickModule, target, overlay string, forTest bool) ([]string, error) {

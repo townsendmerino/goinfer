@@ -355,7 +355,8 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
 - **Two things for the phases that follow:**
   - Before OP2's SSM on Metal, the non-gated activation needs a feature per value (§4.5, item 2).
   - Before OP5, `attn-output-gate` needs splitting by activation (§4.5, item 3).
-- **Three things in backend modules were read and not fixed** (§4.5's last list). The CUDA one may be live.
+- **Backend findings are §4.5's last list.** The CUDA double softcap was confirmed and fixed; a Cohere step row's one-ulp
+  LayerNorm difference was found by that fix and is open, as are the other two.
 
 ### 4.5 Features mapped to operations (OP0, read 2026-10-13)
 
@@ -498,12 +499,23 @@ path:
 
 Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
 
-**Found while reading, in backend modules, and not fixed** (a backend change is a two-step tag; each needs its owner's call).
-All are read from the code, and none was run.
-- **CUDA: a batched-step row that returns logits appears to get the final softcap and the logit scale twice.**
-  `cuda/prefill.go:cudaResident.prefillCore` applies both inside the job for a step row, and its closing loop applies both
-  again to every row. It would touch concurrent conversations that sample on the host, on a model with a final softcap
-  (dense Gemma 4) or a logit scale (Command-R). Both transforms keep the argmax, so a greedy test cannot see it.
+**Found in backend modules** (a backend change is a two-step tag; each needs its owner's call). The first two were run; the
+rest are read from the code and not fixed.
+- **CUDA: a batched-step row that returns logits got the final softcap and the logit scale twice. Confirmed and fixed
+  2026-10-14.** `cuda/prefill.go:cudaResident.batchedHeadFull` applied both to a step row, and
+  `cuda/prefill.go:cudaResident.prefillCore`'s closing loop applied both again to every logits row; the closing loop is now
+  the only place. It touched concurrent conversations that sample on a model with a final softcap (dense Gemma 4) or a
+  logit scale (Command-R, Granite): those models always draw on the host. `TestCUDAStepBatch_matchesForward` now runs
+  `gemma4-dense-twogeom-tiny` (softcap) and `granite-dense-tiny` (logit scale) and compares a step row's logits with
+  `Forward`'s bit for bit; before the fix it read logit 1 at -0.2842141 against -0.2842226 (Gemma 4) and logit 0 at
+  -0.0024854098 against -0.014912458 (Granite, the scale of 1/6 applied twice).
+- **CUDA: a Cohere step row is not bit-identical to `Forward`, found by the fix above and not fixed.** With the double
+  transform gone, `cohere-tiny` and `cohere2-tiny` still differ from `Forward` by one ulp in a logit (cohere-tiny at its
+  third step, cohere2-tiny at its first). The batched LayerNorm, `cuda/layernorm_quant.cu`'s `layernorm_quant_batched`,
+  rounds `((x-mean)*inv)*w`, while decode's `layernorm_quant` in `cuda/glue.cu` rounds `((x-mean)*w)*inv`, so a normed value
+  can differ in its last bit and move an int8 code. The step, `PrefillLastN` and speculative verify on Cohere inherit it.
+  `cuda/prefill.go:cudaResident.bLayerNormQuantB`'s fallback, which loops decode's kernel per row, would be exact. The
+  batched kernel is shared with the SigLIP tower, so the fix is the CUDA owner's call.
 - **WebGPU: `logit-scale`**, item 2 above.
 - **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
   derives `nope`, which WebGPU does not declare. The registry's representative config is roped, so the matrix cannot show it.
@@ -642,6 +654,190 @@ its fixture's own no-softcap agreement, which nobody had measured. This step mea
 - **Tier: by day.** The 2B loads twice per arm and quant, and Gemma 3 4B and the 1.5B once each; about 15 minutes in all
   (INFERRED from the tiny runs and the load sizes, not measured). Under the timing lock, with no night job running.
 
+**G2-R moved to the night queue (owner's decision, 2026-10-14).** The registration says "Tier: by day"; by day the Mac
+cannot admit the loads.
+- **Run 1, 08:49:** the fit guard refused the first load of the 2B (6.7 GB needed, 6.4 GB available with the owner's
+  apps open). Nothing was measured.
+- **Run 2, 08:50, with the fit guard bypassed on the owner's word** (`GOINFER_NO_FIT_GUARD=1`):
+  - the hook check passed: removing the softcap changes the CPU's logits;
+  - arm B at int8int8 read a min cosine of 0.982217, with argmax equal at 22 of 24 positions;
+  - Metal's resident memory guard then declined the int4 build (3.63 GB needed, a budget of 2.66 GB), and the test was
+    skipped. **The run is void, and the 0.982217 is recorded as not a result:** the registration needs B, G and P in one
+    session.
+- **Tonight, as `op1-g2r-metal`:** all three arms in one session, by
+  `docs/measurements/op1-metal-2026-10-13/run-g2r-night.sh` at the declaration branch's `78633e7f`. No guard is bypassed.
+  The gate is not timed: night only means nothing else holds memory.
+
+**G2-R amendment, 2026-10-15 (owner), before any further run: the CPU reference runs in its own process.**
+
+**Why.** On the night of 2026-10-14 the fit guard refused the job's first load, the 2B on the CPU: 6.7 GB priced, with
+6.6 GB available. No guard is bypassed (owner, 2026-10-15). Within one process, `residentParityAt` holds a Metal model
+and a CPU model at once, so each load's guard sees what the other holds.
+
+**What changes.** The job runs two processes, one after the other, at the same build:
+
+1. **The CPU reference.**
+   - It loads only CPU models, one at a time, and computes everything the arms read on the CPU:
+     - the hook check's two logit sets;
+     - for each of B (softcap off), G and P (softcap on), at int8int8 and int4: the token sequence (the seed, then the
+       CPU's greedy continuation, 24 steps) and the CPU's logits at every step;
+     - P's score statistics and its capped-against-uncapped logits;
+     - the control's and Gemma 3's tokens and logits.
+   - It writes them to one file under the job's output directory, with each checkpoint's sha256 and the build's commit.
+2. **The Metal arms.**
+   - They load only Metal models, one at a time.
+   - They feed each arm the saved tokens (greedy lockstep off the CPU, as before) and compare their logits with the
+     saved CPU logits.
+   - B's stop rule is applied before G and P run, as before.
+
+**Unchanged:** the arms and their order of reading, the prompts, the 24 steps, the metric (the min logit cosine from
+position 2, and argmax), the bars (0.88; the control's 0.95; the 0.03 band), B's 0.001 stop margin, and every void rule.
+
+The CPU logits are the same computation as before (`decoder.Load` on the CPU at the arm's quant, `ForwardForTest` over
+the same tokens), saved as raw float32 bits.
+
+**Void, in addition:**
+
+- the saved file's checkpoint hashes or commit differ from the Metal process's;
+- an arm is missing from the file;
+- the file does not exist.
+
+**The memory this buys, and what it does not.**
+
+- **Before, in one process:** the largest moment was a Metal model and a CPU model held together, about 10 GB in all.
+  Metal's own guard declined the 2B's int4 build at 3.63 GB needed against a 2.66 GB budget, with the CPU model beside it.
+- **After:** the peak is the larger of the two processes, about 7 GB, and each load's guard sees only itself.
+- **The fit guard still prices the CPU process's largest loads at about 6.7 GB** (estimated from the guard's formula:
+  resident weights + KV at its fitted context + the `.gguf` mapped during the load):
+  - the 2B at int8int8: 2.5 + 1.6 + 2.6 GB;
+  - Gemma 3 4B at int8int8, which the old order never reached: about 4 + KV + 2.5 GB.
+  - The guard's budget is 70% of available memory, so these loads need about 9.6 GB available. The two nights on
+    record had 6.6 GB and 7.8 GB.
+  - Splitting the processes alone therefore does not clear the guard on such a night, and a refused load is void.
+  - What would clear it, for the owner to choose:
+    - a CPU process that loads `.giw` sidecars: no mapping term, so about 4.1 GB priced for the 2B and about 4.5 GB for
+      Gemma 3, which need roughly 6 to 6.5 GB available;
+    - or a night with 9.6 GB free.
+
+**G2-R amendment 2, 2026-10-15 (owner's choice from amendment 1's options), before any run: the CPU arms load `.giw` files.**
+
+**What changes.**
+
+- The CPU process loads each CPU model from a CPU `.giw` (`cmd/prequant -quant <q>`, this box's own target), built from
+  the same `.gguf` at each quant the arms use:
+  - the 2B at int8int8 and int4;
+  - Gemma 3 4B at int8int8;
+  - the dense 1.5B at int8int8, and at int4 for the check below.
+- The night job builds any that are missing, at the job's revision, under `~/goinfer-bench/op1-metal-2026-10/giw/`, and
+  records each one's sha256 in the reference file.
+- The Metal process still loads the `.gguf` files, and every guard stays as shipped.
+
+**Why it is the same computation.** A `.giw` holds the weights already quantized by the same quantizer a direct `.gguf`
+load runs at load time.
+
+- On record: greedy output byte-identical between the two routes (`docs/tasks/task-never-swap-2026-09.md`, S1), and
+  CPU logits through the sidecar bit-identical to the direct load's (`docs/tasks/task-multimodal-support-2026-10.md`).
+- **Checked again each run, as a precondition.** Before any arm, the CPU process loads the dense 1.5B both ways (its
+  `.gguf` fits the fit guard directly) at int8int8 and int4. It runs the gate's prompt and 24 steps, and requires the
+  logits to be equal bit for bit at every step. **A difference voids the run.** It is not a fail of G2-R.
+
+**Memory.** By the guard's formula, the CPU process's largest priced loads drop to about 4.1 GB (the 2B at int8int8)
+and about 4.5 GB (Gemma 3 4B), because there is no `.gguf` to map during the load. That needs roughly 6 to 6.5 GB
+available, where the two nights on record had 6.6 and 7.8 GB.
+
+**Disk.** The four bundles take about 10.6 GB. The job refuses to build when less than 14 GB is free.
+
+**Unchanged:** amendment 1's split, the arms, prompts, bars, voids and the order of reading.
+
+**G2-R amendment 3, 2026-10-15 (owner-approved), before any run: the Metal arms load Metal `.giw` files, and a refused
+load is VOID.**
+
+**Why.** On 2026-10-15 the CPU process passed (its precondition held). Then the fit guard refused the Metal process's
+first load, the 2B's `.gguf`: 5.5 GB priced against a 4.9 GB budget, with 7.0 GB available. The script labelled the run
+FAIL. A refused load measures nothing, so that label was wrong: it was VOID.
+
+**What changes.**
+
+- **Every Metal load reads a `.giw`** of the same `.gguf` at the arm's quant, with no `.gguf` mapped during the load.
+  - **int8int8 has one bundle for both targets.** `cmd/prequant -target metal` and the CPU's own target wrote the dense
+    1.5B's int8int8 bundle byte for byte the same (`cmp`, 1,787,283,843 bytes, 2026-10-15). The target changes only int4
+    tensors. So the Metal process reads amendment 2's int8int8 bundles, under a `.metal.giw` hard link the job makes.
+  - **int4 needs its own Metal bundle**, built with `-target metal`: the CPU's int4 bundles hold the row4-only layout,
+    which Metal cannot read. Two are added: the 2B, and the 0.5B for the precondition below. About 2.7 GB of disk with
+    the 0.5B's int8int8 bundle; the job refuses to build under 6 GB free.
+- **A Metal precondition, like amendment 2's on the CPU.** Before any arm, the Metal process loads Qwen2.5-Coder-0.5B
+  both ways at int8int8 and int4. Its `.gguf` is small enough to load directly. It runs the gate's prompt and 24 steps:
+  the `.gguf` route's greedy tokens, fed to both routes. The logits must be equal bit for bit at every step. **A
+  difference voids the run.**
+- **A refused load is VOID, not FAIL.** A load refused by the fit guard or by Metal's memory guard, in either process,
+  ends the run as VOID, with the refusal's numbers in the log. The script grades a log that holds a `VOID` line as VOID
+  (exit 2) before it looks for a FAIL. A FAIL is reserved for G2-R's own rule: arm G failing, or arm G parked.
+- **A fit check of every load, by day, before the job is queued** (CLAUDE.md, "Testing tiers"). Each load the two
+  processes make is run once, alone, on its backend, and admitted or refused is recorded. The test is
+  `TestG2R_fitCheck`, which takes seconds. The job is queued only if every load is admitted by day. Day memory is the
+  owner's apps plus this session, so a load admitted by day is admitted at night.
+
+**Considered, not changed: whether a smaller model covers the same operations** (owner's question, 2026-10-15).
+
+- **The 2B cannot shrink.** G2-R tests the attention softcap. Gemma 2 is the only family goinfer reads that has one
+  (`decoder/gemma12.go`). The 2B is the smallest Gemma 2 release (2B, 9B, 27B), and no 0.5B-class checkpoint carries the
+  operation.
+- **Gemma 3 4B stays.** It is not covering an operation. It is the reference for G2-R's band: parked when Gemma 2 is
+  more than 0.03 under Gemma 3 from the same session. Gemma 3 1B would change the band's reference after the bar was
+  set, and that is a bar change, so it stays at 4B. With `.giw` loads, the 4B's int8int8 load is priced at about 4.5 GB.
+- **The dense 1.5B control stays.** Its 0.95 bar was registered on it.
+- **The 0.5B enters only as the Metal precondition's model.** Its `.gguf` fits Metal's guards directly, and the
+  precondition checks the load route, not the gate.
+
+**Unchanged:** amendments 1 and 2, the arms, prompts, bars, voids and the order of reading.
+
+**G2-R, read 2026-10-15 by day (the owner moved it off the night queue): VOID as a softcap test at both quants. Not
+declared.**
+
+- **The run:**
+  - Declaration branch `ecf58621`, the script at main `205e3b0d`, under the timing lock, 15:20 to 15:21.
+  - The CPU process passed, with amendment 2's precondition holding at both quants. The Metal process passed amendment 3's
+    precondition and every load.
+  - The logs are in `~/goinfer-logs/op1-metal-2026-10-13/g2r-split-night-2026-10-15/`.
+- **Two earlier attempts the same afternoon measured nothing:**
+  - The Metal `.gguf` load was refused by the fit guard. That run was labelled FAIL by the old grading.
+  - The Metal precondition's `.giw` route read `seed[0]` with no seed and panicked. That was a harness bug, fixed in
+    `ecf58621`.
+  - After the second attempt, the grading was tightened (`205e3b0d`): FAIL comes only from G2-R's own verdict lines, and
+    anything else that ends the run reads VOID.
+
+| arm | int8int8: min cosine, argmax | int4: min cosine, argmax |
+|---|---|---|
+| B, the softcap removed on both sides | 0.982217, 22/24 | 0.976711, 23/24 |
+| the control, the dense 1.5B (bar 0.95) | 0.997749, 21/24 | — |
+| Gemma 3 4B, the band's reference | 0.974482, 23/24 | — |
+| G, graded: the softcap on both sides | 0.991436, 23/24: pass | 0.982765, 20/24: pass |
+| P, the softcap dropped from the Metal build only | 0.990859, 23/24: **passes the rule** | 0.978495, 21/24: **passes the rule** |
+
+- **B's stop rule did not fire:** 0.88 is far below B at both quants.
+- **G passes at both quants and is inside the band:** G is not more than 0.03 under Gemma 3's 0.974482.
+- **P must fail and does not, at either quant.** The softcap barely acts on the gate's prompts. P's three numbers, read on
+  the CPU on the tokens P feeds:
+
+  | quant | scores over \|15\| | largest \|score\| | worst capped-vs-uncapped logit cosine |
+  |---|---|---|---|
+  | int8int8 | 0.0032% of 62,400 | 15.72 | 0.992485 |
+  | int4 | 0.0064% of 62,400 | 16.97 | 0.979200 |
+
+  At a cap of 50, `50·tanh(s/50)` moves a score of 17 by about 0.6, so dropping it costs less than the gate's tolerance.
+- **The outcome, as registered:** VOID as a softcap test at both quants, not a pass. Do not declare; change no bar and no
+  prompt after the fact.
+- **The registered next step:** a prompt set for long contexts, registered in advance, where the scores are larger. It is
+  for the owner to commission; nothing is registered yet.
+
+**G2-R closed as void (owner, 2026-10-15).** No long-context prompt set will be registered, and no CPU comparison is added.
+
+- **The reason:** on these prompts the cap barely acts, so a dropped cap passes the model-level rule.
+- **What tests the Metal kernels instead:** G2-K. It is graded against a float64 reference, on inputs built so the scores
+  cross ±cap, and it reads 152 of 152 inside its bar, with all 152 red once the softcap is dropped (G2-D).
+- **G2-K and its plant now decide the Metal softcap declaration,** in G2-R's place in the order (§4.6, step 3) and among
+  the gates G2-M follows.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
@@ -760,6 +956,234 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 - **The softcap's correctness evidence is the kernel-level float64 checks:** all 152 cases pass, and all 152 fail with
   the softcap dropped (G2-K, G2-D).
 - **The real Gemma 2 2B parity gate, G2-R, decides the declaration.** Its baseline step is below.
+
+### 4.7 The remaining plan for OP2–OP6 (proposed 2026-10-15; docs only, nothing built)
+
+Written on the owner's ask, after G40 stopped on its tier 1 memory run and G2-R was queued for the night of 2026-10-15. Read at
+main `ee80cf2e`. **A proposal for the owner, not a decision.** Sizes are §0's. Gates are in the tiered form
+(`CLAUDE.md`, "Testing tiers"): each is registered at the lowest tier that can answer it, and a night run states why the day
+tiers cannot. The day sizes and the fit notes below are INFERRED from checkpoint sizes, not fit-checked. Every night load is
+fit-checked by day before it is queued.
+
+**KV work in flight, and its production files** (from `git diff --stat` against main on each branch, tests excluded):
+
+- **KV2** (the Mac's `kv2-2026-10`, nobara's `kv2-cuda-2026-10`):
+  - `decoder/model.go`, `decoder/resident_reuse.go` and `decoder/blockspec.go`, plus the decoder's session and VL
+    generate files;
+  - `internal/kvmgr/`;
+  - `internal/serveapp/` (main, openai, sessions);
+  - a new KV-copy file in each of `metal/`, `gpu/` and `cuda/`;
+  - on CUDA, also `cuda/resident.go`.
+- **KV3:** CUDA's half on `kv3-cuda-2026-10` (`cuda/prefill.go` and the prefill scratch). Metal's half is KV-pre's
+  (`metal/prefill.go`).
+- **The CPU's KV:**
+  - G40, stopped: `decoder/forwardn.go`, `decoder/kvcache.go` and `decoder/weightmat.go`;
+  - the CPU KV pricing fix: `decoder/model.go`, `decoder/fitguard.go` and `decoder/prefill_budget.go`;
+  - CPU f16 KV, approved and not started: `decoder/kvcache.go` and the CPU attention.
+- **Next on the KV track:**
+  - KV4, paged CUDA storage: every CUDA KV kernel goes through a block table, including `mla_attn` in `cuda/mla.cu`;
+  - KV5, the same on Metal;
+  - KV8, a recurrent state pool.
+- **Proposal 2** (the integration harness's id carry, nobara's next build): `internal/serveapp/` and one accessor on the
+  decoder's `Generation`. It shares serve's files with KV2 and no file with OP.
+
+#### OP2 — the next operations by demand
+
+Two prerequisites from §4.5, both S, on the Mac, tier 0 only, in `decoder/features.go`:
+
+- **(a) A feature per non-gated activation** (§4.5, item 2), before SSM on Metal. Metal's `act_quant` would otherwise run
+  tanh-GELU for Nemotron-H's squared ReLU.
+- **(b) Split `attn-output-gate` by activation** (§4.5, item 3), before OP5.
+
+Their gate:
+
+- **Tier 0:** the hardware matrix regenerated, with every cell's decline reasons unchanged except the split names.
+- **Plant:** a backend declaring the wrong half of a split must decline the family by name.
+
+**OP2a, MLA on Metal.**
+- **Delivers:** DeepSeek-V2/V3 and Moonlight resident on Metal. Kimi K2 also needs a 384-expert router; that is not here.
+- **Size and box:** M–L, on the Mac.
+- **Depends on:** OP0 only. CUDA's `cuda/mla.cu` and WebGPU's `gpu/mla.go` are the models to port.
+- **KV:**
+  - MLA's latent cache is a second KV shape, a layer group of its own in the KV design (§5.2 of the KV doc).
+  - KV2's Metal KV-copy has to copy it, or decline MLA for cross-conversation reuse, and it shares `metal/model.go`'s
+    slot allocation with KV2.
+  - KV5 will route Metal's MLA kernel through the block table, so OP2a writes the kernel KV5 then edits.
+- **Gates:**
+  - **Tier 0:** `deepseek-tiny` and `kimi-tiny` on Metal against the CPU, by the resident identity suite's bars. A plant: the
+    rope split of q and k swapped must go red.
+  - **Tier 1:** none fits by day as a whole model. The smallest real MLA checkpoint is DeepSeek-V2-Lite (16B MoE), whose
+    Q4_K_M file is about 10 GB, against the Mac's 16 GB. Tier 1 is a layer slice of V2-Lite against `deepseek_v2lite_golden.json`'s
+    hidden states, as a correctness gate only, never quoted as a speed.
+  - **Night, only if the slice passes:** the whole V2-Lite resident through Metal's expert paging. It is the only run that
+    sees the router with the real expert count. Fit-check by day first, and if it is refused, it is an owner question, not
+    a bypass.
+
+**OP2b, SSM (Mamba-2) on CUDA and on Metal.**
+- **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
+- **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).
+- **Depends on:** OP2(a) for Metal.
+- **KV:**
+  - The SSM state is not KV. It lives in today's per-slot recurrent buffers until KV8's state pool.
+  - KV2's reuse already treats hybrids as one slot with exact-extension reuse only. OP2b keeps that, so it changes nothing
+    in KV2's files.
+  - It shares `cuda/resident.go` (CUDA) and `metal/model.go` (Metal) with KV2's slot code.
+- **Gates:**
+  - **Tier 0:**
+    - `nemotron-tiny` and `granite-tiny` on the backend against the CPU, plus `nemotron3nano-tiny` where its MoE is
+      admitted;
+    - a plant: the conv window shifted by one must go red. This needs ≥ 2 decode steps past the window, per `CLAUDE.md`'s
+      minimal-repro rule.
+  - **Tier 1:**
+    - **CUDA:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on nobara's 8 GB card, against `nemotron_real_golden.json.gz`.
+    - **Metal:** the same checkpoint if it fits by day. If it doesn't fit, a layer slice by day, and the whole model at
+      night after a by-day fit check.
+  - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt.
+
+**OP2c, KDA.**
+- **Delivers:** Kimi Linear resident.
+- **Size:** M–L.
+- **Box:** none today. The released Kimi Linear is a 48B-A3B MoE (INFERRED from its model card, not checked here), which
+  fits neither box resident.
+- **Gates:** tier 0 only: `kimi-tiny` plus `kda_rehearsal_golden.json`.
+- **Proposed: park OP2c** until a checkpoint that fits a box exists. A tiny-only gate would leave the real path unseen,
+  the gap §4.6 closed for Gemma 2 with G2-R.
+
+#### OP3 — the layer program, on the CPU
+
+- **Delivers:** every registry family built as a per-layer program that the CPU executes, with its logits bit-identical to
+  today's generic loop and own forwards.
+- **Size and box:** L, on the Mac. The CPU is either box; the Mac, because it stays on OP.
+- **Depends on:** OP0.
+- **Shares files with KV work in flight:**
+  - `decoder/forwardn.go` and `decoder/kvcache.go` with G40 and CPU f16 KV;
+  - `decoder/model.go` with KV2 and the pricing fix.
+  - **Start it after G40 is decided and CPU f16 KV has merged,** or it is rebased across both kernels of the CPU
+    attention.
+- **Gates:**
+  - **Tier 0:** `go run ./cmd/gate identity` on the tiny assets, every family, every step, bit for bit, against the commit
+    before OP3.
+  - **Plants, each of which must go red:** a dropped operation, two swapped operations, and a parameter off by one (the
+    registration in §4.4).
+  - **Tier 1:** the 0.5B, bit for bit, at prompt sizes that cross the CPU's size-switched paths (the fast-attention floor,
+    and G40's chunking if it merges). Tiny fixtures never reach those paths.
+  - **No night run.** Identity inherits each family's validation (TE6(b)). A real checkpoint adds a shape only where a path
+    switches on size, and tier 1 covers those.
+
+#### OP4 — the residents walk the program
+
+- **Delivers:**
+  - each GPU resident runs the program layer by layer;
+  - admission by operation, which absorbs the decoder's and each backend's hand-written declines (§4.5, item 6);
+  - per-backend fusion tables, each fusion gated;
+  - one memory planner pricing through the KV doc's sizing function (its §5.10).
+- **Size:** L per backend.
+- **Box:** CUDA on nobara, Metal on the Mac, WebGPU on the Mac (its discrete half on nobara).
+- **Depends on:** OP3.
+- **KV:**
+  - The memory planner is KV3's admission, generalised, so it follows KV3 on that backend.
+  - CUDA's walk rewrites the launch paths that KV4 routes through block tables (`cuda/resident.go`, `cuda/prefill.go`).
+    **Proposed: CUDA's OP4 after KV4a lands,** so one of the two rebases onto the other once, not repeatedly.
+  - Metal's OP4 shares `metal/model.go`, `metal/prefill.go` and `metal/batch.go` with KV-pre, KV2 and later KV5.
+- **Gates:**
+  - **Tier 0:**
+    - every family's tiny identity suite on the backend, bit-identical to the pre-walk runner;
+    - each fusion bit-identical to the operations it replaces;
+    - a plant: a fusion that claims one operation too many must go red.
+  - **Tier 1:** the 0.5B and the 1.5B, bit for bit against the pre-walk runner, by day.
+  - **Speed:** §4.4's "within 0.99 at depth 128 and 3,900".
+    - A whole-token in-process A/B, interleaved, by day (TE5(b)), first.
+    - **Night only if it does not resolve:** a 0.99 bar is a small-effect decision, which is tier 2's stated case.
+
+#### OP5 — the families whose layers differ
+
+**What it delivers, size and order:**
+
+- **Delivers:** each family resident, bringing only its missing operations.
+- **Size:** M each.
+- **Depends on:** OP4 on that backend, and OP2(b) (the out-gate split).
+- **Order by what a box can measure:**
+  1. Spark-X2.5 (1.7B, on the Mac): exact-erf GELU, out-gate sigmoid, per-layer rotary width.
+  2. LFM2.5 (2.6B, on the Mac): short conv.
+  3. Granite-4.0-H, after OP2b SSM and its gate.
+  4. Laguna (XS-2.1 Q4_K_M), after a by-day fit check.
+  5. Llama 4 last. Scout's smallest released GGUF here is Q2_K at about 40 GB, which neither box holds, so it is tier 0
+     only, and is proposed parked like OP2c.
+
+**KV:**
+
+- LFM2.5's conv state and Granite's SSM state are recurrent state: per-slot until KV8.
+- Llama 4's chunked attention is a KV property (a released-entry rule like the window's), so it touches KV4/KV5's null-block
+  handling.
+
+**Gates:**
+
+- **Tier 0:** the family's tiny fixture on the backend, against the CPU.
+- **Tier 1:** the real checkpoint on the box that holds it, against its committed golden: `spark2_5_real_golden.json.gz`
+  and `lfm2_real_golden.json.gz` on the Mac.
+- **No night run** for the families that fit by day.
+
+#### OP6 — Phi-3/4 on the fast paths (E5: its own small task)
+
+**Delivers:**
+
+- Metal's default load becomes `--quant q4k` for Phi-3/4.
+- A q4k batched prefill on CUDA and on Metal.
+- Per-32 activations, or a q4k lane, on WebGPU.
+
+**Size and box:** M. The Metal half is on the Mac, the CUDA half on nobara.
+
+**Depends on:**
+
+- The Metal decode lane is built and gated (`docs/tasks/task-metal-q4k-2026-10.md`: G-Q1 to G-Q3 PASS).
+- The default switch waits on the owed peer cell M1, a night run. That is a published number, which is tier 2's case.
+
+**Shares with KV:**
+
+- the prefill path: `cuda/prefill.go` with KV3's CUDA half, and `metal/prefill.go` with KV-pre;
+- the q4k prefill sizes its scratch through KV3's admission.
+
+**Gates:**
+
+- **Tier 0:** `phi3-tiny` q4k prefill against q4k decode, bit for bit on the logits of the last prompt row.
+- **Tier 1:** Phi-3 mini on the Mac (`phi3-mini-4k-gguf`), the prefill against `phi3_mini_golden.json`.
+- **Night:** M1 only.
+
+#### Proposed order
+
+**The Mac stays on OP continuously:**
+
+1. OP1 on Metal: tonight's G2-R. On a pass, the declaration merges and G2-M runs, by day.
+2. OP2(a) and (b), the two feature splits: S, tier 0.
+3. OP2b, SSM on Metal.
+4. OP6's Metal half: the q4k batched prefill by day, and M1 queued for a night.
+5. OP2a, MLA on Metal. It is behind SSM because its real gate needs a slice and paging, while Nemotron-H's may fit whole.
+6. OP3, once G40 is decided and CPU f16 KV has merged. If those are still open when step 5 ends, OP1 on WebGPU fills the
+   gap.
+7. OP4 on Metal.
+8. OP5 on Metal: Spark-X2.5, LFM2.5, then the rest as above.
+
+**nobara, after proposal 2's build:**
+
+1. OP1 on CUDA (§4.6's CUDA rows).
+2. OP2b, SSM on CUDA.
+3. OP6's CUDA half: the q4k batched prefill.
+4. KV4a, the KV track's next CUDA phase. That order is the owner's call; it is here because OP4 on CUDA is proposed after it.
+5. OP4 on CUDA, after OP3 (the Mac's) and KV4a.
+6. OP5 on CUDA, by family.
+
+**Two departures from §4.4 and §7, both approved by the owner on 2026-10-15:**
+
+- **OP4 on Metal before OP4 on CUDA** (§4.4 says CUDA first). The Mac reaches OP4 while nobara is in KV4a, and CUDA's walk
+  would otherwise rebase across KV4's kernel rewrite.
+- **OP2c (KDA) and Llama 4 parked,** because no box can run their real checkpoints. They wait for a checkpoint that fits a
+  box.
+  - **A way to test them later without the real weights:** a small, randomly initialised Hugging Face checkpoint of the
+    family's own config class. Build it with `transformers` at a reduced width and depth, with the real layer pattern:
+    Llama 4's chunked and NoPE layers, and Kimi Linear's KDA and MLA layers. It gives a full-model reference from the
+    family's own modelling code, at a size either box holds.
+  - Such a checkpoint is still not trained weights. Its scores sit near zero, as `CLAUDE.md`'s minimal-repro rule warns. Its
+    registration has to say which effects a random init leaves identically zero, as G2-D did for the softcap.
 
 ## 5. Track RF — one ragged forward pass
 

@@ -236,6 +236,46 @@ Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets; `testdata/assets.json
 registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `composition`,
 `selector`, `gpu`, `mutation`).
 
+## Testing tiers: the smallest test that answers (owner rule, 2026-10-15)
+
+**Every gate is registered at the lowest tier that can answer it.** Pre-registration applies at every tier.
+
+- **Tier 0, seconds, the default for every change.** Test the mechanism with deterministic counters
+  (`testing.AllocsPerRun`, bytes reserved or allocated, pass counts, KV rows written) and bit-identity on tiny
+  fixtures.
+- **Tier 1, by day, 10 minutes or less.** One small real model at the smallest size that exercises the mechanism.
+- **Tier 2, night.** Only for a number that will be published, or for a decision that hinges on a small effect. The
+  registration says why tiers 0 and 1 cannot answer it, and gives a wall-clock budget.
+
+**Three rules apply at every tier:**
+
+- **Never re-measure an unchanged arm.** Reuse its last readings and cite them (record and commit).
+- **Stop as soon as the answer is clear.** Run a larger size only for a stated reason why the mechanism changes with
+  scale.
+- **Before queueing any night job, fit-check every load it will make, by day.** That takes seconds. Do not queue a job
+  whose load would be refused.
+
+**Never-swap gates read the test process, not only the system** (owner, 2026-10-15). The rule is on the process's own
+peak resident memory and swap: `VmHWM` and the peak of `VmSwap` from `/proc/<pid>/status`, sampled until it exits. Run the
+test binary directly (`go test -c`), because `go test` runs it as a child. System-wide swap in use is reported as context
+only. A box already gigabytes into swap moves by hundreds of MB for reasons no test owns: KV2's CUDA heavy job read +511 MB system
+swap on 2026-10-15, which only a per-process reading could attribute.
+
+**On the CUDA box (nobara, 8 GB):**
+- **A fit check is the server's own plan, not arithmetic.** Start the binary the job will run with its flags, and read the
+  `fit:` and `KV plan:` banner, or the refusal. One `gv_plan.py` start is seconds to a minute; the 26B's expert cache and KV
+  are sized against free VRAM at load.
+- **Count a desktop compositor's CUDA context.** While anyone is logged in to the desktop, `kwin_wayland` holds one (about
+  16 MiB). Plans move by that much, and the drain-group tests skip. Note it in the record; a GPU gate that needs the drain group
+  runs with the desktop stopped.
+- **Tier 1 GPU runs hold the timing lock** (`timing_lock.py run`), so two sessions' GPU checks do not share the card, and
+  nothing else runs beside a timed job.
+- **Count allocations as the driver does:** `cuMemAlloc` rounds a buffer of 2 MiB or more up to 2 MiB, so a byte counter
+  checks the requested bytes and the plan prices the rounded ones.
+
+Measured cost of not having this rule: on 2026-10-14/15 the G2-R night job was refused by the fit guard on two nights
+running, and G40's memory and speed gates spent a night on sizes a tier 0 counter could have answered.
+
 ## Day loop: seconds, not minutes
 
 **Owner rule, 2026-10-13: the day loop is seconds. A 10-minute gate after every edit is the development process failing, not diligence.**
@@ -302,6 +342,16 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
     `python3 scripts/timing_lock.py run --label <name> -- <cmd>`.
   - A refusal means another run is measuring on this box. Wait for it (`timing_lock.py status` names it); never delete
     the lock file to get past it.
+  - **The day tools check it too.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` refuse while a timed run holds
+    the lock, naming the holder: a build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
+    itself. `--wait SECONDS` waits for the holder, and `--ignore-timing-lock` overrides, for emergencies only, and the
+    overlap then goes in that run's record. Any other build or test you run by hand checks first:
+    `python3 scripts/timing_lock.py check --tool <what>`.
+  - **A command that touches the other box checks that box's lock in the same command, and ends if it is held:**
+    `ssh <box> 'cd <repo> && python3 scripts/timing_lock.py status' && ssh <box> '<the work>'` — one invocation, not a
+    check in one call and the work in the next. An ssh session takes no lock of its own, so nothing else stops it: on
+    2026-10-13 the Mac's session read a 2.78 GB checkpoint on nobara in the middle of a timed I3 cell
+    (`docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md`).
 - **Two arms when the decision is new ÷ old** (TE5(a)). A gate that grades a goinfer-vs-goinfer ratio runs
   `BENCH_ENGINES=goinfer,goinfer_old`, with no peer arm. The peer ratio is read once, after the lever ships, as its own
   same-session interleaved run. In the 2026-09-28 L1 gates Ollama took a quarter to a third of the cell time and

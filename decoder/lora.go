@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -298,6 +299,8 @@ type loraRuntime struct {
 	name   string
 	layers []loraLayerDelta
 	a      *loraAdapter // retains the mmap so the aliased delta data stays valid
+	// kvID is this runtime's identity in a KV key (kvAdapterID): 0 until first asked for.
+	kvID atomic.Uint64
 }
 
 func (rt *loraRuntime) close() {

@@ -302,8 +302,9 @@ const splitkvNever = 1 << 30
 // singleBlockAttnShmemLimit is the dynamic shared memory a single-block attention launch may request. The
 // glue/batched attention kernels size their scratch (nWin+128)*4 with no ceiling. 48 KB is the device's default
 // per-block limit (the 64 KB opt-in needs a per-kernel cuFuncSetAttribute, which nothing here calls), so past
-// 12,160 attended keys the launch is refused: decode fails outright at that position, and batched prefill errors
-// at layer 0 and silently falls back to the much slower sequential path. If per-kernel SetAttribute support
+// 12,160 attended keys the launch is refused: decode fails outright at that position (split-KV takes over where it
+// exists), and a batched prefill pass on the exact attention declines (checkPrefillShmem) and the prompt falls back to the
+// much slower sequential path. A pass the fused attention serves has no such bound. If per-kernel SetAttribute support
 // lands, this becomes a device query (docs/code-notes/cuda.md#singleBlockAttnShmemLimit).
 const singleBlockAttnShmemLimit = 48 * 1024
 
@@ -853,6 +854,7 @@ type cudaResident struct {
 	// of slot s's windowed layers, kvBase the bound slot's, kvScratch the compaction's staging buffer.
 	kvWin     bool
 	kvWindow  int
+	kvSlack   int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
 	kvBase    int
 	kvBases   []int
 	kvScratch Buffer
@@ -928,21 +930,35 @@ type cudaResident struct {
 // BuildResident's own defer (a different goroutine, which cannot reach an executor-thread panic), turns it into
 // setupErr, so BuildResident declines gracefully (staged fallback) instead of proceeding with unusable buffers.
 func (r *cudaResident) af(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[float32](r.dev, n)
 }
 
 // akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, f32 otherwise. Buffer.Len is in elements either way.
 func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
+		allocSeen(n * 2)
 		return gpu.NewBufferLenOf[uint16](r.dev, n)
 	}
 	return r.af(n)
 }
 func (r *cudaResident) ai(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[int32](r.dev, n)
 }
 func (r *cudaResident) au32(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[uint32](r.dev, n)
+}
+
+// allocSeenForTest, when set, is told the size in bytes of every buffer af, akv, ai and au32 allocate. A test seam, nil in
+// production; it is called on whichever goroutine allocates (the executor), so a test reads what it gathered after r.do returns.
+var allocSeenForTest func(bytes int)
+
+func allocSeen(bytes int) {
+	if allocSeenForTest != nil {
+		allocSeenForTest(bytes)
+	}
 }
 
 // recordUpload captures the FIRST alloc/upload error hit during BuildResident's setup job into r.setupErr. The

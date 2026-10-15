@@ -63,7 +63,8 @@ other route**, so a liveness probe must send the API key when one is configured 
 entry also carries goinfer-only fields: the resolved `decode_path`/`prefill_path`, and `context_window`,
 the exact token limit a text request is held to (the resident KV cap on a GPU backend when that is lower than
 the model's own maximum), from the same function that enforces it, repeated as `context_length` and
-`max_model_len` (the names Hermes and Oh My Pi read); and `vision`, whether the model
+`max_model_len` (the names Hermes and Oh My Pi read); `max_positions`, the model's own maximum context, which no `-ctx`
+goes past; and `vision`, whether the model
 accepts image content parts (from the same check that refuses them otherwise);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 `frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
@@ -538,6 +539,19 @@ stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 
 prefilled one token at a time there when it was measured: 2.81× at 4 clients on an M1 Pro
 (`measurements/concurrency-mc1-webgpu-2026-09-27.md`). Since 2026-10-12 a 4-bit dense model prefills in one batched pass
 under WebGPU, so a thrash costs less than it did; the 2.81× has not been re-read.
+
+**Sharing scope, and a known limit.** A conversation's prefix can be reused by another conversation in the same
+sharing scope:
+- one scope on loopback;
+- one per API key when keys are configured;
+- none when `serve` binds beyond loopback without API keys, or under `--kv-share off`.
+
+A shared prefix makes a reply start sooner, so its time to first token says something about what another client
+sent. Outside a shared scope only a continuation reuses rows: a request whose prompt extends everything a slot holds,
+giving up less than one 64-token block of it. **Known limit:** a client that already knows all but the last 63 tokens
+of another conversation can learn from its time to first token how far its guess matched. It learns nothing about a
+conversation it cannot already reproduce up to that tail. API keys do not remove this limit: a continuation is
+recognised by its tokens, not by who sent it. The design is `tasks/task-kv-architecture-2026-10.md` §5.15.
 - **On WebGPU**, each slot is the full f32 KV at the resident context (~0.94 GB for Qwen2.5-1.5B at the default 16k).
   WebGPU has no free-memory query. On a Mac, slots are clamped to 70% of RAM and to what was available before the
   build, and **slots come before context there as on CUDA** (owner decision 2026-09-27): when `--ctx` is not set, the
@@ -674,7 +688,7 @@ to ignore.**
 | Clients that parse `<think>` tags themselves | `reasoning_format: "none"` (or `-reasoning-format none`) | the raw text, tags and all, in `content` — exactly what serve sent before |
 | Both at once | `reasoning_format: "deepseek-legacy"` | `reasoning_content` filled and the tags kept in `content` |
 | Anthropic `/v1/messages` | `thinking: {"type": "enabled"\|"adaptive"\|"disabled"}` | a `thinking` block first, then `text` (and `tool_use`); with no `thinking` field, text only — reasoning is dropped |
-| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`; reasoning items are not returned |
+| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`, with the reasoning as a `reasoning` output item ahead of it (see "Reasoning items on /v1/responses" below) |
 
 - **Defaults.** `-thinking template` (the default) renders what each checkpoint's own chat template renders when thinking
   is unspecified, so serve behaves as the model's card says: Qwen3.5-0.8B and Gemma 4 do not think; Qwen3.5-9B and Qwen3 do.
@@ -696,6 +710,50 @@ to ignore.**
   thinking control, or to a model whose tokenizer has no single token for the block's delimiters. A reply that ends inside its
   block anyway (one of those cases) has empty `content`, `reasoning_content` holding what was written, and `finish_reason:
   length` (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`).
+- **Empty answers say why, and a call read from the reasoning is marked (Experimental vendor extension).** A turn that
+  ends (not cut off) with no answer text and no tool call is never returned as a clean one, and on a tool request a turn
+  with no answer text whose reasoning holds a tool call returns that call: a thinking model sometimes writes its call
+  inside the block and ends its turn there. Both are goinfer extensions, **Experimental**: the field names and the set of
+  reason values may still change, so a client should treat an unknown reason as "no answer" and not depend on the exact
+  set yet.
+
+  | route | an empty answer | a call read from the reasoning |
+  |---|---|---|
+  | `/v1/responses` | `status: "incomplete"`, `incomplete_details: {"reason", "detail"}` (streamed: in `response.completed`) | `goinfer_tool_calls_from_reasoning: true` on the response object |
+  | `/v1/chat/completions` | `goinfer_empty_answer: {"reason", "detail"}` on the choice (streamed: on the chunk carrying `finish_reason`) | `goinfer_tool_calls_from_reasoning: true` on the same choice or chunk |
+  | `/v1/messages` | `goinfer_empty_answer: {"reason", "detail"}` on the message (streamed: on the `message_delta` event) | `goinfer_tool_calls_from_reasoning: true` on the same message or event |
+
+  | `reason` | meaning |
+  |---|---|
+  | `ended_in_reasoning` | the model ended its turn inside its reasoning block without closing it: all it wrote is reasoning |
+  | `reasoning_only` | the model closed its reasoning block and ended its turn without writing an answer |
+  | `stop_sequence` | a stop string matched before any answer text |
+  | `no_output` | the model wrote no answer text and no reasoning (an end of turn at its first token, or whitespace only) |
+
+  `detail` is a sentence for a person, with the token count; do not parse it. A turn cut off by its token limit keeps its
+  usual reason (`finish_reason: length`, `incomplete_details.reason: max_output_tokens`, `stop_reason: max_tokens`), and a
+  cancelled one its `cancelled` reason. `/v1/completions`, batches and jobs do not carry either field. A call drafted in the
+  reasoning of a turn that went on to answer in prose is not taken.
+- **Reasoning items on /v1/responses.** A reply that reasons returns a `reasoning` output item ahead of its message and
+  calls: `summary` is empty (serve writes no summary), `content` holds the reasoning as one `reasoning_text` part, and
+  `encrypted_content` holds the same bytes, base64, after the prefix `goinfer-reasoning-v1:`. That value is not encrypted,
+  and it is opaque only by convention: it exists so the client sends it back unchanged. Streamed, the item opens on the
+  first reasoning fragment, the text arrives as `response.reasoning_text.delta` events, and the item closes before the
+  message or the first call opens.
+  A reasoning item sent back in `input` is **rendered, not dropped**. Its text becomes the replayed reasoning of the
+  assistant turn after it (the next `function_call` or assistant `message`), and the model's own chat template then decides
+  where it appears, as for `reasoning_content` on the chat route ("Replayed reasoning (history)" below). For Qwen3,
+  Qwen3.5 and Mellum2.1, the turns of the tool loop in progress keep their reasoning and earlier turns drop it, which is
+  what their Hugging Face templates render. A template with no history rule ignores it. The text is read from serve's own
+  `encrypted_content` first, then from `reasoning_text` content, then from the `summary_text`. An item may carry either
+  form or both, and **`encrypted_content` wins when they disagree**, since it is the bytes the model generated. An
+  `encrypted_content` from another server is ignored. One with serve's prefix that does not decode is a 400, not a
+  silent drop. A reasoning item with no assistant turn after it is dropped.
+  **Why render:** the reasoning is in the KV the reply left behind. A client that resends the turn without it (Codex
+  before this change) makes the next prompt leave the KV where the reasoning began. The turn then re-prefills from there,
+  in full on CUDA windowed-KV models, where a rollback past the window's slack forces a cold prefill. Sent back, the
+  next prompt extends the previous prompt plus the generated tokens. `usage.input_tokens_details.cached_tokens` reports
+  the prompt tokens a prior turn's KV covered.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

@@ -123,7 +123,7 @@ func (m *Model) residentCausalImagePrefill(ctx context.Context, pf Prefiller, id
 	for i := range rows {
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
-	m.residentForgetIDs()
+	m.residentForgetIDsIn(kvScopeOf(ctx))
 	if logits, err = pf.PrefillLast(ctx, rows, 0); err != nil {
 		return nil, 0, err
 	}

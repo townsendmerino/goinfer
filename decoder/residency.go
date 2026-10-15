@@ -445,14 +445,15 @@ func (m *Model) prefillBlockRows(promptLen int) int {
 
 // residentPrefillScratch is the memory a resident request's prefill takes at its largest pass, when the resident
 // splits its prefill (prefillBlockRows): that pass's scratch by the resident's own figure, plus the host embeddings
-// built for it. The last pass is the longest, at most a block and prefillTailMin-1 rows. ok is false for a resident
-// that does not split, whose request is priced by prefillScratchBytes.
+// built for it. The last pass is the longest, at most a block and the resident's tail minimum less one rows. A resident that
+// chunks its own prefill (ResidentPrefillChunks) is priced at one chunk and the embeddings of the whole suffix. ok is false for a
+// resident that does neither, whose request is priced by prefillScratchBytes.
 func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) {
 	B := m.prefillBlockRows(promptTokens)
 	if B <= 0 || promptTokens <= 0 {
-		return 0, false
+		return m.residentChunkedScratch(promptTokens)
 	}
-	rows := min(promptTokens, B+prefillTailMin-1)
+	rows := min(promptTokens, B+m.prefillTailMinRows()-1)
 	pb := m.resident.(ResidentPrefillBlocks)
 	return pb.PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
 }

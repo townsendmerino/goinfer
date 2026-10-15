@@ -197,7 +197,8 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	o.ResidentKVSlots = cfg.kvSessions
 	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // Metal keeps 2 slots unless -kv-sessions was given
 	o.ResidentPrefillChunk = cfg.prefillChunk     // chunked prefill under concurrent generation; 0 = off
-	o.CPUBatchDecode = cfg.cpuBatch               // batched CPU decode (-cpu-batch)
+	o.KVShareOff = cfg.kvShareOff
+	o.CPUBatchDecode = cfg.cpuBatch // batched CPU decode (-cpu-batch)
 	return o
 }
 
@@ -322,6 +323,8 @@ type config struct {
 	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
 	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
 	prefillChunk    int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
+	kvShare         string        // -kv-share: "on" (default) or "off"
+	kvShareOff      bool          // kvShareOffFor's answer, set once the API key and bind are known
 	jobDir          string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
@@ -459,6 +462,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		}
 		return nil
 	})
+	fs.StringVar(&cfg.kvShare, "kv-share", "on", "on|off: whether a conversation may reuse KV rows another conversation computed, such as a shared system prompt, on a GPU-resident model (on: a new conversation copies the shared rows instead of prefilling them; off: a request reuses only its own conversation's rows). Sharing makes time to first token reveal something about what another client sent, so it is off whatever this says when the server answers the network without -api-key (an -allowed-hosts name on a loopback bind)")
 	fs.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
 	fs.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	fs.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
@@ -512,6 +516,9 @@ func (srv *server) checkpointSessions(cfg config) {
 func (cfg config) validate() error {
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
 		return err
+	}
+	if cfg.kvShare != "" && cfg.kvShare != "on" && cfg.kvShare != "off" {
+		return fmt.Errorf("-kv-share must be on or off (got %q)", cfg.kvShare)
 	}
 	if cfg.spec != "" && cfg.spec != "ngram" {
 		return fmt.Errorf("-spec must be \"\" or \"ngram\" (got %q)", cfg.spec)
@@ -792,6 +799,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if err := cfg.validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
+	}
+	cfg.kvShareOff = kvShareOffFor(cfg.kvShare, authKey, *addr, cfg.allowedHosts)
+	if cfg.kvShareOff && cfg.kvShare != "off" {
+		fmt.Fprintln(os.Stderr, "KV sharing: off — this server answers the network without -api-key, so one client's time to first token must not reveal what another sent; set -api-key to share a common prompt between conversations")
 	}
 
 	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr)) // Gemma 3 on CUDA: float32 if the card holds it beside the decoder, else int8, before the plan prices the tower
@@ -1958,4 +1969,16 @@ func qwenTowerPlacement(backend string, int8Tower, asked, require bool, attach f
 		return "CPU (" + backend + " declined)", nil
 	}
 	return name, nil
+}
+
+// kvShareOffFor is whether requests may not take KV rows another conversation computed (decoder.Options.KVShareOff):
+// when -kv-share is off, and when the server answers the network without an API key. serve has one key, so every
+// request that passes it is one sharing scope (docs/tasks/task-kv-architecture-2026-10.md §8, D4). Without a key
+// only loopback may be bound, but a loopback bind answering an -allowed-hosts name is a reverse proxy's public
+// face, and is treated as the network.
+func kvShareOffFor(kvShare, apiKey, addr, allowedHosts string) bool {
+	if kvShare == "off" {
+		return true
+	}
+	return apiKey == "" && (!addrIsLoopback(addr) || strings.TrimSpace(allowedHosts) != "")
 }

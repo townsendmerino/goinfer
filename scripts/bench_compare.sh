@@ -29,6 +29,12 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# A timed run: it holds the timing lock for its whole run, so it refuses beside another timed run and a night job
+# cannot start over it (TE9). Under a holder (a night job) the lock is inherited and this re-exec is a no-op wait.
+if [ -z "${BENCH_COMPARE_LOCKED:-}" ]; then
+  BENCH_COMPARE_LOCKED=1 exec python3 scripts/timing_lock.py run --label bench_compare.sh -- bash "$ROOT/scripts/bench_compare.sh" "$@"
+fi
+
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 DATE="$(date -u +%Y-%m-%d)"
 OS="$(uname -s)"
