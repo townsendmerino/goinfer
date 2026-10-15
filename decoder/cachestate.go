@@ -239,6 +239,9 @@ var kvCacheNotState = map[string]string{
 	"latentDim":       "geometry: the MLA latent width, fixed at NewCache",
 	"recurrentResets": "a counter of resetRecurrent calls, for tests (audit R-16)",
 	"scr":             "per-stream scratch buffers, overwritten by every forward",
+	"planRows":        "the current request's planned size, set by every generation before its prefill; capacity only",
+	"rowCeiling":      "the context size the current request may grow to, set with planRows; capacity only",
+	"regrownBytes":    "bytes a growth dropped within the position being appended, zeroed at its last layer",
 }
 
 // holdsState reports whether c currently holds kind s. "Holds" follows allocation, as
