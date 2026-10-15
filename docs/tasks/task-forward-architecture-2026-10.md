@@ -1125,12 +1125,18 @@ Their gate:
 5. OP4 on CUDA, after OP3 (the Mac's) and KV4a.
 6. OP5 on CUDA, by family.
 
-**Two departures from §4.4 and §7, for the owner:**
+**Two departures from §4.4 and §7, both approved by the owner on 2026-10-15:**
 
 - **OP4 on Metal before OP4 on CUDA** (§4.4 says CUDA first). The Mac reaches OP4 while nobara is in KV4a, and CUDA's walk
   would otherwise rebase across KV4's kernel rewrite.
 - **OP2c (KDA) and Llama 4 parked,** because no box can run their real checkpoints. They wait for a checkpoint that fits a
   box.
+  - **A way to test them later without the real weights:** a small, randomly initialised Hugging Face checkpoint of the
+    family's own config class. Build it with `transformers` at a reduced width and depth, with the real layer pattern:
+    Llama 4's chunked and NoPE layers, and Kimi Linear's KDA and MLA layers. It gives a full-model reference from the
+    family's own modelling code, at a size either box holds.
+  - Such a checkpoint is still not trained weights. Its scores sit near zero, as `CLAUDE.md`'s minimal-repro rule warns. Its
+    registration has to say which effects a random init leaves identically zero, as G2-D did for the softcap.
 
 ## 5. Track RF — one ragged forward pass
 
