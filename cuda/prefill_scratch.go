@@ -1,3 +1,5 @@
+//go:build cuda
+
 package cuda
 
 // prefillPassRows is the most rows one batched pass takes now: GOINFER_PREFILL_CHUNK or the default (512, a multiple of the block
