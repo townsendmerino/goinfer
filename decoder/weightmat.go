@@ -760,6 +760,14 @@ func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) 
 // huge call (the vocab-sized LM head) from pinning that size forever.
 var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
 
+// matmulWorkspace is own when the caller holds a Workspace, else one from matmulWSPool, which the caller returns when pooled.
+func matmulWorkspace(own *linalg.Workspace) (ws *linalg.Workspace, pooled bool) {
+	if own != nil {
+		return own, false
+	}
+	return matmulWSPool.Get().(*linalg.Workspace), true
+}
+
 // w4a8PreOff (tests only) makes prepare leave every block unset, so each matmul quantizes its own input, for the gate
 // that compares the two paths and the A/B that times them. w4a8PreCalls counts the matmuls that ran on a shared block, so
 // a test can see the path was taken.
@@ -794,12 +802,19 @@ func cpuW4A8(be Backend, w *linalg.WeightMat) bool {
 // prepare quantizes a (M rows of w.Cols()) for w and every weight sharing its K and activation group, or clears the
 // block when w does not run the CPU W4A8 path.
 func (p *w4a8Act) prepare(be Backend, w *linalg.WeightMat, a []float32, M int) {
+	p.prepareWS(be, nil, w, a, M)
+}
+
+// prepareWS is prepare through own, a caller-held Workspace, or a pooled one when own is nil.
+func (p *w4a8Act) prepareWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a []float32, M int) {
 	p.set = false
 	if w4a8PreOff || !cpuW4A8(be, w) {
 		return
 	}
-	ws := matmulWSPool.Get().(*linalg.Workspace)
-	defer matmulWSPool.Put(ws)
+	ws, pooled := matmulWorkspace(own)
+	if pooled {
+		defer matmulWSPool.Put(ws)
+	}
 	ws.SetActQuantGroup(w.ActQuantGroup())
 	w.QuantizeActW4A8(ws, a, M, &p.q)
 	p.set, p.group, p.M = true, w.ActQuantGroup(), M
@@ -807,12 +822,19 @@ func (p *w4a8Act) prepare(be Backend, w *linalg.WeightMat, a []float32, M int) {
 
 // matmulPre is matmul(be, w, a, dst, M), using p's block when it was quantized for an input w can take.
 func matmulPre(be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
+	matmulPreWS(be, nil, w, p, a, dst, M)
+}
+
+// matmulPreWS is matmulPre through own, a caller-held Workspace (a batched pass's), or a pooled one when own is nil.
+func matmulPreWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
 	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
-		matmul(be, w, a, dst, M)
+		matmulWS(be, own, w, a, dst, M)
 		return
 	}
-	ws := matmulWSPool.Get().(*linalg.Workspace)
-	defer matmulWSPool.Put(ws)
+	ws, pooled := matmulWorkspace(own)
+	if pooled {
+		defer matmulWSPool.Put(ws)
+	}
 	ws.SetThreshold(int4ParThreshold)
 	ws.SetActQuantGroup(w.ActQuantGroup())
 	w.MatmulBTW4A8PreInto(ws, &p.q, dst, M)
@@ -823,6 +845,12 @@ func matmulPre(be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M 
 // W8A8 and W4A8 paths can run on a GPU backend (be.MatmulBT, QuantBackend.MatmulW8A8, QuantBackend4.MatmulW4A8);
 // weight-only int8 (Q8) stays on the CPU.
 func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
+	matmulWS(be, nil, w, a, dst, M)
+}
+
+// matmulWS is matmul through own, a caller-held Workspace (a batched pass's, which a chunked prefill keeps across its
+// chunks), or a pooled one when own is nil.
+func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []float32, M int) {
 	if w.IsInt4() {
 		// Staged int4 backend consult, mirrored in matmulInto and the W8A8 branch below. Nested under Int4()'s ok (canonical
 		// bytes present), not IsInt4(): the consult hands q4/q4s to the backend on every call, so a repacked-only tensor has
@@ -845,8 +873,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		//
 		// Use w.MatmulBTW4A8Into, not the raw linalg free function: aikit picks the repacked layout (arm64 row4, amd64
 		// split-half) inside it, at M=1 only, and the load-time repacks do nothing without this call.
-		ws := matmulWSPool.Get().(*linalg.Workspace)
-		defer matmulWSPool.Put(ws)
+		ws, pooled := matmulWorkspace(own)
+		if pooled {
+			defer matmulWSPool.Put(ws)
+		}
 		ws.SetThreshold(int4ParThreshold)
 		ws.SetActQuantGroup(w.ActQuantGroup()) // pooled: always set, so a previous model's group never leaks
 		w.MatmulBTW4A8Into(ws, a, dst, M)
@@ -860,8 +890,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			// Pooled Workspace with the int8 decode threshold: the free-matmul path (e.g. gemma4's own forward) has no scratch
 			// Workspace, and without this its W8A8 decode matmuls would run at aikit's conservative default. matmulInto gets the same
 			// through decodeScratch. The threshold differs from int4's (see DefaultDecodeParallelThreshold and int4ParThreshold).
-			ws := matmulWSPool.Get().(*linalg.Workspace)
-			defer matmulWSPool.Put(ws)
+			ws, pooled := matmulWorkspace(own)
+			if pooled {
+				defer matmulWSPool.Put(ws)
+			}
 			ws.SetThreshold(DefaultDecodeParallelThreshold)
 			ws.SetActQuantGroup(w.ActQuantGroup())
 			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
@@ -869,8 +901,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		}
 		// Pooled Workspace, as in the W8A8 case: the bare linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every
 		// call, and the weight-only Q8 LM head is the largest per-token cost on this path.
-		ws := matmulWSPool.Get().(*linalg.Workspace)
-		defer matmulWSPool.Put(ws)
+		ws, pooled := matmulWorkspace(own)
+		if pooled {
+			defer matmulWSPool.Put(ws)
+		}
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
 		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
@@ -878,8 +912,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if w.Kind() == "q4k" {
 		// Native Q4_K (quantQ4K) runs on the CPU here: there is no staged-backend consult for it. Per-32 activations are built
 		// into the kind.
-		ws := matmulWSPool.Get().(*linalg.Workspace)
-		defer matmulWSPool.Put(ws)
+		ws, pooled := matmulWorkspace(own)
+		if pooled {
+			defer matmulWSPool.Put(ws)
+		}
 		ws.SetThreshold(int4ParThreshold)
 		w.MatmulBTInto(ws, a, dst, M)
 		return
@@ -887,8 +923,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if _, _, ok := w.Half16(); ok {
 		// 16-bit weights (quantBF16, quantF16): the kind widens a tile of rows and runs the f32 kernel, so the result is the f32
 		// matmul's over the widened weights. No backend consult: no backend takes this kind.
-		ws := matmulWSPool.Get().(*linalg.Workspace)
-		defer matmulWSPool.Put(ws)
+		ws, pooled := matmulWorkspace(own)
+		if pooled {
+			defer matmulWSPool.Put(ws)
+		}
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
 		w.MatmulBTInto(ws, a, dst, M)
 		return
