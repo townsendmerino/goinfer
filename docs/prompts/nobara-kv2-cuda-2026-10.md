@@ -6,6 +6,19 @@ For a session on `nobara-pc`. The task doc is `docs/tasks/task-kv-architecture-2
 - the registration, `docs/measurements/kv2-2026-10-14.md`. Its §1 holds the choices made before the code, and its §2
   the gates whose CUDA arms are yours.
 
+## Status, 2026-10-14 evening: the Mac half is done; the CUDA arm starts 2026-10-15 by day
+
+- **Every Mac arm of G0 to G7 is read and passes** (`docs/measurements/kv2-2026-10-14.md` §3, "The Mac's night,
+  2026-10-14"):
+  - G5 T-busy DELIVERS: 0.949 of the projection, 32.5 s saved;
+  - G5 T-idle PASS: 1.902;
+  - G6 PASS on all four cells.
+- **KV2 merges when this CUDA arm reads.** Nothing else is outstanding on the Mac.
+- **When:** 2026-10-15, by day, after nobara's release queue for v0.23.0 has finished (the CUDA GPU gate, the parity
+  sweep and `quick -full`, all at `695ce16c`). Nothing non-doc merges to `main` before the tag, so build on this
+  branch and merge after the tag.
+- `kv3-cuda-2026-10` is merged (PR #14), so the start condition below holds. Merge `main` into this branch first.
+
 ## 0. When to start, and where to work
 
 - **Start after `kv3-cuda-2026-10` is merged to `main`** (tonight's merge). KV2's 16-row cap and the class records
