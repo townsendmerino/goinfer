@@ -413,6 +413,29 @@ T0a is not amended a second time. It is a diagnostic, reported in G40's output a
 
 If either of the last two misses, G40 stops there and is reported.
 
+### Tier 1 memory run: FAIL on the 0.5B's "returned" check (2026-10-15, 14:29 to 14:40)
+
+The after arm only, `g40_mem.py --arms after`, with the server built at `5f04764d` (the fix is `76142498`; nothing in
+`decoder/` changed after it). One cold 20,189-token prompt per cell, under the timing lock. The before arm is reused
+from `db2bca58`'s night run (`main` unchanged). The log and JSON are in `~/goinfer-logs/g40-2026-10/tier1-2026-10-15-mem/`.
+
+| cell | peak footprint (bound) | peak RSS (bound) | 10 s after (bound) | swap grown | verdict |
+|---|---|---|---|---|---|
+| 0.5B after | 977 (1,306) | 1,388 (1,585) | **977 (794)** | 0 | **FAIL** |
+| 1.5B after | 1,783 (1,938) | 2,660 (2,832) | 1,184 (1,426) | 0 | PASS |
+| 0.5B before (reused) | 3,330 | 3,632 | 3,330 | 0 | FAIL |
+| 1.5B before (reused) | 6,098 | 6,501 | 6,099 | 0 | FAIL |
+
+MiB throughout.
+
+- **The peak checks pass on both models.** On the 0.5B the peak footprint went from 3,330 MiB before to 977, and on the
+  1.5B from 6,098 to 1,783.
+- **The 0.5B misses the registered "returned" bound:** load + KV + 256 MiB = 794. Its footprint 10 s after the request
+  equals its peak: nothing was returned. The 1.5B returned about 600 MiB.
+- **The verdict is FAIL.** By the owner's rule (no amendments), G40 stops here and is reported. The 0.5B 6K speed cell
+  was not run.
+- Not yet diagnosed. On the 0.5B, the footprint held after the request is 439 MiB over load + KV.
+
 ### Done
 
 G40-1 and G40-2 pass and G40-3 ships. G40-2's before-and-after record goes beside KV9's, and G40 in
