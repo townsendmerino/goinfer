@@ -295,6 +295,61 @@ A run that does not resolve a direction by day goes to the night as a served two
 - **A cell that would swap is void, not a fail.** Each cell checks available memory before it loads, and is void if
   available memory is under 7 GiB for the 1.5B at 20K, or under 4 GiB otherwise. G40-2's precondition is unchanged.
 
+### G40-2's reading, 2026-10-15: FAIL, by its registered bounds
+
+Run by day (13:15 to 13:35) at `db2bca58` against `main` at `4d393367`, one cold prompt of 20,189 tokens per cell, no
+swap growth in any cell.
+
+| cell | peak footprint (bound) | peak RSS (bound) | 10 s after (bound) |
+|---|---|---|---|
+| 0.5B before | 3,330 MiB | 3,632 MiB | 3,330 MiB |
+| 0.5B after | **1,372** (1,308) | **1,682** (1,585) | **981** (796) |
+| 1.5B before | 6,098 MiB | 6,501 MiB | 6,099 MiB |
+| 1.5B after | **2,642** (1,940) | **3,519** (2,832) | 1,270 (1,428) |
+
+- **The result:** the after arm cut the peak by 59% and 57%, but missed its bounds. G40 does not merge on this
+  reading, and the bounds do not move.
+- **The mechanism found:** every chunk allocated a fresh working set, so ten chunks left about 2.3 GiB of garbage on
+  the 1.5B for Go's GC goal to hold.
+- **G40-3** was stopped by the owner after one cell. The 0.5B at 6K read a median of 0.9766 over 5 pairs. Exploratory,
+  not a grade.
+
+### Amendment, 2026-10-15, under the owner's testing tiers (CLAUDE.md, "Testing tiers"), before the fix is written
+
+**The fix.** The chunked prefill allocates its working set once, for its largest pass, and every chunk reuses it:
+
+- the activation buffers;
+- the embedding rows;
+- the quantized-activation blocks and the matmul workspace;
+- the attention worker pool, sized once for the whole prompt's keys. Its row tile is clamped to the slot, as
+  `attendTileForK` already does.
+
+Reused buffers are cleared at each chunk's start, so every chunk computes from the same state a fresh allocation gives.
+
+**Tier 0 gates. These replace G40-2 and G40-3; seconds, by day.**
+
+- **G40-T0a, no new working buffers after the first chunk.**
+  - The instrument: a test hook after each chunk reads `runtime.MemStats.TotalAlloc`.
+  - The cells: `llama-attnfa-tiny` with C = 256 and a 4-chunk prompt (1,000 tokens), and Qwen2.5-Coder-0.5B with
+    C = 2,048 and a 7,000-token prompt (4 chunks).
+  - **Pass:** every chunk after the first allocates at most 1 MiB, or 1% of one chunk's working set, whichever is
+    larger.
+- **G40-T0b, peak live heap.**
+  - The instrument: on the 0.5B, the 4-chunk prompt above, with the live heap read after a forced collection at every
+    chunk boundary and at the end.
+  - The baseline is the live heap after load (the weights and what loading keeps).
+  - **Pass:** the largest reading minus the baseline is at most the prompt's KV by geometry, plus one chunk's working
+    set, plus the attention pool, plus 128 MiB.
+- **G40-1, re-run as registered:** the fixtures, then the 0.5B cell.
+
+**Tier 1, by day, one run.**
+
+- The after arm only, on the 0.5B and the 1.5B at 20,189 tokens, by `g40_mem.py`.
+- **The before arm is reused, not re-run:** the table above, from `db2bca58`'s run. `main` is unchanged.
+- The bounds are G40-2's.
+- **Speed:** the 0.5B at 6K only, one pass of 5 pairs (about 5 minutes), against G40-3's bars.
+- **No night run** unless a tier 1 result is unclear.
+
 ### Done
 
 G40-1 and G40-2 pass and G40-3 ships. G40-2's before-and-after record goes beside KV9's, and G40 in
