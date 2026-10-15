@@ -524,6 +524,31 @@ amended.
     count of the full text, and a cell that serve counts otherwise is VOID (`--want-tokens`).
 - **The rule:** merge on a pass; stop and report on a miss.
 
+**Tier 1, read 2026-10-15, 15:40 to 16:00: PASS on all four cells.** The server was built at `a5d3f83f` and the run held
+the timing lock. The logs are in `~/goinfer-logs/g40-2026-10/tier1-kvfix-2026-10-15/`.
+
+| cell | peak footprint (bound) | peak RSS (bound) | 10 s after (bound) | swap grown | verdict |
+|---|---|---|---|---|---|
+| 0.5B, 20,189 | 855 (1,307) | 1,159 (1,585) | 547 (795) | 0 | PASS |
+| 1.5B, 20,189 | 1,689 (1,939) | 2,520 (2,832) | 1,185 (1,427) | 0 | PASS |
+| 0.5B, 20,184 (0 spare rows) | 879 (1,307) | 1,182 (1,585) | 545 (795) | 0 | PASS |
+| 1.5B, 20,184 (0 spare rows) | 1,705 (1,938) | 2,488 (2,831) | 1,186 (1,426) | 0 | PASS |
+
+MiB throughout.
+
+- The 0.5B's footprint 10 s after the request went from 977 MiB (the miss) to 547.
+- Serve counted 20,184 tokens for the cut, as the tokenizer predicted.
+
+**G40's verdict: every registered gate passes.**
+
+- G40-1, bit-identity: the fixtures, and the 0.5B cell at 20 of 20.
+- T0b, the peak live heap.
+- The KV gates (a), (b) and (c).
+- The tier 1 memory run on its unchanged bounds.
+- The 0.5B 6K speed cell: SHIPS at 0.986.
+- T0a is a diagnostic, by the owner's ruling.
+
+**G40 merges on green CI** (owner, 2026-10-15).
 ### The 0.5B 6K speed cell (2026-10-15, 15:13 to 15:18): SHIPS
 
 `TestG40Speed` restricted to `GOINFER_G40_SPEED_CELLS=0.5B:6000`, one pass of 5 ABBA pairs, from a test binary built at
