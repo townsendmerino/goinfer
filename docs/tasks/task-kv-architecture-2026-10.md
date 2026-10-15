@@ -785,6 +785,24 @@ KV2 merges when every arm on both boxes is read.
     because main could not tell a conversation's own request from another's.
   - The item: drop that rule for a request that keeps the slot's whole first prompt, on the GPU and the CPU.
   - Gate it like G3: same reply in every schedule, and replies unchanged against KV2's merge.
+- **Follow-up 2, after KV2 merges (found by nobara's CUDA arm, 2026-10-15; not started): the donor choice asks the slot.**
+
+  **What happens.** With three or more slots and windowed KV, `kvmgr`'s donor choice takes the first slot with the
+  longest token hit, even when that slot's window has moved past the rows the request needs. The CUDA copy then
+  declines (`KVCopyDecline`, logged with both slots' positions and the rollback budget), and the request prefills cold,
+  although another slot still holds the rows.
+
+  **What it costs.** Time, never a wrong row. It cannot occur on a family without sliding-window layers, so G5's
+  registered cells (Qwen2.5-Coder-1.5B) never meet it.
+
+  **The fix.** Try the candidate donors in order of hit length, and take the first whose `ResidentReusableKVSlot`
+  answers that it still holds the needed rows. Fall back to the cold prefill only when none does.
+
+  **Gates.**
+  - A fake resident in which the longest-hit slot has lost its window's rows and a shorter-hit slot has not: the copy
+    comes from the shorter-hit slot, and the reply is unchanged.
+  - G3's schedule independence.
+  - A windowed family's G5 cell read beside it.
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
 
