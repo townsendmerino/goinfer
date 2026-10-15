@@ -6,12 +6,30 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/metrics"
 	"testing"
 )
 
-// G40-T0a and G40-T0b (docs/tasks/task-cpu-prefill-memory-2026-10.md, the amendment under the testing tiers): a chunked
-// prefill allocates its working set once, so every chunk after the first allocates (almost) nothing, and its live heap
-// stays within the prompt's KV, one chunk's working set and the attention pool.
+// G40-T0a and G40-T0b (docs/tasks/task-cpu-prefill-memory-2026-10.md, the amendment under the testing tiers, and the
+// owner's amendment of T0a after its first reading): a chunked prefill allocates its working set once, so no chunk after
+// the first makes an allocation of 4 KiB or more, and its live heap stays within the prompt's KV, one chunk's working set
+// and the attention pool. Each chunk's total bytes and allocation count are reported beside the graded count, not
+// graded: the remainder is aikit's per-call closure in Workspace.MatmulBT, short-lived garbage.
+
+// bigMallocs is the count of heap allocations of 4 KiB or more so far, from the runtime's allocation size histogram
+// (/gc/heap/allocs-by-size:bytes), whose buckets cover every size, large objects included.
+func bigMallocs() uint64 {
+	sample := []metrics.Sample{{Name: "/gc/heap/allocs-by-size:bytes"}}
+	metrics.Read(sample)
+	h := sample[0].Value.Float64Histogram()
+	var n uint64
+	for i, c := range h.Counts {
+		if h.Buckets[i] >= 4096 { // the bucket's lower bound
+			n += c
+		}
+	}
+	return n
+}
 
 // chunkWorkingSet is one pass's activation buffers for C rows, by the arch's geometry (the buffers runLayersFromEmbedNFloor
 // takes), in bytes.
@@ -24,54 +42,53 @@ func chunkWorkingSet(m *Model, C int) int64 {
 // chunkAllocs prefills prompt into a fresh cache at chunk size C and returns the bytes allocated by each chunk's pass
 // (chunk 0's includes the first-use allocations; the KV reserve is read apart and excluded), and the live heap after a
 // forced collection at every boundary, minus the live heap before the prefill.
-func chunkAllocs(t *testing.T, m *Model, prompt []int, C int, live bool) (perChunk []int64, peakLive int64) {
+func chunkAllocs(t *testing.T, m *Model, prompt []int, C int, live bool) (perChunk, bigPerChunk []int64, peakLive int64) {
 	t.Helper()
 	prevC, prevHook := prefillChunkRows, prefillChunkDone
 	defer func() { prefillChunkRows, prefillChunkDone = prevC, prevHook }()
 	prefillChunkRows = C
-	var mallocs, lastMallocs uint64
+	var mallocs, lastMallocs, big, lastBig uint64
 	read := func() (total, heap uint64) {
 		if live {
 			runtime.GC()
 		}
 		var ms runtime.MemStats
 		runtime.ReadMemStats(&ms)
-		mallocs = ms.Mallocs
+		mallocs, big = ms.Mallocs, bigMallocs()
 		return ms.TotalAlloc, ms.HeapAlloc
 	}
 	cache := m.NewCache(0)
 	t0, base := read()
 	last := t0
-	lastMallocs = mallocs
+	lastMallocs, lastBig = mallocs, big
 	prefillChunkDone = func(chunk int) {
 		total, heap := read()
 		if chunk >= 0 {
 			perChunk = append(perChunk, int64(total-last))
+			bigPerChunk = append(bigPerChunk, int64(big-lastBig))
 			n := mallocs - lastMallocs
-			fmt.Fprintf(os.Stderr, "[g40-t0a] chunk %d: %d allocations, %.0f bytes each on average\n", chunk+1, n, float64(total-last)/float64(max(n, 1)))
+			fmt.Fprintf(os.Stderr, "[g40-t0a] chunk %d: %d allocations of 4 KiB or more (graded); %d allocations, %.2f MiB in all (reported)\n",
+				chunk+1, big-lastBig, n, float64(total-last)/(1<<20))
 		}
-		last, lastMallocs = total, mallocs
+		last, lastMallocs, lastBig = total, mallocs, big
 		peakLive = max(peakLive, int64(heap)-int64(base))
 	}
 	if _, err := m.prefillLogits(context.Background(), prompt, cache); err != nil {
 		t.Fatalf("prefill: %v", err)
 	}
-	return perChunk, peakLive
+	return perChunk, bigPerChunk, peakLive
 }
 
 func checkNoChunkAllocs(t *testing.T, m *Model, prompt []int, C int) {
 	t.Helper()
-	per, _ := chunkAllocs(t, m, prompt, C, false)
+	_, big, _ := chunkAllocs(t, m, prompt, C, false)
 	want := (len(prompt) + C - 1) / C
-	if len(per) != want {
-		t.Fatalf("%d chunk readings, want %d: the prefill did not chunk as expected", len(per), want)
+	if len(big) != want {
+		t.Fatalf("%d chunk readings, want %d: the prefill did not chunk as expected", len(big), want)
 	}
-	limit := max(int64(1<<20), chunkWorkingSet(m, C)/100)
-	for i, b := range per {
-		fmt.Fprintf(os.Stderr, "[g40-t0a] chunk %d/%d allocated %.2f MiB (limit after the first %.2f MiB; one chunk's working set %.1f MiB)\n",
-			i+1, len(per), float64(b)/(1<<20), float64(limit)/(1<<20), float64(chunkWorkingSet(m, C))/(1<<20))
-		if i > 0 && b > limit {
-			t.Errorf("chunk %d allocated %d bytes, over the %d-byte limit: a chunk after the first allocated working buffers", i+1, b, limit)
+	for i, n := range big {
+		if i > 0 && n != 0 {
+			t.Errorf("chunk %d made %d allocations of 4 KiB or more: a chunk after the first allocated working buffers", i+1, n)
 		}
 	}
 }
@@ -112,7 +129,7 @@ func TestG40T0b_peakLiveHeapReal0p5B(t *testing.T) {
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()
 	const n, C = 7000, 2048
-	_, peak := chunkAllocs(t, m, chunkPrompt(n, vocab, 1), C, true)
+	_, _, peak := chunkAllocs(t, m, chunkPrompt(n, vocab, 1), C, true)
 	a := m.w.arch
 	kv := int64(n) * int64(a.NumLayers) * 2 * int64(a.NumKVHeads*a.HeadDim) * 4
 	bound := kv + chunkWorkingSet(m, C) + prefillAttnScratchBudget + 128<<20
