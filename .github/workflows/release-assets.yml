@@ -439,9 +439,8 @@ jobs:
           [ "$fail" = 0 ] || { echo "embedded-${{ matrix.tier }} version assertions FAILED"; exit 1; }
       - name: checksum the embedded binaries inside their artifact
         if: steps.gate.outputs.skip == 'false'
-        # publish verifies these after the download: an artifact can arrive short (a full disk
-        # truncated one 1.5B binary and dropped two on v0.23.0's first run), and an existence check
-        # passes a truncated file.
+        # publish verifies these after the download: an artifact can arrive short (on v0.23.0's first run
+        # one 1.5B binary came back truncated and two missing), and an existence check passes a truncated file.
         run: cd demo/chat/dist && sha256sum -- goinfer-chat-${{ matrix.tier }}-* > SHA256SUMS-embedded-${{ matrix.tier }}.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.gate.outputs.skip == 'false'
@@ -469,7 +468,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - name: free disk for the artifacts
-        # The 1.5B tier alone is about 10 GB, zipped and then extracted; a stock runner has about 14 GB free.
+        # Headroom for the ~20 GB of artifacts; the runner had 86 GB free on v0.23.0's re-run, so this is margin, not the fix.
         run: |
           df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
