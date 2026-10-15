@@ -227,3 +227,28 @@ The rule is the owner's to choose:
 - takeover (one preamble's memory, tails lost);
 - copy (tails kept, one preamble per conversation);
 - KV9's host blocks (both). This is the case the KV9 record names for reopening KV9.
+
+**G42 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15**
+
+Found by G40-1 (`docs/tasks/task-cpu-prefill-memory-2026-10.md`, "Amendment, 2026-10-15, after G40-1's first read", on
+branch `g40-cpu-prefill-memory-2026-10`):
+
+- On `gemma2-tiny` (sliding window 4), a prefill run in chunks under fast attention differed from the single pass.
+  At a suffix of 529 with C = 256, 446 of the last row's logits differed. The first difference was layer 1's keys at
+  the second chunk's rows, so layer 0, the sliding-window layer, gave a different attention output.
+- The exact path chunked identically. Dense and MoE fixtures chunked identically under fast attention too.
+
+The fast local attention's result depends on where the pass's assembled key window starts
+(`decoder/forwardn.go:Model.runLayersFromEmbedN`, its local branch: `KVCache.batchReadLocal` then
+`attendBatchedHeads`), and a chunk boundary moves that start.
+
+**Consequence:** G40 keeps the single pass for a sliding-window cache under fast attention. So the memory bound G40
+adds does not reach Gemma 2, 3 and 4, or any other family with sliding-window layers, prefilled fast on the CPU. That
+is where G40's high-water stays.
+
+**To fix:** make the fast local attention's arithmetic independent of the window's start, for example by aligning its
+key blocks to absolute positions rather than to the assembled window. Then drop the exclusion in
+`decoder/forwardn.go:Model.prefillLogits`.
+
+**Gate:** G40-1 unchanged, with `gemma2-tiny`'s fast cases chunking, and its pass count asserting they do. The fast
+path's own fidelity record is re-read on the 1.5B if the arithmetic changes.
