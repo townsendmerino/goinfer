@@ -910,6 +910,228 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
   the softcap dropped (G2-K, G2-D).
 - **The real Gemma 2 2B parity gate, G2-R, decides the declaration.** Its baseline step is below.
 
+### 4.7 The remaining plan for OP2–OP6 (proposed 2026-10-15; docs only, nothing built)
+
+Written on the owner's ask, after G40 stopped on its tier 1 memory run and G2-R was queued for the night of 2026-10-15. Read at
+main `7030f1b3`. **A proposal for the owner, not a decision.** Sizes are §0's. Gates are in the tiered form
+(`CLAUDE.md`, "Testing tiers"): each is registered at the lowest tier that can answer it, and a night run states why the day
+tiers cannot. The day sizes and the fit notes below are INFERRED from checkpoint sizes, not fit-checked. Every night load is
+fit-checked by day before it is queued.
+
+**KV work in flight, and its production files** (from `git diff --stat` against main on each branch, tests excluded):
+
+- **KV2** (the Mac's `kv2-2026-10`, nobara's `kv2-cuda-2026-10`):
+  - `decoder/model.go`, `decoder/resident_reuse.go` and `decoder/blockspec.go`, plus the decoder's session and VL
+    generate files;
+  - `internal/kvmgr/`;
+  - `internal/serveapp/` (main, openai, sessions);
+  - a new KV-copy file in each of `metal/`, `gpu/` and `cuda/`;
+  - on CUDA, also `cuda/resident.go`.
+- **KV3:** CUDA's half on `kv3-cuda-2026-10` (`cuda/prefill.go` and the prefill scratch). Metal's half is KV-pre's
+  (`metal/prefill.go`).
+- **The CPU's KV:**
+  - G40, stopped: `decoder/forwardn.go`, `decoder/kvcache.go` and `decoder/weightmat.go`;
+  - the CPU KV pricing fix: `decoder/model.go`, `decoder/fitguard.go` and `decoder/prefill_budget.go`;
+  - CPU f16 KV, approved and not started: `decoder/kvcache.go` and the CPU attention.
+- **Next on the KV track:**
+  - KV4, paged CUDA storage: every CUDA KV kernel goes through a block table, including `mla_attn` in `cuda/mla.cu`;
+  - KV5, the same on Metal;
+  - KV8, a recurrent state pool.
+- **Proposal 2** (the integration harness's id carry, nobara's next build): `internal/serveapp/` and one accessor on the
+  decoder's `Generation`. It shares serve's files with KV2 and no file with OP.
+
+#### OP2 — the next operations by demand
+
+Two prerequisites from §4.5, both S, on the Mac, tier 0 only, in `decoder/features.go`:
+
+- **(a) A feature per non-gated activation** (§4.5, item 2), before SSM on Metal. Metal's `act_quant` would otherwise run
+  tanh-GELU for Nemotron-H's squared ReLU.
+- **(b) Split `attn-output-gate` by activation** (§4.5, item 3), before OP5.
+
+Their gate:
+
+- **Tier 0:** the hardware matrix regenerated, with every cell's decline reasons unchanged except the split names.
+- **Plant:** a backend declaring the wrong half of a split must decline the family by name.
+
+**OP2a, MLA on Metal.**
+- **Delivers:** DeepSeek-V2/V3 and Moonlight resident on Metal. Kimi K2 also needs a 384-expert router; that is not here.
+- **Size and box:** M–L, on the Mac.
+- **Depends on:** OP0 only. CUDA's `cuda/mla.cu` and WebGPU's `gpu/mla.go` are the models to port.
+- **KV:**
+  - MLA's latent cache is a second KV shape, a layer group of its own in the KV design (§5.2 of the KV doc).
+  - KV2's Metal KV-copy has to copy it, or decline MLA for cross-conversation reuse, and it shares `metal/model.go`'s
+    slot allocation with KV2.
+  - KV5 will route Metal's MLA kernel through the block table, so OP2a writes the kernel KV5 then edits.
+- **Gates:**
+  - **Tier 0:** `deepseek-tiny` and `kimi-tiny` on Metal against the CPU, by the resident identity suite's bars. A plant: the
+    rope split of q and k swapped must go red.
+  - **Tier 1:** none fits by day as a whole model. The smallest real MLA checkpoint is DeepSeek-V2-Lite (16B MoE), whose
+    Q4_K_M file is about 10 GB, against the Mac's 16 GB. Tier 1 is a layer slice of V2-Lite against `deepseek_v2lite_golden.json`'s
+    hidden states, as a correctness gate only, never quoted as a speed.
+  - **Night, only if the slice passes:** the whole V2-Lite resident through Metal's expert paging. It is the only run that
+    sees the router with the real expert count. Fit-check by day first, and if it is refused, it is an owner question, not
+    a bypass.
+
+**OP2b, SSM (Mamba-2) on CUDA and on Metal.**
+- **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
+- **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).
+- **Depends on:** OP2(a) for Metal.
+- **KV:**
+  - The SSM state is not KV. It lives in today's per-slot recurrent buffers until KV8's state pool.
+  - KV2's reuse already treats hybrids as one slot with exact-extension reuse only. OP2b keeps that, so it changes nothing
+    in KV2's files.
+  - It shares `cuda/resident.go` (CUDA) and `metal/model.go` (Metal) with KV2's slot code.
+- **Gates:**
+  - **Tier 0:**
+    - `nemotron-tiny` and `granite-tiny` on the backend against the CPU, plus `nemotron3nano-tiny` where its MoE is
+      admitted;
+    - a plant: the conv window shifted by one must go red. This needs ≥ 2 decode steps past the window, per `CLAUDE.md`'s
+      minimal-repro rule.
+  - **Tier 1:**
+    - **CUDA:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on nobara's 8 GB card, against `nemotron_real_golden.json.gz`.
+    - **Metal:** the same checkpoint if it fits by day. If it doesn't fit, a layer slice by day, and the whole model at
+      night after a by-day fit check.
+  - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt.
+
+**OP2c, KDA.**
+- **Delivers:** Kimi Linear resident.
+- **Size:** M–L.
+- **Box:** none today. The released Kimi Linear is a 48B-A3B MoE (INFERRED from its model card, not checked here), which
+  fits neither box resident.
+- **Gates:** tier 0 only: `kimi-tiny` plus `kda_rehearsal_golden.json`.
+- **Proposed: park OP2c** until a checkpoint that fits a box exists. A tiny-only gate would leave the real path unseen,
+  the gap §4.6 closed for Gemma 2 with G2-R.
+
+#### OP3 — the layer program, on the CPU
+
+- **Delivers:** every registry family built as a per-layer program that the CPU executes, with its logits bit-identical to
+  today's generic loop and own forwards.
+- **Size and box:** L, on the Mac. The CPU is either box; the Mac, because it stays on OP.
+- **Depends on:** OP0.
+- **Shares files with KV work in flight:**
+  - `decoder/forwardn.go` and `decoder/kvcache.go` with G40 and CPU f16 KV;
+  - `decoder/model.go` with KV2 and the pricing fix.
+  - **Start it after G40 is decided and CPU f16 KV has merged,** or it is rebased across both kernels of the CPU
+    attention.
+- **Gates:**
+  - **Tier 0:** `go run ./cmd/gate identity` on the tiny assets, every family, every step, bit for bit, against the commit
+    before OP3.
+  - **Plants, each of which must go red:** a dropped operation, two swapped operations, and a parameter off by one (the
+    registration in §4.4).
+  - **Tier 1:** the 0.5B, bit for bit, at prompt sizes that cross the CPU's size-switched paths (the fast-attention floor,
+    and G40's chunking if it merges). Tiny fixtures never reach those paths.
+  - **No night run.** Identity inherits each family's validation (TE6(b)). A real checkpoint adds a shape only where a path
+    switches on size, and tier 1 covers those.
+
+#### OP4 — the residents walk the program
+
+- **Delivers:**
+  - each GPU resident runs the program layer by layer;
+  - admission by operation, which absorbs the decoder's and each backend's hand-written declines (§4.5, item 6);
+  - per-backend fusion tables, each fusion gated;
+  - one memory planner pricing through the KV doc's sizing function (its §5.10).
+- **Size:** L per backend.
+- **Box:** CUDA on nobara, Metal on the Mac, WebGPU on the Mac (its discrete half on nobara).
+- **Depends on:** OP3.
+- **KV:**
+  - The memory planner is KV3's admission, generalised, so it follows KV3 on that backend.
+  - CUDA's walk rewrites the launch paths that KV4 routes through block tables (`cuda/resident.go`, `cuda/prefill.go`).
+    **Proposed: CUDA's OP4 after KV4a lands,** so one of the two rebases onto the other once, not repeatedly.
+  - Metal's OP4 shares `metal/model.go`, `metal/prefill.go` and `metal/batch.go` with KV-pre, KV2 and later KV5.
+- **Gates:**
+  - **Tier 0:**
+    - every family's tiny identity suite on the backend, bit-identical to the pre-walk runner;
+    - each fusion bit-identical to the operations it replaces;
+    - a plant: a fusion that claims one operation too many must go red.
+  - **Tier 1:** the 0.5B and the 1.5B, bit for bit against the pre-walk runner, by day.
+  - **Speed:** §4.4's "within 0.99 at depth 128 and 3,900".
+    - A whole-token in-process A/B, interleaved, by day (TE5(b)), first.
+    - **Night only if it does not resolve:** a 0.99 bar is a small-effect decision, which is tier 2's stated case.
+
+#### OP5 — the families whose layers differ
+
+**What it delivers, size and order:**
+
+- **Delivers:** each family resident, bringing only its missing operations.
+- **Size:** M each.
+- **Depends on:** OP4 on that backend, and OP2(b) (the out-gate split).
+- **Order by what a box can measure:**
+  1. Spark-X2.5 (1.7B, on the Mac): exact-erf GELU, out-gate sigmoid, per-layer rotary width.
+  2. LFM2.5 (2.6B, on the Mac): short conv.
+  3. Granite-4.0-H, after OP2b SSM and its gate.
+  4. Laguna (XS-2.1 Q4_K_M), after a by-day fit check.
+  5. Llama 4 last. Scout's smallest released GGUF here is Q2_K at about 40 GB, which neither box holds, so it is tier 0
+     only, and is proposed parked like OP2c.
+
+**KV:**
+
+- LFM2.5's conv state and Granite's SSM state are recurrent state: per-slot until KV8.
+- Llama 4's chunked attention is a KV property (a released-entry rule like the window's), so it touches KV4/KV5's null-block
+  handling.
+
+**Gates:**
+
+- **Tier 0:** the family's tiny fixture on the backend, against the CPU.
+- **Tier 1:** the real checkpoint on the box that holds it, against its committed golden: `spark2_5_real_golden.json.gz`
+  and `lfm2_real_golden.json.gz` on the Mac.
+- **No night run** for the families that fit by day.
+
+#### OP6 — Phi-3/4 on the fast paths (E5: its own small task)
+
+**Delivers:**
+
+- Metal's default load becomes `--quant q4k` for Phi-3/4.
+- A q4k batched prefill on CUDA and on Metal.
+- Per-32 activations, or a q4k lane, on WebGPU.
+
+**Size and box:** M. The Metal half is on the Mac, the CUDA half on nobara.
+
+**Depends on:**
+
+- The Metal decode lane is built and gated (`docs/tasks/task-metal-q4k-2026-10.md`: G-Q1 to G-Q3 PASS).
+- The default switch waits on the owed peer cell M1, a night run. That is a published number, which is tier 2's case.
+
+**Shares with KV:**
+
+- the prefill path: `cuda/prefill.go` with KV3's CUDA half, and `metal/prefill.go` with KV-pre;
+- the q4k prefill sizes its scratch through KV3's admission.
+
+**Gates:**
+
+- **Tier 0:** `phi3-tiny` q4k prefill against q4k decode, bit for bit on the logits of the last prompt row.
+- **Tier 1:** Phi-3 mini on the Mac (`phi3-mini-4k-gguf`), the prefill against `phi3_mini_golden.json`.
+- **Night:** M1 only.
+
+#### Proposed order
+
+**The Mac stays on OP continuously:**
+
+1. OP1 on Metal: tonight's G2-R. On a pass, the declaration merges and G2-M runs, by day.
+2. OP2(a) and (b), the two feature splits: S, tier 0.
+3. OP2b, SSM on Metal.
+4. OP6's Metal half: the q4k batched prefill by day, and M1 queued for a night.
+5. OP2a, MLA on Metal. It is behind SSM because its real gate needs a slice and paging, while Nemotron-H's may fit whole.
+6. OP3, once G40 is decided and CPU f16 KV has merged. If those are still open when step 5 ends, OP1 on WebGPU fills the
+   gap.
+7. OP4 on Metal.
+8. OP5 on Metal: Spark-X2.5, LFM2.5, then the rest as above.
+
+**nobara, after proposal 2's build:**
+
+1. OP1 on CUDA (§4.6's CUDA rows).
+2. OP2b, SSM on CUDA.
+3. OP6's CUDA half: the q4k batched prefill.
+4. KV4a, the KV track's next CUDA phase. That order is the owner's call; it is here because OP4 on CUDA is proposed after it.
+5. OP4 on CUDA, after OP3 (the Mac's) and KV4a.
+6. OP5 on CUDA, by family.
+
+**Two departures from §4.4 and §7, for the owner:**
+
+- **OP4 on Metal before OP4 on CUDA** (§4.4 says CUDA first). The Mac reaches OP4 while nobara is in KV4a, and CUDA's walk
+  would otherwise rebase across KV4's kernel rewrite.
+- **OP2c (KDA) and Llama 4 parked,** because no box can run their real checkpoints. They wait for a checkpoint that fits a
+  box.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
