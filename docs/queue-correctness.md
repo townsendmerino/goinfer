@@ -203,7 +203,7 @@ prefill", but nothing bounds the prefill by that budget.
 - the 20K cell of `kv9_mem.py` re-read with no swap growth and a footprint bounded by weights + KV + one chunk's
   scratch.
 
-**G41 · CPU serve: interleaved conversations that share a preamble take over each other's session and lose their tails** — `cpu`, **filed 2026-10-14; revisit with KV2's first-prompt anchor**
+**G42 · CPU serve: interleaved conversations that share a preamble take over each other's session and lose their tails** — `cpu`, **filed 2026-10-14; revisit with KV2's first-prompt anchor**
 
 Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 1).
 
@@ -228,7 +228,7 @@ The rule is the owner's to choose:
 - copy (tails kept, one preamble per conversation);
 - KV9's host blocks (both). This is the case the KV9 record names for reopening KV9.
 
-**G42 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15**
+**G43 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15**
 
 Found by G40-1 (`docs/tasks/task-cpu-prefill-memory-2026-10.md`, "Amendment, 2026-10-15, after G40-1's first read", on
 branch `g40-cpu-prefill-memory-2026-10`):
