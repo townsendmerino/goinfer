@@ -23,6 +23,10 @@ git worktree add -q --detach "$WT" "$REV" || { echo "FATAL: cannot check out $RE
 # -full exists to RUN the deferred tests, and a fresh worktree has none of the gitignored fixtures this box has, so they are symlinked in from the
 # main checkout exactly as docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh does (see its comments): untracked, not-ignored fixture
 # directories linked whole and first, then each ignored entry (a directory as a real directory of links, so its dir-only ignore rule still matches).
+# A file is HARD-linked where it can be: tests that copy a fixture into a temp dir take only regular files (DirEntry.Type().IsRegular()),
+# so a symlinked config.json or tokenizer.json would be silently left out of the copy.
+# A subdirectory, or a file on another filesystem, falls back to a symlink.
+linkOne() { if [ -d "$1" ] || ! ln "$1" "$2" 2>/dev/null; then ln -s "$1" "$2"; fi; }
 n=0; linkedDirs=""
 for d in testdata decoder/testdata; do
   while IFS= read -r p; do
@@ -39,9 +43,9 @@ for d in testdata decoder/testdata; do
     [ -e "$WT/$p" ] && continue
     if [ -d "$SRC/$p" ]; then
       mkdir -p "$WT/$p"
-      for c in "$SRC/$p"/* "$SRC/$p"/.[!.]*; do [ -e "$c" ] && ln -s "$c" "$WT/$p/"; done
+      for c in "$SRC/$p"/* "$SRC/$p"/.[!.]*; do [ -e "$c" ] && linkOne "$c" "$WT/$p/"; done
     else
-      mkdir -p "$(dirname "$WT/$p")"; ln -s "$SRC/$p" "$WT/$p"
+      mkdir -p "$(dirname "$WT/$p")"; linkOne "$SRC/$p" "$WT/$p"
     fi
     n=$((n + 1))
   done < <(git ls-files --others --ignored --exclude-standard --directory "$d")
