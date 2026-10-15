@@ -791,6 +791,45 @@ FAIL. A refused load measures nothing, so that label was wrong: it was VOID.
 
 **Unchanged:** amendments 1 and 2, the arms, prompts, bars, voids and the order of reading.
 
+**G2-R, read 2026-10-15 by day (the owner moved it off the night queue): VOID as a softcap test at both quants. Not
+declared.**
+
+- **The run:**
+  - Declaration branch `ecf58621`, the script at main `a84c955c`, under the timing lock, 15:20 to 15:21.
+  - The CPU process passed, with amendment 2's precondition holding at both quants. The Metal process passed amendment 3's
+    precondition and every load.
+  - The logs are in `~/goinfer-logs/op1-metal-2026-10-13/g2r-split-night-2026-10-15/`.
+- **Two earlier attempts the same afternoon measured nothing:**
+  - The Metal `.gguf` load was refused by the fit guard. That run was labelled FAIL by the old grading.
+  - The Metal precondition's `.giw` route read `seed[0]` with no seed and panicked. That was a harness bug, fixed in
+    `ecf58621`.
+  - After the second attempt, the grading was tightened (`a84c955c`): FAIL comes only from G2-R's own verdict lines, and
+    anything else that ends the run reads VOID.
+
+| arm | int8int8: min cosine, argmax | int4: min cosine, argmax |
+|---|---|---|
+| B, the softcap removed on both sides | 0.982217, 22/24 | 0.976711, 23/24 |
+| the control, the dense 1.5B (bar 0.95) | 0.997749, 21/24 | — |
+| Gemma 3 4B, the band's reference | 0.974482, 23/24 | — |
+| G, graded: the softcap on both sides | 0.991436, 23/24: pass | 0.982765, 20/24: pass |
+| P, the softcap dropped from the Metal build only | 0.990859, 23/24: **passes the rule** | 0.978495, 21/24: **passes the rule** |
+
+- **B's stop rule did not fire:** 0.88 is far below B at both quants.
+- **G passes at both quants and is inside the band:** G is not more than 0.03 under Gemma 3's 0.974482.
+- **P must fail and does not, at either quant.** The softcap barely acts on the gate's prompts. P's three numbers, read on
+  the CPU on the tokens P feeds:
+
+  | quant | scores over \|15\| | largest \|score\| | worst capped-vs-uncapped logit cosine |
+  |---|---|---|---|
+  | int8int8 | 0.0032% of 62,400 | 15.72 | 0.992485 |
+  | int4 | 0.0064% of 62,400 | 16.97 | 0.979200 |
+
+  At a cap of 50, `50·tanh(s/50)` moves a score of 17 by about 0.6, so dropping it costs less than the gate's tolerance.
+- **The outcome, as registered:** VOID as a softcap test at both quants, not a pass. Do not declare; change no bar and no
+  prompt after the fact.
+- **The registered next step:** a prompt set for long contexts, registered in advance, where the scores are larger. It is
+  for the owner to commission; nothing is registered yet.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
