@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **aikit v1.70.2** in all five modules: `DequantizeRowInt8` and `WeightMat.Row` check the destination length in every build and panic on a short one (no goinfer caller passes one: `docs/measurements/aikit-v1702-bump-2026-10-15.md`), and the encoder behind `/v1/embeddings` shares one scratch slab between attention and MLP, about half the scratch, bit-identical.
+
 ## [v0.23.0] — 2026-10-15
 
 ### Highlights
