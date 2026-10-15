@@ -130,6 +130,24 @@ prefills.
 **Memory after it:** the working set is C rows: 131 MiB on the 0.5B and 236 MiB on the 1.5B, against 1.2 and 2.1 GiB
 at 20K today. The quantized down-projection input in the pooled workspace is C rows too.
 
+**Amendment, 2026-10-15, after G40-1's first read: a sliding-window cache under fast attention is not chunked.**
+
+- **What G40-1 found.** On `gemma2-tiny` (sliding window 4), the chunked prefill differed from the single pass in 446
+  of the last row's logits at a suffix of 529, with C = 256. That held cold and warm, at suffixes 529 and 1,368: only
+  where the suffix takes fast attention.
+- **Where it differs.** The first difference was layer 1's keys, at the second chunk's rows. So layer 0, the
+  sliding-window layer, gave a different attention output. The fast local-layer attention depends on where the pass's
+  assembled key window starts, and a chunk boundary moves it.
+- **What still holds.** The exact path chunked identically on the same fixture. The dense (`llama-tiny`,
+  `llama-attnfa-tiny`) and MoE (`mixtral-tiny`) fixtures chunked identically in every case, including a short last
+  chunk inside a fast suffix.
+- **The change.** `prefillLogits` keeps the single pass for a cache with sliding-window layers whenever the suffix
+  takes fast attention. G40 therefore does not bound that case's working set: Gemma 2, 3 and 4, and every other family
+  with sliding-window layers, prefilled fast on the CPU. Making the fast local attention chunk-invariant is a separate
+  item.
+- **What does not change:** no bar, and no other part of the design. G40-1 now also asserts the number of passes each
+  chunked arm ran: several where it chunks, one for a windowed cache under fast attention.
+
 ### (b) Reserve the KV once
 
 Before the sweep, each attention layer's `keys` and `vals` are grown once, to the capacity the suffix needs. Rows are
