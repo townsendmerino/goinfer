@@ -1,6 +1,10 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"slices"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // kvQuant selects the CPU KV-cache storage precision. kvF32 (default) is
 // bit-exact; kvI8 stores K and V as per-(position,KV-head) symmetric int8 + a
@@ -458,6 +462,48 @@ func (c *KVCache) AppendLatent(layer int, latent []float32) {
 
 // Latent returns the stored MLA latent history for a layer as [storedPos, latentDim].
 func (c *KVCache) Latent(layer int) []float32 { return c.mlaLatent[layer] }
+
+// prefillChunkable reports whether a text prefill into this cache may run in several passes: nothing on the cache keeps
+// per-pass state that a pass boundary would split (an image block, m-RoPE positions, DeepStack rows, a hidden-state
+// capture, a speculative tree, a caller-driven position).
+func (c *KVCache) prefillChunkable() bool {
+	return c.imgBlocks == nil && c.mropePos == nil && c.deepstack == nil && c.captureLayers == nil && !c.subCapture &&
+		c.treeRowPos == nil && c.treeMask == nil && !c.manualPos
+}
+
+// reserveRows grows each append-forever attention layer's arrays so that rows more positions append without reallocating.
+// Capacity only: nothing stored changes. A ring layer, and a layer whose width is not yet known (nothing written), is left
+// alone.
+func (c *KVCache) reserveRows(rows int) {
+	if rows <= 0 {
+		return
+	}
+	for l := range c.numLayers {
+		if c.rings[l] != nil {
+			continue
+		}
+		if c.mlaLatent != nil {
+			if c.latentDim > 0 {
+				c.mlaLatent[l] = slices.Grow(c.mlaLatent[l], rows*c.latentDim)
+			}
+			continue
+		}
+		st := c.stride[l]
+		if st == 0 {
+			continue
+		}
+		if c.quant == kvI8 {
+			nKV := st / c.headDim
+			c.keysQ[l] = slices.Grow(c.keysQ[l], rows*st)
+			c.valsQ[l] = slices.Grow(c.valsQ[l], rows*st)
+			c.keyScale[l] = slices.Grow(c.keyScale[l], rows*nKV)
+			c.valScale[l] = slices.Grow(c.valScale[l], rows*nKV)
+			continue
+		}
+		c.keys[l] = slices.Grow(c.keys[l], rows*st)
+		c.vals[l] = slices.Grow(c.vals[l], rows*st)
+	}
+}
 
 // Pos is the number of positions stored so far.
 func (c *KVCache) Pos() int { return c.pos }

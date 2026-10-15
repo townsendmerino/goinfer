@@ -163,6 +163,13 @@ func (m *Model) embedN(ids []int) []float32 {
 // masked_scatter overwrites the scaled placeholder embed). Returns the [K,
 // HiddenDim] post-final-norm hidden states (the LM head is the caller's).
 func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
+	return m.runLayersFromEmbedNFloor(reqCtx, h, cache, fastAttn, len(h)/m.w.arch.HiddenDim)
+}
+
+// runLayersFromEmbedNFloor is runLayersFromEmbedN with the fast-attention floor keyed on floorK, the length of the whole
+// suffix being prefilled, rather than on this pass's rows: a chunked prefill (Model.prefillLogits) passes every chunk the
+// suffix's length, so a short last chunk keeps the suffix's attention path and its rows equal a single pass's.
+func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -198,7 +205,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// MoE is not excluded: its measured divergence was close to the dense case and never reached the output
 	// (docs/code-notes/decoder.md#Model.runLayersFromEmbedN.fastAttn). That evidence is one family, Mellum2, whose sliding-attention
 	// layers cap nKeys; a full-attention MoE is unmeasured, so do not read it as "MoE in general".
-	if fastAttn && K < fastAttnMinPrompt {
+	if fastAttn && floorK < fastAttnMinPrompt {
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
@@ -1222,14 +1229,46 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	h, err := m.forwardLayersN(ctx, prompt, cache, m.cpuFastAttention())
-	if err != nil {
-		return nil, err
+	// A sliding-window layer's fast attention is not chunk-invariant (G40-1: its output depends on where the pass's key window
+	// starts), so a cache with one keeps the single pass whenever the suffix takes fast attention.
+	fast := m.cpuFastAttention() && len(prompt) >= fastAttnMinPrompt
+	C := len(prompt)
+	if cache.prefillChunkable() && !(cache.localAny && fast) {
+		C = prefillChunkRows
+	}
+	var h []float32
+	for c0 := 0; c0 < len(prompt); c0 += C {
+		c1 := min(c0+C, len(prompt))
+		if c0 == C {
+			cache.reserveRows(len(prompt) - c0) // the first chunk taught the cache each layer's width
+		}
+		var err error
+		atomic.AddInt64(&prefillPasses, 1)
+		if h, err = m.runLayersFromEmbedNFloor(ctx, m.embedN(prompt[c0:c1]), cache, m.cpuFastAttention(), len(prompt)); err != nil {
+			return nil, err
+		}
 	}
 	hidden := m.w.arch.HiddenDim
-	last := h[(len(prompt)-1)*hidden:] // [HiddenDim] — LM head on the last row only
-	return m.lmHeadN(last, 1), nil
+	logits := m.lmHeadN(h[len(h)-hidden:], 1) // the LM head on the last row only
+	if len(prompt) >= prefillReleaseRows {
+		releaseHostMemory()
+	}
+	return logits, nil
 }
+
+// prefillChunkRows is how many rows one pass of a long text prefill holds (docs/tasks/task-cpu-prefill-memory-2026-10.md,
+// G40): the pass's working set is sized by its rows, so a chunk bounds it. A variable so a test can cross chunk boundaries on a
+// tiny fixture; 2048 in production.
+var prefillChunkRows = 2048
+
+// prefillPasses counts the batched passes prefillLogits runs, so a test can see that a chunked prefill really chunked: a
+// bit-identity gate cannot tell a prefill that never split from one that split correctly.
+var prefillPasses int64
+
+// prefillReleaseRows is the prompt length from which prefillLogits returns freed memory to the OS once the prefill is done: a
+// long prompt's scratch is garbage by then, and the runtime would otherwise keep it mapped. Shorter prompts skip the forced
+// collection.
+const prefillReleaseRows = 4096
 
 // prefillLogitsVL prefills a multimodal prompt and returns the last-position
 // logits: the text token embeddings with the projected vision embeddings
