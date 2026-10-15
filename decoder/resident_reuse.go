@@ -321,6 +321,9 @@ type kvAcquired struct {
 	shared, src int
 	copyDur     time.Duration
 	declined    string
+	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
+	// (Generation.PrefillSlot and PrefillMatch).
+	slotLen, match int
 }
 
 // residentAcquireIn is residentAcquireSlot for a request under scope sc. When another slot's published blocks hold
@@ -334,6 +337,9 @@ func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora 
 	}
 	if acq.slot >= 0 {
 		a := m.kvSlots()
+		if sq := a.Seq(a.Bound()); sq != nil {
+			acq.slotLen, acq.match = sq.Len(), commonPrefixLen(sq.Tokens(), prompt)
+		}
 		a.Acquired(a.Bound(), acq.reuse, prompt)
 		m.kvSetNS(a.Bound(), sc.Namespace)
 	}
