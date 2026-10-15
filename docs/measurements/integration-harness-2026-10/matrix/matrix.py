@@ -85,7 +85,10 @@ def main():
             slog = open(os.path.join(logdir, f"serve-{c['name']}.log"), "a")
             srv = subprocess.Popen(argv, stdout=slog, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
                                    env={**os.environ, "GOINFER_SWAP_GUARD": str(plan.get("swap_guard_mb", 512))})
-            proxy = subprocess.Popen([sys.executable, os.path.join(HERE, "wire_proxy.py"), str(pport), str(port), wirelog],
+            # "bodies": true in a configuration keeps every request body and response stream (wire_proxy.py) under
+            # bodies-<config>/ beside the wire log, for the id round trip's grade.
+            bodies = [os.path.join(a.out, f"bodies-{c['name']}")] if c.get("bodies") else []
+            proxy = subprocess.Popen([sys.executable, os.path.join(HERE, "wire_proxy.py"), str(pport), str(port), wirelog] + bodies,
                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             procs[:] = [proxy, srv]
             t = time.time()

@@ -1,0 +1,152 @@
+# 2026-10-14, by day, branch kv3-cuda-2026-10 at the tree committed as 6d3b40cb: the four suite failures run by name
+
+===== branch-fixed.log
+=== RUN   TestGemma4EModelPrefill_batchedBitIdentical
+=== RUN   TestGemma4EModelPrefill_batchedBitIdentical/18rows
+=== RUN   TestGemma4EModelPrefill_batchedBitIdentical/96rows
+--- PASS: TestGemma4EModelPrefill_batchedBitIdentical (2.00s)
+    --- PASS: TestGemma4EModelPrefill_batchedBitIdentical/18rows (1.38s)
+    --- PASS: TestGemma4EModelPrefill_batchedBitIdentical/96rows (0.62s)
+=== RUN   TestKV0_prefillInvariance_tiny
+=== RUN   TestKV0_prefillInvariance_tiny/f32
+    kv0_invariance_test.go:358: KV precision f32
+[kv0] fixture loaded, KV f16=false, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 512401 of 1024000 elements differ (first at position 0, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 131178 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.017): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 261833 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.016): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 7685 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.02): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 154112 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+=== RUN   TestKV0_prefillInvariance_tiny/f16
+    kv0_invariance_test.go:358: KV precision f16
+[kv0] fixture loaded, KV f16=true, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 475476 of 1024000 elements differ (first at position 1, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 127303 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0186): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@256                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 245953 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0151): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@511                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 6569 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0203): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 152933 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+--- PASS: TestKV0_prefillInvariance_tiny (1.08s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f32 (0.49s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f16 (0.59s)
+=== RUN   TestPrefillChunked_fastKernelsOnEveryChunk
+    prefill_chunk_fast_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestPrefillChunked_fastKernelsOnEveryChunk (0.00s)
+=== RUN   TestPrefillChunked_bitIdentical
+    prefill_chunked_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestPrefillChunked_bitIdentical (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	3.133s
+
+===== branch-fixed-heavy.log
+=== RUN   TestResidentDrafter_extendContext
+    drafter_test.go:142: ISOLATED-RUN: AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+    drafter_test.go:235: incremental (4+4) is BIT-IDENTICAL to one-shot (8) across 8192 K values
+--- PASS: TestResidentDrafter_extendContext (15.86s)
+=== RUN   TestKV0_prefillInvariance_real1p5B
+=== RUN   TestKV0_prefillInvariance_real1p5B/f32
+    kv0_invariance_test.go:369: KV precision f32
+[kv0] fixture loaded, KV f16=false, N=1000 floor=512 layers=28
+[kv0] whole pass: 28 attn_fused, 196 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 13837756 of 14336000 elements differ (first at position 0, layer 0); last logits 151936 of 151936 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 13446456 of 14336000 elements differ; last logits 151935 of 151936 differ (max |diff| 0.972): NOT INVARIANT, starts at position 0 (layer 0)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 3670016 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 13580961 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 1.19): NOT INVARIANT, starts at position 0 (layer 0)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 7325696 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 207586 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 0.829): NOT INVARIANT, starts at position 985 (layer 0)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 4147121 from it on (first at 700); last logits 151936 of 151936 differ
+[kv0] done in 5s
+=== RUN   TestKV0_prefillInvariance_real1p5B/f16
+    kv0_invariance_test.go:369: KV precision f16
+[kv0] fixture loaded, KV f16=true, N=1000 floor=512 layers=28
+[kv0] whole pass: 28 attn_fused, 196 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 13583400 of 14336000 elements differ (first at position 0, layer 2); last logits 151936 of 151936 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 13329587 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 1.08): NOT INVARIANT, starts at position 0 (layer 2)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 3670016 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 13418286 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 0.982): NOT INVARIANT, starts at position 0 (layer 2)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 7325696 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 203561 of 14336000 elements differ; last logits 151936 of 151936 differ (max |diff| 1.01): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 14336000 elements differ; last logits 0 of 151936 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 4124507 from it on (first at 700); last logits 151936 of 151936 differ
+[kv0] done in 7s
+--- PASS: TestKV0_prefillInvariance_real1p5B (18.68s)
+    --- PASS: TestKV0_prefillInvariance_real1p5B/f32 (9.19s)
+    --- PASS: TestKV0_prefillInvariance_real1p5B/f16 (9.48s)
+=== RUN   TestPrefillChunked_fastKernelsOnEveryChunk
+    prefill_chunk_fast_test.go:80: layers=28: single pass attn=28 gemm=196 | 3 chunks attn=84 gemm=588 | HiddenLast 3 chunks attn=0 gemm=0
+--- PASS: TestPrefillChunked_fastKernelsOnEveryChunk (4.75s)
+=== RUN   TestPrefillChunked_bitIdentical
+[chunked] chunk=4096   M=1024 prefill 164ms
+[chunked] chunk=256    M=1024 prefill 234ms
+[chunked] chunk=256    0/151936 seed logits differ from the single-pass reference
+[chunked] chunk=300    M=1024 prefill 234ms
+[chunked] chunk=300    0/151936 seed logits differ from the single-pass reference
+--- PASS: TestPrefillChunked_bitIdentical (3.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	43.057s
+
+===== p20.log
+=== RUN   TestP20ExpertLocality
+    p20_expert_locality_test.go:33: ISOLATED-RUN: the 26B needs 3.69 GB of KV + reserve against 3.98 GB free; declined in the one-process heavy tier, passes alone
+decoder: gemma4-26b-int4.giw is not in memory: reading its 14.6 GB once before the load
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.8 GB free — capping to 12 (1.3 GB)
+    p20_expert_locality_test.go:61: loaded gemma4-26b-int4.giw in 47s
+=== P20 EXPERT LOCALITY: gemma4-26b-int4.giw, M=512, cacheSlots=12, nE=128, topK=8 ===
+layer      rows distinct   row*topK  dupFactor fitsInSlots?
+MoE layers=0, worst-case distinct/layer=0 (cacheSlots=12), mean row-to-distinct dup factor=0.00
+EXISTING per-row LRU cache, this same prefill: 0 hits / 2240 misses (0.0% hit rate) — the headroom expert-major would have to beat
+--- PASS: TestP20ExpertLocality (55.70s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	55.821s
+
+===== 26b-cache-b.log
+=== RUN   TestGemma4_26B_cache_B
+    gemma4_26b_cache_test.go:48: ISOLATED-RUN: the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.6 GB free — capping to 31 (3.2 GB)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: expert cache (C′) cannot fit its MINIMUM: top-2 routed experts across 4 MoE layers need 0.03 GB of slots, but only 0.41 GB is free — 0 slots/layer fit. Free VRAM, lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright) — continuing on the CPU/staged path
+    gemma4_26b_cache_test.go:90: loaded 26B resident + C′ staging in 1m24s (11.4 GB experts host-pinned; ~0.7 GB slots + ~1.3 GB core in VRAM)
+    gemma4_26b_cache_test.go:191: B′ OK — 26B resident via C′ (31 slots/layer): 64 tok, distinct-trigram 0.818, 47 ms/tok (21.44 tok/s — capture OFF; sync H2D; informative capability number, NOT a same-machine benchmark)
+          cont: "The capital of France is **Paris**.\n\nIt is famous for many things, including:\n\n*   **Iconic Landmarks:** It is home to world-famous monuments like the **Eiffel Tower**, the **Arc de Triomphe**, and the **Notre-Dame Cathedral**.\n*   **Art and Culture"
+    gemma4_26b_cache_test.go:194: C′ cache: 12085 hits / 4871 misses = 71.3% hit rate (each hit is one skipped expert DMA; nSlots=31, topK=8, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse
+--- PASS: TestGemma4_26B_cache_B (87.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	88.754s

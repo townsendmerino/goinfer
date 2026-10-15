@@ -633,7 +633,7 @@ func markedTests(marker string) []string {
 // front rather than discovered by someone waiting on a gate they thought took minutes.
 func (g *gpuGate) cudaHeavy() {
 	g.grp("heavy")
-	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; measured 78 min on 2026-09-28)")
+	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group split in two processes by test name)")
 	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
 		g.heavySkipped = true
 		g.skip("heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert\n" +
@@ -647,32 +647,58 @@ func (g *gpuGate) cudaHeavy() {
 		g.bad("heavy tier partition: the marker derivation found ZERO draining tests")
 		g.note("drainsDevice() marker matched nothing — the derivation is broken, not the tree clean")
 	}
-	total := 0
+	var listed []string
 	lst := exec.Command("go", "test", "-tags", "cuda goinfer_testhooks", "./cuda/", "-list", ".*")
 	lst.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if b, err := lst.Output(); err == nil {
 		for ln := range strings.SplitSeq(string(b), "\n") {
 			if strings.HasPrefix(ln, "Test") {
-				total++
+				listed = append(listed, strings.TrimSpace(ln))
 			}
 		}
 	}
+	total := len(listed)
+	if total == 0 {
+		g.bad("heavy tier: `go test -list` found no tests in ./cuda/, so the main tier cannot be split")
+		g.note("heavy tier did not run: the ./cuda/ test listing was empty or failed to build")
+		return
+	}
+	halves := splitMainTier(listed)
 	fmt.Fprintf(g.w, "      partition (derived from drainsDevice() in cuda/drain_marker_test.go):\n")
 	fmt.Fprintf(g.w, "        package total     %d test(s)   [go test -list '.*']\n", total)
 	fmt.Fprintf(g.w, "        drain group        %d test(s)   %s\n", len(drain), strings.Join(drain, " "))
 	fmt.Fprintf(g.w, "        main group         %d test(s)   [complement, by construction]\n", total-len(drain))
 
-	fmt.Fprintf(g.w, "      streaming (one line per test):\n")
-	// The timeout needs real headroom over the tier's observed wall (the group header states the last
-	// measured one). A timeout that close to the wall reports a dead process with no test-level failure, and
-	// the crash head names whichever test was merely running: the most expensive red to diagnose. Do not lower
-	// it without re-measuring; the fresh-process tests below moved their share of the wall out of this process.
-	// History and the measurements: docs/code-notes/cmd-gate.md, "cudaHeavy: main-tier timeout".
-	mainRes, mainCR, mainOut := g.run(cell{
-		Name: "cuda-heavy", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "120m",
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_ISOLATE_DEFER": "1"},
-	}, true)
+	// The main group runs as two processes, split by test name, each under its own timeout. Each half needs
+	// real headroom over its observed wall: a timeout that close to the wall reports a dead process with no
+	// test-level failure, and the crash head names whichever test was merely running, the most expensive red
+	// to diagnose. Do not lower it, or merge the halves back, without re-measuring.
+	// The measurements: docs/code-notes/cmd-gate.md, "cudaHeavy: main-tier timeout".
+	var mainRes []*results
+	var mainOut string
+	mainRC := 0
+	for _, h := range halves {
+		fmt.Fprintf(g.w, "      main group, %s (%d test(s)), streaming (one line per test):\n", h.Label, len(h.Tests))
+		res, cr, out := g.run(cell{
+			Name: "cuda-heavy-" + h.Label, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+			Serial: true, Timeout: "120m", Run: h.Run,
+			Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_ISOLATE_DEFER": "1"},
+		}, true)
+		mainRes = append(mainRes, res)
+		mainOut += out
+		if cr.RC != 0 {
+			mainRC = cr.RC
+			fmt.Fprintf(g.w, "      %s full output: %s\n", h.Label, cr.LogPath)
+		}
+	}
+	// A split that drops or doubles a test is the failure mode, so every listed test must have a result in
+	// exactly one half.
+	missing, doubled := reconcileHalves(listed, mainRes)
+	fmt.Fprintf(g.w, "      split reconciliation: listed=%d  missing=%d  in-both=%d\n", total, len(missing), len(doubled))
+	if len(missing) > 0 || len(doubled) > 0 {
+		g.bad("heavy tier split does not reconcile — a test is in neither half or in both")
+		g.note(fmt.Sprintf("main-tier split mismatch: missing %v, in both halves %v", missing, doubled))
+	}
 
 	// INVOCATION 2: the drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is
 	// what un-skips the marker; -run restricts it to the derived set so the rest of the package is
@@ -740,7 +766,7 @@ func (g *gpuGate) cudaHeavy() {
 	}
 
 	secs := int(time.Since(t0).Seconds())
-	if mainCR.RC == 0 {
+	if mainRC == 0 {
 		g.ran++
 		g.ok("heavy tier (real models) — %ds", secs)
 		g.evidence(mainOut, okLineRe)
@@ -749,16 +775,85 @@ func (g *gpuGate) cudaHeavy() {
 		// Name the failing TESTS first, then their assertion lines. Never a bare "file.go:N:" match, which under
 		// -v is every log line in the run.
 		g.detail(mainOut, failTestRe)
-		fmt.Fprintf(g.w, "      full output: %s\n", mainCR.LogPath)
 	}
 	// Census its skips BY NAME. A tier whose value is "it runs the real models" is worth nothing if
 	// the real-model tests inside it skipped.
-	hsk := len(mainRes.topLevel("skip"))
-	fmt.Fprintf(g.w, "      ran %d tests, skipped %d\n", mainRes.runLines, hsk)
+	hsk, runLines := 0, 0
+	for _, r := range mainRes {
+		hsk += len(r.topLevel("skip"))
+		runLines += r.runLines
+	}
+	fmt.Fprintf(g.w, "      ran %d tests, skipped %d\n", runLines, hsk)
 	if hsk > 0 {
-		g.skipCensus(mainRes, "        ")
+		for _, r := range mainRes {
+			g.skipCensus(r, "        ")
+		}
 		g.note(fmt.Sprintf("heavy tier skipped %d test(s) — see the 2c census for which", hsk))
 	}
+}
+
+// mainTierHalf is one process of the heavy tier's main group: the tests it owns and the -run pattern that
+// selects exactly those.
+type mainTierHalf struct {
+	Label string
+	Tests []string
+	Run   string
+}
+
+// splitMainTier splits the listed ./cuda/ tests by the first letter after "Test": A to L in one half, the rest
+// in the other. Each pattern is an anchored alternation of the half's own names, so a name can match only its
+// own half, whatever characters it contains. An empty half is dropped.
+func splitMainTier(listed []string) []mainTierHalf {
+	var first, second []string
+	for _, n := range listed {
+		c := byte(0)
+		if len(n) > len("Test") {
+			c = n[len("Test")]
+		}
+		if (c >= 'A' && c <= 'L') || (c >= 'a' && c <= 'l') {
+			first = append(first, n)
+		} else {
+			second = append(second, n)
+		}
+	}
+	var out []mainTierHalf
+	for _, h := range []mainTierHalf{{Label: "A-L", Tests: first}, {Label: "M-Z", Tests: second}} {
+		if len(h.Tests) == 0 {
+			continue
+		}
+		quoted := make([]string, len(h.Tests))
+		for i, n := range h.Tests {
+			quoted[i] = regexp.QuoteMeta(n)
+		}
+		h.Run = "^(" + strings.Join(quoted, "|") + ")$"
+		out = append(out, h)
+	}
+	return out
+}
+
+// reconcileHalves returns the listed tests with no top-level result in any half, and those with a result in
+// more than one.
+func reconcileHalves(listed []string, halves []*results) (missing, doubled []string) {
+	seen := map[string]int{}
+	for _, r := range halves {
+		inThis := map[string]bool{}
+		for _, k := range r.order {
+			if !isSubtest(k) && r.final[k] != "" && !inThis[k.Test] {
+				inThis[k.Test] = true
+				seen[k.Test]++
+			}
+		}
+	}
+	for _, n := range listed {
+		switch seen[n] {
+		case 0:
+			missing = append(missing, n)
+		case 1:
+		default:
+			doubled = append(doubled, n)
+		}
+	}
+	return missing, doubled
 }
 
 // ---- 2d. CUDA graphs bit-exactness, FORCED ----

@@ -1,0 +1,44 @@
+swap guard (load): not armed for /home/francis/models/qwen3-4b.int4.e4h.cuda.v16.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+loaded "qwen3-4b": 36-layer model (vocab 151936) in 7.267s [chat: chatml, thinking: template default on, serving template]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  context: 28672 tokens (--ctx; model maximum 40960) · KV f16
+  fit: 28672-token cap needs 3.9 GB KV (weights 2.1 GB, budget 38.2 GB, 34.3 GB left for a request's own prefill)
+  KV plan: 1 conversation x 28672 positions (--ctx 28672)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions applies to the CPU path only)
+  features: tools (constrainable call form) · structured output
+"qwen3-4b" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +4096 MB over baseline
+goinfer serving on http://127.0.0.1:18192 [chat:[qwen3-4b]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 20.0 MiB (text) / 52.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 8.93 GB swap-used
+goinfer: batched prefill declined for a 17869-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: layer 0 attention at 12288 attended keys needs 49664 B of shared memory, past this device's 49152 B limit — batched prefill has no split-KV path, so this prompt length needs the sequential path: cuda prefill: batched path declined (arch/geometry)
+request: POST /v1/messages model=qwen3-4b status=200 prompt_tokens=17869 completion_tokens=1 ttft=272144ms total=272166ms
+
+shutting down…
+----- new1 -----
+swap guard (load): not armed for /home/francis/models/qwen3-4b.int4.e4h.cuda.v16.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+loaded "qwen3-4b": 36-layer model (vocab 151936) in 6.795s [chat: chatml, thinking: template default on, serving template]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  context: 28672 tokens (--ctx; model maximum 40960) · KV f16
+  fit: 28672-token cap needs 3.9 GB KV (weights 2.1 GB, budget 38.3 GB, 34.3 GB left for a request's own prefill)
+  KV plan: 1 conversation x 28672 positions (--ctx 28672)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions applies to the CPU path only)
+  features: tools (constrainable call form) · structured output
+"qwen3-4b" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +4096 MB over baseline
+goinfer serving on http://127.0.0.1:18192 [chat:[qwen3-4b]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 20.0 MiB (text) / 52.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 8.93 GB swap-used
+request: POST /v1/messages model=qwen3-4b status=200 prompt_tokens=17869 completion_tokens=1 ttft=25195ms total=25217ms
+
+shutting down…

@@ -262,6 +262,18 @@ no-margin state the note above describes. The fresh-process tests below moved ~1
 this process at the same time, so 120m is headroom, not a new expectation.
 ```
 
+**Split in two processes since 2026-10-14 (owner decision, `docs/queue-engineering.md` B21).** The one-process main group had outgrown
+120 m. The KV3 CUDA suite, run as one process on 2026-10-13, spent 6,507 s on the first 421 of 469 main-group tests, after removing the
+684 s of fresh-process tests, with 48 still to start (`docs/measurements/kv3-cuda-2026-10-13.md` §5). The same tests split by name
+measured about 59 min for `Test[A-L]` and about 53 min plus about 13 min unreached for `Test[M-Z]` (that record's re-queue paragraph).
+`cudaHeavy` now runs the main group as two processes. `splitMainTier` puts A to L in one and the rest in the other, each selected by an
+anchored list of its own names from `go test -list`, and `reconcileHalves` fails the tier if a listed test has a result in neither half
+or in both. Each half keeps the 120 m timeout, about 2x its expected hour, which is more headroom than the single process ever had.
+A single process re-registered with the same 50% margin would have needed about 3 h, the whole night-job limit. The expected gate
+wall is about 2 h 20 min: the two halves (about 2 h), the fresh-process tests (about 11 min), the drain group and the 5 min outside
+the heavy tier. The first measured run replaces these figures. If either half nears an hour and a half, split again (three
+letter ranges) rather than raise the timeout.
+
 ## ptxVersionRe (group 4 header)
 
 Moved from `cmd/gate/gpu.go` (the comment above `ptxVersionRe`) on 2026-10-09.

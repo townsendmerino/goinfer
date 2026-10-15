@@ -573,3 +573,9 @@ func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
 	}
 	return slot, rows
 }
+
+// WholePromptScratchBytesForTest is the CPU batched sweep's whole-prompt scratch figure (prefillScratchBytes) that admission
+// priced a resident request at before a resident could report its own per-pass figure: the price a test sets beside the new one.
+func (m *Model) WholePromptScratchBytesForTest(promptTokens int) int64 {
+	return prefillScratchBytes(m.Config(), promptTokens)
+}
