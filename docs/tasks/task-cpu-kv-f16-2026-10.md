@@ -1,6 +1,6 @@
 # Task: f16 KV on the CPU as the command-line default, with f32 kept as the reference (2026-10)
 
-> **Status: GATES REGISTERED 2026-10-14 (§5); not started.** The owner asked for it on 2026-10-12 ("can we keep f32
+> **Status: APPROVED 2026-10-15 (owner), to build after G40 passes; gates registered 2026-10-14 (§5).** The owner asked for it on 2026-10-12 ("can we keep f32
 > as an option for kv on cpu, but make default f16? f32 would be important for our reference"). On 2026-10-14 the owner
 > asked for a recommendation on the two open decisions (§1, answered in §1a) and for the gates, with building to follow
 > G40 by day if approved. Nothing here is measured yet. The facts about the code were read at main `88665dbe`, re-read
@@ -22,6 +22,8 @@
   2. **Its place in the order.** Unscheduled.
 
 ## 1a. Recommendation on the two decisions (2026-10-14, for the owner)
+
+**Owner, 2026-10-15: approved as recommended below.** Building starts once G40's night gates (G40-2, G40-3) pass.
 
 **Decision 1, which default moves: the command lines, not the library.** This is §1's recommendation, with two
 refinements.
