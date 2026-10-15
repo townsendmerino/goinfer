@@ -803,6 +803,29 @@ for them:** the served speed gate on both boxes and the Metal device gate.
   - time-to-first-token at K = 512 and K = 3,900 is 0.97 or better against main (CUDA: night job);
   - a Claude Code-sized first request on CUDA prefills in batched passes (night job; 45 s or less on Qwen3-4B).
 - **Size:** S.
+- **Inside a pass: what is left after chunking (added 2026-10-15; not started).** With passes bounded at 512 rows,
+  `cuda/prefill_scratch.go:cudaResident.PrefillScratchBytes` is about 69 MiB on the 1.5B and 148.5 MiB on the 7B (Qwen2.5
+  shapes, before the allocator's rounding), and the MLP is most of it: three `M × inter` f32 buffers, against 12–13% on the
+  attention side. Two reductions, both bit-identical by construction. Each lowers the per-chunk admission figure, and so frees
+  KV pool, since the pool is the budget minus everything else (§5.10). Neither is large; together they are about 1,000 tokens
+  of f16 KV on either model.
+  1. **CUDA: `glu_quant_batched` writes its product into the gate buffer.** Each thread reads `g[i]` and writes `dscr[i]` at
+     the same index, and the quantize loop reads `dscr` only after `__syncthreads`, so `dScrB` can be `gOb` (and `pleGB` on
+     the PLE path, `cudaResident.prefillCore`'s second `bSw` launch). That drops one `M × inter` buffer per pass: 17.5 MiB
+     on the 1.5B, 37 MiB on the 7B, about 25%, roughly 640 tokens of f16 KV on either. The kernel declares `g` and `dscr`
+     `__restrict__`, and aliasing restrict pointers is undefined behaviour, so this needs an in-place variant without it, a
+     PTX rebuild (`cuda/build_ptx.sh`), a bit-identity check against today's pass, and `PrefillScratchBytes` changed in the
+     same commit (`TestKV3_prefillScratchBytes_matchesThePass` holds the two together).
+  2. **Phase aliasing, the pattern aikit v1.70.2 shipped for its encoder.** The attention-side buffers (`aqB`, `qBb`, `kBb`,
+     `vBb`, `cctxB`, `cqB` and their scales) and the MLP-side ones become sub-buffers of one allocation sized to the larger
+     phase. It saves only the attention side, 12–13% of a pass (8.5 MiB on the 1.5B, 19.5 MiB on the 7B). Which buffers
+     cross the phase boundary has not been checked in this tree; aikit's `TestScratchPhases_poisonedBoundaryIsInert` (NaN
+     written into each phase's buffers at the boundary, output bit-identical to a fresh run) is the model for its gate.
+     Worth doing only after 1, and only if the KV budget is at the margin.
+  - **Metal is not the same fix.** Its gate and up share one fused `[M, 2·maxI]` buffer (`guF`), and the product goes to a
+    separate `[M, maxI]` (`dqF`), which the down GEMM reads. Writing the product compactly into `guF` would overwrite rows
+    not yet read, so the Metal equivalent needs a down GEMM that reads A at a 2·I row stride, or a different kernel order.
+    Not scoped.
 
 ### KV4 — Paged storage on CUDA, then f16
 
@@ -921,6 +944,22 @@ Added on the owner's word the same day, from the conversation that produced `doc
     expert's gate, up and down weights and scales in one layer. Both depend on the model and its quantization. So they share
     memory through a common slab arena, or by trading coarse device buffers under one byte budget, not by packing experts
     into KV blocks.
+  - **One concrete form of the common slab arena: two-ended (added 2026-10-15).** From demofox's "double-headed stack
+    allocator" (2026-10-03): KV blocks are carved from the bottom of one device allocation and expert slots from the top,
+    and the boundary moves as the mix shifts. A long agent prompt moves it up by evicting the expert at the boundary; a
+    short chat moves it down by releasing the KV block there. Three things decide whether it fits:
+    - **Only the boundary moves.** Every expert slot except the one at the boundary keeps its address, which meets the
+      graph constraint below for all but one slot: only the boundary slot's segments need re-capture, or the boundary
+      slot stays out of captured segments.
+    - **KV blocks are relocatable.** Kernels reach them through the block table, a launch argument (§5.11), so a busy KV
+      block at the boundary can be copied into a free block lower in the pool and its table entry rewritten, instead of
+      waiting for it to free. Holes in the KV side stay usable by KV, since every block is one size; they only hold the
+      boundary still until it compacts.
+    - **Against it:** option A's per-group pools (§5.2) make several KV sides, not one, so the two-ended form fits one
+      group's pool (the full-attention group, which holds most of the bytes) or needs option B's uniform page; and
+      compaction is device copy traffic the eviction cost model has to charge.
+
+    A design option for the build, not a decision. "First, measure" below still decides whether there is a build.
   - **Resizing is new.** Today CUDA sizes its expert cache once, at load and after KV, to the free memory it measures
     (`cuda/resident.go:cudaResident.allocSlots`, `cuda/resident.go:expertCache`). Any buffer a captured CUDA graph segment
     reads must keep its address, so slot buffers are allocated at their largest size up front, or the segments that read
