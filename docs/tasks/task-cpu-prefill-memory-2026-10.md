@@ -279,6 +279,22 @@ A run that does not resolve a direction by day goes to the night as a served two
 
 **Prediction:** every cell within 1.00 ± 0.02 (0.7); the forced collection under 100 ms at 20K (0.8).
 
+### Amendment, 2026-10-15, before G40-2 and G40-3 run (the run details the registration left open)
+
+- **Revisions.** "Before" is `main` at `4d393367`, the branch's merge base. "After" is `789a316a`.
+- **G40-3's pairs.** The registration fixed no number of paired runs. Fixed now, before any run:
+  - 5 pairs at 6,000 tokens;
+  - 3 pairs at 20,000 tokens.
+- **G40-3's run order.** The arms alternate in an ABBA pattern across pairs. Each cell is loaded once, and each arm gets
+  a fresh cache.
+- **Not changed:** the bars, and the C = 4,096 alternative. The ratio is read as the median of the pairs' chunked ÷
+  single-pass times.
+- **Both arms return memory after a prompt of 4,096 rows or more,** because the release is in `prefillLogits` for every
+  pass shape. The single pass is not chunked; it still releases. So the ratio compares the chunking alone, and the
+  release's own time is reported beside it, timed once a cell.
+- **A cell that would swap is void, not a fail.** Each cell checks available memory before it loads, and is void if
+  available memory is under 7 GiB for the 1.5B at 20K, or under 4 GiB otherwise. G40-2's precondition is unchanged.
+
 ### Done
 
 G40-1 and G40-2 pass and G40-3 ships. G40-2's before-and-after record goes beside KV9's, and G40 in
