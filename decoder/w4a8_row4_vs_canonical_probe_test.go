@@ -40,14 +40,17 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 	var gateUp, down []sample
 	rng := rand.New(rand.NewSource(1))
 	build := func(wm *linalg.WeightMat) (sample, bool) {
-		q4, q4s, group, ok := wm.Int4()
+		q4, q4s16, group, ok := wm.Int4F16()
 		if !ok {
 			return sample{}, false
 		}
-		row4, row4Scales, ok := wm.Int4Row4()
+		row4, row4Scales16, ok := wm.Int4Row4F16()
 		if !ok {
 			return sample{}, false
 		}
+		q4s, row4Scales := make([]float32, len(q4s16)), make([]float32, len(row4Scales16))
+		linalg.F16ToF32Slice(q4s, q4s16) // the kernels below take f32 scales
+		linalg.F16ToF32Slice(row4Scales, row4Scales16)
 		act := make([]float32, wm.Cols())
 		for j := range act {
 			act[j] = rng.Float32()*2 - 1
