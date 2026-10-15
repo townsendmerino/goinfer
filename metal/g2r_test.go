@@ -4,7 +4,6 @@ package metal
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -12,34 +11,24 @@ import (
 )
 
 // TestG2R_registered is OP1's real Gemma 2 gate, G2-R, run as registered in docs/tasks/task-forward-architecture-2026-10.md
-// §4.6 ("G2-R's baseline step"): one session, in this order.
+// §4.6 ("G2-R's baseline step", and the 2026-10-15 amendment): the Metal process, reading the CPU side from the file
+// TestG2R_cpuReference wrote (g2r_split_test.go), in this order.
 //
-//  0. The hook check: on the CPU, removing the softcap (decoder.SetAttnSoftcapOffForTest) must change the 2B's logits.
+//  0. The hook check: on the CPU, removing the softcap (decoder.SetAttnSoftcapOffForTest) must have changed the 2B's logits.
 //  1. Arm B: the gate's harness with the softcap removed on both sides, at int8int8 and int4. If 0.88 is within 0.001 of
 //     B's min cosine at either quant, the run stops there.
 //  2. The control (TestDenseResidentParity's) and Gemma 3 (TestGemma3ResidentParity's), for G2-R's band.
 //  3. Arm G: TestGemma2ResidentParity's measurement, the softcap on both sides, at both quants.
 //  4. Arm P: the softcap dropped from the Metal build only (attnSoftcapDropForTest), at both quants; it must fail G2-R's
-//     rule. P also records, on the CPU and on the tokens P feeds, how much the softcap acts: the share of scores with
-//     |score| > 15 before the cap, the largest |score|, and the worst per-position logit cosine between the capped and the
-//     uncapped CPU runs.
+//     rule. P also reports, from the CPU process, how much the softcap acts on the tokens P feeds.
 //
-// It prints a verdict block and fails on anything but a pass. Run it alone, under the timing lock:
-//
-//	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal -run '^TestG2R_registered$' -count=1 -v -timeout 60m
+// It prints a verdict block and fails on anything but a pass. Run by run-g2r-split-night.sh, after the CPU process.
 func TestG2R_registered(t *testing.T) {
 	requireHeavyModel(t)
 	const bar, stopMargin, band = 0.88, 0.001, 0.03
-	g2 := os.ExpandEnv("$HOME/models/gemma-2-2b-it-Q8_0.gguf")
-	g3 := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
-	dense := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
-	for _, p := range []string{g2, g3, dense} {
-		if _, err := os.Stat(p); err != nil {
-			t.Fatalf("VOID: a checkpoint the session needs is missing: %v", err)
-		}
-	}
+	ref := g2rLoadRef(t)
+	g2, g3, dense := g2rPaths()
 	quants := []string{"int8int8", "int4"}
-	seed := seedPrompt(t, g2, probeText)
 	var report []string
 	say := func(format string, a ...any) {
 		line := fmt.Sprintf(format, a...)
@@ -47,18 +36,10 @@ func TestG2R_registered(t *testing.T) {
 		t.Log(line)
 	}
 	defer func() { t.Log("== G2-R verdict block ==\n" + strings.Join(report, "\n")) }()
+	say("CPU reference made at %s, in its own process", ref.Commit)
 
 	// 0. The hook check.
-	tokens := g2rTokens(t, g2, "int8int8", seed, 24, false)
-	with := g2rCPULogits(t, g2, "int8int8", tokens, true)
-	without := g2rCPULogits(t, g2, "int8int8", tokens, false)
-	changed := false
-	for i := range with {
-		for j := range with[i] {
-			changed = changed || with[i][j] != without[i][j]
-		}
-	}
-	if !changed {
+	if !ref.HookChanged {
 		say("STOP: the hook is broken: the CPU's logits with the softcap removed equal its logits with it")
 		t.FailNow()
 	}
@@ -69,7 +50,7 @@ func TestG2R_registered(t *testing.T) {
 	for _, q := range quants {
 		was := decoder.SetAttnSoftcapOffForTest(true)
 		g2rCheckCap(t, g2, q, 0)
-		st := residentParityAt(t, g2, q, seed, 24)
+		st := g2rMetalAgainst(t, g2, q, ref.Arms["B/"+q])
 		decoder.SetAttnSoftcapOffForTest(was)
 		say("B  %-8s softcap removed on both sides: min cosine %.6f, argmax %d/%d, NaN %d", q, st.minCos, st.exact, st.steps, st.nan)
 		if st.minCos < bar+stopMargin {
@@ -82,20 +63,20 @@ func TestG2R_registered(t *testing.T) {
 	}
 
 	// 2. The control and Gemma 3, same session.
-	ctrl := residentParity(t, dense, seedPrompt(t, dense, probeText), 24)
+	ctrl := g2rMetalAgainst(t, dense, "int8int8", ref.Arms["control"])
 	say("control (dense 1.5B, int8int8): min cosine %.6f, argmax %d/%d", ctrl.minCos, ctrl.exact, ctrl.steps)
 	if ctrl.nan > 0 || ctrl.minCos < 0.95 || ctrl.exact*2 < ctrl.steps {
 		say("VOID: the control failed its 0.95 bar")
 		t.FailNow()
 	}
-	g3st := residentParity(t, g3, seedPrompt(t, g3, probeText), 24)
+	g3st := g2rMetalAgainst(t, g3, "int8int8", ref.Arms["gemma3"])
 	say("Gemma 3 4B (int8int8): min cosine %.6f, argmax %d/%d", g3st.minCos, g3st.exact, g3st.steps)
 
 	// 3. Arm G.
 	gPass, parked := true, false
 	for _, q := range quants {
 		g2rCheckCap(t, g2, q, 50)
-		st := residentParityAt(t, g2, q, seed, 24)
+		st := g2rMetalAgainst(t, g2, q, ref.Arms["G/"+q])
 		pass := st.nan == 0 && st.minCos >= bar && st.exact*2 >= st.steps
 		say("G  %-8s softcap on both sides: min cosine %.6f, argmax %d/%d, NaN %d, worst near-tie %.3f%% -> %s", q, st.minCos, st.exact, st.steps, st.nan, st.worstTie*100, map[bool]string{true: "pass", false: "FAIL"}[pass])
 		gPass = gPass && pass
@@ -105,31 +86,22 @@ func TestG2R_registered(t *testing.T) {
 		}
 	}
 
-	// 4. Arm P, and how much the softcap acts.
+	// 4. Arm P, and how much the softcap acts (from the CPU process, on the tokens P feeds).
 	pFails := true
 	for _, q := range quants {
 		attnSoftcapDropForTest = true
 		g2rCheckCap(t, g2, q, 0)
-		st := residentParityAt(t, g2, q, seed, 24)
+		st := g2rMetalAgainst(t, g2, q, ref.Arms["G/"+q])
 		attnSoftcapDropForTest = false
 		fails := st.nan > 0 || st.minCos < bar || st.exact*2 < st.steps
 		say("P  %-8s softcap dropped from the Metal build only: min cosine %.6f, argmax %d/%d -> %s", q, st.minCos, st.exact, st.steps, map[bool]string{true: "fails the rule, as it must", false: "PASSES the rule"}[fails])
 		pFails = pFails && fails
-
-		toks := g2rTokens(t, g2, q, seed, 24, false)
-		stopStats := decoder.StartAttnScoreStatsForTest()
-		capped := g2rCPULogits(t, g2, q, toks, false)
-		n, over, maxAbs := stopStats()
-		uncapped := g2rCPULogits(t, g2, q, toks, true)
-		worst := 1.0
-		for i := 2; i < len(capped); i++ {
-			worst = min(worst, cosF(capped[i], uncapped[i]))
-		}
+		ps := ref.PStats[q]
 		share := 0.0
-		if n > 0 {
-			share = float64(over) / float64(n)
+		if ps.N > 0 {
+			share = float64(ps.Over) / float64(ps.N)
 		}
-		say("   P's tokens on the CPU at %s: %d capped scores, %.4f%% with |score| > 15, largest |score| %.2f; worst capped-vs-uncapped logit cosine %.6f", q, n, 100*share, maxAbs, worst)
+		say("   P's tokens on the CPU at %s: %d capped scores, %.4f%% with |score| > 15, largest |score| %.2f; worst capped-vs-uncapped logit cosine %.6f", q, ps.N, 100*share, ps.MaxAbs, ps.Worst)
 	}
 
 	switch {
