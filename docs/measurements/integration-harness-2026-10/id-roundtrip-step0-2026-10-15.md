@@ -82,58 +82,115 @@ each other.
 The model does not say what a truncated reply does next. A truncated call is lost and its turn is redone, and a truncated summary
 loses part of the history. Those replies are 4% and 6% of the run, so the compaction saving is an upper bound.
 
-## (a) How cold and warm prefills stay identical
+**Owner decision (2026-10-15): the cap stays at 4,096 for Codex.** A smaller cap truncates compaction summaries (1 of 20 at
+3,072, 4 of 20 at 2,048), and a truncated summary costs more than the compactions saved. Recorded in the I3 notes too
+(`i3-night-2026-10-13.md`, § "After run: the compactions and the cold continuations, diagnosed", part 4).
 
-**What the owner's store gives.** With the generated ids kept per reply, in a store keyed by the exact echoed rendering and
-outliving the KV blocks, a warm request and a cold one tokenize the echoed reply identically. The token sequence then no longer
-depends on what the KV holds. That part holds.
+## (a) Design (owner decision, 2026-10-15): the reply's ids ride in its own opaque field, signed; no server-side store
 
-**Where it cannot hold as stated.**
-- **Equal ids do not give byte-identical outputs.** A warm request reuses the reply's rows as decode wrote them; a cold one
-  prefills the same ids in batch. `docs/tasks/task-kv-architecture-2026-10.md` §5.6 property 3 already says a continuation is not
-  bit-identical to cold. That is true today for every full reuse, and the store neither adds nor removes it. A gate that demands
-  byte-identical outputs warm against cold fails on main today without any id store. What the store can promise is identical
-  prompt ids. Byte identity would need the next turn to re-prefill the reply's rows instead of reusing them, at the cost of the
-  reply's length in prefill (a median of 184 tokens here, about 2 s on this load).
-- **The store brings in a new dependence of its own.** Today the prompt ids are a function of the request bytes alone. With a
-  store, they are a function of the request bytes and the store's contents. An evicted entry, a restart or a second server
-  tokenizes the same request differently from an identical earlier one. That is the cold/warm split moved from the KV to the store.
-  It is narrow, because only the non-canonical replies (4 of 45 here) need an entry at all. The canonicity check above, run once at
-  commit, says which ones those are, and a canonical reply needs nothing stored. Entries are small too: about 4 bytes an id,
-  about 3 KB for a 700-token reply.
+**Decided:** the opaque-field design, not the store, with conditions (a) to (c) below. The store design and the reasons it lost
+are kept after them. **There is no Chat Completions store for now.** It is revisited if opencode runs show cold or partial
+continuations that this cause explains.
 
-**A better answer where the protocol allows it: carry the ids in the reply's own opaque field.** Responses has one:
-`encrypted_content`, which serve already writes as the reasoning's bytes and which came back byte for byte in all 298 of the
-night's items. Anthropic's `thinking.signature` is another, which serve sends empty today. If that blob carried the reply's
-generated ids (the whole assistant turn's, reasoning, calls and text), plus a hash of the text they decode to, the prompt ids
-would again be a function of the request bytes alone. Cold equals warm by construction, across restarts, evictions and servers,
-and no store is needed. serve uses the ids only when the echoed items re-render to exactly the text the ids decode to; otherwise
-it tokenizes as today. Chat Completions has no opaque field, so it keeps the store, with the dependence stated. Two conditions
-apply to the blob:
-- **Special ids.** A client can forge a blob. Decode-equal text is not enough, because a special id decodes to its surface form
-  (`<|im_end|>`). serve must accept only ids that are not special inside content segments, in the template's own segmentation,
-  or a blob forges turn boundaries that `EncodeSegments` exists to stop.
-- **A dropped reasoning item.** A client that drops the reasoning item loses the ids, and the reply falls back to today's
-  behaviour, not to anything worse.
+**What is carried, and where.** When a reply is committed, serve has its generated ids: the whole assistant turn, from the first
+generated id to the last before the stop token, covering reasoning, calls and text. On `/v1/responses` the reasoning item's
+`encrypted_content` carries them, in a new format beside the current one:
+- the current `goinfer-reasoning-v1:<base64 text>` stays readable, and carries text only;
+- `goinfer-reasoning-v2:<base64>` encodes: the format version, the reasoning text (which the field already carries), the ids
+  (varint-packed: about 1.5 bytes an id, so 4,096 ids are about 8 KB before base64), the identity of the served model and its
+  tokenizer, the key id, and the MAC.
+
+`content` keeps the readable reasoning text as today.
+
+**Condition a: signed with a key the server holds.**
+- **The MAC.** HMAC-SHA256 over the version, the key id, the model and tokenizer identity, the request's D4 namespace, and the
+  packed ids.
+- **Why refusing special ids is not enough.** An unsigned blob would let a client choose an unusual tokenization of
+  harmless-looking text. The model would then be conditioned on a token sequence it never produced, with a text check that
+  passes.
+- **How the key is held.** By default it is 32 bytes from `crypto/rand`, generated at server start and never written anywhere.
+  A restart, or a second server, makes every older blob fail the check. It then falls back to re-tokenizing, counted under
+  `key`, which is today's behaviour. An operator who wants ids to survive restarts or span servers configures the key with a
+  flag naming a file (32 bytes or more, mode 0600, refused otherwise). It is not an env read (`docs/env-vars.md`, the policy).
+- **The key id** is the first 8 bytes of SHA-256 of the key. It lets a blob from a different key be counted as `key`, not as a
+  forgery.
+
+**Condition b: the ids must decode to exactly the echoed text, or the turn re-tokenizes as today, and every outcome is counted.**
+- **Where the check runs:** on the assistant turn's own segments, as the template renders them from the echoed items.
+- **What it requires:**
+  - the carried ids, split at their special ids, give the same sequence of special ids as the template's special segments for
+    that turn;
+  - each run of non-special ids decodes to exactly the text of the template's content segment in that place: reasoning, the
+    rendered call JSON, the answer text;
+  - no special id inside a content run.
+- **When it passes,** the turn's ids are the carried ids. That would have given 45 of 45 here: in this replay, every rendered
+  turn's text equalled the decoded generated text.
+- **When it fails,** the turn is tokenized exactly as today, and the reason is counted:
+
+  | reason | what failed |
+  |---|---|
+  | `v1` | the blob carries no ids |
+  | `parse` | a malformed blob |
+  | `mac` | a bad or missing signature |
+  | `key` | another key id |
+  | `model` | another model or tokenizer |
+  | `ns` | another namespace |
+  | `special` | the special ids differ, or a special id sits inside content |
+  | `decode` | the text differs, which is a client edit |
+
+- **Where the count lands:**
+  - `-log-requests` gains `ids=<used>/<carried>` (turns that used their ids, of the turns that carried a blob) and
+    `ids_fallback=<reason>,...`;
+  - the totals by reason go in the admin socket's `status` report.
+- **A fallback is the cold path by construction:** the prompt ids are the ones a request carrying no blob gets today.
+
+**Condition c: replies with no reasoning item.**
+
+| case | carrier | covered? |
+|---|---|---|
+| Responses, a reply that reasons (Codex x Mellum2.1 here) | the reasoning item's `encrypted_content` | yes |
+| Responses, a reply with no reasoning (a non-thinking model, thinking off, `reasoning.effort: none`) | a carrier-only reasoning item (empty `content`, `encrypted_content` holding the ids), emitted only when the request asked for `include: ["reasoning.encrypted_content"]`, which says the client round-trips it | yes for clients that ask, as Codex does; no for the others |
+| Responses, a client that drops reasoning items, or does not ask for `encrypted_content` | none (call and message items have no opaque field; `call_id` and the item `id` are echoed but are identifiers, and are not used as carriers) | **no** |
+| Anthropic `/v1/messages`, a turn with a thinking block | the block's `signature`, empty today | yes, if the client echoes thinking blocks back (Claude Code does on tool turns; to be checked per client) |
+| Anthropic, a turn with no thinking block (thinking off, a non-thinking model) | none: `text` and `tool_use` blocks have no opaque field. A `redacted_thinking` block carries opaque `data`, but sending one to a client that did not ask for thinking is unverified | **no** |
+| Chat Completions | none, and no store for now | **no** |
+
+**The step-0 sample's share without a carrier: 0 of 45 replies and 0 of 4 misses.** Every reply carried a reasoning item: 44
+reasoning then a function call, 1 reasoning then a message. The night's rollouts agree: 298 of 298 responses had one. The cases
+marked **no** are other workloads (other clients, thinking off, Chat Completions), and this sample cannot size them.
+
+**Cold against warm, under this design.**
+- **Prompt ids.** Within one key's lifetime they are a function of the request bytes alone: the same echoed items give the same
+  ids, whatever the KV holds. With a configured key that holds across restarts and servers too. With the default key, a restart
+  turns old blobs into counted `key` fallbacks, which tokenize exactly as a cold request with no blob.
+- **Outputs.** Byte identity of outputs between warm and cold is not given by equal ids. A warm request reuses rows that decode
+  wrote, while a cold one prefills the same ids in batch: `docs/tasks/task-kv-architecture-2026-10.md` §5.6 property 3, true for
+  every continuation on main today. The gates below hold prompt-id identity as the bar and report output identity. If byte
+  identity is wanted, the next turn would re-prefill the reply's rows instead of reusing them, costing the reply's length in
+  prefill (a median of 184 tokens here, about 2 s on this load).
+
+**The store design, not chosen.** A per-reply id store keyed by the echoed rendering also makes the ids independent of the KV.
+But it makes them depend on the store's own contents: eviction, restart, which server answered, and what else ran (a problem for
+KV2's schedule-independence gate). It also has to be namespaced for D4. The signed blob has none of these, because the ids arrive
+in the requester's own request.
 
 ## (b) Fit with KV2 and D4
 
-- **The chain.** KV1's index keys blocks by the chain hash of token ids. With the ids reused, the chain runs through the reply
-  instead of breaking inside it, so a conversation's next turn finds its own blocks. On CUDA the follow-up then diverges only
-  after the reply, inside the ring's 448-position rollback, which removes this cause of the cold continuations whether or not the
-  rollback is ever raised.
-- **Across conversations.** §5.6 property 3 accepts decode-class rows only as a continuation of the same chain. So KV2 will not
-  copy a reply's decode-written rows to another conversation, even when the store makes the ids equal: the requester's cold class
-  for those rows is a prefill class. What KV2 can share across conversations stays the prefill-class preamble. The id reuse does
-  not widen sharing and needs no change to KV2's gates.
-- **D4.** A server-side store must be keyed by (namespace, hash of the echoed rendering). Otherwise one namespace's generations
-  decide how another's identical text is tokenized. That is cross-namespace influence on outputs, and a timing probe: whether reuse
-  happened reveals that someone generated that exact text. The blob form needs no namespace, because the ids come in the
-  requester's own request.
-- **The schedule-independence gate.** KV2's gate (N conversations sharing a preamble, every reply equal to that conversation's
-  reply alone) holds under the blob form. Under a shared store whose eviction depends on what else ran it can fail: the schedule
-  decides an eviction, and the eviction decides the tokenization. A store that is per namespace and never evicts before the
-  conversation's KV does is the minimum for the store form.
+- **The chain.** KV1's index keys blocks by the chain hash of token ids. With the carried ids used, the chain runs through the
+  reply instead of breaking inside it, so a conversation's next turn finds its own blocks. On CUDA the follow-up then diverges
+  only after the reply, inside the ring's 448-position rollback. That removes this cause of the cold continuations whether or
+  not the rollback is ever raised.
+- **Across conversations.** §5.6 property 3 accepts decode-class rows only as a continuation of the same chain. KV2 therefore
+  never copies a reply's decode-written rows to another conversation, even when the ids are equal, because the requester's cold
+  class for those rows is a prefill class. What KV2 shares stays the prefill-class preamble. The design does not widen sharing
+  and needs no change to KV2's gates.
+- **D4.**
+  - The namespace is inside the MAC. A blob minted in one namespace and presented in another falls back (`ns`, counted), so one
+    namespace's generations never decide another's tokenization.
+  - With serve's single API key there is one namespace today, so this is a no-op until namespaces multiply. It is in the MAC
+    from the start so it does not become a format change later.
+- **Schedule independence (KV2's gate) holds under this design.** The ids come from the request, not from shared state that
+  other conversations could change.
 
 ## (c) Gates — DRAFT, not registered
 
@@ -179,25 +236,51 @@ with the feature on.
 - **Stopping rule:** fixed N.
 - **Cost:** about 2 x 2.5 h. Over the 3-hour job cap, so two jobs on two nights, or 5 tasks x 2.
 
-## (e) Logging generated ids in future night runs
+## (e) Logging generated ids in night runs (APPROVED 2026-10-15): the mechanism
 
 **What exists:**
 - `-log-requests`: one line, counts and times;
-- `cached_tokens` and `prefill_reused_tokens` in usage: the reused length, no position inside the reply;
-- `kv0_proxy.py`, which saves whole request bodies outside the repository;
-- the matrix's `wire_proxy.py`, which counts events and keeps no bodies;
+- `cached_tokens` and `prefill_reused_tokens` in usage: the reused length, no position;
+- the matrix's `wire_proxy.py`, which counted events and kept no bodies;
 - no route returns ids.
 
-**Proposed, none built:**
-1. **A reuse field on the `-log-requests` line:** the reused length, the first divergent position, and that position's offset
-   into the previous turn's reply. It is cheap, carries no content, and would have turned the night's bound into a measurement.
-   It goes in the log line, not an env read (the env-read policy).
-2. **A canonicity bit per reply on the same line** (the check above, at commit): whether the reply's ids are the tokenizer's own.
-   With 1, it attributes every partial and cold continuation without ids.
-3. **The ids themselves, for a measurement run only:** a request-scoped vendor field on the response (as `prefill_reused_tokens`
-   is), off unless asked, captured by a body-saving proxy (`kv0_proxy.py`'s shape) with the bodies kept outside the repository.
-   The night harness would switch its proxy to save bodies for the run that measures this, not for every night.
+**Built now, harness only (this PR): request and response bodies in night runs.**
+- `matrix/wire_proxy.py` takes an optional fourth argument, a directory. Each POST's body goes to `<seq>.req.json.gz` and the
+  response's whole byte stream to `<seq>.resp.gz`, and the wire log line names the pair (`"bodies": "<seq>"`).
+- `matrix/matrix.py` passes `bodies-<config>/` in the run's output directory when the configuration has `"bodies": true`.
+- Smoke-tested against a stub upstream: both files are written per request, the log line names them, and the bytes relayed are
+  unchanged.
+- With bodies, a grade can compare every echoed item with the emitted one (the client-edit check, per request) and re-render
+  every prompt offline with this record's renderer.
+- **The bodies hold the harness's prompts and the model's replies.** They stay in the run's output, beside the wire log, and a
+  grade commits them only as `codex-rollouts.tar.gz` was committed: as a tarball, by decision.
 
+**To build with proposal 2 (serve; specified here, not built):**
+1. **Reuse fields on the `-log-requests` line** (`internal/serveapp/reqlog.go:reqTrace`, filled where the first generation
+   reports in). Fields, in order after `total=`:
+   - `reused=<n>`: the generation's `PrefillReused`;
+   - `slot=<n>`: the length of the bound slot's id record before the request, which needs a decoder accessor beside
+     `PrefillReused` on `decoder.Generation`;
+   - `div=<n|->`: the first divergent position when reuse ended before the slot's end, else `-`;
+   - `canon=<0|1>`: whether this reply's generated ids are canonical, run by run between special tokens (one `Encode` of each
+     run's decoded text at commit; the check that predicted the outcome 45 of 45 here);
+   - with proposal 2, `ids=<used>/<carried>` and `ids_fallback=<reasons|->` (condition b).
+
+   These land in the night's `logs/serve-<config>.log`, archived as `serve-<config>.log.gz` as now. They carry no content.
+2. **The generated ids, for measurement runs only.** A serve flag, `--log-token-ids <file>`, appends one JSON line per
+   generation:
+   - `t`, `route`, the response id;
+   - `prompt_len`, `prompt_sha256` (SHA-256 of the prompt ids, which the bodies let a grade re-render and check);
+   - `reused`, `slot`;
+   - `gen` (the generated ids);
+   - `canon`.
+
+   It is a flag, not an env read, and it is off by default. In the matrix, a configuration with `"token_ids": true` adds
+   `--log-token-ids <out>/token-ids-<config>.jsonl` to the serve arguments. The grade archives the file as
+   `token-ids-<config>.jsonl.gz` beside `serve-<config>.log.gz`, under the same rule as the bodies.
+3. **The night's grade then measures this record's question directly, on every request.** It reads the next request's body,
+   renders it, and compares the result with the logged `gen` after the logged prompt. Bodies and `token_ids` are switched on
+   together, for the runs that measure this.
 
 ## Method (written and committed before the run)
 
