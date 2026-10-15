@@ -1,0 +1,14 @@
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_real
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_real/gemma-3-4b
+    kv3_tiled_test.go:316: KV precision f32
+[kv3-tiled] gemma-3-4b per-token reference: 2948 of 12400 rows, 30 s
+[kv3-tiled] gemma-3-4b per-token reference: 5718 of 12400 rows, 60 s
+[kv3-tiled] gemma-3-4b per-token reference: 8367 of 12400 rows, 90 s
+[kv3-tiled] gemma-3-4b per-token reference: 10900 of 12400 rows, 120 s
+[kv3-tiled] gemma-3-4b per-token reference: 12400 rows in 138.4 s
+[kv3-tiled] G4 gemma-3-4b levers off n=12400: batched 31.88 s (25 row groups, 0 tensor-core launches), per-token 138.4 s; logits differing 0 of 262144 (worst 0), KV differing 0 of 863436800; cosine 1.000000, argmax equal true
+[kv3-tiled] G4 gemma-3-4b default    n=12400: batched 31.88 s (25 row groups, 0 tensor-core launches), per-token 138.4 s; logits differing 0 of 262144 (worst 0), KV differing 0 of 863436800; cosine 1.000000, argmax equal true
+--- PASS: TestKV3Tiled_batchedEqualsPerToken_real (218.93s)
+    --- PASS: TestKV3Tiled_batchedEqualsPerToken_real/gemma-3-4b (218.93s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	219.024s

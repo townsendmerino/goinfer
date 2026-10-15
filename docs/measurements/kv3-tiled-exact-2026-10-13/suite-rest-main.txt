@@ -1,9 +1,6 @@
-TestAudioEncoder_realMatchesCPU
-TestAudioEncoderSpeed_record
 TestBlockSpec_twoTurnsMatchPlain
 TestDecodeVerifyDivergence_keyedOnTheSpike
 TestImagePrefillResident_twoImagesTinyCUDA
-TestLoRACostMeasure
 TestNgramSpec_twoTurnsMatchPlain
 TestQKNorm_widths
 TestRecordUpload_capturesFirstError
@@ -37,4 +34,3 @@ TestVNorm_scaleless
 TestVsumMechanism
 TestVsumSplitFidelity
 TestVsumSplitGateVsReference
-TestWhisperSmall_clipsOnDevice

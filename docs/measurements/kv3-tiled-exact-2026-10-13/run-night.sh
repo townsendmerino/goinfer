@@ -7,9 +7,11 @@
 #   JOB=speed      G5: time to first token at 12,400 and 20,000 tokens, batched against per-token, both models (est 45 min)
 #   JOB=ttft       G6: K = 512 and 3,900 on the 1.5B and Gemma-3-4B, this branch against kv3-cuda-2026-10, three pairs (est 15 min)
 #   JOB=suite      the whole ./cuda/ suite on this branch, with the ignored fixtures linked into the pinned worktree (est 60 min)
-#   JOB=suite-rest what the 2026-10-13 suite did not read green, in cmd/gate gpu's partition: the 40 tests it did not reach
+#   JOB=suite-rest what the 2026-10-13 suite did not read green, in cmd/gate gpu's partition: the 36 tests it did not reach
 #                  (suite-rest-main.txt) as one process with GOINFER_ISOLATE_DEFER=1, then each needsFreshProcess test that failed
-#                  in one process or was not reached as its own process, then the drainsDevice group (est 100 min)
+#                  in one process or was not reached as its own process, then the drainsDevice group (est 100 min). It first
+#                  lists the package under the run's own tags (go test -list: a compile, no device) and refuses a listed name
+#                  that build does not contain; KV3_TILED_REST_LIST_ONLY=1 stops after that check.
 #
 #   JOB=exact      after the owner's decision (§11): G4's Gemma-3-4B arms past the bound, now both graded bit for bit, and G5 re-read on
 #                  Gemma-3-4B with serve-cuda-exact, built at the pinned worktree's commit (est 20 min)
@@ -48,6 +50,13 @@ case $JOB in
   suite-rest)
     LIST=${KV3_TILED_REST_LIST:-$HERE/suite-rest-main.txt}   # the two overrides narrow it for the day check of the plumbing
     RUN="^($(paste -sd'|' "$LIST"))\$"
+    # A name the run's tags do not compile can never reach a verdict, so it is refused here, before any device time.
+    (cd "$W" && go test -list '.*' -tags 'cuda goinfer_testhooks' ./cuda/) > "$OUT/cuda-list.txt" 2>&1 \
+      || { echo "FATAL: go test -list failed" | tee "$OUT/FATAL.txt"; exit 2; }
+    absent=$(grep '^Test' "$OUT/cuda-list.txt" | sort | comm -23 <(grep . "$LIST" | sort) -)
+    [ -z "$absent" ] || { echo "FATAL: listed but not built under -tags 'cuda goinfer_testhooks':" $absent | tee "$OUT/FATAL.txt"; exit 2; }
+    echo "list check: $(grep -c . "$LIST") listed, all built under the run's tags" | tee -a "$OUT/provenance.txt"
+    [ -z "${KV3_TILED_REST_LIST_ONLY:-}" ] || exit 0
     (cd "$W" && GOINFER_HEAVY_TESTS=1 GOINFER_ISOLATE_DEFER=1 go test -count=1 -timeout 120m -tags 'cuda goinfer_testhooks' -run "$RUN" -v ./cuda/) 2>&1 \
       | tee "$OUT/cuda-main.log"; rc=${PIPESTATUS[0]}
     iso=${KV3_TILED_REST_ISO:-TestGemma4_26B_cache_B TestP20ExpertLocality TestResidentDrafter_extendContext TestSpecPagerInteraction}

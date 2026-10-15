@@ -180,7 +180,7 @@ per-token arm's reads `sequential — GOINFER_BATCHED_PREFILL=0`; Gemma-3's atte
 only be the row kernels. G6 ran the base binary at `kv3-cuda-2026-10`'s tip, so the pair differs only in this branch.
 
 **The whole `./cuda/` suite: TIMEOUT, not graded.** It reached the job's 2-hour limit while `TestSpecPagerInteraction` was loading its 20 GB checkpoint: 394 PASS,
-4 FAIL, 47 SKIP; 41 of the package's 486 tests were not reached. The four failures are the four of `kv3-cuda-2026-10`'s suite of the same night, with the same
+4 FAIL, 47 SKIP; 37 of the 482 tests the run's tags build reached no verdict (`TestSpecPagerInteraction` started, 36 never did). (Corrected in §12: this line first read "41 of 486", a count from a listing built with `realckpt`, which the run does not use.) The four failures are the four of `kv3-cuda-2026-10`'s suite of the same night, with the same
 messages and the same figures, so none is this branch's (§9's rule): `TestResidentDrafter_extendContext` (the second resident's allocation fails out of memory),
 `TestGemma4_26B_cache_B` (the 26B's resident declines, 4.00 GB free in both), `TestP20ExpertLocality` (3.98 GB free in both) (all three print the test's own
 `ISOLATED-RUN` note: they fail in the one-process heavy tier and pass alone), and `TestGemma4EModelPrefill_batchedBitIdentical` at 18 and 96 rows (`PrefillLast chunk 5:
@@ -191,7 +191,7 @@ adds ran and passed (`TestPrefillSplitKV_rowsEqualAttnBatched` and the four tiny
 and is merged here; `TestGemma4EModelPrefill_batchedBitIdentical` (18 and 96 rows) and `TestKV3_chunkerKeepsPassStartsOnTheGrid` (chunks 1 to 79) pass on this branch
 with the fixtures present, at the merge `d05fc2da` (`suite-after-merge-day.log`). The three out-of-memory reds are `needsFreshProcess` tests, which fail in any one-process run of the package
 and pass alone; `TestResidentDrafter_extendContext` passed alone on this branch in the day check of the re-queued job's plumbing. What the suite has not read green is
-re-queued as `kv3-tiled-suite-rest` (`run-night.sh`, `JOB=suite-rest`), in `cmd/gate gpu`'s partition: the 40 unreached tests other than the fresh-process one
+re-queued as `kv3-tiled-suite-rest` (`run-night.sh`, `JOB=suite-rest`), in `cmd/gate gpu`'s partition: the 36 unreached tests other than the fresh-process one (40 as first queued; §12)
 (`suite-rest-main.txt`) as one process with the fresh-process tests deferred, then `TestGemma4_26B_cache_B`, `TestP20ExpertLocality`,
 `TestResidentDrafter_extendContext` and `TestSpecPagerInteraction` each as its own process, then the drain group (skipped in a one-process run), with a reconcile of
 each part. The tests this branch does not touch that the 2026-10-13 run read green are not repeated; `kv3-cuda-2026-10`'s partitioned suite reads the merged fix.
@@ -227,3 +227,49 @@ differing, with the GEMM still running at 3,900 tokens; the other tiled tests pa
 - Job `kv3-tiled-exact` (`run-night.sh`, `JOB=exact`), about 20 minutes.
 
 **Not taken: option (b)**, a fidelity gate for the tensor-core GEMM at depth on Gemma-3, is filed as its own item in `docs/tasks/task-kv-architecture-2026-10.md`.
+
+## 12. Readings of the re-registered jobs (2026-10-14, graded against §11)
+
+Both jobs ran on 2026-10-14 from the pinned worktree at `f7530d01` (the exact-past-the-bound rule and the merged tail-rule fix), the serve binary `serve-cuda-exact`
+built at that commit. The owner started the queue by day, at 11:20 PDT; the runner held the timing lock, load average 0.34 at the start. Driver 595.91.07,
+RTX 2070 SUPER. Logs and provenance: `kv3-tiled-exact-2026-10-13/queue-2026-10-14/` (`exact/`, `suite-rest/`).
+
+| gate | reading | verdict |
+|---|---|---|
+| G4, Gemma-3-4B, levers off, 12,400 tokens | 0 of 262,144 logits and 0 of 863,436,800 KV elements differ from the per-token path; 25 row groups, 0 tensor-core launches | **PASS** |
+| G4, Gemma-3-4B, default, 12,400 tokens (§11: graded bit for bit) | 0 of 262,144 logits and 0 of 863,436,800 KV elements differ; 25 row groups, 0 tensor-core launches; batched 31.88 s, per-token 138.4 s in the test rig | **PASS** |
+| G5 re-read, Gemma-3-4B, per-token over the median batched at 12,400 tokens | **4.13x** (130.47 s against 31.49 and 31.63 s); at 20,000 tokens 3.48x (219.3 s against 62.96 and 62.96 s); no decline logged in either batched arm | **PASS** (bar 3x) |
+
+**Vacuity.** The test asserts at least one row-group launch in each arm and no tensor-core launch in an arm graded exact; both arms print 25 row groups and 0
+launches, and the two arms are now the same computation, so their equal 31.88 s is expected. The batched serve logs read `prefill path: batched` and log no decline,
+the per-token one reads `sequential — GOINFER_BATCHED_PREFILL=0`.
+
+**What the exact rule costs.** Against §10's G5 (the GEMM on, the same prompts and design), the batched arm went from 22.92 and 23.02 s to 31.49 and 31.63 s at 12,400
+tokens (1.37x slower) and the ratio from 5.68x to 4.13x. The per-token arm read 130.47 s against 130.39 s the night before, so the box was in the same state for the
+two readings; this comparison is across sessions and is context, not a graded ratio. Gemma-4-E4B's 3.31x stands (§11).
+
+**The suite's remainder (`kv3-tiled-suite-rest`): no test failed; the job's red is a harness defect, fixed.** The job exited 1 on its own reconcile, `main listed=40
+reached=36`. Every part ran: the main process 30 PASS, 0 FAIL, 6 SKIP; the four fresh-process tests each alone, 4 PASS (`TestGemma4_26B_cache_B`,
+`TestP20ExpertLocality`, `TestResidentDrafter_extendContext`, `TestSpecPagerInteraction`); the drain group 2 PASS, 2 SKIP.
+
+- **Why 36 of 40.** The four listed names that reached no verdict are `TestAudioEncoder_realMatchesCPU`, `TestAudioEncoderSpeed_record`,
+  `TestWhisperSmall_clipsOnDevice` (`cuda/audio_encoder_real_test.go`, `//go:build cuda && realckpt`) and `TestLoRACostMeasure` (`cuda && goinfer_testhooks &&
+  realckpt`). `suite-rest-main.txt` was built from a test listing that included `realckpt` (487 names at `f7530d01`; 486 at `a0ce6e40`, the source of §10's
+  first figure), while the 2026-10-13 suite and this job both build `-tags 'cuda goinfer_testhooks'` (483 names at `f7530d01`), as `cmd/gate gpu`'s CUDA cells do.
+  Those four were never in the 2026-10-13 suite's build, so they were not unreached tests of it, and `-run` could not match them. Under the run's own tags the
+  2026-10-13 suite had 482 tests, 445 verdicts, and 37 without one; this job gave a verdict to every one of the 37 that it listed (36 here, `TestSpecPagerInteraction` alone).
+- **The fix** (`run-night.sh`, `JOB=suite-rest`): before any device time the job lists the package under its own tags (`go test -list`, a compile) and exits 2 naming
+  any listed test that build does not contain; `KV3_TILED_REST_LIST_ONLY=1` stops after that check. The four names are removed from `suite-rest-main.txt` (36 names;
+  the job's `-run` pattern lists exactly 36). Dry run, no device (`suite-rest/list-check-dry-run.txt`): the list as queued exits 2 naming the four, the fixed list
+  exits 0, 36 listed.
+- **The skips, read rather than counted.** Main: `TestSpecResidentPrefillRegression`, `TestThetaAB`, `TestThetaProbe_CUDA`, `TestVsumMechanism`,
+  `TestVsumSplitFidelity` and `TestVsumSplitGateVsReference` are opt-in probes that skip without their own variable in any run. Drain: `TestAllocFloor` and
+  `TestMoERouteDemandThreshold` skip because the desktop compositor holds a CUDA context on the device; they need an exclusive device, which no queued run has. None
+  of the eight touches prefill attention. They are skips, not passes.
+- **Not re-queued.** With the list corrected the same run reconciles 36 of 36, and nothing it would read is unread: the `./cuda/` package under `cuda goinfer_testhooks`
+  has now given a verdict on every test across the two runs, with no failure that is this branch's (§10's four: the three fresh-process tests pass alone here, the
+  tail-rule test passed by day after the merge). The four `realckpt` tests are outside the suite as registered (§9) and outside `cmd/gate gpu`'s CUDA cells; three
+  skip without their own variables, and none reaches the prefill code this branch changes.
+
+**Where this leaves the branch.** On the build that carries §11's rule every registered gate reads PASS (G4's Gemma-3 default arm stays recorded FAILED for the build
+§10 read), and the suite has no red of its own. It merges after `kv3-cuda-2026-10`, in a release later than v0.23.0.

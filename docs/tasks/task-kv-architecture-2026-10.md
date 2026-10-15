@@ -735,8 +735,9 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   3.31x against the per-token path at 12,400 tokens), no-regression TTFT PASS, the real-model identity PASS on both exact arms (Gemma-4-E4B, Gemma-3-4B levers off,
   bit for bit) and **FAIL on Gemma-3-4B at default settings: cosine 0.9865 against the 0.99 bar**. The difference is the tensor-core GEMM's, which already reads
   0.9901 on Gemma-3 at 12,000 tokens below the bound; the branch is the first to run it past 12,160 keys. **Owner decision 2026-10-14: exact** (record §11): a prompt that takes the
-  row kernels runs every pass on the exact kernels; G4's Gemma-3 cells and a Gemma-3 G5 re-read are on the night queue. The CUDA suite timed out at 2 hours with only the four reds of the branch below
-  (three fresh-process tests and the tail-rule defect, whose fix is merged here); the remainder is re-queued in the gate's partition. The branch merges after `kv3-cuda-2026-10`, once the decision is taken and the suite's remainder reads.
+  row kernels runs every pass on the exact kernels. **Read 2026-10-14 (record §12):** G4 on Gemma-3-4B bit-identical in both arms at 12,400 tokens, G5 re-read 4.13x
+  (PASS; 5.68x with the GEMM on). The CUDA suite timed out at 2 hours with only the four reds of the branch below (three fresh-process tests and the tail-rule defect,
+  whose fix is merged here); its remainder, in the gate's partition, read no failure (its job's red was a test list built with `realckpt`, fixed). The branch merges after `kv3-cuda-2026-10`.
 - **Not started: a fidelity gate for the CUDA tensor-core GEMM at depth on Gemma-3 (option (b) of the tiled record's §10; not chosen 2026-10-14).**
   Why it is owed even with the exact rule: on one prompt Gemma-3-4B's default batched prefill read cosine 0.9963 at 1,200 tokens, 0.9901 at 12,000 and 0.9865 at
   12,400 against the per-token path, so `main`'s Gemma-3 prefill between 3,900 and 12,160 keys is unmeasured and may already sit under the 0.99 bar the KV3 work

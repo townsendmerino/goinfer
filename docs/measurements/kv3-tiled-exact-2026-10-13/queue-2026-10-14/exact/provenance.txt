@@ -1,0 +1,13 @@
+started: 2026-10-14 11:20:49 PDT
+job: exact
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+tiled: 12d9d8fbed59a4bfb85ddc48fac152803a43e664
+base: 5282df9a76349d56b56b16eede71ea3ba18b33bb
+worktree: f7530d0128a3af9677d2e84f93fb1a2bd5cf51b9
+load:  11:20:49 up 10 days, 14:43,  6 users,  load average: 0.34, 0.26, 0.59
+               total        used        free      shared  buff/cache   available
+Mem:           64238        7373       25397         128       32218       56864
+Swap:          78863       11596       67267
+exact: f7530d0128a3af9677d2e84f93fb1a2bd5cf51b9
+finished: 2026-10-14 11:34:27 PDT rc=0
