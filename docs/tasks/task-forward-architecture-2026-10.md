@@ -668,6 +668,57 @@ cannot admit the loads.
   `docs/measurements/op1-metal-2026-10-13/run-g2r-night.sh` at the declaration branch's `78633e7f`. No guard is bypassed.
   The gate is not timed: night only means nothing else holds memory.
 
+**G2-R amendment, 2026-10-15 (owner), before any further run: the CPU reference runs in its own process.**
+
+**Why.** On the night of 2026-10-14 the fit guard refused the job's first load, the 2B on the CPU: 6.7 GB priced, with
+6.6 GB available. No guard is bypassed (owner, 2026-10-15). Within one process, `residentParityAt` holds a Metal model
+and a CPU model at once, so each load's guard sees what the other holds.
+
+**What changes.** The job runs two processes, one after the other, at the same build:
+
+1. **The CPU reference.**
+   - It loads only CPU models, one at a time, and computes everything the arms read on the CPU:
+     - the hook check's two logit sets;
+     - for each of B (softcap off), G and P (softcap on), at int8int8 and int4: the token sequence (the seed, then the
+       CPU's greedy continuation, 24 steps) and the CPU's logits at every step;
+     - P's score statistics and its capped-against-uncapped logits;
+     - the control's and Gemma 3's tokens and logits.
+   - It writes them to one file under the job's output directory, with each checkpoint's sha256 and the build's commit.
+2. **The Metal arms.**
+   - They load only Metal models, one at a time.
+   - They feed each arm the saved tokens (greedy lockstep off the CPU, as before) and compare their logits with the
+     saved CPU logits.
+   - B's stop rule is applied before G and P run, as before.
+
+**Unchanged:** the arms and their order of reading, the prompts, the 24 steps, the metric (the min logit cosine from
+position 2, and argmax), the bars (0.88; the control's 0.95; the 0.03 band), B's 0.001 stop margin, and every void rule.
+
+The CPU logits are the same computation as before (`decoder.Load` on the CPU at the arm's quant, `ForwardForTest` over
+the same tokens), saved as raw float32 bits.
+
+**Void, in addition:**
+
+- the saved file's checkpoint hashes or commit differ from the Metal process's;
+- an arm is missing from the file;
+- the file does not exist.
+
+**The memory this buys, and what it does not.**
+
+- **Before, in one process:** the largest moment was a Metal model and a CPU model held together, about 10 GB in all.
+  Metal's own guard declined the 2B's int4 build at 3.63 GB needed against a 2.66 GB budget, with the CPU model beside it.
+- **After:** the peak is the larger of the two processes, about 7 GB, and each load's guard sees only itself.
+- **The fit guard still prices the CPU process's largest loads at about 6.7 GB** (estimated from the guard's formula:
+  resident weights + KV at its fitted context + the `.gguf` mapped during the load):
+  - the 2B at int8int8: 2.5 + 1.6 + 2.6 GB;
+  - Gemma 3 4B at int8int8, which the old order never reached: about 4 + KV + 2.5 GB.
+  - The guard's budget is 70% of available memory, so these loads need about 9.6 GB available. The two nights on
+    record had 6.6 GB and 7.8 GB.
+  - Splitting the processes alone therefore does not clear the guard on such a night, and a refused load is void.
+  - What would clear it, for the owner to choose:
+    - a CPU process that loads `.giw` sidecars: no mapping term, so about 4.1 GB priced for the 2B and about 4.5 GB for
+      Gemma 3, which need roughly 6 to 6.5 GB available;
+    - or a night with 9.6 GB free.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
