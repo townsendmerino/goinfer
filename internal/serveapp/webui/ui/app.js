@@ -660,10 +660,25 @@ function hidePreviewsWhileLive(out, live) {
 // source — not the rendered text, so pasting it elsewhere keeps its formatting.
 const sources = new WeakMap();
 
+// copySafe is the text a Copy button puts on the clipboard: what the reader saw, without the characters that are
+// invisible on the page and act when pasted, most of all into a terminal. It drops control characters other than tab
+// and newline, the bidirectional embeddings, overrides and isolates that reorder displayed text, and zero-width and
+// invisible format characters. A line ending of any kind becomes a newline, as the page shows it. A joiner or a
+// direction mark is kept only where it has a job: alone, between two non-ASCII characters (an emoji sequence, Persian
+// or Indic text). Tag characters are kept only after the black flag, where they spell a flag.
+const isNonASCII = c => c !== undefined && c > "\x7F";
+function copySafe(s) {
+  return String(s).replace(/\r\n?|[\u2028\u2029]/g, "\n")
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u180E\u200B\u202A-\u202E\u2060-\u206F\uFEFF]/g, "")
+    .replace(/(\u{1F3F4}?)[\u{E0000}-\u{E007F}]+/gu, (m, flag) => flag ? m : "")
+    .replace(/[\u061C\u200C-\u200F]+/g, (m, at, all) => m.length === 1 && isNonASCII(all[at - 1]) && isNonASCII(all[at + 1]) ? m : "");
+}
+
 // copyText tries the async clipboard API, then falls back to a selected textarea. The fallback is not
 // an edge case: the async API only exists in a SECURE context, and the page opened from another
 // machine at a plain-http LAN address (a phone on the LAN, W16) is not one.
 async function copyText(s) {
+  s = copySafe(s);
   if (navigator.clipboard && window.isSecureContext) {
     try { await navigator.clipboard.writeText(s); return; } catch { /* fall through */ }
   }
@@ -703,9 +718,9 @@ $("log").addEventListener("click", async e => {
 // A sandboxed iframe, or not at all. sandbox="" (every restriction on, NO allow-scripts, NO allow-same-origin) gives the document
 // a unique, opaque origin and runs no script in it: it cannot read this page's cookies, storage or API key, cannot navigate this
 // page, and cannot compute a destination from anything it knows, so a previewed page is a static render. The CSP baked into the
-// document blocks every subresource request (images, fonts, frames, forms, base). It does not stop the document navigating ITSELF,
-// as a meta refresh or a link the reader clicks can: a preview shows what the model wrote, and that includes a link or a redirect
-// the model chose. An earlier version ran scripts here, and a script could redirect the frame with data it had been handed, so the
+// document blocks every subresource request (images, fonts, frames, forms, base). A meta refresh is an automatic feature the
+// sandbox turns off with scripts (the browser gate previews a page that tries each of these and counts what reaches a listener).
+// What is left is a link the reader clicks: a preview shows what the model wrote, and that includes a link the model chose. An earlier version ran scripts here, and a script could redirect the frame with data it had been handed, so the
 // preview no longer runs them. Loaded via iframe.src on a data: URI — never .srcdoc, which
 // TestWebUI_noHTMLStringSinks bans outright as an HTML-string sink.
 function previewDoc(html) {
@@ -726,6 +741,7 @@ $("log").addEventListener("click", e => {
     frame.setAttribute("sandbox", ""); // no allow-scripts: see previewDoc
     frame.setAttribute("title", "Preview");
     frame.src = previewDoc(code);
+    frame.hidden = true; // the toggle below shows it
     wrap.after(frame);
   }
   frame.hidden = !frame.hidden;

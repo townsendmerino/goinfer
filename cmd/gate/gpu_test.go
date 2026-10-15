@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -465,5 +467,119 @@ func TestGPU_withGoBinPrependsGOPATHBin(t *testing.T) {
 	}
 	if got := withGoBin([]string{"HOME=/h"}); !slices.Contains(got, "PATH="+bin) {
 		t.Errorf("no PATH in the input: got %v, want PATH=%s added", got, bin)
+	}
+}
+
+// The build script's execute bit is read only where the OS has one. On Windows every file's mode has none, and a check there
+// ended the PTX group with "missing" before it reached the count that says nothing was verified.
+func TestPTXScriptDecline_executeBitOnlyWhereTheOSHasOne(t *testing.T) {
+	st, err := os.Stat(filepath.Join("..", "..", "cuda", "build_ptx.sh"))
+	if err != nil {
+		t.Fatalf("cuda/build_ptx.sh: %v", err)
+	}
+	noExec := modeInfo{FileInfo: st, mode: 0o666}
+	for _, tc := range []struct {
+		name    string
+		st      os.FileInfo
+		statErr error
+		goos    string
+		want    string
+	}{
+		{"windows, a present script with no execute bit", noExec, nil, "windows", ""},
+		{"linux, the same mode", noExec, nil, "linux", "is not executable"},
+		{"linux, executable", modeInfo{FileInfo: st, mode: 0o755}, nil, "linux", ""},
+		{"absent, on either", nil, os.ErrNotExist, "windows", "is missing"},
+		{"absent, on linux", nil, os.ErrNotExist, "linux", "is missing"},
+	} {
+		if got := ptxScriptDecline(tc.st, tc.statErr, tc.goos); got != tc.want {
+			t.Errorf("%s: ptxScriptDecline = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// modeInfo is a FileInfo with its mode replaced, so a test can state the mode an OS would report.
+type modeInfo struct {
+	os.FileInfo
+	mode os.FileMode
+}
+
+func (m modeInfo) Mode() os.FileMode { return m.mode }
+
+// `gate ptx` with no NVRTC verifies nothing, and that is red: a run that could not rebuild a file must not read as one
+// that found it identical. GOINFER_NVRTC_DIRS is an override, so an empty directory makes "no toolchain" reachable on a
+// box that has one.
+func TestGatePTX_nothingVerifiedIsRed(t *testing.T) {
+	t.Chdir(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join("cuda", "build_ptx.sh")); err != nil {
+		t.Fatalf("cuda/build_ptx.sh is not where the gate looks for it: %v", err)
+	}
+	t.Setenv("GOINFER_NVRTC_DIRS", t.TempDir())
+	var out bytes.Buffer
+	if rc := runPTX(&out, ""); rc != 1 {
+		t.Errorf("gate ptx with no NVRTC exited %d, want 1\n%s", rc, out.String())
+	}
+	all, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))
+	if want := fmt.Sprintf("zero of %d artifacts verified", len(all)); len(all) == 0 || !strings.Contains(out.String(), want) {
+		t.Errorf("gate ptx did not count every committed .ptx (%d of them, the f16-KV twins included), want %q in:\n%s", len(all), want, out.String())
+	}
+}
+
+// The heavy tier's main group runs as two processes; a name in neither half, or in both, is a test the gate
+// silently stops running or runs twice.
+func TestGPU_mainTierSplitCoversEveryTestOnce(t *testing.T) {
+	listed := []string{"TestAlpha", "TestAlphaBeta", "TestLast", "TestMiddle", "TestZeta", "Test_under", "Testlower",
+		"Testmlower", "Test0digit", "TestKV3Tiled_batchedEqualsPerToken_real", "TestSpecPagerInteraction"}
+	halves := splitMainTier(listed)
+	if len(halves) != 2 {
+		t.Fatalf("got %d halves, want 2", len(halves))
+	}
+	owner := map[string]string{}
+	for _, h := range halves {
+		re := regexp.MustCompile(h.Run)
+		for _, n := range h.Tests {
+			if prev, ok := owner[n]; ok {
+				t.Errorf("%s is in both %s and %s", n, prev, h.Label)
+			}
+			owner[n] = h.Label
+		}
+		for _, n := range listed {
+			if re.MatchString(n) != slices.Contains(h.Tests, n) {
+				t.Errorf("%s's pattern matches %s: %v, but owning it: %v", h.Label, n, re.MatchString(n), slices.Contains(h.Tests, n))
+			}
+		}
+	}
+	for _, n := range listed {
+		if owner[n] == "" {
+			t.Errorf("%s is in neither half", n)
+		}
+	}
+	if owner["TestLast"] != "A-L" || owner["TestMiddle"] != "M-Z" || owner["Testlower"] != "A-L" || owner["Testmlower"] != "M-Z" {
+		t.Errorf("letter boundary wrong: %v", owner)
+	}
+}
+
+// The split's reconciliation must name a listed test that produced no result, and one that produced a result in
+// both halves; a clean split names neither.
+func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
+	half := func(cell string, tests ...string) *results {
+		r := newResults()
+		for _, n := range tests {
+			k := testKey{Cell: cell, Pkg: "cuda", Test: n}
+			r.order = append(r.order, k)
+			r.final[k] = "pass"
+		}
+		sub := testKey{Cell: cell, Pkg: "cuda", Test: "TestAlpha/sub"}
+		r.order = append(r.order, sub)
+		r.final[sub] = "pass"
+		return r
+	}
+	listed := []string{"TestAlpha", "TestBeta", "TestMiddle", "TestZeta"}
+	missing, doubled := reconcileHalves(listed, []*results{half("a", "TestAlpha", "TestBeta"), half("b", "TestMiddle", "TestZeta")})
+	if len(missing) != 0 || len(doubled) != 0 {
+		t.Fatalf("clean split: missing %v, doubled %v", missing, doubled)
+	}
+	missing, doubled = reconcileHalves(listed, []*results{half("a", "TestAlpha", "TestBeta", "TestMiddle"), half("b", "TestMiddle")})
+	if !slices.Equal(missing, []string{"TestZeta"}) || !slices.Equal(doubled, []string{"TestMiddle"}) {
+		t.Fatalf("got missing %v, doubled %v; want [TestZeta], [TestMiddle]", missing, doubled)
 	}
 }

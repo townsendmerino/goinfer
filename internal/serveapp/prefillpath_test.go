@@ -190,6 +190,7 @@ func TestServe_contextWindowIsTheEnforcedOne(t *testing.T) {
 			ContextWindow int `json:"context_window"`
 			ContextLength int `json:"context_length"` // H-b: Hermes / Oh My Pi read these two
 			MaxModelLen   int `json:"max_model_len"`
+			MaxPositions  int `json:"max_positions"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &ml); err != nil || len(ml.Data) != 1 {
@@ -201,6 +202,9 @@ func TestServe_contextWindowIsTheEnforcedOne(t *testing.T) {
 	}
 	if d := ml.Data[0]; d.ContextLength != n || d.MaxModelLen != n {
 		t.Errorf("context_length = %d, max_model_len = %d, want both = context_window %d", d.ContextLength, d.MaxModelLen, n)
+	}
+	if mp := ml.Data[0].MaxPositions; mp != lm.model.Config().MaxPositions {
+		t.Errorf("max_positions = %d, want the model's MaxPositions %d", mp, lm.model.Config().MaxPositions)
 	}
 	one := 1
 	sm := sampling{MaxTokens: &one}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -71,11 +72,12 @@ type Model struct {
 	// by residentForgetIDs (every resident write invalidates it) and set only by BlockSpec.generate's fully-completed exit, the
 	// one path that keeps resIDs and the drafter's context advancing together.
 	resDrafterSynced *BlockSpec
-	// resSlots / resCur / resTick: MC1's resident KV slots (resident_reuse.go residentAcquire). nil / 0 / 0 with one
-	// slot; the bound slot's bookkeeping lives in the resIDs fields above, the others' is parked in resSlots.
-	resSlots      []residentSlot
-	resCur        int
-	resTick       uint64
+	// kv is the KV manager over the resident's slots (internal/kvmgr, resident_reuse.go): one sequence per slot, the
+	// slot a prompt takes, what it may reuse, and the index of published blocks. nil until first used. The bound
+	// slot's record is mirrored in the resIDs fields above. kvLora is the adapter runtime each slot's sequence was
+	// built under, by slot (the manager keys on the adapter's identity, not the runtime).
+	kv            *kvmgr.Slots
+	kvLora        []*loraRuntime
 	kvF16         bool         // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
 	kvF16Decline  string       // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU

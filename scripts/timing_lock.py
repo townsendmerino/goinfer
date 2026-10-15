@@ -17,7 +17,8 @@ It is cooperative: a `go test -bench` typed by hand does not take it. The harnes
 
 usage:
   timing_lock.py run [--wait SECONDS] [--label TEXT] -- CMD [ARGS...]   hold the lock while CMD runs (for run-*.sh)
-  timing_lock.py status                                                who holds it, if anyone
+  timing_lock.py status                                                who holds it, if anyone (exit 1 when held by
+                                                                       a run other than this process's own holder)
 
 library:
   from timing_lock import hold
@@ -176,7 +177,12 @@ def cmd_status(_a):
         print(f"free ({path})")
         return 0
     except OSError:
-        print(f"HELD: {describe(read_holder(path))}")
+        holder = read_holder(path)
+        mine = os.environ.get(TOKEN_ENV)
+        if mine and holder.get("token") == mine:  # held by a parent of ours: free to us, as acquire() treats it
+            print(f"free to this run (inherited from {describe(holder)})")
+            return 0
+        print(f"HELD: {describe(holder)}")
         return 1
     finally:
         os.close(fd)

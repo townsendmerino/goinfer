@@ -94,15 +94,19 @@ else
   echo "── goinfer: cold start → first token (wall clock) + resident memory ──"
   # Build the demo once, then time a one-token generation from cold (process start
   # to first token) and capture peak resident memory the OS-appropriate way.
-  go build -o /tmp/goinfer_chat ./demo/chat 2>/dev/null
-  if [ -x /tmp/goinfer_chat ]; then
+  # The binary is built into a directory of this run's own: a fixed name under /tmp is one another user can put a file at.
+  BIN_DIR="$(mktemp -d)"
+  trap 'rm -rf "$BIN_DIR"' EXIT
+  CHAT_BIN="$BIN_DIR/goinfer_chat"
+  go build -o "$CHAT_BIN" ./demo/chat 2>/dev/null
+  if [ -x "$CHAT_BIN" ]; then
     if [ "$OS" = "Darwin" ]; then
       # macOS: /usr/bin/time -l reports "maximum resident set size" (phys_footprint-class)
-      /usr/bin/time -l /tmp/goinfer_chat --model "$MODEL" --max-tokens 1 --prompt "hi" 2>&1 \
+      /usr/bin/time -l "$CHAT_BIN" --model "$MODEL" --max-tokens 1 --prompt "hi" 2>&1 \
         | grep -iE 'real|maximum resident' || echo "  (timing unavailable)"
     else
       # Linux: GNU time -v reports "Maximum resident set size (kbytes)"
-      /usr/bin/time -v /tmp/goinfer_chat --model "$MODEL" --max-tokens 1 --prompt "hi" 2>&1 \
+      /usr/bin/time -v "$CHAT_BIN" --model "$MODEL" --max-tokens 1 --prompt "hi" 2>&1 \
         | grep -iE 'Elapsed \(wall|Maximum resident' || echo "  (install GNU time, or use the demo's own timing)"
     fi
   else

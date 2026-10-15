@@ -101,12 +101,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// these; M.1 drops the sliding-window half, but this table states the family's
 	// BASE profile and RequiredResidentFeatures derives the per-model truth.
 	"laguna": {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
-	// spark2_5: same attention-output-gate CPU-only forcing function as Laguna (FeatAttnOutputGate: sigmoid here, softplus
-	// there; no resident backend implements either). It also derives FeatGatedGELU (!NonGatedMLP && Act != ActSiLU): the
-	// first family combining a gated MLP with ActGelu (exact erf). Whether CUDA's glu_quant is correct for that activation
-	// on the gated path is UNVERIFIED, and masked only because FeatAttnOutputGate keeps the family CPU-only
-	// (docs/code-notes/decoder.md#archFeatureProfile.spark2_5).
-	"spark2_5":    {FeatAttnOutputGate, FeatGatedGELU, FeatPartialRotary, FeatPerLayerRoPE, FeatSlidingWindow},
+	// spark2_5: the same attention-output-gate decline as Laguna (FeatAttnOutputGate: sigmoid here, softplus there; no
+	// resident backend implements either), and a gated MLP with exact-erf GELU (FeatGatedGELUErf), which no backend
+	// implements either: every gated kernel has GELU-tanh and SiLU only.
+	"spark2_5":    {FeatAttnOutputGate, FeatGatedGELUErf, FeatPartialRotary, FeatPerLayerRoPE, FeatSlidingWindow},
 	"deepseek_v2": {FeatMLA, FeatMoE},
 	"deepseek_v3": {FeatMLA, FeatMoE},
 	"kimi_k2":     {FeatMLA, FeatMoE},
@@ -405,6 +403,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// Every feature added to the taxonomy must be added here too, or this test goes red on the declaring backend (N-12).
 		FeatAttnTemp: true, FeatPostOnlyNorm: true, FeatQKNormWhole: true,
 		FeatPairwiseRoPE: true, FeatPairwiseMRoPE: true,
+		FeatGatedGELUErf: true, FeatNonGatedGELUErf: true, // FeatGatedActUnknown is left out on purpose: it names no kernel
 	}
 	for be, set := range residentBackendFeatures {
 		for f := range set {
@@ -440,7 +439,10 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"parallel-block", func(a *Architecture) { a.NormPlacement = NormParallel }, FeatParallelBlock},
 		{"nope", func(a *Architecture) { a.layerNoPE = func(int) bool { return true } }, FeatNoPE},
 		{"gated-gelu", func(a *Architecture) { a.Act = ActGeluTanh }, FeatGatedGELU},
+		{"gated-gelu-erf", func(a *Architecture) { a.Act = ActGelu }, FeatGatedGELUErf},
+		{"gated-act-unknown", func(a *Architecture) { a.Act = ActReLU2 }, FeatGatedActUnknown},
 		{"non-gated", func(a *Architecture) { a.NonGatedMLP = true }, FeatNonGatedMLP},
+		{"non-gated-gelu-erf", func(a *Architecture) { a.NonGatedMLP = true; a.Act = ActGelu }, FeatNonGatedGELUErf},
 		{"learned-pos", func(a *Architecture) { a.LearnedPosEmbed = true }, FeatLearnedPos},
 		{"out-bias", func(a *Architecture) { a.OutBias = true }, FeatOutBias},
 		{"logit-scale", func(a *Architecture) { a.LogitScale = 8 }, FeatLogitScale},

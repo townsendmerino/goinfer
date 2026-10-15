@@ -207,3 +207,16 @@ The bar is [0.98, 1.02] PASS, below 0.97 FAIL, 0.97 to 0.98 parked; the job's ve
 - **A reading the rule does not make, stated because it is the weak spot:** in both passes the full-KV arm's SECOND session ran slower than its first (pass 1: 88.63 then 86.39, -2.5%; pass 2: 88.02 then 85.29, -3.1%) while the windowed arm held (+0.1% both times), in either order. Against each pass's first full-KV session alone the windowed arm reads about 0.975 and 0.978, inside the 0.97-0.98 parked band. The rule pools all sessions, as registered, and the windowed arm is no slower than the full arm's slower sessions; but a cost of 1% to 2% of decode on this model at ctx 2048 is not excluded, and the A/A (section 11) shows two builds can differ by 2% either way on this box.
 - **Consequence, as registered: `--windowed-kv` is on by default in `serve` and `chat`** (`internal/loadflags`; `--windowed-kv=false` opts out; `Options.ResidentWindowedKV` stays false for library callers). It engages only on the CUDA resident path for a model with sliding-window layers and a context above window + slack, so no other backend, model or small context changes. `docs/flags.md` regenerated; the option-state grid is unchanged (it keys on the option, not the flag default).
 - **Not measured by this gate, and worth knowing before it matters in use:** the cost of the reuse floor. Reusing a conversation prefix whose window has been dropped re-prefills the prompt from the start (`ReusableKV`), so a long multi-turn agent loop on a windowed model past its window pays a full prefill per turn that the full-KV arm does not. Correctness of those turns is gated (`TestWindowedKV_agentTurns`); their speed is not. `--windowed-kv=false` is the opt-out for such a workload.
+
+## 14. Amendment 2026-10-14: a compaction keeps a rollback floor
+
+Sections 2 and 3 set a compaction's new base to the first row's window (`pos - window + 1`) and called a rollback of up to `slack` positions
+valid. In use the budget was not `slack`: it cycled between 0 and 512 with where the last decode stopped in the compaction cycle, and
+`ReusableKV` refused every follow-up that diverged further back. Codex sends no reasoning back, so each follow-up rolls back the whole
+previous reply; in the I3 night 35 of its 59 requests on Mellum2.1 re-prefilled the whole prompt
+(`docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md`).
+
+Now a compaction moves the base only far enough to keep `slack - step` positions behind the end of the write (`cuda/kvwindow.go:kvWindowNextBase`,
+step 64: a floor of 448 at the unchanged 512 slack, so a compaction every 65 positions), and `cudaResident.kvGrantRollback` adds up to 576
+positions from VRAM left over once the context, slots and expert cache are fixed (a rollback of up to 1,024; none for an expert-cache load).
+The plan and the price are unchanged. Gates and the night speed guard: the record above, sections 5 and 8.

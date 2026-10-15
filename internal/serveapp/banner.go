@@ -182,14 +182,15 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		}
 	}
 	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
-	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32.
+	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32. "auto", the
+	// flag's default, is not a choice: off the resident path it is f32.
 	switch req := cfg.load.KV; {
 	case f.kvPrec != "":
 		ctxLine += " · KV " + f.kvPrec
 		if f.kvPrec != "f32" && f.kvPrec == req {
 			ctxLine += " (lossy)"
 		}
-	case req != "" && req != "f32":
+	case req != "" && req != "f32" && req != "auto":
 		ctxLine += " · KV " + req + " (lossy)"
 	default:
 		ctxLine += " · KV f32"

@@ -9,8 +9,9 @@
 //     in through createTextNode. There is no innerHTML/outerHTML/insertAdjacentHTML anywhere in the
 //     page; a Go test (TestWebUI_noHTMLStringSinks) fails the build if one appears.
 //   - Raw HTML in the model's output is not interpreted. "<script>" is shown as the text "<script>".
-//   - Links are live only for http:, https: and mailto:. Anything else (javascript:, data:, vbscript:,
-//     file:, relative paths) is rendered as plain text, not as a link.
+//   - Links are live only for http: and https: followed by two slashes, and for mailto:. Anything else
+//     (javascript:, data:, vbscript:, file:, relative paths, and "http:path", which a browser resolves against
+//     this page's own address) is rendered as plain text, not as a link.
 //   - Images are NEVER loaded. A Markdown image becomes a link to it. Loading one would make the
 //     offline page reach the network, and a model could use it as a tracking pixel.
 //
@@ -26,7 +27,7 @@ const Markdown = (() => {
   const TAGS = new Set(["p", "br", "strong", "em", "del", "code", "pre", "a", "ul", "ol", "li",
     "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th",
     "td", "div", "span", "button"]);
-  const LINK_OK = /^(https?:|mailto:)/i;
+  const LINK_OK = /^(https?:\/\/|mailto:)/i;
   const LANG_OK = /^[A-Za-z0-9_+#.-]{1,32}$/;
 
   function el(tag, cls) {
@@ -71,7 +72,29 @@ const Markdown = (() => {
     return a;
   }
 
+  // INLINE_MAX bounds one inline parse. An opener that never closes is searched for to the end of the text from every
+  // opener, so one parse costs the square of its length. Longer text is parsed in pieces, cut after a line break or a
+  // space where there is one; emphasis that would span a cut stays literal.
+  const INLINE_MAX = 4096;
+
   function inline(src) {
+    if (src.length <= INLINE_MAX) return inlinePiece(src);
+    const out = [];
+    for (let at = 0; at < src.length;) {
+      let end = Math.min(at + INLINE_MAX, src.length);
+      if (end < src.length) {
+        const piece = src.slice(at, end);
+        let cut = piece.lastIndexOf("\n");
+        if (cut < 0) cut = piece.lastIndexOf(" ");
+        if (cut >= 0) end = at + cut + 1;
+      }
+      out.push(...inlinePiece(src.slice(at, end)));
+      at = end;
+    }
+    return out;
+  }
+
+  function inlinePiece(src) {
     let segs = [src];
     // backslash escapes become literal text nodes first, so "\*" can never open emphasis
     segs = pass(segs, /\\([\\`*_{}\[\]()#+\-.!~|>])/g, m => text(m[1]));
@@ -107,15 +130,73 @@ const Markdown = (() => {
   }
 
   // ---- blocks ---------------------------------------------------------------------------------
-  const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
-  const HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+  // A fence, a heading and a table separator are read with index loops, not patterns: each is tested on every line of
+  // every streamed frame, and a pattern with two adjacent runs that can share the same characters takes time in the
+  // square of a long line. The patterns that remain are anchored and have no such pair.
+  const isSpTab = c => c === " " || c === "\t";
+
+  // fenceOf reads a code fence opener: up to three spaces, a run of three or more backticks or tildes, and an info
+  // string with no backtick in it. It returns the run and the info string's first word, or null.
+  function fenceOf(line) {
+    let p = 0;
+    while (p < 3 && line[p] === " ") p++;
+    const c = line[p];
+    if (c !== "`" && c !== "~") return null;
+    let q = p;
+    while (line[q] === c) q++;
+    if (q - p < 3 || line.indexOf("`", q) !== -1) return null;
+    return { marker: line.slice(p, q), lang: /^\s*(\S*)/.exec(line.slice(q))[1] };
+  }
+
+  // headingOf reads an ATX heading: up to three spaces, one to six #, a space or tab, the text, and an optional closing
+  // run of # that a space or tab sets off from the text. It returns the level and the text, or null.
+  function headingOf(line) {
+    let p = 0;
+    while (p < 3 && line[p] === " ") p++;
+    let q = p;
+    while (q - p < 6 && line[q] === "#") q++;
+    if (q === p || !isSpTab(line[q])) return null;
+    let a = q;
+    while (isSpTab(line[a])) a++;
+    let e = line.length;
+    while (e > a && isSpTab(line[e - 1])) e--;
+    let h = e;
+    while (h > a && line[h - 1] === "#") h--;
+    if (h < e && h > a && isSpTab(line[h - 1])) {
+      e = h;
+      while (e > a && isSpTab(line[e - 1])) e--;
+    }
+    return { level: q - p, text: line.slice(a, e) };
+  }
+
+  // isTableSep reads a table's separator row: two or more cells of dashes, each with an optional colon at either end
+  // and spaces around it, between optional outer pipes.
+  function isTableSep(line) {
+    let a = 0, e = line.length;
+    while (a < e && line[a] === " ") a++;
+    while (e > a && line[e - 1] === " ") e--;
+    if (line[a] === "|") a++;
+    if (e > a && line[e - 1] === "|") e--;
+    const cols = line.slice(a, e).split("|");
+    return cols.length >= 2 && cols.every(c => {
+      let x = 0, y = c.length;
+      while (x < y && c[x] === " ") x++;
+      while (y > x && c[y - 1] === " ") y--;
+      return SEP_CELL.test(c.slice(x, y));
+    });
+  }
+  const SEP_CELL = /^:?-+:?$/;
+
   const HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
   const QUOTE = /^ {0,3}>[ ]?/;
   const ITEM = /^( *)([-*+]|\d{1,9}[.)])[ \t]+(.*)$/;
-  const TABLE_SEP = /^ *\|? *:?-{1,}:? *(\| *:?-{1,}:? *)+\|? *$/;
+
+  // MAX_DEPTH bounds how deep quotes and lists nest: each level is a call, and a line of fifty thousand ">" would
+  // otherwise overflow the stack. Anything deeper is shown as text.
+  const MAX_DEPTH = 64;
 
   const isBlank = l => /^\s*$/.test(l);
-  const startsBlock = l => FENCE.test(l) || HEADING.test(l) || HR.test(l) || QUOTE.test(l) || ITEM.test(l);
+  const startsBlock = l => !!fenceOf(l) || !!headingOf(l) || HR.test(l) || QUOTE.test(l) || ITEM.test(l);
 
   function cells(line) {
     let s = line.trim();
@@ -124,16 +205,22 @@ const Markdown = (() => {
     return s.split(/(?<!\\)\|/).map(c => c.trim());
   }
 
-  function blocks(lines, into) {
+  function blocks(lines, into, depth = 0) {
+    if (depth > MAX_DEPTH) {
+      const p = el("p");
+      p.append(text(lines.join("\n")));
+      into.appendChild(p);
+      return;
+    }
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
       if (isBlank(line)) { i++; continue; }
 
       let m;
-      if ((m = FENCE.exec(line))) {
-        const marker = m[1];
-        const lang = LANG_OK.test(m[2]) ? m[2] : "";
+      if ((m = fenceOf(line))) {
+        const marker = m.marker;
+        const lang = LANG_OK.test(m.lang) ? m.lang : "";
         const body = [];
         i++;
         const close = new RegExp("^ {0,3}" + marker[0] + "{" + marker.length + ",}\\s*$");
@@ -174,9 +261,9 @@ const Markdown = (() => {
         into.appendChild(wrap);
         continue;
       }
-      if ((m = HEADING.exec(line))) {
-        const h = el("h" + m[1].length);
-        h.append(...inline(m[2]));
+      if ((m = headingOf(line))) {
+        const h = el("h" + m.level);
+        h.append(...inline(m.text));
         into.appendChild(h);
         i++;
         continue;
@@ -189,19 +276,19 @@ const Markdown = (() => {
           i++;
         }
         const bq = el("blockquote");
-        blocks(inner, bq);
+        blocks(inner, bq, depth + 1);
         into.appendChild(bq);
         continue;
       }
-      if (ITEM.test(line)) { i = list(lines, i, into); continue; }
-      if (line.includes("|") && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1])) {
+      if (ITEM.test(line)) { i = list(lines, i, into, depth); continue; }
+      if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
         i = table(lines, i, into);
         continue;
       }
       // paragraph: runs until a blank line or the start of another block
       const para = [];
       while (i < lines.length && !isBlank(lines[i]) && !(para.length && startsBlock(lines[i])) &&
-             !(lines[i].includes("|") && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]) && para.length)) {
+             !(lines[i].includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1]) && para.length)) {
         para.push(lines[i].replace(/^ {0,3}/, ""));
         i++;
       }
@@ -211,7 +298,7 @@ const Markdown = (() => {
     }
   }
 
-  function list(lines, i, into) {
+  function list(lines, i, into, depth) {
     const first = ITEM.exec(lines[i]);
     const indent = first[1].length;
     const ordered = /\d/.test(first[2]);
@@ -259,7 +346,7 @@ const Markdown = (() => {
     }
     for (const content of items) {
       const li = el("li");
-      blocks(content, li);
+      blocks(content, li, depth + 1);
       if (!loose && li.childNodes.length && li.firstChild.nodeName === "P") {
         const p = li.firstChild;
         while (p.firstChild) li.insertBefore(p.firstChild, p);

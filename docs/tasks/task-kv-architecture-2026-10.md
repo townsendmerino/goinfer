@@ -1,6 +1,7 @@
-# Task: one KV architecture — paged, content-addressed, tiered (KV0–KV10) — 2026-10
+# Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
-> **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0); KV1 is next.** Written on the owner's ask after a Cowork conversation the same day ("seems
+> **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0). KV1 DONE 2026-10-14: every gate read PASS
+> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2 is next.** Written on the owner's ask after a Cowork conversation the same day ("seems
 > like we should consider a new KV architecture, given what goinfer is like now, feature-wise, what would be the best
 > architecture if we were writing it from scratch. how close is the current code?", then "please write the task doc for
 > the new architecture as proposed, be thorough").
@@ -53,7 +54,7 @@ slot is gone; and every KV feature is built three or four times.
 - Hybrids (Qwen3.5/3.6/3.8 and the other recurrent families) get prefix reuse and more than one conversation.
 - CUDA gets f16 KV pools and extends f16 to the remaining families.
 
-**How.** Eleven phases, each shippable alone. At the same KV precision, each is bit-identical to the tree before it.
+**How.** Twelve phases, each shippable alone. At the same KV precision, each is bit-identical to the tree before it.
 - KV1–KV3 change bookkeeping, copies and admission only. They deliver cross-conversation reuse and fix Metal's long-prompt
   413 without touching an attention kernel.
 - KV4–KV5 are the kernel work.
@@ -72,6 +73,7 @@ slot is gone; and every KV feature is built three or four times.
 | KV8 | recurrent state pool and checkpoints | CUDA, Metal | L | KV4 (KV5 for Metal) |
 | KV9 | the CPU path onto the manager (deferred by D2: CPU joins through KV2's copies) | CPU | M–L | KV2, D2 |
 | KV10 | long context and lower-precision blocks | all | M | KV4/KV5 |
+| KV11 | one residency manager for KV blocks and MoE experts (added 2026-10-13) | CUDA, then Metal | L | KV4, KV7 |
 
 ## 1. Why: what the current KV design costs
 
@@ -338,9 +340,13 @@ into blocks it owns.
 - **Only full blocks are indexed,** as in vLLM. A partial tail is private.
 - **A lookup, across groups:**
   1. Take the longest chain of hits from block 0 in the full (or latent) group: `L_full`. A model with no such group (every
-     layer windowed: Mistral, Phi-3) has nothing to walk there, and needs nothing: a link is computed from the *request's*
-     tokens, so `L_full` is the request's own block count, and step 2 does the work. No header of a released block has to be
-     kept (SGLang's tombstones exist because it walks a tree from its root; a hash chain is looked up by value).
+     layer windowed: Mistral, Phi-3) has nothing to walk there, and needs nothing kept in the pool.
+     - A cold request computes `h_0 … h_{k−1}` from its own tokens, with its cold producer class.
+     - A continuing or forked sequence cannot: its earlier blocks may carry the `decode` class or a mix at a turn boundary
+       (§5.6 property 3), which its tokens do not determine. So the sequence keeps its own hash list from block 0 (32 B a
+       block, 16 KB at 32K), and the pool keeps no tombstone for a block whose window data is released.
+     - `L_full` is then the request's own block count, and step 2 does the work. SGLang's tombstones exist because it walks a
+       tree from its root; a hash chain is looked up by value.
   2. Take the largest block-aligned `L ≤ L_full` at which every window and chunk group still holds the live blocks its layers
      read at `L` (`[L − ceil(W/B)·B, L)` for a window W), scanning from the right, as vLLM's `SlidingWindowManager` does (§11a).
   3. For a hybrid, take the deepest recurrent checkpoint at or below `L`.
@@ -456,7 +462,8 @@ is MC4's identity gate extended to shared preambles.
   - The window and chunk groups are sized for the maximum number of running sequences; the full and latent groups get
     the rest.
   - On a paged-MoE load the expert cache keeps an explicit share. Today such a load holds KV at 4,096 so the pager gets
-    the leftover, and the new rule keeps that behaviour unless a measurement says otherwise.
+    the leftover, and the new rule keeps that behaviour unless a measurement says otherwise. KV11 replaces the fixed split
+    with one budget for KV blocks and experts (§6).
 - **Admission** asks for blocks for [hit, prompt) plus one block of headroom, plus the chunk scratch, priced from the
   allocator's own figure, not `prefillScratchBytes`'s whole-prompt bound.
   - If the blocks are not free yet, the request waits in serve's existing FIFO (`internal/serveapp/admission.go:admission`).
@@ -488,8 +495,24 @@ is MC4's identity gate extended to shared preambles.
 ### 5.12 Speculation and drafters
 
 - **Verify rows go into the private tail.** A rollback is `Truncate`.
-- **Window and chunk groups keep one block of slack** behind the window, so a rollback inside a verify width stays valid.
-  This is the windowed doc's slack rule in block form.
+- **Window and chunk groups keep rollback slack behind the window, sized for a client's rollback, not for a verify
+  width.** One block (64 tokens) covers a speculative verify but not a conversation that drops or edits its last reply.
+  - **The measurement (2026-10-14).** On CUDA's windowed KV (1,024 window + 512 slack), the base moved in full
+    512-token jumps. So the budget for rolling back into a slot cycled between 0 and 512 tokens, depending on where the
+    last decode landed, and any larger rollback went cold. Replaying that arithmetic predicted warm or cold for 59 of 59
+    Codex requests from the I3 night. 35 of the 59 went cold, about 2,430 s of re-prefill.
+  - **The rule chosen for CUDA (the ring fix, built 2026-10-14; `kvwindow-ring-2026-10`, speed guard PASS):**
+    - The base compacts in 64-token steps, so the budget never drops below 448. It costs no VRAM; the extra copying is
+      about 0.1% of a token's time on Mellum2.1.
+    - Extra rollback, up to 1,024, comes only from VRAM left after planning. It never costs residency, context, a slot
+      or an expert slot, and an expert-cache load gets none.
+    - Limit: right after a prefill pass of 448 rows or more, an edit inside that pass has less than 448 until decode
+      catches up. Dropping the last reply is always covered.
+  - **The paged design keeps the same guarantee.** A window group retains at least the rollback budget behind the
+    window, not one block. KV2's registration (`kv2-2026-10`) is amended to match, and KV4 sizes window groups with it.
+  - **What removes most rollback in the first place** is the client sending its reasoning back. `/v1/responses` returns
+    reasoning items and accepts them back (PR #12). The ring rule covers every other client that edits late in its
+    prompt.
 - **Drafters' own caches stay outside the pool** in this doc: `cuda/drafter.go`, EAGLE, and the block drafters.
 
 ### 5.13 The backend contract (sketch; names provisional)
@@ -654,24 +677,70 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   reachable today with `--ctx 32768 --kv-sessions 1` at the price of the other slots. The owner's call whether they change the
   verdict.
 
-### KV1 — The manager over today's slots (no storage change)
+### KV1 — The manager over today's slots (no storage change) — BUILT 2026-10-13, day gates read, not merged
 
-- **Build:**
-  - the manager's own package (§5.13, "The manager is its own package");
-  - the geometry (groups, state spec) from the `Architecture`;
-  - sequences, logical blocks, the hash chain and index, refcounts, LRU;
-  - the slot adapter;
-  - `resident_reuse.go`'s bookkeeping replaced by manager calls, with the four rules and the class moved into the key;
-  - the cache-state grid extended with the new lifecycle paths.
-- **Not changed:** serve's admission and every backend kernel.
-- **Gates (sketch):**
-  - **Identity:** every existing reuse, slot, MC3 and MC4 test passes unchanged, and every parity golden passes
-    unchanged.
-  - **Oracle property test:** random sequences of admit, append, publish, truncate, fork and release against a plain
-    per-sequence array model. Refcounts, tables and published contents are checked after every operation.
-  - **Wrong-hit mutations:** drop the adapter, an image hash, the class or the precision from the key, and an
-    adversarial test must go red. Each is shown once.
-  - **Speed:** a lone request's time-to-first-token and decode within 0.99–1.01 of main.
+Branch `kv1-2026-10`. Gates and readings: `docs/measurements/kv1-2026-10-13.md` (registered before the code; G2 and G5b
+amended before their runs). **Read and passing:** identity by day on both boxes, the windowed tests at awkward offsets
+on the exact class, the oracle property test, the wrong-hit mutations, the manager's own cost, and the fast-class
+windowed measurement (which measures, and does not gate KV1). **Queued for the night of 2026-10-13, and the merge waits
+for them:** the served speed gate on both boxes and the Metal device gate.
+
+- **Built:**
+  - `internal/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
+    and KV precision; a SHA-256 chain per block over its tokens, the image spans that touch it and the class of each
+    row); blocks of 64 with reference counts, publish, the index and the LRU of blocks nobody references; sequences
+    with admit, append, publish, truncate, fork and release; and the slot adapter (`kvmgr.Slots`), where logical block
+    i of the sequence in slot s is at `(s, 64i)`.
+  - `decoder/kvgeometry.go`: `Architecture.KVGeometry` derives the groups (full, window, chunk, latent; K = V; the
+    layers that read another layer's KV) and the recurrent state from the architecture, and agrees with `kvDimAt` and
+    `kvPositionsAt` on ten family shapes. The manager's types are re-exported under `decoder.KV*` names for the backends.
+  - `decoder/resident_reuse.go` is now calls into the manager. The four rules are `kvmgr.Slots.Score`'s and the root's;
+    the slot choice is `kvmgr.PickSlot`; the short-prefix guard is `kvmgr.ClassMap.DeclineShortLead` and states the
+    16-row rule; a completed generation publishes its full blocks (`kvmgr.Slots.Commit`), and a forget takes them out of
+    the index at once.
+  - `decoder/cachestate.go`: publish, share and evict are lifecycle paths, with a declared cell for each of the 14 kinds
+    and a test that checks each cell against the reuse code.
+  - `docs/ARCHITECTURE.md`, "The KV cache": corrected (CUDA's windowed layers, the fit-by-default contexts) and extended
+    with the manager.
+- **Not changed:** serve's admission, every backend kernel and allocation, and what a request reuses.
+- **Choices made in the build** (each is in the record's §1 or §3):
+  - **The names the tests hold are kept.** `residentReuseLen`, `residentAcquire`, `residentCommitIDs`,
+    `residentForgetIDs`, `pickResidentSlot`, `declineShortLeadReuse` and the bound sequence's three fields (`resIDs`,
+    `resIDsLora`, `resImgBlocks`) remain, as calls into the manager and as its record of the bound slot, because the
+    identity gate says the existing tests pass unchanged and twelve of their sites assign those fields. The parked slots
+    (`resSlots`, `resCur`, `resTick`) are gone.
+  - **One chain for every group** (the question §11a left for KV1): the group is not hashed into the chain. Under slots
+    every group's blocks are published together; the group id joins the map key when groups get their own pools (KV4).
+  - **The adapter's id is its load identity**, as rule 4's pointer comparison was. A content hash is KV7's need.
+  - **A forget unindexes the whole slot**, as rule 2 does today. §5.4's "a cancelled request still leaves its finished
+    blocks reusable" is not adopted here: it would change what a request reuses.
+  - **A sequence is reused only by continuing it in its own slot, at token granularity.** The index is built and
+    published to, and nothing takes a hit from it yet. In production no block has a reference count above zero until
+    KV2 pins a copy's source; the counts are exercised by the oracle test through the pool API.
+- **Left for KV2, which must settle each before it takes another sequence's rows:**
+  - **The class of a row is recorded per pass the decoder sees.** CUDA cuts a long prefill into 512-row passes
+    internally, and a last pass of 15 rows or fewer is exact class (KV0's `chunk=496` arm). The decoder records the
+    whole call as one pass, so such a tail is recorded as fast. KV3 moves the 16-row rule into the chunker, which
+    removes that tail; KV2's gate should check the recorded classes against launch counts, as KV0's test does.
+  - **Rows written by a path that does not go through `residentAcquireSlot`** (the image prefills, which compute on the
+    CPU and upload) are recorded as class unknown, which matches no other request. That is safe and loses the reuse.
+  - **The namespace is in the key and nothing sets it.** D4's defaults (one per API key; off beyond loopback without
+    keys) need a namespace on the request, from serve.
+  - **Window groups.** The geometry knows which blocks a window group holds (`KVGroup.FirstBlock`), but the adapter
+    leaves the answer to the backend (`ResidentReusableKV`), as today.
+  - **The slot choice is still by slot** (`PickSlot`'s last-use tick). The block LRU is maintained beside it and is
+    what KV2 switches to.
+  - **A hit from another sequence must leave a suffix the fast kernels will run**: at least 16 rows on CUDA when the
+    requester's cold prefill is fast class (KV0's `split@985`; the KV3 session's request). `Manager.Admit` caps a hit
+    at n − 1 only, and the cap needs the requester's class map.
+  - **CUDA's windowed layers.** A slot that is not bound must be able to say what it still holds, and a copy between
+    slots must go through each slot's shifted view. Both are the backend's; KV1 copies nothing.
+  - **A windowed layer on the fast kernels is invariant only to pass starts that are multiples of 64** (measured,
+    the record's G2b). A hit from another sequence is block-aligned, so the pass after it is safe. A continuation's
+    pass starts anywhere, so on a model with a sliding window its fast rows are recorded with no producer named and
+    the index never returns them. A row with no producer named matches nothing.
+  - **An image span with no content hash matches nothing in the index** (built: a lookup stops at the first block it
+    touches). KV2 should keep that when it adds the copy.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.
 
 ### KV2 — Cross-conversation reuse by copy (still slot storage)
@@ -828,6 +897,54 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - K8V4 as research.
 - **Size:** M.
 
+### KV11 — One residency manager for KV blocks and MoE experts (added 2026-10-13)
+
+Added on the owner's word the same day, from the conversation that produced `docs/tasks/task-forward-architecture-2026-10.md`
+(the compute half; this is its memory item).
+
+- **Why: two managers split one memory by a fixed rule.**
+  - A load that pages MoE experts keeps KV at 4,096 positions on CUDA and on Metal. The expert cache takes whatever is left
+    after everything pinned, so every byte given to KV is a byte the experts never see.
+    - On CUDA, growing the context there "cut its slots and decode speed sharply" (`cuda/resident.go:resolveCtxCapFit`).
+    - Metal keeps the same rule: "paged MoE keeps the default" (M2, `CHANGELOG.md`).
+  - Three expert pagers keep three budgets:
+    - CUDA's expert-slot cache, per layer (`-moe-cache-experts`, `-moe-cache-slots`);
+    - Metal's `metal/expertpool.go`, also per layer, under the same flags;
+    - the CPU's `decoder/moepaging.go:expertPager`, one cache across layers (`-moe-pager`, and `-stream-weights` with
+      `-weight-cache`).
+  - So a paged-MoE user picks context or expert hit rate at load, by flag. Neither choice fits a mixed workload: a long agent
+    prompt wants KV, and a short chat wants experts.
+- **Design.**
+  - An expert slot becomes a second kind of unit in §5.10's pool. KV blocks and experts share one budget, one allocator and
+    one pressure policy.
+  - **The two units differ in size.** A KV block is 64 rows across a group's layers (§5.2, option A); an expert slot is one
+    expert's gate, up and down weights and scales in one layer. Both depend on the model and its quantization. So they share
+    memory through a common slab arena, or by trading coarse device buffers under one byte budget, not by packing experts
+    into KV blocks.
+  - **Resizing is new.** Today CUDA sizes its expert cache once, at load and after KV, to the free memory it measures
+    (`cuda/resident.go:cudaResident.allocSlots`, `cuda/resident.go:expertCache`). Any buffer a captured CUDA graph segment
+    reads must keep its address, so slot buffers are allocated at their largest size up front, or the segments that read
+    them are re-captured when they change.
+  - An expert's lower tier is the mapping or host copy it is paged from (§5.8).
+  - Eviction compares expected cost per unit: a KV block's re-prefill or demotion cost, against an expert's miss cost (a
+    host-to-device copy per use, times its measured miss rate, per layer).
+  - D5's order still holds among KV blocks. An expert goes before a cached KV block only when its expected miss cost is lower.
+  - The CPU pager keeps its own cache (D2).
+- **First, measure.** The build goes ahead only if these show the fixed split costs something:
+  - per-layer expert hit rates at a fixed total budget on the real Gemma 4 26B-A4B, which is FreeToken Lead 4's first
+    step (`docs/tasks/task-freetoken-techniques.md`);
+  - the trade curve on one paged-MoE model per GPU box: decode speed, and the longest prompt that fits, against the KV share.
+- **Gates (sketch):**
+  - tokens identical to today's at the same split, since paging changes where weights live and not what is computed;
+  - a prompt that today's 4,096 cap refuses now fits, up to the fit default (16,384) where memory allows;
+  - decode at short prompts within 0.97 of today's 4,096-position load;
+  - never-swap throughout.
+- **Owner question when it starts:** do `-moe-cache-experts` and `-moe-cache-slots` keep their meanings, or become caps on
+  the shared budget? D6 covers only `-ctx` and `-kv-sessions`.
+- **Needs:** KV4 (a pool to share) and KV7 (the tiers). CUDA first, then Metal after KV5.
+- **Absorbs:** FreeToken Lead 4, pooling the CUDA expert cache across layers.
+- **Size:** L.
+
 ## 7. Order, and what is useful if the program stops early
 
 - **KV0 → header fix + KV3 alongside KV1 → KV2** (decided in D8 and Q2) deliver the agent-preamble win, fix CUDA's 12,288-key
@@ -836,6 +953,8 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   and the doc records why.
 - **KV7 and KV8 can come before KV5** for CUDA users. **KV6 is closed (keep slots, D3).** **KV9 is deferred (D2).** **KV10 waits on
   KV4/KV5.**
+- **KV11 follows KV4 and KV7,** CUDA first, and is built only if its first measurement shows the fixed split costs
+  something.
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
 
 ## 8. Owner decisions
@@ -845,7 +964,7 @@ Size S. Done in one session, on nobara; test files and measurement records only 
 | **D1** | Reverse the paged-attention parking narrowly, for memory and reuse within one user's conversations and agents? `positioning.md`'s "no paged attention" would change; continuous batching stays parked. | **DECIDED 2026-10-13: yes** ("un park paged attention for sure"). |
 | **D2** | Does the CPU path join (KV9)? | Index and copies when KV2 lands; storage later, only on a measured memory case. **DECIDED 2026-10-13: no, not now; the CPU joins only through KV2's copies.** |
 | **D3** | WebGPU: page it or keep slots? | Keep slots; KV6 decides with numbers. **DECIDED 2026-10-13: keep slots on WebGPU**, as the census supports. |
-| **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. **DECIDED 2026-10-13: one namespace on loopback, one per API key, and no sharing between namespaces (off) when `serve` binds beyond loopback without API keys.** The conservative choice; it costs a single local user nothing. |
+| **D4** | Sharing scope by default? | One namespace per server, one per API key when keys are configured; `-kv-share off` available. **DECIDED 2026-10-13: one namespace on loopback, one per API key, and no sharing between namespaces (off) when `serve` binds beyond loopback without API keys.** The conservative choice; it costs a single local user nothing. **As built in KV2 (2026-10-14), against serve as it is:** serve has one shared API key, so "one namespace per key" is one namespace, and its holders are one trust domain. Serve refuses to start beyond loopback without a key, so that case cannot arise. The network-facing case that remains, a loopback server answering an `-allowed-hosts` name without a key, shares nothing. `--kv-share off` turns sharing off for any server. |
 | **D5** | Policy under pressure? | Evict idle → demote → preempt the newest by release (§5.10). **DECIDED 2026-10-13: as proposed.** |
 | **D6** | CLI meanings before v1.0 (`-ctx`, `-kv-sessions` are Hard tier)? | Keep both: `-ctx` is a per-conversation cap, `-kv-sessions` the number of conversations kept warm and running on a resident. New flags only for sharing scope and the host-tier budget. **DECIDED 2026-10-13: keep the meanings of `-ctx` and `-kv-sessions`.** |
 | **D7** | CUDA's default KV precision once f16 passes its gate? | f16 by default with f32 kept as the reference, Metal's precedent. **DECIDED 2026-10-13: extend f16 to the remaining families as each clears its fidelity gate** (it is already the default for llama, mistral, qwen2, qwen3 and phi3). |
@@ -887,19 +1006,23 @@ Size S. Done in one session, on nobara; test files and measurement records only 
   - R-01 phase 2 and R-04's resident half (`docs/tasks/task-recompute-audit.md`);
   - FreeToken Lead 1 (`docs/tasks/task-freetoken-techniques.md`);
   - the reopen condition of `docs/tasks/parked/task-kv-cache-streaming.md` (its host-KV idea becomes KV7);
-  - lever 4's third step (KV10).
+  - lever 4's third step (KV10);
+  - FreeToken Lead 4, pooling the CUDA expert cache across layers (KV11).
 - **Replaces when built:**
   - `cuda/kvwindow.go`'s shifted view (KV4);
   - the per-slot bookkeeping in `decoder/resident_reuse.go` (KV1);
   - `pickResidentSlot` and serve's preamble floor (KV1–KV2);
-  - WebGPU's runner-per-slot if KV6 says so.
+  - WebGPU's runner-per-slot if KV6 says so;
+  - the fixed 4,096-position context of a paged-MoE load, and the GPU expert caches' per-layer slot counts (KV11).
 - **Interacts with:**
   - **KV-pre:** its block size;
   - **I7** (`docs/tasks/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
     so its code should stay small;
   - `docs/tasks/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
-  - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid.
+  - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid;
+  - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
+    memory planner prices through §5.10's one function.
 - **Doc amendments when phases land:**
   - `docs/roadmap.md` and MC5 record D1 (done 2026-10-13); `docs/positioning.md`'s "no paged attention" changes when
     KV4 ships;

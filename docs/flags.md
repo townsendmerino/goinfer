@@ -135,7 +135,7 @@ Controlling a running server without restarting it.
 
 | Flag | Type | Default | What it does |
 |---|---|---|---|
-| `--admin-socket` | `string` | — | Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`. |
+| `--admin-socket` | `string` | — | Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. Refused in a directory its group or everyone can write, unless it is sticky like `/tmp`. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`. |
 | `--halt-file` | `string` | — | Poll this path every 250 ms: present halts the server (inference routes return 503 and in-flight generations are cancelled), absent resumes it. A supervisor halts with `touch` and resumes with `rm`. |
 | `--halt-exit-code` | `int` | `0` | When nonzero, a halt exits the process with this code once every cancelled generation has stopped, for supervisors whose restart policy must not undo a deliberate halt. 0 = a halt never exits. |
 | `--unload-drain-wait` | `duration` | `5s` | How long `POST /admin/models/unload` waits for in-flight requests to drain before returning 202. |

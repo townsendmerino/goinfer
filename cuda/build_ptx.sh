@@ -35,7 +35,6 @@ if [ -z "${NVRTC_LIB:-}" ]; then
 	lib=$(find_first \
 		"../.cuda_tools/nvidia/cuda_nvrtc/lib/libnvrtc.so.12" \
 		"$HOME"/.local/lib/python*/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 \
-		/tmp/cuda_extract/cuda_nvrtc/targets/x86_64-linux/lib/libnvrtc.so.12 \
 		"$HOME"/cuda-toolkit/targets/x86_64-linux/lib/libnvrtc.so.12 \
 		"$HOME"/.venv*/lib/python*/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 \
 		/usr/local/cuda/lib64/libnvrtc.so.12 \
@@ -46,7 +45,6 @@ if [ -z "${CUDA_INC:-}" ]; then
 	hdr=$(find_first \
 		"../.cuda_tools/nvidia/cuda_runtime/include/cuda_fp16.h" \
 		"$HOME"/.local/lib/python*/site-packages/nvidia/cuda_runtime/include/cuda_fp16.h \
-		/tmp/cuda_extract/cuda_cudart/targets/x86_64-linux/include/cuda_fp16.h \
 		"$HOME"/cuda-toolkit/targets/x86_64-linux/include/cuda_fp16.h \
 		"$HOME"/.venv*/lib/python*/site-packages/nvidia/cuda_runtime/include/cuda_fp16.h \
 		/usr/local/cuda/include/cuda_fp16.h \

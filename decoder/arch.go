@@ -590,10 +590,11 @@ const (
 	ActReLU2 // ReLU-squared (relu(x)²) — Nemotron-H's non-gated MLP
 	// ActGelu is the EXACT erf GELU — HF's "gelu", a different function from
 	// "gelu_new"/"gelu_pytorch_tanh" (ActGeluTanh) rather than a spelling of it.
-	// Appended deliberately: GatedActResident passes this ordinal straight to a CUDA
-	// kernel (0 = GELU-tanh, 1 = SiLU), so the existing values cannot be renumbered.
-	// Only non-gated archs reach it today, and GatedActResident is documented as
-	// meaningless for those.
+	// Appended deliberately: GatedActResident passes the ordinal straight to resident
+	// kernels that know 0 (GELU-tanh) and 1 (SiLU), so the existing values cannot be
+	// renumbered. Gated and non-gated archs both use it, and no resident kernel
+	// implements it: residentFeatures derives FeatGatedGELUErf or FeatNonGatedGELUErf,
+	// which no backend declares.
 	ActGelu
 )
 

@@ -13688,6 +13688,10 @@ family with a gated exact-GELU MLP and NO attention gate would need that verifie
 not assumed safe by this precedent.
 ```
 
+Resolved 2026-10-13 (OP0, `docs/tasks/task-forward-architecture-2026-10.md` §3.2): the gated kernels take GELU-tanh and SiLU only, so
+exact GELU now derives its own feature, `gated-gelu-erf`, which no backend declares. `spark2_5`'s profile carries it in place of
+`gated-gelu`.
+
 ## archFeatureProfile.gemma
 
 Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.gemma`) on 2026-10-09.

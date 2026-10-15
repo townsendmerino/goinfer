@@ -23,7 +23,7 @@ any surface may still change.
 - **Image turns on Qwen3.5 are much faster**: on a 0.8B, time to first token for a 1024x640 image went from 37.5 s to 3.6 s on CUDA (0.3 s for a resent image) and from 38 s to 7.7 s on the CPU backend. Exploratory, one run per cell (`docs/measurements/p26*-2026-10-06/`).
 - **Qwen3-VL-30B-A3B images**, checked against Hugging Face on the CPU; its CUDA paged-experts path read FAIL on one served request and is unvalidated until its re-read.
 - **CUDA keeps the KV cache in f16 by default** for the dense llama, mistral, qwen2, qwen3 and phi3 families, so the same card holds about twice the context. Metal already did; `--kv f32` is the exact cache and the choice for any other family is unchanged. An owner decision over a fidelity cell that read parked (agreement 92.0% against 92.97% on a 7B at 8,000 keys) and a speed check stopped before its deep cells, recorded in `docs/tasks/task-cuda-f16-kv-2026-10.md`.
-- **`--windowed-kv` is on by default on CUDA**, so a mixed sliding/full model fits a longer context; `--windowed-kv=false` opts out, and a long agent loop past the window re-prefills each turn.
+- **`--windowed-kv` is on by default on CUDA**, so a mixed sliding/full model fits a longer context; `--windowed-kv=false` opts out. A follow-up turn reuses its prefix when it drops up to 448 tokens of the last reply (up to 1,024 when the card has VRAM to spare), where it used to re-prefill the whole prompt on most turns.
 - **`serve -lenient-tool-calls` (off by default)** reads one fenced JSON call at the end of a reply as a tool call, for the `<tool_call>` families, with the arguments checked against the tool's schema. A demonstration that ends on one valid call looks the same as a meant call, so use it with a client that confirms before it acts.
 - **EmbeddingGemma 2 takes images and audio** at `/v1/embeddings`, and runs on the GPU on a Mac. **Qwen3.5+ images from a GGUF `mmproj`** (`--vision mmproj.gguf`).
 - **Library:** `Model.Close` is safe during a generation (and refuses new ones with `decoder.ErrClosed`), `Tokenizer.NewStream` prints tokens without losing spaces, and `Options.Quant "bf16"` / `"f16"` holds a 16-bit checkpoint at half f32's memory, bit-identical to f32 (CPU).
@@ -65,9 +65,19 @@ configuration: the base URL, the model, and **the context window the server real
 
 - **It says whether the agent fits.** Each agent's first request was measured (Claude Code 20,199 tokens, opencode 7,165, Codex 5,850): the
   output says viable, marginal or not viable for this window, and names the `-ctx` that would fit.
+- **`connect claude-code` sizes Claude Code's output cap to the window and warns when it comes out small.** Claude Code compacts when its
+  context plus its output cap reaches the window it is told (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, which `connect` sets to the window the server
+  enforces). `connect` now writes `CLAUDE_CODE_MAX_OUTPUT_TOKENS` as what the window leaves beside its first request (20,199 tokens) and a
+  2,048-token margin, at most 8,192: 6,425 at 28,672, 8,192 from 30,439 up. Under 4,096 it warns and names `-ctx 26343`, or says the model
+  cannot hold the first request when its own maximum (`max_positions`, below) is smaller. At 28,672 with a 7,168-token cap Claude Code
+  compacted after every file read and stopped on "Autocompact is thrashing". A model id Claude Code may read as a Claude model, for which it
+  does not apply that variable, is warned about too. No documented Claude Code setting makes it compact later at a window this small
+  (`CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts 100,000 and up, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower the trigger).
+- **`/v1/models` publishes `max_positions`**, the model's own maximum context, beside `context_window`.
 - **`-write` patches the agent's own file in place**, keeping every other setting and the order they were in: `~/.claude/settings.json`,
   `./opencode.json` (or the per-user file with `-global`), `~/.codex/config.toml`. It refuses a window the agent cannot fit unless `-force`.
 - **`-undo` restores the file byte for byte**, or removes it if `connect` created it, and refuses if you have edited it since.
+- **`connect claude-code` names the served model in every model slot Claude Code reads**: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_MODEL`, `ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL` and the deprecated `ANTHROPIC_SMALL_FAST_MODEL` (the list in Claude Code's own documentation, https://code.claude.com/docs/en/model-config), and sets `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` so a subagent whose definition names its own model runs on the served one too (Claude Code 2.1.257 and later). It set only the main and Haiku slots before, so a subagent that asked for `sonnet` went out as `claude-sonnet-5-5` and the server answered 404.
 - **`connect claude-code` also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`.** Claude Code opens its system prompt with a hash of the conversation's first message, at token 22, so two conversations share 22 tokens instead of the roughly 18,000 of preamble that follows. With the header off, three different first prompts shared 18,213 of about 20,154 tokens (KV0, `docs/measurements/kv0-traffic-2026-10-13.md`). The server does not rewrite the line; it is the client's setting, named in `docs/integrations/claude-code.md`.
 - It never starts the agent. A JSON file with comments is not patched (the comments would be lost): the settings are printed to paste.
 - **Not yet confirmed by running each agent on a written file**; the shapes are the ones the census runs used. Codex's file is patched as text.
@@ -153,6 +163,44 @@ under 4096, and less than 16384 only when it does not fit (the context gives way
 
 `docs/tasks/task-minimax-code-compat-2026-09.md` M2.
 
+### Fixed — under `--backend cuda`, concurrent sampled conversations on a dense Gemma 4 or a logit-scaled model got the wrong distribution
+
+**Who was affected:** `--backend cuda` serving dense Gemma 4, Command-R or Granite (any model with a final-logit softcap or
+a logit scale) to two or more conversations at once, with a sampling temperature above zero. **Since:** batched
+multi-request decode on CUDA (`7a44a58e`, 2026-09-27), so v0.20.0, v0.21.0 and v0.22.0 all carry it.
+
+When several conversations decode together in one batched step, a conversation that samples (on these models every
+sampled token is drawn on the host, since the on-device draw does not apply the transforms) received logits with the
+final-logit softcap or the logit scale applied twice. That squeezed a dense Gemma 4's logits further toward the cap and,
+on a Command-R, Granite or other logit-scaled model, multiplied them by the scale a second time, which raises the
+effective temperature by its inverse (16 on Command-R, whose `logit_scale` is `0.0625`). Greedy decoding and a
+conversation decoding alone were not affected; both transforms keep the argmax. Each is now applied once, and a step row's
+logits equal the single-sequence `Forward`'s bit for bit (`TestCUDAStepBatch_matchesForward`).
+
+### Fixed — under `--backend cuda` with windowed KV, a follow-up turn that dropped the last reply re-prefilled the whole prompt
+
+**Who was affected:** `--backend cuda` serving a model with sliding-window layers (Mellum, Gemma 2, 3 and 4, Mistral, Command-R7B,
+gpt-oss, Phi-3) past its window, to a multi-turn client whose next request does not contain the previous reply as generated: Codex,
+which sends no reasoning back, or any client that edits near the end of the prompt. **Since:** `--windowed-kv` became the default
+(unreleased).
+
+A windowed layer keeps 512 positions beyond its window, and the compaction that makes room moved its start as far forward as it could,
+so how far back a follow-up could still reuse the cache cycled between 0 and 512 positions depending on where the last reply happened to
+end. A follow-up that diverged further back prefilled the whole prompt. In the 2026-10-13 I3 night, 35 of Codex's 59 requests on
+Mellum2.1 (16K context) did that, about 65 s each: some 2,430 s, three quarters of that cell's wall time.
+
+A compaction now moves the start only far enough to keep 448 positions behind the newest one, so a follow-up that diverges up to 448
+tokens before the end of what the cache holds reuses its prefix wherever the last reply ended. The planned memory is unchanged: the
+context, the KV slots and the expert cache each model gets are the same as before. When VRAM is left over after all of those (and after
+the vision-tower, decode and prefill reserves), the load also gets up to 576 more positions, a rollback of up to 1,024, and the serve log
+says so; an expert-cache load never does. So whether a long reply's follow-up is warm can depend on the memory state at load. Replayed on
+the I3 requests, the follow-ups inside a run that re-prefilled drop from 30 of 54 to 16 at 448, and to 5 at 1,024. Output is unchanged
+(the reused and cold prefills, and decode across the more frequent compactions, are bit-identical: `TestWindowedKV_rollbackReuse`,
+`TestWindowedKV_stepIdentity64`). Compacting every 64 positions instead of every 512 copies more per token (about 0.1% of a token by
+arithmetic on Mellum2.1; a decode-speed guard is registered). Details:
+[`docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md`](docs/measurements/prefix-reuse-windowed-kv-2026-10-14.md). The CPU backend's
+window rings keep no rollback at all and are not changed (same record).
+
 ### Fixed — Claude Code 2.1.268 could not complete a turn against `/v1/messages`
 
 Claude Code now sends a `system` message inside the conversation on every turn (the Messages API's mid-conversation system
@@ -164,6 +212,44 @@ stable from turn to turn. A `system` message in first place, and every other unk
 Traced with the real client ([the record](docs/measurements/integration-harness-2026-10/claude-code-census-2026-10-12.md)):
 its first request, with its 24 built-in tools, is **19,692 tokens**, so it needs `-ctx 32768`, not the 16384 the recipe
 named; `claude --bare` sends 1,063. [docs/integrations/claude-code.md](docs/integrations/claude-code.md) has the variables.
+
+### Added — `/v1/responses` returns the reasoning as a reasoning item and reads it back, so a Codex turn stays warm
+
+A thinking model's reasoning is now a `reasoning` output item (in `content` and, unchanged, in `encrypted_content`). A
+reasoning item sent back in `input` is rendered as that turn's replayed reasoning, where the model's own template
+puts it. Before, the route dropped the reasoning. Codex resent each assistant turn without the reasoning still held in
+the KV, so every turn rolled back to the end of the previous prompt, and on CUDA windowed-KV models (Mellum2.1) it
+re-prefilled from cold. Live, Codex 0.162.1 x Mellum2.1 on an RTX 2070 SUPER: the turns after the first reused
+6,504 of 6,554 and 6,873 of 6,949 prompt tokens, with time to first token 0.6 s and 0.9 s against 65 s for the cold first
+turn (docs/measurements/integration-harness-2026-10/reasoning-items-live-2026-10-14.md). The reused count is reported in
+`usage.input_tokens_details.cached_tokens`.
+
+### Fixed — a thinking model's tool call written inside its reasoning was lost, and an empty answer gave no reason
+
+A thinking model can write its tool call inside its reasoning block and end its turn there. The splitter routed the call
+to the reasoning and the call parser reads only the answer, so the turn came back with no call and no answer: on
+`/v1/responses`, which returns no reasoning, an empty message marked `completed`. Seen in the I3 night of 2026-10-13
+(Codex x Mellum2.1 `read`, and opencode x Qwen3-4B `read` on `/v1/chat/completions`, whose reasoning ended on the call).
+
+- **A turn with no answer text takes its tool call from its reasoning**, on all three routes, and says so with
+  `goinfer_tool_calls_from_reasoning: true`. A call drafted in the reasoning of a turn that went on to answer in prose is
+  still not taken.
+- **An empty answer always says why.** A turn that ends with no answer text and no tool call is `status: "incomplete"`
+  with `incomplete_details: {"reason", "detail"}` on `/v1/responses`, and carries `goinfer_empty_answer: {"reason",
+  "detail"}` on `/v1/chat/completions` (in the choice, or the finish chunk) and `/v1/messages` (in the message, or the
+  `message_delta` event). The reason is `ended_in_reasoning`, `reasoning_only`, `stop_sequence` or `no_output`. A reply
+  cut off by its token limit keeps the reason it already had (`length`, `max_output_tokens`, `max_tokens`). Both fields
+  are an **Experimental** vendor extension (docs/server.md, "Empty answers say why"): the set of values may change.
+
+### Changed — resident prefix reuse is kept by one KV manager (no change in what a request gets)
+
+The record of what each GPU KV slot holds, the choice of a slot for a prompt and the length it may skip moved from
+`decoder` into one package, `internal/kvmgr`, the first step of `docs/tasks/task-kv-architecture-2026-10.md`. Nothing a
+kernel computes or a backend allocates changes, and replies are the same: the new code is walked against the old at
+random in the test suite. One rule is now stated where it was implied: a prompt of 15 tokens or fewer never runs CUDA's
+fast prefill kernels, so it keeps a short reused prefix (with the default 512-token floor this changes nothing).
+Library, Experimental: `decoder.Architecture.KVGeometry` and `decoder.Model.KVGeometry` (a model's KV layer groups and
+recurrent state), their types, `decoder.KVBlockRows` and `decoder.KVSlotRow`.
 
 ### Fixed — Codex turns were cut at 512 tokens, and a thinking model's cut-off reply could show `</think>`
 
@@ -188,12 +274,75 @@ where it is 5,850. Every system message is now kept. Those before the conversati
 system prompt; one sent after it has started stays where it is, as text of the user side, instead of replacing the system
 prompt. A `/v1/responses` request with both `instructions` and a `developer` item keeps both.
 
+### Fixed — a model whose MLP uses the exact GELU can no longer be put on a GPU with the tanh approximation
+
+Every GPU backend's MLP kernel has two activations, tanh-GELU and SiLU, and picks one from a number the decoder hands it. The admission
+check let any other activation through as if it were tanh-GELU.
+
+- **A GPT-2 checkpoint that declares `activation_function: "gelu"` now decodes on the CPU under Metal.** It was admitted to the GPU and
+  ran `gelu_new`'s tanh approximation, which differs from the exact function by up to 4.73e-4 per activation. The released GPT-2
+  checkpoints use `gelu_new` and are unchanged. `DecodePath()` and `serve check` name the reason: `non-gated-gelu-erf`.
+- **Spark-X2.5 was never affected, and now cannot be.** Its gated MLP uses the exact GELU; two other gaps keep it on the CPU today, and
+  the activation is now a third, named `gated-gelu-erf`, so lifting the first two cannot put it on a GPU with the wrong activation.
+- **Any other activation in a gated MLP declines too** (`gated-act-unknown`), until a backend has a kernel for it.
+- Gemma, whose gated MLP uses tanh-GELU, is admitted as before.
+- **A model the GPU runner cannot express now says which shape stopped it**: `arch is not eligible for the resident decode runner: own
+  forward, not bridged`, for example, where the message ended at "runner".
+
+### Changed — `docs/hardware-matrix.md` says why each family decodes on the CPU
+
+The matrix gains a generated section, "Why a cell reads CPU". For each family and backend it lists every reason, not only the first one
+the load path reports: the runner shape, the features the backend lacks, the activation hazard, the MoE router's capacity.
+
+- It is generated from the same checks admission runs, and a test fails when a cell and its reasons disagree.
+- **It shows two reasons that a first refusal hid.** Kimi K2 on Metal lacks latent-KV attention and also has 384 experts where Metal's
+  router kernel routes 256. Spark-X2.5 lacks its activation as well as its attention output gate.
+- **Phi-3 and Phi-4 get a note.** Their row reads a configuration the loader does not pick: a GGUF loads at `--quant q4k` on CUDA and
+  runs on the GPU, and on Metal it does only with an explicit `--quant q4k`.
+
 ### Added — `serve check` tests tool calling on `/v1/messages` at a real agent's schema size
 
 A new row, `tools, harness, Messages`, sends the same dozen tools and prompt as `tools, harness-scale` through the Anthropic
 route, which is what Claude Code speaks. A model that does not call the tool is a skip, as on the OpenAI row. A `tool_use`
 block a client could not use is a failure: no `id`, another tool's name, an `input` that is not a JSON object, or a
 `stop_reason` other than `tool_use`.
+
+### Security — the web UI has a content policy and survives hostile text; Copy drops hidden characters; smaller server and build hardening
+
+The rest of the low findings from the 2026-10-12 security audit. None had a known way to be used against a default server.
+
+- **The web UI is served with a full `Content-Security-Policy`.** Scripts, styles and requests come from the server itself and
+  nowhere else; inline scripts and handlers are refused. The page already writes model output as text and never as HTML; this
+  is the browser's second check behind that. `TestWebUI_contentPolicyInBrowser` opens the page from its real handlers in
+  headless Chrome: the page does its work with no violation, and each thing the policy forbids is refused.
+- **A long line could freeze the chat.** The Markdown renderer matched table separators, headings and code fences with patterns
+  whose cost grows with the square of a line's length, on every frame of a streaming reply: a table row followed by a line of
+  80,000 spaces took 18 s. Those three are now read with index loops (1 ms), on about a million generated lines the new readers
+  agree with the old patterns, long inline text is parsed in pieces of 4,096 characters, and quotes or lists nested more than
+  64 deep are shown as text (50,000 `>` on one line overflowed the stack).
+- **Copy no longer carries characters you cannot see.** A reply could show one command and put another on the clipboard, using
+  control characters, bidirectional overrides or zero-width characters. Copy now drops them, on code blocks and on messages, and
+  what was hidden becomes visible in what is pasted. A joiner inside an emoji sequence or between Persian or Indic letters is
+  kept.
+- **A link needs two slashes.** `[x](http:v1/models)` was a live link, and a browser resolves it against the page's own address.
+  Only `http://`, `https://` and `mailto:` links are live.
+- **The HTML preview makes no request, and now a browser test says so.** A previewed page that tries a script, a redirect, a meta
+  refresh, images, styles, fonts, frames and media reaches a local listener zero times, while the same page in a frame that may
+  run scripts reaches it seventeen ways. On a browser where that second frame cannot reach the listener either, the gate
+  reports the check as not verified instead of passed. **Fixed on the way:** the first click on Preview showed nothing (the frame was created
+  hidden, so it took a second click).
+- **A web load of a path outside the pull cache gets one refusal**, whether or not the path exists, so a page cannot learn which
+  files are on the machine from the wording.
+- **The API key is compared as SHA-256 digests**, so the time a refusal takes no longer depends on the length of the key tried.
+- **`--admin-socket` is refused in a directory other users can rewrite** (group- or world-writable and not sticky; `/tmp` still
+  works), and the socket is at mode 0600 from the moment it can be reached: it is bound inside a private directory and renamed
+  into place. Before, a client that connected between the bind and the `chmod` kept its connection.
+- **Build scripts.** `cuda/build_ptx.sh` no longer looks for the CUDA compiler library under `/tmp`, where any user could plant
+  one; `scripts/bench_compare.sh` builds its binary into a `mktemp` directory.
+- **Every shipped GPU kernel is checked against its source, in CI.** `go run ./cmd/gate ptx` rebuilds each
+  `cuda/testdata/*.ptx` at the NVRTC version the file records and compares bytes; the `cuda` CI job runs it with both versions
+  installed. The check inside `gate gpu` had been skipping the seven f16-KV twin files (`*_kv16.ptx`), which have no source of
+  their own name; it now rebuilds them from the kernel they are built from.
 
 ### Security — a loopback server refuses a foreign `Host`; the tool prompt no longer lets a message forge a turn; a wider embedding table is refused at load
 
@@ -311,8 +460,8 @@ fluent); a re-read after the expert-major rounding fix is queued, and until it r
 A sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer
 context in the same VRAM. Texts were identical across two A/B passes and eight sessions; decode speed pooled at 0.987 and 0.991 of
 full KV (the registered bar was 0.98), and a 1% to 2% cost is not excluded. It engages only on the CUDA resident path for a model
-with sliding-window layers and a context above the window. **A long multi-turn agent loop past the window re-prefills the prompt each
-turn** (its correctness is gated, its speed is not): `--windowed-kv=false` is the opt-out
+with sliding-window layers and a context above the window. **A turn that diverges more than 448 tokens before the end of what the cache
+holds (up to 1,024 with VRAM to spare) re-prefills the whole prompt** (see the Fixed entry on reuse after a dropped reply): `--windowed-kv=false` is the opt-out
 ([`docs/tasks/task-cuda-windowed-kv-2026-10.md`](docs/tasks/task-cuda-windowed-kv-2026-10.md), sections 12 and 13).
 
 ### Added — Whisper and Voxtral's audio encoder on the GPU under `--backend cuda`

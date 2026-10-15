@@ -31,7 +31,7 @@ func unixHTTPClient(path string) *http.Client {
 // that path to reach regardless of the key. No real model needed: halt/resume/status/generations
 // none of them touch a loaded model, only K1's registry and K2's atomic state.
 func TestServe_adminSocket(t *testing.T) {
-	sockPath := filepath.Join(t.TempDir(), "admin.sock")
+	sockPath := filepath.Join(ownerOnlyDir(t), "admin.sock")
 	const apiKey = "s3cr3t"
 
 	srv, err := newServer(config{adminSocket: sockPath})

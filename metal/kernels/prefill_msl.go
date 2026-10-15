@@ -7,7 +7,7 @@ package kernels
 const PrefillKernels = `
 #include <metal_stdlib>
 using namespace metal;
-
+` + AttnScoreMSL + `
 // gemm_w4f16_store: blocked int4→f16 MMA GEMM with a fused epilogue (mode 0 = plain store, 1 =
 // +bias for fused QKV, 2 = +residual for o-proj/down) — C[M×N] = A[M×K](f16) · Wᵀ, W = resident
 // int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. Dispatched as a 2-D grid of
@@ -497,7 +497,7 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
         // half4 vectorized K-read (coalescing fix, bit-identical; guarded on hd%4==0, scalar tail).
         if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
         for (; d<hd; d++) a += float(qr[d])*float(k[d]);
-        sc[s]=a*scale;
+        sc[s]=attn_score(a*scale);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     float mmax=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) mmax=max(mmax,sc[s]);
@@ -546,7 +546,7 @@ kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device co
         float a=0; device const half* k=kb+s*kvDim; uint d=0;
         if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
         for (; d<hd; d++) a += float(qr[d])*float(k[d]);
-        sc[s]=a*scale;
+        sc[s]=attn_score(a*scale);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     float mmax=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) mmax=max(mmax,sc[s]);
@@ -657,7 +657,7 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
                 float sraw[ATTN_KTILE]; float rowmax = -INFINITY;
                 for (uint c=0;c<ncols;c++) {
                     uint j = j0s+c;
-                    float v = sScr[sgid][row*ATTN_KTILE+c]*scale;
+                    float v = attn_score(sScr[sgid][row*ATTN_KTILE+c]*scale);
                     if (j>=rowKeys || j<rowWin) v = -INFINITY;
                     sraw[c]=v; rowmax = max(rowmax, v);
                 }
@@ -800,8 +800,8 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
             }
             // This lane's four scores: row myRow, keys j0 + {fn, fn+1, 8+fn, 9+fn}.
             float s[4];
-            s[0] = S[0].thread_elements()[0] * sl2; s[1] = S[0].thread_elements()[1] * sl2;
-            s[2] = S[1].thread_elements()[0] * sl2; s[3] = S[1].thread_elements()[1] * sl2;
+            s[0] = attn_score_log2(S[0].thread_elements()[0] * sl2); s[1] = attn_score_log2(S[0].thread_elements()[1] * sl2);
+            s[2] = attn_score_log2(S[1].thread_elements()[0] * sl2); s[3] = attn_score_log2(S[1].thread_elements()[1] * sl2);
             const bool edge = (j0 + R19_BK > startPos + r0 + 1u) || (j0 < myWin + R19_BK) || (myRow >= M);
             if (edge) {
                 uint js[4] = {j0 + fn, j0 + fn + 1u, j0 + 8u + fn, j0 + 9u + fn};

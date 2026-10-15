@@ -156,7 +156,11 @@ func (r *resident) ensurePrefill() {
 	if (r.w8 || r.w8Attn) && r.preciseMath { // the owner's precise-math decision for native int8 (w8PreciseMath) covers its prefill too
 		compile = r.d.CompileLibraryPrecise
 	}
-	lib, err := compile(prefillKernels, MSL3_1)
+	src, err := withAttnSoftcap(prefillKernels, r.attnSoftcap)
+	if err != nil {
+		panic(fmt.Sprintf("metal prefill source: %v", err))
+	}
+	lib, err := compile(src, MSL3_1)
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill compile: %v", err))
 	}
@@ -302,16 +306,22 @@ var prefillScratchSeen atomic.Int64
 // threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by prefillExactAttnMaxKeys.
 func (r *resident) prefillAttnKernels() (fused, steel bool) {
 	g0 := r.prefillGeom()
-	fused = metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION")) && g0.hd%8 == 0 && g0.hd <= 128
+	fused = r.prefillFusedOn() && g0.hd%8 == 0 && g0.hd <= 128
 	steel = fused && g0.hd == 128 && !prefillSteelAttnOff
 	return fused, steel
+}
+
+// prefillFusedOn reports whether the pass may take the fused and steel attention kernels where a layer's head
+// dimension has one. A model with an attention softcap may not: the softcap is gated on the exact kernel.
+func (r *resident) prefillFusedOn() bool {
+	return r.attnSoftcap == 0 && metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
 }
 
 // prefillExactAttn reports whether any attention layer of the pass runs the exact attention kernel (no fused kernel for
 // its head dim, or fused attention off), whose score buffer holds prefillExactAttnMaxKeys keys. A Gemma 4 E-model's
 // layers differ (S9 step 2); every other family's are one geometry.
 func (r *resident) prefillExactAttn() bool {
-	fusedOn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
+	fusedOn := r.prefillFusedOn()
 	for l := range r.layers {
 		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
 			return true
@@ -606,7 +616,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		shared bool
 	}
 	luCache := map[luKey]*layerU{}
-	fusedOn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
+	fusedOn := r.prefillFusedOn()
 	layerUFor := func(L *residLayer) *layerU {
 		k := luKey{L.geom, L.kvShared}
 		if u, ok := luCache[k]; ok {

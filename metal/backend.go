@@ -930,6 +930,9 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	if a.r.kvI8 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
 	}
+	if a.r.attnSoftcap != 0 && len(blocks) > 0 {
+		return nil, fmt.Errorf("metal: the image prefill's attention kernel is not gated with an attention softcap; using sequential path")
+	}
 	if !a.r.prefillOK && !a.emodelBatched() {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}

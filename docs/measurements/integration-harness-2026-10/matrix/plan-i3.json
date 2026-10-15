@@ -166,6 +166,29 @@
     "--quant",
     "int4"
    ]
+  },
+  {
+   "name": "mellum-16k-codex-f",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 3,
+   "run_timeout": 1500,
+   "label": {
+    "regime": "screening, Mellum2.1 int4mix, C' expert streaming (45 of 64 slots), -ctx 16384, KV f32; the registered three repetitions of a fragile cell (Codex x Mellum2.1, 2 of 5 on 2026-10-13)"
+   }
   }
  ]
 }

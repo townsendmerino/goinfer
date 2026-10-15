@@ -303,7 +303,7 @@
   {
    "name": "admin-socket",
    "group": "Admin and halt",
-   "summary": "Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`."
+   "summary": "Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. Refused in a directory its group or everyone can write, unless it is sticky like `/tmp`. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`."
   },
   {
    "name": "halt-file",
