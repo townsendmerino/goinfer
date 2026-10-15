@@ -1,0 +1,20 @@
+{
+ "schema": 1,
+ "os": "darwin",
+ "arch": "arm64",
+ "commit": "695ce16c131877e742652937111520cea558f785",
+ "date": "2026-10-15T05:37:59Z",
+ "verdict": "PASS",
+ "dirty": false,
+ "full": true,
+ "pass": 2561,
+ "skip": 537,
+ "fail": 0,
+ "cells": 62,
+ "ran": 46,
+ "cached": 14,
+ "not_run": [
+  "cuda",
+  "cuda/s4siglip"
+ ]
+}

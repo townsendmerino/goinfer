@@ -1,0 +1,3 @@
+planted rw-etc: caught (1 escapes named, e.g. ESCAPE: 'write /etc/ssl/x' -> ['OK', '/etc/ssl/x'])
+planted share-net: caught (6 escapes named, e.g. ESCAPE: 'tcp 1.1.1.1:443' -> ['OK', 'connected'])
+planted rw-root: caught (4 escapes named, e.g. ESCAPE: 'write /etc/x' -> ['OK', '/etc/x'])
