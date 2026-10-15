@@ -382,8 +382,36 @@ gone, and the remainder is short-lived closure garbage, which T0b's live-heap re
   goinfer working buffer.
 
 **Filed for aikit's next release, not blocking G40:** no allocation per call in `MatmulBT` (no closure per
-`parallelCols` call) or in the W4A8 scale-buffer path, each with an `AllocsPerRun` gate in aikit. The brief is in aikit's
-local `docs/prompts/linalg-no-per-call-allocs-2026-10.md`. goinfer re-runs T0a when it moves to that release.
+`parallelCols` call) or in the W4A8 scale-buffer path, each with an `AllocsPerRun` gate in aikit. The brief is a local,
+untracked prompt in aikit's checkout (its prompts directory is gitignored), to be entered in aikit's queue when that work
+starts.
+
+### T0a demoted to a diagnostic (owner, 2026-10-15)
+
+T0a is not amended a second time. It is a diagnostic, reported in G40's output and not graded.
+
+- **Both readings stand as recorded above:**
+  - the first, by the registered limit: 3.4 to 5.6 MiB per later chunk on the 0.5B, against 1.27;
+  - the amended one: 2, 9 and 13 allocations of 4 KiB or more in chunks 2 to 4.
+- **The attribution:** every 16 KiB allocation is aikit's W4A8 scale buffer. It comes from a `sync.Pool` that each
+  garbage collection empties, so the next W4A8 call after a collection allocates a fresh one. The closures are the same
+  kind of thing: aikit's per-call scratch, not a goinfer working buffer.
+- **Why not amend again:** a second amendment after the data would have moved the bar twice.
+- **What stays:**
+  - The fixture cell still asserts no allocation of 4 KiB or more after the first chunk. It holds goinfer's own buffers,
+    and the planted defect turned it red.
+  - The 0.5B cell reports and does not fail.
+- **When goinfer moves to the aikit release without per-call allocations,** T0a is re-run once on the 0.5B, as a check,
+  not a gate.
+
+**G40 merges on four results, all on their registered bounds, with no amendments:**
+
+1. G40-1, which passed: the fixtures, and the 0.5B cell at 20 of 20 cases bit-identical (794 s, at `76142498`).
+2. T0b, which passed.
+3. The tier 1 memory run.
+4. The 0.5B 6K speed cell.
+
+If either of the last two misses, G40 stops there and is reported.
 
 ### Done
 

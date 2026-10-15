@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-// G40-T0a and G40-T0b (docs/tasks/task-cpu-prefill-memory-2026-10.md, the amendment under the testing tiers, and the
-// owner's amendment of T0a after its first reading): a chunked prefill allocates its working set once, so no chunk after
-// the first makes an allocation of 4 KiB or more, and its live heap stays within the prompt's KV, one chunk's working set
-// and the attention pool. Each chunk's total bytes and allocation count are reported beside the graded count, not
-// graded: the remainder is aikit's per-call closure in Workspace.MatmulBT, short-lived garbage.
+// G40-T0a and G40-T0b (docs/tasks/task-cpu-prefill-memory-2026-10.md, "T0a demoted to a diagnostic"): a chunked prefill
+// allocates its working set once. T0b, graded: its live heap stays within the prompt's KV, one chunk's working set and
+// the attention pool. T0a counts each later chunk's allocations of 4 KiB or more, with its total bytes and allocation
+// count beside them. On the fixture it asserts none, which keeps goinfer's own buffers from coming back; on the 0.5B it
+// only reports, because aikit's W4A8 scale-buffer pool, emptied at each collection, allocates there.
 
 // bigMallocs is the count of heap allocations of 4 KiB or more so far, from the runtime's allocation size histogram
 // (/gc/heap/allocs-by-size:bytes), whose buckets cover every size, large objects included.
@@ -67,7 +67,7 @@ func chunkAllocs(t *testing.T, m *Model, prompt []int, C int, live bool) (perChu
 			perChunk = append(perChunk, int64(total-last))
 			bigPerChunk = append(bigPerChunk, int64(big-lastBig))
 			n := mallocs - lastMallocs
-			fmt.Fprintf(os.Stderr, "[g40-t0a] chunk %d: %d allocations of 4 KiB or more (graded); %d allocations, %.2f MiB in all (reported)\n",
+			fmt.Fprintf(os.Stderr, "[g40-t0a] chunk %d: %d allocations of 4 KiB or more ; %d allocations, %.2f MiB in all (reported)\n",
 				chunk+1, big-lastBig, n, float64(total-last)/(1<<20))
 		}
 		last, lastMallocs, lastBig = total, mallocs, big
@@ -79,7 +79,7 @@ func chunkAllocs(t *testing.T, m *Model, prompt []int, C int, live bool) (perChu
 	return perChunk, bigPerChunk, peakLive
 }
 
-func checkNoChunkAllocs(t *testing.T, m *Model, prompt []int, C int) {
+func checkNoChunkAllocs(t *testing.T, m *Model, prompt []int, C int, graded bool) {
 	t.Helper()
 	_, big, _ := chunkAllocs(t, m, prompt, C, false)
 	want := (len(prompt) + C - 1) / C
@@ -87,7 +87,7 @@ func checkNoChunkAllocs(t *testing.T, m *Model, prompt []int, C int) {
 		t.Fatalf("%d chunk readings, want %d: the prefill did not chunk as expected", len(big), want)
 	}
 	for i, n := range big {
-		if i > 0 && n != 0 {
+		if i > 0 && n != 0 && graded {
 			t.Errorf("chunk %d made %d allocations of 4 KiB or more: a chunk after the first allocated working buffers", i+1, n)
 		}
 	}
@@ -100,7 +100,7 @@ func TestG40T0a_noAllocsAfterFirstChunk(t *testing.T) {
 	}
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()
-	checkNoChunkAllocs(t, m, chunkPrompt(1000, vocab, 1), 256)
+	checkNoChunkAllocs(t, m, chunkPrompt(1000, vocab, 1), 256, true)
 }
 
 func load0p5B(t *testing.T) *Model {
@@ -117,11 +117,12 @@ func load0p5B(t *testing.T) *Model {
 	return m
 }
 
+// TestG40T0a_noAllocsAfterFirstChunkReal0p5B is a diagnostic: it reports and never fails.
 func TestG40T0a_noAllocsAfterFirstChunkReal0p5B(t *testing.T) {
 	m := load0p5B(t)
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()
-	checkNoChunkAllocs(t, m, chunkPrompt(7000, vocab, 1), 2048)
+	checkNoChunkAllocs(t, m, chunkPrompt(7000, vocab, 1), 2048, false)
 }
 
 func TestG40T0b_peakLiveHeapReal0p5B(t *testing.T) {
