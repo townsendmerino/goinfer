@@ -387,6 +387,22 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 	return acq
 }
 
+// kvOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
+// windows still hold. It changes nothing; it is the G5-C diagnostic of how much of a decline is the choice of donor
+// (docs/measurements/kv2-cuda-2026-10-15.md, §6).
+func kvOtherDonors(rk ResidentReusableKVSlot, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
+	k := 0
+	for s, h := range hits {
+		if s == src || s == dst {
+			continue
+		}
+		if h = cm.CapHit(n, h); h > reuse && rk.ReusableKVSlot(s, h) >= h {
+			k++
+		}
+	}
+	return fmt.Sprintf("; other slots that could serve: %d", k)
+}
+
 // residentShare copies into the bound slot acq.slot the longest run of prompt another slot's published blocks hold
 // (kvmgr.Slots.Hits, capped by kvmgr.ClassMap.CapHit), when that is more than acq.reuse, the rows the slot itself
 // holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without ResidentKVCopier, or when the source's
@@ -408,7 +424,7 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		return
 	}
 	if rk, ok := m.resident.(ResidentReusableKVSlot); ok && rk.ReusableKVSlot(src, hit) < hit {
-		acq.declined = "the source slot's window no longer holds the rows"
+		acq.declined = "the source slot's window no longer holds the rows" + kvOtherDonors(rk, hits, cm, len(prompt), src, dst, acq.reuse)
 		return
 	}
 	start := min(hits[dst], hit) // dst already holds these as the same published blocks
@@ -419,6 +435,9 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		var d *KVCopyDecline
 		if errors.As(err, &d) {
 			acq.declined = d.Reason
+			if rk, ok := m.resident.(ResidentReusableKVSlot); ok {
+				acq.declined += kvOtherDonors(rk, hits, cm, len(prompt), src, dst, acq.reuse)
+			}
 		} else {
 			acq.declined = err.Error()
 			acq.reuse = min(acq.reuse, start)
