@@ -434,7 +434,60 @@ MiB throughout.
   equals its peak: nothing was returned. The 1.5B returned about 600 MiB.
 - **The verdict is FAIL.** By the owner's rule (no amendments), G40 stops here and is reported. The 0.5B 6K speed cell
   was not run.
-- Not yet diagnosed. On the 0.5B, the footprint held after the request is 439 MiB over load + KV.
+- Not yet diagnosed at the time of the run. On the 0.5B, the footprint held after the request is 439 MiB over load + KV.
+
+### The 0.5B's held memory, diagnosed: G40's reserve (2026-10-15, 14:51 to 15:13)
+
+**The cause is G40's code.** `KVCache.reserveRows` grows each layer's K and V to exactly the prompt's rows. Page rounding
+then decides how many spare rows a layer gets. When generation appends more rows than that, Go re-allocates every layer's
+arrays at about 1.25× and copies them. Nothing releases the old arrays after decode, so they stay in the heap as dead
+memory.
+
+**The readings.** The logs and the throwaway tests are in `~/goinfer-logs/g40-2026-10/diag-2026-10-15/`.
+
+1. **In process, after the prefill, nothing beyond the weights and the KV is live**, on G40's tree or main's merge base.
+   A heap profile names only the two. Figures are MiB; the weights are on the heap because this test loads the `.gguf`.
+
+   | tree | footprint | live heap | live minus weights and KV |
+   |---|---|---|---|
+   | G40 (`aed512cf`) | 1,144 | 1,121 | 1 |
+   | main's merge base (`4d393367`) | 1,149 | 1,131 | 11 |
+
+   - In the same run, dropping the cache made Go report 837 MiB returned to the OS while the footprint did not move.
+     Footprint can lag the runtime's own release on this Mac.
+2. **serve's route in process** (the `.giw`, `Generate` with 8 tokens, the cache not kept): 1.3 MiB live and a 34 MiB
+   footprint afterwards.
+3. **A serve cell with Go's GC and scavenger trace on** (one 0.5B request, as G40-2's):
+   - 10 s after: a footprint of 962 MiB, nearly all of it dirty Go heap.
+   - The last collection read `918->930->610 MB`: 582 MiB live, against the KV's 473 by geometry.
+   - The scavenger released 359 MB at the prefill's release; decode then re-used those pages.
+4. **The KV's growth, replayed on the 0.5B's geometry without a forward pass** (chunk 0's 2,048 rows appended, the reserve,
+   the rest of the prompt, then 8 decode rows):
+
+   | prompt rows | spare rows after the prompt | 8 decode rows re-allocate the KV | KV capacity after decode (MiB) |
+   |---|---|---|---|
+   | 20,189 | 3 | yes | 591.8, against 473.2 |
+   | 20,193 | 15 | no | 473.6 |
+
+   - The 591.8 MiB matches serve's live heap.
+   - The dead 473 MiB copy accounts for the rest of the footprint.
+   - The 1.5B passed because its rounding left enough spare rows.
+   - On the fixture, size classes left 24 spare rows and nothing moved, which is why the fixture tests did not see it.
+
+**G40 stops here, on the owner's rule (2026-10-15): "If the diagnosis ties it to G40's code: stop and report."** No bound is
+amended.
+
+- **The fix, not made:** reserve the prompt plus the request's generation budget, not the prompt alone.
+- **A tier 0 gate it would need:** decode rows up to the budget do not move the KV.
+
+### The 0.5B 6K speed cell (2026-10-15, 15:13 to 15:18): SHIPS
+
+`TestG40Speed` restricted to `GOINFER_G40_SPEED_CELLS=0.5B:6000`, one pass of 5 ABBA pairs, from a test binary built at
+`aed512cf` and run under the timing lock. The log is `~/goinfer-logs/g40-2026-10/tier1-2026-10-15-speed/g40-speed.log`.
+
+- **Chunked ÷ single pass: median 0.9860** (min 0.9761, max 0.9868) over 5 pairs. Chunked was faster in every pair.
+- **Verdict: SHIPS** on G40-3's bars (SHIPS at 1.03 or under, PARKED to 1.05, KILLED above).
+- The prefill path does not touch the reserve, so this reading stands for a build that only changes the reserve.
 
 ### Done
 
