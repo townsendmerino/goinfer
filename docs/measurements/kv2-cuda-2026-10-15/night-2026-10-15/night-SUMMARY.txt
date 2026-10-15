@@ -1,0 +1,17 @@
+# Night run 2026-10-15 — nobara-pc
+
+Runner finished. Started 2026-10-15 12:03 PDT, deadline 06:30, ended 13:25 (1 h 22 min).
+
+3 of 3 job(s) ok.
+
+| # | job | result | ran | est | queued at rev | log |
+|---|---|---|---|---|---|---|
+| 1 | kv2-share-cuda | ok | 25 min | 40 min | d7a87e88 | `/home/francis/goinfer-logs/night/runs/2026-10-15/kv2-share-cuda.log` |
+| 2 | kv2-speed-cuda | ok | 30 min | 45 min | d7a87e88 | `/home/francis/goinfer-logs/night/runs/2026-10-15/kv2-speed-cuda.log` |
+| 3 | kv2-heavy-cuda | ok | 26 min | 45 min | d7a87e88 | `/home/francis/goinfer-logs/night/runs/2026-10-15/kv2-heavy-cuda.log` |
+
+## Who picks these up
+
+- kv2-share-cuda: Claude, KV2 CUDA half (G5-C sharing, with the declared donor diagnostic) · docs/tasks/task-kv-architecture-2026-10.md · registered docs/measurements/kv2-cuda-2026-10-15.md (§2, §6, §6a) on branch kv2-cuda-2026-10; REV fe87a89b (aikit v1.70.2 from go.mod), BASE e77c721f (main as merged into the branch); output ~/goinfer-logs/kv2-cuda-2026-10-15/
+- kv2-speed-cuda: Claude, KV2 CUDA half (G6-C lone request) · docs/tasks/task-kv-architecture-2026-10.md · registered docs/measurements/kv2-cuda-2026-10-15.md (§2, §6, §6a) on branch kv2-cuda-2026-10; REV fe87a89b (aikit v1.70.2 from go.mod), BASE e77c721f (main as merged into the branch); output ~/goinfer-logs/kv2-cuda-2026-10-15/
+- kv2-heavy-cuda: Claude, KV2 CUDA half (G1-C real-checkpoint tests, G7-C copy cost 1.5B+7B, GV-C(a) 26B plan) · docs/tasks/task-kv-architecture-2026-10.md · registered docs/measurements/kv2-cuda-2026-10-15.md (§2, §6, §6a) on branch kv2-cuda-2026-10; REV fe87a89b (aikit v1.70.2 from go.mod), BASE e77c721f (main as merged into the branch); output ~/goinfer-logs/kv2-cuda-2026-10-15/

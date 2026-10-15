@@ -154,10 +154,46 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 		s = l.faultBack(prompt)
 	}
 	if s == nil {
-		s = l.fresh()
+		donor, hit := l.donorFor(prompt)
+		if donor != nil && len(l.order) >= l.size && l.coldestIdle() >= 0 && l.order[l.coldestIdle()] == donor {
+			// the session fresh would evict holds the hit: take it in place, cut back to exactly the rows a copy gives
+			moveToFront(l.order, slices.Index(l.order, donor))
+			l.mark(donor)
+			donor.KeepPrefix(hit)
+			s = donor
+		} else {
+			s = l.fresh()
+			if donor != nil && donor != s {
+				if err := s.CopyPrefixFrom(donor, hit); err != nil {
+					fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%v); the rows were prefilled\n", err)
+				}
+			}
+		}
 	}
 	l.checkout(s)
 	return s
+}
+
+// donorFor is the idle session that can give prompt the most rows by copy (decoder.Session.SharedHit), and how many: a
+// new conversation that opens like an earlier one then prefills only what differs. A busy session is never read; there
+// is no donor when the model's sharing is off.
+func (l *sessionLRU) donorFor(prompt []int) (*decoder.Session, int) {
+	if l.model.KVShareOff() {
+		return nil, 0
+	}
+	var donor *decoder.Session
+	best := 0
+	for _, d := range l.order {
+		if l.busy[d] {
+			continue
+		}
+		// >=: among equal hits the least recently used wins, which is the session fresh would evict, so taking it in
+		// place saves the copy and keeps the more recent one
+		if h := d.SharedHit(prompt); h > 0 && h >= best {
+			donor, best = d, h
+		}
+	}
+	return donor, best
 }
 
 // checkout marks s as held by an in-flight generation (see busy).

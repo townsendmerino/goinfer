@@ -1,0 +1,9 @@
+[kv2-g0 webgpu llama-tiny f32 KV] split@64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f32 KV] chunk=32: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f32 KV] decode token by token against the batched pass: first KV difference buffer -1 row -1 (-1: none)
+[kv2-g0 webgpu llama-tiny f16 KV] split@64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f16 KV] chunk=32: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f16 KV] decode token by token against the batched pass: first KV difference buffer -1 row -1 (-1: none)
+[kv2-g0 webgpu llama-tiny i8 KV] split@64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny i8 KV] chunk=32: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny i8 KV] decode token by token against the batched pass: first KV difference buffer -1 row -1 (-1: none)

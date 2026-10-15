@@ -539,6 +539,19 @@ stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 
 prefilled one token at a time there when it was measured: 2.81× at 4 clients on an M1 Pro
 (`measurements/concurrency-mc1-webgpu-2026-09-27.md`). Since 2026-10-12 a 4-bit dense model prefills in one batched pass
 under WebGPU, so a thrash costs less than it did; the 2.81× has not been re-read.
+
+**Sharing scope, and a known limit.** A conversation's prefix can be reused by another conversation in the same
+sharing scope:
+- one scope on loopback;
+- one per API key when keys are configured;
+- none when `serve` binds beyond loopback without API keys, or under `--kv-share off`.
+
+A shared prefix makes a reply start sooner, so its time to first token says something about what another client
+sent. Outside a shared scope only a continuation reuses rows: a request whose prompt extends everything a slot holds,
+giving up less than one 64-token block of it. **Known limit:** a client that already knows all but the last 63 tokens
+of another conversation can learn from its time to first token how far its guess matched. It learns nothing about a
+conversation it cannot already reproduce up to that tail. API keys do not remove this limit: a continuation is
+recognised by its tokens, not by who sent it. The design is `tasks/task-kv-architecture-2026-10.md` §5.15.
 - **On WebGPU**, each slot is the full f32 KV at the resident context (~0.94 GB for Qwen2.5-1.5B at the default 16k).
   WebGPU has no free-memory query. On a Mac, slots are clamped to 70% of RAM and to what was available before the
   build, and **slots come before context there as on CUDA** (owner decision 2026-09-27): when `--ctx` is not set, the

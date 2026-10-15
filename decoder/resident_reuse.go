@@ -1,9 +1,11 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
@@ -91,11 +93,13 @@ func kvAdapterID(rt *loraRuntime) uint64 {
 	return rt.kvID.Load()
 }
 
-// kvRoot is the root a sequence built under lora is keyed by: the model's numerics identity, the sharing namespace,
-// the adapter and the KV precision. The namespace is the single local one: serve passes no per-key scope yet (the
-// task doc's D4, built with KV2's sharing).
-func (m *Model) kvRoot(lora *loraRuntime) kvmgr.Root {
-	r := kvmgr.Root{Adapter: kvAdapterID(lora), Precision: m.ResidentKVPrecision()}
+// kvRoot is kvRootIn in the single local namespace.
+func (m *Model) kvRoot(lora *loraRuntime) kvmgr.Root { return m.kvRootIn(lora, "") }
+
+// kvRootIn is the root a sequence built under lora in namespace ns is keyed by: the model's numerics identity, the
+// sharing namespace (KVScope), the adapter and the KV precision.
+func (m *Model) kvRootIn(lora *loraRuntime, ns string) kvmgr.Root {
+	r := kvmgr.Root{Namespace: ns, Adapter: kvAdapterID(lora), Precision: m.ResidentKVPrecision()}
 	if m.w != nil && m.w.arch != nil {
 		a := m.w.arch
 		r.Model = fmt.Sprintf("%s/%dx%d/%d", a.Name, a.NumLayers, a.HiddenDim, a.VocabSize)
@@ -158,9 +162,13 @@ func kvSpansOfClaims(claims []residentImageClaim) []kvmgr.ImageSpan {
 // kvAdopt makes the manager's record of the bound slot agree with resIDs, resIDsLora and resImgBlocks. Every writer
 // in this file keeps the two together, so this does nothing in a generation. It is for a caller that assigns the
 // fields directly (tests do, to stand for an earlier commit): the manager takes what it finds as the slot's content,
-// with no producer named.
+// with no producer named. A live slot's record is a running generation's (kvmgr.Slots.Live), not the bound fields',
+// and is left alone.
 func (m *Model) kvAdopt(a *kvmgr.Slots) {
 	slot := a.Bound()
+	if a.Live(slot) {
+		return
+	}
 	s := a.Seq(slot)
 	if len(m.resIDs) == 0 {
 		if s != nil {
@@ -173,8 +181,25 @@ func (m *Model) kvAdopt(a *kvmgr.Slots) {
 		return
 	}
 	a.Unrecorded(slot)
-	a.Commit(slot, m.kvRoot(m.resIDsLora), m.resIDs, kvSpansOfBlocks(m.resImgBlocks), len(m.resIDs), kvmgr.ClassMap{})
+	a.Commit(slot, m.kvRootIn(m.resIDsLora, m.kvNSOf(slot)), m.resIDs, kvSpansOfBlocks(m.resImgBlocks), len(m.resIDs), kvmgr.ClassMap{})
 	m.kvSetLora(slot, m.resIDsLora)
+}
+
+// kvSetNS records the sharing namespace of the request that took slot; the commit that ends it keys the slot's
+// sequence under it.
+func (m *Model) kvSetNS(slot int, ns string) {
+	for len(m.kvNS) <= slot {
+		m.kvNS = append(m.kvNS, "")
+	}
+	m.kvNS[slot] = ns
+}
+
+// kvNSOf is the namespace recorded for slot ("" when none was).
+func (m *Model) kvNSOf(slot int) string {
+	if slot < len(m.kvNS) {
+		return m.kvNS[slot]
+	}
+	return ""
 }
 
 // kvSetLora records which adapter runtime slot's sequence was built under. The manager keys on the adapter's
@@ -191,10 +216,46 @@ func (m *Model) kvSetLora(slot int, lora *loraRuntime) {
 // bound for this generation (nil = base weights). A caller that takes this length without going through
 // residentAcquireSlot has not told the manager what it will write, so the commit that follows names no producer.
 func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
+	return m.residentReuseLenIn(prompt, imgs, lora, KVScope{})
+}
+
+// residentReuseLenIn is residentReuseLen for a request under scope sc that takes the bound slot as it is: the caller
+// prefills into it and commits there.
+func (m *Model) residentReuseLenIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope) int {
+	n := m.boundReuseLen(prompt, imgs, lora, sc.Namespace)
+	m.kvSetNS(m.kvSlots().Bound(), sc.Namespace)
+	return n
+}
+
+// boundReuseLen scores the bound slot for prompt. A live slot's announcement is a running generation's, so it is not
+// marked unrecorded.
+func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string) int {
 	a := m.kvSlots()
 	m.kvAdopt(a)
-	a.Unrecorded(a.Bound())
-	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora))
+	if !a.Live(a.Bound()) {
+		a.Unrecorded(a.Bound())
+	}
+	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns))
+}
+
+// ResidentKVCopier is the optional capability of a resident with several KV slots (ResidentKVSlotter) to copy rows
+// between them. CopyKV copies rows [start, end) of every layer from slot src to slot dst, src != dst, start and end
+// multiples of kvmgr.BlockRows; dst then continues at position end, and src is unchanged. A range the backend cannot
+// serve (a window that no longer holds rows dst will attend to, a layout it does not copy) returns a *KVCopyDecline
+// before anything is written. The caller treats any error as having written nothing it may trust from start on.
+type ResidentKVCopier interface {
+	CopyKV(src, dst, start, end int) error
+}
+
+// KVCopyDecline is CopyKV's refusal of a range, with the reason; dst is untouched.
+type KVCopyDecline struct{ Reason string }
+
+func (d *KVCopyDecline) Error() string { return "kv copy declined: " + d.Reason }
+
+// ResidentReusableKVSlot is ResidentReusableKV's question for any slot, bound or not: of the first prefix positions
+// of slot's sequence, how many it can serve to a forward that continues at position prefix (prefix or 0).
+type ResidentReusableKVSlot interface {
+	ReusableKVSlot(slot, prefix int) int
 }
 
 // ResidentReusableKV is implemented by a resident whose KV for some layers holds only a recent window of positions (Options.ResidentWindowedKV).
@@ -219,11 +280,11 @@ func (m *Model) residentReuseFloor(reuse int) int {
 
 // reuseLenOf is how many leading tokens of prompt the sequence in slot holds, the bound slot's or a parked one's,
 // before the resident's own floor.
-func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
+func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string) int {
 	if m.residentReuseDisabled() {
 		return 0
 	}
-	return m.kvSlots().Score(slot, kvmgr.Request{Root: m.kvRoot(lora), Tokens: prompt, Images: kvSpansOfClaims(imgs)}, m.hasRecurrentState())
+	return m.kvSlots().Score(slot, kvmgr.Request{Root: m.kvRootIn(lora, ns), Tokens: prompt, Images: kvSpansOfClaims(imgs)}, m.hasRecurrentState())
 }
 
 // residentSlotCount is how many resident KV slots a generation may choose among: what the resident allocated
@@ -242,22 +303,41 @@ func (m *Model) residentSlotCount() int {
 // residentReuseLen. With several it scores every slot and binds pickResidentSlot's choice. Call it where
 // residentReuseLen was called: under the resident claim, before the forget.
 func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
-	reuse, _ := m.residentAcquireSlot(prompt, imgs, lora, nil)
-	return reuse
+	return m.residentAcquireIn(prompt, imgs, lora, nil, KVScope{}).reuse
 }
 
 // residentAcquireSlot is residentAcquire that also returns the slot it bound, and never picks a slot busy marks (MC3:
 // another running generation's). With every slot busy it binds nothing and returns slot -1. It tells the manager
 // what the generation will do in the slot (skip reuse rows, prefill the rest of prompt), which the commit reads.
 func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
-	reuse, slot = m.residentAcquireSlotAll(prompt, imgs, lora, busy)
+	acq := m.residentAcquireIn(prompt, imgs, lora, busy, KVScope{})
+	return acq.reuse, acq.slot
+}
+
+// kvAcquired is what residentAcquireIn did: the rows the generation skips, the slot it bound (-1: none), and how many
+// of the skipped rows were copied from another slot, from which, at what cost, or why a copy was declined.
+type kvAcquired struct {
+	reuse, slot int
+	shared, src int
+	copyDur     time.Duration
+	declined    string
+}
+
+// residentAcquireIn is residentAcquireSlot for a request under scope sc. When another slot's published blocks hold
+// more of the prompt than the bound slot does, it copies them into the bound slot (ResidentKVCopier) and skips them.
+func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
+	acq := m.residentAcquireSlotAll(prompt, imgs, lora, busy, sc)
 	// the slot is bound now, so its window is the one to ask (a parked slot's score was not floored when it was counted)
-	reuse = m.residentReuseFloor(m.declineShortLeadReuse(prompt, reuse))
-	if slot >= 0 {
-		a := m.kvSlots()
-		a.Acquired(a.Bound(), reuse, prompt)
+	acq.reuse = m.residentReuseFloor(m.declineShortLeadReuse(prompt, acq.reuse))
+	if acq.reuse < acq.shared { // the bound slot's window cannot serve the copied rows: none of them count
+		acq.shared = 0
 	}
-	return reuse, slot
+	if acq.slot >= 0 {
+		a := m.kvSlots()
+		a.Acquired(a.Bound(), acq.reuse, prompt)
+		m.kvSetNS(a.Bound(), sc.Namespace)
+	}
+	return acq
 }
 
 // minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels
@@ -272,35 +352,106 @@ func (m *Model) declineShortLeadReuse(prompt []int, reuse int) int {
 	return m.kvLeadClassMap().DeclineShortLead(len(prompt), reuse)
 }
 
-func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
+func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
 	n := m.residentSlotCount()
 	a := m.kvSlots()
 	a.Resize(n)
 	if n <= 1 {
-		return m.residentReuseLen(prompt, imgs, lora), 0
+		return kvAcquired{reuse: m.boundReuseLen(prompt, imgs, lora, sc.Namespace), src: -1}
 	}
-	scores, lens, uses := make([]int, n), make([]int, n), make([]uint64, n)
+	scores, lens, firsts, uses := make([]int, n), make([]int, n), make([]int, n), make([]uint64, n)
 	bound := a.Bound()
-	scores[bound] = m.residentReuseLen(prompt, imgs, lora) // adopts the bound record first, and asks its window
+	if bound >= len(busy) || !busy[bound] { // a busy slot is never picked, and its record is another generation's
+		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace) // adopts the bound record first, and asks its window
+	}
 	for i := range n {
 		if i != bound {
-			scores[i] = m.reuseLenOf(i, prompt, imgs, lora)
+			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace)
 		}
-		lens[i], uses[i] = a.Len(i), a.Use(i)
+		lens[i], firsts[i], uses[i] = a.Len(i), a.FirstPrompt(i), a.Use(i)
 	}
-	pick := pickResidentSlot(scores, lens, uses, busy)
+	pick := kvmgr.PickSlotFor(scores, lens, firsts, uses, busy, m.kvRollbackAllowance())
 	if pick < 0 {
-		return 0, -1
+		return kvAcquired{slot: -1, src: -1}
 	}
 	if err := m.residentBind(pick); err != nil {
 		// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it. Slot -1: an MC3 caller
 		// must not decode on a binding it did not choose (it may be another generation's slot); residentAcquire's
 		// callers carry on cold on the previous binding, as they always have.
 		m.residentForgetIDs()
-		return 0, -1
+		return kvAcquired{slot: -1, src: -1}
 	}
 	a.Touch(pick)
-	return scores[pick], pick
+	acq := kvAcquired{reuse: scores[pick], slot: pick, src: -1}
+	m.residentShare(prompt, imgs, lora, sc, &acq)
+	return acq
+}
+
+// kvOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
+// windows still hold. It changes nothing; it is the G5-C diagnostic of how much of a decline is the choice of donor
+// (docs/measurements/kv2-cuda-2026-10-15.md, §6).
+func kvOtherDonors(rk ResidentReusableKVSlot, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
+	k := 0
+	for s, h := range hits {
+		if s == src || s == dst {
+			continue
+		}
+		if h = cm.CapHit(n, h); h > reuse && rk.ReusableKVSlot(s, h) >= h {
+			k++
+		}
+	}
+	return fmt.Sprintf("; other slots that could serve: %d", k)
+}
+
+// residentShare copies into the bound slot acq.slot the longest run of prompt another slot's published blocks hold
+// (kvmgr.Slots.Hits, capped by kvmgr.ClassMap.CapHit), when that is more than acq.reuse, the rows the slot itself
+// holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without ResidentKVCopier, or when the source's
+// window no longer holds the rows. A decline or an error leaves acq.reuse at what the slot can still trust.
+func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
+	cp, ok := m.resident.(ResidentKVCopier)
+	if !ok || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+		return
+	}
+	a, dst, cm := m.kvSlots(), acq.slot, m.kvClassMap()
+	hits := a.Hits(kvmgr.Request{Root: m.kvRootIn(lora, sc.Namespace), Tokens: prompt, Images: kvSpansOfClaims(imgs)}, cm.ColdClasses(len(prompt)))
+	src, hit := -1, 0
+	for s, h := range hits {
+		if s != dst && h > hit {
+			src, hit = s, h
+		}
+	}
+	if hit = cm.CapHit(len(prompt), hit); src < 0 || hit <= acq.reuse {
+		return
+	}
+	if rk, ok := m.resident.(ResidentReusableKVSlot); ok && rk.ReusableKVSlot(src, hit) < hit {
+		acq.declined = "the source slot's window no longer holds the rows" + kvOtherDonors(rk, hits, cm, len(prompt), src, dst, acq.reuse)
+		return
+	}
+	start := min(hits[dst], hit) // dst already holds these as the same published blocks
+	t0 := time.Now()
+	err := cp.CopyKV(src, dst, start, hit)
+	acq.copyDur = time.Since(t0)
+	if err != nil {
+		var d *KVCopyDecline
+		if errors.As(err, &d) {
+			acq.declined = d.Reason
+			if rk, ok := m.resident.(ResidentReusableKVSlot); ok {
+				acq.declined += kvOtherDonors(rk, hits, cm, len(prompt), src, dst, acq.reuse)
+			}
+		} else {
+			acq.declined = err.Error()
+			acq.reuse = min(acq.reuse, start)
+		}
+		return
+	}
+	a.Copied(src, dst, hit)
+	s := a.Seq(dst)
+	m.resIDs, m.resIDsLora, m.resImgBlocks = s.Tokens(), lora, nil
+	for _, sp := range s.Images() {
+		m.resImgBlocks = append(m.resImgBlocks, residentImageBlock{start: sp.Start, end: sp.Start + sp.Len, hash: sp.Hash})
+	}
+	m.kvSetLora(dst, lora)
+	acq.reuse, acq.shared, acq.src = hit, hit, src
 }
 
 // residentBind binds resident KV slot `slot` and makes resIDs, resIDsLora and resImgBlocks that slot's record. A
@@ -332,6 +483,22 @@ func (m *Model) residentBind(slot int) error {
 	return nil
 }
 
+// kvAllowanceOverride, when positive, replaces kvRollbackAllowance. Set only by in-package tests: a large value
+// switches the in-place limit off, so a test can compare the rest of the slot choice with the bookkeeping KV1 replaced.
+var kvAllowanceOverride int
+
+// kvRollbackAllowance is how many rows a request may give up of a slot it takes in place (kvmgr.PickSlotWithin): one
+// block, or for a model with sliding-window layers the window group's rollback floor (the task doc's §5.12).
+func (m *Model) kvRollbackAllowance() int {
+	if kvAllowanceOverride > 0 {
+		return kvAllowanceOverride
+	}
+	if m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0 {
+		return kvmgr.RollbackFloor
+	}
+	return kvmgr.BlockRows
+}
+
 // pickResidentSlot chooses a slot for a prompt from each slot's reuse score, its committed length and its last-use
 // tick (kvmgr.PickSlot): a continuation keeps its slot; a shared lead takes an empty slot, else the least recently
 // used. busy (nil: none) marks slots another running generation holds (MC3); -1 when all are busy.
@@ -361,8 +528,15 @@ func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentI
 		m.resImgBlocks = append(kept, newBlocks...)
 	}
 	a := m.kvSlots()
-	a.Commit(a.Bound(), m.kvRoot(lora), ids, kvSpansOfBlocks(m.resImgBlocks), len(prompt), m.kvClassMap())
+	a.Commit(a.Bound(), m.kvRootIn(lora, m.kvNSOf(a.Bound())), ids, kvSpansOfBlocks(m.resImgBlocks), len(prompt), m.kvClassMap())
 	m.kvSetLora(a.Bound(), lora)
+}
+
+// residentPublishPrompt publishes the full blocks of prompt, which the generation in slot has just finished
+// prefilling, so a request arriving while it decodes can copy them (kvmgr.Slots.Prefilled). Only a generation that
+// shares the resident with others while it runs (MC3) needs it; the slot stays live until its commit or forget.
+func (m *Model) residentPublishPrompt(slot int, prompt []int, lora *loraRuntime) {
+	m.kvSlots().Prefilled(slot, m.kvRootIn(lora, m.kvNSOf(slot)), prompt, nil, m.kvClassMap())
 }
 
 // residentForgetIDs marks the resident KV's contents unknown. Anything that writes the cache
@@ -379,4 +553,11 @@ func (m *Model) residentForgetIDs() {
 	if m.kv != nil {
 		m.kv.Forget(m.kv.Bound())
 	}
+}
+
+// residentForgetIDsIn is residentForgetIDs for a path that is about to write the bound slot for a request under scope
+// sc, without residentAcquireIn: the commit that follows keys the slot under sc's namespace.
+func (m *Model) residentForgetIDsIn(sc KVScope) {
+	m.residentForgetIDs()
+	m.kvSetNS(m.kvSlots().Bound(), sc.Namespace)
 }

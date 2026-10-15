@@ -72,6 +72,27 @@ scratch (the sum of the pass's device buffers after the allocator's rounding, he
 request at one chunk plus the host embeddings of the prompt: 0.19 GB against 1.65 GB for the same request on the 1.5B. This is the
 CUDA half of the Metal change under "on Metal, a long prompt prefills in blocks".
 
+### Added — a new conversation copies the prompt it shares with an earlier one instead of prefilling it (`--kv-share`)
+
+On a GPU-resident model, and on the CPU's session cache, a conversation that opens with the same tokens as another, such
+as a coding agent's system prompt and tool list, now copies those rows from the other conversation's KV and prefills
+only what differs. On Metal and CUDA the source can still be generating.
+- **Identical replies.** Only whole 64-token blocks whose rows the new request's own cold prefill would compute are
+  copied, so the reply is the one a cold prefill gives.
+- **Claude Code needs its attribution header off to share anything:** `goinfer-serve connect claude-code` sets it.
+- **A conversation no longer loses its history to another.** A request now takes another conversation's KV slot in
+  place only when it keeps at least as much as it overwrites and gives up less than one 64-token block (on a model with
+  sliding-window layers, less than 448 tokens). Otherwise it copies into a free slot. A conversation rolling back its
+  own history (an edited or dropped reply) still continues in its own slot, whatever the size.
+- **`--kv-share off`** turns sharing off: a request reuses only its own conversation's rows. It is off whatever the
+  flag says when the server answers the network without `--api-key`.
+- **Known limit:** where sharing is off, a client that already knows all but the last 63 tokens of another
+  conversation can still tell from its time to first token how far its guess matched (`docs/server.md`).
+- **Library:** a backend opts in with `decoder.ResidentKVCopier` and `decoder.ResidentReusableKVSlot`; `decoder.Options.KVShareOff`,
+  `decoder.WithKVScope` (a per-request sharing namespace), and `Generation.PrefillShared`, `KVCopy` and `KVCopyDeclined`
+  report a copy. The backends' modules gain the copy, so the next release needs `RELEASING.md`'s two-step tag.
+- Gates and readings: `docs/measurements/kv2-2026-10-14.md`.
+
 ### Added — `goinfer-serve connect <agent>` writes a coding agent's configuration with the window the server serves
 
 Against a running server, `connect claude-code`, `connect opencode` or `connect codex` reads the model list and prints that agent's

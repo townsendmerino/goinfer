@@ -115,6 +115,9 @@ type BlockSpecOptions struct {
 	// end-to-end speed alone (a cumulative average lags a regime change mid-generation), and for `serve`'s per-request accept-rate and
 	// tok/verify metadata.
 	OnRound func(width, committed int)
+
+	// scope is the request's KV sharing scope (KVScope), from GenerateStream's ctx; the zero value is the local one.
+	scope KVScope
 }
 
 // defaultVerifyWidth is 8, the one number that serves both measured pairings (the optimum for math, within 2% of code's optimum of 7).
@@ -215,7 +218,11 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		defer atomic.StoreInt32(&m.resBusy, 0)
 		// Compute reuse before forgetting: forgetting clears the very state residentReuseLen reads. BlockSpec never binds an adapter (nil lora,
 		// matching residentCommitIDs' own nil below).
-		reuseFrom = m.residentAcquire(prompt, nil, nil) // MC1: binds the KV slot (clearing resDrafterSynced on a switch)
+		// MC1: binds the KV slot (clearing resDrafterSynced on a switch). Off: the drafter keeps its own context, which a
+		// copy of another sequence's rows would not bring with it.
+		sc := opt.scope
+		sc.Off = true
+		reuseFrom = m.residentAcquireIn(prompt, nil, nil, nil, sc).reuse
 		// resIDs matching is NOT enough on its own: a plain Generate or n-gram-speculative turn
 		// can commit resIDs without ever touching THIS drafter's own context, so the token
 		// prefix can match while rd's state does not reflect it at all. Only trust reuseFrom
@@ -524,6 +531,7 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 		opt := BlockSpecOptions{
 			MaxTokens: maxTokens,
 			StopIDs:   sp.StopIDs,
+			scope:     kvScopeOf(ctx),
 			OnRound: func(width, committed int) {
 				drafted += width - 1 // the anchor is the target's own token, not a draft
 				evaluated += committed

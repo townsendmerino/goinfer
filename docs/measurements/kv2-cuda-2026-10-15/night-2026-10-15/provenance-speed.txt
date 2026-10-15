@@ -1,0 +1,11 @@
+job: speed
+started: 2026-10-15 12:28:55 PDT
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+backend: cuda
+new (REV): fe87a89b62a3aedb5c0081e47f801b2786fbc75b
+old (BASE, main at the branch point): e77c721f2b2c08ff96a6ef1b8754656a659dd879
+driver: 595.91.07, NVIDIA GeForce RTX 2070 SUPER
+aikit (go.mod): v1.70.2
+load:  12:28:55 up 11 days, 15:51,  6 users,  load average: 0.84, 1.12, 1.26
+finished: 2026-10-15 12:58:44 PDT rc=0
+finished: 2026-10-15 12:58:45 PDT rc=0

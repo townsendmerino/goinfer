@@ -1,0 +1,47 @@
+== 45 replies replayed; wall 613 s
+validity: slot starts with the route's rendered prompt in 45 of 45 
+prompt tokens less the night's: [-18]
+slot length less prompt less output tokens: [0] (0: the slot holds exactly the generated ids serve counted)
+next-request render errors: []
+replies at the 4,096 guard: []
+generated tokens: total 17233, median 184
+
+== overall: the next request re-renders to the generated ids in 41 of 45 (91%, 95% CI 79% to 96%)
+
+== by reply category (a reply can be in several)
+  escapes    with: 4 of 6 (67%, 95% CI 30% to 90%)          without: 37 of 39 (95%, 95% CI 83% to 99%)
+  dots       with: 4 of 4 (100%, 95% CI 51% to 100%)        without: 37 of 41 (90%, 95% CI 77% to 96%)
+  non-ASCII  with: 1 of 4 (25%, 95% CI 5% to 70%)           without: 40 of 41 (98%, 95% CI 87% to 100%)
+  code       with: 15 of 19 (79%, 95% CI 57% to 91%)        without: 26 of 26 (100%, 95% CI 87% to 100%)
+  in no category: 22 of 22 (100%, 95% CI 85% to 100%)
+  replies of 0-448 tokens: 35 of 36 (97%, 95% CI 86% to 100%)
+  replies of 449-more tokens: 6 of 9 (67%, 95% CI 35% to 88%)
+
+== by part: runs of generated ids between special tokens that are the tokenizer's own encoding of their text
+  reasoning       canonical runs 42 of 45 (93%, 95% CI 82% to 98%); replies with a non-canonical run here: 3
+  answer          canonical runs 45 of 45 (100%, 95% CI 92% to 100%); replies with a non-canonical run here: 0
+  tool-call JSON  canonical runs 43 of 44 (98%, 95% CI 88% to 100%); replies with a non-canonical run here: 1
+  replies with any reasoning ids: 45; that part canonical throughout in 42 of 45 (93%, 95% CI 82% to 98%)
+  replies with any answer ids: 45; that part canonical throughout in 45 of 45 (100%, 95% CI 92% to 100%)
+  replies with any tool-call JSON ids: 44; that part canonical throughout in 43 of 44 (98%, 95% CI 88% to 100%)
+
+== each mismatch: where, what, and why
+  write-r2-041205#4      reply  825 diverges at  606 (-219 from its end) in tool-call JSON; JSON escape; non-canonical ids (text identical); any non-canonical run: True
+      generated: ['n', '+', '\\\\', 't', 'tests', ' :=', ' []']
+      re-render: ['n', '+', '\\\\', 'tt', 'ests', ' :=', ' []']
+  write-r2-041205#5      reply 2547 diverges at  178 (-2369 from its end) in reasoning; code punctuation; non-canonical ids (text identical); any non-canonical run: True
+      generated: ['***', ' End', ' Patch', '"]}', '".', ' But', ' in']
+      re-render: ['***', ' End', ' Patch', '"]', '}".', ' But', ' in']
+  fix-r3-052213#1        reply  370 diverges at  215 (-155 from its end) in reasoning; other; non-canonical ids (text identical); any non-canonical run: True
+      generated: ['_', 'escal', 'ated', '"],', '"', 'type', '":"']
+      re-render: ['_', 'escal', 'ated', '"],"', 'type', '":"', 'string']
+  fix-r3-052213#9        reply 2780 diverges at 1439 (-1341 from its end) in reasoning; other; non-canonical ids (text identical); any non-canonical run: True
+      generated: ['`', ' -', ' updates', ' ', 'Goal', '.', '\n']
+      re-render: ['`', ' -', ' updates', ' Goal', '.', '\n', '\n']
+
+== causes
+  non-canonical ids (text identical): 4
+
+== replies whose ids are all canonical but still mismatch, and the reverse
+  all-canonical replies: 41 of 45; of them matched 41
+  replies with a non-canonical run: 4; of them matched 0

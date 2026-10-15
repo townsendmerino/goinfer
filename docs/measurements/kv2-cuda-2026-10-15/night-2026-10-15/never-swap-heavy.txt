@@ -1,0 +1,3 @@
+swap in use before: 10752 MB
+swap in use after: 11263 MB; growth 511 MB: FAIL (64 MB or less passes)
+VRAM used after: 445 MiB, 8192 MiB

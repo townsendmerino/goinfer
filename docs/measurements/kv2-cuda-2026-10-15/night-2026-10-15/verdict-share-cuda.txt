@@ -1,0 +1,9 @@
+cuda 1.5B
+DELIVERS: busy, median saving / projection 0.926 over 6 blocks; median saving 10.25 s; hits [18112]; by block 0.925 0.924 0.927 0.927 0.925 0.928
+       B1 time to first token: main median 12.29 s, kv2 median 2.05 s
+control off / main (busy): median 0.999
+control header on, kv2 / main: median 1.000
+PASS: idle, (B1 + A2) main / kv2 median 1.926; by block 1.924 1.929 1.941 1.946 1.915 1.923
+       idle B1 alone, kv2 / main: median 1.018 (the copy replaces an in-place take)
+copy cost (G7, reported): median 2.89 ms over 12 copies of [18112] rows
+VERDICT busy DELIVERS / idle PASS

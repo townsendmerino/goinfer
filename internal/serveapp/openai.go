@@ -1557,6 +1557,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		if cr != "" {
 			finish = "cancelled"
 		}
+		logKVCopy(gen)
 		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 	}
 
@@ -1613,6 +1614,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	if cr != "" {
 		finish = "cancelled"
 	}
+	logKVCopy(gen)
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
@@ -1728,6 +1730,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
+	logKVCopy(gen)
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
@@ -1901,6 +1904,17 @@ func jsonLogprob(x float64) float64 {
 }
 
 func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(id)) }
+
+// logKVCopy reports a generation that took KV rows from another conversation's slot, or whose copy was declined: the
+// rows and the copy's wall time are the sharing gate's copy cost (docs/measurements/kv2-2026-10-14.md, G7).
+func logKVCopy(gen *decoder.Generation) {
+	if gen.PrefillShared > 0 {
+		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", gen.PrefillShared, float64(gen.KVCopy.Microseconds())/1000)
+	}
+	if gen.KVCopyDeclined != "" {
+		fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%s); the rows were prefilled\n", gen.KVCopyDeclined)
+	}
+}
 
 // scriptedStream is loadedModel.scripted as drive's token channel: at most maxTokens of ids, then closed.
 func scriptedStream(ids []int, maxTokens int) <-chan int {

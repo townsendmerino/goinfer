@@ -1,0 +1,4 @@
+298 recorded responses: 278 replies, 20 compaction summaries; largest reply 4096, largest summary 3584
+cap 4096: trigger 12288, modelled compactions 15; replies over the cap 0 of 278, summaries over it 0 of 20
+cap 3072: trigger 13312, modelled compactions 12; replies over the cap 12 of 278, summaries over it 1 of 20
+cap 2048: trigger 14336, modelled compactions 9; replies over the cap 18 of 278, summaries over it 4 of 20

@@ -506,15 +506,34 @@ backends").
 - **Blocks.** A sequence is cut into logical blocks of 64 positions. While a backend stores KV per
   slot, block *i* of the sequence in slot *s* is rows *64i* to *64i + 63* of slot *s*
   (`decoder.KVSlotRow`), so nothing in a kernel or an allocation knows about blocks yet.
-- **The index.** When a generation completes, the sequence's full blocks are published: each gets a
-  SHA-256 hash chained from the block before it and from a root (model, namespace, adapter, KV
-  precision), and covering its tokens, any image span that touches it, and the class of its rows.
-  A block of a generation that did not complete is never published.
-- **What it does not do yet.** A request reuses rows only by continuing a sequence in its own slot.
-  Taking another sequence's published blocks needs a copy between slots, which is the next step of
-  [tasks/task-kv-architecture-2026-10.md](tasks/task-kv-architecture-2026-10.md), as are paged
-  storage and the geometry's use (`decoder.Architecture.KVGeometry`: the layer groups by row width
-  and retention, and the recurrent state).
+- **The index.** A sequence's full blocks are published when its generation completes, and under concurrent
+  generation (MC3) already when its prompt's prefill ends, since decode writes only past the prompt. Each block gets a
+  SHA-256 hash chained from the block before it and from a root (model, namespace, adapter, KV precision), covering
+  its tokens, any image span that touches it, and the class of its rows. A block a generation wrote but did not
+  finish is never published, and a pass that fell back from the batched kernels names no class.
+- **Sharing by copy.** A prompt that another slot's published blocks hold more of than its own slot does copies
+  them (`decoder.ResidentKVCopier`: rows `[start, end)` of every layer, from one slot to another) and prefills the
+  rest:
+  - the hit is whole blocks whose rows are the class the request's own cold prefill would write, so the reply is the
+    reply a cold prefill gives;
+  - it is cut back until the rest still runs on that class (`kvmgr.ClassMap.CapHit`);
+  - a backend that cannot serve a range declines (`decoder.KVCopyDecline`) and the rows are prefilled.
+
+  Metal and WebGPU copy within their slot buffers, CUDA through each slot's window view; the CPU's sessions copy
+  through serve's session LRU (`decoder.Session.SharedHit`, `CopyPrefixFrom`).
+- **Which slot.** A request takes another sequence's slot in place only when it keeps at least as much of it as it
+  overwrites and gives up less than one block of it, or, on a model with sliding-window layers, less than the window
+  group's rollback floor (448 rows, the task doc's §5.12). Otherwise it copies into an empty slot, else the least
+  recently used one; a copy counts as a use of its source. A request that keeps the slot's whole first prompt is that
+  conversation rolling back its own history, and continues in place whatever it gives up
+  (`kvmgr.Slots.FirstPrompt`, `kvmgr.PickSlotFor`).
+- **Sharing scope.** The namespace in the root keeps requests in different scopes apart. serve has one scope, and
+  turns sharing off (`decoder.Options.KVShareOff`) under `--kv-share off` and when it answers the network without
+  an API key; a request then reuses only its own conversation's rows. `docs/server.md` states the timing limit that
+  remains.
+- **Not yet.** Paged storage and the geometry's use (`decoder.Architecture.KVGeometry`: the layer groups by row width
+  and retention, and the recurrent state) are later steps of
+  [tasks/task-kv-architecture-2026-10.md](tasks/task-kv-architecture-2026-10.md).
 
 ### Fitting to the machine
 

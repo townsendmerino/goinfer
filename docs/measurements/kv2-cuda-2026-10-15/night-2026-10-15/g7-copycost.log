@@ -1,0 +1,13 @@
+=== RUN   TestKV2_copyCost_real
+=== RUN   TestKV2_copyCost_real/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf/f16
+[kv2-g7] 18176 rows, 28 layers, KV f16=true: 521.1 MB a copy; median 2.834853ms, min 2.816112ms, max 3.083164ms over 20; free VRAM 4926 -> 4926 MB (reported, not graded)
+=== RUN   TestKV2_copyCost_real/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf/f32
+[kv2-g7] 18176 rows, 28 layers, KV f16=false: 1042.3 MB a copy; median 5.574625ms, min 5.481955ms, max 5.674565ms over 20; free VRAM 4162 -> 4162 MB (reported, not graded)
+=== RUN   TestKV2_copyCost_real/qwen2.5-7b-instruct-q4_k_m.gguf/f16
+[kv2-g7] 18176 rows, 28 layers, KV f16=true: 1042.3 MB a copy; median 5.636455ms, min 5.536055ms, max 5.738855ms over 20; free VRAM 772 -> 772 MB (reported, not graded)
+--- PASS: TestKV2_copyCost_real (20.85s)
+    --- PASS: TestKV2_copyCost_real/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf/f16 (4.29s)
+    --- PASS: TestKV2_copyCost_real/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf/f32 (2.97s)
+    --- PASS: TestKV2_copyCost_real/qwen2.5-7b-instruct-q4_k_m.gguf/f16 (13.54s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	20.918s

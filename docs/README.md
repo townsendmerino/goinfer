@@ -187,7 +187,7 @@ asks how many wire dialects the coding-agent harnesses speak and how often a too
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (272)
+## Evidence — `measurements/` (274)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
@@ -205,7 +205,7 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (15) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (16) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered, and the 4
   left then were each still open (drafted-by-decision, blocked, or unshipped, per their own status).
   Briefs written since are read by their own status headers. Newest:
