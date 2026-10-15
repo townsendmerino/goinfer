@@ -1,0 +1,143 @@
+=== RUN   TestGemma4_26B_cache_B
+    gemma4_26b_cache_test.go:48: ISOLATED-RUN: the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.6 GB free — capping to 31 (3.2 GB)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: expert cache (C′) cannot fit its MINIMUM: top-2 routed experts across 4 MoE layers need 0.03 GB of slots, but only 0.41 GB is free — 0 slots/layer fit. Free VRAM, lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright) — continuing on the CPU/staged path
+    gemma4_26b_cache_test.go:90: loaded 26B resident + C′ staging in 1m18s (11.4 GB experts host-pinned; ~0.7 GB slots + ~1.3 GB core in VRAM)
+    gemma4_26b_cache_test.go:191: B′ OK — 26B resident via C′ (31 slots/layer): 64 tok, distinct-trigram 0.818, 45 ms/tok (22.34 tok/s — capture OFF; sync H2D; informative capability number, NOT a same-machine benchmark)
+          cont: "The capital of France is **Paris**.\n\nIt is famous for many things, including:\n\n*   **Iconic Landmarks:** It is home to world-famous monuments like the **Eiffel Tower**, the **Arc de Triomphe**, and the **Notre-Dame Cathedral**.\n*   **Art and Culture"
+    gemma4_26b_cache_test.go:194: C′ cache: 12085 hits / 4871 misses = 71.3% hit rate (each hit is one skipped expert DMA; nSlots=31, topK=8, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse
+--- PASS: TestGemma4_26B_cache_B (82.32s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	83.156s
+=== RUN   TestP20ExpertLocality
+    p20_expert_locality_test.go:33: ISOLATED-RUN: the 26B needs 3.69 GB of KV + reserve against 3.98 GB free; declined in the one-process heavy tier, passes alone
+decoder: gemma4-26b-int4.giw is not in memory: reading its 14.6 GB once before the load
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.8 GB free — capping to 12 (1.3 GB)
+    p20_expert_locality_test.go:61: loaded gemma4-26b-int4.giw in 47s
+=== P20 EXPERT LOCALITY: gemma4-26b-int4.giw, M=512, cacheSlots=12, nE=128, topK=8 ===
+layer      rows distinct   row*topK  dupFactor fitsInSlots?
+MoE layers=0, worst-case distinct/layer=0 (cacheSlots=12), mean row-to-distinct dup factor=0.00
+EXISTING per-row LRU cache, this same prefill: 0 hits / 2240 misses (0.0% hit rate) — the headroom expert-major would have to beat
+--- PASS: TestP20ExpertLocality (55.58s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	55.706s
+=== RUN   TestPrefillLongPrompt
+    prefill_longprompt_test.go:29: ISOLATED-RUN: the 7B needs 0.94 GB of KV + 384 MB reserve against 1.29 GB free, 30 MB short in the one-process heavy tier; passes alone
+[longprompt] loading /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ...
+[longprompt] loaded in 13.922s
+[longprompt] PrefillPath(load-time) = true — batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+[longprompt] guards: prefillReady=true moe=false gemma4Moe=false sandwich=false qkNorm=false
+[longprompt] layers=28 non-uniform-vs-L0=0 kEqV=0 nonBatchableKinds=map[] (L0: hd=128 nKV=4 qDim=3584 kvDim=512 rhalf=64 window=0)
+[longprompt] hidden=3584 inter=18944 layers=28 ctxCap=8192
+[longprompt] VRAM free=1.83 GB of 8.16 GB after load
+[longprompt] M=512   batched OK 365ms      (0.712 ms/token)
+[longprompt] M=2048  batched OK 1.559s     (0.761 ms/token)
+[longprompt] M=4096  batched OK 3.379s     (0.825 ms/token)
+[longprompt] M=8012  batched OK 7.704s     (0.962 ms/token)
+[longprompt] M=512   SEQUENTIAL 5.667s     (11.069 ms/token)
+[longprompt] M=2048  SEQUENTIAL 25.453s    (12.428 ms/token)
+[longprompt] M=4096  SEQUENTIAL 57.236s    (13.974 ms/token)
+[longprompt] M=8012  SEQUENTIAL 2m13.902s  (16.713 ms/token)
+--- PASS: TestPrefillLongPrompt (249.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	249.805s
+=== RUN   TestR14DrafterArgmaxAB
+    r14_drafter_argmax_ab_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=26) in the one-process heavy tier; passes alone
+    r14_drafter_argmax_ab_test.go:96: bit-identical: 582 device argmax calls matched the host loop row-for-row; emitted sequences equal on 2 prompts
+    r14_drafter_argmax_ab_test.go:114: pair 0: host 1300 ms | device 1039 ms | speedup 1.251x
+    r14_drafter_argmax_ab_test.go:114: pair 1: host 1295 ms | device 1041 ms | speedup 1.244x
+    r14_drafter_argmax_ab_test.go:114: pair 2: host 1298 ms | device 1042 ms | speedup 1.246x
+    r14_drafter_argmax_ab_test.go:114: pair 3: host 1289 ms | device 1040 ms | speedup 1.239x
+    r14_drafter_argmax_ab_test.go:114: pair 4: host 1274 ms | device 1039 ms | speedup 1.226x
+    r14_drafter_argmax_ab_test.go:114: pair 5: host 1279 ms | device 1041 ms | speedup 1.229x
+    r14_drafter_argmax_ab_test.go:125: paired median speedup 1.242x (min 1.226, max 1.251) over 6 pairs; pooled host 7735 vs device 6242 ms — SHIP (>=2%)
+--- PASS: TestR14DrafterArgmaxAB (34.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	34.222s
+=== RUN   TestR14DrafterArgmaxProfile
+    r14_drafter_argmax_profile_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=23) in the one-process heavy tier; passes alone
+    r14_drafter_argmax_profile_test.go:96: code w=7: 193 tokens, 41 rounds, spec wall 1061 ms (25.88 ms/round)
+    r14_drafter_argmax_profile_test.go:97:   head→argmax tails: 84 calls (582 rows, 6.9 rows/call, vocab 151936): sync 165.355ms | D2H 4.753ms | host argmax 0s | total 170.108ms
+    r14_drafter_argmax_profile_test.go:100:   per round: sync 4.033 ms | D2H 0.116 ms | host 0.000 ms | D2H+host 0.116 ms = 0.4% of the round (sync 15.6%)
+    r14_drafter_argmax_profile_test.go:103:   D2H bandwidth 74.42 GB/s; host argmax 0.0 ns/element
+    r14_drafter_argmax_profile_test.go:96: math w=8: 194 tokens, 33 rounds, spec wall 975 ms (29.55 ms/round)
+    r14_drafter_argmax_profile_test.go:97:   head→argmax tails: 68 calls (557 rows, 8.2 rows/call, vocab 151936): sync 171.784ms | D2H 3.726ms | host argmax 0s | total 175.51ms
+    r14_drafter_argmax_profile_test.go:100:   per round: sync 5.206 ms | D2H 0.113 ms | host 0.000 ms | D2H+host 0.113 ms = 0.4% of the round (sync 17.6%)
+    r14_drafter_argmax_profile_test.go:103:   D2H bandwidth 90.85 GB/s; host argmax 0.0 ns/element
+--- PASS: TestR14DrafterArgmaxProfile (13.97s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	14.055s
+=== RUN   TestResidentDrafter_extendContext
+    drafter_test.go:142: ISOLATED-RUN: AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+    drafter_test.go:235: incremental (4+4) is BIT-IDENTICAL to one-shot (8) across 8192 K values
+--- PASS: TestResidentDrafter_extendContext (12.11s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	12.214s
+=== RUN   TestSpecPagerInteraction
+    spec_pager_interaction_test.go:157: ISOLATED-RUN: NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+[spec-pager 15:57:43] loading qwen3.6-35b-a3b-int4.giw (pinned ~20 GB, expect ~5 min)
+decoder: qwen3.6-35b-a3b-int4.giw is not in memory: reading its 20.0 GB once before the load
+[spec-pager 15:59:00] loaded in 1m17s (decode path cuda-resident (int4))
+[spec-pager 15:59:00] pager: 64 slots/layer BUILT (requested ""), topK=8
+[spec-pager 15:59:02] drafter attached: block 16, taps [1 6 11 16 22 27 32 37]
+[spec-pager 15:59:02] warm-up prompt 0 (untimed)
+[spec-pager 15:59:03] warm-up prompt 1 (untimed)
+[spec-pager 15:59:05] warm-up prompt 2 (untimed)
+[spec-pager 15:59:07] spec probe ok — the speculative arms are live
+[spec-pager 15:59:10] off p0 r0: 64 tok in 2.69s (23.80 tok/s) | stages 3640 distinct/stage 8.000 | 1/45 done, elapsed 3s
+[spec-pager 15:59:13] off p0 r1: 64 tok in 2.71s (23.63 tok/s) | stages 3640 distinct/stage 8.000 | 2/45 done, elapsed 5s
+[spec-pager 15:59:16] off p0 r2: 64 tok in 2.71s (23.64 tok/s) | stages 3640 distinct/stage 8.000 | 3/45 done, elapsed 8s
+[spec-pager 15:59:18] off p1 r0: 64 tok in 2.54s (25.21 tok/s) | stages 3480 distinct/stage 8.000 | 4/45 done, elapsed 11s
+[spec-pager 15:59:21] off p1 r1: 64 tok in 2.55s (25.13 tok/s) | stages 3480 distinct/stage 8.000 | 5/45 done, elapsed 13s
+[spec-pager 15:59:23] off p1 r2: 64 tok in 2.54s (25.15 tok/s) | stages 3480 distinct/stage 8.000 | 6/45 done, elapsed 16s
+[spec-pager 15:59:26] off p2 r0: 64 tok in 3.10s (20.65 tok/s) | stages 4480 distinct/stage 8.000 | 7/45 done, elapsed 19s
+[spec-pager 15:59:29] off p2 r1: 64 tok in 3.06s (20.92 tok/s) | stages 4480 distinct/stage 8.000 | 8/45 done, elapsed 22s
+[spec-pager 15:59:32] off p2 r2: 64 tok in 3.07s (20.85 tok/s) | stages 4480 distinct/stage 8.000 | 9/45 done, elapsed 25s
+[spec-pager 15:59:35] blk4 p0 r0 SHORT: 46/64 tokens — excluded from timings
+[spec-pager 15:59:37] blk4 p0 r1 SHORT: 46/64 tokens — excluded from timings
+[spec-pager 15:59:40] blk4 p0 r2 SHORT: 46/64 tokens — excluded from timings
+[spec-pager 15:59:43] blk4 p1 r0: 64 tok in 2.85s (22.45 tok/s) | stages 4200 distinct/stage 8.000 | 10/45 done, elapsed 35s
+[spec-pager 15:59:46] blk4 p1 r1: 64 tok in 2.85s (22.47 tok/s) | stages 4200 distinct/stage 8.000 | 11/45 done, elapsed 38s
+[spec-pager 15:59:48] blk4 p1 r2: 64 tok in 2.84s (22.56 tok/s) | stages 4200 distinct/stage 8.000 | 12/45 done, elapsed 41s
+[spec-pager 15:59:52] blk4 p2 r0: 64 tok in 3.12s (20.51 tok/s) | stages 4960 distinct/stage 8.000 | 13/45 done, elapsed 44s
+[spec-pager 15:59:55] blk4 p2 r1: 64 tok in 3.11s (20.58 tok/s) | stages 4960 distinct/stage 8.000 | 14/45 done, elapsed 47s
+[spec-pager 15:59:58] blk4 p2 r2: 64 tok in 3.18s (20.16 tok/s) | stages 4960 distinct/stage 8.000 | 15/45 done, elapsed 50s
+[spec-pager 16:00:01] blk7 p0 r0: 64 tok in 3.41s (18.78 tok/s) | stages 4880 distinct/stage 8.000 | 16/45 done, elapsed 54s
+[spec-pager 16:00:05] blk7 p0 r1: 64 tok in 3.39s (18.88 tok/s) | stages 4880 distinct/stage 8.000 | 17/45 done, elapsed 57s
+[spec-pager 16:00:08] blk7 p0 r2: 64 tok in 3.33s (19.22 tok/s) | stages 4880 distinct/stage 8.000 | 18/45 done, elapsed 1m1s
+[spec-pager 16:00:11] blk7 p1 r0: 64 tok in 3.35s (19.09 tok/s) | stages 4880 distinct/stage 8.000 | 19/45 done, elapsed 1m4s
+[spec-pager 16:00:15] blk7 p1 r1: 64 tok in 3.35s (19.11 tok/s) | stages 4880 distinct/stage 8.000 | 20/45 done, elapsed 1m7s
+[spec-pager 16:00:18] blk7 p1 r2: 64 tok in 3.32s (19.25 tok/s) | stages 4880 distinct/stage 8.000 | 21/45 done, elapsed 1m11s
+[spec-pager 16:00:23] blk7 p2 r0: 64 tok in 4.92s (13.00 tok/s) | stages 8320 distinct/stage 8.000 | 22/45 done, elapsed 1m15s
+[spec-pager 16:00:28] blk7 p2 r1: 64 tok in 4.94s (12.97 tok/s) | stages 8320 distinct/stage 8.000 | 23/45 done, elapsed 1m20s
+[spec-pager 16:00:33] blk7 p2 r2: 64 tok in 4.92s (13.00 tok/s) | stages 8320 distinct/stage 8.000 | 24/45 done, elapsed 1m25s
+[spec-pager 16:00:33] ng4 p0 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 16:00:33] ng4 p1 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 16:00:33] ng4 p2 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 16:00:33] ng7 p0 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 16:00:33] ng7 p1 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 16:00:33] ng7 p2 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+    spec_pager_interaction_test.go:421: === spec x pager [qwen3.6-35b-a3b-int4.giw], 64 slots/layer, topK 8, 64 new tokens/generation ===
+    spec_pager_interaction_test.go:421: seconds are normalized to 64 emitted tokens; per-arm raw token counts logged below
+    spec_pager_interaction_test.go:421: arm   |   mean s |    med s | wspread | dist/stage |     hit% | miss/stg |  alpha
+    spec_pager_interaction_test.go:421: off   |    2.774 |    2.707 |    0.8% |     8.0000 |    77.3% |    1.815 |  0.000
+    spec_pager_interaction_test.go:421:       raw token counts [[64 64 64] [64 64 64] [64 64 64]] (short/excluded: 0)
+    spec_pager_interaction_test.go:421: blk4  |    2.990 |    2.981 |    0.8% |     8.0000 |    79.9% |    1.609 |  2.791
+    spec_pager_interaction_test.go:421:       raw token counts [[] [64 64 64] [64 64 64]] (short/excluded: 3)
+    spec_pager_interaction_test.go:421: blk7  |    3.882 |    3.390 |    1.1% |     8.0000 |    83.8% |    1.299 |  2.091
+    spec_pager_interaction_test.go:421:       raw token counts [[64 64 64] [64 64 64] [64 64 64]] (short/excluded: 0)
+    spec_pager_interaction_test.go:421: ng4   | DECLINED — decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+    spec_pager_interaction_test.go:421: ng7   | DECLINED — decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+    spec_pager_interaction_test.go:421: R1 blk4 vs off: paired median 1.0746 (n=6, sign agrees true) -> AMBIGUOUS -> PARKED
+    spec_pager_interaction_test.go:421: R3 blk4: alpha 2.791 committed/round, H-noamort predicts K/alpha = 1.4333; measured/predicted = 0.7498 (closes at 1.00 +/- 0.15)
+    spec_pager_interaction_test.go:421: R1 blk7 vs off: paired median 1.3147 (n=9, sign agrees true) -> REAL REGRESSION
+    spec_pager_interaction_test.go:421: R3 blk7: alpha 2.091 committed/round, H-noamort predicts K/alpha = 3.3478; measured/predicted = 0.3927 (closes at 1.00 +/- 0.15)
+    spec_pager_interaction_test.go:421: R2 off: not evaluable (off arm is the baseline)
+    spec_pager_interaction_test.go:421: R2 blk4: 8.0000 distinct/stage vs off 8.0000 -> H-paging REFUTED (pager sees decode-shaped traffic)
+    spec_pager_interaction_test.go:421: R2 blk7: 8.0000 distinct/stage vs off 8.0000 -> H-paging REFUTED (pager sees decode-shaped traffic)
+    spec_pager_interaction_test.go:421: R2 ng4: not evaluable (arm declined)
+    spec_pager_interaction_test.go:421: R2 ng7: not evaluable (arm declined)
+[spec-pager 16:00:33] arms complete
+--- PASS: TestSpecPagerInteraction (170.39s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	171.197s
