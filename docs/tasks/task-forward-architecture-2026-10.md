@@ -749,6 +749,48 @@ available, where the two nights on record had 6.6 and 7.8 GB.
 
 **Unchanged:** amendment 1's split, the arms, prompts, bars, voids and the order of reading.
 
+**G2-R amendment 3, 2026-10-15 (owner-approved), before any run: the Metal arms load Metal `.giw` files, and a refused
+load is VOID.**
+
+**Why.** On 2026-10-15 the CPU process passed (its precondition held). Then the fit guard refused the Metal process's
+first load, the 2B's `.gguf`: 5.5 GB priced against a 4.9 GB budget, with 7.0 GB available. The script labelled the run
+FAIL. A refused load measures nothing, so that label was wrong: it was VOID.
+
+**What changes.**
+
+- **Every Metal load reads a `.giw`** of the same `.gguf` at the arm's quant, with no `.gguf` mapped during the load.
+  - **int8int8 has one bundle for both targets.** `cmd/prequant -target metal` and the CPU's own target wrote the dense
+    1.5B's int8int8 bundle byte for byte the same (`cmp`, 1,787,283,843 bytes, 2026-10-15). The target changes only int4
+    tensors. So the Metal process reads amendment 2's int8int8 bundles, under a `.metal.giw` hard link the job makes.
+  - **int4 needs its own Metal bundle**, built with `-target metal`: the CPU's int4 bundles hold the row4-only layout,
+    which Metal cannot read. Two are added: the 2B, and the 0.5B for the precondition below. About 2.7 GB of disk with
+    the 0.5B's int8int8 bundle; the job refuses to build under 6 GB free.
+- **A Metal precondition, like amendment 2's on the CPU.** Before any arm, the Metal process loads Qwen2.5-Coder-0.5B
+  both ways at int8int8 and int4. Its `.gguf` is small enough to load directly. It runs the gate's prompt and 24 steps:
+  the `.gguf` route's greedy tokens, fed to both routes. The logits must be equal bit for bit at every step. **A
+  difference voids the run.**
+- **A refused load is VOID, not FAIL.** A load refused by the fit guard or by Metal's memory guard, in either process,
+  ends the run as VOID, with the refusal's numbers in the log. The script grades a log that holds a `VOID` line as VOID
+  (exit 2) before it looks for a FAIL. A FAIL is reserved for G2-R's own rule: arm G failing, or arm G parked.
+- **A fit check of every load, by day, before the job is queued** (CLAUDE.md, "Testing tiers"). Each load the two
+  processes make is run once, alone, on its backend, and admitted or refused is recorded. The test is
+  `TestG2R_fitCheck`, which takes seconds. The job is queued only if every load is admitted by day. Day memory is the
+  owner's apps plus this session, so a load admitted by day is admitted at night.
+
+**Considered, not changed: whether a smaller model covers the same operations** (owner's question, 2026-10-15).
+
+- **The 2B cannot shrink.** G2-R tests the attention softcap. Gemma 2 is the only family goinfer reads that has one
+  (`decoder/gemma12.go`). The 2B is the smallest Gemma 2 release (2B, 9B, 27B), and no 0.5B-class checkpoint carries the
+  operation.
+- **Gemma 3 4B stays.** It is not covering an operation. It is the reference for G2-R's band: parked when Gemma 2 is
+  more than 0.03 under Gemma 3 from the same session. Gemma 3 1B would change the band's reference after the bar was
+  set, and that is a bar change, so it stays at 4B. With `.giw` loads, the 4B's int8int8 load is priced at about 4.5 GB.
+- **The dense 1.5B control stays.** Its 0.95 bar was registered on it.
+- **The 0.5B enters only as the Metal precondition's model.** Its `.gguf` fits Metal's guards directly, and the
+  precondition checks the load route, not the gate.
+
+**Unchanged:** amendments 1 and 2, the arms, prompts, bars, voids and the order of reading.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
