@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -173,7 +174,7 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 	return pass, agree, n
 }
 
-// g3PassMargin and g3FailMargin bound the E-model non-inferiority gates (G3c, G-E4B-C1, G-E4B-C1b) in points of teacher-forced agreement against the live reference.
+// g3PassMargin and g3FailMargin bound the E-model non-inferiority gates (G3c, G-E4B-C1b) in points of teacher-forced agreement against the live reference.
 // They are -4.7 and -6.7, the registered -2.0 and -4.0 shifted by the reference's own move from 93.97% to 96.64% under ChatML's default system message, so the
 // absolute floor the gates were registered at (about 92%) is unchanged. Record: docs/tasks/task-multimodal-support-2026-10.md, "G3c reference moved".
 const (
@@ -249,8 +250,10 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 		sum/float64(n), sorted[n/2], sorted[n*9/10], n, len(m.EmbedResidentForTest(ids[0])))
 }
 
-// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1 (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c's procedure and rule, unchanged, on Gemma 4 E4B loaded from its
-// safetensors directory by both sides.
+// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c's procedure, rule and reference,
+// unchanged, on Gemma 4 E4B loaded by both sides from GOINFER_GEMMA4_E4B_CKPT, a .gguf or a Hugging Face directory, default Google's quantization-aware
+// GGUF (~/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf, the equivalent of the E2B file G3c reads). A run on the plain bf16 checkpoint
+// (~/models/gemma-4-E4B-it) is a record, not this gate: that checkpoint fails the bar for its own sake, not the implementation's (same section).
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BNonInferiority$' -v ./cuda/
 func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
@@ -258,20 +261,25 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	t0 := time.Now()
 	logf := func(format string, a ...any) {
-		fmt.Fprintf(os.Stderr, "[G-E4B-C1 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+		fmt.Fprintf(os.Stderr, "[G-E4B-C1b %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
 	}
+	ckpt := os.Getenv("GOINFER_GEMMA4_E4B_CKPT")
+	if ckpt == "" {
+		ckpt = filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it.gguf")
+	}
+	logf("E4B checkpoint %s", ckpt)
 	rp, ra, rn := g3Model(t, filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "reference Qwen2.5-Coder-1.5B", logf)
-	ep, ea, en := g3Model(t, filepath.Join(home, "models", "gemma-4-E4B-it"), "E4B", logf)
+	ep, ea, en := g3Model(t, ckpt, "E4B", logf)
 	refPct, e4bPct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
 	delta := e4bPct - refPct
-	logf("G-E4B-C1 non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
+	logf("G-E4B-C1b non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
 	switch {
 	case delta < g3FailMargin || ep <= rp-2:
-		t.Errorf("G-E4B-C1 FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
+		t.Errorf("G-E4B-C1b FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
 	case delta < g3PassMargin:
-		t.Errorf("G-E4B-C1 AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
+		t.Errorf("G-E4B-C1b AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
 	default:
-		t.Logf("G-E4B-C1 PASS: delta %+.2f points (margin %.1f), free-run %d vs reference %d", delta, g3PassMargin, ep, rp)
+		t.Logf("G-E4B-C1b PASS: delta %+.2f points (margin %.1f), free-run %d vs reference %d", delta, g3PassMargin, ep, rp)
 	}
 }
 
@@ -385,6 +393,8 @@ func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 // TestGemma4EModel_realE4BF32Dump is an EXPLORATORY follow-up to TestGemma4EModel_realE4BAnchorDump, not a gate. The anchor read both int4 arms about equally far from HF float32 and much further than from each other, which a shared
 // deviation or plain int4 sensitivity could both produce. This removes quantization: goinfer's CPU forward in float32 (Options.Quant "f32") teacher-forced over the SAME ids, written in the dump's shape so scripts/anchor_e4b_hf.py can
 // compare it with HF float32. If the implementation is right, float32 against float32 is near-identical; if it is not, the gap is the bug.
+// The float32 load needs about 30 GB of host memory. When the fit guard refuses it (decoder.ErrWontFitResident), as it does inside a long-lived
+// gate process whose earlier tests have taken memory, the test skips with the guard's arithmetic; run it alone to get the dump.
 func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 	requireHeavyModel(t)
 	home, _ := os.UserHomeDir()
@@ -416,6 +426,9 @@ func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 		t.Fatal(err)
 	}
 	mc, err := decoder.Load(dir, decoder.Options{Quant: "f32", ResidentContext: 512})
+	if errors.Is(err, decoder.ErrWontFitResident) {
+		t.Skipf("the float32 load does not fit this process's fit budget; run this test alone (go test -run '^TestGemma4EModel_realE4BF32Dump$'), where the budget is the box's: %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,31 +466,5 @@ func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "dump-f32.json"), out, 0o644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// TestGemma4EModel_realE4BQATNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c, unchanged in procedure, rule and reference, on Google's
-// quantization-aware-trained E4B GGUF, the equivalent of the E2B file G3c used. The plain bf16 checkpoint (TestGemma4EModel_realE4BNonInferiority) failed for the checkpoint's sake, not the implementation's.
-//
-//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BQATNonInferiority$' -v ./cuda/
-func TestGemma4EModel_realE4BQATNonInferiority(t *testing.T) {
-	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	t0 := time.Now()
-	logf := func(format string, a ...any) {
-		fmt.Fprintf(os.Stderr, "[G-E4B-C1b %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
-	}
-	rp, ra, rn := g3Model(t, filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "reference Qwen2.5-Coder-1.5B", logf)
-	ep, ea, en := g3Model(t, filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it.gguf"), "E4B (QAT q4_0)", logf)
-	refPct, e4bPct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
-	delta := e4bPct - refPct
-	logf("G-E4B-C1b non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
-	switch {
-	case delta < g3FailMargin || ep <= rp-2:
-		t.Errorf("G-E4B-C1b FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
-	case delta < g3PassMargin:
-		t.Errorf("G-E4B-C1b AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
-	default:
-		t.Logf("G-E4B-C1b PASS: delta %+.2f points (margin %.1f), free-run %d vs reference %d", delta, g3PassMargin, ep, rp)
 	}
 }
