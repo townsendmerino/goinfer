@@ -105,10 +105,14 @@ else
 fi
 [ "$made_link" = 1 ] && rm -f "$LINK"
 cd "$SRC" && git worktree remove --force "$WT" 2>/dev/null
-# Amendment 3: a VOID line (a refused load, a precondition, a void rule) is read before a FAIL.
+# Amendment 3: FAIL is G2-R's own rule only (arm G failing, or parked), read from the test's verdict lines. A registered
+# stop is reported as STOPPED. Anything else that ends the run (a refused load, a precondition, a void rule, a crash, a
+# skip) measured nothing and is VOID.
 if grep -q '^--- PASS: TestG2R_registered' "$OUT/g2r.log"; then rc=0; v=PASS
-elif grep -q 'VOID' "$OUT/g2r-cpu.log" "$OUT/g2r.log"; then rc=2; v="VOID (see the VOID line in the logs)"
-elif grep -q '^--- FAIL: TestG2R_registered' "$OUT/g2r.log"; then rc=1; v=FAIL
-else rc=2; v="VOID (skipped, or did not finish)"; fi
+elif grep -q 'VERDICT: VOID' "$OUT/g2r.log"; then rc=2; v="VOID as a softcap test (registered)"
+elif grep -q 'VERDICT: G2-R FAILS' "$OUT/g2r.log"; then rc=1; v=FAIL
+elif grep -q 'VERDICT: G2-R PARKED' "$OUT/g2r.log"; then rc=1; v="PARKED (band)"
+elif grep -q 'STOP' "$OUT/g2r.log"; then rc=1; v="STOPPED (a registered stop; see the log)"
+else rc=2; v="VOID (refused, a precondition, a void rule, a crash, or a skip; see the logs)"; fi
 echo "finished: $(date '+%F %T %Z') verdict $v rc=$rc" | tee -a "$OUT/provenance.txt"
 exit $rc
