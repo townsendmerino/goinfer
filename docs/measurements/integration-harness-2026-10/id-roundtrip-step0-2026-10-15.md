@@ -282,6 +282,8 @@ share three definitions:
 - **Stopping rule:** fixed N, 15 runs an arm.
 - **Cost basis:** the after run, 2 h 28 min for 15 runs, so about 2.5 h an arm. That is two night jobs under the 3-hour cap.
 
+**Registration commit: `dd04f022`** (the gates above, as committed there; the design they test is `96fe0edd`).
+
 ## (e) Logging generated ids in night runs (APPROVED 2026-10-15): the mechanism
 
 **What exists:**
