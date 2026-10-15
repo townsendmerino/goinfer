@@ -19,6 +19,9 @@ usage:
   timing_lock.py run [--wait SECONDS] [--label TEXT] -- CMD [ARGS...]   hold the lock while CMD runs (for run-*.sh)
   timing_lock.py status                                                who holds it, if anyone (exit 1 when held by
                                                                        a run other than this process's own holder)
+  timing_lock.py check --tool NAME [--wait S] [--ignore-timing-lock]  for a day tool that loads the box (a build, a
+                                                                       test run): exit 0 when it may go ahead, 75 when
+                                                                       a timed run holds the lock (it names the holder)
 
 library:
   from timing_lock import hold
@@ -165,27 +168,62 @@ def cmd_run(a):
         lk.release()
 
 
-def cmd_status(_a):
+def held_by_other():
+    """The holder record of a timed run that holds the lock and is not this process's own holder, else None. A run
+    under the holder (its token in our environment) reads it as free, as acquire() does."""
     path = lock_path()
     if not path.exists():
-        print(f"free ({path} does not exist)")
-        return 0
+        return None
     fd = os.open(path, os.O_RDONLY)
     try:
         fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
         fcntl.flock(fd, fcntl.LOCK_UN)
-        print(f"free ({path})")
-        return 0
+        return None
     except OSError:
         holder = read_holder(path)
         mine = os.environ.get(TOKEN_ENV)
-        if mine and holder.get("token") == mine:  # held by a parent of ours: free to us, as acquire() treats it
-            print(f"free to this run (inherited from {describe(holder)})")
-            return 0
-        print(f"HELD: {describe(holder)}")
-        return 1
+        if mine and holder.get("token") == mine:
+            return None
+        return holder or {"label": "unidentified"}
     finally:
         os.close(fd)
+
+
+def day_check(tool, wait_s=0.0, ignore=False):
+    """Gate a day tool that loads the box (a build, a test run) on the lock: it must not run beside a timed run,
+    which it would contaminate. Returns 0 to go ahead, 75 (EX_TEMPFAIL) to refuse; prints why either way."""
+    deadline = time.monotonic() + max(0.0, wait_s)
+    while (h := held_by_other()) is not None:
+        if ignore:
+            print(f"{tool}: WARNING: running beside a timed run, by --ignore-timing-lock: {describe(h)}. Its timings "
+                  "from now until this finishes are contaminated; say so in its record.", file=sys.stderr)
+            return 0
+        if time.monotonic() >= deadline:
+            print(f"{tool}: REFUSED: a timed run holds the timing lock and this would load the box under it: "
+                  f"{describe(h)}. Wait for it (`--wait SECONDS`, or `python3 scripts/timing_lock.py status`); "
+                  "`--ignore-timing-lock` overrides, for emergencies only.", file=sys.stderr)
+            return 75
+        time.sleep(min(POLL_S, max(0.1, deadline - time.monotonic())))
+    return 0
+
+
+def cmd_check(a):
+    return day_check(a.tool, wait_s=a.wait, ignore=a.ignore_timing_lock)
+
+
+def cmd_status(_a):
+    path = lock_path()
+    h = held_by_other()
+    if h is not None:
+        print(f"HELD: {describe(h)}")
+        return 1
+    mine = os.environ.get(TOKEN_ENV)
+    holder = read_holder(path) if path.exists() else {}
+    if mine and holder.get("token") == mine:
+        print(f"free to this run (inherited from {describe(holder)})")
+    else:
+        print(f"free ({path}{'' if path.exists() else ' does not exist'})")
+    return 0
 
 
 def main(argv=None):
@@ -196,11 +234,17 @@ def main(argv=None):
     r.add_argument("--label", default="", help="shown to a refused contender")
     r.add_argument("cmd", nargs=argparse.REMAINDER)
     sub.add_parser("status", help="who holds the lock")
+    c = sub.add_parser("check", help="exit 0 if a day tool may load the box now, 75 if a timed run holds the lock")
+    c.add_argument("--tool", default="this tool", help="named in the refusal")
+    c.add_argument("--wait", type=float, default=0.0, help="seconds to wait for the holder to finish (default: refuse)")
+    c.add_argument("--ignore-timing-lock", action="store_true", help="go ahead anyway, with a warning (emergencies)")
     a = p.parse_args(argv)
     if a.sub == "run":
         if a.cmd and a.cmd[0] == "--":
             a.cmd = a.cmd[1:]
         return cmd_run(a)
+    if a.sub == "check":
+        return cmd_check(a)
     return cmd_status(a)
 
 

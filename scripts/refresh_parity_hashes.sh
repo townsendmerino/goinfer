@@ -30,6 +30,14 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# The goldens load the box for minutes, so they must not run under a timed run (TE9). `--ignore-timing-lock`
+# as the first argument overrides, for emergencies; `--wait SECONDS` waits for the holder.
+lockargs=()
+while [ $# -gt 0 ] && { [ "$1" = "--ignore-timing-lock" ] || [ "$1" = "--wait" ]; }; do
+	if [ "$1" = "--wait" ]; then lockargs+=(--wait "$2"); shift 2; else lockargs+=(--ignore-timing-lock); shift; fi
+done
+python3 scripts/timing_lock.py check --tool refresh_parity_hashes.sh ${lockargs[@]+"${lockargs[@]}"} || exit $?
+
 # PRE-FLIGHT: the manifest must be CLEAN before the refresh runs.
 #
 # This exists because of a real mistake, not a hypothetical one. An aikit bump edited
