@@ -37,6 +37,8 @@ func TestG2R_registered(t *testing.T) {
 	}
 	defer func() { t.Log("== G2-R verdict block ==\n" + strings.Join(report, "\n")) }()
 	say("CPU reference made at %s, in its own process", ref.Commit)
+	g2rMetalPrecondition(t)
+	say("Metal precondition (amendment 3): the 0.5B's .giw and .gguf routes agree bit for bit at both quants")
 
 	// 0. The hook check.
 	if !ref.HookChanged {
@@ -185,15 +187,11 @@ func g2rRun(t *testing.T, path, quant string, seed []int, steps int, softcapOff 
 // one of the void conditions.
 func g2rCheckCap(t *testing.T, path, quant string, want float32) {
 	t.Helper()
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: quant})
-	if err != nil {
-		t.Fatalf("load (metal): %v", err)
-	}
+	m := g2rLoad(t, g2rMetalPath(t, path, quant), "metal", quant) // amendment 3: Metal loads .giw too
 	defer m.Close()
-	rf, ok := m.ResidentForwardForTest().(*metalResident)
-	if !ok || rf == nil {
-		skipIfMemoryDeclined(t, m)
-		t.Fatalf("VOID: the 2B did not go resident on Metal at %s: %s", quant, m.ResidentDecline())
+	rf, ok := g2rResident(t, m, "the 2B at "+quant).(*metalResident)
+	if !ok {
+		t.Fatalf("VOID: the 2B's resident at %s is not Metal's", quant)
 	}
 	if rf.r.attnSoftcap != want {
 		t.Fatalf("VOID: the resident's compiled cap is %v, the arm wants %v", rf.r.attnSoftcap, want)

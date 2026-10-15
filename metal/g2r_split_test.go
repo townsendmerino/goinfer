@@ -107,11 +107,8 @@ func g2rCPUArm(t *testing.T, path, quant string, seed []int, steps int, softcapO
 func g2rCPUArmFrom(t *testing.T, load, quant string, seed []int, steps int, softcapOff, wantCap bool) g2rArm {
 	t.Helper()
 	was := decoder.SetAttnSoftcapOffForTest(softcapOff)
-	m, err := decoder.Load(load, decoder.Options{Quant: quant})
+	m := g2rLoad(t, load, "", quant)
 	decoder.SetAttnSoftcapOffForTest(was)
-	if err != nil {
-		t.Fatalf("load (cpu): %v", err)
-	}
 	defer m.Close()
 	if got := m.AttnLogitSoftcapResident(); wantCap && (got == 0) != softcapOff {
 		t.Fatalf("VOID: the CPU model's cap is %v with the softcap removed = %v", got, softcapOff)
@@ -249,16 +246,9 @@ func g2rMetalAgainst(t *testing.T, path, quant string, arm g2rArm) parityStats {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	mg, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: quant})
-	if err != nil {
-		t.Fatalf("load (metal): %v", err)
-	}
+	mg := g2rLoad(t, g2rMetalPath(t, path, quant), "metal", quant) // amendment 3: Metal loads .giw too
 	defer mg.Close()
-	rf := mg.ResidentForwardForTest()
-	if rf == nil {
-		skipIfMemoryDeclined(t, mg)
-		t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.ResidentDecline())
-	}
+	rf := g2rResident(t, mg, filepath.Base(path))
 	st := parityStats{steps: len(arm.Inputs), minCos: 1}
 	for i, tok := range arm.Inputs {
 		cpuL := arm.Logits[i]
