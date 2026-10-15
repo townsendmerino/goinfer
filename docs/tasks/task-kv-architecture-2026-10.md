@@ -751,6 +751,19 @@ KV2 merges when every arm on both boxes is read.
   - the CPU's sessions copy last (D2).
   - The copy is small next to the prefill it saves. A 19,692-token preamble on the 7B at f32 (112 KB a position) is about
     2.2 GB of device copy, around 10 ms on the 8 GB card, against seconds of prefill.
+- **Sharing keys on token ids, so equal text with different ids does not share (owner, 2026-10-15: accepted).** The
+  block key chains the token ids (§2, rule 1: ids, never text). Under the id round trip's proposal 2, a reply's generated
+  ids come back in a signed opaque field (Responses' `encrypted_content`, Anthropic's `thinking.signature`) and are used
+  in place of re-tokenizing the echoed text (PR #24's step-0 record, `id-roundtrip-step0-2026-10-15.md` on branch
+  `id-roundtrip-step0-2026-10`). Two conversations whose prompts carry the same text but different ids (one carries a
+  reply's non-canonical generated ids, the other re-tokenizes the same text canonically, or carries ids from a different
+  generation) hash differently from the first differing id, so a copy stops at the block before it. That is acceptable:
+  - what crosses conversations is the prefill-class preamble (system prompt, tools, environment), which no carried id
+    touches and which both tokenize identically;
+  - a reply's rows are decode class, which property 3 (§5.6) never shares across conversations whatever the ids;
+  - matching on text would need the two tokenizations to give the same KV, which they do not (different ids are
+    different inputs), so it would break sharing invariance (§5.6, property 2).
+  KV2's gates need no change for it: the CUDA registration (`docs/measurements/kv2-cuda-2026-10-15.md` §3) states it.
 - **Gates (registered):**
   - G0: split invariance on the Mac's backends.
   - G1: identity.
