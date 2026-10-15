@@ -118,3 +118,57 @@
     FAIL
     FAIL	github.com/townsendmerino/goinfer/cuda	1.156s
     FAIL
+
+# G3-C plants, 2026-10-15 11:08, same script (plant.py copy-does-nothing hit-one-block-long); the 'hit-one-block-long' plant is the decoder copying and claiming one block past its hit (capped to leave 16 rows).
+== copy-does-nothing (cuda/kvcopy.go; ^TestKV2_scheduleIndependence_tiny$): RED
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 0 turn 0 (reused 1000, copied 0, own false): [], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 1 (reused 1086, copied 0, own true): [253 97 148 162 6 168 0 120 135 24 0 120 135 24 0 120], reference [157 60 156 123 156 123 156 123 156 123 156 123 156 123 156 123]
+        kv2_schedule_test.go:240: A [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [202 221 51 155] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 960
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 960, copied 960
+        kv2_schedule_test.go:240: A [] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 0
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 0 turn 0 (reused 1000, copied 0, own false): [], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 1 (reused 1086, copied 0, own true): [253 97 148 162 6 168 0 120 135 24 0 120 135 24 0 120], reference [157 60 156 123 156 123 156 123 156 123 156 123 156 123 156 123]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:240: A [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [202 221 51 155] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 960
+== hit-one-block-long (decoder/resident_reuse.go; ^TestKV2_scheduleIndependence_tiny$): RED
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [208 106 65 123 156 123 156 123 156 123 156 123 156 123 156 123], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [208 106 65 123 156 123 156 123 156 123 156 123 156 123 156 123], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 29 123 23 110 106 97 136 245 97 171 68 98 159 247 245], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:240: A [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251] (alone [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251]); B [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230] (alone [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]), B copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:240: A [247 161 7 228 118 26 244 93 245 173 123 93 244 14 208 156] (alone [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251]); B [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230] (alone [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]), B copied 0
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+    --- FAIL: TestKV2_scheduleIndependence_tiny (11.28s)
+    FAIL

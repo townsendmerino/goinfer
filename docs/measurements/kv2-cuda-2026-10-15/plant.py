@@ -25,6 +25,10 @@ PLANTS = [
      "srcOff, dstOff, rows = lo*row, 0, end-lo", "^TestKV2_copyWindowed$"),
     ("window-check-removed", COPY, "if !kvBaseHolds(r.kvBases[src], end, r.kvWindow) {",
      "if false && !kvBaseHolds(r.kvBases[src], end, r.kvWindow) {", "^TestKV2_copyWindowed$"),
+    ("copy-does-nothing", COPY, "\treturn r.do(func() error { return r.copyKVSlots(src, dst, start, end) })",
+     "\treturn nil", "^TestKV2_scheduleIndependence_tiny$"),
+    ("hit-one-block-long", "decoder/resident_reuse.go", "err := cp.CopyKV(src, dst, start, hit)",
+     "hit = min(hit+64, len(prompt)-16)\n\terr := cp.CopyKV(src, dst, start, hit)", "^TestKV2_scheduleIndependence_tiny$"),
     ("staging-buffer-kept", COPY, "\t\tfor _, p := range [2][2]Buffer{",
      "\t\t_ = r.af(rows * row / 4)\n\t\tfor _, p := range [2][2]Buffer{", "^TestKV2_copyAllocatesNothing_tiny$"),
 ]

@@ -99,6 +99,14 @@ type kv2Buf struct {
 	row   int // bytes a position takes
 }
 
+// slotBufs is slot's per-layer K and V buffers (the build's own with one slot).
+func (g *kv2Rig) slotBufs(slot int) cudaKVSlot {
+	if len(g.r.kvSlotBufs) == 0 {
+		return cudaKVSlot{g.r.kc, g.r.vc}
+	}
+	return g.r.kvSlotBufs[slot]
+}
+
 // bufs lists every buffer a slot owns: K and V of each layer that does not read another layer's KV, V only where it exists.
 func (g *kv2Rig) bufs() []kv2Buf {
 	var out []kv2Buf
@@ -112,7 +120,7 @@ func (g *kv2Rig) bufs() []kv2Buf {
 			elem = 2
 		}
 		for _, v := range []bool{false, true} {
-			if v && g.r.kvSlotBufs[0].vc[l].Len() == 0 {
+			if v && g.slotBufs(0).vc[l].Len() == 0 {
 				continue
 			}
 			out = append(out, kv2Buf{layer: l, v: v, win: Ly.kvWin, row: Ly.kvDim * elem})
@@ -129,9 +137,9 @@ func (g *kv2Rig) raw(slot int) (out [][]byte, base int) {
 			return e
 		}
 		for _, b := range g.bufs() {
-			buf := g.r.kvSlotBufs[slot].kc[b.layer]
+			buf := g.slotBufs(slot).kc[b.layer]
 			if b.v {
-				buf = g.r.kvSlotBufs[slot].vc[b.layer]
+				buf = g.slotBufs(slot).vc[b.layer]
 			}
 			elem := 4
 			if g.r.layers[b.layer].kvHalf {
