@@ -1688,7 +1688,7 @@ gate is re-run. The bar never moves.
 - the reduction order as an operation parameter, rather than unifying the orders inside OP3;
 - the old loops kept until OP3z, for gate S.
 
-**OP3a's readings, 2026-10-16 (branch `op3-layer-program-2026-10`; gates I, P, L and T1 at `439bd3bf`, gate S at `d5752b99`, which adds only the S test).**
+**OP3a's readings, 2026-10-16 (branch `op3-layer-program-2026-10`). P, L and T1 ran at `439bd3bf`. S ran at `d5752b99`, which adds only the S test. I ran at `1ce5f447`, which has the same code as `d5752b99` plus this record.**
 
 - **I, identity: PASS.** Against `2c56d9c6` on the tiny assets: 37 families IDENTICAL at f32, int8int8 and int4, none
   different. The six NOT RUN are as listed above. Log: `docs/measurements/op3-2026-10/op3a-identity-tiny.log`.
