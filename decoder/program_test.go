@@ -317,6 +317,8 @@ var programParamUnreached = map[string]string{
 // reported NOT RUN, never passed.
 var programParamNeeds = map[string]string{
 	"embed.LearnedPos": "gpt2",
+	"embed.PLE":        "gemma4-emodel-tiny",
+	"residual.Scale":   "granite-tiny",
 	"norm.Bias":        "gpt2",
 	"head.Norm.Bias":   "gpt2",
 }
