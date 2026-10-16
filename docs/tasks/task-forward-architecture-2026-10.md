@@ -1347,6 +1347,106 @@ on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Rec
 - Nemotron-3-Nano's MoE.
 - A speed gate. The do-nothing arm is the CPU, about 15× slower.
 
+**OP2b on CUDA: the gates, registered 2026-10-16 before any code** (read at main `d183f2c9`; Metal's step 1 and step 2 records above).
+
+**What exists and what does not.**
+- **On the CPU and the decoder side, ready:**
+  - the reference, `decoder/mamba2.go:mamba2Step`, and its hooks (`SetMambaCapHook`, `SetSSMQ8CPU`);
+  - the layer program, `decoder.Model.ResidentLayerOps`, and the accessors `NemotronResidentParams`, `MambaProjInt8`,
+    `ResidentProjsInt4`;
+  - the fixtures `nemotron-tiny`, `granite-tiny`, `nemotron3nano-tiny` and the real goldens.
+- **On CUDA, nothing:**
+  - no Mamba kernel, no non-gated MLP, and none of `ssm`, `non-gated-mlp`, `non-gated-relu2` is declared. Nemotron-H derives exactly
+    those three (`decoder/features.go:Architecture.residentFeatures`);
+  - the only recurrent state is DeltaNet's `dnetParams` (`cuda/resident.go`), model-level and shaped for DeltaNet, so it is not reused;
+  - the recurrent guards test `r.dnet` at eight sites: `cuda/batchstep.go`, `cuda/kvsnap.go`, `cuda/kvcopy.go`, `cuda/prefill.go` (two),
+    `cuda/resident.go` (four). A Mamba layer must read as recurrent at every one.
+- **The shape that carries over from Metal:** Nemotron-H resident at int4 only. Its int8 projections would be re-quantized to int4
+  without notice, so int8int8 declines by name, on the decoder's own test (`ResidentProjsInt4`), and the CPU runs it at real int8
+  (Metal's gate-M amendment). Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds it, and the backend declines it by name.
+
+**The build, by step.**
+- **Step 1, kernels and the non-gated MLP, nothing reaches them yet.**
+  - `mamba_conv`, `mamba_ssm`, `mamba_gnorm` (per group for Nemotron-H, over the full inner width for Granite), in a new `cuda/mamba.cu`,
+    from `gpu/mamba.go`'s shaders and `decoder/mamba2.go`. Conv window ≤ 8 taps, the window and the SSM state persistent in place.
+  - The squared-ReLU activation and the non-gated structure (up GEMV, activation, quantize, down GEMV) in a new `cuda/nongated_act.cu`.
+  - **Mechanism, chosen here because the gates lean on it: new files and new PTX, no ordinal added to `glue.cu`,
+    `prefill_batched.cu` or `actgroup.cu`.** No audited or shipped PTX moves, so gate I below is a byte comparison of PTX and not a
+    claim about a compiler. Built at the ambient NVRTC (12.9.86) per `cuda/testdata/REGEN.md`; a new `.cu` needs no pinned toolchain.
+  - `in_proj` and `out_proj` run W8A8 through the existing `gemv_w8a8` (int8 rows with per-row scales from `MambaProjInt8` when the
+    load holds them, else quantized from the f32 as Metal and WebGPU do); attention and MLP projections are W4A8 as today.
+- **Step 2, the resident:** the builder walks `ResidentLayerOps`, uploads and encodes only a layer's own weights, keeps the conv window
+  and SSM state per layer and per slot, and resets them with the slot. The eight guard sites above read "recurrent".
+  Prompts are processed token by token (the batched prefill declines a recurrent family, as for DeltaNet). `KVBytes` and the fit plan
+  price the attention layers only, and add the states.
+- **Declaration:** `ssm`, `non-gated-mlp` and `non-gated-relu2` on CUDA, int4 only, after every gate below passes; the
+  matrix and the admission golden regenerate with it. On a branch, unmerged, until then (OP1's way).
+
+**Tier 0, by day: synthetic and tiny, seconds. Cosine in every K, M and tier 1 reading is scored 0 when exactly one side is all zeros.**
+CUDA's `cosF32` returns 1 for that case (`cuda/deltanet_test.go`), which is the guard that made Metal's first kernel test read 1.0 on
+an all-zero output (step 1's "found on the way"); these tests use a helper that does not.
+- **K, each new kernel against the CPU's own computation, on real inputs.** `SetMambaCapHook` captures each step's `in_proj` output
+  and gated output from `nemotron-tiny` and `granite-tiny` (the kernels serve Granite's geometry too; the family stays declined), and
+  the CUDA chain replays the `in_proj` output from a fresh state. Bar `gpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3
+  (Metal read 1.2e-7 and 7.2e-7).
+  - The chain over 72 steps (≥ 2 past the conv window: one step inside it cannot see a window error; 72 for drift).
+  - The gated norm at 4 groups against `gatedRMSNormGrouped` (both fixtures have one group, so the grouped case needs its own).
+  - The squared-ReLU activation: exact.
+- **D, plants, each must turn K red.** The kernels are prebuilt PTX, so each plant is a temporary edit of `mamba.cu` or
+  `nongated_act.cu` with the affected modules rebuilt, run, and restored (as OP1's G2-D was); the record lists the red cases.
+  - The conv taps shifted by one.
+  - The softplus on dt dropped. `granite-tiny`'s dt sits where softplus is nearly the identity (Metal moved it by 4e-5), so this
+    plant is read on `nemotron-tiny` and `granite-tiny`'s blind spot is logged, not hidden.
+  - One group over the full width where groups are asked for.
+  - Squared ReLU as plain ReLU.
+- **I, identity.** Every existing PTX file is byte for byte base's (`git diff` adds only new files), and G1-K's 1,864 attention digests
+  are equal to base's. `go run ./cmd/gate identity <base> <new> -backend cuda` on the tiny fixtures: IDENTICAL for every family that ran.
+- **M, the tiny models against the CPU, int4 only,** in greedy lockstep for 32 steps, positions from 2 graded.
+  - **The bar is relative, set by a control in the same run:** `llama-tiny` at int4 through the same harness. Each SSM fixture's min
+    logit cosine ≥ the control's minus 0.001, argmax equal on at least the control's count minus 2 (G2-T's lesson: a bar copied
+    from another model sat just under this fixture's own baseline).
+  - `nemotron-tiny` always; `nemotron3nano-tiny` where its MoE is admitted on CUDA, else its decline reason is recorded.
+  - **int8int8 is not graded:** it must decline by name, test pinned (`buildMamba`'s counterpart), planted by removing the decline.
+  - **Plant:** the conv window shifted in the CUDA build only, the CPU keeping the right math: M must fail.
+- **G, the guards.** A resident built from `nemotron-tiny` is declined by each of the eight sites: the batched step, the prefix
+  snapshot, KV copy, both prefill sites, and the four in `resident.go`. A control (`llama-tiny`) is admitted by the ones where the
+  recurrent check decides. **Plant:** one guard left DeltaNet-only (`kvcopy.go`, then `kvsnap.go`): red.
+- **S, slots.** One KV slot; the batched step declines. Two conversations taking turns on the slot with the state reset between them
+  each give the reply they give alone. **Plant:** the reset leaving the Mamba state: red, both later replies change.
+- **P, pricing.** The KV plan prices attention layers only plus the states (`nemotron-tiny`: 2 attention layers of 5; `qwen35-tiny`'s
+  DeltaNet layers; `llama-tiny` all). **Plant:** only DeltaNet skipped: red.
+- **F, fit, by day, before any tier 1:** every load tier 1 makes is started alone with the server's own flags and its `fit:` and
+  `KV plan:` banner read, or its refusal. A refused load is VOID, not FAIL, and no guard is bypassed.
+
+**Tier 1, by day, under the timing lock, about 10 minutes.** The checkpoint is `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf` in
+nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it on nobara with `cmd/prequant -target cuda`.
+- **The question the card asks first.** Metal's whole-model bundle is 7.27 GB (v17, Mamba projections at int8). The card is 8 GB with
+  about 0.45 GB held by the desktop and a CUDA context. Whether that plus the states and scratch fits is not known; **F answers it
+  from the plan before anything else, and the answer decides which half of the rule below applies.**
+- **If the whole model is admitted:** its resident run against the CPU at int4 by G2-R's harness and bars (greedy lockstep 32
+  steps off the CPU, min cosine ≥ 0.88, argmax ≥ 50%), the dense 1.5B control through the same harness at ≥ 0.95 in the same
+  session (a control failure voids the session). Against `nemotron_real_golden.json.gz` as a second reading.
+- **If it is not:** the registered fallback is the three-layer slice (layers 0, 1 and 14 of the Q8_0, renumbered 0 to 2, with the
+  embedding, final norm and head; `scripts/slice_gguf_layers.py`), same harness and bars. **A slice does not declare:** the whole
+  model's agreement stays unanswered and the matter goes to the owner with the numbers, since on Metal the slice stood in only by the
+  owner's word (2026-10-15). A smaller bundle would answer it (B27's int8 Mamba projections took Metal's from 19.2 to 7.27 GB;
+  int4 Mamba projections would go further and need their own quality gate, `docs/ssm-int8-quality.md`).
+- **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. One
+  decode rate and the time to first token of the sequential prompt are recorded for the 9B, not graded.
+
+**Void, for every gate above:** a model path under `/srv/models` or `/Volumes`; a resident arm whose `DecodePath()` is not
+`cuda-resident` (a silent CPU fallback passes every bar); a skipped test counted as a pass (the record names `--- PASS`); the two
+sides on different drivers; the control failing; a refused load.
+
+**Order, and what a failure does.**
+1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `cuda/resident.go`'s neighbourhood). Gate F's table,
+   and the CUDA int4 bundle's size, are written into this section before step 1's code.
+2. Step 1, then K, D, I. A failure: step 2 does not start.
+3. Step 2, then M, G, S, P. A failure: not declared.
+4. Tier 1. Declaration on its own branch; the matrix regenerates (`go test ./decoder -run HardwareMatrix -update`).
+5. Not in this build: Granite-4.0-H, Nemotron-3-Nano's MoE unless admitted, int8int8, a batched prefill for recurrent families, a
+   speed gate.
+
 **OP2c, KDA.**
 - **Delivers:** Kimi Linear resident.
 - **Size:** M–L.
