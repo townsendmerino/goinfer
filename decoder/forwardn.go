@@ -99,8 +99,7 @@ func (m *Model) hasRecurrentState() bool {
 	if m == nil || m.w == nil || m.w.arch == nil {
 		return false
 	}
-	f, own := m.w.arch.ownForward()
-	return own && f.Recurrent
+	return m.w.arch.recurrent()
 }
 
 // specRollbackSafe reports whether speculative decode's rollback (KVCache.TruncateTo after a partial accept) correctly restores

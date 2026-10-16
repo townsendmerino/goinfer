@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"unsafe"
 )
@@ -40,6 +41,59 @@ func realCacheFor(t *testing.T, f ownForwardFamily) (*Model, *KVCache) {
 	}
 	m := &Model{w: &Weights{arch: arch}}
 	return m, m.NewCache(8)
+}
+
+// realCacheForType is realCacheFor for a model type, whichever loop its family runs.
+func realCacheForType(t *testing.T, mt string) (*Model, *KVCache) {
+	t.Helper()
+	cfg := representativeConfig(mt)
+	if cfg == nil {
+		t.Fatalf("representativeConfig has no case for %q", mt)
+	}
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil {
+		t.Fatalf("resolveArchitecture(%s): %v", mt, err)
+	}
+	m := &Model{w: &Weights{arch: arch}}
+	return m, m.NewCache(8)
+}
+
+// modelTypes is every registered model type with a representative config, read from the registry rather than the own-loop
+// table, which shrinks as families move to the program walker.
+func modelTypes(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, mt := range strings.Split(knownModelTypes(), ", ") {
+		if representativeConfig(mt) != nil {
+			out = append(out, mt)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("no registered model type has a representative config")
+	}
+	return out
+}
+
+// recurrentModelTypes is every registered model type whose architecture carries in-place state (Architecture.recurrent),
+// read from the registry rather than the own-loop table, which shrinks as families move to the program walker.
+func recurrentModelTypes(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, mt := range strings.Split(knownModelTypes(), ", ") {
+		cfg := representativeConfig(mt)
+		if cfg == nil {
+			continue
+		}
+		arch, _, err := resolveArchitecture(cfg)
+		if err != nil || !arch.recurrent() {
+			continue
+		}
+		out = append(out, mt)
+	}
+	if len(out) == 0 {
+		t.Fatal("no registered model type is recurrent: the census would test nothing")
+	}
+	return out
 }
 
 // recurrentKinds returns KVCache's allocated recurrent-state kinds: every []*struct field except
@@ -142,12 +196,12 @@ func recurrentDirt(names []string, fields []reflect.Value) []string {
 // per-position history), and TruncateTo(0) must zero every kind (the next conversation must not
 // start on the last one's state).
 func TestKVCache_recurrentKindsResetAndRewindHonestly(t *testing.T) {
-	for _, f := range ownForwards {
-		t.Run(f.Name, func(t *testing.T) {
-			_, c := realCacheFor(t, f)
+	for _, mt := range recurrentModelTypes(t) {
+		t.Run(mt, func(t *testing.T) {
+			_, c := realCacheForType(t, mt)
 			names, fields := recurrentKinds(c)
 			if len(names) == 0 {
-				return // no recurrent kinds: nothing to rewind dishonestly
+				t.Fatalf("%s is recurrent but NewCache allocated no recurrent kind", mt)
 			}
 			fillRecurrent(t, fields)
 			for range 3 {
@@ -171,16 +225,7 @@ func TestKVCache_recurrentKindsResetAndRewindHonestly(t *testing.T) {
 // sessionLRU evicts the coldest conversation at the default --kv-sessions, must not hand the next
 // conversation this one's state.
 func TestSession_bailingHybridNeverReusesKDAState(t *testing.T) {
-	var fam ownForwardFamily
-	for _, f := range ownForwards {
-		if f.Name == "bailing_hybrid" {
-			fam = f
-		}
-	}
-	if fam.Name == "" {
-		t.Fatal("bailing_hybrid is no longer in ownForwards — this gate would test nothing")
-	}
-	m, _ := realCacheFor(t, fam)
+	m, _ := realCacheForType(t, "bailing_hybrid")
 	s := m.NewSession(8)
 	names, fields := recurrentKinds(s.cache)
 	if len(names) == 0 {
@@ -212,16 +257,7 @@ func TestSession_bailingHybridNeverReusesKDAState(t *testing.T) {
 // recurrent cache. The other half matters more: every case where the skip must NOT happen is pinned too, because a wrongly skipped reset is the
 // cross-conversation state leak audit C-01 and C-03 closed.
 func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
-	var fam ownForwardFamily
-	for _, f := range ownForwards {
-		if f.Name == "bailing_hybrid" {
-			fam = f
-		}
-	}
-	if fam.Name == "" {
-		t.Fatal("bailing_hybrid is no longer in ownForwards — this gate would test nothing")
-	}
-	m, _ := realCacheFor(t, fam)
+	m, _ := realCacheForType(t, "bailing_hybrid")
 	prompt := []int{4, 5, 6}
 
 	t.Run("new session: no reset at all before the first generation", func(t *testing.T) {

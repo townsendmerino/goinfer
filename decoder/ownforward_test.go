@@ -179,17 +179,18 @@ func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 // reconcile). A family recurrent in one sense and not the other leaks state across sessions (audit C-02/C-03).
 //
 // TestOwnForward_recurrentBitMatchesTheCacheKinds is DERIVED, not listed: both predicates could omit the same
-// state (KDA) and agree, so the cache is asked directly. Each own-forward family's REAL cache is built by
-// NewCache from its representativeConfig and its recurrent kinds are found by reflection (recurrentKinds); the
-// registry bit, both hasRecurrentState views and speculative rollback must all agree with that.
+// state (KDA) and agree, so the cache is asked directly. Every registered family's REAL cache is built by NewCache
+// from its representativeConfig and its recurrent kinds are found by reflection (recurrentKinds); the architecture's
+// rule (Architecture.recurrent: the own-loop table's bit, or the program's operations), both hasRecurrentState views
+// and speculative rollback must all agree with that.
 func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {
-	for _, f := range ownForwards {
-		t.Run(f.Name, func(t *testing.T) {
-			m, c := realCacheFor(t, f)
+	for _, mt := range modelTypes(t) {
+		t.Run(mt, func(t *testing.T) {
+			m, c := realCacheForType(t, mt)
 			names, _ := recurrentKinds(c)
 			allocated := len(names) > 0
-			if f.Recurrent != allocated {
-				t.Errorf("table Recurrent=%v, but NewCache allocates recurrent kinds %v", f.Recurrent, names)
+			if m.w.arch.recurrent() != allocated {
+				t.Errorf("Architecture.recurrent()=%v, but NewCache allocates recurrent kinds %v", m.w.arch.recurrent(), names)
 			}
 			if got := c.hasRecurrentState(); got != allocated {
 				t.Errorf("KVCache.hasRecurrentState()=%v, but the cache holds recurrent kinds %v — every "+

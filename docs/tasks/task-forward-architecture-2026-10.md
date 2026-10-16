@@ -1856,6 +1856,26 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - Every `mla` parameter is live except `mla.HeadWise`, which is listed: only Bailing's MLA layers carry the gate.
   - Log: `docs/measurements/op3-2026-10/op3e-PL.log`.
 
+**OP3f, Bailing Hybrid (MLA and KDA): readings, 2026-10-16 (same branch).**
+- **The build:**
+  - Bailing walks the program: the pre-norm layer with `opKDA` on its linear layers and `opMLA` on the rest. `opKDA`'s
+    parameters are the output norm's epsilon and the decay gate's lower bound. The safe gate is not a parameter: the CPU
+    implements only that form, and the adapter refuses a checkpoint without it.
+  - Its loop file, `decoder/forward_bailing.go`, is gone.
+- **The rule that matters most here:** the table's `Recurrent` bit kept speculative rollback off a family with in-place state.
+  - It is now `Architecture.recurrent`: the table's bit for a family still listed, otherwise any recurrent operation in the
+    family's layers.
+  - `Model.hasRecurrentState` and the hybrid image prefill's check (`imageTurnDecodesResident`) read it.
+- **Tests that iterated the own-loop table** would have lost each family as it moved, while staying green. They now iterate every
+  registered model type: the recurrent-state census, the cache-state grid's rewind and rollback cells, and the check that the
+  recurrence rule agrees with the cache NewCache allocates (227 subtests).
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `bailing_hybrid` in all three cells. Log: `docs/measurements/op3-2026-10/op3f-identity-tiny.log`.
+- **P and L: PASS.** `mla.HeadWise` is now reached, since Bailing's fixture has the gate, and is off the list. `kda.Eps` and
+  `kda.LowerBound` are live. Log: `docs/measurements/op3-2026-10/op3f-PL.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

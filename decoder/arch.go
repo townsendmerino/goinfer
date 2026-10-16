@@ -152,7 +152,7 @@ type Architecture struct {
 	// kda, when non-nil, marks Bailing Hybrid's (Ling 3.0) Kimi Delta Attention linear-attention layers, alternating with MLA
 	// (mla, above) every LayerGroupSize-th layer; layerIsLinear picks which, the same hook qwen35 uses. A delta-rule
 	// recurrence like Gated DeltaNet, but with a per-channel decay (one value per row of the state matrix) where Gated DeltaNet
-	// has one scalar per head. Own forward (forward_bailing.go). nil for every other family.
+	// has one scalar per head. Its layers are opKDA (Architecture.layerOps). nil for every other family.
 	kda *kdaParams
 
 	// llama4, when non-nil, marks a Llama 4 text decoder (llama4_text): the iRoPE
@@ -805,9 +805,6 @@ var ownForwards = []ownForwardFamily{
 	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true, false, false},
 	// nemotron_h: single-op-per-block hybrid.
 	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true, false, false},
-	// bailing_hybrid: MLA / KDA hybrid (Ling 3.0). bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse
-	// mlaAttention directly), so Architecture.layerOps must not build DeepSeek's program for it while it is listed here.
-	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token
 }
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or

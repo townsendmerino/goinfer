@@ -305,7 +305,6 @@ func indexesOf(ops []op, k opKind) []int {
 // passes a pair only when it changes some fixture's logits, or is listed here; a listed pair that does change is stale.
 var programParamUnreached = map[string]string{
 	"ffn.Limit":              "gpt-oss's clamp bound: the tiny fixture's gate and up values never reach 7, so a doubled bound clamps nothing either",
-	"mla.HeadWise":           "the MLA output gate's granularity: DeepSeek has no gate; Bailing Hybrid's MLA layers do, and move in OP3f",
 	"ffn.MoE.PerExpertScale": "Gemma 4's router extra, read only by its own loop",
 	"ffn.MoE.RouterPreNorm":  "Gemma 4's router extra, read only by its own loop",
 	"head.Norm.Slot":         "the head has one norm weight; the slot names it and is not read",
@@ -512,6 +511,8 @@ func opParamValue(o *op) (reflect.Value, string, bool) {
 		p = &o.res
 	case opMLA:
 		p = &o.mla
+	case opKDA:
+		p = &o.kda
 	default:
 		return reflect.Value{}, "", false
 	}

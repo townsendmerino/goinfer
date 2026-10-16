@@ -140,6 +140,11 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 			case opMLA:
 				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
+			case opKDA:
+				kp := *arch.kda
+				kp.LowerBound = o.kda.LowerBound
+				copy(m.reg(o.out, h, scr), kdaMixerStep(m.be, m.reg(o.in, h, scr), lw.kda, kp, arch.HiddenDim, o.kda.Eps, cache.kda[l]))
+				lastFFN = false
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.kind)
 			}

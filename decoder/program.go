@@ -33,6 +33,7 @@ const (
 	opFFN                         // in → out
 	opResidual                    // the residual += regA (and regB)
 	opMLA                         // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
+	opKDA                         // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
 )
 
 // opReg names a per-stream buffer an operation reads or writes.
@@ -59,6 +60,7 @@ type op struct {
 	ffn     ffnParams
 	res     residualParams
 	mla     mlaOpParams
+	kda     kdaOpParams
 }
 
 // normSlot selects which of a layer's norm weights an opNorm applies.
@@ -162,6 +164,14 @@ type mlaOpParams struct {
 	HeadWise   bool
 }
 
+// kdaOpParams are an opKDA's: the gated output norm's epsilon and the decay gate's lower bound. The head and conv sizes, and
+// whether the gates carry a LoRA, are shapes, read from the Architecture; the CPU implements the safe (bounded) decay gate only,
+// and the adapter refuses a checkpoint without it.
+type kdaOpParams struct {
+	Eps        float64
+	LowerBound float64
+}
+
 // mlaOpParamsAt is layer l's opMLA parameters.
 func (a *Architecture) mlaOpParamsAt(l int) mlaOpParams {
 	return mlaOpParams{InvFreq: a.ropeInvFreq(l), Mscale: a.ropeMscale(l), Interleave: a.mla.ropeInterleave, Eps: a.NormEps,
@@ -257,8 +267,11 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 		return a.llama4LayerOps(l, input, ffn)
 	}
 	if a.mla != nil {
-		return []op{input(slotPreAttn), {kind: opMLA, in: regX, out: regA, mla: a.mlaOpParamsAt(l)},
-			{kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
+		mixer := op{kind: opMLA, in: regX, out: regA, mla: a.mlaOpParamsAt(l)}
+		if a.kda != nil && a.isLinearLayer(l) { // Bailing Hybrid: KDA on the linear layers, MLA on the rest
+			mixer = op{kind: opKDA, in: regX, out: regA, kda: kdaOpParams{Eps: a.NormEps, LowerBound: a.kda.LowerBound}}
+		}
+		return []op{input(slotPreAttn), mixer, {kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
 	}
 	ops := []op{input(slotPreAttn)}
 	ops = append(ops, a.attentionOps(l)...)
@@ -304,11 +317,28 @@ func (a *Architecture) attentionOps(l int) []op {
 
 func (k opKind) String() string {
 	names := [...]string{opNorm: "norm", opProjQKV: "proj-qkv", opQKNorm: "qk-norm", opRope: "rope", opAttnTemp: "attn-temp",
-		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla"}
+		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
 	return fmt.Sprintf("op(%d)", uint8(k))
+}
+
+// recurrent reports whether a layer carries state mutated in place per token (a conv window, an SSM state, a linear-attention
+// state), which no positional rewind restores: from the own-loop table for a family still listed there, else from its
+// operations. Speculative rollback and the hybrid image prefill read it before any cache exists.
+func (a *Architecture) recurrent() bool {
+	if f, own := a.ownForward(); own {
+		return f.Recurrent
+	}
+	for l := range a.NumLayers {
+		for _, o := range a.layerOps(l, false) {
+			if o.kind == opKDA {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // attnOrder is the attention kernel this family's CPU forward computes in.

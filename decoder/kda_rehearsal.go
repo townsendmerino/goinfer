@@ -4,7 +4,7 @@ import "math"
 
 // KDA (Kimi Delta Attention) recurrence for the linear-attention mixer of Ling-3.0-tiny / Kimi K3
 // (docs/completed/task-families-2026-09.md, F4). It began as a rehearsal that proved the one new piece of KDA's math
-// against a real reference; kdaMixerStep (kda.go, called from forward_bailing.go for bailing_hybrid) now reuses
+// against a real reference; kdaMixerStep (kda.go, run by the program walker's opKDA for bailing_hybrid) now reuses
 // kdaLowerBoundGate and kdaRecurrentStep directly, so this is production code.
 //
 // Verified against fla-org/flash-linear-attention's source (fla/ops/kda/{naive,gate}.py), not the HF modeling file's
