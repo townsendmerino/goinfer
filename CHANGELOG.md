@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Nemotron-H resident on Metal, at int4.** The Mamba-2 mixer and the squared-ReLU MLP run on the GPU; an int8
+  Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models and a three-layer slice of the real
+  Nemotron-Nano-9B-v2; the whole-model run is owed (`docs/queue-engineering.md`, B26).
+- **Faster q4k prefill on Metal.** A model loaded at `--quant q4k` (Phi-3) prefills eight rows a step on the batched
+  step's kernels instead of one token at a time, with bit-identical results: 1.99x on Phi-3 mini at 200 tokens.
+- **The memory-fit guard prices `--quant q4k` at what the load keeps** (Q4_K blocks and int8), not as int4 with its
+  repacks: Phi-3 mini's weights are priced at 2.8 GB, where they were 4.3 GB.
 - **aikit v1.70.2** in all five modules: `DequantizeRowInt8` and `WeightMat.Row` check the destination length in every build and panic on a short one (no goinfer caller passes one: `docs/measurements/aikit-v1702-bump-2026-10-15.md`), and the encoder behind `/v1/embeddings` shares one scratch slab between attention and MLP, about half the scratch, bit-identical.
 
 ## [v0.23.0] — 2026-10-15
