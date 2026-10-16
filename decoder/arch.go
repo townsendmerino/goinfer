@@ -799,8 +799,6 @@ var ownForwards = []ownForwardFamily{
 	{"gemma4", func(a *Architecture) bool { return a.gemma4 != nil }, (*Model).runLayersGemma4, true, false, false, false},
 	// qwen3_5_moe: Gated DeltaNet / softmax hybrid.
 	{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayersQwen35, true, true, false, false},
-	// nemotron_h: single-op-per-block hybrid.
-	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true, false, false},
 }
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or

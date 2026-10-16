@@ -496,8 +496,12 @@ func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden i
 		for i := range mid {
 			mid[i] = geluErf(mid[i])
 		}
+	case ActReLU2: // Nemotron-H's mlp blocks
+		for i := range mid {
+			mid[i] = relu2(mid[i])
+		}
 	default:
-		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu)", act)
+		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu, relu²)", act)
 	}
 	out := make([]float32, hidden)
 	matmul(be, &lw.DownProj, mid, out, 1)

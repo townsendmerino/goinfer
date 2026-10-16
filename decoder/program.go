@@ -197,8 +197,9 @@ const (
 	ffnGated ffnForm = iota + 1
 	ffnNonGated
 	ffnMoE
-	ffnGptOss    // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
-	ffnLlama4MoE // Llama 4: top-k by logit, each expert's INPUT scaled by sigmoid(logit), plus an ungated shared expert (llama4MoEWith)
+	ffnGptOss      // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
+	ffnLlama4MoE   // Llama 4: top-k by logit, each expert's INPUT scaled by sigmoid(logit), plus an ungated shared expert (llama4MoEWith)
+	ffnNemotronMoE // Nemotron 3 Nano: routeExperts over non-gated relu² experts, plus an ungated shared expert (nemotronMoEWith)
 )
 
 type ffnParams struct {
@@ -306,6 +307,9 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 	if a.granite != nil {
 		return a.graniteLayerOps(l, input, ffn)
 	}
+	if a.nemotron != nil {
+		return a.nemotronLayerOps(l, input, ffn)
+	}
 	if a.lfm2 != nil && a.isConvLayer(l) {
 		return []op{input(slotPreAttn), {kind: opShortConv, in: regX, out: regA}, {kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
 	}
@@ -338,7 +342,7 @@ func (a *Architecture) attentionOps(l int) []op {
 	if a.QKNorm {
 		ops = append(ops, op{kind: opQKNorm, qkNorm: qkNormParams{Form: qkRMS, Whole: a.QKNormWhole, Eps: a.NormEps, AddOne: a.RMSAddOne}})
 	}
-	if !a.LearnedPosEmbed && !a.isNoPELayer(l) {
+	if !a.LearnedPosEmbed && !a.isNoPELayer(l) && len(a.ropeInvFreq(l)) > 0 { // an empty table rotates nothing (Nemotron-H)
 		ops = append(ops, op{kind: opRope, rope: ropeParams{
 			Kernel: ropeAtKernel, InvFreq: a.ropeInvFreq(l), Mscale: a.ropeMscale(l), Interleave: a.ropeInterleave,
 			MRopeSection: a.MRopeSection, MRopeInterleaved: a.MRopeInterleaved,
@@ -409,7 +413,7 @@ func (a *Architecture) attnOrder() attnOrder {
 		return attnQuery
 	case a.mla != nil:
 		return attnMLA
-	case a.lfm2 != nil, a.granite != nil:
+	case a.lfm2 != nil, a.granite != nil, a.nemotron != nil:
 		return attnQuery
 	}
 	return attnBatchedAcc64
@@ -434,6 +438,29 @@ func (a *Architecture) graniteLayerOps(l int, input func(normSlot) op, ffn func(
 		return ops
 	}
 	return append(ops, input(slotPreMLP), ffn(regA), resid)
+}
+
+// nemotronLayerOps is a Nemotron-H layer: one operation per block, pre-norm with a residual add. A mamba block is Mamba-2 with
+// per-group gated norms, an attention block is NoPE GQA through attendQuery, an mlp block is a non-gated relu² FFN, and a moe
+// block is Nemotron 3 Nano's relu² MoE.
+func (a *Architecture) nemotronLayerOps(l int, input func(normSlot) op, ffn func(opReg) op) []op {
+	np := a.nemotron
+	ops := []op{input(slotPreAttn)}
+	switch np.blockKind[l] {
+	case nemoMamba:
+		ops = append(ops, op{kind: opMamba2, in: regX, out: regA, mamba: mamba2OpParams{Eps: a.NormEps, NormGroups: np.NGroups}})
+	case nemoAttn:
+		ops = append(ops, a.attentionOps(l)...)
+	case nemoMLP:
+		f := ffn(regA)
+		f.ffn = ffnParams{Form: ffnNonGated, Act: a.Act}
+		ops = append(ops, f)
+	case nemoMoE:
+		f := ffn(regA)
+		f.ffn = ffnParams{Form: ffnNemotronMoE, Act: a.Act, MoE: *a.MoE}
+		ops = append(ops, f)
+	}
+	return append(ops, op{kind: opResidual})
 }
 
 // mamba2Shapes is the Mamba-2 geometry of a Granite or Nemotron-H layer, with gated-norm group count g.

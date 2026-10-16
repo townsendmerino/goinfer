@@ -1920,6 +1920,23 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - `TestFitEstimate_q4kAgreesWithResidentWeightBytes`: the fit guard refused the 1.5B because the Mac had 2.7 GB available
     at that moment. This is the machine's memory, not this change.
 
+**OP3i, Nemotron-H: readings, 2026-10-16 (same branch).**
+- **The build:** Nemotron-H walks the program (`Architecture.nemotronLayerOps`). Each layer is one operation, pre-norm, with a
+  residual add:
+  - `opMamba2` with per-group gated norms;
+  - NoPE GQA attention through `attendQuery`;
+  - the generic non-gated FFN, now with relu² and the width read from the weights (it varies by layer);
+  - `ffnNemotronMoE`.
+  - A layer whose rope table is empty now gets no `rope` operation; it rotated nothing before.
+  - `nemotronMLP` and the loop are gone.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `nemotron_h` in all six cells (two fixtures). **P and L: PASS.**
+- **The whole decoder package: PASS** apart from the parity manifest's staleness between refreshes. Logs:
+  `docs/measurements/op3-2026-10/op3i-identity-tiny.log`, `docs/measurements/op3-2026-10/op3i-PL.log`,
+  `docs/measurements/op3-2026-10/op3i-decoder-full.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

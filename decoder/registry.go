@@ -1969,7 +1969,7 @@ func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error)
 // family uses. The mamba layers reuse the Mamba-2 mixer (mamba2.go); the attention
 // layers are NoPE GQA (no RoPE — the SSM layers carry position); the mlp layers are
 // non-gated relu². Plain RMSNorm, no multipliers. Dedicated loader + forward
-// (buildNemotronWeights / runLayersNemotron).
+// (buildNemotronWeights; its program is Architecture.nemotronLayerOps).
 func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// Released checkpoints spell the layer sequence as hybrid_override_pattern; only
 	// transformers-instantiated configs carry layers_block_type. Normalize to the latter

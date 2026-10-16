@@ -370,8 +370,11 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		}
 		copy(out, g)
 		return nil
+	case ffnNemotronMoE:
+		copy(out, m.nemotronMoEWith(x, lw, &p.MoE, arch.HiddenDim))
+		return nil
 	case ffnNonGated:
-		g, err := nonGatedMLPWith(x, lw, p.Act, arch.IntermediateDim, arch.HiddenDim, m.be)
+		g, err := nonGatedMLPWith(x, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be)
 		if err != nil {
 			return err
 		}
