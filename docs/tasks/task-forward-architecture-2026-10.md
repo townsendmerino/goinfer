@@ -1109,6 +1109,42 @@ Their gate:
 - **If not:** the same on a layer slice by day, and the whole model at night after a by-day fit check of every load.
 - The checkpoint is pulled to `~/models` first; the archive is never a read path.
 
+**Step 1, the kernels, read 2026-10-15** (branch `op2b-ssm-metal-2026-10`). All tier 0 gates pass.
+
+- **Built:**
+  - `metal/kernels/mamba_kernels_msl.go`: `mamba_conv`, `mamba_ssm` and `mamba_gnorm`, ported from `gpu/mamba.go`'s
+    shaders and appended to the library.
+  - `act_quant`'s squared-ReLU branch: `nongated_act`, ordinal 2, local to `act_quant`, so `glu_act`'s other callers keep
+    their code.
+  - Nothing reaches the new kernels yet.
+- **Two amendments, made before any run:**
+  - **K reads real inputs, not synthetic ones.** The CPU's own `mamba2Step` captures each step's in_proj output and gated
+    output on the tiny fixtures (`decoder.SetMambaCapHook`), and the Metal chain replays the in_proj output from a fresh
+    state.
+  - **The norm-group plant needs its own kernel case.** Both tiny fixtures have one group, so the grouped norm is gated at
+    4 groups against the CPU's `gatedRMSNormGrouped`, through a new test hook.
+- **K:**
+  - The chain against `mamba2Step` over 72 steps, worst cosine 1.000000000: `nemotron-tiny` max |diff| 1.2e-7,
+    `granite-tiny` 7.2e-7.
+  - The gated norm at 4 groups: 2.4e-7.
+  - `act_quant`'s squared ReLU: exact.
+- **D:**
+  - Conv taps shifted by one: red on both fixtures.
+  - Softplus on dt dropped: red on `nemotron-tiny`. `granite-tiny`'s dt sits where softplus is nearly the identity, so
+    there it moved the output by 4e-5 only; logged as that fixture's blind spot.
+  - One group over the full width: red (cosine 0.79).
+  - Plain ReLU for squared ReLU: red.
+  - K fails under every plant, as registered.
+- **I:**
+  - G1-K's 1,095 attention digests are equal on main (`69b37261`) and the branch.
+  - `act_quant` at ordinals 0 and 1 is bit-identical to the kernel rebuilt with `glu_act` in the branch's place.
+- **Found on the way:**
+  - The test's first run read Metal's gated output as all zeros, because the fixture's weight slices aliased a model the
+    test had already closed (fixed by copying them).
+  - It showed as a cosine of 1.0, because the shared `cosF32` returns 1 when one side is all zeros. The Mamba tests use
+    `mambaCos`, which scores that case 0. Other callers of `cosF32` still have the guard.
+- **Next, step 2:** the resident builder learns Nemotron-H's one-operation blocks, with the per-slot state, then M and S.
+
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
