@@ -384,3 +384,8 @@ spaced arguments run past 448 tokens would make the follow-up cold.
 
 No design here, by the owner's order. If Chat Completions is worth building, its record must state that a carrier-less fix
 makes the prompt depend on cache state.
+
+**Owner decision (2026-10-16): no build.** The 9 formatting misses cost 144 tokens in all, every one partial, which does not
+justify the cache-state dependence (warm: the model's bytes; cold: the template's). Revisit if a long tool call goes cold: an
+`edit` or `write` call whose spaced arguments run past the 448-position rollback, the case this count could not see. The
+side-request eviction the same run showed is a separate item: `docs/measurements/side-requests-2026-10/side-requests-2026-10-16.md`.
