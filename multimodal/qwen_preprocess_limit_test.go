@@ -23,9 +23,14 @@ func TestQwenPreprocess_inputPixelLimit_M15(t *testing.T) {
 		}
 		return buf.Bytes()
 	}
-	// A blank 12000x12000 PNG (144 MP) compresses tiny but would allocate ~1.7 GB; must be refused.
-	if _, _, err := QwenPreprocess(enc(12000, 12000), cfg); err == nil {
-		t.Error("144 MP image accepted (M-15): must reject above the input-pixel limit")
+	// A blank 6000x6000 PNG (36 MP, over the 32 Mi-pixel limit) compresses tiny but would allocate ~0.4 GB; it must be
+	// refused. The size only has to clear the limit: a larger one costs the test, not the check.
+	const w, h = 6000, 6000
+	if w*h <= qwenMaxInputPixels {
+		t.Fatalf("the fixture (%d px) is not over the limit (%d): the gate would not exercise the refusal", w*h, qwenMaxInputPixels)
+	}
+	if _, _, err := QwenPreprocess(enc(w, h), cfg); err == nil {
+		t.Errorf("%d MP image accepted (M-15): must reject above the input-pixel limit", w*h/1_000_000)
 	}
 	// A realistic image still works.
 	if _, _, err := QwenPreprocess(enc(224, 224), cfg); err != nil {
