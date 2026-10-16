@@ -1041,6 +1041,36 @@ Their gate:
     sees the router with the real expert count. Fit-check by day first, and if it is refused, it is an owner question, not
     a bypass.
 
+**OP2a on Metal, registered 2026-10-16 before any code** (branch `op2a-mla-metal-2026-10`).
+
+- **Design:** WebGPU's absorbed MLA (`gpu/mla.go`, `gpu/decoderunner.go`), ported to Metal kernels:
+  - the q-LoRA path or the direct q projection;
+  - the KV down-projection with its latent norm and the rope slice, stored per position as one latent row
+    (`kvLoRA + qkRope` values);
+  - q's nope part absorbed through W_UK; q's rope part rotated;
+  - attention over the latent cache;
+  - the lift through W_UV, then the output projection.
+  - Metal's MoE router already routes DeepSeek-V2/V3 (sigmoid, bias, group-limited top-k), so the MoE is unchanged.
+  - Kimi K2's 384-expert router stays out, as above.
+- **The KV:**
+  - an MLA layer's cache is its latent rows, priced so by `ResidentKVBytes`;
+  - the MC3 batched step, the f16 prefill, KV2's slot copy and int8 KV decline an MLA model, each pinned by a test.
+- **Tier 0, by day:**
+  - **M, the tiny models against the CPU at the same quant:** `deepseek-tiny` and `kimi-tiny` resident on Metal at int4,
+    in greedy lockstep for 32 steps off the CPU, graded from position 2.
+    - **The control,** in the same session and harness: `qwen3moe-tiny`, a MoE already resident on Metal. A routing flip
+      under rounding is then something both arms can show.
+    - **The bar:** each MLA fixture's min logit cosine at least the control's minus 0.001, and argmax agreement at least the
+      control's count minus 2. That is gate M's rule (OP2b).
+    - **Planted defect:** q's and k's rope and nope slices swapped in the Metal kernel only. M must fail.
+  - **Guards:** each decline above, with a test; `ResidentKVBytes` for an MLA layer equals its latent size per position.
+- **Tier 1, by day:** a layer slice of DeepSeek-V2-Lite (`scripts/slice_gguf_layers.py`, its first layers including the
+  dense one and one MoE layer) resident on Metal against the CPU at int4, by G2-R's bars (min cosine ≥ 0.88, argmax ≥ 50%)
+  with the dense 1.5B control ≥ 0.95. The checkpoint is pulled to `~/models` first.
+  - This replaces the hidden-state comparison against `deepseek_v2lite_golden.json` written above. That golden holds the
+    whole model's output, which a slice does not produce.
+- **Night, only if the slice passes:** the whole V2-Lite, as above.
+
 **OP2b, SSM (Mamba-2) on CUDA and on Metal.**
 - **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
 - **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).
