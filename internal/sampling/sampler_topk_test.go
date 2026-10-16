@@ -1,9 +1,11 @@
 package sampling
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
+	"sync"
 	"testing"
 )
 
@@ -74,13 +76,16 @@ func topKTestLogits(kind string, v int, rng *rand.Rand) []float32 {
 // the token the full-row sampler draws from the SAME seed, draw after draw — or the row reports ok=false
 // (falls back) and the full path draws instead, having consumed no randomness. Z is passed exactly here;
 // the device's rounded Z is exercised separately below.
+// topKCfg is one sampler configuration of TestSampleFromTopK_matchesFullPath's sweep.
+type topKCfg struct {
+	name          string
+	topK          int
+	topP, minP, T float64
+}
+
 func TestSampleFromTopK_matchesFullPath(t *testing.T) {
 	slowTest(t)
-	type cfg struct {
-		name          string
-		topK          int
-		topP, minP, T float64
-	}
+	type cfg = topKCfg
 	var cfgs []cfg
 	for _, T := range []float64{0.3, 0.8, 1.0, 1.5} {
 		cfgs = append(cfgs,
@@ -91,81 +96,103 @@ func TestSampleFromTopK_matchesFullPath(t *testing.T) {
 			cfg{"topk40+minp0.1+topp0.95", 40, 0.95, 0.1, T},
 		)
 	}
+	// Each (vocab, shape) cell is independent (its own logits, its own samplers per config), so the cells run as parallel
+	// subtests inside one group; the totals are read after the group returns, when every cell has run.
+	var mu sync.Mutex
 	var total, served, mismatched int
-	for _, v := range []int{50, 1000, 32000, 152064} {
-		for _, kind := range []string{"normal", "zipf", "quantized", "flat", "zeros", "peaked"} {
-			rng := rand.New(rand.NewSource(int64(v) * 31))
-			logits := topKTestLogits(kind, v, rng)
-			for _, c := range cfgs {
-				p := SamplingParams{Temperature: c.T, TopK: c.topK, TopP: c.topP, MinP: c.minP, Seed: 12345}
-				full, fast := NewSampler(p), NewSampler(p)
-				if !fast.TopKEligible() {
-					t.Fatalf("%s should be eligible", c.name)
-				}
-				k, ok := fast.TopKWidth(v)
-				if !ok {
-					continue // a top-k wider than the kernel maximum is never served; that is the contract
-				}
-				row := refTopKRow(logits, k, c.T, fast.TopPActive())
-				// The reference order must be the host's own tie order.
-				for i, id := range topKByLogit(logits, min(k, v)) {
-					_ = i
-					found := false
-					for _, r := range row.IDs {
-						if int(r) == id {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Fatalf("v=%d %s: refTopKRow's set differs from topKByLogit's at id %d", v, kind, id)
-					}
-				}
-				// The full path sorts the whole nucleus every draw; on flat rows at a wide vocab that is ~V
-				// candidates, so those cells get few draws. Everything else gets many.
-				draws := 150
-				switch {
-				case v >= 32000 && (kind == "flat" || kind == "zeros"):
-					draws = 3
-				case v >= 32000:
-					draws = 40
-				}
-				// Under -race the DRAW axis is strided by the same constant as the exactness sweep's seeds: every (vocab, shape, config)
-				// cell still runs, with 1/sweepSeedStride of its draws, because this is pure computation the detector finds nothing in
-				// (docs/completed/task-ci-speed-2026-09.md, C8). The full draw count runs in ci.yml's non-race sampler-gates step, which
-				// TestSweepCoverage_fullSweepRunsSomewhere requires to name this test.
-				if sweepSeedStride > 1 {
-					draws = max(1, draws/sweepSeedStride)
-				}
-				for d := 0; d < draws; d++ {
-					want, err := full.SampleWithInfo(logits)
-					if err != nil {
-						t.Fatal(err)
-					}
-					got, used := fast.SampleFromTopK(row, v)
-					total++
-					if used {
-						served++
-					} else {
-						var e error
-						if got, e = fast.SampleWithInfo(logits); e != nil {
-							t.Fatal(e)
-						}
-					}
-					if got.ID != want.ID {
-						mismatched++
-						if mismatched <= 5 {
-							t.Errorf("v=%d %s %s T=%.1f draw %d used=%v: device-path id %d != full-path id %d", v, kind, c.name, c.T, d, used, got.ID, want.ID)
-						}
-					}
-				}
+	t.Run("cells", func(t *testing.T) {
+		for _, v := range []int{50, 1000, 32000, 152064} {
+			for _, kind := range []string{"normal", "zipf", "quantized", "flat", "zeros", "peaked"} {
+				t.Run(fmt.Sprintf("v%d/%s", v, kind), func(t *testing.T) {
+					t.Parallel()
+					cellTotal, cellServed := topKMatchesFullPathCell(t, v, kind, cfgs, &mu, &mismatched)
+					mu.Lock()
+					total, served = total+cellTotal, served+cellServed
+					mu.Unlock()
+				})
 			}
 		}
-	}
+	})
 	if mismatched != 0 {
 		t.Fatalf("%d of %d draws differ from the full path", mismatched, total)
 	}
 	t.Logf("%d draws, %d served from the top-K row (%.1f%%), the rest fell back; 0 mismatches — sweep: %s", total, served, 100*float64(served)/float64(total), sweepMode)
+}
+
+// topKMatchesFullPathCell runs TestSampleFromTopK_matchesFullPath's configs on one (vocab, shape) cell and returns its
+// draws and the draws the K-row served; mismatched (under mu) counts across cells, so only the first five mismatches
+// anywhere are printed.
+func topKMatchesFullPathCell(t *testing.T, v int, kind string, cfgs []topKCfg, mu *sync.Mutex, mismatched *int) (total, served int) {
+	rng := rand.New(rand.NewSource(int64(v) * 31))
+	logits := topKTestLogits(kind, v, rng)
+	for _, c := range cfgs {
+		p := SamplingParams{Temperature: c.T, TopK: c.topK, TopP: c.topP, MinP: c.minP, Seed: 12345}
+		full, fast := NewSampler(p), NewSampler(p)
+		if !fast.TopKEligible() {
+			t.Fatalf("%s should be eligible", c.name)
+		}
+		k, ok := fast.TopKWidth(v)
+		if !ok {
+			continue // a top-k wider than the kernel maximum is never served; that is the contract
+		}
+		row := refTopKRow(logits, k, c.T, fast.TopPActive())
+		// The reference order must be the host's own tie order.
+		for i, id := range topKByLogit(logits, min(k, v)) {
+			_ = i
+			found := false
+			for _, r := range row.IDs {
+				if int(r) == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("v=%d %s: refTopKRow's set differs from topKByLogit's at id %d", v, kind, id)
+			}
+		}
+		// The full path sorts the whole nucleus every draw; on flat rows at a wide vocab that is ~V
+		// candidates, so those cells get few draws. Everything else gets many.
+		draws := 150
+		switch {
+		case v >= 32000 && (kind == "flat" || kind == "zeros"):
+			draws = 3
+		case v >= 32000:
+			draws = 40
+		}
+		// Under -race the DRAW axis is strided by the same constant as the exactness sweep's seeds: every (vocab, shape, config)
+		// cell still runs, with 1/sweepSeedStride of its draws, because this is pure computation the detector finds nothing in
+		// (docs/completed/task-ci-speed-2026-09.md, C8). The full draw count runs in ci.yml's non-race sampler-gates step, which
+		// TestSweepCoverage_fullSweepRunsSomewhere requires to name this test.
+		if sweepSeedStride > 1 {
+			draws = max(1, draws/sweepSeedStride)
+		}
+		for d := 0; d < draws; d++ {
+			want, err := full.SampleWithInfo(logits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, used := fast.SampleFromTopK(row, v)
+			total++
+			if used {
+				served++
+			} else {
+				var e error
+				if got, e = fast.SampleWithInfo(logits); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if got.ID != want.ID {
+				mu.Lock()
+				*mismatched++
+				first := *mismatched <= 5
+				mu.Unlock()
+				if first {
+					t.Errorf("v=%d %s %s T=%.1f draw %d used=%v: device-path id %d != full-path id %d", v, kind, c.name, c.T, d, used, got.ID, want.ID)
+				}
+			}
+		}
+	}
+	return
 }
 
 // TestSampleFromTopK_typicalConfigRarelyFallsBack: the fallback exists for the pathological flat row,
