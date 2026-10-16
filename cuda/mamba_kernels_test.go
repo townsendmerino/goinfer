@@ -166,7 +166,7 @@ func TestMambaKernels_cpuParity(t *testing.T) {
 		r.release()
 		t.Logf("%s: %d steps, nHeads=%d headDim=%d dState=%d nGroups=%d normGroups=%d K=%d: worst cosine %.9f, max |diff| %.3g",
 			dir, f.steps, f.nHeads, f.headDim, f.dState, f.nGroups, f.normGroups, f.K, c, a)
-		if c < 0.99999 || a > 1e-3 {
+		if !(c >= 0.99999) || !(a <= 1e-3) {
 			t.Errorf("%s: the CUDA Mamba-2 chain drifts from the CPU: worst cosine %.9f, max |diff| %.3g", dir, c, a)
 		}
 	}
@@ -206,12 +206,12 @@ func TestMambaGNorm_groups(t *testing.T) {
 		}
 		cos, a := mambaCosNonZero(t, "gated norm", want, run(c.groups))
 		t.Logf("gated norm, %d groups of %d: cosine %.9f, max |diff| %.3g", c.groups, size, cos, a)
-		if cos < 0.99999 || a > 1e-3 {
+		if !(cos >= 0.99999) || !(a <= 1e-3) {
 			t.Errorf("the gated norm at %d groups drifts from the CPU: cosine %.9f, max |diff| %.3g", c.groups, cos, a)
 		}
 		cos, a = mambaCosNonZero(t, "gated norm plant", want, run(1))
 		t.Logf("plant, one group over the full width: cosine %.6f, max |diff| %.3g", cos, a)
-		if cos >= 0.99999 && a <= 1e-3 {
+		if cos >= 0.99999 && a <= 1e-3 { // NaN is not inside the bar, so it reads as red
 			t.Errorf("the norm taken over the full width where %d groups are asked for stayed inside the bar", c.groups)
 		}
 		r.release()
