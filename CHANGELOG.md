@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`/v1/messages` reports prompt-prefix reuse as `usage.cache_read_input_tokens`,** and `input_tokens` is now the prompt
+  tokens the request prefilled, the Messages API's split: the prompt is their sum. Before, `input_tokens` was the whole
+  prompt and no reuse was reported. A cold request reads as before. A client that took `input_tokens` as the prompt size adds
+  `cache_read_input_tokens`; Claude Code already does. A stream's `message_delta` carries the split, and its `message_start`
+  the whole prompt (`docs/server.md`, "usage on /v1/messages").
 - **`--kv f16` now gives the CPU an f16 KV cache** (half the KV bytes; each stored row rounded to f16) for the generic families
   without MoE. Other families stay f32 and the banner says why. `--kv auto` and the library default stay f32, the reference.
   A CPU load given `--kv f16` was priced at f16 over an f32 cache before; it is now priced at what it builds.
