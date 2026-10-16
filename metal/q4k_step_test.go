@@ -18,14 +18,23 @@ import (
 // Every check is bit for bit against the lane's own decode. The model is Qwen2.5-Coder-0.5B q4_k_m, whose attn_v is Q6_K
 // (int8 on the lane) in half the layers, so both rows GEMVs and the multi-segment projections run.
 
-// q4kStepResident loads the 0.5B at --quant q4k with `slots` resident KV slots and builds its resident, which must be on
-// the lane with the batched step built. It skips without the file.
+// q4kStepResident loads the 0.5B at --quant q4k (q4kStepLoad).
 func q4kStepResident(t *testing.T, slots, ctx int) *metalResident {
 	t.Helper()
-	path := os.Getenv("GOINFER_QWEN05_GGUF")
+	return q4kStepLoad(t, "GOINFER_QWEN05_GGUF", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", slots, ctx)
+}
+
+// q4kStepLoad loads the GGUF named by env (else ~/models/<file>) at --quant q4k with `slots` resident KV slots and builds
+// its resident, which must be on the lane with the batched step built. It skips without the file.
+func q4kStepLoad(t *testing.T, env, file string, slots, ctx int) *metalResident {
+	t.Helper()
+	path := os.Getenv(env)
 	if path == "" {
 		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+		path = filepath.Join(home, "models", file)
+	}
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no model at %s", path)
