@@ -324,6 +324,7 @@ type kvAcquired struct {
 	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
 	snapRows int
 	snapDur  time.Duration
+	snapFrom *kvSnap // the snapshot those rows came from
 	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
 	// (Generation.PrefillSlot and PrefillMatch).
 	slotLen, match int

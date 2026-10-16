@@ -349,3 +349,28 @@ func TestKVSnapshot_statsJSON(t *testing.T) {
 		t.Error("a model with a snapshotting resident and a budget reports none supported")
 	}
 }
+
+// A request that restored its prefix from a snapshot does not take a second one of the same family, whatever the model's window
+// (a non-windowed model has no rollback to measure "covered" against): the held snapshot already serves the shared rows. A prompt that
+// runs on past it by more than a rollback replaces it.
+func TestKVSnapshot_aRestoreDoesNotHoldTheFamilyTwice(t *testing.T) {
+	m, f := loadWithSnapFake(t, 1<<30, "", 0) // serveFloor 0: any restore end serves, as on a model with no window
+	_, _, _, _, _, _, vocab := m.Dims()
+	pre := snapToks(1000, 1, vocab)
+	task := func(seed int) []int { return append(slices.Clone(pre), snapToks(300, seed, vocab)...) } // 1,300 ids: a snapshot of 1,280 rows
+	short := snapToks(200, 5, vocab)                                                                 // takes the one slot, never snapshotted
+	snapRun(t, m, "", task(2))
+	snapRun(t, m, "", short)
+	_, g := snapRun(t, m, "", task(3)) // shares 1,000 ids: restores 960 of the first's 1,280 rows
+	st, _ := m.KVSnapshotStats()
+	if g.KVSnapRestored != 960 || st.Held != 1 || st.Taken != 1 || st.Declined["held"] != 1 || f.taken != 1 {
+		t.Errorf("a restored session: restored %d, held %d, taken %d, declined %v", g.KVSnapRestored, st.Held, st.Taken, st.Declined)
+	}
+	// one that runs past the held snapshot's rows by more than a rollback replaces it
+	snapRun(t, m, "", short)
+	snapRun(t, m, "", append(slices.Clone(pre), snapToks(1200, 4, vocab)...)) // 2,200 ids, 2,176 rows
+	st, _ = m.KVSnapshotStats()
+	if st.Held != 1 || st.Taken != 2 || st.Snapshots[0].Rows != 2176 {
+		t.Errorf("a longer prompt of the held family: held %d, taken %d, snapshots %v", st.Held, st.Taken, st.Snapshots)
+	}
+}

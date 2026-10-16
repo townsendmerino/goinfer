@@ -6,7 +6,7 @@ re-serialized body renders another prompt (serve renders a tool's parameters ver
 
   python3 -I replay.py --base http://127.0.0.1:18090 --pid PID --out DIR --max-tokens 24 NAME=ROUTE=BODY.json[.gz] ...
 
-ROUTE is chat (/v1/chat/completions), responses (/v1/responses) or messages (/v1/messages).
+ROUTE is chat (/v1/chat/completions), responses (/v1/responses) or messages (/v1/messages). A trailing @MODEL names the model for that session.
 """
 import argparse, gzip, json, os, sys, threading, time, urllib.request
 from json.decoder import scanstring, JSONDecoder
@@ -110,9 +110,12 @@ def main():
     log = open(os.path.join(a.out, "replay.jsonl"), "w")
     for spec in a.sessions:
         name, route, path = spec.split("=", 2)
+        model = None
+        if "@" in path:  # NAME=ROUTE=PATH@MODEL: this session names another model (a client's small-model request names the alias)
+            path, model = path.rsplit("@", 1)
         raw = read_body(path)
         extra = dict(kv.split("=", 1) for kv in a.set)
-        body = splice(raw, {"stream": "false", "temperature": "0", MAXKEY[route]: str(a.max_tokens)} | ({"store": "false"} if route == "responses" else {}) | extra)
+        body = splice(raw, {"stream": "false", "temperature": "0", MAXKEY[route]: str(a.max_tokens)} | ({"store": "false"} if route == "responses" else {}) | extra | ({"model": json.dumps(model)} if model else {}))
         t0 = time.time()
         print(f"[{time.strftime('%H:%M:%S')}] {name}: {len(body)} bytes to {ROUTES[route]}", flush=True)
         wall, resp = post(a.base + ROUTES[route], body, a.timeout)

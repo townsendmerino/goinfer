@@ -4,7 +4,33 @@ reply and the generated ids are equal on and off; the snapshot counters; the ser
 
   python3 -I compare.py OUT
 """
-import json, os, re, sys
+import base64, json, os, re, sys
+
+PREFIX = "goinfer-reasoning-v2:"
+
+
+def strip_key(v):
+    """A reply without what is random per request or per server start: the response and call ids, and in a signed reasoning blob (carried
+    token ids) the two fields that depend on the server's random signing key: its
+    8-byte key id (bytes 2 to 10) and its 32-byte HMAC (the last 32). Everything else, the model identity, the text and the ids, stays."""
+    if isinstance(v, dict):  # the response and call ids are random per request
+        return {k: ("<id>" if k in ("id", "call_id") and isinstance(x, str) else strip_key(x)) for k, x in v.items()}
+    if isinstance(v, list):
+        return [strip_key(x) for x in v]
+    if isinstance(v, str) and v.startswith(PREFIX):
+        raw = base64.b64decode(v[len(PREFIX):])
+        return PREFIX + base64.b64encode(raw[:2] + raw[10:-32]).decode()
+    return v
+
+
+def same_reply(a, b):
+    """Equal replies, the signing key aside. Chat replies are strings; the Responses and Messages ones are JSON."""
+    if a == b:
+        return True
+    try:
+        return strip_key(json.loads(a)) == strip_key(json.loads(b))
+    except ValueError:
+        return False
 
 LINE = re.compile(r"^request: POST (\S+) .*?prompt_tokens=(\d+) completion_tokens=(\d+) ttft=(\d+)ms total=(\d+)ms reused=(\S+) slot=(\S+) div=(\S+)(.*)$")
 
@@ -29,13 +55,20 @@ def arm(d):
 
 def main():
     out = sys.argv[1]
-    off, on = arm(f"{out}/off"), arm(f"{out}/on")
+    arms = {n: arm(f"{out}/{n}") for n in ("off", "on")}
+    off, on = arms["off"], arms["on"]
+    offn = {r["name"]: i for i, r in enumerate(off[0])}
     bad = 0
     print(f"{'session':10s} {'prompt':>6s} | {'off ttft':>8s} {'on ttft':>8s} {'on reused':>9s} {'restored':>8s} | reply  ids")
-    for i, (a, b) in enumerate(zip(off[0], on[0])):
-        ra, rb = off[1][i], on[1][i]
-        same_r = a["reply"] == b["reply"]
-        same_i = (off[2][i] == on[2][i]) if i < len(off[2]) and i < len(on[2]) else None
+    for i, b in enumerate(on[0]):
+        rb = on[1][i]
+        if b["name"] not in offn:
+            print(f"{b['name']:10s} {rb['prompt']:6d} | {'-':>8s} {rb['ttft']:7.1f}s {rb['reused']:>9s} {rb['snap']:8d} | (no off arm)")
+            continue
+        j = offn[b["name"]]
+        a, ra = off[0][j], off[1][j]
+        same_r = same_reply(a["reply"], b["reply"])
+        same_i = (off[2][j] == on[2][i]) if j < len(off[2]) and i < len(on[2]) else None
         bad += (not same_r) or (same_i is False)
         print(f"{a['name']:10s} {rb['prompt']:6d} | {ra['ttft']:7.1f}s {rb['ttft']:7.1f}s {rb['reused']:>9s} {rb['snap']:8d} | {'equal' if same_r else 'DIFFERENT':6s} {'equal' if same_i else ('n/a' if same_i is None else 'DIFFERENT')}")
     last = on[0][-1].get("kv_snapshots")

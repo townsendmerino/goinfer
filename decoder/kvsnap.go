@@ -355,7 +355,7 @@ func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVSc
 	s := a.Seq(acq.slot)
 	m.resIDs, m.resIDsLora, m.resImgBlocks = s.Tokens(), nil, nil
 	m.kvSetLora(acq.slot, nil)
-	acq.reuse, acq.snapRows, acq.snapDur, acq.shared, acq.src = q, q, d, 0, -1
+	acq.reuse, acq.snapRows, acq.snapDur, acq.snapFrom, acq.shared, acq.src = q, q, d, x, 0, -1
 	st.use(x, q, d)
 	fmt.Fprintf(stderrKV, "kv snapshot: restored %d rows of %d into slot %d in %.1f ms\n", q, x.h.Rows(), acq.slot, float64(d.Microseconds())/1000)
 }
@@ -395,12 +395,22 @@ func (m *Model) residentSnapshotPrompt(slot int, prompt []int, lora *loraRuntime
 	}
 	root := m.kvRootIn(nil, sc.Namespace)
 	var replaced *kvSnap
-	if x := st.covering(root, prompt, b, slack); x != nil {
-		if x.h.Rows() >= b {
-			st.decline("held")
-			return
+	switch x := acq.snapFrom; {
+	case x != nil && b <= x.h.Rows()+kvmgr.RollbackFloor:
+		// This request restored its prefix from x, so the family is held: a snapshot of this prompt would hold the same prefix again,
+		// for the rows only this prompt has. Only a prompt that runs on past x's rows by more than a rollback replaces it.
+		st.decline("held")
+		return
+	case x != nil:
+		replaced = x
+	default:
+		if c := st.covering(root, prompt, b, slack); c != nil {
+			if c.h.Rows() >= b {
+				st.decline("held")
+				return
+			}
+			replaced = c // a longer prompt of the same prefix: take it, then drop the shorter
 		}
-		replaced = x // a longer prompt of the same prefix: take it, then drop the shorter
 	}
 	need := sn.KVSnapshotBytes(b)
 	if need <= 0 {
