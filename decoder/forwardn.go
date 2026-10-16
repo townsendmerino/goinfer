@@ -240,7 +240,7 @@ func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, ca
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
 	// Allocated when the model has ring layers or an int8 cache.
 	var alk, alv []float32
-	if cache.localAny || cache.quant == kvI8 {
+	if cache.localAny || cache.quant.widened() {
 		alk = ps.take(&ps.alk, maxKeys*kvDim)
 		alv = ps.take(&ps.alv, maxKeys*kvDim)
 	}
@@ -348,6 +348,10 @@ func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, ca
 					qi[j] *= scale
 				}
 			}
+			if kvRoundF16ForTest { // F1's reference (causalAttention's twin)
+				roundF16InPlace(ki)
+				roundF16InPlace(vi)
+			}
 			if !isLocal {
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}
@@ -362,9 +366,9 @@ func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, ca
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
 			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 			cache.commitBatch(l, startPos, K, k, v)
-		} else if cache.quant == kvI8 {
-			// int8 global: the Append loop above already quantized the new K/V into
-			// the layer; dequant the full history into f32 scratch for the matmul.
+		} else if cache.quant.widened() {
+			// int8 or f16 global: the Append loop above already narrowed the new K/V into the layer; widen the full history into
+			// f32 scratch for the matmul.
 			nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
 			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 		} else {

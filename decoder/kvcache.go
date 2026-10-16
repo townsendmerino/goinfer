@@ -16,7 +16,27 @@ type kvQuant uint8
 const (
 	kvqF32 kvQuant = iota
 	kvI8
+	kvqF16 // f16 (IEEE binary16, linalg.F32ToF16's rounding): half the bytes; read by widening into scratch, as int8 is
 )
+
+// widened reports whether stored rows are read by widening them into f32 scratch (int8, f16) rather than in place (f32).
+func (q kvQuant) widened() bool { return q != kvqF32 }
+
+// kvRoundF16ForTest rounds each K and V row to f16 and back where it reaches an f32 cache: gate F1's reference
+// (docs/tasks/task-cpu-kv-f16-2026-10.md). The planted defects F1 must see: kvF16NewRowsF32ForTest (a prefill's new ring rows
+// attended at f32) and kvF16RingOffsetForTest (the ring window read one slot late).
+var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
+
+// roundF16InPlace rounds x to f16 and back, the f16 cache's storage rounding.
+func roundF16InPlace(x []float32) {
+	for i, f := range x {
+		x[i] = linalg.F16ToF32(linalg.F32ToF16(f))
+	}
+}
+
+// narrowF16Into stores src as f16 into dst; widenF16Into is its exact inverse. The f16 cache's one rounding (F1's rule).
+func narrowF16Into(dst []uint16, src []float32) { linalg.F32ToF16Slice(dst, src) }
+func widenF16Into(dst []float32, src []uint16)  { linalg.F16ToF32Slice(dst, src) }
 
 // quantizeHeads writes src (nKV contiguous rows of headDim) as int8 into q with
 // one symmetric maxabs/127 scale per head into scales[:nKV]. Per-head (not
@@ -86,6 +106,8 @@ type KVCache struct {
 	headDim            int         // per-head width, for int8 scale striding
 	keysQ, valsQ       [][]int8    // [pos*kvDim] (global int8 layers)
 	keyScale, valScale [][]float32 // [pos*nKV]   (per-(position,head) scale)
+	// f16 KV (quant == kvqF16): global layers store K/V as f16 here, parallel to keys/vals (which stay empty).
+	keysH, valsH [][]uint16 // [pos*kvDim]
 
 	// manualPos decouples pos from Append's last-layer trigger, for families whose last layer never appends (Gemma 4's is KV-shared;
 	// a hybrid's linear layers do not Append): the caller advances pos explicitly via Advance() after each token's full layer sweep.
@@ -199,6 +221,7 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer f
 // a future query can read) is [max(0,count-w), count).
 type ring struct {
 	k, v     []float32 // f32 mode: [w*stride] each; position p at offset (p%w)*stride
+	kh, vh   []uint16  // f16 mode: [w*stride]
 	kq, vq   []int8    // int8 mode: [w*stride]
 	ksc, vsc []float32 // int8 mode: per-(slot,head) scale, [w*nKV]
 	w        int       // window size (slot count)
@@ -208,6 +231,7 @@ type ring struct {
 	headDim  int       // for int8 scale striding (nKV = stride/headDim)
 	tq       []int8    // int8 mode scratch (stride)
 	tsc      []float32 // int8 mode scale scratch (nKV)
+	th       []uint16  // f16 mode scratch (stride)
 }
 
 // write stores position p's k/v into slot p%w and advances count past p. O(stride),
@@ -215,19 +239,14 @@ type ring struct {
 func (r *ring) write(p int, k, v []float32) {
 	if r.stride == 0 {
 		r.stride = len(k)
-		if r.quant == kvI8 {
-			nKV := r.stride / r.headDim
-			r.kq = make([]int8, r.w*r.stride)
-			r.vq = make([]int8, r.w*r.stride)
-			r.ksc = make([]float32, r.w*nKV)
-			r.vsc = make([]float32, r.w*nKV)
-		} else {
-			r.k = make([]float32, r.w*r.stride)
-			r.v = make([]float32, r.w*r.stride)
-		}
+		r.alloc()
 	}
 	slot := p % r.w
-	if r.quant == kvI8 {
+	if r.quant == kvqF16 {
+		o := slot * r.stride
+		narrowF16Into(r.kh[o:o+r.stride], k)
+		narrowF16Into(r.vh[o:o+r.stride], v)
+	} else if r.quant == kvI8 {
 		nKV := r.stride / r.headDim
 		o, so := slot*r.stride, slot*nKV
 		quantizeHeads(k, r.kq[o:o+r.stride], r.ksc[so:so+nKV], nKV, r.headDim)
@@ -247,6 +266,24 @@ func (r *ring) write(p int, k, v []float32) {
 	}
 }
 
+// alloc sizes the ring's storage for its mode once its stride is known.
+func (r *ring) alloc() {
+	switch r.quant {
+	case kvI8:
+		nKV := r.stride / r.headDim
+		r.kq = make([]int8, r.w*r.stride)
+		r.vq = make([]int8, r.w*r.stride)
+		r.ksc = make([]float32, r.w*nKV)
+		r.vsc = make([]float32, r.w*nKV)
+	case kvqF16:
+		r.kh = make([]uint16, r.w*r.stride)
+		r.vh = make([]uint16, r.w*r.stride)
+	default:
+		r.k = make([]float32, r.w*r.stride)
+		r.v = make([]float32, r.w*r.stride)
+	}
+}
+
 // ringDirectDecode makes K=1 decode on an f32 ring read its window in place instead of copying every resident row into scratch
 // each token. It is an A/B handle and a test seam, never read from the environment: tests flip it to compare the two paths bit
 // for bit.
@@ -255,7 +292,7 @@ var ringDirectDecode = true
 // mirrored reports whether the ring holds its second copy: slots [w, 2w) equal slots [0, w), so ANY run of up to w consecutive positions is one contiguous
 // slice of k/v whatever the wrap point. f32 rings only; the int8 ring keeps the copy path (it round-trips the new row through the quantizer).
 func (r *ring) mirrored() bool {
-	return r.quant != kvI8 && r.stride > 0 && len(r.k) == 2*r.w*r.stride
+	return r.quant == kvqF32 && r.stride > 0 && len(r.k) == 2*r.w*r.stride
 }
 
 // ensureMirror allocates the second copy the first time a window wraps, so a layer that never wraps (a short context) costs no extra memory and no copy, and a
@@ -315,11 +352,18 @@ func (c *KVCache) enableRings(window int, isGlobal func(int) bool) {
 	}
 }
 
-// setQuant switches the cache to int8 KV storage (kvI8). Global (append-forever)
-// layers get parallel int8 + scale arrays; ring layers inherit the mode via
-// enableRings (call setQuant FIRST). f32 default leaves everything bit-exact.
+// setQuant switches the cache to int8 (kvI8) or f16 (kvqF16) KV storage. Global (append-forever) layers get parallel arrays;
+// ring layers inherit the mode via enableRings (call setQuant FIRST). f32 default leaves everything bit-exact.
 func (c *KVCache) setQuant(q kvQuant, capHint int) {
 	c.quant = q
+	if q == kvqF16 {
+		c.keysH = make([][]uint16, c.numLayers)
+		c.valsH = make([][]uint16, c.numLayers)
+		for l := range c.numLayers {
+			c.keysH[l] = make([]uint16, 0, capHint*c.kvDim)
+			c.valsH[l] = make([]uint16, 0, capHint*c.kvDim)
+		}
+	}
 	if q == kvI8 {
 		nKV := c.kvDim / c.headDim
 		c.keysQ = make([][]int8, c.numLayers)
@@ -350,7 +394,16 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 		if c.stride[layer] == 0 {
 			c.stride[layer] = len(k) // per-layer KV width, learned on first append (M11)
 		}
-		if c.quant == kvI8 {
+		if c.quant == kvqF16 {
+			if len(c.keysH[layer])+len(k) > cap(c.keysH[layer]) {
+				c.regrowLayer(layer)
+			}
+			o := len(c.keysH[layer])
+			c.keysH[layer] = growU16(c.keysH[layer], len(k))
+			c.valsH[layer] = growU16(c.valsH[layer], len(v))
+			narrowF16Into(c.keysH[layer][o:], k)
+			narrowF16Into(c.valsH[layer][o:], v)
+		} else if c.quant == kvI8 {
 			if len(c.keysQ[layer])+len(k) > cap(c.keysQ[layer]) {
 				c.regrowLayer(layer)
 			}
@@ -404,6 +457,8 @@ func (c *KVCache) regrowLayer(l int) {
 	held := len(c.keys[l]) / st
 	if c.quant == kvI8 {
 		held = len(c.keysQ[l]) / st
+	} else if c.quant == kvqF16 {
+		held = len(c.keysH[l]) / st
 	}
 	rows := held + max(held/4, 256)
 	if c.rowCeiling > held {
@@ -411,6 +466,12 @@ func (c *KVCache) regrowLayer(l int) {
 	}
 	grow := (rows - held) * st
 	kvRegrows.Add(1)
+	if c.quant == kvqF16 {
+		c.regrownBytes += 2 * (cap(c.keysH[l]) + cap(c.valsH[l]))
+		c.keysH[l] = slices.Grow(c.keysH[l], grow)
+		c.valsH[l] = slices.Grow(c.valsH[l], grow)
+		return
+	}
 	if c.quant == kvI8 {
 		nKV := st / c.headDim
 		c.regrownBytes += cap(c.keysQ[l]) + cap(c.valsQ[l]) + 4*(cap(c.keyScale[l])+cap(c.valScale[l]))
@@ -454,6 +515,15 @@ func growI8(s []int8, n int) []int8 {
 	return grown
 }
 
+func growU16(s []uint16, n int) []uint16 {
+	if cap(s)-len(s) >= n {
+		return s[:len(s)+n]
+	}
+	grown := make([]uint16, len(s)+n, max(2*cap(s), len(s)+n))
+	copy(grown, s)
+	return grown
+}
+
 func growF32(s []float32, n int) []float32 {
 	if cap(s)-len(s) >= n {
 		return s[:len(s)+n]
@@ -489,7 +559,10 @@ func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
 		nKV := st / r.headDim
 		for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
 			so, do := (p%r.w)*st, i*st
-			if r.quant == kvI8 {
+			if r.quant == kvqF16 {
+				widenF16Into(k[do:do+st], r.kh[so:so+st])
+				widenF16Into(v[do:do+st], r.vh[so:so+st])
+			} else if r.quant == kvI8 {
 				sso := (p % r.w) * nKV
 				dequantHeads(r.kq[so:so+st], r.ksc[sso:sso+nKV], nKV, r.headDim, k[do:do+st])
 				dequantHeads(r.vq[so:so+st], r.vsc[sso:sso+nKV], nKV, r.headDim, v[do:do+st])
@@ -499,6 +572,15 @@ func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
 			}
 		}
 		return k, v, lo
+	}
+	if c.quant == kvqF16 {
+		n := len(c.keysH[layer])
+		k, v = make([]float32, n), make([]float32, n)
+		if n > 0 {
+			widenF16Into(k, c.keysH[layer])
+			widenF16Into(v, c.valsH[layer])
+		}
+		return k, v, 0
 	}
 	if c.quant == kvI8 {
 		st := c.kvDim
@@ -556,6 +638,11 @@ func (c *KVCache) reserveRows(rows int) {
 		}
 		st := c.stride[l]
 		if st == 0 {
+			continue
+		}
+		if c.quant == kvqF16 {
+			c.keysH[l] = slices.Grow(c.keysH[l], rows*st)
+			c.valsH[l] = slices.Grow(c.valsH[l], rows*st)
 			continue
 		}
 		if c.quant == kvI8 {
@@ -680,6 +767,11 @@ func (c *KVCache) TruncateTo(pos int) (exact bool) {
 		// Global layers: truncate by the per-layer width recorded at first append, not len/pos, which mis-slices a ragged layer left by
 		// a mid-sweep forward error. min guards a KV-shared (stride 0) or shorter-than-pos layer.
 		st := c.stride[l]
+		if c.quant == kvqF16 {
+			c.keysH[l] = c.keysH[l][:min(pos*st, len(c.keysH[l]))]
+			c.valsH[l] = c.valsH[l][:min(pos*st, len(c.valsH[l]))]
+			continue
+		}
 		if c.quant == kvI8 {
 			nKV := 0
 			if c.headDim > 0 {
@@ -720,6 +812,41 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 	hist := startPos - base // resident history rows, ≤ W-1 and ≤ r.count
 	slot0 := base % r.w
 	seg1 := min(hist, r.w-slot0)
+	if r.quant == kvqF16 {
+		// f16 ring: widen the resident window, and round-trip the K new rows through f16 so prefill attends the values decode
+		// will read back (commitBatch stores the same f16).
+		if kvF16RingOffsetForTest {
+			slot0 = (slot0 + 1) % r.w
+			seg1 = min(hist, r.w-slot0)
+		}
+		if seg1 > 0 {
+			len1, src1 := seg1*stride, slot0*stride
+			widenF16Into(dstK[:len1], r.kh[src1:src1+len1])
+			widenF16Into(dstV[:len1], r.vh[src1:src1+len1])
+		}
+		if seg2 := hist - seg1; seg2 > 0 {
+			len1, len2 := seg1*stride, seg2*stride
+			widenF16Into(dstK[len1:len1+len2], r.kh[:len2])
+			widenF16Into(dstV[len1:len1+len2], r.vh[:len2])
+		}
+		if cap(r.th) < stride {
+			r.th = make([]uint16, stride)
+		}
+		th := r.th[:stride]
+		for i := range K {
+			d := (hist + i) * stride
+			if kvF16NewRowsF32ForTest {
+				copy(dstK[d:d+stride], newK[i*stride:(i+1)*stride])
+				copy(dstV[d:d+stride], newV[i*stride:(i+1)*stride])
+				continue
+			}
+			narrowF16Into(th, newK[i*stride:(i+1)*stride])
+			widenF16Into(dstK[d:d+stride], th)
+			narrowF16Into(th, newV[i*stride:(i+1)*stride])
+			widenF16Into(dstV[d:d+stride], th)
+		}
+		return base, hist + K
+	}
 	if r.quant == kvI8 {
 		// int8 ring: dequant the resident window from int8, and round-trip the K
 		// new rows (quantize→dequant) so prefill attends the SAME dequantized K/V
@@ -778,6 +905,14 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 // were already quantized into the layer by the prefill's Append loop, so this
 // dequant covers history + new uniformly (matching decode's dequant reads).
 func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int {
+	if c.quant == kvqF16 {
+		n := len(c.keysH[layer]) / kvDim
+		if n > 0 {
+			widenF16Into(dstK[:n*kvDim], c.keysH[layer])
+			widenF16Into(dstV[:n*kvDim], c.valsH[layer])
+		}
+		return n
+	}
 	nKV := kvDim / c.headDim
 	n := len(c.keysQ[layer]) / kvDim
 	if n == 0 {
@@ -798,18 +933,9 @@ func (c *KVCache) commitBatch(layer, startPos, K int, newK, newV []float32) {
 	stride := len(newK) / K
 	if r.stride == 0 {
 		r.stride = stride
-		if r.quant == kvI8 {
-			nKV := r.stride / r.headDim
-			r.kq = make([]int8, r.w*r.stride)
-			r.vq = make([]int8, r.w*r.stride)
-			r.ksc = make([]float32, r.w*nKV)
-			r.vsc = make([]float32, r.w*nKV)
-		} else {
-			r.k = make([]float32, r.w*r.stride)
-			r.v = make([]float32, r.w*r.stride)
-		}
+		r.alloc()
 	}
-	if r.quant == kvI8 {
+	if r.quant.widened() {
 		for i := range K {
 			o := i * stride
 			r.write(startPos+i, newK[o:o+stride], newV[o:o+stride])
@@ -861,6 +987,9 @@ func (c *KVCache) storedRows(layer, kvDim int) int {
 	}
 	if c.quant == kvI8 {
 		return len(c.keysQ[layer]) / kvDim
+	}
+	if c.quant == kvqF16 {
+		return len(c.keysH[layer]) / kvDim
 	}
 	return len(c.keys[layer]) / kvDim
 }

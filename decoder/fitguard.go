@@ -774,6 +774,12 @@ type kvPrice struct {
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	p.pinned = opts.ResidentContext > 0
 	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
+	if opts.Backend == "" || opts.Backend == "cpu" { // the CPU cache's precision is KVQuant's, where the family allows f16
+		p.kvF16 = false
+		if arch, _, err := resolveArchitecture(cfg); err == nil && opts.KVQuant == "f16" {
+			p.kvF16 = arch.kvF16OK()
+		}
+	}
 	if _, ok := kvPolicies[opts.Backend]; ok {
 		// A backend with a KV policy (kvpolicy.go) is f16 only where the policy says so (the default included), else f32 whatever was requested.
 		p.kvF16 = false

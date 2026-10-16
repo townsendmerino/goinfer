@@ -15,6 +15,9 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`--kv f16` now gives the CPU an f16 KV cache** (half the KV bytes; each stored row rounded to f16) for the generic families
+  without MoE. Other families stay f32 and the banner says why. `--kv auto` and the library default stay f32, the reference.
+  A CPU load given `--kv f16` was priced at f16 over an f32 cache before; it is now priced at what it builds.
 - **DeepSeek-V2 and V3 resident on Metal.** Multi-head latent attention runs on the GPU in its absorbed form, with the latent
   rows as the KV cache. Gated on tiny models, a kernel check of both rope layouts against float64, and a two-layer slice of
   DeepSeek-V2-Lite against the CPU. Kimi K2 stays on the CPU: its 384-expert router is past Metal's 256.

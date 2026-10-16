@@ -215,6 +215,7 @@ var recurrentCells = map[lifecyclePath]stateCell{
 // TestKVCache_everyFieldHasAState fails a field that is in neither.
 var kvCacheFieldState = map[string]cacheState{
 	"keys": statePositional, "vals": statePositional, "stride": statePositional, "pos": statePositional, "manualPos": statePositional,
+	"keysH": statePositional, "valsH": statePositional, // the same rows at f16 (KVQuant f16)
 	"rings": stateRing, "localAny": stateRing,
 	"quant": stateInt8KV, "keysQ": stateInt8KV, "valsQ": stateInt8KV, "keyScale": stateInt8KV, "valScale": stateInt8KV,
 	"mlaLatent": stateMLALatent,
@@ -249,7 +250,7 @@ var kvCacheNotState = map[string]string{
 func (c *KVCache) holdsState(s cacheState) bool {
 	switch s {
 	case statePositional:
-		return len(c.keys) > 0 || len(c.keysQ) > 0
+		return len(c.keys) > 0 || len(c.keysQ) > 0 || len(c.keysH) > 0
 	case stateRing:
 		return c.localAny
 	case stateInt8KV:

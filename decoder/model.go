@@ -84,6 +84,7 @@ type Model struct {
 	kvF16Decline  string       // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	kvH           bool         // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
@@ -337,9 +338,10 @@ type Options struct {
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
 	// at VRAM cost. Only meaningful with MoECacheExperts.
 	MoECacheSlots int
-	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact) or "i8" (per-(position,KV-head)
-	// symmetric int8, 4x smaller, SDOT decode). Lossy, opt-in; declined where Architecture.kvInt8OK says no (MoE, and own-forward
-	// families not marked KVInt8). See task-cpu-kv-quant.md.
+	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact, the reference), "f16" (each stored row
+	// rounded to binary16, half the bytes; the generic loop without MoE, Architecture.kvF16OK, else f32) or "i8" (per-(position,
+	// KV-head) symmetric int8, 4x smaller; declined where Architecture.kvInt8OK says no). The lossy two are opt-in. See
+	// docs/tasks/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
 	KVQuant string
 	// StreamWeights enables on-demand weight residency (idea #2): for an mmap-backed
 	// .giw MoE model, expert weights are paged out of the mapping under a RAM budget
@@ -483,7 +485,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		}
 	}
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,
-		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
+		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
@@ -761,9 +763,9 @@ func (o Options) Validate() error {
 		return fmt.Errorf("decoder: invalid -kv %q (auto | f32 | f16 | i8)", o.KVPrecision)
 	}
 	switch o.KVQuant {
-	case "", "f32", "i8":
+	case "", "f32", "f16", "i8":
 	default:
-		return fmt.Errorf("decoder: invalid -kv-quant %q (f32 | i8)", o.KVQuant)
+		return fmt.Errorf("decoder: invalid -kv-quant %q (f32 | f16 | i8)", o.KVQuant)
 	}
 	return nil
 }
@@ -901,6 +903,8 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// own loop must opt in. Must precede enableRings so local layers inherit the mode.
 	if m.kvI8 && a.kvInt8OK() {
 		c.setQuant(kvI8, capHint)
+	} else if m.kvH && a.kvF16OK() {
+		c.setQuant(kvqF16, capHint) // f16 storage (Options.KVQuant == "f16"); also before enableRings
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
 	// can read. Only for families whose forward uses attendQuery/attendBatchedHeads (kvRingsOK); the others keep append-forever.
