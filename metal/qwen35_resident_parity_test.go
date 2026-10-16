@@ -19,7 +19,7 @@ import (
 // rather than merely starting zeroed.
 func TestQwen35ResidentParityMetal(t *testing.T) {
 	for _, fx := range []struct{ name, quant string }{
-		{"qwen3_5-tiny", "int8int8"},
+		{"qwen3_5-tiny", "int4"}, // int4: at int8 Metal declines a recurrent family (G44)
 		{"qwen3_5_moe-tiny", "int4"},
 	} {
 		t.Run(fx.name, func(t *testing.T) {
@@ -27,7 +27,7 @@ func TestQwen35ResidentParityMetal(t *testing.T) {
 		})
 	}
 	if ck := os.Getenv("GOINFER_DNET_CKPT_METAL"); ck != "" { // a bigger/real checkpoint, opt-in
-		t.Run("env", func(t *testing.T) { qwen35ResidentParityMetal(t, ck, "int8int8") })
+		t.Run("env", func(t *testing.T) { qwen35ResidentParityMetal(t, ck, "int4") })
 	}
 }
 

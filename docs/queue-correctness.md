@@ -18,7 +18,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 ## Queued
 
 **G44 · Metal re-quantizes a Gated-DeltaNet model's int8 weights to int4 instead of declining** — `metal`, **filed 2026-10-15
-(owner), not started**
+(owner); built 2026-10-16 (branch `g44-deltanet-int8-decline-2026-10`)**
 
 Metal's native int8 path covers no recurrent family (`metal/model.go:w8Eligible`: its first slice excludes DeltaNet), so a Qwen3.5,
 Qwen3-Next or Olmo Hybrid model loaded at int8int8 runs resident with its attention, MLP and DeltaNet projections re-quantized to
@@ -31,6 +31,18 @@ at real int8. Native int8 for recurrent families is a later slice of `docs/tasks
 
 **Gate (tier 0):** `qwen35-tiny` at int8int8 does not go resident on Metal; at int4 it does, unchanged. Planted defect: no decline,
 which must turn it red.
+
+**Built 2026-10-16:**
+- **The decline:** `metal/deltanet.go:buildDeltaNet` declines when `recurrentInt8Load` says the load is int8, int8int8 or int4mix.
+  - That predicate reads the load's quant label (`decoder.Model.Quant`), not `ResidentProjsInt4`. The latter reads `qwen35-tiny`
+    (a MoE: no MLP up-projection, attention outside `QProj`) as non-int4 even at int4, which would decline every load.
+  - `metal/mamba.go:buildMamba` takes the same predicate as well, so Nemotron-H at int4mix (int4 MLP, int8 attention) now
+    declines too, where its int8 attention used to be re-quantized.
+- **Gate:** `TestG44_deltaNetInt8Declines` PASS. int8int8 gives the int4-only decline, and through the backend it runs on
+  the CPU. int4 builds. The planted defect (`dnetInt8DeclineOffForTest`) turns it red.
+  - int4mix is GGUF-only, so the tiny safetensors fixtures cannot load it. Its decline is the same predicate, untested here.
+- **`TestQwen35ResidentParityMetal`'s dense fixture moves from int8int8 to int4,** the precision Metal now runs. It had been
+  measuring the re-quantized path. Worst cosine 0.999889 over 128 tokens, argmax 125/128; the MoE fixture reads 0.991138, unchanged.
 
 **G41 · An answer is lost inside the reasoning when a thinking model ends its turn mid-reasoning** — `any`, **filed 2026-10-15
 (owner), not started**
