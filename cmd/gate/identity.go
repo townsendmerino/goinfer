@@ -58,6 +58,7 @@ type identityOpts struct {
 	Assets      string   // tiny | real
 	Quants      []string // nil = defaultIdentityQuants
 	Steps       int
+	Long        bool // -assets real: add a third prompt of about 2,500 tokens
 	ModelsDir   string
 	LogDir      string
 	Keep        bool
@@ -81,6 +82,7 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs.StringVar(&o.Assets, "assets", "tiny", "tiny (the forward goldens' fixtures) | real (small checkpoints under ~/models)")
 	fs.StringVar(&quants, "quant", "", "comma-separated quants (default: cpu f32,int8int8,int4; metal int4,int8int8; webgpu int4; -assets real int4)")
 	fs.StringVar(&only, "only", "", "comma-separated asset names to keep (e.g. coder-0.5b-q4km)")
+	fs.BoolVar(&o.Long, "long", false, "-assets real: add a third prompt of about 2,500 tokens, past the CPU prefill's 2,048-row chunk")
 	fs.IntVar(&o.Steps, "steps", 0, "tokens generated per prompt; logits are dumped for each (default: tiny 8, real 32)")
 	fs.StringVar(&o.LogDir, "logdir", os.TempDir(), "where the run directory (worktrees, builds, dumps, logs) is created")
 	fs.BoolVar(&o.Keep, "keep", false, "keep the dumps, binaries and logs (worktrees are always removed)")
