@@ -2031,6 +2031,35 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   carries the main checkout's gitignored fixtures as clones, so it runs the same tests the main checkout does.
 
 
+**OP3's seams PR: enabling `HiddenLast`, `ForwardSubCapture` and `ForwardCapture` for the pre-OP3 own-loop families
+(registered 2026-10-16, before its code; a behaviour change, so it goes to the owner before merging).**
+- **The change:** the three seams stop refusing the nine families `decoder/seam_refusals.go` lists, and so does the CUDA/WebGPU
+  bisect hook, `ForwardSubCaptureLogitsForTest`. Their layers already run through the walker, which carries the seams. The
+  other refusals in that file (f16 KV's reason text, MC3c's, LoRA's) are not seams and stay.
+- **Gates, tier 0, on every tiny fixture whose family walks a program** (the P/L harness's fixtures: the nine families and
+  the generic ones). A fixture a gate cannot reach is listed as NOT RUN, never passed.
+  - **H, `HiddenLast`:**
+    - its row is bit-identical to the forward's final hidden state: the per-token forward's residual after the last prompt
+      token, with the head's norm applied;
+    - the head over that row reproduces the forward's last logits, bit for bit.
+  - **C, `ForwardCapture`:**
+    - for every layer l, the residual captured after layer l at the prompt's last token is bit-identical to the forward
+      over the same prompt with the program cut to its first l+1 layers;
+    - the capture does not change the logits.
+  - **S, `ForwardSubCapture`:**
+    - for every layer from 1 on, the residual after it is rebuilt bit for bit from the residual before it (from gate C's
+      capture) and the captured contributions, applied the way the layer's own residual operations apply them: one add, the
+      parallel block's joint add, or Granite's scaled add;
+    - a layer with an in-place operation the contributions do not cover (Gemma 4's PLE branch and its MoE block) is skipped,
+      and the skips are counted;
+    - the capture does not change the logits.
+- **Planted defects, each of which must turn its gate red on at least one fixture:**
+  - H: the seam skips the final norm;
+  - C: the capture is taken before the layer's last operation;
+  - S: the attention contribution is captured before its post-attention norm, for the sandwich-norm families.
+- **No tier 1 or night run:** each seam is a copy of a tensor the forward already computes. Gate I is unaffected, since the
+  forward does not change.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
