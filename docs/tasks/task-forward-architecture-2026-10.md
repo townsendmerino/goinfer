@@ -2012,6 +2012,24 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   `Generate`) does not reach either. Moving them onto the batched walker needs their own gate: the PromptHidden and bidirectional
   VL tests that already bound them.
 - **OP3z, part 2:** once S reads, the old loops, `causalAttention`, the old `mlp` dispatch and `programWalkOffForTest` go.
+- **The seams PR (owner, 2026-10-16).** OP3 keeps every pre-OP3 own-loop family's seam refusals exactly
+  (`decoder/seam_refusals.go`, pinned by `TestSeams_ownLoopFamiliesStillRefuse`). Enabling `HiddenLast`, `ForwardSubCapture`
+  and `ForwardCapture` for them is a separate PR, with a gate per seam and a planted defect, which goes to the owner before it
+  merges.
+
+**#62 rebuilt one commit per step (2026-10-16), on the owner's condition that each commit passes the whole decoder package.**
+- Each step's commit is the tree that step ended at, with:
+  - the seam refusals;
+  - the test-fixture fixes found at later steps, moved into the step that first needed them (the dispatch census, the
+    layered recurrent fixtures, the PromptHidden family check);
+  - its own goldens-gated manifest refresh.
+- OP3k and OP3z part 1 are one commit: at OP3k the old table test had nothing left to scan.
+- The final tree differs from the pre-rebuild branch only in the refusals, their test, the removed seam test, these records
+  and the manifest's hashes.
+- **The per-commit check runs at night**, about 85 minutes, beyond the day budget:
+  `docs/measurements/op3-2026-10/run-steps-sweep.sh`, over every rebuilt commit and #61's head. It runs in a worktree that
+  carries the main checkout's gitignored fixtures as clones, so it runs the same tests the main checkout does.
+
 
 ## 5. Track RF — one ragged forward pass
 
