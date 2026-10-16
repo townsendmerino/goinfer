@@ -227,7 +227,7 @@ func TestNemotronResident_tier1Slice(t *testing.T) {
 	const steps = 32
 	home, _ := os.UserHomeDir()
 	ctrlPath := filepath.Join(home, "models", fmt.Sprintf("qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v%d.giw", decoder.GIWFormatVersion))
-	slicePath := filepath.Join(home, "models", "nemotron", "nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw")
+	slicePath := filepath.Join(home, "models", "nemotron", fmt.Sprintf("nemotron-nano-9b-v2.slice-0-1-14.int4-metal.v%d.giw", decoder.GIWFormatVersion))
 	for _, p := range []string{ctrlPath, slicePath} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("VOID: %s is missing", p)
