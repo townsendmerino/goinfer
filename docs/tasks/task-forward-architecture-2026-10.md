@@ -1062,6 +1062,58 @@ Their gate:
       night after a by-day fit check.
   - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt.
 
+**OP2b on Metal: the gates, registered 2026-10-15 before any code.**
+
+**The build:**
+- The Mamba-2 decode kernels in MSL, ported from `gpu/mamba.go`'s shaders: the conv step with its window, the SSM step,
+  and the gated RMSNorm, per group (Nemotron-H) and over the full inner width (Granite-4.0-H).
+- A squared-ReLU branch in `glu_act`. It is a new ordinal (2); 0 and 1 stay as they are.
+- Metal's resident builder learns Nemotron-H's one-operation blocks: Mamba, NoPE attention and the non-gated MLP. The
+  recurrent state is kept per slot and reset with it.
+- `ssm` and `non-gated-relu2` are declared on Metal only after every gate below passes.
+
+**Tier 0, by day: synthetic kernels and tiny fixtures, seconds.**
+
+- **K, each new kernel against the CPU's own computation** (`decoder/mamba2.go:mamba2Step`'s pieces), on synthetic
+  inputs. The bar is `gpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3.
+  - The gated norm at one group and at several.
+  - The conv step over ≥ 2 steps past its window. One step inside the window cannot see a window error (CLAUDE.md's
+    minimal-repro rule).
+  - The SSM step over 64 steps, for drift.
+  - The squared-ReLU branch.
+- **D, plants: each must turn K red.**
+  - The conv window shifted by one.
+  - The softplus on dt dropped.
+  - The group norm taken over the full width where groups are asked for.
+  - Squared ReLU as plain ReLU.
+- **I, identity:** every existing kernel's digest equals base's (G1-K's instrument). Adding the new ordinal changes no
+  existing path.
+- **M, the tiny models against the CPU at the same quant:** `nemotron-tiny` and `granite-tiny` resident on Metal, at
+  int8int8 and int4, in greedy lockstep for 32 steps. Positions from 2 are graded.
+  - **The bar is relative, set by a control in the same session:** `llama-tiny` at the same quant through the same
+    harness.
+  - Each SSM fixture's min logit cosine must be at least the control's minus 0.001, with argmax equal on at least the
+    control's count minus 2.
+  - G2-T is why: its bar was copied without measuring the fixture's own baseline, and sat just under it.
+  - With the conv window plant from D in the Metal build only, M must fail.
+- **S, slots:**
+  - A recurrent family is declined by MC3's batched step and by KV2's sharing, as now.
+  - A test pins both declines.
+  - Two conversations taking turns on one slot, the state reset between them, each give the reply they give alone.
+
+**Tier 1, by day.**
+
+- **Fit-check first:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on Metal, about 5.5 GB.
+- **If it is admitted by day:** its resident run against the CPU at int4, by G2-R's harness and bars (min cosine ≥ 0.88,
+  argmax ≥ 50%), with the dense 1.5B control at 0.95, in one session.
+- **If not:** the same on a layer slice by day, and the whole model at night after a by-day fit check of every load.
+- The checkpoint is pulled to `~/models` first; the archive is never a read path.
+
+**Not in this build:**
+- Granite-4.0-H's own bring-up gate (§4.5).
+- Nemotron-3-Nano's MoE.
+- A speed gate. The do-nothing arm is the CPU, about 15× slower.
+
 **OP2c, KDA.**
 - **Delivers:** Kimi Linear resident.
 - **Size:** M–L.
