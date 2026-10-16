@@ -19,7 +19,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Gemma 2 | ✅ | CPU | CPU | CPU |
+| Gemma 2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 4 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite 4.2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -107,7 +107,7 @@ admission runs.
 | GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos` |
 | GPT-2 | CUDA | missing: `learned-pos`, `non-gated-mlp` |
-| Gemma 2 | WebGPU, CUDA, Metal | missing: `attn-logit-softcap` |
+| Gemma 2 | WebGPU, CUDA | missing: `attn-logit-softcap` |
 | Granite-4.0-H | WebGPU | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
 | Granite-4.0-H | CUDA, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); missing: `ssm` |
 | Kimi K2 | Metal | missing: `mla`; router capacity: 384 experts, the kernel routes 256 |
