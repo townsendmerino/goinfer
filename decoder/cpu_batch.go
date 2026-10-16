@@ -124,7 +124,7 @@ func (m *Model) cpuBatchModelEligible() error {
 // cpuBatchCacheEligible is decodeMultiStep's per-cache scope: f32 append-forever KV (no sliding-window ring, no int8
 // KV) with no adapter, tree mask or manual position. A token on any other cache runs production's own forward.
 func cpuBatchCacheEligible(c *KVCache) error {
-	if c == nil || c.scr == nil || c.localAny || c.quant == kvI8 || c.lora != nil || c.treeMask != nil || c.manualPos {
+	if c == nil || c.scr == nil || c.localAny || c.quant.widened() || c.lora != nil || c.treeMask != nil || c.manualPos {
 		return fmt.Errorf("cpu batch: not a plain f32 append-forever cache")
 	}
 	return nil

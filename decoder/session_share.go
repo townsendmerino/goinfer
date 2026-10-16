@@ -41,6 +41,10 @@ func (c *KVCache) copyPrefixFrom(src *KVCache, n int) error {
 		if st == 0 {
 			continue // a KV-shared layer appends nothing
 		}
+		if src.quant == kvqF16 {
+			c.keysH[l] = append(c.keysH[l][:0], src.keysH[l][:n*st]...)
+			c.valsH[l] = append(c.valsH[l][:0], src.valsH[l][:n*st]...)
+		}
 		if src.quant == kvI8 {
 			nKV := st / src.headDim
 			c.keysQ[l] = append(c.keysQ[l][:0], src.keysQ[l][:n*st]...)

@@ -193,15 +193,16 @@ func (f *Flags) Knobs() *decoder.Knobs {
 	return &decoder.Knobs{"GOINFER_CPU_FAST_ATTENTION": fast}
 }
 
-// CPUKV is the CPU KV cache precision: serve's deprecated --kv-quant when given, else --kv mapped
-// onto the CPU cache, which has no f16 form — so f16 stays f32 there and i8 selects the per-head int8
-// cache. (Both Options fields remain; only the command line unified.)
+// CPUKV is the CPU KV cache precision: serve's deprecated --kv-quant when given, else --kv mapped onto the CPU cache: f16 and
+// i8 select those caches, and auto (the default) and f32 the f32 reference. auto moves to f16 only after the gates read
+// (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). (Both Options fields remain; only the command line unified.)
 func CPUKV(kvQuant, kv string) string {
 	if kvQuant != "" {
 		return kvQuant
 	}
-	if kv == "i8" {
-		return "i8"
+	switch kv {
+	case "i8", "f16":
+		return kv
 	}
 	return "f32"
 }

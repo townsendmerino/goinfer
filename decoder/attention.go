@@ -144,6 +144,11 @@ func causalAttention(
 		}
 	}
 
+	if kvRoundF16ForTest { // F1's reference: the f32 path with each stored row rounded to f16 by hand
+		roundF16InPlace(k)
+		roundF16InPlace(v)
+	}
+
 	// 4. Append this position's K/V, then attend over the stored history through the same attendBatchedHeads kernel (at K=1) that the
 	// batched prefill/verify (forwardN) uses, with f64 accumulation (acc64), so decode is bit-identical to the batched forward for
 	// dense and MoE alike. Same-model speculative decoding requires it: the target's batched verify must reproduce sequential greedy
@@ -153,7 +158,7 @@ func causalAttention(
 	ctx := cache.scr.ctx[:nH*hd]
 	acc64 := true
 	switch {
-	case cache.rings[layer] != nil && ringDirectDecode && cache.rings[layer].quant != kvI8:
+	case cache.rings[layer] != nil && ringDirectDecode && cache.rings[layer].quant == kvqF32:
 		// Local ring layer, f32 (ringDirectDecode): store this token's K/V first, then read the window [base, pos] in place as one
 		// contiguous slice. The write before the read is safe because the slot it takes holds position pos-W, the one row just outside
 		// the window [pos-W+1, pos] (or is empty before the first wrap). The copy path below moves every resident row into scratch each
@@ -180,9 +185,9 @@ func causalAttention(
 		if !cache.manualPos && layer == cache.numLayers-1 {
 			cache.pos++ // commitBatch doesn't step pos; mirror Append's last-layer advance
 		}
-	case cache.quant == kvI8:
-		// int8-KV global: Append quantizes the new K/V into the layer, then dequant the
-		// full history into f32 scratch for the matmul (mirrors forwardN's int8 branch).
+	case cache.quant.widened():
+		// int8- or f16-KV global: Append narrows the new K/V into the layer, then the full history is widened into f32 scratch for
+		// the matmul (mirrors forwardN's branch).
 		cache.Append(layer, k, v)
 		lk, lv := scr.localBufs(cache.storedRows(layer, kvDim) * kvDim)
 		nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)

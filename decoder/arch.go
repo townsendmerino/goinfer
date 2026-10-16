@@ -834,6 +834,16 @@ func (a *Architecture) kvInt8OK() bool {
 	return a.MoE == nil
 }
 
+// kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): the generic loop
+// without MoE, the set the gates were registered on (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). Another family keeps
+// f32 until it is checked on its own.
+func (a *Architecture) kvF16OK() bool {
+	if _, own := a.ownForward(); own {
+		return false
+	}
+	return a.MoE == nil
+}
+
 // kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers, keeping only the W
 // most recent positions. The generic loop reads rings through attendQuery / attendBatchedHeads; a family with its own loop
 // only when its ownForwards entry says KVRings.

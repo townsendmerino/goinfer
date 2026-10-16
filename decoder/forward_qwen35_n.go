@@ -107,7 +107,7 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 				qg, q, gate = make([]float32, K*2*qDim), make([]float32, K*qDim), make([]float32, K*qDim)
 				k, v, ctx = make([]float32, K*kvDim), make([]float32, K*kvDim), make([]float32, K*qDim)
 				attnPool = newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, K, startPos+K, hd, nH), K, startPos+K, hd, false)
-				if cache.quant == kvI8 {
+				if cache.quant.widened() {
 					alk, alv = make([]float32, (startPos+K)*kvDim), make([]float32, (startPos+K)*kvDim)
 				}
 			}
@@ -128,7 +128,7 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, false, arch.MRopeInterleaved)
 				cache.Append(l, ki, vi)
 			}
-			if cache.quant == kvI8 {
+			if cache.quant.widened() {
 				nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
 				attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, true, arch, true, attnPool)
 			} else {
