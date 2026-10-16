@@ -132,7 +132,7 @@ type Config struct {
 	LayerGroupSize   int `json:"layer_group_size"`
 	NumSharedExperts int `json:"num_shared_experts"`
 	// GatedAttentionProjGranularity ("head_wise" | "element_wise" | absent): MLA's optional per-head or per-element sigmoid output
-	// gate (g_proj) on the attention context before the output projection: Laguna's structure (FeatAttnOutputGate) with sigmoid
+	// gate (g_proj) on the attention context before the output projection: Laguna's structure (FeatAttnOutputGateSoftplus) with sigmoid
 	// in place of softplus.
 	GatedAttentionProjGranularity string `json:"gated_attention_proj_granularity_type"`
 	// HeadwiseAttnOutputGate/GateAttnActMode (Spark-X2.5): its own spelling of the same gate-before-out_proj idea: a plain bool

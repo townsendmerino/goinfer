@@ -318,8 +318,8 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 		exact              string
 	}{
 		{modelType: "lfm2", backend: "cuda", want: []string{"runner shape: own forward, not bridged", "`short-conv`"}},
-		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate`"}},
-		{modelType: "spark2_5", backend: "webgpu", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate`", "`gated-gelu-erf`"}},
+		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-softplus`", "`per-layer-query-heads`"}},
+		{modelType: "spark2_5", backend: "webgpu", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-sigmoid`", "`gated-gelu-erf`"}},
 		{modelType: "granitemoehybrid", backend: "cuda", want: []string{"runner shape: bring-up gate", "`ssm`"}},
 		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + runnerShapeBringUp},
 		{modelType: "llama4_text", backend: "cuda", exact: "runner shape: " + runnerShapeOwnForward},
