@@ -3,20 +3,21 @@
 # nobara builds NVIDIA-Nemotron-Nano-9B-v2's int4 .giw from the registered Q8_0 GGUF
 # (GOINFER_NEMOTRON_GGUF), and the Mac copies only the .giw into its ~/models.
 #
-# Run from the Mac:  bash docs/measurements/op2b-step2-2026-10/make-nemotron-giw.sh build
+# Run from the Mac:  [REV=<commit>] bash docs/measurements/op2b-step2-2026-10/make-nemotron-giw.sh build
 #                    bash docs/measurements/op2b-step2-2026-10/make-nemotron-giw.sh pull
 # `build` exits at once if nobara's timing lock is held (the check and the work are one ssh).
 # It holds the lock itself for the conversion, so no timed run overlaps it. `pull` checks
 # the lock in the same ssh as each read, and that the Mac has room for the bundle plus 2 GB.
 set -euo pipefail
 GGUF_NAME=nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf
-GIW_NAME=nemotron-nano-9b-v2-int4-metal.giw
+GIW_NAME=nemotron-nano-9b-v2-int4-metal.v17.giw
+REV=${REV:-origin/main} # the commit whose cmd/prequant builds the bundle (its .giw format)
 REMOTE_DIR=models/nemotron           # under nobara's ~
 LOCAL_DIR="$HOME/models/nemotron"
 
 case "${1:-}" in
 build)
-  ssh -o ConnectTimeout=8 nobara GGUF_NAME="$GGUF_NAME" GIW_NAME="$GIW_NAME" REMOTE_DIR="$REMOTE_DIR" bash -s <<'REMOTE'
+  ssh -o ConnectTimeout=8 nobara GGUF_NAME="$GGUF_NAME" GIW_NAME="$GIW_NAME" REMOTE_DIR="$REMOTE_DIR" REV="$REV" bash -s <<'REMOTE'
 set -euo pipefail
 command -v go >/dev/null || export PATH=/usr/local/go/bin:$PATH # a non-interactive ssh shell has no go on PATH
 cd ~/mycode/goinfer
@@ -31,7 +32,7 @@ fi
 # prequant from origin/main in a detached worktree, so this box's checkout is not moved.
 git fetch -q origin
 wt=$(mktemp -d /tmp/prequant-wt.XXXXXX)
-git worktree add -q --detach "$wt" origin/main
+git worktree add -q --detach "$wt" "$REV"
 trap 'git -C ~/mycode/goinfer worktree remove --force "$wt"' EXIT
 rev=$(git -C "$wt" rev-parse --short HEAD)
 (cd "$wt" && GOWORK=off go build -o "$wt/prequant" ./cmd/prequant)
@@ -40,7 +41,7 @@ start=$(date +%s)
 python3 scripts/timing_lock.py run --label nemotron-int4-giw -- \
   "$wt/prequant" -target metal -quant int4 -o "$out.partial" "$src"
 mv "$out.partial" "$out"
-echo "built $out at origin/main $rev in $(( $(date +%s) - start )) s"
+echo "built $out at $REV $rev in $(( $(date +%s) - start )) s"
 ls -l "$out"; (cd "$(dirname "$out")" && sha256sum "$GIW_NAME" | tee "$GIW_NAME.sha256")
 REMOTE
   ;;

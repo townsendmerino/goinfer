@@ -1,0 +1,16 @@
+=== RUN   TestB26_bundleHoldsInt8MambaProjections
+    b26_mamba_int8_test.go:140: the bundle spends 31680 bytes on the Mamba projections; their int8 size is 29696..31808
+    b26_mamba_int8_test.go:146: planted (f32 kept): 118784 bytes against 29696..31808
+--- PASS: TestB26_bundleHoldsInt8MambaProjections (0.02s)
+=== RUN   TestB26_int8MatchesTheUploadBefore
+--- PASS: TestB26_int8MatchesTheUploadBefore (0.01s)
+=== RUN   TestB26_unknownEncodingRefusedByName
+--- PASS: TestB26_unknownEncodingRefusedByName (0.00s)
+=== RUN   TestB26_cpuFidelityTiny
+    b26_mamba_int8_test.go:252: nemotron-tiny at int4, int8 Mamba against f32: min cosine 0.999808, argmax 30/32
+--- PASS: TestB26_cpuFidelityTiny (0.01s)
+=== RUN   TestB26_cpuFidelitySlice
+    b26_mamba_int8_test.go:264: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestB26_cpuFidelitySlice (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.393s
