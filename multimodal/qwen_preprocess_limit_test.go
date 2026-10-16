@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 	"image"
 	"image/png"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,8 +30,18 @@ func TestQwenPreprocess_inputPixelLimit_M15(t *testing.T) {
 	if w*h <= qwenMaxInputPixels {
 		t.Fatalf("the fixture (%d px) is not over the limit (%d): the gate would not exercise the refusal", w*h, qwenMaxInputPixels)
 	}
-	if _, _, err := QwenPreprocess(enc(w, h), cfg); err == nil {
+	// Refused BEFORE pixel decode: a refusal after decode has already allocated the canvas (4 bytes a pixel), which is the
+	// cost M-15 exists to prevent, so the bytes the call allocates are the check that the header guard ran.
+	bomb := enc(w, h)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, _, err := QwenPreprocess(bomb, cfg)
+	runtime.ReadMemStats(&after)
+	if err == nil {
 		t.Errorf("%d MP image accepted (M-15): must reject above the input-pixel limit", w*h/1_000_000)
+	}
+	if got := after.TotalAlloc - before.TotalAlloc; got > 16<<20 {
+		t.Errorf("refusing the %d MP image allocated %d bytes: it was refused after decoding its pixels, not from its header (M-15)", w*h/1_000_000, got)
 	}
 	// A realistic image still works.
 	if _, _, err := QwenPreprocess(enc(224, 224), cfg); err != nil {
