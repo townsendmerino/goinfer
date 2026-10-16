@@ -953,9 +953,6 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 // all-ZERO table of the same width. The resident rope kernels compute cos=cos(pos·invFreq)·mscale and
 // sin=sin(pos·invFreq)·mscale, so invFreq==0 is the identity rotation ONLY when mscale==1 (RopeMscaleLayer).
 // That holds for every family that sets layerNoPE today; a family combining YaRN with NoPE needs this revisited.
-// Nemotron-H's attention is NoPE as a family (nemotronAttention ropes nothing) and sets no layerNoPE, so its layers get
-// the zero table here too; the feature list does not derive FeatNoPE for it, because a backend that builds Nemotron-H
-// supplies the table this way or its own.
 // A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
 //
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
@@ -970,7 +967,7 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 		width = a.rotaryDim() / 2
 	}
 	out := make([]float32, width)
-	if a.isNoPELayer(i) || a.nemotron != nil {
+	if a.isNoPELayer(i) {
 		return out // all-zero: identity rotation, given mscale==1 on every NoPE layer today
 	}
 	for j, v := range inv {

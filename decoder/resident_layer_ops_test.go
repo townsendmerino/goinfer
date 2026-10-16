@@ -89,8 +89,9 @@ func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 	}
 }
 
-// TestRopeInvFreqLayer_nemotronIsNoPE: Nemotron-H's attention ropes nothing on the CPU, so the table a resident reads for it
-// is all zeros (the identity rotation); a roped family's table is unchanged.
+// TestRopeInvFreqLayer_nemotronIsNoPE: Nemotron-H's attention ropes nothing on the CPU, and its adapter builds no RoPE table
+// (RotaryDim 0, no base), so the table a resident reads for its attention layers is all zeros, the identity rotation. A
+// resident relies on this: Metal's attention ropes with whatever table this returns. A roped family's table is unchanged.
 func TestRopeInvFreqLayer_nemotronIsNoPE(t *testing.T) {
 	nemo := loadTinyOps(t, "nemotron-tiny")
 	checked := 0
