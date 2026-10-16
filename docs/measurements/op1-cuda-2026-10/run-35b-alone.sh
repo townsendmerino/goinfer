@@ -2,7 +2,8 @@
 # OP1 on CUDA: TestQwen36_35B_cache alone, in a fresh process, with the v17 sidecar already built (owner, 2026-10-16), to settle the device gate's
 # one void part. Builds the test binary at REV in a detached worktree (go test -c, so the process is the test and nothing wraps it), runs it, and
 # logs the process's VmHWM and VmSwap and the per-process GPU memory every second until it exits.
-#   python3 scripts/timing_lock.py run --label op1-35b-alone -- env REV=c3a81a9f5026e0ccf1ef13d3e3f082049c440a53 bash docs/measurements/op1-cuda-2026-10/run-35b-alone.sh
+#   python3 scripts/night.py add op1-35b-alone-cuda --est 15 ... -- env REV=<commit> bash docs/measurements/op1-cuda-2026-10/run-35b-alone.sh   (night.py holds the timing lock)
+#   by hand: python3 scripts/timing_lock.py run --label op1-35b-alone -- env REV=c3a81a9f5026e0ccf1ef13d3e3f082049c440a53 bash docs/measurements/op1-cuda-2026-10/run-35b-alone.sh
 # The card must have no other compute process; this refuses to start if one is there. The report line is "VmHWM ... against the 44,000 MB budget"
 # (docs/measurements/b23-cuda-heavy-split-2026-10-15.md: Qwen3.6-35B-A3B, TestPagerDeterminism's reading 41,805 MB plus about 5%).
 set -uo pipefail
@@ -25,6 +26,7 @@ rev=$(git rev-parse --verify "$REV^{commit}") || exit 2
 [ -d "$WT" ] && git worktree remove --force "$WT"
 git worktree add -q --detach "$WT" "$rev" || exit 2
 cd "$WT" && go work init . ./gpu ./cuda ./metal ./demo/agent || exit 2
+[ "${DRY:-0}" = 1 ] && { echo "DRY=1: stopping after the card check, the sidecar check and the worktree ($WT at $rev)"; cd "$SRC" && git worktree remove --force "$WT"; exit 0; }
 (cd cuda && CGO_ENABLED=0 go test -c -tags 'cuda goinfer_testhooks' -o "$OUT/cuda.test" .) || { echo "FATAL: the test binary did not build"; exit 2; }
 { echo "rev: $rev"; echo "started: $(date '+%F %T %Z')"; echo "gpu: $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "swap before: $(free -m | awk '/Swap/{print $3" MB used of "$2}')"; echo "sidecar: $(ls -la "$HOME/models/qwen3.6-35b-a3b-int4.giw" | awk '{print $5, $6, $7, $8}')"; } | tee "$OUT/provenance.txt"
