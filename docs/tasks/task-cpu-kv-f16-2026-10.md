@@ -359,6 +359,38 @@ golden and parity record keeps running at f32. Two checks pin that, before any p
 **The default stays f32** on the command lines as well, until F1–F5 read as registered and the owner says so (§1a).
 The build adds `--kv f16`, a real f16 cache on a CPU load, priced and printed as f16.
 
+## 5b. Built and read, 2026-10-16 (way A; branch `cpu-kv-f16-2026-10`)
+
+- **Built:**
+  - A third storage form (`kvqF16`): rows narrowed to binary16 on append (`linalg.F32ToF16`) and widened into the int8 path's
+    scratch on read, at every cache site of §2, the two session copies and the snapshot (storage byte 2).
+  - `Options.KVQuant` `"f16"`, built where `Architecture.kvF16OK` allows (the generic loop, no MoE).
+  - On the command lines `--kv f16` builds it, and `--kv auto` stays f32.
+  - The fit guard and the per-request budget price the CPU cache at its real precision. That fixes §2's under-count of an
+    f32 cache priced at f16.
+  - The banner prints the CPU cache's precision, and why an f16 request was held at f32.
+- **F0, identity: PASS.** `gate identity` between the branch's base and the build, on this Mac's CPU:
+  - 37 families IDENTICAL at f32, int8int8 and int4 on the tiny assets, none different;
+  - qwen2 IDENTICAL on the 0.5B at f32 and int4;
+  - five not run (missing tiny assets, or real-model slices).
+  - The f32 path did not move, so the parity hashes are refreshed and nothing is re-validated.
+- **F1, exactness: PASS,** zero differing bits in every cell. Fixtures as registered, plus one choice made at the run: the
+  tiny fixtures' windows hold 64 to 128 positions, so the cell at 512 rows or more (the fast gather) ran on
+  Qwen2.5-Coder-0.5B, 600 rows.
+  - Cells: decode, batched prefill (with qwen25vl's image block and m-RoPE positions), the GPU-upload bridge, rewind,
+    snapshot round trip, KV2's session copy, and prefill-equals-decode on a global and a ring layer.
+  - mixtral-tiny keeps f32, and says why.
+  - **Plants:**
+    - new prefill rows attended at f32: 33,213 values differ, red;
+    - the ring read one slot late: 17,374, red;
+    - the snapshot's storage byte left at f32: refused on restore, red.
+    - **A row narrowed twice cannot go red,** and is not built: f32 to f16 to f32 to f16 gives the same bits, because every f16
+      value is exact in f32.
+- **F5, the library default:** `TestKVF16_F5LibraryDefaultIsF32` PASS, and the forward goldens pass in the parity refresh.
+- **Still owed, before `auto` can move:** F3's in-process A/B by day, then F2, F4 and F3's served cells at night, each
+  fit-checked before it is queued. Until they read, and until the owner says so, the default stays f32 everywhere.
+  Record: `docs/measurements/cpu-kv-f16-2026-10-16/`.
+
 ## 6. Risks
 
 - **A slower default.** If the widening pass costs more than the bandwidth it saves at ordinary depths, f16 loses

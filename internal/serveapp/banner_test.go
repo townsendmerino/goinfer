@@ -122,7 +122,11 @@ func TestBanner_contextAndKV(t *testing.T) {
 		{"metal resident, -kv f32 requested", 4096, 32768, 0, "f32", []string{"KV f16"}, []string{"KV f32"}, "f16"},
 		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8", "lossy"}, nil, "i8"},
 	} {
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
+		cpuKV := "" // off the resident path, the CPU cache's own precision: the request, where the family allows it
+		if tc.resKV == "" && (tc.kv == "f16" || tc.kv == "i8") {
+			cpuKV = tc.kv
+		}
+		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV, cpuKVPrec: cpuKV}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
 		got := bannerLine(lines, "context:")
 		for _, want := range tc.want {
 			if !strings.Contains(got, want) {
@@ -532,5 +536,15 @@ func TestBanner_contextSaysWhyAndWarnsAHarness(t *testing.T) {
 				t.Errorf("%s: harness line %q missing %q", tc.name, got, want)
 			}
 		}
+	}
+}
+
+// TestBanner_cpuKVF16HeldAtF32: an f16 request on a CPU load whose family keeps f32 (decoder.Model.CPUKVF16DeclineReason) prints
+// the precision that runs and why, not the request.
+func TestBanner_cpuKVF16HeldAtF32(t *testing.T) {
+	f := bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, cpuKVPrec: "f32", cpuKVF16Decline: "MoE families are not checked for f16 KV yet"}
+	got := bannerLine(modelBannerFrom(f, config{load: loadflags.Flags{KV: "f16"}}), "context:")
+	if !strings.Contains(got, "KV f32") || !strings.Contains(got, "-kv f16 held at f32: MoE") || strings.Contains(got, "lossy") {
+		t.Errorf("an f16 request held at f32 printed %q", got)
 	}
 }
