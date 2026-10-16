@@ -320,9 +320,12 @@ func runCUDAHeavy(argv []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate cuda-heavy: %v\n", err)
 		return 2
 	}
-	if v := os.Getenv("GOINFER_DRAIN_GROUP"); v != "" {
-		fmt.Fprintf(w, "note: GOINFER_DRAIN_GROUP=%s was set in the calling environment — UNSET (the main group sets its own).\n", v)
-		os.Unsetenv("GOINFER_DRAIN_GROUP")
+	// As runGPU does: an ambient drain-group variable would run the draining tests inside a main-group process.
+	for _, v := range []string{"GOINFER_DRAIN_GROUP"} {
+		if val := os.Getenv(v); val != "" {
+			fmt.Fprintf(w, "note: %s=%s was set in the calling environment — UNSET (the main group sets its own).\n", v, val)
+			os.Unsetenv(v)
+		}
 	}
 	g := &gpuGate{w: w, logDir: *logDir, emitted: map[string]bool{}, models: env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))}
 	listed, err := listCUDATests()
