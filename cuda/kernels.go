@@ -372,6 +372,17 @@ func (r *cudaResident) withCap(args ...gpu.KernelArg) []gpu.KernelArg {
 	return append(slices.Clone(args), gpu.ArgValue(r.attnCap))
 }
 
+// mambaPTX: the Mamba-2 decode mixer (mamba_conv, mamba_ssm, mamba_gnorm) for Nemotron-H and Granite-4.0-H, ported from metal/kernels/mamba_kernels_msl.go.
+// A module of its own: no existing PTX holds a Mamba kernel. Not bound by any pipeline until OP2b's resident builder (cuda/mamba.cu).
+//
+//go:embed testdata/mamba.ptx
+var mambaPTX []byte
+
+// nongatedActPTX: relu2_quant, Nemotron-H's non-gated MLP activation (squared ReLU) fused with the symmetric int8 quantization the down projection reads.
+//
+//go:embed testdata/nongated_act.ptx
+var nongatedActPTX []byte
+
 // kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module.
 func (r *cudaResident) kvPTX(f32, kv16 []byte) []byte {
 	if r.kvF16 {
