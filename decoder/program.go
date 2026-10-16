@@ -112,6 +112,7 @@ type attnOrder uint8
 
 const (
 	attnBatchedAcc64 attnOrder = iota + 1 // attendBatchedHeads with float64 accumulation
+	attnSinksF64                          // gpt-oss: inline float64 dots and softmax with a learned sink per head (attendSinksToken)
 )
 
 type attentionParams struct {
@@ -129,12 +130,14 @@ const (
 	ffnGated ffnForm = iota + 1
 	ffnNonGated
 	ffnMoE
+	ffnGptOss // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
 )
 
 type ffnParams struct {
-	Form ffnForm
-	Act  ActKind
-	MoE  MoEConfig // ffnMoE only
+	Form         ffnForm
+	Act          ActKind
+	MoE          MoEConfig // ffnMoE and ffnGptOss
+	Alpha, Limit float64   // ffnGptOss: the gate's sigmoid gain and the clamp bound
 }
 
 type residualParams struct{ Two bool } // adds regA and regB, the parallel block's single residual
@@ -195,6 +198,8 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 	ffn := func(out opReg) op {
 		f := ffnParams{Form: ffnGated, Act: a.Act}
 		switch {
+		case a.gptoss != nil:
+			f.Form, f.MoE, f.Alpha, f.Limit = ffnGptOss, *a.MoE, a.gptoss.SwigluAlpha, a.gptoss.SwigluLimit
 		case a.MoE != nil && hasExperts:
 			f.Form, f.MoE = ffnMoE, *a.MoE
 		case a.NonGatedMLP:
@@ -238,7 +243,7 @@ func (a *Architecture) attentionOps(l int) []op {
 	if !a.isGlobalLayer(l) {
 		window = a.SlidingWindow
 	}
-	ops = append(ops, op{kind: opAttention, attn: attentionParams{Window: window, Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnBatchedAcc64}})
+	ops = append(ops, op{kind: opAttention, attn: attentionParams{Window: window, Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: a.attnOrder()}})
 	if a.hasAttnOutputGate() {
 		ops = append(ops, op{kind: opOutGate, in: regX, gate: outGateParams{Sigmoid: a.AttnGate == GateSigmoid}})
 	}
@@ -252,6 +257,14 @@ func (k opKind) String() string {
 		return names[k]
 	}
 	return fmt.Sprintf("op(%d)", uint8(k))
+}
+
+// attnOrder is the attention kernel this family's CPU forward computes in.
+func (a *Architecture) attnOrder() attnOrder {
+	if a.gptoss != nil {
+		return attnSinksF64
+	}
+	return attnBatchedAcc64
 }
 
 // start is the first key position a query at pos attends.

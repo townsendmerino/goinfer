@@ -501,11 +501,15 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 	return h, nil
 }
 
-// multiStepEligible is the program-level scope of the multi-sequence walker: every layer pre-norm placed (no post-sublayer norm,
-// no copy for post-only placement, no parallel block), a gated dense FFN, no output gate, and no learned positions.
+// multiStepEligible is the program-level scope of the multi-sequence walker: the batched attention kernel on every layer, every
+// layer pre-norm placed (no post-sublayer norm, no copy for post-only placement, no parallel block), a gated dense FFN, no output
+// gate, and no learned positions.
 func (p *program) multiStepEligible() error {
 	if p.layers == nil {
 		return fmt.Errorf("no layer program (an own loop)")
+	}
+	if !p.attnOrderIs(attnBatchedAcc64) {
+		return fmt.Errorf("an attention kernel this walker does not run")
 	}
 	if p.embed.LearnedPos {
 		return fmt.Errorf("learned positions")
@@ -528,14 +532,27 @@ func (p *program) multiStepEligible() error {
 	return nil
 }
 
-// batchEligible reports whether the batched walker runs prog: a layer program with no learned positions and no non-gated FFN.
+// batchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
+// kernel on every layer, and a gated or MoE FFN.
 func (p *program) batchEligible() bool {
-	if p.layers == nil || p.embed.LearnedPos {
+	if p.layers == nil || p.embed.LearnedPos || !p.attnOrderIs(attnBatchedAcc64) {
 		return false
 	}
 	for _, ops := range p.layers {
 		for i := range ops {
-			if ops[i].kind == opFFN && ops[i].ffn.Form == ffnNonGated {
+			if ops[i].kind == opFFN && ops[i].ffn.Form != ffnGated && ops[i].ffn.Form != ffnMoE {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// attnOrderIs reports whether every attention operation in p computes in order o.
+func (p *program) attnOrderIs(o attnOrder) bool {
+	for _, ops := range p.layers {
+		for i := range ops {
+			if ops[i].kind == opAttention && ops[i].attn.Order != o {
 				return false
 			}
 		}

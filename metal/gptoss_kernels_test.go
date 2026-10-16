@@ -21,7 +21,7 @@ import (
 )
 
 // TestGptOssAttnSink_metal gates the sink term against decoder/forward_gptoss.go's
-// gptOssAttention: a per-head learned logit with no key and no value that joins the softmax MAX
+// attendSinksToken: a per-head learned logit with no key and no value that joins the softmax MAX
 // and the DENOMINATOR only —
 //
 //	m     = max(max_s score_s, sink_h)

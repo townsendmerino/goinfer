@@ -68,7 +68,7 @@ type LayerWeights struct {
 
 	// AttnSinks is gpt-oss's per-head learned attention-sink logit ([NumHeads]):
 	// an extra term in each head's softmax denominator (exp(sink_h)) with no value,
-	// bleeding attention mass. nil for every other family. Consumed by gptOssAttention.
+	// bleeding attention mass. nil for every other family. Consumed by attendSinksToken.
 	AttnSinks []float32
 
 	// Shared expert (Qwen-MoE / Qwen2-MoE; set when arch.MoE.SharedIntermediateDim

@@ -814,8 +814,6 @@ var ownForwards = []ownForwardFamily{
 	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false, false, false},
 	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
 	{"llama4_text", func(a *Architecture) bool { return a.llama4 != nil }, (*Model).runLayersLlama4, false, false, false, false},
-	// gpt-oss: per-head attention sinks + clamped-SwiGLU MoE.
-	{"gpt-oss", func(a *Architecture) bool { return a.gptoss != nil }, (*Model).runLayersGptOss, true, false, false, false},
 }
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or
@@ -824,34 +822,34 @@ var ownForwards = []ownForwardFamily{
 func (a *Architecture) hasAttnOutputGate() bool { return a.laguna != nil || a.AttnGate == GateSigmoid }
 
 // kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family with its own layer loop only when
-// its ownForwards entry says KVInt8; otherwise the generic loop, which reads K/V through the int8-aware attention path,
-// except for MoE, where attention runs the acc64 kernel so expert routing stays bit-stable and a quantized cache would
-// reopen that. It is one rule in the table, replacing two hand-written lists that could disagree with kvRingsOK.
+// its ownForwards entry says KVInt8; otherwise a family whose attention is the batched kernel (attnOrder), which reads K/V
+// through the int8-aware path, except for MoE, where attention runs the acc64 kernel so expert routing stays bit-stable and
+// a quantized cache would reopen that.
 func (a *Architecture) kvInt8OK() bool {
 	if f, own := a.ownForward(); own {
 		return f.KVInt8
 	}
-	return a.MoE == nil
+	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
 }
 
-// kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): the generic loop
-// without MoE, the set the gates were registered on (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). Another family keeps
-// f32 until it is checked on its own.
+// kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): a family whose
+// attention is the batched kernel (attnOrder), without MoE, the set the gates were registered on
+// (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). Another family keeps f32 until it is checked on its own.
 func (a *Architecture) kvF16OK() bool {
 	if _, own := a.ownForward(); own {
 		return false
 	}
-	return a.MoE == nil
+	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
 }
 
 // kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers, keeping only the W
-// most recent positions. The generic loop reads rings through attendQuery / attendBatchedHeads; a family with its own loop
-// only when its ownForwards entry says KVRings.
+// most recent positions: a family whose attention is the batched kernel (attnOrder), which reads a ring through
+// attendBatchedHeads; a family with its own loop only when its ownForwards entry says KVRings.
 func (a *Architecture) kvRingsOK() bool {
 	if f, own := a.ownForward(); own {
 		return f.KVRings
 	}
-	return true
+	return a.attnOrder() == attnBatchedAcc64
 }
 
 // ownForward returns this architecture's own layer loop, if it has one.

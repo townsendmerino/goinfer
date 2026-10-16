@@ -38,10 +38,16 @@ func programFixtures(t *testing.T) []programFixture {
 			continue
 		}
 		for _, e := range ents {
-			if !e.IsDir() || !strings.Contains(e.Name(), "tiny") {
+			if !strings.Contains(e.Name(), "tiny") {
 				continue
 			}
 			d := filepath.Join(root, e.Name())
+			if !e.IsDir() {
+				if strings.HasSuffix(e.Name(), ".gguf") {
+					dirs = append(dirs, d) // a tiny GGUF fixture (gpt-oss's is one)
+				}
+				continue
+			}
 			if _, err := os.Stat(filepath.Join(d, "config.json")); err == nil {
 				dirs = append(dirs, d)
 			}
@@ -299,7 +305,7 @@ func indexesOf(ops []op, k opKind) []int {
 var programParamUnreached = map[string]string{
 	"ffn.MoE.NGroup":         "no generic fixture routes by group; one more than 0 is 1, which is still no grouping (deepseek-tiny's own loop has groups)",
 	"ffn.MoE.TopkGroup":      "read only when NGroup > 1, which no generic fixture has",
-	"ffn.MoE.NumExperts":     "a shape: the per-token path's router scratch is sized by the router's rows; only a call without scratch (the batched path) allocates by it",
+	"ffn.Limit":              "gpt-oss's clamp bound: the tiny fixture's gate and up values never reach 7, so a doubled bound clamps nothing either",
 	"ffn.MoE.PerExpertScale": "Gemma 4's router extra, read only by its own loop",
 	"ffn.MoE.RouterPreNorm":  "Gemma 4's router extra, read only by its own loop",
 	"head.Norm.Slot":         "the head has one norm weight; the slot names it and is not read",
@@ -311,8 +317,6 @@ var programParamNeeds = map[string]string{
 	"embed.LearnedPos": "gpt2",
 	"norm.Bias":        "gpt2",
 	"head.Norm.Bias":   "gpt2",
-	"proj-qkv.Bias":    "gpt2",
-	"proj-o.Bias":      "gpt2",
 }
 
 // TestProgram_L_everyParameterIsLive is gate L: every parameter the builder emits, changed alone in every operation that carries

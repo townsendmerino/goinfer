@@ -1314,10 +1314,8 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
 func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own loop calls captureResidual are
-	// wired, every other own-forward family is not. A hand-written list once missed LFM2, whose loop never captures and returned
-	// nil rows through a seam documented to fail loudly.
-	if f, own := a.ownForward(); own && !f.Captures {
+	// Refused for the families whose own loop did not capture before OP3 (seam_refusals.go).
+	if a.ownLoopFamily() && !a.ownLoopCaptured() {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for _, l := range layers {
@@ -1343,9 +1341,8 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // families (they don't route through runLayersFromEmbed's uniform block).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	// Every own-forward family, derived: this seam needs runLayersFromEmbed's uniform block, which no own-forward loop routes
-	// through.
-	if _, own := a.ownForward(); own {
+	// Refused for the families that ran their own loop before OP3 (seam_refusals.go).
+	if a.ownLoopFamily() {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers

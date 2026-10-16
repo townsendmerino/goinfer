@@ -25,7 +25,7 @@ import (
 // arch guard and byte-identical-output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers
@@ -49,7 +49,7 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 // and the LM head in a resident bisect. It does not project to logits; that is the head.
 func (m *Model) FinalNormForTest(h []float32) []float32 {
 	out := append([]float32(nil), h...)
-	normalize(m.w.arch, out, m.w.FinalNorm, m.w.FinalNormBias, m.w.arch.HiddenDim)
+	m.finalNorm(out)
 	return out
 }
 

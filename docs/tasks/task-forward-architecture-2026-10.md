@@ -1791,6 +1791,29 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   | prefill, 4,096 tokens | 4 | 1.001 | 0.995–1.005 | 2 |
   | MC3c step, 4 × depth 128 | 6 | 1.008 | 0.995–1.022 | 1 |
 
+**OP3c, gpt-oss: readings, 2026-10-16 (same branch, stacked on OP3b).**
+- **The build:**
+  - gpt-oss walks the program. Its layer is the generic pre-norm list with two kinds of its own:
+    - the attention order `attnSinksF64` (`decoder/forward_gptoss.go:attendSinksToken`, its kernel moved verbatim);
+    - the FFN form `ffnGptOss`, whose gate's sigmoid gain and clamp bound are parameters.
+  - `runLayersGptOss` and its table entry are gone.
+- **The rules the table entry answered now decline by operation:**
+  - ring storage, int8 KV and f16 KV need the batched attention kernel (`Architecture.attnOrder`);
+  - the batched walker and MC3c need it too (`program.attnOrderIs`).
+  - So gpt-oss keeps an append-forever f32 cache and the per-token prefill, as before.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- The hidden-state seams' final norm now reads the program's head (`Model.finalNorm`).
+- **I: PASS.** 37 families IDENTICAL against `2c56d9c6`, gpt-oss in all three cells. Log:
+  `docs/measurements/op3-2026-10/op3c-identity-tiny.log`.
+- **P and L: PASS.** The fixtures now include the tiny GGUFs: 37 per token, gpt-oss among them.
+  - gpt-oss's fixture has non-zero q/k/v and o biases, so those two pairs no longer depend on GPT-2.
+  - `ffn.MoE.NumExperts` errors when changed on gpt-oss (its router logits are allocated by it), so it is no longer listed.
+  - `ffn.Limit` is listed: the fixture's gate and up values never reach the clamp bound of 7.
+  - Log: `docs/measurements/op3-2026-10/op3c-PL.log`.
+- No T1 or S: OP3c changes no walker's existing path.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

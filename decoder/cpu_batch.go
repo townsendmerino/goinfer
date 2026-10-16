@@ -107,7 +107,7 @@ func runStep(f func() ([][]float32, error)) (out [][]float32, err error) {
 // committed family it admits to bit-identity with the production forward.
 func (m *Model) cpuBatchModelEligible() error {
 	a := m.w.arch
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return fmt.Errorf("cpu batch: %s has its own forward", a.Name)
 	}
 	if m.layerPager != nil || m.w.Embed.Rows() == 0 {

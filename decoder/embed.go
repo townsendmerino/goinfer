@@ -37,8 +37,8 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 		return nil, fmt.Errorf("decoder.HiddenLast: empty token sequence")
 	}
 	a := m.w.arch
-	// Derived from the dispatch table (ownForward), not a hand-written list.
-	if _, own := a.ownForward(); own {
+	// Refused for the families that ran their own loop before OP3 (seam_refusals.go).
+	if a.ownLoopFamily() {
 		return nil, fmt.Errorf("decoder.HiddenLast: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	if err := m.checkHiddenIDs("decoder.HiddenLast", ids); err != nil {
@@ -112,7 +112,7 @@ func (m *Model) hiddenLastSequential(ids []int) ([]float32, error) {
 	// Copy before normalizing: h aliases the decode scratch and normalize mutates in place (the
 	// same in-place norm logitsFromHidden does on its way to the head).
 	out := append([]float32(nil), h[:a.HiddenDim]...)
-	normalize(a, out, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+	m.finalNorm(out)
 	return out, nil
 }
 
@@ -210,6 +210,6 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 	}
 	// Copy before normalizing: h aliases the decode scratch and normalize mutates in place.
 	out := append([]float32(nil), h[:a.HiddenDim]...)
-	normalize(a, out, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+	m.finalNorm(out)
 	return out, nil
 }

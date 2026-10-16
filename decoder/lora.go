@@ -353,7 +353,7 @@ func (m *Model) LoadAdapter(name, dir string) error {
 // loadAdapter is LoadAdapter without the lifecycle guard (lifecycle.go).
 func (m *Model) loadAdapter(name, dir string) error {
 	arch := m.w.arch
-	_, hasOwnForward := arch.ownForward()
+	hasOwnForward := arch.ownLoopFamily()
 	switch {
 	case m.w.schema == nil:
 		return fmt.Errorf("decoder: compute-time LoRA needs a safetensors base (HF tensor names)")

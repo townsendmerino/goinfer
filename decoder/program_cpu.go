@@ -71,7 +71,9 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 					q[j] *= scale
 				}
 			case opAttention:
-				if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
+				if o.attn.Order == attnSinksF64 {
+					attendSinksToken(o.attn, q, k, v, ctx, cache, arch, lw, l, pos)
+				} else if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
 					return nil, err
 				}
 			case opOutGate:
@@ -144,6 +146,17 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 		}
 	}
 	return h, nil
+}
+
+// finalNorm applies the head stage's norm to one row in place: the norm logitsFromHidden applies before the head, for the seams
+// that stop before it (the hidden states).
+func (m *Model) finalNorm(x []float32) {
+	hp := &m.program().head
+	b := m.w.FinalNormBias
+	if !hp.Norm.Bias {
+		b = nil
+	}
+	applyNorm(hp.Norm, x, x, m.w.FinalNorm, b, m.w.arch.HiddenDim)
 }
 
 // reg resolves an operand to the stream's buffer.
@@ -289,6 +302,13 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *decodeScratch, ld *loraLayerDelta) error {
 	arch := m.w.arch
 	switch p.Form {
+	case ffnGptOss:
+		g, err := m.gptOssMoEWith(x, lw, p, arch.HiddenDim)
+		if err != nil {
+			return err
+		}
+		copy(out, g)
+		return nil
 	case ffnMoE:
 		g, err := moeMLPWith(x, lw, &p.MoE, p.Act, arch.HiddenDim, m.be, scr, m.pager)
 		if err != nil {
