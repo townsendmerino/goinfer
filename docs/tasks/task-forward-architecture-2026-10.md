@@ -1937,6 +1937,32 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   `docs/measurements/op3-2026-10/op3i-identity-tiny.log`, `docs/measurements/op3-2026-10/op3i-PL.log`,
   `docs/measurements/op3-2026-10/op3i-decoder-full.log`.
 
+**OP3j, the Qwen3.5 family (qwen3_5_moe, qwen3_5, qwen3_next, olmo_hybrid): readings, 2026-10-16 (same branch).**
+- **The build:** the per-token loop walks the program. The family's layer is the generic layer with
+  `Architecture.mixerOps`' mixer:
+  - `opDeltaNet` on the linear layers, whose parameters are the norm epsilon, the output norm's own epsilon and the widened
+    write gate;
+  - `opGatedAttn` on qwen3.5's attention layers, whose parameters are the generic QK-norm, rotation and attention
+    parameters;
+  - the generic attention on Olmo Hybrid's plain layers, in the batched kernel's order, which is what `causalAttention`
+    computed.
+  - The family-level attention order, which the cache-layout rules read, stays `attnQuery`, so the cache is unchanged.
+- **Split from the registration's plan:** the batched twin, `runLayersQwen35N`, is unchanged in this step. It is dispatched by
+  its own check (`qwen35BatchN`), and it is not bit-identical to the per-token forward by design. Moving it onto the batched
+  walker is its own step, with its T1, after Gemma 4.
+- **Found while building, fixed:**
+  - `opGatedAttn` ignored its QK-norm form and its attention order. It now uses the shared QK-norm, and refuses an order it does
+    not run. L caught both.
+  - **The whole decoder package found seven test fixtures that build a recurrent family's `Architecture` with no layers, or
+    assert the own-loop table.** Two of them had failed since OP3g, which my targeted run patterns missed.
+    - `recurrentTestModel` and the MTP eligibility fixture now carry one linear layer.
+    - The PromptHidden tests check the family, not the table.
+- **I: PASS.** 37 IDENTICAL: `qwen3_5_moe` in six cells, and `qwen3_5`, `qwen3_next` and `olmo_hybrid` in three each.
+  **P and L: PASS.**
+- Logs: `docs/measurements/op3-2026-10/op3j-identity-tiny.log`, `docs/measurements/op3-2026-10/op3j-PL.log`, and the two
+  whole-package runs: the first, red as described (`docs/measurements/op3-2026-10/op3j-decoder-full-1.log`), and the second,
+  green apart from the manifest's staleness (`docs/measurements/op3-2026-10/op3j-decoder-full-2.log`).
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

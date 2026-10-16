@@ -132,7 +132,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 				}
 			case opQKNorm:
 				for i := range K {
-					applyQKNorm(o.qkNorm, row(q, i, qDim), row(k, i, kvDim), lw, nH, nKV, hd)
+					applyQKNorm(o.qkNorm, row(q, i, qDim), row(k, i, kvDim), lw.QNorm, lw.KNorm, nH, nKV, hd)
 				}
 			case opRope:
 				for i := range K {
@@ -426,7 +426,7 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 				}
 			case opQKNorm:
 				for b := range B {
-					applyQKNorm(o.qkNorm, row(q, b, qDim), row(k, b, kvDim), lw, nH, nKV, hd)
+					applyQKNorm(o.qkNorm, row(q, b, qDim), row(k, b, kvDim), lw.QNorm, lw.KNorm, nH, nKV, hd)
 				}
 			case opRope:
 				for b, c := range caches {

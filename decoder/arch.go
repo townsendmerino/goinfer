@@ -317,7 +317,7 @@ type qwen35Params struct {
 	ONormEps float64
 	// PlainFullAttn (Olmo Hybrid): the full-attention layers are a plain olmo3-shaped self-attention (single-width q/k/v/o,
 	// optional whole-vector QK-norm, generic RoPE/NoPE), not qwen3_5's double-width gated attention. false routes non-linear
-	// layers through loadQwen35Attn / runLayersQwen35's bespoke qwen3.5 attention; true routes them through the shared generic
+	// layers through loadQwen35Attn / the bespoke qwen3.5 attention (opGatedAttn); true routes them through the shared generic
 	// loader path and causalAttention, reusing olmo3's adapter.
 	PlainFullAttn bool
 }
@@ -797,8 +797,6 @@ var ownForwards = []ownForwardFamily{
 	// Fields: Name, is, run, Captures, Recurrent, KVInt8, KVRings.
 	// Gemma 4: per-layer head_dim, KV-sharing, PLE.
 	{"gemma4", func(a *Architecture) bool { return a.gemma4 != nil }, (*Model).runLayersGemma4, true, false, false, false},
-	// qwen3_5_moe: Gated DeltaNet / softmax hybrid.
-	{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayersQwen35, true, true, false, false},
 }
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or

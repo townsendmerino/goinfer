@@ -39,10 +39,14 @@ const (
 	opKDA                         // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
 	opShortConv                   // in → out, LFM2's gated short convolution (shortConvStep), on the layer's conv window
 	opMamba2                      // in → out, the Mamba-2 selective-scan mixer (mamba2Step), on the layer's SSM state
+	opDeltaNet                    // in → out, the Gated DeltaNet mixer (gatedDeltaNetStep), on the layer's recurrent state
+	opGatedAttn                   // in → out, qwen3.5's gated attention sublayer: [query ‖ gate] q_proj, QK-norm, rope, attendQuery, ×sigmoid(gate), o_proj
 )
 
 // recurrent reports whether the operation mutates per-layer state in place, which no positional rewind restores.
-func (k opKind) recurrent() bool { return k == opKDA || k == opShortConv || k == opMamba2 }
+func (k opKind) recurrent() bool {
+	return k == opKDA || k == opShortConv || k == opMamba2 || k == opDeltaNet
+}
 
 // genericKinds are the operations of the generic layer: the ones the batched and multi-sequence walkers implement, LoRA's
 // deltas reach (q/k/v, o and the gated FFN), and the layer pager's spans cover.
@@ -74,6 +78,8 @@ type op struct {
 	mla     mlaOpParams
 	kda     kdaOpParams
 	mamba   mamba2OpParams
+	delta   deltaNetOpParams
+	gated   gatedAttnParams
 }
 
 // normSlot selects which of a layer's norm weights an opNorm applies.
@@ -216,6 +222,20 @@ type residualParams struct {
 	Scale float64
 }
 
+// deltaNetOpParams are an opDeltaNet's: the norm epsilon, the output gated norm's own epsilon (0 = Eps), and whether the
+// write gate's range is widened to [0, 2). The head counts and widths, and the checkpoint's tensor layout, are shapes.
+type deltaNetOpParams struct {
+	Eps, ONormEps float64
+	NegEigval     bool
+}
+
+// gatedAttnParams are an opGatedAttn's: its QK-norm, rotation and attention, each as the generic operation's parameters.
+type gatedAttnParams struct {
+	QKNorm qkNormParams
+	Rope   ropeParams
+	Attn   attentionParams
+}
+
 // mamba2OpParams are an opMamba2's: the gated norm's epsilon and its group count (1 normalises the whole inner width). The
 // heads, state and conv sizes are shapes, read from the Architecture.
 type mamba2OpParams struct {
@@ -321,7 +341,7 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 		return []op{input(slotPreAttn), mixer, {kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
 	}
 	ops := []op{input(slotPreAttn)}
-	ops = append(ops, a.attentionOps(l)...)
+	ops = append(ops, a.mixerOps(l)...)
 	if placement == NormParallel {
 		// One input norm feeds both sublayers, and their outputs meet in one residual add.
 		return append(ops, ffn(regB), op{kind: opResidual, res: residualParams{Two: true}})
@@ -334,6 +354,33 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 		ops = append(ops, post(slotPostMLP))
 	}
 	return append(ops, op{kind: opResidual})
+}
+
+// mixerOps is a generic-placement layer's first sublayer, regX → regA: qwen3.5's family puts a Gated DeltaNet on its linear
+// layers and its gated attention on the rest (Olmo Hybrid keeps the generic attention, in the batched kernel's order, as
+// causalAttention computed it); every other family the generic attention.
+func (a *Architecture) mixerOps(l int) []op {
+	g := a.qwen35
+	switch {
+	case g == nil:
+		return a.attentionOps(l)
+	case a.isLinearLayer(l):
+		return []op{{kind: opDeltaNet, in: regX, out: regA, delta: deltaNetOpParams{Eps: a.NormEps, ONormEps: g.ONormEps, NegEigval: g.NegEigval}}}
+	case g.PlainFullAttn:
+		ops := a.attentionOps(l)
+		for i := range ops {
+			if ops[i].kind == opAttention {
+				ops[i].attn.Order = attnBatchedAcc64
+			}
+		}
+		return ops
+	}
+	return []op{{kind: opGatedAttn, in: regX, out: regA, gated: gatedAttnParams{
+		QKNorm: qkNormParams{Form: qkRMS, Eps: a.NormEps, AddOne: a.RMSAddOne},
+		// The rotary is the half-split form whatever ropeInterleave says, as it always was for this family.
+		Rope: ropeParams{Kernel: ropeAtKernel, InvFreq: a.ropeInvFreq(l), Mscale: a.ropeMscale(l), MRopeSection: a.MRopeSection, MRopeInterleaved: a.MRopeInterleaved},
+		Attn: attentionParams{Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnQuery},
+	}}}
 }
 
 // attentionOps is the generic attention sublayer, regX → regA.
@@ -364,7 +411,7 @@ func (a *Architecture) attentionOps(l int) []op {
 
 func (k opKind) String() string {
 	names := [...]string{opNorm: "norm", opProjQKV: "proj-qkv", opQKNorm: "qk-norm", opRope: "rope", opAttnTemp: "attn-temp",
-		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv", opMamba2: "mamba2"}
+		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv", opMamba2: "mamba2", opDeltaNet: "deltanet", opGatedAttn: "gated-attn"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
@@ -413,7 +460,7 @@ func (a *Architecture) attnOrder() attnOrder {
 		return attnQuery
 	case a.mla != nil:
 		return attnMLA
-	case a.lfm2 != nil, a.granite != nil, a.nemotron != nil:
+	case a.lfm2 != nil, a.granite != nil, a.nemotron != nil, a.qwen35 != nil:
 		return attnQuery
 	}
 	return attnBatchedAcc64

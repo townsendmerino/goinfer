@@ -2967,7 +2967,7 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 		NormEps:          cfg.RMSNormEps,
 		NormPlacement:    NormPre2,
 		Act:              ActSiLU,
-		MoE:              nil, // the one structural difference; runLayersQwen35 branches on it
+		MoE:              nil, // the one structural difference; the program's FFN branches on it
 		QKNorm:           true,
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
 		layerIsGlobal:    cfg.IsGlobalLayer,

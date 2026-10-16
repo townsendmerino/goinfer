@@ -63,7 +63,7 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 				projQKVToken(m.be, scr, lw, m.reg(o.in, h, scr), q, k, v, ld, o.proj)
 				t.qkv()
 			case opQKNorm:
-				applyQKNorm(o.qkNorm, q, k, lw, nH, arch.NumKVHeads, hd)
+				applyQKNorm(o.qkNorm, q, k, lw.QNorm, lw.KNorm, nH, arch.NumKVHeads, hd)
 			case opRope:
 				applyRope(&o.rope, q, k, nH, arch.NumKVHeads, hd, pos, cache.mropePos, cache.mropeDelta)
 			case opAttnTemp:
@@ -146,6 +146,17 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 				}
 			case opMLA:
 				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				lastFFN = false
+			case opDeltaNet:
+				dp := *arch.qwen35
+				dp.ONormEps, dp.NegEigval = o.delta.ONormEps, o.delta.NegEigval
+				copy(m.reg(o.out, h, scr), gatedDeltaNetStep(m.be, m.reg(o.in, h, scr), lw.delta, dp, arch.HiddenDim, o.delta.Eps, cache.delta[l]))
+				lastFFN = false
+			case opGatedAttn:
+				if o.gated.Attn.Order != attnQuery {
+					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery only, not order %d", l, o.gated.Attn.Order)
+				}
+				copy(m.reg(o.out, h, scr), m.qwen35AttentionWith(&o.gated, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
 			case opMamba2:
 				mp := arch.mamba2Shapes(o.mamba.NormGroups)
@@ -266,19 +277,19 @@ func projQKVToken(be Backend, scr *decodeScratch, lw *LayerWeights, x, q, k, v [
 
 // applyQKNorm normalises q and k: weighted RMSNorm per head, or over each whole vector when p.Whole; or Llama 4's
 // parameter-free RMS per head.
-func applyQKNorm(p qkNormParams, q, k []float32, lw *LayerWeights, nH, nKV, hd int) {
+func applyQKNorm(p qkNormParams, q, k, qw, kw []float32, nH, nKV, hd int) {
 	if p.Form == qkL2 {
 		l2NormHeads(q, nH, hd, p.Eps)
 		l2NormHeads(k, nKV, hd, p.Eps)
 		return
 	}
 	if p.Whole {
-		rmsNorm(q, lw.QNorm, 1, nH*hd, p.Eps, p.AddOne)
-		rmsNorm(k, lw.KNorm, 1, nKV*hd, p.Eps, p.AddOne)
+		rmsNorm(q, qw, 1, nH*hd, p.Eps, p.AddOne)
+		rmsNorm(k, kw, 1, nKV*hd, p.Eps, p.AddOne)
 		return
 	}
-	rmsNorm(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
-	rmsNorm(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
+	rmsNorm(q, qw, nH, hd, p.Eps, p.AddOne)
+	rmsNorm(k, kw, nKV, hd, p.Eps, p.AddOne)
 }
 
 // applyRope rotates one position's q and k.

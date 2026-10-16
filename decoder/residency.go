@@ -1723,7 +1723,7 @@ func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
 }
 
 // Qwen3.5/3.6-MoE / Qwen3-Next / Qwen3.8 resident bridge (Gated-DeltaNet hybrid). The family's
-// forward is its own (runLayersQwen35) because two things in it are not the uniform-layer shape:
+// forward has its own operations (opDeltaNet, opGatedAttn) because two things in it are not the uniform-layer shape:
 // most layers replace softmax attention with a recurrent delta rule, and the full-attention layers
 // carry a per-head output gate fused into a double-width q_proj. These accessors expose both to a
 // backend without exporting the family's internals.

@@ -72,7 +72,7 @@ func (m *Model) prefillQwen35VLPerToken(ctx context.Context, ids []int, imageFea
 		}
 		h := all[i*hidden : (i+1)*hidden]
 		var err error
-		if last, err = m.runLayersQwen35FromEmbed(h, cache); err != nil {
+		if last, err = m.runLayersFromEmbed(h, cache); err != nil {
 			return nil, err
 		}
 	}

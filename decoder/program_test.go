@@ -197,6 +197,8 @@ func cloneProgram(p *program) *program {
 			o.rope.InvFreq = append([]float64(nil), o.rope.InvFreq...)
 			o.rope.MRopeSection = append([]int(nil), o.rope.MRopeSection...)
 			o.mla.InvFreq = append([]float64(nil), o.mla.InvFreq...)
+			o.gated.Rope.InvFreq = append([]float64(nil), o.gated.Rope.InvFreq...)
+			o.gated.Rope.MRopeSection = append([]int(nil), o.gated.Rope.MRopeSection...)
 		}
 	}
 	return &c
@@ -513,6 +515,12 @@ func opParamValue(o *op) (reflect.Value, string, bool) {
 		p = &o.mla
 	case opKDA:
 		p = &o.kda
+	case opMamba2:
+		p = &o.mamba
+	case opDeltaNet:
+		p = &o.delta
+	case opGatedAttn:
+		p = &o.gated
 	default:
 		return reflect.Value{}, "", false
 	}
