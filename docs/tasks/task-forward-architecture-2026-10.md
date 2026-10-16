@@ -2,7 +2,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA and WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: its mechanism and rows are registered (§4.6a), no code yet. OP1 on WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -956,6 +956,116 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 - **The softcap's correctness evidence is the kernel-level float64 checks:** all 152 cases pass, and all 152 fail with
   the softcap dropped (G2-K, G2-D).
 - **The real Gemma 2 2B parity gate, G2-R, decides the declaration.** Its baseline step is below.
+
+### 4.6a OP1 on CUDA: mechanism and rows (amended 2026-10-16 on nobara, before any CUDA OP1 code)
+
+Read at main `7e130317`. This section amends §4.6 for CUDA only, in a commit of its own, as §4.6 allows. It applies Metal's
+two rulings (OP1-M1, 2026-10-13, and "G2-R closed as void", 2026-10-15) to CUDA's rows from the start, so CUDA does not repeat
+the run that found them out. The owner may overrule either before the first CUDA code commit.
+
+**CUDA's mechanism: the softcap is a compile-time variant, and the cap is a kernel argument of the variant.**
+- **The variant.** `build_ptx.sh` builds a second module from the same source with `-DATTN_SOFTCAP`: `<module>_cap.ptx`, and
+  `<module>_kv16_cap.ptx` beside the f16-KV twin. The variant's kernels take a trailing `float cap`; the plain module's
+  signatures and source do not change. A capped model loads the variants of the three modules below, and no other model loads
+  them (as the `_kv16` twins are loaded only by an f16 build).
+- **Why a variant and not a run-time parameter.**
+  - A parameter puts a branch on every score in every attention kernel of every model, and changes the PTX of all of them.
+  - Here the identity gate can be stronger than Metal's: the plain modules are PTX files, so G2-I compares step 2's plain PTX
+    with step 1's **byte for byte**, then checks the bits. With a parameter it would rest on the compiler.
+- **Why an argument and not a baked `-D` constant.** CUDA has no NVRTC at run time, so a baked cap would be one number in a
+  prebuilt file. An argument lets G2-K sweep caps, including a small one so that ordinary scores cross it.
+- **The covered kernels** (the ones a capped layer takes): `attention` (`glue.cu`, the fallback when batched prefill is not
+  ready), `attn_batched` (`prefill_batched.cu`: exact prefill, and decode through `decodeAttnGap`, the batched step's rows
+  included), and `splitkv_scores` (`decode_splitkv.cu`; its softmax and V-sum kernels read the stored, already capped scores).
+  That is three modules at two KV types: six variant files.
+- **The kernels a lane selector keeps a capped layer off**, each by a named decline and each tested (G2-L below):
+  flash-decode and its verify rows (`faEligible` and `flashVerifyAttn`: the lane is default-on at 2,048 keys and serves head
+  dimension 256), `attn_fused*` and `attn_fused_bm*` (`useAttnFused`: head dimensions 64 and 128 only, guarded anyway), the
+  drafter's `attn_block_full`, the image prefill's `attn_img_batched`, `mla_attn`. The vision and audio towers (`attn_fused_vit`,
+  `tower_base`, `audio_encoder`) are not text-path kernels and are not touched.
+  **Owed, not in OP1:** the flash-decode lane with the cap. Gemma 2 then decodes at depth on the exact split-KV lane; G2-P's depth
+  cell shows what that costs.
+
+**Step 1 on CUDA.** One new header, `attnscore.cuh`, beside `kvtype.cuh`. Each of the 10 hand-written score sites (§4.5) calls it:
+`glue.cu`, `prefill_batched.cu`, `attn_block.cu`, `attn_img_prefill.cu` (`dot *= scale`), `decode_splitkv.cu` (`dot * scale`),
+`decode_fa.cu` (`d * scale`, two sites), `attn_fused.cu` and `attn_fused_bm.cu` (`__fmul_rn(s, scale)`), `mla.cu`
+(`__fmul_rn(dot, scale)`). The header has one function per multiply the sites use today, so each kernel keeps its own order of
+operations and a `__fmul_rn` stays a `__fmul_rn` (a fused multiply-add must not appear).
+- **`glue.ptx` is an audited artifact** (`cuda/testdata/REGEN.md`). Editing `glue.cu` means regenerating it at the pinned NVRTC
+  12.6.85 with that file's control. **Registered fallback:** if the per-kernel hash audit shows any kernel other than `attention`
+  moving, step 1 does not touch `glue.cu`, `attention` stays unrouted, and a capped model requires `prefillReady` or declines by
+  name. G1-K records `attention`'s digests either way. The other modules were built at the ambient 12.9.86 and are regenerated there.
+- **G1-K's instrument** is `TestAttnKernelDigests` (`goinfer_testhooks`, `cuda` tags), built and run at base first.
+  - It drives each of the 10 sites' kernels, in every module they ship in (f32 and f16 KV), on fixed pseudo-random inputs, and hashes
+    the output bytes. Shapes: head dimensions 64, 128, 256 (512 where a kernel has it); key counts at, one under and one over each
+    kernel's tile bound; windowed and not; with and without a sink.
+  - The kernel list is a table in the test. **A `__global__` in `cuda/*.cu` whose name says attention, and that is not in the table,
+    fails the test.** A kernel in the table that no case drives fails it too.
+  - The digests are committed in `cuda/testdata/attn_digests.json`, keyed by device name and driver version. A run on another
+    driver is VOID, not a pass.
+  - **Planted defect:** one ulp added to a score in each routed kernel turns that kernel's digests red.
+- **G1-M's instrument.** `cmd/gate identity` gets `-backend cuda`: a dumper in `cuda/` with `-tags cuda`, an ephemeral
+  `go.work` of `. ./cuda`, the same three-run judging as the other GPU backends, and a decline that reads as NOT RUN. It lands as its
+  own commit, before step 1, with the tool's tests. Tiny fixtures at int4 and int8int8; real checkpoints at int4, as the other backends.
+
+**G1-S on CUDA, by name** (no test that passed at base may skip): `TestAttnBatched_bitIdentical`, `TestSplitKV_bitIdentical`,
+`TestSplitKV_bitIdentical_gemma3`, `TestAttnFused_vsExact`, `TestAttnFusedTile_32x64BitIdentical`,
+`TestAttnFusedTile_defaultBitIdenticalWholeModel`, `TestAttnBlockFull_nonCausal`, `TestAttnImgBatched_*`, `TestAttnSink_matchesReference`,
+`TestFlashDecode*` (the host-only ones included), `TestMLAAttn_cuda`, and the batched step's bit-identity tests; the night device gate is
+`go run ./cmd/gate gpu`.
+
+**G2-K on CUDA.** Each covered kernel, at f32 and at f16 KV, with a head dimension of 64 and of 256, windowed and not, with a sink
+(`attn_batched` and `splitkv_scores` carry one), against a float64 reference, with caps of 50 and of 2 and queries scaled so that scores
+land on both sides of ±cap, plus a peaked row. Bar: cosine ≥ 0.9999 and max abs error ≤ 1e-2.
+- **G2-D** removes the cap's application from the variant source (the argument is read and ignored): every G2-K case must go red.
+  It is the same planted defect for G2-T and G2-R, whose results are recorded.
+
+**G2-L (new, CUDA): the lane selectors keep a capped layer off the uncovered kernels.** On a capped fixture, decode at a depth past
+2,048 keys and a prefill with `fastAttn` on launch none of the kernels in the list above. The instrument is the executor's launch record by
+kernel name; if it has none, step 2 adds a counter behind `goinfer_testhooks`. **Planted defect:** `faEligible` ignores the cap, and G2-L
+goes red.
+
+**G2-T on CUDA is a diagnostic from the start, with its baseline measured first.** Metal's run found a bar copied from Gemma 1 sat
+inside the fixture's own no-softcap agreement. For CUDA, before any graded reading, both tiny fixtures are read at int4 and at int8int8
+with the cap removed on both sides (`SetAttnSoftcapOffForTest`), 16 positions, the batched prefill against the token-by-token one. Both
+numbers are recorded with the capped ones. The 0.999 bar is not applied: the declaration does not rest on these fixtures (G2-D).
+
+**G2-R on CUDA is a model-level sanity gate, not a softcap test.** Metal found the cap barely acts on the gate's prompts (a plant that
+drops it passes). CUDA runs the registered arms B, G and P anyway, since the harness exists, and records them: G must clear 0.88 with
+argmax equal at ≥ 50% of positions and no NaN, inside the band of §4.6's G2-R. P's result is recorded and does not gate. **The CUDA
+softcap declaration rests on G2-K, G2-D and G2-L**, as Metal's does. The checkpoint is `gemma-2-2b-it-Q8_0.gguf` in nobara's `~/models`
+(sha256 `2d448a9a…debe`); G2-R loads it from there, never from `/srv/models`.
+
+**Rows for the night gates.**
+- **G1-M and G2-I on real checkpoints, CUDA:** `cmd/gate identity -backend cuda -assets real`. Estimate 25 min; the families the box
+  holds, int4.
+- **G2-S, CUDA** (the template in §4.6; the numbers from `scripts/power.py` and the registry, 2026-10-16):
+  ```
+  Tier: night. One timed run per box, under the timing lock (the 8 GB card holds one model at a time).
+  Instrument: scripts/bench_peer.py served decode, two arms (new, base), no peer arm, restart between cells.
+  Cells: decode on the 1.5B at depth 128 and 3900 (the single-block and split-KV lanes, then flash-decode, whose kernels step 1
+    routes), on Gemma 3 4B at depth 128 (head dimension 256, the kernels Gemma 2 shares), and on the 0.5B at depth 128.
+  Noise: 1.5B and Gemma 3 cells: seed-nobara-cuda-goinfer-all-S, sd 0.0081, a same-binary A/A (registry gap 1: it cannot see a build
+    effect). 0.5B cell: cuda-fused-rms-0.5B-crossbuild, sd 0.0164 with a floor of 0.0144, the only cross-build A/A on this box.
+  power.py N: `served-decode nobara/cuda/1.5B/d128 --bar 0.97 --expect 1.0 --paired` -> N = 3 (power 0.88), run at N = 4;
+    the same at d3900 and for gemma-3-4b/d128; the 0.5B cell with `--entry cuda-fused-rms-0.5B-crossbuild` -> N = 11 (power 0.83).
+  Stopping rule: fixed N per cell, no early stop.
+  Rule: PASS if every cell's interval clears 0.97; FAIL if any lies under it. A straddling interval is parked for the owner.
+  Not gating: time to first token on the 1.5B at K = 3900 (the registry has no CUDA entry: gap 4), reported with its spread.
+  Cost: (3 cells x 4 blocks + 1 cell x 11 blocks) x 2 arms x about 2 min = about 90 min, plus idle-gate waits. Queued after the other night jobs.
+  ```
+- **G2-P, CUDA:** §4.6's template with `bench_peer.py` on nobara, `gemma-2-2b-it` Q4 both sides, depth 128 and 2048, three arms (goinfer
+  CUDA, goinfer CPU, Ollama). The CPU arm gates (ship ≥ 1.02x at both depths). Estimate 25 min. The depth-2048 cell runs on the exact
+  split-KV lane because flash-decode is kept off a capped layer; a result under 1.02x there is parked and names that lane.
+
+**Boxes and costs.** nobara-pc, RTX 2070 SUPER, 8 GB, driver 595.91.07. Day gates need the card for seconds to minutes each, under
+`timing_lock.py run`; while anyone is logged in, `kwin_wayland` holds about 16 MiB of the card, which goes in the record. The 2B at int4
+and f16 KV fits; its fit is checked with the server's own plan (the `fit:` and `KV plan:` banner) before the night job is queued.
+
+**Order on CUDA** (§4.6's order, with the two additions): (1) the `-backend cuda` tool commit; (2) G1-K's digest test and base's digests,
+committed with the digest file; (3) step 1, then G1-K, G1-M (tiny), G1-S; (4) step 2, then G2-I (plain PTX byte-equal to step 1's, then
+G1-K and G1-M again), G2-K, G2-D, G2-L, the G2-T baseline and readings, G2-R; (5) declare `attn-logit-softcap` on CUDA, regenerate the
+matrix (G2-M), merge; (6) night: G1-M and G2-I on real checkpoints, the device gate, G2-S, G2-P.
 
 ### 4.7 The remaining plan for OP2–OP6 (proposed 2026-10-15; docs only, nothing built)
 
