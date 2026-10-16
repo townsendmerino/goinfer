@@ -7,6 +7,7 @@
 // ---- the original attn_fused.cu header follows ----
 #include <cuda_fp16.h>
 #include "kvtype.cuh"
+#include "attnscore.cuh"
 
 // attn_fused: FlashAttention-style fused prefill attention for sm_75 (docs/task-prefill-gap.md
 // §4 L2). One block per (head, 64-query tile); K/V streamed in BN-key tiles through shared memory,
@@ -228,10 +229,10 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         for (int g = 0; g < NG; g++) {
             const int kA = s0 + g * 8 + colBase, kB = kA + 1;
             const int lim = s0 + nk;
-            const float a0 = (kA >= winStart0 && kA < nKeys0 && kA < lim) ? __fmul_rn(s[g][0], scale) : -1e30f;
-            const float a1 = (kB >= winStart0 && kB < nKeys0 && kB < lim) ? __fmul_rn(s[g][1], scale) : -1e30f;
-            const float b0 = (kA >= winStart1 && kA < nKeys1 && kA < lim) ? __fmul_rn(s[g][2], scale) : -1e30f;
-            const float b1 = (kB >= winStart1 && kB < nKeys1 && kB < lim) ? __fmul_rn(s[g][3], scale) : -1e30f;
+            const float a0 = (kA >= winStart0 && kA < nKeys0 && kA < lim) ? attn_score_rn(s[g][0], scale) : -1e30f;
+            const float a1 = (kB >= winStart0 && kB < nKeys0 && kB < lim) ? attn_score_rn(s[g][1], scale) : -1e30f;
+            const float b0 = (kA >= winStart1 && kA < nKeys1 && kA < lim) ? attn_score_rn(s[g][2], scale) : -1e30f;
+            const float b1 = (kB >= winStart1 && kB < nKeys1 && kB < lim) ? attn_score_rn(s[g][3], scale) : -1e30f;
             s[g][0] = a0; s[g][1] = a1; s[g][2] = b0; s[g][3] = b1;
             tileMax0 = fmaxf(tileMax0, fmaxf(a0, a1));
             tileMax1 = fmaxf(tileMax1, fmaxf(b0, b1));
