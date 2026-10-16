@@ -17,6 +17,21 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
+**G44 · Metal re-quantizes a Gated-DeltaNet model's int8 weights to int4 instead of declining** — `metal`, **filed 2026-10-15
+(owner), not started**
+
+Metal's native int8 path covers no recurrent family (`metal/model.go:w8Eligible`: its first slice excludes DeltaNet), so a Qwen3.5,
+Qwen3-Next or Olmo Hybrid model loaded at int8int8 runs resident with its attention, MLP and DeltaNet projections re-quantized to
+int4 (`upload` and `fuse` fall back to `int4BufA` / `int4ConcatA`). Checked 2026-10-15 on `qwen35-tiny`: resident at int8int8, decode
+path "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)". The path label names it, but the model does not run at the int8 it
+was loaded with.
+
+**The fix, as Nemotron-H's (OP2b, `metal/mamba.go:buildMamba`):** at int8 Metal declines the model as resident and the CPU runs it
+at real int8. Native int8 for recurrent families is a later slice of `docs/tasks/task-metal-int8-2026-10.md`.
+
+**Gate (tier 0):** `qwen35-tiny` at int8int8 does not go resident on Metal; at int4 it does, unchanged. Planted defect: no decline,
+which must turn it red.
+
 **G41 · An answer is lost inside the reasoning when a thinking model ends its turn mid-reasoning** — `any`, **filed 2026-10-15
 (owner), not started**
 
