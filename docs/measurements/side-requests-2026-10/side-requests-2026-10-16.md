@@ -170,3 +170,40 @@ with no tools and a short prompt would cut that. It is a product decision, not a
 - Subagents' eviction of the main slot: not measured; a scratch slot would not address it.
 - The archived Claude Code run's missing title request: unexplained.
 - The decode cost of 54 or 55 expert slots against 57: not measured.
+
+## Tier 1: the fast alias on opencode (2026-10-16, by day)
+
+The same three opencode tasks (read, search, edit, one run each) on Mellum2.1, `--ctx 16384 --moe-cache-experts`, one GPU slot, with
+the alias on: serve built at `62ba5f07` (the alias PR), `connect opencode -write` run by the matrix against it, so opencode's
+`small_model` named `mellum2.1-thinking-fast`. 06:56 to 07:02 PDT under the timing lock, nobara. Plan:
+`ids-carried-tier2/plan-cc-opencode.json` with the serve path and name changed; output in `~/goinfer-bench/fast-alias-2026-10/out`.
+Read with `fast_alias_compare.py` (beside this record).
+
+**The "without" arm is the 2026-10-15 run above, not re-run** (an unchanged arm: same model, flags, harness pin and tasks). It is a
+different session on a different serve build, three runs against three, so this is **exploratory and cross-session**: the headline
+below is large against the sampling noise, and the pass/fail counts are not a comparison. A main-model request is byte-identical with
+the alias on and off (tier 0), so the builds differ only on the alias.
+
+| | alias off (2026-10-15) | alias on |
+|---|---|---|
+| requests | 25 | 20 |
+| titles named by | `mellum2.1-thinking` | `mellum2.1-thinking-fast`, 3 of 3 |
+| title: generated tokens | 1,341 / 831 / 2,327 | 9 / 4 / 4 |
+| title: time on the GPU | 26.9 / 18.2 / 41.5 s (86.6 s) | 6.5 / 5.7 / 5.8 s (18.0 s) |
+| summary (context summarizer) | 1 request, 1,134 generated, 43.1 s | **none: no run compacted, so unobserved** |
+| each run's first main request, time to first token | 106.9 / 97.5 / 121.8 s (mean 108.7) | 82.6 / 81.2 / 81.4 s (mean 81.7) |
+| passed | read, search, edit (3 of 3) | read, search; **edit failed** (2 of 3) |
+
+- **Titles.** Their text is sensible ("Rename sum total everywhere") and carries no reasoning. What remains of a title's 6 s is the
+  prefill of its 590-token prompt, which this path runs at about 100 tokens a second.
+- **First main request.** It waits for the title that the client sent 0.6 s before it, so it gets back about the title's saved time:
+  27 s on average, 25%. The cold prefill of the 7,500-token prompt (about 80 s) is the rest, and is untouched. After the first
+  request the runs were warm as before.
+- **The edit failure is not the alias's.** The run's last turn was a malformed tool call from the main model (the opening quote of
+  `newString` missing, emitted as text). The alias handled only the three titles. The I3 night had this task fail 1 time in 5 on
+  the same model (`i3-night-2026-10-13.md`), so one failure in three is within that. Three runs say nothing more.
+- **The summary is still open.** Whether opencode sends its context summarizer through `small_model` is unobserved: no run reached
+  a compaction. The baseline's summarizer ran on the main model with thinking (43.1 s); under the alias it would be capped at
+  `-fast-max-tokens` (1,024), which a summary of that size (1,134 tokens with its thinking) may or may not fit.
+- **Not measured:** Claude Code's small-model requests against the real model. The replay against a stub shows only that its title
+  request names the alias.
