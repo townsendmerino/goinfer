@@ -80,4 +80,15 @@ for k in "${targets[@]}"; do
 			NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
 			python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_kv16.ptx" "$ARCH" "$CUDA_INC" -DKV_F16
 	fi
+	# The three modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores) are also built with the attention
+	# softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The plain modules above do not change.
+	case "${k%.cu}" in
+	glue | prefill_batched | decode_splitkv)
+		for variant in "cap:-DATTN_SOFTCAP" "kv16_cap:-DKV_F16 -DATTN_SOFTCAP"; do
+			LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+				NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
+				python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_${variant%%:*}.ptx" "$ARCH" "$CUDA_INC" ${variant#*:}
+		done
+		;;
+	esac
 done

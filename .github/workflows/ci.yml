@@ -710,6 +710,13 @@ jobs:
       - name: vet, untagged
         run: go vet ./cuda/...
 
+      # `gate gpu`'s kernel-level suite (check 2a) builds the cuda tests with -tags cuda and NOTHING else, to prove the kernel tests need no
+      # test hooks. A _test.go file that uses a helper defined under goinfer_testhooks without its own tag compiles in every step above and
+      # fails only there (cuda/kv2_optionoff_test.go did, 2026-10-16: the device gate's 2a was red on a build error CI never saw).
+      # `go vet` compiles the tests; this step type-checks that exact tag set.
+      - name: vet -tags cuda alone (the device gate's 2a build)
+        run: go vet -tags cuda ./cuda/...
+
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this
       # is now a prebuilt binary invocation, not a `go run` -- the env var had no effect on the

@@ -74,7 +74,7 @@ usage:
   gate quick [-base REF] [-files a,b] [-count1] [-j N] [-select] [-v]
                                                    the day loop: gofmt, vet, staticcheck and the tests that can
                                                    observe the diff, one go test per package in parallel (TE7)
-  gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu] [-families a,b] [-assets tiny|real]
+  gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu|cuda] [-families a,b] [-assets tiny|real]
                [-quant q,…] [-steps N] [-only asset,…] [-keep]
                                                    inherit validation by identity (TE6(b)): dump full logits of
                                                    each family's parity prompt at both revs, compare bytes

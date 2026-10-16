@@ -48,6 +48,7 @@ var heavyFamilies = []heavyFamily{
 	{Group: "qwen3-vl-2b", Rank: 48, re: regexp.MustCompile(`(?i)qwen3-vl-2b`)},
 	{Group: "qwen25vl-3b", Rank: 47, re: regexp.MustCompile(`(?i)qwen25vl-3b|qwen2\.5-vl-3b`)},
 	{Group: "glm-ocr", Rank: 46, re: regexp.MustCompile(`(?i)glm-ocr`)},
+	{Group: "gemma2-2b", Rank: 44, re: regexp.MustCompile(`(?i)gemma-2-2b`)},
 	{Group: "gemma4-e2b", Rank: 45, re: regexp.MustCompile(`(?i)gemma-4-e2b`)},
 	{Group: heavySmallGroup, Rank: 1, re: regexp.MustCompile(
 		`(?i)qwen2\.5-coder-(0\.5b|1\.5b)|qwen2\.5-0\.5b|gemma3-1b|llama-3\.2-1b|qwen3-1\.7b|qwen3\.5-0\.8b|qwen35vl|phi-?3-mini|clef-flash`)},

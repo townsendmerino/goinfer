@@ -31,6 +31,7 @@
 // Exponentials are __expf, as in splitkv_softmax. `#pragma` FMA: the dots use explicit __fmaf_rn, and
 // kernel_fma_lint_test.go checks no other float multiply-add pair is left to the compiler.
 #include "kvtype.cuh"
+#include "attnscore.cuh"
 #define FA_WARPS 8
 #define FA_NEG (-1e30f)
 #define FA_SEEN (-5e29f) // a unit with any key has m > FA_SEEN
@@ -98,7 +99,7 @@ __device__ __forceinline__ void fa_partial_impl(
             float d = part[g];
             d += __shfl_xor_sync(0xffffffff, d, 1);
             d += __shfl_xor_sync(0xffffffff, d, 2);
-            s[g] = valid ? d * scale : FA_NEG;
+            s[g] = valid ? attn_score(d, scale) : FA_NEG;
         }
         // ---- online softmax over the block's 8 keys, per head, warp-uniform ----
 #pragma unroll
@@ -329,7 +330,7 @@ __device__ __forceinline__ void fa_partial_rows_impl(
                 float d = part[rr][g];
                 d += __shfl_xor_sync(0xffffffff, d, 1);
                 d += __shfl_xor_sync(0xffffffff, d, 2);
-                const float s = valid ? d * scale : FA_NEG;
+                const float s = valid ? attn_score(d, scale) : FA_NEG;
                 float mx = s;
                 mx = fmaxf(mx, __shfl_xor_sync(0xffffffff, mx, 4));
                 mx = fmaxf(mx, __shfl_xor_sync(0xffffffff, mx, 8));

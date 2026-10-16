@@ -1,0 +1,36 @@
+# OP1 on CUDA: the day gates (nobara-pc, RTX 2070 SUPER, driver 595.91.07, 2026-10-16)
+
+Registered in `docs/tasks/task-forward-architecture-2026-10.md` §4.6a. Logs are in `~/goinfer-bench/op1-cuda-2026-10/` on nobara.
+
+## Step 1: the ten score sites through `cuda/attnscore.cuh` (commit 607b9daa; base 78e4faf2)
+
+| gate | result |
+|---|---|
+| PTX | all 15 attention modules rebuilt from the edited sources are byte for byte the committed PTX. Control first: each module rebuilt unchanged at its own toolchain (`glue`, `glue_kv16`, `mla` at 12.6.85 from a pinned venv; the rest at the ambient 12.9.86) and `git status` showed nothing |
+| G1-K | PASS: 1,864 of 1,864 digests equal base's (recorded three times at base, two processes, identical) |
+| G1-K planted defect | a one-ulp change in `attn_score` and `attn_score_rn`, all 15 modules rebuilt: **41 of 41** kernel families red (`g1k-plant-ulp.log`). Not every case goes red: cases with one key (softmax of one element is 1.0 at any score) and a few short ones stay equal, which is why the test drives key counts either side of the tile bounds |
+| G1-M, tiny | PASS: 27 families IDENTICAL, 0 different, 16 NOT RUN (the backend declines them or their asset is not in the tree), 3m47s, `g1m-tiny-step1.log` |
+| G1-S, by name, `GOINFER_HEAVY_TESTS=1` | PASS: 34 tests by name; base 31 PASS 3 SKIP, step 1 the identical list. The three skips (`TestFlashDecodeOracleRealKV`, `TestFlashDecodeOracleRealKVGemma`, `TestFlashDecodeGateVsReference`) skip at base too. Without the heavy flag the same run is 11 PASS 23 SKIP, which proves nothing: that is why the heavy run is the gate |
+
+The first G1-S run without the heavy flag was kept and not graded (`g1s-step1.log`): 23 of its 34 tests skipped.
+
+## Step 2: the softcap as a compile-time variant (commit 2cafcbae), and its declaration (branch `op1-cuda-declare-2026-10`)
+
+| gate | result |
+|---|---|
+| G2-I, PTX | the 15 plain PTX files are byte for byte step 1's (`git diff` shows only the six new `_cap` / `_kv16_cap` files added) |
+| G2-I, G1-K | PASS: 1,864 of 1,864 digests equal base's (`g2k-g1k-step2.log`) |
+| G2-I, G1-M tiny | PASS: 27 IDENTICAL, 0 different, 16 NOT RUN, base against step 2 (`g2i-tiny-step2.log`) |
+| G2-K | PASS: 320 of 320 kernel cases inside the bar (cosine >= 0.9999, max abs <= 1e-2) against float64: `attention`, `attn_batched` (each row) and the split-KV chain, f32 and f16 KV, caps 50 and 2, head dimensions 64 and 256, windowed or not, sink or not, with a peaked case. Each case asserts from the reference that scores lie past ±cap (at least 5% of them, and the largest at 1.5 caps or more) before it runs (`g2k-capped.log`) |
+| G2-D | PASS: with the cap's application removed from the variant source (the argument read and ignored) and the six variants rebuilt, all 320 cases go red: `attention` 64 of 64, split-KV 128 of 128, `attn_batched` 128 of 128 cases (1,264 rows) (`g2d-planted.log`) |
+| G2-L | PASS (`cuda/gemma2_softcap_test.go:TestGemma2Softcap_lanesCUDA`). The tiny fixtures have head dimension 32, which flash-decode and the fused kernels never serve, so each selector is asked at head dimension 64 with the resident's state set up as a served prefill would: cap off, flash-decode and fused-prefill say yes (the control); cap on, both say no. The image-block and drafter refusals name the cap. Planted: the flash-decode selector ignoring the cap, and the fused selector ignoring it, each turn the test red |
+| G2-T, diagnostic | worst logit cosine over 16 positions, resident against the CPU, cap on both sides / cap removed on both sides: `gemma2-tiny` int4 0.999650 / 0.999827, int8int8 1.000000 / 1.000000; `gemma2-hd-tiny` int4 0.999756 / 1.000000, int8int8 1.000000 / 1.000000. The batched prefill (`attn_batched` with the cap) and the token-by-token decode write the same K and V rows and the same last-token logits bit for bit on both fixtures. The 0.999 bar is not applied (registered: a diagnostic) |
+| G2-R, model-level | the real `gemma-2-2b-it` Q8_0 (`~/models`), one process, `g2r-cuda.log`, 82 s. Hook check: removing the cap changes the CPU's logits. B (cap removed both sides): int8int8 0.982058 (23/24), int4 0.980240 (22/24). Control (dense 1.5B, int8int8): 0.997803 (23/24). Gemma 3 4B: int8int8 0.975099, int4 0.984910 (23/24 both). **G (cap on both sides): int8int8 0.992910 (23/24), int4 0.980619 (21/24): pass, inside the 0.03 band of Gemma 3's at the same quant.** P (cap dropped from the CUDA build only): int8int8 0.992485 (21/24), int4 0.982282 (23/24): **passes the rule**, as on Metal. The cap on the CPU over P's run: 62,400 scores, 0.0032% / 0.0064% past 15, largest |score| 15.72 / 15.91, the same figures Metal recorded. So G2-R is a model-level check and not a softcap test, as registered; the declaration rests on G2-K, G2-D and G2-L |
+| G2-M | the matrix regenerated: Gemma 2 reads resident on CUDA (`docs/hardware-matrix.md`) |
+| fit check (by day, before any queueing) | `TestG2R_fitCheck`: the five CUDA loads (2B at int8int8 and int4, Gemma 3 4B at both, the dense 1.5B at int8int8) are all admitted, 1.5 to 10.9 s each (`g2r-fitcheck.log`) |
+
+Also: `gate ptx` (check 4) did not rebuild the six `_cap` files, because it derived a source only for the `_kv16` suffix; it counted 42 of 48
+committed artifacts. Fixed in `f5098c12` and the test's count. The heavy-group table gained a `gemma2-2b` row.
+
+**Not run by day, queued for the night after the merge:** G1-M and G2-I on real checkpoints (`gate identity -backend cuda -assets real`), the
+device gate, G2-S (speed, no model got slower), G2-P (Gemma 2 against our CPU and Ollama).

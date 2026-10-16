@@ -17,6 +17,21 @@
 
 ## What is open
 
+- **P27 · CPU f16 KV, way B: widen the stored rows inside the attention kernels — PARKED 2026-10-16 (owner). Revisit if CPU KV
+  memory becomes the limit for a real user.** `mac`, aikit kernel work.
+
+  - **The finding that parked way A as the default:** CPU f16 KV way A (`--kv f16`, opt-in since #55) narrows rows to f16 on
+    append and widens the whole stored history into scratch on every decode step. F3's in-process A/B put it slower at depth:
+    0.925 on the 0.5B at 4,096 keys, 4 of 4 pairs under 1 (resolved), and 0.861 on the 1.5B (3 of 4). So `auto` stays f32
+    (`docs/tasks/task-cpu-kv-f16-2026-10.md` §5b).
+  - **Way B** (that doc's §4) reads f16 in the register, inside the kernels. Because the float64 path reads K and V in place, this
+    is not one kernel: it is an f16 form of each of the four attention kernels (two of them arm64-only), plus the fast prefill's
+    gather. Those kernels are aikit's, and its pushes and tags are the owner's.
+  - **What reopens it:** a real user whose CPU context is bounded by KV memory (f16 halves it: 0.94 GB to 0.47 GB at 16,384
+    positions on Qwen2.5-1.5B). Not speed: way B's best case is f32's speed at half the bytes.
+  - **Gates when it reopens:** the task doc's F1–F5 as registered, with F3 against way B; F1's exactness rule (the f32 path with
+    each stored row rounded to f16 by hand) carries over unchanged.
+
 - **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
   transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from
   `docs/task-laguna.md`'s DFlash pairing measurement, moved here at archival so the finding has a

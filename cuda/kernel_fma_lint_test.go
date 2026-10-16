@@ -135,7 +135,7 @@ func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
 		linted[f] = true
 	}
 	for _, m := range embedded {
-		cu := strings.TrimSuffix(m[1], "_kv16") + ".cu" // a _kv16 twin is its base source built with -DKV_F16, linted as that source
+		cu := func() string { s, _ := ptxSourceName(m[1]); return s }() + ".cu" // a _kv16, _cap or _kv16_cap twin is its base source built with a define, linted as that source
 		if linted[cu] {
 			continue
 		}

@@ -198,7 +198,7 @@ var admissionGolden = map[string][]string{
 	// feature-admitted: it intentionally tracks the feature-only model, as with the MoE-cap precedent (deepseek_v2/kimi_k2
 	// below, admitted by feature but capped elsewhere).
 	"gemma":               {"cuda", "metal", "webgpu"},
-	"gemma2":              {"metal"}, // the attention-score softcap: Metal since OP1; cuda and webgpu do not declare it
+	"gemma2":              {"cuda", "metal"}, // the attention-score softcap: Metal and CUDA since OP1; webgpu does not declare it
 	"gemma3":              {"cuda", "metal", "webgpu"},
 	"gemma3_text":         {"cuda", "metal", "webgpu"},
 	"gemma4":              {"cuda", "metal", "webgpu"},
@@ -341,13 +341,17 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// TestMellumResidentParityCUDA; FeatAttnSink + FeatOutBias were declared only after a real gpt-oss-20b forward ran
 		// resident (TestGptOssResidentParityCUDA), because a declaration on kernel-level evidence alone was reverted once and
 		// the end-to-end run found three silent wiring defects no kernel test could see. Still undeclared: per-layer rotary
-		// WIDTH, the ATTENTION softcap (FeatAttnLogitSoftcap, a per-layer kernel) and FeatSSM; the Qwen2-MoE decline is the
+		// WIDTH and FeatSSM; the Qwen2-MoE decline is the
 		// gated shared expert (FeatMoEGatedShared) being in the shared taxonomy, not a hand-coded check.
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
 			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
 			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatLayerNorm, FeatParallelBlock, FeatLogitScale,
+			// The attention-score softcap, a compile-time variant of the three kernels a capped layer takes
+			// (docs/tasks/task-forward-architecture-2026-10.md §4.6a): TestAttnSoftcap_kernelsAgainstFloat64 with the cap dropped as the
+			// control, and TestGemma2Softcap_lanesCUDA.
+			FeatAttnLogitSoftcap,
 			FeatMLA,
 			// FeatPairwiseRoPE/FeatPairwiseMRoPE: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
 			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the real Aya/R7B gate.
