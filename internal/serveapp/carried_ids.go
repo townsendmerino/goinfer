@@ -37,12 +37,15 @@ const (
 	idsModel   = "model"   // minted for another model or tokenizer
 	idsNS      = "ns"      // minted in another namespace
 	idsSpecial = "special" // the special ids differ from the template's for the turn, or one sits inside content
-	idsDecode  = "decode"  // the ids do not decode to the turn's text: a client edit
+	idsDecode  = "decode"  // the ids do not decode to the turn's text, and the difference is content: a client edit
 	idsHistory = "history" // the template does not render this turn's reasoning (its history rule), so the ids cannot match it
+	// The ids differ from the turn's render only in template-owned formatting (idsFormat) but cannot be placed: no single run
+	// of the render covers the turn and lines up with its special tokens.
+	idsTemplate = "template"
 )
 
 // idsReasons is every reason, in the order /admin/status lists them.
-var idsReasons = []string{idsV1, idsParse, idsMAC, idsKeyR, idsModel, idsNS, idsSpecial, idsDecode, idsHistory}
+var idsReasons = []string{idsV1, idsParse, idsMAC, idsKeyR, idsModel, idsNS, idsSpecial, idsDecode, idsHistory, idsTemplate}
 
 // idsKey is the server's signing key and its id, the first 8 bytes of SHA-256 of the key.
 type idsKey struct {
@@ -266,6 +269,7 @@ type idsCarrier struct {
 // reason for each that did not, in turn order.
 type idsOutcome struct {
 	carried, used int
+	formatted     int // of used, the turns whose ids replaced template-owned formatting (idsFormat)
 	fallbacks     []string
 }
 
@@ -284,14 +288,18 @@ func (o idsOutcome) fields() string {
 	if len(o.fallbacks) > 0 {
 		fb = strings.Join(o.fallbacks, ",")
 	}
-	return fmt.Sprintf("ids=%d/%d ids_fallback=%s", o.used, o.carried, fb)
+	s := fmt.Sprintf("ids=%d/%d ids_fallback=%s", o.used, o.carried, fb)
+	if o.formatted > 0 {
+		s += fmt.Sprintf(" ids_fmt=%d", o.formatted)
+	}
+	return s
 }
 
 // idsCounters are the server's totals since start, for /admin/status.
 type idsCounters struct {
-	mu            sync.Mutex
-	carried, used int
-	by            map[string]int
+	mu                       sync.Mutex
+	carried, used, formatted int
+	by                       map[string]int
 }
 
 func (c *idsCounters) add(o idsOutcome) {
@@ -302,6 +310,7 @@ func (c *idsCounters) add(o idsOutcome) {
 	defer c.mu.Unlock()
 	c.carried += o.carried
 	c.used += o.used
+	c.formatted += o.formatted
 	if c.by == nil {
 		c.by = map[string]int{}
 	}
@@ -319,7 +328,7 @@ func (c *idsCounters) report() map[string]any {
 			fb[r] = n
 		}
 	}
-	return map[string]any{"carried": c.carried, "used": c.used, "fallbacks": fb}
+	return map[string]any{"carried": c.carried, "used": c.used, "formatted": c.formatted, "fallbacks": fb}
 }
 
 // idsBytes is ids as the token-id log hashes them: each id a little-endian uint32.
