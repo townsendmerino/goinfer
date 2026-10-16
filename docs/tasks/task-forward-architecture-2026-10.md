@@ -1747,6 +1747,50 @@ runs at night as registered.
 - **Pass:** at least 0.99. **Fail:** under 0.99, and the walker is fixed before OP3a merges. Pass 2 is not skipped.
 - OP3a merges after this cell reads. OP3b builds on the branch meanwhile.
 
+**OP3b's gate S (amendment, 2026-10-16, before it runs).** S's cells name a decode rate, but OP3b's walkers run the batched
+prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
+- **The batched walker:** prefill rate, walker ÷ old, on the 0.5B. The prompts are 128 tokens, which is batched with exact
+  attention, and 4,096, which is fast attention over two G40 chunks. Pairs: 6 and 4.
+- **The multi-sequence walker:** MC3c's step rate, walker ÷ old, on the 0.5B with four sequences at depth 128, 24 steps a
+  generation, 6 pairs.
+- The instrument is `decoder/program_ab_test.go:TestProgram_S_batchedSpeed`, interleaved ABBA in one process under the timing
+  lock.
+- The bars and bands are S's: pass at a median of at least 0.99; fail when a cell resolves slower with its median under 0.99;
+  parked when a cell does not resolve and its median is under 0.99, which sends it to a served gate at night.
+
+**OP3b's readings, 2026-10-16, at `51693631` (stacked on OP3a, same branch).**
+- **The build:**
+  - The batched walker (`Model.walkBatch`) and the multi-sequence walker (`Model.walkMulti`). The old loops stay behind
+    `programWalkOffForTest`.
+  - `canBatchN` and MC3c's eligibility read the program (`program.batchEligible`, `program.multiStepEligible`).
+  - The batched embedding and head read the program.
+- **I, identity: PASS.** 37 families IDENTICAL against `2c56d9c6`, none different. Log:
+  `docs/measurements/op3-2026-10/op3b-identity-tiny.log`.
+- **P, plants: PASS on each walker.**
+  - Every plant changed the logits on every fixture it applies to: 32 of 32 batched, and 13 of 13 multi-sequence for the
+    three plants that apply there.
+  - The window plant is NOT RUN on the multi-sequence walker: it admits no windowed cache.
+- **L, every parameter is live: PASS.**
+  - The per-token reading is OP3a's.
+  - Each parameter that changes a fixture's per-token logits also changes that fixture's batched and multi-sequence logits,
+    on every fixture those walkers run: 33 parameters checked on the batched walker and 24 on the multi-sequence walker.
+    The rest are NOT RUN there, because no fixture those walkers admit shows them per token.
+  - **An amendment made at the build, before this reading:** only a per-token *change* binds the other walkers, not a
+    per-token error. One more than an expert's width overruns the per-token scratch and errors there. The batched path
+    allocates per call, and the extra all-zero column cannot reach the logits. So `ffn.MoE.IntermediateDim` and
+    `SharedIntermediateDim` are shapes, read by no walker as behaviour.
+  - Log: `docs/measurements/op3-2026-10/op3b-PL.log`.
+- **T1: PASS.** The real 0.5B with prompts of 145, 621 and 2,593 tokens is IDENTICAL. The long prompt's prefill runs the
+  batched walker with fast attention, over two chunks. Log: `docs/measurements/op3-2026-10/op3b-T1-real-0.5b.log`.
+- **S: PASS in every cell.** The cells are as amended above; each pair's two arms gave the same logits, bit for bit. Load
+  averages were 3.2 to 6.8. Log: `docs/measurements/op3-2026-10/op3b-S.log`.
+
+  | cell | pairs | median, walker ÷ old | range | under 1 |
+  |---|---|---|---|---|
+  | prefill, 128 tokens | 6 | 1.014 | 0.965–1.219 | 2 |
+  | prefill, 4,096 tokens | 4 | 1.001 | 0.995–1.005 | 2 |
+  | MC3c step, 4 × depth 128 | 6 | 1.008 | 0.995–1.022 | 1 |
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

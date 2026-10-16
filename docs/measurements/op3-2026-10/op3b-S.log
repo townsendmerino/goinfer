@@ -1,0 +1,29 @@
+=== RUN   TestProgram_S_batchedSpeed
+=== RUN   TestProgram_S_batchedSpeed/prefill-128
+[S prefill-128] pair 1/6: walker 191.858 | old 233.819 ms | rate walker/old 1.219
+[S prefill-128] pair 2/6: walker 197.627 | old 204.367 ms | rate walker/old 1.034
+[S prefill-128] pair 3/6: walker 201.022 | old 193.994 ms | rate walker/old 0.965
+[S prefill-128] pair 4/6: walker 192.561 | old 196.194 ms | rate walker/old 1.019
+[S prefill-128] pair 5/6: walker 197.411 | old 194.086 ms | rate walker/old 0.983
+[S prefill-128] pair 6/6: walker 198.536 | old 200.181 ms | rate walker/old 1.008
+    program_ab_test.go:86: S prefill-128: paired median rate walker/old 1.014 (min 0.965 max 1.219, n=6, 2 under 1; bar 0.99)
+=== RUN   TestProgram_S_batchedSpeed/prefill-4096
+[S prefill-4096] pair 1/4: walker 14351.733 | old 14397.316 ms | rate walker/old 1.003
+[S prefill-4096] pair 2/4: walker 14402.287 | old 14371.422 ms | rate walker/old 0.998
+[S prefill-4096] pair 3/4: walker 14427.795 | old 14354.528 ms | rate walker/old 0.995
+[S prefill-4096] pair 4/4: walker 14332.295 | old 14399.159 ms | rate walker/old 1.005
+    program_ab_test.go:86: S prefill-4096: paired median rate walker/old 1.001 (min 0.995 max 1.005, n=4, 2 under 1; bar 0.99)
+=== RUN   TestProgram_S_batchedSpeed/multi-4x128
+[S multi-4x128] pair 1/6: walker 19.086 | old 18.988 ms | rate walker/old 0.995
+[S multi-4x128] pair 2/6: walker 18.990 | old 19.266 ms | rate walker/old 1.015
+[S multi-4x128] pair 3/6: walker 18.969 | old 19.173 ms | rate walker/old 1.011
+[S multi-4x128] pair 4/6: walker 19.004 | old 19.428 ms | rate walker/old 1.022
+[S multi-4x128] pair 5/6: walker 19.029 | old 19.086 ms | rate walker/old 1.003
+[S multi-4x128] pair 6/6: walker 19.140 | old 19.234 ms | rate walker/old 1.005
+    program_ab_test.go:86: S multi-4x128: paired median rate walker/old 1.008 (min 0.995 max 1.022, n=6, 1 under 1; bar 0.99)
+--- PASS: TestProgram_S_batchedSpeed (149.65s)
+    --- PASS: TestProgram_S_batchedSpeed/prefill-128 (3.25s)
+    --- PASS: TestProgram_S_batchedSpeed/prefill-4096 (129.76s)
+    --- PASS: TestProgram_S_batchedSpeed/multi-4x128 (16.63s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	150.217s

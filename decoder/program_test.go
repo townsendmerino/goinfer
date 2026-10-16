@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -94,8 +95,31 @@ func programPrompt(m *Model) []int {
 	return ids
 }
 
-// runTokens runs the per-token forward with prog over ids and returns the last logits, or the error or panic it ended on.
-func runTokens(m *Model, prog *program, ids []int) (logits []float32, err error) {
+// walkerMode names the walker a run goes through: the per-token forward, the batched forward (forwardN, exact attention), or
+// MC3c's multi-sequence step (two sequences in lockstep, the first one's logits read).
+type walkerMode string
+
+const (
+	modeToken walkerMode = "token"
+	modeBatch walkerMode = "batch"
+	modeMulti walkerMode = "multi"
+)
+
+var walkerModes = []walkerMode{modeToken, modeBatch, modeMulti}
+
+// eligible reports whether m's unchanged model runs mode at all, so a mode it declines is not read as a change.
+func (mode walkerMode) eligible(m *Model, n int) bool {
+	switch mode {
+	case modeBatch:
+		return m.canBatchN(n)
+	case modeMulti:
+		return m.cpuBatchModelEligible() == nil && cpuBatchCacheEligible(m.NewCache(n)) == nil
+	}
+	return true
+}
+
+// runProgram runs ids through mode with prog and returns the last logits, or the error or panic it ended on.
+func runProgram(m *Model, prog *program, ids []int, mode walkerMode) (logits []float32, err error) {
 	mm := *m
 	mm.prog = prog
 	defer func() {
@@ -103,14 +127,36 @@ func runTokens(m *Model, prog *program, ids []int) (logits []float32, err error)
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
-	cache := mm.NewCache(len(ids))
-	if len(m.w.arch.MRopeSection) > 0 {
-		// A text prompt's m-RoPE positions are (p, p, p), where the section and the interleave cannot show: give each axis its own.
-		cache.mropePos = make([][3]int, len(ids))
-		for i := range ids {
-			cache.mropePos[i] = [3]int{i, i / 2, i % 3}
+	newCache := func() *KVCache {
+		c := mm.NewCache(len(ids))
+		if len(m.w.arch.MRopeSection) > 0 {
+			// A text prompt's m-RoPE positions are (p, p, p), where the section and the interleave cannot show: give each axis its own.
+			c.mropePos = make([][3]int, len(ids))
+			for i := range ids {
+				c.mropePos[i] = [3]int{i, i / 2, i % 3}
+			}
 		}
+		return c
 	}
+	switch mode {
+	case modeBatch:
+		rows, ferr := mm.forwardN(context.Background(), ids, newCache())
+		if ferr != nil {
+			return nil, ferr
+		}
+		return append([]float32(nil), rows[len(rows)-1]...), nil
+	case modeMulti:
+		c0, c1 := newCache(), newCache()
+		for i, id := range ids {
+			rows, ferr := mm.decodeMultiStep([]int{id, ids[len(ids)-1-i]}, []*KVCache{c0, c1})
+			if ferr != nil {
+				return nil, ferr
+			}
+			logits = rows[0]
+		}
+		return append([]float32(nil), logits...), nil
+	}
+	cache := newCache()
 	for _, id := range ids {
 		lg, ferr := mm.forward(id, cache)
 		if ferr != nil {
@@ -150,7 +196,7 @@ func cloneProgram(p *program) *program {
 }
 
 // TestProgram_P_plants is gate P: a dropped operation, two swapped operations, and a parameter off by one each change the
-// logits on at least one fixture.
+// logits on at least one fixture, through each walker.
 func TestProgram_P_plants(t *testing.T) {
 	fx := programFixtures(t)
 	plants := []struct {
@@ -186,45 +232,54 @@ func TestProgram_P_plants(t *testing.T) {
 		}},
 		{"attention window one key short on the first windowed layer", nil},
 	}
-	for _, pl := range plants {
-		changed, ran := 0, 0
-		var cells []string
-		for _, f := range fx {
-			ids := programPrompt(f.m)
-			ref, err := runTokens(f.m, f.m.prog, ids)
-			if err != nil {
-				t.Fatalf("%s: the unchanged program fails: %v", f.name, err)
-			}
-			c := cloneProgram(f.m.prog)
-			ok := false
-			if pl.apply != nil {
-				c.layers[0], ok = pl.apply(f.m.w.arch, c.layers[0])
-			} else {
-			windowed:
-				for l := range c.layers {
-					for i := range c.layers[l] {
-						if o := &c.layers[l][i]; o.kind == opAttention && o.attn.Window > 1 {
-							o.attn.Window--
-							ok = true
-							break windowed
+	for _, mode := range walkerModes {
+		for _, pl := range plants {
+			changed, ran := 0, 0
+			var cells []string
+			for _, f := range fx {
+				ids := programPrompt(f.m)
+				if !mode.eligible(f.m, len(ids)) {
+					continue
+				}
+				ref, err := runProgram(f.m, f.m.prog, ids, mode)
+				if err != nil {
+					t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
+				}
+				c := cloneProgram(f.m.prog)
+				ok := false
+				if pl.apply != nil {
+					c.layers[0], ok = pl.apply(f.m.w.arch, c.layers[0])
+				} else {
+				windowed:
+					for l := range c.layers {
+						for i := range c.layers[l] {
+							if o := &c.layers[l][i]; o.kind == opAttention && o.attn.Window > 1 {
+								o.attn.Window--
+								ok = true
+								break windowed
+							}
 						}
 					}
 				}
+				if !ok {
+					continue
+				}
+				ran++
+				got, err := runProgram(f.m, c, ids, mode)
+				res := outcome(ref, got, err)
+				if res != "same" {
+					changed++
+				}
+				cells = append(cells, f.name+"="+res)
 			}
-			if !ok {
+			if ran == 0 {
+				t.Logf("P %s %q NOT RUN: no fixture this walker runs has what it changes", mode, pl.name)
 				continue
 			}
-			ran++
-			got, err := runTokens(f.m, c, ids)
-			res := outcome(ref, got, err)
-			if res != "same" {
-				changed++
+			t.Logf("P %s %q: changed on %d of %d fixtures it applies to (%s)", mode, pl.name, changed, ran, strings.Join(cells, " "))
+			if changed == 0 {
+				t.Errorf("P %s %q changed nothing on any fixture: the walker does not read what the plant changed", mode, pl.name)
 			}
-			cells = append(cells, f.name+"="+res)
-		}
-		t.Logf("P %q: changed on %d of %d fixtures it applies to (%s)", pl.name, changed, ran, strings.Join(cells, " "))
-		if changed == 0 {
-			t.Errorf("P %q changed nothing on any fixture: the walker does not read what the plant changed", pl.name)
 		}
 	}
 }
@@ -261,35 +316,53 @@ var programParamNeeds = map[string]string{
 }
 
 // TestProgram_L_everyParameterIsLive is gate L: every parameter the builder emits, changed alone in every operation that carries
-// it, changes the logits of at least one fixture.
+// it, changes the logits of at least one fixture through the per-token walker. Through the batched and multi-sequence walkers it
+// must change every fixture they run whose per-token logits it changes: a walker that read the parameter from elsewhere would
+// keep that fixture's logits.
 func TestProgram_L_everyParameterIsLive(t *testing.T) {
 	fx := programFixtures(t)
 	type tally struct {
 		changed, errored, same []string
 	}
+	// res[mode][key][fixture]: what changing key did to that fixture's logits through that walker.
+	res := map[walkerMode]map[string]map[string]string{}
 	pairs := map[string]*tally{}
-	for _, f := range fx {
-		ids := programPrompt(f.m)
-		ref, err := runTokens(f.m, f.m.prog, ids)
-		if err != nil {
-			t.Fatalf("%s: the unchanged program fails: %v", f.name, err)
-		}
-		for _, key := range programParamKeys(f.m.prog) {
-			c := cloneProgram(f.m.prog)
-			programPerturb(c, key)
-			got, err := runTokens(f.m, c, ids)
-			tl := pairs[key]
-			if tl == nil {
-				tl = &tally{}
-				pairs[key] = tl
+	for _, mode := range walkerModes {
+		res[mode] = map[string]map[string]string{}
+		for _, f := range fx {
+			ids := programPrompt(f.m)
+			if !mode.eligible(f.m, len(ids)) {
+				continue
 			}
-			switch outcome(ref, got, err) {
-			case "changed":
-				tl.changed = append(tl.changed, f.name)
-			case "error":
-				tl.errored = append(tl.errored, f.name+" ("+firstLine(err.Error())+")")
-			default:
-				tl.same = append(tl.same, f.name)
+			ref, err := runProgram(f.m, f.m.prog, ids, mode)
+			if err != nil {
+				t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
+			}
+			for _, key := range programParamKeys(f.m.prog) {
+				c := cloneProgram(f.m.prog)
+				programPerturb(c, key)
+				got, err := runProgram(f.m, c, ids, mode)
+				r := outcome(ref, got, err)
+				if res[mode][key] == nil {
+					res[mode][key] = map[string]string{}
+				}
+				res[mode][key][f.name] = r
+				if mode != modeToken {
+					continue
+				}
+				tl := pairs[key]
+				if tl == nil {
+					tl = &tally{}
+					pairs[key] = tl
+				}
+				switch r {
+				case "changed":
+					tl.changed = append(tl.changed, f.name)
+				case "error":
+					tl.errored = append(tl.errored, f.name+" ("+firstLine(err.Error())+")")
+				default:
+					tl.same = append(tl.same, f.name)
+				}
 			}
 		}
 	}
@@ -300,17 +373,17 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		tl := pairs[k]
-		live := len(tl.changed) > 0 || len(tl.errored) > 0
-		t.Logf("L %-28s changed %2d  error %2d  same %2d  %s", k, len(tl.changed), len(tl.errored), len(tl.same), firstOf(tl.changed, tl.errored))
+		isLive := len(tl.changed) > 0 || len(tl.errored) > 0
+		t.Logf("L token %-28s changed %2d  error %2d  same %2d  %s", k, len(tl.changed), len(tl.errored), len(tl.same), firstOf(tl.changed, tl.errored))
 		reason, listed := programParamUnreached[k]
-		if need, ok := programParamNeeds[k]; ok && !live && !hasFixture(fx, need) {
+		if need, ok := programParamNeeds[k]; ok && !isLive && !hasFixture(fx, need) {
 			t.Logf("L %s NOT RUN: only %s reaches it, and it is not present (a skip is not a pass)", k, need)
 			continue
 		}
 		switch {
-		case live && listed:
+		case isLive && listed:
 			t.Errorf("L %s is listed as unreached (%s) but changes the logits: remove it from programParamUnreached", k, reason)
-		case !live && !listed:
+		case !isLive && !listed:
 			t.Errorf("L %s changed no fixture's logits: the walker may read it from elsewhere, or no fixture reaches it (then list it, with the reason)", k)
 		}
 	}
@@ -318,6 +391,31 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 		if pairs[k] == nil {
 			t.Errorf("L %s is listed as unreached but no fixture's program carries it: remove it", k)
 		}
+	}
+	// The other walkers, against the per-token one, fixture by fixture. Only a per-token CHANGE binds them: an error is the path's
+	// own (a width one too large overruns the per-token scratch, and the batched path, allocating per call, computes an extra zero
+	// column that the logits cannot show).
+	for _, mode := range []walkerMode{modeBatch, modeMulti} {
+		checked, notRun := 0, 0
+		for _, k := range keys {
+			n := 0
+			for f, r := range res[mode][k] {
+				if res[modeToken][k][f] != "changed" {
+					continue
+				}
+				n++
+				if r == "same" {
+					t.Errorf("L %s %s: changes %s's per-token logits but not its %s logits: that walker does not read it from the program", mode, k, f, mode)
+				}
+			}
+			if n == 0 {
+				notRun++
+				t.Logf("L %s %-28s NOT RUN: no fixture this walker runs shows it per token", mode, k)
+				continue
+			}
+			checked++
+		}
+		t.Logf("L %s: %d parameters checked against the per-token walker, %d not run", mode, checked, notRun)
 	}
 }
 

@@ -90,8 +90,8 @@ func TestPromptHiddenAll_matchesHF(t *testing.T) {
 	}
 	for _, fx := range g.Fixtures {
 		m := loadFixtureModel(t, fx.Checkpoint, "")
-		if _, own := m.w.arch.ownForward(); !own {
-			t.Fatalf("%s is expected to have its own layer loop; the test would not cover the Qwen3.5 path", fx.Checkpoint)
+		if m.w.arch.qwen35 == nil {
+			t.Fatalf("%s is expected to be a Qwen3.5-family model; the test would not cover the Qwen3.5 path", fx.Checkpoint)
 		}
 		if m.w.arch.HiddenDim != fx.HiddenSize {
 			t.Fatalf("%s: hidden %d, golden %d", fx.Checkpoint, m.w.arch.HiddenDim, fx.HiddenSize)

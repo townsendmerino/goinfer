@@ -84,7 +84,7 @@ func (m *Model) canBatchN(K int) bool {
 	if _, own := a.ownForward(); own {
 		return false
 	}
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed
+	return K > 1 && m.w.Embed.Rows() != 0 && m.program().batchEligible()
 }
 
 // hasRecurrentState reports whether this model carries state mutated in place per token (a conv window, an SSM state, a
@@ -145,13 +145,12 @@ func (m *Model) embedN(ids []int) []float32 {
 
 // embedNInto is embedN into h, which holds exactly len(ids)*HiddenDim floats.
 func (m *Model) embedNInto(h []float32, ids []int) []float32 {
-	arch := m.w.arch
-	hidden := arch.HiddenDim
+	hidden := m.w.arch.HiddenDim
 	for i, id := range ids {
 		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
 	}
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		s := float32(arch.EmbedScale)
+	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+		s := float32(emb.Scale)
 		for i := range h {
 			h[i] *= s
 		}
@@ -174,6 +173,19 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 // suffix being prefilled, rather than on this pass's rows: a chunked prefill (Model.prefillLogits) passes every chunk the
 // suffix's length, so a short last chunk keeps the suffix's attention path and its rows equal a single pass's.
 func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
+	if programWalkOffForTest {
+		return m.runLayersFromEmbedNFloorLoop(reqCtx, h, cache, fastAttn, floorK, ps)
+	}
+	prog := m.program()
+	if prog.layers == nil {
+		return nil, fmt.Errorf("decoder: %s has no layer program (it runs its own loop)", m.w.arch.Name)
+	}
+	return m.walkBatch(reqCtx, prog, h, cache, fastAttn, floorK, ps)
+}
+
+// runLayersFromEmbedNFloorLoop is the batched loop the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step.
+func (m *Model) runLayersFromEmbedNFloorLoop(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -1161,23 +1173,23 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 // lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
 // [M, VocabSize] (+ final-logit softcap), at M=K so the head weights stream once.
 func (m *Model) lmHeadN(h []float32, M int) []float32 {
-	arch := m.w.arch
-	logits := make([]float32, M*arch.VocabSize)
-	if arch.TiedLMHead {
+	hp := &m.program().head
+	logits := make([]float32, M*m.w.arch.VocabSize)
+	if hp.Tied {
 		matmul(m.be, &m.w.Embed, h, logits, M)
 	} else {
 		matmul(m.be, &m.w.LMHead, h, logits, M)
 	}
-	if arch.FinalLogitSoftcap > 0 {
-		sc := float32(arch.FinalLogitSoftcap)
+	if hp.Softcap > 0 {
+		sc := float32(hp.Softcap)
 		for j, val := range logits {
 			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
 		}
 	}
 	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite logits_scaling divisor): mirrors logitsFromHidden's tail.
 	// The sequential path applies it, so batched prefill/verify must too or forwardN diverges for any LogitScale family.
-	if arch.LogitScale != 0 && arch.LogitScale != 1 {
-		inv := float32(1 / arch.LogitScale)
+	if hp.LogitScale != 0 && hp.LogitScale != 1 {
+		inv := float32(1 / hp.LogitScale)
 		for j := range logits {
 			logits[j] *= inv
 		}
