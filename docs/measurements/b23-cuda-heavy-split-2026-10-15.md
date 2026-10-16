@@ -19,7 +19,25 @@ the first, test in their process, so their own footprint is that size and no par
 `TestCohereRealResidentParityCUDA` (aya-expanse-8b and command-r7b, both bf16 safetensors, in one test) read 37,262 MB, fifth in
 its process after tests that peaked at 15,925 MB: an upper bound, likely over 20 GB alone, not shown.
 
-The owner's condition for merging was that no single test exceed about 20 GB, so the change is held unmerged for the owner.
+**Owner decision 2026-10-15, option (a): accept these four as they are, each under a per-test memory budget**, and merge the
+split. A budget is the measured reading plus about 5%, the run-to-run spread of the suite's VmHWM in this box's ABBA (37,229 to
+38,361 MB, `docs/measurements/kv2-cuda-2026-10-15.md` §7), rounded up to the next 1,000 MB. Figures are MB as the gate prints them
+(kB / 1024). A reading over budget is a regression to explain before it is accepted.
+
+| test | family | budget | basis |
+|---|---|---|---|
+| `TestGemma4_26B_1bBound` | Gemma 4 26B | 54,000 MB, and see below | 51,077 MB RSS, first test in its process; the process's VmHWM 51,085 MB |
+| `TestGptOssResidentParityCUDA` | gpt-oss-20b | 47,000 MB | 44,651 MB VmHWM, the only test in its process |
+| `TestPagerDeterminism` | Qwen3.6-35B-A3B | 44,000 MB | 41,805 MB RSS, after a test that peaked at 3,931 MB |
+| `TestGemma4EModel_realE4BAnchorDump` | Gemma 4 E4B | 38,000 MB | at most 35,852 MB RSS, after a test that peaked at 16,806 MB (an upper bound) |
+
+**The 26B's reading is a floor, not its demand.** Its process sits at `user-1000.slice`'s `memory.high` of 53,248 MiB, against
+which the desktop and the page cache also count. With the desktop up, reclaim swapped 24,064 MB of the process's own pages (peak
+VmSwap), so its resident peak was capped by the slice. Expect that process to swap whenever the desktop is logged in. B24
+(`docs/queue-engineering.md`) is the follow-up that would lower it.
+
+The four groups not run by day (qwen3-4b, qwen3-vl-2b, gemma3-4b, small) get their readings from the next `gate gpu` run, which
+logs every process's VmHWM and peak VmSwap. No separate run is made for them.
 
 ## 2. The readings (day, tier 1)
 
@@ -48,8 +66,9 @@ this box does not hold, as in the gate. The 26B process swapped 24 GB and ran `T
 2026-10-14 release gate, so its later tests' timings are not citable.
 
 **Not measured by day:** qwen3-4b (27 tests, about 12 min of test time in the 2026-10-14 gate's logs), qwen3-vl-2b (7, about
-15 min), gemma3-4b (21, about 19 min) and small (392, about 30 min). Each is over the 10-minute day limit, together about 76 min. The
-next `gate gpu` run records every process's VmHWM and peak VmSwap in its output and in the record's `heavy_processes`.
+15 min), gemma3-4b (21, about 19 min) and small (392, about 30 min). Each is over the 10-minute day limit, together about 76 min. By the
+owner's decision their readings come from the next `gate gpu` run, which records every process's VmHWM and peak VmSwap in its
+output and in the record's `heavy_processes`.
 
 Logs: `~/goinfer-logs/b23-2026-10-15/` on nobara (`run-<group>.log`, the gate's `gate_gpu_cuda-heavy-<group>.json` streams, and
 `run-day.sh`, the chain that ran them).
