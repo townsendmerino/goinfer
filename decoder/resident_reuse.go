@@ -321,6 +321,10 @@ type kvAcquired struct {
 	shared, src int
 	copyDur     time.Duration
 	declined    string
+	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
+	snapRows int
+	snapDur  time.Duration
+	snapFrom *kvSnap // the snapshot those rows came from
 	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
 	// (Generation.PrefillSlot and PrefillMatch).
 	slotLen, match int
@@ -330,6 +334,9 @@ type kvAcquired struct {
 // more of the prompt than the bound slot does, it copies them into the bound slot (ResidentKVCopier) and skips them.
 func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
 	acq := m.residentAcquireSlotAll(prompt, imgs, lora, busy, sc)
+	if imgs == nil {
+		m.residentRestoreSnapshot(prompt, lora, sc, &acq)
+	}
 	// the slot is bound now, so its window is the one to ask (a parked slot's score was not floored when it was counted)
 	acq.reuse = m.residentReuseFloor(m.declineShortLeadReuse(prompt, acq.reuse))
 	if acq.reuse < acq.shared { // the bound slot's window cannot serve the copied rows: none of them count

@@ -946,6 +946,8 @@ KV2 merges when every arm on both boxes is read.
 
 ### KV7 — Tiers, parking and resume
 
+- **First slice built 2026-10-16 (CUDA, over slot storage, pinned host RAM only, one restore):** prefix snapshots,
+  `docs/tasks/task-kv7-prefix-snapshot-2026-10.md`. The disk tier, promotion policy and block-granular host pool below are still to do.
 - **Build:**
   - CUDA's pinned host tier;
   - a disk tier for every GPU backend;

@@ -398,3 +398,33 @@ func TestSlots_firstPrompt(t *testing.T) {
 		t.Errorf("after a request that diverged inside the first prompt: FirstPrompt = %d, want %d", got, len(p3))
 	}
 }
+
+// TestSlotsRestored: a prefix restored from a host snapshot is recorded exactly as a copy is. A request whose prompt starts
+// with it hits it, whole blocks only, under the snapshot's root and not another's; its classes are the snapshot's.
+func TestSlotsRestored(t *testing.T) {
+	a := NewSlots(2)
+	root := Root{Model: "m", Namespace: "a", Precision: "f32"}
+	toks := seqOf(9*BlockRows+10, 1) // a prompt over the fast floor: its rows are fast class
+	classes := cudaClasses.ColdClasses(len(toks))
+	a.Restored(1, root, toks, classes)
+	if got, want := a.Len(1), 9*BlockRows; got != want {
+		t.Fatalf("a restored slot holds %d rows, want %d (whole blocks only)", got, want)
+	}
+	prompt := append(slices.Clone(toks[:8*BlockRows+5]), seqOf(400, 9)...)
+	hits := a.Hits(Request{Root: root, Tokens: prompt}, cudaClasses.ColdClasses(len(prompt)))
+	if hits[1] != 8*BlockRows || hits[0] != 0 {
+		t.Errorf("hits %v, want 8 blocks in slot 1 and none in slot 0", hits)
+	}
+	other := root
+	other.Namespace = "b"
+	if h := a.Hits(Request{Root: other, Tokens: prompt}, cudaClasses.ColdClasses(len(prompt))); h[1] != 0 {
+		t.Errorf("a request in another namespace hit the restored rows: %v", h)
+	}
+	if got := a.Seq(1).Tokens(); !slices.Equal(got, toks[:9*BlockRows]) {
+		t.Errorf("the restored tokens are not the snapshot's")
+	}
+	a.Restored(1, root, toks[:BlockRows-1], classes) // less than a block: nothing to hold
+	if a.Len(1) != 0 || a.Seq(1) != nil {
+		t.Errorf("a restore of under one block left a record (%d rows)", a.Len(1))
+	}
+}

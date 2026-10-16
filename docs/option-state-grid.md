@@ -17,6 +17,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
+| `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision` | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | tested: `TestOptionPathMetal_kvPrecision` | tested: `TestOptionPathMetal_kvPrecision` |
 | `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `KVShareOff` | n/a | n/a | n/a | n/a | tested: `TestKV2_optionKVShareOff_resident` | n/a | tested: `TestSessionLRU_sharesAPreamble` |
@@ -42,6 +43,10 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 - `EmbedInt4`: a weight format; the session's cache does not depend on it
 - `ExactPrefill`: selects how a prompt is ingested; decode is one token
 - `ExactPrefill`: selects prefill numerics; a session's reuse rules do not depend on them
+- `KVHostBytes`: snapshots hold a GPU resident's KV in host memory; the CPU path keeps its own session LRU
+- `KVHostBytes`: a snapshot is taken after the prefill, before the first decode step, and restored before the prefill; decode extends the slot's own rows
+- `KVHostBytes`: snapshots act as a request takes its slot and as its prefill ends, before any speculative step
+- `KVHostBytes`: a session's own KV is the CPU path's; this is the resident slot's
 - `KVPrecision`: "Ignored off the residency path"
 - `KVQuant`: the CPU KV cache's precision ("selects the CPU KV cache storage precision"); a resident uses KVPrecision
 - `KVShareOff`: sharing chooses the rows a request starts from as it takes its session; the forward that follows is unchanged

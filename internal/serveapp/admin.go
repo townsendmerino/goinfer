@@ -110,6 +110,18 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	if len(rb) > 0 {
 		resp["resident_batch"] = rb
 	}
+	// Prefix snapshots (decoder/kvsnap.go) per model that keeps them: the budget and what is held, taken, restored and refused.
+	kv := map[string]any{}
+	for _, lm := range s.modelList() {
+		if lm.model != nil {
+			if st, ok := lm.model.KVSnapshotStats(); ok {
+				kv[lm.name] = st
+			}
+		}
+	}
+	if len(kv) > 0 {
+		resp["kv_snapshots"] = kv
+	}
 	// Carried token ids (carried_ids.go): turns that carried a blob, turns that used its ids, and the fallbacks by reason.
 	resp["carried_ids"] = s.idsStats.report()
 	writeJSON(w, http.StatusOK, resp)

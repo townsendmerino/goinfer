@@ -221,6 +221,11 @@
    "summary": "Cap on request-body size in bytes; a larger body is rejected with 413 before it is read. 0 derives the cap from the model's context window."
   },
   {
+   "name": "kv-host-bytes",
+   "group": "Sessions and KV cache",
+   "summary": "Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held."
+  },
+  {
    "name": "kv-share",
    "group": "Sessions and KV cache",
    "summary": "on|off: whether a new conversation on a GPU-resident model copies KV rows another conversation computed (a shared system prompt) instead of prefilling them. Off whatever this says when the server answers the network without -api-key."
