@@ -229,8 +229,9 @@ func TestSeams_gates(t *testing.T) {
 // refuse exactly the fixtures where gate S cannot rebuild a layer (Gemma 4's E-models and 26B MoE: the PLE branch and the MoE
 // block), and serve every other one. HiddenLast and ForwardCapture serve all of them (TestSeams_gates).
 func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
-	refused := map[string]bool{}
+	refused, present := map[string]bool{}, map[string]bool{}
 	for _, f := range programFixtures(t) {
+		present[f.name] = true
 		ids := programPrompt(f.m)
 		cache := f.m.NewCache(len(ids))
 		_, _, _, _, err := f.m.ForwardSubCapture(ids[0], cache)
@@ -249,14 +250,21 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 			t.Errorf("%s: served, but gate S rebuilt %d layers (%v)", f.name, checked, err)
 		}
 	}
+	// The four the owner's condition names; three are gitignored, so a box without them (CI) reports them NOT RUN.
 	want := []string{"gemma4-emodel-tiny", "gemma4-moe-kv-tiny", "gemma4-moe-tiny", "gemma4-moe-unified-tiny"}
+	wantPresent := 0
 	for _, w := range want {
-		if !refused[w] {
-			t.Errorf("%s is not refused (or not present): the owner's condition names it", w)
+		switch {
+		case !present[w]:
+			t.Logf("%s NOT RUN: the fixture is not present (a skip is not a pass)", w)
+		case !refused[w]:
+			t.Errorf("%s is not refused: the owner's condition names it", w)
+		default:
+			wantPresent++
 		}
 	}
-	if len(refused) != len(want) {
-		t.Errorf("refused %d fixtures, want exactly the %d gate S could not run on: %v", len(refused), len(want), refused)
+	if len(refused) != wantPresent {
+		t.Errorf("refused %d fixtures, want exactly the %d present ones gate S could not run on: %v", len(refused), wantPresent, refused)
 	}
 }
 
