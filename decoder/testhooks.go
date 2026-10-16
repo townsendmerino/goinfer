@@ -601,3 +601,17 @@ func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
 func (m *Model) WholePromptScratchBytesForTest(promptTokens int) int64 {
 	return prefillScratchBytes(m.Config(), promptTokens)
 }
+
+// StartMoESelTraceForTest records every moeMLP call's routing (top-k indices and weights) in forward order until
+// TakeMoESelTraceForTest; StopMoESelTraceForTest turns it off.
+func StartMoESelTraceForTest() { moeSelTrace, moeWtsTrace = [][]int{}, [][]float32{} }
+
+// TakeMoESelTraceForTest returns the routing recorded since the last call, and keeps recording.
+func TakeMoESelTraceForTest() ([][]int, [][]float32) {
+	s, w := moeSelTrace, moeWtsTrace
+	moeSelTrace, moeWtsTrace = [][]int{}, [][]float32{}
+	return s, w
+}
+
+// StopMoESelTraceForTest stops the recording.
+func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }

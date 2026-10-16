@@ -299,7 +299,11 @@ type resident struct {
 	// prefill's row-by-row MoE (GOINFER_MOE_EXPERT_MAJOR=0) copies row m's into slot l*rows+m; the expert-major path,
 	// which reads its routing back to the host anyway, hands it to major. Encoded at encode time, so a test sets it
 	// before the first forward it captures.
-	moeCap struct {
+	// moeForce, a test-only routing override: when idx is set, each MoE layer's router result is replaced by the k indices
+	// and weights at layer*k (encodeMoERoute); encLayer is the layer being encoded.
+	moeForce struct{ idx, wgt Buffer }
+	encLayer int
+	moeCap   struct {
 		idx, wgt Buffer
 		rows     int
 		major    func(l int, idx []uint32, wgt []float32)
@@ -2959,6 +2963,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		rp = uRopePos[0]
 	}
 	L := &r.layers[l]
+	r.encLayer = l
 	switch {
 	case L.delta != nil:
 		// Gated-DeltaNet mixer: replaces the whole attention sub-block (norm through o-proj) —

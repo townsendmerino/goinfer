@@ -1071,6 +1071,29 @@ Their gate:
     whole model's output, which a slice does not produce.
 - **Night, only if the slice passes:** the whole V2-Lite, as above.
 
+**OP2a gate M, read 2026-10-16, and two amendments after the data (owner, 2026-10-16).**
+
+- **As registered:**
+  - The control `qwen3moe-tiny` read min cosine 0.999458, argmax 31/32.
+  - `deepseek-tiny`: 0.999880, 32/32, **PASS**.
+  - `kimi-tiny`: 0.994251 against 0.998458, **FAIL**, with argmax 31/32. Its cosine held about 0.9997 except steps 8 and 9
+    (0.994, 0.997), then recovered.
+  - The guards PASS.
+- **Amendment 1, gate M for the MoE fixtures is graded with routing forced.** Every MoE layer on Metal takes the experts
+  and weights the CPU chose for the same token (`TestMLAResident_routingForced`), on all three fixtures, control included.
+  - Read: control 0.999885, 31/32; `deepseek-tiny` 0.999884, 32/32; `kimi-tiny` 0.999751, 32/32. **PASS.**
+  - The step 8–9 dip was a routing near-tie: Metal's router sums its softmax in f32, the CPU's in f64, and kimi-tiny picks
+    4 of 16 experts. A fault in the MLA path would persist through the latent cache, and none shows once routing is forced.
+- **Amendment 2, the tiny fixtures cannot see a rope defect.** The registered plant (q's and the latent's rope and nope slices
+  swapped, on the branch these interleaved fixtures run) read 0.999866, 32/32, not red. Their rope contributes almost nothing
+  to the scores (`decoder/features.go`'s note on flat tiny weights). Gate M stays as the model-level check of the rest of the
+  path. The rope is gated at the kernel instead, registered here before it runs:
+  - **K-MLA:** `mla_store` and `mla_qrope` against a float64 reference on non-flat synthetic inputs (values spanning ±4, a
+    rope table of base 10,000), both branches (interleaved and not), at positions 0, 1, 7, 255 and 4,095.
+    - **Bar:** max |error| ≤ 2e-3 × max |reference| per output, which allows for fast-math `sin`/`cos` at angles up to
+      about 4,095 radians.
+    - **Plant:** the rope and nope slices swapped in each branch must turn it red.
+
 **OP2b, SSM (Mamba-2) on CUDA and on Metal.**
 - **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
 - **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).
