@@ -1382,9 +1382,12 @@ on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Rec
 - **Declaration:** `ssm`, `non-gated-mlp` and `non-gated-relu2` on CUDA, int4 only, after every gate below passes; the
   matrix and the admission golden regenerate with it. On a branch, unmerged, until then (OP1's way).
 
-**Tier 0, by day: synthetic and tiny, seconds. Cosine in every K, M and tier 1 reading is scored 0 when exactly one side is all zeros.**
-CUDA's `cosF32` returns 1 for that case (`cuda/deltanet_test.go`), which is the guard that made Metal's first kernel test read 1.0 on
-an all-zero output (step 1's "found on the way"); these tests use a helper that does not.
+**Tier 0, by day: synthetic and tiny, seconds. In every K and M reading both outputs are asserted non-zero before the cosine is taken,
+and a cosine where exactly one side is all zeros is scored 0.**
+CUDA's `cosF32` returns 1 for an all-zero side (`cuda/deltanet_test.go`), which is the guard that made Metal's first kernel test read
+1.0 on an all-zero output (step 1's "found on the way"). The non-zero assertion fails the test by name ("output is all zeros: the
+reading is void"), so a kernel that writes nothing, or a replay of a model closed under it, cannot pass as agreement. Tier 1's harness
+applies the same check to each step's logits.
 - **K, each new kernel against the CPU's own computation, on real inputs.** `SetMambaCapHook` captures each step's `in_proj` output
   and gated output from `nemotron-tiny` and `granite-tiny` (the kernels serve Granite's geometry too; the family stays declined), and
   the CUDA chain replays the `in_proj` output from a fresh state. Bar `gpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3
@@ -1420,17 +1423,27 @@ an all-zero output (step 1's "found on the way"); these tests use a helper that 
 
 **Tier 1, by day, under the timing lock, about 10 minutes.** The checkpoint is `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf` in
 nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it on nobara with `cmd/prequant -target cuda`.
-- **The question the card asks first.** Metal's whole-model bundle is 7.27 GB (v17, Mamba projections at int8). The card is 8 GB with
-  about 0.45 GB held by the desktop and a CUDA context. Whether that plus the states and scratch fits is not known; **F answers it
-  from the plan before anything else, and the answer decides which half of the rule below applies.**
-- **If the whole model is admitted:** its resident run against the CPU at int4 by G2-R's harness and bars (greedy lockstep 32
-  steps off the CPU, min cosine ≥ 0.88, argmax ≥ 50%), the dense 1.5B control through the same harness at ≥ 0.95 in the same
-  session (a control failure voids the session). Against `nemotron_real_golden.json.gz` as a second reading.
-- **If it is not:** the registered fallback is the three-layer slice (layers 0, 1 and 14 of the Q8_0, renumbered 0 to 2, with the
-  embedding, final norm and head; `scripts/slice_gguf_layers.py`), same harness and bars. **A slice does not declare:** the whole
-  model's agreement stays unanswered and the matter goes to the owner with the numbers, since on Metal the slice stood in only by the
-  owner's word (2026-10-15). A smaller bundle would answer it (B27's int8 Mamba projections took Metal's from 19.2 to 7.27 GB;
-  int4 Mamba projections would go further and need their own quality gate, `docs/ssm-int8-quality.md`).
+- **The whole-model cell, decided now (owner, 2026-10-16), in this order, before any data:**
+  1. **Look for a smaller real Nemotron-H first.** `nvidia/Nemotron-H-4B-Instruct-128K` exists (52 layers, hidden 3072, 112 Mamba heads
+     of 64, per its model card and config as found 2026-10-16; its file size was not confirmed and is INFERRED to be about 8 GB in
+     bf16, so about 2.5 to 3 GB as an int4 bundle). The steps, each stopping the list on a failure:
+     - pull it to nobara's `~/models` (never read from the archive);
+     - it must load and generate coherently on the **CPU** through today's `nemotron_h` adapter, which is a decoder finding in its
+       own right if it does not (a different layer pattern or head geometry the adapter does not know);
+     - gate F's plan must admit its CUDA int4 bundle whole.
+     If all three hold, **it is tier 1's whole-model cell:** its resident run against the CPU by G2-R's harness and bars (greedy
+     lockstep 32 steps off the CPU, min cosine ≥ 0.88, argmax ≥ 50%), the dense 1.5B control at ≥ 0.95 in the same session (a control
+     failure voids the session). The 9B's three-layer slice runs beside it as an extra, not as the cell.
+  2. **If none fits whole,** the declaration may rest on gates K, D, I, M, G, S and P, **the three-layer 9B slice on CUDA** (layers 0, 1
+     and 14 of the Q8_0, renumbered 0 to 2, with the embedding, final norm and head, `scripts/slice_gguf_layers.py`; same harness and
+     bars), **and Metal's whole-9B pass** (2026-10-16, min cosine 0.929161, argmax 27/32), recorded as exactly that: the same CPU
+     reference and the same Mamba-2 math, checked whole on Metal and in slice on CUDA, **not** a whole-model CUDA measurement. The
+     record says so in its first line, and the matrix row carries no stronger claim.
+  3. **The 9B on the card is still tried:** gate F reads the plan for Metal's 7.27 GB bundle's CUDA counterpart (on an 8 GB card with
+     about 0.45 GB held by the desktop and a context, it may not fit). If F admits it, the whole 9B joins as a further cell. A refusal
+     is recorded, is VOID for that cell and not a FAIL, and changes nothing in rule 2.
+- A smaller bundle would also answer it for the 9B (B27's int8 Mamba projections took Metal's from 19.2 to 7.27 GB; int4 Mamba
+  projections would go further and need their own quality gate, `docs/ssm-int8-quality.md`); that is not part of this build.
 - **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. One
   decode rate and the time to first token of the sequential prompt are recorded for the 9B, not graded.
 
@@ -1439,6 +1452,7 @@ nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it
 sides on different drivers; the control failing; a refused load.
 
 **Order, and what a failure does.**
+0. **OP2b CUDA's build starts after #58 (OP1 on CUDA) merges** (owner, 2026-10-16): both edit `cuda/resident.go`, `cuda/backend.go` and the PTX lint tests.
 1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `cuda/resident.go`'s neighbourhood). Gate F's table,
    and the CUDA int4 bundle's size, are written into this section before step 1's code.
 2. Step 1, then K, D, I. A failure: step 2 does not start.
