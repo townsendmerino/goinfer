@@ -371,9 +371,6 @@ func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 // (a different error), or this test would be trivially satisfied by rejecting everything.
 func TestLoadAdapter_denseFamilyDoesNotHitOwnForwardRejection(t *testing.T) {
 	arch := &Architecture{Name: "qwen2"}
-	if _, own := arch.ownForward(); own {
-		t.Fatal("test setup: qwen2 unexpectedly reads as an own-forward family")
-	}
 	m := &Model{w: &Weights{schema: &tensorSchema{}, arch: arch}}
 	err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
 	if err == nil {

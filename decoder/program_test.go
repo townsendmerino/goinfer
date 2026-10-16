@@ -199,6 +199,7 @@ func cloneProgram(p *program) *program {
 			o.mla.InvFreq = append([]float64(nil), o.mla.InvFreq...)
 			o.gated.Rope.InvFreq = append([]float64(nil), o.gated.Rope.InvFreq...)
 			o.gated.Rope.MRopeSection = append([]int(nil), o.gated.Rope.MRopeSection...)
+			o.g4.InvFreq = append([]float64(nil), o.g4.InvFreq...)
 		}
 	}
 	return &c
@@ -307,8 +308,8 @@ func indexesOf(ops []op, k opKind) []int {
 // passes a pair only when it changes some fixture's logits, or is listed here; a listed pair that does change is stale.
 var programParamUnreached = map[string]string{
 	"ffn.Limit":              "gpt-oss's clamp bound: the tiny fixture's gate and up values never reach 7, so a doubled bound clamps nothing either",
-	"ffn.MoE.PerExpertScale": "Gemma 4's router extra, read only by its own loop",
-	"ffn.MoE.RouterPreNorm":  "Gemma 4's router extra, read only by its own loop",
+	"ffn.MoE.PerExpertScale": "Gemma 4's router extra in MoEConfig: its MoE block (opGemma4MoE) reads the router from its weights, and no other MoE reads it",
+	"ffn.MoE.RouterPreNorm":  "Gemma 4's router extra in MoEConfig: its MoE block (opGemma4MoE) reads the router from its weights, and no other MoE reads it",
 	"head.Norm.Slot":         "the head has one norm weight; the slot names it and is not read",
 }
 
@@ -521,6 +522,10 @@ func opParamValue(o *op) (reflect.Value, string, bool) {
 		p = &o.delta
 	case opGatedAttn:
 		p = &o.gated
+	case opGemma4Attn:
+		p = &o.g4
+	case opGemma4MoE, opPLE:
+		p = &o.norms
 	default:
 		return reflect.Value{}, "", false
 	}

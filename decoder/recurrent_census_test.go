@@ -11,39 +11,8 @@ import (
 // holds, and generic fill / check-zero over them, so no test here carries a list of kinds or families to forget. A new kind
 // is covered the day its field is added.
 
-// ownForwardModelType maps an ownForwards table name to the model_type representativeConfig
-// takes. Only names that differ appear; an unknown family makes realCacheFor fail loudly.
-func ownForwardModelType(name string) string {
-	switch name {
-	case "deepseek_v2/v3":
-		return "deepseek_v3"
-	case "gpt-oss":
-		return "gpt_oss"
-	}
-	return name
-}
-
-// realCacheFor builds family f's REAL cache via NewCache from its representative config — the
-// allocation production uses — rather than setting a cache field by hand.
-func realCacheFor(t *testing.T, f ownForwardFamily) (*Model, *KVCache) {
-	t.Helper()
-	cfg := representativeConfig(ownForwardModelType(f.Name))
-	if cfg == nil {
-		t.Fatalf("representativeConfig has no case for own-forward family %q — add one, or this "+
-			"family's cache is never inspected by the recurrent-state census", f.Name)
-	}
-	arch, _, err := resolveArchitecture(cfg)
-	if err != nil {
-		t.Fatalf("resolveArchitecture(%s): %v", f.Name, err)
-	}
-	if !f.is(arch) {
-		t.Fatalf("representativeConfig(%q) does not resolve to an arch the table routes to %s", ownForwardModelType(f.Name), f.Name)
-	}
-	m := &Model{w: &Weights{arch: arch}}
-	return m, m.NewCache(8)
-}
-
-// realCacheForType is realCacheFor for a model type, whichever loop its family runs.
+// realCacheForType builds model type mt's REAL cache via NewCache from its representative config — the allocation production
+// uses — rather than setting a cache field by hand.
 func realCacheForType(t *testing.T, mt string) (*Model, *KVCache) {
 	t.Helper()
 	cfg := representativeConfig(mt)

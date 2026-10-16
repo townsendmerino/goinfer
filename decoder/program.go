@@ -12,12 +12,10 @@ import (
 // Every implementation reads its parameters from the operation, never from the Architecture, so a parameter changed in the program
 // changes the forward (gate L). Shapes (head counts, head and hidden widths) are not parameters: the weights fix them, and the
 // implementations read them from the Architecture.
-//
-// A family with its own layer loop (ownForwards) has no layers yet; each moves when its step lands. Its embedding and head
-// stages are built like any other family's.
+
 type program struct {
 	embed  embedParams
-	layers [][]op // nil for a family that still runs its own loop
+	layers [][]op
 	head   headParams
 }
 
@@ -25,22 +23,26 @@ type program struct {
 type opKind uint8
 
 const (
-	opNorm      opKind = iota + 1 // in → out, the normalisation (or a copy, for post-only placement)
-	opProjQKV                     // in → the stream's q, k, v
-	opQKNorm                      // q, k in place
-	opRope                        // q, k in place
-	opAttnTemp                    // q in place
-	opAttention                   // stores this position's k, v; q → the stream's attention context
-	opOutGate                     // context in place, gated by a projection of in
-	opProjO                       // context → out
-	opFFN                         // in → out
-	opResidual                    // the residual += regA (and regB)
-	opMLA                         // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
-	opKDA                         // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
-	opShortConv                   // in → out, LFM2's gated short convolution (shortConvStep), on the layer's conv window
-	opMamba2                      // in → out, the Mamba-2 selective-scan mixer (mamba2Step), on the layer's SSM state
-	opDeltaNet                    // in → out, the Gated DeltaNet mixer (gatedDeltaNetStep), on the layer's recurrent state
-	opGatedAttn                   // in → out, qwen3.5's gated attention sublayer: [query ‖ gate] q_proj, QK-norm, rope, attendQuery, ×sigmoid(gate), o_proj
+	opNorm       opKind = iota + 1 // in → out, the normalisation (or a copy, for post-only placement)
+	opProjQKV                      // in → the stream's q, k, v
+	opQKNorm                       // q, k in place
+	opRope                         // q, k in place
+	opAttnTemp                     // q in place
+	opAttention                    // stores this position's k, v; q → the stream's attention context
+	opOutGate                      // context in place, gated by a projection of in
+	opProjO                        // context → out
+	opFFN                          // in → out
+	opResidual                     // the residual += regA (and regB)
+	opMLA                          // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
+	opKDA                          // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
+	opShortConv                    // in → out, LFM2's gated short convolution (shortConvStep), on the layer's conv window
+	opMamba2                       // in → out, the Mamba-2 selective-scan mixer (mamba2Step), on the layer's SSM state
+	opDeltaNet                     // in → out, the Gated DeltaNet mixer (gatedDeltaNetStep), on the layer's recurrent state
+	opGatedAttn                    // in → out, qwen3.5's gated attention sublayer: [query ‖ gate] q_proj, QK-norm, rope, attendQuery, ×sigmoid(gate), o_proj
+	opGemma4Attn                   // in → out, Gemma 4's attention sublayer (gemma4AttnToken): per-layer widths, shared KV, scale-less v-norm
+	opGemma4MoE                    // the residual in place: Gemma 4's parallel dense ‖ MoE block, which returns the whole layer output
+	opPLE                          // the residual in place: Gemma 4's per-layer-embedding branch
+	opLayerScale                   // the residual in place: × the layer's learned output scalar, when it has one
 )
 
 // recurrent reports whether the operation mutates per-layer state in place, which no positional rewind restores.
@@ -80,6 +82,8 @@ type op struct {
 	mamba   mamba2OpParams
 	delta   deltaNetOpParams
 	gated   gatedAttnParams
+	g4      gemma4AttnParams
+	norms   normEpsParams // opGemma4MoE and opPLE
 }
 
 // normSlot selects which of a layer's norm weights an opNorm applies.
@@ -160,6 +164,7 @@ const (
 	attnSinksF64                          // gpt-oss: inline float64 dots and softmax with a learned sink per head (attendSinksToken)
 	attnQuery                             // attendQuery: float64 dots, float32 accumulation of the values
 	attnMLA                               // the family attends through opMLA, over a latent cache
+	attnGemma4                            // the family attends through opGemma4Attn (gemma4Attend: float32 matmuls)
 )
 
 type attentionParams struct {
@@ -206,6 +211,7 @@ const (
 	ffnGptOss      // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
 	ffnLlama4MoE   // Llama 4: top-k by logit, each expert's INPUT scaled by sigmoid(logit), plus an ungated shared expert (llama4MoEWith)
 	ffnNemotronMoE // Nemotron 3 Nano: routeExperts over non-gated relu² experts, plus an ungated shared expert (nemotronMoEWith)
+	ffnGemma4Dense // Gemma 4's dense GeGLU at the layer's own width, in its own call form (gemma4DenseFFN)
 )
 
 type ffnParams struct {
@@ -236,6 +242,27 @@ type gatedAttnParams struct {
 	Attn   attentionParams
 }
 
+// gemma4AttnParams are an opGemma4Attn's: the q/k norms' and the scale-less v-norm's epsilon and the q/k norms' (1+w), the
+// layer's rope table and scale (the local full-rotary table, or the global proportional one), the window (0 on a global layer),
+// the score scale, and the layer whose K/V it attends with whether it stores its own (a KV-shared tail layer reads an earlier
+// layer's). The head width and KV-head count are per-layer shapes, read from the Architecture.
+type gemma4AttnParams struct {
+	Eps     float64
+	AddOne  bool
+	InvFreq []float64
+	Mscale  float64
+	Window  int
+	Scale   float64
+	KVSrc   int
+	OwnsKV  bool
+}
+
+// normEpsParams are the norm epsilon and (1+w) of an operation with norms inside it (opGemma4MoE, opPLE).
+type normEpsParams struct {
+	Eps    float64
+	AddOne bool
+}
+
 // mamba2OpParams are an opMamba2's: the gated norm's epsilon and its group count (1 normalises the whole inner width). The
 // heads, state and conv sizes are shapes, read from the Architecture.
 type mamba2OpParams struct {
@@ -246,6 +273,7 @@ type mamba2OpParams struct {
 type embedParams struct {
 	Scale      float64 // 0 or 1 = none
 	LearnedPos bool
+	PLE        bool // Gemma 4: per-layer embedding inputs from the token id (gemma4PLEInputs), read by the layers' opPLE
 }
 
 type headParams struct {
@@ -259,14 +287,11 @@ type headParams struct {
 // (first_k_dense_replace) do not, and only the weights say so.
 func buildProgram(a *Architecture, experts func(l int) bool) *program {
 	p := &program{
-		embed: embedParams{Scale: a.embedScale(), LearnedPos: a.LearnedPosEmbed},
+		embed: embedParams{Scale: a.embedScale(), LearnedPos: a.LearnedPosEmbed, PLE: a.gemma4 != nil && a.gemma4.HiddenSizePerLayerInput > 0},
 		head: headParams{
 			Norm: normParams{Slot: slotFinal, Form: a.normForm(), Eps: a.NormEps, AddOne: a.RMSAddOne, Bias: true},
 			Tied: a.TiedLMHead, Softcap: a.FinalLogitSoftcap, LogitScale: a.LogitScale,
 		},
-	}
-	if _, own := a.ownForward(); own {
-		return p
 	}
 	p.layers = make([][]op, a.NumLayers)
 	for l := range a.NumLayers {
@@ -323,6 +348,9 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 
 	if a.llama4 != nil {
 		return a.llama4LayerOps(l, input, ffn)
+	}
+	if a.gemma4 != nil {
+		return a.gemma4LayerOps(l, hasExperts)
 	}
 	if a.granite != nil {
 		return a.graniteLayerOps(l, input, ffn)
@@ -411,7 +439,8 @@ func (a *Architecture) attentionOps(l int) []op {
 
 func (k opKind) String() string {
 	names := [...]string{opNorm: "norm", opProjQKV: "proj-qkv", opQKNorm: "qk-norm", opRope: "rope", opAttnTemp: "attn-temp",
-		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv", opMamba2: "mamba2", opDeltaNet: "deltanet", opGatedAttn: "gated-attn"}
+		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv", opMamba2: "mamba2", opDeltaNet: "deltanet", opGatedAttn: "gated-attn", opGemma4Attn: "gemma4-attn", opGemma4MoE: "gemma4-moe", opPLE: "ple",
+		opLayerScale: "layer-scale"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
@@ -419,12 +448,9 @@ func (k opKind) String() string {
 }
 
 // recurrent reports whether a layer carries state mutated in place per token (a conv window, an SSM state, a linear-attention
-// state), which no positional rewind restores: from the own-loop table for a family still listed there, else from its
-// operations. Speculative rollback and the hybrid image prefill read it before any cache exists.
+// state), which no positional rewind restores: any recurrent operation in its layers. Speculative rollback and the hybrid image
+// prefill read it before any cache exists.
 func (a *Architecture) recurrent() bool {
-	if f, own := a.ownForward(); own {
-		return f.Recurrent
-	}
 	for l := range a.NumLayers {
 		for _, o := range a.layerOps(l, false) {
 			if o.kind.recurrent() {
@@ -436,11 +462,8 @@ func (a *Architecture) recurrent() bool {
 }
 
 // genericKindsOnly reports whether every layer of a is made of genericKinds, so the generic machinery around the layers applies:
-// LoRA, and the dense layer pager (with the fit guard's retry that mirrors it). False for a family still in the own-loop table.
+// LoRA, and the dense layer pager (with the fit guard's retry that mirrors it).
 func (a *Architecture) genericKindsOnly() bool {
-	if _, own := a.ownForward(); own {
-		return false
-	}
 	for l := range a.NumLayers {
 		for _, o := range a.layerOps(l, false) {
 			if !slices.Contains(genericKinds, o.kind) {
@@ -462,8 +485,39 @@ func (a *Architecture) attnOrder() attnOrder {
 		return attnMLA
 	case a.lfm2 != nil, a.granite != nil, a.nemotron != nil, a.qwen35 != nil:
 		return attnQuery
+	case a.gemma4 != nil:
+		return attnGemma4
 	}
 	return attnBatchedAcc64
+}
+
+// gemma4LayerOps is a Gemma 4 layer: sandwich norms around its attention; then, on a 26B MoE layer, the parallel dense ‖ MoE
+// block, which returns the whole layer output (scalar included); on a dense layer the sandwiched GeGLU, the PLE branch (when the
+// model has PLE) and the layer scalar.
+func (a *Architecture) gemma4LayerOps(l int, moeLayer bool) []op {
+	g := a.gemma4
+	norm := func(slot normSlot, in, out opReg) op {
+		return op{kind: opNorm, in: in, out: out, norm: normParams{Slot: slot, Form: a.normForm(), Eps: a.NormEps, AddOne: a.RMSAddOne}}
+	}
+	global := a.isGlobalLayer(l)
+	attn := gemma4AttnParams{Eps: a.NormEps, AddOne: a.RMSAddOne, Mscale: 1, Scale: a.AttnScale, KVSrc: a.gemma4KVSrcAt(l),
+		OwnsKV: l < a.NumLayers-g.SharedKVLayers, InvFreq: gemma4InvFreq(a.HeadDim, a.HeadDim, a.RoPELocalBase)}
+	if global {
+		attn.InvFreq = gemma4InvFreq(g.GlobalHeadDim, g.GlobalRotaryDim, a.RoPEGlobalBase)
+	} else {
+		attn.Window = a.SlidingWindow
+	}
+	ops := []op{norm(slotPreAttn, regH, regX), {kind: opGemma4Attn, in: regX, out: regA, g4: attn}, norm(slotPostAttn, regA, regA), {kind: opResidual}}
+	ne := normEpsParams{Eps: a.NormEps, AddOne: a.RMSAddOne}
+	if moeLayer {
+		return append(ops, op{kind: opGemma4MoE, norms: ne})
+	}
+	ops = append(ops, norm(slotPreMLP, regH, regX), op{kind: opFFN, in: regX, out: regA, ffn: ffnParams{Form: ffnGemma4Dense, Act: a.Act}},
+		norm(slotPostMLP, regA, regA), op{kind: opResidual})
+	if g.HiddenSizePerLayerInput > 0 {
+		ops = append(ops, op{kind: opPLE, norms: ne})
+	}
+	return append(ops, op{kind: opLayerScale})
 }
 
 // graniteLayerOps is a Granite-4.0-H layer: pre-norm, a Mamba-2 mixer or GQA attention, each sublayer's output scaled by

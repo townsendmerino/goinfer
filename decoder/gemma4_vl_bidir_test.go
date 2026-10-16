@@ -13,7 +13,7 @@ import (
 // a use_bidirectional_attention="vision" checkpoint, a TEXT-ONLY forward (no image) must still match HF. HF's own
 // forward degrades block_sequence_ids to an all -1 tensor when there is no multimodal content, which makes
 // blockwise_overlay unconditionally false, i.e. plain causal (scripts/pin_gemma4_vl_bidir_tiny.py's docstring has the
-// citation). This test checks BOTH the sequential path (m.forward, via runLayersGemma4) AND the batched path
+// citation). This test checks BOTH the sequential path (m.forward, via the Gemma 4 program walk) AND the batched path
 // (runLayersGemma4FromEmbedN with imgLen=0) against the HF golden, and against each other. An M=K batched matmul is not
 // guaranteed the reduction order of K separate M=1 calls, so the bound is a tight tolerance, not bit-exactness.
 func TestGemma4VLBidir_textParity(t *testing.T) {

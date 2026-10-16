@@ -77,13 +77,8 @@ var attnGroupedRuns int64
 // and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
 // FFN stays per row because the router picks different experts per token.
 func (m *Model) canBatchN(K int) bool {
-	a := m.w.arch
-	// Every family with its own sequential forward is excluded, derived from the dispatch table (ownForward) rather than restated
-	// here: a restated list once fell a family behind, and a 2-token prompt ran the dense attention stack over conv layers that load
-	// no q/k/v/o.
-	if _, own := a.ownForward(); own {
-		return false
-	}
+	// The program decides (program.batchEligible), not a family list: a restated list once fell a family behind, and a 2-token
+	// prompt ran the dense attention stack over conv layers that load no q/k/v/o.
 	return K > 1 && m.w.Embed.Rows() != 0 && m.program().batchEligible()
 }
 
@@ -175,11 +170,7 @@ func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, ca
 	if programWalkOffForTest {
 		return m.runLayersFromEmbedNFloorLoop(reqCtx, h, cache, fastAttn, floorK, ps)
 	}
-	prog := m.program()
-	if prog.layers == nil {
-		return nil, fmt.Errorf("decoder: %s has no layer program (it runs its own loop)", m.w.arch.Name)
-	}
-	return m.walkBatch(reqCtx, prog, h, cache, fastAttn, floorK, ps)
+	return m.walkBatch(reqCtx, m.program(), h, cache, fastAttn, floorK, ps)
 }
 
 // runLayersFromEmbedNFloorLoop is the batched loop the program walker replaced, kept for gate S's in-process A/B

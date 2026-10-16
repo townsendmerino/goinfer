@@ -2641,7 +2641,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err = parallelLayers(arch.NumLayers, abort, loadG4); err != nil {
 			return nil, err
 		}
-		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection (v_norm(k_proj); see loadG4/runLayersGemma4).
+		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection (v_norm(k_proj); see loadG4/the Gemma 4 program walk).
 		// Parity-gated against the HF bf16 oracle by TestGemma4_12B_logitParity.
 		return w, nil
 	}

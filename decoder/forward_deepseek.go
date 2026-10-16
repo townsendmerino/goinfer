@@ -11,18 +11,10 @@ import (
 // qk_rope_head_dim slice of Q and the shared latent key; the no-rope dims and the (different-width) V skip it. The layer is the
 // pre-norm program of Architecture.layerOps with one opMLA as its attention sublayer.
 
-// mlaAttention dispatches to the absorb path (default — folds kv_b_proj into q/o so no
-// per-key K/V is ever reconstructed; the perf path) or the naive reconstruct-per-key
-// path (parity reference + GOINFER_MLA_NAIVE / m.mlaNaive fallback). The two are
-// algebraically identical (cosine ~1.0, not bit-exact — f32 reorder), gated by
-// TestMLAAbsorb_parity on the tiny golden and the V2-Lite/Moonlight real-model gates.
-func (m *Model) mlaAttention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	op := arch.mlaOpParamsAt(layer)
-	return m.mlaAttentionWith(&op, n, lw, arch, cache, layer, pos)
-}
-
-// mlaAttentionWith is mlaAttention with the rotation, norm epsilon, score scale and gate granularity given: the program walker's
-// form. The absorbed and naive forms are a knob (GOINFER_MLA_NAIVE) and a test seam, not part of the program, as fast attention is.
+// mlaAttentionWith is one Multi-head Latent Attention sublayer (opMLA): the absorb path by default (it folds kv_b_proj into q and o,
+// so no per-key K/V is ever rebuilt) or the naive reconstruct-per-key path (the parity reference). The two are algebraically
+// identical (cosine ~1.0, not bit-exact), gated by TestMLAAbsorb_parity on the tiny golden and the real-model gates. Which runs is a
+// knob (GOINFER_MLA_NAIVE) and a test seam, not part of the program, as fast attention is.
 func (m *Model) mlaAttentionWith(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	if mlaForceNaive || m.knobs.mlaNaive() {
 		return m.mlaAttentionNaive(op, n, lw, arch, cache, layer, pos)

@@ -171,7 +171,7 @@ func TestGptOssAttnSink_metal(t *testing.T) {
 }
 
 // TestGptOssSwigluQuant_metal gates gpt-oss's clamped interleaved-SwiGLU expert against
-// decoder/forward_gptoss.go's gptOssExpert:
+// decoder/forward_gptoss.go's gptOssExpertWith:
 //
 //	gate = clamp(Gate·h + gateBias, max = limit)      // UPPER only
 //	up   = clamp(Up·h   + upBias,   [-limit, limit])  // BOTH
@@ -248,7 +248,7 @@ func TestGptOssSwigluQuant_metal(t *testing.T) {
 	qs := dQ.Int8s()
 	sc := dS.Floats()[0]
 
-	// CPU reference — decoder/forward_gptoss.go's gptOssExpert, activation only.
+	// CPU reference — decoder/forward_gptoss.go's gptOssExpertWith, activation only.
 	want := make([]float32, I)
 	for i := range want {
 		gx := g[i] + gb[i]

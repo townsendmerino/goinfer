@@ -1,214 +1,136 @@
 package decoder
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
 
 // g4traceHidden, when non-nil, receives the residual stream after each layer
-// (layer -1 = post-embedding) on every runLayersGemma4 call. Debug/test only:
+// (layer -1 = post-embedding) on every Gemma 4 token through the program walker. Debug/test only:
 // set it around the final token's forward to capture a last-position layer trace
 // for diffing against the HF reference. The callback must copy h if it retains it.
 var g4traceHidden func(layer int, h []float32)
 
 // g4traceQKV, when non-nil, receives the post-norm/RoPE q, k, v for each layer on
-// every runLayersGemma4 call (k/v nil on KV-shared layers). Debug/test only.
+// every Gemma 4 token (k/v nil on KV-shared layers). Debug/test only.
 var g4traceQKV func(layer int, q, k, v []float32)
 
-// runLayersGemma4 is the Gemma 4 (E-model) forward over one token. It has its own path because it diverges from the generic
-// runLayers: per-layer head_dim and KV-head count, scale-less v-norm, cross-layer KV sharing (the last N layers reuse an earlier
-// layer's KV), per-attention-type RoPE (proportional / partial-rotary on the global layers), the Per-Layer-Embedding (PLE)
-// residual branch, and a per-layer output scalar. It returns the pre-final-norm hidden, matching runLayers; forward() applies the
-// final norm, LM head and softcap. Buffers are allocated per call (parity-first, not the perf path).
-func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	hidden := arch.HiddenDim
-	// Embedding × √hidden (inputs_embeds).
-	h := make([]float32, hidden)
-	m.w.Embed.Row(id, h)
-	es := float32(arch.EmbedScale)
-	for i := range h {
-		h[i] *= es
-	}
-	return m.runLayersGemma4FromEmbed(h, id, cache)
+// Gemma 4 diverges from the generic layer in per-layer head_dim and KV-head count, scale-less v-norm, cross-layer KV sharing (the
+// last N layers reuse an earlier layer's KV), per-attention-type RoPE (proportional / partial-rotary on the global layers), the
+// Per-Layer-Embedding (PLE) residual branch, and a per-layer output scalar. Its program is Architecture.gemma4LayerOps; the
+// operations below are its own. Buffers are allocated per call (parity-first, not the perf path).
+
+// gemma4Token is one Gemma 4 position's state across its layers: the quantized activation shared by a layer's q/k/v and by its
+// gate/up, the attention scratch (sized to the widest head_dim and this position's key count), and the PLE inputs.
+type gemma4Token struct {
+	hq       w4a8Act
+	sc       g4attnScratch
+	perLayer []float32
+	pleDim   int
 }
 
-// runLayersGemma4FromEmbed is runLayersGemma4's shared body over an already-built (already-scaled) hidden-state embedding h: the
-// embed-by-vector seam a multimodal caller uses to substitute a projected image/video/audio embedding for a token lookup (the
-// generic runLayersFromEmbed/runLayersFromEmbedN seams do not reach this own-forward family).
-//
-// pleTokenID selects which token id's per-layer embedding feeds PLE's token-identity term: for a real text position, the id h was
-// embedded from; for a multimodal position, the checkpoint's pad_token_id (arch.gemma4.PadTokenID), which is what HF's multimodal
-// forward substitutes before computing PLE (not the placeholder token's own id, and not a skipped or zeroed term; see
-// docs/multimodal.md, P7 entry).
-func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVCache) ([]float32, error) {
+// newGemma4Token makes position pos's state. The PLE inputs are computed from h, the embedding, so it is made before layer 0.
+func (m *Model) newGemma4Token(prog *program, h []float32, pleID, pos int) *gemma4Token {
 	arch := m.w.arch
-	g4 := arch.gemma4
-	be := m.be
-	hidden := arch.HiddenDim
+	g := arch.gemma4
 	nH := arch.NumHeads
-	pleDim := g4.HiddenSizePerLayerInput
-	pos := cache.Pos()
-
-	if g4traceHidden != nil {
-		g4traceHidden(-1, h)
-	}
-
-	// RoPE tables: local (full rotary, base 10k) and global (proportional /
-	// partial-rotary, base 1e6 — only the first GlobalRotaryDim dims rotate).
-	localInv := gemma4InvFreq(arch.HeadDim, arch.HeadDim, arch.RoPELocalBase)
-	globalInv := gemma4InvFreq(g4.GlobalHeadDim, g4.GlobalRotaryDim, arch.RoPEGlobalBase)
-
-	perLayer := make([]float32, arch.NumLayers*pleDim)
-	if pleDim > 0 {
-		m.gemma4PLEInputs(h, pleTokenID, perLayer)
-	}
-
-	// Cross-layer KV sharing: layers ≥ firstShared reuse the KV of the last
-	// non-shared layer of their type (sliding vs global).
-	firstShared := arch.NumLayers - g4.SharedKVLayers
-	lastSliding, lastGlobal := -1, -1
-	for i := range firstShared {
-		if arch.isGlobalLayer(i) {
-			lastGlobal = i
-		} else {
-			lastSliding = i
-		}
-	}
-	kvSrc := func(l int) int {
-		if l < firstShared {
-			return l
-		}
-		if arch.isGlobalLayer(l) {
-			return lastGlobal
-		}
-		return lastSliding
-	}
-
-	// Attention scratch: allocated once per token, reused across layers (the
-	// batched-over-heads gemma4Attend gathers K_head/V_headᵀ + per-head scores).
-	// Sized to the widest per-layer head_dim and the current key count.
-	maxHd := max(g4.GlobalHeadDim, arch.HeadDim)
+	maxHd := max(g.GlobalHeadDim, arch.HeadDim)
 	nkMax := pos + 1
-	g4sc := g4attnScratch{
+	t := &gemma4Token{pleDim: g.HiddenSizePerLayerInput, sc: g4attnScratch{
 		kh:     make([]float32, nkMax*maxHd),
 		vt:     make([]float32, nkMax*maxHd),
 		qstack: make([]float32, nH*maxHd),
 		scores: make([]float32, nH*nkMax),
 		cstack: make([]float32, nH*maxHd),
+	}}
+	t.perLayer = make([]float32, arch.NumLayers*t.pleDim)
+	if prog.embed.PLE && t.pleDim > 0 {
+		m.gemma4PLEInputs(h, pleID, t.perLayer)
 	}
+	return t
+}
 
-	normd := make([]float32, hidden)
-	sub := make([]float32, hidden)
+// ple is layer l's PLE input.
+func (t *gemma4Token) ple(l int) []float32 { return t.perLayer[l*t.pleDim : (l+1)*t.pleDim] }
 
-	var hq w4a8Act // normd quantized once for q/k/v and once for gate/up (R-13); reused per layer
-	for l := 0; l < arch.NumLayers; l++ {
-		lw := &m.w.Layers[l]
-		global := arch.isGlobalLayer(l)
-		hd := arch.headDimAt(l)
-		nKV := arch.kvHeadsAt(l)
-		ffn := arch.ffnAt(l)
-		invFreq := localInv
-		if global {
-			invFreq = globalInv
-		}
-
-		// --- attention sub-block (sandwich) ---
-		normalizeInto(arch, normd, h, lw.PreAttnNorm, nil, hidden)
-
-		q := make([]float32, nH*hd)
-		hq.prepare(be, &lw.QProj, normd, 1)
-		matmulPre(be, &lw.QProj, &hq, normd, q, 1)
-		rmsNorm(q, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
-		applyRoPE(q, nH, hd, pos, invFreq, 1.0)
-
-		if l < firstShared { // owns its KV
-			k := make([]float32, nKV*hd)
-			matmulPre(be, &lw.KProj, &hq, normd, k, 1)
-			v := make([]float32, nKV*hd)
-			if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
-				copy(v, k)
-			} else {
-				matmulPre(be, &lw.VProj, &hq, normd, v, 1)
-			}
-			rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne) // K: k_norm + RoPE
-			applyRoPE(k, nKV, hd, pos, invFreq, 1.0)
-			rmsNormNoWeight(v, nKV, hd, arch.NormEps) // V: scale-less v_norm, no RoPE
-			cache.Append(l, k, v)
-			if g4traceQKV != nil {
-				g4traceQKV(l, q, k, v)
-			}
-		} else if g4traceQKV != nil {
-			g4traceQKV(l, q, nil, nil)
-		}
-		src := kvSrc(l)
-		keys, vals := cache.Keys(src), cache.Vals(src)
-		kvDim := nKV * hd
-		nKeys := len(keys) / kvDim
-		ctx := make([]float32, nH*hd)
-		start := cache.WindowStart(pos, global)
-		gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, arch.AttnScale, &g4sc)
-
-		matmul(be, &lw.OProj, ctx, sub, 1)
-		normalize(arch, sub, lw.PostAttnNorm, nil, hidden) // post-attn (sandwich)
-		addResidual(h, sub)
-
-		// --- FFN sub-block ---
-		if lw.gemma4moe != nil {
-			// Gemma 4 26B-A4B: parallel dense+MoE FFN (enable_moe_block). gemma4MoEFFN
-			// returns the FULL layer output — post-attention residual h + the joint-normed
-			// (dense ‖ MoE) branches, × layer_scalar — so it replaces the dense MLP + PLE +
-			// separate scalar tail below. (The MoE variant is PLE-free.)
-			h = gemma4MoEFFN(be, arch, h, lw.gemma4moe, m.pager)
+// gemma4AttnToken is one Gemma 4 attention sublayer (opGemma4Attn) for position pos, x → out: q (normed, roped); on a layer that
+// owns its KV, k (normed, roped) and v (from k when the checkpoint ties them, then normed without a weight), appended; then
+// attention over p.KVSrc's keys from the window's start, and o_proj.
+func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *LayerWeights, cache *KVCache, l, pos int, t *gemma4Token) {
+	arch, be := m.w.arch, m.be
+	nH, hd, nKV := arch.NumHeads, arch.headDimAt(l), arch.kvHeadsAt(l)
+	q := make([]float32, nH*hd)
+	t.hq.prepare(be, &lw.QProj, x, 1)
+	matmulPre(be, &lw.QProj, &t.hq, x, q, 1)
+	rmsNorm(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
+	applyRoPE(q, nH, hd, pos, p.InvFreq, p.Mscale)
+	if p.OwnsKV {
+		k := make([]float32, nKV*hd)
+		matmulPre(be, &lw.KProj, &t.hq, x, k, 1)
+		v := make([]float32, nKV*hd)
+		if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
+			copy(v, k)
 		} else {
-			// dense variant: MLP sub-block (sandwich), GeGLU at the per-layer width.
-			normalizeInto(arch, normd, h, lw.PreMLPNorm, nil, hidden)
-			gate := make([]float32, ffn)
-			up := make([]float32, ffn)
-			hq.prepare(be, &lw.GateProj, normd, 1)
-			matmulPre(be, &lw.GateProj, &hq, normd, gate, 1)
-			matmulPre(be, &lw.UpProj, &hq, normd, up, 1)
-			if len(gate) < activationFanoutThreshold {
-				geglu(gate, up)
-			} else {
-				parallelElementwise(len(gate), func(lo, hi int) {
-					geglu(gate[lo:hi], up[lo:hi])
-				})
-			}
-			matmul(be, &lw.DownProj, gate, sub, 1)
-			normalize(arch, sub, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
-			addResidual(h, sub)
-
-			// --- PLE branch: gate→gelu→×per-layer-embedding→proj→norm→+residual ---
-			if pleDim > 0 {
-				pl := perLayer[l*pleDim : (l+1)*pleDim]
-				px := make([]float32, pleDim)
-				matmul(be, &lw.PLEGate, h, px, 1)
-				parallelElementwise(len(px), func(lo, hi int) {
-					for i := lo; i < hi; i++ {
-						px[i] = geluTanh(px[i]) * pl[i]
-					}
-				})
-				matmul(be, &lw.PLEProj, px, sub, 1)
-				normalize(arch, sub, lw.PostPLENorm, nil, hidden)
-				addResidual(h, sub)
-			}
-
-			// --- per-layer output scalar ---
-			if lw.LayerScalar != 0 {
-				for i := range h {
-					h[i] *= lw.LayerScalar
-				}
-			}
+			matmulPre(be, &lw.VProj, &t.hq, x, v, 1)
 		}
-		if g4traceHidden != nil {
-			g4traceHidden(l, h)
+		rmsNorm(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
+		applyRoPE(k, nKV, hd, pos, p.InvFreq, p.Mscale)
+		rmsNormNoWeight(v, nKV, hd, p.Eps) // scale-less v_norm, no RoPE
+		cache.Append(l, k, v)
+		if g4traceQKV != nil {
+			g4traceQKV(l, q, k, v)
 		}
-		cache.captureResidual(l, h)
+	} else if g4traceQKV != nil {
+		g4traceQKV(l, q, nil, nil)
 	}
-	cache.Advance()
-	return h, nil
+	keys, vals := cache.Keys(p.KVSrc), cache.Vals(p.KVSrc)
+	nKeys := len(keys) / (nKV * hd)
+	ctx := make([]float32, nH*hd)
+	start := 0
+	if p.Window > 0 {
+		start = max(pos-p.Window+1, 0)
+	}
+	gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, p.Scale, &t.sc)
+	matmul(be, &lw.OProj, ctx, out, 1)
+}
+
+// gemma4DenseFFN is a dense Gemma 4 layer's GeGLU at its own width, x → out, sharing the position's quantized activation.
+func (m *Model) gemma4DenseFFN(act ActKind, x, out []float32, lw *LayerWeights, width int, hq *w4a8Act) error {
+	if act != ActGeluTanh {
+		return fmt.Errorf("decoder: Gemma 4's dense FFN is GELU-tanh, not activation %d", act)
+	}
+	be := m.be
+	gate := make([]float32, width)
+	up := make([]float32, width)
+	hq.prepare(be, &lw.GateProj, x, 1)
+	matmulPre(be, &lw.GateProj, hq, x, gate, 1)
+	matmulPre(be, &lw.UpProj, hq, x, up, 1)
+	if len(gate) < activationFanoutThreshold {
+		geglu(gate, up)
+	} else {
+		parallelElementwise(len(gate), func(lo, hi int) {
+			geglu(gate[lo:hi], up[lo:hi])
+		})
+	}
+	matmul(be, &lw.DownProj, gate, out, 1)
+	return nil
+}
+
+// gemma4PLEBranch adds the per-layer-embedding branch to h: gate → gelu × the layer's PLE input → proj → norm → +residual. sub is
+// scratch of the hidden width.
+func (m *Model) gemma4PLEBranch(h, pl []float32, lw *LayerWeights, ne *normEpsParams, sub []float32) {
+	px := make([]float32, len(pl))
+	matmul(m.be, &lw.PLEGate, h, px, 1)
+	parallelElementwise(len(px), func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			px[i] = geluTanh(px[i]) * pl[i]
+		}
+	})
+	matmul(m.be, &lw.PLEProj, px, sub, 1)
+	rmsNormInto(sub, sub, lw.PostPLENorm, 1, len(h), ne.Eps, ne.AddOne)
+	addResidual(h, sub)
 }
 
 // gemma4InvFreq builds the RoPE inverse-frequency table. For full rotary,
@@ -244,7 +166,7 @@ func rmsNormNoWeight(x []float32, rows, dim int, eps float64) {
 }
 
 // g4attnScratch holds the batched-over-heads gemma4 attention buffers: the gathered K_head [n,hd] / V_headᵀ [hd,n] for one KV
-// head, the stacked query-head group, its scores, and the context. Allocated once per token in runLayersGemma4 (sized to the
+// head, the stacked query-head group, its scores, and the context. Allocated once per token (newGemma4Token, sized to the
 // widest head_dim and current key count) and reused across layers.
 type g4attnScratch struct {
 	kh, vt, qstack, scores, cstack []float32

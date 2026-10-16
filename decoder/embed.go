@@ -19,8 +19,8 @@ import (
 // It takes one sequence, so the last token is always the last real token; there is no padded batch whose last slot
 // could be a pad. Callers that want a batch call it per sequence. The returned slice is a fresh copy the caller owns.
 //
-// Generic decode path only: families with their own runLayers return an error rather than a silently wrong vector, the
-// same contract and guard as ForwardCapture.
+// The families that ran their own layer loop before OP3 are refused (seam_refusals.go), rather than handed a vector no
+// gate has checked.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {
@@ -143,7 +143,7 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 // equal to last_hidden_state[:, -1]. It is the input a Route B decision head reads
 // (docs/tasks/task-constrained-confidence.md): a linear head over the last prompt token's final-norm hidden state.
 //
-// Unlike HiddenLast it serves every family, including those with their own layer loop: it runs the per-token forward
+// Unlike HiddenLast it serves every family: it runs the per-token forward
 // Generate's CPU path runs (runLayers), in a fresh cache, then the final norm logitsFromHidden applies before the LM
 // head, so the hidden state is the one the logits are computed from. Families on the generic batched path (canBatchN)
 // take hiddenLastBatched, which ends at the same final norm, and Qwen3.5 takes runLayersQwen35N;

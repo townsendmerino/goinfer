@@ -2,7 +2,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA and WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA and WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell is served that night; the two batched twins and OP3z part 2 remain (§4.8, "Left in OP3").** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -114,7 +114,7 @@
   - `decoder/registry.go:resolveArchitecture` turns a checkpoint's config into a `decoder/arch.go:Architecture`. Every
     `Architecture` passes `decoder/registry.go:Architecture.validateResolved`.
   - A family's specifics are fields: norms, attention options, position scheme, FFN kind, MoE configuration.
-  - Nine families run their own layer loop: the nine entries of the `ownForwards` table (`decoder/arch.go:ownForwardFamily`),
+  - Nine families run their own layer loop: the nine entries of the `ownForwards` table (`ownForwardFamily`; the table was removed in OP3z),
     one `runLayers*` function each, across twelve files named `forward_*.go` in `decoder/`. They are:
     - the recurrent hybrids: Gated DeltaNet, short conv, two Mamba-2 families, and KDA with MLA;
     - MLA itself (DeepSeek);
@@ -1559,7 +1559,7 @@ Read at main `2c56d9c6`, with CPU f16 KV merged (#55) and G40 merged, which §4.
 - the batched loop, `decoder/forwardn.go:Model.runLayersFromEmbedNFloor`;
 - MC3c's multi-sequence step, `decoder/cpu_batch.go:Model.decodeMultiStep`.
 
-Beside them are the nine own loops of `decoder/arch.go:ownForwards`, two of which have batched twins:
+Beside them are the nine own loops of the `ownForwards` table, two of which have batched twins:
 `decoder/forward_gemma4_batched.go:Model.runLayersGemma4FromEmbedN` and `decoder/forward_qwen35_n.go:Model.runLayersQwen35N`.
 
 **The same mathematics is computed in more than one floating-point order across them:**
@@ -1962,6 +1962,56 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
 - Logs: `docs/measurements/op3-2026-10/op3j-identity-tiny.log`, `docs/measurements/op3-2026-10/op3j-PL.log`, and the two
   whole-package runs: the first, red as described (`docs/measurements/op3-2026-10/op3j-decoder-full-1.log`), and the second,
   green apart from the manifest's staleness (`docs/measurements/op3-2026-10/op3j-decoder-full-2.log`).
+
+**OP3k, Gemma 4: readings, 2026-10-16 (same branch). The own-loop table is now empty.**
+- **The build:** Gemma 4 walks the program (`Architecture.gemma4LayerOps`).
+  - `opGemma4Attn`. Its parameters are the q/k/v norms' epsilon and (1+w), the layer's rope table and scale, the window, the
+    score scale, and the layer whose K/V it attends with whether it stores its own. Cross-layer KV sharing is now a parameter.
+  - Gemma 4's dense GeGLU in its own call form, at the per-layer width.
+  - `opGemma4MoE`, which replaces the whole layer output on the 26B.
+  - `opPLE` and `opLayerScale`.
+  - **The embedding stage carries PLE.** The walker computes the per-layer inputs from the token id, or from the pad id for a
+    row with no token behind it, through `runLayersFromEmbedPLE`. It does this before layer 0, from the embedding, as the loop
+    did.
+  - The family-level attention order (`attnGemma4`) keeps the cache as it was: no rings, no int8 or f16.
+- **Not moved in this step:** the bidirectional image prefill's batched twin, `runLayersGemma4FromEmbedN`. Like qwen3.5's twin, it
+  is its own later step.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `gemma4` in all 15 cells (five fixtures, three quants). **P and L: PASS.** Every Gemma 4 parameter
+  is live: changing `KVSrc` or `OwnsKV` errors, the rest change the logits. Logs:
+  `docs/measurements/op3-2026-10/op3k-identity-tiny.log`, `docs/measurements/op3-2026-10/op3k-PL.log`.
+
+**OP3z, part 1: the own-loop table goes (2026-10-16, same branch).**
+- **The table had been empty since OP3k.** Every rule it answered now reads the family's operations:
+  - the cache layout (rings, int8, f16) reads the family's attention kernel (`Architecture.attnOrder`);
+  - recurrence (`Architecture.recurrent`) reads its recurrent operations;
+  - LoRA, the dense pager and the fit guard's retry read whether its layers are all generic operations
+    (`Architecture.genericKindsOnly`);
+  - the batched walkers read the kinds and attention orders they implement.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- `captureResidual`, `mlaAttention` and `gptOssExpert` had no caller left and are gone; staticcheck is clean under the default,
+  testhooks and realckpt tags.
+- **The table's tests become program invariants over every registered model type:**
+  - `TestProgram_noFamilyLoopAndEveryFamilyWalks`: no family layer loop outside the program (a source scan), and every
+    family's program is made of operations the per-token walker implements.
+  - `TestProgram_pagerStaysOffNonGenericFamilies`: the dense pager stays off any family with a layer outside the generic
+    operations.
+- **I: PASS** (37 IDENTICAL). **The whole decoder package: PASS** apart from the manifest's staleness. Logs:
+  `docs/measurements/op3-2026-10/op3z1-identity-tiny.log`, `docs/measurements/op3-2026-10/op3z1-decoder-full.log` (and Gemma
+  4's own run, `docs/measurements/op3-2026-10/op3k-decoder-full.log`, where the old table test had nothing left to scan).
+
+**Left in OP3:**
+- **OP3a's parked S cell** is served tonight (`op3a-S-served`). The old per-token, batched and multi-sequence loops stay
+  behind `programWalkOffForTest` until it reads: if the walker must change, S runs again in process.
+- **The two batched twins:** qwen3.5's (`runLayersQwen35N`), with its registered T1, and Gemma 4's bidirectional
+  (`runLayersGemma4FromEmbedN`). Neither is bit-identical to its family's per-token forward by design, and gate I (through
+  `Generate`) does not reach either. Moving them onto the batched walker needs their own gate: the PromptHidden and bidirectional
+  VL tests that already bound them.
+- **OP3z, part 2:** once S reads, the old loops, `causalAttention`, the old `mlp` dispatch and `programWalkOffForTest` go.
 
 ## 5. Track RF — one ragged forward pass
 
@@ -2369,7 +2419,7 @@ separate architecture doc while this is a proposal.
 Code, read at `9593bd70`:
 - **The descriptor and admission:**
   - `decoder/registry.go:resolveArchitecture`, `decoder/registry.go:Architecture.validateResolved`;
-  - `decoder/arch.go:Architecture`, `decoder/arch.go:ownForwardFamily`;
+  - `decoder/arch.go:Architecture`, `ownForwardFamily` (removed in OP3z);
   - `decoder/residency.go:Model.residentAdmission`, `decoder/residency.go:Model.decodeRunnerDecline`,
     `decoder/residency.go:Architecture.decodeRunnerEligible`, `decoder/residency.go:Architecture.ropeResidentCompatible`,
     `decoder/residency.go:DeclineResident`;

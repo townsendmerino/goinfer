@@ -107,7 +107,7 @@ Read in the tree, not run:
       which also read in place.
   - **The own-forward families:** `decoder/attention.go:attendQuery` is called only by the Granite, LFM2, Llama 4,
     Nemotron and Qwen3.5 forwards, and `decoder/forward_gemma4.go` and `decoder/forward_gptoss.go` read the cache's
-    slices directly. None of the nine entries in `decoder/arch.go:ownForwards` allows an int8 cache, so
+    slices directly. None of the nine entries in the own-loop table (`ownForwards`, removed in OP3z) allows an int8 cache, so
     `decoder/attention.go:attendQueryI8` is reached by tests only.
   - **Code that tests "int8, else f32":** `decoder/prefix_share.go:KVCache.copyStateFrom`,
     `decoder/cpu_batch.go:cpuBatchCacheEligible`, `decoder/forward_qwen35_n.go:Model.runLayersQwen35N`,

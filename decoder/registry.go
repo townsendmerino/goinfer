@@ -306,7 +306,7 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // (those are Gemma 3n). E2B also has cross-layer KV sharing + variable FFN +
 // final-logit softcap 30.
 //
-// The forward pass (runLayersGemma4) consumes the per-layer deltas; E2B/E4B and
+// The forward pass (the Gemma 4 program walk) consumes the per-layer deltas; E2B/E4B and
 // the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
 func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	globalHeadDim, globalKVHeads, err := cfg.gemma4GlobalGeometry()
@@ -2199,7 +2199,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 //
 //   - layer_types is NOT a config.json field for this family: the pattern is computed from layer_group_size (normalizeBailingLayerTypes,
 //     including a tail-cleanup clause).
-//   - MLA is reused via mlaAttention UNCHANGED, parameterized for two departures: both mixers are named self.attention (mlaParams.AttnPrefix)
+//   - MLA is reused via mlaAttentionWith UNCHANGED, parameterized for two departures: both mixers are named self.attention (mlaParams.AttnPrefix)
 //     and the output projection is self.dense (mlaParams.DenseSuffix). An optional per-head sigmoid output gate
 //     (gated_attention_proj_granularity_type) rides the mechanism Laguna's attention-output gate ships, activation aside.
 //   - MoE reuses moeMLP/routeExperts UNCHANGED (sigmoid + expert_bias + group-limited top-k + routed_scaling_factor + an ungated shared expert

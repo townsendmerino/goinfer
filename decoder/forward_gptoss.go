@@ -112,12 +112,6 @@ func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidde
 	return out, nil
 }
 
-// gptOssExpert evaluates one gpt-oss expert into dst[:hidden] with the family's constants.
-func (m *Model) gptOssExpert(ex *expertWeights, h, dst []float32, inter int) {
-	gp := m.w.arch.gptoss
-	gptOssExpertWith(m.be, ex, h, dst, inter, float32(gp.SwigluAlpha), float32(gp.SwigluLimit))
-}
-
 // gptOssExpertWith evaluates one gpt-oss expert. Unlike the plain SwiGLU expert it clamps both branches, gates with an α-scaled
 // sigmoid, adds 1 to the linear branch, and carries per-projection biases (matching HF GptOssExperts):
 //

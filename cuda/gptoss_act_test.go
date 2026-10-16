@@ -131,7 +131,7 @@ func TestGptOssAct_matchesReference(t *testing.T) {
 		t.Fatalf("D2H scale: %v", e)
 	}
 
-	// CPU reference — decoder/forward_gptoss.go's gptOssExpert, activation only.
+	// CPU reference — decoder/forward_gptoss.go's gptOssExpertWith, activation only.
 	want := make([]float32, I)
 	for i := range want {
 		gx := g[i] + gb[i]

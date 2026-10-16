@@ -58,7 +58,7 @@ const (
 	FeatAttnOutputGateSigmoid  ResidentFeature = "attn-output-gate-sigmoid"  // ctx *= sigmoid(g_proj·h) (Spark-X2.5)
 	FeatPerLayerQueryHeads     ResidentFeature = "per-layer-query-heads"     // the query head count varies by layer (Laguna XS)
 	FeatShortConv              ResidentFeature = "short-conv"                // LFM2 gated short-convolution mixer replacing attention on most layers (depthwise causal conv, a per-layer rolling window of the last K-1 inputs: stateful)
-	FeatGemma4EModel           ResidentFeature = "gemma4-e-model"            // Gemma-4 E2B/E4B: per-layer embeddings (PLE, hidden_size_per_layer_input>0), cross-layer shared KV, per-layer FFN width; runLayersGemma4 injects PLE per layer. A backend without the PLE branch would skip it and mis-run
+	FeatGemma4EModel           ResidentFeature = "gemma4-e-model"            // Gemma-4 E2B/E4B: per-layer embeddings (PLE, hidden_size_per_layer_input>0), cross-layer shared KV, per-layer FFN width; the Gemma 4 program walk injects PLE per layer. A backend without the PLE branch would skip it and mis-run
 	// FeatAttnTemp is the Llama4-style attention-temperature query scale (AttnTempBeta/AttnTempOrigMaxPos; Model.AttnTempScale,
 	// AttnTempParams). A path that does not apply it gives plausible-but-wrong logits at exactly the context lengths past
 	// original_max_position_embeddings it exists for, and the model otherwise needs nothing a backend lacks, so without this feature it

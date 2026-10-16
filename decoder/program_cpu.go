@@ -21,13 +21,17 @@ func (m *Model) program() *program {
 	return buildProgram(m.w.arch, m.w.hasExperts)
 }
 
-// hasExperts reports whether layer l carries MoE experts.
-func (w *Weights) hasExperts(l int) bool { return l < len(w.Layers) && w.Layers[l].Experts != nil }
+// hasExperts reports whether layer l carries MoE experts (Gemma 4's 26B carries them in its own block).
+func (w *Weights) hasExperts(l int) bool {
+	return l < len(w.Layers) && (w.Layers[l].Experts != nil || w.Layers[l].gemma4moe != nil)
+}
 
 // walkToken runs prog's layers for one position over h ([hidden], the residual stream, updated in place) and returns h. Each
 // operation reads its parameters from prog; the walker supplies the stream's buffers, the cache, and the hooks that are not
 // operations (the layer pager, LoRA, the captures, decodeTiming).
-func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32, error) {
+//
+// pleID is the token id behind h for the embedding stage's PLE inputs (Gemma 4); an image row passes the pad id.
+func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	scr := cache.scr
 	if m.layerPager != nil {
@@ -35,6 +39,13 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 	}
 	pos := cache.Pos() // this position, stable across layers in one forward
 	var t attnTimer
+	var g4 *gemma4Token // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
+	if arch.gemma4 != nil {
+		g4 = m.newGemma4Token(prog, h, pleID, pos)
+		if g4traceHidden != nil {
+			g4traceHidden(-1, h)
+		}
+	}
 	for l, ops := range prog.layers {
 		if ssmStopLayer >= 0 && l > ssmStopLayer {
 			break // the resident-SSM bring-up's layer sweep (SetSSMStopLayerForTest)
@@ -113,7 +124,11 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 					t0 = time.Now()
 				}
 				out := m.reg(o.out, h, scr)
-				if err := m.ffnToken(&o.ffn, m.reg(o.in, h, scr), out, lw, scr, ld); err != nil {
+				if o.ffn.Form == ffnGemma4Dense {
+					if err := m.gemma4DenseFFN(o.ffn.Act, m.reg(o.in, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
+						return nil, err
+					}
+				} else if err := m.ffnToken(&o.ffn, m.reg(o.in, h, scr), out, lw, scr, ld); err != nil {
 					return nil, err
 				}
 				if decodeTiming {
@@ -143,6 +158,19 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 					addScaled(h, scr.sub, float32(o.res.Scale))
 				} else {
 					addResidual(h, scr.sub)
+				}
+			case opGemma4Attn:
+				m.gemma4AttnToken(&o.g4, m.reg(o.in, h, scr), m.reg(o.out, h, scr), lw, cache, l, pos, g4)
+				lastFFN = false
+			case opGemma4MoE:
+				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.norms.Eps, o.norms.AddOne, h, lw.gemma4moe, m.pager))
+			case opPLE:
+				m.gemma4PLEBranch(h, g4.ple(l), lw, &o.norms, scr.sub)
+			case opLayerScale:
+				if lw.LayerScalar != 0 {
+					for i := range h {
+						h[i] *= lw.LayerScalar
+					}
 				}
 			case opMLA:
 				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
@@ -174,6 +202,11 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.kind)
 			}
 		}
+		if g4traceHidden != nil && arch.gemma4 != nil {
+			g4traceHidden(l, h)
+		}
+		// The hidden-state seam the block drafters read: the residual AFTER layer l is complete (HF's output_hidden_states
+		// shifted by one: its index 0 is the embedding, ours is layer 0's output), copied, since later layers mutate h.
 		if cache.captureLayers != nil {
 			for i, cl := range cache.captureLayers {
 				if cl == l {
@@ -364,6 +397,8 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *decodeScratch, ld *loraLayerDelta) error {
 	arch := m.w.arch
 	switch p.Form {
+	case ffnGemma4Dense:
+		return errNotImplemented // the walker runs Gemma 4's dense FFN itself (it shares the token's quantized input)
 	case ffnLlama4MoE:
 		m.llama4MoEWith(x, out, lw, &p.MoE, arch.HiddenDim)
 		return nil

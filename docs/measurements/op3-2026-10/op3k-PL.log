@@ -1,0 +1,276 @@
+=== RUN   TestProgram_P_plants
+    program_test.go:211: 9 tiny directories did not load as text models (not counted): embeddinggemma2-tiny: decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); gemma4-audio-tiny: decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); gemma4-vision-tiny: decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); glm-ocr-vision-tiny: decoder(glm_ocr): missing required dim (hidden=0 layers=0 heads=0 headDim=0); pixtral-projector-tiny: decoder(llama): missing required dim (hidden=24 layers=0 heads=0 headDim=0); qwen3vl-vision-tiny: decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it; siglip-tiny: decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); whisper-tiny-rand: decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); whisper-tiny-ts: decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral)
+    program_test.go:289: P token "drop layer 0's second residual": changed on 58 of 58 fixtures it applies to (bailing_hybrid-tiny=changed cohere-tiny=changed cohere2-tiny=changed deepseek-tiny=changed gemma1-tiny=changed gemma1-tiny.gguf=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed gemma4-dense-twogeom-tiny=changed gemma4-emodel-tiny=changed gemma4-moe-kv-tiny=changed gemma4-moe-tiny=changed gemma4-moe-unified-tiny=changed gemma4-vl-bidir-tiny=changed glm-ocr-tiny=changed glm-tiny=changed glm-tiny-bias=changed glm-tiny.gguf=changed granite-dense-tiny=changed granite-tiny=changed kimi-tiny=changed lfm2-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed llama4-tiny=changed ministral3-tiny=changed mistral-tiny-window=changed mixtral-tiny=changed nemotron-tiny=changed nemotron3nano-tiny=changed olmo3-tiny=changed olmo_hybrid-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen35-tiny=changed qwen35vl-tiny=changed qwen3asr-tiny=changed qwen3moe-tiny=changed qwen3moe-tiny-k3=changed qwen3next-tiny=changed qwen3vl-tiny=changed qwen3vlmoe-tiny=changed smollm3-tiny=changed tiny-qwen2-moe=changed voxtral-tiny=changed gptoss_tiny.gguf=changed internlm2-tiny=changed internlm3-tiny=changed laguna-m1-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed qwen3_5-tiny=changed qwen3_5-tiny-normw=changed qwen3_5_moe-tiny=changed spark2-5-tiny=changed gpt2=changed)
+    program_test.go:289: P token "swap layer 0's qk-norm and rope, or its first norm and the operation after it": changed on 58 of 58 fixtures it applies to (bailing_hybrid-tiny=changed cohere-tiny=changed cohere2-tiny=changed deepseek-tiny=changed gemma1-tiny=changed gemma1-tiny.gguf=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed gemma4-dense-twogeom-tiny=changed gemma4-emodel-tiny=changed gemma4-moe-kv-tiny=changed gemma4-moe-tiny=changed gemma4-moe-unified-tiny=changed gemma4-vl-bidir-tiny=changed glm-ocr-tiny=changed glm-tiny=changed glm-tiny-bias=changed glm-tiny.gguf=changed granite-dense-tiny=changed granite-tiny=changed kimi-tiny=changed lfm2-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed llama4-tiny=changed ministral3-tiny=changed mistral-tiny-window=changed mixtral-tiny=changed nemotron-tiny=changed nemotron3nano-tiny=changed olmo3-tiny=changed olmo_hybrid-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen35-tiny=changed qwen35vl-tiny=changed qwen3asr-tiny=changed qwen3moe-tiny=changed qwen3moe-tiny-k3=changed qwen3next-tiny=changed qwen3vl-tiny=changed qwen3vlmoe-tiny=changed smollm3-tiny=changed tiny-qwen2-moe=changed voxtral-tiny=changed gptoss_tiny.gguf=changed internlm2-tiny=changed internlm3-tiny=changed laguna-m1-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed qwen3_5-tiny=changed qwen3_5-tiny-normw=changed qwen3_5_moe-tiny=changed spark2-5-tiny=changed gpt2=changed)
+    program_test.go:289: P token "rope one pair short on layer 0": changed on 37 of 37 fixtures it applies to (cohere-tiny=changed cohere2-tiny=changed gemma1-tiny=changed gemma1-tiny.gguf=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed glm-ocr-tiny=changed glm-tiny=changed glm-tiny-bias=changed glm-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed llama4-tiny=changed ministral3-tiny=changed mistral-tiny-window=changed mixtral-tiny=changed olmo3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3moe-tiny=changed qwen3moe-tiny-k3=changed qwen3vl-tiny=changed qwen3vlmoe-tiny=changed smollm3-tiny=changed tiny-qwen2-moe=changed voxtral-tiny=changed gptoss_tiny.gguf=changed internlm2-tiny=changed internlm3-tiny=changed laguna-m1-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed spark2-5-tiny=changed)
+    program_test.go:289: P token "attention window one key short on the first windowed layer": changed on 11 of 11 fixtures it applies to (cohere2-tiny=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed mistral-tiny-window=changed olmo3-tiny=changed gptoss_tiny.gguf=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed spark2-5-tiny=changed)
+    program_test.go:289: P batch "drop layer 0's second residual": changed on 35 of 35 fixtures it applies to (cohere-tiny=changed cohere2-tiny=changed gemma1-tiny=changed gemma1-tiny.gguf=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed glm-ocr-tiny=changed glm-tiny=changed glm-tiny-bias=changed glm-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed ministral3-tiny=changed mistral-tiny-window=changed mixtral-tiny=changed olmo3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3moe-tiny=changed qwen3moe-tiny-k3=changed qwen3vl-tiny=changed qwen3vlmoe-tiny=changed smollm3-tiny=changed tiny-qwen2-moe=changed voxtral-tiny=changed internlm2-tiny=changed internlm3-tiny=changed laguna-m1-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed spark2-5-tiny=changed)
+    program_test.go:289: P batch "swap layer 0's qk-norm and rope, or its first norm and the operation after it": changed on 35 of 35 fixtures it applies to (cohere-tiny=changed cohere2-tiny=changed gemma1-tiny=changed gemma1-tiny.gguf=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed glm-ocr-tiny=changed glm-tiny=changed glm-tiny-bias=changed glm-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed ministral3-tiny=changed mistral-tiny-window=changed mixtral-tiny=changed olmo3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3moe-tiny=changed qwen3moe-tiny-k3=changed qwen3vl-tiny=changed qwen3vlmoe-tiny=changed smollm3-tiny=changed tiny-qwen2-moe=changed voxtral-tiny=changed internlm2-tiny=changed internlm3-tiny=changed laguna-m1-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed spark2-5-tiny=changed)
+    program_test.go:289: P batch "rope one pair short on layer 0": changed on 35 of 35 fixtures it applies to (cohere-tiny=changed cohere2-tiny=changed gemma1-tiny=changed gemma1-tiny.gguf=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed glm-ocr-tiny=changed glm-tiny=changed glm-tiny-bias=changed glm-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed ministral3-tiny=changed mistral-tiny-window=changed mixtral-tiny=changed olmo3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3moe-tiny=changed qwen3moe-tiny-k3=changed qwen3vl-tiny=changed qwen3vlmoe-tiny=changed smollm3-tiny=changed tiny-qwen2-moe=changed voxtral-tiny=changed internlm2-tiny=changed internlm3-tiny=changed laguna-m1-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed spark2-5-tiny=changed)
+    program_test.go:289: P batch "attention window one key short on the first windowed layer": changed on 10 of 10 fixtures it applies to (cohere2-tiny=changed gemma2-hd-tiny=changed gemma2-hd-tiny.gguf=changed gemma2-tiny=changed gemma3-vl-tiny=changed mistral-tiny-window=changed olmo3-tiny=changed laguna-xs2-tiny=changed laguna-xs21-tiny=changed spark2-5-tiny=changed)
+    program_test.go:289: P multi "drop layer 0's second residual": changed on 14 of 14 fixtures it applies to (gemma1-tiny=changed gemma1-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed ministral3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3vl-tiny=changed smollm3-tiny=changed voxtral-tiny=changed internlm2-tiny=changed internlm3-tiny=changed)
+    program_test.go:289: P multi "swap layer 0's qk-norm and rope, or its first norm and the operation after it": changed on 14 of 14 fixtures it applies to (gemma1-tiny=changed gemma1-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed ministral3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3vl-tiny=changed smollm3-tiny=changed voxtral-tiny=changed internlm2-tiny=changed internlm3-tiny=changed)
+    program_test.go:289: P multi "rope one pair short on layer 0": changed on 14 of 14 fixtures it applies to (gemma1-tiny=changed gemma1-tiny.gguf=changed granite-dense-tiny=changed llama-attnfa-tiny=changed llama-tiny=changed ministral3-tiny=changed phi3-tiny=changed qwen25vl-tiny=changed qwen3asr-tiny=changed qwen3vl-tiny=changed smollm3-tiny=changed voxtral-tiny=changed internlm2-tiny=changed internlm3-tiny=changed)
+    program_test.go:286: P multi "attention window one key short on the first windowed layer" NOT RUN: no fixture this walker runs has what it changes
+--- PASS: TestProgram_P_plants (4.86s)
+=== RUN   TestProgram_L_everyParameterIsLive
+    program_test.go:329: 9 tiny directories did not load as text models (not counted): embeddinggemma2-tiny: decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); gemma4-audio-tiny: decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); gemma4-vision-tiny: decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); glm-ocr-vision-tiny: decoder(glm_ocr): missing required dim (hidden=0 layers=0 heads=0 headDim=0); pixtral-projector-tiny: decoder(llama): missing required dim (hidden=24 layers=0 heads=0 headDim=0); qwen3vl-vision-tiny: decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it; siglip-tiny: decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); whisper-tiny-rand: decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral); whisper-tiny-ts: decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral)
+    program_test.go:383: L token attention.Chunk              changed 43  error  0  same  0  e.g. cohere-tiny
+    program_test.go:383: L token attention.Order              changed  1  error 42  same  0  e.g. gptoss_tiny.gguf
+    program_test.go:383: L token attention.Scale              changed 43  error  0  same  0  e.g. cohere-tiny
+    program_test.go:383: L token attention.Softcap            changed 42  error  0  same  1  e.g. cohere-tiny
+    program_test.go:383: L token attention.Window             changed 42  error  0  same  1  e.g. cohere-tiny
+    program_test.go:383: L token attn-temp.Beta               changed  2  error  0  same  0  e.g. llama4-tiny
+    program_test.go:383: L token attn-temp.OrigMaxPos         changed  2  error  0  same  0  e.g. llama4-tiny
+    program_test.go:383: L token attn-temp.PosOffset          changed  2  error  0  same  0  e.g. llama4-tiny
+    program_test.go:383: L token deltanet.Eps                 changed  6  error  0  same  1  e.g. qwen35-tiny
+    program_test.go:383: L token deltanet.NegEigval           changed  7  error  0  same  0  e.g. olmo_hybrid-tiny
+    program_test.go:383: L token deltanet.ONormEps            changed  7  error  0  same  0  e.g. olmo_hybrid-tiny
+    program_test.go:383: L token embed.LearnedPos             changed  1  error  0  same 57  e.g. gpt2
+    program_test.go:383: L token embed.PLE                    changed  1  error  0  same 57  e.g. gemma4-emodel-tiny
+    program_test.go:383: L token embed.Scale                  changed 14  error  0  same 44  e.g. gemma1-tiny
+    program_test.go:383: L token ffn.Act                      changed  7  error 46  same  2  e.g. gemma1-tiny
+    program_test.go:383: L token ffn.Alpha                    changed  1  error  0  same 54  e.g. gptoss_tiny.gguf
+    program_test.go:383: L token ffn.Form                     changed 17  error 36  same  2  e.g. gemma1-tiny
+    program_test.go:383: L token ffn.Limit                    changed  0  error  0  same 55  
+    program_test.go:383: L token ffn.MoE.IntermediateDim      changed  0  error 18  same 37  e.g. bailing_hybrid-tiny (panic: runtime error: slice bounds out of range [:33] with capacity 32)
+    program_test.go:383: L token ffn.MoE.NGroup               changed  4  error  0  same 51  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token ffn.MoE.NormTopKProb         changed 19  error  0  same 36  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token ffn.MoE.NumExperts           changed  0  error  3  same 52  e.g. llama4-tiny (panic: runtime error: index out of range [4] with length 4)
+    program_test.go:383: L token ffn.MoE.PerExpertScale       changed  0  error  0  same 55  
+    program_test.go:383: L token ffn.MoE.RoutedScale          changed 10  error  0  same 45  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token ffn.MoE.RouterPreNorm        changed  0  error  0  same 55  
+    program_test.go:383: L token ffn.MoE.RouterSigmoid        changed 19  error  0  same 36  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token ffn.MoE.SharedIntermediateDim changed  4  error 13  same 38  e.g. mixtral-tiny
+    program_test.go:383: L token ffn.MoE.SharedUngated        changed 14  error  0  same 41  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token ffn.MoE.TopK                 changed 21  error  0  same 34  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token ffn.MoE.TopkGroup            changed  2  error  0  same 53  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token gated-attn.Attn.Chunk        changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.Attn.Order        changed  0  error  6  same  0  e.g. qwen35-tiny (decoder: layer 3: gated attention runs attendQuery only, not order 4)
+    program_test.go:383: L token gated-attn.Attn.Scale        changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.Attn.Softcap      changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.Attn.Window       changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.QKNorm.AddOne     changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.QKNorm.Eps        changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.QKNorm.Form       changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.QKNorm.Whole      changed  0  error  6  same  0  e.g. qwen35-tiny (panic: runtime error: slice bounds out of range [:64] with capacity 16)
+    program_test.go:383: L token gated-attn.Rope.Interleave   changed  2  error  0  same  4  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.Rope.InvFreq      changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gated-attn.Rope.Kernel       changed  4  error  0  same  2  e.g. qwen35vl-tiny
+    program_test.go:383: L token gated-attn.Rope.MRopeInterleaved changed  4  error  0  same  2  e.g. qwen35vl-tiny
+    program_test.go:383: L token gated-attn.Rope.MRopeSection changed  0  error  4  same  2  e.g. qwen35vl-tiny (panic: runtime error: index out of range [2] with length 2)
+    program_test.go:383: L token gated-attn.Rope.Mscale       changed  6  error  0  same  0  e.g. qwen35-tiny
+    program_test.go:383: L token gemma4-attn.AddOne           changed  6  error  0  same  0  e.g. gemma4-dense-twogeom-tiny
+    program_test.go:383: L token gemma4-attn.Eps              changed  6  error  0  same  0  e.g. gemma4-dense-twogeom-tiny
+    program_test.go:383: L token gemma4-attn.InvFreq          changed  6  error  0  same  0  e.g. gemma4-dense-twogeom-tiny
+    program_test.go:383: L token gemma4-attn.KVSrc            changed  0  error  6  same  0  e.g. gemma4-dense-twogeom-tiny (panic: runtime error: index out of range [2] with length 2)
+    program_test.go:383: L token gemma4-attn.Mscale           changed  6  error  0  same  0  e.g. gemma4-dense-twogeom-tiny
+    program_test.go:383: L token gemma4-attn.OwnsKV           changed  0  error  6  same  0  e.g. gemma4-dense-twogeom-tiny (panic: runtime error: slice bounds out of range [:-16])
+    program_test.go:383: L token gemma4-attn.Scale            changed  6  error  0  same  0  e.g. gemma4-dense-twogeom-tiny
+    program_test.go:383: L token gemma4-attn.Window           changed  6  error  0  same  0  e.g. gemma4-dense-twogeom-tiny
+    program_test.go:383: L token gemma4-moe.AddOne            changed  3  error  0  same  0  e.g. gemma4-moe-kv-tiny
+    program_test.go:383: L token gemma4-moe.Eps               changed  3  error  0  same  0  e.g. gemma4-moe-kv-tiny
+    program_test.go:383: L token head.LogitScale              changed  4  error  0  same 54  e.g. cohere-tiny
+    program_test.go:383: L token head.Norm.AddOne             changed 55  error  0  same  3  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token head.Norm.Bias               changed  1  error  0  same 57  e.g. gpt2
+    program_test.go:383: L token head.Norm.Eps                changed 57  error  0  same  1  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token head.Norm.Form               changed 58  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token head.Norm.Slot               changed  0  error  0  same 58  
+    program_test.go:383: L token head.Softcap                 changed 58  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token head.Tied                    changed 57  error  0  same  1  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token kda.Eps                      changed  1  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token kda.LowerBound               changed  1  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token mamba2.Eps                   changed  3  error  0  same  0  e.g. granite-tiny
+    program_test.go:383: L token mamba2.NormGroups            changed  3  error  0  same  0  e.g. granite-tiny
+    program_test.go:383: L token mla.Eps                      changed  3  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token mla.HeadWise                 changed  0  error  1  same  2  e.g. bailing_hybrid-tiny (panic: runtime error: index out of range [8] with length 8)
+    program_test.go:383: L token mla.Interleave               changed  3  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token mla.InvFreq                  changed  3  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token mla.Mscale                   changed  3  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token mla.Scale                    changed  3  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token norm.AddOne                  changed 55  error  0  same  3  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token norm.Bias                    changed  1  error  0  same 57  e.g. gpt2
+    program_test.go:383: L token norm.Eps                     changed 58  error  0  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token norm.Form                    changed 56  error  2  same  0  e.g. bailing_hybrid-tiny
+    program_test.go:383: L token norm.Slot                    changed  3  error 55  same  0  e.g. gemma4-moe-kv-tiny
+    program_test.go:383: L token out-gate.Sigmoid             changed  4  error  0  same  0  e.g. laguna-m1-tiny
+    program_test.go:383: L token ple.AddOne                   changed  1  error  0  same  0  e.g. gemma4-emodel-tiny
+    program_test.go:383: L token ple.Eps                      changed  1  error  0  same  0  e.g. gemma4-emodel-tiny
+    program_test.go:383: L token proj-o.Bias                  changed  2  error  0  same 41  e.g. gptoss_tiny.gguf
+    program_test.go:383: L token proj-qkv.Bias                changed  2  error  0  same 41  e.g. gptoss_tiny.gguf
+    program_test.go:383: L token qk-norm.AddOne               changed 14  error  0  same  1  e.g. gemma3-vl-tiny
+    program_test.go:383: L token qk-norm.Eps                  changed 15  error  0  same  0  e.g. gemma3-vl-tiny
+    program_test.go:383: L token qk-norm.Form                 changed 14  error  1  same  0  e.g. gemma3-vl-tiny
+    program_test.go:383: L token qk-norm.Whole                changed  2  error 12  same  1  e.g. olmo3-tiny
+    program_test.go:383: L token residual.Scale               changed  1  error  0  same 57  e.g. granite-tiny
+    program_test.go:383: L token residual.Two                 changed  3  error  0  same 55  e.g. cohere-tiny
+    program_test.go:383: L token rope.Interleave              changed 37  error  0  same  2  e.g. cohere-tiny
+    program_test.go:383: L token rope.InvFreq                 changed 39  error  0  same  0  e.g. cohere-tiny
+    program_test.go:383: L token rope.Kernel                  changed  4  error  0  same 35  e.g. glm-ocr-tiny
+    program_test.go:383: L token rope.MRopeInterleaved        changed  4  error  0  same 35  e.g. glm-ocr-tiny
+    program_test.go:383: L token rope.MRopeSection            changed  2  error  2  same 35  e.g. glm-ocr-tiny
+    program_test.go:383: L token rope.Mscale                  changed 39  error  0  same  0  e.g. cohere-tiny
+    program_test.go:419: L batch attention.Order              NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch deltanet.Eps                 NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch deltanet.NegEigval           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch deltanet.ONormEps            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch embed.LearnedPos             NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch embed.PLE                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.Alpha                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.Limit                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.MoE.IntermediateDim      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.MoE.NGroup               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.MoE.NumExperts           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.MoE.PerExpertScale       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.MoE.RouterPreNorm        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ffn.MoE.TopkGroup            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Attn.Chunk        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Attn.Order        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Attn.Scale        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Attn.Softcap      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Attn.Window       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.QKNorm.AddOne     NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.QKNorm.Eps        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.QKNorm.Form       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.QKNorm.Whole      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Rope.Interleave   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Rope.InvFreq      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Rope.Kernel       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Rope.MRopeInterleaved NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Rope.MRopeSection NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gated-attn.Rope.Mscale       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.AddOne           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.Eps              NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.InvFreq          NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.KVSrc            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.Mscale           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.OwnsKV           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.Scale            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-attn.Window           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-moe.AddOne            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch gemma4-moe.Eps               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch head.Norm.Bias               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch head.Norm.Slot               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch kda.Eps                      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch kda.LowerBound               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mamba2.Eps                   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mamba2.NormGroups            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mla.Eps                      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mla.HeadWise                 NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mla.Interleave               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mla.InvFreq                  NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mla.Mscale                   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch mla.Scale                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch norm.Bias                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch norm.Slot                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ple.AddOne                   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch ple.Eps                      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch proj-o.Bias                  NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch proj-qkv.Bias                NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L batch residual.Scale               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:424: L batch: 37 parameters checked against the per-token walker, 58 not run
+    program_test.go:419: L multi attention.Order              NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi deltanet.Eps                 NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi deltanet.NegEigval           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi deltanet.ONormEps            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi embed.LearnedPos             NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi embed.PLE                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.Alpha                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.Limit                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.IntermediateDim      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.NGroup               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.NormTopKProb         NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.NumExperts           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.PerExpertScale       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.RoutedScale          NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.RouterPreNorm        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.RouterSigmoid        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.SharedIntermediateDim NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.SharedUngated        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.TopK                 NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ffn.MoE.TopkGroup            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Attn.Chunk        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Attn.Order        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Attn.Scale        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Attn.Softcap      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Attn.Window       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.QKNorm.AddOne     NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.QKNorm.Eps        NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.QKNorm.Form       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.QKNorm.Whole      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Rope.Interleave   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Rope.InvFreq      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Rope.Kernel       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Rope.MRopeInterleaved NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Rope.MRopeSection NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gated-attn.Rope.Mscale       NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.AddOne           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.Eps              NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.InvFreq          NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.KVSrc            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.Mscale           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.OwnsKV           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.Scale            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-attn.Window           NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-moe.AddOne            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi gemma4-moe.Eps               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi head.Norm.Bias               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi head.Norm.Slot               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi kda.Eps                      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi kda.LowerBound               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mamba2.Eps                   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mamba2.NormGroups            NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mla.Eps                      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mla.HeadWise                 NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mla.Interleave               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mla.InvFreq                  NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mla.Mscale                   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi mla.Scale                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi norm.Bias                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi norm.Slot                    NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi out-gate.Sigmoid             NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ple.AddOne                   NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi ple.Eps                      NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi proj-o.Bias                  NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi proj-qkv.Bias                NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi qk-norm.Whole                NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi residual.Scale               NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:419: L multi residual.Two                 NOT RUN: no fixture this walker runs shows it per token
+    program_test.go:424: L multi: 28 parameters checked against the per-token walker, 67 not run
+--- PASS: TestProgram_L_everyParameterIsLive (26.78s)
+=== RUN   TestProgram_movedFamilySeams
+=== RUN   TestProgram_movedFamilySeams/gptoss_tiny.gguf
+=== RUN   TestProgram_movedFamilySeams/llama4-tiny
+=== RUN   TestProgram_movedFamilySeams/deepseek-tiny
+=== RUN   TestProgram_movedFamilySeams/kimi-tiny
+=== RUN   TestProgram_movedFamilySeams/bailing_hybrid-tiny
+=== RUN   TestProgram_movedFamilySeams/lfm2-tiny
+=== RUN   TestProgram_movedFamilySeams/granite-tiny
+=== RUN   TestProgram_movedFamilySeams/nemotron-tiny
+=== RUN   TestProgram_movedFamilySeams/nemotron3nano-tiny
+=== RUN   TestProgram_movedFamilySeams/qwen3_5-tiny
+=== RUN   TestProgram_movedFamilySeams/qwen3_5_moe-tiny
+=== RUN   TestProgram_movedFamilySeams/qwen3next-tiny
+=== RUN   TestProgram_movedFamilySeams/olmo_hybrid-tiny
+=== RUN   TestProgram_movedFamilySeams/gemma4-emodel-tiny
+=== RUN   TestProgram_movedFamilySeams/gemma4-moe-tiny
+=== RUN   TestProgram_movedFamilySeams/gemma4-dense-twogeom-tiny
+--- PASS: TestProgram_movedFamilySeams (0.27s)
+    --- PASS: TestProgram_movedFamilySeams/gptoss_tiny.gguf (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/llama4-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/deepseek-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/kimi-tiny (0.05s)
+    --- PASS: TestProgram_movedFamilySeams/bailing_hybrid-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/lfm2-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/granite-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/nemotron-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/nemotron3nano-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/qwen3_5-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/qwen3_5_moe-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/qwen3next-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/olmo_hybrid-tiny (0.01s)
+    --- PASS: TestProgram_movedFamilySeams/gemma4-emodel-tiny (0.03s)
+    --- PASS: TestProgram_movedFamilySeams/gemma4-moe-tiny (0.03s)
+    --- PASS: TestProgram_movedFamilySeams/gemma4-dense-twogeom-tiny (0.03s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	32.445s

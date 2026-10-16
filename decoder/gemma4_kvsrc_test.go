@@ -4,7 +4,7 @@ import "testing"
 
 // TestGemma4KVSrcAt_handDerived pins gemma4KVSrcAt (decoder/arch.go) — the shared cross-layer-KV
 // redirect the resident CUDA bridge (KVSrcAtResident) reads, and the same algorithm
-// forward_gemma4.go's own runLayersGemma4FromEmbed closure computes independently — against
+// forward_gemma4.go's own runLayersFromEmbedPLE closure computes independently — against
 // hand-traced expected values on a small, explicit layer_types config, not just "agrees with
 // itself". 4 layers, sliding/full/sliding/full, last 2 shared:
 //
