@@ -22,7 +22,7 @@
 extern "C" __global__ void splitkv_scores(
     const float* __restrict__ q, const KV_T* __restrict__ kc,
     int nH, int nKV, int hd, int winStart, int nKeys, float scale,
-    float* __restrict__ scStore, int nWin) {
+    float* __restrict__ scStore, int nWin ATTN_CAP_PARAM) {
     int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
 
     // q IS BLOCK-INVARIANT — it depends only on h = blockIdx.x — but every one of the 128 threads
@@ -56,7 +56,7 @@ extern "C" __global__ void splitkv_scores(
         dot = __fmaf_rn(qq.w, kk.w, dot);
     }
     for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LD(ks + d), dot);
-    scStore[(long)h * nWin + i] = attn_score(dot, scale);
+    scStore[(long)h * nWin + i] = attn_score(dot, scale ATTN_CAP_ARG);
 }
 
 // splitkv_softmax: grid nH, block 128 — replicates attn_batched's max+exp+denom EXACTLY (same strided

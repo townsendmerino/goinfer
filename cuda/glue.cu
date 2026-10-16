@@ -204,7 +204,7 @@ __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
 // against the 48 KB per-block limit.
 __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ kc,
                           const KV_T* __restrict__ vc, int nH, int nKV, int hd, int nKeys,
-                          float scale, int window, float* __restrict__ ctx) {
+                          float scale, int window, float* __restrict__ ctx ATTN_CAP_PARAM) {
     extern __shared__ float sm[];       // [nWin] scores/weights + [blockDim] reduce
     int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
     int nWin = nKeys - winStart;
@@ -220,7 +220,7 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
         const KV_T* ks = kc + s * kvDim + kvh * hd;
         float dot = 0.f;
         for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
-        dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
+        dot = attn_score(dot, scale ATTN_CAP_ARG); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }

@@ -621,11 +621,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		allocSlack = 0 // the planted defect of TestBuildScratchAccounting_plantedDefect: the plan as it was before the slack was priced
 	}
 	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack)
+	attnCap := m.AttnLogitSoftcapResident()
+	if attnCap != 0 && mlaOK {
+		return declined(fmt.Errorf("an attention softcap on a latent-attention model: mla_attn has no cap"))
+	}
 	r := &cudaResident{
 		knob:   m.Knob,
 		kvF16:  m.KVCacheF16(),
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
-		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
+		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap,
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: m.HasQKNorm(), qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(), postOnly: postOnly,
@@ -744,7 +748,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if e != nil {
 			return e
 		}
-		glmod, e := r.dev.CompileLibrary(r.kvPTX(gluePTX, glueKV16PTX))
+		glmod, e := r.dev.CompileLibrary(r.attnPTX(gluePTX, glueKV16PTX, glueCapPTX, glueKV16CapPTX))
 		if e != nil {
 			return e
 		}
@@ -888,7 +892,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// Batched prefill kernels (weight-stationary M=len path): own module, prefill_batched.ptx, with the audited PTX
 		// untouched. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally; there is no gemv_w4a8_batched module.
 		{
-			if pbmod, e3 := r.dev.CompileLibrary(r.kvPTX(prefillBatchedPTX, prefillBatchedKV16PTX)); e3 == nil {
+			if pbmod, e3 := r.dev.CompileLibrary(r.attnPTX(prefillBatchedPTX, prefillBatchedKV16PTX, prefillBatchedCapPTX, prefillBatchedKV16CapPTX)); e3 == nil {
 				ok := true
 				load := func(dst *Pipeline, mod gpu.Library, name string) {
 					if p, le := r.dev.NewComputePipeline(mod, name); le == nil {
@@ -1065,7 +1069,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		if r.prefillReady {
-			if skmod, e2 := r.dev.CompileLibrary(r.kvPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX)); e2 == nil {
+			if skmod, e2 := r.dev.CompileLibrary(r.attnPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX, decodeSplitKVCapPTX, decodeSplitKVKV16CapPTX)); e2 == nil {
 				skOK := true
 				loadSK := func(dst *Pipeline, name string) {
 					if p, le := r.dev.NewComputePipeline(skmod, name); le == nil {

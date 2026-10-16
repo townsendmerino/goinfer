@@ -769,6 +769,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, nil, e
 	}
+	if len(blocks) > 0 && r.attnCap != 0 {
+		return nil, nil, fmt.Errorf("cuda prefill: an image block on a model with an attention softcap; attn_img_batched has no cap")
+	}
 	if r.eModel {
 		// Gemma 4 E-model: text prompts batch. A step (its rows' PLE tails and KV slots are not staged by the step path), an
 		// image block and m-RoPE (no E-model has it) stay sequential.
@@ -1264,7 +1267,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 					} else {
 						attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)
+							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.withCap(attnArgs...)...)
 					}
 					if attnErr == nil && laneFrom < M {
 						attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
@@ -1838,7 +1841,7 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // including TestPipelineLint_boundKernelsAreLaunched, which flags a field bound at every model load and launched by
 // nothing.
 func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
-	if r.forceExactKernels || !r.fastAttn || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
+	if r.forceExactKernels || !r.fastAttn || r.attnCap != 0 || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
 		return 0, false
 	}
 	p, sh := r.attnFusedFor(hd)

@@ -76,6 +76,9 @@ type drafterLayer struct {
 // against the target, not trusted: a drafter reads the target's residual stream, so a hidden-dim mismatch is the wrong
 // pairing, and the failure mode is a drafter that runs and drafts noise (docs/spec/08).
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
+	if r.attnCap != 0 {
+		return nil, fmt.Errorf("cuda drafter: the target has an attention softcap, which attn_block_full does not apply")
+	}
 	if r.kvF16 {
 		// The drafter keeps its own f32 K/V and attends over it with this resident's attention pipelines; under an f16 cache those are the
 		// _kv16 twins, which would read its f32 buffers as halves and draft noise without an error. Load the target with -kv f32.

@@ -5,6 +5,9 @@ package cuda
 import (
 	_ "embed"
 	"math"
+	"slices"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
 // The production decode kernels (NVRTC to PTX, go:embed, driver-JIT via cuModuleLoadDataEx), embedded in a non-test file
@@ -332,6 +335,42 @@ var attnFusedKV16PTX []byte
 
 //go:embed testdata/attn_fused_bm_kv16.ptx
 var attnFusedBMKV16PTX []byte
+
+//go:embed testdata/glue_cap.ptx
+var glueCapPTX []byte
+
+//go:embed testdata/glue_kv16_cap.ptx
+var glueKV16CapPTX []byte
+
+//go:embed testdata/prefill_batched_cap.ptx
+var prefillBatchedCapPTX []byte
+
+//go:embed testdata/prefill_batched_kv16_cap.ptx
+var prefillBatchedKV16CapPTX []byte
+
+//go:embed testdata/decode_splitkv_cap.ptx
+var decodeSplitKVCapPTX []byte
+
+//go:embed testdata/decode_splitkv_kv16_cap.ptx
+var decodeSplitKVKV16CapPTX []byte
+
+// attnPTX is kvPTX for the three modules that hold a kernel a capped layer takes (attention, attn_batched, splitkv_scores): a model with
+// an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module.
+func (r *cudaResident) attnPTX(f32, kv16, capF32, capKV16 []byte) []byte {
+	if r.attnCap != 0 {
+		return r.kvPTX(capF32, capKV16)
+	}
+	return r.kvPTX(f32, kv16)
+}
+
+// withCap appends the cap to the argument list of a covered kernel when the model has one: the capped variants take it as their last
+// parameter, the plain ones do not.
+func (r *cudaResident) withCap(args ...gpu.KernelArg) []gpu.KernelArg {
+	if r.attnCap == 0 {
+		return args
+	}
+	return append(slices.Clone(args), gpu.ArgValue(r.attnCap))
+}
 
 // kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module.
 func (r *cudaResident) kvPTX(f32, kv16 []byte) []byte {

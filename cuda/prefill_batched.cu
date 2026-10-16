@@ -174,7 +174,7 @@ __global__ void rope_kv_batched(
 __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
                              const KV_T* __restrict__ vc, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
-                             const float* __restrict__ sinks) {
+                             const float* __restrict__ sinks ATTN_CAP_PARAM) {
     int h = blockIdx.x; if (h >= nH) return;
     int m = blockIdx.y; if (m >= M) return;
     int nKeys = startPos + m + 1;
@@ -206,7 +206,7 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
         for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
-        dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
+        dot = attn_score(dot, scale ATTN_CAP_ARG); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
