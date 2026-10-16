@@ -1533,6 +1533,19 @@ applies the same check to each step's logits.
 - **F, fit, by day, before any tier 1:** every load tier 1 makes is started alone with the server's own flags and its `fit:` and
   `KV plan:` banner read, or its refusal. A refused load is VOID, not FAIL, and no guard is bypassed.
 
+**Gate F's prediction, written before the server's plan exists (2026-10-16, owner's instruction).** This is arithmetic, not the gate: F is the server's own
+`fit:` and `KV plan:` banner on a resident, which can be read only once step 2 builds one. The card is 8,192 MiB with 445 MiB held by the desktop,
+so **7,747 MiB (7.57 GiB) is free**; the owner's "about 7.7 GiB" was a rounding of that.
+- **The 4B:** its CUDA int4 bundle (`cmd/prequant -quant int4 -target cuda`, measured) is 3,665,816,296 bytes, **3,496 MiB (3.41 GiB)**. That leaves
+  about 4,250 MiB. Against it: the process's CUDA context and driver-JIT modules (INFERRED, a few hundred MiB), scratch for one decode row (tens
+  of MiB), the Mamba state (24 layers x 112 x 64 x 128 f32 = 3.7 MB each, about 88 MiB plus the conv windows), and the KV of the 4 attention layers
+  (8 KV heads x 128 x K and V x f16 = 16 KiB a token, 256 MiB at 16,384 positions). **Predicted: admitted whole at a context of 16,384 or more,
+  with 3 GiB or more of headroom.** Falsified if the plan refuses it, or caps its context under 8,192.
+- **The 9B:** Metal's v17 bundle is 7.27 GB, **6,935 MiB**; the CUDA counterpart should be within a few percent. That leaves about 810 MiB for the
+  context, the scratch, the state and the KV. **Predicted: refused, or admitted only at a context under 2,048.** Falsified if it is admitted at 4,096
+  or more.
+- Both readings, and the plan's own numbers beside these, go in the record when the resident exists. A wrong prediction is recorded as wrong.
+
 **Tier 1, by day, under the timing lock, about 10 minutes.** The checkpoint is `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf` in
 nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it on nobara with `cmd/prequant -target cuda`.
 - **The whole-model cell, decided now (owner, 2026-10-16), in this order, before any data:**
