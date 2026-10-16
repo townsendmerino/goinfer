@@ -761,7 +761,7 @@ to ignore.**
   generated token ids as well: `goinfer-reasoning-v2:` then base64 of the reasoning text, the ids (varint-packed), the
   identity of the model and tokenizer, the namespace, a key id and an HMAC-SHA256 over everything but the text. The key is
   32 random bytes made at start and never written (`--ids-key-file` names a file to use instead, 32 bytes or more, mode
-  0600 (not checked on Windows, whose mode bits do not carry it), to keep the ids valid across restarts or between servers sharing it). A reply with no reasoning gets a
+  0600; not checked on Windows, whose mode bits do not carry it, and serve warns at startup there), to keep the ids valid across restarts or between servers sharing it). A reply with no reasoning gets a
   **carrier-only** reasoning item (empty `content`, the blob alone) when the request asked for
   `include: ["reasoning.encrypted_content"]`, as Codex does; without that, or when the client drops reasoning items, a
   reply's ids do not ride back. Streamed, the reasoning item closes when the answer starts, so a streamed answer's item
@@ -769,11 +769,16 @@ to ignore.**
   carries the whole turn.
   When the turn is echoed back, its ids are used **only** if the blob verifies (this server's key id and MAC, this model,
   this namespace) and the ids decode exactly to the turn's text as the template renders it, special tokens on the
-  template's special tokens. Anything else tokenizes the turn exactly as a request with no blob, and is counted:
-  `v1` (no ids), `parse`, `mac`, `key` (another key: after a restart with the default key), `model`, `ns`, `special`,
-  `decode` (the text differs: a client edit), `history` (the template drops this turn's reasoning, as Mellum2.1 and the
-  Qwen families do for turns before the last user query). `-log-requests` writes `ids=<used>/<carried> ids_fallback=<reasons>`
-  per request and `GET /admin/status` the totals since start (`carried_ids`). The prompt ids are then a function of the
+  template's special tokens, or differ from it only in formatting the template writes itself: newlines next to the
+  reasoning delimiters, and JSON whitespace around the separators of a tool-call block outside its strings (the model
+  writing `Now</think>` where the template renders `Now\n</think>`, or `"arguments":{` for `"arguments": {`). Then the
+  model's own bytes stand in for the template's over that turn. Anything else tokenizes the turn exactly as a request with
+  no blob, and is counted: `v1` (no ids), `parse`, `mac`, `key` (another key: after a restart with the default key),
+  `model`, `ns`, `special`, `decode` (the content differs: a client edit), `history` (the template drops this turn's
+  reasoning, as Mellum2.1 and the Qwen families do for turns before the last user query), `template` (the difference is
+  formatting only, but the ids have no single place in the render). `-log-requests` writes
+  `ids=<used>/<carried> ids_fallback=<reasons>`, then `ids_fmt=<n>` when n of the used turns replaced template formatting,
+  per request, and `GET /admin/status` the totals since start (`carried_ids`). The prompt ids are then a function of the
   request alone, never of what the KV holds. Not covered: Chat Completions and `/v1/messages` (no carrier yet), and a
   reply whose calls the client echoes as separate turns.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the

@@ -89,13 +89,16 @@ func (lm *loadedModel) encodePrompt(tm *chat.Template, system string, turns []ch
 	pl := newSegPlan(segs)
 	var regs []idsRegion
 	for _, k := range sortedKeys(ck.carriers) {
-		reason, reg := lm.idsTurn(ck, ck.carriers[k], k, turns, render, pl)
+		reason, reg := lm.idsTurn(ck, ck.carriers[k], k, turns, render, pl, newIDsFormat(tm))
 		if reason == "" && len(regs) > 0 && reg.a < regs[len(regs)-1].b {
 			reason = idsDecode // two carriers claim the same bytes; cannot happen for turns rendered in order
 		}
 		out.note(reason)
 		if reason == "" {
 			regs = append(regs, reg)
+			if reg.formatted {
+				out.formatted++
+			}
 		}
 	}
 	ids, err := lm.encodeRegions(pl, regs)
@@ -160,10 +163,12 @@ type idsPiece struct {
 	text    string
 }
 
-// idsRegion is a byte range of the rendered text whose tokens are carried ids.
+// idsRegion is a byte range of the rendered text whose tokens are carried ids. formatted marks a range whose rendered bytes
+// differ from the ids' text in template-owned formatting only (idsFormat).
 type idsRegion struct {
-	a, b int
-	ids  []int
+	a, b      int
+	ids       []int
+	formatted bool
 }
 
 // pieces splits ids at their added (special) ids and decodes each run between them; ok is false when an id is out of the
@@ -219,8 +224,9 @@ func (p *segPlan) aligned(a int, ps []idsPiece) bool {
 // idsTurn decides whether turn k uses its carried ids, and where they go. The turn's rendered bytes are located by rendering
 // the conversation once more with the turn's content, reasoning and calls emptied: the range where the two texts differ lies
 // inside the turn's generated part. The ids must decode to a run of the rendered text that covers that range (all of it for a
-// whole-turn blob, its start for a reasoning-only one) and line up with the template's special tokens.
-func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.Turn, render func([]chat.Turn) []chat.Segment, pl *segPlan) (string, idsRegion) {
+// whole-turn blob, its start for a reasoning-only one) and line up with the template's special tokens, or differ from such a
+// run only by fm's template-owned formatting, in which case the ids replace the run.
+func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.Turn, render func([]chat.Turn) []chat.Segment, pl *segPlan, fm idsFormat) (string, idsRegion) {
 	if r := ck.reasonBeforeRender(c, ""); r != "" {
 		return r, idsRegion{}
 	}
@@ -283,6 +289,32 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 		if newSegPlan(render(noR)).text == T {
 			return idsHistory, idsRegion{}
 		}
+	}
+	formatOnly := false
+	n = 0
+	for a := min(p, len(T)); a >= max(0, p-len(D)); a-- {
+		end, at, differs, ok := fm.align(D, T[a:])
+		if !ok || !differs {
+			continue
+		}
+		formatOnly = true
+		end += a
+		for i := range at {
+			at[i] += a
+		}
+		covers := T != E && a <= p && end > p
+		if b.whole {
+			covers = covers && len(T)-end <= sfx && a+len(T)-end <= len(E)
+		}
+		if covers && pl.alignedAt(at, ps) {
+			found, n = idsRegion{a: a, b: end, ids: b.ids, formatted: true}, n+1
+		}
+	}
+	switch {
+	case n == 1:
+		return "", found
+	case formatOnly:
+		return idsTemplate, idsRegion{} // the difference is template-owned, but no single run of the render takes the ids
 	}
 	return idsDecode, idsRegion{}
 }

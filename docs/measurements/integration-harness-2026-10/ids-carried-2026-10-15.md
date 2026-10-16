@@ -250,3 +250,51 @@ next such turn past the 448-position floor would fail a re-run of this gate.
 scaffolding when the two differ only there, which changes the prompt from what the template would write; or accept it and relabel
 it (a `template` reason, not `decode`), so the counter stops calling it a client edit. The `idsDecode` comment in
 `internal/serveapp/carried_ids.go` is wrong for this case either way.
+
+## Follow-up (2026-10-15, by day, tier 0): template-owned formatting
+
+Owner decisions after the grade: G-ids-3 passed as registered; label the scaffolding case, then fix it (option 1) under a
+closed list; check the no-carrier path and name its fix without building it; no night re-run until there is another reason.
+
+**Built.**
+- **The closed list** (`idsFormat` in `internal/serveapp/carried_ids_format.go`). A carried turn whose reply bytes differ from
+  the template's render only by these differences keeps its ids; the model's bytes take the place of the template's for that span:
+  1. a run of newlines next to a reasoning delimiter (the template writes `\n` inside the block and strips the reasoning's own);
+  2. JSON whitespace inside a tool-call block, outside string literals, next to `{}[]:,`.
+
+  Anything else is content and falls back: whitespace inside a JSON string or inside the reasoning or answer text, a space (not a
+  newline) before a delimiter, a split number, JSON spacing outside a call, and any difference before the reply's first byte. The
+  last of those keeps a span from taking in the newline after the assistant header, which sits next to `<think>`.
+- **The label.** A difference that is formatting only but has no single place in the render is the new reason `template`, not
+  `decode`; `decode` now means a content difference. A used turn that replaced formatting is counted as `ids_fmt=<n>` on the
+  `-log-requests` line and as `formatted` in `/admin/status`'s `carried_ids`.
+
+**Tier 0** (`TestIDsCarried_templateFormat`, 2.2 s; `TestIDsFormat_align`, 0.00 s):
+- **The fixture** is the 3 saved turns with the night's request bytes (`testdata/ids-template/cases.json.gz`, built by
+  `ids-carried-tier2/build_template_fixture.py`). **Void check:** each previous request must render to the night's prompt, length
+  and sha256 from `--log-token-ids`; all 3 do. It failed at first by 18 tokens on every request: re-serializing a body changes
+  the prompt, because serve renders a tool's `parameters` verbatim. The fixture keeps the bytes Codex sent, and the test splices
+  only `input`.
+- **The 3 cases now reuse:** `ids=K/K ids_fallback=- ids_fmt=1`, and the next prompt starts with the slot's whole id record.
+- **Planted defects still fall back as `decode`**, tokenized as a v1 blob of the same text would be, each with a void check that
+  the edit changed the prompt. On each of the 3 cases:
+  - a one-character edit in the call's arguments, and one in the reasoning;
+  - a space inside an argument string, a space inside the reasoning, and a space before `</think>`.
+- **The boundary:** a client re-spacing the call's JSON outside its strings keeps the ids (item 2 on the list).
+- **Two mutations each turned the gate red:** whitespace allowed anywhere (the reasoning-whitespace defects were accepted), and
+  whitespace allowed inside JSON strings (the argument-string defect was accepted).
+- **Regressions:** `TestIDsCarried_G0` still holds 45 of 45 with every planted defect unchanged, and the other carried-ids tests
+  pass. The closed-list unit test runs without the tokenizer, so CI exercises it; the Mellum2.1 case test skips in CI, as G0
+  does, for want of the per-machine tokenizer.
+
+**The no-carrier path has the same loss.** With the turn's blob replaced by a v1 blob of the same text, the next prompt leaves
+the slot at 11,528, 7,647 and 9,005, which are the night's own `div` values for these requests: 657, 19 and 14 ids before the
+slot's end, inside the reply. The off arm shows the same thing (fix-r1 #17 cold, edit-r1 #10 partial; graded above). **Its fix,
+not built:** the server holds the reply's ids in its own slot record, so it needs no carrier. When a prompt leaves a slot inside
+that slot's last generated span, align the span's decoded bytes against the render with the same closed list; where they align,
+tokenize that span as the slot's generated ids. Trust comes from the record being the server's own, and content is still
+compared byte for byte, less the closed list. It needs the slot's generated ids at render time (today they reach the prefix
+matcher only as KV rows), and with several slots it must use the slot the prompt matched. It would also reach the routes carried
+ids do not cover (Chat Completions, `/v1/messages`) and re-tokenized replies on them, because it needs no carrier.
+
+**No night re-run** (owner): G-ids-3 is re-run only when there is another reason to.
