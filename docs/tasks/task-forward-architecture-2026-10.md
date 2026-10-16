@@ -1191,13 +1191,31 @@ Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for th
     runs int8. The control is on the native int8 path, so it matches.
   - This agrees with the decoder's existing rule (`decodeRunnerDecline`): Nemotron-H is resident at int4 only by default,
     with int8 behind `GOINFER_SSM_RESIDENT`.
-- **Not run:** tier 1 (the real 9B) and the declaration. Both wait on gate M.
+- **Not run (at the time of this reading):** tier 1 (the real 9B) and the declaration. Both waited on gate M; see the
+  amendment below.
 - **Regression checks:**
   - The Metal set (DeltaNet, Qwen3.5, Olmo, GPT-2, Gemma, the parity, KV and batch tests): 86 pass, 45 skip.
   - Its two failures: gate M's int8int8 row, and `TestGemma2ResidentParityMetal`, which fails identically on main
     (0.998997 and 0.998657, G2-T's recorded readings: OP1-M1 made the tiny fixtures diagnostics, and the test still
     asserts 0.999).
   - The decoder's feature, matrix, residency and KV tests: 55 pass, 0 fail.
+
+**Gate M amended after the data (owner, 2026-10-15): graded at int4 only, with a condition.**
+
+- **The reason:** the gate assumed a native Metal int8 path, which no recurrent family has. So int8int8 measured the int4
+  re-quantization of Nemotron-H's attention and MLP weights, not this work.
+- **Gate M at int4: PASS:** 0.999699 against the control's 0.999906, argmax 31/32; the conv plant red.
+- **The condition, built:** at int8, Metal declines Nemotron-H as resident, and the CPU runs it at real int8, instead of
+  re-quantizing to int4.
+  - It is `metal/mamba.go:buildMamba`, on the decoder's own test (`decoder.Model.ResidentProjsInt4`).
+  - `TestNemotronResident_int8Declines`: int8int8 is refused with the int4-only reason, and int4 builds.
+  - Plant: the decline removed. Red: the int8int8 build went through.
+- **The ssm and non-gated-relu2 declaration is scoped to int4:** Metal builds Nemotron-H at int4 only.
+- **Checked once: the DeltaNet families have the same re-quantization.**
+  - `qwen35-tiny` at int8int8 runs resident on Metal as "int8int8→int4", with native int8 off.
+  - Filed as G44 (`docs/queue-correctness.md`) with the same fix.
+- **Native int8 for recurrent families** is slice 6 of `docs/tasks/task-metal-int8-2026-10.md`, later.
+- **Tier 1 next, after a by-day fit check.**
 
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
