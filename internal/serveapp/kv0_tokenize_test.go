@@ -171,26 +171,27 @@ func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs 
 		if err := json.Unmarshal(body, &req); err != nil {
 			return nil, idsOutcome{}, err
 		}
-		system, turns, aerr := anthropicTurns(&req)
+		system, turns, carriers, aerr := anthropicTurnsCarried(&req)
 		if aerr != nil {
 			return nil, idsOutcome{}, fmt.Errorf("anthropicTurns: %v", aerr)
+		}
+		ck := s.idsCheckFor(lm, nil, carriers)
+		if !useIDs {
+			ck = nil
 		}
 		ts, err := s.resolveThink(req.thinkRequest())
 		if err != nil {
 			return nil, idsOutcome{}, err
 		}
 		tm := lm.templateFor(ts)
-		mode, name := anthropicToolMode(req.ToolChoice)
-		if len(req.Tools) > 0 && mode != "none" {
-			tools := anthropicTools(req.Tools)
+		var tools []chat.Tool
+		if mode, name := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" {
+			tools = anthropicTools(req.Tools)
 			if anthropicToolsConstrainedFromStart(mode, name, tools) {
 				tm = lm.constrainedTemplate(ts)
 			}
-			ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
-			return ids, idsOutcome{}, err
 		}
-		ids, err := lm.promptForT(tm, system, turns)
-		return ids, idsOutcome{}, err
+		return lm.encodePrompt(tm, system, turns, tools, ck)
 	}
 	return nil, idsOutcome{}, fmt.Errorf("route %s is not a generation route", route)
 }

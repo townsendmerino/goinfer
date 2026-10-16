@@ -246,7 +246,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	reason, seq := anthropicStopReason(finish, stopHitOut)
 	content := []map[string]any{textBlock(sb.String())}
 	if req.wantsThinking() && rb.Len() > 0 {
-		content = append([]map[string]any{thinkingBlock(rb.String())}, content...)
+		content = append([]map[string]any{thinkingBlock(rb.String(), "")}, content...)
 		if sb.Len() == 0 { // cut off while thinking: no answer, so no text block
 			content = content[:1]
 		}

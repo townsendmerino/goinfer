@@ -290,7 +290,7 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 			return idsHistory, idsRegion{}
 		}
 	}
-	formatOnly := false
+	formatOnly, fmtHit := false, false
 	n = 0
 	for a := min(p, len(T)); a >= max(0, p-len(D)); a-- {
 		end, at, differs, ok := fm.align(D, T[a:])
@@ -306,13 +306,18 @@ func (lm *loadedModel) idsTurn(ck *idsCheck, c *idsCarrier, k int, turns []chat.
 		if b.whole {
 			covers = covers && len(T)-end <= sfx && a+len(T)-end <= len(E)
 		}
-		if covers && pl.alignedAt(at, ps) {
-			found, n = idsRegion{a: a, b: end, ids: b.ids, formatted: true}, n+1
+		if covers {
+			fmtHit = true
+			if pl.alignedAt(at, ps) {
+				found, n = idsRegion{a: a, b: end, ids: b.ids, formatted: true}, n+1
+			}
 		}
 	}
 	switch {
 	case n == 1:
 		return "", found
+	case n == 0 && fmtHit:
+		return idsSpecial, idsRegion{} // as for an exact match: the turn's run is found, its special ids are not the template's
 	case formatOnly:
 		return idsTemplate, idsRegion{} // the difference is template-owned, but no single run of the render takes the ids
 	}

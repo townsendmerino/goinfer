@@ -46,7 +46,7 @@ func anthropicStreamErr(ss *sseWriter, msg string) {
 // buffered fully (tools.go decides from the whole output) and emitted as one
 // input_json_delta — Claude Code accepts the single chunk, as it does for
 // llama.cpp.
-func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, turns []chat.Turn, ts thinkSettings, wantThinking bool) {
+func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, turns []chat.Turn, ts thinkSettings, wantThinking bool, mint *carriedMint) {
 	ss, ok := anthropicSSEStart(w)
 	if !ok {
 		return
@@ -65,7 +65,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 
 	// Thinking (think.go): reasoning becomes a `thinking` block at index 0 when the request asked for one, and is dropped
 	// otherwise — an Anthropic client that never asked for thinking must see only text. Everything after it shifts by one.
-	th := &anthropicThink{ss: ss, want: wantThinking}
+	th := &anthropicThink{ss: ss, want: wantThinking, mint: mint}
 	s.routeThink(lm, &gr, tm, turns, ts, th.push)
 
 	if toolsActive {
@@ -113,6 +113,9 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 	ts := &anthropicTextStream{ss: ss, think: th}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, ts.push)
 	th.close() // a turn that went straight from thinking to a tool call never pushed prose, which is what closes it
+	if !ts.open {
+		th.carrierOnly()
+	}
 	if gerr != nil && !errors.Is(gerr, errProseDiverged) {
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())
 		return
@@ -223,12 +226,16 @@ func (a *anthropicTextStream) close() {
 // anthropicThink is the thinking half of a streamed turn: a `thinking` content block at index 0, opened lazily when
 // the first reasoning arrives and closed — with its signature_delta, which a client expects before content_block_stop —
 // when the answer (or the end of the turn) begins. With want false (the request did not ask for thinking) reasoning is
-// discarded and no block is ever emitted. A nil *anthropicThink is a turn with no thinking.
+// discarded and no block is ever emitted. A nil *anthropicThink is a turn with no thinking. The signature is mint's blob for the
+// block's text (carried_ids_mint.go): the whole turn's ids when the block closes after the generation, else the ids up to the
+// end of the reasoning.
 type anthropicThink struct {
 	ss   *sseWriter
 	want bool
 	open bool
 	used bool
+	mint *carriedMint
+	text strings.Builder
 }
 
 func (t *anthropicThink) push(text string) {
@@ -242,6 +249,7 @@ func (t *anthropicThink) push(text string) {
 		})
 		t.open, t.used = true, true
 	}
+	t.text.WriteString(text)
 	anthropicEvent(t.ss, "content_block_delta", map[string]any{
 		"type": "content_block_delta", "index": 0,
 		"delta": map[string]any{"type": "thinking_delta", "thinking": text},
@@ -254,10 +262,25 @@ func (t *anthropicThink) close() {
 	}
 	anthropicEvent(t.ss, "content_block_delta", map[string]any{
 		"type": "content_block_delta", "index": 0,
-		"delta": map[string]any{"type": "signature_delta", "signature": ""},
+		"delta": map[string]any{"type": "signature_delta", "signature": t.mint.blob(t.text.String())},
 	})
 	anthropicEvent(t.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	t.open = false
+}
+
+// carrierOnly emits the carrier for a turn that asked for thinking and had none (redactedCarrierBlock) as block 0. Call it
+// only before any other block has opened; a turn whose prose already streamed carries no ids.
+func (t *anthropicThink) carrierOnly() {
+	if t == nil || !t.want || t.used {
+		return
+	}
+	cb := redactedCarrierBlock(t.mint)
+	if cb == nil {
+		return
+	}
+	anthropicEvent(t.ss, "content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": cb})
+	anthropicEvent(t.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+	t.used = true
 }
 
 // offset is the index the first non-thinking block takes: 1 once a thinking block has been emitted, else 0.

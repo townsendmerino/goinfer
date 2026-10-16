@@ -755,7 +755,7 @@ to ignore.**
   in full on CUDA windowed-KV models, where a rollback past the window's slack forces a cold prefill. Sent back, the
   next prompt extends the previous prompt plus the generated tokens. `usage.input_tokens_details.cached_tokens` reports
   the prompt tokens a prior turn's KV covered.
-- **Carried token ids on /v1/responses.** Echoed text re-tokenizes to the tokenizer's own split of it, which is not always
+- **Carried token ids on /v1/responses and /v1/messages.** Echoed text re-tokenizes to the tokenizer's own split of it, which is not always
   the split the model generated (about one reply in eleven on Codex traffic: a JSON escape, `"]}` in prose, a lone space),
   and the next prompt then leaves the KV inside the reply. So the reasoning item's `encrypted_content` carries the reply's
   generated token ids as well: `goinfer-reasoning-v2:` then base64 of the reasoning text, the ids (varint-packed), the
@@ -779,8 +779,12 @@ to ignore.**
   formatting only, but the ids have no single place in the render). `-log-requests` writes
   `ids=<used>/<carried> ids_fallback=<reasons>`, then `ids_fmt=<n>` when n of the used turns replaced template formatting,
   per request, and `GET /admin/status` the totals since start (`carried_ids`). The prompt ids are then a function of the
-  request alone, never of what the KV holds. Not covered: Chat Completions and `/v1/messages` (no carrier yet), and a
-  reply whose calls the client echoes as separate turns.
+  request alone, never of what the KV holds. On `/v1/messages` the same blob rides in the reply's `thinking` block as its
+  `signature` (streamed, in the `signature_delta`), and a reply that asked for thinking and had none gets a carrier-only
+  `redacted_thinking` block whose `data` is the blob, first, when no other block has opened; a thinking block whose
+  signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
+  the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
+  a reply whose calls the client echoes as separate turns.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

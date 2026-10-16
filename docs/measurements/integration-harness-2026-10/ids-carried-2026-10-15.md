@@ -298,3 +298,50 @@ matcher only as KV rows), and with several slots it must use the slot the prompt
 ids do not cover (Chat Completions, `/v1/messages`) and re-tokenized replies on them, because it needs no carrier.
 
 **No night re-run** (owner): G-ids-3 is re-run only when there is another reason to.
+
+## Carried ids on /v1/messages (2026-10-15, by day, tier 0)
+
+Owner decision (item 3a): extend carried ids to `/v1/messages` through `thinking.signature`, with the same signing and
+checks and the Responses tier-0 gates, before any no-carrier work. (The no-carrier fix is declined for now: it would make
+the prompt depend on cache state, the model's bytes when warm and the template's when cold, which is what the carrier
+design avoided.)
+
+**Built.**
+- **The carrier.** The same v2 blob, minted by the same key and checked by the same `idsTurn`, rides in the reply's
+  `thinking` block as its `signature`. Streamed, it rides in the `signature_delta`, which carries the whole turn when the
+  block closes after the generation (straight into a tool call) and the ids up to the end of the reasoning when an answer
+  opens first.
+- **Carrier-only.** A reply that asked for thinking and has none gets a carrier-only `redacted_thinking` block whose `data`
+  is the blob, first, when no other block has opened. This is Responses' carrier-only item, with the same rule about
+  streamed prose.
+- **Input.** `anthropicTurnsCarried` reads the signature or data back. A value this server did not mint carries nothing,
+  and the visible thinking is used. The blob's text stands for the block's visible thinking, as on Responses. Two assistant
+  messages merged into one turn fall back as `decode`.
+- **Rendering.** `/v1/messages` and `count_tokens` render through `encodePrompt`, so the count is the generation's.
+- **One label fix found by these gates.** A formatting-only match that covers the turn but whose special ids miss the
+  template's is now `special`, as on the exact path, not `template`.
+
+**Tier 0** (all in `internal/serveapp/ids_carried_messages_test.go`):
+- **`TestIDsCarriedMessages_tinyFallbackAndKV`.** The Responses arms through the real handler on the tiny fixture, with a
+  `redacted_thinking` carrier.
+  - A-warm reused 33 of 58, and A-cold's prompt ids equal A-warm's.
+  - B (`mac`) and C (`key`) have D's prompt and output.
+  - `/admin/status` reads 4 carried, 2 used, `mac` 1, `key` 1.
+  - These are the Responses run's own numbers, as they should be: the same model, prompt and render.
+- **`TestIDsCarriedMessages_carriers`** (the scripted Mellum2.1 server):
+  - the whole-turn signature, streamed and not, for a turn that goes straight into a call;
+  - the carrier-only block, only when thinking was asked for;
+  - a streamed answer's signature carries ids up to `</think>`, and a non-streamed one carries the whole turn;
+  - echoed in the loop the ids are used, and after a new query the turn counts as `history`.
+- **`TestIDsCarriedMessages_G0`.** Step 0's 45 replies, each request translated to the Messages request a client sends, the
+  body encoded as a JavaScript client re-sends parsed JSON (compact, no HTML escaping).
+  - Carried and untouched, **the next prompt starts with the slot in 45 of 45; 44 of them by the closed list**: the client
+    sends `tool_use` input back compacted, and the model had spaced its arguments.
+  - Every planted defect (a), (b), (c), (d) and (e) to (m) gives today's tokenization, its reason and no error. Responses'
+    (k), a v1 blob, becomes a signature this server did not mint, which carries nothing.
+- **A mutation** that ignores carriers on input turned both the carriers test and the KV test red.
+- **Regressions:** the Responses tier-0 tests, G0 included (45 of 45), pass unchanged.
+
+**What 44 of 45 says.** Without the closed list, a carried turn on `/v1/messages` would fall back on nearly every real tool
+call: a Messages client does not send arguments back as bytes. The closed list was built for Responses' template
+scaffolding. On this route it is what makes carried ids work at all.

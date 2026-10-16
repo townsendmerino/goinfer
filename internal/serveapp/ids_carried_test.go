@@ -492,6 +492,7 @@ func scriptedIDsServer(t *testing.T, reply string) (*httptest.Server, []int, *se
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/responses", s.handleResponses)
+	mux.HandleFunc("POST /v1/messages", s.handleMessages)
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts, ids, s

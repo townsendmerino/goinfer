@@ -626,7 +626,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	reason, seq := anthropicStopReason(finish, stopSeq)
 	vcontent := []map[string]any{textBlock(sb.String())}
 	if req.wantsThinking() && rb.Len() > 0 {
-		vcontent = append([]map[string]any{thinkingBlock(rb.String())}, vcontent...)
+		vcontent = append([]map[string]any{thinkingBlock(rb.String(), "")}, vcontent...)
 		if sb.Len() == 0 { // cut off while thinking: no answer, so no text block
 			vcontent = vcontent[:1]
 		}
