@@ -454,6 +454,27 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
+PR #31's Windows CI). **Not started.**
+
+Both checks read Unix mode bits, which Windows does not carry: every file reads as 0666. `readIDsKeyFile` therefore skips its
+owner-only check there and serve prints `permissions not checked on Windows` at startup, and `adminSocketDirSafe` returns early.
+On Windows the question is the file's or directory's DACL: an entry granting read (the key) or write (the socket's directory)
+to anyone but the owner, SYSTEM and Administrators.
+- **Tier 0 when it starts** (a Windows CI job): a key file with an inherited `Everyone:R` entry is refused and one restricted to
+  the owner loads; a socket directory writable by `Users` is refused; a planted defect (the check reading the wrong ACE type)
+  turns it red.
+
+**B25 · a .giw form for `--quant q4k`** — filed 2026-10-15 (owner, from OP6's tier 1). **Not started; for later.**
+
+A q4k load keeps each dense projection the GGUF stores as Q4_K in its own super-blocks, but `giwWriter.weightMatKind`
+refuses that kind ("--quant q4k has no .giw form yet; load the .gguf directly"). So a q4k model always loads from its GGUF,
+and the fit guard charges the whole file as mapped for the length of the load: 2.2 GB of Phi-3 mini's 4.9 GB on the Mac.
+A .giw kind for Q4_K super-blocks, aliased from the mapping as the int8 and int4 kinds are, would drop that charge and let
+`cmd/prequant -quant q4k` build a bundle.
+- **Tier 0 when it starts:** a q4k .giw of the 0.5B q4_k_m loads bit-identical weights to the GGUF load (every Q4_K row's
+  bytes equal), and its decode's logits match bit for bit; a planted defect (one super-block offset) turns it red.
+
 **B24 · the 26B test's bf16 checkpoint should load through memory-mapped safetensors, so its pages can be dropped rather than
 swapped** — `linux`, filed 2026-10-15 (owner, from B23). **Not started.**
 

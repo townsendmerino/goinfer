@@ -742,6 +742,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
 	}
 	if !a.r.prefillOK {
+		if a.fastPrefill() && a.VerifyCost() != nil && !a.r.promptStepOff { // promptStepOK takes every prompt
+			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model)"
+		}
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
 	if !a.fastPrefill() {

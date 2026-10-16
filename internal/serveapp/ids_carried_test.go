@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -79,11 +80,17 @@ func TestIDsKeyFile(t *testing.T) {
 	if _, err := readIDsKeyFile(write("short", key[:31], 0o600)); err == nil {
 		t.Error("a 31-byte key was accepted")
 	}
-	if _, err := readIDsKeyFile(write("open", key, 0o644)); err == nil {
+	if _, err := readIDsKeyFile(write("open", key, 0o644)); err == nil && runtime.GOOS != "windows" { // Windows carries no mode bits
 		t.Error("a key file readable by others was accepted")
 	}
 	if _, err := readIDsKeyFile(filepath.Join(dir, "missing")); err == nil {
 		t.Error("a missing key file was accepted")
+	}
+	if w := idsKeyFileWarning("windows", "k"); !strings.Contains(w, "permissions not checked on Windows") {
+		t.Errorf("windows: warning %q", w)
+	}
+	if idsKeyFileWarning("linux", "k") != "" || idsKeyFileWarning("windows", "") != "" {
+		t.Error("a warning off Windows, or with no key file")
 	}
 	r1, err1 := randomIDsKey()
 	r2, err2 := randomIDsKey()
