@@ -67,7 +67,7 @@ func TestKVHostBytes_bannerAndLog(t *testing.T) {
 	if l := line(bannerFacts{resident: true, snapshots: false}, on); !strings.Contains(l, "not on this backend") {
 		t.Errorf("a resident that cannot: %q", l)
 	}
-	if l := line(bannerFacts{resident: true}, config{kvHostBytesHow: "off: -kv-host-bytes 0"}); !strings.Contains(l, "OFF") || !strings.Contains(l, "-kv-host-bytes 0") {
+	if l := line(bannerFacts{resident: true}, config{kvHostBytesHow: "-kv-host-bytes 0"}); l != "prefix snapshots: OFF (-kv-host-bytes 0)" {
 		t.Errorf("off: %q", l)
 	}
 	if l := line(bannerFacts{resident: false}, on); l != "" {

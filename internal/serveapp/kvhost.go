@@ -50,11 +50,11 @@ func resolveKVHostBytes(flag string, ram int64) (int64, string, error) {
 	}
 	switch {
 	case !auto && n == 0:
-		return 0, "off: -kv-host-bytes 0", nil
+		return 0, "-kv-host-bytes 0", nil
 	case !auto:
 		return n, "-kv-host-bytes " + strings.TrimSpace(flag), nil
 	case ram <= 0:
-		return 0, "off: auto needs the machine's physical RAM, which is unknown here", nil
+		return 0, "auto needs the machine's physical RAM, which is unknown here", nil
 	}
 	b := min(ram/kvHostFraction, kvHostCap)
 	return b, fmt.Sprintf("auto: 1/%d of %s of RAM, at most %s", kvHostFraction, gib(ram), gib(kvHostCap)), nil

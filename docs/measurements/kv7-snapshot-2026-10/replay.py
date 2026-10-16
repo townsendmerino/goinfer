@@ -100,6 +100,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-tokens", type=int, default=24)
     ap.add_argument("--timeout", type=float, default=900)
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=JSON", help="a top-level field to rewrite in every body (e.g. model='\"qwen3-4b\"')")
     ap.add_argument("sessions", nargs="+")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -110,7 +111,8 @@ def main():
     for spec in a.sessions:
         name, route, path = spec.split("=", 2)
         raw = read_body(path)
-        body = splice(raw, {"stream": "false", "temperature": "0", MAXKEY[route]: str(a.max_tokens)} | ({"store": "false"} if route == "responses" else {}))
+        extra = dict(kv.split("=", 1) for kv in a.set)
+        body = splice(raw, {"stream": "false", "temperature": "0", MAXKEY[route]: str(a.max_tokens)} | ({"store": "false"} if route == "responses" else {}) | extra)
         t0 = time.time()
         print(f"[{time.strftime('%H:%M:%S')}] {name}: {len(body)} bytes to {ROUTES[route]}", flush=True)
         wall, resp = post(a.base + ROUTES[route], body, a.timeout)
