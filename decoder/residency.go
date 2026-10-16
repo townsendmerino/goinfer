@@ -580,6 +580,10 @@ func actGroupResidentDecline(backend string, actGroup int, quant string) string 
 // Nemotron-H default-on residency. Scans for the first attention/MLP projection (the mamba
 // in/out_proj are always f32 in the model and quantized at build, so they don't indicate the
 // load precision).
+// ResidentProjsInt4 is residentProjsInt4, for a backend that runs Nemotron-H resident at int4 only (Metal: it has no native
+// int8 path for a recurrent family, and would otherwise re-quantize int8 projections to int4).
+func (m *Model) ResidentProjsInt4() bool { return m.residentProjsInt4() }
+
 func (m *Model) residentProjsInt4() bool {
 	for i := range m.w.Layers {
 		lw := &m.w.Layers[i]

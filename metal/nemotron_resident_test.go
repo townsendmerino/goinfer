@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -66,13 +67,14 @@ func residentLockstep(t *testing.T, dir, quant string, steps int) lockstep {
 }
 
 // TestNemotronResident_tinyAgainstControl is OP2b's gate M on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.7,
-// "OP2b on Metal"): nemotron-tiny resident on Metal against the CPU at int8int8 and int4, 32 steps of greedy lockstep, graded
+// "OP2b on Metal", graded at int4 by the amendment after the data): nemotron-tiny resident on Metal against the CPU at int4,
+// 32 steps of greedy lockstep, graded
 // from position 2. The bar is relative to llama-tiny through the same harness in the same run: nemotron-tiny's min logit
 // cosine at least the control's minus 0.001, and argmax agreement on at least the control's count minus 2. With the conv
 // window's taps shifted in the Metal build only (mambaSrcPlantForTest), the same comparison must fail.
 func TestNemotronResident_tinyAgainstControl(t *testing.T) {
 	const steps = 32
-	for _, quant := range []string{"int8int8", "int4"} {
+	for _, quant := range []string{"int4"} { // int4 only: the amendment after the data (§4.7); int8int8 declines, TestNemotronResident_int8Declines
 		ctrl := residentLockstep(t, "llama-tiny", quant, steps)
 		nemo := residentLockstep(t, "nemotron-tiny", quant, steps)
 		pass := func(s lockstep) bool { return s.minCos >= ctrl.minCos-0.001 && s.exact >= ctrl.exact-2 }
@@ -166,4 +168,40 @@ func TestNemotronResident_slots(t *testing.T) {
 	if same(pb, aloneB) && same(p2, aloneA) {
 		t.Error("with the Mamba-2 state left between conversations the turns still match: gate S cannot see a missing reset")
 	}
+}
+
+// TestNemotronResident_int8Declines: at int8int8 Metal declines Nemotron-H as resident, so the CPU runs it at the int8 it was
+// loaded with, instead of re-quantizing its projections to int4 without notice (Metal's native int8 path covers no recurrent
+// family). int4 builds. With the decline planted off, the int8int8 build must go through, which the gate must see.
+func TestNemotronResident_int8Declines(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	build := func(quant string) error {
+		m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Quant: quant})
+		if err != nil {
+			t.Fatalf("load at %s: %v", quant, err)
+		}
+		defer m.Close()
+		r, err := buildResident(m)
+		if err == nil {
+			_ = r.Close()
+		}
+		return err
+	}
+	if err := build("int8int8"); err == nil || !strings.Contains(err.Error(), "int4 only") {
+		t.Errorf("int8int8: buildResident = %v, want the int4-only decline", err)
+	}
+	if err := build("int4"); err != nil {
+		t.Errorf("int4: buildResident = %v, want a build", err)
+	}
+	// Through the backend as well: a Metal load at int8int8 runs on the CPU, not resident.
+	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Backend: "metal", Quant: "int8int8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ResidentForwardForTest() != nil {
+		t.Error("a Metal load of Nemotron-H at int8int8 went resident")
+	}
+	_ = m.Close()
 }

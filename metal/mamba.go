@@ -20,6 +20,10 @@ import (
 // package only (OP2b's gate M: the Mamba-2 kernels broken in the Metal build while the CPU keeps the right math).
 var mambaSrcPlantForTest [2]string
 
+// mambaInt8DeclineOffForTest lets a non-int4 Nemotron-H build (re-quantized to int4): the planted defect for the int8
+// decline's gate, set by tests in this package only.
+var mambaInt8DeclineOffForTest bool
+
 // mambaResetSkipForTest makes resetMamba leave the state alone: gate S's planted defect, set by tests in this package only.
 var mambaResetSkipForTest bool
 
@@ -48,6 +52,12 @@ func buildMamba(m *decoder.Model) (*mambaParams, error) {
 	nh, hd, ds, ng, k, normG, _, ok := m.NemotronResidentParams()
 	if !ok {
 		return nil, nil
+	}
+	if !m.ResidentProjsInt4() && !mambaInt8DeclineOffForTest {
+		// Metal's native int8 path covers no recurrent family (w8Eligible), so int8 projections would be re-quantized to
+		// int4 without notice: decline, and the CPU runs the model at the int8 it was loaded with
+		// (docs/tasks/task-forward-architecture-2026-10.md §4.7, gate M's amendment).
+		return nil, fmt.Errorf("metal: Nemotron-H runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU")
 	}
 	if normG < 1 || ng < 1 || nh%ng != 0 || (nh*hd)%normG != 0 || k < 2 || k > 8 || (nh*hd)%8 != 0 {
 		return nil, fmt.Errorf("metal: Mamba-2 geometry out of the kernels' range (nHeads %d, headDim %d, nGroups %d, normGroups %d, dConv %d; "+
