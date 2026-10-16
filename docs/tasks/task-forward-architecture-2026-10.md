@@ -1295,6 +1295,26 @@ Their gate:
     - **Off:** a median below 1.00.
 - **Night:** M1, unchanged, after this merges.
 
+**OP6's Metal half, read 2026-10-15.** Tier 0 and tier 1 PASS.
+
+- **Tier 0, by day, on the 0.5B q4_k_m:** (a) to (c) are 0 differing logits and 0 differing K/V elements in every case.
+  The planted defect turns (a) red: every logit and 91,101 K/V elements differ. `PrefillPath` names the step route.
+  - The first run failed every case, with differences up to 1.9e-6. The int8 rows kernel computed its row scale once,
+    above its mode branch, where decode's kernel writes `simd_sum * scale + bias` as one statement and the compiler
+    fuses it. Each mode now writes decode's statement. That is a kernel fix, not a bar change.
+- **Tier 1 needed the fit guard's q4k price fixed first.** By day the guard refused Phi-3 at 6.6 to 7.0 GB, pricing q4k as
+  int4 with its repacks. PR #41 prices it at what the load keeps; Phi-3's weights are 2.81 GB measured against 2.83 GB
+  estimated. Tier 1's context was set to 256 positions, what its prompts use.
+- **Tier 1, the Mac's night queue, 2026-10-15 21:30–21:32 PDT,** at `d1b340ad` (its `metal/` and `decoder/` equal this
+  branch's after the rebase onto #41). The fit guard was on and admitted both loads. Swap stayed at 849 MB with 0 swaps;
+  the tier 1 process peaked at 5.49 GB RSS. Records: `docs/measurements/op6-q4k-step-2026-10/night-2026-10-15/`.
+  - **Bit identity:** 0 of 32,064 last-row logits and 0 K/V elements differ from the sequential loop, on the golden's
+    5-token prompt and on the 200-token prompt. **PASS.**
+  - **Golden:** argmax 3681, the golden's 3681. **PASS.** Cosine 0.7554, logged only (an earlier snapshot).
+  - **Speed:** 200 tokens in 4.42 s on the step (45 tok/s) against 8.78 s on the sequential loop (23 tok/s). Ratios
+    1.982 to 1.986 over 5 pairs, every pair above 1, median 1.985. **SHIP.**
+- **Next:** the PR, merged by hand on green CI. Then M1 at night, which decides Metal's default `--quant q4k` load.
+
 #### Proposed order
 
 **The Mac stays on OP continuously:**
