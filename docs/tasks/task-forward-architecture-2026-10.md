@@ -1264,6 +1264,15 @@ int4 only.**
   it, `buildMamba` declines it, and only its "missing: `ssm`" reason goes. The admission golden lists Metal for both,
   as it tracks the feature-only model.
 
+**Tier 1 on the whole 9B, read 2026-10-16 06:28–06:33 PDT: PASS.** Run by day on the owner's word, as the fit check
+admitted both loads (B27's v17 int4 bundle, 7.27 GB). Pinned at `3faaa5bb`; the fit guard and Metal's memory guard were
+on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Record:
+`docs/measurements/op2b-step2-2026-10/tier1-whole-2026-10-16/`.
+
+- **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
+- **NVIDIA-Nemotron-Nano-9B-v2, whole:** min cosine 0.929161 against 0.88; argmax 27/32 against 16. **PASS.**
+- **This closes what the slice stood in for.** The declaration now rests on the whole model as well.
+
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
