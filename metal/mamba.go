@@ -69,19 +69,31 @@ func buildMamba(m *decoder.Model) (*mambaParams, error) {
 // buildMambaLayer uploads layer l's Mamba-2 weights and allocates its state, zeroed.
 func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams) (*mambaLayer, error) {
 	inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.GraniteMambaWeights(l)
+	// The projections as the load holds them: int8 already on a quantized load, else quantized here from the f32, the same
+	// codes either way.
+	var inWM, outWM linalg.WeightMat
+	if in, out := m.MambaProjInt8(l); in != nil {
+		inWM, outWM = *in, *out
+	} else {
+		if len(inProj) != p.projDim*hidden || len(outProj) != hidden*p.dInner {
+			return nil, fmt.Errorf("metal: layer %d: Mamba-2 projections have %d and %d values, want %d and %d", l, len(inProj), len(outProj), p.projDim*hidden, hidden*p.dInner)
+		}
+		inWM, outWM = linalg.QuantizeInt8(inProj, p.projDim, hidden, false), linalg.QuantizeInt8(outProj, hidden, p.dInner, false)
+	}
+	if inWM.Rows() != p.projDim || inWM.Cols() != hidden || outWM.Rows() != hidden || outWM.Cols() != p.dInner {
+		return nil, fmt.Errorf("metal: layer %d: Mamba-2 projections are %d×%d and %d×%d, want %d×%d and %d×%d", l,
+			inWM.Rows(), inWM.Cols(), outWM.Rows(), outWM.Cols(), p.projDim, hidden, hidden, p.dInner)
+	}
 	for _, c := range []struct {
 		name    string
 		got, of int
-	}{{"in_proj", len(inProj), p.projDim * hidden}, {"conv_w", len(convW), p.convDim * p.dConv}, {"conv_b", len(convB), p.convDim},
-		{"a_log", len(aLog), p.nHeads}, {"d", len(dW), p.nHeads}, {"dt_bias", len(dtBias), p.nHeads}, {"norm_w", len(normW), p.dInner},
-		{"out_proj", len(outProj), hidden * p.dInner}} {
+	}{{"conv_w", len(convW), p.convDim * p.dConv}, {"conv_b", len(convB), p.convDim},
+		{"a_log", len(aLog), p.nHeads}, {"d", len(dW), p.nHeads}, {"dt_bias", len(dtBias), p.nHeads}, {"norm_w", len(normW), p.dInner}} {
 		if c.got != c.of {
 			return nil, fmt.Errorf("metal: layer %d: Mamba-2 %s has %d values, want %d", l, c.name, c.got, c.of)
 		}
 	}
 	L := &mambaLayer{}
-	inWM := linalg.QuantizeInt8(inProj, p.projDim, hidden, false)
-	outWM := linalg.QuantizeInt8(outProj, hidden, p.dInner, false)
 	var err error
 	if L.inW, L.inS, err = int8Buf(d, &inWM); err != nil {
 		return nil, err

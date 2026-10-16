@@ -249,6 +249,20 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return rm, nil
 	}
 
+	// projInt8 uploads an already-int8 weight matrix (per-row scales) as projF32 uploads its quantized f32.
+	projInt8 := func(w *linalg.WeightMat, N, K int) (decodeWeight, error) {
+		q8, scales, _, ok := w.Int8()
+		if !ok || w.Rows() != N || w.Cols() != K {
+			return nil, fmt.Errorf("gpu: an int8 projection of %d×%d (int8 %v), want %d×%d", w.Rows(), w.Cols(), ok, N, K)
+		}
+		rm, err := c.UploadW8A8(q8, scales, N, K)
+		if err != nil {
+			return nil, err
+		}
+		keepF(rm.Release)
+		return rm, nil
+	}
+
 	// Granite multiplier folding: ResidMul scales every residual-add weight (o-proj / mamba out-proj / MoE expert-down /
 	// shared-down); 1/LogitScale folds into the lm_head; EmbMul applies to the embedding in decoder.embedResident. mult==1 ⇒
 	// the plain proj path, byte-identical for non-granite models.
@@ -569,11 +583,20 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				rl.nemoKind = nemoKMamba
 				rl.isMamba = true
 				inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
-				if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
-					return fail(e)
-				}
-				if rl.mambaOutProj, e = projF32(outP, hidden, mp.dInner); e != nil {
-					return fail(e)
+				if inQ, outQ := m.MambaProjInt8(i); inQ != nil { // a quantized load holds them as int8: projF32's codes
+					if rl.mambaInProj, e = projInt8(inQ, mp.projDim, hidden); e != nil {
+						return fail(e)
+					}
+					if rl.mambaOutProj, e = projInt8(outQ, hidden, mp.dInner); e != nil {
+						return fail(e)
+					}
+				} else {
+					if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
+						return fail(e)
+					}
+					if rl.mambaOutProj, e = projF32(outP, hidden, mp.dInner); e != nil {
+						return fail(e)
+					}
 				}
 				if rl.mambaConvW, e = up32(cW); e != nil {
 					return fail(e)

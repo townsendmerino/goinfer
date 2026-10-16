@@ -36,8 +36,9 @@ func (p mamba2Params) dInner() int  { return p.NHeads * p.HeadDim }
 func (p mamba2Params) convDim() int { return p.dInner() + 2*p.NGroups*p.DState }
 func (p mamba2Params) projDim() int { return 2*p.dInner() + 2*p.NGroups*p.DState + p.NHeads }
 
-// mamba2Weights holds one mixer's tensors, all f32 (parity-first, like the qwen35
-// DeltaNet/softmax weights). Row-major [out, in] for the projections.
+// mamba2Weights holds one mixer's tensors, f32 (parity-first, like the qwen35 DeltaNet/softmax weights), row-major [out, in]
+// for the projections. On a quantized Nemotron-H load the two projections are int8 instead (inQ, outQ; quantizeProjections),
+// with inProj and outProj nil.
 type mamba2Weights struct {
 	inProj  []float32 // [projDim, hidden]
 	convW   []float32 // [convDim, K] (HF conv1d.weight [convDim,1,K] flattened)
@@ -47,6 +48,29 @@ type mamba2Weights struct {
 	dtBias  []float32 // [nHeads]
 	normW   []float32 // [dInner] gated RMSNorm weight
 	outProj []float32 // [hidden, dInner]
+	// inQ and outQ are in_proj and out_proj as per-row int8, weight-only (f32 activations): linalg.QuantizeInt8 of the f32
+	// weights, the codes and scales the GPU backends upload.
+	inQ, outQ linalg.WeightMat
+}
+
+// mambaProjInt8 reports whether a load at q holds Nemotron-H's Mamba projections as int8: every integer quant does, and
+// an f32, bf16 or f16 load keeps them f32 (docs/queue-engineering.md, B26).
+func mambaProjInt8(q quantMode) bool {
+	switch q {
+	case quantInt8, quantInt8I8, quantInt4, quantInt4Mix, quantQ4K:
+		return !mambaKeepF32ForTest
+	}
+	return false
+}
+
+// mambaKeepF32ForTest keeps the f32 projections on a quantized load: the f32 arm of B26's fidelity bar, and its planted defect.
+var mambaKeepF32ForTest bool
+
+// quantizeProjections replaces the f32 projections with their int8 form.
+func (w *mamba2Weights) quantizeProjections(projDim, hidden, dInner int) {
+	w.inQ = linalg.QuantizeInt8(w.inProj, projDim, hidden, false)
+	w.outQ = linalg.QuantizeInt8(w.outProj, hidden, dInner, false)
+	w.inProj, w.outProj = nil, nil
 }
 
 // mamba2State is the per-layer recurrent state: the short causal conv window (last
@@ -79,7 +103,12 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 		inProj = q8RoundTrip(inProj, p.projDim(), p.Hidden)
 		outProj = q8RoundTrip(outProj, p.Hidden, dInner)
 	}
-	proj := matvec(inProj, p.projDim(), p.Hidden, h)
+	var proj []float32
+	if w.inQ.Rows() > 0 {
+		proj = matvecWM(nil, &w.inQ, h)
+	} else {
+		proj = matvec(inProj, p.projDim(), p.Hidden, h)
+	}
 	z := proj[:dInner]
 	xBC := proj[dInner : dInner+convDim]
 	dt := proj[dInner+convDim:] // [nHeads]
@@ -166,6 +195,9 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 	}
 	if mambaCapHook != nil { // test seam: capture real (in_proj output, mixer output) for GPU-kernel parity replay
 		mambaCapHook(proj, gated)
+	}
+	if w.outQ.Rows() > 0 {
+		return matvecWM(nil, &w.outQ, gated)
 	}
 	return matvec(outProj, p.Hidden, dInner, gated)
 }

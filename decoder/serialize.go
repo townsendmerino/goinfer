@@ -71,7 +71,10 @@ const (
 	giwMagic = "GINFW"
 	// giwVersion is the one format version this build writes and reads. A file at any other version is refused, and a
 	// sidecar is then rebuilt from its source (docs/giw-bundles.md, "One version").
-	giwVersion = 16
+	giwVersion = 17
+	// giwEncF32 is a standalone f32 array's encoding byte, in the weight-matrix kinds' namespace (kind 1 is f32). Every
+	// tensor record starts with its encoding, and a reader refuses only an encoding it does not know (unknownEncoding).
+	giwEncF32 = 1
 	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
 	// cannot drive a multi-GB make() before the body reader hits its first short read. A LayerWeights is a large struct, so an
 	// unbounded layer count is the worst offender.
@@ -927,9 +930,16 @@ func (w *giwWriter) scales16(s []uint16) {
 	w.u16s(s)
 }
 
-// f32 batches into one raw write (a per-tensor temp), not 4 bytes at a time — the
-// stream path would otherwise do millions of tiny writes.
+// f32 writes a standalone f32 array: its encoding byte (giwEncF32), then the array (f32Body).
 func (w *giwWriter) f32(s []float32) {
+	w.raw([]byte{giwEncF32})
+	w.f32Body(s)
+}
+
+// f32Body batches into one raw write (a per-tensor temp), not 4 bytes at a time — the
+// stream path would otherwise do millions of tiny writes. A weight matrix's own arrays use it directly: the matrix's
+// kind byte is their encoding.
+func (w *giwWriter) f32Body(s []float32) {
 	w.u32(uint32(len(s)))
 	if len(s) == 0 {
 		return
@@ -1013,10 +1023,10 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	// so the alias is legal (see giwArrayPad).
 	switch kind {
 	case 1:
-		w.f32(f32)
+		w.f32Body(f32)
 	case 2:
 		w.alignArray()
-		w.f32(scales)
+		w.f32Body(scales)
 		w.alignArray()
 		w.i8(q8)
 	case 3, 5: // binary16 group scales, then the nibbles: canonical for kind 3, the row4 layout for kind 5
@@ -1163,15 +1173,25 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	} else {
 		w.raw([]byte{1})
 		m := l.mamba
-		w.f32(m.inProj)
+		w.mambaProj(m.inProj, &m.inQ)
 		w.f32(m.convW)
 		w.f32(m.convB)
 		w.f32(m.aLog)
 		w.f32(m.d)
 		w.f32(m.dtBias)
 		w.f32(m.normW)
-		w.f32(m.outProj)
+		w.mambaProj(m.outProj, &m.outQ)
 	}
+}
+
+// mambaProj writes a Mamba projection in the encoding it is held in: an int8 weight matrix (kind 2) when the load quantized
+// it, else a standalone f32 array (giwEncF32). Both start with their encoding byte, so the reader tells them apart.
+func (w *giwWriter) mambaProj(f []float32, q *linalg.WeightMat) {
+	if q.Rows() > 0 {
+		w.weightMatKind3Only(q)
+		return
+	}
+	w.f32(f)
 }
 
 // v8Layer writes the LFM2 gated short-convolution mixer: presence byte then the three tensors. Unconditional like the v6
@@ -1400,9 +1420,24 @@ func (r *giwReader) f32Alias() []float32 {
 	return out
 }
 
-// f32 copies (the input isn't guaranteed aligned). len 0 ⇒ nil, preserving the
-// "absent ⇒ nil" convention the forward pass checks for biases/norms.
+// f32 reads a standalone f32 array (giwWriter.f32): its encoding byte, which must be giwEncF32, then the array.
 func (r *giwReader) f32() []float32 {
+	if enc := r.u8(); enc != giwEncF32 {
+		r.unknownEncoding(enc)
+		return nil
+	}
+	return r.f32Body()
+}
+
+// unknownEncoding refuses a tensor whose encoding this build does not read. Only that encoding is refused: a newer writer
+// adds an encoding without a version bump, and a bundle that never uses it still loads.
+func (r *giwReader) unknownEncoding(enc byte) {
+	r.fail(fmt.Sprintf("a tensor's encoding %d is not one this build reads (written by a newer goinfer; the sidecar is rebuilt)", enc))
+}
+
+// f32Body copies (the input isn't guaranteed aligned). len 0 ⇒ nil, preserving the
+// "absent ⇒ nil" convention the forward pass checks for biases/norms.
+func (r *giwReader) f32Body() []float32 {
 	n := int(r.u32())
 	if n == 0 || !r.need(n*4) {
 		return nil
@@ -1468,6 +1503,10 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	if kind == 0 {
 		return linalg.WeightMat{}
 	}
+	if kind != 1 && kind != 2 && kind != 3 && kind != 5 { // kind 6 is read as a fused group, never here
+		r.unknownEncoding(kind)
+		return linalg.WeightMat{}
+	}
 	rows, cols, group := int(r.u32()), int(r.u32()), int(r.u32())
 	if !r.need(1) {
 		return linalg.WeightMat{}
@@ -1485,7 +1524,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	}
 	switch kind {
 	case 1:
-		f := r.f32()
+		f := r.f32Body()
 		if len(f) != rows*cols {
 			r.fail(fmt.Sprintf("f32 weightMat %d×%d has %d values", rows, cols, len(f)))
 			return linalg.WeightMat{}
@@ -1541,9 +1580,17 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		return wm
 	default:
-		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
+		r.unknownEncoding(kind)
 		return linalg.WeightMat{}
 	}
+}
+
+// mambaProj reads giwWriter.mambaProj's record: an f32 array (giwEncF32) or a weight matrix, by its encoding byte.
+func (r *giwReader) mambaProj() ([]float32, linalg.WeightMat) {
+	if r.need(1) && r.data[r.off] == giwEncF32 {
+		return r.f32(), linalg.WeightMat{}
+	}
+	return nil, r.weightMat()
 }
 
 // fusedPending is a kind-6 member whose header has been read; its nibbles and scales are in the group's two
@@ -1678,14 +1725,14 @@ func (r *giwReader) v6Layer(l *LayerWeights) {
 	}
 	if r.u8() != 0 {
 		m := &mamba2Weights{}
-		m.inProj = r.f32()
+		m.inProj, m.inQ = r.mambaProj()
 		m.convW = r.f32()
 		m.convB = r.f32()
 		m.aLog = r.f32()
 		m.d = r.f32()
 		m.dtBias = r.f32()
 		m.normW = r.f32()
-		m.outProj = r.f32()
+		m.outProj, m.outQ = r.mambaProj()
 		l.mamba = m
 	}
 }

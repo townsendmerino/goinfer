@@ -2399,6 +2399,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				for h := range a {
 					mw.aLog[h] = float32(math.Log(-float64(a[h])))
 				}
+				if mambaProjInt8(quant) {
+					mw.quantizeProjections(projDim, hidden, dInner)
+				}
 				l.mamba = mw
 			case nemoAttn:
 				// NoPE → no q/k permute.
