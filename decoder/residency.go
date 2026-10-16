@@ -1268,6 +1268,17 @@ func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBi
 	return w.inProj, w.convW, w.convB, w.aLog, w.d, w.dtBias, w.normW, w.outProj
 }
 
+// MambaProjInt8 returns layer i's Mamba in_proj and out_proj as per-row int8 weight matrices when the load holds them so
+// (a quantized Nemotron-H load), nil otherwise; GraniteMambaWeights then returns nil for those two. They are
+// linalg.QuantizeRowsInt8 of the f32 weights, the codes a backend would make from GraniteMambaWeights itself.
+func (m *Model) MambaProjInt8(i int) (in, out *linalg.WeightMat) {
+	w := m.w.Layers[i].mamba
+	if w == nil || w.inQ.Rows() == 0 {
+		return nil, nil
+	}
+	return &w.inQ, &w.outQ
+}
+
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
 func (m *Model) ResidentActive() bool { return m.resident != nil }

@@ -2626,6 +2626,9 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 			if mw.outProj, e = st.TensorF32(tn("mixer.out_proj.weight"), hidden, dInner); e != nil {
 				return e
 			}
+			if mambaProjInt8(quant) {
+				mw.quantizeProjections(projDim, hidden, dInner)
+			}
 			lw.mamba = mw
 		case nemoAttn:
 			if lw.QProj, e = loadMat(st, tn("mixer.q_proj.weight"), qDim, hidden); e != nil {
