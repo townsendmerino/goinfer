@@ -1145,6 +1145,60 @@ Their gate:
     `mambaCos`, which scores that case 0. Other callers of `cosF32` still have the guard.
 - **Next, step 2:** the resident builder learns Nemotron-H's one-operation blocks, with the per-slot state, then M and S.
 
+**Step 2, Nemotron-H on Metal, read 2026-10-15** (branch `op2b-step2-nemotron-metal-2026-10`). Nothing is declared yet.
+Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for the owner's call (below).
+
+- **The NoPE check:** Nemotron-H's adapter sets `RotaryDim: 0` and no RoPE base, so it builds no RoPE table, and
+  `Model.RopeInvFreqLayerResident` already returns an all-zero table (the identity rotation) for its attention layers.
+  - No change was needed. A clause added for it was dead code and was removed.
+  - `TestRopeInvFreqLayer_nemotronIsNoPE` pins the property, and a RoPE base planted in the adapter turns it red.
+- **The general form:** `decoder.Model.ResidentLayerOps(i)` gives each layer's mixer (attention, DeltaNet, Mamba-2 or
+  none) and whether a feed-forward block follows.
+  - This is §4.1's layer program in its smallest form: each layer is a mixer operation, then an optional FFN operation,
+    from a closed set of mixer kinds.
+  - Metal's build and encode switch on it and upload and encode only that layer's own weights. A hybrid of existing
+    kinds (Granite-4.0-H, once its multipliers are folded) needs no family branch on Metal.
+  - What it does not yet do: per-operation norms and fusions are still the runner's own (§4.1's fusion tables are
+    OP4's), and the FFN kind is still read from model-level flags.
+- **Mamba-2 on the resident** (`metal/mamba.go`):
+  - in_proj and out_proj run W8A8, as on WebGPU;
+  - the conv window and SSM state are per layer, reset with the slot (`resetRecurrent`);
+  - Granite-4.0-H declines on Metal, its multipliers not yet folded.
+- **The guards:** the twelve paths that declined DeltaNet now decline any recurrent mixer.
+  - `TestRecurrentGuards_declineMamba` checks all twelve on a hand-built resident with one Mamba-2 layer. For the four
+    where the recurrent check decides, a control without the Mamba layer is admitted.
+  - Plant: the KV-copy guard left DeltaNet-only. Red.
+- **KV pricing:** `ResidentKVBytes("metal")` prices attention layers only.
+  - `TestResidentKVBytes_attentionLayersOnly`: nemotron-tiny 2 attention layers of 5, qwen35-tiny's DeltaNet layers,
+    llama-tiny all.
+  - Plant: only DeltaNet skipped. Red: 640,000 bytes against 256,000.
+- **Gate S: pass.**
+  - One KV slot, and the batched step declines.
+  - Two conversations taking turns on the slot give their solo replies.
+  - Plant: the reset leaving the Mamba-2 state. Red: both later replies change.
+- **Gate M** (`TestNemotronResident_tinyAgainstControl`, against `llama-tiny` in the same run):
+
+  | quant | control (llama-tiny) | nemotron-tiny | verdict | conv plant |
+  |---|---|---|---|---|
+  | int4 | 0.999906, argmax 32/32 | 0.999699, argmax 31/32 | pass | red (0.0336) |
+  | int8int8 | 0.999888, argmax 32/32 | 0.994279, argmax 30/32 | **FAIL** | red (0.2451) |
+
+- **Why int8int8 fails: not the Mamba-2 mixer.**
+  - With the CPU's Mamba projections also W8A8 (`SetSSMQ8CPU`), nemotron-tiny still reads 0.994730.
+  - The native int8 path (`w8Eligible`) covers no recurrent family. Its doc comment scopes slice 1 to "no DeltaNet", and
+    the converted guard now declines Mamba too.
+  - So at int8int8, Nemotron-H's attention and MLP projections take the int4 re-quantization (`int4ConcatA`) while the CPU
+    runs int8. The control is on the native int8 path, so it matches.
+  - This agrees with the decoder's existing rule (`decodeRunnerDecline`): Nemotron-H is resident at int4 only by default,
+    with int8 behind `GOINFER_SSM_RESIDENT`.
+- **Not run:** tier 1 (the real 9B) and the declaration. Both wait on gate M.
+- **Regression checks:**
+  - The Metal set (DeltaNet, Qwen3.5, Olmo, GPT-2, Gemma, the parity, KV and batch tests): 86 pass, 45 skip.
+  - Its two failures: gate M's int8int8 row, and `TestGemma2ResidentParityMetal`, which fails identically on main
+    (0.998997 and 0.998657, G2-T's recorded readings: OP1-M1 made the tiny fixtures diagnostics, and the test still
+    asserts 0.999).
+  - The decoder's feature, matrix, residency and KV tests: 55 pass, 0 fail.
+
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
