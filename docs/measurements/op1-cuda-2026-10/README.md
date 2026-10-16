@@ -63,3 +63,16 @@ during the resident build, after which the 35B ran on the CPU. The owner's readi
 load after the sidecar rebuild (a 48 GB peak into deep swap). A server of 5,958 MiB was seen holding the card at 14:27. The rule for a timed or
 GPU-exclusive run is one holder at a time (`timing_lock.py`); this window had two. The device gate is **not recorded green** until
 `TestQwen36_35B_cache` passes alone, in a fresh process, with the v17 sidecar already built.
+
+**`TestQwen36_35B_cache` alone, night job `op1-35b-alone-cuda`, 2026-10-16 15:18 to 15:19 PDT: PASS. The void part is settled and the device gate is
+recorded green.** `c3a81a9f`, a fresh process (the test binary built with `go test -c` and run directly), the v17 sidecar built before the run
+(20,046,085,520 bytes, written 13:02), nothing else on the card: the per-second `nvidia-smi` samples show only `cuda.test` (6.1 GB) and the desktop's
+17 MiB. `--- PASS: TestQwen36_35B_cache (71.58s)`, 0 skips, `loaded 35B resident + C' staging in 1m9s (decode path cuda-resident (int4))`, 48
+tokens at 21.88 tok/s. **VmHWM peak 37,212 MB, back under the 44,000 MB budget** (B23's reading for this model: 41,805 MB in `TestPagerDeterminism`,
+45,211 MB in `TestQwen36_35B_cache` in its group), VmSwap peak 994 MB (system swap before the run: 11,244 MB of 78,863). Logs:
+`~/goinfer-bench/op1-cuda-2026-10/35b-alone-1518/`.
+
+**The device gate, as it stands:** the first run's parts that passed (PTX 48/48, graphs, drain group, resident parity, the other heavy groups,
+hygiene), plus the re-run's check 2a, both fresh-process tests and the 26B group, plus this. The 35B group's other tests passed in the re-run
+(`TestPagerDeterminism`, `TestGridVisionCUDA_real`) and `TestQwen36_35B_cache` passes alone. **Green, for `c3a81a9f`.** Not re-run as one `gate gpu`
+invocation: the record is assembled from these runs, and says so.
