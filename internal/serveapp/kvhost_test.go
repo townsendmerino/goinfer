@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// -kv-host-bytes: the flag's grammar, the default (a tenth of RAM, at most 8 GiB) and what the startup banner and the request log say.
+// -kv-host-bytes: the flag's grammar, its default (a fraction of RAM under a cap) and what the startup banner and the request log say.
 func TestKVHostBytes_parseAndResolve(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
@@ -31,7 +31,7 @@ func TestKVHostBytes_parseAndResolve(t *testing.T) {
 		how  string
 	}{
 		{"auto", 64 * g, 64 * g / 10, "auto: 1/10 of 64.0 GiB"},
-		{"auto", 128 * g, 8 * g, "at most 8.0 GiB"}, // a tenth of 128 GiB is over the cap
+		{"auto", 128 * g, 8 * g, "at most 8.0 GiB"}, // a tenth of this much RAM is over the cap
 		{"auto", 16 * g, 16 * g / 10, "1/10 of 16.0 GiB"},
 		{"auto", 0, 0, "unknown"},
 		{"0", 64 * g, 0, "-kv-host-bytes 0"},

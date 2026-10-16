@@ -22,10 +22,10 @@ import (
 // success and writes nothing (the slot keeps the conversation that overwrote it), "short" restores a block less than it claims.
 type snapFake struct {
 	*mc3Fake
-	plant                           string
-	serveFloor                      int
-	taken, restored, released, rbyt int
-	failTake                        error
+	plant                     string
+	serveFloor                int
+	taken, restored, released int
+	failTake                  error
 }
 
 type snapFakeSnap struct {
