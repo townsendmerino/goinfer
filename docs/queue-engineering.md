@@ -454,7 +454,7 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
+**B27 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
 PR #31's Windows CI). **Not started.**
 
 Both checks read Unix mode bits, which Windows does not carry: every file reads as 0666. `readIDsKeyFile` therefore skips its
