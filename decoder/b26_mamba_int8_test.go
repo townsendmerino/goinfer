@@ -3,6 +3,8 @@ package decoder
 import (
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -250,5 +252,42 @@ func TestB26_cpuFidelityTiny(t *testing.T) {
 	t.Logf("nemotron-tiny at int4, int8 Mamba against f32: min cosine %.6f, argmax %d/32", minCos, agree)
 	if minCos < 0.999 || agree < 30 {
 		t.Errorf("below B26's bar (min cosine >= 0.999, argmax >= 30/32)")
+	}
+}
+
+// TestB26_cpuFidelitySlice is B26's CPU fidelity bar on the three-layer slice of NVIDIA-Nemotron-Nano-9B-v2 (layers 0, 1
+// and 14 of the Q8_0 GGUF; docs/tasks/task-forward-architecture-2026-10.md §4.7) at int4: the int8-Mamba CPU against the
+// f32-Mamba CPU, 32 steps of greedy lockstep, min logit cosine >= 0.99 from position 2 and argmax agreement >= 28/32.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -run '^TestB26_cpuFidelitySlice$' -v ./decoder/
+func TestB26_cpuFidelitySlice(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.Getenv("GOINFER_NEMOTRON_SLICE_GGUF")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, "models", "nemotron", "nemotron-nano-9b-v2-Q8_0.slice-0-1-14.gguf")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no slice at %s", path)
+	}
+	load := func(keepF32 bool) *Model {
+		prev := mambaKeepF32ForTest
+		mambaKeepF32ForTest = keepF32
+		defer func() { mambaKeepF32ForTest = prev }()
+		m, err := Load(path, Options{Quant: "int4", ResidentContext: 64})
+		if err != nil {
+			t.Fatalf("load the slice (f32 Mamba %v): %v", keepF32, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	ref, got := load(true), load(false)
+	if in, _ := got.MambaProjInt8(0); in == nil {
+		t.Fatal("the int8 arm's layer 0 holds no int8 projections")
+	}
+	minCos, agree := b26Lockstep(t, ref, got, []int{1, 17, 113, 29, 71, 5}, 32)
+	t.Logf("the slice at int4, int8 Mamba against f32: min cosine %.6f, argmax %d/32", minCos, agree)
+	if minCos < 0.99 || agree < 28 {
+		t.Errorf("below B26's bar (min cosine >= 0.99, argmax >= 28/32)")
 	}
 }

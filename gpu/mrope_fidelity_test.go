@@ -265,7 +265,7 @@ func TestS12MRoPEFidelity(t *testing.T) {
 	}
 	defer mR.Close()
 	src := dir // the directory's WebGPU sidecar when it is beside it: the same int4 weights, mapped
-	if sc := dir + ".int4.e4h.webgpu.v16.giw"; func() bool { _, err := os.Stat(sc); return err == nil }() {
+	if sc := dir + fmt.Sprintf(".int4.e4h.webgpu.v%d.giw", decoder.GIWFormatVersion); func() bool { _, err := os.Stat(sc); return err == nil }() {
 		src = sc
 	}
 	mA, err := decoder.Load(src, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 4096})

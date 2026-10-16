@@ -20,6 +20,8 @@ import (
 //
 // There is one layout. This build writes giwVersion and reads only giwVersion; a file at any other version is refused
 // with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (internal/prequant).
+// Every tensor record starts with its encoding (a weight matrix's kind, or giwEncF32 for a standalone array), and a reader
+// refuses only an encoding it does not read, so a new encoding needs no new version (docs/giw-bundles.md, "From v17").
 // There is no fallback to the GGUF: an embedded or explicitly named bundle that does not load is an error. The
 // history of the earlier versions is in docs/code-notes/decoder.md ("The .giw format before v16").
 //
@@ -40,7 +42,8 @@ import (
 //	crc     uint32   (CRC32-IEEE over every preceding byte)
 //
 // str  = uint32 len + len bytes
-// f32  = uint32 len + len*4 LE-float32 bytes   (len 0 => nil on load)
+// f32  = uint8 encoding (giwEncF32) + uint32 len + len*4 LE-float32 bytes   (len 0 => nil on load); a weight matrix's own
+//        arrays carry no encoding byte, the matrix's kind being theirs
 // i8   = uint32 len + len bytes                (aliased on load)
 // raw  = uint32 len + len bytes                (aliased on load)
 // u16  = uint32 len + len*2 LE-uint16 bytes    (aliased on load)

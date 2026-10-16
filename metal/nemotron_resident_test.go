@@ -226,7 +226,7 @@ func TestNemotronResident_tier1Slice(t *testing.T) {
 	requireHeavyModel(t)
 	const steps = 32
 	home, _ := os.UserHomeDir()
-	ctrlPath := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v16.giw")
+	ctrlPath := filepath.Join(home, "models", fmt.Sprintf("qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v%d.giw", decoder.GIWFormatVersion))
 	slicePath := filepath.Join(home, "models", "nemotron", "nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw")
 	for _, p := range []string{ctrlPath, slicePath} {
 		if _, err := os.Stat(p); err != nil {

@@ -532,7 +532,7 @@ func TestPrefillMRoPE_realImage(t *testing.T) {
 	}
 	g.InputIDs = append(g.InputIDs, post...)
 	src := dir
-	if sc := dir + ".int4.e4h.webgpu.v16.giw"; func() bool { _, err := os.Stat(sc); return err == nil }() {
+	if sc := dir + fmt.Sprintf(".int4.e4h.webgpu.v%d.giw", decoder.GIWFormatVersion); func() bool { _, err := os.Stat(sc); return err == nil }() {
 		src = sc
 	}
 	// The first layer's K, the reading that can see a position: the right wiring, then each planted defect.

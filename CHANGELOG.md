@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **.giw files rebuild again (v17).** Each cached sidecar is transcoded once from its source on first load; a bundle named
+  with `--model` or built into a binary must be rebuilt with `cmd/prequant`. From v17 every tensor carries its encoding,
+  so a new encoding no longer needs a format bump (`docs/giw-bundles.md`, "From v17").
+- **Quantized Nemotron-H CPU loads now hold the Mamba projections at int8** (about 12 GB less on the 9B), from a .gguf or
+  a .giw; an f32 load keeps them f32. The GPU backends upload the same codes as before.
 - **Nemotron-H resident on Metal, at int4.** The Mamba-2 mixer and the squared-ReLU MLP run on the GPU; an int8
   Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models and a three-layer slice of the real
   Nemotron-Nano-9B-v2; the whole-model run is owed (`docs/queue-engineering.md`, B26).
