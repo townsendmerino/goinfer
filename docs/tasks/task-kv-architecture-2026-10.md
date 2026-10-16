@@ -1,7 +1,10 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
 > **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0). KV1 DONE 2026-10-14: every gate read PASS
-> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2: gates registered 2026-10-14 (`docs/measurements/kv2-2026-10-14.md`), no code yet.** Written on the owner's ask after a Cowork conversation the same day ("seems
+> (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2 DONE 2026-10-15: the CUDA and Metal halves merged
+> (`772b1fb2`, PR #26); G5-C, the sharing gate on nobara, PASS (`docs/measurements/kv2-cuda-2026-10-15.md`); the donor
+> choice (follow-up 2) merged 2026-10-15 (#37). KV3 DONE: shipped in v0.23.0 (2026-10-15), with the rollback-budget fix
+> (CUDA's windowed KV compacts in 64-token steps, so a client's rollback keeps at least 448 tokens).** Written on the owner's ask after a Cowork conversation the same day ("seems
 > like we should consider a new KV architecture, given what goinfer is like now, feature-wise, what would be the best
 > architecture if we were writing it from scratch. how close is the current code?", then "please write the task doc for
 > the new architecture as proposed, be thorough").
@@ -64,8 +67,8 @@ slot is gone; and every KV feature is built three or four times.
 | KV-pre | long-prompt prefill in blocks, admission per block (**in flight**, not this doc's) | Metal | S | — |
 | KV0 | prior art, block size, invariance and traffic measurements, owner decisions (**done**) | — | S | — |
 | KV1 | the manager over today's slots: logical blocks, hashed index, no storage change | CUDA, Metal, WebGPU | M | KV0 |
-| KV2 | cross-conversation reuse by device copy between slots | CUDA, Metal, WebGPU | S–M | KV1 |
-| KV3 | prefill and admission in blocks everywhere, CUDA 12,288-key fix, 16-row rule (absorbs KV-pre; **in flight** alongside KV1, D8) | all resident | S | KV0 |
+| KV2 | cross-conversation reuse by device copy between slots (**done** 2026-10-15: CUDA and Metal, `772b1fb2`; G5-C PASS) | CUDA, Metal, WebGPU | S–M | KV1 |
+| KV3 | prefill and admission in blocks everywhere, CUDA 12,288-key fix, 16-row rule (absorbs KV-pre; **done**: shipped in v0.23.0, with the rollback-budget fix) | all resident | S | KV0 |
 | KV4 | paged storage and block-table kernels; f16 pools | CUDA | L | KV2, KV3 |
 | KV5 | paged storage | Metal | L | KV4 |
 | KV6 | keep slots with KV2's copies (**decided**, D3) | WebGPU | — | KV2 |
@@ -749,7 +752,15 @@ Metal device gate.
     touches). KV2 should keep that when it adds the copy.
 - **Size:** M. **Closes:** nothing visible. It is the foundation.
 
-### KV2 — Cross-conversation reuse by copy (still slot storage) — gates REGISTERED 2026-10-14, no code yet
+### KV2 — Cross-conversation reuse by copy (still slot storage) — DONE 2026-10-15
+
+**Done 2026-10-15.** The CUDA and Metal halves merged in `772b1fb2` (PR #26). G5-C, the sharing gate on nobara's 1.5B at
+`-ctx 24576 -kv-sessions 2` (`docs/measurements/kv2-cuda-2026-10-15.md`):
+- **T-idle: PASS 1.926** (1.915 to 1.946 by block).
+- **T-busy: delivers 0.926 of the projected saving,** inside [0.80, 1.05]. The median time to first token went from
+  12.29 s on `main` to 2.05 s, a saving of 10.25 s, on an 18,112-row hit in every block.
+
+The donor choice (follow-up 2 below) merged the same day (#37).
 
 Branch `kv2-2026-10`. Gates, and the choices made before the code: `docs/measurements/kv2-2026-10-14.md`. The Mac
 builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/prompts/nobara-kv2-cuda-2026-10.md`.
@@ -814,7 +825,10 @@ KV2 merges when every arm on both boxes is read.
   - **G3's schedule independence passes,** with the 23 KV2 and MC3 tests near the change.
   - **A windowed family's served G5 cell is not run:** it is tier 2, and the owner set this gate at tier 0.
 
-### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
+### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre) — DONE (v0.23.0)
+
+**Done: shipped in v0.23.0 (2026-10-15).** That includes the rollback-budget fix in §5.12: CUDA's windowed KV compacts in
+64-token steps, so a client's rollback keeps at least 448 tokens, and up to 1,024 from VRAM left after planning.
 
 **Started 2026-10-13 (owner decision, §8 D8): alongside KV1, ahead of KV2.** It does not depend on KV1. The CUDA half is on the branch
 `kv3-cuda-2026-10` with its record, `docs/measurements/kv3-cuda-2026-10-13.md`; the Metal half is the KV-pre session's (`metal/`).

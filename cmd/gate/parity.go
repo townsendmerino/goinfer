@@ -719,8 +719,8 @@ var realckptNotRequired = map[string]string{
 		"TestNemotron3NanoMoE_textParity; this adds the real GGUF checkpoint",
 	"TestNemotron3NanoReal_oracle": "nemotron3nano is required through " +
 		"TestNemotron3NanoMoE_textParity; this adds the real bf16 checkpoint",
-	"TestNemotronReal_gate": "unregistered asset (GOINFER_NEMOTRON_GGUF); nemotron is required " +
-		"through TestNemotron_textParity",
+	"TestNemotronReal_gate": "nemotron is required through TestNemotron_textParity; this adds the " +
+		"real Q8_0 GGUF checkpoint (GOINFER_NEMOTRON_GGUF)",
 	"TestNemotronReal_oracle": "nemotron is required through TestNemotron_textParity; this adds the " +
 		"real HF checkpoint",
 	"TestQwen2Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen2 is required through " +

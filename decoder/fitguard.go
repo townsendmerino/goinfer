@@ -473,6 +473,8 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	if q == quantQ4K && !q4kPriceAsInt4ForTest {
 		price = quantInt8I8
 	}
+	ggufArch, _ := g.Str("general.architecture")
+	nemoInt8 := (ggufArch == "nemotron_h" || ggufArch == "nemotron_h_moe") && mambaProjInt8(q)
 	var sum, exp float64
 	for _, name := range g.Names() {
 		dims, ok := g.Dims(name)
@@ -492,6 +494,11 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 		}
 		if len(dims) < 2 {
 			sum += 4 * float64(n)
+			continue
+		}
+		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8).
+		if nemoInt8 && (strings.HasSuffix(name, ".ssm_in.weight") || strings.HasSuffix(name, ".ssm_out.weight")) {
+			sum += quantBytesPerElem(quantInt8I8) * float64(n)
 			continue
 		}
 		// Mamba-2/MLA tensors stay f32 regardless of the requested quant: price them at what they cost, not the ambient rate.
@@ -579,6 +586,11 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 			continue
 		}
 		// Mamba-2/MLA tensors stay f32 regardless of the requested quant.
+		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8); these compound names are its alone.
+		if mambaProjInt8(q) && (strings.HasSuffix(name, "mixer.in_proj.weight") || strings.HasSuffix(name, "mixer.out_proj.weight")) {
+			total += quantBytesPerElem(quantInt8I8) * float64(n)
+			continue
+		}
 		if f32PinnedTensorName(name) {
 			total += 4 * float64(n)
 			continue

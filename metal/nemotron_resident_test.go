@@ -223,28 +223,63 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 10m -run '^TestNemotronResident_tier1Slice$' -v ./metal/
 func TestNemotronResident_tier1Slice(t *testing.T) {
+	nemotronTier1(t, fmt.Sprintf("nemotron-nano-9b-v2.slice-0-1-14.int4-metal.v%d.giw", decoder.GIWFormatVersion), "slice 0,1,14")
+}
+
+// TestNemotronResident_tier1Whole is OP2b's tier 1 on Metal on the whole NVIDIA-Nemotron-Nano-9B-v2 (§4.7; B27 brought its
+// int4 .giw to a size this Mac holds): the same arms, bars, control and voids as TestNemotronResident_tier1Slice.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -run '^TestNemotronResident_tier1Whole$' -v ./metal/
+func TestNemotronResident_tier1Whole(t *testing.T) {
+	nemotronTier1(t, fmt.Sprintf("nemotron-nano-9b-v2-int4-metal.v%d.giw", decoder.GIWFormatVersion), "whole 9B")
+}
+
+// nemotronTier1 runs the dense 1.5B control, then the Nemotron-H bundle ~/models/nemotron/<file>, each resident on Metal
+// against the CPU model it was built from: 32 steps of greedy lockstep graded from position 2. The control under min
+// cosine 0.95, or a missing or refused load, is VOID; the bundle passes on min cosine >= 0.88 and argmax >= 50%.
+func nemotronTier1(t *testing.T, file, label string) {
 	requireHeavyModel(t)
 	const steps = 32
 	home, _ := os.UserHomeDir()
-	ctrlPath := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v16.giw")
-	slicePath := filepath.Join(home, "models", "nemotron", "nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw")
-	for _, p := range []string{ctrlPath, slicePath} {
+	ctrlPath := filepath.Join(home, "models", fmt.Sprintf("qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v%d.giw", decoder.GIWFormatVersion))
+	path := filepath.Join(home, "models", "nemotron", file)
+	for _, p := range []string{ctrlPath, path} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("VOID: %s is missing", p)
 		}
 	}
 	opts := decoder.Options{Quant: "int4", ResidentContext: 64}
+	if os.Getenv("GOINFER_TIER1_FITCHECK") == "1" { // the by-day fit check: each load and resident build, nothing run
+		for _, p := range []string{ctrlPath, path} {
+			m, err := decoder.Load(p, opts)
+			if err != nil {
+				t.Errorf("fit check: %s REFUSED: %v", filepath.Base(p), err)
+				continue
+			}
+			r, err := buildResident(m)
+			if err != nil {
+				m.Close()
+				t.Errorf("fit check: %s resident REFUSED: %v", filepath.Base(p), err)
+				continue
+			}
+			t.Logf("fit check: %s admitted", filepath.Base(p))
+			r.Close()
+			m.Close()
+			debug.FreeOSMemory()
+		}
+		return
+	}
 	ctrl := residentLockstepAt(t, ctrlPath, opts, steps)
 	debug.FreeOSMemory()
 	t.Logf("control, dense 1.5B: min cosine %.6f, argmax %d/%d", ctrl.minCos, ctrl.exact, ctrl.steps)
 	if ctrl.minCos < 0.95 {
 		t.Fatalf("VOID: the control's min cosine %.6f is under 0.95", ctrl.minCos)
 	}
-	nemo := residentLockstepAt(t, slicePath, opts, steps)
+	nemo := residentLockstepAt(t, path, opts, steps)
 	pass := nemo.minCos >= 0.88 && 2*nemo.exact >= nemo.steps
-	t.Logf("Nemotron-H slice 0,1,14: min cosine %.6f, argmax %d/%d -> %s", nemo.minCos, nemo.exact, nemo.steps,
+	t.Logf("Nemotron-H %s: min cosine %.6f, argmax %d/%d -> %s", label, nemo.minCos, nemo.exact, nemo.steps,
 		map[bool]string{true: "PASS", false: "FAIL"}[pass])
 	if !pass {
-		t.Errorf("the slice misses G2-R's bars (min cosine >= 0.88, argmax >= 50%%)")
+		t.Errorf("%s misses G2-R's bars (min cosine >= 0.88, argmax >= 50%%)", label)
 	}
 }

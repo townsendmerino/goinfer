@@ -455,16 +455,50 @@ confirms 33 by run before anything is published as safe rather than as computed.
 ## Queued
 
 **B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
-**Not started.**
+**Built 2026-10-16; the whole-model run PASS** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered,
+main's B26 being another item; reading in docs/tasks/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,
+before any code.
 
 NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host
 weights (about 0.59 GB a layer over 27 layers), and only attention and MLP take the requested quant. Metal already runs
 those projections at int8 (`metal/mamba.go`, quantized at build from the f32 host copy), so the f32 bytes serve only the
 CPU path and the build. At int8 the bundle would be about 7 GB, which a 16 GB Mac could load at night, and the whole-model
 half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md §4.7, "Tier 1 on a layer slice").
-- **Tier 0 when it starts:** `nemotron-tiny`'s CPU forward with int8 Mamba projections against today's f32, held to a bar
-  set before the run, and its resident Metal build bit-identical to today's (Metal quantizes the same values either way).
-  A planted defect (a transposed projection) must be red.
+
+**Owner's decisions:**
+1. **The .giw goes to v17,** as v16 did: every sidecar rebuilds once. In v17 each tensor's encoding is explicit, and a
+   reader refuses only an encoding it does not know, not the whole file by version, so B25's q4k form can be added
+   without a v18. The record says whether that holds.
+2. **Option A:** every quantized Nemotron-H load (from a .gguf or a .giw) holds the two Mamba projections as int8; an f32
+   load stays f32. Granite-4.0-H is unchanged.
+
+**Design:**
+- **The host:** at a quantized load, `mamba2Weights` holds `in_proj` and `out_proj` as int8 per-row weight matrices
+  (`linalg.QuantizeInt8`, the call Metal makes today), and the f32 copies are dropped. The CPU runs them as int8 weights
+  against f32 activations, through the backend's matmul.
+- **The GPU paths:** Metal and WebGPU upload those codes and scales as they are, where they quantized the f32 copy before.
+- **v17:** every array record starts with an encoding byte, the same namespace as a weight matrix's kind. The Mamba
+  projections are written as weight matrices (kind 1 f32, kind 2 int8). An unknown encoding is a `*SerializeError` naming
+  it, so a sidecar is rebuilt.
+- **The fit guard** prices a quantized Nemotron-H GGUF's `ssm_in`/`ssm_out` at int8.
+
+**Gates, registered before any code:**
+- **Tier 0, the bundle:** a quantized `nemotron-tiny` .giw holds its Mamba projections as int8 (kind 2), and the bundle's
+  size equals the size computed with int8 projections. Planted defect: the f32 copies kept (a test switch), which must
+  turn the size check red.
+- **Tier 0, the upload:** the int8 codes and scales Metal and WebGPU upload from the new host weights, from a .gguf and
+  from a .giw, equal byte for byte what they uploaded before (`linalg.QuantizeRowsInt8` of the f32 weights).
+- **Tier 0, the format:** a bundle with an unknown encoding is refused with a `*SerializeError` that names it; a
+  round-trip of every family's tiny fixture still loads (the existing serialize tests).
+- **CPU fidelity bar,** the int8-Mamba CPU against the f32-Mamba CPU at the same quant, greedy lockstep for 32 steps off
+  the f32 arm, graded from position 2:
+  - `nemotron-tiny` at int4: min logit cosine ≥ 0.999 and argmax agreement ≥ 30/32.
+  - The three-layer slice of the 9B (layers 0, 1, 14) at int4: min logit cosine ≥ 0.99 and argmax ≥ 28/32. The slice's
+    Metal W8A8 arm read 0.994410 against the f32 CPU; weight-only int8 has no activation quantization, so it should sit
+    closer.
+- **Then:** the parity refresh, and the whole-model run at night after a by-day fit check, against §4.7's bars (min
+  cosine ≥ 0.88, argmax ≥ 50%, the dense 1.5B control ≥ 0.95).
+- **After the v17 bundle is built:** nobara's 19.2 GB v16 .giw is deleted.
 
 **B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
 PR #31's Windows CI). **Not started.**
