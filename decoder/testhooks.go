@@ -261,6 +261,12 @@ func SetSSMForceF32(v bool) { ssmForceF32 = v }
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
 func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
 
+// GatedRMSNormGroupedForTest is the Mamba-2 mixer's grouped RMSNorm (gatedRMSNormGrouped): x, already y·silu(z), normalized in
+// place per group, times weight. A backend's gated-norm kernel is gated against it at group counts the tiny fixtures lack.
+func GatedRMSNormGroupedForTest(x, weight []float32, nGroups int, eps float64) {
+	gatedRMSNormGrouped(x, weight, nGroups, eps)
+}
+
 // DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's parity gate. The trunk's own
 // DraftBlock takes a Backend and cpuBackend is unexported, so a backend package (cuda/metal/gpu) cannot drive the reference
 // it must match without this. A seam for gates, not API.

@@ -2104,10 +2104,17 @@ kernel void swiglu_f32(device const float* g[[buffer(0)]], device const float* u
     if (i < I) out[i] = glu_act_pinned(g[i], act) * u[i];
 }
 // act_quant: FeatNonGatedMLP's fused activation+quant — up->act->down (GPT-2, Nemotron relu²),
-// no gate multiply, unlike swiglu_quant. Reuses glu_act (same ordinals), so it inherits the
-// GELU-tanh clamp fix for free. Only ACT_GELU_TANH/ACT_SILU are wired (glu_act's only branches);
-// exact-erf GELU (decoder's ActGelu, HF's plain "gelu") is NOT implemented — GPT-2's real
-// released checkpoints use "gelu_new" (ActGeluTanh), which this covers.
+// no gate multiply, unlike swiglu_quant. Its activation is nongated_act: glu_act's GELU-tanh and
+// SiLU (inheriting the GELU-tanh clamp fix), plus squared ReLU. Exact-erf GELU (decoder's ActGelu,
+// HF's plain "gelu") is NOT implemented — GPT-2's real released checkpoints use "gelu_new"
+// (ActGeluTanh), which this covers.
+// nongated_act is act_quant's activation: glu_act's ordinals, plus squared ReLU at decoder.ActReLU2's ordinal (2), which only
+// a non-gated MLP takes (Nemotron-H), so glu_act's other callers keep their compiled code.
+#define ACT_RELU2 2u
+inline float nongated_act(float x, uint act) {
+    if (act == ACT_RELU2) { float r = max(x, 0.0f); return r*r; }
+    return glu_act(x, act);
+}
 kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffer(1)]],
     device float* ds[[buffer(2)]], constant uint& I[[buffer(3)]], constant uint& act[[buffer(4)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
@@ -2120,10 +2127,10 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
     device const float4* u4 = (device const float4*)u;
     for (uint i4=tid; i4<I4; i4+=tgs) {
         float4 uv=u4[i4];
-        float s0=glu_act(uv.x,act), s1=glu_act(uv.y,act), s2=glu_act(uv.z,act), s3=glu_act(uv.w,act);
+        float s0=nongated_act(uv.x,act), s1=nongated_act(uv.y,act), s2=nongated_act(uv.z,act), s3=nongated_act(uv.w,act);
         mx=max(mx,fabs(s0)); mx=max(mx,fabs(s1)); mx=max(mx,fabs(s2)); mx=max(mx,fabs(s3));
     }
-    for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); mx=max(mx,fabs(s)); }
+    for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=nongated_act(u[i],act); mx=max(mx,fabs(s)); }
     // 2-level SIMD-shuffle reduction instead of the 8-step threadgroup-barrier tree -- max is
     // exact/order-independent regardless of reduction structure. Cuts barrier count from 8 to 2
     // (verified safe on quant_vec/layernorm_quant this session). Does not touch glu_act's own
@@ -2139,14 +2146,14 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
     device char4* dq4 = (device char4*)dq;
     for (uint i4=tid; i4<I4; i4+=tgs) {
         float4 uv=u4[i4];
-        float s0=glu_act(uv.x,act), s1=glu_act(uv.y,act), s2=glu_act(uv.z,act), s3=glu_act(uv.w,act);
+        float s0=nongated_act(uv.x,act), s1=nongated_act(uv.y,act), s2=nongated_act(uv.z,act), s3=nongated_act(uv.w,act);
         char q0=char(clamp(int(round(s0*inv)),-127,127));
         char q1=char(clamp(int(round(s1*inv)),-127,127));
         char q2=char(clamp(int(round(s2*inv)),-127,127));
         char q3=char(clamp(int(round(s3*inv)),-127,127));
         dq4[i4]=char4(q0,q1,q2,q3);
     }
-    for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
+    for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=nongated_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 // Gemma 4's per-layer output scalar on a dense layer: x *= s (decoder's forward_gemma4.go; the MoE join has its own).
@@ -2249,4 +2256,4 @@ kernel void copy_u32(device const uint* src [[buffer(0)]], device uint* dst [[bu
     constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i < N) dst[i] = src[i];
 }
-` + MoeKernels + Gemma4MoeKernels + DeltaNetKernels + GumbelMSLKernels + MoeBatchKernels
+` + MoeKernels + Gemma4MoeKernels + DeltaNetKernels + GumbelMSLKernels + MoeBatchKernels + MambaKernels
