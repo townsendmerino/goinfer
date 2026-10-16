@@ -1000,6 +1000,28 @@ Their gate:
 - **Tier 0:** the hardware matrix regenerated, with every cell's decline reasons unchanged except the split names.
 - **Plant:** a backend declaring the wrong half of a split must decline the family by name.
 
+**(a) and (b) built 2026-10-15; both gates pass.**
+
+- **(a)** One feature per non-gated activation, in `decoder/features.go`: `non-gated-gelu-tanh`, `non-gated-silu`,
+  `non-gated-relu2` and `non-gated-act-unknown`, beside `non-gated-gelu-erf`. Each backend declares the kernels it has:
+  - Metal's `act_quant` (`glu_act`'s two branches): GELU-tanh and SiLU;
+  - WebGPU's `relu2Quant`: squared ReLU;
+  - CUDA: no non-gated kernel, as before.
+- **(b)** `attn-output-gate` is three features:
+  - `attn-output-gate-softplus` (Laguna);
+  - `attn-output-gate-sigmoid` (Spark-X2.5);
+  - `per-layer-query-heads` (Laguna XS's per-layer query-head count, which the old feature carried along).
+
+  The gate features follow `hasAttnOutputGate`'s two cases, so the features and the forward cannot drift.
+- **Tier 0, the matrix:** `docs/hardware-matrix.md` changes in six rows, each only by the split names. No cell changed
+  whether it runs resident, and the capability matrix is unchanged.
+  - **The row that matters:** Nemotron-H on Metal now reads "missing: `non-gated-relu2`, `ssm`". When SSM on Metal lands,
+    Nemotron-H stays declined until Metal has a squared-ReLU kernel, instead of running `act_quant`'s GELU-tanh on it.
+- **The plant:** `TestFeatureSplits_wrongHalfDeclinesByName` gives each split's family a backend that declares the other
+  half: GPT-2 with SiLU, Nemotron-H with GELU-tanh, Laguna with sigmoid, Spark-X2.5 with softplus. Each declines,
+  naming exactly the half it lacks.
+  - **Planted:** Spark-X2.5 deriving softplus, and squared ReLU deriving GELU-tanh. Both went red, then restored.
+
 **OP2a, MLA on Metal.**
 - **Delivers:** DeepSeek-V2/V3 and Moonlight resident on Metal. Kimi K2 also needs a 384-expert router; that is not here.
 - **Size and box:** M–L, on the Mac.
