@@ -5,6 +5,9 @@ package gpu
 import (
 	"math"
 	"math/rand"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -73,17 +76,35 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 				if v > 10000 {
 					draws = 50 // the sequential host reference costs ~10 ms/draw at a 152k vocab
 				}
-				for d := 0; d < draws; d++ {
-					seed := seeds[d%len(seeds)]
-					draw := uint64(d)
+				// The device draws run in order on the one state; the host references, pure computation and most of the
+				// time, are then computed across the cores; the comparison below walks the draws in order.
+				seedOf := func(d int) uint64 { return seeds[d%len(seeds)] }
+				drawOf := func(d int) uint64 {
 					if d%7 == 0 {
-						draw += 1 << 33 // the high counter word
+						return uint64(d) + 1<<33 // the high counter word
 					}
-					dev, err := s.sample(c, nil, v, float32(1/T), seed, draw)
+					return uint64(d)
+				}
+				devs, hosts := make([]int, draws), make([]int, draws)
+				for d := range draws {
+					dev, err := s.sample(c, nil, v, float32(1/T), seedOf(d), drawOf(d))
 					if err != nil {
 						t.Fatalf("v=%d %s T=%.1f: %v", v, kind, T, err)
 					}
-					host := decoder.GumbelDrawForTest(l, T, seed, draw)
+					devs[d] = dev
+				}
+				var wg sync.WaitGroup
+				next := atomic.Int64{}
+				for range runtime.GOMAXPROCS(0) {
+					wg.Go(func() {
+						for d := int(next.Add(1) - 1); d < draws; d = int(next.Add(1) - 1) {
+							hosts[d] = decoder.GumbelDrawForTest(l, T, seedOf(d), drawOf(d))
+						}
+					})
+				}
+				wg.Wait()
+				for d := 0; d < draws; d++ {
+					seed, draw, dev, host := seedOf(d), drawOf(d), devs[d], hosts[d]
 					total++
 					if dev == host {
 						continue

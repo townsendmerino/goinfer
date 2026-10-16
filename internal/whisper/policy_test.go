@@ -2,6 +2,7 @@ package whisper
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -50,11 +51,23 @@ func loadPolicy(t *testing.T) polGolden {
 
 // polMatches runs every case and configuration and reports which ones differ from transformers (an empty list: all equal) and how many windows each run skipped.
 func polMatches(t *testing.T, tr *Transcriber, g polGolden) (diffs []string, skipped map[string]int) {
+	return polMatchesUpTo(t, tr, g, 0)
+}
+
+// polMatchesUpTo is polMatches stopping once limit configurations differ (0 = run them all), in a fixed order: a gate
+// that only needs to see one difference need not transcribe the rest.
+func polMatchesUpTo(t *testing.T, tr *Transcriber, g polGolden, limit int) (diffs []string, skipped map[string]int) {
 	t.Helper()
 	skipped = map[string]int{}
-	for cname, c := range g.Cases {
+	for _, cname := range slices.Sorted(maps.Keys(g.Cases)) {
+		c := g.Cases[cname]
 		x := tsClip(c.Samples, c.A, c.B)
-		for oname, opts := range polConfigs {
+		for _, oname := range slices.Sorted(maps.Keys(polConfigs)) {
+			if limit > 0 && len(diffs) >= limit {
+				slices.Sort(diffs)
+				return
+			}
+			opts := polConfigs[oname]
 			want := c.Results[oname]
 			r, err := tr.TranscribeWith(x, opts)
 			if err != nil {
@@ -100,8 +113,8 @@ func TestPolicy_plantedDefectsAreRed(t *testing.T) {
 	for name, d := range map[string]int{"conditioning uncut": condNoCut, "double ending timestamp not trimmed": condNoDoubleTrim, "no startofprev": condNoStartOfPrev,
 		"no-speech from processed scores": polNoSpeechProcessed, "silent window not skipped": polSkipIgnored} {
 		tr.Dec.condDefect = d
-		diffs, _ := polMatches(t, tr, g)
-		t.Logf("%-38s red %v (%d configurations differ)", name, len(diffs) > 0, len(diffs))
+		diffs, _ := polMatchesUpTo(t, tr, g, 1) // one difference is all the gate asks
+		t.Logf("%-38s red %v (first differing configuration: %v)", name, len(diffs) > 0, diffs)
 		if len(diffs) == 0 {
 			t.Errorf("defect %q left every result equal to transformers': the gate cannot see it", name)
 		}
