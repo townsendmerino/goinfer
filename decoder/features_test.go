@@ -188,8 +188,8 @@ var admissionGolden = map[string][]string{
 	// checkpoints while flat 0.02-std fixtures read 0.9997 (docs/tasks/task-metal-pairwise-rope-2026-10.md).
 	"cohere":      {"cuda", "metal"},
 	"cohere2":     {"cuda", "metal"},
-	"deepseek_v2": {"cuda", "webgpu"},
-	"deepseek_v3": {"cuda", "webgpu"},
+	"deepseek_v2": {"cuda", "metal", "webgpu"},
+	"deepseek_v3": {"cuda", "metal", "webgpu"},
 	// gemma3 (uniform head_dim) reaches webgpu for real (testdata/gemma3-vl-tiny's text tower,
 	// gpu.TestGemma3ResidentParityWebGPU). gemma4/gemma4_text/gemma4_unified_text are FEATURE-compatible there, but dense
 	// Gemma 4's local/global head_dim split needs a per-layer geometry seam this feature-list model cannot express
@@ -224,9 +224,9 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"metal", "webgpu"}, // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
-	"kimi_k2":          {"cuda", "webgpu"},
-	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
+	"granitemoehybrid": {"metal", "webgpu"},         // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
+	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
+	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
 	// rope kernels; WebGPU has only NeoX rope kernels and declines (FeatPairwiseRoPE + FeatPairwiseMRoPE). Admitted with the
 	// NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny.
@@ -381,6 +381,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatAttnLogitSoftcap,
 			// Nemotron-H's Mamba-2 mixer and squared-ReLU MLP, int4 only (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b).
 			FeatSSM, FeatNonGatedReLU2,
+			// Multi-head latent attention (§4.7, OP2a).
+			FeatMLA,
 		},
 	}
 	for be, exp := range want {
