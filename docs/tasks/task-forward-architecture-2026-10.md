@@ -2074,6 +2074,14 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
 
   - S is NOT RUN on the four Gemma 4 E-model and 26B MoE fixtures: every layer past the first has the PLE branch or the MoE
     block, which the contributions do not cover. Gates H and C cover those fixtures.
+- **The owner's condition (2026-10-16, approving the PR): `ForwardSubCapture` stays refused there.**
+  - It refuses any model with a layer whose operation the contributions do not cover (`program.subCaptureUncovered`: Gemma
+    4's PLE branch and MoE block), and so does its bisect hook.
+  - `TestSeams_subCaptureRefusedWhereGateSCannotRun` pins it: the refused set is exactly those four fixtures, and every
+    served fixture rebuilds at least one layer under gate S.
+  - `HiddenLast` and `ForwardCapture` serve all 58.
+  - Plant S, counted only on the 54 fixtures it can run on, is red on 9.
+  - The PR merges by hand on green CI after #62 lands.
   - Log: `docs/measurements/op3-2026-10/seams-gates.log`.
 - **I: PASS** (37 IDENTICAL; the forward does not change). Log: `docs/measurements/op3-2026-10/seams-identity-tiny.log`.
 
