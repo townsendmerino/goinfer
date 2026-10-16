@@ -1259,6 +1259,42 @@ Their gate:
 - **Tier 1:** Phi-3 mini on the Mac (`phi3-mini-4k-gguf`), the prefill against `phi3_mini_golden.json`.
 - **Night:** M1 only.
 
+**OP6's Metal half, registered 2026-10-15 before any code** (branch `op6-q4k-step-metal-2026-10`).
+
+- **Design: the q4k lane joins MC3's batched step,** so its prefill runs on the step route that every other dense Metal
+  model below the floor already takes (`prefillByStep`, eight rows a step, the sequential loop's bits).
+  - **New rows kernels:**
+    - `rmsnorm_f32_out` and `swiglu_f32` rows forms, derived from production's text as `batch_rows.go` derives the others;
+    - `gemv_q4k_f32` and `gemv_w8_f32` rows forms, which read each weight row once for B activation rows and keep
+      decode's per-lane loop and `simd_sum` for each row.
+  - **The head:** production's `gemv_w8f32_head`, once per row.
+  - **`promptStepOK` gains one case:** a resident whose batched pass never runs (`prefillOK` false and no layer-major
+    route) takes the step for a prompt of any length. Its rows are the loop the decoder would otherwise run.
+  - **One consequence, in scope:** concurrent batched decode turns on for q4k models (`StepBatch`), with the same per-row
+    bits.
+- **Amendment before any code: tier 0 runs on Qwen2.5-Coder-0.5B q4_k_m, not `phi3-tiny`.** No tiny Q4_K fixture
+  exists (`phi3-tiny` is safetensors). The 0.5B is the lane's own non-heavy test model and loads in seconds. Its attn_v
+  is Q6_K in half the layers, so both rows kernels run, and so do the multi-segment projections.
+- **Tier 0, by day, all bit for bit (`math.Float32bits`):**
+  - **(a) Prompt:** `PrefillLast` on the step against the sequential loop (`promptStepOff`). Measured at lengths
+    2, 7, 8, 9, 17 and 64, on the last row's logits and every K/V byte written.
+  - **(b) Verify rows:** consecutive rows on one slot at depths 128 and 2048, M = 2, 4 and 8, against sequential decode
+    (`TestMC3Verify_sameSlotRowsBitIdentical`'s shape).
+  - **(c) Two sequences:** two slots stepped together for 8 steps, each row against that sequence's decode alone.
+  - **Planted defect:** the min term dropped from the q4k rows kernel only. It must turn (a) red.
+  - **`PrefillPath`** on a q4k resident must name the step route.
+- **Tier 1, by day (≤ 10 min):** Phi-3 mini (`phi3-mini-4k-gguf`) at q4k on Metal.
+  - **Graded:** the step against the sequential loop, bit for bit on the last row and the K/V, on the golden's prompt
+    and on a 200-token prompt.
+  - **Graded:** argmax equal to `phi3_mini_golden.json`'s, as `TestPhi3GGUFReal_gate` grades this file. Its cosine is
+    logged only, because the GGUF is an earlier Phi-3 snapshot than the golden.
+  - **Speed:** an in-process A/B of `PrefillLast` on the 200-token prompt, step against sequential, interleaved, 5 pairs
+    after a warm-up.
+    - **Ship:** every pair's ratio above 1 and the median at least 1.02.
+    - **Park:** a median of 1.00 to 1.02.
+    - **Off:** a median below 1.00.
+- **Night:** M1, unchanged, after this merges.
+
 #### Proposed order
 
 **The Mac stays on OP continuously:**
