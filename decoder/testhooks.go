@@ -9,6 +9,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"sync/atomic"
 
@@ -548,6 +549,21 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 		out = append(out, l...)
 	}
 	return out, nil
+}
+
+// SetAttnSoftcapOffForTest makes every model loaded while it is on load without its attention-score softcap, on the CPU
+// and on a resident alike (attnSoftcapOffForTest). It returns the previous setting.
+func SetAttnSoftcapOffForTest(on bool) (was bool) { return attnSoftcapOffForTest.Swap(on) }
+
+// StartAttnScoreStatsForTest counts every attention score the CPU caps from now until the returned stop is called, and
+// stop reports how many, how many had |score| > 15, and the largest |score|, all before the cap (attnScoreStatsForTest).
+func StartAttnScoreStatsForTest() (stop func() (n, over15 int64, maxAbs float64)) {
+	st := &attnScoreStats{}
+	attnScoreStatsForTest.Store(st)
+	return func() (int64, int64, float64) {
+		attnScoreStatsForTest.Store(nil)
+		return st.n.Load(), st.over15.Load(), math.Float64frombits(st.maxAbsBits.Load())
+	}
 }
 
 // KVBoundClassesForTest is the bound resident KV slot and the kernel class the KV manager recorded for each row of its

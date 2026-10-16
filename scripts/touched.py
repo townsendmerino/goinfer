@@ -16,7 +16,7 @@ ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=Tru
 os.chdir(ROOT)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import timing_lock  # noqa: E402  (a build and test run loads the box, so it must not run under a timed one: TE9)
-SLOW = {"decoder", "internal/sampling", "cuda"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
+SLOW = {"decoder", "internal/sampling", "cuda", "internal/serveapp"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
 TAGS = {"cuda": "cuda goinfer_testhooks", "gpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 
 
