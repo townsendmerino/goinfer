@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -524,42 +523,8 @@ func TestGatePTX_nothingVerifiedIsRed(t *testing.T) {
 	}
 }
 
-// The heavy tier's main group runs as two processes; a name in neither half, or in both, is a test the gate
-// silently stops running or runs twice.
-func TestGPU_mainTierSplitCoversEveryTestOnce(t *testing.T) {
-	listed := []string{"TestAlpha", "TestAlphaBeta", "TestLast", "TestMiddle", "TestZeta", "Test_under", "Testlower",
-		"Testmlower", "Test0digit", "TestKV3Tiled_batchedEqualsPerToken_real", "TestSpecPagerInteraction"}
-	halves := splitMainTier(listed)
-	if len(halves) != 2 {
-		t.Fatalf("got %d halves, want 2", len(halves))
-	}
-	owner := map[string]string{}
-	for _, h := range halves {
-		re := regexp.MustCompile(h.Run)
-		for _, n := range h.Tests {
-			if prev, ok := owner[n]; ok {
-				t.Errorf("%s is in both %s and %s", n, prev, h.Label)
-			}
-			owner[n] = h.Label
-		}
-		for _, n := range listed {
-			if re.MatchString(n) != slices.Contains(h.Tests, n) {
-				t.Errorf("%s's pattern matches %s: %v, but owning it: %v", h.Label, n, re.MatchString(n), slices.Contains(h.Tests, n))
-			}
-		}
-	}
-	for _, n := range listed {
-		if owner[n] == "" {
-			t.Errorf("%s is in neither half", n)
-		}
-	}
-	if owner["TestLast"] != "A-L" || owner["TestMiddle"] != "M-Z" || owner["Testlower"] != "A-L" || owner["Testmlower"] != "M-Z" {
-		t.Errorf("letter boundary wrong: %v", owner)
-	}
-}
-
 // The split's reconciliation must name a listed test that produced no result, and one that produced a result in
-// both halves; a clean split names neither.
+// two processes; a clean split names neither.
 func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
 	half := func(cell string, tests ...string) *results {
 		r := newResults()
@@ -574,11 +539,11 @@ func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
 		return r
 	}
 	listed := []string{"TestAlpha", "TestBeta", "TestMiddle", "TestZeta"}
-	missing, doubled := reconcileHalves(listed, []*results{half("a", "TestAlpha", "TestBeta"), half("b", "TestMiddle", "TestZeta")})
+	missing, doubled := reconcileGroups(listed, []*results{half("a", "TestAlpha", "TestBeta"), half("b", "TestMiddle", "TestZeta")})
 	if len(missing) != 0 || len(doubled) != 0 {
 		t.Fatalf("clean split: missing %v, doubled %v", missing, doubled)
 	}
-	missing, doubled = reconcileHalves(listed, []*results{half("a", "TestAlpha", "TestBeta", "TestMiddle"), half("b", "TestMiddle")})
+	missing, doubled = reconcileGroups(listed, []*results{half("a", "TestAlpha", "TestBeta", "TestMiddle"), half("b", "TestMiddle")})
 	if !slices.Equal(missing, []string{"TestZeta"}) || !slices.Equal(doubled, []string{"TestMiddle"}) {
 		t.Fatalf("got missing %v, doubled %v; want [TestZeta], [TestMiddle]", missing, doubled)
 	}

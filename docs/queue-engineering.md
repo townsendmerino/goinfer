@@ -454,8 +454,24 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B24 · the 26B test's bf16 checkpoint should load through memory-mapped safetensors, so its pages can be dropped rather than
+swapped** — `linux`, filed 2026-10-15 (owner, from B23). **Not started.**
+
+`TestGemma4_26B_1bBound` loads the 49 GB bf16 `gemma-4-26b-a4b-it` safetensors and peaks at 51,077 MB VmHWM alone, at
+`user-1000.slice`'s `memory.high`; with the desktop up its process swapped 24,064 MB (`docs/measurements/b23-cuda-heavy-split-2026-10-15.md`
+§1). Load its bf16 reference through memory-mapped safetensors instead of an in-memory copy, so the kernel can drop clean file pages
+under pressure instead of swapping anonymous ones. First find where the copy is made (the loader's bf16 read path, or the test).
+- **Gate, tier 1 (by day, under the timing lock):** the test's assertions unchanged and passing; its process's VmHWM and peak VmSwap
+  before and after, each read per process with `docs/measurements/kv2-cuda-2026-10-15/swap_sampler.py` on the prebuilt test binary.
+  The pass bar is a peak VmSwap that falls to under 64 MB with the desktop up (the GV-C(c) bar applied to the process), registered
+  with the before reading before the change is written.
+- **Tier 0:** a counter that the load path holds the file mapped rather than copied (bytes copied into the heap for the bf16
+  tensors), with a planted defect that restores the copy and turns it red.
+- **Then, only if the 26B result shows it is worth it:** the same for `TestGptOssResidentParityCUDA` (gpt-oss-20b),
+  `TestPagerDeterminism` (Qwen3.6-35B) and `TestGemma4EModel_realE4BAnchorDump` (E4B), each its own registration.
+
 **B23 · main's CUDA resident suite peaks near 38 GB and can swap whenever the desktop or page cache grows** — `linux`,
-filed 2026-10-15 (owner)
+filed 2026-10-15 (owner). **Option 1 built and merged; the four tests over 20 GB alone run under per-test budgets (option (a))**
 
 The test process of 33 of `./cuda/`'s resident tests (`Reuse|Slot|MC3|MC4|Lead|Resident…`, run with `GOINFER_HEAVY_TESTS=1`)
 has a peak resident set (`VmHWM`) of about 37–38 GB, on main and on KV2's tree alike. That is close to `user-1000.slice`'s
@@ -467,8 +483,29 @@ swap readings. Read in `docs/measurements/kv2-cuda-2026-10-15.md` §7 (the bisec
 - **For gates:** a night "never swap" gate judges on the test process's own `VmHWM` and peak `VmSwap`, and reports system
   swap in use as context only (CLAUDE.md, "Testing tiers"). A system-wide reading on this box moves by hundreds of MB that no
   test owns: KV2's CUDA heavy job read +511 MB that bisection put on main's suite near the slice's ceiling, not on KV2.
-- **Open, not started:** whether the suite should hold that much at once (it loads several real checkpoints in one process),
-  or the night runs should raise the slice's `memory.high` or run with the desktop logged out. That is for the owner.
+- **Owner decision 2026-10-15: option 1**, split the suite so each process holds one large model family, log each process's
+  VmHWM, aim for no process above about 20 GB, and change no test's assertions.
+- **Built 2026-10-15 (branch `b23-cuda-heavy-split`).** `cudaHeavy` runs the main group as
+  one process per model family, derived from the source by `heavyPartition` (a test that fits no group turns the tier red), and logs
+  each process's test-binary VmHWM and peak VmSwap to the output and the record. Basis: `docs/code-notes/cmd-gate.md`, "cudaHeavy:
+  one model family per process".
+- **Result: grouping cannot reach 20 GB, because single tests exceed it alone.** Measured by day, each group in its own process
+  (`docs/measurements/b23-cuda-heavy-split-2026-10-15.md`): `TestGemma4_26B_1bBound` 51 GB as the first test in its process (it
+  loads the 49 GB bf16 26B safetensors), `TestGptOssResidentParityCUDA` 45 GB alone, `TestPagerDeterminism` (Qwen3.6-35B) 42 GB
+  nearly alone, and `TestGemma4EModel_realE4BAnchorDump` and `TestCohereRealResidentParityCUDA` at most 36 and 37 GB. The 26B process
+  swapped 24 GB. The smaller families read 6 to 19 GB; qwen3-4b, qwen3-vl-2b, gemma3-4b and the small group (about 76 min together)
+  were not run by day.
+- **Owner decision 2026-10-15, option (a): accepted under per-test memory budgets, and merged.** Each budget is the measured reading
+  plus about 5% (the suite's ABBA spread), in MB as the gate prints them; a reading over budget is a regression to explain:
+  - `TestGemma4_26B_1bBound` (Gemma 4 26B): 54,000 MB, on 51,077 MB as the first test in its process. That reading is a floor: the
+    process sits at `user-1000.slice`'s `memory.high` (53,248 MiB) and swapped 24,064 MB of its own pages with the desktop up. Expect
+    it to swap whenever the desktop is logged in.
+  - `TestGptOssResidentParityCUDA` (gpt-oss-20b): 47,000 MB, on 44,651 MB alone.
+  - `TestPagerDeterminism` (Qwen3.6-35B-A3B): 44,000 MB, on 41,805 MB after a 3,931 MB test.
+  - `TestGemma4EModel_realE4BAnchorDump` (Gemma 4 E4B): 38,000 MB, on an upper bound of 35,852 MB.
+- **The four groups not run by day** (qwen3-4b, qwen3-vl-2b, gemma3-4b, small) get their readings from the next `gate gpu` run; no
+  separate run.
+- **Follow-up:** B24, loading the 26B test's bf16 checkpoint so its pages can be dropped rather than swapped.
 
 **B21 · `gate gpu`'s heavy main tier no longer fits its 120 m timeout** — `linux`, filed 2026-10-14. **FIXED 2026-10-14 by
 option (a), the split** (owner: on v0.23.0's path): `cudaHeavy` runs the main group as two processes by test name, reconciled both

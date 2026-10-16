@@ -24,6 +24,9 @@ type cell struct {
 	Dir     string            // working directory ("" = the process's own) — used by the
 	//                          mutation tests to point a cell at a scratch module
 
+	// OnStart, when set, is called with the `go` process's pid once it starts; the func it returns is called after
+	// the process exits. The heavy tier samples its test binary's memory this way.
+	OnStart func(pid int) (stop func())
 }
 
 // gateConfig is a whole gate: its matrix, and the knobs its DECISION needs. Everything that varies between
@@ -177,12 +180,17 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	// progress line is not part of the verdict document); the interval is env-tunable, and 0 or a bad value
 	// disables it.
 	stopBeat := startCellHeartbeat(c.Name, res, t0)
+	stopWatch := func() {}
+	if c.OnStart != nil {
+		stopWatch = c.OnStart(cmd.Process.Pid)
+	}
 	// Tee: the raw stream survives on disk (a panic that kills test2json mid-line still leaves
 	// evidence) while being parsed in one pass.
 	res.consume(io.TeeReader(stdout, logf))
 	stopBeat()
 	waitErr := cmd.Wait()
 	dur := time.Since(t0)
+	stopWatch()
 
 	rc := 0
 	if waitErr != nil {

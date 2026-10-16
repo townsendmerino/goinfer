@@ -63,6 +63,8 @@ usage:
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
+  gate cuda-heavy [-list] [-group a,b]             gpu's heavy main group, one process per model family: the partition, or
+                                                   chosen groups run alone with each test binary's VmHWM and peak VmSwap
   gate ptx [-keep DIR]                             every cuda/testdata/*.ptx rebuilt from its .cu at the NVRTC it records, compared
                                                    byte for byte; needs NVRTC, no GPU (GOINFER_NVRTC_DIRS names the installs)
   gate release [-offline] vX.Y.Z                   the pre-flight as rows: done / OWED / UNKNOWN each, with its record; exit 0 only when all are done
@@ -151,6 +153,10 @@ func run(argv []string, w io.Writer) int {
 	// `gpu-records` reads the records `gate gpu` wrote (gpu_record.go).
 	if name == "gpu-records" {
 		return runGPURecords(rest, w)
+	}
+	// `cuda-heavy` runs the heavy tier's main-group processes alone (heavy_groups.go).
+	if name == "cuda-heavy" {
+		return runCUDAHeavy(rest, w)
 	}
 	// `identity` takes two revs as positionals, interleaved with its flags (identity.go).
 	if name == "identity" {
