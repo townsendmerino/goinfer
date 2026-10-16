@@ -1,0 +1,35 @@
+{
+ "serve": "/home/francis/goinfer-bench/ids3-2026-10/bin/serve-cuda-ids3",
+ "swap_guard_mb": 4096,
+ "port": 18090,
+ "proxy_port": 18095,
+ "box": "nobara-pc (RTX 2070 SUPER 8 GB, driver 595.91.07)",
+ "commit": "2a0d11bb",
+ "configs": [
+  {
+   "name": "cc-opencode-mellum",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "opencode"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "3b day measure",
+    "harness": "opencode",
+    "route": "/v1/chat/completions"
+   }
+  }
+ ]
+}

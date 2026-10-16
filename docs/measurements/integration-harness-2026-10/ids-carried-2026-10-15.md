@@ -298,3 +298,89 @@ matcher only as KV rows), and with several slots it must use the slot the prompt
 ids do not cover (Chat Completions, `/v1/messages`) and re-tokenized replies on them, because it needs no carrier.
 
 **No night re-run** (owner): G-ids-3 is re-run only when there is another reason to.
+
+## Carried ids on /v1/messages (2026-10-15, by day, tier 0)
+
+Owner decision (item 3a): extend carried ids to `/v1/messages` through `thinking.signature`, with the same signing and
+checks and the Responses tier-0 gates, before any no-carrier work. (The no-carrier fix is declined for now: it would make
+the prompt depend on cache state, the model's bytes when warm and the template's when cold, which is what the carrier
+design avoided.)
+
+**Built.**
+- **The carrier.** The same v2 blob, minted by the same key and checked by the same `idsTurn`, rides in the reply's
+  `thinking` block as its `signature`. Streamed, it rides in the `signature_delta`, which carries the whole turn when the
+  block closes after the generation (straight into a tool call) and the ids up to the end of the reasoning when an answer
+  opens first.
+- **Carrier-only.** A reply that asked for thinking and has none gets a carrier-only `redacted_thinking` block whose `data`
+  is the blob, first, when no other block has opened. This is Responses' carrier-only item, with the same rule about
+  streamed prose.
+- **Input.** `anthropicTurnsCarried` reads the signature or data back. A value this server did not mint carries nothing,
+  and the visible thinking is used. The blob's text stands for the block's visible thinking, as on Responses. Two assistant
+  messages merged into one turn fall back as `decode`.
+- **Rendering.** `/v1/messages` and `count_tokens` render through `encodePrompt`, so the count is the generation's.
+- **One label fix found by these gates.** A formatting-only match that covers the turn but whose special ids miss the
+  template's is now `special`, as on the exact path, not `template`.
+
+**Tier 0** (all in `internal/serveapp/ids_carried_messages_test.go`):
+- **`TestIDsCarriedMessages_tinyFallbackAndKV`.** The Responses arms through the real handler on the tiny fixture, with a
+  `redacted_thinking` carrier.
+  - A-warm reused 33 of 58, and A-cold's prompt ids equal A-warm's.
+  - B (`mac`) and C (`key`) have D's prompt and output.
+  - `/admin/status` reads 4 carried, 2 used, `mac` 1, `key` 1.
+  - These are the Responses run's own numbers, as they should be: the same model, prompt and render.
+- **`TestIDsCarriedMessages_carriers`** (the scripted Mellum2.1 server):
+  - the whole-turn signature, streamed and not, for a turn that goes straight into a call;
+  - the carrier-only block, only when thinking was asked for;
+  - a streamed answer's signature carries ids up to `</think>`, and a non-streamed one carries the whole turn;
+  - echoed in the loop the ids are used, and after a new query the turn counts as `history`.
+- **`TestIDsCarriedMessages_G0`.** Step 0's 45 replies, each request translated to the Messages request a client sends, the
+  body encoded as a JavaScript client re-sends parsed JSON (compact, no HTML escaping).
+  - Carried and untouched, **the next prompt starts with the slot in 45 of 45; 44 of them by the closed list**: the client
+    sends `tool_use` input back compacted, and the model had spaced its arguments.
+  - Every planted defect (a), (b), (c), (d) and (e) to (m) gives today's tokenization, its reason and no error. Responses'
+    (k), a v1 blob, becomes a signature this server did not mint, which carries nothing.
+- **A mutation** that ignores carriers on input turned both the carriers test and the KV test red.
+- **Regressions:** the Responses tier-0 tests, G0 included (45 of 45), pass unchanged.
+
+**What 44 of 45 says.** Without the closed list, a carried turn on `/v1/messages` would fall back on nearly every real tool
+call: a Messages client does not send arguments back as bytes. The closed list was built for Responses' template
+scaffolding. On this route it is what makes carried ids work at all.
+
+## Chat Completions: template-formatting misses on opencode traffic (2026-10-15, by day): the count
+
+Owner item 3b: measure first whether opencode traffic hits template-formatting misses, and report the count before any
+design.
+
+**The archive could not answer it.** Job B of the I3 night (2026-10-13) ran opencode × Mellum2.1, 41 requests, but on a serve
+build that logged no reuse fields, no bodies and no token ids.
+
+**So a short day run.** opencode 1.19.0 × Mellum2.1 (`--ctx 16384 --moe-cache-experts`), tasks read, search and edit, one run
+each.
+- **Setup:** the G-ids-3 pin (serve `2a0d11bb`, with bodies and `--log-token-ids`), plan
+  `ids-carried-tier2/plan-cc-opencode.json`.
+- **Run:** 23:05 to 23:16 PDT under the timing lock. Output in `~/goinfer-bench/ids-cc-2026-10/out` on nobara.
+- **Result:** all 3 runs passed with no compactions; 25 requests in all.
+
+**Attribution method.** Each follow-up was attributed from the bodies and the token-id log, in a throwaway replay:
+1. Decode the previous reply's generated ids.
+2. Render the next request from its raw bytes.
+3. Compare the two (bytes verbatim; the closed list; reasoning dropped; or other).
+
+| follow-ups (24) | count | what |
+|---|---|---|
+| full | 8 | the prompt extended the slot |
+| **template formatting** | **9** | **every one opencode re-sending the call's `arguments` compacted (`{"pattern":"sum","path":"."}` where the model wrote `{"pattern": "sum", "path": "."}`): closed-list item 2** |
+| another conversation | 7 | opencode's own side requests take the one KV slot: the title generator (one per run; 2 here, request 1 being the first) and a context summarizer (1), and the main conversation's request after each side request (4) |
+| tokenization only (bytes verbatim) | 0 | |
+| reasoning dropped by the client | 0 | opencode sends the reasoning back; each reply's head renders identically |
+
+**What each miss costs here.** The divergence is at the first spaced separator in the arguments, which in these runs lay 8
+to 30 tokens before the reply's end. That is 144 tokens re-prefilled across the 9, all within the windowed-KV rollback floor
+(448), so every one was partial, never cold. The depth grows with the arguments' length: an `edit` or `write` call whose
+spaced arguments run past 448 tokens would make the follow-up cold.
+
+**Beside the count, not part of it:** the side requests cost far more. Each main-conversation request after one re-prefills
+7,505 to 8,877 tokens cold (TTFT 95 to 122 s, against 0.3 to 3.4 s warm) because the card holds one conversation.
+
+No design here, by the owner's order. If Chat Completions is worth building, its record must state that a carrier-less fix
+makes the prompt depend on cache state.
