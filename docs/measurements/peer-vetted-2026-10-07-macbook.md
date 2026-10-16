@@ -100,6 +100,33 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
 
 **Cost.** Night only: two cells (M3, then M2), two engines each, about 20-25 minutes of cells and loads. Queued at 40 minutes (25 before the amendment).
 
+### Amendment, 2026-10-16, before any timed run: M1 unblocked (owner: "Queue M1 ... for tonight, after a fit check at queue time; no bypass")
+
+- **What unblocked it:**
+  - Metal runs `--quant q4k` on its q4k lane (`docs/tasks/task-metal-q4k-2026-10.md`: G-Q1, G-Q2 and G-Q3 PASS).
+  - Since OP6's Metal half (#42), the lane prefills on the batched step.
+  - The fit guard prices q4k at what the load keeps (#41).
+- **The cell, M3's shape otherwise:** depth 128, greedy, 3 runs (pairs), 8 completions × 64 tokens a run, both engines on
+  Metal at context 2048, under the rules above unchanged: the swap void, the +1 GB kill, the decode-path gate, the
+  GOINFER-ALONE rule, the bands and `grade.py`.
+- **goinfer:** `--backend metal --quant q4k -require-backend` (`BENCH_QUANT_OVERRIDE=phi3-mini=q4k`; the harness's own default
+  for Phi-3 is int8int8). Its decode path must read `metal-resident (q4k)`; anything else is VOID. No `-moe-cache-experts`:
+  Phi-3 is dense.
+- **Ollama 0.32.5:** tag `p3m-local`, at its defaults. It is this file imported with `ollama create`, 195/195 tensors
+  identical (`scripts/bench_peer.py`'s note). The older `p3m` tag is a different revision and is not used.
+- **The fit check at queue time:** the pinned serve binary is started by day with the cell's flags, and its fit line is
+  read. A refusal by day is reported with its figures and is not bypassed; the night runs with the guard on, and a night
+  refusal is VOID.
+- **Provenance:** goinfer `42d72319`, `serve-metal` built from a clean worktree at it; the vetted file, sha256 `8a83c7fb…`.
+- **The fit check at queue time, 2026-10-16 06:56 PDT: REFUSED, so not queued.** The pinned serve with the cell's flags
+  printed "needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint = 5.6 GB" against a budget of
+  5.2 GB (70% of 7.4 GB available). Its weight-streaming retry declined too: the disk had 3.2 GB free against a sidecar of
+  about 4.4 GB. Log: `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-0656.log`. The next step is the owner's.
+- **Cost:** one cell, two engines, about 8 minutes of cells and loads; queued at 20.
+- **What it decides:** the owner's E5 ("yes to the default once the cell is read",
+  `docs/tasks/task-forward-architecture-2026-10.md` §7): the cell is read, and Metal's default load for Phi-3/4 becomes
+  `--quant q4k` by the owner's word on that reading.
+
 ## Results
 
 ### Night 1, 2026-10-07 23:25-23:27 PDT

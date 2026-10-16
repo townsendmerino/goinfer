@@ -1,0 +1,7 @@
+swap guard (load): armed for /Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+note: "/Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf" does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)
+load model (/Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf): decoder: Phi-3-mini-4k-instruct-q4.gguf needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 5.6 GB; this machine currently has 7.4 GB of memory available (budget 5.2 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it (auto weight-streaming retry also failed: stream-weights: refusing to transcode Phi-3-mini-4k-instruct-q4.gguf — projected sidecar size ~4.4 GB exceeds 3.2 GB free on this disk (a half-written sidecar on a full disk is worse than refusing up front); free some space and retry, or pass -direct-load to skip the sidecar entirely)
