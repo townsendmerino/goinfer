@@ -1,6 +1,7 @@
 package sampling
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -99,13 +100,20 @@ func TestGumbelDraw_goodnessOfFit(t *testing.T) {
 	slowTest(t)
 	const n = 1_000_000
 	rng := rand.New(rand.NewSource(1))
-	for _, T := range []float64{0.6, 1.0, 1.7} {
-		logits := gumbelTestLogits(rng, 40, 2)
-		z, df := chiSquareZ(drawCounts(t, logits, T, 7, n), softmaxRef(logits, T), n)
-		t.Logf("T=%.1f df=%d z=%+.2f", T, df, z)
-		if z <= -4.5 || z >= 4.5 {
-			t.Errorf("T=%.1f: chi-square z=%+.2f (df=%d) outside (-4.5, 4.5) — the draw is not softmax(l/T)", T, z, df)
-		}
+	temps := []float64{0.6, 1.0, 1.7}
+	logits := make([][]float32, len(temps)) // drawn in the temperatures' order, as the sequential loop drew them
+	for i := range temps {
+		logits[i] = gumbelTestLogits(rng, 40, 2)
+	}
+	for i, T := range temps { // each temperature is its own seeded sampler: parallel subtests draw the same counts
+		t.Run(fmt.Sprintf("T%.1f", T), func(t *testing.T) {
+			t.Parallel()
+			z, df := chiSquareZ(drawCounts(t, logits[i], T, 7, n), softmaxRef(logits[i], T), n)
+			t.Logf("T=%.1f df=%d z=%+.2f", T, df, z)
+			if z <= -4.5 || z >= 4.5 {
+				t.Errorf("T=%.1f: chi-square z=%+.2f (df=%d) outside (-4.5, 4.5) — the draw is not softmax(l/T)", T, z, df)
+			}
+		})
 	}
 }
 
@@ -116,12 +124,19 @@ func TestGumbelDraw_equivalentToLegacyDistribution(t *testing.T) {
 	rng := rand.New(rand.NewSource(2))
 	logits := gumbelTestLogits(rng, 200, 1.5)
 	T := 1.0
-	newC := drawCounts(t, logits, T, 11, n)
+	// The legacy draws run beside the new ones: two samplers with their own seeded streams, so the counts are the ones a
+	// sequential run gives.
 	old := NewSampler(SamplingParams{Temperature: T, Seed: 11})
 	oldC := make([]int, len(logits))
-	for range n {
-		oldC[old.sampleChunked(logits, T, old.rng.Float64())]++
-	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range n {
+			oldC[old.sampleChunked(logits, T, old.rng.Float64())]++
+		}
+	}()
+	newC := drawCounts(t, logits, T, 11, n)
+	<-done
 	// two-sample chi-square with equal n: sum (a-b)^2/(a+b) ~ chi2(df), bins with a+b < 40 merged.
 	var chi2, restA, restB float64
 	bins := 0

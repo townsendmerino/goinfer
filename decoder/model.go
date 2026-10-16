@@ -1678,6 +1678,15 @@ func (m *Model) tryClaimResident() bool {
 // the caller owns the channel so it can run post-generation bookkeeping (a Session reconciling its token list) before the
 // consumer observes the close. commit, if non-nil, is called with each id once its forward has committed that position to
 // the cache, the seam Session uses to track exactly what the cache holds. Terminal status lands on g.err.
+// kvRowCeiling is the context size a CPU KV cache may grow to: the pinned or requested context when there is one, else the
+// model's maximum positions (0 when neither is known).
+func (m *Model) kvRowCeiling() int {
+	if m.resCtxReq > 0 {
+		return m.resCtxReq
+	}
+	return m.w.Cfg.MaxPositions
+}
+
 func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, newCache func() *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
 	if len(prompt) == 0 {
 		g.err = fmt.Errorf("decoder.Generate: empty prompt")
@@ -1819,6 +1828,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
 		gpuPos = len(prompt)
 	} else {
+		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
 			g.err = err
 			return

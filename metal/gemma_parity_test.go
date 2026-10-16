@@ -166,3 +166,16 @@ func TestGemma3ResidentParity(t *testing.T) {
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "gemma3", st, 0.88) // int4-hostile: floor 0.92 (quantbar), 0.88 with margin
 }
+
+// TestGemma2ResidentParity is the registered gate G2-R (docs/tasks/task-forward-architecture-2026-10.md §4.6): Gemma 2 2B
+// through the same harness and at the bar TestGemma3ResidentParity uses, at int8int8 and at int4. Run it in one session
+// with TestDenseResidentParity and TestGemma3ResidentParity: the control failing voids the session, and a Gemma 2 min
+// cosine more than 0.03 under Gemma 3's from the same session is parked for the owner even when it clears the bar.
+func TestGemma2ResidentParity(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.ExpandEnv("$HOME/models/gemma-2-2b-it-Q8_0.gguf")
+	for _, quant := range []string{"int8int8", "int4"} {
+		st := residentParityAt(t, path, quant, seedPrompt(t, path, probeText), 24)
+		assertParity(t, "gemma2 "+quant, st, 0.88)
+	}
+}

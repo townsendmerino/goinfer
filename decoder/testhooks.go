@@ -9,6 +9,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"sync/atomic"
 
@@ -259,6 +260,12 @@ func SetSSMForceF32(v bool) { ssmForceF32 = v }
 // SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
 func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
+
+// GatedRMSNormGroupedForTest is the Mamba-2 mixer's grouped RMSNorm (gatedRMSNormGrouped): x, already y·silu(z), normalized in
+// place per group, times weight. A backend's gated-norm kernel is gated against it at group counts the tiny fixtures lack.
+func GatedRMSNormGroupedForTest(x, weight []float32, nGroups int, eps float64) {
+	gatedRMSNormGrouped(x, weight, nGroups, eps)
+}
 
 // DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's parity gate. The trunk's own
 // DraftBlock takes a Backend and cpuBackend is unexported, so a backend package (cuda/metal/gpu) cannot drive the reference
@@ -548,6 +555,21 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 		out = append(out, l...)
 	}
 	return out, nil
+}
+
+// SetAttnSoftcapOffForTest makes every model loaded while it is on load without its attention-score softcap, on the CPU
+// and on a resident alike (attnSoftcapOffForTest). It returns the previous setting.
+func SetAttnSoftcapOffForTest(on bool) (was bool) { return attnSoftcapOffForTest.Swap(on) }
+
+// StartAttnScoreStatsForTest counts every attention score the CPU caps from now until the returned stop is called, and
+// stop reports how many, how many had |score| > 15, and the largest |score|, all before the cap (attnScoreStatsForTest).
+func StartAttnScoreStatsForTest() (stop func() (n, over15 int64, maxAbs float64)) {
+	st := &attnScoreStats{}
+	attnScoreStatsForTest.Store(st)
+	return func() (int64, int64, float64) {
+		attnScoreStatsForTest.Store(nil)
+		return st.n.Load(), st.over15.Load(), math.Float64frombits(st.maxAbsBits.Load())
+	}
 }
 
 // KVBoundClassesForTest is the bound resident KV slot and the kernel class the KV manager recorded for each row of its

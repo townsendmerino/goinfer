@@ -1,6 +1,11 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"slices"
+	"sync/atomic"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // kvQuant selects the CPU KV-cache storage precision. kvF32 (default) is
 // bit-exact; kvI8 stores K and V as per-(position,KV-head) symmetric int8 + a
@@ -43,12 +48,17 @@ func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
 //
 // Not goroutine-safe: one cache belongs to one in-flight sequence.
 type KVCache struct {
-	numLayers  int
-	kvDim      int      // NumKVHeads * HeadDim
-	window     int      // sliding-window cap for local layers; 0 = unbounded
-	imgBlocks  [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
-	mropePos   [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position. (P5)
-	mropeDelta int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+mropeDelta (the image compresses positions, so delta is usually negative). (P5)
+	numLayers int
+	// planRows is the number of positions the current request expects the cache to end with (planRequest); rowCeiling is
+	// the context size it may never exceed (0 = unknown). regrownBytes is the old capacity a growth dropped during the
+	// position being appended, released to the OS at its last layer (kvRegrowReleaseBytes).
+	planRows, rowCeiling int
+	regrownBytes         int
+	kvDim                int      // NumKVHeads * HeadDim
+	window               int      // sliding-window cap for local layers; 0 = unbounded
+	imgBlocks            [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
+	mropePos             [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position. (P5)
+	mropeDelta           int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+mropeDelta (the image compresses positions, so delta is usually negative). (P5)
 	// deepstack is Qwen3-VL's DeepStack for the prefill that carries it: after decoder layer l, for l < len(rows), rows[l]
 	// ([n*hidden], one row per image position) is added to the hidden state at the image positions [start, start+n), as HF's
 	// _deepstack_process does. nil for every other prefill; a decode step never touches it.
@@ -341,11 +351,21 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 			c.stride[layer] = len(k) // per-layer KV width, learned on first append (M11)
 		}
 		if c.quant == kvI8 {
+			if len(c.keysQ[layer])+len(k) > cap(c.keysQ[layer]) {
+				c.regrowLayer(layer)
+			}
 			c.appendQuant(layer, k, v)
 		} else {
+			if len(c.keys[layer])+len(k) > cap(c.keys[layer]) {
+				c.regrowLayer(layer)
+			}
 			c.keys[layer] = append(c.keys[layer], k...)
 			c.vals[layer] = append(c.vals[layer], v...)
 		}
+	}
+	if layer == c.numLayers-1 && c.regrownBytes >= kvRegrowReleaseBytes {
+		c.regrownBytes = 0
+		releaseHostMemory()
 	}
 	// pos advances once per last-layer append so all layers stay in lockstep —
 	// unless manualPos (gemma4), where the caller calls Advance() after the sweep.
@@ -353,6 +373,56 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 		c.pos++
 	}
 	return c.pos
+}
+
+// kvRegrowReleaseBytes is the old KV capacity, summed over a position's layers, above which a growth returns freed memory
+// to the OS at once: below it the copy is left to the runtime's scavenger.
+const kvRegrowReleaseBytes = 64 << 20
+
+// kvRegrows counts KV layer growths (regrowLayer), for gates that assert a request within its plan never grows the cache.
+var kvRegrows atomic.Int64
+
+// planRequest records that the current request expects the cache to end with promptRows+budget positions, at most
+// ceiling (the context size; 0 = unknown). The prefill reserves to it, and a growth stops at the ceiling. A ceiling the
+// prompt already exceeds is not being enforced on this cache, so it is ignored rather than allowed to shrink the plan.
+func (c *KVCache) planRequest(promptRows, budget, ceiling int) {
+	if ceiling < promptRows {
+		ceiling = 0
+	}
+	rows := promptRows + max(budget, 0)
+	if ceiling > 0 {
+		rows = min(rows, ceiling)
+	}
+	c.planRows, c.rowCeiling = rows, ceiling
+}
+
+// regrowLayer grows one append-forever layer that has no room for another position, by the cache's growth policy: to a
+// quarter more rows than it holds, at least 256 more, and never past the context size while that leaves a row free. The
+// old arrays are dropped here, and their capacity is counted toward the release at the position's last layer.
+func (c *KVCache) regrowLayer(l int) {
+	st := c.stride[l]
+	held := len(c.keys[l]) / st
+	if c.quant == kvI8 {
+		held = len(c.keysQ[l]) / st
+	}
+	rows := held + max(held/4, 256)
+	if c.rowCeiling > held {
+		rows = min(rows, c.rowCeiling)
+	}
+	grow := (rows - held) * st
+	kvRegrows.Add(1)
+	if c.quant == kvI8 {
+		nKV := st / c.headDim
+		c.regrownBytes += cap(c.keysQ[l]) + cap(c.valsQ[l]) + 4*(cap(c.keyScale[l])+cap(c.valScale[l]))
+		c.keysQ[l] = slices.Grow(c.keysQ[l], grow)
+		c.valsQ[l] = slices.Grow(c.valsQ[l], grow)
+		c.keyScale[l] = slices.Grow(c.keyScale[l], (rows-held)*nKV)
+		c.valScale[l] = slices.Grow(c.valScale[l], (rows-held)*nKV)
+		return
+	}
+	c.regrownBytes += 4 * (cap(c.keys[l]) + cap(c.vals[l]))
+	c.keys[l] = slices.Grow(c.keys[l], grow)
+	c.vals[l] = slices.Grow(c.vals[l], grow)
 }
 
 // appendQuant quantizes one position's K/V per head and appends the int8 rows +
@@ -458,6 +528,48 @@ func (c *KVCache) AppendLatent(layer int, latent []float32) {
 
 // Latent returns the stored MLA latent history for a layer as [storedPos, latentDim].
 func (c *KVCache) Latent(layer int) []float32 { return c.mlaLatent[layer] }
+
+// prefillChunkable reports whether a text prefill into this cache may run in several passes: nothing on the cache keeps
+// per-pass state that a pass boundary would split (an image block, m-RoPE positions, DeepStack rows, a hidden-state
+// capture, a speculative tree, a caller-driven position).
+func (c *KVCache) prefillChunkable() bool {
+	return c.imgBlocks == nil && c.mropePos == nil && c.deepstack == nil && c.captureLayers == nil && !c.subCapture &&
+		c.treeRowPos == nil && c.treeMask == nil && !c.manualPos
+}
+
+// reserveRows grows each append-forever attention layer's arrays so that rows more positions append without reallocating.
+// Capacity only: nothing stored changes. A ring layer, and a layer whose width is not yet known (nothing written), is left
+// alone.
+func (c *KVCache) reserveRows(rows int) {
+	if rows <= 0 {
+		return
+	}
+	for l := range c.numLayers {
+		if c.rings[l] != nil {
+			continue
+		}
+		if c.mlaLatent != nil {
+			if c.latentDim > 0 {
+				c.mlaLatent[l] = slices.Grow(c.mlaLatent[l], rows*c.latentDim)
+			}
+			continue
+		}
+		st := c.stride[l]
+		if st == 0 {
+			continue
+		}
+		if c.quant == kvI8 {
+			nKV := st / c.headDim
+			c.keysQ[l] = slices.Grow(c.keysQ[l], rows*st)
+			c.valsQ[l] = slices.Grow(c.valsQ[l], rows*st)
+			c.keyScale[l] = slices.Grow(c.keyScale[l], rows*nKV)
+			c.valScale[l] = slices.Grow(c.valScale[l], rows*nKV)
+			continue
+		}
+		c.keys[l] = slices.Grow(c.keys[l], rows*st)
+		c.vals[l] = slices.Grow(c.vals[l], rows*st)
+	}
+}
 
 // Pos is the number of positions stored so far.
 func (c *KVCache) Pos() int { return c.pos }

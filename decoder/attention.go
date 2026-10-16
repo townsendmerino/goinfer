@@ -449,5 +449,33 @@ func softcapScore(s, c float64) float64 {
 	if c == 0 {
 		return s
 	}
+	if st := attnScoreStatsForTest.Load(); st != nil {
+		st.observe(s)
+	}
 	return c * math.Tanh(s/c)
+}
+
+// attnScoreStatsForTest, when set, counts the scores softcapScore caps: how many, how many past |15|, and the largest
+// |score|, before the cap. OP1's real Gemma 2 gate reads it (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-R's
+// planted arm). Set only through StartAttnScoreStatsForTest (goinfer_testhooks); nil costs one atomic load per capped
+// score and nothing for a model without a cap.
+var attnScoreStatsForTest atomic.Pointer[attnScoreStats]
+
+type attnScoreStats struct {
+	n, over15  atomic.Int64
+	maxAbsBits atomic.Uint64
+}
+
+func (st *attnScoreStats) observe(s float64) {
+	st.n.Add(1)
+	a := math.Abs(s)
+	if a > 15 {
+		st.over15.Add(1)
+	}
+	for {
+		old := st.maxAbsBits.Load()
+		if a <= math.Float64frombits(old) || st.maxAbsBits.CompareAndSwap(old, math.Float64bits(a)) {
+			return
+		}
+	}
 }

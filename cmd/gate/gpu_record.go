@@ -40,6 +40,20 @@ type gpuRecord struct {
 	HeavySkipped bool              `json:"heavy_skipped"`
 	Groups       gpuRecordGroups   `json:"groups"`
 	Trees        map[string]string `json:"trees"` // git tree id of each gpuQualifyingTrees directory at Commit, for a reader; qualification recomputes them
+	// HeavyProcesses is each heavy-tier main-group process's memory, as the never-swap rule reads it.
+	HeavyProcesses []heavyProcRecord `json:"heavy_processes,omitempty"`
+}
+
+// heavyProcRecord is one heavy-tier process: its group, how many tests it owned, its wall time, and its test binary's
+// VmHWM and peak VmSwap in MB (procPeak). Samples is 0 where /proc could not be read, and the two figures are then absent,
+// not zero.
+type heavyProcRecord struct {
+	Group      string `json:"group"`
+	Tests      int    `json:"tests"`
+	WallS      int    `json:"wall_s"`
+	Samples    int    `json:"samples"`
+	VmHWMMB    int64  `json:"vmhwm_mb,omitempty"`
+	VmSwapPkMB int64  `json:"vmswap_peak_mb,omitempty"`
 }
 
 type gpuRecordGroups struct {
@@ -74,7 +88,7 @@ func (g *gpuGate) writeRecord(verdict string) {
 	now := time.Now().UTC()
 	rec := gpuRecord{
 		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped,
-		GPU: g.gpuName, Trees: map[string]string{},
+		GPU: g.gpuName, Trees: map[string]string{}, HeavyProcesses: g.heavyProcs,
 		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
 	}
 	if b, err := exec.Command("uname", "-sm").Output(); err == nil {

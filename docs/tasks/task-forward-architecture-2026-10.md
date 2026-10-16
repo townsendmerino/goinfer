@@ -830,6 +830,14 @@ declared.**
 - **The registered next step:** a prompt set for long contexts, registered in advance, where the scores are larger. It is
   for the owner to commission; nothing is registered yet.
 
+**G2-R closed as void (owner, 2026-10-15).** No long-context prompt set will be registered, and no CPU comparison is added.
+
+- **The reason:** on these prompts the cap barely acts, so a dropped cap passes the model-level rule.
+- **What tests the Metal kernels instead:** G2-K. It is graded against a float64 reference, on inputs built so the scores
+  cross ±cap, and it reads 152 of 152 inside its bar, with all 152 red once the softcap is dropped (G2-D).
+- **G2-K and its plant now decide the Metal softcap declaration,** in G2-R's place in the order (§4.6, step 3) and among
+  the gates G2-M follows.
+
 **G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
 `cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
 can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
@@ -992,6 +1000,28 @@ Their gate:
 - **Tier 0:** the hardware matrix regenerated, with every cell's decline reasons unchanged except the split names.
 - **Plant:** a backend declaring the wrong half of a split must decline the family by name.
 
+**(a) and (b) built 2026-10-15; both gates pass.**
+
+- **(a)** One feature per non-gated activation, in `decoder/features.go`: `non-gated-gelu-tanh`, `non-gated-silu`,
+  `non-gated-relu2` and `non-gated-act-unknown`, beside `non-gated-gelu-erf`. Each backend declares the kernels it has:
+  - Metal's `act_quant` (`glu_act`'s two branches): GELU-tanh and SiLU;
+  - WebGPU's `relu2Quant`: squared ReLU;
+  - CUDA: no non-gated kernel, as before.
+- **(b)** `attn-output-gate` is three features:
+  - `attn-output-gate-softplus` (Laguna);
+  - `attn-output-gate-sigmoid` (Spark-X2.5);
+  - `per-layer-query-heads` (Laguna XS's per-layer query-head count, which the old feature carried along).
+
+  The gate features follow `hasAttnOutputGate`'s two cases, so the features and the forward cannot drift.
+- **Tier 0, the matrix:** `docs/hardware-matrix.md` changes in six rows, each only by the split names. No cell changed
+  whether it runs resident, and the capability matrix is unchanged.
+  - **The row that matters:** Nemotron-H on Metal now reads "missing: `non-gated-relu2`, `ssm`". When SSM on Metal lands,
+    Nemotron-H stays declined until Metal has a squared-ReLU kernel, instead of running `act_quant`'s GELU-tanh on it.
+- **The plant:** `TestFeatureSplits_wrongHalfDeclinesByName` gives each split's family a backend that declares the other
+  half: GPT-2 with SiLU, Nemotron-H with GELU-tanh, Laguna with sigmoid, Spark-X2.5 with softplus. Each declines,
+  naming exactly the half it lacks.
+  - **Planted:** Spark-X2.5 deriving softplus, and squared ReLU deriving GELU-tanh. Both went red, then restored.
+
 **OP2a, MLA on Metal.**
 - **Delivers:** DeepSeek-V2/V3 and Moonlight resident on Metal. Kimi K2 also needs a 384-expert router; that is not here.
 - **Size and box:** M–L, on the Mac.
@@ -1031,6 +1061,94 @@ Their gate:
     - **Metal:** the same checkpoint if it fits by day. If it doesn't fit, a layer slice by day, and the whole model at
       night after a by-day fit check.
   - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt.
+
+**OP2b on Metal: the gates, registered 2026-10-15 before any code.**
+
+**The build:**
+- The Mamba-2 decode kernels in MSL, ported from `gpu/mamba.go`'s shaders: the conv step with its window, the SSM step,
+  and the gated RMSNorm, per group (Nemotron-H) and over the full inner width (Granite-4.0-H).
+- A squared-ReLU branch in `glu_act`. It is a new ordinal (2); 0 and 1 stay as they are.
+- Metal's resident builder learns Nemotron-H's one-operation blocks: Mamba, NoPE attention and the non-gated MLP. The
+  recurrent state is kept per slot and reset with it.
+- `ssm` and `non-gated-relu2` are declared on Metal only after every gate below passes.
+
+**Tier 0, by day: synthetic kernels and tiny fixtures, seconds.**
+
+- **K, each new kernel against the CPU's own computation** (`decoder/mamba2.go:mamba2Step`'s pieces), on synthetic
+  inputs. The bar is `gpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3.
+  - The gated norm at one group and at several.
+  - The conv step over ≥ 2 steps past its window. One step inside the window cannot see a window error (CLAUDE.md's
+    minimal-repro rule).
+  - The SSM step over 64 steps, for drift.
+  - The squared-ReLU branch.
+- **D, plants: each must turn K red.**
+  - The conv window shifted by one.
+  - The softplus on dt dropped.
+  - The group norm taken over the full width where groups are asked for.
+  - Squared ReLU as plain ReLU.
+- **I, identity:** every existing kernel's digest equals base's (G1-K's instrument). Adding the new ordinal changes no
+  existing path.
+- **M, the tiny models against the CPU at the same quant:** `nemotron-tiny` and `granite-tiny` resident on Metal, at
+  int8int8 and int4, in greedy lockstep for 32 steps. Positions from 2 are graded.
+  - **The bar is relative, set by a control in the same session:** `llama-tiny` at the same quant through the same
+    harness.
+  - Each SSM fixture's min logit cosine must be at least the control's minus 0.001, with argmax equal on at least the
+    control's count minus 2.
+  - G2-T is why: its bar was copied without measuring the fixture's own baseline, and sat just under it.
+  - With the conv window plant from D in the Metal build only, M must fail.
+- **S, slots:**
+  - A recurrent family is declined by MC3's batched step and by KV2's sharing, as now.
+  - A test pins both declines.
+  - Two conversations taking turns on one slot, the state reset between them, each give the reply they give alone.
+
+**Tier 1, by day.**
+
+- **Fit-check first:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on Metal, about 5.5 GB.
+- **If it is admitted by day:** its resident run against the CPU at int4, by G2-R's harness and bars (min cosine ≥ 0.88,
+  argmax ≥ 50%), with the dense 1.5B control at 0.95, in one session.
+- **If not:** the same on a layer slice by day, and the whole model at night after a by-day fit check of every load.
+- The checkpoint is pulled to `~/models` first; the archive is never a read path.
+
+**Step 1, the kernels, read 2026-10-15** (branch `op2b-ssm-metal-2026-10`). All tier 0 gates pass.
+
+- **Built:**
+  - `metal/kernels/mamba_kernels_msl.go`: `mamba_conv`, `mamba_ssm` and `mamba_gnorm`, ported from `gpu/mamba.go`'s
+    shaders and appended to the library.
+  - `act_quant`'s squared-ReLU branch: `nongated_act`, ordinal 2, local to `act_quant`, so `glu_act`'s other callers keep
+    their code.
+  - Nothing reaches the new kernels yet.
+- **Two amendments, made before any run:**
+  - **K reads real inputs, not synthetic ones.** The CPU's own `mamba2Step` captures each step's in_proj output and gated
+    output on the tiny fixtures (`decoder.SetMambaCapHook`), and the Metal chain replays the in_proj output from a fresh
+    state.
+  - **The norm-group plant needs its own kernel case.** Both tiny fixtures have one group, so the grouped norm is gated at
+    4 groups against the CPU's `gatedRMSNormGrouped`, through a new test hook.
+- **K:**
+  - The chain against `mamba2Step` over 72 steps, worst cosine 1.000000000: `nemotron-tiny` max |diff| 1.2e-7,
+    `granite-tiny` 7.2e-7.
+  - The gated norm at 4 groups: 2.4e-7.
+  - `act_quant`'s squared ReLU: exact.
+- **D:**
+  - Conv taps shifted by one: red on both fixtures.
+  - Softplus on dt dropped: red on `nemotron-tiny`. `granite-tiny`'s dt sits where softplus is nearly the identity, so
+    there it moved the output by 4e-5 only; logged as that fixture's blind spot.
+  - One group over the full width: red (cosine 0.79).
+  - Plain ReLU for squared ReLU: red.
+  - K fails under every plant, as registered.
+- **I:**
+  - G1-K's 1,095 attention digests are equal on main (`69b37261`) and the branch.
+  - `act_quant` at ordinals 0 and 1 is bit-identical to the kernel rebuilt with `glu_act` in the branch's place.
+- **Found on the way:**
+  - The test's first run read Metal's gated output as all zeros, because the fixture's weight slices aliased a model the
+    test had already closed (fixed by copying them).
+  - It showed as a cosine of 1.0, because the shared `cosF32` returns 1 when one side is all zeros. The Mamba tests use
+    `mambaCos`, which scores that case 0. Other callers of `cosF32` still have the guard.
+- **Next, step 2:** the resident builder learns Nemotron-H's one-operation blocks, with the per-slot state, then M and S.
+
+**Not in this build:**
+- Granite-4.0-H's own bring-up gate (§4.5).
+- Nemotron-3-Nano's MoE.
+- A speed gate. The do-nothing arm is the CPU, about 15× slower.
 
 **OP2c, KDA.**
 - **Delivers:** Kimi Linear resident.

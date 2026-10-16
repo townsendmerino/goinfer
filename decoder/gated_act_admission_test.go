@@ -78,7 +78,7 @@ func TestGatedGELUErf_sparkNamesIt(t *testing.T) {
 			t.Errorf("%s admits spark2_5", be)
 		}
 		why := residentGateReason(a, be)
-		for _, f := range []ResidentFeature{FeatGatedGELUErf, FeatAttnOutputGate} {
+		for _, f := range []ResidentFeature{FeatGatedGELUErf, FeatAttnOutputGateSigmoid} {
 			if !strings.Contains(why, string(f)) {
 				t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, f)
 			}

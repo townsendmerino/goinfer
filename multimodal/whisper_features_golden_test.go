@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -78,6 +79,7 @@ func diffStats(a, b []float32) (maxAbs, mean float64) {
 }
 
 func TestWhisperFeatures_matchTransformers(t *testing.T) {
+	raceSubset(t)
 	g := loadWhisperGolden(t)
 	if len(g.meta.Cases) != 7 {
 		t.Fatalf("golden has %d cases, want 7", len(g.meta.Cases))
@@ -119,23 +121,32 @@ func TestWhisperFeatures_matchTransformers(t *testing.T) {
 // Each planted defect must put some case over the bar, against the NumPy path (the closer reference); the largest excess is logged so the margin is on record.
 func TestWhisperFeatures_plantedDefectsAreRed(t *testing.T) {
 	g := loadWhisperGolden(t)
-	for d := 1; d <= audio.WhisperDefectCountForTest; d++ {
-		var worst float64
-		for _, name := range []string{"libri", "libri80", "synth10"} {
-			mels := 128
-			if name == "libri80" {
-				mels = 80
-			}
-			got, _, err := audio.WhisperFeaturesDefectForTest(f32s(g.files[name+".in.f32"]), mels, d)
-			if err != nil {
-				t.Fatal(err)
-			}
-			mx, _ := diffStats(got, f32s(g.files[name+".np.f32"]))
-			worst = math.Max(worst, mx)
+	for d := 1; d <= audio.WhisperDefectCountForTest; d++ { // each defect is a pure function of its inputs: parallel subtests
+		t.Run(fmt.Sprintf("defect%d", d), func(t *testing.T) {
+			t.Parallel()
+			whisperFeaturesDefectRed(t, g, d)
+		})
+	}
+}
+
+// whisperFeaturesDefectRed is one planted defect of TestWhisperFeatures_plantedDefectsAreRed: its worst max |diff| over
+// the three clips must clear whisperMaxBar, and is logged so the margin is on record.
+func whisperFeaturesDefectRed(t *testing.T, g *whisperGolden, d int) {
+	var worst float64
+	for _, name := range []string{"libri", "libri80", "synth10"} {
+		mels := 128
+		if name == "libri80" {
+			mels = 80
 		}
-		t.Logf("planted defect %d: worst max |diff| %.3e against the bar %.0e", d, worst, whisperMaxBar)
-		if worst <= whisperMaxBar {
-			t.Errorf("planted defect %d stayed under the bar (%.3e): the bar is too loose or the seam is dead", d, worst)
+		got, _, err := audio.WhisperFeaturesDefectForTest(f32s(g.files[name+".in.f32"]), mels, d)
+		if err != nil {
+			t.Fatal(err)
 		}
+		mx, _ := diffStats(got, f32s(g.files[name+".np.f32"]))
+		worst = math.Max(worst, mx)
+	}
+	t.Logf("planted defect %d: worst max |diff| %.3e against the bar %.0e", d, worst, whisperMaxBar)
+	if worst <= whisperMaxBar {
+		t.Errorf("planted defect %d stayed under the bar (%.3e): the bar is too loose or the seam is dead", d, worst)
 	}
 }

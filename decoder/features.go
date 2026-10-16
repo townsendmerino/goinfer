@@ -33,7 +33,7 @@ const (
 	FeatParallelBlock     ResidentFeature = "parallel-block"      // one shared input norm; attn+MLP sum into a single residual add (Cohere, GPT-J)
 	FeatNoPE              ResidentFeature = "nope"                // per-layer NoPE: some layers skip RoPE entirely (Cohere2 global layers, Llama-4 iRoPE)
 	FeatGatedGELU         ResidentFeature = "gated-gelu"          // gated MLP whose activation is GELU-tanh, not SiLU (Gemma)
-	FeatNonGatedMLP       ResidentFeature = "non-gated-mlp"       // up→act→down, no gate (GPT-2, Nemotron relu²); the activation is whichever the backend's non-gated kernel has, except exact GELU (FeatNonGatedGELUErf)
+	FeatNonGatedMLP       ResidentFeature = "non-gated-mlp"       // up→act→down, no gate (GPT-2, Nemotron relu²); its activation is a feature of its own (FeatNonGatedGELUTanh and the rest)
 	FeatLearnedPos        ResidentFeature = "learned-pos"         // learned position embeddings, no RoPE (GPT-2)
 	FeatOutBias           ResidentFeature = "out-bias"            // additive bias on the attn output proj (GPT-2)
 	FeatLogitScale        ResidentFeature = "logit-scale"         // logits_scaling divisor (Granite)
@@ -44,17 +44,21 @@ const (
 	// FeatDeltaNet bundles the two departures of the Gated-DeltaNet hybrids, which always co-occur: the recurrent delta rule replacing softmax
 	// attention on 3 of every 4 layers (a fixed-size per-head matrix state: no KV cache, not position-truncatable), and attn_output_gate on the
 	// remaining layers (q_proj emits [query ‖ gate] per head at double width; the context is scaled by sigmoid(gate) before o_proj). A backend
-	// implementing one without the other would be admitted and silently run half the model wrong. The gate is not FeatAttnOutputGate's (a
+	// implementing one without the other would be admitted and silently run half the model wrong. The gate is not FeatAttnOutputGateSoftplus's (a
 	// separate g_proj through softplus), so declaring one must not admit the other.
 	FeatDeltaNet ResidentFeature = "deltanet" // Gated-DeltaNet mixer + fused attn output gate
 	// FeatAttnSink bundles gpt-oss's three departures: the learned per-head sink in the softmax denominator, the clamped interleaved-SwiGLU
 	// expert, and a router whose bias reaches the mixing weight rather than only the selection. A backend declares all three or none, and only
 	// after a real gpt-oss forward has run end to end on it: kernel-level parity is not end-to-end parity. History and the per-backend status:
 	// docs/code-notes/decoder.md#FeatAttnSink.
-	FeatAttnSink       ResidentFeature = "attn-sink"        // gpt-oss: softmax sink, clamped-SwiGLU expert, bias-weighted router (see above)
-	FeatAttnOutputGate ResidentFeature = "attn-output-gate" // attention output gate applied before o_proj (Laguna: ctx *= softplus(g_proj·h); Spark-X2.5: sigmoid), plus Laguna's per-layer query head count; a resident runner would skip both
-	FeatShortConv      ResidentFeature = "short-conv"       // LFM2 gated short-convolution mixer replacing attention on most layers (depthwise causal conv, a per-layer rolling window of the last K-1 inputs: stateful)
-	FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B: per-layer embeddings (PLE, hidden_size_per_layer_input>0), cross-layer shared KV, per-layer FFN width; runLayersGemma4 injects PLE per layer. A backend without the PLE branch would skip it and mis-run
+	FeatAttnSink ResidentFeature = "attn-sink" // gpt-oss: softmax sink, clamped-SwiGLU expert, bias-weighted router (see above)
+	// The attention output gate before o_proj, one feature per activation (a backend that builds one gate must not admit the
+	// other), and Laguna's per-layer query-head count, a separate property a gate kernel does not cover.
+	FeatAttnOutputGateSoftplus ResidentFeature = "attn-output-gate-softplus" // ctx *= softplus(g_proj·h) (Laguna)
+	FeatAttnOutputGateSigmoid  ResidentFeature = "attn-output-gate-sigmoid"  // ctx *= sigmoid(g_proj·h) (Spark-X2.5)
+	FeatPerLayerQueryHeads     ResidentFeature = "per-layer-query-heads"     // the query head count varies by layer (Laguna XS)
+	FeatShortConv              ResidentFeature = "short-conv"                // LFM2 gated short-convolution mixer replacing attention on most layers (depthwise causal conv, a per-layer rolling window of the last K-1 inputs: stateful)
+	FeatGemma4EModel           ResidentFeature = "gemma4-e-model"            // Gemma-4 E2B/E4B: per-layer embeddings (PLE, hidden_size_per_layer_input>0), cross-layer shared KV, per-layer FFN width; runLayersGemma4 injects PLE per layer. A backend without the PLE branch would skip it and mis-run
 	// FeatAttnTemp is the Llama4-style attention-temperature query scale (AttnTempBeta/AttnTempOrigMaxPos; Model.AttnTempScale,
 	// AttnTempParams). A path that does not apply it gives plausible-but-wrong logits at exactly the context lengths past
 	// original_max_position_embeddings it exists for, and the model otherwise needs nothing a backend lacks, so without this feature it
@@ -90,6 +94,12 @@ const (
 	// FeatNonGatedGELUErf is the same activation in a non-gated MLP (a GPT-2 checkpoint declaring "gelu" rather than "gelu_new"),
 	// needed in addition to FeatNonGatedMLP. A separate feature from FeatGatedGELUErf because it is a separate kernel.
 	FeatNonGatedGELUErf ResidentFeature = "non-gated-gelu-erf"
+	// The other non-gated activations, one feature each, needed in addition to FeatNonGatedMLP: a backend's non-gated kernel
+	// implements some and must not be handed another's ordinal. FeatNonGatedActUnknown names no kernel, as FeatGatedActUnknown.
+	FeatNonGatedGELUTanh   ResidentFeature = "non-gated-gelu-tanh"
+	FeatNonGatedSiLU       ResidentFeature = "non-gated-silu"
+	FeatNonGatedReLU2      ResidentFeature = "non-gated-relu2"
+	FeatNonGatedActUnknown ResidentFeature = "non-gated-act-unknown"
 	// FeatGatedActUnknown is what a gated MLP derives when its activation is none of SiLU, GELU-tanh and exact GELU. It names no
 	// kernel, so no backend may declare it (TestGatedAct_onlyTanhAndSiLUAdmitted): it exists so a new ActKind declines until
 	// residentFeatures gives it a feature of its own.
@@ -143,11 +153,22 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	// The MLP activation, not just the gate's presence: a glue kernel that hardcodes SwiGLU would run Gemma's gated GELU-tanh block silently
 	// wrong. One feature per gated activation, and the default arm is deliberate: a gated activation without a feature of its own must
 	// not derive one a backend declares, or GatedActResident hands its ordinal to a kernel that knows only GELU-tanh and SiLU. An arch
-	// that forgets to set Act reads as ActGeluTanh (ActKind's zero value) on the CPU and on a backend alike. A non-gated arch's
-	// activation is implied by FeatNonGatedMLP, except exact GELU, which no non-gated resident kernel has.
+	// that forgets to set Act reads as ActGeluTanh (ActKind's zero value) on the CPU and on a backend alike. A non-gated arch
+	// derives one feature per activation in the same way.
 	switch {
 	case a.NonGatedMLP:
-		add(a.Act == ActGelu, FeatNonGatedGELUErf)
+		switch a.Act {
+		case ActGeluTanh:
+			add(true, FeatNonGatedGELUTanh)
+		case ActSiLU:
+			add(true, FeatNonGatedSiLU)
+		case ActReLU2:
+			add(true, FeatNonGatedReLU2)
+		case ActGelu:
+			add(true, FeatNonGatedGELUErf)
+		default:
+			add(true, FeatNonGatedActUnknown)
+		}
 	case a.Act == ActSiLU:
 	case a.Act == ActGeluTanh:
 		add(true, FeatGatedGELU)
@@ -175,10 +196,12 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.pairwiseRoPE() && len(a.MRopeSection) > 0, FeatPairwiseMRoPE)
 	add(a.lfm2 != nil, FeatShortConv)
 	add(a.gptoss != nil, FeatAttnSink)
-	// Laguna's attention output gate and per-layer query-head count, and Spark-X2.5's sigmoid gate (arch.AttnGate == GateSigmoid): a generic
-	// attention-output gate that a resident runner would silently skip. hasAttnOutputGate is the predicate the forward dispatches on too, so
-	// the feature and the math cannot drift.
-	add(a.hasAttnOutputGate(), FeatAttnOutputGate)
+	// The attention output gate, by the activation the forward applies (hasAttnOutputGate's two cases: Laguna's softplus, keyed on
+	// arch.laguna, and arch.AttnGate == GateSigmoid), so the features and the math cannot drift; and Laguna's per-layer query-head
+	// count where its config gives one.
+	add(a.laguna != nil, FeatAttnOutputGateSoftplus)
+	add(a.AttnGate == GateSigmoid, FeatAttnOutputGateSigmoid)
+	add(a.laguna != nil && len(a.laguna.HeadsPerLayer) > 0, FeatPerLayerQueryHeads)
 	// Gemma-4 E-model (E2B/E4B) shape: PLE, cross-layer shared KV and variable per-layer FFN width, all co-present. PLE alone catches every
 	// real E-model; the shared-KV and FFN disjuncts make the decline complete against a PLE-less variant.
 	add(a.gemma4 != nil && (a.gemma4.HiddenSizePerLayerInput > 0 || a.gemma4.SharedKVLayers > 0 || len(a.gemma4.FFNPerLayer) > 0), FeatGemma4EModel)
@@ -517,6 +540,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)
 		FeatDeltaNet:       true, // Gated-DeltaNet engine + fused attn output gate (gpu/deltanet.go)
 		FeatNonGatedMLP:    true, // relu2Quant (Nemotron-H squared-ReLU)
+		FeatNonGatedReLU2:  true, // relu2Quant is the only non-gated activation kernel
 		FeatLogitScale:     true, // Granite logits_scaling — folded into the lm_head weight scale at BuildResident, not a host-side postcap
 		FeatRMSAddOne:      true, // (1+w) RMS offset
 		// The Gemma3/Gemma4/gpt-oss set. FeatEmbedScale needs no gpu/ code: embedResident applies √hidden host-side for every backend before
@@ -562,6 +586,8 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (metal/model.go: finalizeLogits)
 		FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, generalized with a hasBias flag for Cohere)
 		FeatNonGatedMLP:       true, // act_quant — up→act→down, no gate (GPT-2)
+		FeatNonGatedGELUTanh:  true, // act_quant's glu_act branches: GELU-tanh and SiLU only
+		FeatNonGatedSiLU:      true,
 		FeatLearnedPos:        true, // addLearnedPos — host-side wpe[pos] add, RoPE dispatch skipped (GPT-2)
 		FeatOutBias:           true, // gemv_w4a8_sa_bias_resid (o-proj) — GPT-2's attention output bias
 		FeatRopeMscale:        true, // rope kernel's scale param (kernels.go), proven in isolation (TestRope_mscale) and end-to-end via gpt-oss's YaRN (TestGptOssResidentParity) — ALSO admits Mellum, see note above
@@ -585,5 +611,11 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// resident gates that go red on the NeoX kernels (TestPairwiseRoPEResidentParityMetal, TestGlmOcrResidentParityMetal) and real checkpoints.
 		FeatPairwiseRoPE:  true,
 		FeatPairwiseMRoPE: true,
+		// The attention-score softcap is compiled into the kernel source for a model that has one (Model.AttnLogitSoftcapResident), on
+		// the three kernels a capped layer takes: attention, attention_i8 and the exact attention_prefill. The lane selectors keep
+		// such a layer off every other attention kernel, and the MC3 batched step declines it. The declaration rests on the kernel
+		// gates against float64, with the cap dropped as the control (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel).
+		// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+		FeatAttnLogitSoftcap: true,
 	},
 }
