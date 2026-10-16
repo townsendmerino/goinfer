@@ -1,4 +1,5 @@
 #include "kvtype.cuh" // KV_T / KV_LD: the cache element type of `attention` (the _kv16 twin module)
+#include "attnscore.cuh"
 // glue.cu — the per-token elementwise/attention kernels the GEMV-only projection omitted,
 // so the cgo-free CUDA decode measurement is end-to-end (docs/prompts/cuda-measure-e2e-decode.md).
 // Dense Qwen2/Llama decode. Compiled to PTX offline (NVRTC compute_75), go:embed'd, driver-JIT'd.
@@ -219,7 +220,7 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
         const KV_T* ks = kc + s * kvDim + kvh * hd;
         float dot = 0.f;
         for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
-        dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
+        dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }

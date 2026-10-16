@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -448,6 +449,13 @@ func TestAttnKernelDigests(t *testing.T) {
 		}
 		n := min(len(ids), 8)
 		t.Errorf("%d case(s) %s, first %d: %v", len(ids), what, n, ids[:n])
+	}
+	byKernel := map[string]int{}
+	for _, id := range diff {
+		byKernel[id[:strings.IndexByte(id, '/')]]++
+	}
+	if len(byKernel) > 0 {
+		t.Errorf("cases with a different digest, by kernel: %v", byKernel)
 	}
 	show("have a different digest from base's", diff)
 	show("are in the committed file and no longer driven", missing)

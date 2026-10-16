@@ -1,5 +1,6 @@
 #include <cuda_fp16.h>
 #include "kvtype.cuh"
+#include "attnscore.cuh"
 
 // prefill_batched.cu — the batched (M=len) counterparts of the per-token glue kernels, for the
 // weight-stationary prefill path. Each is the existing M=1 kernel with an M dimension added; the
@@ -205,7 +206,7 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
         for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
-        dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
+        dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
