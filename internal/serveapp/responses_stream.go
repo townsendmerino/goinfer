@@ -20,6 +20,8 @@ type respStream struct {
 	// opens; rsnDone is it as the final response lists it, once closed.
 	rsn     *respMsg
 	rsnDone map[string]any
+	// mint gives the reasoning item its carried-id blob when it closes (carried_ids_mint.go); nil keeps the v1 text blob.
+	mint *carriedMint
 }
 
 type respMsg struct {
@@ -63,11 +65,26 @@ func (r *respStream) closeReasoning() map[string]any {
 	if r.rsn != nil {
 		text, idx := r.rsn.text.String(), r.rsn.index
 		r.rsn = nil
-		r.rsnDone = reasoningItem(r.rsnID(), text)
+		r.rsnDone = reasoningItem(r.rsnID(), text, r.mint.blob(text))
 		r.emit("response.reasoning_text.done", map[string]any{"item_id": r.rsnID(), "output_index": idx, "content_index": 0, "text": text})
 		r.emit("response.output_item.done", map[string]any{"output_index": idx, "item": r.rsnDone})
 	}
 	return r.rsnDone
+}
+
+// carrierOnly announces and closes a reasoning item with no text whose encrypted_content is enc, as the first item: false
+// (and nothing sent) when an item has already opened.
+func (r *respStream) carrierOnly(enc string) bool {
+	if r.idx != 0 || r.rsn != nil || r.rsnDone != nil || r.msg != nil {
+		return false
+	}
+	idx := r.idx
+	r.idx++
+	r.rsnDone = reasoningItem(r.rsnID(), "", enc)
+	r.emit("response.output_item.added", map[string]any{"output_index": idx, "item": map[string]any{
+		"type": "reasoning", "id": r.rsnID(), "summary": []any{}}})
+	r.emit("response.output_item.done", map[string]any{"output_index": idx, "item": r.rsnDone})
+	return true
 }
 
 func (r *respStream) openMessage() {

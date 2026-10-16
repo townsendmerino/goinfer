@@ -736,7 +736,8 @@ to ignore.**
   reasoning of a turn that went on to answer in prose is not taken.
 - **Reasoning items on /v1/responses.** A reply that reasons returns a `reasoning` output item ahead of its message and
   calls: `summary` is empty (serve writes no summary), `content` holds the reasoning as one `reasoning_text` part, and
-  `encrypted_content` holds the same bytes, base64, after the prefix `goinfer-reasoning-v1:`. That value is not encrypted,
+  `encrypted_content` holds the same bytes, base64, after the prefix `goinfer-reasoning-v1:` (or, with the reply's token
+  ids, `goinfer-reasoning-v2:`: "Carried token ids" below). That value is not encrypted,
   and it is opaque only by convention: it exists so the client sends it back unchanged. Streamed, the item opens on the
   first reasoning fragment, the text arrives as `response.reasoning_text.delta` events, and the item closes before the
   message or the first call opens.
@@ -754,6 +755,32 @@ to ignore.**
   in full on CUDA windowed-KV models, where a rollback past the window's slack forces a cold prefill. Sent back, the
   next prompt extends the previous prompt plus the generated tokens. `usage.input_tokens_details.cached_tokens` reports
   the prompt tokens a prior turn's KV covered.
+- **Carried token ids on /v1/responses.** Echoed text re-tokenizes to the tokenizer's own split of it, which is not always
+  the split the model generated (about one reply in eleven on Codex traffic: a JSON escape, `"]}` in prose, a lone space),
+  and the next prompt then leaves the KV inside the reply. So the reasoning item's `encrypted_content` carries the reply's
+  generated token ids as well: `goinfer-reasoning-v2:` then base64 of the reasoning text, the ids (varint-packed), the
+  identity of the model and tokenizer, the namespace, a key id and an HMAC-SHA256 over everything but the text. The key is
+  32 random bytes made at start and never written (`--ids-key-file` names a file to use instead, 32 bytes or more, mode
+  0600; not checked on Windows, whose mode bits do not carry it, and serve warns at startup there), to keep the ids valid across restarts or between servers sharing it). A reply with no reasoning gets a
+  **carrier-only** reasoning item (empty `content`, the blob alone) when the request asked for
+  `include: ["reasoning.encrypted_content"]`, as Codex does; without that, or when the client drops reasoning items, a
+  reply's ids do not ride back. Streamed, the reasoning item closes when the answer starts, so a streamed answer's item
+  carries the ids up to the end of the reasoning block only; a call is emitted after the turn ends, so the item before it
+  carries the whole turn.
+  When the turn is echoed back, its ids are used **only** if the blob verifies (this server's key id and MAC, this model,
+  this namespace) and the ids decode exactly to the turn's text as the template renders it, special tokens on the
+  template's special tokens, or differ from it only in formatting the template writes itself: newlines next to the
+  reasoning delimiters, and JSON whitespace around the separators of a tool-call block outside its strings (the model
+  writing `Now</think>` where the template renders `Now\n</think>`, or `"arguments":{` for `"arguments": {`). Then the
+  model's own bytes stand in for the template's over that turn. Anything else tokenizes the turn exactly as a request with
+  no blob, and is counted: `v1` (no ids), `parse`, `mac`, `key` (another key: after a restart with the default key),
+  `model`, `ns`, `special`, `decode` (the content differs: a client edit), `history` (the template drops this turn's
+  reasoning, as Mellum2.1 and the Qwen families do for turns before the last user query), `template` (the difference is
+  formatting only, but the ids have no single place in the render). `-log-requests` writes
+  `ids=<used>/<carried> ids_fallback=<reasons>`, then `ids_fmt=<n>` when n of the used turns replaced template formatting,
+  per request, and `GET /admin/status` the totals since start (`carried_ids`). The prompt ids are then a function of the
+  request alone, never of what the KV holds. Not covered: Chat Completions and `/v1/messages` (no carrier yet), and a
+  reply whose calls the client echoes as separate turns.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

@@ -1,0 +1,5 @@
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+[cuda] C′ cache: 64 slots/layer would need 6.3 GB VRAM but only 6.2 GB free — capping to 57 (5.8 GB)
+  context: 16384 tokens (--ctx; model maximum 131072) · KV f32
+  fit: 16384-token cap needs 0.6 GB KV (weights 6.4 GB, budget 34.8 GB, 34.3 GB left for a request's own prefill)
+  KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)

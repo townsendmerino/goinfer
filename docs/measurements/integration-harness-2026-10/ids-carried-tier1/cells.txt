@@ -1,0 +1,15 @@
+# Tier 1 cells (Amendment 1): the 4 misses and 8 controls from the 41 that held, in select.txt's order.
+# misses: write-r2#4 #5, fix-r3#1 #9; escapes: write-r3#8 #10; ./...: write-r2#8, fix-r3#7; code: write-r2#2 #3;
+# the non-ASCII reply that held: write-r2#10; none of the four: write-r2#0.
+write-r2-041205#0
+write-r2-041205#2
+write-r2-041205#3
+write-r2-041205#4
+write-r2-041205#5
+write-r2-041205#8
+write-r2-041205#10
+fix-r3-052213#1
+fix-r3-052213#7
+fix-r3-052213#9
+write-r3-043705#8
+write-r3-043705#10

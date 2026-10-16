@@ -1,0 +1,745 @@
+{
+ "serve": "PINNED/bin/serve-cuda-ids3",
+ "swap_guard_mb": 4096,
+ "port": 18090,
+ "proxy_port": 18095,
+ "box": "nobara-pc (RTX 2070 SUPER 8 GB, driver 595.91.07)",
+ "commit": "PINNED-AT-QUEUE-TIME",
+ "configs": [
+  {
+   "name": "ids3-off-read-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-read-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-search-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "search"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-search-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "search"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-edit-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-edit-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-write-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "write"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-write-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "write"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-fix-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-fix-r1",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 1,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-read-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-read-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-search-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "search"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-search-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "search"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-edit-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-edit-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-write-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "write"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-write-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "write"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-fix-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-fix-r2",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 2,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-read-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-read-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "read"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-search-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "search"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-search-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "search"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-edit-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-edit-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "edit"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-on-write-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "write"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  },
+  {
+   "name": "ids3-off-write-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "write"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-off-fix-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts",
+    "--carry-ids=false"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "off",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids off"
+   }
+  },
+  {
+   "name": "ids3-on-fix-r3",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "codex"
+   ],
+   "tasks": [
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "bodies": true,
+   "token_ids": true,
+   "label": {
+    "gate": "G-ids-3",
+    "arm": "on",
+    "rep": 3,
+    "regime": "mellum-16k-codex-f: Mellum2.1 int4, C' expert streaming, -ctx 16384, KV f32; carried ids on"
+   }
+  }
+ ]
+}

@@ -499,6 +499,17 @@ half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md
   cosine ≥ 0.88, argmax ≥ 50%, the dense 1.5B control ≥ 0.95).
 - **After the v17 bundle is built:** nobara's 19.2 GB v16 .giw is deleted.
 
+**B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
+PR #31's Windows CI). **Not started.**
+
+Both checks read Unix mode bits, which Windows does not carry: every file reads as 0666. `readIDsKeyFile` therefore skips its
+owner-only check there and serve prints `permissions not checked on Windows` at startup, and `adminSocketDirSafe` returns early.
+On Windows the question is the file's or directory's DACL: an entry granting read (the key) or write (the socket's directory)
+to anyone but the owner, SYSTEM and Administrators.
+- **Tier 0 when it starts** (a Windows CI job): a key file with an inherited `Everyone:R` entry is refused and one restricted to
+  the owner loads; a socket directory writable by `Users` is refused; a planted defect (the check reading the wrong ACE type)
+  turns it red.
+
 **B25 · a .giw form for `--quant q4k`** — filed 2026-10-15 (owner, from OP6's tier 1). **Not started; for later.**
 
 A q4k load keeps each dense projection the GGUF stores as Q4_K in its own super-blocks, but `giwWriter.weightMatKind`

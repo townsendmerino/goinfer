@@ -13,6 +13,11 @@ type emptyAnswer struct {
 // turnOutcome is what streamTokens records about a generation's answer as it runs. prepare gives every request one.
 type turnOutcome struct {
 	answered bool // answer text other than whitespace reached onText
+	// ids are the ids generated so far (all of them once done); stopHit says a stop string ended the turn, so the ids run
+	// past the text the client received. Read by carried-id minting (carried_ids_mint.go).
+	ids     []int
+	done    bool
+	stopHit bool
 }
 
 // emptyAnswerOf is the reason a finished turn has no answer, or nil when it has answer text or a tool call, or when its
