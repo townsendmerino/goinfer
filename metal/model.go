@@ -175,6 +175,8 @@ type residLayer struct {
 	// mamba non-nil marks a Mamba-2 mixer layer (mamba.go): like delta, no KV cache, no q/k/v/o, no geom. A layer with
 	// neither and a nil geom has no mixer at all (decoder.MixerNone: Nemotron-H's MLP blocks).
 	mamba *mambaLayer
+	// mla non-nil marks an MLA layer (mla.go): its KV cache is the latent rows in kc (vc aliases it), and it has no geom.
+	mla *mlaLayer
 	// ffn is whether a feed-forward block follows the mixer (decoder.Model.ResidentLayerOps); false on Nemotron-H's
 	// Mamba and attention blocks.
 	ffn bool
@@ -571,8 +573,12 @@ type resident struct {
 	uDnValueDim                                                                    Buffer // dnet.valueDim — the out_proj GEMV's K (input width)
 
 	// The Mamba-2 mixer (mamba.go); mamba nil ⇒ no Mamba layer, and nothing below is allocated.
-	mamba                                                      *mambaParams
-	pMbConv, pMbSSM, pMbGNorm                                  Pipeline
+	mamba                     *mambaParams
+	pMbConv, pMbSSM, pMbGNorm Pipeline
+	// MLA (mla.go); mla nil ⇒ no MLA layer, and nothing of mlaS is allocated.
+	mla                                                        *mlaParams
+	mlaS                                                       *mlaScratch
+	pMlaStore, pMlaHeadMV, pMlaQRope, pMlaAttn                 Pipeline
 	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc                  Buffer // per-token scratch: in_proj output, conv output, SSM output, gated output and its int8 form
 	uMbConvDim, uMbK, uMbDInner, uMbNH, uMbHD, uMbDS           Buffer
 	uMbRep, uMbGSize, uMbDtBase, uMbGroupSize, uMbZero, uMbEps Buffer
@@ -1078,6 +1084,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
+	for _, p := range mlaSrcPlantForTest {
+		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1218,6 +1227,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.mamba != nil {
 		r.buildMambaScratch(d, pipe, m.NormEps())
 	}
+	if r.mla, err = buildMLA(m, r.nH, H); err != nil { // MLA; nil otherwise; error ⇒ decline
+		return nil, err
+	}
+	if r.mla != nil {
+		if r.kvI8 {
+			return nil, fmt.Errorf("metal: an MLA model keeps its latent cache in f32; int8 KV (-kv i8) does not apply, so it runs on the CPU")
+		}
+		r.pMlaStore, r.pMlaHeadMV, r.pMlaQRope, r.pMlaAttn = pipe("mla_store"), pipe("mla_head_mv"), pipe("mla_qrope"), pipe("mla_attn")
+		r.mlaS = buildMLAScratch(d, m, r.mla)
+	}
 	if r.dnet != nil {
 		dp := r.dnet
 		r.pDnConv, r.pDnGates = pipe("delta_conv"), pipe("delta_gates")
@@ -1304,7 +1323,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
 		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 &&
-		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
+		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
+		r.mla == nil // MLA's latent attention is in no prefill kernel
+
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -1398,6 +1419,25 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				return nil, e
 			}
 			L.mamba = ML
+		} else if mixer == decoder.MixerMLA {
+			// MLA (mla.go): the latent rows are this layer's KV cache, in kc with its slots as for attention (vc aliases kc).
+			if r.mla == nil {
+				return nil, fmt.Errorf("metal: layer %d is an MLA layer but the model gives no MLA geometry", l)
+			}
+			ML, e := buildMLALayer(d, m, l, H, r.mla)
+			if e != nil {
+				return nil, e
+			}
+			L.mla = ML
+			kvBytes := (r.ctxCap + 7) / 8 * 8 * r.mla.latDim * 4
+			allocSlots := 1
+			if kvSlots > 1 {
+				allocSlots = kvSlots
+				r.kvContig = true
+			}
+			r.kvSlotBytes[l] = kvBytes
+			r.kc[l] = byteBuf(d, kvBytes*allocSlots)
+			r.vc[l] = r.kc[l]
 		} else if mixer == decoder.MixerNone {
 			// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
 		} else if dnetOK && attnGate {
@@ -1880,6 +1920,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		for B := 2; B <= batchMaxSeqs; B++ { // the batched step's projections, B rows per weight read (batch_rows.go)
 			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
 		}
+	}
+	if maxNHhd == 0 { // no attention layer (an all-MLA model): the attention scratch below is never dispatched, but sized
+		maxNHhd, maxKvDim, maxHd = 4, 4, 4
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
@@ -2924,6 +2967,8 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		r.encodeDeltaNetMixer(e, L)
 	case L.mamba != nil:
 		r.encodeMambaMixer(e, L, x) // Mamba-2 mixer (mamba.go), the same place in the layer as DeltaNet's
+	case L.mla != nil:
+		r.encodeMLAMixer(e, l, L, x, uPos, rp, uNKeys) // MLA (mla.go): its own attention block over the latent rows
 	case L.geom == nil:
 		// no mixer: a feed-forward-only block
 	default:

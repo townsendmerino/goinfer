@@ -29,6 +29,8 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 		return &decoder.KVCopyDecline{Reason: "one KV slot"}
 	case r.recurrentModel():
 		return &decoder.KVCopyDecline{Reason: "recurrent state is not part of a KV slot"}
+	case r.mla != nil && !mlaKVCopyDeclineOffForTest:
+		return &decoder.KVCopyDecline{Reason: "an MLA layer's latent rows are not copied (this copy moves K and V rows)"}
 	}
 	if start == end {
 		return nil

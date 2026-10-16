@@ -1755,6 +1755,7 @@ const (
 	MixerDeltaNet                       // the Gated-DeltaNet recurrence (Qwen3.5/3.6, Qwen3-Next, Olmo Hybrid)
 	MixerMamba                          // the Mamba-2 recurrence (Nemotron-H, Granite-4.0-H)
 	MixerNone                           // no mixer: a feed-forward-only block (Nemotron-H's MLP and MoE blocks)
+	MixerMLA                            // multi-head latent attention over a latent cache (DeepSeek-V2/V3, Kimi K2)
 )
 
 // Recurrent reports whether the mixer keeps per-sequence recurrent state instead of a KV cache.
@@ -1780,6 +1781,8 @@ func (m *Model) ResidentLayerOps(i int) (mixer ResidentMixer, ffn bool) {
 		return MixerDeltaNet, true
 	case a.granite != nil && a.isMambaLayer(i):
 		return MixerMamba, true
+	case a.mla != nil:
+		return MixerMLA, true
 	}
 	return MixerAttention, true
 }
