@@ -1220,7 +1220,8 @@ Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for th
 **Tier 1's whole model cannot load on the Mac, by day or by night (2026-10-15).** The int4 .giw that nobara built from
 the registered Q8_0 GGUF (`make-nemotron-giw.sh`, at `6622df20`) is 19.2 GB. Its Mamba projections stay f32 in the
 bundle, about 0.59 GB a Mamba layer over 27, and only the attention and MLP matrices take int4. That is more than the
-Mac's 16 GB RAM, so the fallback's night half cannot run here. The §4.6 estimate of about 5.5 GB assumed every matrix at int4.
+Mac's 16 GB RAM, so the fallback's night half cannot run here. The fit-check line's 5.5 GB above assumed every matrix
+at int4.
 
 **Tier 1 on a layer slice, registered 2026-10-15 before any run (the registered fallback, by day).**
 
@@ -1240,6 +1241,14 @@ Mac's 16 GB RAM, so the fallback's night half cannot run here. The §4.6 estimat
 - **A refused load** (the fit guard or Metal's memory guard) is VOID, not FAIL. No guard is bypassed.
 - **Not answered by the slice:** the whole model's agreement. That needs a smaller bundle, quantized Mamba projections
   (filed with the reading), or a box that holds 19.2 GB.
+
+**Tier 1 on the slice, read 2026-10-15 22:36 PDT: PASS.** By day, under the timing lock. The fit guard and Metal's memory
+guard admitted both loads; nothing was bypassed. Record: `docs/measurements/op2b-step2-2026-10/tier1-slice-2026-10-15/`.
+
+- **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
+- **The Nemotron-H slice:** min cosine 0.994410 against 0.88; argmax 29/32 against 16. **PASS.**
+- **What stays open:** the whole model, for which this Mac has no room, and filed as B26 (`docs/queue-engineering.md`).
+  The declaration of `ssm` and `non-gated-relu2` waits for the owner's word on whether the slice stands for tier 1.
 
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
