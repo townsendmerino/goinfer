@@ -1088,9 +1088,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
-	for _, p := range mlaSrcPlantForTest {
-		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
-	}
 	if err != nil {
 		return nil, err
 	}

@@ -223,7 +223,7 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 10m -run '^TestNemotronResident_tier1Slice$' -v ./metal/
 func TestNemotronResident_tier1Slice(t *testing.T) {
-	nemotronTier1(t, fmt.Sprintf("nemotron-nano-9b-v2.slice-0-1-14.int4-metal.v%d.giw", decoder.GIWFormatVersion), "slice 0,1,14")
+	nemotronTier1(t, fmt.Sprintf("nemotron-nano-9b-v2.slice-0-1-14.int4-metal.v%d.giw", decoder.GIWFormatVersion), "Nemotron-H slice 0,1,14")
 }
 
 // TestNemotronResident_tier1Whole is OP2b's tier 1 on Metal on the whole NVIDIA-Nemotron-Nano-9B-v2 (§4.7; B27 brought its
@@ -231,18 +231,24 @@ func TestNemotronResident_tier1Slice(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -run '^TestNemotronResident_tier1Whole$' -v ./metal/
 func TestNemotronResident_tier1Whole(t *testing.T) {
-	nemotronTier1(t, fmt.Sprintf("nemotron-nano-9b-v2-int4-metal.v%d.giw", decoder.GIWFormatVersion), "whole 9B")
+	nemotronTier1(t, fmt.Sprintf("nemotron-nano-9b-v2-int4-metal.v%d.giw", decoder.GIWFormatVersion), "Nemotron-H whole 9B")
 }
 
 // nemotronTier1 runs the dense 1.5B control, then the Nemotron-H bundle ~/models/nemotron/<file>, each resident on Metal
 // against the CPU model it was built from: 32 steps of greedy lockstep graded from position 2. The control under min
 // cosine 0.95, or a missing or refused load, is VOID; the bundle passes on min cosine >= 0.88 and argmax >= 50%.
 func nemotronTier1(t *testing.T, file, label string) {
+	home, _ := os.UserHomeDir()
+	residentTier1(t, filepath.Join(home, "models", "nemotron", file), label)
+}
+
+// residentTier1 is nemotronTier1 on the bundle or GGUF at path: the dense 1.5B control first, then path, each resident on
+// Metal against the CPU model it was built from, with the same bars and voids.
+func residentTier1(t *testing.T, path, label string) {
 	requireHeavyModel(t)
 	const steps = 32
 	home, _ := os.UserHomeDir()
 	ctrlPath := filepath.Join(home, "models", fmt.Sprintf("qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v%d.giw", decoder.GIWFormatVersion))
-	path := filepath.Join(home, "models", "nemotron", file)
 	for _, p := range []string{ctrlPath, path} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("VOID: %s is missing", p)
@@ -277,7 +283,7 @@ func nemotronTier1(t *testing.T, file, label string) {
 	}
 	nemo := residentLockstepAt(t, path, opts, steps)
 	pass := nemo.minCos >= 0.88 && 2*nemo.exact >= nemo.steps
-	t.Logf("Nemotron-H %s: min cosine %.6f, argmax %d/%d -> %s", label, nemo.minCos, nemo.exact, nemo.steps,
+	t.Logf("%s: min cosine %.6f, argmax %d/%d -> %s", label, nemo.minCos, nemo.exact, nemo.steps,
 		map[bool]string{true: "PASS", false: "FAIL"}[pass])
 	if !pass {
 		t.Errorf("%s misses G2-R's bars (min cosine >= 0.88, argmax >= 50%%)", label)

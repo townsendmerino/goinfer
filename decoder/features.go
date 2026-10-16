@@ -623,5 +623,10 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// the CPU; the whole-model run is owed under B27 (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
 		FeatSSM:           true,
 		FeatNonGatedReLU2: true,
+		// Multi-head latent attention (metal/mla.go: mla_store, mla_head_mv, mla_qrope, mla_attn), the absorbed form, its latent
+		// rows in each slot's KV buffer. The declaration rests on gate M with routing forced (deepseek-tiny, kimi-tiny), the
+		// kernel gate on both rope branches, the guard tests, and a two-layer slice of DeepSeek-V2-Lite against the CPU
+		// (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.
+		FeatMLA: true,
 	},
 }

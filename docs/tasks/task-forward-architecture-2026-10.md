@@ -1094,6 +1094,21 @@ Their gate:
       about 4,095 radians.
     - **Plant:** the rope and nope slices swapped in each branch must turn it red.
 
+**OP2a read 2026-10-16: K-MLA, tier 1 PASS; Metal declares `mla`.** Record: `docs/measurements/op2a-mla-metal-2026-10-16/`.
+
+- **K-MLA (`TestMLAKernels_rope`):** worst max |error| / max |reference| is 7.8e-5 for `mla_store` and 2.9e-4 for `mla_qrope`
+  across both branches and every position, against 2e-3. The rope/nope swap reads 1.3 to 2.1. **PASS.**
+- **Tier 1, the V2-Lite slice:** the first two layers (dense, then MoE) of `DeepSeek-V2-Lite-Chat-Q4_K_M.gguf`, cut by
+  `scripts/slice_gguf_layers.py` on nobara (774 MB, sha256 `7396629f…`), int4, by day under the timing lock. The fit guard
+  and Metal's memory guard admitted both loads.
+  - Control 0.997134, 27/32.
+  - The slice: min cosine 0.995465 against 0.88; argmax 30/32 against 16. **PASS.**
+- **The declaration:** Metal declares `mla`.
+  - It rests on gate M with routing forced, K-MLA, the guards and the tier 1 slice.
+  - The hardware matrix reads DeepSeek-V2 and V3 resident on Metal.
+  - Kimi K2 stays on the CPU, held by its 384-expert router (Metal's routes 256), which this work does not touch.
+- **Not run:** the whole V2-Lite at night, through Metal's expert paging, as registered above.
+
 **OP2b, SSM (Mamba-2) on CUDA and on Metal.**
 - **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
 - **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).

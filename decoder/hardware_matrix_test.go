@@ -325,7 +325,7 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 		{modelType: "granitemoehybrid", backend: "cuda", want: []string{"runner shape: bring-up gate", "`ssm`"}},
 		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + runnerShapeBringUp},
 		{modelType: "llama4_text", backend: "cuda", exact: "runner shape: " + runnerShapeOwnForward},
-		{modelType: "kimi_k2", backend: "metal", want: []string{"`mla`", "router capacity: 384 experts, the kernel routes 256"}},
+		{modelType: "kimi_k2", backend: "metal", exact: "router capacity: 384 experts, the kernel routes 256"}, // Metal has mla since OP2a
 		{modelType: "phi3", backend: "metal", want: []string{"activation hazard"}},
 	} {
 		arch, _, err := resolveArchitecture(representativeConfig(tc.modelType))

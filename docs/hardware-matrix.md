@@ -13,8 +13,8 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 |---|---|---|---|---|
 | Command-R | ✅ | CPU | ✅ resident | ✅ resident |
 | Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
-| DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | CPU |
-| DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | CPU |
+| DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
@@ -104,19 +104,16 @@ admission runs.
 |---|---|---|
 | Command-R | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
 | Command-R7B | WebGPU | missing: `layer-norm`, `nope`, `pairwise-rope`, `parallel-block` |
-| DeepSeek-V2 | Metal | missing: `mla` |
-| DeepSeek-V3 | Metal | missing: `mla` |
 | GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
 | GPT-2 | CUDA | missing: `learned-pos`, `non-gated-gelu-tanh`, `non-gated-mlp` |
 | Gemma 2 | WebGPU, CUDA | missing: `attn-logit-softcap` |
 | Granite-4.0-H | WebGPU, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
 | Granite-4.0-H | CUDA | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); missing: `ssm` |
-| Kimi K2 | Metal | missing: `mla`; router capacity: 384 experts, the kernel routes 256 |
+| Kimi K2 | Metal | router capacity: 384 experts, the kernel routes 256 |
 | LFM2.5 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged; missing: `short-conv` |
 | Laguna | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-softplus`, `per-layer-query-heads` |
-| Ling 3.0 | WebGPU, CUDA | missing: `kda` |
-| Ling 3.0 | Metal | missing: `kda`, `mla` |
+| Ling 3.0 | WebGPU, CUDA, Metal | missing: `kda` |
 | Llama 4 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged |
 | Ministral 3 | WebGPU | missing: `attn-temp` |
 | Nemotron-H | CUDA | missing: `non-gated-mlp`, `non-gated-relu2`, `ssm` |

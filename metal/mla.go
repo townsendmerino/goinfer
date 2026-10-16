@@ -147,9 +147,6 @@ func buildMLAScratch(d *Device, m *decoder.Model, p *mlaParams) *mlaScratch {
 	return s
 }
 
-// mlaSrcPlantForTest is a planted defect in the library source, {from, to} pairs each replaced once, set by OP2a's gate M.
-var mlaSrcPlantForTest [][2]string
-
 // mlaKVCopyDeclineOffForTest removes CopyKV's MLA decline: the guard test's planted defect.
 var mlaKVCopyDeclineOffForTest bool
 
