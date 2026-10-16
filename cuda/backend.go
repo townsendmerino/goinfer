@@ -622,6 +622,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack)
 	attnCap := m.AttnLogitSoftcapResident()
+	if attnSoftcapDropForTest {
+		attnCap = 0
+	}
 	if attnCap != 0 && mlaOK {
 		return declined(fmt.Errorf("an attention softcap on a latent-attention model: mla_attn has no cap"))
 	}

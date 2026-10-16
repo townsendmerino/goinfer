@@ -474,8 +474,14 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatGatedGELU:         true, // glu_quant `act` — GeGLU as well as SwiGLU
 		FeatEmbedScale:        true, // √hidden applied host-side in embedResident
 		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
-		FeatPerLayerRoPE:      true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
-		FeatMoE:               true, // moe_route + indexed stacked experts + ungated shared expert
+		// The attention-score softcap is compiled into the three kernels a capped layer takes (attention, attn_batched, splitkv_scores) as a
+		// variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh). The lane selectors keep such a layer off flash-decode and its verify
+		// rows, the fused prefill kernels, the image block kernel, the block drafter and MLA. The declaration rests on the kernel gates
+		// against float64 with the cap dropped as the control (TestAttnSoftcap_kernelsAgainstFloat64) and on the lane test
+		// (TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/tasks/task-forward-architecture-2026-10.md §4.6a).
+		FeatAttnLogitSoftcap: true,
+		FeatPerLayerRoPE:     true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
+		FeatMoE:              true, // moe_route + indexed stacked experts + ungated shared expert
 		// The sigmoid-gated shared expert (Qwen-MoE) is gated by qwen3_5_moe-tiny (TestQwen35ResidentParityCUDA), whose MoE block is
 		// Qwen2-MoE's. Declaring it therefore also admits qwen2_moe on cuda, which has no fixture of its own: its admission rests on that
 		// inheritance. Add one if that stops being good enough.

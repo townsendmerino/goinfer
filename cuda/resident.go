@@ -1075,6 +1075,10 @@ func allocRoundSlack(n int64) int64 {
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
 var allocSlackOffForTest bool
 
+// attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
+// OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
+var attnSoftcapDropForTest bool
+
 var hostWType = reflect.TypeFor[hostW]()
 
 // packedAllocSlack is the allocation rounding of every packed weight the build is about to upload: each hostW found
