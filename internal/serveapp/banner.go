@@ -61,6 +61,9 @@ type bannerFacts struct {
 
 	// kvF16Decline: why a CUDA load that asked for -kv f16 was held at f32 (decoder.Model.KVF16DeclineReason), "" when it was not.
 	kvF16Decline string
+	// cpuKVPrec is the CPU (host) KV cache's precision (decoder.Model.CPUKVPrecision), and cpuKVF16Decline why an f16 request
+	// left it at f32.
+	cpuKVPrec, cpuKVF16Decline string
 
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
@@ -103,6 +106,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
 	f.kvF16Decline = lm.model.KVF16DeclineReason()
+	f.cpuKVPrec, f.cpuKVF16Decline = lm.model.CPUKVPrecision(), lm.model.CPUKVF16DeclineReason()
 	f.ctxNote = lm.model.ResidentContextNote()
 	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
@@ -192,10 +196,13 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		if f.kvPrec != "f32" && f.kvPrec == req {
 			ctxLine += " (lossy)"
 		}
-	case req != "" && req != "f32" && req != "auto":
-		ctxLine += " · KV " + req + " (lossy)"
+	case f.cpuKVPrec != "" && f.cpuKVPrec != "f32": // off the resident path, the CPU cache's own precision
+		ctxLine += " · KV " + f.cpuKVPrec + " (lossy)"
 	default:
 		ctxLine += " · KV f32"
+		if f.cpuKVF16Decline != "" {
+			ctxLine += " (-kv f16 held at f32: " + f.cpuKVF16Decline + ")"
+		}
 	}
 	if f.kvF16Decline != "" {
 		ctxLine += " (-kv f16 held at f32: " + f.kvF16Decline + ")"

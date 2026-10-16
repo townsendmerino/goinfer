@@ -50,7 +50,9 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 		{"metal, pinned 8192", q, Options{Backend: "metal", ResidentContext: 8192}, 8192, true, true, true},
 		{"metal, pin past the window", q, Options{Backend: "metal", ResidentContext: 1 << 20}, 32768, true, true, true},
 		{"cpu, unpinned", q, Options{Backend: "cpu"}, 32768, false, false, false},
-		{"cpu, -kv f16", q, Options{Backend: "cpu", KVPrecision: "f16"}, 32768, true, false, false},
+		{"cpu, -kv f16", q, Options{Backend: "cpu", KVPrecision: "f16", KVQuant: "f16"}, 32768, true, false, false},
+		// The CPU cache's precision is KVQuant's: the GPU field alone no longer prices an f32 cache at f16.
+		{"cpu, KVPrecision f16 alone", q, Options{Backend: "cpu", KVPrecision: "f16"}, 32768, false, false, false},
 	}
 	for _, c := range cases {
 		p, ok := kvPricingFor(c.cfg, c.opts)
@@ -66,7 +68,7 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 	}
 	// An architecture outside Metal's feature gate falls back to the CPU, so it keeps the CPU's pricing.
 	var declined string
-	for _, mt := range []string{"deepseek_v2", "kimi_k2", "llama4_text"} {
+	for _, mt := range []string{"bailing_hybrid", "laguna", "lfm2"} {
 		arch, _, err := resolveArchitecture(a3Config(mt))
 		if err == nil && len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) > 0 {
 			declined = mt

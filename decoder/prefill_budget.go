@@ -93,7 +93,7 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 	// lazily, only on the CPU fallback. Pricing it anyway could reject a request an 8 GB CUDA box would have served entirely in VRAM.
 	var kv int64
 	if !(residentPath && m.ResidentActive()) {
-		kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)
+		kv = estimateKVBytes(cfg, positions, m.hostKVF16(), m.kvI8)
 	}
 	// A resident that splits its prefill into blocks is priced at its own figure for one block; every other request at
 	// the batched CPU sweep's figure over the whole prompt.
@@ -151,7 +151,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		}
 		ctx = cfg.MaxPositions
 	}
-	kvBytes = estimateKVBytes(cfg, ctx, m.kvF16, m.kvI8)
+	kvBytes = estimateKVBytes(cfg, ctx, m.hostKVF16(), m.kvI8)
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }
 
@@ -170,4 +170,29 @@ func prefillScratchBytes(cfg *Config, promptTokens int) int64 {
 	}
 	mlp := int64(2*4) * int64(cfg.IntermediateDim) * int64(promptTokens) // gate + up, f32
 	return prefillAttnScratchBudget + mlp
+}
+
+// hostKVF16 reports whether the CPU (host) KV cache this model builds is f16: requested and allowed for the family.
+func (m *Model) hostKVF16() bool { return m.kvH && m.w.arch.kvF16OK() }
+
+// CPUKVPrecision is the precision the CPU (host) KV cache is built at: "i8", "f16" or "f32".
+func (m *Model) CPUKVPrecision() string {
+	switch {
+	case m.kvI8 && m.w.arch.kvInt8OK():
+		return "i8"
+	case m.hostKVF16():
+		return "f16"
+	}
+	return "f32"
+}
+
+// CPUKVF16DeclineReason is why an f16 request leaves the CPU cache at f32 ("" when f16 was not asked or is built).
+func (m *Model) CPUKVF16DeclineReason() string {
+	if !m.kvH || m.w.arch.kvF16OK() || (m.kvI8 && m.w.arch.kvInt8OK()) {
+		return ""
+	}
+	if _, own := m.w.arch.ownForward(); own {
+		return "this family's own forward loop is not checked for f16 KV yet"
+	}
+	return "MoE families are not checked for f16 KV yet"
 }

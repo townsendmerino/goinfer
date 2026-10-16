@@ -6,7 +6,7 @@ import (
 )
 
 // --kv is the one KV-precision flag for whichever backend serves: it sets the GPU residency cache
-// (Options.KVPrecision) and the CPU cache (Options.KVQuant), which has no f16 form. --kv-quant is a
+// (Options.KVPrecision) and the CPU cache (Options.KVQuant); auto stays f32 on the CPU. --kv-quant is a
 // deprecated alias that, when given, overrides the CPU cache alone. Same for the per-model keys.
 func TestKVFlag_drivesBothCachesUnlessKVQuantOverrides(t *testing.T) {
 	str := func(s string) *string { return &s }
@@ -18,7 +18,8 @@ func TestKVFlag_drivesBothCachesUnlessKVQuantOverrides(t *testing.T) {
 	}{
 		{"default", modelSpec{}, config{load: loadflags.Flags{KV: "f32"}}, "f32", "f32"},
 		{"--kv i8 reaches the CPU cache too", modelSpec{}, config{load: loadflags.Flags{KV: "i8"}}, "i8", "i8"},
-		{"--kv f16: the CPU cache has no f16", modelSpec{}, config{load: loadflags.Flags{KV: "f16"}}, "f16", "f32"},
+		{"--kv f16 reaches the CPU cache too", modelSpec{}, config{load: loadflags.Flags{KV: "f16"}}, "f16", "f16"},
+		{"--kv auto keeps the CPU cache at f32", modelSpec{}, config{load: loadflags.Flags{KV: "auto"}}, "auto", "f32"},
 		{"deprecated --kv-quant still overrides the CPU cache", modelSpec{}, config{load: loadflags.Flags{KV: "f16"}, kvQuant: "i8"}, "f16", "i8"},
 		{"--kv-quant f32 beats --kv i8 on CPU", modelSpec{}, config{load: loadflags.Flags{KV: "i8"}, kvQuant: "f32"}, "i8", "f32"},
 		{"per-model kv= drives both", modelSpec{kvPrec: str("i8")}, config{load: loadflags.Flags{KV: "f32"}}, "i8", "i8"},

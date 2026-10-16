@@ -1041,6 +1041,74 @@ Their gate:
     sees the router with the real expert count. Fit-check by day first, and if it is refused, it is an owner question, not
     a bypass.
 
+**OP2a on Metal, registered 2026-10-16 before any code** (branch `op2a-mla-metal-2026-10`).
+
+- **Design:** WebGPU's absorbed MLA (`gpu/mla.go`, `gpu/decoderunner.go`), ported to Metal kernels:
+  - the q-LoRA path or the direct q projection;
+  - the KV down-projection with its latent norm and the rope slice, stored per position as one latent row
+    (`kvLoRA + qkRope` values);
+  - q's nope part absorbed through W_UK; q's rope part rotated;
+  - attention over the latent cache;
+  - the lift through W_UV, then the output projection.
+  - Metal's MoE router already routes DeepSeek-V2/V3 (sigmoid, bias, group-limited top-k), so the MoE is unchanged.
+  - Kimi K2's 384-expert router stays out, as above.
+- **The KV:**
+  - an MLA layer's cache is its latent rows, priced so by `ResidentKVBytes`;
+  - the MC3 batched step, the f16 prefill, KV2's slot copy and int8 KV decline an MLA model, each pinned by a test.
+- **Tier 0, by day:**
+  - **M, the tiny models against the CPU at the same quant:** `deepseek-tiny` and `kimi-tiny` resident on Metal at int4,
+    in greedy lockstep for 32 steps off the CPU, graded from position 2.
+    - **The control,** in the same session and harness: `qwen3moe-tiny`, a MoE already resident on Metal. A routing flip
+      under rounding is then something both arms can show.
+    - **The bar:** each MLA fixture's min logit cosine at least the control's minus 0.001, and argmax agreement at least the
+      control's count minus 2. That is gate M's rule (OP2b).
+    - **Planted defect:** q's and k's rope and nope slices swapped in the Metal kernel only. M must fail.
+  - **Guards:** each decline above, with a test; `ResidentKVBytes` for an MLA layer equals its latent size per position.
+- **Tier 1, by day:** a layer slice of DeepSeek-V2-Lite (`scripts/slice_gguf_layers.py`, its first layers including the
+  dense one and one MoE layer) resident on Metal against the CPU at int4, by G2-R's bars (min cosine ≥ 0.88, argmax ≥ 50%)
+  with the dense 1.5B control ≥ 0.95. The checkpoint is pulled to `~/models` first.
+  - This replaces the hidden-state comparison against `deepseek_v2lite_golden.json` written above. That golden holds the
+    whole model's output, which a slice does not produce.
+- **Night, only if the slice passes:** the whole V2-Lite, as above.
+
+**OP2a gate M, read 2026-10-16, and two amendments after the data (owner, 2026-10-16).**
+
+- **As registered:**
+  - The control `qwen3moe-tiny` read min cosine 0.999458, argmax 31/32.
+  - `deepseek-tiny`: 0.999880, 32/32, **PASS**.
+  - `kimi-tiny`: 0.994251 against 0.998458, **FAIL**, with argmax 31/32. Its cosine held about 0.9997 except steps 8 and 9
+    (0.994, 0.997), then recovered.
+  - The guards PASS.
+- **Amendment 1, gate M for the MoE fixtures is graded with routing forced.** Every MoE layer on Metal takes the experts
+  and weights the CPU chose for the same token (`TestMLAResident_routingForced`), on all three fixtures, control included.
+  - Read: control 0.999885, 31/32; `deepseek-tiny` 0.999884, 32/32; `kimi-tiny` 0.999751, 32/32. **PASS.**
+  - The step 8–9 dip was a routing near-tie: Metal's router sums its softmax in f32, the CPU's in f64, and kimi-tiny picks
+    4 of 16 experts. A fault in the MLA path would persist through the latent cache, and none shows once routing is forced.
+- **Amendment 2, the tiny fixtures cannot see a rope defect.** The registered plant (q's and the latent's rope and nope slices
+  swapped, on the branch these interleaved fixtures run) read 0.999866, 32/32, not red. Their rope contributes almost nothing
+  to the scores (`decoder/features.go`'s note on flat tiny weights). Gate M stays as the model-level check of the rest of the
+  path. The rope is gated at the kernel instead, registered here before it runs:
+  - **K-MLA:** `mla_store` and `mla_qrope` against a float64 reference on non-flat synthetic inputs (values spanning ±4, a
+    rope table of base 10,000), both branches (interleaved and not), at positions 0, 1, 7, 255 and 4,095.
+    - **Bar:** max |error| ≤ 2e-3 × max |reference| per output, which allows for fast-math `sin`/`cos` at angles up to
+      about 4,095 radians.
+    - **Plant:** the rope and nope slices swapped in each branch must turn it red.
+
+**OP2a read 2026-10-16: K-MLA, tier 1 PASS; Metal declares `mla`.** Record: `docs/measurements/op2a-mla-metal-2026-10-16/`.
+
+- **K-MLA (`TestMLAKernels_rope`):** worst max |error| / max |reference| is 7.8e-5 for `mla_store` and 2.9e-4 for `mla_qrope`
+  across both branches and every position, against 2e-3. The rope/nope swap reads 1.3 to 2.1. **PASS.**
+- **Tier 1, the V2-Lite slice:** the first two layers (dense, then MoE) of `DeepSeek-V2-Lite-Chat-Q4_K_M.gguf`, cut by
+  `scripts/slice_gguf_layers.py` on nobara (774 MB, sha256 `7396629f…`), int4, by day under the timing lock. The fit guard
+  and Metal's memory guard admitted both loads.
+  - Control 0.997134, 27/32.
+  - The slice: min cosine 0.995465 against 0.88; argmax 30/32 against 16. **PASS.**
+- **The declaration:** Metal declares `mla`.
+  - It rests on gate M with routing forced, K-MLA, the guards and the tier 1 slice.
+  - The hardware matrix reads DeepSeek-V2 and V3 resident on Metal.
+  - Kimi K2 stays on the CPU, held by its 384-expert router (Metal's routes 256), which this work does not touch.
+- **Not run:** the whole V2-Lite at night, through Metal's expert paging, as registered above.
+
 **OP2b, SSM (Mamba-2) on CUDA and on Metal.**
 - **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
 - **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).
