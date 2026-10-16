@@ -387,6 +387,31 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 	return acq
 }
 
+// kvChooseDonor picks the slot to copy from: of the slots other than dst whose capped hit beats reuse, the longest hit
+// (the lower slot on a tie) that the resident says still holds the rows (ResidentReusableKVSlot; a resident without it
+// holds every row it has). src is -1 when none beats reuse, and when every candidate's window has moved past its rows,
+// in which case declined says so.
+func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, reuse int) (src, hit int, declined string) {
+	type cand struct{ slot, hit int }
+	var cands []cand
+	for s, h := range hits {
+		if h = cm.CapHit(n, h); s != dst && h > reuse {
+			cands = append(cands, cand{s, h})
+		}
+	}
+	slices.SortStableFunc(cands, func(a, b cand) int { return b.hit - a.hit })
+	rk, windowed := res.(ResidentReusableKVSlot)
+	for _, c := range cands {
+		if !windowed || rk.ReusableKVSlot(c.slot, c.hit) >= c.hit {
+			return c.slot, c.hit, ""
+		}
+	}
+	if len(cands) > 0 {
+		return -1, 0, fmt.Sprintf("no source slot's window still holds the rows (%d candidates)", len(cands))
+	}
+	return -1, 0, ""
+}
+
 // kvOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
 // windows still hold. It changes nothing; it is the G5-C diagnostic of how much of a decline is the choice of donor
 // (docs/measurements/kv2-cuda-2026-10-15.md, §6).
@@ -414,17 +439,9 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 	}
 	a, dst, cm := m.kvSlots(), acq.slot, m.kvClassMap()
 	hits := a.Hits(kvmgr.Request{Root: m.kvRootIn(lora, sc.Namespace), Tokens: prompt, Images: kvSpansOfClaims(imgs)}, cm.ColdClasses(len(prompt)))
-	src, hit := -1, 0
-	for s, h := range hits {
-		if s != dst && h > hit {
-			src, hit = s, h
-		}
-	}
-	if hit = cm.CapHit(len(prompt), hit); src < 0 || hit <= acq.reuse {
-		return
-	}
-	if rk, ok := m.resident.(ResidentReusableKVSlot); ok && rk.ReusableKVSlot(src, hit) < hit {
-		acq.declined = "the source slot's window no longer holds the rows" + kvOtherDonors(rk, hits, cm, len(prompt), src, dst, acq.reuse)
+	src, hit, declined := kvChooseDonor(m.resident, hits, cm, len(prompt), dst, acq.reuse)
+	if src < 0 {
+		acq.declined = declined
 		return
 	}
 	start := min(hits[dst], hit) // dst already holds these as the same published blocks
