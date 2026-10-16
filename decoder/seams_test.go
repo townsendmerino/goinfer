@@ -208,17 +208,56 @@ func TestSeams_gates(t *testing.T) {
 		if err := gateC(t, f.m, ids); err != nil {
 			t.Errorf("C %s: %v", f.name, err)
 		}
+		if f.m.program().subCaptureUncovered() {
+			t.Logf("S %s NOT RUN: ForwardSubCapture refuses it (a PLE branch or MoE block; TestSeams_subCaptureRefusedWhereGateSCannotRun)", f.name)
+			continue
+		}
 		checked, skipped, err := gateS(t, f.m, ids)
 		switch {
 		case err != nil:
 			t.Errorf("S %s: %v", f.name, err)
 		case checked == 0:
-			t.Logf("S %s NOT RUN: all %d layers past the first have an in-place operation the contributions do not cover", f.name, skipped)
+			t.Errorf("S %s: no layer rebuilt (%d skipped), but ForwardSubCapture serves it", f.name, skipped)
 		default:
 			t.Logf("S %s: %d layers rebuilt, %d skipped", f.name, checked, skipped)
 		}
 	}
 	t.Logf("H, C, S over %d fixtures", len(fx))
+}
+
+// TestSeams_subCaptureRefusedWhereGateSCannotRun pins the owner's condition (2026-10-16): ForwardSubCapture, and its bisect hook,
+// refuse exactly the fixtures where gate S cannot rebuild a layer (Gemma 4's E-models and 26B MoE: the PLE branch and the MoE
+// block), and serve every other one. HiddenLast and ForwardCapture serve all of them (TestSeams_gates).
+func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
+	refused := map[string]bool{}
+	for _, f := range programFixtures(t) {
+		ids := programPrompt(f.m)
+		cache := f.m.NewCache(len(ids))
+		_, _, _, _, err := f.m.ForwardSubCapture(ids[0], cache)
+		if f.m.program().subCaptureUncovered() {
+			if err == nil || !strings.Contains(err.Error(), "do not cover") {
+				t.Errorf("%s: ForwardSubCapture did not refuse (%v)", f.name, err)
+			}
+			refused[f.name] = true
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: ForwardSubCapture refused a fixture gate S covers: %v", f.name, err)
+		}
+		// Every served fixture rebuilds at least one layer: the refusal is exactly where gate S cannot run.
+		if checked, _, err := gateS(t, f.m, ids); err != nil || checked == 0 {
+			t.Errorf("%s: served, but gate S rebuilt %d layers (%v)", f.name, checked, err)
+		}
+	}
+	want := []string{"gemma4-emodel-tiny", "gemma4-moe-kv-tiny", "gemma4-moe-tiny", "gemma4-moe-unified-tiny"}
+	for _, w := range want {
+		if !refused[w] {
+			t.Errorf("%s is not refused (or not present): the owner's condition names it", w)
+		}
+	}
+	if len(refused) != len(want) {
+		t.Errorf("refused %d fixtures, want exactly the %d gate S could not run on: %v", len(refused), len(want), refused)
+	}
 }
 
 // TestSeams_plantsGoRed: each planted defect turns its gate red on at least one fixture.
@@ -238,7 +277,12 @@ func TestSeams_plantsGoRed(t *testing.T) {
 		}},
 	} {
 		var red []string
+		ran := 0
 		for _, f := range fx {
+			if pl.plant == plantSubPrePostNorm && f.m.program().subCaptureUncovered() {
+				continue // refused, not run: its error is not the plant being seen
+			}
+			ran++
 			seamPlantForTest = pl.plant
 			err := pl.gate(f, programPrompt(f.m))
 			seamPlantForTest = plantNone
@@ -246,7 +290,7 @@ func TestSeams_plantsGoRed(t *testing.T) {
 				red = append(red, f.name)
 			}
 		}
-		t.Logf("plant %q: red on %d of %d fixtures (%s)", pl.name, len(red), len(fx), strings.Join(red, " "))
+		t.Logf("plant %q: red on %d of %d fixtures it runs on (%s)", pl.name, len(red), ran, strings.Join(red, " "))
 		if len(red) == 0 {
 			t.Errorf("plant %q turned no fixture red: its gate does not see the defect", pl.name)
 		}

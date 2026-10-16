@@ -1334,9 +1334,13 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // This is the finer seam ForwardCapture doesn't give: it separates the two sublayers, which is
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
 // Diagnostic — same byte-identical-output contract as ForwardCapture. A single-operation block (Nemotron-H) fills one of the
-// two; gate S of §4.8's seams PR rebuilds each layer's residual from them.
+// two; gate S of §4.8's seams PR rebuilds each layer's residual from them. Refused where a layer has an operation they do not
+// cover (program.subCaptureUncovered).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
+	if m.program().subCaptureUncovered() {
+		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q: a layer has an operation its contributions do not cover (Gemma 4's PLE branch or MoE block)", a.Name)
+	}
 	nL := a.NumLayers
 	cache.subCapture = true
 	cache.subAttn = make([][]float32, nL)

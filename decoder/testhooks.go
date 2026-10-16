@@ -25,6 +25,9 @@ import (
 // arch guard and byte-identical-output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
+	if m.program().subCaptureUncovered() {
+		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q: a layer has an operation its contributions do not cover", a.Name)
+	}
 	nL := a.NumLayers
 	cache.subCapture = true
 	cache.subAttn = make([][]float32, nL)
