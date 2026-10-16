@@ -16,6 +16,9 @@ card keeps none of it (the previous session ended 760 to 9,932 positions past th
 - **Gates as designed:** tier 0 bit-identity with all five planted defects; tier 1 the opencode and Codex session-start replay with
   replies identical on and off, and one Claude Code session start on Qwen3-4B if it fits by day.
 - **Built on `kv7-snapshot-2026-10`; PR merged by hand on green CI after tier 1.**
+- **Status (2026-10-16): built, tier 0 and tier 1 passed** (`docs/measurements/kv7-snapshot-2026-10/kv7-tier1-2026-10-16.md`): opencode and
+  Codex session starts on Mellum2.1 78.3 s and 61.9 s to 0.3 s with equal replies, a Claude Code start on Qwen3-4B 28.4 s to 5.6 s; the
+  take costs more than estimated (185 ms to 1.66 s). The preamble marker remains the second step.
 
 ## 1. Does it work on today's slot storage, without KV4?
 
