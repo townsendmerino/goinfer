@@ -798,6 +798,21 @@ KV2 merges when every arm on both boxes is read.
     because main could not tell a conversation's own request from another's.
   - The item: drop that rule for a request that keeps the slot's whole first prompt, on the GPU and the CPU.
   - Gate it like G3: same reply in every schedule, and replies unchanged against KV2's merge.
+- **Follow-up 2, the donor choice: built 2026-10-15** (found by nobara's CUDA arm,
+  `docs/measurements/kv2-cuda-2026-10-15.md` §6).
+  - **The defect:** with several slots holding a prefix and windowed KV, the copy took the first of the longest hits. When
+    that slot's window had moved past the rows, it declined and prefilled cold, although another slot still held them.
+    It cost time, never a wrong row.
+  - **The fix:** `decoder/resident_reuse.go:kvChooseDonor`. Of the slots other than the destination whose capped hit
+    beats the reuse, take the longest hit, the lower slot on a tie, that `ResidentReusableKVSlot` says still holds the
+    rows. Decline only when none does.
+  - **Tier 0 gate, on the owner's brief:** `TestKV2_donorWhoseWindowHoldsTheRows`.
+    - Three slots. Slots 0 and 1 hold the preamble, and slot 0's window has moved past it.
+    - The third conversation's copy comes from slot 1, and its reply equals its reply alone.
+  - **`TestKVChooseDonor`** covers the rule's cases.
+  - **The planted defect, the old first-match choice:** both tests red ("copied nothing"; "got slot -1"), then restored.
+  - **G3's schedule independence passes,** with the 23 KV2 and MC3 tests near the change.
+  - **A windowed family's served G5 cell is not run:** it is tier 2, and the owner set this gate at tier 0.
 
 ### KV3 — Prefill and admission in blocks on every backend (absorbs KV-pre)
 
