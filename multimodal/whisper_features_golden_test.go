@@ -79,6 +79,7 @@ func diffStats(a, b []float32) (maxAbs, mean float64) {
 }
 
 func TestWhisperFeatures_matchTransformers(t *testing.T) {
+	raceSubset(t)
 	g := loadWhisperGolden(t)
 	if len(g.meta.Cases) != 7 {
 		t.Fatalf("golden has %d cases, want 7", len(g.meta.Cases))

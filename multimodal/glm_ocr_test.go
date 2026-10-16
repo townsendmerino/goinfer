@@ -184,6 +184,7 @@ func TestGlmOcrExtractionText_rule(t *testing.T) {
 // pass a field-level test and still send the full-size image to the tower. A 2400x3200 page (7.7 MP) is well over the model's own 4.82 MP ceiling; the default config
 // lands near the ceiling, a 2 MP cap lands near 2 MP, and a cap above the ceiling changes nothing.
 func TestCapGlmOcrPixels_throughPreprocess(t *testing.T) {
+	raceSubset(t)
 	cfg := QwenPreprocessConfig{PatchSize: 14, MergeSize: 2, TemporalPatchSize: 2, MinPixels: 6272, MaxPixels: 4816896,
 		Mean: [3]float32{0.5, 0.5, 0.5}, Std: [3]float32{0.5, 0.5, 0.5}}
 	img := image.NewRGBA(image.Rect(0, 0, 2400, 3200))

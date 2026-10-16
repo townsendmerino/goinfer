@@ -18,6 +18,9 @@ import (
 // docs/completed/task-w4a8-neon-bandwidth.md, may have been measured on different tensor dimensions). Calls both
 // free-function kernels directly on the same real gemma4 expert bytes, same activation, same dst: isolates kernel choice
 // as the only variable.
+//
+// It runs on no machine we have, so it is not coverage: it builds only on arm64, and it needs the 26B kind-4 .giw on a Mac
+// that can hold it, which the 16 GB Mac cannot; nobara is amd64. A skip here vouches for nothing.
 func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 	requireHeavyModel(t)
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))

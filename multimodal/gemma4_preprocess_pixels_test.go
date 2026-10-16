@@ -20,6 +20,7 @@ import (
 // scripts/pin_gemma4_preprocess_pixels.py). The bilinear resampler, run beside it, must differ: the control that
 // shows the hash sees a resampler change.
 func TestGemma4Preprocess_matchesTransformers(t *testing.T) {
+	raceSubset(t)
 	raw, err := os.ReadFile("../testdata/gemma4-preprocess-pixels.json")
 	if err != nil {
 		t.Fatal(err)
