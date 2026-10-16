@@ -24,8 +24,8 @@ any surface may still change.
 - **Quantized Nemotron-H CPU loads now hold the Mamba projections at int8** (about 12 GB less on the 9B), from a .gguf or
   a .giw; an f32 load keeps them f32. The GPU backends upload the same codes as before.
 - **Nemotron-H resident on Metal, at int4.** The Mamba-2 mixer and the squared-ReLU MLP run on the GPU; an int8
-  Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models and a three-layer slice of the real
-  Nemotron-Nano-9B-v2; the whole-model run is owed (`docs/queue-engineering.md`, B27).
+  Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models, a three-layer slice of the real
+  Nemotron-Nano-9B-v2, and the whole 9B against the CPU (min logit cosine 0.929, argmax 27 of 32).
 - **Faster q4k prefill on Metal.** A model loaded at `--quant q4k` (Phi-3) prefills eight rows a step on the batched
   step's kernels instead of one token at a time, with bit-identical results: 1.99x on Phi-3 mini at 200 tokens.
 - **The memory-fit guard prices `--quant q4k` at what the load keeps** (Q4_K blocks and int8), not as int4 with its

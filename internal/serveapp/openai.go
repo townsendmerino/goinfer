@@ -806,6 +806,10 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 		// another language may reject them: GET /health carries the same fields on a payload with no compatibility
 		// contract, for operators who need a surface that cannot break a client.
 		maps.Copy(e, s.pathFields(name))
+		if alias := s.fastAliasOf(name); alias != "" {
+			// Vendor extension, same convention: the alias connect points an agent's small-model setting at (fast_alias.go).
+			e["fast_model"] = alias
+		}
 		if s.speechByName(name) != nil {
 			e["capabilities"] = []string{"audio.transcriptions"} // a speech model: no decoder paths, one route
 		}
@@ -847,6 +851,9 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast()
 	}
 	dropUnrunnableTools(w, &req.Tools)
 	if err := validateN(req.N); err != nil {
@@ -1010,6 +1017,7 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	s.fastRoute(r, &req.Model) // /v1/completions renders no template, so the alias has nothing to turn off there
 	if err := validateN(req.N); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

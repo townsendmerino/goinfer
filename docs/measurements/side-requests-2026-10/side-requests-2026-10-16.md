@@ -1,5 +1,12 @@
 # Side requests and the one GPU KV slot (2026-10-16): measurement, and a design proposal not built
 
+**Owner decision (2026-10-16): the scratch slot is not built.** The finding to keep: the slow main turns after side requests were
+cold anyway, at session start and after a compaction, given the 448-position rollback; a kept slot would have served none of them.
+What was approved instead is a product change that removes the side requests' own cost: a fast alias that runs them without
+thinking (`<model>-fast`, on by default, `-fast-alias=false` turns it off; `connect` points Claude Code's small/fast model and opencode's `small_model` at it).
+Its tier-1 reading is the last section. Interactive Claude Code's mid-session side requests: not run; revisit if a later run shows
+side requests landing between main turns.
+
 Owner item 3 (2026-10-16): measure by day which requests evict the main conversation's slot, what they cost the next main turn,
 and whether Claude Code sends side requests that `connect` now routes to the served model; then propose a design, with the
 direction "a short request does not evict a long cached prefix", and report before building. **Nothing here is built.**
@@ -163,3 +170,52 @@ with no tools and a short prompt would cut that. It is a product decision, not a
 - Subagents' eviction of the main slot: not measured; a scratch slot would not address it.
 - The archived Claude Code run's missing title request: unexplained.
 - The decode cost of 54 or 55 expert slots against 57: not measured.
+
+## Tier 1: the fast alias on opencode (2026-10-16, by day)
+
+**Amendment, the same day (owner): the alias has no output cap.** Tier 1 ran on `62ba5f07`, whose alias capped output at 1,024
+tokens. The owner removed the cap before the merge ("the gain is from thinking off, and a truncated compaction summary is worse than
+a slow one"): the alias now takes the request's limit or the main model's default, `-fast-max-tokens` is gone (`-fast-alias`,
+default true, replaces it) and `/v1/models` no longer advertises `fast_max_tokens`. **Tier 1 was not re-run for that change**: its
+three title requests generated 9, 4 and 4 tokens, so the cap never bound in any of them, and every other request in the run named
+the main model. The cap change has its own tier-0 gate (`TestFastAlias_doesNotCapOutput`: a 3,000-token reply through the alias
+equals the main model's on all three routes, the request's own limit is honored, and a cap planted back into each route turns it
+red). The tier-1 table below is the capped build's.
+
+The same three opencode tasks (read, search, edit, one run each) on Mellum2.1, `--ctx 16384 --moe-cache-experts`, one GPU slot, with
+the alias on: serve built at `62ba5f07` (the alias PR), `connect opencode -write` run by the matrix against it, so opencode's
+`small_model` named `mellum2.1-thinking-fast`. 06:56 to 07:02 PDT under the timing lock, nobara. Plan:
+`ids-carried-tier2/plan-cc-opencode.json` with the serve path and name changed; output in `~/goinfer-bench/fast-alias-2026-10/out`.
+Read with `fast_alias_compare.py` (beside this record).
+
+**The "without" arm is the 2026-10-15 run above, not re-run** (an unchanged arm: same model, flags, harness pin and tasks). It is a
+different session on a different serve build, three runs against three, so this is **exploratory and cross-session**: the headline
+below is large against the sampling noise, and the pass/fail counts are not a comparison. A main-model request is byte-identical with
+the alias on and off (tier 0), so the builds differ only on the alias.
+
+| | alias off (2026-10-15) | alias on |
+|---|---|---|
+| requests | 25 | 20 |
+| titles named by | `mellum2.1-thinking` | `mellum2.1-thinking-fast`, 3 of 3 |
+| title: generated tokens | 1,341 / 831 / 2,327 | 9 / 4 / 4 |
+| title: time on the GPU | 26.9 / 18.2 / 41.5 s (86.6 s) | 6.5 / 5.7 / 5.8 s (18.0 s) |
+| summary (context summarizer) | 1 request, 1,134 generated, 43.1 s | **none: no run compacted, so unobserved** |
+| each run's first main request, time to first token | 106.9 / 97.5 / 121.8 s (mean 108.7) | 82.6 / 81.2 / 81.4 s (mean 81.7) |
+| passed | read, search, edit (3 of 3) | read, search; **edit failed** (2 of 3) |
+
+- **Titles.** Their text is sensible ("Rename sum total everywhere") and carries no reasoning. What remains of a title's 6 s is the
+  prefill of its 590-token prompt, which this path runs at about 100 tokens a second.
+- **First main request.** It waits for the title that the client sent 0.6 s before it, so it gets back about the title's saved time:
+  27 s on average, 25%. The cold prefill of the 7,500-token prompt (about 80 s) is the rest, and is untouched. After the first
+  request the runs were warm as before.
+- **The edit failure is not the alias's.** The run's last turn was a malformed tool call from the main model (the opening quote of
+  `newString` missing, emitted as text). The alias handled only the three titles. The I3 night had this task fail 1 time in 5 on
+  the same model (`i3-night-2026-10-13.md`), so one failure in three is within that. Three runs say nothing more.
+- **The summary.** No run reached a compaction, so none was observed. **opencode 1.19.0's source answers it** (read from the
+  embedded JavaScript of `opencode.exe`): `Provider.getSmallModel`, which reads `small_model`, has two callers, the session-title
+  agent (when the `title` agent names no model of its own, and falling back to the main model if there is no small one) and a
+  project-copy name generator. The compaction request takes the `compaction` agent's configured model, **else the session's main
+  model**; it never calls `getSmallModel`. So the alias never handles a summarizer request, unless a user sets
+  `agent.compaction.model` to it, and the 43.1 s summary in the baseline was the main model thinking.
+- **Not measured:** Claude Code's small-model requests against the real model. The replay against a stub shows only that its title
+  request names the alias.
