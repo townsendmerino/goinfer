@@ -42,6 +42,13 @@ before any implementation or timed run.
 4. **MoE int8 GEMVs**, then int4mix (mixed kinds in one layer), then f32 by quantizing to int8 at build, as CUDA and
    WebGPU do.
 5. **Let auto pick Metal for int8 models**: `autoMetalPrecision` admits them once slices 1–2 and gate S pass.
+6. **Recurrent families, a later slice (added 2026-10-15, owner; not started).**
+   - **Scope:** native int8 for the Gated-DeltaNet hybrids (Qwen3.5, Qwen3-Next, Olmo Hybrid) and Nemotron-H: their
+     attention and MLP projections, the recurrent mixers' own projections, and the paths slice 1 declines for them.
+   - **Until then they do not run resident at int8:**
+     - Nemotron-H declines there (`metal/mamba.go:buildMamba`, OP2b);
+     - the DeltaNet families are queue item G44's same fix.
+   - Its gates are written before its code, as every slice's were.
 
 Out of scope: `q4k`. It needs per-32 activation quantizers, a Q4_K GEMV and a prefill answer, and has no `.giw` form.
 

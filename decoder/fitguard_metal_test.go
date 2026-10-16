@@ -66,7 +66,7 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 	}
 	// An architecture outside Metal's feature gate falls back to the CPU, so it keeps the CPU's pricing.
 	var declined string
-	for _, mt := range []string{"nemotron_h", "granitemoehybrid", "llama4_text"} {
+	for _, mt := range []string{"deepseek_v2", "kimi_k2", "llama4_text"} {
 		arch, _, err := resolveArchitecture(a3Config(mt))
 		if err == nil && len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) > 0 {
 			declined = mt

@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -170,6 +171,47 @@ type residLayer struct {
 	// encodeAttention's qGate branch. Zero-value Buffers (never dispatched) for every other family.
 	qGate      bool
 	dnQw, dnQs Buffer
+
+	// mamba non-nil marks a Mamba-2 mixer layer (mamba.go): like delta, no KV cache, no q/k/v/o, no geom. A layer with
+	// neither and a nil geom has no mixer at all (decoder.MixerNone: Nemotron-H's MLP blocks).
+	mamba *mambaLayer
+	// ffn is whether a feed-forward block follows the mixer (decoder.Model.ResidentLayerOps); false on Nemotron-H's
+	// Mamba and attention blocks.
+	ffn bool
+}
+
+// recurrent reports whether the layer's mixer keeps per-sequence state instead of a KV cache: every path that cannot
+// carry that state (a batched step, a KV copy, a layer-major prefill) declines on it.
+func (L *residLayer) recurrent() bool { return L.delta != nil || L.mamba != nil }
+
+// recurrentModel reports whether any layer has a recurrent mixer (DeltaNet or Mamba-2): the model-level form of
+// residLayer.recurrent, for the paths that decline such a model whole.
+func (r *resident) recurrentModel() bool { return r.dnet != nil || r.mamba != nil }
+
+// recurrentPrefillOK reports whether the batched prefill implements this resident's recurrent mixers: none, or DeltaNet in
+// the shape prefill_deltanet.go covers (dnetPrefillOn, pre-norm layers, no LayerNorm bias; Olmo Hybrid's postOnly stays
+// sequential). Mamba-2 has no prefill kernel, so its prompts prefill one position at a time.
+func (r *resident) recurrentPrefillOK() bool {
+	switch {
+	case r.mamba != nil:
+		return false
+	case r.dnet == nil:
+		return true
+	case !dnetPrefillOn || r.postOnly:
+		return false
+	}
+	for i := range r.layers {
+		if r.layers[i].preNormBias != (Buffer{}) {
+			return false
+		}
+	}
+	return true
+}
+
+// q4kLaneShapeOK reports whether the q4k lane covers this resident's shape: the plain dense pre-norm one (Phi-3, Llama).
+func (r *resident) q4kLaneShapeOK() bool {
+	return !(r.sandwich || r.postOnly || r.parallelBlock || r.outBias || r.layerNorm || r.moe != nil || r.g4moe != nil ||
+		r.recurrentModel() || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.qkNorm)
 }
 
 // modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs applied,
@@ -527,6 +569,13 @@ type resident struct {
 	uDnConvDim, uDnK, uDnNv, uDnNk, uDnHk, uDnHv                                   Buffer // DeltaNet geometry uniforms (model-level, uniform across layers)
 	uDnKeyDim, uDnQScale, uDnRep, uDnVBase                                         Buffer
 	uDnValueDim                                                                    Buffer // dnet.valueDim — the out_proj GEMV's K (input width)
+
+	// The Mamba-2 mixer (mamba.go); mamba nil ⇒ no Mamba layer, and nothing below is allocated.
+	mamba                                                      *mambaParams
+	pMbConv, pMbSSM, pMbGNorm                                  Pipeline
+	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc                  Buffer // per-token scratch: in_proj output, conv output, SSM output, gated output and its int8 form
+	uMbConvDim, uMbK, uMbDInner, uMbNH, uMbHD, uMbDS           Buffer
+	uMbRep, uMbGSize, uMbDtBase, uMbGroupSize, uMbZero, uMbEps Buffer
 }
 
 // recordExecErr latches the first command-buffer abort a forward path observes (audit C-09).
@@ -828,7 +877,7 @@ var w8FastMath = false
 // (whose families also carry the gated-softmax layers). Anything else keeps the int4 re-quantization. A K=V layer
 // has no v_proj and fails the check, so it is never fused as int8.
 func w8Eligible(m *decoder.Model, r *resident) bool {
-	if !nativeInt8 || r.g4moe != nil || r.dnet != nil {
+	if !nativeInt8 || r.g4moe != nil || r.recurrentModel() {
 		return false
 	}
 	// slice 4: a generic resident MoE (Qwen-style experts, not gpt-oss's biased ones, not paged: the pool stages int4)
@@ -877,7 +926,7 @@ func w8Weights(m *decoder.Model) bool {
 // o-proj on pSA, which the FFN shares; non-gated MLPs and output biases run other handles; MoE, DeltaNet and K=V layers
 // are not slice 1's shapes. Any of those keeps the int4 re-quantization.
 func w8AttnEligible(m *decoder.Model, r *resident) bool {
-	if !nativeInt8 || !nativeInt4Mix || r.moe != nil || r.g4moe != nil || r.dnet != nil || r.sandwich || r.postOnly || r.parallelBlock ||
+	if !nativeInt8 || !nativeInt4Mix || r.moe != nil || r.g4moe != nil || r.recurrentModel() || r.sandwich || r.postOnly || r.parallelBlock ||
 		r.nonGatedMLP || r.outBias || r.layerNorm {
 		return false
 	}
@@ -1026,6 +1075,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		attnSoftcap = 0
 	}
 	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels, attnSoftcap) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
+	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
+		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1160,6 +1212,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.dnet, err = buildDeltaNet(d, m, pipe); err != nil { // Gated-DeltaNet mixer; nil otherwise; error ⇒ decline
 		return nil, err
 	}
+	if r.mamba, err = buildMamba(m); err != nil { // Mamba-2 mixer; nil otherwise; error ⇒ decline
+		return nil, err
+	}
+	if r.mamba != nil {
+		r.buildMambaScratch(d, pipe, m.NormEps())
+	}
 	if r.dnet != nil {
 		dp := r.dnet
 		r.pDnConv, r.pDnGates = pipe("delta_conv"), pipe("delta_gates")
@@ -1237,20 +1295,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// - A Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn, and only in the shape prefill_deltanet.go
 	//   implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays sequential.
 	missing := m.MissingResidentFeatures(prefillFeatures)
-	dnetOK := r.dnet == nil
-	if r.dnet != nil && dnetPrefillOn && !r.postOnly {
-		dnetOK = true
-		for i := range r.layers {
-			if r.layers[i].preNormBias != (Buffer{}) {
-				dnetOK = false
-			}
-		}
-		if dnetOK {
-			missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatDeltaNet })
-		}
+	dnetOK := r.recurrentPrefillOK()
+	if r.dnet != nil && dnetOK {
+		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatDeltaNet })
 	}
-	if r.q4kLane && (r.sandwich || r.postOnly || r.parallelBlock || r.outBias || r.layerNorm || r.moe != nil || r.g4moe != nil ||
-		r.dnet != nil || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.qkNorm) {
+	if r.q4kLane && !r.q4kLaneShapeOK() {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
@@ -1325,7 +1374,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		lw := &w.Layers[l]
 		var L residLayer
 		var kEqV bool // false for isDelta (no geometry) and qGate (this family never has K=V); set below otherwise
-		isDelta := dnetOK && m.Qwen35LinearLayer(l)
+		mixer, hasFFN := m.ResidentLayerOps(l)
+		L.ffn = hasFFN
+		isDelta := dnetOK && mixer == decoder.MixerDeltaNet
+		isAttn := mixer == decoder.MixerAttention
 		if isDelta {
 			// Gated-DeltaNet mixer layer: no attention projections, no KV cache, no geometry at
 			// all — see metal/deltanet.go and residLayer.delta's doc. L.geom stays nil and
@@ -1336,6 +1388,18 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				return nil, e
 			}
 			L.delta = DL
+		} else if mixer == decoder.MixerMamba {
+			// Mamba-2 mixer layer (mamba.go): no attention projections, no KV cache, no geometry, as for DeltaNet.
+			if r.mamba == nil {
+				return nil, fmt.Errorf("metal: layer %d is a Mamba-2 layer but the model gives no Mamba geometry", l)
+			}
+			ML, e := buildMambaLayer(d, m, l, H, r.mamba)
+			if e != nil {
+				return nil, e
+			}
+			L.mamba = ML
+		} else if mixer == decoder.MixerNone {
+			// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
 		} else if dnetOK && attnGate {
 			// The same family's gated softmax layer (qwen3_5, qwen3_5_moe, qwen3_next), not every dnetOK family: Olmo
 			// Hybrid's full-attention layer is olmo3's plain scheme (AttnGate=false) and takes the ordinary branch below.
@@ -1408,7 +1472,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 			}
 		}
-		if !isDelta {
+		if isAttn {
 			// attention always dispatches L.attnSinks/L.uHasSink (unlike L.invf, which is only bound
 			// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
 			// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
@@ -1423,15 +1487,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			g4b, isG4MoE = m.Gemma4MoEResidentLayer(l)
 		}
 		switch {
+		case !hasFFN: // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
 		case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
 			L.g4moe = buildGemma4MoELayer(d, m, &g4b, r.g4moe)
 		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
 			L.moe = buildMoELayer(d, m, l, lw, r.moe)
-		case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases
+		case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases (zero where the family has none)
 			L.upW, L.upS = mk(&lw.UpProj)
 			L.dW, L.dS = mk(&lw.DownProj)
-			L.upBias = NewBufferFloats(d, lw.UpBias)
-			L.downBias = NewBufferFloats(d, lw.DownBias)
+			L.upBias = NewBufferFloats(d, orZeros(lw.UpBias, lw.UpProj.Rows()))
+			L.downBias = NewBufferFloats(d, orZeros(lw.DownBias, lw.DownProj.Rows()))
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
 			L.guW, L.guS = fuse(&lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
@@ -1440,7 +1505,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		if r.q4kLane {
 			// The q4k lane covers the plain dense shape (Phi-3, Llama, Qwen2): pre-norm attention (q/k/v bias allowed), a
 			// SwiGLU FFN.
-			if isDelta || L.moe != nil || L.g4moe != nil || L.qGate || L.kvShared || kEqV || r.nonGatedMLP {
+			if !isAttn || !hasFFN || L.moe != nil || L.g4moe != nil || L.qGate || L.kvShared || kEqV || r.nonGatedMLP {
 				return nil, fmt.Errorf("metal: --quant q4k runs on Metal for dense attention+SwiGLU layers only (layer %d is not)", l)
 			}
 			L.qkvSegs = q4kLaneProj(d, &lw.QProj, &lw.KProj, &lw.VProj)
@@ -1450,7 +1515,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
 		// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
 		// so gate on the per-layer truth, not the model-level flag.
-		postOnlyHere := r.postOnly && !isDelta
+		postOnlyHere := r.postOnly && isAttn
 		if !postOnlyHere {
 			// A postOnly (non-delta) layer has NO pre-norm weight at all (lw.PreAttnNorm/
 			// PreMLPNorm are 0-length — NewBufferFloats on an empty slice is a build-time error,
@@ -1460,12 +1525,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all: the MLP reuses the shared input norm the
 			// attention branch computed (encodeLayer's r.aq/r.aSc reuse), so lw.PreMLPNorm is empty (see
 			// Model.ParallelBlockResident), with the same NewBufferFloats hazard postOnly's comment above names.
-			if L.g4moe == nil && !r.parallelBlock { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
+			switch {
+			case !hasFFN: // no FFN, no pre-MLP norm
+			case mixer == decoder.MixerNone: // a feed-forward-only block's one norm is its input norm (Nemotron-H)
+				L.postNorm = L.preNorm
+			case L.g4moe == nil && !r.parallelBlock: // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
 				L.postNorm = NewBufferFloats(d, lw.PreMLPNorm)
 			}
 			if r.layerNorm && r.layerNormBias {
 				L.preNormBias = NewBufferFloats(d, lw.PreAttnNormBias)
-				if L.g4moe == nil && !r.parallelBlock {
+				if hasFFN && mixer != decoder.MixerNone && L.g4moe == nil && !r.parallelBlock {
 					L.postNormBias = NewBufferFloats(d, lw.PreMLPNormBias)
 				}
 			}
@@ -1511,7 +1580,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.plePW, L.plePS = mk(&lw.PLEProj)
 			L.postPLENorm = NewBufferFloats(d, lw.PostPLENorm)
 		}
-		if !isDelta {
+		if isAttn {
 			// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
 			// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
 			// (geom.half). RopeInvFreqLayerResident is the resident per-layer table (== the generic
@@ -1698,8 +1767,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's SA-GEMV. Duplicate
 	// widths across uniform layers are harmless.
 	for l := range r.layers {
-		if r.layers[l].delta != nil {
-			continue // Gated-DeltaNet layer: no attention geometry at all — L.geom is nil by design
+		if r.layers[l].geom == nil {
+			continue // a recurrent or mixer-less layer: no attention geometry at all, L.geom is nil by design
 		}
 		g := r.layers[l].geom
 		widthChecks = append(widthChecks,
@@ -2847,13 +2916,21 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		rp = uRopePos[0]
 	}
 	L := &r.layers[l]
-	if L.delta != nil {
+	switch {
+	case L.delta != nil:
 		// Gated-DeltaNet mixer: replaces the whole attention sub-block (norm through o-proj) —
 		// no KV cache, no positional anything, the state IS the history. The FFN sub-block below
 		// is the ordinary one for this layer (dense or MoE), unchanged.
 		r.encodeDeltaNetMixer(e, L)
-	} else {
+	case L.mamba != nil:
+		r.encodeMambaMixer(e, L, x) // Mamba-2 mixer (mamba.go), the same place in the layer as DeltaNet's
+	case L.geom == nil:
+		// no mixer: a feed-forward-only block
+	default:
 		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
+	}
+	if !L.ffn {
+		return // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
 	}
 	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
 	if L.g4moe != nil {
@@ -2876,7 +2953,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		// above only replaces the attention half) — Olmo Hybrid's DeltaNet layers reach NormPre2
 		// via NormPlacementLinear instead and carry a REAL pre-MLP norm (L.postNorm), so gate on
 		// the per-layer truth, matching cuda/resident.go segBFFN's postOnlyHere.
-		postOnlyHere := r.postOnly && L.delta == nil
+		postOnlyHere := r.postOnly && L.geom != nil
 		if r.q4kLane { // f32 activations throughout: norm, fused gate|up, SwiGLU, down + residual
 			e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, x, L.postNorm, r.axF32, r.uH, r.uEps, r.uAddOne)
 			r.q4kGemv(e, L.guSegs, false, Buffer{}, r.axF32, r.gu, r.uH)
@@ -3037,7 +3114,7 @@ func (r *resident) canUseF16Lane(l int) bool {
 		return false
 	}
 	L := &r.layers[l]
-	return L.moe == nil && L.g4moe == nil && L.delta == nil && !L.qGate
+	return L.moe == nil && L.g4moe == nil && !L.recurrent() && !L.qGate
 }
 
 // attnFACoreCount is the GPU core count attention_fa's split count targets (kvHead x S >= 2x the core count): 14, the
@@ -3206,7 +3283,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	L := &r.layers[l]
-	if L.moe != nil || L.g4moe != nil || L.delta != nil || L.qGate || L.window != 0 {
+	if L.moe != nil || L.g4moe != nil || L.recurrent() || L.geom == nil || L.qGate || L.window != 0 {
 		return false
 	}
 	g := L.geom

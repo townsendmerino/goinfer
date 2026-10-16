@@ -74,11 +74,11 @@ func (r *resident) greedyChainWhyNot() string {
 		return "paged experts (each MoE layer is its own submit, with a host readback between)"
 	case r.loraLayers != nil:
 		return "an adapter bound"
-	case r.dnet != nil:
+	case r.recurrentModel():
 		return "recurrent state: a forward past EOS cannot be undone"
 	}
 	for _, L := range r.layers {
-		if L.delta != nil {
+		if L.recurrent() {
 			return "recurrent state: a forward past EOS cannot be undone"
 		}
 	}

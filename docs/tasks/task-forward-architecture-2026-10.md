@@ -1145,6 +1145,125 @@ Their gate:
     `mambaCos`, which scores that case 0. Other callers of `cosF32` still have the guard.
 - **Next, step 2:** the resident builder learns Nemotron-H's one-operation blocks, with the per-slot state, then M and S.
 
+**Step 2, Nemotron-H on Metal, read 2026-10-15** (branch `op2b-step2-nemotron-metal-2026-10`). Nothing is declared yet.
+Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for the owner's call (below).
+
+- **The NoPE check:** Nemotron-H's adapter sets `RotaryDim: 0` and no RoPE base, so it builds no RoPE table, and
+  `Model.RopeInvFreqLayerResident` already returns an all-zero table (the identity rotation) for its attention layers.
+  - No change was needed. A clause added for it was dead code and was removed.
+  - `TestRopeInvFreqLayer_nemotronIsNoPE` pins the property, and a RoPE base planted in the adapter turns it red.
+- **The general form:** `decoder.Model.ResidentLayerOps(i)` gives each layer's mixer (attention, DeltaNet, Mamba-2 or
+  none) and whether a feed-forward block follows.
+  - This is §4.1's layer program in its smallest form: each layer is a mixer operation, then an optional FFN operation,
+    from a closed set of mixer kinds.
+  - Metal's build and encode switch on it and upload and encode only that layer's own weights. A hybrid of existing
+    kinds (Granite-4.0-H, once its multipliers are folded) needs no family branch on Metal.
+  - What it does not yet do: per-operation norms and fusions are still the runner's own (§4.1's fusion tables are
+    OP4's), and the FFN kind is still read from model-level flags.
+- **Mamba-2 on the resident** (`metal/mamba.go`):
+  - in_proj and out_proj run W8A8, as on WebGPU;
+  - the conv window and SSM state are per layer, reset with the slot (`resetRecurrent`);
+  - Granite-4.0-H declines on Metal, its multipliers not yet folded.
+- **The guards:** the twelve paths that declined DeltaNet now decline any recurrent mixer.
+  - `TestRecurrentGuards_declineMamba` checks all twelve on a hand-built resident with one Mamba-2 layer. For the four
+    where the recurrent check decides, a control without the Mamba layer is admitted.
+  - Plant: the KV-copy guard left DeltaNet-only. Red.
+- **KV pricing:** `ResidentKVBytes("metal")` prices attention layers only.
+  - `TestResidentKVBytes_attentionLayersOnly`: nemotron-tiny 2 attention layers of 5, qwen35-tiny's DeltaNet layers,
+    llama-tiny all.
+  - Plant: only DeltaNet skipped. Red: 640,000 bytes against 256,000.
+- **Gate S: pass.**
+  - One KV slot, and the batched step declines.
+  - Two conversations taking turns on the slot give their solo replies.
+  - Plant: the reset leaving the Mamba-2 state. Red: both later replies change.
+- **Gate M** (`TestNemotronResident_tinyAgainstControl`, against `llama-tiny` in the same run):
+
+  | quant | control (llama-tiny) | nemotron-tiny | verdict | conv plant |
+  |---|---|---|---|---|
+  | int4 | 0.999906, argmax 32/32 | 0.999699, argmax 31/32 | pass | red (0.0336) |
+  | int8int8 | 0.999888, argmax 32/32 | 0.994279, argmax 30/32 | **FAIL** | red (0.2451) |
+
+- **Why int8int8 fails: not the Mamba-2 mixer.**
+  - With the CPU's Mamba projections also W8A8 (`SetSSMQ8CPU`), nemotron-tiny still reads 0.994730.
+  - The native int8 path (`w8Eligible`) covers no recurrent family. Its doc comment scopes slice 1 to "no DeltaNet", and
+    the converted guard now declines Mamba too.
+  - So at int8int8, Nemotron-H's attention and MLP projections take the int4 re-quantization (`int4ConcatA`) while the CPU
+    runs int8. The control is on the native int8 path, so it matches.
+  - This agrees with the decoder's existing rule (`decodeRunnerDecline`): Nemotron-H is resident at int4 only by default,
+    with int8 behind `GOINFER_SSM_RESIDENT`.
+- **Not run (at the time of this reading):** tier 1 (the real 9B) and the declaration. Both waited on gate M; see the
+  amendment below.
+- **Regression checks:**
+  - The Metal set (DeltaNet, Qwen3.5, Olmo, GPT-2, Gemma, the parity, KV and batch tests): 86 pass, 45 skip.
+  - Its two failures: gate M's int8int8 row, and `TestGemma2ResidentParityMetal`, which fails identically on main
+    (0.998997 and 0.998657, G2-T's recorded readings: OP1-M1 made the tiny fixtures diagnostics, and the test still
+    asserts 0.999).
+  - The decoder's feature, matrix, residency and KV tests: 55 pass, 0 fail.
+
+**Gate M amended after the data (owner, 2026-10-15): graded at int4 only, with a condition.**
+
+- **The reason:** the gate assumed a native Metal int8 path, which no recurrent family has. So int8int8 measured the int4
+  re-quantization of Nemotron-H's attention and MLP weights, not this work.
+- **Gate M at int4: PASS:** 0.999699 against the control's 0.999906, argmax 31/32; the conv plant red.
+- **The condition, built:** at int8, Metal declines Nemotron-H as resident, and the CPU runs it at real int8, instead of
+  re-quantizing to int4.
+  - It is `metal/mamba.go:buildMamba`, on the decoder's own test (`decoder.Model.ResidentProjsInt4`).
+  - `TestNemotronResident_int8Declines`: int8int8 is refused with the int4-only reason, and int4 builds.
+  - Plant: the decline removed. Red: the int8int8 build went through.
+- **The ssm and non-gated-relu2 declaration is scoped to int4:** Metal builds Nemotron-H at int4 only.
+- **Checked once: the DeltaNet families have the same re-quantization.**
+  - `qwen35-tiny` at int8int8 runs resident on Metal as "int8int8→int4", with native int8 off.
+  - Filed as G44 (`docs/queue-correctness.md`) with the same fix.
+- **Native int8 for recurrent families** is slice 6 of `docs/tasks/task-metal-int8-2026-10.md`, later.
+- **Tier 1 next, after a by-day fit check.**
+
+**Tier 1's whole model cannot load on the Mac, by day or by night (2026-10-15).** The int4 .giw that nobara built from
+the registered Q8_0 GGUF (`make-nemotron-giw.sh`, at `6622df20`) is 19.2 GB. Its Mamba projections stay f32 in the
+bundle, about 0.59 GB a Mamba layer over 27, and only the attention and MLP matrices take int4. That is more than the
+Mac's 16 GB RAM, so the fallback's night half cannot run here. The fit-check line's 5.5 GB above assumed every matrix
+at int4.
+
+**Tier 1 on a layer slice, registered 2026-10-15 before any run (the registered fallback, by day).**
+
+- **The slice:** layers 0 (Mamba), 1 (MLP) and 14 (the first attention layer) of the Q8_0 GGUF, renumbered 0 to 2, with
+  the embedding, final norm and head (`scripts/slice_gguf_layers.py`, bytes checked against the source). nobara built
+  its int4 .giw (`nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw`, 1.88 GB, sha256 `13c38555b9ac…`) and the Mac pulled
+  it into `~/models/nemotron/`.
+  - **Why these three:** a first-N slice that reaches an attention layer needs 15 layers, 8 of them Mamba, about 6 GB.
+    That does not fit by day. These three hold real weights of every block kind the step builds.
+  - **What it is not:** the model. Its logits are what three layers make of the prompt.
+- **The arms, `TestNemotronResident_tier1Slice`:** one load of the .giw at int4; the Metal resident is built from it and
+  run against the CPU model it was built from. That is gate M's harness: greedy lockstep for 32 steps off the CPU, graded
+  from position 2.
+- **Bars, G2-R's:** min logit cosine ≥ 0.88 and argmax agreement ≥ 50%.
+- **The control, same process, before the slice:** the dense Qwen2.5-Coder-1.5B through its int4 Metal .giw, the same
+  harness. It must reach min cosine ≥ 0.95, or the run is VOID.
+- **A refused load** (the fit guard or Metal's memory guard) is VOID, not FAIL. No guard is bypassed.
+- **Not answered by the slice:** the whole model's agreement. That needs a smaller bundle, quantized Mamba projections
+  (B27), or a box that holds 19.2 GB.
+
+**Tier 1 on the slice, read 2026-10-15 22:36 PDT: PASS.** By day, under the timing lock. The fit guard and Metal's memory
+guard admitted both loads; nothing was bypassed. Record: `docs/measurements/op2b-step2-2026-10/tier1-slice-2026-10-15/`.
+
+- **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
+- **The Nemotron-H slice:** min cosine 0.994410 against 0.88; argmax 29/32 against 16. **PASS.**
+- **What stays open:** the whole model, for which this Mac has no room, and filed as B27 (`docs/queue-engineering.md`; filed as B26, renumbered
+  because main's B26 is another item).
+
+**Declared, 2026-10-15 (owner: the slice stands in for tier 1 for now): Metal declares `ssm` and `non-gated-relu2`,
+int4 only.**
+
+- **What it rests on:**
+  - gate M at int4;
+  - gate S;
+  - the tier 0 kernel tests (K, the norm groups, ReLU²), the guard gate and the int8 decline, each with its plant;
+  - the three-layer slice of the real 9B against the CPU, above.
+- **Owed under B27:** the whole-model run. B27 keeps the Mamba projections at int8 in the .giw so the whole 9B fits this Mac
+  at night, against the bars above.
+- **The matrices:** Nemotron-H reads resident on Metal. Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds
+  it, `buildMamba` declines it, and only its "missing: `ssm`" reason goes. The admission golden lists Metal for both,
+  as it tracks the feature-only model.
+
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
