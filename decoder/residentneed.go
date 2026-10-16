@@ -47,7 +47,13 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var total int64
 	for l := range nLayers {
-		if mixer, _ := m.ResidentLayerOps(l); mixer != MixerAttention {
+		mixer, _ := m.ResidentLayerOps(l)
+		if mixer == MixerMLA { // the latent rows, f32 (metal/mla.go)
+			_, kvLoRA, _, qkRope, _, _, _, _, _ := m.MLAResidentParams()
+			total += padded * int64(kvLoRA+qkRope) * 4
+			continue
+		}
+		if mixer != MixerAttention {
 			continue // no KV cache on a recurrent or mixer-less layer (metal/model.go leaves r.kc[l]/r.vc[l] zero)
 		}
 		if m.KVSrcAtResident(l) != l {
