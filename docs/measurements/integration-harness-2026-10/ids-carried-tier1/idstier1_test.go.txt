@@ -1,0 +1,298 @@
+//go:build cuda
+
+package serveapp
+
+// Throwaway measurement harness for the carried-ids tier-1 gate (id-roundtrip-step0-2026-10-15.md, §(c) Amendment 1; results in
+// ids-carried-2026-10-15.md). Not committed here: its source is archived beside the record as idstier1_test.go.txt. Copy it into
+// internal/serveapp/ and run, under the timing lock:
+//
+//	IDS_REQ=<step 0's requests.jsonl> IDS_CELLS=<cells file, one id per line, in run order> IDS_ARGS='<serve flags>' \
+//	  IDS_OUT=<out.jsonl> go test -tags cuda -count=1 -timeout 20m -run '^TestIDsTier1$' -v ./internal/serveapp/
+//
+// Per cell: the request replayed greedily through serve's /v1/responses handler (streamed, as Codex sends it), then the next
+// request built as Codex echoes (the reply's items less status, then the archived follow-up items) and rendered by the route
+// with the feature on. For the four misses (IDS_MISSES) the next request is also SENT twice, max_output_tokens 1: right after
+// the reply (warm), and after another session's first request has taken the KV slot (cold). The no-carrier arm's prompt ids
+// are the same body with the reasoning item's encrypted_content removed, rendered.
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	_ "github.com/townsendmerino/goinfer/cuda"
+)
+
+type t1Req struct {
+	ID       string            `json:"id"`
+	Run      string            `json:"run"`
+	N        int               `json:"n"`
+	Body     map[string]any    `json:"body"`
+	Follow   []json.RawMessage `json:"follow"`
+	Recorded map[string]int    `json:"recorded"`
+	Archived []map[string]any  `json:"archived_reply"`
+}
+
+func TestIDsTier1(t *testing.T) {
+	if os.Getenv("IDS_REQ") == "" {
+		t.Skip("set IDS_REQ")
+	}
+	reqs := map[string]*t1Req{}
+	firstOf := map[string]string{} // session -> its first request id
+	{
+		f, err := os.Open(os.Getenv("IDS_REQ"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 1<<20), 1<<28)
+		for sc.Scan() {
+			var r t1Req
+			if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
+				t.Fatal(err)
+			}
+			reqs[r.ID] = &r
+			if r.N == 0 {
+				firstOf[r.Run] = r.ID
+			}
+		}
+		f.Close()
+	}
+	var cells []string
+	raw, _ := os.ReadFile(os.Getenv("IDS_CELLS"))
+	for _, l := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			cells = append(cells, l)
+		}
+	}
+	misses := map[string]bool{}
+	for _, m := range strings.Fields(os.Getenv("IDS_MISSES")) {
+		misses[m] = true
+	}
+	tokLog := os.Getenv("IDS_OUT") + ".token-ids.jsonl"
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	sf := registerFlags(fs)
+	if err := fs.Parse(append(strings.Fields(os.Getenv("IDS_ARGS")), "--log-token-ids", tokLog)); err != nil {
+		t.Fatal(err)
+	}
+	markGivenFlags(fs, &sf.cfg)
+	cfg := sf.cfg
+	cfg.load = *sf.lf
+	if err := cfg.load.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now()
+	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "IDS load %.1fs\n", time.Since(t0).Seconds())
+	var lineBuf bytes.Buffer
+	mux, _ := srv.routes(cfg, "", &lineBuf)
+	var lm *loadedModel
+	for _, v := range srv.models {
+		lm = v
+	}
+	of, err := os.Create(os.Getenv("IDS_OUT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer of.Close()
+	enc := json.NewEncoder(of)
+	nTok := 0
+	lastTok := func() map[string]any {
+		f, _ := os.Open(tokLog)
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 1<<20), 1<<26)
+		var last map[string]any
+		n := 0
+		for sc.Scan() {
+			last = nil
+			_ = json.Unmarshal(sc.Bytes(), &last)
+			n++
+		}
+		if n != nTok+1 {
+			t.Fatalf("token-id log has %d lines after %d generations", n, nTok+1)
+		}
+		nTok++
+		return last
+	}
+	type sent struct {
+		items        []map[string]any
+		in, cached   int
+		line         string
+		tok          map[string]any
+		wall         time.Duration
+		promptSHA    string
+		gen          []int
+		promptRender []int
+	}
+	send := func(body map[string]any) sent {
+		bb, _ := json.Marshal(body)
+		lineBuf.Reset()
+		s0 := time.Now()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(bb)))
+		out := sent{wall: time.Since(s0), line: strings.TrimSpace(lineBuf.String())}
+		if rec.Code != 200 {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		for _, blk := range strings.Split(rec.Body.String(), "\n\n") {
+			for _, ln := range strings.Split(blk, "\n") {
+				d, ok := strings.CutPrefix(ln, "data: ")
+				if !ok {
+					continue
+				}
+				var ev map[string]any
+				if json.Unmarshal([]byte(d), &ev) != nil {
+					continue
+				}
+				switch ev["type"] {
+				case "response.output_item.done":
+					out.items = append(out.items, ev["item"].(map[string]any))
+				case "response.completed", "response.incomplete":
+					u := ev["response"].(map[string]any)["usage"].(map[string]any)
+					out.in = int(u["input_tokens"].(float64))
+					out.cached = int(u["input_tokens_details"].(map[string]any)["cached_tokens"].(float64))
+				}
+			}
+		}
+		out.tok = lastTok()
+		out.promptSHA = out.tok["prompt_sha256"].(string)
+		for _, g := range out.tok["gen"].([]any) {
+			out.gen = append(out.gen, int(g.(float64)))
+		}
+		var oc idsOutcome
+		out.promptRender, oc, err = kv0RenderIDs(srv, lm, "/v1/responses", bb, true)
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		_ = oc
+		return out
+	}
+	withBody := func(r *t1Req, maxTok int) map[string]any {
+		b := map[string]any{}
+		for k, v := range r.Body {
+			b[k] = v
+		}
+		b["temperature"], b["max_output_tokens"], b["stream"] = 0, maxTok, true
+		return b
+	}
+	start := time.Now()
+	for k, id := range cells {
+		r := reqs[id]
+		if r == nil {
+			t.Fatalf("no request %s", id)
+		}
+		body := withBody(r, 4096)
+		rep := send(body)
+		valid := len(rep.promptRender) == rep.in && idsSHA256(rep.promptRender) == rep.promptSHA
+		// next request as Codex echoes it
+		var echo []any
+		var myCalls []string
+		for _, it := range rep.items {
+			e := map[string]any{}
+			for kk, v := range it {
+				if kk != "status" {
+					e[kk] = v
+				}
+			}
+			if it["type"] == "function_call" {
+				myCalls = append(myCalls, it["call_id"].(string))
+			}
+			echo = append(echo, e)
+		}
+		var arcCalls []string
+		for _, it := range r.Archived {
+			if it["type"] == "function_call" {
+				arcCalls = append(arcCalls, it["call_id"].(string))
+			}
+		}
+		callMap := map[string]string{}
+		for i := range arcCalls {
+			if i < len(myCalls) {
+				callMap[arcCalls[i]] = myCalls[i]
+			}
+		}
+		next := withBody(r, 1)
+		input := append([]any{}, r.Body["input"].([]any)...)
+		input = append(input, echo...)
+		for _, f := range r.Follow {
+			var it map[string]any
+			_ = json.Unmarshal(f, &it)
+			if c, ok := it["call_id"].(string); ok && callMap[c] != "" {
+				it["call_id"] = callMap[c]
+			}
+			input = append(input, it)
+		}
+		next["input"] = input
+		nb, _ := json.Marshal(next)
+		R, oc, rerr := kv0RenderIDs(srv, lm, "/v1/responses", nb, true)
+		slot := append(append([]int(nil), rep.promptRender...), rep.gen...)
+		// the no-carrier arm: the same body, the reasoning item's encrypted_content removed
+		var noC []any
+		for _, it := range input {
+			if m, ok := it.(map[string]any); ok && m["type"] == "reasoning" && strings.HasPrefix(fmtString(m["encrypted_content"]), reasoningBlobV2Prefix) {
+				c := map[string]any{}
+				for kk, v := range m {
+					if kk != "encrypted_content" {
+						c[kk] = v
+					}
+				}
+				it = c
+			}
+			noC = append(noC, it)
+		}
+		nd := withBody(r, 1)
+		nd["input"] = noC
+		ndb, _ := json.Marshal(nd)
+		D, _, _ := kv0RenderIDs(srv, lm, "/v1/responses", ndb, true)
+		line := map[string]any{
+			"id": id, "wall_s": rep.wall.Seconds(), "prompt": rep.in, "night_prompt": r.Recorded["input"], "offset": rep.in - r.Recorded["input"],
+			"cached": rep.cached, "gen": len(rep.gen), "valid_prompt": valid, "canon": rep.tok["canon"], "reply_line": rep.line,
+			"next_render_error": fmt.Sprint(rerr), "next_ids": oc.fields(), "next_starts_with_slot": rerr == nil && len(R) >= len(slot) && idsLCP(R, slot) == len(slot),
+			"lcp_next_slot_minus_P": idsLCP(R, slot) - len(rep.promptRender), "lcp_next_nocarrier_minus_P": idsLCP(R, D) - len(rep.promptRender),
+			"reasoning_item_v2": len(rep.items) > 0 && strings.HasPrefix(fmtString(rep.items[0]["encrypted_content"]), reasoningBlobV2Prefix),
+		}
+		if misses[id] {
+			w := send(next)
+			o := send(withBody(reqs[firstOfOther(firstOf, r.Run)], 1))
+			c := send(next)
+			line["warm"] = map[string]any{"cached": w.cached, "prompt": w.in, "sha": w.promptSHA, "line": w.line, "wall_s": w.wall.Seconds()}
+			line["other"] = map[string]any{"id": firstOfOther(firstOf, r.Run), "cached": o.cached, "prompt": o.in, "wall_s": o.wall.Seconds()}
+			line["cold"] = map[string]any{"cached": c.cached, "prompt": c.in, "sha": c.promptSHA, "line": c.line, "wall_s": c.wall.Seconds(),
+				"lcp_with_other_prompt": idsLCP(c.promptRender, o.promptRender)}
+			line["warm_eq_cold"] = w.promptSHA == c.promptSHA && w.in == c.in
+			line["warm_eq_render"] = w.promptSHA == idsSHA256(R)
+			line["slot_len"] = len(slot)
+		}
+		_ = enc.Encode(line)
+		fmt.Fprintf(os.Stderr, "IDS %d/%d %s: %.1fs, prompt %d (offset %d), cached %d, gen %d, next %s starts-with-slot %v, elapsed %.0fs\n",
+			k+1, len(cells), id, rep.wall.Seconds(), rep.in, rep.in-r.Recorded["input"], rep.cached, len(rep.gen), oc.fields(), line["next_starts_with_slot"], time.Since(start).Seconds())
+	}
+	resp := httptest.NewRecorder()
+	srv.handleAdminStatus(resp, httptest.NewRequest("GET", "/admin/status", nil))
+	fmt.Fprintf(os.Stderr, "IDS status %s\n", resp.Body.String())
+}
+
+// firstOfOther is the first request of a session other than run.
+func firstOfOther(firstOf map[string]string, run string) string {
+	for _, s := range []string{"search-r2-031737", "edit-r2-034630", "write-r3-043705", "fix-r3-052213", "write-r2-041205"} {
+		if s != run && firstOf[s] != "" {
+			return firstOf[s]
+		}
+	}
+	return ""
+}

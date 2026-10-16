@@ -1,0 +1,31 @@
+=== RUN   TestIDsTier1
+decoder: mellum2.1-thinking.int4.e4h.cuda.v16.giw is not in memory: reading its 6.9 GB once before the load
+swap guard (load): not armed for /home/francis/models/mellum2.1-thinking.int4.e4h.cuda.v16.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+[cuda] C′ cache: 64 slots/layer would need 6.3 GB VRAM but only 5.0 GB free — capping to 45 (4.5 GB)
+loaded "mellum2.1-thinking": 28-layer model (vocab 98304) in 20.33s [chat: mellum2, thinking: template default on, serving template]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  context: 16384 tokens (--ctx; model maximum 131072) · KV f32
+  fit: 16384-token cap needs 1.8 GB KV (weights 6.4 GB, budget 34.8 GB, 33.1 GB left for a request's own prefill)
+  KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"mellum2.1-thinking" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+IDS load 25.5s
+IDS 1/12 write-r2-041205#0: 66.0s, prompt 6090 (offset -18), cached 0, gen 205, next ids=1/1 ids_fallback=- starts-with-slot true, elapsed 66s
+IDS 2/12 write-r2-041205#2: 10.4s, prompt 6687 (offset -18), cached 6108, gen 232, next ids=1/3 ids_fallback=v1,v1 starts-with-slot true, elapsed 76s
+IDS 3/12 write-r2-041205#3: 14.3s, prompt 7131 (offset -18), cached 6693, gen 545, next ids=1/4 ids_fallback=v1,v1,v1 starts-with-slot true, elapsed 91s
+IDS 4/12 write-r2-041205#4: 21.3s, prompt 7858 (offset -18), cached 7192, gen 723, next ids=1/5 ids_fallback=v1,v1,v1,v1 starts-with-slot true, elapsed 140s
+IDS 5/12 write-r2-041205#5: 47.8s, prompt 8548 (offset -18), cached 7922, gen 2238, next ids=1/6 ids_fallback=v1,v1,v1,v1,v1 starts-with-slot true, elapsed 239s
+IDS 6/12 write-r2-041205#8: 20.9s, prompt 10317 (offset -18), cached 8566, gen 124, next ids=1/9 ids_fallback=v1,v1,v1,v1,v1,v1,v1,v1 starts-with-slot true, elapsed 260s
+IDS 7/12 write-r2-041205#10: 22.7s, prompt 10812 (offset -18), cached 10351, gen 936, next ids=1/11 ids_fallback=v1,v1,v1,v1,v1,v1,v1,v1,v1,v1 starts-with-slot true, elapsed 282s
+IDS 8/12 fix-r3-052213#1: 8.2s, prompt 6375 (offset -18), cached 6072, gen 287, next ids=1/2 ids_fallback=v1 starts-with-slot true, elapsed 306s
+IDS 9/12 fix-r3-052213#7: 27.1s, prompt 8826 (offset -18), cached 6378, gen 85, next ids=1/8 ids_fallback=v1,v1,v1,v1,v1,v1,v1 starts-with-slot true, elapsed 333s
+IDS 10/12 fix-r3-052213#9: 39.4s, prompt 10501 (offset -18), cached 8828, gen 1133, next ids=1/10 ids_fallback=v1,v1,v1,v1,v1,v1,v1,v1,v1 starts-with-slot true, elapsed 435s
+IDS 11/12 write-r3-043705#8: 37.7s, prompt 9417 (offset -18), cached 6072, gen 145, next ids=1/9 ids_fallback=v1,v1,v1,v1,v1,v1,v1,v1 starts-with-slot true, elapsed 473s
+IDS 12/12 write-r3-043705#10: 13.1s, prompt 10000 (offset -18), cached 9439, gen 365, next ids=1/11 ids_fallback=v1,v1,v1,v1,v1,v1,v1,v1,v1,v1 starts-with-slot true, elapsed 486s
+IDS status {"carried_ids":{"carried":113,"fallbacks":{"v1":105},"used":8},"generations_inflight":0,"halted":false}
+
+--- PASS: TestIDsTier1 (512.41s)
+PASS

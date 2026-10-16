@@ -335,6 +335,9 @@ type config struct {
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	allowedHosts    string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
 	logRequests     bool          // -log-requests: one stderr line per generation request
+	logTokenIDs     string        // -log-token-ids: append one JSON line per generation (prompt hash, generated ids) to this file; "" = off
+	idsKeyFile      string        // -ids-key-file: the key that signs carried token ids; "" = a random key per start
+	noCarryIDs      bool          // -carry-ids=false: do not carry a reply's token ids back in its reasoning item (the zero value carries them)
 	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
 	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
 	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
@@ -406,7 +409,10 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model, and pull and load GGUF files or whole safetensors checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
 	fs.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
 	fs.StringVar(&cfg.allowedHosts, "allowed-hosts", "", "comma-separated Host names, beyond localhost, 127.0.0.1, [::1] and the -addr host, that a listener bound to the loopback answers (default none). A request whose Host is any other name gets 421: that is what stops a web page from reaching a loopback server by DNS rebinding. Set it when a reverse proxy on this machine forwards a public name to the loopback port. Has no effect on a listener bound beyond the loopback, which answers any Host and is protected by -api-key")
-	fs.BoolVar(&cfg.logRequests, "log-requests", false, "write one line to stderr per generation request (/v1/chat/completions, /v1/completions, /v1/responses, /v1/messages) when it finishes: route, model, status, prompt and completion tokens, time to first token and total time. Off by default; a request that failed before generating shows `-` for the model and token counts")
+	fs.BoolVar(&cfg.logRequests, "log-requests", false, "write one line to stderr per generation request (/v1/chat/completions, /v1/completions, /v1/responses, /v1/messages) when it finishes: route, model, status, prompt and completion tokens, time to first token and total time, then the first generation's KV reuse (reused, the slot's length before the request, and div, where the prompt left it), canon (1 when the generated ids are the tokenizer's own split of their text), and on /v1/responses the carried token ids (ids=<used>/<carried> and ids_fallback, the reason for each turn that re-tokenized). Off by default; a request that failed before generating shows `-` for the model and token counts")
+	fs.StringVar(&cfg.logTokenIDs, "log-token-ids", "", "for measurement runs: append one JSON line per generation to this file — time, route, response id, the prompt's length and SHA-256 (of its ids as little-endian uint32s), reused and slot positions, the generated token ids, and whether they are the tokenizer's own encoding of their text. The file holds the model's output as token ids; it is created 0600. Off by default")
+	fs.Var(invertedBool{&cfg.noCarryIDs}, "carry-ids", "carry a /v1/responses reply's generated token ids back to the server in its reasoning item's encrypted_content (signed), and use them when the reply is echoed, so it re-tokenizes to the ids the model generated. false writes the text-only blob and re-tokenizes every echoed turn, as before this existed")
+	fs.StringVar(&cfg.idsKeyFile, "ids-key-file", "", "a file holding the key (32 bytes or more, mode 0600) that signs the token ids a /v1/responses reply carries back in its reasoning item's encrypted_content, so an echoed reply re-tokenizes to the ids the model generated. Default: a random key made at start and never written, so after a restart, or on another server, older replies fall back to re-tokenizing their text (counted as `key`). Set it to keep carried ids valid across restarts or between servers that share it")
 	fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
 	fs.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
 	fs.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth, so its directory must be one nobody else can rewrite: not writable by its group or by everyone, unless it is sticky like /tmp). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
@@ -590,7 +596,7 @@ func (srv *server) routes(cfg config, authKey string, reqLog io.Writer) (*http.S
 	// ...)".
 	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is
 	// logged with its status too.
-	rl := func(h http.HandlerFunc) http.HandlerFunc { return logRequests(reqLog, h) }
+	rl := func(h http.HandlerFunc) http.HandlerFunc { return srv.traceRequests(reqLog, h) }
 	mux.HandleFunc("POST /v1/chat/completions", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat))))))
 	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
 	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
@@ -999,6 +1005,16 @@ func newServer(cfg config) (*server, error) {
 		// once terminal.
 		files:   newFileStore(256),
 		batches: newBatchStore(256),
+	}
+	if !cfg.noCarryIDs {
+		if s.idsKey, err = loadIDsKey(cfg.idsKeyFile); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.logTokenIDs != "" {
+		if s.tokenLog, err = openTokenIDLog(cfg.logTokenIDs); err != nil {
+			return nil, err
+		}
 	}
 	for _, spec := range cfg.models {
 		if isWhisperDir(spec.path) { // an encoder-decoder speech model: its own registry and route (speech.go)

@@ -87,6 +87,9 @@ type loadedModel struct {
 	// (vocab, tokenizer), so it is built once per model, not per constrained request.
 	tokenBytesOnce sync.Once
 	tokenBytes     [][]byte
+	// idsIdent is the model-and-tokenizer identity carried-id blobs name (idsIdentity), computed once.
+	idsIdentOnce sync.Once
+	idsIdent     string
 	// maxTokBytes is the byte length of the longest token in the vocab, computed once. It bounds tokenization cost: a
 	// servable prompt is at most ctx tokens, so its text is at most ctx*maxTokBytes bytes, and a longer input cannot
 	// fit and is rejected before the O(n) BPE runs.
@@ -417,6 +420,13 @@ type server struct {
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore
 
+	// idsKey signs the token ids a reply carries back (carried_ids.go): random per start, or --ids-key-file. nil turns the
+	// feature off (a server built without newServer). idsStats are the carried-id totals /admin/status reports.
+	idsKey   *idsKey
+	idsStats idsCounters
+	// tokenLog is --log-token-ids' file, nil when the flag is off.
+	tokenLog *tokenIDLog
+
 	// gens is the cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every generation surface. Never
 	// nil after newServer.
 	gens *generationRegistry
@@ -662,6 +672,8 @@ type chatMessage struct {
 	// turns of the tool loop in progress and drops it for earlier turns (chat/history.go); any other model ignores it, as before.
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 	Reasoning        string `json:"reasoning,omitempty"`
+	// carried is the carried-id blob a Responses reasoning item gave this assistant message (carried_ids.go); nil when none.
+	carried *idsCarrier
 }
 
 // text returns the message's text: the plain-string content, or the concatenated
@@ -1384,7 +1396,15 @@ func grammarFor(rf *respFormat) (constrain.Grammar, error) {
 // not a new query (chat.Turn.ToolLoop), the rule /v1/messages follows (anthropicTurns): moved into the system prompt
 // it would replace or reorder what the model was told first and change the prompt's prefix.
 func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
+	system, turns, _ := messagesToTurnsCarried(msgs)
+	return system, turns
+}
+
+// messagesToTurnsCarried is messagesToTurns that also returns, by turn index, the carried-id blob of each assistant turn that
+// has one.
+func messagesToTurnsCarried(msgs []chatMessage) (string, []chat.Turn, map[int]*idsCarrier) {
 	var system string
+	var carriers map[int]*idsCarrier
 	var turns []chat.Turn
 	for _, m := range msgs {
 		switch m.Role {
@@ -1410,12 +1430,18 @@ func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 			if reasoning == "" {
 				reasoning = m.Reasoning
 			}
+			if m.carried != nil {
+				if carriers == nil {
+					carriers = map[int]*idsCarrier{}
+				}
+				carriers[len(turns)] = m.carried
+			}
 			turns = append(turns, chat.Turn{Role: "assistant", Content: m.text(), ToolCalls: tc, Reasoning: reasoning})
 		default:
 			turns = append(turns, chat.Turn{Role: "user", Content: m.text()})
 		}
 	}
-	return system, turns
+	return system, turns, carriers
 }
 
 // rawPrompt is the unrecognized-template fallback (plain conversation text).
@@ -1805,6 +1831,9 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			tr.firstToken()
 		}
 		ids = append(ids, id)
+		if gr.outcome != nil {
+			gr.outcome.ids = ids // read by a reasoning item that closes mid-stream (carriedMint)
+		}
 		// DecodePiece, not Decode or DecodeContinuation: these ids continue the prompt (no sequence-level
 		// dummy-prefix strip), and appending each token's own piece is exactly what the whole-sequence decode does
 		// internally.
@@ -1853,8 +1882,11 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		// string, if one ended it early — the confidences then cover the part the client received).
 		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
 	}
+	if gr.outcome != nil {
+		gr.outcome.ids, gr.outcome.done, gr.outcome.stopHit = ids, true, stopHit != ""
+	}
 	if tr != nil {
-		tr.generated(lm.name, len(gr.promptIDs), len(ids))
+		tr.generated(lm, gr, gen, ids)
 	}
 	return finish, len(ids), stopHit
 }

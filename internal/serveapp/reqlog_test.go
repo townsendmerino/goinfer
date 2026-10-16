@@ -39,7 +39,7 @@ func TestRequestLog_oneLinePerGenerationRequest(t *testing.T) {
 		return resp, b
 	}
 	lines := func() []string { return strings.Split(strings.TrimRight(logbuf.String(), "\n"), "\n") }
-	re := regexp.MustCompile(`^request: POST /v1/chat/completions model=(\S+) status=(\d+) prompt_tokens=(\S+) completion_tokens=(\S+) ttft=(\S+) total=(\d+)ms$`)
+	re := regexp.MustCompile(`^request: POST /v1/chat/completions model=(\S+) status=(\d+) prompt_tokens=(\S+) completion_tokens=(\S+) ttft=(\S+) total=(\d+)ms reused=(\S+) slot=(\S+) div=(\S+) canon=([01-]) ids=(\S+) ids_fallback=(\S+)$`)
 
 	// 1. A normal request: the line's counts are the response's own usage.
 	resp, body := post(`{"model":"tiny","max_tokens":4,"temperature":0,"messages":[{"role":"user","content":"Hi"}]}`)
@@ -60,6 +60,9 @@ func TestRequestLog_oneLinePerGenerationRequest(t *testing.T) {
 	m := re.FindStringSubmatch(ls[0])
 	if m == nil {
 		t.Fatalf("the line does not have the documented shape: %q", ls[0])
+	}
+	if m[11] != "-" || m[12] != "-" || m[7] != "0" || m[10] == "-" {
+		t.Errorf("reuse and carried-id fields %q: a first chat request reuses 0, reports canon, and carries no ids (a Responses-only field)", ls[0])
 	}
 	if m[1] != "tiny" || m[2] != "200" {
 		t.Errorf("model/status = %s/%s: %q", m[1], m[2], ls[0])

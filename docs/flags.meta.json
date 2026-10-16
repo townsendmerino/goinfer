@@ -374,7 +374,24 @@
   {
    "name": "log-requests",
    "group": "Other",
-   "summary": "Write one line to stderr per generation request when it finishes: route, model, status, prompt and completion tokens, time to first token, total time. Covers `/v1/chat/completions`, `/v1/completions`, `/v1/responses` and `/v1/messages`. Off by default; a request that failed before generating shows `-` for the model and token counts."
+   "summary": "Write one line to stderr per generation request when it finishes: route, model, status, prompt and completion tokens, time to first token, total time, KV reuse and carried token ids. Covers `/v1/chat/completions`, `/v1/completions`, `/v1/responses` and `/v1/messages`. Off by default; `-` marks a value that does not exist."
+  },
+  {
+   "name": "log-token-ids",
+   "group": "Other",
+   "summary": "For measurement runs: append one JSON line per generation to this file, with the prompt's length and SHA-256, the reused and slot positions, and the generated token ids. Off by default."
+  },
+  {
+   "name": "carry-ids",
+   "group": "Other",
+   "type": "bool",
+   "default": "true",
+   "summary": "Carry a `/v1/responses` reply's token ids back in its reasoning item, signed, so an echoed reply re-tokenizes to the ids the model generated. On by default; `false` re-tokenizes every echoed turn."
+  },
+  {
+   "name": "ids-key-file",
+   "group": "Other",
+   "summary": "A file (32 bytes or more, mode 0600) holding the key that signs the token ids a `/v1/responses` reply carries back in its reasoning item. Default: a random key per start, so after a restart older replies re-tokenize their text instead."
   }
  ],
  "subcommands": [
