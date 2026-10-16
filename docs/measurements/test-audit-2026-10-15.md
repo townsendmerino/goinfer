@@ -150,7 +150,7 @@ are noted where measured.
 - The test now also asserts that the refusal allocates under 16 MiB. With the header check removed it is red:
   144,118,760 bytes allocated.
 
-## Duplicates, for the owner's decision (none deleted)
+## Duplicates, for the owner's decision (none deleted; item 1 decided, see "Race-detector subset")
 
 1. **Pure-computation packages run twice: under `-race` in `test-rest`, and without it in every `root-*` job.**
    - `internal/whisper` (356 s under `-race`), `multimodal` (259 s) and `internal/kvmgr` (about 20 minutes when not
@@ -165,6 +165,77 @@ are noted where measured.
      race) is the evidence they are safe.
 2. **`TestPolicy_tinyMatchesTransformers` and `TestPolicy_plantedDefectsAreRed`** both run the policy comparison. The
    planted test now stops at the first difference, so the overlap is one configuration per defect. Kept.
+
+## Race-detector subset (owner-approved 2026-10-15, with a condition)
+
+**The condition:** a test may move to a spread-out sample under `-race` only if neither it nor the code under it starts
+goroutines or shares state across them. Every other test stays fully under `-race`, `TestOracle_pool` included unless
+shown otherwise.
+
+**How it was measured, not read.**
+
+- Each of the three packages' 90 top-level tests ran alone, in its own process (so a pool started lazily is counted),
+  with a temporary `TestMain` reading the runtime's `/sched/goroutines-created:goroutines`.
+- The framework's own goroutines (one per test and one per subtest, counted from `-v`) were subtracted.
+- **A remainder of exactly 8 is the garbage collector's workers, not the code.** A scratch test that only calls
+  `runtime.GC()` created 9 goroutines: its own, plus one collector worker per processor, and `GOMAXPROCS` is 8 here.
+  So 0 or 8 means no goroutine was started by the code under test.
+
+| package | tests | start goroutines (stay fully under `-race`) | none (0 or 8) |
+|---|---|---|---|
+| `internal/whisper` | 12 | 10, with 208 to 8,018 each: the encoder and decoder forward through aikit's parallel matmul | `TestSampling_topK`, `TestProcessLogits_order`: milliseconds, not moved |
+| `multimodal` | 54 | `TestWhisperEncoder_tinyMatchesTransformers` (508), `TestWhisperEncoder_tinyPlantedDefectsAreRed` (1,780) | 52 |
+| `internal/kvmgr` | 24 | none of the code; three oracle tests run subtests | all 24 |
+
+**What moved, and why each one is safe.**
+
+- **`multimodal`: six tests, about 215 of the package's 259 s under `-race` on CI,** go through a 1-in-3 sample chosen by
+  name (`raceSubset`):
+  - `TestCapGlmOcrPixels_throughPreprocess`;
+  - `TestQwenPreprocess_inputPixelLimit_M15`;
+  - `TestGemma4Preprocess_matchesTransformers`;
+  - `TestWhisperFeatures_matchTransformers`;
+  - `TestQwenASRFeatures_matchTransformers`;
+  - `TestQwenASRFeatures_plantedDefectsAreRed`.
+
+  Each starts no goroutine, with image and audio preprocessing on one goroutine. Under `-race` the sample keeps
+  `TestWhisperFeatures_matchTransformers`, and the other five skip there with the reason named. All six run in full in
+  the race-free root jobs.
+- **`multimodal`'s other 46 goroutine-free tests are not moved:** under `-race` they are seconds in all, and moving them
+  buys nothing.
+- **`TestWhisperFeatures_plantedDefectsAreRed` stays fully under `-race`.** Its defects run as parallel subtests (this
+  audit's change), so it runs concurrent goroutines even though they share only the read-only golden.
+- **`TestOracle_pool` walks a seventh of its 20,000 operations under `-race`, and all 8 seeds still run concurrently.**
+  This is the "shown otherwise" case:
+  - the manager starts no goroutine;
+  - the seeds' only shared state is two read-only `ClassMap` variables, and each seed has its own manager and oracle;
+  - the detector still runs all eight walks concurrently, so anything they shared would still be seen; only the walk
+    length is sampled, as C8 samples the sampler's seeds.
+  - The full walk runs in the root jobs.
+- **The rest of `internal/kvmgr` and all of `internal/whisper` are unchanged.**
+- **A guard in each package fails when no CI step runs `go test ./...` without `-race` and `-short`:**
+  `TestRaceSubset_runsInFullSomewhere` and `TestOracle_runsInFullSomewhere`.
+
+**Planted, each red, then restored:**
+
+- the root steps changed to `-short`: both guards red;
+- the refcount fault in `unref` under `-race` with the shorter walk: red at seeds 2, 4 and 8 within two operations;
+- the moved tests' own plants (above) run in the race-free jobs, where nothing is sampled.
+
+**Local, the Mac, under `-race`:**
+
+- `multimodal`: 25.3 s with the sample. Before, the two image tests alone took 27.3 and 61.8 s.
+- `internal/kvmgr`: 200 s → 30.5 s.
+- Without `-race` both packages run every test and pass: 5.8 s and 8.5 s.
+
+**The 14-minute checkout on `gpu-darwin` (run `38810497681`) was a one-off network stall, not the workflow.**
+
+- That job's `actions/checkout` fetches one commit (`fetch-depth: 1`), and no workflow uses LFS (no LFS files in the
+  tree).
+- The fetch hung for 13.6 minutes and failed: `RPC failed; curl 56 Recv failure: Operation timed out`. git's retry then
+  finished in 5 s.
+- Only `changes` and `lint` fetch full history, and the lint needs it for the citation lint.
+- Left as it is.
 
 ## Release-night checks (left alone)
 
