@@ -202,6 +202,10 @@ type Config struct {
 	NGroups               int      `json:"n_groups"`
 	ConvKernel            int      `json:"conv_kernel"`
 
+	// AttentionHeadDim is NVIDIA's spelling of the attention head dimension in Nemotron-H's own config.json (the 4B carries this key and no
+	// head_dim). Only the nemotron_h adapter reads it.
+	AttentionHeadDim int `json:"attention_head_dim"`
+
 	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
 	// replace softmax attention with a gated delta-rule recurrence over a
 	// fixed-size matrix state; these size its conv + per-head key/value dims.
@@ -1298,6 +1302,7 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoder: read %s: %w", name, err)
 	}
+	b = lenientConfigJSON(b) // Python's Infinity and NaN, as released configs carry them; request bodies stay strict
 	var c Config
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
