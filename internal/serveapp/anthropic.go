@@ -615,7 +615,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.fastRoute(r, &req.Model) {
-		req.applyFast(s.cfg.fastMaxTokens)
+		req.applyFast()
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req, lm) })
 }
@@ -811,7 +811,7 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.fastRoute(r, &req.Model) {
-		req.applyFast(s.cfg.fastMaxTokens)
+		req.applyFast()
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveCountTokensWith(w, req, lm) })
 }

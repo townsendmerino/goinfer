@@ -19,10 +19,10 @@ All three env vars are required. Non-loopback binds refuse to start without `-ap
 `-write` patches the file, keeping your other settings; `connect claude-code -undo` restores it byte for byte.
 
 **The small/fast model is the served model's fast alias.** The server also answers to `<model>-fast`: the same weights, thinking
-off, output capped (`-fast-max-tokens`, 1,024 by default). `connect` points `ANTHROPIC_DEFAULT_HAIKU_MODEL` and
+off and nothing else different. `connect` points `ANTHROPIC_DEFAULT_HAIKU_MODEL` and
 `ANTHROPIC_SMALL_FAST_MODEL` at it, so the session title and Claude Code's other small requests stop spending seconds of GPU time
 thinking; the main model's settings and every other slot stay the served model. A server without the alias, or started with
-`-fast-max-tokens 0`, gets the old settings, every slot the served model.
+`-fast-alias=false`, gets the old settings, every slot the served model.
 
 **It names the served model in every other model slot Claude Code reads**, so a subagent, the `opus`/`sonnet`/`haiku`/`fable`
 aliases, `opusplan` and background work all reach a model the server serves. The slots are the ones Claude Code's

@@ -29,11 +29,10 @@ type settings struct {
 	Window int // context_window from /v1/models
 	MaxPos int // max_positions from /v1/models, the model's own maximum context; 0 when the server does not publish it
 	Output int // the output limit told to the agent
-	// Fast is the alias the server advertises for the model (fast_model in /v1/models): the same weights with thinking off and a
-	// small output cap, FastMax tokens. "" when the server does not advertise one (an older server, or -fast-max-tokens 0), and then
-	// the agent's small-model settings are left as they were.
-	Fast    string
-	FastMax int
+	// Fast is the alias the server advertises for the model (fast_model in /v1/models): the same weights with thinking off and
+	// nothing else different. "" when the server does not advertise one (an older server, or -fast-alias=false), and then the
+	// agent's small-model settings are left as they were.
+	Fast string
 }
 
 // harness is one coding agent connect can configure.
@@ -125,7 +124,7 @@ var harnesses = map[string]harness{
 				// Without limit.context opencode never compacts, and runs the conversation into the window.
 				models := map[string]any{s.Model: map[string]any{"name": s.Model, "limit": map[string]any{"context": s.Window, "output": s.Output}}}
 				if s.Fast != "" {
-					models[s.Fast] = map[string]any{"name": s.Fast, "limit": map[string]any{"context": s.Window, "output": min(s.Output, s.FastMax)}}
+					models[s.Fast] = map[string]any{"name": s.Fast, "limit": map[string]any{"context": s.Window, "output": s.Output}}
 				}
 				prov.set("goinfer", map[string]any{
 					"npm": "@ai-sdk/openai-compatible", "name": "goinfer",
@@ -220,11 +219,10 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 	}
 	var list struct {
 		Data []struct {
-			ID      string `json:"id"`
-			Window  int    `json:"context_window"`
-			MaxPos  int    `json:"max_positions"`
-			Fast    string `json:"fast_model"`
-			FastMax int    `json:"fast_max_tokens"`
+			ID     string `json:"id"`
+			Window int    `json:"context_window"`
+			MaxPos int    `json:"max_positions"`
+			Fast   string `json:"fast_model"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &list); err != nil {
@@ -250,9 +248,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 				s.Key = "goinfer" // agents refuse an empty key; a server with none accepts any
 			}
 			s.MaxPos = m.MaxPos
-			if m.Fast != "" && m.FastMax > 0 {
-				s.Fast, s.FastMax = m.Fast, m.FastMax
-			}
+			s.Fast = m.Fast
 			return s, nil
 		}
 	}
@@ -439,7 +435,7 @@ func connect(out io.Writer, name string, h harness, path string, s settings, doW
 	fmt.Fprintf(out, "%s -> %s, model %s, context window %d tokens (output limit %d)\n", h.Name, s.URL, s.Model, s.Window, s.Output)
 	fmt.Fprintf(out, "first request: %d tokens (%s %s, measured) — %s in this window\n", h.FirstRequest, h.Name, h.Version, verdict)
 	if s.Fast != "" && h.smallModel != "" {
-		fmt.Fprintf(out, "%s: %s (thinking off, at most %d output tokens), for the agent's titles and other small requests\n", h.smallModel, s.Fast, s.FastMax)
+		fmt.Fprintf(out, "%s: %s (the same model, thinking off), for the agent's titles and other small requests\n", h.smallModel, s.Fast)
 	}
 	switch verdict {
 	case "marginal":

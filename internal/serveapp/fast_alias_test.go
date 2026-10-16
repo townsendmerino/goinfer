@@ -14,10 +14,11 @@ import (
 )
 
 // The fast alias (fast_alias.go) at tier 0, on the scripted Mellum2.1 server: a request under "<model>-fast" runs on the same
-// loaded model with thinking off and its output capped; a request under the model's own name is unchanged.
+// loaded model with thinking off and nothing else different, its output limit included; a request under the model's own name is
+// unchanged.
 
-// fastRig is a scripted Mellum2.1 server whose model "m" generates reply, with fastMax as -fast-max-tokens. prompts collects the
-// prompt ids of every generation, in order.
+// fastRig is a scripted Mellum2.1 server whose model "m" generates reply, with the alias on or off (-fast-alias). prompts collects
+// the prompt ids of every generation, in order.
 type fastRig struct {
 	ts      *httptest.Server
 	s       *server
@@ -26,14 +27,14 @@ type fastRig struct {
 	prompts *[][]int
 }
 
-func newFastRig(t *testing.T, reply string, fastMax int) *fastRig {
+func newFastRig(t *testing.T, reply string, alias bool) *fastRig {
 	t.Helper()
 	tk := scriptTokenizer(t)
 	ids, err := tk.Encode(reply, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{cfg: config{fastMaxTokens: fastMax}}
+	s := &server{cfg: config{fastAlias: alias}}
 	var prompts [][]int
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
 	lm.onScripted = func(p []int) { prompts = append(prompts, append([]int(nil), p...)) }
@@ -134,7 +135,7 @@ func withFields(body map[string]any, extra map[string]any) map[string]any {
 // model's own name with thinking turned off in that route's own spelling; under the model's name the default thinking stands.
 // count_tokens counts the alias's prompt too.
 func TestFastAlias_sameModelThinkingOff(t *testing.T) {
-	f := newFastRig(t, "ok", 8)
+	f := newFastRig(t, "ok", true)
 	const closed = "<think>\n\n</think>\n\n"
 	for _, rt := range fastRoutes {
 		t.Run(rt.path, func(t *testing.T) {
@@ -173,22 +174,29 @@ func TestFastAlias_sameModelThinkingOff(t *testing.T) {
 	}
 }
 
-// The output cap: unset, above and below the cap, on every route. The main model's own limit is untouched.
-func TestFastAlias_capsOutput(t *testing.T) {
-	f := newFastRig(t, strings.Repeat("a", 40), 8)
+// No output cap: whatever limit the request gives, or the route's default, the alias generates what the main model does, so a
+// reply longer than any small cap comes back whole (a summary cut short is worse than a slow one). The reply here is 3,000 tokens,
+// past the 1,024 an earlier version of the alias capped at.
+func TestFastAlias_doesNotCapOutput(t *testing.T) {
+	const n = 3000
+	f := newFastRig(t, strings.Repeat("a", n), true)
 	for _, rt := range fastRoutes {
 		t.Run(rt.path, func(t *testing.T) {
-			for _, tc := range []struct{ asked, want int }{{0, 8}, {8192, 8}, {8, 8}, {3, 3}} {
-				if rt.path == "/v1/messages" && tc.asked == 0 {
+			for _, asked := range []int{0, 100000, 1500, 3} {
+				if rt.path == "/v1/messages" && asked == 0 {
 					continue // max_tokens is required on this route
 				}
-				r, _ := f.post(t, rt.path, rt.body("m-fast", tc.asked))
-				if got := rt.tokens(r); got != tc.want {
-					t.Errorf("max %d: %d tokens, want %d", tc.asked, got, tc.want)
+				a, _ := f.post(t, rt.path, rt.body("m-fast", asked))
+				m, _ := f.post(t, rt.path, rt.body("m", asked))
+				if rt.tokens(a) != rt.tokens(m) {
+					t.Errorf("max %d: the alias generated %d tokens, the main model %d", asked, rt.tokens(a), rt.tokens(m))
 				}
-			}
-			if r, _ := f.post(t, rt.path, rt.body("m", 30)); rt.tokens(r) != 30 {
-				t.Errorf("the main model's limit was changed: %d tokens for max 30", rt.tokens(r))
+				if asked == 100000 && rt.tokens(a) != n {
+					t.Errorf("max %d: %d tokens, want the whole %d-token reply", asked, rt.tokens(a), n)
+				}
+				if asked == 3 && rt.tokens(a) != 3 {
+					t.Errorf("max 3: %d tokens, the request's own limit was not honored", rt.tokens(a))
+				}
 			}
 		})
 	}
@@ -198,7 +206,7 @@ func TestFastAlias_capsOutput(t *testing.T) {
 // set aside, and renders the same prompt.
 func TestFastAlias_mainRequestUnchanged(t *testing.T) {
 	norm := regexp.MustCompile(`"(id|created|created_at|completed_at)":("[^"]*"|[0-9]+)`)
-	on, off := newFastRig(t, "<think>\nhm\n</think>\n\nok", 1024), newFastRig(t, "<think>\nhm\n</think>\n\nok", 0)
+	on, off := newFastRig(t, "<think>\nhm\n</think>\n\nok", true), newFastRig(t, "<think>\nhm\n</think>\n\nok", false)
 	for _, rt := range fastRoutes {
 		t.Run(rt.path, func(t *testing.T) {
 			for _, max := range []int{0, 64} {
@@ -216,8 +224,8 @@ func TestFastAlias_mainRequestUnchanged(t *testing.T) {
 	}
 }
 
-// /v1/models: the model's own entry advertises the alias and its cap; the alias is not an entry of its own, so a listing is one
-// model; off (cap 0) advertises nothing; a model really served under the alias's name wins, and then nothing is advertised for
+// /v1/models: the model's own entry advertises the alias; the alias is not an entry of its own, so a listing is one
+// model; off advertises nothing; a model really served under the alias's name wins, and then nothing is advertised for
 // the model it would have aliased. An unknown name stays a 404, alias or not.
 func TestFastAlias_modelsAndNames(t *testing.T) {
 	list := func(f *fastRig) []map[string]any {
@@ -232,12 +240,12 @@ func TestFastAlias_modelsAndNames(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&out)
 		return out.Data
 	}
-	f := newFastRig(t, "ok", 256)
-	if d := list(f); len(d) != 1 || d[0]["id"] != "m" || d[0]["fast_model"] != "m-fast" || d[0]["fast_max_tokens"] != float64(256) {
-		t.Errorf("listing %v; want one entry, m, advertising m-fast and 256", d)
+	f := newFastRig(t, "ok", true)
+	if d := list(f); len(d) != 1 || d[0]["id"] != "m" || d[0]["fast_model"] != "m-fast" || d[0]["fast_max_tokens"] != nil {
+		t.Errorf("listing %v; want one entry, m, advertising m-fast and no cap", d)
 	}
-	off := newFastRig(t, "ok", 0)
-	if d := list(off); len(d) != 1 || d[0]["fast_model"] != nil || d[0]["fast_max_tokens"] != nil {
+	off := newFastRig(t, "ok", false)
+	if d := list(off); len(d) != 1 || d[0]["fast_model"] != nil {
 		t.Errorf("with the alias off the listing advertises it: %v", d)
 	}
 	status := func(f *fastRig, model string) int {
@@ -256,10 +264,10 @@ func TestFastAlias_modelsAndNames(t *testing.T) {
 		t.Errorf("an alias of a model not served: %d, want 404", s)
 	}
 	if s := status(off, "m-fast"); s != 404 {
-		t.Errorf("the alias with -fast-max-tokens 0: %d, want 404", s)
+		t.Errorf("the alias with -fast-alias=false: %d, want 404", s)
 	}
 	// A served model named m-fast takes the name.
-	taken := newFastRig(t, "ok", 256)
+	taken := newFastRig(t, "ok", true)
 	other := &loadedModel{tk: taken.lm.tk, name: "m-fast", tmpl: taken.lm.tmpl, scripted: []int{}}
 	taken.s.regMu.Lock()
 	taken.s.models["m-fast"] = other
@@ -274,7 +282,7 @@ func TestFastAlias_modelsAndNames(t *testing.T) {
 
 // The request log marks a request that named the alias, and no other line changes.
 func TestFastAlias_requestLogMarksTheAlias(t *testing.T) {
-	f := newFastRig(t, "ok", 8)
+	f := newFastRig(t, "ok", true)
 	f.post(t, "/v1/chat/completions", fastRoutes[0].body("m", 0))
 	f.post(t, "/v1/chat/completions", fastRoutes[0].body("m-fast", 0))
 	lines := strings.Split(strings.TrimSpace(f.log.String()), "\n")
@@ -283,8 +291,8 @@ func TestFastAlias_requestLogMarksTheAlias(t *testing.T) {
 	}
 }
 
-// applyFast on each request type, whatever the client asked for: it resolves to thinking off, explicitly, and caps both output
-// spellings. This is the gate's planted defect: leaving thinking on for the alias turns it red.
+// applyFast on each request type, whatever the client asked for: it resolves to thinking off, explicitly, with no budget, and
+// leaves the output limits as the client gave them. Leaving thinking on for the alias turns it red.
 func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 	s := &server{}
 	budget, big, one := 512, 5000, 1
@@ -296,14 +304,14 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 		"chat": {func() thinkRequest {
 			r := chatReq{ChatTemplateKwargs: on, ReasoningEffort: "high", ThinkingTokenBudget: &budget}
 			r.MaxTokens, r.MaxCompletionTokens = &big, &one
-			r.applyFast(100)
+			r.applyFast()
 			return r.think()
 		}, nil},
 		"responses": {func() thinkRequest {
 			r := responseReq{Reasoning: &struct {
 				Effort string `json:"effort"`
 			}{Effort: "high"}}
-			r.applyFast(100)
+			r.applyFast()
 			return r.thinkRequest()
 		}, nil},
 		"messages": {func() thinkRequest {
@@ -311,7 +319,7 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 				Type         string `json:"type"`
 				BudgetTokens int    `json:"budget_tokens"`
 			}{Type: "enabled", BudgetTokens: 512}}
-			r.applyFast(100)
+			r.applyFast()
 			return r.thinkRequest()
 		}, nil},
 	} {
@@ -322,12 +330,12 @@ func TestFastAlias_applyFastTurnsThinkingOff(t *testing.T) {
 	}
 	c := chatReq{}
 	c.MaxTokens, c.MaxCompletionTokens = &big, &one
-	c.applyFast(100)
-	if *c.MaxTokens != 100 || *c.MaxCompletionTokens != 1 {
-		t.Errorf("chat caps: max_tokens %d, max_completion_tokens %d, want 100 and 1", *c.MaxTokens, *c.MaxCompletionTokens)
+	c.applyFast()
+	if *c.MaxTokens != big || *c.MaxCompletionTokens != one {
+		t.Errorf("chat limits: max_tokens %d, max_completion_tokens %d, want %d and %d untouched", *c.MaxTokens, *c.MaxCompletionTokens, big, one)
 	}
 	k := chatReq{ChatTemplateKwargs: on}
-	k.applyFast(100)
+	k.applyFast()
 	if string(on["enable_thinking"]) != "true" {
 		t.Error("applyFast edited the caller's chat_template_kwargs in place")
 	}

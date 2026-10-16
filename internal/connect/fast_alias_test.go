@@ -17,7 +17,7 @@ import (
 
 var fastSettings = func() settings {
 	s := testSettings
-	s.Fast, s.FastMax = "coder-fast", 1024
+	s.Fast = "coder-fast"
 	return s
 }()
 
@@ -50,8 +50,9 @@ func TestPatch_claudeCodeSmallModelIsTheFastAlias(t *testing.T) {
 	}
 }
 
-// opencode: small_model names the alias under the goinfer provider, whose model list gains the alias with the small output
-// limit; the main model's entry is unchanged and no `model` is set. An existing small_model is replaced and an unrelated key kept.
+// opencode: small_model names the alias under the goinfer provider, whose model list gains the alias with the main model's limits
+// (the alias has no output cap of its own); the main model's entry is unchanged and no `model` is set. An existing small_model is
+// replaced and an unrelated key kept.
 func TestPatch_opencodeSmallModelIsTheFastAlias(t *testing.T) {
 	out, err := harnesses["opencode"].patch([]byte(`{"model": "other/m", "small_model": "other/tiny", "theme": "x"}`), fastSettings)
 	if err != nil {
@@ -73,13 +74,13 @@ func TestPatch_opencodeSmallModelIsTheFastAlias(t *testing.T) {
 	if got.SmallModel != "goinfer/coder-fast" || got.Model != "other/m" || got.Theme != "x" {
 		t.Errorf("small_model %q, model %q, theme %q:\n%s", got.SmallModel, got.Model, got.Theme, out)
 	}
-	if m["coder"].Limit.Context != 32768 || m["coder"].Limit.Output != 8192 || m["coder-fast"].Limit.Context != 32768 || m["coder-fast"].Limit.Output != 1024 {
+	if m["coder"].Limit.Context != 32768 || m["coder"].Limit.Output != 8192 || m["coder-fast"].Limit.Context != 32768 || m["coder-fast"].Limit.Output != 8192 {
 		t.Errorf("model limits: main %+v, alias %+v", m["coder"], m["coder-fast"])
 	}
 	small := fastSettings
-	small.Output = 512 // an output limit below the alias's cap wins
-	if out, _ = harnesses["opencode"].patch(nil, small); !strings.Contains(string(out), `"output": 512`) || strings.Contains(string(out), `"output": 1024`) {
-		t.Errorf("the alias's output limit is not min(output, cap):\n%s", out)
+	small.Output = 512 // the alias's output limit is the main model's, whatever that is
+	if out, _ = harnesses["opencode"].patch(nil, small); strings.Count(string(out), `"output": 512`) != 2 {
+		t.Errorf("the alias's output limit is not the main model's:\n%s", out)
 	}
 	plain, err := harnesses["opencode"].patch(nil, testSettings)
 	if err != nil || strings.Contains(string(plain), "-fast") || strings.Contains(string(plain), "small_model") {
@@ -122,35 +123,31 @@ func TestWriteThenUndoWithFastAlias(t *testing.T) {
 }
 
 // probe reads the alias from the model's own entry; the alias is not a model of its own in the list, so the single-model
-// default still works; a server that advertises none (or with a cap of 0) yields none.
+// default still works; a server that advertises none yields none.
 func TestProbe_fastAlias(t *testing.T) {
 	serve := func(body string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
 	}
-	for _, tc := range []struct {
-		name, body, fast string
-		max              int
-	}{
-		{"advertised", `{"data":[{"id":"coder","context_window":32768,"fast_model":"coder-fast","fast_max_tokens":1024}]}`, "coder-fast", 1024},
-		{"older server", `{"data":[{"id":"coder","context_window":32768}]}`, "", 0},
-		{"no cap", `{"data":[{"id":"coder","context_window":32768,"fast_model":"coder-fast","fast_max_tokens":0}]}`, "", 0},
+	for _, tc := range []struct{ name, body, fast string }{
+		{"advertised", `{"data":[{"id":"coder","context_window":32768,"fast_model":"coder-fast"}]}`, "coder-fast"},
+		{"older server", `{"data":[{"id":"coder","context_window":32768}]}`, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ts := serve(tc.body)
 			defer ts.Close()
 			s, err := probe(ts.Client(), ts.URL, "", "")
-			if err != nil || s.Model != "coder" || s.Fast != tc.fast || s.FastMax != tc.max {
-				t.Errorf("settings %+v (%v), want model coder, alias %q cap %d", s, err, tc.fast, tc.max)
+			if err != nil || s.Model != "coder" || s.Fast != tc.fast {
+				t.Errorf("settings %+v (%v), want model coder, alias %q", s, err, tc.fast)
 			}
 		})
 	}
 }
 
-// Through Run: the printed summary names the alias and its cap for an agent that has a small-model setting, and the written
+// Through Run: the printed summary names the alias for an agent that has a small-model setting, and the written
 // file holds it; for Codex nothing is said.
 func TestRun_fastAlias(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"data":[{"id":"coder","context_window":32768,"fast_model":"coder-fast","fast_max_tokens":1024}]}`))
+		w.Write([]byte(`{"data":[{"id":"coder","context_window":32768,"fast_model":"coder-fast"}]}`))
 	}))
 	defer ts.Close()
 	for _, tc := range []struct {
@@ -162,7 +159,7 @@ func TestRun_fastAlias(t *testing.T) {
 		if rc := Run([]string{tc.agent, ts.URL, "-write", "-file", file}, "serve", &out); rc != 0 {
 			t.Fatalf("%s: exit %d:\n%s", tc.agent, rc, out.String())
 		}
-		if got := strings.Contains(out.String(), "coder-fast (thinking off, at most 1024 output tokens)"); got != tc.says {
+		if got := strings.Contains(out.String(), "coder-fast (the same model, thinking off)"); got != tc.says {
 			t.Errorf("%s: summary names the alias = %v, want %v:\n%s", tc.agent, got, tc.says, out.String())
 		}
 		if cur, _ := os.ReadFile(file); strings.Contains(string(cur), "coder-fast") != tc.says {

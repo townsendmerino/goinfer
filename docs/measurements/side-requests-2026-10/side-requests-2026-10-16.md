@@ -3,7 +3,7 @@
 **Owner decision (2026-10-16): the scratch slot is not built.** The finding to keep: the slow main turns after side requests were
 cold anyway, at session start and after a compaction, given the 448-position rollback; a kept slot would have served none of them.
 What was approved instead is a product change that removes the side requests' own cost: a fast alias that runs them without
-thinking (`<model>-fast`, `-fast-max-tokens`; `connect` points Claude Code's small/fast model and opencode's `small_model` at it).
+thinking (`<model>-fast`, on by default, `-fast-alias=false` turns it off; `connect` points Claude Code's small/fast model and opencode's `small_model` at it).
 Its tier-1 reading is the last section. Interactive Claude Code's mid-session side requests: not run; revisit if a later run shows
 side requests landing between main turns.
 
@@ -173,6 +173,15 @@ with no tools and a short prompt would cut that. It is a product decision, not a
 
 ## Tier 1: the fast alias on opencode (2026-10-16, by day)
 
+**Amendment, the same day (owner): the alias has no output cap.** Tier 1 ran on `62ba5f07`, whose alias capped output at 1,024
+tokens. The owner removed the cap before the merge ("the gain is from thinking off, and a truncated compaction summary is worse than
+a slow one"): the alias now takes the request's limit or the main model's default, `-fast-max-tokens` is gone (`-fast-alias`,
+default true, replaces it) and `/v1/models` no longer advertises `fast_max_tokens`. **Tier 1 was not re-run for that change**: its
+three title requests generated 9, 4 and 4 tokens, so the cap never bound in any of them, and every other request in the run named
+the main model. The cap change has its own tier-0 gate (`TestFastAlias_doesNotCapOutput`: a 3,000-token reply through the alias
+equals the main model's on all three routes, the request's own limit is honored, and a cap planted back into each route turns it
+red). The tier-1 table below is the capped build's.
+
 The same three opencode tasks (read, search, edit, one run each) on Mellum2.1, `--ctx 16384 --moe-cache-experts`, one GPU slot, with
 the alias on: serve built at `62ba5f07` (the alias PR), `connect opencode -write` run by the matrix against it, so opencode's
 `small_model` named `mellum2.1-thinking-fast`. 06:56 to 07:02 PDT under the timing lock, nobara. Plan:
@@ -202,8 +211,11 @@ the alias on and off (tier 0), so the builds differ only on the alias.
 - **The edit failure is not the alias's.** The run's last turn was a malformed tool call from the main model (the opening quote of
   `newString` missing, emitted as text). The alias handled only the three titles. The I3 night had this task fail 1 time in 5 on
   the same model (`i3-night-2026-10-13.md`), so one failure in three is within that. Three runs say nothing more.
-- **The summary is still open.** Whether opencode sends its context summarizer through `small_model` is unobserved: no run reached
-  a compaction. The baseline's summarizer ran on the main model with thinking (43.1 s); under the alias it would be capped at
-  `-fast-max-tokens` (1,024), which a summary of that size (1,134 tokens with its thinking) may or may not fit.
+- **The summary.** No run reached a compaction, so none was observed. **opencode 1.19.0's source answers it** (read from the
+  embedded JavaScript of `opencode.exe`): `Provider.getSmallModel`, which reads `small_model`, has two callers, the session-title
+  agent (when the `title` agent names no model of its own, and falling back to the main model if there is no small one) and a
+  project-copy name generator. The compaction request takes the `compaction` agent's configured model, **else the session's main
+  model**; it never calls `getSmallModel`. So the alias never handles a summarizer request, unless a user sets
+  `agent.compaction.model` to it, and the 43.1 s summary in the baseline was the main model thinking.
 - **Not measured:** Claude Code's small-model requests against the real model. The replay against a stub shows only that its title
   request names the alias.

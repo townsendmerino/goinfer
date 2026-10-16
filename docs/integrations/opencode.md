@@ -12,8 +12,9 @@ With the server running, `goinfer-serve connect opencode` prints this file with 
 `connect opencode -undo` restores what was there.
 
 `connect` also sets `small_model`, the model opencode names its sessions with, to the server's fast alias (`<model>-fast`: the same
-weights, thinking off, output capped by `-fast-max-tokens`, 1,024 by default) and lists the alias under the provider with that output
-limit. The main model is still the one you pick with `-m`. It replaces an existing `small_model` (`-undo` restores it); a server
+weights, thinking off, nothing else different) and lists the alias under the provider with the main model's limits. opencode uses
+`small_model` for the session title; its context summarizer runs on the compaction agent's model, else the session's main model, so
+the alias never touches it. The main model is still the one you pick with `-m`. It replaces an existing `small_model` (`-undo` restores it); a server
 without the alias leaves `small_model` alone.
 
 ```json
