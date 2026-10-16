@@ -20,6 +20,9 @@ import (
 // package only (OP2b's gate M: the Mamba-2 kernels broken in the Metal build while the CPU keeps the right math).
 var mambaSrcPlantForTest [2]string
 
+// mambaResetSkipForTest makes resetMamba leave the state alone: gate S's planted defect, set by tests in this package only.
+var mambaResetSkipForTest bool
+
 // mambaParams is the mixer's model-level geometry, uniform across the Mamba layers.
 type mambaParams struct {
 	nHeads, headDim, dState, nGroups, dConv, normGroups int
@@ -124,7 +127,7 @@ func (r *resident) encodeMambaMixer(e *Encoder, L *residLayer, x Buffer) {
 // resetMamba zeroes every Mamba layer's conv window and SSM state, which a fresh sequence must not inherit. No-op without
 // Mamba layers.
 func (r *resident) resetMamba() {
-	if r.mamba == nil {
+	if r.mamba == nil || mambaResetSkipForTest {
 		return
 	}
 	for i := range r.layers {

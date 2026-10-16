@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -90,4 +91,79 @@ func TestNemotronResident_tinyAgainstControl(t *testing.T) {
 		}
 	}
 
+}
+
+// metalGreedyReply feeds prompt to the resident from position 0 (which resets its recurrent state) and returns n greedy
+// tokens after it.
+func metalGreedyReply(t *testing.T, a *metalResident, m *decoder.Model, prompt []int, n int) []int {
+	t.Helper()
+	var out []int
+	tok, pos := prompt[0], 0
+	for i := 0; i < len(prompt)+n-1; i++ {
+		l, err := a.Forward(m.EmbedResidentForTest(tok), pos)
+		if err != nil {
+			t.Fatalf("metal forward: %v", err)
+		}
+		pos++
+		if i+1 < len(prompt) {
+			tok = prompt[i+1]
+			continue
+		}
+		tok = argmaxF(l)
+		out = append(out, tok)
+	}
+	return out
+}
+
+// TestNemotronResident_slots is OP2b's gate S on Metal: a recurrent family gets one KV slot (so MC3 runs no concurrent
+// generation on it and KV2 has no other slot to copy from) and the batched step declines it; and two conversations taking
+// turns on that one slot, its state reset at each one's position 0, each give the reply they give alone. With the reset
+// planted to leave the Mamba-2 state alone, the turns must differ.
+func TestNemotronResident_slots(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Quant: "int4", ResidentKVSlots: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if got := m.ResidentKVSlotsRequest(); got != 1 {
+		t.Errorf("Nemotron-H asks for %d resident KV slots, want 1: a recurrent family's state is not part of a slot", got)
+	}
+	build := func() *metalResident {
+		r, err := buildResident(m)
+		if err != nil {
+			t.Fatalf("build resident: %v", err)
+		}
+		t.Cleanup(func() { _ = r.Close() })
+		return &metalResident{r: r, hidden: r.H}
+	}
+	a := build()
+	if n := a.r.kvSlotCount(); n != 1 {
+		t.Errorf("the resident built %d KV slots, want 1", n)
+	}
+	if why := a.r.batchIneligible(); why == "" {
+		t.Error("the batched step admits Nemotron-H")
+	}
+	pA, pB := []int{1, 40, 9, 77, 3, 51}, []int{1, 12, 88, 6, 30}
+	const n = 10
+	aloneA := metalGreedyReply(t, build(), m, pA, n)
+	aloneB := metalGreedyReply(t, build(), m, pB, n)
+	turns := func(a *metalResident) (a1, b, a2 []int) {
+		return metalGreedyReply(t, a, m, pA, n), metalGreedyReply(t, a, m, pB, n), metalGreedyReply(t, a, m, pA, n)
+	}
+	a1, b, a2 := turns(a)
+	same := func(x, y []int) bool { return fmt.Sprint(x) == fmt.Sprint(y) }
+	t.Logf("alone A %v, B %v; turns A %v, B %v, A %v", aloneA, aloneB, a1, b, a2)
+	if !same(a1, aloneA) || !same(b, aloneB) || !same(a2, aloneA) {
+		t.Error("a conversation taking turns on the slot does not give the reply it gives alone")
+	}
+	mambaResetSkipForTest = true
+	p1, pb, p2 := turns(build())
+	mambaResetSkipForTest = false
+	t.Logf("plant (reset leaves the Mamba-2 state): turns A %v, B %v, A %v", p1, pb, p2)
+	if same(pb, aloneB) && same(p2, aloneA) {
+		t.Error("with the Mamba-2 state left between conversations the turns still match: gate S cannot see a missing reset")
+	}
 }
