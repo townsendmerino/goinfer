@@ -585,5 +585,11 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// resident gates that go red on the NeoX kernels (TestPairwiseRoPEResidentParityMetal, TestGlmOcrResidentParityMetal) and real checkpoints.
 		FeatPairwiseRoPE:  true,
 		FeatPairwiseMRoPE: true,
+		// The attention-score softcap is compiled into the kernel source for a model that has one (Model.AttnLogitSoftcapResident), on
+		// the three kernels a capped layer takes: attention, attention_i8 and the exact attention_prefill. The lane selectors keep
+		// such a layer off every other attention kernel, and the MC3 batched step declines it. The declaration rests on the kernel
+		// gates against float64, with the cap dropped as the control (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel).
+		// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+		FeatAttnLogitSoftcap: true,
 	},
 }

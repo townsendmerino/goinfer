@@ -118,6 +118,7 @@ func TestTimestamps_plantedDefectsAreRed(t *testing.T) {
 			r, err := tr.TranscribeTimestamps(tsClip(c.Samples, c.A, c.B), "", "")
 			if err != nil || diffTS(r, c) != "" {
 				red = true
+				break // one differing case is all the gate asks
 			}
 		}
 		t.Logf("%-34s red %v", name, red)

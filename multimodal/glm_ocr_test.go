@@ -181,14 +181,15 @@ func TestGlmOcrExtractionText_rule(t *testing.T) {
 }
 
 // CapGlmOcrPixels is tested through QwenPreprocess, the function that turns the config into a patch grid: a cap on the config that the resize did not honour would
-// pass a field-level test and still send the full-size image to the tower. A 3000x4000 page (12 MP) is far over the model's own 4.82 MP ceiling; the default config
+// pass a field-level test and still send the full-size image to the tower. A 2400x3200 page (7.7 MP) is well over the model's own 4.82 MP ceiling; the default config
 // lands near the ceiling, a 2 MP cap lands near 2 MP, and a cap above the ceiling changes nothing.
 func TestCapGlmOcrPixels_throughPreprocess(t *testing.T) {
+	raceSubset(t)
 	cfg := QwenPreprocessConfig{PatchSize: 14, MergeSize: 2, TemporalPatchSize: 2, MinPixels: 6272, MaxPixels: 4816896,
 		Mean: [3]float32{0.5, 0.5, 0.5}, Std: [3]float32{0.5, 0.5, 0.5}}
-	img := image.NewRGBA(image.Rect(0, 0, 3000, 4000))
-	for y := 0; y < 4000; y += 7 {
-		for x := 0; x < 3000; x += 7 {
+	img := image.NewRGBA(image.Rect(0, 0, 2400, 3200))
+	for y := 0; y < 3200; y += 7 {
+		for x := 0; x < 2400; x += 7 {
 			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 128, 255})
 		}
 	}
@@ -210,8 +211,8 @@ func TestCapGlmOcrPixels_throughPreprocess(t *testing.T) {
 	}
 	two := patches(capped2)
 	above, _ := CapGlmOcrPixels(cfg, 50_000_000)
-	if patches(above) != full {
-		t.Errorf("a cap above the ceiling changed the grid: %d patches, want %d", patches(above), full)
+	if got := patches(above); got != full {
+		t.Errorf("a cap above the ceiling changed the grid: %d patches, want %d", got, full)
 	}
 	if full*14*14 > 4816896 || full*14*14 < 4_000_000 {
 		t.Errorf("the default budget gave %d patches = %d px, want just under the 4.82 MP ceiling", full, full*14*14)
