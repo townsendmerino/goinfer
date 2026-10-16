@@ -76,7 +76,12 @@ func fusedWorkers(n int) int {
 // gatedMLPFusedGateUp computes scr.gate = silu(gate·h) * (up·h) in one fork/join. It reports false,
 // having touched nothing, when its preconditions do not hold — the caller then runs the normal path.
 func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr *decodeScratch) bool {
-	if arch.Act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {
+	return gatedMLPFusedGateUpAct(h, lw, arch.Act, scr)
+}
+
+// gatedMLPFusedGateUpAct is gatedMLPFusedGateUp with the activation given: the program walker's form.
+func gatedMLPFusedGateUpAct(h []float32, lw *LayerWeights, act ActKind, scr *decodeScratch) bool {
+	if act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {
 		return false
 	}
 	if lw.GateProj.Int4Layout() != "canonical" || lw.UpProj.Int4Layout() != "canonical" {
