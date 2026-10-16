@@ -1,0 +1,30 @@
+=== RUN   TestQ4KStep_phi3Tier1
+    q4k_step_phi3_real_test.go:53: golden prompt: 0 of 32064 last-row logits and 0 K/V elements differ from the sequential loop
+    q4k_step_phi3_real_test.go:53: 200 tokens: 0 of 32064 last-row logits and 0 K/V elements differ from the sequential loop
+    q4k_step_phi3_real_test.go:81: golden prompt: argmax 3681, golden 3681; cosine 0.7554 (logged: an earlier snapshot)
+[op6-tier1] pair 1: step 4420.9 ms (45 tok/s), sequential 8777.9 ms (23 tok/s), ratio 1.986
+[op6-tier1] pair 2: step 4423.3 ms (45 tok/s), sequential 8779.5 ms (23 tok/s), ratio 1.985
+[op6-tier1] pair 3: step 4425.1 ms (45 tok/s), sequential 8779.1 ms (23 tok/s), ratio 1.984
+[op6-tier1] pair 4: step 4421.1 ms (45 tok/s), sequential 8777.4 ms (23 tok/s), ratio 1.985
+[op6-tier1] pair 5: step 4420.7 ms (45 tok/s), sequential 8761.9 ms (23 tok/s), ratio 1.982
+    q4k_step_phi3_real_test.go:133: speed: median sequential/step 1.985 over 5 pairs, every pair above 1: true — SHIP
+--- PASS: TestQ4KStep_phi3Tier1 (97.20s)
+PASS
+       97.87 real         6.16 user         2.74 sys
+          5486690304  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              808969  page reclaims
+                 443  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                1250  signals received
+                 422  voluntary context switches
+              136324  involuntary context switches
+         47233720285  instructions retired
+         25215767788  cycles elapsed
+          8679365520  peak memory footprint

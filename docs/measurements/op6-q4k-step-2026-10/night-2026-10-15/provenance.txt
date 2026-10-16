@@ -1,0 +1,11 @@
+rev d1b340ad (decoder test sha256 182cc6ad1d9a45a8, metal test sha256 277b6af12bce12ab)
+phi3 8a83c7fb9049a9b2
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 2048.00M  used = 849.25M  free = 1198.75M  (encrypted)
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   216018.
+Pages active:                                 227058.
+Pages inactive:                               385062.
+Pages speculative:                             20804.
+21:30  up 1 day, 32 mins, 1 user, load averages: 1.21 1.32 1.50

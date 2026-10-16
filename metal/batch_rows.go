@@ -282,5 +282,96 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 }
 `)
 
+	// The q4k lane's step (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP6): its norm and SwiGLU derived as
+	// above, and its two projections for B rows, each weight read once for all rows. A rows GEMV keeps its decode
+	// kernel's per-lane loop, statement for statement, and simd_sum per row (Q4K_F32_BODY, W8_F32_BODY), so each row is
+	// decode's bits. Activation row b starts at ax_rows + b*lda, output row b at out_rows + b*ldo. mode: 0 store, 1
+	// +bias, 2 +=. B <= 8.
+	b.WriteString(edit(extractKernel(allKernels, "rmsnorm_f32_out"),
+		"kernel void rmsnorm_f32_out(device const float* x[[buffer(0)]]",
+		"kernel void mc3_rmsnorm_f32_out_rows(device const float* x_rows[[buffer(0)]]",
+		"device float* out[[buffer(2)]]", "device float* out_rows[[buffer(2)]]",
+		rowsTail,
+		"uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]],\n    uint mc3_row[[threadgroup_position_in_grid]]) {\n"+
+			"    device const float* x = x_rows + mc3_row*H; device float* out = out_rows + mc3_row*H;"))
+	b.WriteString("\n")
+	b.WriteString(edit(extractKernel(allKernels, "swiglu_f32"),
+		"kernel void swiglu_f32(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]]",
+		"kernel void mc3_swiglu_f32_rows(device const float* g_rows[[buffer(0)]], device const float* u_unused[[buffer(1)]]",
+		"device float* out[[buffer(2)]]", "device float* out_rows[[buffer(2)]]",
+		"uint i[[thread_position_in_grid]]) {",
+		"constant uint& mc3_M[[buffer(5)]], uint i_rows[[thread_position_in_grid]]) {\n"+
+			"    uint mc3_row = i_rows / I; if (mc3_row >= mc3_M) return; uint i = i_rows % I;\n"+
+			"    device const float* g = g_rows + mc3_row*2u*I; device const float* u = g + I; device float* out = out_rows + mc3_row*I;"))
+	b.WriteString("\n")
+	b.WriteString(q4kRowsSrc)
+	for B := 1; B <= 8; B++ {
+		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q4k_f32_rows%d\")]] kernel decltype(mc3_gemv_q4k_f32_rows<%d>) mc3_gemv_q4k_f32_rows<%d>;\n", B, B, B)
+		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_w8_f32_rows%d\")]] kernel decltype(mc3_gemv_w8_f32_rows<%d>) mc3_gemv_w8_f32_rows<%d>;\n", B, B, B)
+	}
+
 	return b.String()
 }
+
+const q4kRowsSrc = `template <uint B>
+kernel void mc3_gemv_q4k_f32_rows(device const uchar* wq[[buffer(0)]], device const float* ax_rows[[buffer(1)]],
+    device float* out_rows[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
+    constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint row = tgid*8u + sgid;
+    if (row >= N) return;
+    uint NB = K >> 8u;
+    device const uchar* wr = wq + (ulong)row*(ulong)NB*144ul;
+    float acc[B];
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
+    for (uint b=0u; b<NB; b++) {
+        device const uchar* blk = wr + b*144u;
+        float d  = float(as_type<half>(ushort(uint(blk[0]) | (uint(blk[1])<<8u))));
+        float dm = float(as_type<half>(ushort(uint(blk[2]) | (uint(blk[3])<<8u))));
+        device const uchar* scs = blk + 4; device const uchar* qs = blk + 16;
+        for (uint j=0u; j<4u; j++) {
+            float sc0, m0, sc1, m1; q4k_scale_min(2u*j, scs, sc0, m0); q4k_scale_min(2u*j+1u, scs, sc1, m1);
+            uint q = uint(qs[j*32u + lane]);
+            SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+                device const float* a = ax_rows + r*lda + b*256u;
+                float a0 = a[j*64u + lane], a1 = a[j*64u + 32u + lane];
+                acc[r] += (d*sc0*float(q & 15u) - dm*m0) * a0 + (d*sc1*float(q >> 4u) - dm*m1) * a1;
+            }
+        }
+    }
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+        float s = simd_sum(acc[r]);
+        if (lane==0) {
+            device float* out = out_rows + r*ldo;
+            if (mode == 0u) out[row] = s;
+            else if (mode == 1u) out[row] = s + bias[row];
+            else out[row] += s;
+        }
+    }
+}
+template <uint B>
+kernel void mc3_gemv_w8_f32_rows(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
+    device const float* ax_rows[[buffer(2)]], device float* out_rows[[buffer(3)]], constant uint& K[[buffer(4)]],
+    constant uint& N[[buffer(5)]], constant uint& lda[[buffer(6)]], constant uint& ldo[[buffer(7)]],
+    device const float* bias[[buffer(8)]], constant uint& mode[[buffer(9)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint row = tgid*8u + sgid;
+    if (row >= N) return;
+    device const char4* wr = (device const char4*)(wq + (ulong)row*(ulong)K);
+    float acc[B];
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
+    for (uint g=lane; g<(K>>2u); g+=32u) {
+        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] += dot(float4(wr[g]), ((device const float4*)(ax_rows + r*lda))[g]);
+    }
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+        float s = simd_sum(acc[r]);
+        if (lane==0) { // each mode's statement as its decode kernel's, so the scale contracts the same way into the bias or residual
+            device float* out = out_rows + r*ldo;
+            if (mode == 0u) out[row] = s * sc[row];
+            else if (mode == 1u) out[row] = s * sc[row] + bias[row];
+            else out[row] += s * sc[row];
+        }
+    }
+}
+`
