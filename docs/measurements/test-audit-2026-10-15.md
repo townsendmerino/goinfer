@@ -121,6 +121,26 @@ are noted where measured.
 | `internal/kvmgr` | 21.3 s | 7.5 s |
 | `gpu`, `-short` | 99.8 s | 83.6 s |
 
+**On CI: PR #34's run `38829196412`, against main's `38812659448`.**
+
+| job | before | after |
+|---|---|---|
+| `gpu-darwin` | 8.2 min (`gpu` 392 s) | 5.6 min (`gpu` 284 s) |
+| `root-darwin` | 6.0 min (`internal/sampling` 237 s) | 5.6 min (177 s) |
+| `root-windows` | 7.0 min (`internal/sampling` 278 s) | 6.7 min (241 s) |
+| `root-windows-arm64` | 6.2 min | 5.8 min (`internal/sampling` 165 s) |
+| `root-linux-arm64` | 3.8 min | 3.2 min (`internal/sampling` 137 s) |
+| `test-rest` (`-race`) | 7.2 min with `internal/kvmgr` cached; about 20 min when it runs (`TestOracle_pool` 1,233.6 s) | 13.5 min in a run that paid `internal/kvmgr`: 741.6 s |
+
+- **#34's `test-rest` ran `internal/kvmgr` uncached,** because the oracle's test file changed. Its 8 seeds in parallel
+  under `-race` used the runner's four cores while the package's siblings ran beside it, and those got slower in that
+  run:
+  - `TestPolicy_tinyMatchesTransformers` 68.8 → 104.1 s;
+  - `TestCapGlmOcrPixels_throughPreprocess` 74.1 → 92.1 s, after its shrink;
+  - `TestPolicy_plantedDefectsAreRed` 187.9 → 73.8 s, and `TestQwenPreprocess_inputPixelLimit_M15` 94.2 → 59.1 s.
+- **The next run with `internal/kvmgr` cached shows the steady state.** The `-race` duplicates below remain the large
+  lever on `test-rest`.
+
 **A blind spot found and closed: M15 could not see its own guard.**
 
 - The input-pixel check runs twice in `multimodal/qwen_preprocess.go:QwenPreprocess`: on the header, before decode, and
