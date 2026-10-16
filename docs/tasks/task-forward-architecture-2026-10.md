@@ -1217,6 +1217,30 @@ Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for th
 - **Native int8 for recurrent families** is slice 6 of `docs/tasks/task-metal-int8-2026-10.md`, later.
 - **Tier 1 next, after a by-day fit check.**
 
+**Tier 1's whole model cannot load on the Mac, by day or by night (2026-10-15).** The int4 .giw that nobara built from
+the registered Q8_0 GGUF (`make-nemotron-giw.sh`, at `6622df20`) is 19.2 GB. Its Mamba projections stay f32 in the
+bundle, about 0.59 GB a Mamba layer over 27, and only the attention and MLP matrices take int4. That is more than the
+Mac's 16 GB RAM, so the fallback's night half cannot run here. The §4.6 estimate of about 5.5 GB assumed every matrix at int4.
+
+**Tier 1 on a layer slice, registered 2026-10-15 before any run (the registered fallback, by day).**
+
+- **The slice:** layers 0 (Mamba), 1 (MLP) and 14 (the first attention layer) of the Q8_0 GGUF, renumbered 0 to 2, with
+  the embedding, final norm and head (`scripts/slice_gguf_layers.py`, bytes checked against the source). nobara built
+  its int4 .giw (`nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw`, 1.88 GB, sha256 `13c38555b9ac…`) and the Mac pulled
+  it into `~/models/nemotron/`.
+  - **Why these three:** a first-N slice that reaches an attention layer needs 15 layers, 8 of them Mamba, about 6 GB.
+    That does not fit by day. These three hold real weights of every block kind the step builds.
+  - **What it is not:** the model. Its logits are what three layers make of the prompt.
+- **The arms, `TestNemotronResident_tier1Slice`:** one load of the .giw at int4; the Metal resident is built from it and
+  run against the CPU model it was built from. That is gate M's harness: greedy lockstep for 32 steps off the CPU, graded
+  from position 2.
+- **Bars, G2-R's:** min logit cosine ≥ 0.88 and argmax agreement ≥ 50%.
+- **The control, same process, before the slice:** the dense Qwen2.5-Coder-1.5B through its int4 Metal .giw, the same
+  harness. It must reach min cosine ≥ 0.95, or the run is VOID.
+- **A refused load** (the fit guard or Metal's memory guard) is VOID, not FAIL. No guard is bypassed.
+- **Not answered by the slice:** the whole model's agreement. That needs a smaller bundle, quantized Mamba projections
+  (filed with the reading), or a box that holds 19.2 GB.
+
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
