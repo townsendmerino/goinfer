@@ -161,6 +161,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	// prompt is a generateInto error: don't touch the cache (rewind/reconcile), so a warm session
 	// survives a rejected call.
 	matched := 0
+	g.PrefillSlot, g.PrefillMatch = len(s.tokens), commonPrefixLen(s.tokens, prompt)
 	if len(prompt) > 0 {
 		matched = s.rewindForReuse(prompt)
 	}

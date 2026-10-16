@@ -1,0 +1,32 @@
+arm off: 15 runs, passed 7, compactions 7, follow-ups {'partial': 8, 'full': 111, 'compaction': 7, 'post-compaction': 7, 'cold': 6}, cold plain continuations 6, fallbacks -
+    ids3-off-read-r1         codex-read-r1-183403         passed=True  {'partial': 1, 'full': 2} fallbacks=-
+    ids3-off-search-r1       codex-search-r1-184020       passed=True  {'full': 1} fallbacks=-
+    ids3-off-edit-r1         codex-edit-r1-184207         passed=False {'partial': 2, 'full': 13, 'compaction': 1, 'post-compaction': 1} fallbacks=-
+    ids3-off-write-r1        codex-write-r1-191340        passed=False {'full': 7, 'cold': 1} fallbacks=-
+    ids3-off-fix-r1          codex-fix-r1-191819          passed=False {'full': 9, 'cold': 3, 'compaction': 2, 'post-compaction': 2} fallbacks=-
+    ids3-off-read-r2         codex-read-r1-194643         passed=True  {'full': 2} fallbacks=-
+    ids3-off-search-r2       codex-search-r1-194839       passed=True  {'full': 5} fallbacks=-
+    ids3-off-edit-r2         codex-edit-r1-200353         passed=False {'full': 10, 'compaction': 1, 'post-compaction': 1} fallbacks=-
+    ids3-off-write-r2        codex-write-r1-201016        passed=False {'full': 21, 'partial': 3, 'cold': 1, 'compaction': 2, 'post-compaction': 2} fallbacks=-
+    ids3-off-fix-r2          codex-fix-r1-203335          passed=False {'full': 4} fallbacks=-
+    ids3-off-read-r3         codex-read-r1-203828         passed=True  {'full': 2} fallbacks=-
+    ids3-off-search-r3       codex-search-r1-204443       passed=True  {'full': 4} fallbacks=-
+    ids3-off-edit-r3         codex-edit-r1-204647         passed=False {'full': 10, 'partial': 1} fallbacks=-
+    ids3-off-write-r3        codex-write-r1-213239        passed=True  {'full': 17, 'cold': 1, 'partial': 1, 'compaction': 1, 'post-compaction': 1} fallbacks=-
+    ids3-off-fix-r3          codex-fix-r1-214114          passed=False {'full': 4} fallbacks=-
+arm on: 15 runs, passed 10, compactions 15, follow-ups {'full': 229, 'compaction': 15, 'post-compaction': 15, 'cold': 1, 'partial': 2}, cold plain continuations 1, fallbacks {'history': 185, 'decode': 19}
+    ids3-on-read-r1          codex-read-r1-183601         passed=True  {'full': 2} fallbacks=-
+    ids3-on-search-r1        codex-search-r1-183811       passed=True  {'full': 6} fallbacks=-
+    ids3-on-edit-r1          codex-edit-r1-184945         passed=True  {'full': 16, 'compaction': 1, 'post-compaction': 1} fallbacks={'history': 9}
+    ids3-on-write-r1         codex-write-r1-185749        passed=True  {'full': 32, 'compaction': 3, 'post-compaction': 3} fallbacks={'history': 35}
+    ids3-on-fix-r1           codex-fix-r1-193531          passed=False {'full': 7, 'compaction': 1, 'post-compaction': 1} fallbacks={'history': 8}
+    ids3-on-read-r2          codex-read-r1-194440         passed=True  {'full': 4} fallbacks=-
+    ids3-on-search-r2        codex-search-r1-195119       passed=True  {'full': 4} fallbacks=-
+    ids3-on-edit-r2          codex-edit-r1-195341         passed=False {'full': 14, 'compaction': 1, 'post-compaction': 1, 'cold': 1} fallbacks={'history': 9, 'decode': 1}
+    ids3-on-write-r2         codex-write-r1-202504        passed=False {'full': 15, 'partial': 1, 'compaction': 1, 'post-compaction': 1} fallbacks={'decode': 11, 'history': 17}
+    ids3-on-fix-r2           codex-fix-r1-203114          passed=False {'full': 3} fallbacks=-
+    ids3-on-read-r3          codex-read-r1-204020         passed=True  {'full': 2} fallbacks=-
+    ids3-on-search-r3        codex-search-r1-204215       passed=True  {'full': 11} fallbacks=-
+    ids3-on-edit-r3          codex-edit-r1-205111         passed=True  {'full': 74, 'compaction': 5, 'post-compaction': 5, 'partial': 1} fallbacks={'history': 73, 'decode': 7}
+    ids3-on-write-r3         codex-write-r1-211639        passed=True  {'full': 35, 'compaction': 3, 'post-compaction': 3} fallbacks={'history': 34}
+    ids3-on-fix-r3           codex-fix-r1-214400          passed=False {'full': 4} fallbacks=-

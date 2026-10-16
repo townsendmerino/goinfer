@@ -139,6 +139,13 @@ func (t *Tokenizer) Has(piece string) bool { _, ok := t.vocab[piece]; return ok 
 // "<end_of_turn>") and whether it exists.
 func (t *Tokenizer) TokenID(piece string) (int, bool) { id, ok := t.vocab[piece]; return int(id), ok }
 
+// Size is the number of ids the tokenizer can decode: every id in [0, Size()) has a piece.
+func (t *Tokenizer) Size() int { return len(t.idToPiece) }
+
+// IsAdded reports whether id is an added token (a special or control token, or any other added_tokens entry). Encoding
+// untrusted text through EncodeSegments never produces one, so a run of ordinary ids ends at each.
+func (t *Tokenizer) IsAdded(id int) bool { return id >= 0 && id < len(t.isAdded) && t.isAdded[id] }
+
 // PreTokenizerDecline reports why this tokenizer's pre-tokenizer is NOT the alternation the walker
 // implements, or "" when it is (or when the family is not byte-level at all).
 //

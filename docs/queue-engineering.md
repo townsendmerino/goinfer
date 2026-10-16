@@ -454,7 +454,7 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**B26 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
+**B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
 **Not started.**
 
 NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host
@@ -465,6 +465,17 @@ half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md
 - **Tier 0 when it starts:** `nemotron-tiny`'s CPU forward with int8 Mamba projections against today's f32, held to a bar
   set before the run, and its resident Metal build bit-identical to today's (Metal quantizes the same values either way).
   A planted defect (a transposed projection) must be red.
+
+**B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
+PR #31's Windows CI). **Not started.**
+
+Both checks read Unix mode bits, which Windows does not carry: every file reads as 0666. `readIDsKeyFile` therefore skips its
+owner-only check there and serve prints `permissions not checked on Windows` at startup, and `adminSocketDirSafe` returns early.
+On Windows the question is the file's or directory's DACL: an entry granting read (the key) or write (the socket's directory)
+to anyone but the owner, SYSTEM and Administrators.
+- **Tier 0 when it starts** (a Windows CI job): a key file with an inherited `Everyone:R` entry is refused and one restricted to
+  the owner loads; a socket directory writable by `Users` is refused; a planted defect (the check reading the wrong ACE type)
+  turns it red.
 
 **B25 · a .giw form for `--quant q4k`** — filed 2026-10-15 (owner, from OP6's tier 1). **Not started; for later.**
 

@@ -1240,14 +1240,15 @@ at int4.
   harness. It must reach min cosine ≥ 0.95, or the run is VOID.
 - **A refused load** (the fit guard or Metal's memory guard) is VOID, not FAIL. No guard is bypassed.
 - **Not answered by the slice:** the whole model's agreement. That needs a smaller bundle, quantized Mamba projections
-  (filed with the reading), or a box that holds 19.2 GB.
+  (B27), or a box that holds 19.2 GB.
 
 **Tier 1 on the slice, read 2026-10-15 22:36 PDT: PASS.** By day, under the timing lock. The fit guard and Metal's memory
 guard admitted both loads; nothing was bypassed. Record: `docs/measurements/op2b-step2-2026-10/tier1-slice-2026-10-15/`.
 
 - **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
 - **The Nemotron-H slice:** min cosine 0.994410 against 0.88; argmax 29/32 against 16. **PASS.**
-- **What stays open:** the whole model, for which this Mac has no room, and filed as B26 (`docs/queue-engineering.md`).
+- **What stays open:** the whole model, for which this Mac has no room, and filed as B27 (`docs/queue-engineering.md`; filed as B26, renumbered
+  because main's B26 is another item).
 
 **Declared, 2026-10-15 (owner: the slice stands in for tier 1 for now): Metal declares `ssm` and `non-gated-relu2`,
 int4 only.**
@@ -1257,7 +1258,7 @@ int4 only.**
   - gate S;
   - the tier 0 kernel tests (K, the norm groups, ReLU²), the guard gate and the int8 decline, each with its plant;
   - the three-layer slice of the real 9B against the CPU, above.
-- **Owed under B26:** the whole-model run. B26 keeps the Mamba projections at int8 in the .giw so the whole 9B fits this Mac
+- **Owed under B27:** the whole-model run. B27 keeps the Mamba projections at int8 in the .giw so the whole 9B fits this Mac
   at night, against the bars above.
 - **The matrices:** Nemotron-H reads resident on Metal. Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds
   it, `buildMamba` declines it, and only its "missing: `ssm`" reason goes. The admission golden lists Metal for both,

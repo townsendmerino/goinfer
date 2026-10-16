@@ -110,6 +110,8 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	if len(rb) > 0 {
 		resp["resident_batch"] = rb
 	}
+	// Carried token ids (carried_ids.go): turns that carried a blob, turns that used its ids, and the fallbacks by reason.
+	resp["carried_ids"] = s.idsStats.report()
 	writeJSON(w, http.StatusOK, resp)
 }
 

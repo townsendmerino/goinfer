@@ -1824,7 +1824,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				return
 			}
 		}
-		g.PrefillReused = acq.reuse
+		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
 		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
 		gpuPos = len(prompt)
 	} else {
@@ -2374,6 +2374,11 @@ type Generation struct {
 	// agent loop's per-turn prefill cost visible without timing it. GenerateVL/GenerateQwenVL set it only on the full-image-reuse
 	// fast path (docs/multimodal.md): 0 there means the turn's image (or everything before it) was not fully reused.
 	PrefillReused int
+	// PrefillSlot is how many positions the KV record this generation reused from held before it started (the bound resident
+	// slot's, or a Session's), and PrefillMatch how many leading prompt tokens equal that record's, before any rounding to what
+	// may be reused: when PrefillMatch < PrefillSlot the prompt left the record at PrefillMatch. Diagnostics for -log-requests;
+	// 0 on paths that do not report them.
+	PrefillSlot, PrefillMatch int
 	// PrefillShared is how many of the PrefillReused rows were copied from another conversation's KV slot
 	// (ResidentKVCopier); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
 	// made ("" when none was declined). Diagnostics for the sharing gate (docs/measurements/kv2-2026-10-14.md).

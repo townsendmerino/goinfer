@@ -40,6 +40,9 @@ type responseReq struct {
 	Reasoning *struct {
 		Effort string `json:"effort"`
 	} `json:"reasoning"`
+	// Include lists the extra output a client asked for; "reasoning.encrypted_content" says it round-trips reasoning items,
+	// so a reply with no reasoning gets a carrier-only item for its ids (carried_ids_mint.go).
+	Include []string `json:"include"`
 	sampling
 }
 
@@ -184,12 +187,13 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	if sm.constrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
-	system, turns := messagesToTurns(messages)
-	ids, err := lm.promptForT(tm, system, turns)
+	system, turns, carriers := messagesToTurnsCarried(messages)
+	ids, idsOut, err := lm.encodePrompt(tm, system, turns, nil, s.idsCheckFor(lm, r, carriers))
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	s.noteIDs(r, idsOut)
 	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
@@ -198,6 +202,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	gr.id = id                                // registers this generation for cancel-by-id
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // the reasoning becomes a reasoning item (reasoning_items.go)
+	mint := s.mintFor(lm, r, gr)
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
@@ -210,6 +215,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		rs := newRespStream(ss, id)
+		rs.mint = mint
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		if gr.think != nil {
 			gr.think.onReasoning = rs.reasoningDelta
@@ -228,7 +234,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			sseDone(ss)
 			return
 		}
-		out := withReasoning(rs, gr.think, id, []any{rs.closeMessage(sb.String())})
+		out := withCarrier(rs, mint, req.Include, id, withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(sb.String())}))
 		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused)})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
@@ -248,7 +254,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
-	out := withReasoning(nil, gr.think, id, []any{outputMessage(id+"-msg", sb.String())})
+	out := withCarrier(nil, mint, req.Include, id, withReasoning(nil, gr.think, id, mint, []any{outputMessage(id+"-msg", sb.String())}))
 	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 }
@@ -350,7 +356,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	for i, t := range req.Tools {
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
-	system, turns := messagesToTurns(messages)
+	system, turns, carriers := messagesToTurnsCarried(messages)
 	ts, terr := s.resolveThink(req.thinkRequest())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
@@ -360,11 +366,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
-	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
+	ids, idsOut, err := lm.encodePrompt(tm, system, turns, tools, s.idsCheckFor(lm, r, carriers))
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	s.noteIDs(r, idsOut)
 	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
@@ -379,6 +386,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		return
 	}
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // AFTER the tool constraint, which the budget composes with; the reasoning becomes a reasoning item
+	mint := s.mintFor(lm, r, gr)
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
@@ -400,6 +408,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	var rs *respStream
 	if ss != nil {
 		rs = newRespStream(ss, id)
+		rs.mint = mint
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		onProse = rs.delta
 		if gr.think != nil {
@@ -426,7 +435,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		// (partial) text message, as the "nothing parseable" fallback below does, so a client still gets a
 		// well-formed response object with real usage.
 		if ss != nil {
-			resp := responseObject(id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, []any{rs.closeMessage(t.raw)}), inTok, nComp)
+			resp := responseObject(id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(t.raw)}), inTok, nComp)
 			rs.emit("response.completed", map[string]any{"response": resp})
 			rs.emit("response.cancelled", map[string]any{"reason": t.cancelReason})
 			sseDone(ss)
@@ -438,6 +447,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	calls, lead := t.calls, ""
 	if len(calls) > 0 {
 		lead = t.lead
+	}
+	if rs != nil && wantsCarrier(req.Include) {
+		// a reply with no reasoning and nothing streamed yet: its carrier-only item goes first, before the items below open
+		if enc := mint.blob(""); enc != "" {
+			rs.carrierOnly(enc)
+		}
 	}
 	if ss != nil && t.rest != "" {
 		// The prose still held back when the call opened (or all of it, on a family that cannot
@@ -481,7 +496,10 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 			out = append(out, outputMessage(id+"-msg", t.raw))
 		}
 	}
-	out = withReasoning(rs, gr.think, id, out)
+	out = withReasoning(rs, gr.think, id, mint, out)
+	if rs == nil {
+		out = withCarrier(nil, mint, req.Include, id, out)
+	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
 	resp := withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused)
@@ -553,14 +571,19 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 	// pending is a reasoning item's text waiting for the assistant turn it belongs to: the next function_call or assistant
 	// message. A reasoning item with no assistant turn after it is dropped.
 	pending := ""
+	// carried is the carried-id blob of the latest reasoning item, for the same assistant turn as pending (carried_ids.go).
+	var carried *idsCarrier
 	for _, it := range items {
 		switch it.Type {
 		case "reasoning":
-			text, err := reasoningItemText(it.EncryptedContent, it.Content, it.Summary)
+			text, c, err := reasoningItemCarried(it.EncryptedContent, it.Content, it.Summary)
 			if err != nil {
 				return nil, err
 			}
 			pending += text
+			if c != nil {
+				carried = c
+			}
 			continue
 		case "function_call":
 			// The model's own call, replayed. Becomes the assistant turn that carries it, which is
@@ -568,8 +591,8 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 			tc := apiToolCall{ID: it.CallID, Type: "function"}
 			tc.Function.Name = it.Name
 			tc.Function.Arguments = it.Arguments
-			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}, ReasoningContent: pending})
-			pending = ""
+			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}, ReasoningContent: pending, carried: carried})
+			pending, carried = "", nil
 			continue
 		case "function_call_output":
 			// The caller's result. `output` is a string in every SDK that sends it, but is typed
@@ -594,6 +617,7 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		m := chatMessage{Role: role, Content: content}
 		if role == "assistant" {
 			m.ReasoningContent, pending = pending, ""
+			m.carried, carried = carried, nil
 		}
 		msgs = append(msgs, m)
 	}

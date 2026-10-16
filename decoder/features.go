@@ -620,7 +620,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// Nemotron-H's Mamba-2 mixer (metal/mamba.go: mamba_conv, mamba_ssm, mamba_gnorm) and its squared-ReLU MLP (act_quant's
 		// nongated_act), at int4 only: buildMamba declines an int8 model, whose projections would be re-quantized to int4. The
 		// declaration rests on gates M and S, the tier 0 kernel and guard tests, and a three-layer slice of the real 9B against
-		// the CPU; the whole-model run is owed under B26 (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
+		// the CPU; the whole-model run is owed under B27 (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
 		FeatSSM:           true,
 		FeatNonGatedReLU2: true,
 	},
