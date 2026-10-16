@@ -198,7 +198,7 @@ var admissionGolden = map[string][]string{
 	// feature-admitted: it intentionally tracks the feature-only model, as with the MoE-cap precedent (deepseek_v2/kimi_k2
 	// below, admitted by feature but capped elsewhere).
 	"gemma":               {"cuda", "metal", "webgpu"},
-	"gemma2":              {"metal"}, // the attention-score softcap: Metal since OP1; cuda and webgpu do not declare it
+	"gemma2":              {"cuda", "metal"}, // the attention-score softcap: Metal and CUDA since OP1; webgpu does not declare it
 	"gemma3":              {"cuda", "metal", "webgpu"},
 	"gemma3_text":         {"cuda", "metal", "webgpu"},
 	"gemma4":              {"cuda", "metal", "webgpu"},
