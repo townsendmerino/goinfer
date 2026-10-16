@@ -2060,6 +2060,23 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
 - **No tier 1 or night run:** each seam is a copy of a tensor the forward already computes. Gate I is unaffected, since the
   forward does not change.
 
+**OP3's seams PR: readings, 2026-10-16 (branch `op3-seams-2026-10`, on #62).**
+- **The build:** the three seams, and `ForwardSubCaptureLogitsForTest`, stop refusing. `seam_refusals.go` keeps only the
+  family list for the refusals that are not seams (f16 KV's reason, MC3c's and LoRA's), which keep their pre-OP3 text. The
+  walker's capture moved into `Model.captureLayer`, and the plants are one test hook, `seamPlantForTest`.
+- **Gates, on all 58 tiny fixtures that walk a program:**
+
+  | gate | result | its plant |
+  |---|---|---|
+  | H, `HiddenLast` | PASS on 58 | the final norm skipped: red on 23 (every fixture whose `HiddenLast` takes the per-token path) |
+  | C, `ForwardCapture` | PASS on 58 | the capture one operation early: red on 58 |
+  | S, `ForwardSubCapture` | PASS on 54; NOT RUN on 4 | the attention contribution before its post-norm: red on 9 (the sandwich-norm fixtures) |
+
+  - S is NOT RUN on the four Gemma 4 E-model and 26B MoE fixtures: every layer past the first has the PLE branch or the MoE
+    block, which the contributions do not cover. Gates H and C cover those fixtures.
+  - Log: `docs/measurements/op3-2026-10/seams-gates.log`.
+- **I: PASS** (37 IDENTICAL; the forward does not change). Log: `docs/measurements/op3-2026-10/seams-identity-tiny.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
