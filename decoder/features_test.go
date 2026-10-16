@@ -224,7 +224,7 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"webgpu"},
+	"granitemoehybrid": {"metal", "webgpu"}, // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
 	"kimi_k2":          {"cuda", "webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
@@ -263,7 +263,7 @@ var admissionGolden = map[string][]string{
 	"mistral3":   {"cuda", "metal"},
 	"ministral3": {"cuda", "metal"},
 	"mixtral":    {"cuda", "metal", "webgpu"},
-	"nemotron_h": {"webgpu"},
+	"nemotron_h": {"metal", "webgpu"}, // Metal since OP2b step 2, int4 only (metal/mamba.go:buildMamba declines int8)
 	"phi3":       {"cuda", "metal", "webgpu"},
 	"qwen2":      {"cuda", "metal", "webgpu"},
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
@@ -379,6 +379,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatPairwiseRoPE, FeatPairwiseMRoPE,
 			// The attention-score softcap, compiled into the three kernels a capped layer takes (docs/tasks/task-forward-architecture-2026-10.md §4.6).
 			FeatAttnLogitSoftcap,
+			// Nemotron-H's Mamba-2 mixer and squared-ReLU MLP, int4 only (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b).
+			FeatSSM, FeatNonGatedReLU2,
 		},
 	}
 	for be, exp := range want {

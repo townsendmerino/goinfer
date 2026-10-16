@@ -35,7 +35,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Ministral 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Nemotron-H | ✅ | ✅ resident | CPU | CPU |
+| Nemotron-H | ✅ | ✅ resident | CPU | ✅ resident |
 | Olmo 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Olmo Hybrid | ✅ | CPU | ✅ resident | ✅ resident |
 | Phi-3 / Phi-4 | ✅ | CPU | CPU | CPU |
@@ -61,13 +61,15 @@ features). Two load-time notes the taxonomy does not encode:
 - **Memory fit:** Metal Mistral-7B needs > 16 GB unified memory (int8 + int4); MoE
   residency is unified-memory-bound.
 - **Precision policy:** Nemotron-H resident is int4-only by default (int8 is opt-in via
-  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability.
+  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability. Metal runs it at
+  int4 only: an int8 Nemotron-H declines to the CPU there rather than re-quantize its projections.
 - **Granite-4.0-H's CPU row is the SAME env var, a DIFFERENT gate (N-94, docs/audit-2026-09-10.md).**
   `GOINFER_SSM_RESIDENT` is Nemotron-H's precision knob above, but for Granite-4.0-H it is an
   ELIGIBILITY gate inside `Architecture.decodeRunnerEligible()` itself, still parity-bring-up-guarded
   off by default — this table's generator pins it empty, so every column reads CPU regardless of
-  backend capability. WebGPU already declares `FeatSSM`; the gap here is the gate not yet being
-  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits.
+  backend capability. WebGPU and Metal already declare `FeatSSM`; the gap here is the gate not yet being
+  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits
+  (Metal's builder still declines Granite-4.0-H, metal/mamba.go:buildMamba, until its own resident gate).
 - **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable
   Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE
   FFN) this representative config never exercises — WebGPU implements it (G7 part 2,
@@ -108,8 +110,8 @@ admission runs.
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
 | GPT-2 | CUDA | missing: `learned-pos`, `non-gated-gelu-tanh`, `non-gated-mlp` |
 | Gemma 2 | WebGPU, CUDA | missing: `attn-logit-softcap` |
-| Granite-4.0-H | WebGPU | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
-| Granite-4.0-H | CUDA, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); missing: `ssm` |
+| Granite-4.0-H | WebGPU, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
+| Granite-4.0-H | CUDA | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); missing: `ssm` |
 | Kimi K2 | Metal | missing: `mla`; router capacity: 384 experts, the kernel routes 256 |
 | LFM2.5 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged; missing: `short-conv` |
 | Laguna | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-softplus`, `per-layer-query-heads` |
@@ -118,7 +120,6 @@ admission runs.
 | Llama 4 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged |
 | Ministral 3 | WebGPU | missing: `attn-temp` |
 | Nemotron-H | CUDA | missing: `non-gated-mlp`, `non-gated-relu2`, `ssm` |
-| Nemotron-H | Metal | missing: `non-gated-relu2`, `ssm` |
 | Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
 | Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |

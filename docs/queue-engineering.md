@@ -454,7 +454,19 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**B27 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
+**B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
+**Not started.**
+
+NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host
+weights (about 0.59 GB a layer over 27 layers), and only attention and MLP take the requested quant. Metal already runs
+those projections at int8 (`metal/mamba.go`, quantized at build from the f32 host copy), so the f32 bytes serve only the
+CPU path and the build. At int8 the bundle would be about 7 GB, which a 16 GB Mac could load at night, and the whole-model
+half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md §4.7, "Tier 1 on a layer slice").
+- **Tier 0 when it starts:** `nemotron-tiny`'s CPU forward with int8 Mamba projections against today's f32, held to a bar
+  set before the run, and its resident Metal build bit-identical to today's (Metal quantizes the same values either way).
+  A planted defect (a transposed projection) must be red.
+
+**B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
 PR #31's Windows CI). **Not started.**
 
 Both checks read Unix mode bits, which Windows does not carry: every file reads as 0666. `readIDsKeyFile` therefore skips its
