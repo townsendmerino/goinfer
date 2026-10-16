@@ -641,7 +641,7 @@ func (a *Architecture) runnerShapeDecline() string {
 	case a.llama4 != nil:
 		return runnerShapeOwnForward
 	case a.lfm2 != nil:
-		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only via FeatShortConv is
+		// LFM2/LFM2.5: its short-convolution layers (opShortConv) are not bridged. Declining HERE and not only via FeatShortConv is
 		// deliberate: decodeRunnerEligible is an ARCH-SHAPE predicate, and 22 of 30 layers run a gated short
 		// convolution with a rolling window that no uniform-layer runner can express, a property of the family
 		// rather than of any backend's kernels. It also keeps the capability matrix honest: its GPU-resident

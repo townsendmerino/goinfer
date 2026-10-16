@@ -503,7 +503,7 @@ func (p *program) multiStepEligible() error {
 	if p.layers == nil {
 		return fmt.Errorf("no layer program (an own loop)")
 	}
-	if !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(batchKinds...) {
+	if !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(genericKinds...) {
 		return fmt.Errorf("an attention kernel or an operation this walker does not run")
 	}
 	if p.embed.LearnedPos {
@@ -530,7 +530,7 @@ func (p *program) multiStepEligible() error {
 // batchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
 // kernel on every layer, and a gated or MoE FFN.
 func (p *program) batchEligible() bool {
-	if p.layers == nil || p.embed.LearnedPos || !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(batchKinds...) {
+	if p.layers == nil || p.embed.LearnedPos || !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(genericKinds...) {
 		return false
 	}
 	for _, ops := range p.layers {
@@ -554,9 +554,6 @@ func (p *program) kindsIn(kinds ...opKind) bool {
 	}
 	return true
 }
-
-// batchKinds are the operations the batched and multi-sequence walkers implement.
-var batchKinds = []opKind{opNorm, opProjQKV, opQKNorm, opRope, opAttnTemp, opAttention, opOutGate, opProjO, opFFN, opResidual}
 
 // attnOrderIs reports whether every attention operation in p computes in order o.
 func (p *program) attnOrderIs(o attnOrder) bool {

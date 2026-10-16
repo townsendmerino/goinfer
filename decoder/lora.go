@@ -335,11 +335,12 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchem
 
 // LoadAdapter loads a PEFT LoRA adapter for compute-time application and registers it under name. Unlike the
 // merge-at-load path (Options.Lora) the base stays immutable, so many adapters of one base share its resident weights.
-// Only the generic dense forward is wired: MoE, non-gated MLP and every own-forward family (arch.ownForward) are
-// rejected, as is a GGUF or serialized base (the adapter is HF-named and needs the safetensors schema).
+// Only the generic dense forward is wired: MoE, non-gated MLP and every family with a layer outside the generic operations
+// (Architecture.genericKindsOnly) are rejected, as is a GGUF or serialized base (the adapter is HF-named and needs the
+// safetensors schema).
 //
-// The own-forward rejection must derive from arch.ownForward(), not a hand-written family list: a family missing from
-// a copy would load and validate cleanly and then silently apply nothing (runLayersLFM2 takes no lora parameter).
+// The rejection must derive from the operations, not a hand-written family list: a family missing from a copy would load and
+// validate cleanly and then silently apply nothing (a short convolution takes no LoRA delta).
 // History: docs/code-notes/decoder.md#Model.LoadAdapter.
 func (m *Model) LoadAdapter(name, dir string) error {
 	_, done, err := m.enterCall(context.Background())
@@ -353,11 +354,10 @@ func (m *Model) LoadAdapter(name, dir string) error {
 // loadAdapter is LoadAdapter without the lifecycle guard (lifecycle.go).
 func (m *Model) loadAdapter(name, dir string) error {
 	arch := m.w.arch
-	hasOwnForward := arch.ownLoopFamily()
 	switch {
 	case m.w.schema == nil:
 		return fmt.Errorf("decoder: compute-time LoRA needs a safetensors base (HF tensor names)")
-	case hasOwnForward:
+	case arch.ownLoopFamily() || !arch.genericKindsOnly():
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for %s (own forward path)", arch.Name)
 	case arch.MoE != nil:
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for MoE (expert FFN not wired)")

@@ -192,9 +192,8 @@ func (e *FitDeclineError) Error() string { return e.msg }
 func (e *FitDeclineError) Unwrap() error { return ErrWontFitResident }
 
 // denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the fit guard's retry decision and the
-// pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and an
-// own-forward family (resolved through arch.ownForward(), not a hand-written list) runs a layer loop that never calls enterLayer, so
-// layerPager would never engage for it. cfg == nil (header unreadable) answers false: don't know must not attempt a retry the guard cannot
+// pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and a
+// family whose layers are not all generic operations (Architecture.genericKindsOnly) gets no layerPager. cfg == nil (header unreadable) answers false: don't know must not attempt a retry the guard cannot
 // vouch for.
 func denseStreamable(cfg *Config) bool {
 	if cfg == nil {
@@ -204,8 +203,7 @@ func denseStreamable(cfg *Config) bool {
 	if err != nil || arch == nil || arch.MoE != nil {
 		return false
 	}
-	_, own := arch.ownForward()
-	return !own
+	return arch.genericKindsOnly()
 }
 
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a

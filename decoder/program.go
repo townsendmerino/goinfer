@@ -1,6 +1,9 @@
 package decoder
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // A program is a model's forward written as data: an embedding stage, one list of operations per layer, and a head stage, built
 // once at load from the resolved Architecture and the loaded weights (buildProgram). The CPU walks it (Model.walkToken), and its
@@ -34,7 +37,15 @@ const (
 	opResidual                    // the residual += regA (and regB)
 	opMLA                         // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
 	opKDA                         // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
+	opShortConv                   // in → out, LFM2's gated short convolution (shortConvStep), on the layer's conv window
 )
+
+// recurrent reports whether the operation mutates per-layer state in place, which no positional rewind restores.
+func (k opKind) recurrent() bool { return k == opKDA || k == opShortConv }
+
+// genericKinds are the operations of the generic layer: the ones the batched and multi-sequence walkers implement, LoRA's
+// deltas reach (q/k/v, o and the gated FFN), and the layer pager's spans cover.
+var genericKinds = []opKind{opNorm, opProjQKV, opQKNorm, opRope, opAttnTemp, opAttention, opOutGate, opProjO, opFFN, opResidual}
 
 // opReg names a per-stream buffer an operation reads or writes.
 type opReg uint8
@@ -266,6 +277,9 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 	if a.llama4 != nil {
 		return a.llama4LayerOps(l, input, ffn)
 	}
+	if a.lfm2 != nil && a.isConvLayer(l) {
+		return []op{input(slotPreAttn), {kind: opShortConv, in: regX, out: regA}, {kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
+	}
 	if a.mla != nil {
 		mixer := op{kind: opMLA, in: regX, out: regA, mla: a.mlaOpParamsAt(l)}
 		if a.kda != nil && a.isLinearLayer(l) { // Bailing Hybrid: KDA on the linear layers, MLA on the rest
@@ -317,7 +331,7 @@ func (a *Architecture) attentionOps(l int) []op {
 
 func (k opKind) String() string {
 	names := [...]string{opNorm: "norm", opProjQKV: "proj-qkv", opQKNorm: "qk-norm", opRope: "rope", opAttnTemp: "attn-temp",
-		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda"}
+		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
@@ -333,12 +347,28 @@ func (a *Architecture) recurrent() bool {
 	}
 	for l := range a.NumLayers {
 		for _, o := range a.layerOps(l, false) {
-			if o.kind == opKDA {
+			if o.kind.recurrent() {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// genericKindsOnly reports whether every layer of a is made of genericKinds, so the generic machinery around the layers applies:
+// LoRA, and the dense layer pager (with the fit guard's retry that mirrors it). False for a family still in the own-loop table.
+func (a *Architecture) genericKindsOnly() bool {
+	if _, own := a.ownForward(); own {
+		return false
+	}
+	for l := range a.NumLayers {
+		for _, o := range a.layerOps(l, false) {
+			if !slices.Contains(genericKinds, o.kind) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // attnOrder is the attention kernel this family's CPU forward computes in.
@@ -350,6 +380,8 @@ func (a *Architecture) attnOrder() attnOrder {
 		return attnQuery
 	case a.mla != nil:
 		return attnMLA
+	case a.lfm2 != nil:
+		return attnQuery
 	}
 	return attnBatchedAcc64
 }

@@ -1876,6 +1876,25 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
 - **P and L: PASS.** `mla.HeadWise` is now reached, since Bailing's fixture has the gate, and is off the list. `kda.Eps` and
   `kda.LowerBound` are live. Log: `docs/measurements/op3-2026-10/op3f-PL.log`.
 
+**OP3g, LFM2: readings, 2026-10-16 (same branch).**
+- **The build:**
+  - LFM2 walks the program: `opShortConv` on its conv layers, which has no behavioural parameter (the conv width and taps are
+    shapes), and the generic attention list with `attendQuery` on the rest.
+  - The LFM2-VL prefill runs its rows through the per-token walker's embedding entry.
+  - Its loop goes.
+- **Three rules the table answered now read the operations** (`Architecture.genericKindsOnly`: every layer made of the generic
+  kinds):
+  - LoRA, which would otherwise have accepted LFM2 and silently not applied its conv-layer deltas (V-12's own regression);
+  - the dense layer pager;
+  - the fit guard's streaming retry, which mirrors the pager.
+  - Each stays off LFM2, as before. The LoRA rejection test now iterates every registered model type and requires LFM2 among
+    the rejected families.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS** (37 IDENTICAL; `lfm2` in all three cells). **P and L: PASS.** Logs:
+  `docs/measurements/op3-2026-10/op3g-identity-tiny.log`, `docs/measurements/op3-2026-10/op3g-PL.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

@@ -140,6 +140,9 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 			case opMLA:
 				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
+			case opShortConv:
+				copy(m.reg(o.out, h, scr), shortConvStep(m.reg(o.in, h, scr), lw.shortConv, *arch.lfm2, arch.HiddenDim, cache.conv[l]))
+				lastFFN = false
 			case opKDA:
 				kp := *arch.kda
 				kp.LowerBound = o.kda.LowerBound

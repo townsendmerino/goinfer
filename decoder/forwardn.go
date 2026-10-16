@@ -1391,7 +1391,7 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 }
 
 // prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL, S10): the text embeddings with the image rows spliced
-// in, each run through runLayersLFM2FromEmbed in order (the conv windows see every row, image rows included), and each
+// in, each run through the per-token walker in order (the conv windows see every row, image rows included), and each
 // position's hidden state final-normed, as the batched entry returns them.
 func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
@@ -1406,11 +1406,11 @@ func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []Imag
 			return nil, err
 		}
 		row := h[i*hidden : (i+1)*hidden]
-		out, err := m.runLayersLFM2FromEmbed(row, cache)
+		out, err := m.runLayersFromEmbed(row, cache)
 		if err != nil {
 			return nil, err
 		}
-		normalize(arch, out, m.w.FinalNorm, m.w.FinalNormBias, hidden)
+		m.finalNorm(out)
 	}
 	return h, nil
 }

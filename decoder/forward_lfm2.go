@@ -1,10 +1,8 @@
 package decoder
 
-// LFM2 / LFM2.5 forward, one token per call. The caller (forward) applies the final norm and the tied LM head.
-//
-// Every layer is Pre2: operator_norm → mixer → residual, then ffn_norm → SwiGLU → residual. The mixer is a gated short convolution
-// on most layers and GQA softmax attention on the others (layer_types). Both halves write into the same hidden vector, so the only
-// thing the layer kind changes is which mixer runs and which cache slot it touches.
+// LFM2 / LFM2.5: every layer is Pre2, operator_norm → mixer → residual, then ffn_norm → SwiGLU → residual. The mixer is a gated
+// short convolution (opShortConv) on most layers and GQA softmax attention with a per-head RMS QK-norm on the others
+// (layer_types); its program is Architecture.layerOps.
 
 // shortConvStep is the LFM2 gated short-convolution mixer for one token.
 //
@@ -55,90 +53,4 @@ func shortConvStep(n []float32, w *shortConvWeights, g lfm2Params, hidden int, s
 		y[c] = C[c] * conv[c]
 	}
 	return matvec(w.outProj, hidden, cd, y)
-}
-
-// lfm2Attention is GQA + RoPE with per-head RMSNorm on Q and K. The QK-norm is RMSNorm over head_dim, applied per head before
-// RoPE, the ordering HF uses and the one the existing hardcoded QK-norm path already implements, so declaring QKNorm was enough.
-// It is RMSNorm, not LayerNorm: the released checkpoint carries q_layernorm.weight and no bias tensor, and the reference builds
-// Lfm2RMSNorm(head_dim) (see lfm2Architecture).
-func (m *Model) lfm2Attention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	hidden := arch.HiddenDim
-	q := make([]float32, nH*hd)
-	k := make([]float32, nKV*hd)
-	v := make([]float32, nKV*hd)
-	matmul(m.be, &lw.QProj, n, q, 1)
-	matmul(m.be, &lw.KProj, n, k, 1)
-	matmul(m.be, &lw.VProj, n, v, 1)
-
-	if arch.QKNorm {
-		rmsNorm(q, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
-		rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
-	}
-
-	invFreq := arch.ropeInvFreq(layer)
-	ms := arch.ropeMscale(layer)
-	applyRoPE(q, nH, hd, pos, invFreq, ms)
-	applyRoPE(k, nKV, hd, pos, invFreq, ms)
-
-	cache.Append(layer, k, v)
-	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQuery clears it
-	nKeys := len(cache.Keys(layer)) / (nKV * hd)
-	// Full causal attention on every attention layer: LFM2 has no sliding window — the conv
-	// layers ARE its locality mechanism, so the 8 attention layers are all global.
-	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true, arch)
-
-	out := make([]float32, hidden)
-	matmul(m.be, &lw.OProj, ctx, out, 1)
-	return out
-}
-
-func (m *Model) runLayersLFM2(id int, cache *KVCache) ([]float32, error) {
-	h := make([]float32, m.w.arch.HiddenDim)
-	m.w.Embed.Row(id, h) // no embedding scale
-	return m.runLayersLFM2FromEmbed(h, cache)
-}
-
-// runLayersLFM2FromEmbed is runLayersLFM2 from an embedding row instead of a token id (S10, LFM2-VL: an image row
-// spliced in place of an <image> token runs through the same conv and attention layers). h is consumed in place and
-// returned, before the final norm.
-func (m *Model) runLayersLFM2FromEmbed(h []float32, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
-		cache.scr = newDecodeScratch(arch)
-	}
-	g := arch.lfm2
-	hidden := arch.HiddenDim
-	eps := arch.NormEps
-
-	// manualPos: the conv layers never Append, so position cannot be read off the KV length.
-	pos := cache.Pos()
-
-	for l := 0; l < arch.NumLayers; l++ {
-		lw := &m.w.Layers[l]
-
-		// Mixer sub-block. operator_norm is the pre-mixer norm for BOTH kinds — LFM2 does
-		// not have separate conv/attention norm names, which is why lfm2TensorSchema maps
-		// it to PreAttnNorm and both branches read the same field.
-		rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
-		var mix []float32
-		if arch.isConvLayer(l) {
-			mix = shortConvStep(cache.scr.norm, lw.shortConv, *g, hidden, cache.conv[l])
-		} else {
-			mix = m.lfm2Attention(cache.scr.norm, lw, arch, cache, l, pos)
-		}
-		addResidual(h, mix)
-
-		// FFN sub-block. ffn_norm is the pre-FFN norm; the FFN is SwiGLU (w1 gate, w3 up,
-		// w2 down) and identical on conv and attention layers.
-		rmsNormInto(cache.scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn := cache.scr.sub
-		if err := gatedMLP(cache.scr.norm, ffn, lw, arch, m.be, cache.scr, nil); err != nil {
-			return nil, err
-		}
-		addResidual(h, ffn)
-	}
-
-	cache.Advance()
-	return h, nil
 }
