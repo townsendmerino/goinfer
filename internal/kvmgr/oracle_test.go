@@ -450,9 +450,11 @@ func oracleOps() int {
 	return 20000
 }
 
+// TestOracle_pool's seeds are independent walks, each on its own manager and oracle, so they run in parallel.
 func TestOracle_pool(t *testing.T) {
 	for seed := int64(1); seed <= 8; seed++ {
 		t.Run(fmt.Sprintf("seed%d", seed), func(t *testing.T) {
+			t.Parallel()
 			o := &oracle{t: t, rng: rand.New(rand.NewSource(seed)), seed: seed, dev: map[int32][]orow{}, pub: map[int32]opub{},
 				m: New([]int{12, 24, 48, 96}[seed%4])}
 			o.roots = []Root{
